@@ -9,3 +9,6 @@ build/downloads/
 build/user/
 # arduino-cli build output (.bin / .elf / .map / objects)
 build/output/
+
+# Python bytecode (test_loopback.py imports the flasher module)
+__pycache__/
