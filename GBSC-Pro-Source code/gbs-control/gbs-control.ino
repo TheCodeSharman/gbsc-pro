@@ -10065,6 +10065,12 @@ static bool capturePresetRegisters(uint8_t *dump)
     return i == presetRegisterCount && !allZero && !allOnes;
 }
 
+// The preset to fall back on when a custom one cannot be used.
+static const uint8_t *builtinPresetFor(byte forVideoMode)
+{
+    return (forVideoMode == 2 || forVideoMode == 4) ? pal_240p : ntsc_240p;
+}
+
 const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
 {
 
@@ -10083,10 +10089,7 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
         f.close();
         slot = result[2];
     } else {
-        if (forVideoMode == 2 || forVideoMode == 4)
-            return pal_240p;
-        else
-            return ntsc_240p;
+        return builtinPresetFor(forVideoMode);
     }
 
     String path = presetPathForVideoMode(forVideoMode, slot);
@@ -10096,23 +10099,33 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
 
     if (!f) // open failed, or a video mode with no custom preset
     {
-        if (forVideoMode == 2 || forVideoMode == 4)
-            return pal_240p;
-        else
-            return ntsc_240p;
+        return builtinPresetFor(forVideoMode);
     } else {
-        s = f.readStringUntil('}'); // 
+        s = f.readStringUntil('}'); //
         f.close();
     }
 
+    // The bound is load-bearing. readStringUntil() stops before the '}', so a
+    // well-formed file ends "...,\r\n" and strtok yields the trailing "\r\n" as
+    // one token more than there are values; a file uploaded through
+    // /spiffs/upload can be any length at all.
     char *tmp;
     uint16_t i = 0;
-    tmp = strtok(&s[0], ","); // 
-    while (tmp) {
-        preset[i++] = (uint8_t)atoi(tmp); 
+    tmp = strtok(&s[0], ","); //
+    while (tmp != NULL && i < presetRegisterCount) {
+        preset[i++] = (uint8_t)atoi(tmp);
         tmp = strtok(NULL, ",");
         yield();
     }
+
+    if (i < presetRegisterCount) {
+        // Short file. The rest of preset[] is whatever the previous load left
+        // in it, which belongs to some other video mode.
+        debugPrintf("preset load: %s holds %u of %u values, using the built-in preset\n",
+            path.c_str(), i, presetRegisterCount);
+        return builtinPresetFor(forVideoMode);
+    }
+
     return preset;
 }
 
