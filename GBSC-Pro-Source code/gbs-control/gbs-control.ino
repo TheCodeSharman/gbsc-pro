@@ -2855,81 +2855,39 @@ void setCsVsStop(uint16_t stop)
     GBS::SP_SDCS_VSSP_REG_L::write(stop & 0xff);
 }
 
+// Dump the scaler's live display timings: on demand from the web UI (`/sc?,`)
+// or serial (`,`), and after every moveHS()/moveVS() nudge. printf_P gives one
+// WebSocket frame per line, with the format strings left in flash.
 void printVideoTimings()
 {
+#if GBS_DEBUG
     if (rto->presetID < 0x20) {
-        ; // SerialMprintln("");
-        ; // SerialMprint(F("HT / scale   : "));
-        ; // SerialMprint(GBS::VDS_HSYNC_RST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_HSCALE::read());
-        ; // SerialMprint(F("HS ST/SP     : "));
-        ; // SerialMprint(GBS::VDS_HS_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_HS_SP::read());
-        ; // SerialMprint(F("HB ST/SP(d)  : "));
-        ; // SerialMprint(GBS::VDS_DIS_HB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_DIS_HB_SP::read());
-        ; // SerialMprint(F("HB ST/SP     : "));
-        ; // SerialMprint(GBS::VDS_HB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_HB_SP::read());
-        ; // SerialMprintln(F("------"));
+        SerialM.printf_P(PSTR("\nHT / scale   : %d %d\n"), GBS::VDS_HSYNC_RST::read(), GBS::VDS_HSCALE::read());
+        SerialM.printf_P(PSTR("HS ST/SP     : %d %d\n"), GBS::VDS_HS_ST::read(), GBS::VDS_HS_SP::read());
+        SerialM.printf_P(PSTR("HB ST/SP(d)  : %d %d\n"), GBS::VDS_DIS_HB_ST::read(), GBS::VDS_DIS_HB_SP::read());
+        SerialM.printf_P(PSTR("HB ST/SP     : %d %d\n"), GBS::VDS_HB_ST::read(), GBS::VDS_HB_SP::read());
+        SerialM.printf_P(PSTR("------\n"));
         // vertical
-        ; // SerialMprint(F("VT / scale   : "));
-        ; // SerialMprint(GBS::VDS_VSYNC_RST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_VSCALE::read());
-        ; // SerialMprint(F("VS ST/SP     : "));
-        ; // SerialMprint(GBS::VDS_VS_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_VS_SP::read());
-        ; // SerialMprint(F("VB ST/SP(d)  : "));
-        ; // SerialMprint(GBS::VDS_DIS_VB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_DIS_VB_SP::read());
-        ; // SerialMprint(F("VB ST/SP     : "));
-        ; // SerialMprint(GBS::VDS_VB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::VDS_VB_SP::read());
+        SerialM.printf_P(PSTR("VT / scale   : %d %d\n"), GBS::VDS_VSYNC_RST::read(), GBS::VDS_VSCALE::read());
+        SerialM.printf_P(PSTR("VS ST/SP     : %d %d\n"), GBS::VDS_VS_ST::read(), GBS::VDS_VS_SP::read());
+        SerialM.printf_P(PSTR("VB ST/SP(d)  : %d %d\n"), GBS::VDS_DIS_VB_ST::read(), GBS::VDS_DIS_VB_SP::read());
+        SerialM.printf_P(PSTR("VB ST/SP     : %d %d\n"), GBS::VDS_VB_ST::read(), GBS::VDS_VB_SP::read());
         // IF V offset
-        ; // SerialMprint(F("IF VB ST/SP  : "));
-        ; // SerialMprint(GBS::IF_VB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::IF_VB_SP::read());
+        SerialM.printf_P(PSTR("IF VB ST/SP  : %d %d\n"), GBS::IF_VB_ST::read(), GBS::IF_VB_SP::read());
     } else {
-        ; // SerialMprintln("");
-        ; // SerialMprint(F("HD_HSYNC_RST : "));
-        ; // SerialMprintln(GBS::HD_HSYNC_RST::read());
-        ; // SerialMprint(F("HD_INI_ST    : "));
-        ; // SerialMprintln(GBS::HD_INI_ST::read());
-        ; // SerialMprint(F("HS ST/SP     : "));
-        ; // SerialMprint(GBS::SP_CS_HS_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::SP_CS_HS_SP::read());
-        ; // SerialMprint(F("HB ST/SP     : "));
-        ; // SerialMprint(GBS::HD_HB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::HD_HB_SP::read());
-        ; // SerialMprintln(F("------"));
+        SerialM.printf_P(PSTR("\nHD_HSYNC_RST : %d\n"), GBS::HD_HSYNC_RST::read());
+        SerialM.printf_P(PSTR("HD_INI_ST    : %d\n"), GBS::HD_INI_ST::read());
+        SerialM.printf_P(PSTR("HS ST/SP     : %d %d\n"), GBS::SP_CS_HS_ST::read(), GBS::SP_CS_HS_SP::read());
+        SerialM.printf_P(PSTR("HB ST/SP     : %d %d\n"), GBS::HD_HB_ST::read(), GBS::HD_HB_SP::read());
+        SerialM.printf_P(PSTR("------\n"));
         // vertical
-        ; // SerialMprint(F("VS ST/SP     : "));
-        ; // SerialMprint(GBS::HD_VS_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::HD_VS_SP::read());
-        ; // SerialMprint(F("VB ST/SP     : "));
-        ; // SerialMprint(GBS::HD_VB_ST::read());
-        ; // SerialMprint(" ");
-        ; // SerialMprintln(GBS::HD_VB_SP::read());
+        SerialM.printf_P(PSTR("VS ST/SP     : %d %d\n"), GBS::HD_VS_ST::read(), GBS::HD_VS_SP::read());
+        SerialM.printf_P(PSTR("VB ST/SP     : %d %d\n"), GBS::HD_VB_ST::read(), GBS::HD_VB_SP::read());
     }
 
-    ; // SerialMprint(F("CsVT         : "));
-    ; // SerialMprintln(GBS::STATUS_SYNC_PROC_VTOTAL::read());
-    ; // SerialMprint(F("CsVS_ST/SP   : "));
-    ; // SerialMprint(getCsVsStart());
-    ; // SerialMprint(F(" "));
-    ; // SerialMprintln(getCsVsStop());
+    SerialM.printf_P(PSTR("CsVT         : %d\n"), GBS::STATUS_SYNC_PROC_VTOTAL::read());
+    SerialM.printf_P(PSTR("CsVS_ST/SP   : %d %d\n"), getCsVsStart(), getCsVsStop());
+#endif
 }
 
 void set_htotal(uint16_t htotal)
