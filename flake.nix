@@ -26,8 +26,9 @@
             dependencies = with pkgs.python3Packages; [ ordered-set pyserial ];
           };
           # pyserial: AV-module flasher; ymodem: YMODEM transfer; websocket-client:
-          # read gbs-control's live status/terminal over ws://<ip>:81/.
-          pythonEnv = pkgs.python3.withPackages (ps: [ ps.pyserial ymodem ps.websocket-client ]);
+          # read gbs-control's live status/terminal over ws://<ip>:81/; pytest:
+          # runs tools/gbsc-pro-hwtest against a live unit.
+          pythonEnv = pkgs.python3.withPackages (ps: [ ps.pyserial ymodem ps.websocket-client ps.pytest ]);
         in
         {
           default = pkgs.mkShell {
@@ -38,8 +39,9 @@
               pkgs.gnumake
             ];
             shellHook = ''
-              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client), esptool, arduino-cli + make"
+              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest), esptool, arduino-cli + make"
               echo "  firmware: make -C build setup   (once)   then   make -C build"
+              echo "  hardware: pytest --host=gbscontrol.local   (needs a running unit)"
             '';
           };
         });
