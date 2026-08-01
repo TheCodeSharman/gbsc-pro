@@ -73,3 +73,19 @@ A successful save switches the unit's preset preference to `OutputCustomized`
 (byte 0 of `/preferencesv2.txt` becomes `2`). `/uc?p` puts it back to
 `Output1024P` (`4`) without touching the filesystem, which is a cleaner undo
 than re-uploading the preferences file.
+
+## sync_monitor.py
+
+A live view of the sync processor, for correlating with a scope on the VGA
+input:
+
+```sh
+python3 tools/gbsc-pro-hwtest/sync_monitor.py --host 192.168.88.108
+python3 tools/gbsc-pro-hwtest/sync_monitor.py --host … --totals
+```
+
+It polls `STATUS_16` and prints every change, flagging any instant where H and V
+are active together — which is what the firmware's `stable` test requires and
+what this unit has never sustained. Ctrl-C prints a summary with the percentage
+of samples each sync was active for. Scope answers "is it on the wire"; this
+answers "does the scaler see it".
