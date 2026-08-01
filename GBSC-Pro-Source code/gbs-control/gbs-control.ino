@@ -13,6 +13,14 @@ static unsigned long lastVsyncLock = millis();
 // #define LEDON     pinMode(LED_BUILTIN, OUTPUT); digitalWrite(LED_BUILTIN, LOW)
 // #define LEDOFF    pinMode(LED_BUILTIN, INPUT);  digitalWrite(LED_BUILTIN, HIGH)
 #define HAVE_BUTTONS 0
+
+// GBS_DEBUG: compile in the debug surface -- traces, dumps and the register
+// endpoints. Off by default. Must be defined before the framesync.h include
+// below, which reads it.
+#ifndef GBS_DEBUG
+#define GBS_DEBUG 0
+#endif
+
 static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t numValues);
 const uint8_t *loadPresetFromSPIFFS(byte forVideoMode);
 

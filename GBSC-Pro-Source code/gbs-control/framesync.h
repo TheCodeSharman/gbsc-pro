@@ -21,10 +21,10 @@
 // FS_DEBUG_LED:  just blink LED (off = adjust phase, on = normal phase)
 // #define FS_DEBUG
 // #define FS_DEBUG_LED
-// #define FRAMESYNC_DEBUG
-
-#ifdef FRAMESYNC_DEBUG
-#define fsDebugPrintf(...) ; // SerialM.printf(__VA_ARGS__)
+// fsDebugPrintf: framesync's per-decision trace (HTotal search, sync phase,
+// vsync period), routed through SerialM so it reaches the web console.
+#if GBS_DEBUG
+#define fsDebugPrintf(...) SerialM.printf(__VA_ARGS__)
 #else
 #define fsDebugPrintf(...)
 #endif
