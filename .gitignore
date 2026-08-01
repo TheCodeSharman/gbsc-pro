@@ -1,3 +1,6 @@
+# direnv cached dev shell
+.direnv/
+
 # Build caches and outputs — large, regenerable, never commit.
 
 # arduino-cli isolated data dir, package downloads, and per-user dir

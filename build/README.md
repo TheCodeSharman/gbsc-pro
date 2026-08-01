@@ -31,6 +31,22 @@ the sketch's `static inline writeOneByte()` before `clearFrame()` uses it, so
 `pio run` fails with *"'writeOneByte' was not declared in this scope"*.
 arduino-cli does the full Arduino auto-prototype pass.
 
+## Optional: a pinned toolchain with nix
+
+The repo ships a flake pinning a known-good `arduino-cli`, `make` and `esptool`.
+It is one way to get the tools, not a requirement — the Makefile neither knows
+nor cares where they came from.
+
+```
+direnv allow           # loads and caches the shell on cd
+nix develop            # or enter it by hand
+```
+
+Prefer the cached direnv shell over `nix develop -c <cmd>` per command:
+evaluating the flake from a dirty checkout copies the tracked working tree into
+the store, keyed on tree state, so a per-command habit costs one copy per edit.
+direnv re-evaluates only when `flake.nix` or `flake.lock` change.
+
 ## Gitignored (regenerable, large — see ../.gitignore)
 
 `data/` (~310M esp8266 core + xtensa toolchain), `downloads/` (~91M package
