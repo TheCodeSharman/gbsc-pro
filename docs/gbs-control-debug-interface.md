@@ -55,8 +55,28 @@ their arguments a character at a time straight from the UART, so they cannot be
 driven over the network at all.
 
 Both write straight to the chip and neither is persisted: a reboot, or any
-preset load, undoes whatever you poked. Persisting is `savePresetToSPIFFS()`'s
-job, and that is where a bad value gets you a wedged config.
+preset load, undoes whatever you poked.
+
+### Saving what you poked
+
+`/uc?4` writes the live registers to SPIFFS as the custom preset for the current
+video mode and slot, and switches the unit's preset preference to
+`OutputCustomized` — so from then on it boots into that file.
+
+That is the wedge: whatever the registers hold at that moment is what the unit
+comes up in, every boot, and if it comes up without a picture the web UI is the
+thing you would have used to fix it. `/uc?1` (wipe) or a reflash is the way out.
+
+The save path refuses the cases it can recognise rather than persisting them: a
+video mode with no preset file, a register readback that is all `0x00` or all
+`0xff` (the chip did not answer), and a file that does not write in full. It
+writes to `<preset>~` and swaps that into place only once complete, so a failure
+leaves the previous preset untouched — and the preference is only switched to
+`OutputCustomized` if a preset actually landed. With `GBS_DEBUG=1` the
+reason for a refusal goes to the web console.
+
+None of that judges whether the timings are *good*, only whether they are a
+preset at all. Saving a bad-but-well-formed preset still wedges the unit.
 
 ### Footguns
 

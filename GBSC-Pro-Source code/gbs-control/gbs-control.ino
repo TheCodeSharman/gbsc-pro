@@ -21,6 +21,15 @@ static unsigned long lastVsyncLock = millis();
 #define GBS_DEBUG 0
 #endif
 
+// The sketch-level twin of framesync.h's fsDebugPrintf: one line to the web
+// console, format string kept in flash, and nothing at all when the flag is
+// off. Expands where it is used, so SerialM does not have to exist yet here.
+#if GBS_DEBUG
+#define debugPrintf(fmt, ...) SerialM.printf_P(PSTR(fmt), ##__VA_ARGS__)
+#else
+#define debugPrintf(fmt, ...)
+#endif
+
 static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t numValues);
 const uint8_t *loadPresetFromSPIFFS(byte forVideoMode);
 
@@ -498,6 +507,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 // prototypes above the ESPAsyncWebServer.h include where the type is unknown.
 static bool getHexParam(AsyncWebServerRequest *request, const char *name, long limit, long *out);
 #endif
+static String presetPathForVideoMode(uint8_t videoMode, Ascii8 slot);
+bool savePresetToSPIFFS();
 void UpDisplay(void);
 void printBinary(unsigned char num);
 void turnOffWiFi();
@@ -8866,9 +8877,12 @@ void handleType2Command(char argument)
             // printf("This load \n");
         } break;
         case '4': // Saving customized presets
-            savePresetToSPIFFS();
-            uopt->presetPreference = OutputCustomized; // custom
-            saveUserPrefs();
+            // Only switch to custom presets once one exists, or a failed save
+            // leaves the unit booting into a missing or half-written preset.
+            if (savePresetToSPIFFS()) {
+                uopt->presetPreference = OutputCustomized; // custom
+                saveUserPrefs();
+            }
             break;
         case '5':
             // 
@@ -9974,10 +9988,87 @@ void StrClear(char *str, uint16_t length)
     }
 }
 
-const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) // 
+// A custom preset is these register ranges, in this order. They add up to
+// presetRegisterCount bytes, which is what a preset file holds and what
+// loadPresetFromSPIFFS() reads back.
+static const struct {
+    uint8_t segment;
+    uint8_t first;
+    uint8_t last;
+} presetRegisterRanges[] = {
+    { 0, 0x40, 0x5F }, // 32
+    { 0, 0x90, 0x9F }, // 16
+    { 1, 0x00, 0x2F }, // 48
+    { 3, 0x00, 0x7F }, // 128
+    { 4, 0x00, 0x5F }, // 96
+    { 5, 0x00, 0x6F }, // 112
+};
+
+static const uint16_t presetRegisterCount = 432;
+
+// Path of the custom preset file for a video mode and slot; empty for a mode
+// that has no custom preset. Shared by the load and save paths so the two
+// cannot drift apart on a filename.
+static String presetPathForVideoMode(uint8_t videoMode, Ascii8 slot)
+{
+    switch (videoMode) {
+        case 0:
+            return String(F("/preset_unknown.")) + (char)slot;
+        case 1:
+            return String(F("/preset_ntsc.")) + (char)slot;
+        case 2:
+            return String(F("/preset_pal.")) + (char)slot;
+        case 3:
+            return String(F("/preset_ntsc_480p.")) + (char)slot;
+        case 4:
+            return String(F("/preset_pal_576p.")) + (char)slot;
+        case 5:
+            return String(F("/preset_ntsc_720p.")) + (char)slot;
+        case 6:
+            return String(F("/preset_ntsc_1080p.")) + (char)slot;
+        case 8:
+            return String(F("/preset_medium_res.")) + (char)slot;
+        case 14:
+            return String(F("/preset_vga_upscale.")) + (char)slot;
+        default:
+            return String();
+    }
+}
+
+// Read the live registers a custom preset is made of into dump[]. False if the
+// chip plainly did not answer: a readback of nothing but 0x00, or nothing but
+// 0xff, is not a preset, and persisting one replaces a working preset with a
+// dead one.
+static bool capturePresetRegisters(uint8_t *dump)
+{
+    uint16_t i = 0;
+    bool allZero = true;
+    bool allOnes = true;
+
+    for (uint8_t range = 0; range < (sizeof(presetRegisterRanges) / sizeof(presetRegisterRanges[0])); range++) {
+        writeOneByte(0xF0, presetRegisterRanges[range].segment);
+
+        for (uint16_t x = presetRegisterRanges[range].first; x <= presetRegisterRanges[range].last; x++) {
+            if (i >= presetRegisterCount) {
+                return false; // the ranges no longer match presetRegisterCount
+            }
+
+            readFromRegister((uint8_t)x, 1, &dump[i]);
+            allZero &= (dump[i] == 0x00);
+            allOnes &= (dump[i] == 0xFF);
+            i++;
+        }
+
+        yield();
+    }
+
+    return i == presetRegisterCount && !allZero && !allOnes;
+}
+
+const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
 {
 
-    static uint8_t preset[432]; //
+    static uint8_t preset[presetRegisterCount]; //
     String s = "";
     Ascii8 slot = 0;
     File f;
@@ -9998,27 +10089,12 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
             return ntsc_240p;
     }
 
-    if (forVideoMode == 1) {
-        f = SPIFFS.open("/preset_ntsc." + String((char)slot), "r");
-    } else if (forVideoMode == 2) {
-        f = SPIFFS.open("/preset_pal." + String((char)slot), "r");
-    } else if (forVideoMode == 3) {
-        f = SPIFFS.open("/preset_ntsc_480p." + String((char)slot), "r");
-    } else if (forVideoMode == 4) {
-        f = SPIFFS.open("/preset_pal_576p." + String((char)slot), "r");
-    } else if (forVideoMode == 5) {
-        f = SPIFFS.open("/preset_ntsc_720p." + String((char)slot), "r");
-    } else if (forVideoMode == 6) {
-        f = SPIFFS.open("/preset_ntsc_1080p." + String((char)slot), "r");
-    } else if (forVideoMode == 8) {
-        f = SPIFFS.open("/preset_medium_res." + String((char)slot), "r");
-    } else if (forVideoMode == 14) {
-        f = SPIFFS.open("/preset_vga_upscale." + String((char)slot), "r");
-    } else if (forVideoMode == 0) {
-        f = SPIFFS.open("/preset_unknown." + String((char)slot), "r");
+    String path = presetPathForVideoMode(forVideoMode, slot);
+    if (path.length() > 0) {
+        f = SPIFFS.open(path, "r");
     }
 
-    if (!f) // open failed
+    if (!f) // open failed, or a video mode with no custom preset
     {
         if (forVideoMode == 2 || forVideoMode == 4)
             return pal_240p;
@@ -10040,112 +10116,104 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
     return preset;
 }
 
-void savePresetToSPIFFS()
+// Capture the live registers as the custom preset for the current video mode.
+// False when nothing was saved, so the caller does not switch the unit over to
+// custom presets on the strength of a preset that is not there.
+//
+// **THE ORDER IS THE POINT**: capture and check the registers, write beside the
+// old preset, and swap only once the new one is complete, so a save that fails
+// part-way leaves the old preset untouched.
+// docs/investigations/riscpc-game-modes.md
+bool savePresetToSPIFFS()
 {
-
-    uint8_t readout = 0;
-    File f;
-    Ascii8 slot = 0;
-
-    f = SPIFFS.open("/preferencesv2.txt", "r");
-    if (f) {
-        uint8_t result[3];
-        result[0] = f.read();
-        result[1] = f.read();
-        result[2] = f.read();
-        f.close();
-        slot = result[2];
-    } else {
-        return;
+    File f = SPIFFS.open("/preferencesv2.txt", "r");
+    if (!f) {
+        debugPrintf("preset save: no preferences file, so no slot to save into\n");
+        return false;
     }
 
-    if (rto->videoStandardInput == 1) {
-        f = SPIFFS.open("/preset_ntsc." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 2) {
-        f = SPIFFS.open("/preset_pal." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 3) {
-        f = SPIFFS.open("/preset_ntsc_480p." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 4) {
-        f = SPIFFS.open("/preset_pal_576p." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 5) {
-        f = SPIFFS.open("/preset_ntsc_720p." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 6) {
-        f = SPIFFS.open("/preset_ntsc_1080p." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 8) {
-        f = SPIFFS.open("/preset_medium_res." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 14) {
-        f = SPIFFS.open("/preset_vga_upscale." + String((char)slot), "w");
-    } else if (rto->videoStandardInput == 0) {
-        f = SPIFFS.open("/preset_unknown." + String((char)slot), "w");
+    uint8_t result[3];
+    result[0] = f.read();
+    result[1] = f.read();
+    result[2] = f.read();
+    f.close();
+    Ascii8 slot = result[2];
+
+    String path = presetPathForVideoMode(rto->videoStandardInput, slot);
+    if (path.length() == 0) {
+        debugPrintf("preset save: video mode %d has no preset file\n", rto->videoStandardInput);
+        return false;
     }
 
-    if (f) {
-        GBS::GBS_PRESET_CUSTOM::write(1);
+    // Normalise the state about to be captured: a preset should not bake in
+    // scanlines or a frame time lock correction.
+    GBS::GBS_PRESET_CUSTOM::write(1);
 
-        if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-            disableScanlines();
-        }
-
-        if (!rto->extClockGenDetected) {
-            if (uopt->enableFrameTimeLock && FrameSync::getSyncLastCorrection() != 0) {
-                FrameSync::reset(uopt->frameTimeLockMethod);
-            }
-        }
-
-        for (int i = 0; i <= 5; i++) {
-            writeOneByte(0xF0, i);
-            switch (i) {
-                case 0:
-                    for (int x = 0x40; x <= 0x5F; x++) {
-                        readFromRegister(x, 1, &readout);
-                        f.print(readout);
-                        f.println(",");
-                    }
-                    for (int x = 0x90; x <= 0x9F; x++) {
-                        readFromRegister(x, 1, &readout);
-                        f.print(readout);
-                        f.println(",");
-                    }
-                    break;
-                case 1:
-                    for (int x = 0x0; x <= 0x2F; x++) {
-                        readFromRegister(x, 1, &readout);
-                        f.print(readout);
-                        f.println(",");
-                    }
-                    break;
-                case 2:
-
-                    break;
-                case 3:
-                    for (int x = 0x0; x <= 0x7F; x++) {
-                        readFromRegister(x, 1, &readout);
-                        f.print(readout);
-                        f.println(",");
-                    }
-                    break;
-                case 4:
-                    for (int x = 0x0; x <= 0x5F; x++) {
-                        readFromRegister(x, 1, &readout);
-                        f.print(readout);
-                        f.println(",");
-                    }
-                    break;
-                case 5:
-                    for (int x = 0x0; x <= 0x6F; x++) {
-                        readFromRegister(x, 1, &readout);
-                        f.print(readout);
-                        f.println(",");
-                    }
-                    break;
-            }
-        }
-        f.println("};");
-        f.close();
-        // delay(100);
-        // printf("Info: 0x%02x \n", Info);
-        // delay(100);
+    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
+        disableScanlines();
     }
+
+    if (!rto->extClockGenDetected) {
+        if (uopt->enableFrameTimeLock && FrameSync::getSyncLastCorrection() != 0) {
+            FrameSync::reset(uopt->frameTimeLockMethod);
+        }
+    }
+
+    uint8_t *dump = (uint8_t *)malloc(presetRegisterCount);
+    if (dump == NULL) {
+        debugPrintf("preset save: out of memory\n");
+        return false;
+    }
+
+    if (!capturePresetRegisters(dump)) {
+        debugPrintf("preset save: register readback is not a preset, keeping the old one\n");
+        free(dump);
+        return false;
+    }
+
+    String tempPath = path + "~";
+    f = SPIFFS.open(tempPath, "w");
+    if (!f) {
+        debugPrintf("preset save: cannot open %s\n", tempPath.c_str());
+        free(dump);
+        return false;
+    }
+
+    bool complete = true;
+    for (uint16_t i = 0; i < presetRegisterCount; i++) {
+        char line[8];
+        int len = snprintf_P(line, sizeof(line), PSTR("%u,\r\n"), (unsigned)dump[i]);
+
+        if (f.write((const uint8_t *)line, len) != (size_t)len) {
+            complete = false;
+            break;
+        }
+    }
+
+    if (complete) {
+        complete = (f.print(F("};\r\n")) == 4);
+    }
+
+    f.close();
+    free(dump);
+
+    if (!complete) {
+        debugPrintf("preset save: %s came up short, discarding it\n", tempPath.c_str());
+        SPIFFS.remove(tempPath);
+        return false;
+    }
+
+    // SPIFFS_rename refuses an existing destination, so the old preset has to go
+    // first. If the rename then fails there is no preset at all, which loads the
+    // built-in one: worse than the old preset, far better than a broken one.
+    SPIFFS.remove(path);
+    if (!SPIFFS.rename(tempPath, path)) {
+        debugPrintf("preset save: cannot move %s into place\n", tempPath.c_str());
+        SPIFFS.remove(tempPath);
+        return false;
+    }
+
+    return true;
 }
 // void SaveUserIRRemote()
 // {
