@@ -1914,6 +1914,30 @@ void optimizeSogLevel() // Optimize SOG levels
     }
 }
 
+// With SP_EXT_SYNC_SEL clear the sync processor takes V from the VS input, so an
+// active VSACT proves a real V sync — meaning the source is not composite.
+// Restores SP_EXT_SYNC_SEL. docs/investigations/riscpc-no-sync.md
+boolean sourceHasOwnVsync()
+{
+    uint8_t extSyncBackup = GBS::SP_EXT_SYNC_SEL::read();
+    GBS::SP_EXT_SYNC_SEL::write(0);
+    delay(240); // the sync processor needs time to reacquire V after the switch
+
+    boolean active = false;
+    unsigned long timeOutStart = millis();
+    while (!active && ((millis() - timeOutStart) < 250)) {
+        active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
+        delay(2);
+    }
+    if (active) { // confirm it: the bit flickers while the processor settles
+        delay(10);
+        active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
+    }
+
+    GBS::SP_EXT_SYNC_SEL::write(extSyncBackup);
+    return active;
+}
+
 uint8_t detectAndSwitchToActiveInput() 
 {                                      // if any
     uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
@@ -1972,7 +1996,13 @@ uint8_t detectAndSwitchToActiveInput()
                                 decodeSuccess++; 
                         }
 
-                        if (decodeSuccess >= 2) {
+                        // The loop above only asks whether assuming composite sync
+                        // yields a plausible field rate, and every source above 40 Hz
+                        // says yes — so it can never conclude "separate sync" on its
+                        // own. A V sync line of its own overrules it.
+                        boolean ownVsync = sourceHasOwnVsync();
+
+                        if (decodeSuccess >= 2 && !ownVsync) {
                             // SerialMprintln(F(" (with CSync)"));
                             GBS::SP_PRE_COAST::write(0x10); 
                             delay(40);
@@ -1981,6 +2011,9 @@ uint8_t detectAndSwitchToActiveInput()
                             // SerialMprintln();
                             rto->syncTypeCsync = false; 
                         }
+                        debugPrintf("sync type: %d/3 field rate probes plausible, own V sync %s -> %s\n",
+                            decodeSuccess, ownVsync ? "yes" : "no",
+                            rto->syncTypeCsync ? "csync" : "separate H/V");
 
                         for (uint8_t i = 0; i < 16; i++) {
 
@@ -5980,18 +6013,18 @@ void runSyncWatcher() //
         if (rto->noSyncCounter % 150 == 0) {
             if (rto->noSyncCounter == 150 || rto->noSyncCounter % 900 == 0) {
 
-                uint8_t extSyncBackup = GBS::SP_EXT_SYNC_SEL::read();
-                GBS::SP_EXT_SYNC_SEL::write(0); // Extension 2 Setting Hs_Hs Selection
-                delay(240);
                 printInfo();
-                if (GBS::STATUS_SYNC_PROC_VSACT::read() == 1) {
-                    delay(10);
-                    if (GBS::STATUS_SYNC_PROC_VSACT::read() == 1) {
-                        rto->noSyncCounter = 0x07fe;
-                        printf("noSyncCounter max2 \n");
+                if (sourceHasOwnVsync()) {
+                    // Correct the classification before the retry below hands
+                    // bypassModeSwitch_RGBHV a syncTypeCsync that blinds the sync
+                    // processor to the V sync that is right there.
+                    if (rto->syncTypeCsync) {
+                        debugPrintf("sync type: own V sync found while configured for csync -> separate H/V\n");
+                        rto->syncTypeCsync = false;
                     }
+                    rto->noSyncCounter = 0x07fe;
+                    printf("noSyncCounter max2 \n");
                 }
-                GBS::SP_EXT_SYNC_SEL::write(extSyncBackup);
             }
             GBS::SP_H_COAST::write(0);
             GBS::SP_H_PROTECT::write(0); 
@@ -6674,6 +6707,9 @@ void runSyncWatcher() //
                 {
                     runsWithSogBadStatus++;
                     if (runsWithSogBadStatus >= 4) {
+                        // A second route to csync, and a suspect if a separate-sync
+                        // source locks then loses it: SOG is not in use on RGBHV.
+                        debugPrintf("sync type: SOG bad for %d runs -> csync\n", runsWithSogBadStatus);
                         rto->syncTypeCsync = true;
                         rto->HPLLState = runsWithSogBadStatus = RGBHVNoSyncCounter = 0;
                         rto->noSyncCounter = 0x07fe;
