@@ -132,5 +132,12 @@ instead, ending with the same `CsVT` / `CsVS_ST/SP` pair.
 resets the ESP.** Independent of the WebSocket:
 
 - the sync watcher prints `RGBHV limit no sync` and friends;
-- `printInfo()` (toggled by `i`) is genuinely active — h/v period, HS/VS active
-  and polarity, HTotal/VTotal, video mode, `noSyncCounter`.
+- `printInfo()` (toggled by `i`, or `/sc?i`) — h/v period, HS/VS active and
+  polarity, HTotal/VTotal, video mode, `noSyncCounter`, `continousStableCounter`.
+
+`printInfo()` printed nothing at all until it was fixed: its `sprintf` had been
+mangled into `printf(print, ...)`, passing the output buffer as the format
+string. It now goes through `SerialM`, so it reaches the web console too, rate
+limited to four lines a second. It is the only view of `noSyncCounter` and
+`continousStableCounter` — those live in ESP RAM, so no amount of `/getreg` will
+show them.

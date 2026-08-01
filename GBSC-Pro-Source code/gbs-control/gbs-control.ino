@@ -5656,14 +5656,32 @@ void printInfo()
         v = VSp = ' ';
     }
 
-    printf(print, "h:%4u v:%4u PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x m:%hu ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
-           hperiod, vperiod, lockCounterPrevious,
-           GBS::ADC_RGCTRL::read(), GBS::ADC_GGCTRL::read(), GBS::ADC_BGCTRL::read(),
-           GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
-           h, HSp, v, VSp, stat0FIrq, GBS::TEST_BUS::read(), getVideoMode(),
-           GBS::STATUS_SYNC_PROC_HTOTAL::read(), GBS::STATUS_SYNC_PROC_VTOTAL::read() /*+ 1*/,
-           GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), rto->noSyncCounter, rto->continousStableCounter,
-           rto->currentLevelSOG, wifi);
+    // printf(print, ...) passed `print` — the output buffer — as the format
+    // string, a mangled sprintf. Since `print` is static and nothing ever writes
+    // to it, this formatted an empty string: printInfo() has printed nothing at
+    // all, whatever the docs said. It is the only view of noSyncCounter and
+    // continousStableCounter, which live in ESP RAM and so cannot be read back
+    // over I2C, so it is worth having.
+    //
+    // Rate limited, and only the output is: loop() calls printInfo() every
+    // iteration with no gate of its own, and SerialM broadcasts to the
+    // WebSocket, so unthrottled this floods the socket until the heap check in
+    // SerialMirror disconnects it. The interrupt handling below still runs at
+    // the original rate.
+    static unsigned long lastInfoPrint = 0;
+    if ((millis() - lastInfoPrint) >= 250) {
+        lastInfoPrint = millis();
+        snprintf(print, sizeof(print),
+            "h:%4u v:%4u PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x m:%hu ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
+            hperiod, vperiod, lockCounterPrevious,
+            GBS::ADC_RGCTRL::read(), GBS::ADC_GGCTRL::read(), GBS::ADC_BGCTRL::read(),
+            GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
+            h, HSp, v, VSp, stat0FIrq, GBS::TEST_BUS::read(), getVideoMode(),
+            GBS::STATUS_SYNC_PROC_HTOTAL::read(), GBS::STATUS_SYNC_PROC_VTOTAL::read() /*+ 1*/,
+            GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), rto->noSyncCounter, rto->continousStableCounter,
+            rto->currentLevelSOG, wifi);
+        SerialM.print(print);
+    }
     if (stat0FIrq != 0x00) {
         clearIrqCounter++;
         if (clearIrqCounter >= 50) {
