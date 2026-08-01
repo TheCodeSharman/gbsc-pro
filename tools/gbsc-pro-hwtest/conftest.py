@@ -18,6 +18,14 @@ def pytest_addoption(parser):
         "Defaults to $GBSC_HOST; without either, the hardware tests skip.",
     )
     group.addoption(
+        "--source",
+        action="store_true",
+        default=False,
+        help="a video source is connected and expected to lock, so run the sync "
+        "tests. Without it they skip: an unplugged input and a firmware that "
+        "cannot see the input look identical from over here.",
+    )
+    group.addoption(
         "--preset-save",
         action="store_true",
         default=False,
@@ -66,6 +74,15 @@ def console(host):
         pytest.skip(f"no WebSocket console on {host}: {e}")
     yield connection
     connection.close()
+
+
+@pytest.fixture
+def source(request):
+    """Asserts the operator's promise that a source is plugged in and should be
+    locking. Skips the sync tests without it, so a bench unit with nothing on its
+    input does not report the no-sync fault it does not have."""
+    if not request.config.getoption("--source"):
+        pytest.skip("needs a connected source: pass --source")
 
 
 @pytest.fixture

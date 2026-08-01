@@ -30,10 +30,29 @@ console is silent — a silent console is the regression they exist to catch.
 | `malformed_register_requests_are_rejected` | a bad request reaching the chip instead of returning 400 |
 | `setreg_reports_the_previous_value` | losing the `was` value that tells you how to undo a poke |
 | `setreg_changes_a_register` | writes not landing, or the read-back being faked |
+| `a_source_with_its_own_vsync_is_not_configured_for_csync` | the sync-type test classifying a separate-sync source as composite, setting `SP_EXT_SYNC_SEL` and blinding the sync processor |
+| `the_sync_processor_holds_a_lock` | a lock that never arrives, or arrives and collapses when the sync watcher reconfigures underneath it |
 | `sc_comma_prints_timings` | `printVideoTimings()` going silent again |
 | `timings_agree_with_getreg` | either feature drifting from the other |
 | `no_leftover_temp_presets` | a failed save leaving `<preset>~` behind |
 | `preset_save_writes_a_complete_preset` | the save path writing a short or dead preset |
+
+## The two sync tests
+
+Both skip unless you pass `--source`, which is your promise that something is
+plugged into the unit's input and ought to be locking. From over the network an
+unplugged input and a firmware that cannot see the input read identically, so
+without that promise a bench unit would report the no-sync fault it does not
+have. They are the regression tests for [the RISC PC no-sync
+fault](../../docs/investigations/riscpc-no-sync.md).
+
+```sh
+pytest --host=192.168.88.108 --source -k sync
+```
+
+They sample across a window rather than reading once, because a unit that has
+lost the lock hunts through sync processor configurations — a single read
+catches whichever one it is passing through, and passes by luck.
 
 ## The destructive one
 

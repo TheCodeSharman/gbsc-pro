@@ -10,6 +10,7 @@ console is the regression they exist to catch.
 """
 
 import re
+import time
 
 import pytest
 
@@ -21,6 +22,7 @@ from gbs_unit import (
     read_word,
     spiffs_dir,
     spiffs_read,
+    wait_for,
     write_reg,
 )
 
@@ -30,6 +32,17 @@ from gbs_unit import (
 SAFE_SEGMENT, SAFE_REGISTER = 3, 0x01
 
 PRESET_VALUE_COUNT = 432  # see presetRegisterRanges[] in gbs-control.ino
+
+# Sync processor state, all reachable through /getreg.
+STATUS_16 = (0, 0x16)  # what every "is there sync?" test in the firmware reads
+HS_ACTIVE, VS_ACTIVE = 1 << 1, 1 << 3
+LOCKED = HS_ACTIVE | VS_ACTIVE
+
+SYNC_PROC_00 = (5, 0x20)
+EXT_SYNC_SEL = 1 << 3  # take V sync off the HS line instead of the VS input
+
+LOCK_TIMEOUT = 45.0  # the firmware's own RGBHV retry loop is slow
+HOLD_SECONDS = 15.0  # long enough to catch a lock the sync watcher takes back
 
 # Console label -> the registers behind each printed column, as
 # (segment, low byte, field mask). Widths are from tv5725.h. Both the scaling
@@ -178,6 +191,67 @@ def test_timings_agree_with_getreg(host, console):
 
     disagreed = {k: v for k, v in compared.items() if v[0] != v[1]}
     assert not disagreed, f"console vs /getreg (printed, read): {disagreed}; moved: {moved}"
+
+
+# --- sync type classification -----------------------------------------------
+
+
+def test_a_source_with_its_own_vsync_is_not_configured_for_csync(
+    host, source, register_guard
+):
+    """A source driving its own VS line is not composite sync, and the firmware
+    must not configure the sync processor as though it were: SP_EXT_SYNC_SEL makes
+    it take V off the HS line, blinding it to the V sync that is there.
+
+    Sampled across a window rather than read once, because a firmware that has
+    lost the lock hunts through configurations. Whether this input has its own V
+    sync is then established with the probe the firmware itself uses, so a
+    genuinely composite source skips instead of failing.
+    docs/investigations/riscpc-no-sync.md
+    """
+    chosen = []
+    deadline = time.monotonic() + HOLD_SECONDS
+    while time.monotonic() < deadline:
+        chosen.append(read_reg(host, *SYNC_PROC_00) or 0)
+
+    baseline = register_guard(*SYNC_PROC_00)
+    own_vsync = wait_for(
+        # Rewritten every pass: the sync watcher puts its own value back.
+        lambda: write_reg(host, *SYNC_PROC_00, baseline & ~EXT_SYNC_SEL)
+        and (read_reg(host, *STATUS_16) or 0) & VS_ACTIVE,
+        timeout=3.0,
+    )
+    if not own_vsync:
+        pytest.skip("this input has no V sync of its own, so composite is the right call")
+
+    csync = sum(1 for value in chosen if value & EXT_SYNC_SEL)
+    assert csync == 0, (
+        f"the source drives its own V sync, but the firmware set SP_EXT_SYNC_SEL in "
+        f"{csync} of {len(chosen)} samples over {HOLD_SECONDS:.0f}s — blinding the "
+        f"sync processor to the V sync that is there"
+    )
+
+
+def test_the_sync_processor_holds_a_lock(host, source):
+    """H and V active at the same moment is what every downstream stage waits
+    for. The no-sync fault shows up here twice over: as a lock that never
+    arrives, and as one that arrives and collapses seconds later when the sync
+    watcher reconfigures the sync processor underneath it."""
+    locked = wait_for(
+        lambda: (read_reg(host, *STATUS_16) or 0) & LOCKED == LOCKED, timeout=LOCK_TIMEOUT
+    )
+    assert locked, f"no H and V lock within {LOCK_TIMEOUT:.0f}s of asking"
+
+    samples = []
+    deadline = time.monotonic() + HOLD_SECONDS
+    while time.monotonic() < deadline:
+        samples.append(read_reg(host, *STATUS_16) or 0)
+
+    held = sum(1 for s in samples if s & LOCKED == LOCKED)
+    assert held == len(samples), (
+        f"the lock did not hold: {held} of {len(samples)} samples over "
+        f"{HOLD_SECONDS:.0f}s, values seen {sorted({s for s in samples})}"
+    )
 
 
 # --- preset save ------------------------------------------------------------

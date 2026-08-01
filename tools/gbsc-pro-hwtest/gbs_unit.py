@@ -110,6 +110,20 @@ def write_reg(host, segment, register, value):
     return payload if status == 200 else None
 
 
+def wait_for(predicate, timeout=10.0, interval=0.1):
+    """Poll until predicate() is truthy and return its value, or None if the
+    timeout passes first. The unit's sync state settles on its own schedule, so
+    tests wait for the state itself rather than for a guessed number of seconds."""
+    deadline = time.monotonic() + timeout
+    while True:
+        value = predicate()
+        if value:
+            return value
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(interval)
+
+
 def read_word(host, segment, low_register, mask):
     """A little-endian register pair, masked to the field's bit width. The TV5725
     spreads a multi-bit field across consecutive bytes low-first."""
