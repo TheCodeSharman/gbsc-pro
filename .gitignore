@@ -1,0 +1,8 @@
+# Build caches and outputs — large, regenerable, never commit.
+
+# arduino-cli isolated data dir, package downloads, and per-user dir
+build/data/
+build/downloads/
+build/user/
+# arduino-cli build output (.bin / .elf / .map / objects)
+build/output/

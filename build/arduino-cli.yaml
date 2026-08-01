@@ -1,0 +1,9 @@
+directories:
+  data: /home/msharman/Projects/gbsc-pro/build/data
+  downloads: /home/msharman/Projects/gbsc-pro/build/downloads
+  user: /home/msharman/Projects/gbsc-pro/build/user
+board_manager:
+  additional_urls:
+    - https://arduino.esp8266.com/stable/package_esp8266com_index.json
+library:
+  enable_unsafe_install: true
