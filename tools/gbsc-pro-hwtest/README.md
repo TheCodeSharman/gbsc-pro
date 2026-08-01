@@ -89,3 +89,22 @@ are active together — which is what the firmware's `stable` test requires and
 what this unit has never sustained. Ctrl-C prints a summary with the percentage
 of samples each sync was active for. Scope answers "is it on the wire"; this
 answers "does the scaler see it".
+
+## dump_registers.py
+
+Snapshot the scaler's register configuration, and diff two snapshots:
+
+```sh
+python3 tools/gbsc-pro-hwtest/dump_registers.py --host 192.168.88.108 \
+    --out snapshots/whatever.json --note "what state this was"
+python3 tools/gbsc-pro-hwtest/dump_registers.py --diff snapshots/a.json snapshots/b.json
+```
+
+The diff is the point. This unit alternates between locking and not locking, and
+the useful question each time is which registers differ from a known-good state.
+`snapshots/riscpc-working-2026-08-01.json` is that reference: RISC PC locked, a
+1280×1024-class mode at 60 Hz, `HTOTAL` 1856, `VTOTAL` 1061, `STATUS_16` `0x0f`.
+
+Segment 0 `0x00`–`0x2F` are live measurements, not configuration — they change
+on every read even when nothing is wrong. They are captured separately as
+`status` and excluded from the diff unless `--all` is passed.
