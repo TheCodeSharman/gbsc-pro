@@ -90,8 +90,10 @@ mode — mode 15 has no preset file, so it refuses; mode 0 writes
 
 A successful save switches the unit's preset preference to `OutputCustomized`
 (byte 0 of `/preferencesv2.txt` becomes `2`). `/uc?p` puts it back to
-`Output1024P` (`4`) without touching the filesystem, which is a cleaner undo
-than re-uploading the preferences file.
+`Output1024P` (`4`), which is a cleaner undo than re-uploading the preferences
+file — but note it **does** write to the filesystem: every output-preset command
+(`/uc?f`, `?g`, `?h`, `?p`, `?s`) ends in `saveUserPrefs()`, so the choice
+survives a reboot. An earlier version of this file claimed otherwise.
 
 ## sync_monitor.py
 
