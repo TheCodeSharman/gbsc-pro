@@ -28,7 +28,39 @@ Useful ones:
 | `/uc?1` | **reset to defaults and reboot — wipes the config** |
 | `/uc?f` `/uc?g` `/uc?p` `/uc?s` | scaling presets: 1280×960, 1280×720, 1280×1024, 1920×1080 |
 
-Two of these bite:
+### Registers
+
+| Endpoint | Meaning |
+|----------|---------|
+| `GET /getreg?s=<seg>&r=<reg>` | read one TV5725 register byte |
+| `GET /setreg?s=<seg>&r=<reg>&v=<val>` | write one, and report what it was |
+
+Segment `0`–`5`, register and value `00`–`ff`. Every field is hex, with or
+without an `0x` prefix — never decimal, so `r=11` means the same register the
+serial console's `g5 11` means. Bad or missing fields get a `400`.
+
+```
+$ curl 'http://gbscontrol.local/getreg?s=5&r=0x11'
+{"segment":5,"register":"0x11","value":"0x3c"}
+$ curl 'http://gbscontrol.local/setreg?s=5&r=0x11&v=0x40'
+{"segment":5,"register":"0x11","was":"0x3c","value":"0x40"}
+```
+
+`setreg` reads the register back after writing, so `value` is what the chip
+actually holds: unchanged means the bits are read-only, or the segment is wrong.
+`was` is the value to write back to undo the poke.
+
+These do what the serial console's `g` and `s` have always done — but those read
+their arguments a character at a time straight from the UART, so they cannot be
+driven over the network at all.
+
+Both write straight to the chip and neither is persisted: a reboot, or any
+preset load, undoes whatever you poked. Persisting is `savePresetToSPIFFS()`'s
+job, and that is where a bad value gets you a wedged config.
+
+### Footguns
+
+Two of the `/sc` commands bite:
 
 - `/sc?K` persists the bypass preference, so a wrong guess survives reboot and
   the unit comes back in the same unusable state. Prefer `/sc?k`.

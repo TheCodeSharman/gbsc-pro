@@ -493,6 +493,11 @@ static void LoadDefault()
 }
 
 void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCurrent, uint8_t readout, uint8_t inputToogleBit);
+#if GBS_DEBUG
+// Declared here rather than by the .ino prototype generator, which inserts
+// prototypes above the ESPAsyncWebServer.h include where the type is unknown.
+static bool getHexParam(AsyncWebServerRequest *request, const char *name, long limit, long *out);
+#endif
 void UpDisplay(void);
 void printBinary(unsigned char num);
 void turnOffWiFi();
@@ -9448,6 +9453,29 @@ void handleType2Command(char argument)
 
 WiFiEventHandler disconnectedEventHandler;
 
+#if GBS_DEBUG
+// Parse a hex query parameter into 0..limit; 0x prefix optional. Hex, not
+// strtol base-0: an unprefixed r=11 would read as decimal 11 and poke 0x0b.
+// False if missing, malformed or out of range.
+static bool getHexParam(AsyncWebServerRequest *request, const char *name, long limit, long *out)
+{
+    if (!request->hasParam(name)) {
+        return false;
+    }
+
+    String raw = request->getParam(name)->value();
+    char *end = NULL;
+    long value = strtol(raw.c_str(), &end, 16);
+
+    if (end == raw.c_str() || *end != '\0' || value < 0 || value > limit) {
+        return false;
+    }
+
+    *out = value;
+    return true;
+}
+#endif
+
 void startWebserver()
 {
 
@@ -9505,8 +9533,47 @@ void startWebserver()
         
         userCommand = p->name().charAt(0);
       }
-      request->send(200); 
+      request->send(200);
     } });
+
+#if GBS_DEBUG
+    // Read and write TV5725 registers over HTTP. Hex throughout, 0x optional;
+    // /setreg reports the previous value, so a poke can be undone.
+    // docs/gbs-control-debug-interface.md.
+    server.on("/getreg", HTTP_GET, [](AsyncWebServerRequest *request) {
+        long segment = 0, reg = 0;
+
+        if (!getHexParam(request, "s", 5, &segment) || !getHexParam(request, "r", 0xff, &reg)) {
+            request->send(400, "application/json", F("{\"error\":\"expected s=0..5 and r=0..0xff\"}"));
+            return;
+        }
+
+        char body[64];
+        snprintf_P(body, sizeof(body), PSTR("{\"segment\":%ld,\"register\":\"0x%02lx\",\"value\":\"0x%02x\"}"),
+            segment, reg, GBS::read(segment, reg));
+        request->send(200, "application/json", body);
+    });
+
+    server.on("/setreg", HTTP_GET, [](AsyncWebServerRequest *request) {
+        long segment = 0, reg = 0, value = 0;
+
+        if (!getHexParam(request, "s", 5, &segment) || !getHexParam(request, "r", 0xff, &reg) ||
+            !getHexParam(request, "v", 0xff, &value)) {
+            request->send(400, "application/json", F("{\"error\":\"expected s=0..5, r=0..0xff and v=0..0xff\"}"));
+            return;
+        }
+
+        uint8_t was = GBS::read(segment, reg);
+        GBS::write(segment, reg, (uint8_t)value);
+        uint8_t now = GBS::read(segment, reg);
+
+        char body[96];
+        snprintf_P(body, sizeof(body),
+            PSTR("{\"segment\":%ld,\"register\":\"0x%02lx\",\"was\":\"0x%02x\",\"value\":\"0x%02x\"}"),
+            segment, reg, was, now);
+        request->send(200, "application/json", body);
+    });
+#endif
 
     server.on("/wifi/connect", HTTP_POST, [](AsyncWebServerRequest *request) {
     AsyncWebServerResponse *response =
