@@ -43,6 +43,7 @@ class Console:
     def __init__(self, host, timeout=5):
         self.lines = []
         self.status = []
+        self.failure = None
         self._buf = ""
         self._lock = threading.Lock()
         self._stop = False
@@ -52,11 +53,24 @@ class Console:
         self._thread = threading.Thread(target=self._pump, daemon=True)
         self._thread.start()
 
+    @property
+    def alive(self):
+        """False once the pump has stopped, i.e. collect() can only return stale
+        lines from here on. Check this before believing an empty collect()."""
+        return self._thread.is_alive()
+
     def _pump(self):
         while not self._stop:
             try:
                 frame = self.ws.recv()
-            except Exception:
+            except websocket.WebSocketTimeoutException:
+                # The console is idle most of the time, and the socket timeout
+                # applies to recv(). Treating that as fatal killed the pump on
+                # the first quiet gap, after which every collect() returned
+                # nothing — indistinguishable from a firmware printing nothing.
+                continue
+            except Exception as e:  # noqa: BLE001 - a real disconnect, recorded
+                self.failure = e
                 return
             if isinstance(frame, bytes):
                 frame = frame.decode("utf-8", "replace")
@@ -147,6 +161,43 @@ def read_field(host, segment, register, offset, width):
     raw = 0
     for index in range(span):
         byte = read_reg(host, segment, register + index)
+        if byte is None:
+            return None
+        raw |= byte << (8 * index)
+    return (raw >> offset) & ((1 << width) - 1)
+
+
+def read_segment(host, segment, first=0x00, last=0xFF):
+    """A run of registers in one /getregs request, as {register: value}.
+
+    The point is simultaneity, not just speed. Segment 0 holds live measurements,
+    so reading STATUS_16 and HTOTAL as separate requests samples them milliseconds
+    and many video lines apart — enough that a momentary disagreement between them
+    proves nothing. One burst gives values that can be compared against each other.
+
+    Returns None if the endpoint is missing, which is how firmware without this
+    fork's /getregs answers.
+    """
+    status, payload = get_json(
+        host, f"/getregs?s={segment:x}&from={first:02x}&to={last:02x}"
+    )
+    if status != 200 or not payload:
+        return None
+    values = payload.get("values", "")
+    if len(values) != (last - first + 1) * 2:
+        return None
+    try:
+        return {first + i: int(values[2 * i : 2 * i + 2], 16) for i in range(len(values) // 2)}
+    except ValueError:
+        return None
+
+
+def field_from(registers, register, offset, width):
+    """A field out of a read_segment() mapping, same convention as read_field()."""
+    span = (offset + width + 7) // 8
+    raw = 0
+    for index in range(span):
+        byte = registers.get(register + index)
         if byte is None:
             return None
         raw |= byte << (8 * index)
