@@ -1,0 +1,36 @@
+GBSC-Pro user preferences, read from /preferencesv2.txt 2026-08-03
+raw: '51A10000111101111`002000000030144069126'
+
+Decoded in saveUserPrefs() write order:
+  presetPreference                 '5' -> 5
+  enableFrameTimeLock              '1' -> 1   <<<
+  presetSlot                       'A' -> A
+  frameTimeLockMethod              '1' -> 1
+  enableAutoGain                   '0' -> 0
+  wantScanlines                    '0' -> 0
+  wantOutputComponent              '0' -> 0
+  deintMode                        '0' -> 0
+  wantVdsLineFilter                '1' -> 1
+  wantPeaking                      '1' -> 1
+  preferScalingRgbhv               '1' -> 1
+  wantTap6                         '1' -> 1
+  PalForce60                       '0' -> 0
+  matchPresetSource                '1' -> 1
+  wantStepResponse                 '1' -> 1
+  wantFullHeight                   '1' -> 1
+  enableCalibrationADC             '1' -> 1
+  scanlineStrength                 '`' -> 48
+  disableExternalClockGenerator    '0' -> 0
+  Volume                           '0' -> 0
+  SeleInputSource                  '2' -> 2
+  SvModeOption/10                  '0' -> 0
+  SvModeOption%10                  '0' -> 0
+  AvModeOption/10                  '0' -> 0
+  AvModeOption%10                  '0' -> 0
+  SmoothOption                     '0' -> 0
+  LineOption                       '0' -> 0
+
+enableFrameTimeLock = 1 is the fix for the ~2s periodic vertical tear
+(input/output frame-rate beat). It is a SPIFFS preference, NOT a scaler
+register, so restoring a register snapshot will not restore it.
+Toggle with /uc?5 or the 'FrameTime Lock' switch in the gbscontrol UI.

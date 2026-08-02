@@ -105,6 +105,9 @@ All 2026-08-02, RISC PC via GBSC Pro at `192.168.88.108`, in `photos/`.
 | 27 | 21:05 | `HSCALE` 407, product 2000.20 px against a 2000 px memory window | **Moving comb bands over the whole picture**, different every frame. A 0.2 px per line overflow. See the fractional-overflow entry below — `geometry.py` printed "+0" for this. |
 | 28 | 21:12 | `HSCALE` back to 512, capture 240..1000 | Clean again, green frame on all four sides. Confirms 27 was the scale, not the trim. |
 | 29–30 | 21:35 | horizontal tuned by eye to 277..1042 (765 units), animated card, **consecutive animation phases** | The pair is the evidence. Outer ring flips **white → yellow**, so the card is live. The magenta band, the thin cyan stripe and the junk to its right are **pixel-identical across both phases** — frozen, therefore scratch memory, not captured border. Registers in `horizontal-tuned-by-eye-2026-08-02.json`. |
+| 31 | 2026-08-03 | test card at the solved geometry, `SOLVED-mode13-fullscreen-clean-2026-08-03.json` | **Edge to edge, clean.** No magenta, no scratch, no tearing, green frame present on all four sides so nothing is clipped. The one remaining defect is visible in the cyan square: it is oblong, ~17.5% too wide — see the aspect entry below. |
+| 32 | 2026-08-03 | Nevryon title screen, same geometry | Full screen, crisp text, no comb bands, no green blocks, no repeat. |
+| 33 | 2026-08-03 | Nevryon in game, TV set to 4:3 correction, `SOLVED-nevryon-fullscreen-2026-08-03.json` | **The goal.** Full screen, planets round, sprites and status bar pixel-sharp. |
 
 ## What each test decided
 
@@ -641,6 +644,56 @@ wrong. After a preset reload it reads **10**. The `IF_LINE_SP` half does hold �
 1237 = `IF_HSYNC_RST` 1172 + 65 — so the `+0x40 + 1` formula is real, but its 64
 comes from somewhere else.
 
+## SOLVED: full screen, clean, 2026-08-03
+
+Photos 31-33. `SOLVED-mode13-fullscreen-clean-2026-08-03.json` for the test card,
+`SOLVED-nevryon-fullscreen-2026-08-03.json` for the game.
+
+```
+PLLAD_MD 2553    IF line 1277 units
+capture          237..1119 = 882 units   (Nevryon: 296..1149 = 853)
+HSCALE 665       x1.5398   product 1358.1 px
+VSCALE 914       x1.1204
+output raster    1445 x 1622
+memory  window   9..1384
+display window   146..1372
+```
+
+Three faults had to be separated before this was reachable, and conflating them
+is what cost the earlier sessions:
+
+| symptom | cause |
+|---|---|
+| moving comb bands, tearing | product **exceeds the memory window** — by as little as a fraction of a pixel |
+| aliasing, occasional wrong pixels | **non-integer magnification**; `HSCALE` = 1024/n so only x2, x4, x8 are exact |
+| green blocks | the **line-double FIFO cap** at ~1056 IF units |
+
+Note the solved state runs `HSCALE` 665 = x1.5398, which is *not* an integer
+ratio — so the aliasing fault is present in principle and is simply not visible
+at this scale on this material. The integer-ratio route (`PLLAD_MD` 2048, 640
+units, exactly x2) remains untried and would be the cleaner configuration.
+
+### The aspect is a raster problem, not a tuning problem
+
+The card's cyan square is drawn with equal sides, so it reads out the aspect
+directly. At the solved geometry:
+
+```
+picture fills 0.848 of the line and 0.962 of the frame
+on a 16:9 panel that presents as   1.568 : 1
+a 320x256 source wants             1.250 (square pixels) or 1.333 (4:3)
+```
+
+~17.5% too wide. The cause is that the output raster is 1445 x 1622, which the
+panel stretches to fill 16:9 — the scaler was being asked to compensate for a
+raster that does not match the display. **Full width and correct aspect are
+mutually exclusive** for a 5:4 source on a 16:9 panel: it either stretches or it
+pillarboxes.
+
+Resolved in the end by **turning on the TV's own 4:3 correction** (photo 33)
+rather than by any register. Worth remembering before tuning aspect at the
+scaler: check what the display is doing to the raster first.
+
 ## Where this stands, and the next test
 
 The unit is at the **preset baseline** after a power cycle: `PLLAD_MD` 2345,
@@ -677,3 +730,187 @@ Everything should simply get ~20% bigger, filling 92% of the line instead of 74%
 
 Watch the icon bar text and the grille bars — degradation showed there first every
 time tonight.
+
+---
+
+# 2026-08-03 — SOLVED: full screen, clean, MODE 13 and Nevryon
+
+Photos 31-33. Final register set: `SOLVED-final-2026-08-03.json`.
+Preferences: `SOLVED-nevryon-frametimelock-on-2026-08-03.prefs.txt`.
+
+```
+PLLAD_MD 2553   line 1277 IF units
+capture  296 .. 1122 = 826 units
+HSCALE   665 = x1.5398   ->   product 1271.92 px
+memory     6 .. 1387 = 1381 px      headroom +109.08 px
+display  146 .. 1372 = 1226 px
+frame    1126 lines   VSCALE 505   IF_VB 57..53   VDS_VS 11..95
+```
+
+Restore with `--segments 1,3,4,5 --repeat 2`. The default `--segments 5` restores
+none of the geometry.
+
+## THE FINDING: the memory window needs *headroom*, not just fit
+
+Every previous entry modelled this as "product must be <= the memory window".
+That is wrong, and it is why three sessions of tuning felt like guesswork.
+
+| capture | memory | HSCALE | product | slack | result |
+|---|---|---|---|---|---|
+| 877 | 1363 | 660 | 1360.68 | 2.3 px | artefacts |
+| 877 | 1363 | 665 | 1350.40 | 12.6 px | artefacts |
+| 882 | 1375 | 665 | 1358.15 | 16.9 px | **clean** |
+| 877 | 1363 | 670 | 1340.37 | 22.6 px | **clean** |
+
+**Rows 2 and 3 are decisive: the same `HSCALE` 665.** Same ratio, same
+interpolation, same phase, same clocks — only the slack differs, and only that
+changed the outcome. So the governing quantity is `memory window - produced`,
+and the threshold is between **12.6 and 16.9 px**.
+
+    DESIGN RULE:  memory window >= product + ~20 px
+
+Physical reading: the scaler must finish reading the line out of memory before
+the line period ends, so it needs slack. Nominal fit is not enough.
+
+This retro-explains the 407/408 result above (2000.20 px into a 2000 px window
+tore, 1995.29 was clean) and the apparently non-monotonic HSCALE sweep, which was
+headroom moving under the knob as the product changed.
+
+`geometry.py` now prints headroom on every run and warns below 13 px, with the
+smallest HSCALE that restores 20 px. Verified against all four rows.
+
+### What the decisive pair killed
+
+- **Resampling phase / "exact ratios are clean".** HSCALE was *identical*.
+- **Clock beat frequencies, PLL_MS.** Nothing in the clock domain moved.
+- **PCB parasitic coupling.** Same frequencies, same edge activity.
+- **Plain overflow.** Both products fit inside their windows.
+
+Not disproven as phenomena — just not the cause of this.
+
+### Unverified
+
+Measured at one clock and one output preset. A timing budget should scale with
+the line period, so on the 2600 px preset the threshold may be a similar
+*fraction* of the line rather than the same pixel count. Re-measure before
+trusting 13/20 px there — and that is also the cleanest test of whether it is a
+budget at all.
+
+## The periodic vertical tear was the frame-rate beat
+
+A tear sweeping through every ~2 s = input and output differing by ~0.5 Hz
+(input 15625/311 = 50.24 Hz against the Si5351-driven output).
+
+Fixed by the **FrameTime Lock** toggle in the gbscontrol UI (`gbs-message="5"`
+-> `/uc?5` -> `uopt->enableFrameTimeLock`), with `frameTimeLockMethod` 1 rather
+than the default 0. The webui help documents it exactly: *"keeps the input and
+output timings aligned, fixing the horizontal tear line that can appear
+sometimes"*.
+
+**It defaults to OFF** in `loadDefaultUserOptions()`, and it is a SPIFFS
+preference, not a register — so a register restore will not bring it back.
+
+## Saving a preset captures hand tweaks
+
+`capturePresetRegisters()` does a live `readFromRegister()` off the chip, so
+`/uc?4` bakes in whatever you have tuned. It covers 432 registers:
+`0:40-5F, 0:90-9F, 1:00-2F, 3:00-7F, 4:00-5F, 5:00-6F` — narrower than
+`dump_registers.py` in segments 1 and 5, but every geometry register we touch is
+inside it.
+
+It disables scanlines first, and would reset FrameSync to avoid baking in a
+correction — but that is guarded by `if (!rto->extClockGenDetected)`, and this
+board has the Si5351, so that branch is skipped and the save never enters the
+wedge path. It switches `presetPreference` to `OutputCustomized`, so the unit
+then boots into the tweaks. `/uc?p` reverts.
+
+## PLLAD: range selection, and registers that must move together
+
+- **`PLLAD_KS` and `PLLAD_CKOS` are coupled.** `doPostPresetLoadSteps()` writes
+  `KS`, then `setOverSampleRatio()` — which sets `CKOS` as a function of `KS` —
+  then does **one** `latchPLLAD()`. Changing `KS` alone by hand will not lock.
+  Clicking a preset in the UI re-runs the coordinated set; that is why it fixed
+  a stuck PLL.
+
+  | OSR | KS=1 | KS=2 | KS=3 |
+  |---|---|---|---|
+  | 4 | falls back to 1 | CKOS=0 | CKOS=1 |
+  | 2 | CKOS=0 | CKOS=1 | CKOS=2 |
+
+- **The PLL ceiling is a range, not a wall.** `KS` picks the band: `01` =
+  80-40 MHz, `10` = 40-20 MHz (current), `11` = 20-min. At `PLLAD_MD` 2553 the
+  ADC clock is 39.89 MHz, right at the top of the current band — which is why
+  2573 hunted and 2583 wedged. Measured ladder on this source: 2553 solid, 2562
+  locked, 2573 hunting, 2583 wedged.
+- **`PLLAD_MD` per preset**: PAL tops out at 2553 (`pal_downscale`,
+  `pal_1920x1080`). `pal_768x576` is 2345 with HSCALE x2 and the 2600 px output
+  line.
+- **The 1056-unit FIFO cap is doubtful** — the solved state captures to 1122,
+  well past it.
+
+## Two operational traps that cost hours
+
+1. **Unplug the USB serial cable before power cycling.** It back-powers the
+   board, so a power cycle with USB attached does not reset the ESP or the AV
+   board. Every recovery cycle became a partial reset, the scaler stayed
+   unprogrammed and the LCD stayed dark — indistinguishable from a dead board. It
+   also made a cool-down test appear to disprove thermal when the ESP had never
+   lost power.
+2. **`stty -F /dev/ttyUSB0 115200 -hupcl raw -echo` before touching serial**, or
+   opening the port toggles DTR/RTS and resets the board. Three HDMI drops came
+   from exactly that. Boot ROM prints at 74880 baud.
+
+Also: one client at a time. A stale `regpanel.py` had been up 23 hours and
+`soak_watch.py` 22 hours; with the browser that was four clients. Several phantom
+readings — `PLLAD_MD` reading 0, a capture window that moved on its own — trace
+to that. `soak_watch.py` is read-only and its log was the best instrument of the
+night: it timestamps every sync drop and PLL unlock without touching the unit.
+
+## The firmware hang — diagnosed, still unfixed
+
+`framesync.h`, `vsyncInputSample()` and `vsyncOutputSample()`: `ESP.wdtDisable()`
+then a 3,000,000-iteration spin with no `yield()`, whose only exit is a vsync
+pulse. A `PLLAD_MD` write big enough to break sync means no pulse ever arrives.
+Serial goes silent, ping and HTTP die, the association stays up in hardware, and
+the picture keeps running because the TV5725 is a separate chip. The caller
+`continue`s on failure with its print commented out, so the retry is silent and
+the hang permanent.
+
+**A bare timeout is not the fix.** 500 ms plus `yield()` was tried and flashed: it
+converts the hang into a self-recovering reset, but the reset leaves the scaler
+unprogrammed and the caller's `continue` turns it into a silent infinite retry.
+Reverted. A correct fix must fail *upward* — give up, report, and leave the
+system able to re-acquire.
+
+Distinguishing a wedge from a reboot without touching the unit:
+
+```sh
+ssh router "iw dev phy1-ap0 station dump | grep -A6 fc:f5:c4:b1:f2:38"
+```
+
+Station present with low inactive time but no ping -> wedged. Absent -> rebooted.
+
+## Method
+
+- **The eye beat the derivation, again.** The solve came from patient manual
+  sweeping of `VDS_HB_SP` and `HSCALE`. Every model argued for during the session
+  — thermal, a firmware patch, the input mux, resampling phase, clock beats, PCB
+  coupling — was wrong, and one controlled A/B settled it.
+- **Change one thing.** The decisive result was a pair differing in exactly one
+  register.
+- **Snapshot the moment it looks right.** A stable `PLLAD_MD` 2048 picture
+  earlier in the session was never captured and was lost.
+- **Do not flash on a theory.** A patch went onto the only unit unverified, and a
+  symptom that survived the rollback proved the theory wrong anyway.
+
+## Still open
+
+- **`geometry.py` ignores the offset between the memory and display windows**, so
+  its "N px cropped" line is wrong whenever the two do not share a start. It is
+  also horizontal-only — it says nothing about vsync, `VDS_VSCALE` or either
+  vertical window.
+- **The write origin is assumed to be `VDS_HB_SP`** and has never been measured.
+  Moving it and watching which way the picture slides would settle it.
+- **Vertical is not solved the way horizontal now is.** At VSCALE 505 the scaler
+  produces ~622 lines into a 1083-line display window, so the TV is doing some of
+  the scaling.
