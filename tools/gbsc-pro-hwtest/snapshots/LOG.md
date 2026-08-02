@@ -99,6 +99,7 @@ All 2026-08-02, RISC PC via GBSC Pro at `192.168.88.108`, in `photos/`.
 | 21 | 18:05 | `VDS_DIS_HB_ST` 2492 -> 1865, one field | **Green entirely gone**, picture clean. The window no longer extends past the valid picture. |
 | 22 | 18:20 | capture 1200 units at **exactly x2.000**, produced 2400 == memory == display | **Green back**, though narrower than photo 20. Kills the "exact power-of-two `HSCALE`" theory outright. |
 | 23 | 18:30 | `VDS_DIS_HB_ST` 2500 -> **2020**, one field | **Green gone — but the picture is clipped**: the source has content to the right of the new edge. So valid picture reaches at least 2020 *and* real content extends past it. Active video is **strictly between 960 and 1200 IF units**; the 62.5% estimate is a floor, not the value. |
+| 25 | 20:05 | RISC OS test card with the **border colour set to purple**, at the baseline | Purple visible on **all four sides**: the capture takes in border well outside active video, horizontally and vertically. Vertically asymmetric — little above, a lot below — matching the wide-open vertical window. Stripe bands clean and evenly spaced. **This is the calibration signal**: shrink each edge until the purple just disappears. |
 | 24 | 19:10 | capture cut to **984 units** (72..1056, the 0x420 clamp), x2.0, windows 100..2068 | **No green** — but clipped harder still, "Apps" cut in half. Also the grille bars went *uneven* again, at unchanged `PLLAD_MD` 3072. |
 
 ## What each test decided
