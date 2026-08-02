@@ -24,7 +24,7 @@ from gbs_unit import (
     get_json,
     parse_timings,
     read_reg,
-    read_word,
+    read_field,
     spiffs_dir,
     spiffs_read,
     wait_for,
@@ -50,14 +50,24 @@ LOCK_TIMEOUT = 45.0  # the firmware's own RGBHV retry loop is slow
 HOLD_SECONDS = 15.0  # long enough to catch a lock the sync watcher takes back
 
 # Console label -> the registers behind each printed column, as
-# (segment, low byte, field mask). Widths are from tv5725.h. Both the scaling
-# and the HD bypass blocks are here so the cross-check runs in either mode.
+# (segment, low byte, bit offset, width), copied from the UReg declarations in
+# tv5725.h. Both the scaling and the HD bypass blocks are here so the cross-check
+# runs in either mode.
+#
+# The offsets matter: VDS_VSYNC_RST and VDS_VSCALE start at bit 4, sharing their
+# low byte with the field below. Reading them mask-only returns a wrong number
+# that still looks like a plausible timing value — 1818 for a VDS_VSYNC_RST of
+# 625 — so the cross-check reported a firmware disagreement that was its own.
 TIMING_REGISTERS = {
-    "HT / scale": [(3, 0x01, 0x0FFF), (3, 0x16, 0x03FF)],  # VDS_HSYNC_RST, VDS_HSCALE
-    "VT / scale": [(3, 0x02, 0x07FF), (3, 0x17, 0x03FF)],  # VDS_VSYNC_RST, VDS_VSCALE
-    "HD_HSYNC_RST": [(1, 0x37, 0x07FF)],
-    "HD_INI_ST": [(1, 0x39, 0x07FF)],
+    "HT / scale": [(3, 0x01, 0, 12), (3, 0x16, 0, 10)],  # VDS_HSYNC_RST, VDS_HSCALE
+    "VT / scale": [(3, 0x02, 4, 11), (3, 0x17, 4, 10)],  # VDS_VSYNC_RST, VDS_VSCALE
+    "HD_HSYNC_RST": [(1, 0x37, 0, 11)],
+    "HD_INI_ST": [(1, 0x39, 0, 11)],
 }
+
+# printVideoTimings() prints from an async handler while the firmware is also
+# hunting for sync, so a single collect() window intermittently catches nothing.
+TIMINGS_ATTEMPTS = 4
 
 
 # --- /getreg and /setreg ----------------------------------------------------
@@ -136,16 +146,32 @@ def test_setreg_changes_a_register(host, register_guard):
 # --- printVideoTimings() ----------------------------------------------------
 
 
+def _collect_timings(host, console, attempts=TIMINGS_ATTEMPTS):
+    """Ask for the timings block until the console answers. Returns (rows, lines).
+
+    Retried rather than accepted first time because the print races the firmware's
+    own sync hunting and one window in a full run comes back empty. A console that
+    stays silent across every attempt is still the regression these tests exist to
+    catch, so this narrows the flake without softening the assertion.
+    """
+    lines = []
+    for _ in range(attempts):
+        console.drain()
+        get(host, "/sc?,")
+        lines = console.collect()
+        rows = parse_timings(lines)
+        if rows:
+            return rows, lines
+    return {}, lines
+
+
 @pytest.fixture(scope="session")
 def timings(host, console):
     """The block /sc?, prints to the web console."""
-    console.drain()
-    get(host, "/sc?,")
-    lines = console.collect()
-    rows = parse_timings(lines)
+    rows, lines = _collect_timings(host, console)
     assert rows, (
-        "/sc?, printed nothing parseable to the web console. Is this a "
-        f"GBS_DEBUG=1 build? Raw output: {lines!r}"
+        f"/sc?, printed nothing parseable to the web console in {TIMINGS_ATTEMPTS} "
+        f"attempts. Is this a GBS_DEBUG=1 build? Raw output: {lines!r}"
     )
     return rows
 
@@ -157,9 +183,9 @@ def test_sc_comma_prints_timings(timings):
 def _read_all(host):
     """Every register the console block covers, read over HTTP."""
     return {
-        (label, index): read_word(host, segment, register, mask)
+        (label, index): read_field(host, segment, register, offset, width)
         for label, columns in TIMING_REGISTERS.items()
-        for index, (segment, register, mask) in enumerate(columns)
+        for index, (segment, register, offset, width) in enumerate(columns)
     }
 
 
@@ -173,16 +199,16 @@ def test_timings_agree_with_getreg(host, console):
     held still are compared.
     """
     before = _read_all(host)
-    console.drain()
-    get(host, "/sc?,")
-    rows = parse_timings(console.collect())
+    rows, lines = _collect_timings(host, console)
     after = _read_all(host)
+
+    assert rows, f"/sc?, printed nothing parseable in {TIMINGS_ATTEMPTS} attempts: {lines!r}"
 
     compared, moved = {}, {}
     for label, columns in TIMING_REGISTERS.items():
         if label not in rows:
             continue
-        for index, (segment, register, _) in enumerate(columns):
+        for index, (segment, register, _, _width) in enumerate(columns):
             key = f"{label} s{segment}:{register:#04x}"
             printed = rows[label][index]
             if before[(label, index)] != after[(label, index)]:

@@ -126,12 +126,31 @@ def wait_for(predicate, timeout=10.0, interval=0.1):
 
 def read_word(host, segment, low_register, mask):
     """A little-endian register pair, masked to the field's bit width. The TV5725
-    spreads a multi-bit field across consecutive bytes low-first."""
+    spreads a multi-bit field across consecutive bytes low-first.
+
+    Only correct for fields that start at bit 0 of low_register. Plenty do not —
+    VDS_VSYNC_RST is at bit 4 of s3_02, sharing the byte with VDS_HSYNC_RST's top
+    nibble — and for those this returns a plausible wrong number rather than
+    failing. Use read_field() unless you have checked the offset in tv5725.h.
+    """
     low = read_reg(host, segment, low_register)
     high = read_reg(host, segment, low_register + 1)
     if low is None or high is None:
         return None
     return (low | (high << 8)) & mask
+
+
+def read_field(host, segment, register, offset, width):
+    """A field of any width starting at any bit, across as many registers as it
+    needs. Offsets and widths are as declared in tv5725.h."""
+    span = (offset + width + 7) // 8
+    raw = 0
+    for index in range(span):
+        byte = read_reg(host, segment, register + index)
+        if byte is None:
+            return None
+        raw |= byte << (8 * index)
+    return (raw >> offset) & ((1 << width) - 1)
 
 
 # --- console output ---------------------------------------------------------
