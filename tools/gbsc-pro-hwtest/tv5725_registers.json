@@ -1043,6 +1043,15 @@
   "status": "documented",
   "width": 11
  },
+ "IF_HB_ST1": {
+  "desc": "Horizontal blanking start position (set 1). Inferred: the address gap between IF_HB_SP (0x12) and IF_HB_SP1 (0x16) is exactly where set 1's start belongs, and 0x14 reads a plausible value that tracks set 2. Not declared in tv5725.h.",
+  "fake": false,
+  "off": 0,
+  "reg": 20,
+  "seg": 1,
+  "status": "inferred",
+  "width": 11
+ },
  "IF_HB_ST2": {
   "desc": "Bit  Name  Function Horizontal blanking start position (set 2)",
   "fake": false,
