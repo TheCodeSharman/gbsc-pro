@@ -16,19 +16,42 @@ script. Read-only — it never writes a register.
 import argparse
 import time
 
-from gbs_unit import read_reg, read_word
+from gbs_unit import field_from, read_reg, read_segment, read_word
+
+# HPERIOD_IF .. VTOTAL. One /getregs request covers the whole of segment 0 that
+# matters here, so a logged disturbance has genuinely simultaneous context: an
+# entry showing sync dropping *and* the PLL unlocked is one instant, not five
+# round trips spread over ~70ms during which anything could have moved.
+SAMPLE_RANGE = (0x06, 0x1C)
 
 
 def sample(host):
-    status = read_reg(host, 0, 0x16)
-    if status is None:
+    registers = read_segment(host, 0, *SAMPLE_RANGE)
+    if registers is None:  # firmware without /getregs — fall back, less correlated
+        status = read_reg(host, 0, 0x16)
+        if status is None:
+            return None
+        registers = {
+            0x06: read_reg(host, 0, 0x06),
+            0x07: read_reg(host, 0, 0x07),
+            0x09: read_reg(host, 0, 0x09),
+            0x16: status,
+        }
+        vtotal = read_word(host, 0, 0x1B, 0x07FF)
+        htotal = read_word(host, 0, 0x17, 0x0FFF)
+    else:
+        vtotal = field_from(registers, 0x1B, 0, 11)
+        htotal = field_from(registers, 0x17, 0, 12)
+
+    if registers.get(0x16) is None:
         return None
     return {
-        "status16": status,
-        "vtotal": read_word(host, 0, 0x1B, 0x07FF),
-        "htotal": read_word(host, 0, 0x17, 0x0FFF),
+        "status16": registers[0x16],
+        "vtotal": vtotal,
+        "htotal": htotal,
+        "hperiod": field_from(registers, 0x06, 0, 9),
         "preset": read_reg(host, 1, 0x2B),
-        "lock": bool((read_reg(host, 0, 0x09) or 0) & 0x80),
+        "lock": bool((registers.get(0x09) or 0) & 0x80),
     }
 
 
@@ -40,8 +63,20 @@ def describe(s):
             f"H={'act' if st & 2 else '---'}({'+' if st & 1 else '-'}) "
             f"V={'act' if st & 8 else '---'}({'+' if st & 4 else '-'})  "
             f"VTOTAL {s['vtotal']}  HTOTAL {s['htotal']}  "
+            f"HPERIOD {_hperiod(s['hperiod'])}  "
             f"preset {s['preset'] if s['preset'] is None else hex(s['preset'])}  "
             f"PLL {'locked' if s['lock'] else 'UNLOCKED'}")
+
+
+def _hperiod(value):
+    """HPERIOD_IF, flagging the two rail values. Both are perfectly steady, so a
+    log full of one of them is a dead Mode Detect rather than a stable source —
+    see docs/tv5725-chip.md."""
+    if value is None:
+        return "?"
+    if value in (0, 0x1FF):
+        return f"{value} RAILED"
+    return str(value)
 
 
 def significant(a, b):
@@ -54,7 +89,7 @@ def significant(a, b):
         return True
     if a["lock"] != b["lock"]:
         return True
-    for key in ("vtotal", "htotal"):
+    for key in ("vtotal", "htotal", "hperiod"):
         x, y = a[key], b[key]
         if (x is None) != (y is None):
             return True
