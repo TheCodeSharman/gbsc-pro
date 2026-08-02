@@ -65,17 +65,20 @@ def read_state(host):
 
 def describe(state):
     lock = {True: "locked", False: "UNLOCKED", None: "?"}[state["pllad_lock"]]
+    # Any of these can read back as None when the unit is busy or mid-reset, and
+    # that is exactly when this print matters most -- so it must not raise.
     drift = (
-        state["htotal"] - state["pllad_md"]
+        f"{state['htotal'] - state['pllad_md']:+d}"
         if state["htotal"] is not None and state["pllad_md"] is not None
-        else None
+        else "?"
     )
+    preset = "??" if state["preset_id"] is None else f"{state['preset_id']:02x}"
     return (
         f"PLLAD_MD {state['pllad_md']}  PLL {lock}\n"
         f"    IF_HSYNC_RST {state['if_hsync_rst']}  IF_LINE_SP {state['if_line_sp']}  "
         f"SP_RT_HS_SP {state['sp_rt_hs_sp']}\n"
-        f"    HTOTAL {state['htotal']} (PLLAD_MD{drift:+d})  VTOTAL {state['vtotal']}  "
-        f"preset 0x{state['preset_id']:02x}"
+        f"    HTOTAL {state['htotal']} (PLLAD_MD{drift})  VTOTAL {state['vtotal']}  "
+        f"preset 0x{preset}"
     )
 
 
@@ -117,6 +120,36 @@ def set_by_registers(host, target):
     return ok
 
 
+def set_by_steps(host, start, target, step, settle=1.0):
+    """Walk to the target in small increments, checking the unit after each one.
+
+    A large jump breaks input sync outright, and the firmware's framesync
+    measurement then waits for a vsync pulse that never arrives -- with the
+    watchdog disabled, so the board hangs until it is power cycled (see
+    framesync.h vsyncInputSample). Small steps keep the PLL locked, so sync
+    survives and that path is never entered.
+
+    Stops at the first step the unit does not answer after, and reports where,
+    so a hang bounds the problem instead of losing the whole run.
+    """
+    direction = 1 if target > start else -1
+    current = start
+    while current != target:
+        remaining = abs(target - current)
+        current += direction * min(step, remaining)
+        if not set_by_registers(host, current):
+            print(f"    write failed at PLLAD_MD {current}")
+            return False, current
+        time.sleep(settle)
+        state = read_state(host)
+        if state["pllad_md"] is None:
+            print(f"    !! unit stopped answering after PLLAD_MD {current}")
+            return False, current
+        lock = {True: "locked", False: "UNLOCKED", None: "?"}[state["pllad_lock"]]
+        print(f"    {current:5d}  PLL {lock}  HTOTAL {state['htotal']}  VTOTAL {state['vtotal']}")
+    return True, current
+
+
 def set_by_nudges(host, count):
     """'/sc?n' count times. Slower, but it also runs updateClampPosition() and
     updateCoastPosition(), which no register endpoint reaches."""
@@ -134,6 +167,12 @@ def main():
     ap.add_argument("--set", type=int, help="target PLLAD_MD (256..4095)")
     ap.add_argument("--raw", action="store_true",
                     help="always use the register path, never '/sc?n'")
+    ap.add_argument("--step", type=int, metavar="N",
+                    help="walk to the target N at a time, checking the unit after "
+                         "each step; keeps the PLL locked so a big jump cannot "
+                         "break sync and hang the firmware")
+    ap.add_argument("--settle", type=float, default=1.0,
+                    help="seconds to wait after each step (default 1.0)")
     args = ap.parse_args()
 
     before = read_state(args.host)
@@ -153,7 +192,14 @@ def main():
         print(f"\nalready {args.set}")
         return
 
-    if not args.raw and 0 < delta <= MAX_NUDGES:
+    if args.step:
+        print(f"\nstepping {before['pllad_md']} -> {args.set} by {args.step} ...")
+        ok, reached = set_by_steps(args.host, before["pllad_md"], args.set,
+                                   args.step, args.settle)
+        if not ok:
+            sys.exit(f"stopped at PLLAD_MD {reached} -- power cycle and retry "
+                     f"with a smaller --step")
+    elif not args.raw and 0 < delta <= MAX_NUDGES:
         print(f"\n{delta} x /sc?n ...")
         ok = set_by_nudges(args.host, delta)
     else:
