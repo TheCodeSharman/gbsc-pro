@@ -4,13 +4,18 @@
     pytest --host=192.168.1.20 --preset-save
 
 Covers the /getreg and /setreg endpoints, printVideoTimings() reaching the web
-console, and the preset save path. The timings tests need a GBS_DEBUG=1
-build; they fail rather than skip if the console is silent, because a silent
-console is the regression they exist to catch.
+console, the preset save path, and the external clock generator's display-clock
+stash. The timings tests need a GBS_DEBUG=1 build; they fail rather than
+skip if the console is silent, because a silent console is the regression they
+exist to catch.
+
+The display-clock tests read the firmware source rather than the unit, so they
+run with no hardware attached.
 """
 
 import re
 import time
+from pathlib import Path
 
 import pytest
 
@@ -251,6 +256,145 @@ def test_the_sync_processor_holds_a_lock(host, source):
     assert held == len(samples), (
         f"the lock did not hold: {held} of {len(samples)} samples over "
         f"{HOLD_SECONDS:.0f}s, values seen {sorted({s for s in samples})}"
+    )
+
+
+# --- external clock generator: the display-clock stash -----------------------
+#
+# While the external clock generator drives the display, PLL648_CONTROL_01 is
+# parked at a 0x75 sentinel and the real divider is stashed in RAM.
+#
+# **IT CANNOT BE STASHED IN GBS_PRESET_DISPLAY_CLOCK (s1_2D).** That sits inside
+# the range every preset array overwrites, and all but the two downscale presets
+# write 0 there. A preset load then zeroes the stash, the restore is skipped
+# because it is guarded on the stash being non-zero, the sentinel reaches
+# externalClockGenResetClock()'s lookup, matches no known divider, and
+# rto->freqExtClockGen keeps a frequency left over from an earlier preset. That
+# goes to the Si5351 as the display clock, so the TV gets timing it cannot lock
+# to and goes blank -- with every scaler register still reading correct.
+
+FIRMWARE = Path(__file__).resolve().parents[2] / "GBSC-Pro-Source code" / "gbs-control"
+
+PRESET_DISPLAY_CLOCK = (1, 0x2D)  # GBS_PRESET_DISPLAY_CLOCK in tv5725.h
+
+# The eight values externalClockGenResetClock() maps to a frequency, plus the
+# sentinel it parks at. A divider showing up in the stash register means someone
+# has started using it to hold state again.
+DISPLAY_CLOCK_DIVIDERS = {0x25, 0x35, 0x45, 0x55, 0x65, 0x85, 0x95, 0xA5}
+DISPLAY_CLOCK_SENTINEL = 0x75
+
+# The only values the preset arrays themselves put at s1_2D: 0 in the twelve
+# scaling presets, 0x25 in pal_downscale/ntsc_downscale.
+PRESET_STASH_VALUES = {0x00, 0x25}
+
+
+def _function_body(source, name):
+    """The braced body of a C function, by brace matching from its opening `{`."""
+    start = source.index(f"void {name}(")
+    open_brace = source.index("{", start)
+    depth = 0
+    for index in range(open_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[open_brace : index + 1]
+    raise AssertionError(f"unbalanced braces in {name}()")
+
+
+def test_display_clock_stash_is_not_a_preset_register():
+    """The divider must not be stashed anywhere a preset load can overwrite.
+
+    Asserts both halves, so neither can drift: that the presets really do write
+    s1_2D (making it unusable as a stash), and that the firmware no longer
+    writes a divider there.
+    """
+    segment, register = PRESET_DISPLAY_CLOCK
+
+    tv5725 = (FIRMWARE / "tv5725.h").read_text(errors="replace")
+    declaration = re.search(
+        r"UReg<(0x[0-9A-Fa-f]+),\s*(0x[0-9A-Fa-f]+),[^>]*>\s*GBS_PRESET_DISPLAY_CLOCK", tv5725
+    )
+    assert declaration, "GBS_PRESET_DISPLAY_CLOCK is not declared in tv5725.h"
+    assert (int(declaration.group(1), 16), int(declaration.group(2), 16)) == (segment, register), (
+        f"GBS_PRESET_DISPLAY_CLOCK moved to s{declaration.group(1)}_{declaration.group(2)}; "
+        "recheck whether the new address is inside preset coverage before trusting this test"
+    )
+
+    label = f"// s{segment}_{register:02X}"
+    clobbering = sorted(
+        path.name
+        for path in FIRMWARE.glob("*.h")
+        if label in path.read_text(errors="replace").upper().replace("// S", "// s")
+    )
+    assert clobbering, (
+        f"no preset array writes s{segment}_{register:02X} any more. If that is "
+        "deliberate the register is safe to stash in again, but this test's premise "
+        "is gone and it should be rewritten rather than deleted."
+    )
+
+    sketch = (FIRMWARE / "gbs-control.ino").read_text(errors="replace")
+    writes = [
+        line.strip()
+        for line in sketch.splitlines()
+        if "GBS_PRESET_DISPLAY_CLOCK::write" in line
+    ]
+    assert not writes, (
+        f"the display clock is being stashed in s{segment}_{register:02X} again, which "
+        f"{len(clobbering)} preset arrays overwrite ({', '.join(clobbering[:3])}...). "
+        f"A preset load wipes it, the restore is skipped, and the Si5351 keeps a stale "
+        f"frequency — blank output with correct-looking registers. Offending lines: {writes}"
+    )
+
+
+def test_display_clock_lookup_has_no_silent_fallthrough():
+    """externalClockGenResetClock() must assign a frequency on every path.
+
+    The lookup is a chain of `if (activeDisplayClock == ...)`. Without a final
+    unconditional `else`, an unrecognised value — the 0x75 sentinel above all —
+    leaves rto->freqExtClockGen holding whatever the last preset put there, and
+    that stale value is programmed into the Si5351 regardless.
+    """
+    sketch = (FIRMWARE / "gbs-control.ino").read_text(errors="replace")
+    body = _function_body(sketch, "externalClockGenResetClock")
+
+    assert "freqExtClockGen" in body, "externalClockGenResetClock() no longer sets the frequency"
+
+    # a terminal `else` — i.e. one not immediately followed by `if`
+    fallthrough_guard = re.search(r"\belse\s*(?!if\b)\{", body)
+    assert fallthrough_guard, (
+        "no terminal `else` in externalClockGenResetClock(): an unmapped display "
+        "clock silently reuses the previous frequency. Add a fallback that assigns "
+        "rto->freqExtClockGen and says so, rather than falling through."
+    )
+
+
+def test_display_clock_is_not_stashed_in_a_preset_register(host):
+    """Live check of the same invariant: nothing has written a divider to s1_2D.
+
+    Read-only and mode-independent — it asserts only that the value is one a
+    preset array could have put there. The old firmware left a real divider here
+    after every preset apply, so this fails against it.
+    """
+    segment, register = PRESET_DISPLAY_CLOCK
+    stashed = read_reg(host, segment, register)
+    assert stashed is not None, f"could not read s{segment}_{register:02X}"
+
+    parked = read_reg(host, 0, 0x41)  # PLL648_CONTROL_01
+    context = (
+        f"s{segment}_{register:02X}={stashed:#04x}, PLL648_CONTROL_01={parked:#04x} "
+        f"(sentinel is {DISPLAY_CLOCK_SENTINEL:#04x})"
+    )
+
+    assert stashed not in (DISPLAY_CLOCK_DIVIDERS - PRESET_STASH_VALUES), (
+        f"a display-clock divider is sitting in the preset-written stash register: {context}. "
+        "That is the pre-fix behaviour; a preset load will zero it and the output clock "
+        "will fall back to a stale frequency."
+    )
+    assert stashed in PRESET_STASH_VALUES, (
+        f"unexpected value in the stash register: {context}. The preset arrays only ever "
+        f"write {sorted(PRESET_STASH_VALUES)} there, so something else has written to it."
     )
 
 
