@@ -101,6 +101,10 @@ All 2026-08-02, RISC PC via GBSC Pro at `192.168.88.108`, in `photos/`.
 | 23 | 18:30 | `VDS_DIS_HB_ST` 2500 -> **2020**, one field | **Green gone — but the picture is clipped**: the source has content to the right of the new edge. So valid picture reaches at least 2020 *and* real content extends past it. Active video is **strictly between 960 and 1200 IF units**; the 62.5% estimate is a floor, not the value. |
 | 25 | 20:05 | RISC OS test card with the **border colour set to purple**, at the baseline | Purple visible on **all four sides**: the capture takes in border well outside active video, horizontally and vertically. Vertically asymmetric — little above, a lot below — matching the wide-open vertical window. Stripe bands clean and evenly spaced. **This is the calibration signal**: shrink each edge until the purple just disappears. |
 | 24 | 19:10 | capture cut to **984 units** (72..1056, the 0x420 clamp), x2.0, windows 100..2068 | **No green** — but clipped harder still, "Apps" cut in half. Also the grille bars went *uneven* again, at unchanged `PLLAD_MD` 3072. |
+| 26 | 20:50 | capture trimmed to 205..1000 (795 units), `HSCALE` still 512 | Green frame intact on all four sides — **nothing clipped**, so the trim approached from the safe side. Magenta roughly halved left. A structured junk block appears right of the picture: product 1590 px against a 1928 px display window, so the tail of the window shows memory the scaler no longer writes. |
+| 27 | 21:05 | `HSCALE` 407, product 2000.20 px against a 2000 px memory window | **Moving comb bands over the whole picture**, different every frame. A 0.2 px per line overflow. See the fractional-overflow entry below — `geometry.py` printed "+0" for this. |
+| 28 | 21:12 | `HSCALE` back to 512, capture 240..1000 | Clean again, green frame on all four sides. Confirms 27 was the scale, not the trim. |
+| 29–30 | 21:35 | horizontal tuned by eye to 277..1042 (765 units), animated card, **consecutive animation phases** | The pair is the evidence. Outer ring flips **white → yellow**, so the card is live. The magenta band, the thin cyan stripe and the junk to its right are **pixel-identical across both phases** — frozen, therefore scratch memory, not captured border. Registers in `horizontal-tuned-by-eye-2026-08-02.json`. |
 
 ## What each test decided
 
@@ -538,6 +542,104 @@ separate-sync formula for `HTOTAL` 3072 — but it is a real gap in the tool.
 - **The leading strip** (photos 13-15): a detached band of picture to the left of
   the display window, tracking the window position, upstream of display blanking.
   Same family as the bright line, probably the same cause.
+
+## THE MDF SETTLES THE GEOMETRY: the border is 44 px, not one or two
+
+Three sessions of arguing about how much of the line is active video, and the
+answer was on the RISC PC's own disc the whole time. `!Boot/Resources/Configure/
+Monitors/Acorn/AKF50`, the monitor definition actually in use — **not**
+`RetroScale`, which is a different file with a different 320x256 mode at 7.15 MHz:
+
+```
+h_timings: 36, 30, 44, 320, 44, 38    sync, back porch, LEFT BORDER, display, RIGHT BORDER, front porch
+v_timings:  3, 16, 17, 256, 17,  3    sync, back porch, TOP BORDER,  display, BOTTOM BORDER, front porch
+pixel_rate: 8000 kHz                  total 512 px x 312 lines
+```
+
+So §1's "512 px at 8 MHz, 320 active" was right, and it came from here. What was
+missing is that **the visible region is not the display region**: border + display
++ border is 408 px, and the border alone is 44 px each side. At 1173/512 = 2.291
+IF units per source pixel:
+
+| region | source px | IF units |
+|---|---|---|
+| display only | 320 | 733 |
+| one border | 44 | 101 |
+| full visible | 408 | 935 |
+
+`mdf_modes.py` computes totals but does not print the timing breakdown, which is
+the part that mattered. The border fields are what you are trimming.
+
+**Caveat, unresolved.** The MDF arithmetic and the tuning-by-eye disagree by about
+4%: a capture of 765 units read as ~1 px of border remaining, where the arithmetic
+says 765 units is 334 source px, i.e. ~7 px of border per side. Either the units
+per source pixel is not 2.291, or a display-window offset is hiding border before
+it reaches the eye. Not resolved. Do not treat 2.291 as established.
+
+## LIVE vs SCRATCH: animate the card and read which pixels flip
+
+`TestPat.bas` flips the screen border and the outermost ring twice a second.
+Anything that flips is being written by the input formatter this frame; anything
+frozen is memory the scaler has stopped writing. Film it rather than photograph
+it.
+
+This settled two things no static card could:
+
+- **Junk beside a trimmed picture identifies itself.** Trim the capture without
+  re-scaling and the product no longer fills the display window; the tail shows a
+  photograph of an older state, including old *magenta border*, which is
+  indistinguishable from live border in a still. Photos 29-30 are the proof.
+- **A frozen whole display means capture has stopped entirely**, not that the
+  geometry is wrong. Seen while pushing `IF_VB_ST`/`IF_VB_SP`: past a certain
+  point the vertical window selects no lines at all and nothing is written. It is
+  a cliff, not a gradient, which is why the vertical feels finicky. Suspected the
+  wrapping blanking region; `IF_VB_SP` 55 with `IF_VB_ST` 0 avoids the wrap
+  (blanking 0..55, active 55..310 = exactly 256 lines) and is the arrangement to
+  try first.
+
+## FRACTIONAL OVERFLOW: `HSCALE` 407 vs 408
+
+The product must be **≤** the memory window, and the excess can be a fraction of
+a pixel:
+
+```
+795 x 1024 / 407 = 2000.20 px   vs 2000 px window   -> moving comb bands (photo 27)
+795 x 1024 / 408 = 1995.29 px                       -> clean (photo 28)
+```
+
+`geometry.py` formatted the product with `:.0f`, so it printed "2000" and "+0 px
+vs produced" while the picture tore. Fixed: it now prints two decimals, flags the
+overflow, and computes the smallest safe `VDS_HSCALE` for the current capture.
+
+This is the likely explanation for a chunk of the "magnification degrades"
+history. It is not that magnification degrades; it is that arbitrary `HSCALE`
+values land fractionally over the window and the rounding hides it.
+
+## The input formatter is in interlaced mode on a progressive source
+
+`IF_PRGRSV_CNTRL` = 0 ("source is interlaced") and `IF_LD_SEL_PROV` = 0
+("interlace read reset timing"), on a 320x256 progressive source with an odd
+`VTOTAL` of 311. The firmware only sets them for `videoStandardInput` 3/4/8/9;
+this source takes the 1/2 branch, which writes `IF_LD_SEL_PROV(0)` and never
+touches `IF_PRGRSV_CNTRL` at all.
+
+One classification decision produces two symptoms: the line-double FIFO stays
+engaged, which is where the ~1056-unit cap comes from, **and** the chip splits a
+progressive frame into two phantom fields — which is why moving `IF_LINE_ST` /
+`IF_LINE_SP` was observed to affect only every second line. There is no second
+register set for a second field; the RD labels both "Progressive line start/stop
+position", and S1_24/26 are `IF_HBIN_ST`/`IF_HBIN_SP`, a different pair.
+
+Untested: setting both to 1. It changes the line doubler's read reset timing, not
+the FIFO bypass, so §3's warning about halving the picture height does not
+strictly apply — but the vertical is the thing most likely to move.
+
+### Correction: `IF_LINE_ST` is not where the `+0x40` comes from
+
+The earlier entry claiming `IF_LINE_ST` = 0x40 explains `/sc?n`'s `+0x40` is
+wrong. After a preset reload it reads **10**. The `IF_LINE_SP` half does hold —
+1237 = `IF_HSYNC_RST` 1172 + 65 — so the `+0x40 + 1` formula is real, but its 64
+comes from somewhere else.
 
 ## Where this stands, and the next test
 
