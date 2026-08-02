@@ -29,6 +29,21 @@ than by parsing the Bit/Name tables. Those tables are multi-column and defeat
 line-based parsing — an earlier attempt produced garbage like
 "ADC_AUTO_OADC_AUTO_O Bit FST_TEST" and silently lost 337 real fields.
 
+**A description can belong to the next field along.** `describe()` takes the five
+lines following a name and stops at neither the end of that field's Function cell
+nor the start of the next, so where the PDF packs several narrow fields into one
+byte the text bleeds across them. Worked example: `ADC_SOGCTRL` (S5_02, bits 5-1)
+carries "ADC input selection When = 00, R0/G0/B0/SOG0 as input", which is the
+enum for `ADC_INPUT_SEL` in bits 7-6 of the same byte — and the bleed truncated
+`ADC_INPUT_SEL`'s own description so that its `00` case appears nowhere in the
+map, making the channel numbering look as though it starts at 01.
+
+So the map is authoritative for addressing and suggestive for meaning. Read the
+description as a pointer to the right RD page, not as the field's definition, and
+check the PDF before relying on a value. Fixing this properly means bounding each
+chunk at the next known field name, which would rewrite every description in the
+file — worth doing deliberately, not as a side effect.
+
 Needs poppler (`pdftotext`).
 """
 

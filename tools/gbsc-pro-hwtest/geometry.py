@@ -16,6 +16,7 @@ timestamped record next to the photographs.
 
 import argparse
 import json
+import math
 import time
 import urllib.request
 
@@ -35,7 +36,32 @@ def field(registers, register, offset, width):
     return (raw >> offset) & ((1 << width) - 1)
 
 
-def read_all(host):
+def sample_hperiod(host, reads=8):
+    """HPERIOD_IF several times, with the firmware's own validity rule.
+
+    A single read is not trustworthy: the counter rails to 0 or 511 and stays
+    there, perfectly steady, so stability is not a validity test. The firmware
+    takes eight reads and abandons the batch if any two differ by more than 3;
+    this reports the spread instead of hiding it, so a noisy reading is visible
+    as noise rather than being quietly averaged into a plausible number.
+    """
+    values = []
+    for _ in range(reads):
+        values.append(field(burst(host, 0, 0x06, 0x07), 0x06, 0, 9))
+    values.sort()
+    median = values[len(values) // 2]
+    spread = values[-1] - values[0]
+    if median in (0, 511):
+        state = "RAILED"
+    elif spread > 3:
+        state = "UNSETTLED"
+    else:
+        state = "ok"
+    return {"median": median, "spread": spread, "state": state, "n": reads}
+
+
+def read_all(host, hperiod_reads=8):
+    hperiod = sample_hperiod(host, hperiod_reads)
     s0 = burst(host, 0, 0x00, 0x1C)
     s1 = burst(host, 1, 0x00, 0x2F)
     s3 = burst(host, 3, 0x00, 0x1F)
@@ -43,7 +69,8 @@ def read_all(host):
     return {
         # source, as measured
         "STATUS_16": s0[0x16],
-        "HPERIOD_IF": field(s0, 0x06, 0, 9),
+        "HPERIOD_IF": hperiod["median"],
+        "HPERIOD_SAMPLE": hperiod,
         "VTOTAL": field(s0, 0x1B, 0, 11),
         "HLOW_LEN": field(s0, 0x19, 0, 12),
         # input side
@@ -73,9 +100,15 @@ def report(r, label=None):
     add(f"    {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     add("\n  SOURCE (measured)")
+    hp = r["HPERIOD_SAMPLE"]
     add(f"    STATUS_16 0x{r['STATUS_16']:02x}   VTOTAL {r['VTOTAL']}   "
-        f"HPERIOD_IF {r['HPERIOD_IF']}{'  RAILED' if r['HPERIOD_IF'] in (0, 511) else ''}   "
+        f"HPERIOD_IF {hp['median']} +/-{hp['spread']} over {hp['n']} reads"
+        f"{'  ' + hp['state'].upper() if hp['state'] != 'ok' else ''}   "
         f"sync low {r['HLOW_LEN']} samples")
+    if hp["state"] == "RAILED":
+        add("      -> the counter is railed, not measuring. /uc?h brings it back.")
+    elif hp["state"] == "UNSETTLED":
+        add("      -> spread > 3, still settling. Wait a few seconds and re-read.")
 
     line = r["IF_HSYNC_RST"] + 1
     sp2, st2 = r["IF_HB_SP2"], r["IF_HB_ST2"]
@@ -109,9 +142,17 @@ def report(r, label=None):
         + ("  BYPASSED (1:1)" if r["VDS_HSCALE_BYPS"] else f"  = x{magnify:.3f}"))
 
     add("\n  THE THREE EXTENTS, AND WHERE THEY DISAGREE")
-    add(f"    scaler produces   {capture} capture units -> {produced:.0f} px")
-    add(f"    memory window     {memory} px      -> {produced - memory:+.0f} px vs produced")
-    add(f"    display window    {display} px      -> {produced - display:+.0f} px vs produced")
+    add(f"    scaler produces   {capture} capture units -> {produced:.2f} px")
+    add(f"    memory window     {memory} px      -> {produced - memory:+.2f} px vs produced")
+    add(f"    display window    {display} px      -> {produced - display:+.2f} px vs produced")
+    if produced > memory:
+        safe = math.ceil(capture * 1024 / memory) if magnify else None
+        add(f"    !! OVERFLOW: the product exceeds the memory window by "
+            f"{produced - memory:.2f} px per line.")
+        add("       Moving comb bands follow. This is fractional and easy to miss:")
+        if safe:
+            add(f"       smallest safe VDS_HSCALE for this capture is {safe} "
+                f"(-> {capture * 1024 / safe:.2f} px).")
     add(f"    display vs memory  left edge {disp_sp - mem_sp:+d} px, "
         f"right edge {disp_st - mem_st:+d} px")
     if produced > display:
