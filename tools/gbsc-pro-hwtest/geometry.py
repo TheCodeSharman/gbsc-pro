@@ -20,6 +20,28 @@ import math
 import time
 import urllib.request
 
+# The product fitting inside the memory window is NOT sufficient. The scaler has
+# to finish reading the line out of memory before the line period ends, so it
+# needs slack -- and with too little, the picture tears exactly as it does on a
+# real overflow. Bracketed empirically on 2026-08-03 at PLLAD_MD 2553, output
+# line 1445 px, by moving VDS_HSCALE with everything else held fixed:
+#
+#   capture 877, memory 1363, HSCALE 660 -> 1360.68 px,  2.3 px slack  ARTEFACTS
+#   capture 877, memory 1363, HSCALE 665 -> 1350.40 px, 12.6 px slack  ARTEFACTS
+#   capture 882, memory 1375, HSCALE 665 -> 1358.15 px, 16.9 px slack  CLEAN
+#   capture 877, memory 1363, HSCALE 670 -> 1340.37 px, 22.6 px slack  CLEAN
+#
+# The middle pair is the decisive one: same HSCALE, so same ratio and the same
+# interpolation -- only the slack differs, and only that changed the outcome.
+# So the governing quantity is (memory window - produced), not the ratio.
+#
+# UNVERIFIED beyond one clock and one output preset. A timing budget should
+# scale with the line period, so on the 2600 px output preset the threshold may
+# be a similar *fraction* of the line rather than the same pixel count. Re-measure
+# before trusting these numbers there.
+HEADROOM_MIN_PX = 13    # 12.6 px artefacted
+HEADROOM_SAFE_PX = 20   # 16.9 px was clean; round up for margin
+
 
 def burst(host, segment, first, last):
     url = f"http://{host}/getregs?s={segment:x}&from={first:02x}&to={last:02x}"
@@ -138,21 +160,42 @@ def report(r, label=None):
     add(f"    memory  blanking active  {mem_sp} .. {mem_st}   = {memory} px")
     add(f"    display blanking active  {disp_sp} .. {disp_st}   = {display} px  "
         f"({display / htotal:.1%} of the line)")
-    add(f"    VDS_HSCALE {scale}"
-        + ("  BYPASSED (1:1)" if r["VDS_HSCALE_BYPS"] else f"  = x{magnify:.3f}"))
+    # A dropped or truncated read shows up as 0, which is not a legal divisor.
+    # This print is what a bench session trusts, so say so rather than crash.
+    if r["VDS_HSCALE_BYPS"]:
+        scale_note = "  BYPASSED (1:1)"
+    elif magnify:
+        scale_note = f"  = x{magnify:.3f}"
+    else:
+        scale_note = "  !! reads 0 -- dropped read or cleared register, magnification UNKNOWN"
+    add(f"    VDS_HSCALE {scale}{scale_note}")
 
     add("\n  THE THREE EXTENTS, AND WHERE THEY DISAGREE")
+    if magnify is None and not r["VDS_HSCALE_BYPS"]:
+        add("    (VDS_HSCALE unreadable -- the figures below assume 1:1 and are NOT")
+        add("     the real output width. Re-read before trusting any of this.)")
     add(f"    scaler produces   {capture} capture units -> {produced:.2f} px")
     add(f"    memory window     {memory} px      -> {produced - memory:+.2f} px vs produced")
     add(f"    display window    {display} px      -> {produced - display:+.2f} px vs produced")
-    if produced > memory:
-        safe = math.ceil(capture * 1024 / memory) if magnify else None
-        add(f"    !! OVERFLOW: the product exceeds the memory window by "
-            f"{produced - memory:.2f} px per line.")
-        add("       Moving comb bands follow. This is fractional and easy to miss:")
+
+    headroom = memory - produced
+    add(f"    headroom          {headroom:+.2f} px   (memory window - produced)")
+    if headroom < HEADROOM_MIN_PX:
+        safe = (math.ceil(capture * 1024 / (memory - HEADROOM_SAFE_PX))
+                if magnify and memory > HEADROOM_SAFE_PX else None)
+        if headroom < 0:
+            add(f"    !! OVERFLOW: the product exceeds the memory window by "
+                f"{-headroom:.2f} px per line.")
+        else:
+            add(f"    !! TOO LITTLE HEADROOM: only {headroom:.2f} px of slack, and "
+                f"{HEADROOM_MIN_PX} px was measured to artefact.")
+        add("       Moving comb bands follow. Fitting is not enough -- the scaler")
+        add("       must finish reading the line from memory before the line ends,")
+        add(f"       so it needs slack. Aim for >= {HEADROOM_SAFE_PX} px.")
         if safe:
             add(f"       smallest safe VDS_HSCALE for this capture is {safe} "
-                f"(-> {capture * 1024 / safe:.2f} px).")
+                f"(-> {capture * 1024 / safe:.2f} px, "
+                f"{memory - capture * 1024 / safe:.2f} px headroom).")
     add(f"    display vs memory  left edge {disp_sp - mem_sp:+d} px, "
         f"right edge {disp_st - mem_st:+d} px")
     if produced > display:
