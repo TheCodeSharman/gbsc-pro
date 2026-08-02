@@ -831,9 +831,16 @@ void externalClockGenResetClock()
         rto->freqExtClockGen = 81000000;
     else if (activeDisplayClock == 0)
         rto->freqExtClockGen = 81000000;
-    // else if (!rto->outModeHdBypass)
-    // {
-    // }
+    else {
+        // Nothing matched — normally the 0x75 sentinel, meaning the stashed
+        // divider was lost. Falling through used to leave freqExtClockGen holding
+        // a frequency from some earlier preset, which is then programmed into the
+        // Si5351 as the display clock: the TV sees timing it cannot lock to and
+        // goes blank, while every scaler register still reads correct.
+        SerialM.printf_P(PSTR("extClockGen: display clock 0x%02x unmapped, using 81MHz\n"),
+                         activeDisplayClock);
+        rto->freqExtClockGen = 81000000;
+    }
 
     if (rto->freqExtClockGen == 108000000) {
         Si.setFreq(0, 87000000);
@@ -904,6 +911,7 @@ void externalClockGenDetectAndInitialize()
 
     rto->freqExtClockGen = 81000000;
     rto->extClockGenDetected = 0;
+    rto->presetDisplayClock = 0;
 
     if (uopt->disableExternalClockGenerator) {
         return;
@@ -3916,9 +3924,10 @@ void doPostPresetLoadSteps()
                 rto->osr = 4;
             }
 
-            if (GBS::PLL648_CONTROL_01::read() == 0x75 && GBS::GBS_PRESET_DISPLAY_CLOCK::read() != 0) {
-                GBS::PLL648_CONTROL_01::write(GBS::GBS_PRESET_DISPLAY_CLOCK::read());
-            } else if (GBS::GBS_PRESET_DISPLAY_CLOCK::read() == 0) {
+            // Put the real divider back before externalClockGenResetClock() reads
+            // it, or the 0x75 sentinel reaches the lookup and matches nothing.
+            if (GBS::PLL648_CONTROL_01::read() == 0x75 && rto->presetDisplayClock != 0) {
+                GBS::PLL648_CONTROL_01::write(rto->presetDisplayClock);
             }
         }
 
@@ -6446,7 +6455,7 @@ void runSyncWatcher() //
                         if (!rto->outModeHdBypass) {
                             if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
 
-                                GBS::GBS_PRESET_DISPLAY_CLOCK::write(GBS::PLL648_CONTROL_01::read());
+                                rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
 
                                 Si.enable(0);
                                 ESP.wdtFeed();
@@ -6551,7 +6560,7 @@ void runSyncWatcher() //
                             if (!rto->outModeHdBypass) {
                                 if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
 
-                                    GBS::GBS_PRESET_DISPLAY_CLOCK::write(GBS::PLL648_CONTROL_01::read());
+                                    rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
 
                                     Si.enable(0);
                                     ESP.wdtFeed();
@@ -7873,7 +7882,7 @@ void loop()
             if (rto->extClockGenDetected && rto->videoStandardInput != 14) {
                 if (!rto->outModeHdBypass) {
                     if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-                        GBS::GBS_PRESET_DISPLAY_CLOCK::write(GBS::PLL648_CONTROL_01::read());
+                        rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
                         Si.enable(0);
                         ESP.wdtFeed();
                         delayMicroseconds(800);

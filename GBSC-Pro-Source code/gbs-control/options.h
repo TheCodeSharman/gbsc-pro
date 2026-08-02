@@ -89,6 +89,12 @@ struct runTimeOptions
 {
     uint32_t freqExtClockGen;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
+    // PLL648_CONTROL_01 is parked at the 0x75 sentinel while the external clock
+    // generator drives the display, so the real divider is stashed here. It
+    // cannot live in GBS_PRESET_DISPLAY_CLOCK (s1_2D): that sits inside the
+    // range every preset array overwrites, and all but the two downscale presets
+    // write 0 there. RAM puts it out of their reach.
+    uint8_t presetDisplayClock;
     uint8_t presetVlineShift;
     uint8_t videoStandardInput; // 0 - unknown, 1 - NTSC like, 2 - PAL like, 3 480p NTSC, 4 576p PAL
     uint8_t phaseSP;
