@@ -39,14 +39,36 @@ diagnosing "the unit" while able to observe roughly a third of it.
 | Domain | Reaches | Visible to you? |
 |---|---|---|
 | ESP8266 | TV5725 registers, Si5351, STV9426 (0x5D), audio | `/getregs` — **this is all you can see** |
-| HC32F460 | `ASW_01`-`ASW_04` analog input routing (pins PB12-PB15), the OLED, the ADV7280 | no — separate MCU, own GPIOs |
+| HC32F460 | `ASW_01`-`ASW_04` analog input routing (pins PB12-PB15), the ADV7280 | **write-only** — commandable over UART, never readable |
 | MS9288A | HDMI encoding, EDID, output link | no — on nobody's I²C bus |
 
+- **The HC32F460's firmware source is in this repo**, under
+  `GBSC-Pro-Source code/usart_uart_dma - （IapApp）/usb_dev_cdc/source/`. The
+  directory name and `main.c`'s header are a stock Xiaohua UART-DMA example;
+  `videoprocess.c`, `uart_dma.c` and `flash.c` are the AV module. Version-tagged
+  in git history (`V1.3`, `v1.2.3`, `v1.2.2`). These files are ISO-8859, so
+  `grep -r … | grep -v Binary` hides them — **use `grep -a`.**
+- **The ESP commands the HC32 over its UART**, ESP TX → HC32 `USART4` RX (PB7),
+  115200 8N1. 7-byte frame: `41 44 <cmd> <arg> <val|nonce> FE <sum of bytes 0-5>`.
+  `'S'` selects input: `0x4n` RGBs, `0x5n` RGsB, `0x6n` VGA, `0x70` YPbPr,
+  `0x1n` S-Video, `0x2n` composite; `0xA0`/`0xA1` toggle `asw_02`. There is **no
+  readback** — the `'I'` INFO handler is commented out.
+- **The OLED menu is on the ESP**, not the HC32. Picking an input there works
+  because that handler transmits the frame above.
 - **`ADC_INPUT_SEL` is only half the input path.** It selects which TV5725 ADC
   input is used. Whether the HC32F460 has actually *connected* anything to it is
   `ASW_01`-`ASW_04`, which appear in no register dump. Two muxes in series.
-  Picking the input on the OLED is what sets the far one, which is why that
-  fixes things a register write cannot.
+  **VGA is the only input that raises `asw_01`** (the schematic's
+  `ASW_01 = 0, HS_IN = SOGIN` — it selects the dedicated HSync pin over
+  sync-on-green), and the only one raising `asw_01` and `asw_04` together.
+- **Both MCUs persist "which input", separately, and never reconcile.** The ESP
+  keeps `SeleInputSource` in `/preferencesv2.txt`; the HC32 keeps `asw_01..04` in
+  its own flash and restores them via `Video_ReadNot2()`. **Nothing sends a frame
+  at boot**, so a cold start can come up with the two disagreeing — which is what
+  picking the input on the OLED repairs.
+- **AV module v1.3 changes only the ADV7280/ADV7391 composite path** (525p vs
+  625p encoder config). `uart_dma.c` and `flash.c` are byte-identical to v1.2.3.
+  It cannot affect RGB/VGA routing — don't reach for it to fix a VGA fault.
 - **A register dump is not the state of the machine.** `/getregs` reads the
   TV5725 and nothing else.
 - **The MS9288A cannot be reset, queried or configured** by anything on the
@@ -60,10 +82,15 @@ distinguish these:
 
 1. **The output clock is not running.** `PLL648_CONTROL_01 == 0x75` is a
    *sentinel the firmware wrote* meaning "the Si5351 drives the display", not a
-   measurement that it does. Diagnostic: watch the console. If
-   `vsyncPeriodAndPhase()` prints its header repeatedly with no `fpsOutput=`
-   line following, one of the two vsync samples is failing — and if the input is
-   locked, it is the output one. That means no output vsync exists.
+   measurement that it does. Diagnostic: watch the console. **Do not infer which
+   vsync sample failed — the firmware now says.** `vsyncPeriodAndPhase()` prints
+   `no INPUT vsync` or `no OUTPUT vsync`, and `runFrequency()` names its failing
+   check. A stream of bare headers with no outcome means a pre-`f5bb2b0` build.
+   *"The input is locked, so it must be the output sample"* was inferred twice
+   and is wrong: measured on the bench unit with the source locked and the TV
+   dark, it is the **input** sample that times out — a measurement-path fault at
+   `DEBUG_IN_PIN`, not a video-path one. And because `runFrequency()` returns
+   early, the Si5351 never gets adjusted at all.
 2. **The encoder has stopped.** Nothing can see or reset it; power cycle.
 3. **The TV timed out** and dropped the input.
 
