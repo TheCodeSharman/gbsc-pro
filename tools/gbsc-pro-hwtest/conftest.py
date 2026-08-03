@@ -33,21 +33,37 @@ def pytest_addoption(parser):
         "preset for the current video mode and switches the unit to custom "
         "presets. Have a flash backup.",
     )
+    group.addoption(
+        "--no-sync",
+        action="store_true",
+        default=False,
+        help="the source is DISCONNECTED and the unit has no lock, so run the "
+        "tests about surviving that. They are the opposite of --source and "
+        "cannot both be true.",
+    )
 
 
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "preset_save: writes to the unit's flash; needs --preset-save"
     )
+    config.addinivalue_line(
+        "markers", "no_sync: needs the source disconnected; needs --no-sync"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
-    if config.getoption("--preset-save"):
-        return
-    skip = pytest.mark.skip(reason="destructive; pass --preset-save to run it")
-    for item in items:
-        if "preset_save" in item.keywords:
-            item.add_marker(skip)
+    gates = [
+        ("preset_save", "--preset-save", "destructive; pass --preset-save to run it"),
+        ("no_sync", "--no-sync", "needs the source unplugged; pass --no-sync to run it"),
+    ]
+    for keyword, option, reason in gates:
+        if config.getoption(option):
+            continue
+        skip = pytest.mark.skip(reason=reason)
+        for item in items:
+            if keyword in item.keywords:
+                item.add_marker(skip)
 
 
 @pytest.fixture(scope="session")

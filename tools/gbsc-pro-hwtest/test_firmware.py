@@ -618,3 +618,57 @@ def test_preset_save_completes_or_refuses_cleanly(host, console):
     assert all(0 <= v <= 255 for v in numbers), f"{written} holds non-byte values"
     assert len(set(numbers)) > 1, f"{written} is a dead readback (every value identical)"
     print(f"\nwrite path verified: {written}, {len(values)} values")
+
+
+
+# --- surviving a lost lock --------------------------------------------------
+
+
+@pytest.mark.no_sync
+def test_unit_answers_http_while_sync_is_absent(host):
+    """With the source disconnected, the unit must stay reachable.
+
+    FrameSync times a vsync period by spinning until an edge ISR fires. With no
+    signal there is no edge, so this is the path that runs flat out for as long
+    as it is allowed to. Bounded by an iteration count with the watchdog
+    disabled, it holds the CPU long enough that serial, ping and HTTP all stop
+    answering while the picture keeps running -- the TV5725 is a separate chip --
+    and the caller re-enters immediately, so a bounded stall behaves like a
+    permanent wedge. A PLLAD_MD write big enough to break sync gets you there.
+
+    The wait is bounded in TIME, so the property is stated as reachability rather
+    than as anything about the loop: every request answers, and none takes
+    anything like that long.
+    """
+    status16 = read_reg(host, 0, 0x16)
+    assert status16 is not None, "could not read STATUS_16"
+    hs_active = (status16 >> 1) & 1
+    vs_active = (status16 >> 3) & 1
+    assert not (hs_active and vs_active), (
+        f"STATUS_16 is {status16:#04x}: the source is still locked. Unplug it, "
+        "or this test proves nothing about surviving its absence."
+    )
+
+    # Two samples per FrameSync pass at FS_SAMPLE_TIMEOUT_MS each, so a request
+    # arriving mid-measurement can legitimately wait around half a second. The
+    # regression this catches is not slowness, it is silence.
+    limit_seconds = 2.0
+    attempts = 40
+
+    slowest = 0.0
+    failures = []
+    for attempt in range(attempts):
+        started = time.monotonic()
+        status, body = get(host, "/wifi/status", timeout=limit_seconds + 1.0)
+        elapsed = time.monotonic() - started
+        slowest = max(slowest, elapsed)
+        if status != 200:
+            failures.append(f"attempt {attempt}: status {status} after {elapsed:.2f}s ({body[:60]})")
+        time.sleep(0.1)
+
+    print(f"\nno sync: {attempts} requests, slowest {slowest:.2f}s")
+    assert not failures, "the unit stopped answering with no sync:\n  " + "\n  ".join(failures)
+    assert slowest < limit_seconds, (
+        f"slowest response was {slowest:.2f}s, over the {limit_seconds}s bound -- "
+        "the wait is not bounded the way it should be"
+    )
