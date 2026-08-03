@@ -2330,6 +2330,71 @@ void latchPLLAD()
     GBS::PLLAD_LAT::write(1);
 }
 
+// How long to wait for the source to lock again after moving the divider. The
+// sync processor needs a few frames; 1.2 s is several, and short enough that a
+// failed attempt does not feel like a hang.
+#define PLLAD_LOCK_TIMEOUT_MS 1200
+
+// Move PLLAD_MD and insist the source still locks, or put it back.
+//
+// PLLAD_MD is the ADC PLL divider, so a value the source cannot be sampled at
+// takes sync with it -- and sync is what everything downstream needs to
+// recover. FrameSync in particular then waits for vsync edges that never come.
+// Leaving the scaler parked on a divider that broke it turns a single bad
+// write into a unit that needs a power cycle.
+//
+// The read-backs are not belt and braces: the I2C bus can stop answering
+// mid-sequence around this register, so the value read before the write is
+// checked for sanity and the value read after is checked for having taken.
+//
+// Returns true if the new divider is in place and locked. Otherwise the
+// previous value is restored and it returns false, so a caller can report the
+// failure instead of continuing against a scaler that has moved out from under
+// it.
+bool writePllAdMdChecked(uint16_t wanted)
+{
+    const uint16_t previous = GBS::PLLAD_MD::read();
+
+    // 0 or past the 12-bit field is the bus not answering, not a divider.
+    // Writing on top of that would be writing blind, and the restore afterwards
+    // would restore nonsense.
+    if (previous == 0 || previous > 0x0FFF) {
+        debugPrintf("PLLAD_MD: read %u before the write; refusing to touch it\n", previous);
+        return false;
+    }
+    if (wanted == 0 || wanted > 0x0FFF) {
+        debugPrintf("PLLAD_MD: %u is not a legal divider\n", wanted);
+        return false;
+    }
+    if (wanted == previous) {
+        return true;
+    }
+
+    GBS::PLLAD_MD::write(wanted);
+    latchPLLAD();
+
+    if (GBS::PLLAD_MD::read() != wanted) {
+        debugPrintf("PLLAD_MD: write of %u did not take, restoring %u\n", wanted, previous);
+        GBS::PLLAD_MD::write(previous);
+        latchPLLAD();
+        return false;
+    }
+
+    unsigned long deadline = millis() + PLLAD_LOCK_TIMEOUT_MS;
+    while ((int32_t)(millis() - deadline) < 0) {
+        handleWiFi(0); // the whole point is staying reachable while we wait
+        delay(10);
+        if (getStatus16SpHsStable()) {
+            return true;
+        }
+    }
+
+    debugPrintf("PLLAD_MD: %u lost sync, restoring %u\n", wanted, previous);
+    GBS::PLLAD_MD::write(previous);
+    latchPLLAD();
+    return false;
+}
+
 void resetPLL()
 {
     GBS::PLL_VCORST::write(1);
@@ -8342,20 +8407,38 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     applyPresets(13);
                     break;
                 case 'n': {
-                    uint16_t pll_divider = GBS::PLLAD_MD::read();
-                    pll_divider += 1;
-                    GBS::PLLAD_MD::write(pll_divider);
-                    GBS::IF_HSYNC_RST::write((pll_divider / 2));
-                    GBS::IF_LINE_SP::write(((pll_divider / 2) + 1) + 0x40);
-                    ; // SerialMprint(F("PLL div: "));
-                    ; // SerialMprint(pll_divider, HEX);
-                    ; // SerialMprint(" ");
-                    ; // SerialMprintln(pll_divider);
+                    uint16_t pll_divider = GBS::PLLAD_MD::read() + 1;
 
-                    latchPLLAD();
-                    delay(1);
-                    updateClampPosition();
-                    updateCoastPosition(0);
+                    // Through the checked write: it latches, confirms the value
+                    // took, and puts the old one back if the source stops
+                    // locking. The IF registers only follow a divider that
+                    // survived, so they move after the check rather than
+                    // before it.
+                    if (writePllAdMdChecked(pll_divider)) {
+                        GBS::IF_HSYNC_RST::write((pll_divider / 2));
+                        GBS::IF_LINE_SP::write(((pll_divider / 2) + 1) + 0x40);
+                        updateClampPosition();
+                        updateCoastPosition(0);
+                    } else {
+                        debugPrintf("PLLAD_MD %u refused, left at %u\n",
+                            pll_divider, GBS::PLLAD_MD::read());
+                    }
+                } break;
+                case 'Q': {
+                    // Deliberately break sync, to prove the unit comes back.
+                    //
+                    // A divider a long way from the source's line rate cannot
+                    // be sampled at, so this is the failure the checked write
+                    // exists for: it should restore the previous value, report,
+                    // and leave the unit reachable throughout. Nothing else
+                    // reaches this path on demand, which is why it is here
+                    // rather than in a test harness.
+                    uint16_t current = GBS::PLLAD_MD::read();
+                    uint16_t hostile = (current > 2048) ? (current / 2) : (current * 2);
+                    debugPrintf("PLLAD_MD: deliberately trying %u (from %u)\n", hostile, current);
+                    bool ok = writePllAdMdChecked(hostile);
+                    debugPrintf("PLLAD_MD: %s, now %u\n",
+                        ok ? "accepted" : "refused and restored", GBS::PLLAD_MD::read());
                 } break;
                 case 'N': {
                     if (rto->scanlinesEnabled) {
