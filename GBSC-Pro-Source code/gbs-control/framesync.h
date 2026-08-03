@@ -43,6 +43,19 @@
 // millisecond.
 #define FS_SAMPLE_CHECK_EVERY 1024
 
+// When the input sample times out, poll DEBUG_IN_PIN directly for this long and
+// report what it did. Every register that gates the pin can read correct --
+// PAD_BOUT_EN, TEST_BUS_EN, TEST_BUS_SEL, PAD_TRI_ENZ -- and the edges still not
+// arrive, and configuration cannot tell you which side is at fault. A level that
+// never moves says the chip is not driving it or the ESP is not seeing it; a
+// level that moves says the edges are there and the ISR path is the problem.
+//
+// 25 ms is over one frame at 50 Hz, so a working vsync must show transitions.
+#define FS_PROBE_MS 25
+
+// Rate limit, so a unit that fails twice a second does not fill the console.
+#define FS_PROBE_INTERVAL_MS 2000
+
 namespace MeasurePeriod
 {
     volatile uint32_t stopTime, startTime;
@@ -149,6 +162,69 @@ private:
     static float maybeFreqExt_per_videoFps;
 
 
+#if GBS_DEBUG
+    /// Poll DEBUG_IN_PIN and report whether it moves at all.
+    ///
+    /// Only meaningful after a sample has already failed, and only called from
+    /// there. The edge ISR is detached by then -- sampleVsyncPeriod() calls
+    /// MeasurePeriod::stop() before it returns false -- so this is a plain read
+    /// of the pin and cannot disturb a measurement in flight.
+    static void probeDebugPin()
+    {
+        static uint32_t lastProbe = 0;
+        const uint32_t now = millis();
+        if (lastProbe != 0 && (int32_t)(now - (lastProbe + FS_PROBE_INTERVAL_MS)) < 0)
+        {
+            return;
+        }
+        lastProbe = now;
+
+        // Sweep the selectors this firmware uses elsewhere, so a pin that is
+        // simply on the wrong bus can be told from one that is dead. 0x0 is what
+        // framesync measures on, 0x2 is VDS, 0xa is what the sync watcher and
+        // the HTotal search use. If none of them move it, the fault is the pin
+        // or the net, not the selection.
+        const uint8_t selectors[] = {0x0, 0x2, 0xa};
+        const uint8_t selBackup = GBS::TEST_BUS_SEL::read();
+        const uint8_t enBackup = GBS::TEST_BUS_EN::read();
+
+        GBS::TEST_BUS_EN::write(1);
+
+        for (uint8_t i = 0; i < sizeof(selectors); i++)
+        {
+            GBS::TEST_BUS_SEL::write(selectors[i]);
+            delay(1); // let the mux settle before counting
+
+            int level = digitalRead(DEBUG_IN_PIN);
+            const int first = level;
+            uint32_t transitions = 0;
+            uint32_t spins = 0;
+
+            const uint32_t deadline = millis() + FS_PROBE_MS;
+            while ((int32_t)(millis() - deadline) < 0)
+            {
+                const int sample = digitalRead(DEBUG_IN_PIN);
+                if (sample != level)
+                {
+                    transitions++;
+                    level = sample;
+                }
+                if (++spins % FS_SAMPLE_CHECK_EVERY == 0)
+                {
+                    ESP.wdtFeed();
+                }
+            }
+
+            fsDebugPrintf(
+                "  DEBUG_IN_PIN sel=0x%x: %u transitions in %ums, level %d->%d, %u samples\n",
+                selectors[i], transitions, (unsigned)FS_PROBE_MS, first, level, spins);
+        }
+
+        GBS::TEST_BUS_SEL::write(selBackup);
+        GBS::TEST_BUS_EN::write(enBackup);
+    }
+#endif
+
     // Sample input and output vsync periods and their phase
     // difference in microseconds
     static bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput, int32_t *phase)
@@ -163,6 +239,9 @@ private:
         if (!sampleVsyncPeriod(&inStart, &inStop))
         {
             fsDebugPrintf("vsyncPeriodAndPhase(): no INPUT vsync\n");
+#if GBS_DEBUG
+            probeDebugPin();
+#endif
             return false;
         }
 
