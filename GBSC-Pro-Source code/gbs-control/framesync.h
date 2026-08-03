@@ -29,6 +29,20 @@
 #define fsDebugPrintf(...)
 #endif
 
+// How long sampleVsyncPeriod() waits for its two edges before giving up.
+//
+// It needs one edge to arm and a second to measure, so the worst case is two
+// frame periods -- 40 ms at 50 Hz -- plus the delay(7). 250 ms is comfortably
+// above that and still far short of the interval that drops WiFi.
+#define FS_SAMPLE_TIMEOUT_MS 250
+
+// Spins between deadline checks. The wait has to stay a tight poll on a
+// volatile: millis() and ESP.wdtFeed() are function calls, and doing both on
+// every pass slows it enough to stop a measurement completing. Checking every
+// 1024 spins costs nothing and still bounds the wait to within a fraction of a
+// millisecond.
+#define FS_SAMPLE_CHECK_EVERY 1024
+
 namespace MeasurePeriod
 {
     volatile uint32_t stopTime, startTime;
@@ -43,6 +57,15 @@ namespace MeasurePeriod
         stopTime = 0;
         armed = 0;
         attachInterrupt(DEBUG_IN_PIN, _risingEdgeISR_prepare, RISING);
+    }
+
+    // A completed measurement detaches itself -- _measure() is the last ISR and
+    // it detaches on the way out. A measurement that times out does not, so the
+    // caller has to, or an edge arriving afterwards writes startTime behind the
+    // back of whoever reads it next.
+    void stop()
+    {
+        detachInterrupt(DEBUG_IN_PIN);
     }
 
     void ICACHE_RAM_ATTR _risingEdgeISR_prepare()
@@ -238,16 +261,31 @@ public:
     //
     // Which signal that is belongs to the caller: TEST_BUS_SEL selects it, and
     // vsyncPeriodAndPhase() switches from input to output vsync between its two
-    // calls. Nothing here depends on the choice, which is why the input and
-    // output samplers were identical bodies under two names.
+    // calls. Nothing here depends on the choice.
+    //
+    // **THE WAIT IS BOUNDED IN TIME, AND THE WATCHDOG STAYS RUNNING.** Bounding
+    // it by loop passes instead, with the watchdog off, holds the CPU long
+    // enough that serial, ping and HTTP all die while the picture keeps running
+    // -- the TV5725 is a separate chip -- and the caller re-enters immediately,
+    // so a bounded stall behaves like a permanent wedge. A PLLAD_MD write big
+    // enough to break sync is exactly how you get here.
+    //
+    // Deliberately no yield() in the spin. The timestamps come from the two
+    // ICACHE_RAM_ATTR edge ISRs reading ccount, so this loop is a pure wait --
+    // but yield() runs the WiFi stack, whose interrupts-off sections would
+    // delay an edge ISR and skew the timestamp it records. FrameSync resolves
+    // the period to about one cycle in three million, and a few thousand cycles
+    // of added interrupt latency would swamp that. The delay(7) after the first
+    // edge stays exactly where it is: it yields in the ~20 ms of slack between
+    // edges, well away from the one that is about to be measured.
     static bool sampleVsyncPeriod(uint32_t *start, uint32_t *stop)
     {
         yield();
-        ESP.wdtDisable();
         MeasurePeriod::start();
 
-        // typical: 300000 at 80MHz, 600000 at 160MHz
-        for (uint32_t i = 0; i < 3000000; i++)
+        const uint32_t deadline = millis() + FS_SAMPLE_TIMEOUT_MS;
+        uint32_t spins = 0;
+        while (MeasurePeriod::stopTime == 0)
         {
             if (MeasurePeriod::armed)
             {
@@ -255,14 +293,21 @@ public:
                 delay(7);
                 WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
             }
-            if (MeasurePeriod::stopTime > 0)
+            if (++spins % FS_SAMPLE_CHECK_EVERY == 0)
             {
-                break;
+                // Signed difference, so this still terminates across the
+                // millis() wrap rather than spinning for another 49 days.
+                if ((int32_t)(millis() - deadline) >= 0)
+                {
+                    break;
+                }
+                ESP.wdtFeed();
             }
         }
+
         *start = MeasurePeriod::startTime;
         *stop = MeasurePeriod::stopTime;
-        ESP.wdtEnable(0);
+        MeasurePeriod::stop();
         WiFi.setSleepMode(WIFI_NONE_SLEEP);
 
         if ((*start >= *stop) || *stop == 0 || *start == 0)
