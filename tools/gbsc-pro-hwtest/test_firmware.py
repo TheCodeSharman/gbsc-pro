@@ -717,3 +717,111 @@ def test_framesync_names_its_outcome(console):
         f"vsync sample look like the failing one when it is the input sample. "
         f"Raw output: {lines!r}"
     )
+
+
+# --- surviving a hostile PLLAD_MD -------------------------------------------
+
+# The divider is the ADC PLL's, so a value the source cannot be sampled at takes
+# input sync with it -- and that is the path that hangs the board when the wait
+# for a vsync edge is unbounded.
+#
+# 2573 and 2583 are where the PLL hunts and then gives up on this bench source,
+# which is where the hang is reachable. 4095 is the 12-bit ceiling and hostile to
+# any source.
+#
+# **THE FIRST TWO ARE CALIBRATED TO A 320x256@50 RiscPC.** On another source the
+# sampling ceiling sits elsewhere and they need recalculating. 4095 always
+# holds.
+PLLAD_HOSTILE = (2573, 2583, 4095)
+PLLAD_MD_FIELD = (5, 0x12, 0, 12)
+PLLAD_CONTROL = (5, 0x11)
+PLLAD_HAMMER_SECONDS = 8.0
+PLLAD_REQUEST_TIMEOUT = 2.0
+
+
+def _pllad_latch(host):
+    """PLLAD_LAT low then high — the PLL takes the divider on the edge."""
+    control = read_reg(host, *PLLAD_CONTROL)
+    assert control is not None, "could not read PLLAD control register"
+    write_reg(host, *PLLAD_CONTROL, control & ~0x80)
+    time.sleep(0.01)
+    write_reg(host, *PLLAD_CONTROL, control | 0x80)
+
+
+def _pllad_write(host, value):
+    write_reg(host, 5, 0x12, value & 0xFF)
+    high = read_reg(host, 5, 0x13)
+    assert high is not None, "could not read PLLAD_MD high byte"
+    write_reg(host, 5, 0x13, (high & 0xF0) | ((value >> 8) & 0x0F))
+    _pllad_latch(host)
+
+
+def _hammer(host, seconds=PLLAD_HAMMER_SECONDS):
+    """Poll while the divider is wrong. Returns (requests, failures, slowest)."""
+    started = time.monotonic()
+    requests = failures = 0
+    slowest = 0.0
+    while time.monotonic() - started < seconds:
+        began = time.monotonic()
+        try:
+            status, _ = get(host, "/wifi/status", timeout=PLLAD_REQUEST_TIMEOUT)
+            answered = status == 200
+        except Exception:  # noqa: BLE001 - any transport failure is a failure
+            answered = False
+        slowest = max(slowest, time.monotonic() - began)
+        requests += 1
+        if not answered:
+            failures += 1
+        time.sleep(0.05)
+    return requests, failures, slowest
+
+
+@pytest.mark.pllad_hostile
+def test_unit_survives_a_hostile_pllad(host, source):
+    """A divider that breaks sync must not cost us the unit.
+
+    The property is reachability, and only reachability. A corrupted picture is
+    the expected outcome here and is not a failure -- deriving dividers that keep
+    the picture is a later phase. What must not happen is the board going away
+    and needing a power cycle, because that is what makes automatic PLLAD_MD
+    selection unsafe to build on.
+
+    Restores the divider on the way out, including when the assertion fails, so
+    a red test leaves a unit you can keep working with.
+    """
+    baseline = read_field(host, *PLLAD_MD_FIELD)
+    assert baseline and 256 <= baseline <= 4095, (
+        f"PLLAD_MD reads {baseline}; refusing to run without a sane baseline to "
+        "put back"
+    )
+
+    results = []
+    try:
+        for value in PLLAD_HOSTILE:
+            _pllad_write(host, value)
+            time.sleep(0.5)
+            readback = read_field(host, *PLLAD_MD_FIELD)
+            requests, failures, slowest = _hammer(host)
+            results.append((value, readback, requests, failures, slowest))
+            assert failures == 0, (
+                f"PLLAD_MD {value}: {failures} of {requests} requests went "
+                f"unanswered (slowest {slowest:.2f}s). The unit stopped talking "
+                f"with a bad divider -- this is the hang that cost three "
+                f"sessions. Baseline {baseline} is being restored."
+            )
+            assert slowest < PLLAD_REQUEST_TIMEOUT, (
+                f"PLLAD_MD {value}: slowest response {slowest:.2f}s. Answering "
+                "but stalling means the wait is not bounded the way it should be."
+            )
+    finally:
+        _pllad_write(host, baseline)
+        time.sleep(1.0)
+
+    for value, readback, requests, failures, slowest in results:
+        print(f"\nPLLAD_MD {value} (read {readback}): {requests} requests, "
+              f"{failures} failed, slowest {slowest:.2f}s")
+
+    restored = read_field(host, *PLLAD_MD_FIELD)
+    assert restored == baseline, (
+        f"PLLAD_MD did not go back: wanted {baseline}, reads {restored}"
+    )

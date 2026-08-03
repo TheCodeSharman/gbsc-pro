@@ -41,6 +41,15 @@ def pytest_addoption(parser):
         "tests about surviving that. They are the opposite of --source and "
         "cannot both be true.",
     )
+    group.addoption(
+        "--pllad-hostile",
+        action="store_true",
+        default=False,
+        help="drive PLLAD_MD to values known to break sync, to prove the unit "
+        "stays reachable. Corrupts the picture for about half a minute and puts "
+        "the divider back afterwards; it writes no flash. Opt-in because it is "
+        "disruptive to watch, not because it is dangerous.",
+    )
 
 
 def pytest_configure(config):
@@ -50,12 +59,17 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "no_sync: needs the source disconnected; needs --no-sync"
     )
+    config.addinivalue_line(
+        "markers", "pllad_hostile: corrupts the picture while it runs; needs --pllad-hostile"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
     gates = [
         ("preset_save", "--preset-save", "destructive; pass --preset-save to run it"),
         ("no_sync", "--no-sync", "needs the source unplugged; pass --no-sync to run it"),
+        ("pllad_hostile", "--pllad-hostile",
+         "corrupts the picture while it runs; pass --pllad-hostile to run it"),
     ]
     for keyword, option, reason in gates:
         if config.getoption(option):
