@@ -20,13 +20,33 @@ from gbs_unit import get, read_reg
 # The preset ranges from gbs-control.ino, widened on segment 1 to take in the
 # HD_* bypass registers at 0x37-0x49 and on segment 5 for the sync processor.
 CONFIG_RANGES = [
-    (0, 0x40, 0x5F),
+    (0, 0x30, 0x5F),
     (0, 0x90, 0x9F),
     (1, 0x00, 0x5F),
+    (2, 0x00, 0x5F),
     (3, 0x00, 0x7F),
     (4, 0x00, 0x5F),
     (5, 0x00, 0x7F),
 ]
+
+# **SEGMENT 2 MUST BE CAPTURED**, and segment 0 from 0x30 rather than 0x40. s2 is
+# the deinterlacer: a broken-versus-working diff of all 1536 registers has s2
+# 0x12, 0x1a, 0x1b, 0x1f, 0x20, 0x22, 0x23, 0x32-0x38 and 0x3c all differing
+# between a dark unit and a working one, so a snapshot that omits them is most of
+# a picture rather than a picture.
+#
+# The restore side still defaults to segment 5 and the documented recipe is
+# --segments 1,3,4,5, so segment 0 is captured but not written back. That is
+# deliberate and worth keeping deliberate: segment 0 holds the PLL, the clock
+# selects, the DAC power and the block resets at 0x46/0x47, and writing those
+# under a running pipeline is how you wedge the chip rather than retime it. The
+# consequence is that a geometry restore only reproduces the picture if the unit
+# is already on the same base preset the snapshot was taken from -- restoring an
+# x1.540 set over an x2.000 boot writes a tuned VDS_HSYNC_RST against the wrong
+# output clock, and the display drops.
+#
+# So: check GBS_PRESET_ID and VDS_HSCALE match the snapshot's before restoring,
+# or expect to be putting the picture back rather than getting it right.
 
 # Live measurements — captured for context, excluded from diffs by default.
 STATUS_RANGES = [(0, 0x00, 0x2F)]
