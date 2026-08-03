@@ -672,3 +672,48 @@ def test_unit_answers_http_while_sync_is_absent(host):
         f"slowest response was {slowest:.2f}s, over the {limit_seconds}s bound -- "
         "the wait is not bounded the way it should be"
     )
+
+
+# framesync's failure reporting. vsyncPeriodAndPhase() announces itself on every
+# call; before this it announced nothing else, so a unit that could not sync
+# printed the header forever and named no cause.
+FS_HEADER = re.compile(r"vsyncPeriodAndPhase\(\), TEST_BUS_SEL=")
+FS_REASON = re.compile(
+    r"vsyncPeriodAndPhase\(\): no (?:INPUT|OUTPUT) vsync"
+    r"|runFrequency\(\): (?:attempt \d+|gave up)"
+    r"|fpsOutput="
+)
+FS_COLLECT_SECONDS = 12.0
+
+
+def test_framesync_names_its_outcome(console):
+    """A framesync attempt must say how it ended, not just that it started.
+
+    Either it succeeded, and printed fpsOutput=, or it failed and printed which
+    check failed. The header alone is the regression: two sessions read a stream
+    of bare headers and inferred the wrong failing sample from it.
+
+    Skips when framesync is not running at all -- with no source, or a source
+    the firmware has given up on, the loop never executes and there is nothing
+    here to assert. It fails on a console that is connected but printing headers
+    with no outcome, which is the actual fault.
+    """
+    console.drain()
+    lines = console.collect(seconds=FS_COLLECT_SECONDS)
+
+    headers = [line for line in lines if FS_HEADER.search(line)]
+    if not headers:
+        pytest.skip(
+            f"framesync did not run in {FS_COLLECT_SECONDS:.0f}s "
+            f"({_console_diagnosis(console)}). Needs a locked source and a "
+            f"GBS_DEBUG=1 build"
+        )
+
+    reasons = [line for line in lines if FS_REASON.search(line)]
+    assert reasons, (
+        f"framesync started {len(headers)} times in {FS_COLLECT_SECONDS:.0f}s and "
+        f"never reported an outcome — {_console_diagnosis(console)}. "
+        f"A bare header names no cause, which is exactly what made the output "
+        f"vsync sample look like the failing one when it is the input sample. "
+        f"Raw output: {lines!r}"
+    )
