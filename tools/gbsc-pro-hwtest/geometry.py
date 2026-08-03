@@ -16,31 +16,17 @@ timestamped record next to the photographs.
 
 import argparse
 import json
-import math
 import time
 import urllib.request
 
-# The product fitting inside the memory window is NOT sufficient. The scaler has
-# to finish reading the line out of memory before the line period ends, so it
-# needs slack -- and with too little, the picture tears exactly as it does on a
-# real overflow. Bracketed empirically on 2026-08-03 at PLLAD_MD 2553, output
-# line 1445 px, by moving VDS_HSCALE with everything else held fixed:
-#
-#   capture 877, memory 1363, HSCALE 660 -> 1360.68 px,  2.3 px slack  ARTEFACTS
-#   capture 877, memory 1363, HSCALE 665 -> 1350.40 px, 12.6 px slack  ARTEFACTS
-#   capture 882, memory 1375, HSCALE 665 -> 1358.15 px, 16.9 px slack  CLEAN
-#   capture 877, memory 1363, HSCALE 670 -> 1340.37 px, 22.6 px slack  CLEAN
-#
-# The middle pair is the decisive one: same HSCALE, so same ratio and the same
-# interpolation -- only the slack differs, and only that changed the outcome.
-# So the governing quantity is (memory window - produced), not the ratio.
-#
-# UNVERIFIED beyond one clock and one output preset. A timing budget should
-# scale with the line period, so on the 2600 px output preset the threshold may
-# be a similar *fraction* of the line rather than the same pixel count. Re-measure
-# before trusting these numbers there.
-HEADROOM_MIN_PX = 13    # 12.6 px artefacted
-HEADROOM_SAFE_PX = 20   # 16.9 px was clean; round up for margin
+# The arithmetic and the headroom constants live in geometry_math, so that this
+# tool and the code that *chooses* registers cannot come to different conclusions
+# about the same hardware. The empirical bracket behind HEADROOM_MIN_PX and
+# HEADROOM_SAFE_PX is documented there.
+import geometry_math as gm
+
+HEADROOM_MIN_PX = gm.HEADROOM_MIN_PX
+HEADROOM_SAFE_PX = gm.HEADROOM_SAFE_PX
 
 
 def burst(host, segment, first, last):
@@ -151,8 +137,12 @@ def report(r, label=None):
     display = disp_st - disp_sp
     memory = mem_st - mem_sp
     scale = r["VDS_HSCALE"]
-    magnify = None if r["VDS_HSCALE_BYPS"] else 1024 / scale if scale else None
-    produced = capture * magnify if magnify else capture
+    magnify = gm.magnification(scale, r["VDS_HSCALE_BYPS"])
+    # magnify is None only for a dropped read; fall back to 1:1 so the rest of
+    # the report still prints, and say so loudly further down.
+    produced = gm.produced_px(capture, scale, r["VDS_HSCALE_BYPS"])
+    if produced is None:
+        produced = capture
 
     add("\n  OUTPUT SIDE (real output pixels)")
     add(f"    VDS_HSYNC_RST {r['VDS_HSYNC_RST']} (line = {htotal} px)   "
@@ -178,11 +168,10 @@ def report(r, label=None):
     add(f"    memory window     {memory} px      -> {produced - memory:+.2f} px vs produced")
     add(f"    display window    {display} px      -> {produced - display:+.2f} px vs produced")
 
-    headroom = memory - produced
+    headroom = gm.headroom_px(memory, produced)
     add(f"    headroom          {headroom:+.2f} px   (memory window - produced)")
     if headroom < HEADROOM_MIN_PX:
-        safe = (math.ceil(capture * 1024 / (memory - HEADROOM_SAFE_PX))
-                if magnify and memory > HEADROOM_SAFE_PX else None)
+        safe = gm.smallest_safe_hscale(capture, memory) if magnify else None
         if headroom < 0:
             add(f"    !! OVERFLOW: the product exceeds the memory window by "
                 f"{-headroom:.2f} px per line.")
