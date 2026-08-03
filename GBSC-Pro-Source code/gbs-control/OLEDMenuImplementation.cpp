@@ -517,7 +517,18 @@ void Checksum_Sendmode(const unsigned char *buff, uint8_t mode)
 
 static void LoadDefault()
 {
-    loadDefaultUserOptions();
+    // **DO NOT CALL loadDefaultUserOptions() HERE.** LoadDefault() is reached
+    // from resetSyncProcessor() and resetSyncProcessor_yuv(), which every input
+    // handler in this file calls before sending its AD frame -- and every one of
+    // those handlers calls saveUserPrefs() a few lines later. Wiping uopt here
+    // therefore writes the defaults to flash on every input selection, taking
+    // presetPreference to Output1080P and enableFrameTimeLock to 0. That reads
+    // as three separate faults: a custom preset never looked for, FrameSync
+    // switched off, and settings that will not persist.
+    //
+    // The rto-> resets below are legitimate -- they are runtime state belonging
+    // to a sync-processor reset. uopt is the user's, and resetting the sync
+    // processor is not a reason to touch it.
 
     rto->autoBestHtotalEnabled = true; // 已启用自动最佳总计
     rto->syncLockFailIgnore = 16;      //
