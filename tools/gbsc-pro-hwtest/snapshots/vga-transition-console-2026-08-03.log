@@ -1,0 +1,76 @@
+   0.30  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   0.60  vsyncPeriodAndPhase(): no INPUT vsync
+   0.90  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   1.20  vsyncPeriodAndPhase(): no INPUT vsync
+   1.80  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   2.10  vsyncPeriodAndPhase(): no INPUT vsync
+   2.10  DEBUG_IN_PIN sel=0x0: 0 transitions in 25ms, level 0->0, 9959 samples
+   2.10  DEBUG_IN_PIN sel=0x2: 0 transitions in 25ms, level 0->0, 9793 samples
+   2.10  DEBUG_IN_PIN sel=0xa: 0 transitions in 25ms, level 0->0, 9846 samples
+   2.40  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   2.70  vsyncPeriodAndPhase(): no INPUT vsync
+   3.30  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   3.60  vsyncPeriodAndPhase(): no INPUT vsync
+   3.90  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   3.90  vsyncPeriodAndPhase(): no INPUT vsync
+   3.90  DEBUG_IN_PIN sel=0x0: 0 transitions in 25ms, level 0->0, 10017 samples
+   4.20  DEBUG_IN_PIN sel=0x2: 0 transitions in 25ms, level 0->0, 9795 samples
+   4.20  DEBUG_IN_PIN sel=0xa: 0 transitions in 25ms, level 0->0, 10020 samples
+   4.50  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   4.81  vsyncPeriodAndPhase(): no INPUT vsync
+   5.11  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   5.41  vsyncPeriodAndPhase(): no INPUT vsync
+   6.01  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   6.31  vsyncPeriodAndPhase(): no INPUT vsync
+   6.31  DEBUG_IN_PIN sel=0x0: 0 transitions in 25ms, level 0->0, 9899 samples
+   6.31  DEBUG_IN_PIN sel=0x2: 0 transitions in 25ms, level 0->0, 9835 samples
+   6.31  DEBUG_IN_PIN sel=0xa: 0 transitions in 25ms, level 0->0, 9933 samples
+   6.61  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   6.91  vsyncPeriodAndPhase(): no INPUT vsync
+   7.51  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   7.51  vsyncPeriodAndPhase(): no INPUT vsync
+   7.81  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   8.11  vsyncPeriodAndPhase(): no INPUT vsync
+   8.71  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   9.01  vsyncPeriodAndPhase(): no INPUT vsync
+   9.01  DEBUG_IN_PIN sel=0x0: 0 transitions in 25ms, level 0->0, 9930 samples
+   9.01  DEBUG_IN_PIN sel=0x2: 0 transitions in 25ms, level 0->0, 9783 samples
+   9.01  DEBUG_IN_PIN sel=0xa: 0 transitions in 25ms, level 0->0, 9942 samples
+   9.31  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+   9.61  vsyncPeriodAndPhase(): no INPUT vsync
+  10.21  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  10.51  vsyncPeriodAndPhase(): no INPUT vsync
+  10.81  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  11.11  vsyncPeriodAndPhase(): no INPUT vsync
+  11.41  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  11.71  vsyncPeriodAndPhase(): no INPUT vsync
+  11.71  DEBUG_IN_PIN sel=0x0: 0 transitions in 25ms, level 0->0, 9904 samples
+  11.71  DEBUG_IN_PIN sel=0x2: 0 transitions in 25ms, level 0->0, 9820 samples
+  11.71  DEBUG_IN_PIN sel=0xa: 0 transitions in 25ms, level 0->0, 9941 samples
+  12.01  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  12.31  vsyncPeriodAndPhase(): no INPUT vsync
+  12.91  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  13.21  vsyncPeriodAndPhase(): no INPUT vsync
+  13.51  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  13.82  vsyncPeriodAndPhase(): no INPUT vsync
+  14.42  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  14.72  vsyncPeriodAndPhase(): no INPUT vsync
+  14.72  DEBUG_IN_PIN sel=0x0: 0 transitions in 25ms, level 0->0, 9921 samples
+  14.72  DEBUG_IN_PIN sel=0x2: 0 transitions in 25ms, level 0->0, 9805 samples
+  14.72  DEBUG_IN_PIN sel=0xa: 0 transitions in 25ms, level 0->0, 9737 samples
+  15.02  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  15.32  vsyncPeriodAndPhase(): no INPUT vsync
+  15.62  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  15.92  vsyncPeriodAndPhase(): no INPUT vsync
+  16.22  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
+  16.52  vsyncPeriodAndPhase(): no INPUT vsync
+  19.52  ADSa4�ksync type: 0/3 field rate probes plausible, own V sync yes -> separate H/V
+  20.12  externalClockGenResetClock()
+  20.12  extClockGen: display clock 0x75 unmapped, using 81MHz
+  20.12  FrameSyncManager::cleanup(), resetting video frequency
+  21.33  sourceRate: 50.48
+  21.33  FrameSyncManager::cleanup(), resetting video frequency
+  21.33  externalClockGenResetClock()
+  21.33  FrameSyncManager::cleanup(), resetting video frequency
+  21.63  externalClockGenSyncInOutRate()
+  21.93  vsyncPeriodAndPhase(), TEST_BUS_SEL=0
