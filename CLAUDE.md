@@ -31,8 +31,57 @@ pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests r
 tests that write flash. Without `--host` everything hardware skips, so a bare
 `pytest` stays useful.
 
+## The system has three control domains, and you can only see one
+
+This is the single most expensive thing to not know. An evening was spent
+diagnosing "the unit" while able to observe roughly a third of it.
+
+| Domain | Reaches | Visible to you? |
+|---|---|---|
+| ESP8266 | TV5725 registers, Si5351, STV9426 (0x5D), audio | `/getregs` — **this is all you can see** |
+| HC32F460 | `ASW_01`-`ASW_04` analog input routing (pins PB12-PB15), the OLED, the ADV7280 | no — separate MCU, own GPIOs |
+| MS9288A | HDMI encoding, EDID, output link | no — on nobody's I²C bus |
+
+- **`ADC_INPUT_SEL` is only half the input path.** It selects which TV5725 ADC
+  input is used. Whether the HC32F460 has actually *connected* anything to it is
+  `ASW_01`-`ASW_04`, which appear in no register dump. Two muxes in series.
+  Picking the input on the OLED is what sets the far one, which is why that
+  fixes things a register write cannot.
+- **A register dump is not the state of the machine.** `/getregs` reads the
+  TV5725 and nothing else.
+- **The MS9288A cannot be reset, queried or configured** by anything on the
+  board. Only removing power clears it.
+
+## "No HDMI" with every register perfect
+
+Seen four times in one evening. The scaler can be locked, preset loaded, DACs
+powered, sync output enabled — and the TV still says no signal. Registers cannot
+distinguish these:
+
+1. **The output clock is not running.** `PLL648_CONTROL_01 == 0x75` is a
+   *sentinel the firmware wrote* meaning "the Si5351 drives the display", not a
+   measurement that it does. Diagnostic: watch the console. If
+   `vsyncPeriodAndPhase()` prints its header repeatedly with no `fpsOutput=`
+   line following, one of the two vsync samples is failing — and if the input is
+   locked, it is the output one. That means no output vsync exists.
+2. **The encoder has stopped.** Nothing can see or reset it; power cycle.
+3. **The TV timed out** and dropped the input.
+
 ## Things that will cost you an hour if you don't know them
 
+- **Check the preferences before diagnosing anything.** A short read of
+  `/preferencesv2.txt` silently yields a full set of defaults, and one evening
+  produced three separate investigations with this single cause: the custom
+  preset "not loading" (`presetPreference` 5 means it was never looked for),
+  FrameSync "broken" (`enableFrameTimeLock` 0 means it never ran), and the input
+  not applying. Read byte 0 first — 2 is a saved setting, 5 is defaults:
+  `spiffs_read(host, "/preferencesv2.txt")`.
+- **USB backfeeds power.** A "power cycle" with the USB cable attached does not
+  drop the rails, so the MS9288A and HC32F460 never reset. Pull mains *and* USB,
+  and wait. Several apparent power-cycle results were nothing of the kind.
+- **Cold boot and warm reset are different tests.** The preferences bug is a
+  power-up race on the SPI flash — `SPIFFS.begin()` returning true does not mean
+  reads work yet. Reflashing tests nothing; only a true cold start does.
 - **One WebSocket client at a time.** A second connection crashes the ESP. Close
   the web UI before running anything that opens the console (`mode_watch.py`,
   `soak_watch.py`, the `console` fixture, OTA).
@@ -65,6 +114,15 @@ tests that write flash. Without `--host` everything hardware skips, so a bare
   never the picture inside it.
 - **EDID is unreachable.** The MS9288A HDMI encoder is on no MCU's I2C bus (see
   the schematic), so output rasters are chosen blind.
+- **Sync stability does not mean the divider is right.** `getStatus16SpHsStable()`
+  passed happily with `PLLAD_MD` halved from 2553 to 1276, and the display went
+  solid green — the sync processor locks onto edges regardless of whether the
+  ADC is sampling the line the way the rest of the pipeline assumes. Anything
+  choosing `PLLAD_MD` automatically needs a real validity test; "did sync
+  survive" is not one.
+- **Don't read the scaler's raster as what the TV sees.** The MS9288A samples
+  the analog output and re-encodes it, so `VDS_HSYNC_RST` and friends describe
+  the scaler's own timing, not the HDMI mode the display locks to.
 
 ## Working with the unit
 
