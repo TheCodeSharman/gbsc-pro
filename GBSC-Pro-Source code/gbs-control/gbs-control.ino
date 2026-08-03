@@ -3074,7 +3074,7 @@ void fastGetBestHtotal()
     signed long inPeriod = 1;
     double inHz = 1.0;
     GBS::TEST_BUS_SEL::write(0xa);
-    if (FrameSync::vsyncInputSample(&inStart, &inStop)) {
+    if (FrameSync::sampleVsyncPeriod(&inStart, &inStop)) {
         inPeriod = (inStop - inStart) >> 1;
         if (inPeriod > 1) {
             inHz = (double)1000000 / (double)inPeriod;

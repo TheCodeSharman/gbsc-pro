@@ -125,40 +125,6 @@ private:
     /// Reset with syncLastCorrection.
     static float maybeFreqExt_per_videoFps;
 
-    // Sample vsync start and stop times from debug pin.
-    static bool vsyncOutputSample(uint32_t *start, uint32_t *stop)
-    {
-        yield();
-        ESP.wdtDisable();
-        MeasurePeriod::start();
-
-        // typical: 300000 at 80MHz, 600000 at 160MHz
-        for (uint32_t i = 0; i < 3000000; i++)
-        {
-            if (MeasurePeriod::armed)
-            {
-                MeasurePeriod::armed = 0;
-                delay(7);
-                WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
-            }
-            if (MeasurePeriod::stopTime > 0)
-            {
-                break;
-            }
-        }
-        *start = MeasurePeriod::startTime;
-        *stop = MeasurePeriod::stopTime;
-        ESP.wdtEnable(0);
-        WiFi.setSleepMode(WIFI_NONE_SLEEP);
-
-        if ((*start >= *stop) || *stop == 0 || *start == 0)
-        {
-            // ESP.getCycleCount() overflow oder no pulse, just fail this round
-            return false;
-        }
-
-        return true;
-    }
 
     // Sample input and output vsync periods and their phase
     // difference in microseconds
@@ -171,14 +137,14 @@ private:
 
         // calling code needs to ensure debug bus is ready to sample vperiod
 
-        if (!vsyncInputSample(&inStart, &inStop))
+        if (!sampleVsyncPeriod(&inStart, &inStop))
         {
             return false;
         }
 
         GBS::TEST_BUS_SEL::write(0x2); // 0x2 = VDS (t3t50t4) // measure VDS vblank (VB ST/SP)
         inPeriod = (inStop - inStart); //>> 1;
-        if (!vsyncOutputSample(&outStart, &outStop))
+        if (!sampleVsyncPeriod(&outStart, &outStop))
         {
             return false;
         }
@@ -268,6 +234,46 @@ private:
     }
 
 public:
+    // Time one period of whatever signal the debug pin currently carries.
+    //
+    // Which signal that is belongs to the caller: TEST_BUS_SEL selects it, and
+    // vsyncPeriodAndPhase() switches from input to output vsync between its two
+    // calls. Nothing here depends on the choice, which is why the input and
+    // output samplers were identical bodies under two names.
+    static bool sampleVsyncPeriod(uint32_t *start, uint32_t *stop)
+    {
+        yield();
+        ESP.wdtDisable();
+        MeasurePeriod::start();
+
+        // typical: 300000 at 80MHz, 600000 at 160MHz
+        for (uint32_t i = 0; i < 3000000; i++)
+        {
+            if (MeasurePeriod::armed)
+            {
+                MeasurePeriod::armed = 0;
+                delay(7);
+                WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
+            }
+            if (MeasurePeriod::stopTime > 0)
+            {
+                break;
+            }
+        }
+        *start = MeasurePeriod::startTime;
+        *stop = MeasurePeriod::stopTime;
+        ESP.wdtEnable(0);
+        WiFi.setSleepMode(WIFI_NONE_SLEEP);
+
+        if ((*start >= *stop) || *stop == 0 || *start == 0)
+        {
+            // ESP.getCycleCount() overflow oder no pulse, just fail this round
+            return false;
+        }
+
+        return true;
+    }
+
     // sets syncLockReady = ready() = false, which in turn starts a new init()
     // -> findBestHtotal() run in loop()
     static void reset(uint8_t frameTimeLockMethod)
@@ -349,7 +355,7 @@ public:
     static uint32_t getPulseTicks()
     {
         uint32_t inStart, inStop;
-        if (!vsyncInputSample(&inStart, &inStop))
+        if (!sampleVsyncPeriod(&inStart, &inStop))
         {
             return 0;
         }
@@ -393,40 +399,6 @@ public:
         maybeFreqExt_per_videoFps = -1;
     }
 
-    // Sample vsync start and stop times from debug pin.
-    static bool vsyncInputSample(uint32_t *start, uint32_t *stop)
-    {
-        yield();
-        ESP.wdtDisable();
-        MeasurePeriod::start();
-
-        // typical: 300000 at 80MHz, 600000 at 160MHz
-        for (uint32_t i = 0; i < 3000000; i++)
-        {
-            if (MeasurePeriod::armed)
-            {
-                MeasurePeriod::armed = 0;
-                delay(7);
-                WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
-            }
-            if (MeasurePeriod::stopTime > 0)
-            {
-                break;
-            }
-        }
-        *start = MeasurePeriod::startTime;
-        *stop = MeasurePeriod::stopTime;
-        ESP.wdtEnable(0);
-        WiFi.setSleepMode(WIFI_NONE_SLEEP);
-
-        if ((*start >= *stop) || *stop == 0 || *start == 0)
-        {
-            // ESP.getCycleCount() overflow oder no pulse, just fail this round
-            return false;
-        }
-
-        return true;
-    }
 
     // Perform vsync phase locking.  This is accomplished by measuring
     // the period and phase offset of the input and output vsync
@@ -615,7 +587,7 @@ public:
             }
 
             // Measure input period again. vsyncPeriodAndPhase()/getPulseTicks()
-            // -> vsyncInputSample() depend on GBS::TEST_BUS_SEL = 0, but
+            // -> sampleVsyncPeriod() depend on GBS::TEST_BUS_SEL = 0, but
             // vsyncPeriodAndPhase() sets it to 2.
             GBS::TEST_BUS_SEL::write(0x0);
             uint32_t periodInput2 = getPulseTicks();
