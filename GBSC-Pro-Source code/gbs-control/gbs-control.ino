@@ -1946,7 +1946,38 @@ boolean sourceHasOwnVsync()
     return active;
 }
 
-uint8_t detectAndSwitchToActiveInput() 
+// Point the ADC at the input the user last chose, so detection starts where it
+// worked last time instead of wherever the mux happens to be sitting. Without
+// this, which input comes up is decided by detectAndSwitchToActiveInput()'s
+// sweep, which alternates 0/1 from wherever it started.
+//
+// SeleInputSource is a menu selection persisted in /preferencesv2.txt;
+// ADC_INPUT_SEL is the chip's mux, and the numbering differs, so the mapping is
+// derived here rather than stored. Only 0 and 1 carry video -- ADC_INPUT_SEL 2
+// is written solely by calibrateAdcOffset(), a calibration reference rather
+// than an input, which is why the 0/1 sweep is complete.
+//
+// **THE COMMENTED-OUT LINES BESIDE THE SeleInputSource LOAD ARE NOT USABLE.**
+// Each calls f.read() again, so restoring them consumes two bytes the
+// preferences file does not contain and shifts every field after it.
+void applySavedInputSource()
+{
+    switch (SeleInputSource) {
+        case S_RGBs:
+        case S_VGA:
+            GBS::ADC_INPUT_SEL::write(1);
+            break;
+        case S_YUV:
+            GBS::ADC_INPUT_SEL::write(0);
+            break;
+        default:
+            // Nothing meaningful saved; leave the mux alone and let detection
+            // sweep, which is the old behaviour.
+            break;
+    }
+}
+
+uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
     uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
     // printf("currentInput = %d \n",currentInput);
@@ -7675,6 +7706,11 @@ void setup()
             calibrateAdcOffset();
         }
         setResetParameters();
+
+        // After calibrateAdcOffset(), which parks ADC_INPUT_SEL on 2, and after
+        // setResetParameters(), so nothing here overwrites it before detection
+        // gets a look.
+        applySavedInputSource();
 
         delay(4);
         handleWiFi(1);
