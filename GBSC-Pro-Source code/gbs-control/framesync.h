@@ -162,6 +162,7 @@ private:
 
         if (!sampleVsyncPeriod(&inStart, &inStop))
         {
+            fsDebugPrintf("vsyncPeriodAndPhase(): no INPUT vsync\n");
             return false;
         }
 
@@ -169,6 +170,7 @@ private:
         inPeriod = (inStop - inStart); //>> 1;
         if (!sampleVsyncPeriod(&outStart, &outStop))
         {
+            fsDebugPrintf("vsyncPeriodAndPhase(): no OUTPUT vsync\n");
             return false;
         }
         outPeriod = (outStop - outStart); //>> 1;
@@ -618,16 +620,14 @@ public:
             GBS::TEST_BUS_SEL::write(0x0);
             if (!ret)
             {
-                ; // SerialM.printf("runFrequency(): vsyncPeriodAndPhase failed, retrying...\n");
+                fsDebugPrintf("runFrequency(): attempt %d: vsyncPeriodAndPhase failed\n", attempt);
                 continue;
             }
 
             fpsInput = esp8266_clock_freq / (float)periodInput;
             if (fpsInput < 47.0f || fpsInput > 86.0f)
             {
-                ; //SerialM.printf(\
-                    "runFrequency(): fpsInput wrong: %f, retrying...\n",\
-                    fpsInput);
+                fsDebugPrintf("runFrequency(): attempt %d: fpsInput out of range: %f\n", attempt, fpsInput);
                 continue;
             }
 
@@ -638,15 +638,13 @@ public:
             uint32_t periodInput2 = getPulseTicks();
             if (periodInput2 == 0)
             {
-                ; // SerialM.printf("runFrequency(): getPulseTicks failed, retrying...\n");
+                fsDebugPrintf("runFrequency(): attempt %d: getPulseTicks failed\n", attempt);
                 continue;
             }
             float fpsInput2 = esp8266_clock_freq / (float)periodInput2;
             if (fpsInput2 < 47.0f || fpsInput2 > 86.0f)
             {
-                ; //SerialM.printf(\
-                    "runFrequency(): fpsInput2 wrong: %f, retrying...\n",\
-                    fpsInput2);
+                fsDebugPrintf("runFrequency(): attempt %d: fpsInput2 out of range: %f\n", attempt, fpsInput2);
                 continue;
             }
 
@@ -655,10 +653,7 @@ public:
             float relDiff = diff / std::min(fpsInput, fpsInput2);
             if (relDiff != relDiff || diff > 0.5f || relDiff > 0.00833f)
             {
-                ; //SerialM.printf(\
-                    "FrameSyncManager::runFrequency() measured inconsistent FPS %f and %f, retrying...\n",\
-                    fpsInput,\
-                    fpsInput2);
+                fsDebugPrintf("runFrequency(): attempt %d: inconsistent FPS %f vs %f\n", attempt, fpsInput, fpsInput2);
                 continue;
             }
 
@@ -667,7 +662,7 @@ public:
         }
         if (!success)
         {
-            ; // SerialM.printf("FrameSyncManager::runFrequency() failed!\n");
+            fsDebugPrintf("runFrequency(): gave up after %d attempts\n", 2);
             return false;
         }
 
