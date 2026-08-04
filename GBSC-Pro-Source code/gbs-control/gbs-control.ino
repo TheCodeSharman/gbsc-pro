@@ -862,12 +862,20 @@ uint8_t getMovingAverage(uint8_t item)
     return sum >> 4;
 }
 
+// Free heap below which the console stops broadcasting, rather than risk an
+// allocation failure inside broadcastTXT(). A broadcast is a few hundred bytes,
+// so the threshold only has to cover that with headroom. Set it anywhere near
+// the heap this chip actually has spare and the gate never opens: the socket
+// accepts clients and then delivers nothing, which reads as a silent firmware
+// rather than a shut gate.
+static const uint32_t CONSOLE_BROADCAST_MIN_HEAP = 8000;
+
 class SerialMirror : public Stream
 {
     size_t write(const uint8_t *data, size_t size)
     {
         bootLogAppend((const char *)data, size);
-        if (ESP.getFreeHeap() > 20000) {
+        if (ESP.getFreeHeap() > CONSOLE_BROADCAST_MIN_HEAP) {
             webSocket.broadcastTXT(data, size);
         }
         Serial.write(data, size);
@@ -877,7 +885,7 @@ class SerialMirror : public Stream
     size_t write(const char *data, size_t size)
     {
         bootLogAppend(data, size);
-        if (ESP.getFreeHeap() > 20000) {
+        if (ESP.getFreeHeap() > CONSOLE_BROADCAST_MIN_HEAP) {
             webSocket.broadcastTXT(data, size);
         }
         Serial.write(data, size);
@@ -887,7 +895,7 @@ class SerialMirror : public Stream
     size_t write(uint8_t data)
     {
         bootLogAppend((const char *)&data, 1);
-        if (ESP.getFreeHeap() > 20000) {
+        if (ESP.getFreeHeap() > CONSOLE_BROADCAST_MIN_HEAP) {
             webSocket.broadcastTXT(&data, 1);
         }
         Serial.write(data);
@@ -897,7 +905,7 @@ class SerialMirror : public Stream
     size_t write(char data)
     {
         bootLogAppend(&data, 1);
-        if (ESP.getFreeHeap() > 20000) {
+        if (ESP.getFreeHeap() > CONSOLE_BROADCAST_MIN_HEAP) {
             webSocket.broadcastTXT(&data, 1);
         }
         Serial.write(data);
@@ -10431,7 +10439,8 @@ fail:
             request->send(200, "text/plain", header);
             return;
         }
-        if (bootLogLen >= BOOTLOG_BYTES - 1) {
+#endif
+        if (BOOTLOG_BYTES > 0 && bootLogLen >= BOOTLOG_BYTES - 1) {
             header += F("(TRUNCATED: buffer full, raise BOOTLOG_BYTES)\n");
         }
 
@@ -10448,7 +10457,11 @@ fail:
                     const size_t at = index + written;
                     buffer[written] = (at < headerLen)
                         ? (uint8_t)header[at]
+#if BOOTLOG_BYTES > 0
                         : (uint8_t)bootLog[at - headerLen];
+#else
+                        : (uint8_t)0;   // unreachable: bootLogLen is always 0
+#endif
                     written++;
                 }
                 return written;
@@ -10925,8 +10938,6 @@ void saveUserPrefs()
     f.write(Saturation % 10 + '0');
     f.close();
 }
-
-#endif
 
 void OSD_selectOption()
 {
