@@ -919,3 +919,86 @@ def test_preferences_survive_a_round_trip(host):
     assert after == before, (
         f"preferences did not round-trip.\n  before {before!r}\n  after  {after!r}"
     )
+
+
+# --- freeze: stop the firmware writing TV5725 registers -----------------------
+
+# PLLAD_MD is the witness rather than anything in the VDS block: every preset
+# writes it, it is non-zero in every mode, and it survives HD bypass. VDS_HSYNC_RST
+# and VDS_HSCALE both read 0 on a bypassed source -- the VDS block is not driving
+# the output at all -- so they cannot tell "no preset load" from "bypass mode".
+PRESET_WITNESS = (5, 0x12, 0, 12)  # PLLAD_MD
+
+
+def _freeze_state(host):
+    """Whether automation is frozen, or None if the unit has no /freeze."""
+    status, payload = get_json(host, "/freeze")
+    if status != 200 or not isinstance(payload, dict):
+        return None
+    return payload.get("frozen")
+
+
+def test_freeze_can_be_armed_and_reports_its_state(host):
+    """/freeze reports the flag, and setting it takes effect.
+
+    Observability first: without a readable flag neither a test nor a human can
+    tell a frozen unit from one that merely happens to be quiet, and "quiet" is
+    the normal state of a locked source. The flag is deliberately not persisted,
+    so this leaves nothing behind that a reboot would not clear anyway.
+    """
+    before = _freeze_state(host)
+    assert before is not None, (
+        "GET /freeze did not return a JSON object with a 'frozen' key. The "
+        "firmware has no freeze support, or it is not reporting it."
+    )
+
+    try:
+        status, payload = get_json(host, "/freeze?on=1")
+        assert status == 200 and payload.get("frozen") is True, (
+            f"/freeze?on=1 returned {status} {payload}; expected frozen=true"
+        )
+        assert _freeze_state(host) is True, "freeze did not stay armed"
+    finally:
+        get(host, "/freeze?on=0")
+
+    assert _freeze_state(host) is False, "freeze did not disarm"
+
+
+@pytest.mark.freeze
+def test_frozen_firmware_does_not_load_presets(host, source):
+    """Frozen, a command that would load a preset must change nothing.
+
+    This is the property the mode exists for: registers stay where you put them
+    so a targeted experiment is measuring the chip rather than the firmware
+    racing you. /sc?# calls applyPresets(13) directly and writes no flash, which
+    makes it a deterministic trigger over HTTP -- no source mode change needed.
+
+    Opt-in because the un-frozen half of the behaviour would corrupt the picture;
+    here the whole point is that it does not, but a red test means it did.
+    """
+    assert _freeze_state(host) is not None, "unit has no /freeze support"
+
+    # Baseline BEFORE arming. Reading it afterwards cannot tell a unit that was
+    # never configured from one this test froze before it finished detecting.
+    before = read_field(host, *PRESET_WITNESS)
+    assert before, (
+        f"PLLAD_MD reads {before}; refusing to run without a configured unit to "
+        "observe. Let the source lock first."
+    )
+
+    get(host, "/freeze?on=1")
+    assert _freeze_state(host) is True, "could not arm the freeze"
+    try:
+        get(host, "/sc?#")
+        time.sleep(2.0)
+
+        after = read_field(host, *PRESET_WITNESS)
+        assert after == before, (
+            f"frozen, /sc?# still changed PLLAD_MD {before} -> {after}. "
+            "applyPresets() ran when it should have been inert."
+        )
+    finally:
+        # /sc?# also sets rto->videoStandardInput = 13 outside applyPresets(), so
+        # unfreezing lets the sync watcher notice and re-detect. That is the
+        # intended way back, not a leak.
+        get(host, "/freeze?on=0")

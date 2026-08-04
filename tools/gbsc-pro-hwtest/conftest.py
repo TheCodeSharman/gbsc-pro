@@ -42,6 +42,14 @@ def pytest_addoption(parser):
         "cannot both be true.",
     )
     group.addoption(
+        "--freeze",
+        action="store_true",
+        default=False,
+        help="run the freeze test that proves a frozen firmware stops writing "
+        "TV5725 registers. Needs a build with /freeze support; opt-in because a "
+        "failure means a preset load corrupted the picture.",
+    )
+    group.addoption(
         "--pllad-hostile",
         action="store_true",
         default=False,
@@ -62,6 +70,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "pllad_hostile: corrupts the picture while it runs; needs --pllad-hostile"
     )
+    config.addinivalue_line(
+        "markers", "freeze: needs a build with /freeze support; needs --freeze"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -70,6 +81,8 @@ def pytest_collection_modifyitems(config, items):
         ("no_sync", "--no-sync", "needs the source unplugged; pass --no-sync to run it"),
         ("pllad_hostile", "--pllad-hostile",
          "corrupts the picture while it runs; pass --pllad-hostile to run it"),
+        ("freeze", "--freeze",
+         "needs a build with /freeze support; pass --freeze to run it"),
     ]
     for keyword, option, reason in gates:
         if config.getoption(option):
