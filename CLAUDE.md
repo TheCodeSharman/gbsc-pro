@@ -21,7 +21,7 @@ nix develop                       # tools: arduino-cli, make, esptool, python3+p
 make -C build setup               # once: esp8266 core + libs (~440M into build/)
 make -C build                     # compile -> build/output/gbs-control.ino.bin
 make -C build flash               # upload over USB serial (PORT=/dev/ttyUSB0)
-make -C build flash-ota HOST=…    # upload over WiFi, no cable
+make -C build flash-ota HOST=…    # upload over WiFi — only after arming, see below
 
 pytest tools/gbsc-pro-hwtest/ --host=192.168.88.108 -v
 pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests run
@@ -30,6 +30,26 @@ pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests r
 `--source` opts into tests needing a locked signal; `--preset-save` opts into
 tests that write flash. Without `--host` everything hardware skips, so a bare
 `pytest` stays useful.
+
+### Flashing
+
+**USB is the reliable path, and usually the only one available.**
+
+```sh
+ls /dev/ttyUSB*                          # CH340 on this board; enumerate before flashing
+make -C build flash                      # PORT=/dev/ttyUSB0 by default
+make -C build flash PORT=/dev/ttyUSB1
+```
+
+**OTA does not work on this unit** — the mechanism is compiled in but no upload
+has ever succeeded, so USB is the only route. Keep a cable to hand. The
+`build/Makefile` comment claiming "no cable needed" is wrong.
+
+Two things that bite regardless of route, both detailed under the traps below:
+**opening the serial port resets the board** (`stty -F /dev/ttyUSB0 115200 -hupcl
+raw -echo` first), and **USB backfeeds power**, so leaving the cable attached
+means later "power cycles" are not power cycles. Flashing preserves SPIFFS
+(`wipe=none` in the FQBN), so stored timings and preferences survive.
 
 ## The system has three control domains, and you can only see one
 

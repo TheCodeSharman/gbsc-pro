@@ -75,14 +75,21 @@ flash: build
 	  --input-dir "$(OUT)" \
 	  "$(SKETCH)"
 
-## flash-ota: build, then upload over WiFi (HOST=<ip>) -- no cable needed
+## flash-ota: build, then upload over WiFi (HOST=<ip>) -- ARM IT FIRST
 #
-# The firmware runs ArduinoOTA (hostname "GBS OTA"). Faster than fetching a
-# cable, but a failed OTA leaves you needing one anyway, so prefer `flash` when
-# the change touches early boot or WiFi setup.
+# ArduinoOTA (hostname "GBS OTA") is compiled in but dormant. allowUpdatesOTA
+# defaults to false and ArduinoOTA.handle() only runs when it is true, so this
+# target fails against a freshly booted unit. Arm it first, every time:
 #
-# Close the web UI first: the unit permits one WebSocket client, and OTA plus a
-# browser is two.
+#     curl 'http://<ip>/sc?c'
+#
+# A reboot disarms it again, and a unit that has stopped answering HTTP cannot be
+# armed at all -- which is exactly when you want to reflash. Prefer `flash` when
+# the change touches early boot or WiFi setup, and keep a cable to hand.
+#
+# Worth closing the web UI first, but because the console sheds clients when free
+# heap drops under 20 KB, not because only one is permitted --
+# WEBSOCKETS_SERVER_CLIENT_MAX is 5. See CLAUDE.md.
 flash-ota: build
 	$(CLI) upload \
 	  --fqbn '$(FQBN)' \
