@@ -848,6 +848,11 @@ def test_bootlog_reports_the_preferences_read(host):
     """
     status, body = get(host, "/bootlog")
     assert status == 200, f"/bootlog answered {status}: {body[:120]}"
+    if "boot log disabled" in body:
+        # BOOTLOG_BYTES defaults to 0: the 2048-byte buffer cost 2160 bytes of
+        # globals and put free heap under the console's broadcast threshold.
+        # This trace is opt-in now -- reflash with BOOTLOG_BYTES=2048 to use it.
+        pytest.skip("boot log compiled out (BOOTLOG_BYTES=0)")
     assert "(boot log empty)" not in body, (
         "the boot log is empty. Nothing was captured before the first console "
         "client attached, or bootLogAppend() is no longer being fed"
@@ -1002,3 +1007,27 @@ def test_frozen_firmware_does_not_load_presets(host, source):
         # unfreezing lets the sync watcher notice and re-detect. That is the
         # intended way back, not a leak.
         get(host, "/freeze?on=0")
+
+
+def test_the_console_delivers_anything_at_all(console):
+    """The web console must actually broadcast, not merely accept a connection.
+
+    SerialMirror only calls broadcastTXT when ESP.getFreeHeap() > 20000. This
+    fork's globals take 47584 bytes of an 81920 byte heap, so free heap tops out
+    near 34 KB and measured 17728 at boot -- under the gate, permanently. The
+    socket then connects, stays connected and delivers nothing for the life of
+    the session, which is what leaves the web UI sitting on its splash screen
+    with the red disconnected indicator.
+
+    Connected-but-silent is the exact case _console_diagnosis() cannot tell from
+    a quiet firmware, so it needs its own test: on a GBS_DEBUG=1 build
+    FrameSync prints continuously, and receiving nothing means the gate shut.
+    """
+    console.drain()
+    received = console.collect(seconds=6)
+    assert received, (
+        "the console connected but delivered 0 bytes in 6 s. On a "
+        "GBS_DEBUG=1 build FrameSync prints every cycle, so this is the "
+        "heap gate in SerialMirror refusing to broadcast, not a quiet firmware. "
+        "Check /bootlog for 'free heap'."
+    )
