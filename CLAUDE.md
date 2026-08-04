@@ -178,12 +178,16 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   because it is stable and nowhere near a rail. **Validate against the expected
   value for the mode, not against `0`/`511`.** `STATUS_IF_HT_OK` reads 1 even
   when railed, so it is not a validity signal either. `docs/tv5725-chip.md`.
-- **The trigger is a deep sync loss, not a mode change.** Measured over 42
-  transitions: 4 of 10 failed after `SP_VTOTAL` collapsed to 0 or a wild value,
-  and **0 of 32** after a clean mode change. Two handovers said "a live mode
-  change with the firmware active" — that is wrong; mode changes only matter when
-  they happen to collapse sync. A one-sample `97`/`98` blip mid-change is normal;
-  `SP_VTOTAL` *steady* at a non-mode value is the fault.
+- **What predicts the fault is the mode you land in, not what happened before.**
+  Over 195 transitions the failure rate by destination runs 44% (VTOTAL 524), 28%
+  (363), 24% (533) and 0-4% for everything else — and the wrong values repeat:
+  524 latches `50`, while 311 and 261 both latch `350`. A preceding deep sync
+  loss raises the odds (28% vs 3% after a clean change) but **is not a
+  discriminator** — an earlier "0 of 32 without a deep sync loss", drawn from 42
+  transitions, does not survive the full sample and sent two sessions after a
+  test that does not exist. To reproduce, park the source in VTOTAL 524.
+  A one-sample `97`/`98` blip mid-change is normal; `SP_VTOTAL` *steady* at a
+  non-mode value is the fault.
 - **Judge only settled samples.** Discard ~6 s after any mode change. Raw
   sampling across a sweep throws garbage at nearly every change that resolves on
   its own; scoring those produced 15 false positives in one run.

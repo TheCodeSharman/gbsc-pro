@@ -129,3 +129,29 @@ the useful question each time is which registers differ from a known-good state.
 Segment 0 `0x00`–`0x2F` are live measurements, not configuration — they change
 on every read even when nothing is wrong. They are captured separately as
 `status` and excluded from the diff unless `--all` is passed.
+
+## The HPERIOD_IF sweep tools
+
+Four pieces, and which one you want depends on whether the firmware should be in
+the picture:
+
+```sh
+python3 tools/gbsc-pro-hwtest/hperiod_sweep.py --host <ip>          # frozen: the chip alone
+python3 tools/gbsc-pro-hwtest/sweeplog.py <ip> out.jsonl --seconds 3000   # unfrozen: preset loads included
+python3 tools/gbsc-pro-hwtest/analyse_sweep.py out.jsonl            # per-transition verdicts
+python3 tools/gbsc-pro-hwtest/precursor.py sweeps/*.jsonl.gz        # what actually correlates
+```
+
+Run `modesweep.bas` on the RISC PC to drive the source through the AKF50 modes
+while any of them sample.
+
+`sweeps/` holds the two runs the `docs/tv5725-chip.md` failure tables were
+derived from, gzipped. They are committed because those tables replaced an
+earlier claim that turned out to be an artefact of a smaller sample, and the next
+person to doubt them should be able to re-run the arithmetic instead of the
+bench. Both analysers read `.gz` directly.
+
+**The settle filter is not optional.** Sampling raw across a sweep flags nearly
+every mode change, because HPERIOD_IF is legitimately garbage for a few seconds
+while the chip relocks — one run produced 15 false positives that way. Both
+analysers discard 6 s after any VTOTAL change and judge only what is left.
