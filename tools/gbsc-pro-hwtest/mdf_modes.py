@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
 """Read a RISC OS mode file (MDF) and say what the scaler should see for each mode.
 
-    python3 tools/gbsc-pro-hwtest/mdf_modes.py path/to/RetroScale
-    python3 tools/gbsc-pro-hwtest/mdf_modes.py path/to/RetroScale --match 320x256
+    python3 tools/gbsc-pro-hwtest/mdf_modes.py path/to/MonitorFile
+    python3 tools/gbsc-pro-hwtest/mdf_modes.py path/to/MonitorFile --match 320x256
+
+**Know which MDF you are holding.** `RetroScale` is Michael's hand-authored mode
+file, not an Acorn one: it was cobbled together from several Acorn MDFs with a
+custom 320x256 entry tweaked until the RetroScaler showed fullscreen. It is the
+right thing to predict the bench RISC PC against, because it is what the machine
+runs, but its timings are *invented* and carry no authority about what RISC OS
+modes look like in general. For that, use a stock Acorn file
+(`!Boot.Resources.Configure.Monitors.Acorn.AKF50` and friends). Some `RetroScale`
+entries are byte-identical to stock AKF50 and some are not, so the distinction
+cannot be made by eye.
+
+**That approach was then abandoned, deliberately.** Bending the source's timings
+to suit the scaler was judged the wrong fix; the scaler firmware should accept
+whatever timings arrive. Do not reach for a tuned mode file to make a picture fit
+— that is treating the symptom, and it only ever fixes the one machine that runs
+that file.
 
 An MDF states a mode as a pixel rate plus pixel/line counts. The scaler reports
 STATUS_SYNC_PROC_VTOTAL in *lines*, so the vtotal computed here is directly
