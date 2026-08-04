@@ -4,21 +4,36 @@
     python3 tools/gbsc-pro-hwtest/mdf_modes.py path/to/MonitorFile
     python3 tools/gbsc-pro-hwtest/mdf_modes.py path/to/MonitorFile --match 320x256
 
-**Know which MDF you are holding.** `RetroScale` is Michael's hand-authored mode
-file, not an Acorn one: it was cobbled together from several Acorn MDFs with a
-custom 320x256 entry tweaked until the RetroScaler showed fullscreen. It is the
-right thing to predict the bench RISC PC against, because it is what the machine
-runs, but its timings are *invented* and carry no authority about what RISC OS
-modes look like in general. For that, use a stock Acorn file
-(`!Boot.Resources.Configure.Monitors.Acorn.AKF50` and friends). Some `RetroScale`
-entries are byte-identical to stock AKF50 and some are not, so the distinction
-cannot be made by eye.
+**Know which MDF you are holding.** `RetroScale` is a hand-authored mode file,
+not an Acorn one. Diffed against stock AKF50 it is:
 
-**That approach was then abandoned, deliberately.** Bending the source's timings
-to suit the scaler was judged the wrong fix; the scaler firmware should accept
-whatever timings arrive. Do not reach for a tuned mode file to make a picture fit
-— that is treating the symptom, and it only ever fixes the one machine that runs
-that file.
+    AKF50, unchanged        every shared mode is byte-identical, 0 differences
+    + 8 higher-res modes    1024x768, 1280x1024, 1600x600, 800x600@72/75
+    + ONE invented mode     320x256 @ 7.150 MHz
+
+That last entry is the point of the file and the thing to stay away from. It
+exists to make the RetroScaler's output larger, and it does that by starving the
+raster rather than by describing a real one:
+
+    stock 320x256   8.000 MHz  htotal 512  64.00us  15.625 kHz  VTOTAL 312
+                    hsync 36 px (4.5us)    picture 62.5% of the line
+    the tweak       7.150 MHz  htotal 440  61.54us  16.250 kHz  VTOTAL 324
+                    hsync  8 px (1.1us)    picture 72.7% of the line
+
+1.1 us of hsync against broadcast's 4.7. It is a hack to fill a screen, not a
+mode, and nothing general should ever be derived from it.
+
+**Use a stock Acorn file for anything general** --
+`!Boot.Resources.Configure.Monitors.Acorn.AKF50` and friends. `RetroScale` is
+still the right thing to predict a machine that is *running* it against, and the
+two are easy to tell apart on the wire: the tweak reads VTOTAL 324 (323 measured)
+where stock reads 312 (311 measured). `riscpc-game-modes.md`'s MODE 13 rows at
+323 lines are this mode, not a stock one.
+
+**DO NOT REACH FOR A TUNED MODE FILE TO MAKE A PICTURE FIT.** Bending the
+source's timings to suit the scaler treats the symptom and fixes only the one
+machine running that file; the scaler firmware accepts whatever timings
+arrive.
 
 An MDF states a mode as a pixel rate plus pixel/line counts. The scaler reports
 STATUS_SYNC_PROC_VTOTAL in *lines*, so the vtotal computed here is directly
