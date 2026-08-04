@@ -107,9 +107,14 @@ def host(request):
 
 @pytest.fixture(scope="session")
 def console(host):
-    """The one permitted WebSocket client, held open for the whole session.
+    """A WebSocket console client, held open for the whole session.
 
-    A second connection crashes the ESP, so close the web UI before running.
+    Not "the one permitted client": the server caps at 5
+    (3rdparty/WebSockets/src/WebSocketsServer.h:31) and nothing crashes. The
+    old claim came from SerialMirror hanging up on *every* client whenever heap
+    dipped, which read from outside as a one-client limit. Still worth closing
+    the web UI for a long capture, because it costs heap -- but two clients are
+    not forbidden.
     """
     try:
         connection = Console(host)
