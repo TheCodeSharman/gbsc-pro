@@ -1022,6 +1022,26 @@ def test_the_console_delivers_anything_at_all(console):
     Connected-but-silent is the exact case _console_diagnosis() cannot tell from
     a quiet firmware, so it needs its own test: on a GBS_DEBUG=1 build
     FrameSync prints continuously, and receiving nothing means the gate shut.
+
+    KNOWN FLAKE, cause not established (2026-08-05). This fails intermittently in
+    full-directory runs while passing on its own. Before spending an evening on
+    it, note what has already been ruled out:
+
+    - **Not the heap gate.** The gate is 8000 since 877d259 and free heap
+      measured 21-24 KB throughout, so the condition this test was written to
+      catch is not what is firing.
+    - **Not left-over freeze.** `/freeze` reported `{"frozen":false}` immediately
+      after a failing run, so the sync watcher was not gated off.
+    - **Not test ordering.** `test_firmware.py` sorts before
+      `test_geometry_math.py`, so this test -- the last in its file -- already
+      runs before any geometry test. Running `test_firmware.py` alone passes, and
+      so does the tail group, which is what makes the ordering story tempting and
+      wrong.
+
+    What is left is unit state: both observed failures came shortly after the
+    unit had been disturbed (a reboot, then a Mode Detect reset), and both clean
+    runs came once it had settled. That is a hypothesis, not a finding. If it
+    fails, re-run it alone before believing it.
     """
     console.drain()
     received = console.collect(seconds=6)
