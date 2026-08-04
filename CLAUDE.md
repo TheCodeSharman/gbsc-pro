@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; `tv5725.h` has the register map |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | TV5725 datasheet and register definitions; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula |
+| `docs/` | TV5725 datasheet and register definitions; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 
 ## Commands
@@ -111,8 +111,19 @@ distinguish these:
    dark, it is the **input** sample that times out — a measurement-path fault at
    `DEBUG_IN_PIN`, not a video-path one. And because `runFrequency()` returns
    early, the Si5351 never gets adjusted at all.
-2. **The encoder has stopped.** Nothing can see or reset it; power cycle.
+2. **The encoder has stopped.** Nothing can see or reset it; power cycle — mains
+   *and* USB, since USB backfeeds the rails. This is the likeliest cause after a
+   session with heavy mode switching: every bypass↔scaling transition retimes the
+   output and forces the MS9288A to re-lock, so the wedge looks dose-dependent
+   rather than random. A mode sweep is dozens of re-locks, and the bill arrives
+   later as a blank screen.
 3. **The TV timed out** and dropped the input.
+
+**`VDS_ENABLE == 0` is not evidence of no output.** In RGBHV bypass the video
+path does not go through the VDS at all, so an empty segment 2/3 is expected and
+the unit is still driving the encoder. Reading it as "nothing is being sent" is a
+mistake that has been made and cost a wrong diagnosis — bypass produces a working
+800x600 picture. See `docs/rgbhv-bypass-trap.md`.
 
 ## Things that will cost you an hour if you don't know them
 
@@ -159,10 +170,39 @@ distinguish these:
 - **`STATUS_SYNC_PROC_HTOTAL` echoes `PLLAD_MD`.** The sync processor counts in
   ADC clocks and the ADC PLL is locked to HSync with `PLLAD_MD` as divider, so it
   reports your own setting back. Never key anything on it.
-- **`HPERIOD_IF` rails to 0 or 511** when Mode Detect is disturbed and does not
-  self-recover; `/uc?h` clears it. `STATUS_IF_HT_OK` reads 1 *even when railed*,
-  so it is not a validity signal. Derive line rate from `field_rate x VTOTAL`
-  instead.
+- **`HPERIOD_IF` going bad is three different faults**, and the old note here
+  merged them. A stable `0` means the IF is out of the path (RGBHV bypass —
+  expected, not a fault). Noisy multi-valued garbage is the second. The third is
+  the dangerous one: **a single stable value that is simply wrong** (192 where
+  212 was due), which every health check ever written here scores as healthy
+  because it is stable and nowhere near a rail. **Validate against the expected
+  value for the mode, not against `0`/`511`.** `STATUS_IF_HT_OK` reads 1 even
+  when railed, so it is not a validity signal either. `docs/tv5725-chip.md`.
+- **The trigger is a deep sync loss, not a mode change.** Measured over 42
+  transitions: 4 of 10 failed after `SP_VTOTAL` collapsed to 0 or a wild value,
+  and **0 of 32** after a clean mode change. Two handovers said "a live mode
+  change with the firmware active" — that is wrong; mode changes only matter when
+  they happen to collapse sync. A one-sample `97`/`98` blip mid-change is normal;
+  `SP_VTOTAL` *steady* at a non-mode value is the fault.
+- **Judge only settled samples.** Discard ~6 s after any mode change. Raw
+  sampling across a sweep throws garbage at nearly every change that resolves on
+  its own; scoring those produced 15 false positives in one run.
+- **Preset loads leave things behind**, and the symptom lands somewhere
+  unrelated. A yellow-tinted picture is `DAC_RGBS_B0ENZ` (s0 `0x45` bit 0)
+  cleared by a bulk table load that never got patched back — the firmware never
+  writes that bit to 0 anywhere. Fix: `curl '…/setreg?s=0&r=0x45&v=0x11'`.
+  Same mechanism is the leading explanation for the `HPERIOD_IF` failures.
+  `docs/preset-load-clobber.md`.
+- **`/uc?h` does not clear Mode Detect.** It sets `presetPreference =
+  Output480P` — a persistent user preference — and force-calls `applyPresets()`,
+  falling back to the remembered standard when `getVideoMode()` returns 0. It
+  appears to "fix" railing by reloading a preset. The actual Mode Detect reset is
+  `resetModeDetect()` (`SFTRST_MODE_RSTZ`, s0 `0x47` bit 1), reachable via
+  `/setreg` — but it does **not** recover a bypassed IF, and nothing in the
+  firmware resets Mode Detect while sync is present.
+- **An RGBHV source over 535 lines is trapped in bypass** and is never scaled —
+  deterministic, re-armed on every boot. The bench 800x600 (VTOTAL 627) hits it.
+  It still gives a picture; the cost is scaling. `docs/rgbhv-bypass-trap.md`.
 - **The horizontal axis has no native resolution.** The chip sees sync edges, not
   pixels, so the source's pixel clock is unknowable and 320x256 and 640x256 are
   indistinguishable. Capture is in ADC sample units, and how many there are per
