@@ -41,9 +41,21 @@ make -C build flash                      # PORT=/dev/ttyUSB0 by default
 make -C build flash PORT=/dev/ttyUSB1
 ```
 
-**OTA does not work on this unit** — the mechanism is compiled in but no upload
-has ever succeeded, so USB is the only route. Keep a cable to hand. The
-`build/Makefile` comment claiming "no cable needed" is wrong.
+**OTA has never worked on this unit. Do not try it.** Measured 2026-08-05:
+`curl 'http://<ip>/sc?c'` returns **200**
+and port **8266 never opens**, so `make -C build flash-ota` has nothing to talk
+to. The mechanism is all there in the source — `rto->allowUpdatesOTA` defaults to
+false (`gbs-control.ino:7630`), `/sc?c` sets it and calls `initUpdateOTA()`,
+`ArduinoOTA.handle()` runs only when true — which makes it look like an arming
+problem you can solve. It is not; it has never once produced a working upload.
+
+USB is the only route. The `build/Makefile` comment claiming "no cable needed" is
+wrong, and the `flash-ota` target is kept only because removing it would invite
+the next session to reinvent it.
+
+**A 200 from `/sc?c` is not evidence of anything**, which is the trap: see the
+async-server note below for why HTTP answers even when the firmware loop is not
+running.
 
 Two things that bite regardless of route, both detailed under the traps below:
 **opening the serial port resets the board** (`stty -F /dev/ttyUSB0 115200 -hupcl
@@ -140,20 +152,49 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **Cold boot and warm reset are different tests.** The preferences bug is a
   power-up race on the SPI flash — `SPIFFS.begin()` returning true does not mean
   reads work yet. Reflashing tests nothing; only a true cold start does.
-- **The console drops every client when heap runs low — it is not a one-client
-  limit.** The old note here said a second connection crashes the ESP. That is
-  wrong on three counts, and Michael had six clients attached at once.
+- **A connected-but-silent console means the heap gate is shut, not that the
+  firmware is quiet.** `SerialMirror` only calls `broadcastTXT` when free heap
+  clears `CONSOLE_BROADCAST_MIN_HEAP`. That was **20000**, which this fork can
+  never reach: globals take 47584 bytes of 81920, and once WiFi, the async server
+  and the websocket server have taken theirs, `/bootlog` measures ~18 KB free
+  **at boot**. The socket then accepts clients and delivers nothing for the whole
+  session — the web UI loads its shell and sits on the splash with the red
+  disconnected indicator. Lowered to 8000 on 2026-08-05; measured 18120 free at
+  boot afterwards, console delivering. **Read `/bootlog`'s `free heap:` line
+  before believing a silent console.** Guarded by
+  `test_the_console_delivers_anything_at_all`.
+- **It is not a one-client limit, and the console does not hang up any more.**
   `WEBSOCKETS_SERVER_CLIENT_MAX` is **5**
-  (`3rdparty/WebSockets/src/WebSocketsServer.h:31`), nothing crashes, and the
-  trigger is memory: all four `SerialMirror::write()` overloads run
-  `if (ESP.getFreeHeap() > 20000) broadcastTXT(...); else webSocket.disconnect();`
-  and the no-argument `disconnect()` drops **all** clients, not the newest one.
-  So any console write while free heap is under 20 KB disconnects everyone.
-  Globals already take 47.5 KB of 81.9 KB, so the margin is thin, and a
-  `GBS_DEBUG=1` build makes it likelier by printing more. Symptoms look
-  nondeterministic because they track heap, not client count. Still worth closing
-  the web UI before a long capture — but because it costs heap, not because two
-  clients are forbidden.
+  (`3rdparty/WebSockets/src/WebSocketsServer.h:31`), nothing crashes, and six
+  clients have been attached at once. The one-client story came from the old
+  `else webSocket.disconnect()` — the no-argument form drops *all* clients, so a
+  single heap dip during one console write killed every session at once. Removed
+  in `d3a4426`. Still worth closing the web UI before a long capture, because it
+  costs heap, not because two clients are forbidden.
+- **HTTP answering does not mean the firmware is running.** The web server is
+  `ESPAsyncWebServer` (`gbs-control.ino:544`), which serves from network-stack
+  callbacks, **not** from `loop()`. So `/getreg`, `/setreg`, `/freeze` and the
+  200 from `/sc?c` keep working while `loop()` is stalled — and `webSocket.loop()`,
+  the OSD, the IR handler and FrameSync's steering of the Si5351 all stop. The
+  signature is exactly that split: HTTP fine, websocket connects but delivers
+  nothing, OSD dead, picture dead. **Do not read "HTTP responds" as "the unit is
+  healthy".** The serial console is the honest test — silence there with a live
+  HTTP stack means the loop is not running.
+- **Check for stray tooling before diagnosing anything.** On 2026-08-05 a
+  `soak_watch.py --interval 5` had been polling for **2 days 22 hours** and a
+  `regpanel.py` for **1 day 23 hours**, both left from earlier sessions, leaving
+  hundreds of sockets in `TIME-WAIT` and starving the websocket server (which
+  caps at 5 clients). An evening went into "the websocket is wedged" with that
+  running underneath. One command:
+  `ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel|sweeplog'`, and
+  `ss -tanp | grep <ip>` for what is actually connected.
+- **Never flash `GBS_DEBUG=0` while diagnosing.** It is the flag gating
+  `fsDebugPrintf` (`framesync.h:28`), so it silences `no INPUT vsync`,
+  `no OUTPUT vsync` and every `runFrequency()` reason — precisely the messages
+  the "no HDMI with every register perfect" section tells you to read. It buys
+  1068 bytes of globals (46516 vs 47584) and costs the diagnosis. Use
+  `GBS_DEBUG=1 GBS_TRACE_WRITES=0`: full diagnostics, none of the
+  per-write trace flood.
 - **SPIFFS access blocks the firmware loop.** `/spiffs/dir` calls `delay(1)` in a
   loop. Hammering it can make the sync watcher see instability. Read-only over
   HTTP is not the same as zero-impact.
