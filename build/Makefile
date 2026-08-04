@@ -23,6 +23,13 @@ GBS_DEBUG ?= 1
 #   make -C build flash BOOTLOG_BYTES=2048
 BOOTLOG_BYTES ?= 0
 
+# Trace every TV5725 register write to the UART. Off by default: it is a lot of
+# output and it slows the loop, but it is the only way to see the *sequence* of
+# writes, and an HTTP sampler cannot -- it missed the entry into the HPERIOD_IF
+# fault twice at 3 Hz. Costs no heap: Serial, not SerialM. See tw.h rawWrite.
+#   make -C build flash GBS_TRACE_WRITES=1
+GBS_TRACE_WRITES ?= 0
+
 FQBN := esp8266:esp8266:nodemcuv2:xtal=80,eesz=4M2M,ssl=all,exception=legacy,ip=lm2f,vt=flash,dbg=Disabled,lvl=None____,wipe=none
 
 # Not in the Arduino registry, so installed by git URL. The maintained forks
@@ -49,10 +56,10 @@ HOST ?= 192.168.88.108
 build: check-cli
 	$(CLI) compile \
 	  --fqbn '$(FQBN)' \
-	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES)' \
+	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DGBS_TRACE_WRITES=$(GBS_TRACE_WRITES) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES)' \
 	  --build-path "$(OUT)" \
 	  "$(SKETCH)"
-	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) BOOTLOG_BYTES=$(BOOTLOG_BYTES))"
+	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) GBS_TRACE_WRITES=$(GBS_TRACE_WRITES) BOOTLOG_BYTES=$(BOOTLOG_BYTES))"
 
 ## flash: build, then upload over USB serial (PORT=/dev/ttyUSB0)
 #

@@ -3,6 +3,10 @@
 
 #include <Wire.h>
 
+#if GBS_TRACE_WRITES
+#include <Arduino.h>   // Serial / millis, for the register write trace below
+#endif
+
 namespace tw
 {
 
@@ -87,12 +91,29 @@ namespace tw
 
         inline void rawWrite(uint8_t addr, uint8_t reg, uint8_t const *input, uint8_t size)
         {
-#if 0
-  Serial.print("WRITE "); Serial.print(addr, HEX); Serial.print("@"); Serial.print(reg, HEX); Serial.print(": ");
-  for (uint8_t i = 0; i < size; ++i) {
-    Serial.print(input[i] >> 4, HEX); Serial.print(input[i] & 0xF, HEX);
-  }
-  Serial.println();
+#if GBS_TRACE_WRITES
+            // Every TV5725 register write funnels through here, so this is the
+            // one place that can record the *sequence* -- which is what an HTTP
+            // sampler cannot see, having missed the entry into the HPERIOD_IF
+            // fault twice at 3 Hz.
+            //
+            // Serial, never SerialM. SerialM mirrors to the WebSocket and
+            // broadcastTXT() allocates a send buffer per frame; this build runs
+            // on ~21 KB of free heap and sheds console clients below 20 KB.
+            // Serial.print() is a UART FIFO and costs no heap at all.
+            //
+            // Segment selects are writes to 0xF0 and appear in the trace, so the
+            // segment of every following write can be reconstructed from it.
+            Serial.print(millis());
+            Serial.print(F(" W "));
+            if (reg < 0x10) Serial.print('0');
+            Serial.print(reg, HEX);
+            Serial.print(':');
+            for (uint8_t i = 0; i < size; ++i) {
+                if (input[i] < 0x10) Serial.print('0');
+                Serial.print(input[i], HEX);
+            }
+            Serial.println();
 #endif
             Wire.beginTransmission(addr);
             Wire.write(reg);
