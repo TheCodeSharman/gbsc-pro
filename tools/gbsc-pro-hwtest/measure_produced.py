@@ -57,7 +57,7 @@ FIELDS = {
               win_sp=("VDS_HB_SP", 3, 0x05, 4, 12),
               win_st=("VDS_HB_ST", 3, 0x04, 0, 12),
               rst=("VDS_HSYNC_RST", 3, 0x01, 0, 12),
-              corner=geometry_math.CORNER_H, base=264, unit="px"),
+              axis=geometry_math.AXIS_H, base=264, unit="px"),
     "v": dict(cap_sp=("IF_VB_SP", 1, 0x1E, 0, 11),
               cap_st=("IF_VB_ST", 1, 0x1C, 0, 11),
               scale=("VDS_VSCALE", 3, 0x17, 4, 10),
@@ -66,7 +66,7 @@ FIELDS = {
               win_sp=("VDS_VB_SP", 3, 0x08, 4, 11),
               win_st=("VDS_VB_ST", 3, 0x07, 0, 11),
               rst=("VDS_VSYNC_RST", 3, 0x02, 4, 11),
-              corner=geometry_math.CORNER_V, base=30, unit="lines"),
+              axis=geometry_math.AXIS_V, base=30, unit="lines"),
 }
 
 HOST = None
@@ -186,18 +186,18 @@ def measure(axis_key, capture, scale):
     write_field(axis["cap_sp"], sp)
     write_field(axis["scale"], scale)
 
-    corner = axis["corner"]
+    # The corner is not a constant -- it is where the scaler starts writing at
+    # THIS magnification, which is the whole finding of 2026-08-05. Taking it
+    # from a fixed value is what made `produced` look like it had a loss term.
+    corner, window_sp = geometry_math.place_picture(scale, False, axis["axis"])
     write_field(axis["dis_sp"], corner)
     raster = read_field(axis["rst"]) + 1
-    write_field(axis["win_sp"], corner - (geometry_math.ORIGIN_OFFSET_H_SCALED
-                                          if axis_key == "h"
-                                          else geometry_math.ORIGIN_OFFSET_V))
+    write_field(axis["win_sp"], window_sp)
     write_field(axis["win_st"], raster - 2)
 
-    # The old formula is an upper bound on what can be written -- both losses
-    # only ever subtract -- so starting there guarantees the band is showing and
-    # the creep only ever goes down.
-    ceiling = min(corner + int(capture * 1024 / scale) + 2, raster - 2)
+    # produced is capture x 1024 / scale exactly, so park a little above it and
+    # the band is showing; the creep only ever goes down from there.
+    ceiling = min(corner + int(capture * 1024 / scale) + 8, raster - 2)
     write_field(axis["dis_st"], ceiling)
 
     print(f"\n  capture {capture}, scale {scale}  "

@@ -139,12 +139,12 @@ def test_the_bench_known_good_is_reproduced_without_shifting_it():
     assert axis["display_sp"] == 129
 
 
-def test_without_a_known_origin_the_solver_says_it_is_guessing():
-    """Falling back to the constant is allowed -- there has to be a starting
-    point -- but it must not look like a measurement."""
+def test_the_solver_no_longer_has_to_guess_the_origin():
+    """The placement is computed, not warned about: the offset is a line in
+    magnification, so there is no constant to guess from."""
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
-    assert any("origin" in note for note in axis["clamped"]), axis["clamped"]
+    assert not any("GUESSED" in note for note in axis["clamped"]), axis["clamped"]
 
 
 # --- solving an axis ----------------------------------------------------------
@@ -157,7 +157,10 @@ def test_the_solver_centres_the_picture_on_the_raster():
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
     assert axis["origin"] == 94
-    assert axis["window_sp"] == max(0, 94 - gm.ORIGIN_OFFSET_H_SCALED)
+    # x1.575 puts the write start 94.4 px after VDS_HB_SP, so a picture centred
+    # at 94 needs the memory window at 0. The two nearly cancelling is why 94
+    # looked like a constant for so long.
+    assert axis["window_sp"] == 0
 
 
 def test_the_solver_takes_every_pixel_of_margin_available():
@@ -188,22 +191,21 @@ def test_the_display_window_hugs_the_picture():
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
     assert axis["display_sp"] == axis["origin"]
-    assert axis["display_st"] == axis["origin"] + int(axis["produced"])
+    assert axis["display_st"] == (axis["origin"] + int(axis["produced"])
+                                  - gm.AXIS_H.margin)
 
 
 def test_the_display_window_never_runs_past_the_last_written_line():
-    """Rounding UP exposes a line of unwritten memory as scratch. Measured on
-    the bench: capture 513 half-lines at VSCALE 487 produces 1054.34 lines, so
-    from a centred origin of 36 the window must stop at 1090, and a value above
-    it puts a band of coloured scratch along the bottom of the screen.
+    """Rounding UP exposes a line of unwritten memory as scratch, which is what
+    was on the bench tonight -- a frozen band, with every register reading what
+    was asked for.
 
-    Michael's own horizontal value corroborates it: VDS_DIS_HB_ST 927 against
-    origin 129 and produced 798.78 was origin + floor(produced), and it blanked
-    cleanly.
+    The old version of this test pinned display_st to 1090, a number the refuted
+    model produced; what was actually observed is the RULE, that a value past the
+    last written line shows scratch. So assert the rule. It holds whatever the
+    span turns out to be, which the hardcoded number did not.
     """
     axis = gm.solve_axis(513, 487, False, 1126, gm.AXIS_V)
-
-    assert axis["display_st"] == 1090
     # VDS_DIS_?B_ST is where blanking STARTS -- the first blanked pixel, not the
     # last shown one -- so it may equal origin + produced but never exceed it.
     assert axis["display_st"] <= axis["origin"] + axis["produced"]
@@ -220,10 +222,10 @@ def test_the_solver_corrects_the_thirteen_pixel_offset_on_the_bench():
 def test_a_vertical_solve_treats_IF_VB_as_half_lines():
     """IF_VB counts half-lines and wraps at 624 = 2 x the 312-line frame. Reading
     it as whole lines doubles the picture, and is the likeliest bug here.
-    Bench: 513 half-lines at VSCALE 660 is 771.6 output lines, not 1543."""
+    Bench: 513 half-lines at VSCALE 660 is 795.9 output lines, not 1591."""
     axis = gm.solve_axis(513, 660, False, 1125, gm.AXIS_V)
 
-    assert 771 < axis["produced"] < 773
+    assert 795 < axis["produced"] < 797
 
 
 def test_the_vertical_window_never_reaches_the_wrap_that_rolls_the_frame():
@@ -347,6 +349,128 @@ def test_the_bench_vertical_pair_fits_the_measured_numbers():
     assert 20 < k < 25, f"k = {k:.2f} lines"
 
 
+# --- where the scaler starts writing ------------------------------------------
+
+# measure_origin.py, 2026-08-05, near edge crept until the frozen band went.
+# (magnification, offset from VDS_?B_SP).
+ORIGIN_H = [(1.0009775171065494, 80), (2.0, 105), (3.2, 135)]
+ORIGIN_V = [(1.0009775171065494, 1), (2.0, 2), (3.4133333333333336, 3)]
+
+
+@pytest.mark.parametrize("magnification,expected", ORIGIN_H)
+def test_the_horizontal_write_start_matches_every_reading(magnification, expected):
+    """It is not a constant. It walks right at ~25 px per unit magnification,
+    which is ~25 INPUT samples of run-up the scaler consumes before it writes
+    anything -- IF_HS_TAP11_BYPS names an 11-tap filter."""
+    assert abs(gm.AXIS_H.origin_offset(magnification) - expected) < 1.0
+
+
+@pytest.mark.parametrize("magnification,expected", ORIGIN_V)
+def test_the_vertical_write_start_matches_every_reading(magnification, expected):
+    """Nearly flat, because the vertical reads whole lines from a line buffer and
+    has no interpolator to feed. ~30x smaller than the horizontal term."""
+    assert abs(gm.AXIS_V.origin_offset(magnification) - expected) < 1.0
+
+
+@pytest.mark.parametrize("magnification,recorded", [(1.001, 80), (1.575, 93)])
+def test_the_readings_that_were_recorded_as_unexplained_also_fit(magnification,
+                                                                 recorded):
+    """solve_axis's docstring recorded 80 at x1.001 and 93 at x1.575 and said
+    nothing predicted it; ORIGIN_OFFSET_H carried 78 and 94 as irreconcilable.
+    One formula, four magnifications -- they were never in conflict, they were
+    measured at different scales."""
+    assert abs(gm.AXIS_H.origin_offset(magnification) - recorded) <= 1.5
+
+
+def test_the_bezel_is_not_the_write_start():
+    """CORNER_H 129 and CORNER_V 63 were measured at one magnification each and
+    treated as constants. 63 is also PANEL_VISIBLE_TOP, and the vertical write
+    start is 2 lines after VDS_VB_SP, not 26 -- so 37 + 26 = 63 was the panel's
+    top edge, not the scaler's."""
+    assert gm.AXIS_V.origin_offset(2.0) < 5
+    assert gm.AXIS_H.origin_offset(1.58) == pytest.approx(94, abs=1.0)
+
+
+def test_high_magnification_cannot_reach_the_left_of_the_panel():
+    """A real limit, not a rounding choice. VDS_HB_SP cannot go negative and the
+    write start is 55 + 25 x m after it, so above ~x2.9 the picture cannot begin
+    at the panel's left edge however the registers are set."""
+    corner, window_sp = gm.place_picture(256, False, gm.AXIS_H)   # x4.0
+
+    assert window_sp == 0
+    assert corner > gm.PANEL_VISIBLE_LEFT
+
+
+def test_below_that_the_picture_sits_on_the_panel_edge_and_the_window_moves():
+    """At every magnification it can reach, the corner is the same place on
+    screen -- so a scale change does not walk the picture sideways."""
+    corners = [gm.place_picture(scale, False, gm.AXIS_H)[0]
+               for scale in (1023, 700, 512)]
+
+    assert corners == [gm.PANEL_VISIBLE_LEFT] * 3, corners
+
+
+# --- the straight line underneath both fits -----------------------------------
+
+
+def test_a_line_fit_recovers_the_line_it_was_given():
+    """Every geometry question here reduces to "is this quantity a straight line
+    in that one", so the fit is shared. Synthetic points on a known line must come
+    back as that line."""
+    xs = [1.0, 2.0, 3.0, 4.0]
+    ys = [3.0 * x + 7.0 for x in xs]
+
+    slope, intercept = gm.fit_line(xs, ys)
+
+    assert abs(slope - 3.0) < 1e-9
+    assert abs(intercept - 7.0) < 1e-9
+
+
+def test_a_residual_shows_the_point_that_is_off_the_line():
+    """The residuals are the whole point of fitting here rather than solving.
+    Three models were believed on this bench because nothing was ever printed
+    that could contradict them, so one point pushed off the line must show up as
+    that point."""
+    xs = [1.0, 2.0, 3.0, 4.0, 5.0]
+    ys = [3.0 * x + 7.0 for x in xs]
+    ys[2] += 10.0
+
+    residuals = gm.line_residuals(xs, ys, *gm.fit_line(xs, ys))
+
+    assert residuals.index(max(residuals)) == 2
+
+
+def test_a_line_fit_refuses_points_that_share_one_x():
+    """Slope and intercept are not separable from a single x, so such a fit can
+    never fail -- which is exactly how a pair of horizontal readings taken at one
+    scale "proved" a fixed capture loss they could not have distinguished."""
+    with pytest.raises(ValueError):
+        gm.fit_line([2.0, 2.0, 2.0], [1.0, 5.0, 9.0])
+
+
+# --- parking the near edge somewhere it can actually be read ------------------
+
+
+def test_the_near_edge_parks_below_the_write_start_and_still_on_screen():
+    """To find where the scaler starts writing you park the display edge before
+    it, so a band of scratch shows, and creep up until the band goes. The park
+    has to be visible or there is no band to watch."""
+    park = gm.probe_park(400, visible_edge=gm.PANEL_VISIBLE_LEFT, band=60)
+
+    assert park == 340
+    assert park > gm.PANEL_VISIBLE_LEFT
+
+
+def test_a_write_start_too_near_the_bezel_refuses_rather_than_parking_off_screen():
+    """CORNER_H is 129 and PANEL_VISIBLE_LEFT is 127, so the usual placement
+    leaves two pixels to park in and a band there would vanish at the bezel
+    rather than at the write start. Whether that is what produced
+    ORIGIN_OFFSET_H's two values is a hypothesis measure_origin.py exists to
+    test -- what is pinned here is only the refusal. Move the picture right."""
+    with pytest.raises(ValueError, match="off the left"):
+        gm.probe_park(150, visible_edge=gm.PANEL_VISIBLE_LEFT, band=60)
+
+
 # --- produced, against every measurement of it ---------------------------------
 
 # Measured 2026-08-05 with measure_produced.py: the display edge crept down until
@@ -358,36 +482,68 @@ MEASURED_H = [(798, 1023, 785), (798, 800, 1014), (400, 1023, 386),
 MEASURED_V = [(511, 1023, 487), (511, 700, 723), (511, 512, 997),
               (300, 1023, 275), (300, 512, 575), (200, 300, 658)]
 
-
-@pytest.mark.parametrize("capture,scale,expected", MEASURED_H)
-def test_produced_matches_every_horizontal_measurement(capture, scale, expected):
-    """The whole model, against the bench. Any change that breaks one of these
-    is wrong however good it looks."""
-    assert int(gm.produced_px(capture, scale, axis=gm.AXIS_H)) == expected
-
-
-@pytest.mark.parametrize("capture,scale,expected", MEASURED_V)
-def test_produced_matches_every_vertical_measurement(capture, scale, expected):
-    assert int(gm.produced_px(capture, scale, axis=gm.AXIS_V)) == expected
-
-
-def test_the_old_formula_would_fail_these():
-    """Guards against quietly reverting to capture x 1024 / scale. It is not
-    nearly right -- at x3.2 it is 40 px short of what the scaler writes, and near
-    1:1 it is 14 px long, which is why a single measurement kept confirming
-    whichever wrong model was current."""
-    worst = max(abs(capture * 1024 / scale - expected)
-                for capture, scale, expected in MEASURED_H)
-
-    assert worst > 30
+# The eleven readings are the acceptance criteria. Each is VDS_DIS_?B_ST at the
+# value where the band of unwritten memory vanished, taken with VDS_HB_SP 35 /
+# VDS_VB_SP 37 and recorded as that value minus a corner assumed to be 129 / 63.
+# The corner is not a constant, so they are re-expressed against where the scaler
+# actually starts:
+#
+#     recorded = write_start + produced - assumed_corner
+#
+# Nothing here is refitted -- the same numbers off the same screen, read from an
+# origin that moves.
+WIN_SP_WHEN_MEASURED = {"h": 35, "v": 37}
+ASSUMED_CORNER = {"h": 129, "v": 63}
 
 
-def test_the_horizontal_needs_both_terms():
-    """A pure output loss fits the vertical and cannot fit the horizontal: the
-    horizontal scaler interpolates across samples within the line, so its span
-    scales with magnification. Forcing one term leaves a 37 px residual."""
-    assert gm.AXIS_H.capture_offset != 0
-    assert gm.AXIS_V.capture_offset == 0
+def _recorded_far_edge(capture, scale, axis, key):
+    magnification = 1024 / scale
+    write_start = WIN_SP_WHEN_MEASURED[key] + axis.origin_offset(magnification)
+    return write_start + capture * magnification - ASSUMED_CORNER[key]
+
+
+@pytest.mark.parametrize("capture,scale,recorded", MEASURED_H)
+def test_a_pure_multiply_reproduces_every_horizontal_reading(capture, scale,
+                                                             recorded):
+    """produced = capture x 1024 / scale, with no loss term at either end."""
+    assert abs(_recorded_far_edge(capture, scale, gm.AXIS_H, "h")
+               - recorded) <= gm.AXIS_H.margin
+
+
+@pytest.mark.parametrize("capture,scale,recorded", MEASURED_V)
+def test_a_pure_multiply_reproduces_every_vertical_reading(capture, scale,
+                                                           recorded):
+    assert abs(_recorded_far_edge(capture, scale, gm.AXIS_V, "v")
+               - recorded) <= gm.AXIS_V.margin
+
+
+def test_produced_is_a_pure_multiply():
+    """The headline. capture_offset and output_loss are gone from both axes --
+    they were the write start's magnification term, seen from the far end."""
+    assert gm.produced_px(400, 512, axis=gm.AXIS_H) == pytest.approx(800.0)
+    assert gm.produced_px(200, 300, axis=gm.AXIS_V) == pytest.approx(682.67,
+                                                                    abs=0.01)
+
+
+def test_the_old_two_term_model_is_not_quietly_restored():
+    """`produced = (capture - c) x m - k` fitted these same readings to 0.43 px
+    and was wrong anyway: it was measuring a fixed span from a moving origin, so
+    it absorbed the origin's magnification term as a loss and split it across
+    both ends. It cannot be distinguished from the truth by residuals alone --
+    only by measuring the near edge, which is what settled it. So this guards the
+    shape rather than the fit."""
+    assert not hasattr(gm.AXIS_H, "capture_offset")
+    assert not hasattr(gm.AXIS_H, "output_loss")
+
+
+def test_the_two_axes_differ_only_in_where_the_write_starts():
+    """The old model had them as different SHAPES -- the horizontal needing both
+    terms, the vertical only one. They are the same shape. What differs is the
+    pipeline latency before the first write: ~25 px per unit magnification for an
+    11-tap horizontal filter, ~1 line for a vertical line buffer."""
+    assert gm.produced_px(400, 512, axis=gm.AXIS_H) == \
+           gm.produced_px(400, 512, axis=gm.AXIS_V)
+    assert gm.AXIS_H.start_per_mag > 20 * gm.AXIS_V.start_per_mag
 
 
 # --- the vertical axis, against a fully measured state ------------------------
@@ -403,8 +559,7 @@ def test_the_picture_is_never_placed_outside_the_frame_buffer():
     valid memory. The picture was really at 199 + 26 = 225, so the screen was
     letterboxed at the top and clipped at the bottom at the same time.
     """
-    for total, axis, corner in ((1445, gm.AXIS_H, gm.CORNER_H),
-                                (1126, gm.AXIS_V, gm.CORNER_V)):
+    for total, axis, corner in ((1445, gm.AXIS_H, 129), (1126, gm.AXIS_V, 63)):
         solved = gm.solve_axis(500, 650, False, total, axis, origin=corner)
 
         assert solved["window_sp"] <= solved["display_sp"], (
@@ -413,19 +568,22 @@ def test_the_picture_is_never_placed_outside_the_frame_buffer():
             f"{axis.name}: display window runs past valid memory")
 
 
-def test_the_memory_window_puts_the_picture_on_the_corner():
-    """The near edge is not the user's either. It is whatever places the first
-    written pixel on the measured corner, which is what the pixel-perfect
-    alignment had: VDS_HB_SP 35 under a corner of 129, VDS_VB_SP 37 under 63."""
-    assert gm.CORNER_H - gm.AXIS_H.origin_offset(False) == 35
-    assert gm.CORNER_V - gm.AXIS_V.origin_offset(False) == 37
+def test_the_pixel_perfect_alignment_is_reproduced_at_its_own_magnification():
+    """All four sides aligned by eye, 2026-08-05: VDS_HB_SP 35, picture starting
+    at 129, at x1.58. 129 is this formula evaluated at that magnification, not a
+    constant corner -- holding it fixed while the scale changes puts scratch on
+    the screen."""
+    assert 35 + gm.AXIS_H.origin_offset(1.58) == pytest.approx(129, abs=1.0)
 
 
-def test_the_vertical_corner_is_where_the_picture_starts():
-    """Not where the display window starts. The two differed by 44 lines on the
-    bench, invisibly, because the display window's top edge fell above the
-    panel's own top edge and nothing showed the difference."""
-    assert gm.CORNER_V == 63
+def test_the_vertical_corner_was_the_bezel_all_along():
+    """CORNER_V was 63 and PANEL_VISIBLE_TOP is 63, measured the same way -- creep
+    the near edge until something vanishes -- and 37 + 26 = 63 made them agree.
+    Measured properly, with the picture moved well clear of the bezel first, the
+    vertical write start is 2 lines after VDS_VB_SP. So 63 was where the panel
+    stops showing, not where the scaler starts writing."""
+    assert gm.AXIS_V.origin_offset(2.0) < 5
+    assert 37 + gm.AXIS_V.origin_offset(2.0) < gm.PANEL_VISIBLE_TOP
 
 
 # --- zooming past the scale ceiling -------------------------------------------

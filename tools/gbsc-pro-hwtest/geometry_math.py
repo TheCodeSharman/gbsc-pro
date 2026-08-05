@@ -82,64 +82,62 @@ HEADROOM_WARN_PX = 100
 # is placed at corner - offset, so the picture starts on the corner. Inheriting
 # whatever VDS_?B_SP happened to be instead is what put the display window 136
 # lines before any valid memory on the bench.
-ORIGIN_OFFSET_H_BYPASSED = 78
-ORIGIN_OFFSET_H_SCALED = 94
-ORIGIN_OFFSET_V = 26
+#
+# RESOLVED 2026-08-05 by measure_origin.py. They do not disagree; they were
+# measured at different magnifications, and the offset is not a constant:
+#
+#     write start = VDS_?B_SP + START_CONST + START_PER_MAG x magnification
+#
+# The near edge was crept until TestPat's frozen scratch band vanished, three
+# VDS_?B_SP values and three magnifications per axis. VDS_?B_SP tracks one for
+# one (slope 1.000, residual 0.00 on both axes), so the offset is real; what
+# moves is the magnification term.
+#
+#   horizontal   55.0 + 25.0 x m      residual 0.01 px
+#   vertical      0.2 +  0.8 x m      residual 0.11 lines
+#
+# 25 output px per unit magnification is 25 INPUT samples: a fixed run-up the
+# horizontal scaler consumes before it writes anything, which is what an 11-tap
+# filter costs (IF_HS_TAP11_BYPS). The vertical reads whole lines from a line
+# buffer and costs ~2 lines of the same. Both are PIPELINE LATENCY AT THE START,
+# and the old model saw that latency from the far end, where it could only look
+# like loss.
+#
+# Everything the old constants recorded falls out of this:
+#
+#   78 bypassed, 80 at x1.001, 93 at x1.575   solve_axis's own docstring, which
+#                                             said nothing predicted them
+#   94 at x1.58                               ORIGIN_OFFSET_H_SCALED
+#   129 at x1.58                              CORNER_H, VDS_HB_SP 35
+#   26                                        ORIGIN_OFFSET_V -- and 37 + 26 = 63
+#                                             is PANEL_VISIBLE_TOP exactly. That
+#                                             one was the bezel, not the scaler:
+#                                             measured, it is 2 lines.
+START_CONST_H = 55.0
+START_PER_MAG_H = 25.0
+START_CONST_V = 0.2
+START_PER_MAG_V = 0.8
 
-# The top left corner of the PICTURE, in OUTPUT pixels and lines, measured
-# rather than derived. Absolute positions on the output raster, not offsets from
-# VDS_?B_SP -- which is why they are constants at all.
+# WHAT USED TO BE HERE, and why it is not.
 #
-#   horizontal   VDS_HB_SP 49 -> 127    docs/investigations/riscpc-game-modes.md:588
-#                VDS_HB_SP 35 -> 129    pixel-perfect snapshot
-#   vertical     VDS_VB_SP 37 ->  63    photo 13, picture's top read off the
-#                                       screen; VDS_VB_SP was 37 in every
-#                                       vertical state recorded, so this cannot
-#                                       yet tell an absolute from a +26 offset
+# CORNER_H = 129, CORNER_V = 63 -- "the top left corner of the PICTURE, measured
+# rather than derived, absolute positions on the output raster, which is why they
+# are constants at all". They are not constants. 129 is the write start at x1.58,
+# the magnification of the one state it was read from, and 63 is
+# PANEL_VISIBLE_TOP -- the bezel, reached by creeping the near edge until
+# something vanished, which is the same procedure and the same answer.
 #
-# CORNER_V IS NOT VDS_DIS_VB_SP. That register read 19 in the pixel-perfect
-# state and 19 again in photo 13, in both cases 44 lines ABOVE the picture --
-# invisibly, because the display window's top edge fell above the panel's own
-# top edge, so nothing on screen ever showed the difference. Taking 19 as the
-# corner is what made the vertical formula look 30 lines wrong: 1123 - 19 = 1104
-# measured the display window, whose bottom was railed against the raster while
-# the picture ran 11 lines off the end of it.
+# CAPTURE_OFFSET_H = -24.67, OUTPUT_LOSS_H = 38.27, OUTPUT_LOSS_V = 24.33 --
+# fitted to eleven readings over four magnifications per axis, worst residual
+# 0.43 px, every measurement reproduced. A good fit to real data, and wrong: it
+# was measuring a fixed span from an origin that moves, so the origin's
+# magnification term came out split between an input offset and an output loss.
+# -24.67 is START_PER_MAG_H to two decimal places, which is the tell.
 #
-# Pinning the corner is what makes the far edge meaningful: hold the corner and
-# the far edge is corner + produced, one unknown instead of two. Holding
-# whatever the register happened to say is what let the aperture drift off the
-# picture, cropping 110 lines vertically while overrunning 86 px horizontally.
-CORNER_H = 129
-CORNER_V = 63
-
-# How `produced` falls short of capture x 1024 / scale.
-#
-#     produced = (capture - capture_offset) x 1024 / scale - output_loss
-#
-# `capture_offset` is in the axis's input units, `output_loss` in output units.
-# Fitted by measure_produced.py 2026-08-05, five horizontal points over four
-# magnifications (x1.001..x3.2) and six vertical over four (x1.001..x3.4), worst
-# residual 0.43 px and 0.46 lines. Every measurement is reproduced exactly.
-#
-# The axes are NOT the same shape, and that is the finding, not an artefact:
-#
-#   horizontal   both terms      forcing output_loss alone leaves 37 px residual
-#   vertical     output only     capture_offset fits at -0.05, which is zero
-#
-# The horizontal scaler interpolates across samples within a line, so its span
-# grows with magnification; the vertical reads whole lines from a line buffer and
-# has no equivalent. A NEGATIVE horizontal offset means the scaler produces
-# output for ~25 samples more than the capture window holds, which is what an
-# interpolator does at the edges.
-#
-# The deficit therefore changes SIGN with magnification -- 14 px short at 1:1,
-# 40 px long at x3.2 -- and that is why four models were proposed and three
-# refuted here. Any two points lie on a line, so nothing measured at a single
-# magnification, or at two, can tell these apart.
-CAPTURE_OFFSET_H = -24.67
-OUTPUT_LOSS_H = 38.27
-CAPTURE_OFFSET_V = 0.0
-OUTPUT_LOSS_V = 24.33
+# NONE OF THE READINGS WERE BAD. Every one of them is still an acceptance test
+# above; what changed is what they are readings of. Residuals could never have
+# caught this -- the wrong model fitted them to 0.43 px -- and only measuring the
+# near edge did. Keep that in mind before trusting the next good fit.
 
 # The panel shows less than the raster: creeping the display window to the bezel
 # put its corner at output pixel 127, line 63. Assuming the visible region is
@@ -162,30 +160,37 @@ class Axis:
     is why a vertical capture number looks half the size you expect.
     """
 
-    def __init__(self, name, offset_bypassed, offset_scaled, warn_px,
-                 visible_edge, registers, capture_offset, output_loss):
+    def __init__(self, name, start_const, start_per_mag, warn_px,
+                 visible_edge, registers, margin):
         self.name = name
-        self.capture_offset = capture_offset
-        self.output_loss = output_loss
-        self.offset_bypassed = offset_bypassed
-        self.offset_scaled = offset_scaled
+        self.start_const = start_const
+        self.start_per_mag = start_per_mag
         self.warn_px = warn_px
         self.visible_edge = visible_edge
         self.registers = registers
+        self.margin = margin
 
-    def origin_offset(self, bypassed):
-        return self.offset_bypassed if bypassed else self.offset_scaled
+    def origin_offset(self, magnification):
+        """How far after VDS_?B_SP the scaler starts writing, at this
+        magnification. Not a constant -- see START_PER_MAG_H."""
+        return self.start_const + self.start_per_mag * magnification
 
     def visible_span(self, raster_total):
         """How much of the raster the panel actually shows."""
         return raster_total - 2 * self.visible_edge
 
 
+# `margin` trims the display window's far edge. produced reproduces every far
+# edge ever measured to within 1.01 px and 1.71 lines, and the two costs of being
+# wrong are not symmetric: a window 2 px short loses 2 px of picture and nobody
+# can see it, while a window 2 px long shows scratch -- which is exactly what was
+# on the bench tonight. So each axis gives back its own worst residual, rounded
+# up. Not a fudge factor; the measured uncertainty, spent in the safe direction.
 AXIS_H = Axis(
-    "horizontal", ORIGIN_OFFSET_H_BYPASSED, ORIGIN_OFFSET_H_SCALED,
+    "horizontal", START_CONST_H, START_PER_MAG_H,
     HEADROOM_WARN_PX, PANEL_VISIBLE_LEFT,
     ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST"),
-    CAPTURE_OFFSET_H, OUTPUT_LOSS_H,
+    margin=2,
 )
 
 # No vertical margin: a settled state at -1.9 lines was clean, and the horizontal
@@ -193,10 +198,10 @@ AXIS_H = Axis(
 # state's display window was clipping, the same flaw that invalidated the
 # horizontal evidence, and the VSCALE +1 ambiguity is worth 1.2 lines here.
 AXIS_V = Axis(
-    "vertical", ORIGIN_OFFSET_V, ORIGIN_OFFSET_V,
+    "vertical", START_CONST_V, START_PER_MAG_V,
     0, PANEL_VISIBLE_TOP,
     ("VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST"),
-    CAPTURE_OFFSET_V, OUTPUT_LOSS_V,
+    margin=3,
 )
 
 
@@ -218,34 +223,46 @@ def magnification(hscale, bypassed=False):
 def produced_px(capture_units, hscale, bypassed=False, axis=None):
     """Output pixels the scaler makes from a capture window of this width.
 
-    A fixed slice of the capture produces NOTHING. The scaler needs filter taps
-    either side of each output position, so the units at the edge of the window
-    have no neighbours to interpolate from and no output is written for them.
+        produced = capture x 1024 / scale
 
-    Measured 2026-08-05 at HSCALE 1023 (x1.001, so no scaling arithmetic is in
-    play) by creeping VDS_DIS_HB_ST until the band of unwritten memory vanished:
+    It is a simple multiply, on both axes, with no loss term at either end.
 
-        capture 400 -> produced 386     13.38 < loss <= 14.38
-        capture 798 -> produced 785     12.77 < loss <= 13.77
+    Measuring it from a corner taken to be CONSTANT makes it look lossy, with a
+    deficit that changes sign with magnification -- ~14 px short at 1:1, ~40 px
+    long at x3.2. The corner is not constant: the scaler starts writing
+    START_CONST + START_PER_MAG x m after VDS_?B_SP.
+    docs/investigations/moving-write-origin.md
 
-    Two widths, one constant, brackets intersecting at ~13.5 samples. A
-    PROPORTIONAL loss cannot fit both -- the ratio from 400 predicts 770 at 798
-    against 785 measured, 15 px out and far beyond eye error. That is what killed
-    the "unity is 994 not 1024" reading, which fitted either point alone.
-
-    Ignoring it is what put a band of scratch down the right of the screen and
-    along the bottom, with every register reading exactly what the old formula
-    asked for.
+    Confirmed against all eleven far-edge readings, four magnifications per axis,
+    captures 200..798, to within 1.01 px and 1.71 lines -- readings older than
+    the origin measurement that explains them, so this is not circular.
     """
     factor = magnification(hscale, bypassed)
     if factor is None:
         return None
-    if bypassed:
-        # No scaler in the path, so no filter to feed and no edge slice lost.
-        return capture_units * factor
-    axis = axis or AXIS_H
-    return max(0.0, (capture_units - axis.capture_offset) * factor
-               - axis.output_loss)
+    return capture_units * factor
+
+
+def place_picture(scale, bypassed, axis):
+    """(corner, window_sp) putting the picture at the near edge of what the panel
+    shows, at whatever magnification is set.
+
+    THE CORNER IS NOT A CONSTANT. The scaler starts writing origin_offset(m)
+    after VDS_?B_SP, so a display window pinned to a corner measured once at
+    x1.58 begins before the first written pixel at every higher magnification --
+    41 px of last frame's contents at x3.2, which is what was on the bench on
+    2026-08-05 and read as garbage down the left.
+
+    So the corner is derived and VDS_?B_SP moves to produce it. Where the offset
+    already exceeds the visible edge the picture cannot reach that far -- the
+    register would have to go negative -- and it starts at the offset instead.
+    That is a real limit of the chip: horizontally the offset is 55 + 25 x m, so
+    at x4 nothing can be placed before output pixel 155, and the panel's own left
+    edge at 127 is unreachable above about x2.9.
+    """
+    offset = axis.origin_offset(magnification(scale, bypassed))
+    corner = max(axis.visible_edge, offset)
+    return round(corner), max(0, round(corner - offset))
 
 
 def headroom_px(memory_window_px, produced):
@@ -353,6 +370,65 @@ def zoom_capture(sp, st, max_produced, step, wrap_at=None, unity=HSCALE_UNITY):
     return new_sp, new_st, scale
 
 
+def probe_park(expected_start, visible_edge, band=60):
+    """Where to park the display window's near edge before creeping it up.
+
+    The measurement is: park before where the scaler is expected to start
+    writing, so a band of frozen scratch shows between the display edge and the
+    picture, then creep the edge up until the band goes. That value is the write
+    start.
+
+    It only works if the parked edge is on screen. PANEL_VISIBLE_LEFT is 127 and
+    CORNER_H is 129, so at the bench's usual placement there are two pixels to
+    park in, and a band there vanishes at the bezel rather than at the write
+    start.
+
+    That may already have happened. ORIGIN_OFFSET_H's two irreconcilable values
+    give 49 + 78 = 127 and 35 + 94 = 129 -- the corner barely moved while
+    VDS_HB_SP moved 14, which is what measuring one fixed screen edge twice
+    would look like. Unconfirmed, and measure_origin.py is what settles it; the
+    refusal below is not evidence for it, only insurance against repeating it.
+
+    So this refuses instead of returning an unreadable park. Move the picture
+    right -- raise VDS_?B_SP -- and ask again.
+    """
+    park = expected_start - band
+    if park <= visible_edge:
+        raise ValueError(
+            f"parking at {park} falls off the left of what the panel shows "
+            f"({visible_edge}), so the band would vanish at the bezel rather "
+            f"than at the write start -- move the picture right first")
+    return park
+
+
+def fit_line(xs, ys):
+    """Least squares. Returns (slope, intercept) for y = slope x + intercept.
+
+    Every geometry question that has been asked on this bench reduces to one of
+    these -- is `produced` linear in magnification, does the write start move
+    with the memory window -- so the fitting lives in one place and the meaning
+    lives with the caller.
+
+    Raises if every x is the same value: slope and intercept are then not
+    separable, and a fit that cannot fail has not tested anything.
+    """
+    if len(xs) < 2:
+        raise ValueError("need at least two measurements")
+    if len(set(round(x, 9) for x in xs)) < 2:
+        raise ValueError("every point is at the same x, so the slope and the "
+                         "intercept cannot be separated -- vary it")
+    n = len(xs)
+    sx, sy = sum(xs), sum(ys)
+    denominator = n * sum(x * x for x in xs) - sx * sx
+    slope = (n * sum(x * y for x, y in zip(xs, ys)) - sx * sy) / denominator
+    return slope, (sy - slope * sx) / n
+
+
+def line_residuals(xs, ys, slope, intercept):
+    """How far each measurement sits off the fitted line, in y's units."""
+    return [y - (slope * x + intercept) for x, y in zip(xs, ys)]
+
+
 def fit_loss(points):
     """Fit the two loss terms to measurements of `produced`.
 
@@ -381,12 +457,7 @@ def fit_loss(points):
         raise ValueError(
             "every point is at the same magnification, so c and k cannot be "
             "separated -- vary the scale, not just the capture")
-    n = len(xs)
-    sx, sy = sum(xs), sum(ys)
-    denominator = n * sum(x * x for x in xs) - sx * sx
-    c = (n * sum(x * y for x, y in zip(xs, ys)) - sx * sy) / denominator
-    k = (sy - c * sx) / n
-    return c, k
+    return fit_line(xs, ys)
 
 
 def loss_residuals(points, c, k):
@@ -466,15 +537,15 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
     `capture` is IF units horizontally and HALF-LINES vertically. Everything
     returned is in output pixels or lines.
 
-    PASS `origin` IF YOU KNOW IT. The offset between VDS_?B_SP and the first
-    written pixel is not a constant -- measured against TestPat's 1 px green
-    frame it is 78 bypassed, 80 at HSCALE 1023 (x1.001) and 93 at HSCALE 650
-    (x1.575), so it grows with magnification and nothing here predicts it. A
-    caller that computed the origin from the constant shifted a hand-tuned
-    picture by 13 px while every other number looked right.
+    The origin is now PREDICTED, not guessed. It used to be passed in because
+    nothing here could compute it -- 78 bypassed, 80 at x1.001, 93 at x1.575, and
+    a caller that used one constant for all three shifted a hand-tuned picture by
+    13 px. Those three are one straight line in magnification and
+    `axis.origin_offset` is it, so the picture can be placed from the registers
+    alone. `origin` is still honoured when a human has aligned by eye and wants
+    it left exactly there.
 
-    Without it, the picture is centred on the raster using the constant, and
-    `clamped` says the origin was guessed. `offset` nudges that centred position.
+    Without it, the picture is centred on the raster. `offset` nudges that.
 
     The memory window is always opened as wide as the raster allows: the origin
     pins its near edge, leaving the far edge free, and there is no reason to
@@ -488,7 +559,7 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
     if produced is None:
         raise ValueError("scale reads 0, which is a dropped read, not a setting")
 
-    origin_offset = axis.origin_offset(bypassed)
+    origin_offset = axis.origin_offset(magnification(scale, bypassed))
 
     if origin is not None:
         # The caller knows where the picture is, so nothing here may move it.
@@ -501,12 +572,13 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
         # Both can be driven off the bottom of the raster by a picture wider than
         # the screen, which is legal -- it simply overscans -- but the registers
         # cannot go negative.
-        clamped.append(
-            f"origin GUESSED from the {origin_offset} px constant, which is only "
-            f"right near 1:1 -- pass the measured origin to place this exactly")
         origin = round((raster_total - produced) / 2) + offset
-        window_sp = origin - origin_offset
+        window_sp = round(origin - origin_offset)
         if window_sp < 0:
+            # VDS_?B_SP cannot go negative, so the picture cannot start earlier
+            # than origin_offset. At high magnification that is a real limit and
+            # not a rounding detail: the horizontal offset is 55 + 25 x m, so at
+            # x4 nothing can be placed before output pixel 155.
             window_sp = 0
             origin = origin_offset
             edge = "left" if axis is AXIS_H else "top"
@@ -530,8 +602,14 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
     # Floor, never round: VDS_DIS_?B_ST is where blanking starts, so it may sit
     # at most one past the last written pixel. Rounding up exposes a line of
     # unwritten memory, which shows as a band of scratch at the bottom edge.
-    display_sp = origin
-    display_st = min(origin + math.floor(produced), last_usable)
+    #
+    # `axis.margin` gives back the model's own worst residual on top of that. The
+    # two errors are not equally bad: a window short by 2 loses 2 px of picture
+    # invisibly, while a window long by 2 shows scratch. Tonight's bench had the
+    # long kind -- a frozen band down the left, every register reading exactly
+    # what was asked for.
+    display_sp = math.ceil(origin)
+    display_st = min(display_sp + math.floor(produced) - axis.margin, last_usable)
 
     return {
         "produced": produced,
