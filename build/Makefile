@@ -49,11 +49,28 @@ ASYNC_WEB := https://github.com/me-no-dev/ESPAsyncWebServer.git\#2ab974a5b5d65fb
 PORT ?= /dev/ttyUSB0
 HOST ?= 192.168.88.108
 
-.PHONY: build setup all clean help check-cli flash flash-ota
+.PHONY: build setup all clean help check-cli flash flash-ota webui webui-check
 .DEFAULT_GOAL := build
 
+PYTHON ?= python3
+WEBUI_SRC := $(SKETCH)/webui.html
+WEBUI_HDR := $(SKETCH)/webui_html.h
+
+## webui: regenerate webui_html.h from webui.html
+#
+# The firmware serves the UI from a gzipped PROGMEM array, not from the
+# filesystem, so editing webui.html alone changes nothing on the device. Nothing
+# regenerated the header until 2026-08-05 and the /spiffs/ -> /fs/ rename was
+# very nearly shipped with a UI still calling the old routes.
+webui:
+	$(PYTHON) "$(HERE)/webui_header.py" --source "$(WEBUI_SRC)" --header "$(WEBUI_HDR)"
+
+## webui-check: fail if webui_html.h is stale (build depends on this)
+webui-check:
+	@$(PYTHON) "$(HERE)/webui_header.py" --source "$(WEBUI_SRC)" --header "$(WEBUI_HDR)" --check
+
 ## build: compile the sketch -> output/gbs-control.ino.bin
-build: check-cli
+build: check-cli webui-check
 	$(CLI) compile \
 	  --fqbn '$(FQBN)' \
 	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DGBS_TRACE_WRITES=$(GBS_TRACE_WRITES) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES)' \
@@ -63,7 +80,7 @@ build: check-cli
 
 ## flash: build, then upload over USB serial (PORT=/dev/ttyUSB0)
 #
-# The FQBN carries wipe=none, so SPIFFS survives: the stored timings and
+# The FQBN carries wipe=none, so the filesystem survives: the stored timings and
 # preferences are still there after a flash. Do not "fix" that to wipe=all
 # without meaning it.
 #
