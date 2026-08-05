@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; `tv5725.h` has the register map |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | TV5725 datasheet and register definitions; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
+| `docs/` | TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 
 ## Commands
@@ -277,6 +277,24 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **An RGBHV source over 535 lines is trapped in bypass** and is never scaled —
   deterministic, re-armed on every boot. The bench 800x600 (VTOTAL 627) hits it.
   It still gives a picture; the cost is scaling. `docs/rgbhv-bypass-trap.md`.
+- **`produced` is NOT `capture x 1024 / scale`.** That formula is 14 px long at
+  1:1 and 40 px short at x3.2, and a display window sized by it shows a band of
+  unwritten memory past the picture — garbage down the right of the screen and
+  along the bottom, with every register reading exactly what was asked for. The
+  measured model is `(capture - capture_offset) x 1024 / scale - output_loss`,
+  fitted to eleven readings over four magnifications per axis, and the two axes
+  are different shapes. `docs/scaler-geometry-model.md` has the constants, the
+  evidence and the measuring tool (`measure_produced.py`).
+- **A measurement through an edge you cannot see is not a measurement.** The
+  panel shows less than the raster (visible corner ~127/63) and `VDS_DIS_?B_ST`
+  rails two below the raster total. Three separate "measured" geometry values
+  turned out to be edges off-screen or against a rail — one of them cost a whole
+  session chasing a 30-line error in the vertical model that did not exist.
+  Check the edge was on screen and away from its limit before believing it.
+- **Two points cannot disconfirm a line.** Four models of the scaler's output
+  count were proposed in one evening; three were fitted to two readings, looked
+  confirmed, and were refuted by the next. Three magnifications is the minimum
+  that can fail, and `measure_produced.py` prints residuals so it can.
 - **The horizontal axis has no native resolution.** The chip sees sync edges, not
   pixels, so the source's pixel clock is unknowable and 320x256 and 640x256 are
   indistinguishable. Capture is in ADC sample units, and how many there are per
