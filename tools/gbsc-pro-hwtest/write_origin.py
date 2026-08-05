@@ -153,15 +153,47 @@ def main():
                   f"window to pan.\nThe unit is not on a tuned preset; get a "
                   f"picture you want to keep first.")
             return 1
-        shift = args.shift or max(8, capture_width // 8)
+        # Both pan trials must stay inside the line. The capture window is
+        # panned in both directions, so the usable shift is bounded by whichever
+        # edge runs out first: ST2 must not reach IF_HSYNC_RST, SP2 must not go
+        # negative. An edge past either wraps, and a wrapped window answers "it
+        # BROKE" for a reason that has nothing to do with the question.
+        # ST2 must stay strictly under IF_HSYNC_RST -- the firmware's own guard
+        # is `if (IF_HB_ST2 < IF_HSYNC_RST)` and wraps otherwise, so landing
+        # exactly on it is already out of bounds.
+        room = min(base["IF_HSYNC_RST"] - base["IF_HB_ST2"] - 1, base["IF_HB_SP2"])
+        wanted = args.shift or max(8, capture_width // 8)
+        shift = min(wanted, room)
         print(f"\nshift for the pan trials: {shift} IF units "
               f"({100 * shift / capture_width:.0f}% of the capture width)")
+        if shift < wanted:
+            print(f"  clamped from {wanted}: the window is [{base['IF_HB_SP2']}.."
+                  f"{base['IF_HB_ST2']}] in a {base['IF_HSYNC_RST'] + 1} unit line, "
+                  f"so {room} is all the room there is on the tighter side")
+        if shift < 8:
+            print(f"\ncapture window has only {room} units of room to pan. Widen it, "
+                  f"or pass --shift explicitly and accept a wrapped edge.")
+            return 1
+
+        # The ORIGIN trial moves VDS_HB_SP, which resizes the memory window and
+        # therefore moves the headroom. Moving it later shrinks the window, and
+        # at a thin baseline that tears -- which would be read as "it BROKE"
+        # when the question is only "did the left edge follow". Move it earlier
+        # instead: same test of the assumption, and headroom goes up, not down.
+        produced = capture_width * 1024 / base["VDS_HSCALE"]
+        headroom = (base["VDS_HB_ST"] - base["VDS_HB_SP"]) - produced
+        origin_delta = -shift if headroom - shift < geometry_math.HEADROOM_SAFE_PX else shift
+        origin_word = "later" if origin_delta > 0 else "earlier"
+        if origin_delta < 0:
+            print(f"  origin trial moves VDS_HB_SP {origin_word} ({origin_delta}): "
+                  f"headroom is {headroom:.1f} px and moving it later would take it "
+                  f"to {headroom - shift:.1f}, which tears and answers nothing")
 
         if args.plan:
             print("\ntrials:")
             print(f"  1 PAN    IF_HB_SP2/ST2 both +{shift}, output side untouched")
             print(f"  2 PAN    IF_HB_SP2/ST2 both -{shift}, output side untouched")
-            print(f"  3 ORIGIN VDS_HB_SP +{shift}, everything else untouched")
+            print(f"  3 ORIGIN VDS_HB_SP {origin_delta:+d}, everything else untouched")
             print("\nnothing was written")
             return 0
 
@@ -186,11 +218,11 @@ def main():
               "c": "the frame stayed put, different CONTENT inside it",
               "n": "no visible change",
               "b": "it BROKE"}),
-            ("origin", {"VDS_HB_SP": base["VDS_HB_SP"] + shift},
-             "VDS_HB_SP moved later by the same amount, input untouched. "
-             "Did the picture's LEFT EDGE follow it?",
-             {"y": "yes, the left edge moved right",
-              "w": "the picture got NARROWER but the left edge stayed",
+            ("origin", {"VDS_HB_SP": base["VDS_HB_SP"] + origin_delta},
+             f"VDS_HB_SP moved {origin_word} by the same amount, input "
+             f"untouched. Did the picture's LEFT EDGE follow it?",
+             {"y": f"yes, the left edge moved {'right' if origin_delta > 0 else 'left'}",
+              "w": "the picture got WIDER/NARROWER but the left edge stayed",
               "n": "nothing moved",
               "b": "it BROKE"}),
         ]:
