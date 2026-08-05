@@ -5928,7 +5928,18 @@ void printInfo()
     }
 
     uint16_t hperiod = GBS::HPERIOD_IF::read();
-    uint16_t vperiod = GBS::VPERIOD_IF::read();
+
+    // `v:` and `vt:` below are different blocks measuring the same thing: the
+    // input formatter and the sync processor. On RGBHV the IF never completes a
+    // vertical measurement, so VPERIOD_IF is debris while
+    // STATUS_SYNC_PROC_VTOTAL is correct. Printed as two plain numbers they look
+    // equally authoritative, so STATUS_IF_VT_BAD decides which is shown.
+    char vperiodText[8];
+    if (GBS::STATUS_IF_VT_BAD::read()) {
+        snprintf(vperiodText, sizeof(vperiodText), "%4s", "----");
+    } else {
+        snprintf(vperiodText, sizeof(vperiodText), "%4u", GBS::VPERIOD_IF::read());
+    }
     uint8_t stat0FIrq = GBS::STATUS_0F::read();
     char HSp = GBS::STATUS_SYNC_PROC_HSPOL::read() ? '+' : '-';
     char VSp = GBS::STATUS_SYNC_PROC_VSPOL::read() ? '+' : '-';
@@ -5956,8 +5967,8 @@ void printInfo()
     if ((millis() - lastInfoPrint) >= 250) {
         lastInfoPrint = millis();
         snprintf(print, sizeof(print),
-            "h:%4u v:%4u PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x m:%hu ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
-            hperiod, vperiod, lockCounterPrevious,
+            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x m:%hu ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
+            hperiod, vperiodText, lockCounterPrevious,
             GBS::ADC_RGCTRL::read(), GBS::ADC_GGCTRL::read(), GBS::ADC_BGCTRL::read(),
             GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
             h, HSp, v, VSp, stat0FIrq, GBS::TEST_BUS::read(), getVideoMode(),
