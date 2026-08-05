@@ -65,25 +65,25 @@ HEADROOM_WARN_PX = 100
 
 # --- where the picture lands --------------------------------------------------
 
-# The first written pixel sits some distance after VDS_?B_SP. That distance is
-# NOT a constant -- it grows with magnification, and these values are only right
-# near 1:1. Measured against TestPat's 1 px green frame, which marks the
-# outermost active pixel, by creeping VDS_DIS_HB_SP until the frame vanished:
+# The first written pixel sits this far after VDS_?B_SP -- the near edge of the
+# frame buffer, NOT of the display window. Measured against TestPat's 1 px green
+# frame by creeping VDS_DIS_?B_SP until the frame vanished:
 #
-#   bypassed              mag 1.000   offset 78     2026-08-05 afternoon
-#   HSCALE 1023 x1.001    mag 1.001   offset 80     2026-08-05 afternoon
-#   HSCALE  650 x1.575    mag 1.575   offset 93     2026-08-05 evening
+#   horizontal   VDS_HB_SP 49 -> origin 127   offset 78    photo 10, ~1:1
+#                VDS_HB_SP 35 -> origin 129   offset 94    pixel-perfect, x1.58
+#   vertical     VDS_VB_SP 37 -> origin  63   offset 26    photo 13 and 14
 #
-# The evening point was found the hard way: a solver that computed the origin
-# from 80 shifted a picture Michael had aligned to the pixel by 13 px, while
-# every other number it produced was correct. Fitting a + b x mag to the last two
-# gives roughly 57 + 23 x mag, but that is two points and a fitted line -- it
-# predicts nothing until a third is measured.
+# The two horizontal numbers do not agree and nothing here explains why. 94 is
+# used because it is the one from the state where all four edges were aligned to
+# the pixel, so it is consistent with CORNER_H from that same state -- the pair
+# has to come from one alignment or the picture lands between two of them.
 #
-# So these are a STARTING POINT, not an answer. solve_axis() takes a measured
-# `origin` and says so in `clamped` when it has to fall back to these.
+# This offset is what makes the corner reachable: the memory window's near edge
+# is placed at corner - offset, so the picture starts on the corner. Inheriting
+# whatever VDS_?B_SP happened to be instead is what put the display window 136
+# lines before any valid memory on the bench.
 ORIGIN_OFFSET_H_BYPASSED = 78
-ORIGIN_OFFSET_H_SCALED = 80
+ORIGIN_OFFSET_H_SCALED = 94
 ORIGIN_OFFSET_V = 26
 
 # The top left corner of the PICTURE, in OUTPUT pixels and lines, measured

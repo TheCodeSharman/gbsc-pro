@@ -339,6 +339,34 @@ def test_the_vertical_formula_reproduces_a_measured_picture():
     assert v["display_st"] - 1 == 909
 
 
+def test_the_picture_is_never_placed_outside_the_frame_buffer():
+    """VDS_?B_SP..ST is what memory is valid; VDS_DIS_?B_SP..ST is what part of
+    it reaches the output. So the display window has to sit INSIDE the memory
+    window, and the corner is only a constant if the memory window is too.
+
+    The bench found this the hard way: VDS_VB_SP had been moved to 199 while the
+    corner stayed pinned at 63, putting the display window 136 lines before any
+    valid memory. The picture was really at 199 + 26 = 225, so the screen was
+    letterboxed at the top and clipped at the bottom at the same time.
+    """
+    for total, axis, corner in ((1445, gm.AXIS_H, gm.CORNER_H),
+                                (1126, gm.AXIS_V, gm.CORNER_V)):
+        solved = gm.solve_axis(500, 650, False, total, axis, origin=corner)
+
+        assert solved["window_sp"] <= solved["display_sp"], (
+            f"{axis.name}: display window starts before valid memory")
+        assert solved["display_st"] <= solved["window_st"], (
+            f"{axis.name}: display window runs past valid memory")
+
+
+def test_the_memory_window_puts_the_picture_on_the_corner():
+    """The near edge is not the user's either. It is whatever places the first
+    written pixel on the measured corner, which is what the pixel-perfect
+    alignment had: VDS_HB_SP 35 under a corner of 129, VDS_VB_SP 37 under 63."""
+    assert gm.CORNER_H - gm.AXIS_H.origin_offset(False) == 35
+    assert gm.CORNER_V - gm.AXIS_V.origin_offset(False) == 37
+
+
 def test_the_vertical_corner_is_where_the_picture_starts():
     """Not where the display window starts. The two differed by 44 lines on the
     bench, invisibly, because the display window's top edge fell above the
