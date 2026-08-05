@@ -126,10 +126,23 @@ def test_the_solver_centres_the_picture_on_the_raster():
 
 def test_the_solver_takes_every_pixel_of_margin_available():
     """The window's far end is free once the origin is pinned, so it goes to the
-    raster's last usable value rather than to a computed target."""
+    raster's last usable value rather than to a computed target.
+
+    On a 1445 px line VDS_HSYNC_RST is 1444, and VDS_HB_ST must stay STRICTLY
+    below it -- so the last usable value is 1443, not 1444.
+    """
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
-    assert axis["window_st"] == 1444, "one below VDS_HSYNC_RST, which wraps"
+    assert axis["window_st"] == 1443
+
+
+def test_no_returned_register_reaches_the_value_that_wraps():
+    """VDS_VB_ST at VDS_VSYNC_RST rolls the frame, and VDS_HB_ST at
+    VDS_HSYNC_RST wraps. Test at the boundary itself: off-by-one is the risk."""
+    for total, axis, rst in ((1445, gm.AXIS_H, 1444), (1126, gm.AXIS_V, 1125)):
+        solved = gm.solve_axis(500, 650, False, total, axis)
+        assert solved["window_st"] < rst, f"{axis.name} window reaches the wrap"
+        assert solved["display_st"] < rst, f"{axis.name} display reaches the wrap"
 
 
 def test_the_display_window_hugs_the_picture():

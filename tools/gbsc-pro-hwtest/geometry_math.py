@@ -241,11 +241,16 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
     if window_sp < 0:
         window_sp = 0
         origin = origin_offset
-        clamped.append("picture is wider than the raster; pinned to the left edge")
+        edge = "left" if axis is AXIS_H else "top"
+        clamped.append(
+            f"picture overflows the raster; pinned to the {edge} edge")
 
-    # The last value below the raster total. Both ST registers wrap rather than
-    # clamp, and a wrapped VDS_VB_ST rolls the frame.
-    window_st = raster_total - 1
+    # Both ST registers must stay STRICTLY below the raster's own total register
+    # -- VDS_HB_ST < VDS_HSYNC_RST, VDS_VB_ST < VDS_VSYNC_RST -- and they wrap
+    # rather than clamp, a wrapped VDS_VB_ST rolling the frame. The total
+    # register is one below `raster_total`, so the last usable value is two below.
+    last_usable = raster_total - 2
+    window_st = last_usable
 
     margin_given = (window_st - window_sp) - produced
     if margin_given < axis.warn_px:
@@ -255,7 +260,7 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
         )
 
     display_sp = origin
-    display_st = min(origin + round(produced), raster_total - 1)
+    display_st = min(origin + round(produced), last_usable)
 
     return {
         "produced": produced,
