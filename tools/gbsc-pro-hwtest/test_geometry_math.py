@@ -111,6 +111,42 @@ def test_a_pan_stops_at_zero_going_the_other_way():
     assert st - sp == 513
 
 
+# --- the origin is measured, not assumed --------------------------------------
+
+
+def test_a_given_origin_is_used_exactly_and_never_recomputed():
+    """The offset is NOT a constant: measured against TestPat's 1 px green
+    frame it is 78 bypassed, 80 at HSCALE 1023 (x1.001) and 93 at HSCALE 650
+    (x1.575). Computing it from one constant shifted a hand-tuned picture 13 px.
+
+    So a caller that knows where the picture is -- because a human aligned it --
+    must be able to say so, and have every edge left where it is.
+    """
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H, origin=129)
+
+    assert axis["origin"] == 129
+    assert axis["display_sp"] == 129
+
+
+def test_the_bench_known_good_is_reproduced_without_shifting_it():
+    """A hand alignment, to the pixel, 2026-08-05: VDS_HB_SP 36, display window
+    starting at 129. Given that origin, the solver must return it unchanged
+    rather than recentring it somewhere else."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H,
+                         origin=129, window_sp_of=36)
+
+    assert axis["window_sp"] == 36
+    assert axis["display_sp"] == 129
+
+
+def test_without_a_known_origin_the_solver_says_it_is_guessing():
+    """Falling back to the constant is allowed -- there has to be a starting
+    point -- but it must not look like a measurement."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert any("origin" in note for note in axis["clamped"]), axis["clamped"]
+
+
 # --- solving an axis ----------------------------------------------------------
 
 
@@ -152,7 +188,25 @@ def test_the_display_window_hugs_the_picture():
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
     assert axis["display_sp"] == axis["origin"]
-    assert axis["display_st"] == axis["origin"] + round(axis["produced"])
+    assert axis["display_st"] == axis["origin"] + int(axis["produced"])
+
+
+def test_the_display_window_never_runs_past_the_last_written_line():
+    """Rounding UP exposes a line of unwritten memory as scratch. Measured on
+    the bench: capture 513 half-lines at VSCALE 487 produces 1078.67 lines from
+    origin 26, so the window must stop at 1104, not 1105 -- 1105 put a band of
+    coloured scratch along the bottom of the screen.
+
+    Michael's own horizontal value corroborates it: VDS_DIS_HB_ST 927 against
+    origin 129 and produced 798.78 is origin + floor(produced), and it blanked
+    cleanly.
+    """
+    axis = gm.solve_axis(513, 487, False, 1126, gm.AXIS_V)
+
+    assert axis["display_st"] == 1104
+    # VDS_DIS_?B_ST is where blanking STARTS -- the first blanked pixel, not the
+    # last shown one -- so it may equal origin + produced but never exceed it.
+    assert axis["display_st"] <= axis["origin"] + axis["produced"]
 
 
 def test_the_solver_corrects_the_thirteen_pixel_offset_on_the_bench():
@@ -190,7 +244,9 @@ def test_a_picture_too_wide_for_the_line_warns_rather_than_shrinking():
 
 
 def test_a_comfortable_picture_reports_no_shortfall():
-    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+    """With the origin known there is nothing to warn about at this scale."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H,
+                         origin=129, window_sp_of=36)
 
     assert axis["margin_given"] >= gm.HEADROOM_WARN_PX
     assert axis["clamped"] == []
@@ -255,3 +311,67 @@ def test_default_capture_window_stays_inside_the_line():
         for rate in (50.0, 60.1):
             start, stop = gm.default_capture_window(line, rate)
             assert 0 <= start < stop <= line
+
+
+# --- tracking a calibrated display window -------------------------------------
+
+
+def test_a_calibrated_window_scales_in_proportion():
+    """produced is proportional to 1/scale -- that part of the model is solid.
+    It is the constant of proportionality that is wrong: Michael's pixel-perfect
+    alignment on 2026-08-05 measured 1104 lines where the formula said 1074.26.
+
+    So take the width from the measurement and scale it, rather than computing
+    it. Halving the scale must double the width, exactly.
+    """
+    sp, st = gm.track_display(cal_scale=488, cal_sp=19, cal_width=1104,
+                              new_scale=244)
+
+    assert sp == 19
+    assert st - sp == 2208
+
+
+def test_a_calibrated_window_is_unchanged_at_its_own_scale():
+    """The calibration point must be a fixed point, or pressing scale up then
+    down would walk the window away from where it was aligned."""
+    sp, st = gm.track_display(cal_scale=489, cal_sp=19, cal_width=1104,
+                              new_scale=489)
+
+    assert (sp, st) == (19, 1123)
+
+
+def test_tracking_survives_a_round_trip():
+    """Up one step then down one step must land back exactly, or the window
+    drifts every time the user changes their mind."""
+    _, up = gm.track_display(489, 19, 1104, 488)
+    back = gm.track_display(488, 19, up - 19, 489)
+
+    assert back == (19, 1123)
+
+
+# --- zooming past the scale ceiling -------------------------------------------
+
+
+def test_zoom_shrinks_the_capture_and_keeps_the_picture_at_the_ceiling():
+    """Once the picture fills the memory window the scaler cannot magnify any
+    further -- produced would overflow. Capturing LESS source and scaling it by
+    the same amount is still a zoom, and it keeps the output size pinned."""
+    sp, st, scale = gm.zoom_capture(264, 1062, max_produced=1408, step=8)
+
+    assert st - sp == 790, "capture shrank by the step"
+    assert (sp - 264) == (1062 - st), "shrank symmetrically, so it stays centred"
+    # Within a pixel or two: the scale is an integer register, so the refill
+    # cannot be exact.
+    assert abs((st - sp) * 1024 / scale - 1408) < 2.0, "produced still fills it"
+
+
+def test_zoom_refuses_to_shrink_the_capture_to_nothing():
+    with pytest.raises(ValueError):
+        gm.zoom_capture(500, 510, max_produced=1408, step=100)
+
+
+def test_zoom_stays_inside_the_scale_register():
+    """A capture small enough would ask for a scale below the x4 limit."""
+    sp, st, scale = gm.zoom_capture(264, 1062, max_produced=1408, step=600)
+
+    assert scale >= gm.HSCALE_MIN

@@ -65,10 +65,23 @@ HEADROOM_WARN_PX = 100
 
 # --- where the picture lands --------------------------------------------------
 
-# Measured 2026-08-05: the first written pixel sits a fixed distance after
-# VDS_?B_SP, and that distance does not move with the capture window. Horizontal
-# confirmed constant over VDS_HB_SP 49..170; the 2 px difference is the scaler
-# stage in the path, which a bypassed scaler does not add.
+# The first written pixel sits some distance after VDS_?B_SP. That distance is
+# NOT a constant -- it grows with magnification, and these values are only right
+# near 1:1. Measured against TestPat's 1 px green frame, which marks the
+# outermost active pixel, by creeping VDS_DIS_HB_SP until the frame vanished:
+#
+#   bypassed              mag 1.000   offset 78     2026-08-05 afternoon
+#   HSCALE 1023 x1.001    mag 1.001   offset 80     2026-08-05 afternoon
+#   HSCALE  650 x1.575    mag 1.575   offset 93     2026-08-05 evening
+#
+# The evening point was found the hard way: a solver that computed the origin
+# from 80 shifted a picture Michael had aligned to the pixel by 13 px, while
+# every other number it produced was correct. Fitting a + b x mag to the last two
+# gives roughly 57 + 23 x mag, but that is two points and a fitted line -- it
+# predicts nothing until a third is measured.
+#
+# So these are a STARTING POINT, not an answer. solve_axis() takes a measured
+# `origin` and says so in `clamped` when it has to fall back to these.
 ORIGIN_OFFSET_H_BYPASSED = 78
 ORIGIN_OFFSET_H_SCALED = 80
 ORIGIN_OFFSET_V = 26
@@ -211,16 +224,72 @@ def pan_capture(sp, st, delta, wrap_at):
     return start, start + width
 
 
-def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
+def zoom_capture(sp, st, max_produced, step):
+    """Zoom past the scale ceiling by capturing less of the source.
+
+    Once `produced` fills the memory window the scaler cannot magnify further --
+    asking for more overflows and shreds the picture. But capturing LESS source
+    and scaling it to the same output size is still a zoom, and it keeps the
+    output pinned at the ceiling instead of overrunning it.
+
+    Trims symmetrically so the centre of the picture stays put, and returns the
+    scale that refills the window. Michael's idea, 2026-08-05.
+    """
+    width = st - sp
+    new_width = width - step
+    if new_width <= 0:
+        raise ValueError(f"a {step} unit step would leave nothing of a {width} "
+                         f"unit capture")
+    trim = step // 2
+    new_sp, new_st = sp + trim, st - (step - trim)
+    scale = min(max(round(new_width * HSCALE_UNITY / max_produced),
+                    HSCALE_MIN), HSCALE_MAX)
+    return new_sp, new_st, scale
+
+
+def track_display(cal_scale, cal_sp, cal_width, new_scale):
+    """Where a calibrated display window belongs at a different scale.
+
+    `produced` is proportional to 1/scale, and THAT part of the model is sound.
+    What is wrong is the constant of proportionality: a pixel-perfect alignment
+    on 2026-08-05 measured a 1104-line picture where
+    `capture x 1024 / VSCALE` said 1074.26 -- 30 lines out, far beyond eye error.
+
+    So take the width from a measurement and scale it, instead of computing it
+    from a formula that is known to disagree with the hardware. The calibration
+    point is a fixed point by construction, so scaling up and back down returns
+    to exactly where the user aligned it.
+
+    The near edge is held: the origin does drift with magnification (the offset
+    is 80 at x1.001 and 93 at x1.575), but there is no reliable law for it yet,
+    so a caller should re-calibrate rather than have this invent one.
+    """
+    if new_scale <= 0 or cal_scale <= 0:
+        raise ValueError("scale must be positive")
+    width = cal_width * cal_scale / new_scale
+    return cal_sp, cal_sp + round(width)
+
+
+def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
+               origin=None, window_sp_of=None):
     """Where one axis's four output registers belong.
 
     `capture` is IF units horizontally and HALF-LINES vertically. Everything
     returned is in output pixels or lines.
 
-    The picture is centred on the raster and the memory window is opened as wide
-    as the raster allows: the origin pins the window's near edge, leaving the far
-    edge free, and there is no reason to leave margin unclaimed. `offset` nudges
-    the centred position for a caller doing manual placement.
+    PASS `origin` IF YOU KNOW IT. The offset between VDS_?B_SP and the first
+    written pixel is not a constant -- measured against TestPat's 1 px green
+    frame it is 78 bypassed, 80 at HSCALE 1023 (x1.001) and 93 at HSCALE 650
+    (x1.575), so it grows with magnification and nothing here predicts it. A
+    caller that computed the origin from the constant shifted a hand-tuned
+    picture by 13 px while every other number looked right.
+
+    Without it, the picture is centred on the raster using the constant, and
+    `clamped` says the origin was guessed. `offset` nudges that centred position.
+
+    The memory window is always opened as wide as the raster allows: the origin
+    pins its near edge, leaving the far edge free, and there is no reason to
+    leave margin unclaimed.
     """
     if capture <= 0:
         raise ValueError("capture must be positive")
@@ -232,18 +301,28 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
 
     origin_offset = axis.origin_offset(bypassed)
 
-    # Centre the picture, then let the window's near edge follow from it. Both
-    # can be driven off the bottom of the raster by a picture wider than the
-    # screen, which is legal -- it simply overscans -- but the registers cannot
-    # go negative.
-    origin = round((raster_total - produced) / 2) + offset
-    window_sp = origin - origin_offset
-    if window_sp < 0:
-        window_sp = 0
-        origin = origin_offset
-        edge = "left" if axis is AXIS_H else "top"
+    if origin is not None:
+        # The caller knows where the picture is, so nothing here may move it.
+        # window_sp keeps whatever position produced that origin: deriving it
+        # from the constant would move the picture by however wrong the constant
+        # is, which is exactly the 13 px shift this argument exists to prevent.
+        window_sp = window_sp_of if window_sp_of is not None else origin - origin_offset
+    else:
+        # Centre the picture, then let the window's near edge follow from it.
+        # Both can be driven off the bottom of the raster by a picture wider than
+        # the screen, which is legal -- it simply overscans -- but the registers
+        # cannot go negative.
         clamped.append(
-            f"picture overflows the raster; pinned to the {edge} edge")
+            f"origin GUESSED from the {origin_offset} px constant, which is only "
+            f"right near 1:1 -- pass the measured origin to place this exactly")
+        origin = round((raster_total - produced) / 2) + offset
+        window_sp = origin - origin_offset
+        if window_sp < 0:
+            window_sp = 0
+            origin = origin_offset
+            edge = "left" if axis is AXIS_H else "top"
+            clamped.append(
+                f"picture overflows the raster; pinned to the {edge} edge")
 
     # Both ST registers must stay STRICTLY below the raster's own total register
     # -- VDS_HB_ST < VDS_HSYNC_RST, VDS_VB_ST < VDS_VSYNC_RST -- and they wrap
@@ -259,8 +338,11 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
             f"floor -- the picture may tear"
         )
 
+    # Floor, never round: VDS_DIS_?B_ST is where blanking starts, so it may sit
+    # at most one past the last written pixel. Rounding up exposes a line of
+    # unwritten memory, which shows as a band of scratch at the bottom edge.
     display_sp = origin
-    display_st = min(origin + round(produced), last_usable)
+    display_st = min(origin + math.floor(produced), last_usable)
 
     return {
         "produced": produced,
@@ -277,15 +359,19 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
 
 def solve_geometry(capture_h, capture_v, hscale, vscale, line_px, frame_lines,
                    hscale_bypassed=False, vscale_bypassed=False,
-                   offset_h=0, offset_v=0):
+                   offset_h=0, offset_v=0,
+                   origin_h=None, window_sp_h=None,
+                   origin_v=None, window_sp_v=None):
     """The eight output registers for a given capture and scale.
 
     The output raster is an input and is never returned: FrameSync owns
     VDS_VSYNC_RST and runAutoBestHTotal owns VDS_HSYNC_RST, so writing either
     fights the firmware and changes the mode the TV locks to.
     """
-    h = solve_axis(capture_h, hscale, hscale_bypassed, line_px, AXIS_H, offset_h)
-    v = solve_axis(capture_v, vscale, vscale_bypassed, frame_lines, AXIS_V, offset_v)
+    h = solve_axis(capture_h, hscale, hscale_bypassed, line_px, AXIS_H, offset_h,
+                   origin=origin_h, window_sp_of=window_sp_h)
+    v = solve_axis(capture_v, vscale, vscale_bypassed, frame_lines, AXIS_V, offset_v,
+                   origin=origin_v, window_sp_of=window_sp_v)
 
     registers = {}
     for axis, solved in ((AXIS_H, h), (AXIS_V, v)):
