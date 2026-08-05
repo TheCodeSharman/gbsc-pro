@@ -51,28 +51,55 @@ DISPLAY = ("VDS_DIS_HB_ST", "VDS_DIS_HB_SP")
 CONTEXT = ("IF_HSYNC_RST", "VDS_HSYNC_RST", "VDS_HSCALE") + CAPTURE + MEMORY + DISPLAY
 
 
+def headroom_of(state):
+    """Memory window minus produced pixels, or None if the state does not carry
+    enough to say. This is the quantity setfield's docstring is about: let it go
+    negative for even one intermediate step and the picture visibly corrupts."""
+    try:
+        window = state["VDS_HB_ST"] - state["VDS_HB_SP"]
+        capture = state["IF_HB_ST2"] - state["IF_HB_SP2"]
+        scale = state["VDS_HSCALE"]
+    except KeyError:
+        return None
+    if not scale:
+        return None
+    return window - capture * 1024 / scale
+
+
 def ordered_writes(current, changes):
-    """`changes` as (name, value) pairs, ordered so the capture window is never
-    transiently wider than it is at either end of the move.
+    """`changes` as (name, value) pairs, ordered so the headroom never dips
+    below where the move leaves it.
 
-    The window is two independent registers, so moving it takes two writes and
-    there is a state in between. One of the two orders widens it there, and
-    setfield's docstring says what that costs: more produced pixels than the
-    memory window holds, even for one intermediate step, visibly corrupts the
-    picture. The baseline this tool runs against has ~16 px of headroom, so a
-    60-unit transient overrun is not theoretical -- it is the trial answering
-    "it BROKE" for a reason that has nothing to do with the question.
+    Both windows that bound the headroom are two independent registers, so
+    moving either takes two writes with a state in between, and one of the two
+    orders is wrong. They fail in opposite directions, which is why a rule about
+    one pair is not enough:
 
-    Whichever single write leaves the narrower window goes first. That resolves
-    to SP2-first for a positive shift and ST2-first for a negative one, and it
-    stays right for the restore afterwards, which is the same move reversed.
+        capture (IF_HB_SP2/ST2)   widening it raises the produced pixel count
+        memory  (VDS_HB_SP/ST)    narrowing it lowers the space available
+
+    So this does not reason about either pair directly. At each step it sends
+    whichever remaining write leaves the *most* headroom, which orders both
+    pairs correctly and also handles a change that moves both at once -- where
+    per-pair rules would still let the two interact into an overrun. Ties keep
+    the caller's order, so unrelated fields pass through untouched.
+
+    The bench baseline on 2026-08-05 ran at 14 px of headroom while a mis-ordered
+    memory-window slide dipped it to -86. That is the whole margin, several times
+    over.
     """
-    pairs = list(changes.items())
-    if not set(CAPTURE) <= set(changes):
-        return pairs          # one edge, so no intermediate state to get wrong
-    start, end = "IF_HB_SP2", "IF_HB_ST2"
-    first = start if current[end] - changes[start] <= changes[end] - current[start] else end
-    return sorted(pairs, key=lambda pair: pair[0] != first)
+    remaining = list(changes.items())
+    if headroom_of(current) is None:
+        return remaining      # nothing to reason with; do as we were told
+    ordered = []
+    state = dict(current)
+    while remaining:
+        best = max(remaining,
+                   key=lambda pair: headroom_of(dict(state, **{pair[0]: pair[1]})))
+        remaining.remove(best)
+        ordered.append(best)
+        state[best[0]] = best[1]
+    return ordered
 
 
 def read_all(host, spec_map):
