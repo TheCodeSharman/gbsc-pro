@@ -39,7 +39,8 @@ BASE = {
 SHIFT = 100
 
 # The same reading's vertical half. IF_VB counts half-lines, so 513 of them at
-# VSCALE 660 is 795.93 output lines, not 1591.9.
+# VSCALE 660 is 772.65 output lines -- 513 less the 15 the vertical scaler
+# cannot use -- not 1591.9.
 BASE_BOTH_AXES = dict(
     BASE,
     IF_VB_SP=56, IF_VB_ST=569,
@@ -152,10 +153,16 @@ def test_fields_outside_the_two_windows_keep_their_given_order():
 
 
 def test_headroom_reports_the_worse_of_the_two_axes():
-    """A move that is safe horizontally and ruinous vertically must not be
-    ordered as though it were safe. The bench sits at -1.9 lines vertically
-    against +1034 px horizontally, so the vertical half is what decides."""
-    assert write_origin.headroom_of(BASE_BOTH_AXES) < 0
+    """A move that is safe horizontally and tight vertically must not be ordered
+    as though it were safe. Asserted against the two axes directly rather than
+    against a magic number: the vertical is the tighter one here, so it is what
+    must come back."""
+    horizontal_only = write_origin.headroom_of(BASE)
+    both = write_origin.headroom_of(BASE_BOTH_AXES)
+
+    assert both < horizontal_only, (
+        f"vertical {both:.1f} is tighter than horizontal {horizontal_only:.1f}, "
+        f"so it should decide")
 
 
 def test_a_horizontal_only_state_still_reports_its_headroom():

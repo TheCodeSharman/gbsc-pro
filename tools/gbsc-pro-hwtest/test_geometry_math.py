@@ -152,12 +152,12 @@ def test_without_a_known_origin_the_solver_says_it_is_guessing():
 
 def test_the_solver_centres_the_picture_on_the_raster():
     """Bench reference, 2026-08-05 evening: capture 798 at HSCALE 650 produces
-    1257.16 px on a 1445 px line, so the origin belongs at (1445-1257.16)/2 =
-    93.92, rounding to 94."""
+    1235.9 px on a 1445 px line -- 798 units less the 13.5 the filter cannot use
+    -- so the origin belongs at (1445-1235.9)/2 = 104.6, rounding to 105."""
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
-    assert axis["origin"] == 94
-    assert axis["window_sp"] == 94 - gm.ORIGIN_OFFSET_H_SCALED
+    assert axis["origin"] == 105
+    assert axis["window_sp"] == 105 - gm.ORIGIN_OFFSET_H_SCALED
 
 
 def test_the_solver_takes_every_pixel_of_margin_available():
@@ -193,17 +193,18 @@ def test_the_display_window_hugs_the_picture():
 
 def test_the_display_window_never_runs_past_the_last_written_line():
     """Rounding UP exposes a line of unwritten memory as scratch. Measured on
-    the bench: capture 513 half-lines at VSCALE 487 produces 1078.67 lines from
-    origin 26, so the window must stop at 1104, not 1105 -- 1105 put a band of
-    coloured scratch along the bottom of the screen.
+    the bench: capture 513 half-lines at VSCALE 487 produces 1047.13 lines --
+    513 half-lines less the 15 the vertical scaler cannot use -- so from a
+    centred origin of 39 the window must stop at 1086, and a value above it puts
+    a band of coloured scratch along the bottom of the screen.
 
     Michael's own horizontal value corroborates it: VDS_DIS_HB_ST 927 against
-    origin 129 and produced 798.78 is origin + floor(produced), and it blanked
+    origin 129 and produced 798.78 was origin + floor(produced), and it blanked
     cleanly.
     """
     axis = gm.solve_axis(513, 487, False, 1126, gm.AXIS_V)
 
-    assert axis["display_st"] == 1104
+    assert axis["display_st"] == 1086
     # VDS_DIS_?B_ST is where blanking STARTS -- the first blanked pixel, not the
     # last shown one -- so it may equal origin + produced but never exceed it.
     assert axis["display_st"] <= axis["origin"] + axis["produced"]
@@ -220,10 +221,10 @@ def test_the_solver_corrects_the_thirteen_pixel_offset_on_the_bench():
 def test_a_vertical_solve_treats_IF_VB_as_half_lines():
     """IF_VB counts half-lines and wraps at 624 = 2 x the 312-line frame. Reading
     it as whole lines doubles the picture, and is the likeliest bug here.
-    Bench: 513 half-lines at VSCALE 660 is 795.93 output lines, not 1591.9."""
+    Bench: 513 half-lines at VSCALE 660 is 772.6 output lines, not 1545."""
     axis = gm.solve_axis(513, 660, False, 1125, gm.AXIS_V)
 
-    assert 795 < axis["produced"] < 797
+    assert 772 < axis["produced"] < 774
 
 
 def test_the_vertical_window_never_reaches_the_wrap_that_rolls_the_frame():
@@ -313,30 +314,79 @@ def test_default_capture_window_stays_inside_the_line():
             assert 0 <= start < stop <= line
 
 
-# --- the vertical axis, against a fully measured state ------------------------
+# --- fitting the loss from measurements ---------------------------------------
 
 
-def test_the_vertical_formula_reproduces_a_measured_picture():
-    """docs/photos/2026-08-05-horizontal-geometry/README.md, photo 13: the only
-    vertical state where the picture's own edges were read off the screen rather
-    than inferred from the display window.
+def test_the_fit_recovers_a_loss_it_was_given():
+    """The deficit is linear in magnification -- capture x m - produced = c x m + k
+    -- so a straight-line fit recovers both terms. Synthetic points with a known
+    c and k must come back as that c and k, or the fit is not measuring what it
+    claims."""
+    points = [(capture, scale, (capture - 4.0) * 1024 / scale - 20.0)
+              for capture, scale in ((400, 1023), (400, 512), (798, 800))]
 
-        IF_VB 22..568 = 546 half-lines, VSCALE 660, VDS_VB 37..978
-        picture top at output line 63, last written line 909
+    c, k = gm.fit_loss(points)
 
-    546 x 1024 / 660 = 847.13, so the first blanked line is 63 + 847 = 910 and
-    the last written one is 909. Exact.
+    assert abs(c - 4.0) < 0.01
+    assert abs(k - 20.0) < 0.01
 
-    This is what retires the "vertical model is wrong by 30 lines" finding. That
-    came from the pixel-perfect snapshot's VDS_DIS_VB of 19..1123, read as a
-    1104-line picture -- but 19 is 44 lines ABOVE the picture and 1123 is railed
-    against the raster, so 1104 measured the display window and not the picture.
+
+def test_the_fit_needs_two_different_magnifications():
+    """Every point at one scale lies on a single vertical line, so c and k cannot
+    be separated -- which is exactly how the bench measurements at HSCALE 1023
+    looked conclusive and were not."""
+    with pytest.raises(ValueError):
+        gm.fit_loss([(400, 1023, 386.0), (798, 1023, 785.0)])
+
+
+def test_the_bench_vertical_pair_fits_the_measured_numbers():
+    """2026-08-05, capture 511 half-lines at two scales, produced read off the
+    screen by creeping VDS_DIS_VB_ST until the unwritten band vanished."""
+    c, k = gm.fit_loss([(511, 550, 923.0), (511, 1023, 486.0)])
+
+    assert 2 < c < 5, f"c = {c:.2f} half-lines"
+    assert 20 < k < 25, f"k = {k:.2f} lines"
+
+
+# --- the scaler loses a fixed slice of the capture -----------------------------
+
+
+def test_produced_is_short_by_a_fixed_slice_of_the_capture():
+    """Measured on the bench 2026-08-05, at HSCALE 1023 (x1.001, so no scaling
+    arithmetic is in play) by creeping VDS_DIS_HB_ST until the band of unwritten
+    memory just vanished:
+
+        capture 400 samples -> VDS_DIS_HB_ST 515, origin 129 -> produced 386
+        capture 798 samples -> VDS_DIS_HB_ST 914, origin 129 -> produced 785
+
+    A proportional loss cannot fit both: the ratio from 400 predicts 770 at 798,
+    and 785 was measured. A FIXED loss fits both, and the brackets intersect at
+    about 13.5 samples -- a slice at the edge of the capture that produces no
+    output, which is what a polyphase filter does with its taps.
     """
-    v = gm.solve_axis(capture=546, scale=660, bypassed=False, raster_total=1126,
-                      axis=gm.AXIS_V, origin=63, window_sp_of=37)
+    for capture, expected in ((400, 386), (798, 785)):
+        produced = gm.produced_px(capture, 1023)
 
-    assert round(v["produced"], 2) == 847.13
-    assert v["display_st"] - 1 == 909
+        assert int(produced) == expected, (
+            f"capture {capture}: {produced:.2f} produced, measured {expected}")
+
+
+def test_the_vertical_loss_is_measured_separately():
+    """Different units and a different filter, so it does not share the
+    horizontal constant. Bench 2026-08-05: capture 511 half-lines at VSCALE 550
+    gave VDS_DIS_VB_ST 986 from origin 63, so produced 923."""
+    produced = gm.produced_px(511, 550, axis=gm.AXIS_V)
+
+    assert int(produced) == 923, f"{produced:.2f}"
+
+
+def test_a_bypassed_axis_loses_nothing():
+    """Bypass takes the scaler out of the path, so there is no filter to feed
+    and no edge slice to lose."""
+    assert gm.produced_px(798, 1023, bypassed=True) == 798
+
+
+# --- the vertical axis, against a fully measured state ------------------------
 
 
 def test_the_picture_is_never_placed_outside_the_frame_buffer():

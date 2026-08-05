@@ -112,6 +112,18 @@ ORIGIN_OFFSET_V = 26
 CORNER_H = 129
 CORNER_V = 63
 
+# How much of the capture window produces no output at all, in the axis's own
+# units -- samples horizontally, half-lines vertically. See produced_px().
+#
+#   horizontal   13.5 samples     two widths at HSCALE 1023, brackets intersect
+#   vertical     15.0 half-lines  one width at VSCALE 550, bracket 14.71..15.25
+#
+# The vertical rests on a SINGLE measurement, so it pins the constant without
+# proving the shape. The horizontal needed two widths to tell a fixed loss from
+# a proportional one, and the vertical has not had that test.
+CAPTURE_LOSS_H = 13.5
+CAPTURE_LOSS_V = 15.0
+
 # The panel shows less than the raster: creeping the display window to the bezel
 # put its corner at output pixel 127, line 63. Assuming the visible region is
 # symmetric in the raster gives the extents below, and "full screen" means
@@ -134,8 +146,9 @@ class Axis:
     """
 
     def __init__(self, name, offset_bypassed, offset_scaled, warn_px,
-                 visible_edge, registers):
+                 visible_edge, registers, capture_loss):
         self.name = name
+        self.capture_loss = capture_loss
         self.offset_bypassed = offset_bypassed
         self.offset_scaled = offset_scaled
         self.warn_px = warn_px
@@ -154,6 +167,7 @@ AXIS_H = Axis(
     "horizontal", ORIGIN_OFFSET_H_BYPASSED, ORIGIN_OFFSET_H_SCALED,
     HEADROOM_WARN_PX, PANEL_VISIBLE_LEFT,
     ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST"),
+    CAPTURE_LOSS_H,
 )
 
 # No vertical margin: a settled state at -1.9 lines was clean, and the horizontal
@@ -164,6 +178,7 @@ AXIS_V = Axis(
     "vertical", ORIGIN_OFFSET_V, ORIGIN_OFFSET_V,
     0, PANEL_VISIBLE_TOP,
     ("VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST"),
+    CAPTURE_LOSS_V,
 )
 
 
@@ -182,10 +197,36 @@ def magnification(hscale, bypassed=False):
     return HSCALE_UNITY / hscale
 
 
-def produced_px(capture_units, hscale, bypassed=False):
-    """Output pixels the scaler makes from a capture window of this width."""
+def produced_px(capture_units, hscale, bypassed=False, axis=None):
+    """Output pixels the scaler makes from a capture window of this width.
+
+    A fixed slice of the capture produces NOTHING. The scaler needs filter taps
+    either side of each output position, so the units at the edge of the window
+    have no neighbours to interpolate from and no output is written for them.
+
+    Measured 2026-08-05 at HSCALE 1023 (x1.001, so no scaling arithmetic is in
+    play) by creeping VDS_DIS_HB_ST until the band of unwritten memory vanished:
+
+        capture 400 -> produced 386     13.38 < loss <= 14.38
+        capture 798 -> produced 785     12.77 < loss <= 13.77
+
+    Two widths, one constant, brackets intersecting at ~13.5 samples. A
+    PROPORTIONAL loss cannot fit both -- the ratio from 400 predicts 770 at 798
+    against 785 measured, 15 px out and far beyond eye error. That is what killed
+    the "unity is 994 not 1024" reading, which fitted either point alone.
+
+    Ignoring it is what put a band of scratch down the right of the screen and
+    along the bottom, with every register reading exactly what the old formula
+    asked for.
+    """
     factor = magnification(hscale, bypassed)
-    return None if factor is None else capture_units * factor
+    if factor is None:
+        return None
+    if bypassed:
+        # No scaler in the path, so no filter to feed and no edge slice lost.
+        return capture_units * factor
+    loss = (axis or AXIS_H).capture_loss
+    return max(0.0, capture_units - loss) * factor
 
 
 def headroom_px(memory_window_px, produced):
@@ -293,6 +334,53 @@ def zoom_capture(sp, st, max_produced, step, wrap_at=None, unity=HSCALE_UNITY):
     return new_sp, new_st, scale
 
 
+def fit_loss(points):
+    """Fit the two loss terms to measurements of `produced`.
+
+    `points` is [(capture, scale, produced)]. Returns (c, k) where
+
+        produced = (capture - c) x 1024 / scale - k
+
+    c is in the axis's input units, k in output units. The fit is a straight
+    line, because the deficit is linear in magnification:
+
+        capture x m - produced = c x m + k        with m = 1024/scale
+
+    so the slope is c and the intercept is k.
+
+    TWO POINTS ARE NOT EVIDENCE. Any two land exactly on some line, so a
+    two-point fit cannot disconfirm the model -- and three separate readings this
+    evening looked confirmed on exactly that basis and were later refuted. Use
+    three or more distinct magnifications and read `loss_residuals`.
+    """
+    if len(points) < 2:
+        raise ValueError("need at least two measurements")
+    xs = [HSCALE_UNITY / scale for _, scale, _ in points]
+    ys = [capture * HSCALE_UNITY / scale - produced
+          for capture, scale, produced in points]
+    if len(set(round(x, 9) for x in xs)) < 2:
+        raise ValueError(
+            "every point is at the same magnification, so c and k cannot be "
+            "separated -- vary the scale, not just the capture")
+    n = len(xs)
+    sx, sy = sum(xs), sum(ys)
+    denominator = n * sum(x * x for x in xs) - sx * sx
+    c = (n * sum(x * y for x, y in zip(xs, ys)) - sx * sy) / denominator
+    k = (sy - c * sx) / n
+    return c, k
+
+
+def loss_residuals(points, c, k):
+    """How far each measurement sits from the fitted line, in output units.
+
+    This is what says whether the model is right. Residuals within the +-1 that
+    floor() and an eye judgement can account for mean the line holds; a
+    systematic pattern in them means it does not, however well the fit reads.
+    """
+    return [produced - ((capture - c) * HSCALE_UNITY / scale - k)
+            for capture, scale, produced in points]
+
+
 def scale_ceiling(capture, memory_window, unity=HSCALE_UNITY):
     """The smallest scale -- the biggest picture -- this capture may be given
     before `produced` overruns the memory window.
@@ -377,7 +465,7 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
         raise ValueError("capture must be positive")
 
     clamped = []
-    produced = produced_px(capture, scale, bypassed)
+    produced = produced_px(capture, scale, bypassed, axis)
     if produced is None:
         raise ValueError("scale reads 0, which is a dropped read, not a setting")
 
