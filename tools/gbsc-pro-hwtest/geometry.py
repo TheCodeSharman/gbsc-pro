@@ -21,12 +21,11 @@ import urllib.request
 
 # The arithmetic and the headroom constants live in geometry_math, so that this
 # tool and the code that *chooses* registers cannot come to different conclusions
-# about the same hardware. The empirical bracket behind HEADROOM_MIN_PX and
-# HEADROOM_SAFE_PX is documented there.
+# about the same hardware. Why HEADROOM_WARN_PX is a warn floor rather than a
+# measured boundary is documented there.
 import geometry_math as gm
 
-HEADROOM_MIN_PX = gm.HEADROOM_MIN_PX
-HEADROOM_SAFE_PX = gm.HEADROOM_SAFE_PX
+HEADROOM_WARN_PX = gm.HEADROOM_WARN_PX
 
 
 def burst(host, segment, first, last):
@@ -170,17 +169,19 @@ def report(r, label=None):
 
     headroom = gm.headroom_px(memory, produced)
     add(f"    headroom          {headroom:+.2f} px   (memory window - produced)")
-    if headroom < HEADROOM_MIN_PX:
+    if headroom < HEADROOM_WARN_PX:
         safe = gm.smallest_safe_hscale(capture, memory) if magnify else None
         if headroom < 0:
             add(f"    !! OVERFLOW: the product exceeds the memory window by "
                 f"{-headroom:.2f} px per line.")
         else:
-            add(f"    !! TOO LITTLE HEADROOM: only {headroom:.2f} px of slack, and "
-                f"{HEADROOM_MIN_PX} px was measured to artefact.")
+            add(f"    !! THIN HEADROOM: only {headroom:.2f} px of slack, under the "
+                f"{HEADROOM_WARN_PX} px floor.")
         add("       Moving comb bands follow. Fitting is not enough -- the scaler")
         add("       must finish reading the line from memory before the line ends,")
-        add(f"       so it needs slack. Aim for >= {HEADROOM_SAFE_PX} px.")
+        add("       so it needs slack. How much is not known: the requirement is")
+        add("       not monotonic in HSCALE and the corruption has stable bands,")
+        add("       so the floor is set well clear rather than at a boundary.")
         if safe:
             add(f"       smallest safe VDS_HSCALE for this capture is {safe} "
                 f"(-> {capture * 1024 / safe:.2f} px, "

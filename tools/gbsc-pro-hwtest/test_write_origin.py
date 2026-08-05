@@ -38,6 +38,15 @@ BASE = {
 }
 SHIFT = 100
 
+# The same reading's vertical half. IF_VB counts half-lines, so 513 of them at
+# VSCALE 660 is 795.93 output lines, not 1591.9.
+BASE_BOTH_AXES = dict(
+    BASE,
+    IF_VB_SP=56, IF_VB_ST=569,
+    VDS_VB_SP=37, VDS_VB_ST=831,
+    VDS_VSCALE=660, VDS_VSYNC_RST=1125,
+)
+
 
 def states_through(current, changes):
     """Every intermediate state, in the order the tool sends the writes."""
@@ -137,3 +146,30 @@ def test_fields_outside_the_two_windows_keep_their_given_order():
     everything else should pass through as the caller wrote it."""
     changes = {"VDS_DIS_HB_SP": 300, "VDS_DIS_HB_ST": 2100}
     assert write_origin.ordered_writes(BASE, changes) == list(changes.items())
+
+
+# --- the vertical pair has the same hazard and nothing was enforcing it -------
+
+
+def test_headroom_reports_the_worse_of_the_two_axes():
+    """A move that is safe horizontally and ruinous vertically must not be
+    ordered as though it were safe. The bench sits at -1.9 lines vertically
+    against +1034 px horizontally, so the vertical half is what decides."""
+    assert write_origin.headroom_of(BASE_BOTH_AXES) < 0
+
+
+def test_a_horizontal_only_state_still_reports_its_headroom():
+    """Most callers read the horizontal context only; they must keep working."""
+    assert write_origin.headroom_of(BASE) > 0
+
+
+def test_a_vertical_scale_down_is_ordered_after_its_window_opens():
+    """Lowering VSCALE grows the picture. Sent before the window widens, it
+    overflows for as long as the two writes are apart -- the same failure the
+    horizontal pair had, which corrupted the picture mid-pan."""
+    changes = {"VDS_VSCALE": 500, "VDS_VB_ST": 1100}
+
+    order = [name for name, _ in
+             write_origin.ordered_writes(BASE_BOTH_AXES, changes)]
+
+    assert order.index("VDS_VB_ST") < order.index("VDS_VSCALE")

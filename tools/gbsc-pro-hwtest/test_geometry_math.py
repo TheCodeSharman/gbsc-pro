@@ -83,57 +83,118 @@ def test_snapshots_were_found():
     assert SOLVED, "no SOLVED-* snapshots with segment 1 captured"
 
 
-@pytest.mark.parametrize("case", SOLVED, ids=ids(SOLVED))
-def test_solved_states_have_the_headroom_the_rule_demands(case):
-    """These were clean on screen. If the rule says they should not have been,
-    the rule is wrong -- this is the check that keeps the constants honest."""
-    produced = gm.produced_px(case["capture"], case["hscale"], case["bypassed"])
-    headroom = gm.headroom_px(case["memory"], produced)
-    assert headroom >= gm.HEADROOM_MIN_PX, (
-        f"{case['name']} was photographed clean but has only {headroom:.1f} px "
-        f"of headroom, below the {gm.HEADROOM_MIN_PX} px that artefacted"
-    )
+# --- panning the capture window ----------------------------------------------
 
 
-def test_the_headroom_floor_rises_as_hscale_approaches_unity():
-    """665 needed ~13 px (2026-08-03); 1023 needed 33.2 (2026-08-05, capture
-    held at 798 and only HSCALE moved). Anything between is interpolated."""
-    assert (gm.headroom_min_px(665)
-            < gm.headroom_min_px(993)
-            < gm.headroom_min_px(1023))
+def test_a_pan_moves_both_capture_edges_and_keeps_the_width():
+    """Panning chooses which part of the source is grabbed. The width is what
+    `produced` is computed from, so a pan that changed it would resize the
+    picture as a side effect."""
+    sp, st = gm.pan_capture(264, 1062, +8, wrap_at=1277)
+
+    assert (sp, st) == (272, 1070)
 
 
-def test_sixteen_px_is_enough_at_hscale_665_and_not_at_1023():
-    """The crux. 16.85 px was photographed clean at 665 and is the tightest
-    SOLVED state; at 1023 the picture was still shredding well above it."""
-    assert gm.is_safe(1358.15 + 16.85, 1358.15, hscale=665)
-    assert not gm.is_safe(798.78 + 16.85, 798.78, hscale=1023)
+def test_a_pan_stops_at_the_wrap_point_rather_than_crossing_it():
+    """IF_VB_ST wraps at 624 and nothing in the firmware guards it; crossing
+    makes the picture jump, which has been misread as losing the capture."""
+    sp, st = gm.pan_capture(56, 569, +100, wrap_at=624)
+
+    assert st <= 623, f"IF_VB_ST {st} is at or past the 624 wrap"
+    assert st - sp == 513, "clamping must not change the captured width"
+
+
+def test_a_pan_stops_at_zero_going_the_other_way():
+    sp, st = gm.pan_capture(56, 569, -100, wrap_at=624)
+
+    assert sp >= 0
+    assert st - sp == 513
+
+
+# --- solving an axis ----------------------------------------------------------
+
+
+def test_the_solver_centres_the_picture_on_the_raster():
+    """Bench reference, 2026-08-05 evening: capture 798 at HSCALE 650 produces
+    1257.16 px on a 1445 px line, so the origin belongs at (1445-1257.16)/2 =
+    93.92, rounding to 94."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert axis["origin"] == 94
+    assert axis["window_sp"] == 94 - gm.ORIGIN_OFFSET_H_SCALED
+
+
+def test_the_solver_takes_every_pixel_of_margin_available():
+    """The window's far end is free once the origin is pinned, so it goes to the
+    raster's last usable value rather than to a computed target."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert axis["window_st"] == 1444, "one below VDS_HSYNC_RST, which wraps"
+
+
+def test_the_display_window_hugs_the_picture():
+    """The error that invalidated two of tonight's measurements was a display
+    window left sized for a different picture, blanking the right-hand end where
+    tearing shows."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert axis["display_sp"] == axis["origin"]
+    assert axis["display_st"] == axis["origin"] + round(axis["produced"])
+
+
+def test_the_solver_corrects_the_thirteen_pixel_offset_on_the_bench():
+    """The bench had VDS_DIS_HB_SP 129 against an origin of 116 -- 13 px of
+    picture blanked left, 13 px of scratch shown right. Same inputs, corrected."""
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert axis["display_sp"] != 129
+
+
+def test_a_vertical_solve_treats_IF_VB_as_half_lines():
+    """IF_VB counts half-lines and wraps at 624 = 2 x the 312-line frame. Reading
+    it as whole lines doubles the picture, and is the likeliest bug here.
+    Bench: 513 half-lines at VSCALE 660 is 795.93 output lines, not 1591.9."""
+    axis = gm.solve_axis(513, 660, False, 1125, gm.AXIS_V)
+
+    assert 795 < axis["produced"] < 797
+
+
+def test_the_vertical_window_never_reaches_the_wrap_that_rolls_the_frame():
+    axis = gm.solve_axis(513, 660, False, 1125, gm.AXIS_V)
+
+    assert axis["window_st"] < 1125
+
+
+def test_a_picture_too_wide_for_the_line_warns_rather_than_shrinking():
+    """Scale is the user's to set. If even a maximised window leaves under the
+    warn floor, say so and hand back the widest window -- do not quietly change
+    the picture the user asked for."""
+    axis = gm.solve_axis(798, 570, False, 1445, gm.AXIS_H)
+
+    assert axis["produced"] > 1400
+    assert axis["margin_given"] < gm.HEADROOM_WARN_PX
+    assert axis["clamped"], "a shortfall must be reported, not silent"
+
+
+def test_a_comfortable_picture_reports_no_shortfall():
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert axis["margin_given"] >= gm.HEADROOM_WARN_PX
+    assert axis["clamped"] == []
 
 
 def test_the_window_that_shredded_on_the_bench_is_not_safe():
-    """VDS_HB_ST 847 against VDS_HB_SP 49 at HSCALE 1023 — the video in
+    """VDS_HB_ST 847 against VDS_HB_SP 49 at HSCALE 1023 -- the video in
     docs/photos/2026-08-05-horizontal-geometry/15-source-video-IMG_1253.mov."""
-    assert not gm.is_safe(847 - 49, 798.78, hscale=1023)
+    assert not gm.is_safe(847 - 49, 798.78)
 
 
-def test_solve_leaves_the_headroom_its_own_hscale_demands():
-    """A near-unity solve must not hand back a window sized by the 665 floor.
-    798 capture at 798 px wide is the bench's own case, and it lands at 1023."""
-    result = gm.solve_horizontal(798, 798, 1445)
-
-    assert result["hscale"] >= 1000, "expected this to land near unity"
-    assert gm.is_safe(result["min_memory_window_px"], result["produced_px"],
-                      hscale=result["hscale"]), (
-        f"solve returned {result['min_memory_window_px']} px of window for "
-        f"{result['produced_px']:.2f} px produced at HSCALE {result['hscale']} — "
-        f"only {result['min_memory_window_px'] - result['produced_px']:.1f} px "
-        f"of headroom, below the {gm.headroom_min_px(result['hscale'])} measured"
-    )
-
-
-def test_the_window_that_was_clean_on_the_bench_is_safe():
-    """VDS_HB_ST 883, the state that was steady on screen."""
-    assert gm.is_safe(883 - 49, 798.78, hscale=1023)
+def test_the_warn_floor_clears_both_boundaries_that_were_measured_validly():
+    """The floor is not a boundary -- it is deliberately well above both, since
+    the requirement is non-monotonic in HSCALE, the corruption has multiple
+    stable bands, and it may vary between units."""
+    assert gm.HEADROOM_WARN_PX > 33.2, "the HSCALE 1023 edge"
+    assert gm.HEADROOM_WARN_PX > 84.6, "the HSCALE 850 edge"
 
 
 @pytest.mark.parametrize("case", SOLVED, ids=ids(SOLVED))
@@ -152,72 +213,8 @@ def test_magnification_reports_a_dropped_read_rather_than_guessing():
 # --- the generative direction ------------------------------------------------
 
 
-@pytest.mark.parametrize("case", SOLVED, ids=ids(SOLVED))
-def test_solve_reproduces_the_hscale_that_was_on_screen(case):
-    """Round trip: ask for exactly the width this snapshot produces and the solve
-    should return the HSCALE it used. Allow one count -- HSCALE is an integer
-    divisor, so neighbouring values differ by a fraction of a pixel."""
-    produced = gm.produced_px(case["capture"], case["hscale"], case["bypassed"])
-    result = gm.solve_horizontal(case["capture"], produced, case["line_px"])
-    assert abs(result["hscale"] - case["hscale"]) <= 1, (
-        f"{case['name']}: asked for {produced:.1f} px from {case['capture']} "
-        f"capture units, solve chose HSCALE {result['hscale']} but the working "
-        f"state used {case['hscale']}"
-    )
-
-
-@pytest.mark.parametrize("case", TUNED, ids=ids(TUNED))
-def test_solve_never_returns_an_unsafe_register_set(case):
-    """Whatever is asked for, the result honours the headroom rule or says it
-    could not. This is the invariant the firmware will rely on."""
-    result = gm.solve_horizontal(case["capture"], case["line_px"], case["line_px"])
-    if result["safe"]:
-        assert result["min_memory_window_px"] - result["produced_px"] >= gm.HEADROOM_MIN_PX
-    else:
-        assert result["clamped"], "unsafe result with no explanation"
-
-
-@pytest.mark.parametrize("case", SOLVED, ids=ids(SOLVED))
-def test_a_working_memory_window_is_never_narrowed(case):
-    """These windows were on screen and clean, with far more slack than the rule
-    demands. Applying the bare minimum would narrow them into territory nothing
-    has been measured in, so ensure_memory_window() must only ever widen.
-
-    One of these -- mode13-fullscreen-clean, at 16.85 px -- sits below
-    HEADROOM_SAFE_PX, which is the margin added above the tightest state ever
-    seen clean. It is correct for that one to be widened slightly.
-    """
-    produced = gm.produced_px(case["capture"], case["hscale"], case["bypassed"])
-    result = gm.solve_horizontal(case["capture"], produced, case["line_px"])
-    kept = gm.ensure_memory_window(
-        case["memory"], result["min_memory_window_px"], case["line_px"]
-    )
-    assert kept >= case["memory"], "a working window was narrowed"
-    assert kept - produced >= gm.HEADROOM_MIN_PX
-
-
-def test_a_too_narrow_memory_window_is_widened():
-    result = gm.solve_horizontal(826, 1271.92, 1445)
-    widened = gm.ensure_memory_window(1000, result["min_memory_window_px"], 1445)
-    assert widened == result["min_memory_window_px"]
-    assert widened - result["produced_px"] >= gm.HEADROOM_MIN_PX
-
-
 def test_memory_window_never_exceeds_the_line():
     assert gm.ensure_memory_window(9999, 1292, 1445) == 1445
-
-
-def test_solve_raises_hscale_rather_than_overflowing_the_line():
-    """Asking for a picture wider than the line is the corruption case. The solve
-    must shrink it, not hand back the impossible number."""
-    result = gm.solve_horizontal(900, 2000, 1445)
-    assert result["produced_px"] <= 1445 - gm.HEADROOM_MIN_PX
-    assert result["clamped"]
-
-
-def test_solve_refuses_a_line_too_short_to_hold_headroom():
-    with pytest.raises(ValueError):
-        gm.solve_horizontal(900, 100, gm.HEADROOM_SAFE_PX)
 
 
 # --- the starting-point rule -------------------------------------------------

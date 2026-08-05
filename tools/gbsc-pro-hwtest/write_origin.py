@@ -4,10 +4,10 @@
     python3 tools/gbsc-pro-hwtest/write_origin.py --host 192.168.88.108
     python3 tools/gbsc-pro-hwtest/write_origin.py --host <ip> --plan   # no writes
 
-`geometry_math.solve_horizontal` returns widths and refuses to return positions,
-because where the scaler starts writing a captured line has never been measured
--- the geometry handover records it as *assumed* to be VDS_HB_SP. Everything
-about pan rests on that assumption, so it needs to stop being one.
+Where the scaler starts writing a captured line: VDS_HB_SP + 78 bypassed, + 80
+with the scaler engaged, constant over VDS_HB_SP 49..170, and VDS_VB_SP + 26
+vertically. `geometry_math.solve_axis` computes positions from those constants,
+so what this is for is re-measuring them if the clock or output preset changes.
 
 Two questions, and they have different consequences:
 
@@ -48,22 +48,47 @@ import setfield
 CAPTURE = ("IF_HB_ST2", "IF_HB_SP2")
 MEMORY = ("VDS_HB_ST", "VDS_HB_SP")
 DISPLAY = ("VDS_DIS_HB_ST", "VDS_DIS_HB_SP")
-CONTEXT = ("IF_HSYNC_RST", "VDS_HSYNC_RST", "VDS_HSCALE") + CAPTURE + MEMORY + DISPLAY
+# The vertical pair is read too, so headroom_of() can order on the tighter axis
+# rather than assuming the horizontal one is the only hazard.
+VERTICAL = ("IF_VB_ST", "IF_VB_SP", "VDS_VB_ST", "VDS_VB_SP", "VDS_VSCALE")
+CONTEXT = (("IF_HSYNC_RST", "VDS_HSYNC_RST", "VDS_HSCALE")
+           + CAPTURE + MEMORY + DISPLAY + VERTICAL)
+
+
+AXIS_FIELDS = (
+    ("VDS_HB_ST", "VDS_HB_SP", "IF_HB_ST2", "IF_HB_SP2", "VDS_HSCALE"),
+    ("VDS_VB_ST", "VDS_VB_SP", "IF_VB_ST", "IF_VB_SP", "VDS_VSCALE"),
+)
+
+
+def axis_headroom(state, fields):
+    """One axis's window minus what it has to hold, or None if the state does
+    not carry that axis at all."""
+    window_st, window_sp, capture_st, capture_sp, scale = fields
+    try:
+        window = state[window_st] - state[window_sp]
+        capture = state[capture_st] - state[capture_sp]
+        scale_value = state[scale]
+    except KeyError:
+        return None
+    produced = geometry_math.produced_px(capture, scale_value)
+    if produced is None:
+        return None
+    return window - produced
 
 
 def headroom_of(state):
-    """Memory window minus produced pixels, or None if the state does not carry
-    enough to say. This is the quantity setfield's docstring is about: let it go
-    negative for even one intermediate step and the picture visibly corrupts."""
-    try:
-        window = state["VDS_HB_ST"] - state["VDS_HB_SP"]
-        capture = state["IF_HB_ST2"] - state["IF_HB_SP2"]
-        scale = state["VDS_HSCALE"]
-    except KeyError:
-        return None
-    if not scale:
-        return None
-    return window - capture * 1024 / scale
+    """The tighter of the two axes, or None if the state carries neither.
+
+    This is the quantity setfield's docstring is about: let it go negative for
+    even one intermediate step and the picture visibly corrupts. Both axes have
+    the hazard -- vertically, every VSCALE below the one in place at VDS_VB
+    37..845 goes negative -- so ordering on the horizontal alone would send a
+    vertical move in the ruinous order while reporting itself safe.
+    """
+    measured = [axis_headroom(state, fields) for fields in AXIS_FIELDS]
+    present = [value for value in measured if value is not None]
+    return min(present) if present else None
 
 
 def ordered_writes(current, changes):
@@ -129,12 +154,12 @@ def show(state, hscale_note=True):
     # measure, so it should not go unnoticed.
     produced = (state["IF_HB_ST2"] - state["IF_HB_SP2"]) * 1024 / state["VDS_HSCALE"]
     headroom = (state["VDS_HB_ST"] - state["VDS_HB_SP"]) - produced
-    verdict = ("OK" if headroom >= geometry_math.HEADROOM_SAFE_PX else
-               "thin" if headroom >= geometry_math.HEADROOM_MIN_PX else
+    verdict = ("OK" if headroom >= geometry_math.HEADROOM_WARN_PX else
+               "thin" if headroom >= geometry_math.HEADROOM_WARN_PX / 2 else
                "BELOW the rule -- should be tearing")
     print(f"    produces {produced:.1f} px into a {state['VDS_HB_ST'] - state['VDS_HB_SP']} px "
           f"memory window: {headroom:.1f} px headroom, {verdict}")
-    if headroom < geometry_math.HEADROOM_MIN_PX:
+    if headroom < geometry_math.HEADROOM_WARN_PX / 2:
         print(f"      (the rule was measured at a {1445} px output line, this is "
               f"{line} px -- if the picture is clean, the rule does not "
               f"generalise)")
@@ -233,7 +258,7 @@ def main():
         # instead: same test of the assumption, and headroom goes up, not down.
         produced = capture_width * 1024 / base["VDS_HSCALE"]
         headroom = (base["VDS_HB_ST"] - base["VDS_HB_SP"]) - produced
-        origin_delta = -shift if headroom - shift < geometry_math.HEADROOM_SAFE_PX else shift
+        origin_delta = -shift if headroom - shift < geometry_math.HEADROOM_WARN_PX else shift
         origin_word = "later" if origin_delta > 0 else "earlier"
         if origin_delta < 0:
             print(f"  origin trial moves VDS_HB_SP {origin_word} ({origin_delta}): "
@@ -322,13 +347,13 @@ def main():
     pans = [t["answer"] for t in answers["trials"] if t["trial"].startswith("pan")]
     if pans and all(a == "c" for a in pans):
         print("\n  Pan is expressible as input blanking ALONE -- the frame stays put\n"
-              "  and the content moves. solve_horizontal can keep returning widths,\n"
-              "  and the user's pan/scale maps straight onto IF_HB_ST2/SP2.")
+              "  and the content moves, which is what geometry_math.pan_capture\n"
+              "  assumes and what the user's pan control maps onto.")
     elif pans and all(a == "s" for a in pans):
         print("\n  The write origin TRACKS position in the line: panning the input\n"
               "  slides the picture, so the display window has to move with it and\n"
-              "  pan and scale are not independent. solve_horizontal needs to\n"
-              "  return positions, not just widths.")
+              "  pan and scale are not independent. geometry_math.pan_capture would\n"
+              "  then have to re-solve the output windows on every pan.")
 
     if args.out:
         with open(args.out, "w") as handle:

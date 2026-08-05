@@ -32,87 +32,100 @@ HSCALE_MAX = 1023
 # The product fitting inside the memory window is NOT sufficient. The scaler has
 # to finish reading the line out of memory before the line period ends, so it
 # needs slack -- and with too little, the picture tears exactly as it does on a
-# real overflow. Bracketed empirically on 2026-08-03 at PLLAD_MD 2553, output
-# line 1445 px, by moving VDS_HSCALE with everything else held fixed:
+# real overflow.
 #
-#   capture 877, memory 1363, HSCALE 660 -> 1360.68 px,  2.3 px slack  ARTEFACTS
-#   capture 877, memory 1363, HSCALE 665 -> 1350.40 px, 12.6 px slack  ARTEFACTS
-#   capture 882, memory 1375, HSCALE 665 -> 1358.15 px, 16.9 px slack  CLEAN
-#   capture 877, memory 1363, HSCALE 670 -> 1340.37 px, 22.6 px slack  CLEAN
+# HOW MUCH slack is not known, and this module deliberately stops trying to say.
 #
-# The middle pair is the decisive one: same HSCALE, so same ratio and the same
-# interpolation -- only the slack differs, and only that changed the outcome.
-# So the governing quantity is (memory window - produced), not the ratio.
+# The measurements that survive scrutiny, all at PLLAD_MD 2553 on a 1445 px
+# output line, capture held at 798 units, moving only VDS_HB_ST to the edge:
 #
-# The threshold is NOT a constant: it depends on HSCALE, and steeply near unity.
-# Isolated on 2026-08-05 at the same clock and the same 1445 px output line, by
-# holding the capture at 798 units and VDS_HB_SP at 49 and moving only HSCALE,
-# then creeping VDS_HB_ST down to the tearing edge:
+#   HSCALE 1023 (x1.001) -> produced  798.78, edge at VDS_HB_ST  881   33.2 px
+#   HSCALE  850 (x1.205) -> produced  961.36, edge at VDS_HB_ST 1095  ~84.6 px
 #
-#   HSCALE 1023 (x1.001) -> produced  798.78, clean at VDS_HB_ST 881  33.2 px
+# Those disagree with every simple model -- the requirement is NOT monotonic in
+# HSCALE -- and the corruption has multiple stable bands, so an edge found by
+# creeping down is only the true edge if you creep past all of them. More
+# measurement would not fix that.
 #
-# Points at HSCALE 993 (24.1 px) and 850 (-39.4 px, "stable") were taken the same
-# evening and are NOT usable: VDS_DIS_HB_ST was left at 927, sized for the 1023
-# picture, so as HSCALE fell the growing picture had its right-hand end blanked --
-# 24.9 px hidden at 993, 163 px at 850. The tearing shows worst at the right of
-# the line, so the display window was hiding the evidence. Any HSCALE sweep must
-# move VDS_DIS_HB_ST to (origin + produced) at each step. Both are recorded in
-# docs/photos/2026-08-05-horizontal-geometry/ as measurements not to reuse.
+# Everything earlier is retracted. The old rule (13 px, "measured" 2026-08-03 at
+# HSCALE 660-670) rests on SOLVED-mode13-fullscreen-clean, whose VDS_DIS_HB_ST of
+# 1372 blanked 74 px of a picture ending at 1446 -- and tearing shows worst at
+# the right of the line, so its evidence was hidden. Points at HSCALE 993 and 850
+# taken the same evening failed the same way, with 24.9 px and 163 px hidden.
+# Recorded in docs/photos/2026-08-05-horizontal-geometry/ as measurements not to
+# reuse. The lesson is the procedural one: any headroom measurement is worthless
+# unless the display window contains the whole picture.
 #
-# Against the 2026-08-03 bracket above, which is entirely at HSCALE 665. All four
-# SOLVED-* snapshots sit at 665 too, which is why one constant looked sufficient
-# and why nothing caught this: the rule was fitted in one regime and never
-# exercised outside it. At HSCALE 1023 the 13 px figure permits a picture that
-# shreds -- filmed in docs/photos/2026-08-05-horizontal-geometry/.
+# So: do not target a margin, take all of it. The origin pins VDS_?B_SP, leaving
+# VDS_?B_ST free -- push it to the last value below the raster total and accept
+# whatever headroom results. It costs nothing and cannot land in a false-safe
+# band. This is only a floor to warn below.
+HEADROOM_WARN_PX = 100
+
+
+# --- where the picture lands --------------------------------------------------
+
+# Measured 2026-08-05: the first written pixel sits a fixed distance after
+# VDS_?B_SP, and that distance does not move with the capture window. Horizontal
+# confirmed constant over VDS_HB_SP 49..170; the 2 px difference is the scaler
+# stage in the path, which a bypassed scaler does not add.
+ORIGIN_OFFSET_H_BYPASSED = 78
+ORIGIN_OFFSET_H_SCALED = 80
+ORIGIN_OFFSET_V = 26
+
+# The panel shows less than the raster: creeping the display window to the bezel
+# put its corner at output pixel 127, line 63. Assuming the visible region is
+# symmetric in the raster gives the extents below, and "full screen" means
+# covering them -- NOT filling the raster, which is 254 px wider than anything
+# the TV displays.
 #
-# Hypothesis for the shape: HSCALE sets the line-memory reads per output pixel
-# (HSCALE/1024). At 665 the read engine idles about a third of the time and can
-# absorb a stall; at 1023 it runs flat out, so every bit of slack must be
-# pre-paid. The collapsing idle fraction fits the steepness near unity. Three
-# points is not a model -- the interpolation below is a placeholder that is
-# conservative between them, not a claim about the mechanism.
-#
-# 1023 is the largest HSCALE the field holds, so the 33.2 px point is the worst
-# case this chip can be put in at this clock and line -- but note that the
-# least-magnification setting anyone would naturally reach for IS that worst case.
-#
-# UNVERIFIED beyond one clock and one output preset. A timing budget should
-# scale with the line period, so on the 2600 px output preset these may be a
-# similar *fraction* of the line rather than the same pixel counts. Re-measure
-# before trusting them there.
-# Two anchors, not three: the 993 point is excluded above. Interpolating 665 to
-# 1023 puts 993 at 31.5 px, comfortably above the 24.1 that was measured through
-# a blanked right edge -- which is the safe way round, since a hidden failure can
-# only mean the true figure is higher.
-HEADROOM_BRACKETS = (
-    (665, 13.0),     # 12.6 artefacted, 16.85 clean   2026-08-03
-    (1023, 33.2),    # boundary at VDS_HB_ST 881      2026-08-05
+# TENTATIVE vertically. At produced 795.93 lines the bench looks roughly full
+# height, which a 999-line visible region would not; the real figure may be
+# nearer 800, i.e. the region is not symmetric. Calibrate against the panel.
+PANEL_VISIBLE_LEFT = 127
+PANEL_VISIBLE_TOP = 63
+
+
+class Axis:
+    """What differs between the two axes. The arithmetic does not.
+
+    `capture` is in IF units horizontally and HALF-LINES vertically -- the unit
+    difference is absorbed by the scale value, so the formula is the same, but it
+    is why a vertical capture number looks half the size you expect.
+    """
+
+    def __init__(self, name, offset_bypassed, offset_scaled, warn_px,
+                 visible_edge, registers):
+        self.name = name
+        self.offset_bypassed = offset_bypassed
+        self.offset_scaled = offset_scaled
+        self.warn_px = warn_px
+        self.visible_edge = visible_edge
+        self.registers = registers
+
+    def origin_offset(self, bypassed):
+        return self.offset_bypassed if bypassed else self.offset_scaled
+
+    def visible_span(self, raster_total):
+        """How much of the raster the panel actually shows."""
+        return raster_total - 2 * self.visible_edge
+
+
+AXIS_H = Axis(
+    "horizontal", ORIGIN_OFFSET_H_BYPASSED, ORIGIN_OFFSET_H_SCALED,
+    HEADROOM_WARN_PX, PANEL_VISIBLE_LEFT,
+    ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST"),
 )
 
-HEADROOM_MIN_PX = 13    # the HSCALE-665 floor. Prefer headroom_min_px(hscale).
-HEADROOM_SAFE_PX = 20   # 16.9 px was clean at 665; round up for margin
-
-
-def headroom_min_px(hscale):
-    """The measured minimum slack for this HSCALE, in output pixels.
-
-    Piecewise-linear between the measured brackets and flat outside them. Held
-    flat rather than extrapolated because extrapolating three points off either
-    end would invent a number, and the failure it would invent at the top is a
-    torn picture.
-    """
-    if not hscale:
-        return HEADROOM_BRACKETS[-1][1]
-    points = HEADROOM_BRACKETS
-    if hscale <= points[0][0]:
-        return points[0][1]
-    if hscale >= points[-1][0]:
-        return points[-1][1]
-    for (lo_h, lo_px), (hi_h, hi_px) in zip(points, points[1:]):
-        if lo_h <= hscale <= hi_h:
-            span = hi_h - lo_h
-            return lo_px + (hi_px - lo_px) * (hscale - lo_h) / span
-    return points[-1][1]
+# No vertical margin: a settled state at -1.9 lines was clean, and the horizontal
+# rule is a line-time constraint with no per-frame equivalent. Tentative -- that
+# state's display window was clipping, the same flaw that invalidated the
+# horizontal evidence, and the VSCALE +1 ambiguity is worth 1.2 lines here.
+AXIS_V = Axis(
+    "vertical", ORIGIN_OFFSET_V, ORIGIN_OFFSET_V,
+    0, PANEL_VISIBLE_TOP,
+    ("VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST"),
+)
 
 
 # --- reading a register set --------------------------------------------------
@@ -142,17 +155,20 @@ def headroom_px(memory_window_px, produced):
     return memory_window_px - produced
 
 
-def is_safe(memory_window_px, produced, minimum=None, hscale=None):
-    """Whether this window leaves the slack the bench says it needs.
-
-    Pass `hscale` -- the floor depends on it, steeply near unity. `minimum`
-    overrides for a caller that has measured its own regime; with neither, this
-    falls back to the HSCALE-665 constant, which is the historical behaviour and
-    is too low for anything above ~700.
-    """
-    if minimum is None:
-        minimum = HEADROOM_MIN_PX if hscale is None else headroom_min_px(hscale)
+def is_safe(memory_window_px, produced, minimum=HEADROOM_WARN_PX):
+    """Whether this window clears the warn floor. Not a measured boundary -- see
+    HEADROOM_WARN_PX for why there isn't one."""
     return headroom_px(memory_window_px, produced) >= minimum
+
+
+def covers_panel(produced, raster_total, axis):
+    """Whether the picture reaches the edges of what the TV actually shows.
+
+    Full screen is covering the visible region, not filling the raster: the
+    panel's corner is 254 px in horizontally, so a picture can fill the screen
+    while leaving a quarter of the raster unused as overscan.
+    """
+    return produced >= axis.visible_span(raster_total)
 
 
 # --- choosing a register set -------------------------------------------------
@@ -166,7 +182,7 @@ def hscale_for(capture_units, target_active_px):
     return HSCALE_UNITY * capture_units / target_active_px
 
 
-def smallest_safe_hscale(capture_units, memory_window_px, headroom=HEADROOM_SAFE_PX):
+def smallest_safe_hscale(capture_units, memory_window_px, headroom=HEADROOM_WARN_PX):
     """The least magnification-heavy HSCALE whose product still leaves `headroom`
     inside this memory window. Larger HSCALE means a smaller picture, so this is
     the *smallest* value that is safe. None if the window cannot hold anything."""
@@ -176,71 +192,105 @@ def smallest_safe_hscale(capture_units, memory_window_px, headroom=HEADROOM_SAFE
     return math.ceil(HSCALE_UNITY * capture_units / usable)
 
 
-def solve_horizontal(
-    capture_units,
-    target_active_px,
-    output_line_px,
-    headroom=HEADROOM_SAFE_PX,
-):
-    """Registers that display `capture_units` at `target_active_px` wide.
+def pan_capture(sp, st, delta, wrap_at):
+    """Shift a capture window without changing how wide it is.
 
-    Returns widths, not positions. Where the windows sit within the line is a
-    separate question -- the write origin has never been measured (the geometry
-    handover records it as assumed to be VDS_HB_SP), so callers should preserve
-    the existing left edges rather than trust a computed placement.
-
-    The headroom constraint is applied here rather than checked afterwards: if
-    the requested width cannot be produced with enough slack, the returned
-    `hscale` is raised until it can and `clamped` says why. A caller that ignores
-    the result still gets a safe register set.
+    Panning chooses which part of the source is grabbed; the width is what
+    `produced` is computed from, so a pan that changed it would resize the
+    picture as a side effect. Clamps rather than wraps: IF_VB_ST rolls at 624 and
+    IF_HB_ST2 at IF_HSYNC_RST+1, and crossing either makes the picture jump --
+    which has been misread as losing the capture window.
     """
-    if capture_units <= 0:
-        raise ValueError("capture_units must be positive")
-    if output_line_px <= headroom:
-        raise ValueError("output_line_px leaves no room for headroom")
+    width = st - sp
+    if width < 0:
+        raise ValueError("capture stop is before its start")
+    lowest, highest = 0, wrap_at - 1 - width
+    if highest < lowest:
+        raise ValueError("capture is wider than the space it must wrap inside")
+    start = min(max(sp + delta, lowest), highest)
+    return start, start + width
+
+
+def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0):
+    """Where one axis's four output registers belong.
+
+    `capture` is IF units horizontally and HALF-LINES vertically. Everything
+    returned is in output pixels or lines.
+
+    The picture is centred on the raster and the memory window is opened as wide
+    as the raster allows: the origin pins the window's near edge, leaving the far
+    edge free, and there is no reason to leave margin unclaimed. `offset` nudges
+    the centred position for a caller doing manual placement.
+    """
+    if capture <= 0:
+        raise ValueError("capture must be positive")
 
     clamped = []
+    produced = produced_px(capture, scale, bypassed)
+    if produced is None:
+        raise ValueError("scale reads 0, which is a dropped read, not a setting")
 
-    hscale = round(hscale_for(capture_units, target_active_px))
+    origin_offset = axis.origin_offset(bypassed)
 
-    if hscale < HSCALE_MIN:
-        hscale = HSCALE_MIN
-        clamped.append("hit the x4 magnification limit")
-    if hscale > HSCALE_MAX:
-        hscale = HSCALE_MAX
-        clamped.append("hit the x1.001 floor")
+    # Centre the picture, then let the window's near edge follow from it. Both
+    # can be driven off the bottom of the raster by a picture wider than the
+    # screen, which is legal -- it simply overscans -- but the registers cannot
+    # go negative.
+    origin = round((raster_total - produced) / 2) + offset
+    window_sp = origin - origin_offset
+    if window_sp < 0:
+        window_sp = 0
+        origin = origin_offset
+        clamped.append("picture is wider than the raster; pinned to the left edge")
 
-    # The widest picture this line can carry and still leave slack. Raising
-    # hscale shrinks the picture, so this is a lower bound on hscale.
-    fits = smallest_safe_hscale(capture_units, output_line_px, headroom)
-    if fits is not None and hscale < fits:
-        hscale = min(fits, HSCALE_MAX)
+    # The last value below the raster total. Both ST registers wrap rather than
+    # clamp, and a wrapped VDS_VB_ST rolls the frame.
+    window_st = raster_total - 1
+
+    margin_given = (window_st - window_sp) - produced
+    if margin_given < axis.warn_px:
         clamped.append(
-            f"raised to {hscale} so the product leaves {headroom} px inside the line"
+            f"only {margin_given:.1f} px of headroom, under the {axis.warn_px} px "
+            f"floor -- the picture may tear"
         )
 
-    produced = produced_px(capture_units, hscale)
-    display_window = math.floor(produced)
-
-    # The floor depends on the HSCALE we just landed on, and near unity it is far
-    # above the caller's default. Take whichever is larger: a caller asking for
-    # more margin keeps it, one asking for less does not get a torn picture.
-    needed = max(headroom, headroom_min_px(hscale))
-    if needed > headroom:
-        clamped.append(
-            f"headroom raised to {needed:.1f} px, measured for HSCALE {hscale}"
-        )
-    minimum_memory = min(output_line_px, math.ceil(produced + needed))
+    display_sp = origin
+    display_st = min(origin + round(produced), raster_total - 1)
 
     return {
-        "hscale": hscale,
-        "produced_px": produced,
-        "display_window_px": display_window,
-        "min_memory_window_px": minimum_memory,
-        "magnification": magnification(hscale),
+        "produced": produced,
+        "origin": origin,
+        "window_sp": window_sp,
+        "window_st": window_st,
+        "display_sp": display_sp,
+        "display_st": display_st,
+        "margin_given": margin_given,
+        "covers_panel": covers_panel(produced, raster_total, axis),
         "clamped": clamped,
-        "safe": minimum_memory - produced >= HEADROOM_MIN_PX,
     }
+
+
+def solve_geometry(capture_h, capture_v, hscale, vscale, line_px, frame_lines,
+                   hscale_bypassed=False, vscale_bypassed=False,
+                   offset_h=0, offset_v=0):
+    """The eight output registers for a given capture and scale.
+
+    The output raster is an input and is never returned: FrameSync owns
+    VDS_VSYNC_RST and runAutoBestHTotal owns VDS_HSYNC_RST, so writing either
+    fights the firmware and changes the mode the TV locks to.
+    """
+    h = solve_axis(capture_h, hscale, hscale_bypassed, line_px, AXIS_H, offset_h)
+    v = solve_axis(capture_v, vscale, vscale_bypassed, frame_lines, AXIS_V, offset_v)
+
+    registers = {}
+    for axis, solved in ((AXIS_H, h), (AXIS_V, v)):
+        sp, st, dis_sp, dis_st = axis.registers
+        registers[sp] = solved["window_sp"]
+        registers[st] = solved["window_st"]
+        registers[dis_sp] = solved["display_sp"]
+        registers[dis_st] = solved["display_st"]
+
+    return {"registers": registers, "horizontal": h, "vertical": v}
 
 
 def ensure_memory_window(current_px, minimum_px, output_line_px):
