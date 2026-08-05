@@ -293,26 +293,6 @@ def zoom_capture(sp, st, max_produced, step, wrap_at=None, unity=HSCALE_UNITY):
     return new_sp, new_st, scale
 
 
-def measured_unity(cal_width, cal_scale, cal_capture):
-    """The constant of proportionality, from an alignment instead of a datasheet.
-
-    1024 IS THE RIGHT ANSWER ON BOTH AXES, as far as anything measured shows:
-    horizontally to 3 px in 1256, vertically to 1.1 lines in 846 (photo 13). The
-    2.8% vertical discrepancy this was originally written for turned out to be a
-    misread display window, not a wrong constant -- see CORNER_V.
-
-    So this is not a correction, it is a safety net. It exists because the two
-    axes are read off a real panel whose visible region is not the raster, and a
-    user who has aligned by eye knows something the arithmetic does not. If a
-    calibration disagrees with 1024 by more than a rounding, that is worth
-    investigating rather than silently obeying -- last time it meant the
-    measurement was of the wrong thing.
-    """
-    if cal_capture <= 0 or cal_scale <= 0:
-        raise ValueError("a calibration needs a positive capture and scale")
-    return cal_width * cal_scale / cal_capture
-
-
 def scale_ceiling(capture, memory_window, unity=HSCALE_UNITY):
     """The smallest scale -- the biggest picture -- this capture may be given
     before `produced` overruns the memory window.
@@ -370,38 +350,6 @@ def scale_step(sp, st, scale, delta, memory_window, wrap_at,
                         "zoomed": True}
 
     return {"sp": sp, "st": st, "scale": wanted, "zoomed": False}
-
-
-def track_display(cal_scale, cal_sp, cal_width, new_scale,
-                  cal_capture, new_capture):
-    """Where a calibrated display window belongs at a different capture and scale.
-
-    `produced` is proportional to capture/scale, and THAT part of the model is
-    sound. What is wrong is the constant of proportionality: a pixel-perfect
-    alignment on 2026-08-05 measured a 1104-line picture where
-    `capture x 1024 / VSCALE` said 1074.26 -- 30 lines out, far beyond eye error.
-
-    So take the width from a measurement and scale it, instead of computing it
-    from a formula that is known to disagree with the hardware. The calibration
-    point is a fixed point by construction, so scaling up and back down returns
-    to exactly where the user aligned it.
-
-    BOTH ratios are required, and neither defaults. A zoom past the scale ceiling
-    moves them in opposite directions -- the capture shrinks and the scale drops
-    to refill -- so `produced` is unchanged and the window must not move. Tracking
-    the scale alone would widen it over unwritten memory, which shows as a band of
-    scratch along the far edge.
-
-    The near edge is held: the origin does drift with magnification (the offset
-    is 80 at x1.001 and 93 at x1.575), but there is no reliable law for it yet,
-    so a caller should re-calibrate rather than have this invent one.
-    """
-    if new_scale <= 0 or cal_scale <= 0:
-        raise ValueError("scale must be positive")
-    if new_capture <= 0 or cal_capture <= 0:
-        raise ValueError("capture must be positive")
-    width = cal_width * (cal_scale / new_scale) * (new_capture / cal_capture)
-    return cal_sp, cal_sp + round(width)
 
 
 def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,

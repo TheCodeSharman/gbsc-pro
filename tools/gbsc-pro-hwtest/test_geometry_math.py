@@ -313,58 +313,6 @@ def test_default_capture_window_stays_inside_the_line():
             assert 0 <= start < stop <= line
 
 
-# --- tracking a calibrated display window -------------------------------------
-
-
-def test_a_calibrated_window_scales_in_proportion():
-    """produced is proportional to 1/scale -- that part of the model is solid.
-    It is the constant of proportionality that is wrong: Michael's pixel-perfect
-    alignment on 2026-08-05 measured 1104 lines where the formula said 1074.26.
-
-    So take the width from the measurement and scale it, rather than computing
-    it. Halving the scale must double the width, exactly.
-    """
-    sp, st = gm.track_display(cal_scale=488, cal_sp=19, cal_width=1104,
-                              new_scale=244, cal_capture=513, new_capture=513)
-
-    assert sp == 19
-    assert st - sp == 2208
-
-
-def test_a_calibrated_window_is_unchanged_at_its_own_scale():
-    """The calibration point must be a fixed point, or pressing scale up then
-    down would walk the window away from where it was aligned."""
-    sp, st = gm.track_display(cal_scale=489, cal_sp=19, cal_width=1104,
-                              new_scale=489, cal_capture=513, new_capture=513)
-
-    assert (sp, st) == (19, 1123)
-
-
-def test_tracking_survives_a_round_trip():
-    """Up one step then down one step must land back exactly, or the window
-    drifts every time the user changes their mind."""
-    _, up = gm.track_display(489, 19, 1104, 488, 513, 513)
-    back = gm.track_display(488, 19, up - 19, 489, 513, 513)
-
-    assert back == (19, 1123)
-
-
-def test_a_zoom_holds_the_window_still():
-    """Zooming past the ceiling shrinks the capture AND drops the scale to
-    refill, so `produced` does not change -- and neither may the display window.
-    Tracking on the scale alone would widen it over unwritten memory, which is
-    the band of scratch VDS_DIS_?B_ST exists to keep off the screen.
-
-    Capture and scale here are in the ratio 171:163 both before and after, so
-    the refill is exact and the window must not move at all. A real zoom lands
-    on integer registers and moves it by a pixel or so.
-    """
-    sp, st = gm.track_display(cal_scale=489, cal_sp=19, cal_width=1104,
-                              new_scale=326, cal_capture=513, new_capture=342)
-
-    assert (sp, st) == (19, 1123)
-
-
 # --- the vertical axis, against a fully measured state ------------------------
 
 
@@ -462,30 +410,6 @@ def test_zooming_out_at_the_ceiling_widens_the_capture_back():
                          1424, 1277)
 
     assert (back["sp"], back["st"]) == (264, 1062)
-
-
-def test_the_ceiling_comes_from_the_alignment_not_the_datasheet():
-    """Michael measured 1104 lines from 513 half-lines at VSCALE 489, so the
-    vertical unity is 1052.4 and not 1024. Assume 1024 and the window looks
-    unfilled at 489, so the zoom engages late and the picture overruns it.
-
-    His alignment fills the window exactly, so 489 IS the ceiling and a zoom
-    press must trim the capture rather than drop the scale."""
-    unity = gm.measured_unity(cal_width=1104, cal_scale=489, cal_capture=513)
-    step = gm.scale_step(sp=20, st=533, scale=489, delta=-8,
-                         memory_window=1104, wrap_at=624, unity=unity)
-
-    assert step["zoomed"]
-
-
-def test_assuming_the_datasheet_unity_would_have_overrun_the_window():
-    """Why the measurement is load-bearing rather than a refinement: with 1024
-    the same press is treated as ordinary headroom and the scale drops."""
-    step = gm.scale_step(sp=20, st=533, scale=489, delta=-8,
-                         memory_window=1104, wrap_at=624)
-
-    assert not step["zoomed"]
-    assert 513 * 1052.4 / step["scale"] > 1104, "the real picture overran it"
 
 
 def test_zoom_stays_inside_the_scale_register():
