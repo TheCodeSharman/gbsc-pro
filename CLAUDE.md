@@ -277,24 +277,51 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **An RGBHV source over 535 lines is trapped in bypass** and is never scaled —
   deterministic, re-armed on every boot. The bench 800x600 (VTOTAL 627) hits it.
   It still gives a picture; the cost is scaling. `docs/rgbhv-bypass-trap.md`.
-- **`produced` is NOT `capture x 1024 / scale`.** That formula is 14 px long at
-  1:1 and 40 px short at x3.2, and a display window sized by it shows a band of
-  unwritten memory past the picture — garbage down the right of the screen and
-  along the bottom, with every register reading exactly what was asked for. The
-  measured model is `(capture - capture_offset) x 1024 / scale - output_loss`,
-  fitted to eleven readings over four magnifications per axis, and the two axes
-  are different shapes. `docs/scaler-geometry-model.md` has the constants, the
-  evidence and the measuring tool (`measure_produced.py`).
-- **A measurement through an edge you cannot see is not a measurement.** The
-  panel shows less than the raster (visible corner ~127/63) and `VDS_DIS_?B_ST`
-  rails two below the raster total. Three separate "measured" geometry values
-  turned out to be edges off-screen or against a rail — one of them cost a whole
-  session chasing a 30-line error in the vertical model that did not exist.
-  Check the edge was on screen and away from its limit before believing it.
-- **Two points cannot disconfirm a line.** Four models of the scaler's output
-  count were proposed in one evening; three were fitted to two readings, looked
-  confirmed, and were refuted by the next. Three magnifications is the minimum
-  that can fail, and `measure_produced.py` prints residuals so it can.
+- **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
+  loss term at either end. It did not look like one for two years because the
+  deficit against it *changes sign* with magnification, so four models were
+  proposed in one evening and three refuted. The deficit was never in the span:
+  `produced` was being measured from a corner assumed constant, and the corner
+  moves. **The write start is `VDS_?B_SP + START_CONST + START_PER_MAG x
+  magnification`** — 55 + 25m horizontally, 0.2 + 0.8m vertically — which is
+  pipeline latency before the first write, seen from the far end where it could
+  only look like loss. Measuring a fixed span from a moving origin gives a length
+  that appears to vary. `docs/scaler-geometry-model.md`, `measure_origin.py`.
+- **A good fit is not evidence the quantities are what you think.** The refuted
+  two-term model fitted all eleven readings to 0.43 px and was still wrong;
+  residuals could never have caught it. Only measuring the near edge did.
+- **A measurement through an edge you cannot see is not a measurement**, and the
+  specific failure is creeping until the *picture* stops and recording it as
+  where the *screen* stops. That produced `CORNER_H` 129, `ORIGIN_OFFSET_H` 78
+  and 94, `PANEL_VISIBLE_LEFT` 127 and a vertical bezel of 63 — every one of them
+  a write start wearing another name, and 127 and 78 are the same reading filed
+  twice. **Put content beyond the edge first**: set the picture to overrun the
+  raster on all four sides, then creep, and every boundary has live video either
+  side of it. Measured that way the bench panel shows `90..1351 x 41..1121`, not
+  the 127/63 carried here for months.
+- **Two points cannot disconfirm a line.** Three magnifications is the minimum
+  that can fail, and `measure_produced.py` and `measure_origin.py` print
+  residuals so they can.
+- **Don't pin the picture to a panel edge.** Where a display stops showing is a
+  property of the display, so `geometry_math` centres on the raster instead and
+  the user finds their own edges with pan and scale. The vertical visible region
+  is derivable — `1121 - 41 = 1080` exactly, the encoder's active window, same on
+  every display — while the horizontal is real overscan and is not.
+- **Compute the geometry, never inherit it.** Read the capture and the raster;
+  derive everything else. Every geometry fault of 2026-08-06 was a violation:
+  inheriting the corner put 41 px of the previous frame down the left of the
+  screen, and inheriting the picture size froze a picture at 620 lines that no
+  zoom step could grow. `scale_step` deliberately takes no `scale` argument —
+  there is a test asserting the parameter does not exist, because its existence
+  was the bug. Every pad press recomputes every window, pan included.
+- **The output hsync position affects left-hand corruption, and nothing models
+  it.** `VDS_HB_SP` below 8 corrupts, measured with `VDS_HS_ST` at 10; left-hand
+  corruption that survived everything else then cleared by moving the pulse to
+  62..77 (later, and a third as wide). The tempting reading — that the floor is
+  `VDS_HS_ST - 2` — is **refuted by that same state**, which is clean with
+  `VDS_HB_SP` at 9, fifty units before the pulse. Position or width, one at a
+  time, is the experiment. Treat 8 as measured at one hsync setting only.
+  `snapshots/hsync-tuned-no-left-corruption-2026-08-06.json`.
 - **The horizontal axis has no native resolution.** The chip sees sync edges, not
   pixels, so the source's pixel clock is unknowable and 320x256 and 640x256 are
   indistinguishable. Capture is in ADC sample units, and how many there are per
