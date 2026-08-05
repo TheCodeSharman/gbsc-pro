@@ -86,6 +86,24 @@ ORIGIN_OFFSET_H_BYPASSED = 78
 ORIGIN_OFFSET_H_SCALED = 80
 ORIGIN_OFFSET_V = 26
 
+# The top left corner of the picture, in OUTPUT pixels and lines, measured
+# rather than derived. From the pixel-perfect alignment of 2026-08-05, where
+# Michael set all four edges by eye:
+#
+#   snapshots/pixel-perfect-all-four-sides-2026-08-05.json
+#   raster 1445x1126, VDS_DIS_HB 129..1385, VDS_DIS_VB 19..1123
+#
+# These are ABSOLUTE positions on the output raster, not offsets from
+# VDS_?B_SP -- which is why they are constants at all. The offsets in that same
+# alignment were H 94 and V -18, and they move when the memory window moves.
+#
+# Pinning the corner is what makes the far edge meaningful: hold the corner and
+# the far edge is corner + produced, one unknown instead of two. Holding
+# whatever the register happened to say is what let the aperture drift off the
+# picture, cropping 110 lines vertically while overrunning 86 px horizontally.
+CORNER_H = 129
+CORNER_V = 19
+
 # The panel shows less than the raster: creeping the display window to the bezel
 # put its corner at output pixel 127, line 63. Assuming the visible region is
 # symmetric in the raster gives the extents below, and "full screen" means
