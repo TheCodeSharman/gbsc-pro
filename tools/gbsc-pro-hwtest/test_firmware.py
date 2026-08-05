@@ -735,6 +735,12 @@ FS_REASON = re.compile(
 )
 FS_COLLECT_SECONDS = 12.0
 
+# printInfo()'s status line, and the `v:` field within it. `v:` is VPERIOD_IF and
+# `vt:` is the sync processor's -- two different blocks, and only one of them is
+# trustworthy on RGBHV.
+INFO_LINE = re.compile(r"^h:\s*\d+\s+v:")
+INFO_VPERIOD_NUMBER = re.compile(r"^h:\s*\d+\s+v:\s*\d")
+
 
 def test_framesync_names_its_outcome(console):
     """A framesync attempt must say how it ended, not just that it started.
@@ -766,6 +772,57 @@ def test_framesync_names_its_outcome(console):
         f"A bare header names no cause, which is exactly what made the output "
         f"vsync sample look like the failing one when it is the input sample. "
         f"Raw output: {lines!r}"
+    )
+
+
+def test_console_does_not_print_an_invalid_vperiod_as_a_number(host, console):
+    """printInfo()'s `v:` field must not look like a measurement when it is not.
+
+    The line carries both vertical totals: `v:` is VPERIOD_IF, from the input
+    formatter, and `vt:` is STATUS_SYNC_PROC_VTOTAL, from the sync processor.
+    They come from different blocks and legitimately disagree -- on RGBHV the IF
+    never completes a vertical measurement, so `v:` is meaningless while `vt:` is
+    correct. Printed as two plain numbers side by side they look equally
+    authoritative. See docs/tv5725-chip.md.
+
+    The chip says which one to believe: STATUS_IF_VT_BAD (s0 0x05 bit 3) is set
+    exactly when the IF's vertical timing is not valid, so when it is set `v:`
+    reads `----` rather than a number.
+
+    Skips when VT_BAD is clear, because then there is nothing to mark -- on an
+    SD source the measurement is real and should print as one.
+
+    printInfo() does not run by default: rto->printInfos is false and loop()
+    gates on it, so this turns it on with /sc?i and back off afterwards. That
+    toggle is also why the line is not the everyday diagnostic it looks like --
+    you only see it if you asked for it, or if the no-sync counter trips.
+    """
+    if not (read_reg(host, 0, 0x05) >> 3) & 1:
+        pytest.skip(
+            "STATUS_IF_VT_BAD is clear, so VPERIOD_IF is valid here and should "
+            "print as a number; nothing to assert"
+        )
+
+    get(host, "/sc?i")  # toggle printInfo() on
+    try:
+        console.drain()
+        lines = console.collect(seconds=6)
+    finally:
+        get(host, "/sc?i")  # and off again, whatever happened above
+
+    info = [line for line in lines if INFO_LINE.search(line)]
+    if not info:
+        pytest.skip(
+            f"printInfo() did not reach the console in 6s with /sc?i on "
+            f"({_console_diagnosis(console)}). Needs a GBS_DEBUG=1 build"
+        )
+
+    numeric = [line for line in info if INFO_VPERIOD_NUMBER.search(line)]
+    assert not numeric, (
+        f"STATUS_IF_VT_BAD is set, so the IF has no valid vertical measurement, "
+        f"but printInfo() still prints `v:` as a number. That is what makes a "
+        f"meaningless VPERIOD_IF look like a fault next to a correct `vt:`. "
+        f"Expected `v:----`. Lines: {numeric[:3]!r}"
     )
 
 
