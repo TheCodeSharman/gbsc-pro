@@ -112,17 +112,34 @@ ORIGIN_OFFSET_V = 26
 CORNER_H = 129
 CORNER_V = 63
 
-# How much of the capture window produces no output at all, in the axis's own
-# units -- samples horizontally, half-lines vertically. See produced_px().
+# How `produced` falls short of capture x 1024 / scale.
 #
-#   horizontal   13.5 samples     two widths at HSCALE 1023, brackets intersect
-#   vertical     15.0 half-lines  one width at VSCALE 550, bracket 14.71..15.25
+#     produced = (capture - capture_offset) x 1024 / scale - output_loss
 #
-# The vertical rests on a SINGLE measurement, so it pins the constant without
-# proving the shape. The horizontal needed two widths to tell a fixed loss from
-# a proportional one, and the vertical has not had that test.
-CAPTURE_LOSS_H = 13.5
-CAPTURE_LOSS_V = 15.0
+# `capture_offset` is in the axis's input units, `output_loss` in output units.
+# Fitted by measure_produced.py 2026-08-05, five horizontal points over four
+# magnifications (x1.001..x3.2) and six vertical over four (x1.001..x3.4), worst
+# residual 0.43 px and 0.46 lines. Every measurement is reproduced exactly.
+#
+# The axes are NOT the same shape, and that is the finding, not an artefact:
+#
+#   horizontal   both terms      forcing output_loss alone leaves 37 px residual
+#   vertical     output only     capture_offset fits at -0.05, which is zero
+#
+# The horizontal scaler interpolates across samples within a line, so its span
+# grows with magnification; the vertical reads whole lines from a line buffer and
+# has no equivalent. A NEGATIVE horizontal offset means the scaler produces
+# output for ~25 samples more than the capture window holds, which is what an
+# interpolator does at the edges.
+#
+# The deficit therefore changes SIGN with magnification -- 14 px short at 1:1,
+# 40 px long at x3.2 -- and that is why four models were proposed and three
+# refuted here. Any two points lie on a line, so nothing measured at a single
+# magnification, or at two, can tell these apart.
+CAPTURE_OFFSET_H = -24.67
+OUTPUT_LOSS_H = 38.27
+CAPTURE_OFFSET_V = 0.0
+OUTPUT_LOSS_V = 24.33
 
 # The panel shows less than the raster: creeping the display window to the bezel
 # put its corner at output pixel 127, line 63. Assuming the visible region is
@@ -146,9 +163,10 @@ class Axis:
     """
 
     def __init__(self, name, offset_bypassed, offset_scaled, warn_px,
-                 visible_edge, registers, capture_loss):
+                 visible_edge, registers, capture_offset, output_loss):
         self.name = name
-        self.capture_loss = capture_loss
+        self.capture_offset = capture_offset
+        self.output_loss = output_loss
         self.offset_bypassed = offset_bypassed
         self.offset_scaled = offset_scaled
         self.warn_px = warn_px
@@ -167,7 +185,7 @@ AXIS_H = Axis(
     "horizontal", ORIGIN_OFFSET_H_BYPASSED, ORIGIN_OFFSET_H_SCALED,
     HEADROOM_WARN_PX, PANEL_VISIBLE_LEFT,
     ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST"),
-    CAPTURE_LOSS_H,
+    CAPTURE_OFFSET_H, OUTPUT_LOSS_H,
 )
 
 # No vertical margin: a settled state at -1.9 lines was clean, and the horizontal
@@ -178,7 +196,7 @@ AXIS_V = Axis(
     "vertical", ORIGIN_OFFSET_V, ORIGIN_OFFSET_V,
     0, PANEL_VISIBLE_TOP,
     ("VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST"),
-    CAPTURE_LOSS_V,
+    CAPTURE_OFFSET_V, OUTPUT_LOSS_V,
 )
 
 
@@ -225,8 +243,9 @@ def produced_px(capture_units, hscale, bypassed=False, axis=None):
     if bypassed:
         # No scaler in the path, so no filter to feed and no edge slice lost.
         return capture_units * factor
-    loss = (axis or AXIS_H).capture_loss
-    return max(0.0, capture_units - loss) * factor
+    axis = axis or AXIS_H
+    return max(0.0, (capture_units - axis.capture_offset) * factor
+               - axis.output_loss)
 
 
 def headroom_px(memory_window_px, produced):
