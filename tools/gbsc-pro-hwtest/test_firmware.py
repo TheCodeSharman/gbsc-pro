@@ -1034,42 +1034,24 @@ def test_frozen_firmware_does_not_load_presets(host, source):
 def test_the_console_delivers_anything_at_all(console):
     """The web console must actually broadcast, not merely accept a connection.
 
-    SerialMirror only calls broadcastTXT when ESP.getFreeHeap() > 20000. This
-    fork's globals take 47584 bytes of an 81920 byte heap, so free heap tops out
-    near 34 KB and measured 17728 at boot -- under the gate, permanently. The
-    socket then connects, stays connected and delivers nothing for the life of
-    the session, which is what leaves the web UI sitting on its splash screen
-    with the red disconnected indicator.
+    SerialMirror only calls broadcastTXT above a free-heap threshold, and this
+    fork's globals take 47584 bytes of an 81920 byte heap: a threshold of 20000
+    is permanently out of reach, so the socket connects, stays connected and
+    delivers nothing for the life of the session. That is the web UI sitting on
+    its splash screen with the red disconnected indicator.
 
     Connected-but-silent is the exact case _console_diagnosis() cannot tell from
-    a quiet firmware, so it needs its own test: on a GBS_DEBUG=1 build
-    FrameSync prints continuously, and receiving nothing means the gate shut.
+    a quiet firmware, so it needs its own test: on a GBS_DEBUG=1 build FrameSync
+    prints continuously, and receiving nothing means the gate shut.
 
-    KNOWN FLAKE, cause not established (2026-08-05). This fails intermittently in
-    full-directory runs while passing on its own. Before spending an evening on
-    it, note what has already been ruled out:
+    **THE `console` FIXTURE MUST BE PER-TEST, NOT PER-SESSION.** One socket held
+    across the run reads silence from a dead connection in every later console
+    test once SerialMirror has dropped it, which looks exactly like this failure.
+    Fixed in conftest.py.
 
-    - **Not the heap gate.** The gate is 8000 since 877d259 and free heap
-      measured 21-24 KB throughout, so the condition this test was written to
-      catch is not what is firing.
-    - **Not left-over freeze.** `/freeze` reported `{"frozen":false}` immediately
-      after a failing run, so the sync watcher was not gated off.
-    - **Not test ordering.** `test_firmware.py` sorts before
-      `test_geometry_math.py`, so this test -- the last in its file -- already
-      runs before any geometry test. Running `test_firmware.py` alone passes, and
-      so does the tail group, which is what makes the ordering story tempting and
-      wrong.
-
-    What is left is unit state: both observed failures came shortly after the
-    unit had been disturbed (a reboot, then a Mode Detect reset), and both clean
-    runs came once it had settled. That is a hypothesis, not a finding.
-
-    So it retries rather than skipping. The bug it guards -- a console that
-    accepts a connection and then delivers nothing for the whole session -- left
-    the web UI dead on its splash for two days, and a skipped test would not
-    catch that happening again. A genuinely shut gate stays shut, so no number of
-    retries will make this pass; only the settling case recovers. Three attempts
-    over ~30 s, which is what "re-run it alone before believing it" amounts to.
+    It retries rather than skipping: a genuinely shut gate stays shut, so no
+    number of retries makes this pass, and only the settling case recovers.
+    Three attempts over ~30 s.
     """
     received = []
     for attempt in range(ATTEMPTS := 3):
