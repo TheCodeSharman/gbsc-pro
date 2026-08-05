@@ -95,6 +95,47 @@ def test_solved_states_have_the_headroom_the_rule_demands(case):
     )
 
 
+def test_the_headroom_floor_rises_as_hscale_approaches_unity():
+    """665 needed ~13 px (2026-08-03); 1023 needed 33.2 (2026-08-05, capture
+    held at 798 and only HSCALE moved). Anything between is interpolated."""
+    assert (gm.headroom_min_px(665)
+            < gm.headroom_min_px(993)
+            < gm.headroom_min_px(1023))
+
+
+def test_sixteen_px_is_enough_at_hscale_665_and_not_at_1023():
+    """The crux. 16.85 px was photographed clean at 665 and is the tightest
+    SOLVED state; at 1023 the picture was still shredding well above it."""
+    assert gm.is_safe(1358.15 + 16.85, 1358.15, hscale=665)
+    assert not gm.is_safe(798.78 + 16.85, 798.78, hscale=1023)
+
+
+def test_the_window_that_shredded_on_the_bench_is_not_safe():
+    """VDS_HB_ST 847 against VDS_HB_SP 49 at HSCALE 1023 — the video in
+    docs/photos/2026-08-05-horizontal-geometry/15-source-video-IMG_1253.mov."""
+    assert not gm.is_safe(847 - 49, 798.78, hscale=1023)
+
+
+def test_solve_leaves_the_headroom_its_own_hscale_demands():
+    """A near-unity solve must not hand back a window sized by the 665 floor.
+    798 capture at 798 px wide is the bench's own case, and it lands at 1023."""
+    result = gm.solve_horizontal(798, 798, 1445)
+
+    assert result["hscale"] >= 1000, "expected this to land near unity"
+    assert gm.is_safe(result["min_memory_window_px"], result["produced_px"],
+                      hscale=result["hscale"]), (
+        f"solve returned {result['min_memory_window_px']} px of window for "
+        f"{result['produced_px']:.2f} px produced at HSCALE {result['hscale']} — "
+        f"only {result['min_memory_window_px'] - result['produced_px']:.1f} px "
+        f"of headroom, below the {gm.headroom_min_px(result['hscale'])} measured"
+    )
+
+
+def test_the_window_that_was_clean_on_the_bench_is_safe():
+    """VDS_HB_ST 883, the state that was steady on screen."""
+    assert gm.is_safe(883 - 49, 798.78, hscale=1023)
+
+
 @pytest.mark.parametrize("case", SOLVED, ids=ids(SOLVED))
 def test_produced_width_fits_the_line(case):
     produced = gm.produced_px(case["capture"], case["hscale"], case["bypassed"])

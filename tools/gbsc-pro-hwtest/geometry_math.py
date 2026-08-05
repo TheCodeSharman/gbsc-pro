@@ -44,12 +44,75 @@ HSCALE_MAX = 1023
 # interpolation -- only the slack differs, and only that changed the outcome.
 # So the governing quantity is (memory window - produced), not the ratio.
 #
+# The threshold is NOT a constant: it depends on HSCALE, and steeply near unity.
+# Isolated on 2026-08-05 at the same clock and the same 1445 px output line, by
+# holding the capture at 798 units and VDS_HB_SP at 49 and moving only HSCALE,
+# then creeping VDS_HB_ST down to the tearing edge:
+#
+#   HSCALE 1023 (x1.001) -> produced  798.78, clean at VDS_HB_ST 881  33.2 px
+#
+# Points at HSCALE 993 (24.1 px) and 850 (-39.4 px, "stable") were taken the same
+# evening and are NOT usable: VDS_DIS_HB_ST was left at 927, sized for the 1023
+# picture, so as HSCALE fell the growing picture had its right-hand end blanked --
+# 24.9 px hidden at 993, 163 px at 850. The tearing shows worst at the right of
+# the line, so the display window was hiding the evidence. Any HSCALE sweep must
+# move VDS_DIS_HB_ST to (origin + produced) at each step. Both are recorded in
+# docs/photos/2026-08-05-horizontal-geometry/ as measurements not to reuse.
+#
+# Against the 2026-08-03 bracket above, which is entirely at HSCALE 665. All four
+# SOLVED-* snapshots sit at 665 too, which is why one constant looked sufficient
+# and why nothing caught this: the rule was fitted in one regime and never
+# exercised outside it. At HSCALE 1023 the 13 px figure permits a picture that
+# shreds -- filmed in docs/photos/2026-08-05-horizontal-geometry/.
+#
+# Hypothesis for the shape: HSCALE sets the line-memory reads per output pixel
+# (HSCALE/1024). At 665 the read engine idles about a third of the time and can
+# absorb a stall; at 1023 it runs flat out, so every bit of slack must be
+# pre-paid. The collapsing idle fraction fits the steepness near unity. Three
+# points is not a model -- the interpolation below is a placeholder that is
+# conservative between them, not a claim about the mechanism.
+#
+# 1023 is the largest HSCALE the field holds, so the 33.2 px point is the worst
+# case this chip can be put in at this clock and line -- but note that the
+# least-magnification setting anyone would naturally reach for IS that worst case.
+#
 # UNVERIFIED beyond one clock and one output preset. A timing budget should
-# scale with the line period, so on the 2600 px output preset the threshold may
-# be a similar *fraction* of the line rather than the same pixel count. Re-measure
-# before trusting these numbers there.
-HEADROOM_MIN_PX = 13    # 12.6 px artefacted
-HEADROOM_SAFE_PX = 20   # 16.9 px was clean; round up for margin
+# scale with the line period, so on the 2600 px output preset these may be a
+# similar *fraction* of the line rather than the same pixel counts. Re-measure
+# before trusting them there.
+# Two anchors, not three: the 993 point is excluded above. Interpolating 665 to
+# 1023 puts 993 at 31.5 px, comfortably above the 24.1 that was measured through
+# a blanked right edge -- which is the safe way round, since a hidden failure can
+# only mean the true figure is higher.
+HEADROOM_BRACKETS = (
+    (665, 13.0),     # 12.6 artefacted, 16.85 clean   2026-08-03
+    (1023, 33.2),    # boundary at VDS_HB_ST 881      2026-08-05
+)
+
+HEADROOM_MIN_PX = 13    # the HSCALE-665 floor. Prefer headroom_min_px(hscale).
+HEADROOM_SAFE_PX = 20   # 16.9 px was clean at 665; round up for margin
+
+
+def headroom_min_px(hscale):
+    """The measured minimum slack for this HSCALE, in output pixels.
+
+    Piecewise-linear between the measured brackets and flat outside them. Held
+    flat rather than extrapolated because extrapolating three points off either
+    end would invent a number, and the failure it would invent at the top is a
+    torn picture.
+    """
+    if not hscale:
+        return HEADROOM_BRACKETS[-1][1]
+    points = HEADROOM_BRACKETS
+    if hscale <= points[0][0]:
+        return points[0][1]
+    if hscale >= points[-1][0]:
+        return points[-1][1]
+    for (lo_h, lo_px), (hi_h, hi_px) in zip(points, points[1:]):
+        if lo_h <= hscale <= hi_h:
+            span = hi_h - lo_h
+            return lo_px + (hi_px - lo_px) * (hscale - lo_h) / span
+    return points[-1][1]
 
 
 # --- reading a register set --------------------------------------------------
@@ -79,7 +142,16 @@ def headroom_px(memory_window_px, produced):
     return memory_window_px - produced
 
 
-def is_safe(memory_window_px, produced, minimum=HEADROOM_MIN_PX):
+def is_safe(memory_window_px, produced, minimum=None, hscale=None):
+    """Whether this window leaves the slack the bench says it needs.
+
+    Pass `hscale` -- the floor depends on it, steeply near unity. `minimum`
+    overrides for a caller that has measured its own regime; with neither, this
+    falls back to the HSCALE-665 constant, which is the historical behaviour and
+    is too low for anything above ~700.
+    """
+    if minimum is None:
+        minimum = HEADROOM_MIN_PX if hscale is None else headroom_min_px(hscale)
     return headroom_px(memory_window_px, produced) >= minimum
 
 
@@ -149,7 +221,16 @@ def solve_horizontal(
 
     produced = produced_px(capture_units, hscale)
     display_window = math.floor(produced)
-    minimum_memory = min(output_line_px, math.ceil(produced + headroom))
+
+    # The floor depends on the HSCALE we just landed on, and near unity it is far
+    # above the caller's default. Take whichever is larger: a caller asking for
+    # more margin keeps it, one asking for less does not get a torn picture.
+    needed = max(headroom, headroom_min_px(hscale))
+    if needed > headroom:
+        clamped.append(
+            f"headroom raised to {needed:.1f} px, measured for HSCALE {hscale}"
+        )
+    minimum_memory = min(output_line_px, math.ceil(produced + needed))
 
     return {
         "hscale": hscale,
