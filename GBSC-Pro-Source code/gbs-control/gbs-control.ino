@@ -17194,11 +17194,10 @@ void OSD_selectOption()
             S0_Read_Resolution = GBS::STATUS_00::read();
 
             // GBS::IF_LD_RAM_BYPS::write(1);
-            // printf( "Scanning method: %d\n",GBS::STATUS_SYNC_PROC_VTOTAL::read() );   // 0x%02x  
+            // printf( "Scanning method: %d\n",GBS::STATUS_SYNC_PROC_VTOTAL::read() );   // 0x%02x
             // printf( "Scanning method: %d\n",GBS::STATUS_VDS_VERT_COUNT::read() );
-            // printf( "H_TOTAL: %d      ",(GBS::H_TOTAL_HIGH::read() << 8) + GBS::H_TOTAL_LOW::read() *4  );
-
-            // printf( "V_TOTAL: %d\n",(GBS::V_TOTAL_HIGH::read() << 7) + GBS::V_TOTAL_LOW::read() );
+            // printf( "H_TOTAL: %d      ", GBS::HPERIOD_IF::read() * 4 );
+            // printf( "V_TOTAL: %d\n", GBS::VPERIOD_IF::read() );
 
             Tim_info = millis();
         }
