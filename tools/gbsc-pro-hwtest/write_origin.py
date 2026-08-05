@@ -51,6 +51,30 @@ DISPLAY = ("VDS_DIS_HB_ST", "VDS_DIS_HB_SP")
 CONTEXT = ("IF_HSYNC_RST", "VDS_HSYNC_RST", "VDS_HSCALE") + CAPTURE + MEMORY + DISPLAY
 
 
+def ordered_writes(current, changes):
+    """`changes` as (name, value) pairs, ordered so the capture window is never
+    transiently wider than it is at either end of the move.
+
+    The window is two independent registers, so moving it takes two writes and
+    there is a state in between. One of the two orders widens it there, and
+    setfield's docstring says what that costs: more produced pixels than the
+    memory window holds, even for one intermediate step, visibly corrupts the
+    picture. The baseline this tool runs against has ~16 px of headroom, so a
+    60-unit transient overrun is not theoretical -- it is the trial answering
+    "it BROKE" for a reason that has nothing to do with the question.
+
+    Whichever single write leaves the narrower window goes first. That resolves
+    to SP2-first for a positive shift and ST2-first for a negative one, and it
+    stays right for the restore afterwards, which is the same move reversed.
+    """
+    pairs = list(changes.items())
+    if not set(CAPTURE) <= set(changes):
+        return pairs          # one edge, so no intermediate state to get wrong
+    start, end = "IF_HB_SP2", "IF_HB_ST2"
+    first = start if current[end] - changes[start] <= changes[end] - current[start] else end
+    return sorted(pairs, key=lambda pair: pair[0] != first)
+
+
 def read_all(host, spec_map):
     return {name: setfield.read_field(host, spec_map[name]) for name in CONTEXT}
 
@@ -100,8 +124,8 @@ def ask(question, options):
         print("    not one of the options")
 
 
-def apply_fields(host, spec_map, changes, dry):
-    for name, value in changes.items():
+def apply_fields(host, spec_map, current, changes, dry):
+    for name, value in ordered_writes(current, changes):
         spec = spec_map[name]
         if dry:
             print(f"    would set {name} = {value}")
@@ -227,12 +251,15 @@ def main():
               "b": "it BROKE"}),
         ]:
             print(f"\n--- {label}: {', '.join(f'{k}={v}' for k, v in changes.items())}")
-            apply_fields(args.host, spec_map, changes, dry=False)
+            apply_fields(args.host, spec_map, base, changes, dry=False)
             answer = ask(question, options)
             answers["trials"].append(
                 {"trial": label, "changes": changes, "answer": answer,
                  "meaning": options[answer]})
-            apply_fields(args.host, spec_map,
+            # Undoing the trial moves the same window back, so it needs the same
+            # ordering care -- and the state it starts from is the trial's, not
+            # the baseline's.
+            apply_fields(args.host, spec_map, dict(base, **changes),
                          {k: base[k] for k in changes}, dry=False)
 
     except KeyboardInterrupt:
@@ -245,7 +272,11 @@ def main():
         try:
             if wrote:
                 print("\nrestoring the baseline ...")
-                apply_fields(args.host, spec_map,
+                # Read what is actually there rather than assuming the trials
+                # unwound themselves: a Ctrl-C between a trial's two writes
+                # leaves the window half-moved, and that is precisely the state
+                # whose restore order matters most.
+                apply_fields(args.host, spec_map, read_all(args.host, spec_map),
                              {k: base[k] for k in CAPTURE + MEMORY + DISPLAY},
                              dry=False)
         finally:
