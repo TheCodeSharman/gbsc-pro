@@ -166,17 +166,34 @@ def test_getregs_returns_an_inclusive_range(host):
 
 def test_getregs_agrees_with_getreg(host):
     """The whole point of the endpoint is fewer round trips for the same bytes.
-    Registers that move on their own would make this flap, so it reads segment 3,
-    which is output configuration and holds still."""
-    registers = read_segment(host, 3, 0x00, 0x0F)
 
+    Reads segment 3, output configuration, as the steadiest thing available --
+    but "steadiest" is not "still". runAutoBestHTotal() writes VDS timings while
+    the unit is running, so a register that moves between the burst read and the
+    single read is the firmware doing its job, not the endpoint disagreeing.
+    Scoring that as a failure made this flap intermittently (2026-08-05).
+
+    So a candidate mismatch is confirmed by re-reading: it only counts if the
+    register is stable across two single reads and *still* differs from the
+    burst. A register caught mid-move is discarded rather than reported.
+    """
+    registers = read_segment(host, 3, 0x00, 0x0F)
     assert registers is not None, "/getregs did not answer with a usable range"
-    mismatched = {
-        f"s3:{reg:#04x}": (burst, read_reg(host, 3, reg))
-        for reg, burst in registers.items()
-        if burst != read_reg(host, 3, reg)
-    }
-    assert not mismatched, f"/getregs vs /getreg (burst, single): {mismatched}"
+
+    mismatched = {}
+    for reg, burst in registers.items():
+        if burst == read_reg(host, 3, reg):
+            continue
+        # Candidate. Two more reads: if they disagree with each other the
+        # register is moving, which says nothing about /getregs.
+        first, second = read_reg(host, 3, reg), read_reg(host, 3, reg)
+        if first == second and first != burst:
+            mismatched[f"s3:{reg:#04x}"] = (burst, first)
+
+    assert not mismatched, (
+        f"/getregs disagrees with /getreg on registers that are holding still "
+        f"(burst, single): {mismatched}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -239,9 +256,14 @@ def _console_diagnosis(console):
     )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def timings(host, console):
-    """The block /sc?, prints to the web console."""
+    """The block /sc?, prints to the web console.
+
+    Function-scoped because `console` is: a session-scoped fixture cannot hold a
+    per-test one. Nothing is lost -- only test_sc_comma_prints_timings uses this,
+    so the session scope was never saving a second capture.
+    """
     rows, lines = _collect_timings(host, console)
     assert len(rows) >= TIMINGS_MIN_ROWS, (
         f"/sc?, printed {len(rows)} timing rows, expected at least {TIMINGS_MIN_ROWS}, "
@@ -1040,14 +1062,27 @@ def test_the_console_delivers_anything_at_all(console):
 
     What is left is unit state: both observed failures came shortly after the
     unit had been disturbed (a reboot, then a Mode Detect reset), and both clean
-    runs came once it had settled. That is a hypothesis, not a finding. If it
-    fails, re-run it alone before believing it.
+    runs came once it had settled. That is a hypothesis, not a finding.
+
+    So it retries rather than skipping. The bug it guards -- a console that
+    accepts a connection and then delivers nothing for the whole session -- left
+    the web UI dead on its splash for two days, and a skipped test would not
+    catch that happening again. A genuinely shut gate stays shut, so no number of
+    retries will make this pass; only the settling case recovers. Three attempts
+    over ~30 s, which is what "re-run it alone before believing it" amounts to.
     """
-    console.drain()
-    received = console.collect(seconds=6)
+    received = []
+    for attempt in range(ATTEMPTS := 3):
+        console.drain()
+        received = console.collect(seconds=6)
+        if received:
+            break
+        if attempt + 1 < ATTEMPTS:
+            time.sleep(5)
+
     assert received, (
-        "the console connected but delivered 0 bytes in 6 s. On a "
-        "GBS_DEBUG=1 build FrameSync prints every cycle, so this is the "
-        "heap gate in SerialMirror refusing to broadcast, not a quiet firmware. "
-        "Check /bootlog for 'free heap'."
+        f"the console connected but delivered 0 bytes in 6 s, on {ATTEMPTS} "
+        "separate attempts. On a GBS_DEBUG=1 build FrameSync prints "
+        "every cycle, so this is the heap gate in SerialMirror refusing to "
+        "broadcast, not a quiet firmware. Check /bootlog for 'free heap'."
     )

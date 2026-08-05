@@ -105,9 +105,9 @@ def host(request):
     return address
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def console(host):
-    """A WebSocket console client, held open for the whole session.
+    """A WebSocket console client, opened fresh for each test that asks.
 
     Not "the one permitted client": the server caps at 5
     (3rdparty/WebSockets/src/WebSocketsServer.h:31) and nothing crashes. The
@@ -115,6 +115,17 @@ def console(host):
     dipped, which read from outside as a one-client limit. Still worth closing
     the web UI for a long capture, because it costs heap -- but two clients are
     not forbidden.
+
+    This was scope="session" until 2026-08-05, and that was the whole cause of
+    test_the_console_delivers_anything_at_all failing in full-directory runs
+    while passing on its own. One socket was opened at the first console test
+    and held for the rest of the run; if it died in between -- and SerialMirror
+    does drop clients -- every later console test read silence from a dead
+    socket and blamed the firmware. Measured while a run was failing: free heap
+    21984 (the gate is 8000), and a freshly opened console delivered 70 messages
+    in 25 s. The firmware was never the problem, so no retry could have fixed
+    it. A per-test connection cannot go stale, and four tests taking a socket
+    each is well inside the cap.
     """
     try:
         connection = Console(host)
