@@ -325,7 +325,7 @@ def test_a_calibrated_window_scales_in_proportion():
     it. Halving the scale must double the width, exactly.
     """
     sp, st = gm.track_display(cal_scale=488, cal_sp=19, cal_width=1104,
-                              new_scale=244)
+                              new_scale=244, cal_capture=513, new_capture=513)
 
     assert sp == 19
     assert st - sp == 2208
@@ -335,7 +335,7 @@ def test_a_calibrated_window_is_unchanged_at_its_own_scale():
     """The calibration point must be a fixed point, or pressing scale up then
     down would walk the window away from where it was aligned."""
     sp, st = gm.track_display(cal_scale=489, cal_sp=19, cal_width=1104,
-                              new_scale=489)
+                              new_scale=489, cal_capture=513, new_capture=513)
 
     assert (sp, st) == (19, 1123)
 
@@ -343,10 +343,26 @@ def test_a_calibrated_window_is_unchanged_at_its_own_scale():
 def test_tracking_survives_a_round_trip():
     """Up one step then down one step must land back exactly, or the window
     drifts every time the user changes their mind."""
-    _, up = gm.track_display(489, 19, 1104, 488)
-    back = gm.track_display(488, 19, up - 19, 489)
+    _, up = gm.track_display(489, 19, 1104, 488, 513, 513)
+    back = gm.track_display(488, 19, up - 19, 489, 513, 513)
 
     assert back == (19, 1123)
+
+
+def test_a_zoom_holds_the_window_still():
+    """Zooming past the ceiling shrinks the capture AND drops the scale to
+    refill, so `produced` does not change -- and neither may the display window.
+    Tracking on the scale alone would widen it over unwritten memory, which is
+    the band of scratch VDS_DIS_?B_ST exists to keep off the screen.
+
+    Capture and scale here are in the ratio 171:163 both before and after, so
+    the refill is exact and the window must not move at all. A real zoom lands
+    on integer registers and moves it by a pixel or so.
+    """
+    sp, st = gm.track_display(cal_scale=489, cal_sp=19, cal_width=1104,
+                              new_scale=326, cal_capture=513, new_capture=342)
+
+    assert (sp, st) == (19, 1123)
 
 
 # --- zooming past the scale ceiling -------------------------------------------
@@ -368,6 +384,75 @@ def test_zoom_shrinks_the_capture_and_keeps_the_picture_at_the_ceiling():
 def test_zoom_refuses_to_shrink_the_capture_to_nothing():
     with pytest.raises(ValueError):
         gm.zoom_capture(500, 510, max_produced=1408, step=100)
+
+
+def test_below_the_ceiling_a_scale_step_is_just_a_scale_step():
+    """Nothing clever until the picture actually fills the window: the capture
+    is the user's, set by panning, and must not move under them."""
+    step = gm.scale_step(sp=264, st=1062, scale=900, delta=-8,
+                         memory_window=1424, wrap_at=1277)
+
+    assert (step["sp"], step["st"]) == (264, 1062)
+    assert step["scale"] == 892
+    assert not step["zoomed"]
+
+
+def test_at_the_ceiling_a_zoom_trims_the_capture_instead():
+    """Dropping the scale further would produce more than the memory window
+    holds, which shreds the picture. Capturing less source is still a zoom.
+
+    798 units in a 1424 px window fills it at scale 574."""
+    step = gm.scale_step(sp=264, st=1062, scale=574, delta=-8,
+                         memory_window=1424, wrap_at=1277)
+
+    assert step["zoomed"]
+    assert step["st"] - step["sp"] < 798, "captured less of the source"
+    # An odd step cannot split evenly, so the centre holds to within a unit.
+    assert abs((step["sp"] - 264) - (1062 - step["st"])) <= 1
+
+
+def test_a_zoom_never_produces_more_than_the_window_holds():
+    """The whole point. The refill scale is a ceiling and not a round for
+    exactly this: rounding down asks for a fraction more than there is."""
+    step = gm.scale_step(sp=264, st=1062, scale=574, delta=-8,
+                         memory_window=1424, wrap_at=1277)
+
+    produced = (step["st"] - step["sp"]) * 1024 / step["scale"]
+    assert produced <= 1424
+
+
+def test_zooming_out_at_the_ceiling_widens_the_capture_back():
+    """Round trip. A control that cannot be undone is how a hand-aligned
+    picture gets lost -- '+' then '-' must return the capture it started with."""
+    inward = gm.scale_step(264, 1062, 574, -8, 1424, 1277)
+    back = gm.scale_step(inward["sp"], inward["st"], inward["scale"], 8,
+                         1424, 1277)
+
+    assert (back["sp"], back["st"]) == (264, 1062)
+
+
+def test_the_ceiling_comes_from_the_alignment_not_the_datasheet():
+    """Michael measured 1104 lines from 513 half-lines at VSCALE 489, so the
+    vertical unity is 1052.4 and not 1024. Assume 1024 and the window looks
+    unfilled at 489, so the zoom engages late and the picture overruns it.
+
+    His alignment fills the window exactly, so 489 IS the ceiling and a zoom
+    press must trim the capture rather than drop the scale."""
+    unity = gm.measured_unity(cal_width=1104, cal_scale=489, cal_capture=513)
+    step = gm.scale_step(sp=20, st=533, scale=489, delta=-8,
+                         memory_window=1104, wrap_at=624, unity=unity)
+
+    assert step["zoomed"]
+
+
+def test_assuming_the_datasheet_unity_would_have_overrun_the_window():
+    """Why the measurement is load-bearing rather than a refinement: with 1024
+    the same press is treated as ordinary headroom and the scale drops."""
+    step = gm.scale_step(sp=20, st=533, scale=489, delta=-8,
+                         memory_window=1104, wrap_at=624)
+
+    assert not step["zoomed"]
+    assert 513 * 1052.4 / step["scale"] > 1104, "the real picture overran it"
 
 
 def test_zoom_stays_inside_the_scale_register():

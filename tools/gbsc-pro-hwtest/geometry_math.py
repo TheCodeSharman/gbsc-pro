@@ -224,7 +224,7 @@ def pan_capture(sp, st, delta, wrap_at):
     return start, start + width
 
 
-def zoom_capture(sp, st, max_produced, step):
+def zoom_capture(sp, st, max_produced, step, wrap_at=None, unity=HSCALE_UNITY):
     """Zoom past the scale ceiling by capturing less of the source.
 
     Once `produced` fills the memory window the scaler cannot magnify further --
@@ -233,26 +233,127 @@ def zoom_capture(sp, st, max_produced, step):
     output pinned at the ceiling instead of overrunning it.
 
     Trims symmetrically so the centre of the picture stays put, and returns the
-    scale that refills the window. Michael's idea, 2026-08-05.
+    scale that refills the window.
+
+    A NEGATIVE step widens instead, which is how a zoom is undone -- at the
+    ceiling the scale is pinned, so the capture is the only thing left to move.
+    `wrap_at` bounds that: IF_VB_ST rolls at 624 and IF_HB_ST2 at IF_HSYNC_RST+1,
+    and crossing either makes the picture jump.
+
+    The refill scale is a CEILING, never a round: rounding down produces a
+    fraction more than the window holds, which is the overflow this exists to
+    avoid.
     """
     width = st - sp
     new_width = width - step
     if new_width <= 0:
         raise ValueError(f"a {step} unit step would leave nothing of a {width} "
                          f"unit capture")
-    trim = step // 2
-    new_sp, new_st = sp + trim, st - (step - trim)
-    scale = min(max(round(new_width * HSCALE_UNITY / max_produced),
+    # Split the magnitude, then re-sign it. `step // 2` floors, so a trim of 11
+    # takes 5 off one edge and a widen of 11 puts 6 back on it -- and the capture
+    # walks a unit sideways on every round trip.
+    near = abs(step) // 2
+    far = abs(step) - near
+    direction = 1 if step > 0 else -1
+    new_sp, new_st = sp + direction * near, st - direction * far
+    if wrap_at is not None:
+        new_sp = max(0, new_sp)
+        new_st = min(new_st, wrap_at - 1)
+        new_width = new_st - new_sp
+        if new_width <= 0:
+            raise ValueError("widening left no capture inside the line")
+    scale = min(max(math.ceil(new_width * unity / max_produced),
                     HSCALE_MIN), HSCALE_MAX)
     return new_sp, new_st, scale
 
 
-def track_display(cal_scale, cal_sp, cal_width, new_scale):
-    """Where a calibrated display window belongs at a different scale.
+def measured_unity(cal_width, cal_scale, cal_capture):
+    """The constant of proportionality, from an alignment instead of a datasheet.
 
-    `produced` is proportional to 1/scale, and THAT part of the model is sound.
-    What is wrong is the constant of proportionality: a pixel-perfect alignment
-    on 2026-08-05 measured a 1104-line picture where
+    `produced = capture x unity / scale` is the model, and the RATIOS in it are
+    sound -- what is wrong is `unity`. The datasheet value 1024 holds
+    horizontally, but Michael's pixel-perfect alignment on 2026-08-05 measured a
+    1104-line picture from 513 half-lines at VSCALE 489, which makes the vertical
+    unity 1052.4 and not 1024. That is the same 2.8% as the 30-line error in
+    docs; this does not explain it, it just stops assuming it away.
+
+    It matters here because the ceiling is computed from it. Assume 1024
+    vertically and the window looks full at VSCALE 476 when the picture really
+    fills it at 489, so a zoom would engage 13 units late and the picture would
+    overrun the window in between -- which is the overflow the zoom exists to
+    prevent.
+    """
+    if cal_capture <= 0 or cal_scale <= 0:
+        raise ValueError("a calibration needs a positive capture and scale")
+    return cal_width * cal_scale / cal_capture
+
+
+def scale_ceiling(capture, memory_window, unity=HSCALE_UNITY):
+    """The smallest scale -- the biggest picture -- this capture may be given
+    before `produced` overruns the memory window.
+
+    **NO MARGIN IS HELD BACK, AND THE HEADROOM RULE IS RETRACTED.** Its evidence
+    was measured through display windows that hid up to 163 px of the picture,
+    and the thresholds that survive are non-monotonic in HSCALE and come in
+    multiple stable bands. Take the whole window -- 1104 lines of picture in a
+    1104-line window is what a hand alignment produces too. HEADROOM_WARN_PX is a
+    floor to warn below, not a budget to reserve.
+    """
+    if memory_window <= 0:
+        return None
+    return math.ceil(capture * unity / memory_window)
+
+
+def scale_step(sp, st, scale, delta, memory_window, wrap_at,
+               unity=HSCALE_UNITY):
+    """What one press of the scale control should do to an axis.
+
+    Below the ceiling this is just a scale change and the capture is left alone
+    -- it is the user's, set by panning, and moving it under them would undo a
+    hand alignment.
+
+    AT the ceiling the scale can go no lower, so the zoom continues in the
+    capture instead: trim to zoom in, widen to zoom out, with the scale refilling
+    the window each time so the picture stays exactly as big as the window
+    allows. That makes '+' and '-' inverses, which matters more here than
+    anywhere -- an irreversible control is how a hand-aligned picture is lost.
+
+    Returns the capture window, the scale, and whether the capture moved.
+    """
+    capture = st - sp
+    if capture <= 0:
+        raise ValueError("capture stop is before its start")
+
+    floor = scale_ceiling(capture, memory_window, unity)
+    if floor is None:
+        raise ValueError("the memory window is too small to hold any picture")
+    floor = max(floor, HSCALE_MIN)
+
+    wanted = min(max(scale + delta, HSCALE_MIN), HSCALE_MAX)
+    zooming_in = wanted < floor
+    zooming_out_while_pinned = delta > 0 and scale <= floor
+
+    if delta and (zooming_in or zooming_out_while_pinned):
+        # The magnification the user asked for, delivered by capturing less
+        # source instead of by a scale the register cannot reach.
+        step = round(capture * -delta / scale)
+        if step:
+            new_sp, new_st, new_scale = zoom_capture(
+                sp, st, memory_window, step, wrap_at, unity)
+            if (new_sp, new_st) != (sp, st):
+                return {"sp": new_sp, "st": new_st, "scale": new_scale,
+                        "zoomed": True}
+
+    return {"sp": sp, "st": st, "scale": wanted, "zoomed": False}
+
+
+def track_display(cal_scale, cal_sp, cal_width, new_scale,
+                  cal_capture, new_capture):
+    """Where a calibrated display window belongs at a different capture and scale.
+
+    `produced` is proportional to capture/scale, and THAT part of the model is
+    sound. What is wrong is the constant of proportionality: a pixel-perfect
+    alignment on 2026-08-05 measured a 1104-line picture where
     `capture x 1024 / VSCALE` said 1074.26 -- 30 lines out, far beyond eye error.
 
     So take the width from a measurement and scale it, instead of computing it
@@ -260,13 +361,21 @@ def track_display(cal_scale, cal_sp, cal_width, new_scale):
     point is a fixed point by construction, so scaling up and back down returns
     to exactly where the user aligned it.
 
+    BOTH ratios are required, and neither defaults. A zoom past the scale ceiling
+    moves them in opposite directions -- the capture shrinks and the scale drops
+    to refill -- so `produced` is unchanged and the window must not move. Tracking
+    the scale alone would widen it over unwritten memory, which shows as a band of
+    scratch along the far edge.
+
     The near edge is held: the origin does drift with magnification (the offset
     is 80 at x1.001 and 93 at x1.575), but there is no reliable law for it yet,
     so a caller should re-calibrate rather than have this invent one.
     """
     if new_scale <= 0 or cal_scale <= 0:
         raise ValueError("scale must be positive")
-    width = cal_width * cal_scale / new_scale
+    if new_capture <= 0 or cal_capture <= 0:
+        raise ValueError("capture must be positive")
+    width = cal_width * (cal_scale / new_scale) * (new_capture / cal_capture)
     return cal_sp, cal_sp + round(width)
 
 
