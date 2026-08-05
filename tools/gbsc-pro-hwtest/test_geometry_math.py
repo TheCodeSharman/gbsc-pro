@@ -151,16 +151,18 @@ def test_the_solver_no_longer_has_to_guess_the_origin():
 
 
 def test_the_solver_centres_the_picture_on_the_raster():
-    """Bench reference, 2026-08-05 evening: capture 798 at HSCALE 650 produces
-    1257.75 px on a 1445 px line, so the origin belongs at (1445-1257.75)/2 =
-    93.6, rounding to 94."""
+    """Bench reference: capture 798 at HSCALE 650 produces 1257 px on a 1445 px
+    line, so centred puts the corner at (1445-1257)/2 = 94.
+
+    It cannot go there. At x1.575 the write start is 94.4 px after VDS_HB_SP, so
+    a corner of 94 needs the register below its floor of 8 -- where the display
+    corrupts. The picture is pushed right to 102 instead. A near-1:1 picture is
+    centred exactly; a large one is centred as far as the hardware allows.
+    """
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
-    assert axis["origin"] == 94
-    # x1.575 puts the write start 94.4 px after VDS_HB_SP, so a picture centred
-    # at 94 needs the memory window at 0. The two nearly cancelling is why 94
-    # looked like a constant for so long.
-    assert axis["window_sp"] == 0
+    assert axis["origin"] == 102
+    assert axis["window_sp"] == gm.AXIS_H.window_sp_min
 
 
 def test_the_solver_takes_every_pixel_of_margin_available():
@@ -391,23 +393,52 @@ def test_the_bezel_is_not_the_write_start():
     assert gm.AXIS_H.origin_offset(1.58) == pytest.approx(94, abs=1.0)
 
 
-def test_high_magnification_cannot_reach_the_left_of_the_panel():
-    """A real limit, not a rounding choice. VDS_HB_SP cannot go negative and the
-    write start is 55 + 25 x m after it, so above ~x2.9 the picture cannot begin
-    at the panel's left edge however the registers are set."""
-    corner, window_sp = gm.place_picture(256, False, gm.AXIS_H)   # x4.0
+def test_the_picture_is_centred_on_the_raster():
+    """Centred, not pinned to an assumed panel edge.
 
-    assert window_sp == 0
-    assert corner > gm.PANEL_VISIBLE_LEFT
+    Where a TV stops showing is a property of the TV, and this file describes a
+    scaler. PANEL_VISIBLE_LEFT was 127 and measured 90 on the bench display;
+    the next panel will differ again. Centring needs no such number and leaves
+    the user free to find their own edges with pan and scale.
+    """
+    corner, window_sp = gm.place_picture(produced=845, raster_total=1445,
+                                         magnification=2.0, axis=gm.AXIS_H)
+
+    assert corner == 300
+    assert 1445 - (corner + 845) == corner, "margins must match either side"
 
 
-def test_below_that_the_picture_sits_on_the_panel_edge_and_the_window_moves():
-    """At every magnification it can reach, the corner is the same place on
-    screen -- so a scale change does not walk the picture sideways."""
-    corners = [gm.place_picture(scale, False, gm.AXIS_H)[0]
-               for scale in (1023, 700, 512)]
+def test_centring_moves_the_memory_window_not_the_picture():
+    """The corner is where the picture goes; VDS_?B_SP is whatever puts the write
+    start there. At x2 the scaler starts 105 px after the register."""
+    corner, window_sp = gm.place_picture(produced=845, raster_total=1445,
+                                         magnification=2.0, axis=gm.AXIS_H)
 
-    assert corners == [gm.PANEL_VISIBLE_LEFT] * 3, corners
+    assert window_sp + gm.AXIS_H.origin_offset(2.0) == corner
+
+
+def test_a_picture_too_wide_to_centre_is_pinned_as_far_over_as_it_goes():
+    """A picture wider than the raster cannot be centred -- it starts at the write
+    floor and overscans off the far end. The floor is VDS_?B_SP's minimum, not
+    zero: below 8 the horizontal display corrupts, measured on the bench
+    2026-08-06."""
+    corner, window_sp = gm.place_picture(produced=1400, raster_total=1445,
+                                         magnification=2.0, axis=gm.AXIS_H)
+
+    assert window_sp == gm.AXIS_H.window_sp_min
+    assert corner == round(gm.AXIS_H.window_sp_min
+                           + gm.AXIS_H.origin_offset(2.0))
+
+
+def test_the_memory_window_is_never_placed_where_the_picture_corrupts():
+    """VDS_HB_SP below 8 corrupts the display -- a hard floor, and 0 is inside
+    it. Nothing computed here may return a value that breaks the picture."""
+    for magnification in (1.001, 1.416, 2.0, 3.2, 4.0):
+        _, window_sp = gm.place_picture(produced=1400, raster_total=1445,
+                                        magnification=magnification,
+                                        axis=gm.AXIS_H)
+
+        assert window_sp >= 8, f"x{magnification}: VDS_HB_SP {window_sp}"
 
 
 # --- the straight line underneath both fits -----------------------------------
@@ -607,49 +638,8 @@ def test_zoom_refuses_to_shrink_the_capture_to_nothing():
         gm.zoom_capture(500, 510, max_produced=1408, step=100)
 
 
-def test_below_the_ceiling_a_scale_step_is_just_a_scale_step():
-    """Nothing clever until the picture actually fills the window: the capture
-    is the user's, set by panning, and must not move under them."""
-    step = gm.scale_step(sp=264, st=1062, scale=900, delta=-8,
-                         memory_window=1424, wrap_at=1277)
-
-    assert (step["sp"], step["st"]) == (264, 1062)
-    assert step["scale"] == 892
-    assert not step["zoomed"]
 
 
-def test_at_the_ceiling_a_zoom_trims_the_capture_instead():
-    """Dropping the scale further would produce more than the memory window
-    holds, which shreds the picture. Capturing less source is still a zoom.
-
-    798 units in a 1424 px window fills it at scale 574."""
-    step = gm.scale_step(sp=264, st=1062, scale=574, delta=-8,
-                         memory_window=1424, wrap_at=1277)
-
-    assert step["zoomed"]
-    assert step["st"] - step["sp"] < 798, "captured less of the source"
-    # An odd step cannot split evenly, so the centre holds to within a unit.
-    assert abs((step["sp"] - 264) - (1062 - step["st"])) <= 1
-
-
-def test_a_zoom_never_produces_more_than_the_window_holds():
-    """The whole point. The refill scale is a ceiling and not a round for
-    exactly this: rounding down asks for a fraction more than there is."""
-    step = gm.scale_step(sp=264, st=1062, scale=574, delta=-8,
-                         memory_window=1424, wrap_at=1277)
-
-    produced = (step["st"] - step["sp"]) * 1024 / step["scale"]
-    assert produced <= 1424
-
-
-def test_zooming_out_at_the_ceiling_widens_the_capture_back():
-    """Round trip. A control that cannot be undone is how a hand-aligned
-    picture gets lost -- '+' then '-' must return the capture it started with."""
-    inward = gm.scale_step(264, 1062, 574, -8, 1424, 1277)
-    back = gm.scale_step(inward["sp"], inward["st"], inward["scale"], 8,
-                         1424, 1277)
-
-    assert (back["sp"], back["st"]) == (264, 1062)
 
 
 def test_zoom_stays_inside_the_scale_register():
@@ -657,3 +647,120 @@ def test_zoom_stays_inside_the_scale_register():
     sp, st, scale = gm.zoom_capture(264, 1062, max_produced=1408, step=600)
 
     assert scale >= gm.HSCALE_MIN
+
+
+# --- the scale control prefers the capture over the picture size --------------
+
+
+
+
+
+
+
+# --- the picture size is computed, never inherited ----------------------------
+
+
+def test_the_picture_is_made_as_big_as_the_raster_allows():
+    """**CALCULATE THE STARTING STATE; DO NOT READ IT BACK.** Start with the
+    display window as big as it can get and scale the window to fit.
+
+    Inheriting the current size freezes a picture at 620 lines that no zoom step
+    can grow. Computed from the capture and the raster, it cannot happen.
+    """
+    scale, produced = gm.fit_to_raster(798, 1445, gm.AXIS_H)
+    corner, window_sp = gm.place_picture(produced, 1445, 1024 / scale, gm.AXIS_H)
+
+    assert window_sp >= gm.AXIS_H.window_sp_min, "must not corrupt"
+    assert corner + produced <= 1443, "must fit inside the raster"
+    assert window_sp <= gm.AXIS_H.window_sp_min + 4, (
+        "and must use nearly all of it -- VDS_HB_SP should sit on its floor")
+
+
+def test_a_smaller_capture_still_fills_the_raster():
+    """The whole point: the picture size does not depend on how much source is
+    being captured. Crop harder and the scale takes up the slack."""
+    for capture in (798, 400, 200, 155):
+        scale, produced = gm.fit_to_raster(capture, 1445, gm.AXIS_H)
+        corner, window_sp = gm.place_picture(produced, 1445, 1024 / scale,
+                                             gm.AXIS_H)
+
+        assert corner + produced <= 1443, f"capture {capture} overflows"
+        assert window_sp >= gm.AXIS_H.window_sp_min, f"capture {capture} corrupts"
+        if scale > gm.HSCALE_MIN:
+            assert window_sp <= gm.AXIS_H.window_sp_min + 4, (
+                f"capture {capture} left the raster half used")
+
+
+def test_the_scale_register_bounds_how_big_the_picture_can_get():
+    """A tiny capture cannot fill the raster -- x4 is the most magnification the
+    register has. That is a limit, not a failure, and it must still fit."""
+    scale, produced = gm.fit_to_raster(50, 1445, gm.AXIS_H)
+
+    assert scale == gm.HSCALE_MIN
+    assert produced == 50 * 1024 / gm.HSCALE_MIN
+
+
+def test_a_zoom_step_changes_the_crop_and_the_picture_stays_full_size():
+    """One pad. It crops; the picture is always as big as the raster allows and
+    the scale is derived to suit. No second control, nothing frozen."""
+    step = gm.scale_step(sp=264, st=1062, delta=-64, raster_total=1445,
+                         axis=gm.AXIS_H, wrap_at=1277)
+
+    assert step["st"] - step["sp"] < 798, "zoom in must crop"
+    _, full = gm.fit_to_raster(step["st"] - step["sp"], 1445, gm.AXIS_H)
+    assert abs(step["produced"] - full) < 0.5, "and still fill the raster"
+
+
+def test_zooming_out_shows_more_source_at_the_same_picture_size():
+    """Reducing the scale must reveal more source, not shrink the picture."""
+    out = gm.scale_step(sp=264, st=1062, delta=+64, raster_total=1445,
+                        axis=gm.AXIS_H, wrap_at=1277)
+
+    assert out["st"] - out["sp"] > 798, "must take in more source"
+    assert out["produced"] > 1443 - 220, "and the picture must stay full size"
+
+
+def test_a_zoom_step_out_and_back_returns_every_register():
+    """Symmetric about the centre, so it is exactly reversible."""
+    state = dict(sp=264, st=1062)
+    for _ in range(5):
+        step = gm.scale_step(**state, delta=+64, raster_total=1445,
+                             axis=gm.AXIS_H, wrap_at=1277)
+        state = dict(sp=step["sp"], st=step["st"])
+    for _ in range(5):
+        step = gm.scale_step(**state, delta=-64, raster_total=1445,
+                             axis=gm.AXIS_H, wrap_at=1277)
+        state = dict(sp=step["sp"], st=step["st"])
+
+    assert (state["sp"], state["st"]) == (264, 1062)
+
+
+def test_a_zoom_step_never_reads_the_scale_that_happens_to_be_set():
+    """The bug behind every size problem tonight. The step takes no scale
+    argument at all, so a wrong one cannot be inherited."""
+    import inspect
+
+    assert "scale" not in inspect.signature(gm.scale_step).parameters
+
+def test_a_zoom_in_never_crops_the_capture_away_to_nothing():
+    """A control that can destroy the capture is one keypress from a dead
+    picture with no way back."""
+    sp, st = 264, 290
+    for _ in range(20):
+        step = gm.scale_step(sp=sp, st=st, delta=-16, raster_total=1445,
+                             axis=gm.AXIS_H, wrap_at=1277)
+        sp, st = step["sp"], step["st"]
+
+    assert st - sp >= 16
+
+
+def test_a_zoom_out_stops_at_the_line_rather_than_wrapping_it():
+    """IF_HB_ST2 wraps at IF_HSYNC_RST+1 and crossing it makes the picture jump,
+    which has been misread as losing the capture window."""
+    sp, st = 264, 1062
+    for _ in range(40):
+        step = gm.scale_step(sp=sp, st=st, delta=+32, raster_total=1445,
+                             axis=gm.AXIS_H, wrap_at=1277)
+        sp, st = step["sp"], step["st"]
+
+    assert sp >= 0 and st <= 1276

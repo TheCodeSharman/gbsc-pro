@@ -34,122 +34,63 @@ HSCALE_MAX = 1023
 # needs slack -- and with too little, the picture tears exactly as it does on a
 # real overflow.
 #
-# HOW MUCH slack is not known, and this module deliberately stops trying to say.
-#
-# The measurements that survive scrutiny, all at PLLAD_MD 2553 on a 1445 px
-# output line, capture held at 798 units, moving only VDS_HB_ST to the edge:
+# **HOW MUCH SLACK IS NOT KNOWN, AND THIS MODULE DOES NOT GUESS.** The two
+# measurements that survive scrutiny, both at PLLAD_MD 2553 on a 1445 px output
+# line, capture held at 798 units, moving only VDS_HB_ST to the edge:
 #
 #   HSCALE 1023 (x1.001) -> produced  798.78, edge at VDS_HB_ST  881   33.2 px
 #   HSCALE  850 (x1.205) -> produced  961.36, edge at VDS_HB_ST 1095  ~84.6 px
 #
-# Those disagree with every simple model -- the requirement is NOT monotonic in
-# HSCALE -- and the corruption has multiple stable bands, so an edge found by
-# creeping down is only the true edge if you creep past all of them. More
-# measurement would not fix that.
+# The requirement is NOT monotonic in HSCALE and the corruption comes in multiple
+# stable bands, so an edge found by creeping down is only the true edge if you
+# creep past all of them. More measurement does not fix that.
 #
-# Everything earlier is retracted. The old rule (13 px, "measured" 2026-08-03 at
-# HSCALE 660-670) rests on SOLVED-mode13-fullscreen-clean, whose VDS_DIS_HB_ST of
-# 1372 blanked 74 px of a picture ending at 1446 -- and tearing shows worst at
-# the right of the line, so its evidence was hidden. Points at HSCALE 993 and 850
-# taken the same evening failed the same way, with 24.9 px and 163 px hidden.
-# Recorded in docs/photos/2026-08-05-horizontal-geometry/ as measurements not to
-# reuse. The lesson is the procedural one: any headroom measurement is worthless
-# unless the display window contains the whole picture.
+# **ANY HEADROOM MEASUREMENT IS WORTHLESS UNLESS THE DISPLAY WINDOW CONTAINS THE
+# WHOLE PICTURE.** Tearing shows worst at the right of the line, so a window that
+# blanks the right of the picture hides its own evidence.
 #
 # So: do not target a margin, take all of it. The origin pins VDS_?B_SP, leaving
 # VDS_?B_ST free -- push it to the last value below the raster total and accept
-# whatever headroom results. It costs nothing and cannot land in a false-safe
-# band. This is only a floor to warn below.
+# whatever headroom results. This is only a floor to warn below.
 HEADROOM_WARN_PX = 100
 
 
 # --- where the picture lands --------------------------------------------------
 
 # The first written pixel sits this far after VDS_?B_SP -- the near edge of the
-# frame buffer, NOT of the display window. Measured against TestPat's 1 px green
-# frame by creeping VDS_DIS_?B_SP until the frame vanished:
-#
-#   horizontal   VDS_HB_SP 49 -> origin 127   offset 78    photo 10, ~1:1
-#                VDS_HB_SP 35 -> origin 129   offset 94    pixel-perfect, x1.58
-#   vertical     VDS_VB_SP 37 -> origin  63   offset 26    photo 13 and 14
-#
-# The two horizontal numbers do not agree and nothing here explains why. 94 is
-# used because it is the one from the state where all four edges were aligned to
-# the pixel, so it is consistent with CORNER_H from that same state -- the pair
-# has to come from one alignment or the picture lands between two of them.
-#
-# This offset is what makes the corner reachable: the memory window's near edge
-# is placed at corner - offset, so the picture starts on the corner. Inheriting
-# whatever VDS_?B_SP happened to be instead is what put the display window 136
-# lines before any valid memory on the bench.
-#
-# RESOLVED 2026-08-05 by measure_origin.py. They do not disagree; they were
-# measured at different magnifications, and the offset is not a constant:
+# frame buffer, not of the display window:
 #
 #     write start = VDS_?B_SP + START_CONST + START_PER_MAG x magnification
 #
-# The near edge was crept until TestPat's frozen scratch band vanished, three
-# VDS_?B_SP values and three magnifications per axis. VDS_?B_SP tracks one for
-# one (slope 1.000, residual 0.00 on both axes), so the offset is real; what
-# moves is the magnification term.
-#
-#   horizontal   55.0 + 25.0 x m      residual 0.01 px
-#   vertical      0.2 +  0.8 x m      residual 0.11 lines
-#
-# 25 output px per unit magnification is 25 INPUT samples: a fixed run-up the
-# horizontal scaler consumes before it writes anything, which is what an 11-tap
-# filter costs (IF_HS_TAP11_BYPS). The vertical reads whole lines from a line
-# buffer and costs ~2 lines of the same. Both are PIPELINE LATENCY AT THE START,
-# and the old model saw that latency from the far end, where it could only look
-# like loss.
-#
-# Everything the old constants recorded falls out of this:
-#
-#   78 bypassed, 80 at x1.001, 93 at x1.575   solve_axis's own docstring, which
-#                                             said nothing predicted them
-#   94 at x1.58                               ORIGIN_OFFSET_H_SCALED
-#   129 at x1.58                              CORNER_H, VDS_HB_SP 35
-#   26                                        ORIGIN_OFFSET_V -- and 37 + 26 = 63
-#                                             is PANEL_VISIBLE_TOP exactly. That
-#                                             one was the bezel, not the scaler:
-#                                             measured, it is 2 lines.
+# 25 output px per unit magnification is 25 input samples, the run-up an 11-tap
+# horizontal filter consumes before it writes (IF_HS_TAP11_BYPS); the vertical
+# costs ~2 lines of line buffer. Both are pipeline latency at the start.
+# docs/scaler-geometry-model.md, docs/investigations/moving-write-origin.md
 START_CONST_H = 55.0
 START_PER_MAG_H = 25.0
 START_CONST_V = 0.2
 START_PER_MAG_V = 0.8
 
-# WHAT USED TO BE HERE, and why it is not.
+# What one display shows, measured on the bench TV 2026-08-06 with the picture
+# deliberately overrunning the raster on all four sides, so every reading had
+# live video either side of the decision:
 #
-# CORNER_H = 129, CORNER_V = 63 -- "the top left corner of the PICTURE, measured
-# rather than derived, absolute positions on the output raster, which is why they
-# are constants at all". They are not constants. 129 is the write start at x1.58,
-# the magnification of the one state it was read from, and 63 is
-# PANEL_VISIBLE_TOP -- the bezel, reached by creeping the near edge until
-# something vanished, which is the same procedure and the same answer.
+#     horizontal    90 .. 1351  of 1445    margins  90 / 94    span 1261
+#     vertical      41 .. 1121  of 1126    margins  41 /  5    span 1080
 #
-# CAPTURE_OFFSET_H = -24.67, OUTPUT_LOSS_H = 38.27, OUTPUT_LOSS_V = 24.33 --
-# fitted to eleven readings over four magnifications per axis, worst residual
-# 0.43 px, every measurement reproduced. A good fit to real data, and wrong: it
-# was measuring a fixed span from an origin that moves, so the origin's
-# magnification term came out split between an input offset and an output loss.
-# -24.67 is START_PER_MAG_H to two decimal places, which is the tell.
+# THESE DO NOT PLACE THE PICTURE, and must not. Where a display stops showing is
+# a property of the display; place_picture centres on the raster and the user
+# finds their own edges with pan and scale.
 #
-# NONE OF THE READINGS WERE BAD. Every one of them is still an acceptance test
-# above; what changed is what they are readings of. Residuals could never have
-# caught this -- the wrong model fitted them to 0.43 px -- and only measuring the
-# near edge did. Keep that in mind before trusting the next good fit.
-
-# The panel shows less than the raster: creeping the display window to the bezel
-# put its corner at output pixel 127, line 63. Assuming the visible region is
-# symmetric in the raster gives the extents below, and "full screen" means
-# covering them -- NOT filling the raster, which is 254 px wider than anything
-# the TV displays.
-#
-# TENTATIVE vertically. At produced 795.93 lines the bench looks roughly full
-# height, which a 999-line visible region would not; the real figure may be
-# nearer 800, i.e. the region is not symmetric. Calibrate against the panel.
-PANEL_VISIBLE_LEFT = 127
-PANEL_VISIBLE_TOP = 63
+# The two axes are different kinds of limit. 1121 - 41 = 1080 exactly, so the
+# vertical visible region is the active lines of a 1080-line output and is
+# DERIVABLE from the raster -- any display fed the same raster shows the same
+# lines. The horizontal is real overscan, this TV discarding 6% of the line, and
+# the next TV discards something else. docs/scaler-geometry-model.md
+PANEL_VISIBLE_LEFT = 90
+PANEL_VISIBLE_RIGHT = 1351
+PANEL_VISIBLE_TOP = 41
+PANEL_VISIBLE_BOTTOM = 1121
 
 
 class Axis:
@@ -161,14 +102,16 @@ class Axis:
     """
 
     def __init__(self, name, start_const, start_per_mag, warn_px,
-                 visible_edge, registers, margin):
+                 visible_edge, visible_far, registers, margin, window_sp_min):
         self.name = name
         self.start_const = start_const
         self.start_per_mag = start_per_mag
         self.warn_px = warn_px
         self.visible_edge = visible_edge
+        self.visible_far = visible_far
         self.registers = registers
         self.margin = margin
+        self.window_sp_min = window_sp_min
 
     def origin_offset(self, magnification):
         """How far after VDS_?B_SP the scaler starts writing, at this
@@ -176,21 +119,35 @@ class Axis:
         return self.start_const + self.start_per_mag * magnification
 
     def visible_span(self, raster_total):
-        """How much of the raster the panel actually shows."""
-        return raster_total - 2 * self.visible_edge
+        """How much of the raster the bench display shows. A hint for the
+        "fills screen" indicator, nothing more -- it is one display's overscan.
+        The far edge is MEASURED, not assumed symmetric with the near one: 90 and
+        94 are close, 41 and 5 are not."""
+        return self.visible_far - self.visible_edge
 
 
 # `margin` trims the display window's far edge. produced reproduces every far
-# edge ever measured to within 1.01 px and 1.71 lines, and the two costs of being
-# wrong are not symmetric: a window 2 px short loses 2 px of picture and nobody
-# can see it, while a window 2 px long shows scratch -- which is exactly what was
-# on the bench tonight. So each axis gives back its own worst residual, rounded
-# up. Not a fudge factor; the measured uncertainty, spent in the safe direction.
+# edge measured to within 1.01 px and 1.71 lines, and the two costs of being
+# wrong are not symmetric: a window 2 px short loses 2 px of picture nobody can
+# see, while a window 2 px long shows scratch. So each axis gives back its own
+# worst residual, rounded up -- the measured uncertainty, spent in the safe
+# direction.
 AXIS_H = Axis(
     "horizontal", START_CONST_H, START_PER_MAG_H,
-    HEADROOM_WARN_PX, PANEL_VISIBLE_LEFT,
+    HEADROOM_WARN_PX, PANEL_VISIBLE_LEFT, PANEL_VISIBLE_RIGHT,
     ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST"),
     margin=2,
+    # Below VDS_HB_SP 8 the display corrupts -- measured on the bench 2026-08-06
+    # by creeping it down until the picture broke. A hard floor, and it costs 8 px
+    # on top of the write offset, so the leftmost the picture can start is
+    # 8 + 55 + 25 x m. Against this panel's left edge at 90 that means the left of
+    # the screen is only reachable below about x1.08.
+    #
+    # Whether 8 is absolute or relative to the output hsync is not established.
+    # VDS_HS_ST is 10, and 10 - 2 = 8, which may be the whole story or may be a
+    # coincidence; moving VDS_HS_ST and seeing whether the floor follows would
+    # settle it in one creep.
+    window_sp_min=8,
 )
 
 # No vertical margin: a settled state at -1.9 lines was clean, and the horizontal
@@ -199,9 +156,14 @@ AXIS_H = Axis(
 # horizontal evidence, and the VSCALE +1 ambiguity is worth 1.2 lines here.
 AXIS_V = Axis(
     "vertical", START_CONST_V, START_PER_MAG_V,
-    0, PANEL_VISIBLE_TOP,
+    0, PANEL_VISIBLE_TOP, PANEL_VISIBLE_BOTTOM,
     ("VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST"),
     margin=3,
+    # UNMEASURED. The horizontal floor of 8 was found by creeping until the
+    # picture broke; nobody has done the vertical. 0 is what the code assumed
+    # before, so it is no worse than the status quo -- but it is an assumption,
+    # not a measurement, and it should not be read as one.
+    window_sp_min=0,
 )
 
 
@@ -243,26 +205,89 @@ def produced_px(capture_units, hscale, bypassed=False, axis=None):
     return capture_units * factor
 
 
-def place_picture(scale, bypassed, axis):
-    """(corner, window_sp) putting the picture at the near edge of what the panel
-    shows, at whatever magnification is set.
+def max_display_window(raster_total, axis):
+    """The biggest picture this raster can hold, before magnification is known.
 
-    THE CORNER IS NOT A CONSTANT. The scaler starts writing origin_offset(m)
-    after VDS_?B_SP, so a display window pinned to a corner measured once at
-    x1.58 begins before the first written pixel at every higher magnification --
-    41 px of last frame's contents at x3.2, which is what was on the bench on
-    2026-08-05 and read as garbage down the left.
+    DEFINED, not read. Nothing here consults VDS_?B_SP or any other register that
+    happens to be set: inheriting the current geometry is how a picture got frozen
+    at 620 lines that no zoom step could grow.
 
-    So the corner is derived and VDS_?B_SP moves to produce it. Where the offset
-    already exceeds the visible edge the picture cannot reach that far -- the
-    register would have to go negative -- and it starts at the offset instead.
-    That is a real limit of the chip: horizontally the offset is 55 + 25 x m, so
-    at x4 nothing can be placed before output pixel 155, and the panel's own left
-    edge at 127 is unreachable above about x2.9.
+    The bound is the write floor at BOTH ends, because the picture is centred. A
+    picture run from the floor to the far rail is bigger, but it cannot be
+    centred -- tried on 2026-08-06, it gave margins of 105 and 5 and hung 89 px of
+    picture off the right of the screen. Equal margins mean whatever overscans is
+    lost equally, which is the only kind of loss a user can reason about.
     """
-    offset = axis.origin_offset(magnification(scale, bypassed))
-    corner = max(axis.visible_edge, offset)
-    return round(corner), max(0, round(corner - offset))
+    return (raster_total - 2) - 2 * (axis.window_sp_min + axis.start_const)
+
+
+def fit_to_raster(capture, raster_total, axis, unity=HSCALE_UNITY):
+    """(scale, produced) making the picture as big as the raster allows.
+
+    The picture is always as large as it can be, and the scale is whatever maps
+    this capture onto it. So the user's control is the capture alone -- crop
+    harder and the scale takes up the slack, crop less and it gives it back --
+    and the picture never changes size underneath them.
+
+    The magnification term makes this implicit -- the write offset grows with
+    magnification, which itself depends on the size we are solving for -- so it is
+    solved rather than iterated:
+
+        produced = room - START_PER_MAG x produced / capture
+                 = room x capture / (capture + START_PER_MAG)
+
+    A capture too small to fill the raster is bounded by the scale register
+    instead, at x4. That is a limit, not a failure.
+    """
+    room = max_display_window(raster_total, axis)
+    if capture <= 0 or room <= 0:
+        raise ValueError("nothing to fit")
+
+    # Centred, so the magnification term costs at both ends:
+    #     produced = room - 2 x START_PER_MAG x produced / capture
+    produced = room * capture / (capture + 2 * axis.start_per_mag)
+    scale = min(max(round(unity * capture / produced), HSCALE_MIN), HSCALE_MAX)
+    produced = capture * unity / scale
+
+    # Rounding the scale down makes the picture a shade larger than solved for,
+    # which can push the far edge past the last usable value. Give one step back
+    # rather than overflow -- a pixel of unused raster costs nothing, an overflow
+    # shows scratch.
+    while (scale < HSCALE_MAX
+           and round((raster_total - produced) / 2)
+           < axis.window_sp_min + axis.origin_offset(unity / scale)):
+        scale += 1
+        produced = capture * unity / scale
+    return scale, produced
+
+
+def place_picture(produced, raster_total, magnification, axis):
+    """(corner, window_sp) centring the picture on the output raster.
+
+    CENTRED RATHER THAN PINNED TO A PANEL EDGE. Where a display stops showing is
+    a property of that display: PANEL_VISIBLE_LEFT was carried here as 127 and
+    measured 90 on the bench TV, and the next panel will differ again. A scaler
+    cannot know it and should not pretend to. Centring needs no such number, and
+    it leaves the user free to find their own usable edges with pan and scale --
+    which is also the only way anyone has ever actually found them.
+
+    THE CORNER IS NOT A CONSTANT EITHER. The scaler starts writing
+    `origin_offset(m)` after VDS_?B_SP, so the memory window has to move to put
+    the picture where it belongs. Holding a corner fixed while the scale changed
+    is what put 41 px of last frame's contents down the left of the screen on
+    2026-08-05.
+
+    VDS_?B_SP cannot go negative, so a picture too big to centre starts at the
+    write floor instead and overscans off the far end. Horizontally that floor is
+    55 + 25 x m -- at x4 nothing can be placed before output pixel 155.
+    """
+    offset = axis.origin_offset(magnification)
+    corner = round((raster_total - produced) / 2)
+    window_sp = round(corner - offset)
+    if window_sp < axis.window_sp_min:
+        window_sp = axis.window_sp_min
+        return round(window_sp + offset), window_sp
+    return corner, window_sp
 
 
 def headroom_px(memory_window_px, produced):
@@ -487,47 +512,54 @@ def scale_ceiling(capture, memory_window, unity=HSCALE_UNITY):
     return math.ceil(capture * unity / memory_window)
 
 
-def scale_step(sp, st, scale, delta, memory_window, wrap_at,
-               unity=HSCALE_UNITY):
-    """What one press of the scale control should do to an axis.
+def scale_step(sp, st, delta, raster_total, axis, wrap_at,
+               unity=HSCALE_UNITY, minimum_capture=16):
+    """What one press of the zoom control should do to an axis.
 
-    Below the ceiling this is just a scale change and the capture is left alone
-    -- it is the user's, set by panning, and moving it under them would undo a
-    hand alignment.
+    IT CHANGES THE CROP, AND ONLY THE CROP. The picture is always as big as the
+    raster allows -- `fit_to_raster` says how big and what scale gets it there --
+    so zooming in captures less source and magnifies harder, zooming out captures
+    more and magnifies less, and the picture never changes size underneath the
+    user. One pad, and the two windows are managed for them.
 
-    AT the ceiling the scale can go no lower, so the zoom continues in the
-    capture instead: trim to zoom in, widen to zoom out, with the scale refilling
-    the window each time so the picture stays exactly as big as the window
-    allows. That makes '+' and '-' inverses, which matters more here than
-    anywhere -- an irreversible control is how a hand-aligned picture is lost.
+    IT DOES NOT READ THE CURRENT SCALE. There is no `scale` parameter, which is
+    deliberate: every size fault this evening came from deriving the new state
+    from whatever the registers happened to hold. Reading the size froze a picture
+    at 620 lines that nothing could grow; reading the corner put 41 px of the
+    previous frame down the left of the screen. The state is computed from the
+    capture and the raster, and nothing else.
 
-    Returns the capture window, the scale, and whether the capture moved.
+    Trimming is symmetric about the centre, so out and back is exactly
+    reversible -- an irreversible control is how a hand-aligned picture is lost.
+
+    Lower scale means a bigger picture, so the caller's '+' arrives as a negative
+    delta: negative crops in, positive opens out.
     """
     capture = st - sp
     if capture <= 0:
         raise ValueError("capture stop is before its start")
 
-    floor = scale_ceiling(capture, memory_window, unity)
-    if floor is None:
-        raise ValueError("the memory window is too small to hold any picture")
-    floor = max(floor, HSCALE_MIN)
+    # The step is the delta, in input units, NOT a proportion of the current
+    # capture. Proportional steps are not reversible -- out and back use different
+    # capture widths and so different step sizes, and the window walks. The
+    # panel's own step box is what makes a press coarse or fine.
+    step = -delta
 
-    wanted = min(max(scale + delta, HSCALE_MIN), HSCALE_MAX)
-    zooming_in = wanted < floor
-    zooming_out_while_pinned = delta > 0 and scale <= floor
+    new_sp, new_st = sp, st
+    if step:
+        near = abs(step) // 2
+        far = abs(step) - near
+        direction = 1 if step > 0 else -1
+        new_sp, new_st = sp + direction * near, st - direction * far
+        new_sp = max(0, new_sp)
+        if wrap_at is not None:
+            new_st = min(new_st, wrap_at - 1)
+        if new_st - new_sp < minimum_capture:
+            new_sp, new_st = sp, st
 
-    if delta and (zooming_in or zooming_out_while_pinned):
-        # The magnification the user asked for, delivered by capturing less
-        # source instead of by a scale the register cannot reach.
-        step = round(capture * -delta / scale)
-        if step:
-            new_sp, new_st, new_scale = zoom_capture(
-                sp, st, memory_window, step, wrap_at, unity)
-            if (new_sp, new_st) != (sp, st):
-                return {"sp": new_sp, "st": new_st, "scale": new_scale,
-                        "zoomed": True}
-
-    return {"sp": sp, "st": st, "scale": wanted, "zoomed": False}
+    scale, produced = fit_to_raster(new_st - new_sp, raster_total, axis, unity)
+    return {"sp": new_sp, "st": new_st, "scale": scale, "produced": produced,
+            "zoomed": (new_sp, new_st) != (sp, st)}
 
 
 def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
@@ -568,19 +600,11 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
         # is, which is exactly the 13 px shift this argument exists to prevent.
         window_sp = window_sp_of if window_sp_of is not None else origin - origin_offset
     else:
-        # Centre the picture, then let the window's near edge follow from it.
-        # Both can be driven off the bottom of the raster by a picture wider than
-        # the screen, which is legal -- it simply overscans -- but the registers
-        # cannot go negative.
-        origin = round((raster_total - produced) / 2) + offset
-        window_sp = round(origin - origin_offset)
-        if window_sp < 0:
-            # VDS_?B_SP cannot go negative, so the picture cannot start earlier
-            # than origin_offset. At high magnification that is a real limit and
-            # not a rounding detail: the horizontal offset is 55 + 25 x m, so at
-            # x4 nothing can be placed before output pixel 155.
-            window_sp = 0
-            origin = origin_offset
+        origin, window_sp = place_picture(produced, raster_total,
+                                          magnification(scale, bypassed), axis)
+        origin += offset          # `offset` nudges the centred position
+        window_sp = max(0, window_sp + offset)
+        if window_sp == 0 and origin <= round(origin_offset):
             edge = "left" if axis is AXIS_H else "top"
             clamped.append(
                 f"picture overflows the raster; pinned to the {edge} edge")
