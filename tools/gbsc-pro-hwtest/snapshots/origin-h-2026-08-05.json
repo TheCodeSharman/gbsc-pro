@@ -1,0 +1,56 @@
+[
+ {
+  "win_sp": 160,
+  "scale": 512,
+  "capture": 200,
+  "write_start": 265,
+  "offset": 105,
+  "magnification": 2.0,
+  "question": "A"
+ },
+ {
+  "win_sp": 260,
+  "scale": 512,
+  "capture": 200,
+  "write_start": 365,
+  "offset": 105,
+  "magnification": 2.0,
+  "question": "A"
+ },
+ {
+  "win_sp": 360,
+  "scale": 512,
+  "capture": 200,
+  "write_start": 465,
+  "offset": 105,
+  "magnification": 2.0,
+  "question": "A"
+ },
+ {
+  "win_sp": 260,
+  "scale": 1023,
+  "capture": 200,
+  "write_start": 340,
+  "offset": 80,
+  "magnification": 1.0009775171065494,
+  "question": "B"
+ },
+ {
+  "win_sp": 260,
+  "scale": 512,
+  "capture": 200,
+  "write_start": 365,
+  "offset": 105,
+  "magnification": 2.0,
+  "question": "B"
+ },
+ {
+  "win_sp": 260,
+  "scale": 320,
+  "capture": 200,
+  "write_start": 395,
+  "offset": 135,
+  "magnification": 3.2,
+  "question": "B"
+ }
+]
