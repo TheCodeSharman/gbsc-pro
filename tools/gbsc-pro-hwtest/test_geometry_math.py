@@ -365,6 +365,39 @@ def test_a_zoom_holds_the_window_still():
     assert (sp, st) == (19, 1123)
 
 
+# --- the vertical axis, against a fully measured state ------------------------
+
+
+def test_the_vertical_formula_reproduces_a_measured_picture():
+    """docs/photos/2026-08-05-horizontal-geometry/README.md, photo 13: the only
+    vertical state where the picture's own edges were read off the screen rather
+    than inferred from the display window.
+
+        IF_VB 22..568 = 546 half-lines, VSCALE 660, VDS_VB 37..978
+        picture top at output line 63, last written line 909
+
+    546 x 1024 / 660 = 847.13, so the first blanked line is 63 + 847 = 910 and
+    the last written one is 909. Exact.
+
+    This is what retires the "vertical model is wrong by 30 lines" finding. That
+    came from the pixel-perfect snapshot's VDS_DIS_VB of 19..1123, read as a
+    1104-line picture -- but 19 is 44 lines ABOVE the picture and 1123 is railed
+    against the raster, so 1104 measured the display window and not the picture.
+    """
+    v = gm.solve_axis(capture=546, scale=660, bypassed=False, raster_total=1126,
+                      axis=gm.AXIS_V, origin=63, window_sp_of=37)
+
+    assert round(v["produced"], 2) == 847.13
+    assert v["display_st"] - 1 == 909
+
+
+def test_the_vertical_corner_is_where_the_picture_starts():
+    """Not where the display window starts. The two differed by 44 lines on the
+    bench, invisibly, because the display window's top edge fell above the
+    panel's own top edge and nothing showed the difference."""
+    assert gm.CORNER_V == 63
+
+
 # --- zooming past the scale ceiling -------------------------------------------
 
 

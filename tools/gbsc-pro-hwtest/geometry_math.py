@@ -86,23 +86,31 @@ ORIGIN_OFFSET_H_BYPASSED = 78
 ORIGIN_OFFSET_H_SCALED = 80
 ORIGIN_OFFSET_V = 26
 
-# The top left corner of the picture, in OUTPUT pixels and lines, measured
-# rather than derived. From the pixel-perfect alignment of 2026-08-05, where
-# Michael set all four edges by eye:
+# The top left corner of the PICTURE, in OUTPUT pixels and lines, measured
+# rather than derived. Absolute positions on the output raster, not offsets from
+# VDS_?B_SP -- which is why they are constants at all.
 #
-#   snapshots/pixel-perfect-all-four-sides-2026-08-05.json
-#   raster 1445x1126, VDS_DIS_HB 129..1385, VDS_DIS_VB 19..1123
+#   horizontal   VDS_HB_SP 49 -> 127    docs/investigations/riscpc-game-modes.md:588
+#                VDS_HB_SP 35 -> 129    pixel-perfect snapshot
+#   vertical     VDS_VB_SP 37 ->  63    photo 13, picture's top read off the
+#                                       screen; VDS_VB_SP was 37 in every
+#                                       vertical state recorded, so this cannot
+#                                       yet tell an absolute from a +26 offset
 #
-# These are ABSOLUTE positions on the output raster, not offsets from
-# VDS_?B_SP -- which is why they are constants at all. The offsets in that same
-# alignment were H 94 and V -18, and they move when the memory window moves.
+# CORNER_V IS NOT VDS_DIS_VB_SP. That register read 19 in the pixel-perfect
+# state and 19 again in photo 13, in both cases 44 lines ABOVE the picture --
+# invisibly, because the display window's top edge fell above the panel's own
+# top edge, so nothing on screen ever showed the difference. Taking 19 as the
+# corner is what made the vertical formula look 30 lines wrong: 1123 - 19 = 1104
+# measured the display window, whose bottom was railed against the raster while
+# the picture ran 11 lines off the end of it.
 #
 # Pinning the corner is what makes the far edge meaningful: hold the corner and
 # the far edge is corner + produced, one unknown instead of two. Holding
 # whatever the register happened to say is what let the aperture drift off the
 # picture, cropping 110 lines vertically while overrunning 86 px horizontally.
 CORNER_H = 129
-CORNER_V = 19
+CORNER_V = 63
 
 # The panel shows less than the raster: creeping the display window to the bezel
 # put its corner at output pixel 127, line 63. Assuming the visible region is
@@ -288,18 +296,17 @@ def zoom_capture(sp, st, max_produced, step, wrap_at=None, unity=HSCALE_UNITY):
 def measured_unity(cal_width, cal_scale, cal_capture):
     """The constant of proportionality, from an alignment instead of a datasheet.
 
-    `produced = capture x unity / scale` is the model, and the RATIOS in it are
-    sound -- what is wrong is `unity`. The datasheet value 1024 holds
-    horizontally, but Michael's pixel-perfect alignment on 2026-08-05 measured a
-    1104-line picture from 513 half-lines at VSCALE 489, which makes the vertical
-    unity 1052.4 and not 1024. That is the same 2.8% as the 30-line error in
-    docs; this does not explain it, it just stops assuming it away.
+    1024 IS THE RIGHT ANSWER ON BOTH AXES, as far as anything measured shows:
+    horizontally to 3 px in 1256, vertically to 1.1 lines in 846 (photo 13). The
+    2.8% vertical discrepancy this was originally written for turned out to be a
+    misread display window, not a wrong constant -- see CORNER_V.
 
-    It matters here because the ceiling is computed from it. Assume 1024
-    vertically and the window looks full at VSCALE 476 when the picture really
-    fills it at 489, so a zoom would engage 13 units late and the picture would
-    overrun the window in between -- which is the overflow the zoom exists to
-    prevent.
+    So this is not a correction, it is a safety net. It exists because the two
+    axes are read off a real panel whose visible region is not the raster, and a
+    user who has aligned by eye knows something the arithmetic does not. If a
+    calibration disagrees with 1024 by more than a rounding, that is worth
+    investigating rather than silently obeying -- last time it meant the
+    measurement was of the wrong thing.
     """
     if cal_capture <= 0 or cal_scale <= 0:
         raise ValueError("a calibration needs a positive capture and scale")
