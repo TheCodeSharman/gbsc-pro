@@ -54,6 +54,10 @@
               # with the pinned version.
               pkgs.nodejs           # node runs public/scripts/build.js; npm supplies tsc
               pkgs.xxd              # public/scripts/html2h.sh pipes gzip through it
+
+              # The host C++ unit tests. Header-only, so this only has to put
+              # doctest/doctest.h on the include path.
+              pkgs.doctest
             ];
             shellHook = ''
               echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest), esptool, arduino-cli + make, node/tsc (web UI)"
