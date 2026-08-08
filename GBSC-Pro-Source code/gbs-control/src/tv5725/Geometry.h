@@ -32,8 +32,12 @@ public:
     uint16_t verticalStart() const;
     uint16_t linePx() const;
     uint16_t frameLines() const;
-    uint16_t wrapH() const;
-    uint16_t wrapV() const;
+
+    // The horizontal line knows what the hsync pulse takes off each end; the
+    // vertical does not, because nothing has measured the vsync equivalent and
+    // a guess there would crop picture rather than blanking.
+    InputLine lineH() const;
+    InputLine lineV() const;
 
     uint16_t captureH() const;
     uint16_t captureV() const;
@@ -61,6 +65,8 @@ private:
     uint16_t linePx_;         // output raster total, horizontal
     uint16_t frameLines_;     // output raster total, vertical
     uint16_t wrapH_, wrapV_;  // where each capture window rolls over
+    uint16_t hlowLen_;        // hsync low, ADC samples
+    uint16_t adcLine_;        // the whole line in the same samples
 };
 
 // The geometry engine: the user's framing, and every TV5725 register that is an

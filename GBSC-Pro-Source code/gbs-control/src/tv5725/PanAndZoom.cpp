@@ -50,49 +50,65 @@ bool PanAndZoom::operator!=(const PanAndZoom &other) const
     return !(*this == other);
 }
 
-uint16_t PanAndZoom::defaultWidth(uint16_t units, float fieldRateHz,
+uint16_t PanAndZoom::defaultWidth(const InputLine &line, float fieldRateHz,
                                bool vertical)
 {
     float fraction = DefaultHActiveFraction;
     if (vertical)
         fraction = fieldRateHz < 55.0f ? DefaultVActiveFraction50Hz
                                        : DefaultVActiveFraction60Hz;
-    return (uint16_t)clampWidth(lrintf(units * fraction * OverCapture),
-                                units);
+    return (uint16_t)clampWidth(
+        lrintf(line.units() * fraction * OverCapture), line);
 }
 
-CaptureWindow PanAndZoom::capture(uint16_t units, float fieldRateHz,
+CaptureWindow PanAndZoom::capture(const InputLine &line, float fieldRateHz,
                         bool vertical) const
 {
-    if (units == 0)
+    if (line.units() == 0)
         return CaptureWindow();
-
-    // The capture STOP may never reach `units`, only units - 1. That value
-    // is the wrap point -- IF_VB_ST rolls at 2 x (VTOTAL + 1) and IF_HB_ST2
-    // at IF_HSYNC_RST + 1 -- and a window written onto it does not clamp,
-    // it rolls, which reads as the picture jumping rather than as a capture
-    // fault. geometry_math.py is the reference and has always had it, as
-    // `wrap_at - 1` in scale_step() and pan_capture() alike.
-    uint16_t span = units - 1;
 
     int16_t zoomUnits = vertical ? zoomV_ : zoomH_;
     int16_t pan = vertical ? panV_ : panH_;
 
     long width = clampWidth(
-        (long)defaultWidth(units, fieldRateHz, vertical) - zoomUnits, span);
+        (long)defaultWidth(line, fieldRateHz, vertical) - zoomUnits, line);
 
-    long start = (long)(units - width) / 2 + pan;
-    if (start < 0)
-        start = 0;
-    if (start > (long)span - width)
-        start = (long)span - width;
+    long start = (long)(line.units() - width) / 2 + pan;
+    if (start < (long)line.firstCapture())
+        start = line.firstCapture();
+    if (start > (long)line.lastCapture() - width)
+        start = (long)line.lastCapture() - width;
     return CaptureWindow((uint16_t)start, (uint16_t)(start + width));
 }
 
-long PanAndZoom::clampWidth(long width, uint16_t units)
+void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vertical)
 {
-    if (width > (long)units)
-        return units;
+    if (line.units() == 0)
+        return;
+
+    // Deliberately the same arithmetic as capture(), in the same order: this
+    // has to agree with it exactly, or the framing is clamped to a window the
+    // solver does not produce and the dead zone comes back one unit wide.
+    int16_t &zoomUnits = vertical ? zoomV_ : zoomH_;
+    int16_t &pan = vertical ? panV_ : panH_;
+
+    long full = defaultWidth(line, fieldRateHz, vertical);
+    long width = clampWidth(full - zoomUnits, line);
+    zoomUnits = (int16_t)(full - width);
+
+    long centre = (long)(line.units() - width) / 2;
+    long start = centre + pan;
+    if (start < (long)line.firstCapture())
+        start = line.firstCapture();
+    if (start > (long)line.lastCapture() - width)
+        start = (long)line.lastCapture() - width;
+    pan = (int16_t)(start - centre);
+}
+
+long PanAndZoom::clampWidth(long width, const InputLine &line)
+{
+    if (width > (long)line.capturable())
+        return line.capturable();
     if (width < (long)MinimumCapture)
         return MinimumCapture;
     return width;

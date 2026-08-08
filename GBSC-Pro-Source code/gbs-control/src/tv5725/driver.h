@@ -9,6 +9,7 @@
 
 #include "Scale.h"
 #include "CaptureWindow.h"
+#include "InputLine.h"
 #include "RasterFit.h"
 #include "PictureOrigin.h"
 #include "AxisSolution.h"

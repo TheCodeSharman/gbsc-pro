@@ -6,7 +6,7 @@ namespace Tv5725 {
 
 Capture::Capture()
     : horizontalStop_(0), horizontalStart_(0), verticalStop_(0), verticalStart_(0), linePx_(0), frameLines_(0),
-      wrapH_(0), wrapV_(0) {}
+      wrapH_(0), wrapV_(0), hlowLen_(0), adcLine_(0) {}
 
 uint16_t Capture::horizontalStop() const { return horizontalStop_; }
 
@@ -20,9 +20,12 @@ uint16_t Capture::linePx() const { return linePx_; }
 
 uint16_t Capture::frameLines() const { return frameLines_; }
 
-uint16_t Capture::wrapH() const { return wrapH_; }
+InputLine Capture::lineH() const
+{
+    return InputLine::measured(wrapH_, hlowLen_, adcLine_);
+}
 
-uint16_t Capture::wrapV() const { return wrapV_; }
+InputLine Capture::lineV() const { return InputLine(wrapV_); }
 
 uint16_t Capture::captureH() const { return horizontalStart_ - horizontalStop_; }
 
@@ -40,6 +43,13 @@ bool Capture::readRasters()
     linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
     wrapH_ = GBS::IF_HSYNC_RST::read() + 1;
+
+    // How much of the line the hsync pulse takes is a property of the source, so
+    // it is measured. Both are in ADC samples, the one space they share -- the
+    // denominator is the divider, not STATUS_SYNC_PROC_HTOTAL, which only echoes
+    // PLLAD_MD back.
+    hlowLen_ = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+    adcLine_ = GBS::PLLAD_MD::read();
 
     uint16_t sourceVerticalTotal = GBS::STATUS_SYNC_PROC_VTOTAL::read();
     if (wrapH_ < 64 || sourceVerticalTotal < SourceVerticalTotalMin
@@ -152,9 +162,20 @@ bool Geometry::readCapture(Capture &capture)
     }
 
     float fieldRate = sourceFieldRateOr50Hz();
-    capture.setWindows(
-        framing_.capture(capture.wrapH(), fieldRate, false),
-        framing_.capture(capture.wrapV(), fieldRate, true));
+
+    // Store only a framing this source can realise. A press big enough to
+    // overshoot an edge still moves the window a unit or two, so step() accepts
+    // it and the framing keeps the overshoot; every smaller press back then
+    // produces an identical window and step() reverts it, leaving the control
+    // dead in that direction. Only the hold ramp presses that far -- measured
+    // pv -51 against a limit of -46, ph -144 against -134.
+    InputLine h = capture.lineH();
+    InputLine v = capture.lineV();
+    framing_.clampToLine(h, fieldRate, false);
+    framing_.clampToLine(v, fieldRate, true);
+
+    capture.setWindows(framing_.capture(h, fieldRate, false),
+                       framing_.capture(v, fieldRate, true));
     return capture.usable() ? true : fail();
 }
 

@@ -54,13 +54,12 @@ GEOMETRY_FIELDS = [
 # One press asks for a number of OUTPUT PIXELS, not input units, and not a
 # proportion. Must match Geometry::ControlSteps in src/tv5725/ControlSteps.h.
 #
-# It was PAN_STEP = 8 input units and ZOOM_STEP_RATIO = 1.06, a constant
-# proportion of the width. Both went with 78a9f23: an input unit is worth
+# **NOT INPUT UNITS, AND NOT A PROPORTION.** An input unit is worth
 # `magnification` pixels on screen, so a fixed unit step gets coarser the further
 # you zoom in, and the two axes move by different amounts for the same press
 # whenever their magnifications differ -- x1.315 across and x2.107 down on this
-# bench, a 60% difference for one keypress. Michael, 2026-08-09: "one unit of
-# zoom is one pixel of the output screen".
+# bench, 60% for one keypress. One unit of zoom is one pixel of the output
+# screen.
 PAN_STEP_PX = 8
 ZOOM_STEP_PX = 8
 
@@ -611,3 +610,83 @@ def test_the_memory_window_never_lands_below_its_floor(host, probe, framed):
     after = settled_geometry(host)
 
     assert after["VDS_HB_SP"] >= gm.AXIS_H.window_sp_min
+
+
+# --- the capture window may never take the hsync pulse ------------------------
+
+# The pulse is at the HEAD, its width read from the source on every solve, and
+# the TAIL IS DELIBERATELY UNBOUNDED -- both asserted below rather than left to
+# chance. docs/scaler-geometry-model.md "The two green regions in an IF line".
+
+HLOW_LEN = ("HLOW_LEN", 0, 0x19, 0, 12)
+PLLAD_MD = ("PLLAD_MD", 5, 0x12, 0, 12)
+
+# The sync processor's own validity window for the duty, from
+# gbs-control.ino:4858. HLOW_LEN is a segment 0 live measurement and rails.
+DUTY_MIN, DUTY_MAX = 0.041, 0.152
+
+
+def sync_units(probe, units):
+    """What the hsync pulse takes off the head of a `units` long IF line, or a
+    skip: with the duty unmeasurable the firmware falls back to a constant, and
+    a test that cannot measure it either has nothing to check against."""
+    hlow = probe.read_field(HLOW_LEN)
+    adc_line = probe.read_field(PLLAD_MD)
+    if not adc_line:
+        pytest.skip("PLLAD_MD reads 0; the ADC PLL divider is not set")
+    duty = hlow / adc_line
+    if not DUTY_MIN < duty < DUTY_MAX:
+        pytest.skip(f"hsync duty {duty:.4f} (HLOW_LEN {hlow} of {adc_line}) is "
+                    "outside the sync processor's validity window, so the "
+                    "firmware is using its fallback and there is nothing to "
+                    "compare against")
+    return math.ceil(units * duty)
+
+
+@pytest.mark.zoom
+def test_a_zoomed_out_capture_never_takes_the_hsync_pulse(host, probe, framed):
+    """Without a floor, zoom-out widens the capture through the blanking and
+    into the sync, which arrives as green. Asking for far more zoom-out than the
+    line can give is the press that reaches it."""
+    units = framed["IF_HSYNC_RST"] + 1
+    guard = sync_units(probe, units)
+
+    set_framing(host, -5000, 0, 0, 0)
+    after = settled_geometry(host)
+
+    assert after["IF_HB_SP2"] >= guard, (
+        f"the capture starts at {after['IF_HB_SP2']}, inside the {guard} unit "
+        f"hsync pulse at the head of a {units} unit line")
+
+
+@pytest.mark.zoom
+def test_a_zoomed_out_capture_still_takes_the_whole_tail(host, probe, framed):
+    """The other half of the same decision, and the one a future guard would
+    quietly break. Nothing derivable bounds the tail, so zoom-out must still
+    reach the last unit before the wrap -- that is the reach which recovers
+    active video the 0.76 default active fraction crops."""
+    units = framed["IF_HSYNC_RST"] + 1
+
+    set_framing(host, -5000, 0, 0, 0)
+    after = settled_geometry(host)
+
+    assert after["IF_HB_ST2"] == units - 1, (
+        f"the capture stops at {after['IF_HB_ST2']} of a {units} unit line, "
+        f"short of the {units - 1} the wrap allows: something is guarding the "
+        "tail, and no measurement supports a bound there")
+
+
+@pytest.mark.pan
+def test_panning_to_the_left_stop_never_takes_the_hsync_pulse(host, probe, framed):
+    """The same bound, reached the other way. capture() clamps the window and
+    clampToLine() clamps the framing, and they are separate arithmetic -- a pan
+    that stops one unit short of where a zoom stops is the dead zone of
+    2026-08-09 wearing a different hat."""
+    units = framed["IF_HSYNC_RST"] + 1
+    guard = sync_units(probe, units)
+
+    set_framing(host, 0, 0, -5000, 0)
+    left = settled_geometry(host)
+    assert left["IF_HB_SP2"] >= guard, (
+        f"panned to the left stop the capture starts at {left['IF_HB_SP2']}, "
+        f"inside the {guard} unit hsync pulse")

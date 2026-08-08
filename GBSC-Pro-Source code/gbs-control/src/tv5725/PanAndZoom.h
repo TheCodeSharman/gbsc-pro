@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include "InputLine.h"
 #include "CaptureWindow.h"
 
 namespace Tv5725 {
@@ -58,19 +59,25 @@ public:
     bool operator!=(const PanAndZoom &other) const;
 
     // How much of the line an untuned source is assumed to fill. COMPUTED from
-    // the line length alone -- nothing is read from the chip. `units` is the
-    // whole line: IF units horizontally, HALF-LINES vertically.
-    static uint16_t defaultWidth(uint16_t units, float fieldRateHz,
+    // the line alone -- nothing is read from the chip. The fraction is of the
+    // WHOLE line, because that is what the VESA and CEA modes it came from
+    // measure; what the line can actually hold then bounds it.
+    static uint16_t defaultWidth(const InputLine &line, float fieldRateHz,
                                  bool vertical);
 
-    // The capture window this framing means, on a line of `units`. Derived from
-    // the framing and the line length alone -- nothing is read back. At rest
-    // this IS the default window, so there is no second definition of it.
-    CaptureWindow capture(uint16_t units, float fieldRateHz, bool vertical) const;
+    // The capture window this framing means, on `line`. Derived from the
+    // framing and the line alone -- nothing is read back. At rest this IS the
+    // default window, so there is no second definition of it.
+    CaptureWindow capture(const InputLine &line, float fieldRateHz, bool vertical) const;
 
-    // A width wider than its line wraps; one narrower than the minimum is a
-    // dead picture.
-    static long clampWidth(long width, uint16_t units);
+    // Bring this framing back to what the line can actually realise. capture()
+    // clamps the WINDOW, and a framing left beyond anything reachable kills the
+    // control in that direction -- see Geometry::readCapture().
+    void clampToLine(const InputLine &line, float fieldRateHz, bool vertical);
+
+    // A width wider than the line can hold wraps; one narrower than the minimum
+    // is a dead picture.
+    static long clampWidth(long width, const InputLine &line);
 
 private:
     int16_t zoomH_;   // input units cropped off the default width; negative widens
