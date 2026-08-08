@@ -13,6 +13,14 @@ Verdicts:
   no-lock   VTOTAL steady at a value that is not a real AKF50 mode
   short     dwell too short to judge
 
+It also reports the hsync duty per VTOTAL, under the same settle filter, which
+is the measurement deciding whether the duty can carry a term of the preset key.
+That question is open in exactly one direction: statically the duty is strong --
+two tight clusters over 33 committed snapshots, holding across PLLAD_MD
+1856..3072 -- but those are all settled states, and HPERIOD_IF's failure rates
+are known precisely because somebody swept it. The sweeps committed here predate
+the field, so they report nothing rather than a reassuring zero.
+
     python3 tools/gbsc-pro-hwtest/analyse_sweep.py sweeps/2026-08-04-akf50-b.jsonl.gz
 """
 import gzip, json, sys
@@ -36,6 +44,31 @@ def samples(path):
         return [json.loads(line) for line in fh if line.strip()]
 
 
+def sync_width(settled):
+    """Commonest HLOW_LEN over these samples, its spread in counts, and the
+    duty it implies. None if the sweep does not carry the field.
+
+    None rather than a default, and this is the sharp case: the committed
+    sweeps predate HLOW_LEN entirely, so a summary that reported "spread 0" for
+    them would be read as the stability this measurement exists to establish,
+    from runs that never took it.
+
+    The commonest value rather than the mean, because a dropped read is one
+    sample and a mean smears it across the answer -- and the key matches on a
+    bucket, so the mode is the quantity it wants. HTOTAL is zero-based like
+    every counter here, hence the +1; the firmware already does this in ratioHs.
+    """
+    widths = [r["hlow"] for r in settled if r.get("hlow") is not None]
+    totals = [r["htotal"] for r in settled if r.get("htotal")]
+    if not widths or not totals:
+        return None
+    hlow = Counter(widths).most_common(1)[0][0]
+    htotal = Counter(totals).most_common(1)[0][0]
+    return {"hlow": hlow,
+            "spread": max(widths) - min(widths),
+            "duty": hlow / (htotal + 1)}
+
+
 def main():
     rows = samples(sys.argv[1])
     if not rows:
@@ -53,9 +86,9 @@ def main():
     print(f"{len(rows)} samples over {len(runs)} VTOTAL runs "
           f"({(rows[-1]['t']-t0)/60:.1f} min)\n")
     print(f"{'t(s)':>6} {'from':>5}{'':3}{'to':>5} {'dwell':>6} {'preset':>7} "
-          f"{'exp':>5}  {'settled HPERIOD':<34} verdict")
+          f"{'exp':>5}  {'settled HPERIOD':<34} {'duty':>16} verdict")
 
-    prev, tally = None, Counter()
+    prev, tally, widths = None, Counter(), {}
     for run in runs:
         rs = run["rows"]
         dwell = rs[-1]["t"] - rs[0]["t"]
@@ -93,12 +126,59 @@ def main():
                 verdict = f"WRONG VALUE (expected ~{exp})"
         tally[verdict.split(" ")[0]] += 1
         pids = f"0x{pid:02x}" if pid is not None else "?"
+        width = sync_width(settled)
+        if width is None:
+            shown = "-"
+        else:
+            shown = f"{width['duty']:.4f} +-{width['spread']}"
+            widths.setdefault(run["vt"], []).append(width)
         print(f"{rs[0]['t']-t0:6.0f} {str(frm):>5} {'->':^3}{run['vt']:5d} "
-              f"{dwell:6.1f} {pids:>7} {str(exp):>5}  {top:<34} {verdict}")
+              f"{dwell:6.1f} {pids:>7} {str(exp):>5}  {top:<34} {shown:>16} "
+              f"{verdict}")
         prev = prev_for_next
 
     print("\nsummary:", dict(tally))
+    report_sync_width(widths)
     return 0
+
+
+# The duty has to hold to about this to carry a term of the preset key: every
+# separation that matters between two AKF50 modes is >=5 counts, and the
+# tightest useful gap in the whole file is 3.6 (360x480 against 640x480 at
+# VTOTAL 525).
+DUTY_TOLERANCE = 2
+
+
+def report_sync_width(widths):
+    """Whether HLOW_LEN is steady enough, across mode changes, to key on.
+
+    Silence when nothing measured it, rather than a clean bill of health from
+    a sweep that predates the field.
+    """
+    if not widths:
+        print("\nno HLOW_LEN in this sweep -- it predates the field, so it says "
+              "nothing\nabout duty stability either way. Re-run with a current "
+              "sweeplog.")
+        return
+
+    print(f"\nhsync duty per VTOTAL, settled samples only "
+          f"(tolerance +-{DUTY_TOLERANCE} counts):")
+    worst = 0
+    for vt in sorted(widths):
+        seen = widths[vt]
+        spread = max(w["spread"] for w in seen)
+        across = max(w["hlow"] for w in seen) - min(w["hlow"] for w in seen)
+        worst = max(worst, spread, across)
+        duties = " ".join(f"{w['duty']:.4f}" for w in seen)
+        flag = "" if max(spread, across) <= DUTY_TOLERANCE else "   <-- MOVES"
+        print(f"  VTOTAL {vt:4d}  {len(seen)} dwell(s)  HLOW_LEN spread "
+              f"{spread} within, {across} across   {duties}{flag}")
+
+    print(f"\n  worst {worst} counts against a tolerance of {DUTY_TOLERANCE}")
+    print("  the duty holds across mode changes, so it can carry the key"
+          if worst <= DUTY_TOLERANCE else
+          "  the duty MOVES across mode changes -- the key degrades to\n"
+          "  (VTOTAL, rate) plus the variant selector")
 
 
 if __name__ == "__main__":

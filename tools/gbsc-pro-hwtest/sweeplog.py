@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Log HPERIOD_IF across a whole modesweep run, with trace-alignable markers.
+"""Log the sync processor's measurements across a whole modesweep run, with
+trace-alignable markers.
 
 Unlike capture2.py this does not stop at the first break -- the point of a long
 sweep is to learn WHICH transitions rail it, so every mode change needs
 recording, not just the first bad one.
+
+HLOW_LEN and HTOTAL are logged beside HPERIOD_IF because their ratio, the hsync
+duty, is the third term of the proposed preset key and the only one nobody has
+swept. Statically it is strong -- two tight clusters over 33 committed
+snapshots, stable across PLLAD_MD 1856..3072 -- but every one of those readings
+is a settled state, and HPERIOD_IF's failure rates are known precisely because
+somebody swept IT. If the duty holds to +-2 counts once settled, the key holds;
+if not, it degrades to (VTOTAL, rate) plus the variant selector.
 
 Writes a marker (s0 0x95 <- its own value, a no-op the firmware never touches)
 every 2 s so the host-time log can be aligned against the UART write trace
@@ -24,6 +33,34 @@ def http(host, path, timeout=6):
 
 def seg(host, s):
     return bytes.fromhex(json.loads(http(host, f"/getregs?s={s}"))["values"])
+
+
+def decode(s0):
+    """The measured quantities in segment 0, as raw counts.
+
+    Pure, so the bit twiddling can be tested without a unit. That matters more
+    here than it looks: this sweep exists to catch a register holding a stable
+    wrong value, and a mask that lets a neighbouring nibble through produces
+    exactly that -- a confident number nothing downstream can tell from a real
+    reading.
+
+    HTOTAL and HLOW_LEN are both 12 bits sharing their high register with
+    something else, so both are masked to 0xFFF rather than trusted whole.
+    Together they give the hsync duty, HLOW_LEN / (HTOTAL + 1): a ratio of two
+    counts in the same ADC clock, so it survives PLLAD_MD moving underneath it,
+    and it is the one input to the proposed preset key nobody has yet swept
+    across a live mode change.
+    """
+    raw = int.from_bytes(s0[6:10], "little")
+    return {
+        "hperiod": raw & 0x1FF,
+        "vperiod": (raw >> 9) & 0x7FF,
+        "htotal": int.from_bytes(s0[0x17:0x19], "little") & 0xFFF,
+        "hlow": int.from_bytes(s0[0x19:0x1B], "little") & 0xFFF,
+        "vtotal": int.from_bytes(s0[0x1B:0x1D], "little") & 0x7FF,
+        "st00": s0[0x00],
+        "st16": s0[0x16],
+    }
 
 
 def main():
@@ -72,13 +109,9 @@ def main():
             continue
 
         preset, scal = getattr(main, "cache", (None, None))
-        raw = int.from_bytes(s0[6:10], "little")
         rec = {
             "t": now,
-            "hperiod": raw & 0x1FF,
-            "vperiod": (raw >> 9) & 0x7FF,
-            "vtotal": int.from_bytes(s0[0x1B:0x1D], "little") & 0x7FF,
-            "st00": s0[0x00], "st16": s0[0x16],
+            **decode(s0),
             "preset": preset,
             "scal": scal,
             "marker": marked,
@@ -87,8 +120,12 @@ def main():
         n += 1
 
         if rec["vtotal"] != last_vt:
+            duty = rec["hlow"] / (rec["htotal"] + 1)
             print(f"{now-t0:8.1f}  VTOTAL {last_vt} -> {rec['vtotal']}   "
-                  f"HPERIOD {rec['hperiod']}  preset {rec['preset'] if rec['preset'] is None else hex(rec['preset'])}", flush=True)
+                  f"HPERIOD {rec['hperiod']}  "
+                  f"duty {rec['hlow']}/{rec['htotal'] + 1} = {duty:.4f}  "
+                  f"preset {rec['preset'] if rec['preset'] is None else hex(rec['preset'])}",
+                  flush=True)
             last_vt = rec["vtotal"]
 
         time.sleep(0.5)
