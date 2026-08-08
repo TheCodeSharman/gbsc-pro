@@ -96,7 +96,32 @@ def read_all(host, hperiod_reads=8):
         "VDS_DIS_HB_SP": field(s3, 0x11, 4, 12),
         "VDS_HSCALE": field(s3, 0x16, 0, 10),
         "VDS_HSCALE_BYPS": field(s3, 0x00, 4, 1),
+        # vertical, same bursts -- offsets from tv5725_registers.json, which is
+        # the map setfield.py and snapdiff.py decode with. Reading them off the
+        # datasheet by hand put VDS_DIS_VB_SP at 0x15 instead of 0x14 and turned
+        # a 1114-line display window into a 581-line one.
+        "VDS_VSYNC_RST": field(s3, 0x02, 4, 11),
+        "VDS_VS_ST": field(s3, 0x0D, 0, 11),
+        "VDS_VS_SP": field(s3, 0x0E, 4, 11),
+        "VDS_VB_ST": field(s3, 0x07, 0, 11),
+        "VDS_VB_SP": field(s3, 0x08, 4, 11),
+        "VDS_DIS_VB_ST": field(s3, 0x13, 0, 11),
+        "VDS_DIS_VB_SP": field(s3, 0x14, 4, 11),
+        "VDS_VSCALE": field(s3, 0x17, 4, 10),
+        "VDS_VSCALE_BYPS": field(s3, 0x00, 5, 1),
+        "IF_VB_ST": field(s1, 0x1C, 0, 11),
+        "IF_VB_SP": field(s1, 0x1E, 0, 11),
     }
+
+
+def scale_note(magnify, bypassed):
+    """How to describe a scale register. A 0 is a dropped read, not 1:1 -- the
+    difference matters enough to print rather than divide by."""
+    if bypassed:
+        return "  BYPASSED (1:1)"
+    if magnify:
+        return f"  = x{magnify:.3f}"
+    return "  !! reads 0 -- dropped read or cleared register, magnification UNKNOWN"
 
 
 def report(r, label=None):
@@ -151,13 +176,7 @@ def report(r, label=None):
         f"({display / htotal:.1%} of the line)")
     # A dropped or truncated read shows up as 0, which is not a legal divisor.
     # This print is what a bench session trusts, so say so rather than crash.
-    if r["VDS_HSCALE_BYPS"]:
-        scale_note = "  BYPASSED (1:1)"
-    elif magnify:
-        scale_note = f"  = x{magnify:.3f}"
-    else:
-        scale_note = "  !! reads 0 -- dropped read or cleared register, magnification UNKNOWN"
-    add(f"    VDS_HSCALE {scale}{scale_note}")
+    add(f"    VDS_HSCALE {scale}{scale_note(magnify, r['VDS_HSCALE_BYPS'])}")
 
     add("\n  THE THREE EXTENTS, AND WHERE THEY DISAGREE")
     if magnify is None and not r["VDS_HSCALE_BYPS"]:
@@ -198,7 +217,70 @@ def report(r, label=None):
     add("    construction -- the same two registers -- so the picture cannot")
     add("    'extend into' it. Any overhang is against the memory window or the")
     add("    scaler's output width, which are set independently.")
+
+    out.extend(vertical_report(r))
     return "\n".join(out)
+
+
+# The encoder's active window, not the panel's. 1121 - 41 = 1080 exactly, which
+# is the MS9288A's own active region and therefore the same on every display --
+# unlike the horizontal edges, which are real overscan and a property of the TV
+# in front of you. That is why this axis can be reported against an absolute
+# window and the horizontal one cannot.
+ENCODER_TOP = gm.PANEL_VISIBLE_TOP
+ENCODER_BOTTOM = gm.PANEL_VISIBLE_BOTTOM
+ENCODER_LINES = ENCODER_BOTTOM - ENCODER_TOP
+
+
+def vertical_report(r):
+    out = []
+    add = out.append
+
+    frame = r["VDS_VSYNC_RST"] + 1
+    sp, st = r["IF_VB_SP"], r["IF_VB_ST"]
+    capture = st - sp
+    scale = r["VDS_VSCALE"]
+    bypassed = r["VDS_VSCALE_BYPS"]
+    magnify = gm.magnification(scale, bypassed)
+    produced = gm.produced_px(capture, scale, bypassed, axis=gm.AXIS_V)
+    if produced is None:
+        produced = capture
+
+    disp_sp, disp_st = r["VDS_DIS_VB_SP"], r["VDS_DIS_VB_ST"]
+    mem_sp, mem_st = r["VDS_VB_SP"], r["VDS_VB_ST"]
+    display = disp_st - disp_sp
+    memory = mem_st - mem_sp
+
+    add("\n  VERTICAL (output lines)")
+    add(f"    VDS_VSYNC_RST {r['VDS_VSYNC_RST']} (frame = {frame} lines)   "
+        f"sync {r['VDS_VS_ST']} .. {r['VDS_VS_SP']}")
+    add(f"    capture {sp} .. {st}   = {capture} lines")
+    add(f"    VDS_VSCALE {scale}{scale_note(magnify, bypassed)}")
+    add(f"    memory  blanking active  {mem_sp} .. {mem_st}   = {memory} lines")
+    add(f"    display blanking active  {disp_sp} .. {disp_st}   = {display} lines")
+
+    add(f"    scaler produces   {capture} capture lines -> {produced:.2f} lines")
+    add(f"    memory window     {memory} lines    -> {produced - memory:+.2f} lines vs produced")
+    add(f"    display window    {display} lines    -> {produced - display:+.2f} lines vs produced")
+
+    # Where the picture sits inside what the encoder actually transmits. A
+    # negative top is picture above the first transmitted line: gone, and no
+    # amount of panning brings it back if the picture is also too tall.
+    add(f"    encoder window  top {disp_sp - ENCODER_TOP:+d}   "
+        f"bottom {disp_st - ENCODER_BOTTOM:+d}   "
+        f"(transmits {ENCODER_TOP} .. {ENCODER_BOTTOM})")
+    if produced > ENCODER_LINES:
+        add(f"    -> picture is TALLER than the encoder sends: "
+            f"{produced - ENCODER_LINES:.0f} lines are off screen.")
+        add("       Expected when the user has zoomed in; panning chooses which")
+        add("       end is lost. Only a fault if nobody asked for the zoom.")
+    elif produced > display:
+        add(f"    -> picture is TALLER than the display window: "
+            f"{produced - display:.0f} lines cropped")
+    elif produced < display:
+        add(f"    -> picture is SHORTER than the display window: "
+            f"{display - produced:.0f} lines of window with no picture in it")
+    return out
 
 
 def main():

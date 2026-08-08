@@ -50,6 +50,16 @@ def pytest_addoption(parser):
         "failure means a preset load corrupted the picture.",
     )
     group.addoption(
+        "--preset-load",
+        action="store_true",
+        default=False,
+        help="run the tests that force a preset load to prove the geometry is "
+        "recomputed from scratch afterwards. They leave the unit in the preset "
+        "they loaded (pal_768x576), because restoring the output raster is the "
+        "one thing the geometry guard must not do, so the output mode is wrong "
+        "until the next real mode change or a power cycle. Writes no flash.",
+    )
+    group.addoption(
         "--pllad-hostile",
         action="store_true",
         default=False,
@@ -72,6 +82,18 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "freeze: needs a build with /freeze support; needs --freeze"
+    )
+    # SELECTORS, not gates -- absent from the `gates` list below, so they never
+    # skip anything. Assigned by which pad the test presses, because -k matches
+    # words in the NAME: -k "pan" also catches a zoom test that "moves" the
+    # capture, which is the opposite of the split you wanted.
+    #   pytest ... -m pan     the pan and OSD-move pads
+    #   pytest ... -m zoom    the zoom pads
+    config.addinivalue_line(
+        "markers", "pan: presses a pan or move pad; selector only, gates nothing"
+    )
+    config.addinivalue_line(
+        "markers", "zoom: presses a zoom pad; selector only, gates nothing"
     )
 
 
@@ -142,6 +164,15 @@ def source(request):
     input does not report the no-sync fault it does not have."""
     if not request.config.getoption("--source"):
         pytest.skip("needs a connected source: pass --source")
+
+
+@pytest.fixture
+def preset_load(request):
+    """Opt-in for the tests that force a preset load. They leave the output in
+    whatever preset they loaded, which a plain --source run must not do."""
+    if not request.config.getoption("--preset-load"):
+        pytest.skip("forces a preset load and leaves the output mode changed: "
+                    "pass --preset-load")
 
 
 @pytest.fixture
