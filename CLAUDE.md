@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; `tv5725.h` has the register map |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
+| `docs/` | TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/driver.h` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 
 ## Commands
@@ -278,9 +278,9 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   deterministic, re-armed on every boot. The bench 800x600 (VTOTAL 627) hits it.
   It still gives a picture; the cost is scaling. `docs/rgbhv-bypass-trap.md`.
 - **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
-  loss term at either end. It did not look like one for two years because the
-  deficit against it *changes sign* with magnification, so four models were
-  proposed in one evening and three refuted. The deficit was never in the span:
+  loss term at either end. It did not look like one because the deficit against
+  it *changes sign* with magnification, so four models were proposed in one
+  evening and three refuted. The deficit was never in the span:
   `produced` was being measured from a corner assumed constant, and the corner
   moves. **The write start is `VDS_?B_SP + START_CONST + START_PER_MAG x
   magnification`** — 55 + 25m horizontally, 0.2 + 0.8m vertically — which is
@@ -389,6 +389,13 @@ config registers, `snapdiff.py` writes all 1536. Diff like against like.
 horizontal extents disagree — the fastest read on why a picture is wrong.
 
 ## Conventions
+
+**`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
+than namespaces over file-scope globals, one class per file named after it,
+declare-in-header/define-in-.cpp, minimal OO with no inheritance or virtuals,
+dependency injection over reaching for globals, and a behaviour-preserving
+refactor proven by diffing `test_geometry --dump`. Every rule in it is there
+because it cost a session. Read it before writing firmware C++.
 
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
