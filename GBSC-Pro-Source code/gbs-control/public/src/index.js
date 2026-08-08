@@ -82,13 +82,6 @@ const GBSControl = {
             right: "z",
             down: "5",
         },
-        borders: {
-            type: "loadUser",
-            left: "B",
-            up: "C",
-            right: "A",
-            down: "D",
-        },
     },
     dataQueued: 0,
     isWsActive: false,

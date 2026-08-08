@@ -1,15 +1,10 @@
 #include "OSDManager.h"
 #include "options.h"
+#include "src/tv5725/driver.h"   // Tv5725::ControlSteps::Pan / ZoomPixels
 #include "stdio.h"
 
 extern userOptions *uopt;
 extern void saveUserPrefs();
-extern void shiftHorizontalRight();
-extern void shiftHorizontalLeft();
-extern void shiftVerticalDownIF();
-extern void shiftVerticalUpIF();
-extern void scaleVertical(uint16_t, bool);
-extern void scaleHorizontal(uint16_t, bool);
 extern void disableScanlines();
 extern OSDManager osdManager;
 // osd亮度
@@ -138,12 +133,12 @@ bool osdMoveX(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        shiftHorizontalRight();
+        osdManager.geometry().panH(+Tv5725::ControlSteps::Pan);
         config.barActiveLength = 2;
     }
     else
     {
-        shiftHorizontalLeft();
+        osdManager.geometry().panH(-Tv5725::ControlSteps::Pan);
         config.barActiveLength = 0;
     }
     return false;
@@ -159,12 +154,12 @@ bool osdMoveY(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        shiftVerticalDownIF();
+        osdManager.geometry().panV(+Tv5725::ControlSteps::Pan);
         config.barActiveLength = 2;
     }
     else
     {
-        shiftVerticalUpIF();
+        osdManager.geometry().panV(-Tv5725::ControlSteps::Pan);
         config.barActiveLength = 0;
     }
     return false;
@@ -180,12 +175,12 @@ bool osdScaleY(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        scaleVertical(2, true);
+        osdManager.geometry().zoomV(+Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 2;
     }
     else
     {
-        scaleVertical(2, false);
+        osdManager.geometry().zoomV(-Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 0;
     }
     return false;
@@ -201,12 +196,12 @@ bool osdScaleX(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        scaleHorizontal(2, true);
+        osdManager.geometry().zoomH(+Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 2;
     }
     else
     {
-        scaleHorizontal(2, false);
+        osdManager.geometry().zoomH(-Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 0;
     }
     return false;

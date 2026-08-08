@@ -1,13 +1,12 @@
 #ifndef OSD_H_
 #define OSD_H_
 
-// FIXME: Geometry should really be controlled by a manager class
-// which we reference by template argument, but in the meantime use
-// forward declarations to functions in the main file
-extern void shiftHorizontal(uint16_t amountToAdd, bool subtracting);
-extern void shiftVertical(uint16_t amountToAdd, bool subtracting);
-extern void scaleHorizontal(uint16_t amountToAdd, bool subtracting);
-extern void scaleVertical(uint16_t amountToAdd, bool subtracting);
+// The geometry engine's four controls, one per bar in the OSD. Defined in the
+// main file; declared here so this header needs only the GBS typedef.
+extern void osdPanHorizontal(int8_t steps);
+extern void osdPanVertical(int8_t steps);
+extern void osdZoomHorizontal(int8_t steps);
+extern void osdZoomVertical(int8_t steps);
 
 enum class MenuInput
 {
@@ -109,31 +108,20 @@ private:
         menuUpdateBar();
         GBS::OSD_COMMAND_FINISH::write(true);
 
+        // The signed delta goes straight through.
         switch (GBS::osdIcon(menuIndex))
         {
         case GBS::OSD_ICON_LEFT_RIGHT:
-            if (delta < 0)
-                shiftHorizontal(-delta, true);
-            else
-                shiftHorizontal(delta, false);
+            osdPanHorizontal(delta);
             break;
         case GBS::OSD_ICON_UP_DOWN:
-            if (delta < 0)
-                shiftVertical(-delta, true);
-            else
-                shiftVertical(delta, false);
+            osdPanVertical(delta);
             break;
         case GBS::OSD_ICON_HORIZONTAL_SIZE:
-            if (delta < 0)
-                scaleHorizontal(-delta, true);
-            else
-                scaleHorizontal(delta, false);
+            osdZoomHorizontal(delta);
             break;
         case GBS::OSD_ICON_VERTICAL_SIZE:
-            if (delta < 0)
-                scaleVertical(-delta, false);
-            else
-                scaleVertical(delta, true);
+            osdZoomVertical(delta);
             break;
         }
     }

@@ -70,7 +70,11 @@ TV5725
 #include "options.h"
 #include "slot.h"
 #include "osd.h"
-typedef TV5725<GBS_ADDR> GBS;
+#include "gbs_types.h"   // typedef TV5725<GBS_ADDR> GBS, in one place
+#include "src/tv5725/Geometry.h"
+#include "src/tv5725/Controls.h"
+#include "src/input/HoldRamp.h"
+#include "src/input/IrReceiver.h"
 
 struct MenuAttrs
 {
@@ -156,7 +160,7 @@ IR
 #include <IRremoteESP8266.h>
 #include <IRutils.h>
 const int kRecvPin = 2; // D4，infrared receiver PIN
-IRrecv irrecv(kRecvPin);
+IrReceiver irrecv(kRecvPin);
 decode_results results;
 
 /*
@@ -385,7 +389,10 @@ OLED MENU
 #include "OLEDMenuImplementation.h" 
 #include "OSDManager.h"             
 OLEDMenuManager oledMenu(&display);
-OSDManager osdManager;
+// Hold a geometry key to go faster, tap it for one pixel. Shared by the Move and
+// Scale screens so ramping one and then the other starts fresh, which is what
+// changing your mind should do. See src/input/HoldRamp.h.
+HoldRamp geometryHold;
 volatile OLEDMenuNav oledNav = OLEDMenuNav::IDLE;
 volatile uint8_t rotaryIsrID = 0;
 #endif
@@ -914,6 +921,18 @@ class SerialMirror : public Stream
 };
 
 SerialMirror SerialM;
+
+// THE COMPOSITION ROOT. The instances are declared here, in one translation
+// unit, and injected into whatever needs them.
+//
+// Declaration ORDER is the wiring: within a single translation unit objects are
+// initialised in the order they appear, so geometry is ready before the controls
+// that reference it, and the controls before the OSD that references them. It
+// sits below SerialM because the controls take a reference to it.
+Tv5725::Geometry geometry;
+Tv5725::Controls geometryControls(geometry, SerialM);
+OSDManager osdManager(geometryControls);
+
 
 #include "framesync.h"
 
@@ -2581,213 +2600,6 @@ void resetModeDetect()
     GBS::SFTRST_MODE_RSTZ::write(1);
 }
 
-void shiftHorizontal(uint16_t amountToShift, bool subtracting)
-{
-    uint16_t hrst = GBS::VDS_HSYNC_RST::read();
-    uint16_t hbst = GBS::VDS_HB_ST::read();
-    uint16_t hbsp = GBS::VDS_HB_SP::read();
-
-    if (subtracting) {
-        if ((int16_t)hbst - amountToShift >= 0) {
-            hbst -= amountToShift;
-        } else {
-            hbst = hrst - (amountToShift - hbst);
-        }
-        if ((int16_t)hbsp - amountToShift >= 0) {
-            hbsp -= amountToShift;
-        } else {
-            hbsp = hrst - (amountToShift - hbsp);
-        }
-    } else {
-        if ((int16_t)hbst + amountToShift <= hrst) {
-            hbst += amountToShift;
-
-            if (hbst > GBS::VDS_DIS_HB_ST::read()) {
-                GBS::VDS_DIS_HB_ST::write(hbst);
-            }
-        } else {
-            hbst = 0 + (amountToShift - (hrst - hbst));
-        }
-        if ((int16_t)hbsp + amountToShift <= hrst) {
-            hbsp += amountToShift;
-        } else {
-            hbsp = 0 + (amountToShift - (hrst - hbsp));
-        }
-    }
-
-    GBS::VDS_HB_ST::write(hbst);
-    GBS::VDS_HB_SP::write(hbsp);
-}
-
-void shiftHorizontalLeft()
-{
-    shiftHorizontal(4, true);
-}
-
-void shiftHorizontalRight()
-{
-    shiftHorizontal(4, false);
-}
-
-void shiftHorizontalLeftIF(uint8_t amount)
-{
-    uint16_t IF_HB_ST2 = GBS::IF_HB_ST2::read() + amount;
-    uint16_t IF_HB_SP2 = GBS::IF_HB_SP2::read() + amount;
-    uint16_t PLLAD_MD = GBS::PLLAD_MD::read();
-
-    if (rto->videoStandardInput <= 2) {
-        GBS::IF_HSYNC_RST::write(PLLAD_MD / 2);
-    } else if (rto->videoStandardInput <= 7) {
-        GBS::IF_HSYNC_RST::write(PLLAD_MD);
-    }
-    uint16_t IF_HSYNC_RST = GBS::IF_HSYNC_RST::read();
-
-    GBS::IF_LINE_SP::write(IF_HSYNC_RST + 1);
-
-    if (IF_HB_ST2 < IF_HSYNC_RST) {
-        GBS::IF_HB_ST2::write(IF_HB_ST2);
-    } else {
-        GBS::IF_HB_ST2::write(IF_HB_ST2 - IF_HSYNC_RST);
-    }
-
-    if (IF_HB_SP2 < IF_HSYNC_RST) {
-        GBS::IF_HB_SP2::write(IF_HB_SP2);
-    } else {
-        GBS::IF_HB_SP2::write((IF_HB_SP2 - IF_HSYNC_RST) + 1);
-    }
-}
-
-void shiftHorizontalRightIF(uint8_t amount)
-{
-    int16_t IF_HB_ST2 = GBS::IF_HB_ST2::read() - amount;
-    int16_t IF_HB_SP2 = GBS::IF_HB_SP2::read() - amount;
-    uint16_t PLLAD_MD = GBS::PLLAD_MD::read();
-
-    if (rto->videoStandardInput <= 2) {
-        GBS::IF_HSYNC_RST::write(PLLAD_MD / 2);
-    } else if (rto->videoStandardInput <= 7) {
-        GBS::IF_HSYNC_RST::write(PLLAD_MD);
-    }
-    int16_t IF_HSYNC_RST = GBS::IF_HSYNC_RST::read();
-    GBS::IF_LINE_SP::write(IF_HSYNC_RST + 1);
-
-    if (IF_HB_ST2 > 0) {
-        GBS::IF_HB_ST2::write(IF_HB_ST2);
-    } else {
-        GBS::IF_HB_ST2::write(IF_HSYNC_RST - 1);
-    }
-
-    if (IF_HB_SP2 > 0) {
-        GBS::IF_HB_SP2::write(IF_HB_SP2);
-    } else {
-        GBS::IF_HB_SP2::write(IF_HSYNC_RST - 1);
-    }
-}
-
-void scaleHorizontal(uint16_t amountToScale, bool subtracting)
-{
-    uint16_t hscale = GBS::VDS_HSCALE::read();
-
-    if (subtracting && (hscale == 513 || hscale == 512))
-        amountToScale = 1;
-    if (!subtracting && (hscale == 511 || hscale == 512))
-        amountToScale = 1;
-
-    if (subtracting && (((int)hscale - amountToScale) <= 256)) {
-        hscale = 256;
-        GBS::VDS_HSCALE::write(hscale);
-        ; // SerialMprintln("limit");
-        return;
-    }
-
-    if (subtracting && (hscale - amountToScale > 255)) {
-        hscale -= amountToScale;
-    } else if (hscale + amountToScale < 1023) {
-        hscale += amountToScale;
-    } else if (hscale + amountToScale == 1023) {
-        hscale = 1023;
-        GBS::VDS_HSCALE::write(hscale);
-        GBS::VDS_HSCALE_BYPS::write(1);
-    } else if (hscale + amountToScale > 1023) {
-        hscale = 1023;
-        GBS::VDS_HSCALE::write(hscale);
-        GBS::VDS_HSCALE_BYPS::write(1);
-        ; // SerialMprintln("limit");
-        return;
-    }
-
-    GBS::VDS_HSCALE_BYPS::write(0);
-
-    uint16_t htotal = GBS::VDS_HSYNC_RST::read();
-    uint16_t toShift = 0;
-    if (hscale < 540)
-        toShift = 4;
-    else if (hscale < 640)
-        toShift = 3;
-    else
-        toShift = 2;
-
-    if (subtracting) {
-        shiftHorizontal(toShift, true);
-        if ((GBS::VDS_HB_ST::read() + 5) < GBS::VDS_DIS_HB_ST::read()) {
-            GBS::VDS_HB_ST::write(GBS::VDS_HB_ST::read() + 5);
-        } else if ((GBS::VDS_DIS_HB_ST::read() + 5) < htotal) {
-            GBS::VDS_DIS_HB_ST::write(GBS::VDS_DIS_HB_ST::read() + 5);
-            GBS::VDS_HB_ST::write(GBS::VDS_DIS_HB_ST::read());
-        }
-
-        if (GBS::VDS_HB_SP::read() < (GBS::VDS_HB_ST::read() + 16)) {
-            if ((GBS::VDS_HB_SP::read()) > (htotal / 2)) {
-                GBS::VDS_HB_ST::write(GBS::VDS_HB_SP::read() - 16);
-            }
-        }
-    }
-
-    if (!subtracting) {
-        shiftHorizontal(toShift, false);
-        if ((GBS::VDS_HB_ST::read() - 5) > 0) {
-            GBS::VDS_HB_ST::write(GBS::VDS_HB_ST::read() - 5);
-        }
-    }
-
-    if (hscale < 512) {
-        if (hscale % 2 == 0) {
-            if (GBS::VDS_HB_ST::read() % 2 == 1) {
-                GBS::VDS_HB_ST::write(GBS::VDS_HB_ST::read() + 1);
-            }
-            if (htotal % 2 == 1) {
-                if (GBS::VDS_HB_SP::read() % 2 == 0) {
-                    GBS::VDS_HB_SP::write(GBS::VDS_HB_SP::read() - 1);
-                }
-            } else {
-                if (GBS::VDS_HB_SP::read() % 2 == 1) {
-                    GBS::VDS_HB_SP::write(GBS::VDS_HB_SP::read() - 1);
-                }
-            }
-        } else {
-            if (GBS::VDS_HB_ST::read() % 2 == 1) {
-                GBS::VDS_HB_ST::write(GBS::VDS_HB_ST::read() + 1);
-            }
-            if (htotal % 2 == 0) {
-                if (GBS::VDS_HB_SP::read() % 2 == 1) {
-                    GBS::VDS_HB_SP::write(GBS::VDS_HB_SP::read() - 1);
-                }
-            } else {
-                if (GBS::VDS_HB_SP::read() % 2 == 0) {
-                    GBS::VDS_HB_SP::write(GBS::VDS_HB_SP::read() - 1);
-                }
-            }
-        }
-        if (GBS::VDS_DIS_HB_ST::read() < GBS::VDS_HB_ST::read()) {
-            GBS::VDS_DIS_HB_ST::write(GBS::VDS_HB_ST::read());
-        }
-    }
-
-    ; // SerialMprint("HScale: ");
-    ; // SerialMprintln(hscale);
-    GBS::VDS_HSCALE::write(hscale);
-}
-
 void moveHS(uint16_t amountToAdd, bool subtracting)
 {
     if (rto->outModeHdBypass) {
@@ -2909,139 +2721,6 @@ void invertVS()
     writeOneByte(0x0d, (uint8_t)(newST & 0x00ff));
     writeOneByte(0x0e, ((uint8_t)(newSP & 0x000f) << 4) | ((uint8_t)((newST & 0x0f00) >> 8)));
     writeOneByte(0x0f, (uint8_t)((newSP & 0x0ff0) >> 4));
-}
-
-void scaleVertical(uint16_t amountToScale, bool subtracting)
-{
-    uint16_t vscale = GBS::VDS_VSCALE::read();
-
-    if (vscale == 1023) {
-        GBS::VDS_VSCALE_BYPS::write(0);
-    }
-
-    if (subtracting && (vscale == 513 || vscale == 512))
-        amountToScale = 1;
-
-    if (subtracting && (vscale == 684 || vscale == 683))
-        amountToScale = 1;
-
-    if (!subtracting && (vscale == 511 || vscale == 512))
-        amountToScale = 1;
-
-    if (!subtracting && (vscale == 682 || vscale == 683))
-        amountToScale = 1;
-
-    if (subtracting && (vscale - amountToScale > 128)) {
-        vscale -= amountToScale;
-    } else if (subtracting) {
-        vscale = 128;
-    } else if (vscale + amountToScale <= 1023) {
-        vscale += amountToScale;
-    } else if (vscale + amountToScale > 1023) {
-        vscale = 1023;
-    }
-
-    ; // SerialMprint("VScale: ");
-    ; // SerialMprintln(vscale);
-    GBS::VDS_VSCALE::write(vscale);
-}
-
-void shiftVertical(uint16_t amountToAdd, bool subtracting)
-{
-    typedef GBS::Tie<GBS::VDS_VB_ST, GBS::VDS_VB_SP> Regs;
-    uint16_t vrst = GBS::VDS_VSYNC_RST::read() - FrameSync::getSyncLastCorrection();
-    uint16_t vbst = 0, vbsp = 0;
-    int16_t newVbst = 0, newVbsp = 0;
-
-    Regs::read(vbst, vbsp);
-    newVbst = vbst;
-    newVbsp = vbsp;
-
-    if (subtracting) {
-
-        newVbsp -= amountToAdd;
-    } else {
-
-        newVbsp += amountToAdd;
-    }
-
-    if (newVbst < 0) {
-        newVbst = vrst + newVbst;
-    }
-    if (newVbsp < 0) {
-        newVbsp = vrst + newVbsp;
-    }
-
-    if (newVbst > (int16_t)vrst) {
-        newVbst = newVbst - vrst;
-    }
-    if (newVbsp > (int16_t)vrst) {
-        newVbsp = newVbsp - vrst;
-    }
-
-    if (newVbsp < (newVbst + 2)) {
-        newVbsp = newVbst + 2;
-    }
-
-    newVbst = newVbsp - 2;
-
-    Regs::write(newVbst, newVbsp);
-}
-
-void shiftVerticalUp()
-{
-    shiftVertical(1, true);
-}
-
-void shiftVerticalDown()
-{
-    shiftVertical(1, false);
-}
-
-void shiftVerticalUpIF()
-{
-
-    uint8_t offset = rto->videoStandardInput == 2 ? 4 : 1;
-    uint16_t sourceLines = GBS::VPERIOD_IF::read() - offset;
-
-    if ((GBS::GBS_OPTION_SCALING_RGBHV::read() == 1) && rto->videoStandardInput == 14) {
-        sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    }
-    int16_t stop = GBS::IF_VB_SP::read();
-    int16_t start = GBS::IF_VB_ST::read();
-
-    if (stop < (sourceLines - 1) && start < (sourceLines - 1)) {
-        stop += 2;
-        start += 2;
-    } else {
-        start = 0;
-        stop = 2;
-    }
-    GBS::IF_VB_SP::write(stop);
-    GBS::IF_VB_ST::write(start);
-}
-
-void shiftVerticalDownIF()
-{
-    uint8_t offset = rto->videoStandardInput == 2 ? 4 : 1;
-    uint16_t sourceLines = GBS::VPERIOD_IF::read() - offset;
-
-    if ((GBS::GBS_OPTION_SCALING_RGBHV::read() == 1) && rto->videoStandardInput == 14) {
-        sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    }
-
-    int16_t stop = GBS::IF_VB_SP::read();
-    int16_t start = GBS::IF_VB_ST::read();
-
-    if (stop > 1 && start > 1) {
-        stop -= 2;
-        start -= 2;
-    } else {
-        start = sourceLines - 2;
-        stop = sourceLines;
-    }
-    GBS::IF_VB_SP::write(stop);
-    GBS::IF_VB_ST::write(start);
 }
 
 void setHSyncStartPosition(uint16_t value)
@@ -3255,46 +2934,6 @@ void readEeprom()
         Serial.println(readData, HEX);
 
         i++;
-    }
-}
-
-void setIfHblankParameters()
-{
-    if (!rto->outModeHdBypass) {
-        uint16_t pll_divider = GBS::PLLAD_MD::read();
-
-        GBS::IF_HSYNC_RST::write(((pll_divider >> 1) + 13) & 0xfffe);
-        GBS::IF_LINE_SP::write(GBS::IF_HSYNC_RST::read() + 1);
-        if (rto->presetID == 0x05) {
-
-            GBS::IF_HSYNC_RST::write(GBS::IF_HSYNC_RST::read() + 32);
-            GBS::IF_LINE_SP::write(GBS::IF_LINE_SP::read() + 32);
-        }
-        if (rto->presetID == 0x15) {
-            GBS::IF_HSYNC_RST::write(GBS::IF_HSYNC_RST::read() + 20);
-            GBS::IF_LINE_SP::write(GBS::IF_LINE_SP::read() + 20);
-        }
-
-        if (GBS::IF_LD_RAM_BYPS::read()) {
-
-            GBS::IF_HB_SP2::write((uint16_t)((float)pll_divider * 0.06512f) & 0xfffe);
-
-            GBS::IF_HB_ST2::write((uint16_t)((float)pll_divider * 0.4912f) & 0xfffe);
-        } else {
-
-            GBS::IF_HB_SP2::write(4 + ((uint16_t)((float)pll_divider * 0.0224f) & 0xfffe));
-            GBS::IF_HB_ST2::write((uint16_t)((float)pll_divider * 0.4550f) & 0xfffe);
-
-            if (GBS::IF_HB_ST2::read() >= 0x420) {
-
-                GBS::IF_HB_ST2::write(0x420);
-            }
-
-            if (rto->presetID == 0x05 || rto->presetID == 0x15) {
-
-                GBS::IF_HB_SP2::write(0x2A);
-            }
-        }
     }
 }
 
@@ -3594,18 +3233,27 @@ boolean applyBestHTotal(uint16_t bestHTotal)
 
     if (diffHTotal != 0) {
 
+        // Retime on a field boundary. Both waits need their terminating
+        // semicolon: without it the write became the inner loop's body and
+        // never ran. test_the_geometry_survives_a_retime
         uint16_t timeout = 0;
         while ((GBS::STATUS_VDS_FIELD::read() == 1) && (++timeout < 400))
+            ;
+        while ((GBS::STATUS_VDS_FIELD::read() == 0) && (++timeout < 800))
+            ;
+        GBS::VDS_HSYNC_RST::write(bestHTotal);
 
-            while ((GBS::STATUS_VDS_FIELD::read() == 0) && (++timeout < 800))
-
-                GBS::VDS_HSYNC_RST::write(bestHTotal);
-        GBS::VDS_DIS_HB_ST::write(h_blank_display_start_position);
-        GBS::VDS_DIS_HB_SP::write(h_blank_display_stop_position);
-        GBS::VDS_HB_ST::write(h_blank_memory_start_position);
-        GBS::VDS_HB_SP::write(h_blank_memory_stop_position);
+        // The raster changed, so re-solve the windows from the capture
+        // rather than sliding them. The sync pulse stays ours.
         GBS::VDS_HS_ST::write(h_sync_start_position);
         GBS::VDS_HS_SP::write(h_sync_stop_position);
+        if (!geometry.recompute()) {
+            // Bypass or an unreadable capture: leave the slid windows.
+            GBS::VDS_DIS_HB_ST::write(h_blank_display_start_position);
+            GBS::VDS_DIS_HB_SP::write(h_blank_display_stop_position);
+            GBS::VDS_HB_ST::write(h_blank_memory_start_position);
+            GBS::VDS_HB_SP::write(h_blank_memory_stop_position);
+        }
     }
 
     boolean print = 1;
@@ -3638,6 +3286,52 @@ boolean applyBestHTotal(uint16_t bestHTotal)
     }
 
     return true;
+}
+
+// The OSD bar's four controls, and the only way it reaches the geometry.
+//
+// It was calling shiftHorizontal, shiftVertical, scaleHorizontal and
+// scaleVertical, none of which go through the engine: between them they wrote
+// VDS_HB_SP, VDS_HB_ST, VDS_DIS_HB_ST, VDS_HSCALE and VDS_VSCALE by hand and
+// re-solved nothing. Driving the unit by remote therefore exercised the code
+// the engine replaced, which is how a green suite and a broken picture were
+// true at the same time.
+//
+// A size bar reads as "bigger picture", and bigger means cropping harder --
+// which is why zoom in is a NEGATIVE delta, the same convention the 'z' pad
+// uses.
+// One line per IR frame, naming which of loop()'s two consumers took it.
+//
+// Michael, 2026-08-09: "it seems like the remote buttons are queued and only the
+// second-to-last press is actioned." Two mechanisms are both real and both in
+// the code, and this is the cheapest thing that tells them apart:
+//
+//   - OSD_selectOption() decodes inside whichever oled_menuItem branch matches.
+//     Where no branch matches, OSD_IR() takes the frame instead -- and it acts
+//     on four keys and discards the rest, AFTER overwriting `results` and
+//     resuming. That press is gone, and the next one then looks like it
+//     actioned the previous one. Shows up as OSD_IR:1 on a key that is not
+//     Menu or Save.
+//   - `results` is never cleared, so the top half of most of the 77 branches --
+//     which reads it BEFORE decoding -- re-fires on the stale value every loop
+//     pass, redrawing the bar over I2C at 2 transactions per character. Shows
+//     up as a large `worst loop`.
+//
+// A press that reached the engine also prints an ADJ line, so "decoded but did
+// nothing" is visible as a trace line with no ADJ after it.
+static uint32_t irWorstLoopMs = 0;
+
+static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
+                          int menuBefore)
+{
+    if (bySelectOption == 0 && byOsdIr == 0)
+        return;
+    debugPrintf("IR value:0x%08lX  selectOption:%lu OSD_IR:%lu  menu:%d->%d  "
+                "worst loop since last frame:%lums\n",
+                (unsigned long)results.value, (unsigned long)bySelectOption,
+                (unsigned long)byOsdIr, menuBefore, oled_menuItem,
+                (unsigned long)irWorstLoopMs);
+    irWorstLoopMs = 0;
 }
 
 float getSourceFieldRate(boolean useSPBus)
@@ -4457,6 +4151,11 @@ void doPostPresetLoadSteps()
 
             rto->applyPresetDoneStage = 1;
         }
+
+        // Setting a mode ends by computing every geometry register, inheriting
+        // none of the preset's. Before unfreezeVideo() so the first frame shown
+        // is already solved. docs/firmware-geometry-engine.md
+        geometry.solveFromScratch();
 
         unfreezeVideo();
 
@@ -6726,23 +6425,11 @@ void runSyncWatcher() //
 
                     if (needPostAdjust) {
 
-                        GBS::IF_HB_ST2::write(0x08);
-                        GBS::IF_HB_SP2::write(0x68);
                         GBS::IF_HBIN_SP::write(0x50);
-                        if (rto->presetID == 0x05) {
-                            GBS::IF_HB_ST2::write(0x480);
-                            GBS::IF_HB_SP2::write(0x8E);
-                        }
-
-                        float sfr = getSourceFieldRate(0);
-                        if (sfr >= 69.0) {
-
-                            GBS::VDS_VSCALE::write(GBS::VDS_VSCALE::read() - 57);
-                        } else {
-
-                            GBS::IF_VB_SP::write(8);
-                            GBS::IF_VB_ST::write(6);
-                        }
+                        // The capture and the scale are the engine's. This
+                        // wrote IF_VB_SP 8 / IF_VB_ST 6 -- stop before start --
+                        // and knocked VDS_VSCALE down by 57.
+                        geometry.apply();
                     }
                 }
             }
@@ -6831,23 +6518,9 @@ void runSyncWatcher() //
 
                         if (needPostAdjust) {
 
-                            GBS::IF_HB_ST2::write(0x08);
-                            GBS::IF_HB_SP2::write(0x68);
                             GBS::IF_HBIN_SP::write(0x50);
-                            if (rto->presetID == 0x05) {
-                                GBS::IF_HB_ST2::write(0x480);
-                                GBS::IF_HB_SP2::write(0x8E);
-                            }
-
-                            float sfr = getSourceFieldRate(0);
-                            if (sfr >= 69.0) {
-
-                                GBS::VDS_VSCALE::write(GBS::VDS_VSCALE::read() - 57);
-                            } else {
-
-                                GBS::IF_VB_SP::write(8);
-                                GBS::IF_VB_ST::write(6);
-                            }
+                            // The capture and the scale are the engine's.
+                            geometry.apply();
                         }
                     } else {
 
@@ -6932,6 +6605,11 @@ void runSyncWatcher() //
                 if (rto->continousStableCounter == 6) {
                     updateSpDynamic(1); 
                 }
+            }
+            // A preset load that landed before the sync processor had settled
+            // could not derive the capture window; finish it now.
+            if (rto->continousStableCounter >= 6) {
+                geometry.solveIfPending();
             }
         }
 
@@ -8118,8 +7796,24 @@ void loop()
     
     // versatile_encoder->ReadEncoder();
 
+    // How slow a loop pass gets between frames: an IR frame arriving while the
+    // receiver has not been resumed is dropped, so the pass time is the thing
+    // that decides whether a press survives.
+    static unsigned long irLoopMark = 0;
+    unsigned long irLoopNow = millis();
+    if (irLoopMark != 0 && (irLoopNow - irLoopMark) > irWorstLoopMs)
+        irWorstLoopMs = irLoopNow - irLoopMark;
+    irLoopMark = irLoopNow;
+
+    // Which consumer took the frame, counted rather than named: every decode
+    // site goes through IrReceiver, so this needs no edit at any of them.
+    int irMenuBefore = oled_menuItem;
+    uint32_t irBefore = irrecv.decodes();
     OSD_selectOption();
+    uint32_t irAfterSelect = irrecv.decodes();
     OSD_IR();
+    traceIrFrames(irAfterSelect - irBefore, irrecv.decodes() - irAfterSelect,
+                  irMenuBefore);
 
     uint8_t oldIsrID = rotaryIsrID;
     if (NEW_OLED_MENU == true) {
@@ -8192,7 +7886,11 @@ void loop()
         printInfo();
     }
 
-    if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) { 
+    // Deliberately ahead of every gate below: a framing the user requested is
+    // not automation, so neither freeze nor a disabled sync watcher may hold it.
+    geometry.applyRequested();
+
+    if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
         runSyncWatcher();                                                                                               
         lastTimeSyncWatcher = millis();
 
@@ -8503,23 +8201,28 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         dumpRegisters(segment);
                     }; // SerialMprintln("};");
                 } break;
-                case '+':; // SerialMprintln("hor. +");
-                    shiftHorizontalRight();
+                // The four pads. Every press recomputes every window from the
+                // capture and the raster. docs/firmware-geometry-engine.md
+                case '+':
+                    geometryControls.panH(+Tv5725::ControlSteps::Pan);
                     break;
-                case '-':; // SerialMprintln("hor. -");
-                    shiftHorizontalLeft();
+                case '-':
+                    geometryControls.panH(-Tv5725::ControlSteps::Pan);
                     break;
                 case '*':
-                    shiftVerticalUpIF();
+                    geometryControls.panV(-Tv5725::ControlSteps::Pan);
                     break;
                 case '/':
-                    shiftVerticalDownIF();
+                    geometryControls.panV(+Tv5725::ControlSteps::Pan);
                     break;
-                case 'z':; // SerialMprintln(F("scale+"));
-                    scaleHorizontal(2, true);
+                // Zoom in is a negative delta: it crops, and the scale follows.
+                case 'z':
+                    geometryControls.zoomH(+Tv5725::ControlSteps::Zoom);
+                    geometryControls.zoomV(+Tv5725::ControlSteps::Zoom);
                     break;
-                case 'h':; // SerialMprintln(F("scale-"));
-                    scaleHorizontal(2, false);
+                case 'h':
+                    geometryControls.zoomH(-Tv5725::ControlSteps::Zoom);
+                    geometryControls.zoomV(-Tv5725::ControlSteps::Zoom);
                     break;
                 case 'q':
                     resetDigital();
@@ -8870,69 +8573,21 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case '3':
                     //
                     break;
-                case '4': {
-
-                    if (GBS::VDS_VSCALE::read() <= 256) {
-                        ; // SerialMprintln("limit");
-                        break;
-                    }
-                    scaleVertical(2, true);
-                } break;
-                case '5': {
-
-                    if (GBS::VDS_VSCALE::read() == 1023) {
-                        ; // SerialMprintln("limit");
-                        break;
-                    }
-                    scaleVertical(2, false);
-                } break;
+                // Vertical zoom. The scale is computed, not set, so there is
+                // nothing to clamp.
+                case '4':
+                    geometryControls.zoomV(-Tv5725::ControlSteps::Zoom);
+                    break;
+                case '5':
+                    geometryControls.zoomV(+Tv5725::ControlSteps::Zoom);
+                    break;
+                // Move: one path for every source, the same geometryPan
+                // the pads use. docs/firmware-geometry-engine.md
                 case '6':
-                    if (videoStandardInputIsPalNtscSd() && !rto->outModeHdBypass) {
-                        if (GBS::IF_HBIN_SP::read() >= 10) {
-                            GBS::IF_HBIN_SP::write(GBS::IF_HBIN_SP::read() - 8);
-                            if ((GBS::IF_HSYNC_RST::read() - 4) > ((GBS::PLLAD_MD::read() >> 1) + 5)) {
-                                GBS::IF_HSYNC_RST::write(GBS::IF_HSYNC_RST::read() - 4);
-                                GBS::IF_LINE_SP::write(GBS::IF_LINE_SP::read() - 4);
-                            }
-                        } else {
-                            ; // SerialMprintln("limit");
-                        }
-                    } else if (!rto->outModeHdBypass) {
-                        if (GBS::IF_HB_SP2::read() >= 4)
-                            GBS::IF_HB_SP2::write(GBS::IF_HB_SP2::read() - 4);
-                        else
-                            GBS::IF_HB_SP2::write(GBS::IF_HSYNC_RST::read() - 0x30);
-                        if (GBS::IF_HB_ST2::read() >= 4)
-                            GBS::IF_HB_ST2::write(GBS::IF_HB_ST2::read() - 4);
-                        else
-                            GBS::IF_HB_ST2::write(GBS::IF_HSYNC_RST::read() - 0x30);
-                        ; // SerialMprint(F("IF_HB_ST2: "));
-                        ; // SerialMprint(GBS::IF_HB_ST2::read(), HEX);
-                        ; // SerialMprint(F(" IF_HB_SP2: "));
-                        ; // SerialMprintln(GBS::IF_HB_SP2::read(), HEX);
-                    }
+                    geometryControls.panH(-Tv5725::ControlSteps::Pan);
                     break;
                 case '7':
-                    if (videoStandardInputIsPalNtscSd() && !rto->outModeHdBypass) {
-                        if (GBS::IF_HBIN_SP::read() < 0x150) {
-                            GBS::IF_HBIN_SP::write(GBS::IF_HBIN_SP::read() + 8);
-                        } else {
-                            ; // SerialMprintln("limit");
-                        }
-                    } else if (!rto->outModeHdBypass) {
-                        if (GBS::IF_HB_SP2::read() < (GBS::IF_HSYNC_RST::read() - 0x30))
-                            GBS::IF_HB_SP2::write(GBS::IF_HB_SP2::read() + 4);
-                        else
-                            GBS::IF_HB_SP2::write(0);
-                        if (GBS::IF_HB_ST2::read() < (GBS::IF_HSYNC_RST::read() - 0x30))
-                            GBS::IF_HB_ST2::write(GBS::IF_HB_ST2::read() + 4);
-                        else
-                            GBS::IF_HB_ST2::write(0);
-                        ; // SerialMprint(F("IF_HB_ST2: "));
-                        ; // SerialMprint(GBS::IF_HB_ST2::read(), HEX);
-                        ; // SerialMprint(F(" IF_HB_SP2: "));
-                        ; // SerialMprintln(GBS::IF_HB_SP2::read(), HEX);
-                    }
+                    geometryControls.panH(+Tv5725::ControlSteps::Pan);
                     break;
                 case '8':
 
@@ -9572,52 +9227,9 @@ void handleType2Command(char argument)
             setAdcGain(GBS::ADC_RGCTRL::read() + 1);
             ; // SerialMprintln(GBS::ADC_RGCTRL::read(), HEX);
             break;
-        case 'A': {
-            uint16_t htotal = GBS::VDS_HSYNC_RST::read();
-            uint16_t hbstd = GBS::VDS_DIS_HB_ST::read();
-            uint16_t hbspd = GBS::VDS_DIS_HB_SP::read();
-            if ((hbstd > 4) && (hbspd < (htotal - 4))) {
-                GBS::VDS_DIS_HB_ST::write(GBS::VDS_DIS_HB_ST::read() - 4);
-                GBS::VDS_DIS_HB_SP::write(GBS::VDS_DIS_HB_SP::read() + 4);
-            } else {
-                ; // SerialMprintln("limit");
-            }
-        } break;
-        case 'B': {
-            uint16_t htotal = GBS::VDS_HSYNC_RST::read();
-            uint16_t hbstd = GBS::VDS_DIS_HB_ST::read();
-            uint16_t hbspd = GBS::VDS_DIS_HB_SP::read();
-            if ((hbstd < (htotal - 4)) && (hbspd > 4)) {
-                GBS::VDS_DIS_HB_ST::write(GBS::VDS_DIS_HB_ST::read() + 4);
-                GBS::VDS_DIS_HB_SP::write(GBS::VDS_DIS_HB_SP::read() - 4);
-            } else {
-                ; // SerialMprintln("limit");
-            }
-        } break;
-        case 'C': {
-            // vert mask +
-            uint16_t vtotal = GBS::VDS_VSYNC_RST::read();
-            uint16_t vbstd = GBS::VDS_DIS_VB_ST::read();
-            uint16_t vbspd = GBS::VDS_DIS_VB_SP::read();
-            if ((vbstd > 6) && (vbspd < (vtotal - 4))) {
-                GBS::VDS_DIS_VB_ST::write(vbstd - 2);
-                GBS::VDS_DIS_VB_SP::write(vbspd + 2);
-            } else {
-                ; // SerialMprintln("limit");
-            }
-        } break;
-        case 'D': {
-            // vert mask -
-            uint16_t vtotal = GBS::VDS_VSYNC_RST::read();
-            uint16_t vbstd = GBS::VDS_DIS_VB_ST::read();
-            uint16_t vbspd = GBS::VDS_DIS_VB_SP::read();
-            if ((vbstd < (vtotal - 4)) && (vbspd > 6)) {
-                GBS::VDS_DIS_VB_ST::write(vbstd + 2);
-                GBS::VDS_DIS_VB_SP::write(vbspd - 2);
-            } else {
-                ; // SerialMprintln("limit");
-            }
-        } break;
+        // 'A'-'D' were the border mask, removed: the engine computes the
+        // display window to hug the picture, so a manual mask can only
+        // disagree with it. docs/firmware-geometry-engine.md
         case 'q':
             if (uopt->deintMode != 1) {
                 uopt->deintMode = 1;
@@ -10130,6 +9742,42 @@ void startWebserver()
         request->send(200, "application/json", body);
     });
 #endif
+
+    // The framing: the engine's only state, and the one thing writing registers
+    // back cannot restore. Read it, or set any of the four and re-solve.
+    //   GET /geometry
+    //   GET /geometry?zh=0&zv=0&ph=0&pv=0
+    server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Tv5725::PanAndZoom wanted = geometry.framing();
+        bool changed = false;
+        if (request->hasParam("zh")) {
+            wanted.setZoomH((int16_t)request->getParam("zh")->value().toInt());
+            changed = true;
+        }
+        if (request->hasParam("zv")) {
+            wanted.setZoomV((int16_t)request->getParam("zv")->value().toInt());
+            changed = true;
+        }
+        if (request->hasParam("ph")) {
+            wanted.setPanH((int16_t)request->getParam("ph")->value().toInt());
+            changed = true;
+        }
+        if (request->hasParam("pv")) {
+            wanted.setPanV((int16_t)request->getParam("pv")->value().toInt());
+            changed = true;
+        }
+        // Requested, never applied here. This runs in a network-stack callback,
+        // not from loop(), and applying measures the source field rate -- which
+        // spins, and took the unit down every time.
+        if (changed)
+            geometry.requestFraming(wanted);
+        char body[96];
+        snprintf_P(body, sizeof(body),
+            PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d}"),
+            geometry.framing().zoomH(), geometry.framing().zoomV(),
+            geometry.framing().panH(), geometry.framing().panV());
+        request->send(200, "application/json", body);
+    });
 
     server.on("/wifi/connect", HTTP_POST, [](AsyncWebServerRequest *request) {
     AsyncWebServerResponse *response =
@@ -10714,9 +10362,9 @@ const uint8_t *loadPresetFromFS(byte forVideoMode) //
 
     // The bound is not belt-and-braces. readStringUntil() stops before the '}',
     // so a well-formed file ends "...,\r\n" and strtok hands back the trailing
-    // "\r\n" as one more token than there are values — every custom preset load
-    // used to write that token's atoi() of 0 one byte past preset[]. A file
-    // uploaded through /fs/upload can be any length at all.
+    // "\r\n" as one more token than there are values, whose atoi() of 0 would
+    // land one byte past preset[]. A file uploaded through /fs/upload can be
+    // any length at all.
     char *tmp;
     uint16_t i = 0;
     tmp = strtok(&s[0], ","); //
@@ -11765,9 +11413,9 @@ void OSD_selectOption()
                     oled_menuItem = 75;
                     break;
                 case IRKeyDown:
-                    COl_L = 3;
-                    OSD_menu_F('6');
-                    oled_menuItem = 77;
+                    oled_menuItem = 95;
+                    OSD_menu_F(OSD_CROSS_TOP);
+                    OSD_menu_F('o');
                     break;
                 case IRKeyOk:
                     oled_menuItem = 80;
@@ -11784,66 +11432,6 @@ void OSD_selectOption()
                     OSD_c2(0x18, P16, yellow);
                     OSD_c2(0x03, P14, yellow);
                     OSD_c2(0x13, P17, yellow);
-                    break;
-                case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 77) {
-
-        if (OLED_clear_flag)
-            display.clear();
-        OLED_clear_flag = ~0;
-        display.setColor(OLEDDISPLAY_COLOR::WHITE);
-        display.setTextAlignment(TEXT_ALIGN_LEFT);
-        display.setFont(ArialMT_Plain_16);
-        display.drawString(1, 0, "Menu->Screen");
-        display.drawString(1, 28, "Borders");
-        display.display();
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c3(icon4, P0, yellow);
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, blue_fill);
-        }
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F(OSD_CROSS_BOTTOM);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_ScreenSettings;
-                    break;
-                case IRKeyUp:
-                    COl_L = 2;
-                    OSD_menu_F('6');
-                    oled_menuItem = 76;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 95;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('o');
-                    break;
-                case IRKeyOk:
-                    oled_menuItem = 81;
-                    OSD_menu_F('6');
-                    OSD_c3(0x3E, P8, main0);
-                    OSD_c3(0x3E, P9, main0);
-                    OSD_c3(0x3E, P10, main0);
-                    OSD_c3(0x3E, P11, main0);
-                    OSD_c3(0x3E, P12, main0);
-                    OSD_c3(0x3E, P13, main0);
-                    OSD_c3(0x08, P15, yellow);
-                    OSD_c3(0x18, P16, yellow);
-                    OSD_c3(0x03, P14, yellow);
-                    OSD_c3(0x13, P17, yellow);
                     break;
                 case IRKeyExit:
                     OSD_menu_F(OSD_CROSS_TOP);
@@ -11876,7 +11464,10 @@ void OSD_selectOption()
 
         if (irrecv.decode(&results)) {
             decode_flag = 1;
-            switch (results.value) {
+            // A held key sends repeat frames, not the key code, and a repeat
+            // matches no case below -- so resolve it before dispatching.
+            uint32_t irKey = geometryHold.resolve(results.value);
+            switch (irKey) {
                 case IRKeyMenu:
                     OSD_menu_F(OSD_CROSS_TOP);
                     OSD_menu_F('6');
@@ -11889,7 +11480,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    serialCommand = '6';
+                    geometryControls.panH(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::IF_HBIN_SP::read() >= 10) {
                     } else {
                         for (int p = 0; p <= 400; p++) {
@@ -11914,7 +11506,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    serialCommand = '7';
+                    geometryControls.panH(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::IF_HBIN_SP::read() < 0x150) {
                     } else {
                         for (int p = 0; p <= 400; p++) {
@@ -11937,13 +11530,18 @@ void OSD_selectOption()
                     __(t, _24);
                     __(0x0d, _25);
                     break;
+                // Through the engine, like left/right two cases up. These were
+                // shiftVerticalUpIF/DownIF, which wrote IF_VB_SP and IF_VB_ST
+                // by hand and re-solved nothing.
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    shiftVerticalUpIF();
+                    geometryControls.panV(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    shiftVerticalDownIF();
+                    geometryControls.panV(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyExit:
                     OSD_menu_F(OSD_CROSS_TOP);
@@ -11975,7 +11573,10 @@ void OSD_selectOption()
 
         if (irrecv.decode(&results)) {
             decode_flag = 1;
-            switch (results.value) {
+            // A held key sends repeat frames, not the key code, and a repeat
+            // matches no case below -- so resolve it before dispatching.
+            uint32_t irKey = geometryHold.resolve(results.value);
+            switch (irKey) {
                 case IRKeyMenu:
                     OSD_menu_F(OSD_CROSS_MID);
                     OSD_menu_F('6');
@@ -11988,7 +11589,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    serialCommand = 'h';
+                    geometryControls.zoomH(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_HSCALE::read() == 1023) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
@@ -12004,7 +11606,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    serialCommand = 'z';
+                    geometryControls.zoomH(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_HSCALE::read() <= 256) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
@@ -12020,7 +11623,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    serialCommand = '5';
+                    geometryControls.zoomV(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_VSCALE::read() == 1023) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
@@ -12036,7 +11640,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    serialCommand = '4';
+                    geometryControls.zoomV(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_VSCALE::read() <= 256) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
@@ -12047,113 +11652,6 @@ void OSD_selectOption()
                     }
                     colour1 = blue_fill;
                     number_stroca = stroca2;
-                    Osd_Display(20, "limit");
-                    __(0x0d, _25);
-                    break;
-                case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 81) {
-
-        if (results.value == IRKeyOk) {
-            OSD_menu_F('6');
-            OSD_c3(0x3E, P8, main0);
-            OSD_c3(0x3E, P9, main0);
-            OSD_c3(0x3E, P10, main0);
-            OSD_c3(0x3E, P11, main0);
-            OSD_c3(0x3E, P12, main0);
-            OSD_c3(0x3E, P13, main0);
-            OSD_c3(0x08, P15, yellow);
-            OSD_c3(0x18, P16, yellow);
-            OSD_c3(0x03, P14, yellow);
-            OSD_c3(0x13, P17, yellow);
-        }
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F(OSD_CROSS_BOTTOM);
-                    OSD_menu_F('6');
-                    oled_menuItem = 77;
-                    break;
-                case IRKeyOk:
-                    OSD_menu_F(OSD_CROSS_BOTTOM);
-                    OSD_menu_F('6');
-                    oled_menuItem = 77;
-                    break;
-                case IRKeyRight:
-
-                    userCommand = 'A';
-                    if ((GBS::VDS_DIS_HB_ST::read() > 4) && (GBS::VDS_DIS_HB_SP::read() < (GBS::VDS_HSYNC_RST::read() - 4))) {
-                    } else {
-                        for (int p = 0; p <= 400; p++) {
-                            colour1 = 0x14;
-                            number_stroca = stroca3;
-                            Osd_Display(20, "limit");
-                            __(0x0d, _25);
-                        }
-                    }
-                    colour1 = blue_fill;
-                    number_stroca = stroca3;
-                    Osd_Display(20, "limit");
-                    __(0x0d, _25);
-                    break;
-                case IRKeyLeft:
-
-                    userCommand = 'B';
-                    if ((GBS::VDS_DIS_HB_ST::read() < (GBS::VDS_HSYNC_RST::read() - 4)) && (GBS::VDS_DIS_HB_SP::read() > 4)) {
-                    } else {
-                        for (int p = 0; p <= 400; p++) {
-                            colour1 = 0x14;
-                            number_stroca = stroca3;
-                            Osd_Display(20, "limit");
-                            __(0x0d, _25);
-                        }
-                    }
-                    colour1 = blue_fill;
-                    number_stroca = stroca3;
-                    Osd_Display(20, "limit");
-                    __(0x0d, _25);
-                    break;
-                case IRKeyUp:
-
-                    userCommand = 'C';
-                    if ((GBS::VDS_DIS_VB_ST::read() > 6) && (GBS::VDS_DIS_VB_SP::read() < (GBS::VDS_VSYNC_RST::read() - 4))) {
-                    } else {
-                        for (int p = 0; p <= 400; p++) {
-                            colour1 = 0x14;
-                            number_stroca = stroca3;
-                            Osd_Display(20, "limit");
-                            __(0x0d, _25);
-                        }
-                    }
-                    colour1 = blue_fill;
-                    number_stroca = stroca3;
-                    Osd_Display(20, "limit");
-                    __(0x0d, _25);
-                    break;
-                case IRKeyDown:
-
-                    userCommand = 'D';
-                    if ((GBS::VDS_DIS_VB_ST::read() < (GBS::VDS_VSYNC_RST::read() - 4)) && (GBS::VDS_DIS_VB_SP::read() > 6)) {
-                    } else {
-                        for (int p = 0; p <= 400; p++) {
-                            colour1 = 0x14;
-                            number_stroca = stroca3;
-                            Osd_Display(20, "limit");
-                            __(0x0d, _25);
-                        }
-                    }
-                    colour1 = blue_fill;
-                    number_stroca = stroca3;
                     Osd_Display(20, "limit");
                     __(0x0d, _25);
                     break;
@@ -13021,7 +12519,8 @@ void OSD_selectOption()
                     oled_menuItem = OSD_ScreenSettings;
                     break;
                 case IRKeyUp:
-                    oled_menuItem = 77;
+                    COl_L = 2;
+                    oled_menuItem = 76;
                     OSD_menu_F(OSD_CROSS_BOTTOM);
                     OSD_menu_F('6');
                     break;
@@ -17796,10 +17295,6 @@ void handle_6(void)
         A1_yellow = main0;
         A2_main0 = yellowT;
         A3_main0 = main0;
-    } else if (COl_L == 3) {
-        A1_yellow = main0;
-        A2_main0 = main0;
-        A3_main0 = yellowT;
     }
 
     colour1 = blue;
@@ -17808,8 +17303,6 @@ void handle_6(void)
     // __(icon5, _27);
     number_stroca = stroca2;
     __('1', _27);
-    number_stroca = stroca3;
-    __(icon6, _27);
 
     colour1 = A1_yellow;
     number_stroca = stroca1;
@@ -17817,9 +17310,6 @@ void handle_6(void)
     colour1 = A2_main0;
     number_stroca = stroca2;
     Osd_Display(1, "Scale");
-    colour1 = A3_main0;
-    number_stroca = stroca3;
-    Osd_Display(1, "Borders");
 };
 void handle_7(void)
 {

@@ -341,13 +341,6 @@
                 <div class="gbs-icon">zoom_out_map</div>
                 <div>scale</div>
               </button>
-              <button
-                class="gbs-button gbs-button__control"
-                gbs-control-target="borders"
-              >
-                <div class="gbs-icon">crop_free</div>
-                <div>borders</div>
-              </button>
             </div>
           </fieldset>
           <fieldset class="gbs-fieldset gbs-controls__desktop">
@@ -434,54 +427,6 @@
               <button
                 gbs-message="5"
                 gbs-message-type="action"
-                gbs-click="repeat"
-                class="gbs-button gbs-button__control gbs-icon gbs-button__secondary"
-              >
-                keyboard_arrow_down
-              </button>
-              <button class="gbs-button gbs-button__control gbs-icon" disabled>
-                south_east
-              </button>
-            </div>
-            <div class="gbs-flex">
-              <button
-                gbs-message="B"
-                gbs-message-type="user"
-                gbs-click="repeat"
-                class="gbs-button gbs-button__control gbs-icon gbs-button__secondary"
-              >
-                keyboard_arrow_left
-              </button>
-              <button
-                gbs-message="C"
-                gbs-message-type="user"
-                gbs-click="repeat"
-                class="gbs-button gbs-button__control gbs-icon gbs-button__secondary"
-              >
-                keyboard_arrow_up
-              </button>
-              <button
-                gbs-message="A"
-                gbs-message-type="user"
-                gbs-click="repeat"
-                class="gbs-button gbs-button__control gbs-icon gbs-button__secondary"
-              >
-                keyboard_arrow_right
-              </button>
-            </div>
-
-            <div class="gbs-flex gbs-margin__bottom--16">
-              <button
-                class="gbs-button gbs-button__control"
-                gbs-control-target="borders"
-                active
-              >
-                <div class="gbs-icon">crop_free</div>
-                <div>borders</div>
-              </button>
-              <button
-                gbs-message="D"
-                gbs-message-type="user"
                 gbs-click="repeat"
                 class="gbs-button gbs-button__control gbs-icon gbs-button__secondary"
               >

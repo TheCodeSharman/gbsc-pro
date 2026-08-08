@@ -1,11 +1,11 @@
 #ifndef OSD_MANAGER_H_
 #define OSD_MANAGER_H_
-#include "tv5725.h"
+#include "gbs_types.h"
+#include "src/tv5725/Controls.h"
 #define MENU_WIDTH 131
 #define MENU_HEIGHT 19
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
-typedef TV5725<GBS_ADDR> GBS;
 struct OSDMenuConfig
 {
     uint8_t barLength;
@@ -55,10 +55,10 @@ enum class OSDNav {
     MENU,
     BACK
 };
-typedef TV5725<GBS_ADDR> GBS;
 class OSDManager
 {
 private:
+    Tv5725::Controls &geometry_;
     enum class OSDIconValue {
         BRIGHTNESS = 0x1, // 4'b0001
         CONTRAST = 0x2,   // 4'b0010
@@ -108,10 +108,12 @@ private:
     }
 
 public:
-    OSDManager()
+    explicit OSDManager(Tv5725::Controls &geometry) : geometry_(geometry)
     {
         memset(&this->handlers, 0, sizeof(this->handlers));
     }
+
+    Tv5725::Controls &geometry() const { return geometry_; }
     uint8 preset;
     void registerIcon(OSDIcon icon, OSDHanlder handler)
     {

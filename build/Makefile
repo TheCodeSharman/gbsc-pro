@@ -49,8 +49,12 @@ ASYNC_WEB := https://github.com/me-no-dev/ESPAsyncWebServer.git\#2ab974a5b5d65fb
 PORT ?= /dev/ttyUSB0
 HOST ?= 192.168.88.108
 
-.PHONY: build setup all clean help check-cli flash flash-ota webui webui-check
+.PHONY: build setup all clean help check-cli flash flash-ota webui webui-check test \
+        test-geometry
 .DEFAULT_GOAL := build
+
+CXX ?= g++
+CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
 PYTHON ?= python3
 WEBUI_SRC := $(SKETCH)/webui.html
@@ -59,15 +63,20 @@ WEBUI_HDR := $(SKETCH)/webui_html.h
 ## webui: regenerate webui_html.h from webui.html
 #
 # The firmware serves the UI from a gzipped PROGMEM array, not from the
-# filesystem, so editing webui.html alone changes nothing on the device. Nothing
-# regenerated the header until 2026-08-05 and the /spiffs/ -> /fs/ rename was
-# very nearly shipped with a UI still calling the old routes.
+# filesystem, so editing webui.html alone changes nothing on the device.
 webui:
 	$(PYTHON) "$(HERE)/webui_header.py" --source "$(WEBUI_SRC)" --header "$(WEBUI_HDR)"
 
 ## webui-check: fail if webui_html.h is stale (build depends on this)
 webui-check:
 	@$(PYTHON) "$(HERE)/webui_header.py" --source "$(WEBUI_SRC)" --header "$(WEBUI_HDR)" --check
+
+## test: every host unit test (delegates to test/)
+#
+# The rules are in test/Makefile; add nothing here.
+test test-geometry test-hold-ramp:
+	@$(MAKE) --no-print-directory -C "$(HERE)/../test" \
+	  $(patsubst test-%,%,$(patsubst test,test,$@))
 
 ## build: compile the sketch -> output/gbs-control.ino.bin
 build: check-cli webui-check

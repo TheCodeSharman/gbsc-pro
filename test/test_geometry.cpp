@@ -1,0 +1,520 @@
+// Host-compiled unit tests for the geometry -- `make -C test geometry`.
+// The bench measurements of 2026-08-03 to 2026-08-06 are the acceptance
+// criteria. docs/firmware-geometry-engine.md.
+//
+// `--dump` is intercepted before the test runner sees argv, and prints the
+// solved grid for inspection by hand.
+
+#define DOCTEST_CONFIG_IMPLEMENT
+#include <doctest/doctest.h>
+
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <initializer_list>
+
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/driver.h"
+
+// An absolute tolerance, because every tolerance here is a count of pixels
+// rather than a proportion.
+#define CHECK_NEAR(got, want, tol)                                             \
+    CHECK_MESSAGE(std::fabs((double)(got) - (double)(want)) <= (double)(tol),  \
+                  #got " = " << (double)(got) << ", wanted " << (double)(want) \
+                             << " +-" << (double)(tol))
+
+using namespace Tv5725;
+
+// --- where the scaler starts writing -----------------------------------------
+
+// measure_origin.py, 2026-08-05: the near edge crept up until the frozen
+// scratch band vanished. (magnification, offset from VDS_?B_SP).
+TEST_CASE("the write start is not a constant")
+{
+    SUBCASE("the horizontal write start matches every reading") {
+        CHECK_NEAR(AxisHorizontal.originOffset(1.0009775171065494f), 80, 1.0);
+        CHECK_NEAR(AxisHorizontal.originOffset(2.0f), 105, 1.0);
+        CHECK_NEAR(AxisHorizontal.originOffset(3.2f), 135, 1.0);
+    }
+
+    SUBCASE("the vertical write start matches every reading") {
+        // Nearly flat: a line buffer, with no interpolator to feed.
+        CHECK_NEAR(AxisVertical.originOffset(1.0009775171065494f), 1, 1.0);
+        CHECK_NEAR(AxisVertical.originOffset(2.0f), 2, 1.0);
+        CHECK_NEAR(AxisVertical.originOffset(3.4133333333333336f), 3, 1.0);
+    }
+
+    SUBCASE("the readings recorded as unexplained also fit") {
+        // 78 and 94 were carried as irreconcilable. One formula, four
+        // magnifications -- they were measured at different scales.
+        CHECK_NEAR(AxisHorizontal.originOffset(1.001f), 80, 1.5);
+        CHECK_NEAR(AxisHorizontal.originOffset(1.575f), 93, 1.5);
+    }
+
+    SUBCASE("the bezel is not the write start") {
+        // CORNER_V 63 is PANEL_VISIBLE_TOP: 37 + 26 was the panel's edge.
+        CHECK(AxisVertical.originOffset(2.0f) < 5);
+        CHECK_NEAR(AxisHorizontal.originOffset(1.58f), 94, 1.0);
+    }
+}
+
+// --- produced is a pure multiply ---------------------------------------------
+
+TEST_CASE("produced is a pure multiply")
+{
+    SUBCASE("produced is a pure multiply on both axes") {
+        CHECK_NEAR(Scale(512).produced(400), 800.0, 0.001);
+        CHECK_NEAR(Scale(300).produced(200), 682.67, 0.01);
+    }
+
+    SUBCASE("the two axes differ only in where the write starts") {
+        // The old model had them as different shapes. Same shape; what differs
+        // is the pipeline latency before the first write.
+        CHECK(Scale(512).produced(400) == Scale(512).produced(400));
+        CHECK(AxisHorizontal.startPerMag() > 20 * AxisVertical.startPerMag());
+    }
+
+    SUBCASE("a scale of zero is a dropped read, not a setting") {
+        CHECK(Scale(0).magnification() == 0.0f);
+        CHECK(Scale(0).produced(798) == 0.0f);
+    }
+}
+
+// Measured 2026-08-05 with measure_produced.py, floor() of the real value.
+// Taken with VDS_HB_SP 35 / VDS_VB_SP 37 against a corner assumed constant at
+// 129 / 63; the corner was not constant, so they are re-expressed against where
+// the scaler actually starts. Nothing is refitted.
+struct Reading { unsigned capture; unsigned scale; int recorded; };
+
+static const Reading MeasuredH[] = {
+    {798, 1023, 785}, {798, 800, 1014}, {400, 1023, 386},
+    {400, 512, 811}, {200, 320, 680},
+};
+static const Reading MeasuredV[] = {
+    {511, 1023, 487}, {511, 700, 723}, {511, 512, 997},
+    {300, 1023, 275}, {300, 512, 575}, {200, 300, 658},
+};
+
+static double recordedFarEdge(const Reading &r, const Axis &axis, int winSp,
+                              int assumedCorner)
+{
+    double m = 1024.0 / r.scale;
+    double writeStart = winSp + axis.originOffset((float)m);
+    return writeStart + r.capture * m - assumedCorner;
+}
+
+TEST_CASE("every measured reading is reproduced")
+{
+    SUBCASE("a pure multiply reproduces every horizontal reading") {
+        for (const Reading &r : MeasuredH)
+            CHECK_NEAR(recordedFarEdge(r, AxisHorizontal, 35, 129), r.recorded,
+                       AxisHorizontal.margin());
+    }
+
+    SUBCASE("a pure multiply reproduces every vertical reading") {
+        for (const Reading &r : MeasuredV)
+            CHECK_NEAR(recordedFarEdge(r, AxisVertical, 37, 63), r.recorded,
+                       AxisVertical.margin());
+    }
+}
+
+// --- placing the picture ------------------------------------------------------
+
+TEST_CASE("the picture is centred on the raster")
+{
+    PictureOrigin p = AxisHorizontal.placePicture(845, 1445, 2.0f);
+
+    SUBCASE("the picture is centred on the raster, not pinned to a panel edge") {
+        // PANEL_VISIBLE_LEFT was carried as 127 and measured 90 on the bench TV.
+        CHECK(p.corner() == 300);
+        CHECK(1445 - (p.corner() + 845) == p.corner());
+    }
+
+    SUBCASE("centring moves the memory window, not the picture") {
+        // At x2 the scaler starts 105 px after VDS_?B_SP.
+        CHECK_NEAR(p.windowStop() + AxisHorizontal.originOffset(2.0f), p.corner(), 0.5);
+    }
+
+    SUBCASE("a picture too wide to centre is pinned as far over as it goes") {
+        PictureOrigin wide = AxisHorizontal.placePicture(1400, 1445, 2.0f);
+        CHECK(wide.windowStop() == AxisHorizontal.windowStopMin());
+        CHECK(wide.corner() == (int32_t)lrintf(AxisHorizontal.windowStopMin()
+                                              + AxisHorizontal.originOffset(2.0f)));
+    }
+
+    SUBCASE("the memory window is never placed where the picture corrupts") {
+        // Below 8 the display corrupts; place_picture used to clamp at 0.
+        const float magnifications[] = {1.001f, 1.416f, 2.0f, 3.2f, 4.0f};
+        for (float m : magnifications) {
+            PictureOrigin any = AxisHorizontal.placePicture(1400, 1445, m);
+            CHECK(any.windowStop() >= 8);
+        }
+    }
+}
+
+// --- the picture is computed, never inherited ---------------------------------
+
+TEST_CASE("the picture is made as big as the raster allows")
+{
+    RasterFit fit = AxisHorizontal.fitToRaster(798, 1445);
+
+    SUBCASE("the picture is made as big as the raster allows") {
+        // Not "as big as the room": the write offset costs startPerMag x
+        // magnification at both ends. The observable is that nothing more could
+        // be claimed -- the memory window lands hard against its floor.
+        CHECK(((fit.scale().reg() >= Scale::Min)
+               && (fit.scale().reg() <= Scale::Max)));
+        PictureOrigin placed = AxisHorizontal.placePicture(fit.produced(), 1445,
+                                              fit.scale().magnification());
+        CHECK(placed.windowStop() >= AxisHorizontal.windowStopMin());
+        CHECK(placed.windowStop() <= AxisHorizontal.windowStopMin() + 4);
+    }
+
+    SUBCASE("the picture gives up exactly the write offset and nothing more") {
+        CHECK_NEAR(fit.produced(),
+                   AxisHorizontal.maxDisplayWindow(1445)
+                       - 2.0f * AxisHorizontal.startPerMag() * Scale::Unity
+                             / fit.scale().reg(),
+                   2.0);
+    }
+
+    SUBCASE("a smaller capture still fills the raster") {
+        RasterFit small = AxisHorizontal.fitToRaster(400, 1445);
+        PictureOrigin smallPlaced = AxisHorizontal.placePicture(
+            small.produced(), 1445, Scale::Unity / (float)small.scale().reg());
+        CHECK(smallPlaced.windowStop() <= AxisHorizontal.windowStopMin() + 4);
+    }
+
+    SUBCASE("the scale register bounds how big the picture can get") {
+        // A capture too small to fill the raster is bounded by the register at
+        // x4. That is a limit, not a failure.
+        RasterFit tiny = AxisHorizontal.fitToRaster(60, 1445);
+        CHECK(tiny.scale().reg() == Scale::Min);
+        CHECK(tiny.produced() < AxisHorizontal.maxDisplayWindow(1445));
+    }
+
+    SUBCASE("the placed picture always clears the write floor") {
+        // fit_to_raster gives a scale step back rather than overflow: rounding
+        // the scale down makes the picture a shade larger than solved for,
+        // which can push the near edge below VDS_?B_SP's floor.
+        for (unsigned capture = 100; capture <= 1200; capture += 50) {
+            RasterFit f = AxisHorizontal.fitToRaster(capture, 1445);
+            PictureOrigin p = AxisHorizontal.placePicture(f.produced(), 1445,
+                                             f.scale().magnification());
+            CHECK(p.windowStop() >= AxisHorizontal.windowStopMin());
+        }
+    }
+}
+
+// --- the framing, held as state rather than read back ------------------------
+
+TEST_CASE("the framing is held as state and the window is derived")
+{
+    CaptureWindow wide = PanAndZoom(0, 0, 0, 0).capture(1277, 50.0f, false);
+    CaptureWindow centred = PanAndZoom(0, 0, 0, 0).capture(1277, 50.0f, false);
+
+    SUBCASE("the default framing takes the default capture width") {
+        PanAndZoom at_rest;
+        CaptureWindow got = at_rest.capture(1277, 50.0f, false);
+        CHECK(got.st() - got.sp() == PanAndZoom::defaultWidth(1277, 50.0f, false));
+    }
+
+    SUBCASE("one unit of zoom is one unit of capture") {
+        // The point of the absolute framing: a tap has to mean one pixel, and a
+        // proportional control cannot. 6% of a 1009 unit capture is 57 units,
+        // and a ratio small enough to give 1 there rounds to nothing at a
+        // narrow capture.
+        for (int16_t units : {1, 2, 7, 40, 300}) {
+            CaptureWindow in = PanAndZoom(units, 0, 0, 0).capture(1277, 50.0f, false);
+            CHECK((wide.st() - wide.sp()) - (in.st() - in.sp()) == units);
+        }
+    }
+
+    SUBCASE("one unit is one unit at a narrow capture too") {
+        // Where the proportional control was at its coarsest relative to width.
+        CaptureWindow narrow = PanAndZoom(800, 0, 0, 0).capture(1277, 50.0f, false);
+        CaptureWindow narrower = PanAndZoom(801, 0, 0, 0).capture(1277, 50.0f, false);
+        CHECK((narrow.st() - narrow.sp()) - (narrower.st() - narrower.sp())
+              == 1);
+    }
+
+    SUBCASE("zoom out and back returns the window exactly") {
+        // Integer units, so this is exact by construction rather than by the
+        // rounding happening to cancel.
+        CaptureWindow there = PanAndZoom(137, 0, 0, 0).capture(1277, 50.0f, false);
+        CaptureWindow back = PanAndZoom(0, 0, 0, 0).capture(1277, 50.0f, false);
+        CHECK(((back.sp() == wide.sp()) && (back.st() == wide.st())));
+        CHECK(there.st() - there.sp() < wide.st() - wide.sp());
+    }
+
+    SUBCASE("panning moves the window and keeps its width") {
+        CaptureWindow moved = PanAndZoom(0, 0, +40, 0).capture(1277, 50.0f, false);
+        CHECK(moved.sp() == centred.sp() + 40);
+        CHECK(moved.st() - moved.sp() == centred.st() - centred.sp());
+    }
+
+    SUBCASE("a pan is clamped to the line rather than crossing it") {
+        CaptureWindow far_right = PanAndZoom(0, 0, +5000, 0).capture(1277, 50.0f, false);
+        CHECK(far_right.st() <= 1277);
+        CHECK(far_right.st() - far_right.sp() == centred.st() - centred.sp());
+        CaptureWindow far_left = PanAndZoom(0, 0, -5000, 0).capture(1277, 50.0f, false);
+        CHECK(far_left.sp() == 0);
+        CHECK(far_left.st() - far_left.sp() == centred.st() - centred.sp());
+    }
+
+    SUBCASE("a zoom in never crops the capture away to nothing") {
+        CaptureWindow tiny = PanAndZoom(5000, 0, 0, 0).capture(1277, 50.0f, false);
+        CHECK(tiny.st() - tiny.sp() >= MinimumCapture);
+    }
+
+    SUBCASE("zooming out never puts the capture stop on the wrap point") {
+        // IF_VB_ST rolls at 2 x (VTOTAL + 1) and does not clamp, so a window
+        // written onto that value rolls the frame -- which reads as the picture
+        // jumping rather than as a capture fault. Three steps of zoom-out reach
+        // it: 0..624 of a 624 half-line frame.
+        for (int16_t units : {-1, -20, -60, -100, -500, -5000}) {
+            CaptureWindow w = PanAndZoom(0, units, 0, 0).capture(624, 50.0f, true);
+            CHECK(w.st() <= 623);
+        }
+    }
+
+    SUBCASE("the same wrap bound applies horizontally") {
+        for (int16_t units : {-1, -60, -200, -300, -5000}) {
+            CaptureWindow w = PanAndZoom(units, 0, 0, 0).capture(1277, 50.0f, false);
+            CHECK(w.st() <= 1276);
+        }
+    }
+
+    SUBCASE("a pan cannot put the capture stop on the wrap point either") {
+        // pan_capture() bounds it the same way, for the same reason.
+        for (int16_t p : {+5000, +600, -5000}) {
+            CHECK(PanAndZoom(0, 0, 0, p).capture(624, 50.0f, true).st() <= 623);
+            CHECK(PanAndZoom(0, 0, p, 0).capture(1277, 50.0f, false).st() <= 1276);
+        }
+    }
+
+    SUBCASE("a zoom out never runs past the line") {
+        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(1277, 50.0f, false);
+        CHECK(huge.st() <= 1277);
+        CHECK(huge.sp() <= huge.st());
+    }
+
+    SUBCASE("the vertical axis derives from half-lines the same way") {
+        CaptureWindow v = PanAndZoom(0, 0, 0, 0).capture(624, 50.0f, true);
+        CHECK(v.st() - v.sp() == PanAndZoom::defaultWidth(624, 50.0f, true));
+        CHECK_NEAR((int)v.sp(), 624 - (int)v.st(), 1.0);
+    }
+}
+
+// --- solving one axis's four output registers ---------------------------------
+
+TEST_CASE("the solver places every output register")
+{
+    // Bench reference: capture 798 at HSCALE 650 produces 1257 px on a 1445 px
+    // line, so centred puts the corner at 94. It cannot go there -- at x1.575
+    // the write start is 94.4 px after VDS_HB_SP, needing the register below its
+    // floor of 8 -- so the picture is pushed right to 102.
+    AxisSolution solved = AxisHorizontal.solve(798, Scale(650), 1445);
+
+    SUBCASE("the solver centres the picture as far as the hardware allows") {
+        CHECK(solved.origin() == 102);
+        CHECK(solved.windowStop() == AxisHorizontal.windowStopMin());
+    }
+
+    SUBCASE("the solver takes every pixel of margin available") {
+        // VDS_HB_ST must stay STRICTLY below VDS_HSYNC_RST (1444).
+        CHECK(solved.windowStart() == 1443);
+    }
+
+    SUBCASE("the display window hugs the picture") {
+        // A window sized for a different picture invalidated two of the
+        // 2026-08-05 headroom measurements, by blanking where tearing shows.
+        CHECK(solved.displayStop() == solved.origin());
+        CHECK(solved.displayStart()
+              == solved.origin() + (int32_t)solved.produced() - AxisHorizontal.margin());
+    }
+
+    SUBCASE("the solver corrects the thirteen pixel offset seen on the bench") {
+        // VDS_DIS_HB_SP 129 against an origin of 116.
+        CHECK(solved.displayStop() != 129);
+    }
+
+    SUBCASE("no returned register reaches the value that wraps") {
+        // Tested at the boundary itself: off-by-one is the risk.
+        AxisSolution h = AxisHorizontal.solve(500, Scale(650), 1445);
+        CHECK(h.windowStart() < 1444);
+        CHECK(h.displayStart() < 1444);
+        AxisSolution v = AxisVertical.solve(500, Scale(650), 1126);
+        CHECK(v.windowStart() < 1125);
+        CHECK(v.displayStart() < 1125);
+    }
+
+    SUBCASE("the display window never runs past the last written pixel") {
+        // VDS_DIS_?B_ST is where blanking STARTS, so it may equal origin +
+        // produced but never exceed it. Rounding up shows scratch.
+        AxisSolution tall = AxisVertical.solve(513, Scale(487), 1126);
+        CHECK(tall.displayStart() <= tall.origin() + tall.produced());
+    }
+
+    SUBCASE("a vertical solve treats IF_VB as half lines") {
+        // Reading them as whole lines doubles the picture -- the likeliest bug
+        // here. 513 half-lines at VSCALE 660 is 795.9 output lines, not 1591.
+        AxisSolution half = AxisVertical.solve(513, Scale(660), 1125);
+        CHECK(((half.produced() > 795) && (half.produced() < 797)));
+        CHECK(half.windowStart() < 1125);
+    }
+}
+
+// --- everything from the capture and the raster alone -------------------------
+
+TEST_CASE("nothing is inherited from the registers")
+{
+    // The bench state: 798 IF units captured on a 1277-unit line, 513 half-lines
+    // of a 312-line frame, onto a 1445 x 1126 output raster.
+    RegisterSolution s(798, 513, 1445, 1126);
+
+    SUBCASE("both scales are computed, not read") {
+        CHECK(((s.horizontalScale() >= Scale::Min) && (s.horizontalScale() <= Scale::Max)));
+        CHECK(((s.verticalScale() >= Scale::Min) && (s.verticalScale() <= Scale::Max)));
+    }
+
+    SUBCASE("both memory windows clear their floor") {
+        CHECK(s.h().windowStop() >= AxisHorizontal.windowStopMin());
+        CHECK(s.v().windowStop() >= AxisVertical.windowStopMin());
+    }
+
+    SUBCASE("neither window reaches the value that wraps") {
+        CHECK(((s.h().windowStart() < 1444) && (s.h().displayStart() < 1444)));
+        CHECK(((s.v().windowStart() < 1125) && (s.v().displayStart() < 1125)));
+    }
+
+    SUBCASE("the vertical picture is not doubled by reading half lines as lines") {
+        // ~2200 would mean IF_VB was read as whole lines.
+        CHECK(((s.v().produced() > 900) && (s.v().produced() < 1130)));
+    }
+
+    SUBCASE("the same capture always gives the same answer") {
+        RegisterSolution again = RegisterSolution(798, 513, 1445, 1126);
+        CHECK(((again.horizontalScale() == s.horizontalScale())
+               && (again.verticalScale() == s.verticalScale())));
+        CHECK(again.h().windowStop() == s.h().windowStop());
+        CHECK(again.v().displayStart() == s.v().displayStart());
+    }
+
+    SUBCASE("a capture that reads zero yields no picture rather than a wrong one") {
+        RegisterSolution dropped = RegisterSolution(0, 0, 1445, 1126);
+        CHECK(dropped.h().produced() == 0.0f);
+        CHECK(dropped.v().produced() == 0.0f);
+    }
+}
+
+// --- a capture window when there is not a usable one --------------------------
+
+TEST_CASE("a nonsense capture is replaced, not trusted")
+{
+    // The stock preset leaves IF_VB_ST <= IF_VB_SP on 56 of 66 archived
+    // snapshots, and what the chip means by that is not established. Rather
+    // than decode a register state we are deleting, compute one.
+    CaptureWindow w = PanAndZoom(0, 0, 0, 0).capture(1277, 50.0f, false);
+
+    SUBCASE("a default capture is centred on the line") {
+        CHECK(w.st() > w.sp());
+        CHECK_NEAR((int)w.sp(), 1277 - (int)w.st(), 1.0);
+    }
+
+    SUBCASE("a default capture over-captures rather than cropping") {
+        // Black edges are visible and adjustable; a cropped edge looks like a
+        // tuning fault and sends you hunting for a problem that is not there.
+        CHECK(w.st() - w.sp() > 1277 * 0.76);
+    }
+
+    SUBCASE("a default capture never exceeds the line it sits in") {
+        for (uint16_t units : {64, 256, 624, 1277, 2559}) {
+            CaptureWindow any = PanAndZoom(0, 0, 0, 0).capture(units, 50.0f, false);
+            CHECK(any.st() <= units);
+            CHECK(any.st() > any.sp());
+        }
+    }
+
+    SUBCASE("the vertical default splits on field rate") {
+        // A 50 Hz source carries the same active height in a longer frame, so
+        // the fraction is not the same. Horizontal barely moves, does not split.
+        CHECK(PanAndZoom::defaultWidth(624, 60.0f, true)
+              > PanAndZoom::defaultWidth(624, 50.0f, true));
+        CHECK(PanAndZoom::defaultWidth(1277, 50.0f, false)
+              == PanAndZoom::defaultWidth(1277, 60.0f, false));
+    }
+
+    SUBCASE("a line of zero yields nothing rather than a wrapped window") {
+        CaptureWindow none = PanAndZoom(0, 0, 0, 0).capture(0, 50.0f, false);
+        CHECK(((none.sp() == 0) && (none.st() == 0)));
+    }
+}
+
+// --- the oracle for the drift check ------------------------------------------
+
+// `--dump` prints a grid for test_geometry_port.py to diff against
+// geometry_math.py. The tests above cannot catch a port that is wrong the same
+// way on both sides. See docs/firmware-geometry-engine.md "Testing".
+static void dumpGrid()
+{
+    const uint16_t rasters[] = {1445, 1716, 858};
+    const Axis *axes[] = {&AxisHorizontal, &AxisVertical};
+    const char *names[] = {"h", "v"};
+
+    for (uint16_t raster : rasters) {
+        for (unsigned capture = 60; capture <= 1200; capture += 37) {
+            for (int i = 0; i < 2; ++i) {
+                RasterFit f = axes[i]->fitToRaster(capture, raster);
+                PictureOrigin p = axes[i]->placePicture(f.produced(), raster,
+                                                    f.scale().magnification());
+                std::printf("fit %s %u %u %u %.4f %d %d\n", names[i], raster,
+                            capture, f.scale().reg(), f.produced(), p.corner(), p.windowStop());
+            }
+        }
+    }
+
+    // Three fixed scales, so all four output registers are compared.
+    const uint16_t scales[] = {1023, 650, 320};
+    for (uint16_t raster : rasters)
+        for (unsigned capture = 100; capture <= 900; capture += 61)
+            for (uint16_t scale : scales)
+                for (int i = 0; i < 2; ++i) {
+                    AxisSolution s = axes[i]->solve(capture, Scale(scale),
+                                                    raster);
+                    std::printf("solve %s %u %u %u %.4f %d %d %d %d %d\n",
+                                names[i], raster, capture, scale, s.produced(),
+                                s.origin(), s.windowStop(), s.windowStart(), s.displayStop(),
+                                s.displayStart());
+                }
+
+    // solveFromCapture: the whole answer from capture and raster alone.
+    for (uint16_t raster : rasters)
+        for (unsigned ch = 100; ch <= 1100; ch += 83)
+            for (unsigned cv = 100; cv <= 600; cv += 71) {
+                RegisterSolution s(ch, cv, raster, 1126);
+                std::printf("whole %u %u %u %u %u %d %d %d %d %d %d %d %d\n",
+                            raster, ch, cv, s.horizontalScale().reg(), s.verticalScale().reg(),
+                            s.h().origin(), s.h().windowStop(), s.h().displayStop(), s.h().displayStart(),
+                            s.v().origin(), s.v().windowStop(), s.v().displayStop(), s.v().displayStart());
+            }
+
+    // The horizontal default, which geometry_math has a twin for. There is no
+    // Python vertical equivalent, so that half is covered by the host tests only.
+    for (uint16_t units : {320, 624, 1277, 2048, 2559})
+        for (float rate : {50.0f, 60.0f}) {
+            CaptureWindow w = PanAndZoom(0, 0, 0, 0).capture(units, rate, false);
+            std::printf("default %u %.0f %u %u\n", units, rate, w.sp(), w.st());
+        }
+
+}
+
+int main(int argc, char **argv)
+{
+    // Before the test runner, which exits non-zero on an option it does not
+    // know.
+    if (argc > 1 && std::strcmp(argv[1], "--dump") == 0) {
+        dumpGrid();
+        return 0;
+    }
+    return doctest::Context(argc, argv).run();
+}

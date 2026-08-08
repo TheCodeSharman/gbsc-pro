@@ -1115,6 +1115,68 @@ def test_frozen_firmware_does_not_load_presets(host, source):
         get(host, "/freeze?on=0")
 
 
+# IF_HB_SP2 -- the left edge of the captured line, and the register the framing
+# moves first. Reading the framing back is not enough: /geometry reports the
+# state it just stored whether or not anything reached the chip.
+CAPTURE_WITNESS = (1, 0x1A, 0, 11)  # IF_HB_SP2
+
+
+def _capture_sp(host):
+    return read_field(host, *CAPTURE_WITNESS)
+
+
+@pytest.mark.freeze
+def test_an_explicit_framing_request_applies_while_frozen(host, source):
+    """Frozen, /geometry must move the picture, not queue a write for later.
+
+    Freeze exists so a geometry experiment measures the chip instead of racing
+    the firmware, and /geometry is the only way to drive the engine -- a freeze
+    that disarms it cannot be used for the thing it was built for. The same rule
+    already covers /setreg, /uc and /sc: an explicit request is honoured frozen,
+    automation is not.
+
+    What it did instead, measured on the bench 2026-08-08: the framing state
+    moved, the registers did not, and the write landed on its own four seconds
+    after /freeze?on=0 -- capture 90..1042 through the whole frozen window, then
+    106..1058 once unfrozen. So an experiment finished carrying a live geometry
+    write into whatever ran next. Cause: geometrySolvePending's only consumer is
+    geometrySolveIfPending() inside runSyncWatcher(), behind the freeze gate.
+    """
+    assert _freeze_state(host) is not None, "unit has no /freeze support"
+
+    status, framing = get_json(host, "/geometry")
+    assert status == 200 and isinstance(framing, dict), (
+        f"GET /geometry returned {status} {framing}; no framing to restore to"
+    )
+    restore = dict(framing)
+
+    get(host, "/freeze?on=1")
+    assert _freeze_state(host) is True, "could not arm the freeze"
+    try:
+        before = _capture_sp(host)
+        assert before is not None, "could not read IF_HB_SP2"
+
+        # A pan rather than a zoom: it moves the window without resizing it, so
+        # a failure to apply cannot hide behind a scale that rounded to the same
+        # place. 16 units is two of the firmware's own pan steps.
+        wanted = int(restore["ph"]) + 16
+        status, payload = get_json(host, f"/geometry?ph={wanted}")
+        assert status == 200 and payload.get("ph") == wanted, (
+            f"/geometry?ph={wanted} returned {status} {payload}"
+        )
+
+        moved = wait_for(lambda: _capture_sp(host) != before, timeout=6.0)
+        assert moved, (
+            f"IF_HB_SP2 stayed at {before} for 6 s after /geometry?ph={wanted} "
+            f"while frozen, and /geometry reported ph={wanted}. The framing "
+            f"state and the chip now disagree, and the write is queued: it will "
+            f"fire the moment the freeze lifts."
+        )
+    finally:
+        get(host, f"/geometry?ph={restore['ph']}")
+        get(host, "/freeze?on=0")
+
+
 def test_the_console_delivers_anything_at_all(console):
     """The web console must actually broadcast, not merely accept a connection.
 
