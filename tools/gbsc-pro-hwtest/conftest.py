@@ -1,6 +1,7 @@
 """Fixtures for the live-unit tests. Without --host (or GBSC_HOST) every test
 here skips, so a bare `pytest` at the repo root stays useful with no hardware."""
 
+import json
 import os
 
 import pytest
@@ -113,6 +114,55 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if keyword in item.keywords:
                 item.add_marker(skip)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def leave_the_bench_usable(request):
+    """Put the framing back when the run ends, however it ends.
+
+    Every register the geometry tests derange is one the engine OWNS, so the
+    next solve recomputes it and nothing needs restoring. The framing is the
+    exception: it is the engine's own state, the pad tests move it by design,
+    and nothing puts it back -- so a run ends with the picture panned and zoomed
+    wherever the last test left it, and the bench looks broken when it is only
+    reframed. Measured after one run: zh 29, zv 14, ph -2, pv -4.
+
+    Registers written OUTSIDE the engine's ownership already restore themselves
+    and should keep doing so at the test that writes them, not here: the
+    EXT_SYNC_SEL test takes its baseline through `register_guard`, and the
+    hostile-PLLAD test restores in a `finally`. A test that deranges something
+    is responsible for undoing it; this fixture is for the state no single test
+    owns.
+
+    Not a snapshot-and-restore of registers, deliberately: tests SET what they
+    need rather than saving and restoring. That rule is about preconditions;
+    this is teardown, which is a different thing and does not weaken it.
+
+    Also unfreezes, because a run interrupted inside the freeze test leaves
+    automation off and the unit looks dead.
+    """
+    address = request.config.getoption("--host")
+    if not address:
+        yield
+        return
+
+    before = None
+    try:
+        status, body = get(address, "/geometry")
+        if status == 200:
+            before = json.loads(body)
+    except Exception:  # noqa: BLE001 - no framing to restore is not an error
+        before = None
+
+    yield
+
+    if before is None:
+        return
+    try:
+        get(address, "/freeze?on=0")
+        get(address, "/geometry?zh={zh}&zv={zv}&ph={ph}&pv={pv}".format(**before))
+    except Exception:  # noqa: BLE001 - teardown must not turn a pass into an error
+        pass
 
 
 @pytest.fixture(scope="session")
