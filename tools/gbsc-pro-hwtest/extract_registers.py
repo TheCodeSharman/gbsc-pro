@@ -29,20 +29,43 @@ than by parsing the Bit/Name tables. Those tables are multi-column and defeat
 line-based parsing — an earlier attempt produced garbage like
 "ADC_AUTO_OADC_AUTO_O Bit FST_TEST" and silently lost 337 real fields.
 
-**A description can belong to the next field along.** `describe()` takes the five
-lines following a name and stops at neither the end of that field's Function cell
-nor the start of the next, so where the PDF packs several narrow fields into one
-byte the text bleeds across them. Worked example: `ADC_SOGCTRL` (S5_02, bits 5-1)
-carries "ADC input selection When = 00, R0/G0/B0/SOG0 as input", which is the
-enum for `ADC_INPUT_SEL` in bits 7-6 of the same byte — and the bleed truncated
-`ADC_INPUT_SEL`'s own description so that its `00` case appears nowhere in the
-map, making the channel numbering look as though it starts at 01.
+**Descriptions are bounded by the table's Name rows**, rewritten 2026-08-09 when
+Michael reported the register panel's comments "seem to be either missing or
+aggregated". They were: `describe()` took the five lines following a name and
+stopped at neither the end of that field's Function cell nor the start of the
+next, so `ADC_SOGCTRL` (S5_02, bits 5-1) carried "ADC input selection When = 00,
+R0/G0/B0/SOG0 as input" — which is `ADC_INPUT_SEL`'s, from bits 7-6 of the same
+byte — while `ADC_INPUT_SEL` lost its own `00` case, making the channel
+numbering look as though it starts at 01.
 
-So the map is authoritative for addressing and suggestive for meaning. Read the
-description as a pointer to the right RD page, not as the field's definition, and
-check the PDF before relying on a value. Fixing this properly means bounding each
-chunk at the next known field name, which would rewrite every description in the
-file — worth doing deliberately, not as a side effect.
+**The Function cell is vertically CENTRED on its Name row**, which is what made
+it hard: a field's title sits ABOVE its own name and its detail below, so a
+chunk that only runs forward gets the wrong half of two different fields. Taking
+one line above, and stopping one line short of the next Name row so that field
+keeps its own title, separates them.
+
+Two things that had to be got right, both of which cost a wrong result first:
+
+- **Only Name rows count.** The bit grid above each table names every field in
+  the register at once; scanning forward from one of those reads whichever cell
+  happens to follow, and being longer, it won the "longest chunk" contest. That
+  is how `ADC_SOGCTRL` held `ADC_SOGEN`'s description.
+- **The fixture has to be the real layout.** An invented sample that put each
+  field's text after its name made the unit tests pass while the map stayed
+  wrong — worse than having no test.
+
+**Known limitation**, with an xfail against it in test_extract_registers.py: a
+field whose cell is a SINGLE line still absorbs the next field's title, because
+there is no row between them to stop at. Separating those needs the PDF's cell
+geometry (`pdftotext -bbox`, or pdfplumber) rather than flattened text.
+
+`documented` fell from 584 to 566 across this change, and that is a gain, not a
+loss: the fields that dropped out were claiming descriptions like "Bit  Name
+Function" (`PLL_4XV`), "0  1  glb_still" (`VDS_NR_GLB_STILL_MENU`), or another
+field's text entirely (`PLL_LEN` held `PLL_VCORST`'s).
+
+So the map is authoritative for addressing and much better than it was for
+meaning — but still check the PDF before relying on a value.
 
 Needs poppler (`pdftotext`).
 """
@@ -66,6 +89,10 @@ HEADER_FIELD = re.compile(
 
 NOISE = re.compile(r"RD-5725|TRUEVIEW5725|Registers Definition|^\s*Bit\s*$|^\s*Name\s*$"
                    r"|^\s*Function\s*$|^\s*RESERVED\s*$|^[\s\d\-]*$")
+
+# "INPUT_FORMATTER 14 ... REG S1_14, R/W" -- the start of the next register's
+# page, which ends whatever field was being described.
+REGISTER_HEADING = re.compile(r"REG\s+S\d_[0-9A-Fa-f]{2}")
 
 
 def from_header():
@@ -95,11 +122,25 @@ def pdf_text():
 
 
 def describe(text, names):
-    """For each name, the readable text that follows its last mention.
+    """For each name, the Function-column text belonging to that name alone.
 
-    The Function column is what we want and it trails the name, so this takes the
-    following few lines and drops table furniture. Crude, but it degrades to
-    "no description" rather than to nonsense, which the table parser did not.
+    The Function column trails its Name in the RD's layout, so the text after a
+    name is the right place to look. What makes it hard is that the chunk has to
+    STOP: where the PDF packs several narrow fields into one byte, the next
+    field's row follows immediately, and a chunk that runs on gives the field its
+    neighbour's meaning and truncates the neighbour's own.
+
+    That was the bug. `ADC_SOGCTRL` (S5_02 bits 5-1) carried "ADC input selection
+    When = 00, R0/G0/B0/SOG0 as input", which is `ADC_INPUT_SEL`'s enum from bits
+    7-6 of the same byte -- and the bleed cut `ADC_INPUT_SEL`'s own text so its
+    00 case appeared nowhere in the map, making the channel numbering look as
+    though it starts at 01. Michael, 2026-08-09: the register panel's comments
+    "seem to be either missing or aggregated".
+
+    So each chunk is bounded at the next known field name, and separately at the
+    next register heading, and the Bit/Name/Function headings are dropped rather
+    than absorbed. Still line-based and still degrades to "no description"
+    rather than to nonsense.
     """
     lines = text.splitlines()
     where = {}
@@ -108,26 +149,91 @@ def describe(text, names):
             if name in names:
                 where.setdefault(name, []).append(i)
 
+    rows = name_rows(lines, names)
+
     out = {}
     for name, hits in where.items():
+        # A Name row is the field's own table entry and always wins. The other
+        # mentions are the bit grid above the table, where every field in the
+        # register appears at once -- scanning forward from one of those reads
+        # whichever cell happens to follow, and being longer, it used to win.
+        # That is how ADC_SOGCTRL ended up holding ADC_SOGEN's description.
+        own = [h for h in hits if rows.get(h) == name]
+        spans = ([cell_span(h, rows) for h in own] if own
+                 else [(h, h + 6) for h in hits])
         best = ""
-        for i in hits:
-            chunk = []
-            for line in lines[i:i + 5]:
-                stripped = line.strip()
-                # keep prose, drop the bit-grid rows and page furniture
-                if not stripped or NOISE.search(stripped):
-                    continue
-                stripped = re.sub(r"\s{2,}", "  ", stripped)
-                if len(stripped) > 12 and re.search(r"[a-z]{3}", stripped):
-                    chunk.append(stripped)
-                if len(" ".join(chunk)) > 220:
-                    break
-            joined = " ".join(chunk).strip()
+        for span in spans:
+            joined = gather(lines, span, name, names)
             if len(joined) > len(best):
                 best = joined
         out[name] = best[:400]
     return out
+
+
+NAME_ROW = re.compile(r"^\s*\d+(\s*-\s*\d+)?\s+([A-Z][A-Z0-9_]{2,})\b")
+
+
+def name_rows(lines, names):
+    """Line index -> field name, for the table's Name rows only.
+
+    A Name row carries a bit range and exactly one known name. The bit GRID
+    above each table carries several names and no bit range, so requiring the
+    range is what keeps the grid out -- and the grid is where every field in the
+    register appears at once, which would bound every cell to nothing.
+    """
+    rows = {}
+    for i, line in enumerate(lines):
+        match = NAME_ROW.match(line)
+        if match and match.group(2) in names:
+            rows[i] = match.group(2)
+    return rows
+
+
+def cell_span(hit, rows):
+    """The lines belonging to the field whose Name row is at `hit`.
+
+    The Function cell is CENTRED on its Name row, so the field's title sits on
+    the line ABOVE the name and its detail below. Taking one line above, and
+    stopping one line short of the next Name row so that field keeps its own
+    title, is what a flattened-text parse can manage. It leaves one stray line
+    on a field whose cell is a single line -- see the xfail in
+    test_extract_registers.py.
+    """
+    above = [i for i in rows if i < hit]
+    below = [i for i in rows if i > hit]
+    start = max(hit - 1, max(above) + 1 if above else 0)
+    stop = min(below) - 1 if below else hit + 6
+    return start, max(stop, hit + 1)
+
+
+def gather(lines, span, name, names):
+    start, stop = span
+    chunk = []
+    for i in range(start, min(stop, len(lines))):
+        # A new register heading ends this field, whatever else follows.
+        if i > start and REGISTER_HEADING.search(lines[i]):
+            break
+        stripped = lines[i].strip()
+        if not stripped or NOISE.search(stripped):
+            continue
+        stripped = strip_table_furniture(stripped, name)
+        if len(stripped) > 12 and re.search(r"[a-z]{3}", stripped):
+            chunk.append(stripped)
+        if len(" ".join(chunk)) > 220:
+            break
+    return " ".join(chunk).strip()
+
+
+def strip_table_furniture(line, name):
+    """The field's own name, its bit range, and the column headings.
+
+    They sit on the same line as the description often enough that dropping the
+    whole line would lose real text, so they are cut out of it instead.
+    """
+    line = re.sub(r"\b" + re.escape(name) + r"\b(\s*\[[\d:]+\])?", " ", line)
+    line = re.sub(r"^\s*\d+(\s*-\s*\d+)?\s+", " ", line)
+    line = re.sub(r"\b(Bit|Name|Function)\b", " ", line)
+    return re.sub(r"\s{2,}", "  ", line).strip()
 
 
 def main():
