@@ -354,6 +354,25 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   fits: banded non-monotonic thresholds look like marginal signal integrity, in
   which case the numbers are facts about *this board*. A torn picture is still
   not automatically a fault to chase.
+- **The zigzag is NOT HSCALE-banded, and that is measured.** Michael swept
+  `VDS_HSCALE` by hand across the corrupted state on 2026-08-09 and **no value
+  cleared it**. The previous session's reading — clean at 823 and 762, torn at
+  795, therefore banded like the left-edge corruption above — does not survive
+  a full sweep. Do not reach for "move the scale" as the explanation or the fix.
+  The two banding observations are **separate**: the headroom/left-corruption
+  bands above stand, the zigzag one does not, and merging them is what produced
+  the wrong call. An earlier "restoring a snapshot fixed it" was the snapshot
+  being a different *mode*, not a different scale.
+- **The sync processor counts in ADC samples, not IF units.** Settled
+  2026-08-09 and worth stating because the opposite was assumed. Three of its
+  registers hold values above the 1277-unit IF line — `SP_RT_HS_SP` 2374,
+  `SP_H_CST_SP` 1667, `STATUS_SYNC_PROC_HTOTAL` 2553 — and `HLOW_LEN` only
+  matches the source's mode file in ADC: `181/2553` = 7.09% against AKF50's
+  `36/512` = 7.03%, where reading it as IF units gives 14.17%, twice the mode's
+  sync width. The exception nobody can settle from the values alone is
+  `SP_CS_CLP_ST`/`SP` (26 and 150), small enough to be either — and misplaced
+  under both readings, landing inside the hsync pulse rather than the back
+  porch. `docs/scaler-geometry-model.md`.
 - **EDID is unreachable.** The MS9288A HDMI encoder is on no MCU's I2C bus (see
   the schematic), so output rasters are chosen blind.
 - **Sync stability does not mean the divider is right.** `getStatus16SpHsStable()`
