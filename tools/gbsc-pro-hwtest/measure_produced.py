@@ -35,6 +35,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bench_probe
 import geometry_math
 
 # (capture, scale) per axis. Chosen so every product fits inside the raster from
@@ -92,56 +93,12 @@ def write_reg(segment, register, value):
     return _get(f"/setreg?s={segment}&r=0x{register:02x}&v=0x{value:02x}") is not None
 
 
-def _span(offset, width):
-    return (offset + width + 7) // 8
-
-
-def read_field(spec):
-    _, segment, register, offset, width = spec
-    raw = 0
-    for i in range(_span(offset, width)):
-        byte = read_reg(segment, register + i)
-        if byte is None:
-            return None
-        raw |= byte << (8 * i)
-    return (raw >> offset) & ((1 << width) - 1)
-
-
-def write_field(spec, value):
-    """Read-modify-write, so neighbouring bits in the same register survive."""
-    _, segment, register, offset, width = spec
-    value = max(0, min(int(value), (1 << width) - 1))
-    span = _span(offset, width)
-    raw = 0
-    for i in range(span):
-        byte = read_reg(segment, register + i)
-        if byte is None:
-            return False
-        raw |= byte << (8 * i)
-    mask = ((1 << width) - 1) << offset
-    raw = (raw & ~mask) | ((value << offset) & mask)
-    return all(write_reg(segment, register + i, (raw >> (8 * i)) & 0xFF)
-               for i in range(span))
-
-
-def ask(question):
-    """y / n, or q to give up on this point."""
-    while True:
-        answer = input(f"{question} [y/n/q] ").strip().lower()
-        if answer in ("y", "yes"):
-            return True
-        if answer in ("n", "no"):
-            return False
-        if answer in ("q", "quit"):
-            return None
-
-
 CREEP_HELP = """    Enter  down one step      u  up one step
     s N    set the step         N  jump straight to N
     ok     this is the edge     q  skip this point"""
 
 
-def creep_edge(field, start, step=4):
+def creep_edge(probe, field, start, step=4):
     """Walk the display edge down until the band goes, one step at a time.
 
     Deliberately not a bisection. Bisecting asks fewer questions, but each one
@@ -152,7 +109,7 @@ def creep_edge(field, start, step=4):
     it at 1 for the final approach.
     """
     value = start
-    write_field(field, value)
+    probe.write_field(field, value)
     print(CREEP_HELP)
     while True:
         answer = input(f"    {field[0]} = {value:5}  step {step} > ").strip().lower()
@@ -176,38 +133,54 @@ def creep_edge(field, start, step=4):
             except ValueError:
                 print(CREEP_HELP)
                 continue
-        write_field(field, value)
+        probe.write_field(field, value)
 
 
-def measure(axis_key, capture, scale):
+def measure(probe, axis_key, capture, scale):
+    """Set every register this point needs, then hand the far edge to the eye.
+
+    The raster is read BEFORE anything is placed against it. Everything the
+    creep reports is `edge - corner`, so a corner computed from a raster that
+    had not been read yet does not fail loudly -- it returns a plausible number
+    wrong by however far the corner moved, which is the failure this whole tool
+    exists to have stopped making.
+    """
     axis = FIELDS[axis_key]
+    raster = probe.read_field(axis["rst"])
+    if raster is None:
+        print("    could not read the raster total -- is the unit reachable?")
+        return None
+    raster += 1
+
     sp = axis["base"]
-    write_field(axis["cap_st"], sp + capture)
-    write_field(axis["cap_sp"], sp)
-    write_field(axis["scale"], scale)
+    probe.write_field(axis["cap_st"], sp + capture)
+    probe.write_field(axis["cap_sp"], sp)
+    probe.write_field(axis["scale"], scale)
 
     # The corner is not a constant -- it is where the scaler starts writing at
     # THIS magnification, which is the whole finding of 2026-08-05. Taking it
     # from a fixed value is what made `produced` look like it had a loss term.
-    corner, window_sp = geometry_math.place_picture(scale, False, axis["axis"])
-    write_field(axis["dis_sp"], corner)
-    raster = read_field(axis["rst"]) + 1
-    write_field(axis["win_sp"], window_sp)
-    write_field(axis["win_st"], raster - 2)
+    magnification = geometry_math.magnification(scale)
+    predicted = geometry_math.produced_px(capture, scale)
+    corner, window_sp = geometry_math.place_picture(
+        predicted, raster, magnification, axis["axis"])
+    probe.write_field(axis["dis_sp"], corner)
+    probe.write_field(axis["win_sp"], window_sp)
+    probe.write_field(axis["win_st"], raster - 2)
 
     # produced is capture x 1024 / scale exactly, so park a little above it and
     # the band is showing; the creep only ever goes down from there.
-    ceiling = min(corner + int(capture * 1024 / scale) + 8, raster - 2)
-    write_field(axis["dis_st"], ceiling)
+    ceiling = min(corner + int(predicted) + 8, raster - 2)
+    probe.write_field(axis["dis_st"], ceiling)
 
-    print(f"\n  capture {capture}, scale {scale}  "
-          f"(x{1024/scale:.3f}, old formula said {capture*1024/scale:.1f})")
-    edge = creep_edge(axis["dis_st"], ceiling)
+    print(f"\n  capture {capture}, scale {scale}  (x{magnification:.3f}, "
+          f"model says {predicted:.1f}, corner {corner})")
+    edge = creep_edge(probe, axis["dis_st"], ceiling)
     if edge is None:
         return None
     produced = edge - corner
     print(f"    -> produced {produced} {axis['unit']}  "
-          f"(deficit {capture*1024/scale - produced:.1f})")
+          f"(against the model {produced - predicted:+.1f})")
     return produced
 
 
@@ -224,13 +197,15 @@ def main():
               "registers mid-measurement. curl 'http://%s/freeze?on=1'" % HOST)
         return 1
 
+    probe = bench_probe.Probe(read_reg, write_reg)
+
     print(__doc__.split("WHY IT EXISTS")[0].strip())
     print("\nFor each point, creep the display edge down until the band of "
           "unwritten\nmemory past the picture just disappears, then type ok.\n")
 
     points = []
     for capture, scale in MATRIX[args.axis]:
-        produced = measure(args.axis, capture, scale)
+        produced = measure(probe, args.axis, capture, scale)
         if produced is not None:
             points.append((capture, scale, float(produced)))
 
