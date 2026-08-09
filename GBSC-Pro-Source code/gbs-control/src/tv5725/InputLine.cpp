@@ -28,6 +28,11 @@ uint16_t InputLine::units() const { return units_; }
 
 uint16_t InputLine::syncUnits() const { return syncUnits_; }
 
+uint16_t InputLine::progressiveStop(uint16_t start) const
+{
+    return start + units_;
+}
+
 uint16_t InputLine::firstCapture() const { return syncUnits_; }
 
 uint16_t InputLine::lastCapture() const

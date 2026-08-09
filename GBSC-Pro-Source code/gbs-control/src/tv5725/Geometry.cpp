@@ -192,6 +192,12 @@ void Geometry::write(const RegisterSolution &solved, const Capture &capture)
         GBS::VDS_VB_SP::write(solved.v().windowStop());
 
     // 3. The picture. BYPS cleared because an explicit scale was computed.
+    //
+    // The line double's progressive window spans one whole line, so it is
+    // recomputed on every solve. Its start is written rather than read, or a
+    // clobbered preset byte would propagate into the stop.
+    GBS::IF_LINE_ST::write(Capture::ProgressiveStart);
+    GBS::IF_LINE_SP::write(capture.lineH().progressiveStop(Capture::ProgressiveStart));
     GBS::IF_HB_SP2::write(capture.horizontalStop());
     GBS::IF_HB_ST2::write(capture.horizontalStart());
     GBS::IF_VB_SP::write(capture.verticalStop());

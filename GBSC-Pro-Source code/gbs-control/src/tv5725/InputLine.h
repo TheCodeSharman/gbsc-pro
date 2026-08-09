@@ -33,6 +33,14 @@ public:
     // The widest capture this line can hold.
     uint16_t capturable() const;
 
+    // Where the input formatter's PROGRESSIVE line window stops, given where
+    // IF_LINE_ST starts it. That window is the line double timing -- it belongs
+    // to deinterlacing, not to the picture -- and it has to span exactly one
+    // line, so the stop follows the line length and may roll past it. The line
+    // length moves with PLLAD_MD, so a constant stop sizes the window for
+    // whichever line it was picked against.
+    uint16_t progressiveStop(uint16_t start) const;
+
     // The line as the chip measures it. `hlowLen` is STATUS_SYNC_PROC_HLOW_LEN,
     // the hsync low duration in ADC samples, and `adcLine` is PLLAD_MD, the
     // whole line in the same samples -- so their ratio is the hsync duty and

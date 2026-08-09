@@ -389,6 +389,38 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
 // The pulse is at the HEAD, and its width is derived from HLOW_LEN over
 // PLLAD_MD rather than held as a constant. The tail is deliberately unbounded.
 // docs/scaler-geometry-model.md "The two green regions in an IF line".
+
+// IF_LINE_ST/SP is the input formatter's PROGRESSIVE line window -- line double
+// timing, so deinterlacing's rather than the picture's -- and it has to span
+// exactly one line from wherever it starts.
+TEST_CASE("the progressive line window spans exactly one line")
+{
+    const InputLine Bench = InputLine::measured(1277, 181, 2553);
+
+    SUBCASE("it starts where IF_LINE_ST says and runs a whole line") {
+        // The bench value: 64 + 1277 = 1341.
+        CHECK(Bench.progressiveStop(64) == 1341);
+    }
+
+    SUBCASE("a different start moves the stop with it") {
+        // ofw_RGBS and ofw_ypbpr ship IF_LINE_ST 0x18.
+        CHECK(Bench.progressiveStop(24) == 1301);
+    }
+
+    SUBCASE("a longer line makes a longer window") {
+        // The whole reason this cannot be a constant: PLLAD_MD moves and the
+        // line moves with it.
+        CHECK(InputLine::measured(1057, 128, 2114).progressiveStop(64) == 1121);
+    }
+
+    SUBCASE("it may run past the end of the line, and that is not a fault") {
+        // 1341 on a 1277 unit line looked for a day like a stray write, and was
+        // reported as one. It is a stop position measured from a start, not a
+        // position within the raster, so it rolls.
+        CHECK(Bench.progressiveStop(64) > Bench.units());
+    }
+}
+
 TEST_CASE("the capture window never takes the hsync pulse")
 {
     // The bench RiscPC, 2026-08-09: HLOW_LEN 181 of PLLAD_MD 2553 -- a duty of

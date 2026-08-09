@@ -53,6 +53,9 @@ public:
     static const uint16_t SourceVerticalTotalMin = 200;
     static const uint16_t SourceVerticalTotalMax = 1300;
 
+    // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
+    static const uint16_t ProgressiveStart = 64;
+
     // Read the rasters and where each capture window rolls over. False when the
     // source has not settled far enough to derive a window from.
     bool readRasters();

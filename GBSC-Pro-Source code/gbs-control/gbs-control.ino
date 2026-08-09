@@ -8416,7 +8416,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     // before it.
                     if (writePllAdMdChecked(pll_divider)) {
                         GBS::IF_HSYNC_RST::write((pll_divider / 2));
-                        GBS::IF_LINE_SP::write(((pll_divider / 2) + 1) + 0x40);
+                        // Both ends of this window come from the engine's own
+                        // start, rather than a second copy of the number or a
+                        // read of the chip.
+                        GBS::IF_LINE_ST::write(Tv5725::Capture::ProgressiveStart);
+                        GBS::IF_LINE_SP::write(Tv5725::Capture::ProgressiveStart
+                            + ((pll_divider / 2) + 1));
                         updateClampPosition();
                         updateCoastPosition(0);
                     } else {

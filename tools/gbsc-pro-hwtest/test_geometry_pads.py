@@ -536,6 +536,42 @@ def test_a_preset_load_recomputes_every_register_from_scratch(
 
 
 @pytest.mark.zoom
+def test_a_press_computes_the_progressive_line_window_from_scratch(host, probe, framed):
+    """Both ends of IF_LINE_ST/SP, recomputed rather than inherited.
+
+    That window is the line double's timing -- change it and the two fields of
+    an interlaced source separate -- and it has to span exactly one line. It was
+    maintained in one place, the 'n' serial key, as a constant 0x40 plus the
+    line, while PLLAD_MD moved from six.
+
+    The START is the point of this test. Deriving the stop from a read of
+    IF_LINE_ST was the first version and it broke the engine's own rule:
+    readRasters() reads rasters and source measurements, and nothing else,
+    because everything else is inherited by definition. Worse, it meant a
+    clobbered IF_LINE_ST -- which is what a write landing in the wrong segment
+    produces -- would propagate into IF_LINE_SP on every solve for as long as
+    the mode lasted. So both ends are deranged here, and both must come back.
+    """
+    line_st = ("IF_LINE_ST", 1, 0x20, 0, 12)
+    line_sp = ("IF_LINE_SP", 1, 0x22, 0, 12)
+    hsync_rst = ("IF_HSYNC_RST", 1, 0x0E, 0, 11)
+
+    probe.write_field(line_st, 300)
+    probe.write_field(line_sp, 999)
+
+    press(host, probe, "z")
+    settled_geometry(host)
+
+    units = probe.read_field(hsync_rst) + 1
+    start = probe.read_field(line_st)
+    stop = probe.read_field(line_sp)
+
+    assert start == 64, f"IF_LINE_ST inherited rather than written: {start}"
+    assert stop == start + units, (
+        f"progressive window does not span one line: {start}..{stop} "
+        f"is {stop - start} of {units} units")
+
+
 def test_a_press_recovers_from_any_register_state(host, probe, framed):
     """The same hostile state, cleared by a single pad press.
 
