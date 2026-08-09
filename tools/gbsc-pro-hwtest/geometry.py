@@ -186,25 +186,20 @@ def report(r, label=None):
     add(f"    memory window     {memory} px      -> {produced - memory:+.2f} px vs produced")
     add(f"    display window    {display} px      -> {produced - display:+.2f} px vs produced")
 
-    headroom = gm.headroom_px(memory, produced)
-    add(f"    headroom          {headroom:+.2f} px   (memory window - produced)")
-    if headroom < HEADROOM_WARN_PX:
-        safe = gm.smallest_safe_hscale(capture, memory) if magnify else None
-        if headroom < 0:
-            add(f"    !! OVERFLOW: the product exceeds the memory window by "
-                f"{-headroom:.2f} px per line.")
-        else:
-            add(f"    !! THIN HEADROOM: only {headroom:.2f} px of slack, under the "
-                f"{HEADROOM_WARN_PX} px floor.")
-        add("       Moving comb bands follow. Fitting is not enough -- the scaler")
-        add("       must finish reading the line from memory before the line ends,")
-        add("       so it needs slack. How much is not known: the requirement is")
-        add("       not monotonic in HSCALE and the corruption has stable bands,")
-        add("       so the floor is set well clear rather than at a boundary.")
-        if safe:
-            add(f"       smallest safe VDS_HSCALE for this capture is {safe} "
-                f"(-> {capture * 1024 / safe:.2f} px, "
-                f"{memory - capture * 1024 / safe:.2f} px headroom).")
+    # **NO HEADROOM LINE, AND ITS ABSENCE IS THE FINDING.** The solver sets
+    # VDS_?B_ST = VDS_DIS_?B_ST -- the window IS the picture -- so
+    # `memory window - produced` is structurally about zero at every framing and
+    # a 100 px floor would fire on all of them.
+    #
+    # The slack question moved rather than went away: PB_FETCH_NUM tracks the
+    # capture width, so whether the line finishes is decided by the burst size
+    # rather than by spare window. See Memory.h.
+    #
+    # gm.headroom_px and gm.is_safe remain for characterise.py, which analyses
+    # states captured from firmware that does not do this.
+    if memory < produced:
+        add(f"    !! OVERFLOW: the product exceeds the memory window by "
+            f"{produced - memory:.2f} px per line, which shows as scratch.")
     add(f"    display vs memory  left edge {disp_sp - mem_sp:+d} px, "
         f"right edge {disp_st - mem_st:+d} px")
     if produced > display:
