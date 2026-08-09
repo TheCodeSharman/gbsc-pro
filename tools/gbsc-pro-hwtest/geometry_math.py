@@ -26,7 +26,20 @@ import math
 # register is 10 bits; 1023 is the practical floor at x1.001 and scaleHorizontal()
 # has always clamped the other end at 256 (x4).
 HSCALE_UNITY = 1024
-HSCALE_MIN = 256
+# **A PICTURE-QUALITY CEILING, HORIZONTAL ONLY, NOT THE REGISTER'S LIMIT.** The
+# register reaches 256, which is 4.0x. Michael swept it on 2026-08-09 and
+# stopped here: the scale "shouldn't be any smaller than 500 - after that the
+# scaling artifacts a lot." Below 500 the interpolator stretches too few source
+# pixels over too much raster and the picture degrades however clean the memory
+# path is.
+#
+# The VERTICAL keeps 256. 500 was tried on both and taken off again -- "I made a
+# mistake can you remove the clamp from the VSCALE it's too small" -- because
+# the default capture is 82% of the frame against 76% of the line, so the
+# vertical starts closer to its stop and the same ratio buys far less travel.
+# The floor is therefore a property of the AXIS. See Axis.scale_min.
+HSCALE_MIN = 500
+VSCALE_MIN = 256
 HSCALE_MAX = 1023
 
 # The product fitting inside the memory window is NOT sufficient. The scaler has
@@ -102,7 +115,8 @@ class Axis:
     """
 
     def __init__(self, name, start_const, start_per_mag, warn_px,
-                 visible_edge, visible_far, registers, margin, window_sp_min):
+                 visible_edge, visible_far, registers, margin, window_sp_min,
+                 scale_min):
         self.name = name
         self.start_const = start_const
         self.start_per_mag = start_per_mag
@@ -112,6 +126,8 @@ class Axis:
         self.registers = registers
         self.margin = margin
         self.window_sp_min = window_sp_min
+        # How far this axis will magnify -- see HSCALE_MIN / VSCALE_MIN.
+        self.scale_min = scale_min
 
     def origin_offset(self, magnification):
         """How far after VDS_?B_SP the scaler starts writing, at this
@@ -148,6 +164,7 @@ AXIS_H = Axis(
     # coincidence; moving VDS_HS_ST and seeing whether the floor follows would
     # settle it in one creep.
     window_sp_min=8,
+    scale_min=HSCALE_MIN,
 )
 
 # No vertical margin: a settled state at -1.9 lines was clean, and the horizontal
@@ -164,6 +181,7 @@ AXIS_V = Axis(
     # before, so it is no worse than the status quo -- but it is an assumption,
     # not a measurement, and it should not be read as one.
     window_sp_min=0,
+    scale_min=VSCALE_MIN,
 )
 
 
@@ -246,7 +264,8 @@ def fit_to_raster(capture, raster_total, axis, unity=HSCALE_UNITY):
     # Centred, so the magnification term costs at both ends:
     #     produced = room - 2 x START_PER_MAG x produced / capture
     produced = room * capture / (capture + 2 * axis.start_per_mag)
-    scale = min(max(round(unity * capture / produced), HSCALE_MIN), HSCALE_MAX)
+    scale = min(max(round(unity * capture / produced), axis.scale_min),
+                HSCALE_MAX)
     produced = capture * unity / scale
 
     # Rounding the scale down makes the picture a shade larger than solved for,
@@ -569,19 +588,16 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
     `capture` is IF units horizontally and HALF-LINES vertically. Everything
     returned is in output pixels or lines.
 
-    The origin is now PREDICTED, not guessed. It used to be passed in because
-    nothing here could compute it -- 78 bypassed, 80 at x1.001, 93 at x1.575, and
-    a caller that used one constant for all three shifted a hand-tuned picture by
-    13 px. Those three are one straight line in magnification and
-    `axis.origin_offset` is it, so the picture can be placed from the registers
-    alone. `origin` is still honoured when a human has aligned by eye and wants
-    it left exactly there.
+    **THE ORIGIN IS PREDICTED, NOT GUESSED.** 78 bypassed, 80 at x1.001 and 93 at
+    x1.575 are one straight line in magnification, and `axis.origin_offset` is it,
+    so the picture is placed from the registers alone. One constant for all three
+    shifts a hand-tuned picture by 13 px. `origin` is honoured when a human has
+    aligned by eye and wants it left exactly there; without it the picture is
+    centred on the raster, and `offset` nudges that.
 
-    Without it, the picture is centred on the raster. `offset` nudges that.
-
-    The memory window is always opened as wide as the raster allows: the origin
-    pins its near edge, leaving the far edge free, and there is no reason to
-    leave margin unclaimed.
+    The memory window is exactly the display window: only the memory the picture
+    occupies is allocated. Anything past it is memory the playback stage still
+    walks, and it shows as artefacts down the left-hand edge.
     """
     if capture <= 0:
         raise ValueError("capture must be positive")
@@ -614,14 +630,6 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
     # rather than clamp, a wrapped VDS_VB_ST rolling the frame. The total
     # register is one below `raster_total`, so the last usable value is two below.
     last_usable = raster_total - 2
-    window_st = last_usable
-
-    margin_given = (window_st - window_sp) - produced
-    if margin_given < axis.warn_px:
-        clamped.append(
-            f"only {margin_given:.1f} px of headroom, under the {axis.warn_px} px "
-            f"floor -- the picture may tear"
-        )
 
     # Floor, never round: VDS_DIS_?B_ST is where blanking starts, so it may sit
     # at most one past the last written pixel. Rounding up exposes a line of
@@ -635,6 +643,19 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
     display_sp = math.ceil(origin)
     display_st = min(display_sp + math.floor(produced) - axis.margin, last_usable)
 
+    # **THE MEMORY WINDOW IS THE DISPLAY WINDOW. ALLOCATE NOTHING SPARE.**
+    #
+    # Allocate only the memory needed to display the image, which is how the
+    # chip is meant to be used. The VDS_?B_* pair is the memory extent and
+    # VDS_DIS_?B_* the displayed extent, and there is no reason for them to
+    # differ.
+    #
+    # **DO NOT TAKE THE RASTER'S LAST USABLE VALUE.** The far end is not free
+    # once the origin is pinned: memory past the picture is memory the playback
+    # stage still walks, and it shows as artefacts down the LEFT edge.
+    # docs/firmware-geometry-engine.md
+    window_st = display_st
+
     return {
         "produced": produced,
         "origin": origin,
@@ -642,7 +663,6 @@ def solve_axis(capture, scale, bypassed, raster_total, axis, offset=0,
         "window_st": window_st,
         "display_sp": display_sp,
         "display_st": display_st,
-        "margin_given": margin_given,
         "covers_panel": covers_panel(produced, raster_total, axis),
         "clamped": clamped,
     }

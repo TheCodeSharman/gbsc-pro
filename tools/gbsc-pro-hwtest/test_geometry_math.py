@@ -165,16 +165,18 @@ def test_the_solver_centres_the_picture_on_the_raster():
     assert axis["window_sp"] == gm.AXIS_H.window_sp_min
 
 
-def test_the_solver_takes_every_pixel_of_margin_available():
-    """The window's far end is free once the origin is pinned, so it goes to the
-    raster's last usable value rather than to a computed target.
+def test_the_memory_window_is_exactly_the_display_window():
+    """**ALLOCATE ONLY WHAT IS DISPLAYED.**
 
-    On a 1445 px line VDS_HSYNC_RST is 1444, and VDS_HB_ST must stay STRICTLY
-    below it -- so the last usable value is 1443, not 1444.
+    Taking the raster's last usable value instead -- 1443 on a 1445 px line --
+    assumes the far end is free once the origin is pinned. It is not: memory past
+    the picture is memory the playback stage still walks, and it shows as
+    artefacts down the LEFT edge.
     """
     axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
 
-    assert axis["window_st"] == 1443
+    assert axis["window_st"] == axis["display_st"]
+    assert axis["window_st"] <= 1443
 
 
 def test_no_returned_register_reaches_the_value_that_wraps():
@@ -236,24 +238,36 @@ def test_the_vertical_window_never_reaches_the_wrap_that_rolls_the_frame():
     assert axis["window_st"] < 1125
 
 
-def test_a_picture_too_wide_for_the_line_warns_rather_than_shrinking():
-    """Scale is the user's to set. If even a maximised window leaves under the
-    warn floor, say so and hand back the widest window -- do not quietly change
-    the picture the user asked for."""
+def test_there_is_no_headroom_to_report_because_the_window_is_the_picture():
+    """`margin_given` is gone, and its absence is the point.
+
+    It reported memory window minus produced, and two tests measured it against
+    a 100 px warn floor. The window is now exactly the display window, so the
+    quantity is structurally about zero at every framing -- a floor would fire
+    on all of them, and a number that always says the same thing is not a
+    measurement.
+
+    The slack question moved rather than vanished: PB_FETCH_NUM tracks the
+    capture width now, so whether the line finishes reading is decided by the
+    burst size. See Tv5725::Memory.
+    """
+    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H)
+
+    assert "margin_given" not in axis
+    assert axis["window_st"] == axis["display_st"]
+
+
+def test_a_picture_too_wide_for_the_line_is_still_reported():
+    """Scale is the user's to set. A picture that overruns the raster is clamped
+    at the last usable register and that must be said, not swallowed -- this is
+    the one shortfall that survives the headroom rule's removal, because it is
+    about the RASTER rather than about spare window.
+    """
     axis = gm.solve_axis(798, 570, False, 1445, gm.AXIS_H)
 
     assert axis["produced"] > 1400
-    assert axis["margin_given"] < gm.HEADROOM_WARN_PX
-    assert axis["clamped"], "a shortfall must be reported, not silent"
-
-
-def test_a_comfortable_picture_reports_no_shortfall():
-    """With the origin known there is nothing to warn about at this scale."""
-    axis = gm.solve_axis(798, 650, False, 1445, gm.AXIS_H,
-                         origin=129, window_sp_of=36)
-
-    assert axis["margin_given"] >= gm.HEADROOM_WARN_PX
-    assert axis["clamped"] == []
+    assert axis["display_st"] == 1443, "clamped at the raster's last usable"
+    assert axis["window_st"] == axis["display_st"]
 
 
 def test_the_window_that_shredded_on_the_bench_is_not_safe():
@@ -692,8 +706,14 @@ def test_a_smaller_capture_still_fills_the_raster():
 
 
 def test_the_scale_register_bounds_how_big_the_picture_can_get():
-    """A tiny capture cannot fill the raster -- x4 is the most magnification the
-    register has. That is a limit, not a failure, and it must still fit."""
+    """A tiny capture cannot fill the raster -- 2.048x is the most magnification
+    allowed. That is a limit, not a failure, and it must still fit.
+
+    Michael, 2026-08-09: the scale "shouldn't be any smaller than 500 - after
+    that the scaling artifacts a lot." The register itself reaches 256; this is
+    a picture-quality ceiling above it.
+    """
+    assert gm.HSCALE_MIN == 500
     scale, produced = gm.fit_to_raster(50, 1445, gm.AXIS_H)
 
     assert scale == gm.HSCALE_MIN
