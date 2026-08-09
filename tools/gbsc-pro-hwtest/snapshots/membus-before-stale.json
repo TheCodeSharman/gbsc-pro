@@ -1,0 +1,11 @@
+{
+  "CAP_FF_HALF_REQ": 1,
+  "CAP_REQ_OVER": 0,
+  "CAP_STATUS_SEL": 1,
+  "MEM_REQ_PBH_RFFH": 1,
+  "MEM_REQ_PB_RFF_CAP": 0,
+  "PB_CAP_OFFSET": 250,
+  "PB_FETCH_NUM": 250,
+  "PB_REQ_SEL": 3,
+  "PLL_MS": 7
+}
