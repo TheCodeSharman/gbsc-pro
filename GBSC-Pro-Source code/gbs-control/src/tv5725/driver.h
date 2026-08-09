@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_H_
-#define GEOMETRY_H_
+#ifndef TV5725_DRIVER_H_
+#define TV5725_DRIVER_H_
 
 // The scaler's output geometry: capture window in, blanking registers out.
 //
@@ -17,5 +17,7 @@
 #include "PanAndZoom.h"
 #include "RegisterSolution.h"
 #include "ControlSteps.h"
+#include "Memory.h"
+#include "Sampling.h"
 
-#endif  // GEOMETRY_H_
+#endif  // TV5725_DRIVER_H_

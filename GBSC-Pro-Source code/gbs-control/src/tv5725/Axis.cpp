@@ -5,9 +5,9 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t margin)
+           uint16_t margin, uint16_t scaleMin)
     : startConst_(startConst), startPerMag_(startPerMag),
-      windowStopMin_(windowStopMin), margin_(margin) {}
+      windowStopMin_(windowStopMin), margin_(margin), scaleMin_(scaleMin) {}
 
 float Axis::startConst() const { return startConst_; }
 
@@ -16,6 +16,18 @@ float Axis::startPerMag() const { return startPerMag_; }
 uint16_t Axis::windowStopMin() const { return windowStopMin_; }
 
 uint16_t Axis::margin() const { return margin_; }
+
+uint16_t Axis::scaleMin() const { return scaleMin_; }
+
+uint16_t Axis::minimumCapture(uint16_t rasterTotal) const
+{
+    // produced = capture * Unity / scale, and the scale bottoms out at
+    // scaleMin(). So the capture that still just fills the raster is
+    // raster * scaleMin / Unity, rounded UP -- one unit short leaves a bar.
+    uint32_t smallest = ((uint32_t)rasterTotal * scaleMin_ + Scale::Unity - 1)
+                        / Scale::Unity;
+    return (uint16_t)smallest;
+}
 
 float Axis::originOffset(float magnification) const
 {
@@ -35,8 +47,8 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal) const
 
     float produced = room * capture / (capture + 2.0f * startPerMag_);
     long scale = lrintf(Scale::Unity * capture / produced);
-    if (scale < Scale::Min)
-        scale = Scale::Min;
+    if (scale < (long)scaleMin_)
+        scale = scaleMin_;
     if (scale > Scale::Max)
         scale = Scale::Max;
     produced = capture * (float)Scale::Unity / scale;
@@ -53,6 +65,7 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal) const
     }
     return RasterFit(Scale((uint16_t)scale), produced);
 }
+
 
 PictureOrigin Axis::placePicture(float produced, uint16_t rasterTotal,
                              float magnification) const
@@ -83,9 +96,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale,
     // ST registers must stay STRICTLY below the raster's total register,
     // and they wrap rather than clamp -- a wrapped VDS_VB_ST rolls the
     // frame. The total register is one below rasterTotal, so the last
-    // usable is two below. The window takes all of it; no margin reserved.
+    // usable is two below.
     int32_t lastUsable = (int32_t)rasterTotal - 2;
-    solved.windowStart_ = lastUsable;
 
     // Floor, never round: VDS_DIS_?B_ST is where blanking STARTS, so
     // rounding up exposes unwritten memory as a band of scratch.
@@ -94,11 +106,16 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale,
         solved.displayStop_ + (int32_t)solved.produced_ - margin_;
     if (solved.displayStart_ > lastUsable)
         solved.displayStart_ = lastUsable;
+
+    // The memory window IS the display window: allocate nothing spare. Memory
+    // past the picture is memory the playback stage still walks, and taking the
+    // whole raster showed on the bench as artefacts down the LEFT edge.
+    solved.windowStart_ = solved.displayStart_;
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, 500);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, 3);
+const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min);
 
 }  // namespace Tv5725

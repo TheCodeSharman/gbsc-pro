@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_AXIS_H_
-#define GEOMETRY_AXIS_H_
+#ifndef TV5725_AXIS_H_
+#define TV5725_AXIS_H_
 
 // An axis, which knows its own write-start model and solves itself.
 // See docs/scaler-geometry-model.md for the measurements behind the numbers.
@@ -13,7 +13,7 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t margin);
+         uint16_t margin, uint16_t scaleMin);
 
     // write start = VDS_?B_SP + startConst + startPerMag x magnification.
     // Pipeline latency before the first write: ~25 input samples of run-up for
@@ -29,6 +29,23 @@ public:
     // Given back off the display window's far edge: the model's own worst
     // residual. A window short by 2 is invisible; long by 2 shows scratch.
     uint16_t margin() const;
+
+    // How far this axis is willing to magnify, as a VDS_?SCALE floor.
+    //
+    // **PER AXIS, AND THAT IS MEASURED.** Horizontally 500 -- 2.048x -- because
+    // below that the scaling artifacts badly. Vertically the register's own 256,
+    // since a 500 clamp there is too tight.
+    //
+    // The two differ because the same ratio buys different travel. The default
+    // capture is 76% of the line horizontally against 82% of the frame
+    // vertically, so the vertical starts closer to its stop and a 2.048x floor
+    // cuts the zoom off long before the picture degrades.
+    uint16_t scaleMin() const;
+
+    // The smallest capture that can still fill `rasterTotal` at this axis's full
+    // magnification. Below it cropping cannot be compensated, so the picture
+    // shrinks on screen and the display window closes in around it.
+    uint16_t minimumCapture(uint16_t rasterTotal) const;
 
     float originOffset(float magnification) const;
 
@@ -60,7 +77,7 @@ public:
 
 private:
     float startConst_, startPerMag_;
-    uint16_t windowStopMin_, margin_;
+    uint16_t windowStopMin_, margin_, scaleMin_;
 };
 
 // The two axes, defined once in Axis.cpp: `static const` in a header gives every
@@ -70,4 +87,4 @@ extern const Axis AxisVertical;
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_AXIS_H_
+#endif  // TV5725_AXIS_H_

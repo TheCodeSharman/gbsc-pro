@@ -161,7 +161,7 @@ TEST_CASE("the picture is made as big as the raster allows")
         // Not "as big as the room": the write offset costs startPerMag x
         // magnification at both ends. The observable is that nothing more could
         // be claimed -- the memory window lands hard against its floor.
-        CHECK(((fit.scale().reg() >= Scale::Min)
+        CHECK(((fit.scale().reg() >= AxisHorizontal.scaleMin())
                && (fit.scale().reg() <= Scale::Max)));
         PictureOrigin placed = AxisHorizontal.placePicture(fit.produced(), 1445,
                                               fit.scale().magnification());
@@ -178,17 +178,20 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 
     SUBCASE("a smaller capture still fills the raster") {
-        RasterFit small = AxisHorizontal.fitToRaster(400, 1445);
+        // 800, not 400. Below Scale::minimumCapture(1445) = 706 the
+        // magnification runs out and the picture CANNOT fill the raster, so a
+        // capture under it is testing the ceiling rather than the fit.
+        RasterFit small = AxisHorizontal.fitToRaster(800, 1445);
         PictureOrigin smallPlaced = AxisHorizontal.placePicture(
             small.produced(), 1445, Scale::Unity / (float)small.scale().reg());
         CHECK(smallPlaced.windowStop() <= AxisHorizontal.windowStopMin() + 4);
     }
 
     SUBCASE("the scale register bounds how big the picture can get") {
-        // A capture too small to fill the raster is bounded by the register at
-        // x4. That is a limit, not a failure.
+        // A capture too small to fill the raster is bounded at 2.048x. That is
+        // a limit, not a failure.
         RasterFit tiny = AxisHorizontal.fitToRaster(60, 1445);
-        CHECK(tiny.scale().reg() == Scale::Min);
+        CHECK(tiny.scale().reg() == AxisHorizontal.scaleMin());
         CHECK(tiny.produced() < AxisHorizontal.maxDisplayWindow(1445));
     }
 
@@ -209,12 +212,12 @@ TEST_CASE("the picture is made as big as the raster allows")
 
 TEST_CASE("the framing is held as state and the window is derived")
 {
-    CaptureWindow wide = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
-    CaptureWindow centred = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+    CaptureWindow wide = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
+    CaptureWindow centred = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
 
     SUBCASE("the default framing takes the default capture width") {
         PanAndZoom at_rest;
-        CaptureWindow got = at_rest.capture(InputLine(1277), 50.0f, false);
+        CaptureWindow got = at_rest.capture(InputLine(1277), 50.0f, false, 0);
         CHECK(got.st() - got.sp() == PanAndZoom::defaultWidth(InputLine(1277), 50.0f, false));
     }
 
@@ -224,15 +227,15 @@ TEST_CASE("the framing is held as state and the window is derived")
         // and a ratio small enough to give 1 there rounds to nothing at a
         // narrow capture.
         for (int16_t units : {1, 2, 7, 40, 300}) {
-            CaptureWindow in = PanAndZoom(units, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+            CaptureWindow in = PanAndZoom(units, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
             CHECK((wide.st() - wide.sp()) - (in.st() - in.sp()) == units);
         }
     }
 
     SUBCASE("one unit is one unit at a narrow capture too") {
         // Where the proportional control was at its coarsest relative to width.
-        CaptureWindow narrow = PanAndZoom(800, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
-        CaptureWindow narrower = PanAndZoom(801, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow narrow = PanAndZoom(800, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
+        CaptureWindow narrower = PanAndZoom(801, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK((narrow.st() - narrow.sp()) - (narrower.st() - narrower.sp())
               == 1);
     }
@@ -240,29 +243,29 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("zoom out and back returns the window exactly") {
         // Integer units, so this is exact by construction rather than by the
         // rounding happening to cancel.
-        CaptureWindow there = PanAndZoom(137, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
-        CaptureWindow back = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow there = PanAndZoom(137, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
+        CaptureWindow back = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(((back.sp() == wide.sp()) && (back.st() == wide.st())));
         CHECK(there.st() - there.sp() < wide.st() - wide.sp());
     }
 
     SUBCASE("panning moves the window and keeps its width") {
-        CaptureWindow moved = PanAndZoom(0, 0, +40, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow moved = PanAndZoom(0, 0, +40, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(moved.sp() == centred.sp() + 40);
         CHECK(moved.st() - moved.sp() == centred.st() - centred.sp());
     }
 
     SUBCASE("a pan is clamped to the line rather than crossing it") {
-        CaptureWindow far_right = PanAndZoom(0, 0, +5000, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow far_right = PanAndZoom(0, 0, +5000, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(far_right.st() <= 1277);
         CHECK(far_right.st() - far_right.sp() == centred.st() - centred.sp());
-        CaptureWindow far_left = PanAndZoom(0, 0, -5000, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow far_left = PanAndZoom(0, 0, -5000, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(far_left.sp() == 0);
         CHECK(far_left.st() - far_left.sp() == centred.st() - centred.sp());
     }
 
     SUBCASE("a zoom in never crops the capture away to nothing") {
-        CaptureWindow tiny = PanAndZoom(5000, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow tiny = PanAndZoom(5000, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(tiny.st() - tiny.sp() >= MinimumCapture);
     }
 
@@ -272,14 +275,14 @@ TEST_CASE("the framing is held as state and the window is derived")
         // jumping rather than as a capture fault. Three steps of zoom-out reach
         // it: 0..624 of a 624 half-line frame.
         for (int16_t units : {-1, -20, -60, -100, -500, -5000}) {
-            CaptureWindow w = PanAndZoom(0, units, 0, 0).capture(InputLine(624), 50.0f, true);
+            CaptureWindow w = PanAndZoom(0, units, 0, 0).capture(InputLine(624), 50.0f, true, 0);
             CHECK(w.st() <= 623);
         }
     }
 
     SUBCASE("the same wrap bound applies horizontally") {
         for (int16_t units : {-1, -60, -200, -300, -5000}) {
-            CaptureWindow w = PanAndZoom(units, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+            CaptureWindow w = PanAndZoom(units, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
             CHECK(w.st() <= 1276);
         }
     }
@@ -287,19 +290,19 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("a pan cannot put the capture stop on the wrap point either") {
         // pan_capture() bounds it the same way, for the same reason.
         for (int16_t p : {+5000, +600, -5000}) {
-            CHECK(PanAndZoom(0, 0, 0, p).capture(InputLine(624), 50.0f, true).st() <= 623);
-            CHECK(PanAndZoom(0, 0, p, 0).capture(InputLine(1277), 50.0f, false).st() <= 1276);
+            CHECK(PanAndZoom(0, 0, 0, p).capture(InputLine(624), 50.0f, true, 0).st() <= 623);
+            CHECK(PanAndZoom(0, 0, p, 0).capture(InputLine(1277), 50.0f, false, 0).st() <= 1276);
         }
     }
 
     SUBCASE("a zoom out never runs past the line") {
-        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(huge.st() <= 1277);
         CHECK(huge.sp() <= huge.st());
     }
 
     SUBCASE("the vertical axis derives from half-lines the same way") {
-        CaptureWindow v = PanAndZoom(0, 0, 0, 0).capture(InputLine(624), 50.0f, true);
+        CaptureWindow v = PanAndZoom(0, 0, 0, 0).capture(InputLine(624), 50.0f, true, 0);
         CHECK(v.st() - v.sp() == PanAndZoom::defaultWidth(InputLine(624), 50.0f, true));
         CHECK_NEAR((int)v.sp(), 624 - (int)v.st(), 1.0);
     }
@@ -316,49 +319,121 @@ TEST_CASE("the framing is held as state and the window is derived")
 // On the bench line: 1277 units, default width 1009, so the centred start is 134
 // and the largest the line allows is 1276 - 1009 = 267, giving a largest
 // achievable panH of 133.
+TEST_CASE("the scale never magnifies past the point the picture degrades")
+{
+    // Michael, 2026-08-09: the scale "shouldn't be any smaller than 500 - after
+    // that the scaling artifacts a lot." A ceiling on the interpolator, not on
+    // the memory path -- everything else this session was about whether the
+    // data arrives, and this is about whether it is worth looking at once it
+    // has.
+    CHECK(AxisHorizontal.scaleMin() == 500);
+    CHECK_NEAR(Scale(AxisHorizontal.scaleMin()).magnification(), 2.048, 0.001);
+
+    SUBCASE("the VERTICAL keeps the register's own floor") {
+        // **HORIZONTAL ONLY, and that is measured.** Michael set 500 on both
+        // and came back: "I made a mistake can you remove the clamp from the
+        // VSCALE it's too small." 2.048x vertically stops the zoom well before
+        // the picture is anywhere near degraded, because the vertical starts
+        // from a much narrower default capture -- 82% of the frame against 76%
+        // of the line -- so the same ratio buys far less travel.
+        //
+        // So the floor belongs to the AXIS, not to Scale. Scale::Min is the
+        // register's limit and nothing else.
+        CHECK(AxisVertical.scaleMin() == Scale::Min);
+        CHECK(AxisVertical.scaleMin() == 256);
+    }
+
+    SUBCASE("no capture, however small, is scaled past its axis floor") {
+        for (uint16_t capture = 16; capture <= 1277; capture += 7) {
+            CHECK(AxisHorizontal.fitToRaster(capture, 1445).scale() >= AxisHorizontal.scaleMin());
+            CHECK(AxisVertical.fitToRaster(capture, 1126).scale() >= AxisVertical.scaleMin());
+        }
+    }
+
+    SUBCASE("and the zoom stops there rather than shrinking the picture") {
+        // PanAndZoom::clampWidth stops the capture where the magnification runs
+        // out, so the picture stays full size and the control simply stops.
+        CHECK(AxisHorizontal.minimumCapture(1445) == 706);
+        CHECK(AxisVertical.minimumCapture(1126) == 282);
+    }
+}
+
 TEST_CASE("a press that overshoots the edge leaves no dead zone")
 {
     const uint16_t Units = 1277;
     const float Rate = 50.0f;
 
+    SUBCASE("zoom stops at the magnification ceiling instead of letterboxing") {
+        // Zooming past the ceiling otherwise shrinks the capture while the
+        // scale sits at its minimum, so the picture gets smaller on screen and
+        // the display window closes in around it. At 4.0x a 1126 raster floors
+        // at 1126 * 256 / 1024 = 282, measured 2026-08-09 as the last capture
+        // that fills the screen before the bars.
+        const uint16_t Raster = 1126;
+        CHECK(AxisVertical.minimumCapture(Raster) == 282);
+
+        PanAndZoom f;
+        f.zoomBy(0, 5000);                     // hard against the stop
+        f.clampToLine(InputLine(623), Rate, true, Raster);
+        CaptureWindow got = f.capture(InputLine(623), Rate, true, Raster);
+        CHECK(got.st() - got.sp() == 282);
+    }
+
+    SUBCASE("and the floor is the raster's, not a constant") {
+        // A different output raster has a different ceiling, so the floor has
+        // to be computed from it rather than remembered.
+        CHECK(AxisHorizontal.minimumCapture(1445) == 706);
+        CHECK(AxisHorizontal.minimumCapture(720) == 352);
+    }
+
+    SUBCASE("a caller with no raster keeps the old floor") {
+        // defaultWidth() has no raster -- the default is a property of the line
+        // alone -- so 0 means "no scale floor" rather than "floor of zero".
+        PanAndZoom f;
+        f.zoomBy(5000, 0);
+        f.clampToLine(InputLine(1277), Rate, false, 0);
+        CaptureWindow got = f.capture(InputLine(1277), Rate, false, 0);
+        CHECK(got.st() - got.sp() == MinimumCapture);
+    }
+
     SUBCASE("an overshooting pan is brought back to what the line allows") {
         PanAndZoom f;
         f.panBy(200, 0);                       // one accelerated press, way past
-        f.clampToLine(InputLine(Units), Rate, false);
+        f.clampToLine(InputLine(Units), Rate, false, 0);
         CHECK(f.panH() == 133);
     }
 
     SUBCASE("and one unit back then actually moves the window") {
         PanAndZoom f;
         f.panBy(200, 0);
-        f.clampToLine(InputLine(Units), Rate, false);
-        CaptureWindow at_edge = f.capture(InputLine(Units), Rate, false);
+        f.clampToLine(InputLine(Units), Rate, false, 0);
+        CaptureWindow at_edge = f.capture(InputLine(Units), Rate, false, 0);
 
         f.panBy(-1, 0);
-        CaptureWindow back = f.capture(InputLine(Units), Rate, false);
+        CaptureWindow back = f.capture(InputLine(Units), Rate, false, 0);
         CHECK(back.sp() < at_edge.sp());
     }
 
     SUBCASE("the same holds at the other end of the line") {
         PanAndZoom f;
         f.panBy(-200, 0);
-        f.clampToLine(InputLine(Units), Rate, false);
+        f.clampToLine(InputLine(Units), Rate, false, 0);
         CHECK(f.panH() == -134);
 
-        CaptureWindow at_edge = f.capture(InputLine(Units), Rate, false);
+        CaptureWindow at_edge = f.capture(InputLine(Units), Rate, false, 0);
         f.panBy(+1, 0);
-        CHECK(f.capture(InputLine(Units), Rate, false).sp() > at_edge.sp());
+        CHECK(f.capture(InputLine(Units), Rate, false, 0).sp() > at_edge.sp());
     }
 
     SUBCASE("vertically too, which is the 'or bottom' half of the report") {
         PanAndZoom f;
         f.panBy(0, -400);
-        f.clampToLine(InputLine(624), Rate, true);
-        CaptureWindow at_edge = f.capture(InputLine(624), Rate, true);
+        f.clampToLine(InputLine(624), Rate, true, 0);
+        CaptureWindow at_edge = f.capture(InputLine(624), Rate, true, 0);
         CHECK(at_edge.sp() == 0);
 
         f.panBy(0, +1);
-        CHECK(f.capture(InputLine(624), Rate, true).sp() > at_edge.sp());
+        CHECK(f.capture(InputLine(624), Rate, true, 0).sp() > at_edge.sp());
     }
 
     SUBCASE("an overshooting zoom is brought back the same way") {
@@ -366,20 +441,20 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         // forms in zoomH_ if the framing is left holding the overshoot.
         PanAndZoom f;
         f.zoomBy(5000, 0);
-        f.clampToLine(InputLine(Units), Rate, false);
-        CaptureWindow tightest = f.capture(InputLine(Units), Rate, false);
+        f.clampToLine(InputLine(Units), Rate, false, 0);
+        CaptureWindow tightest = f.capture(InputLine(Units), Rate, false, 0);
         CHECK(tightest.st() - tightest.sp() == MinimumCapture);
 
         f.zoomBy(-1, 0);
-        CaptureWindow wider = f.capture(InputLine(Units), Rate, false);
+        CaptureWindow wider = f.capture(InputLine(Units), Rate, false, 0);
         CHECK(wider.st() - wider.sp() > tightest.st() - tightest.sp());
     }
 
     SUBCASE("clamping a framing that is already reachable changes nothing") {
         PanAndZoom f(7, 5, 20, -13);
         PanAndZoom before = f;
-        f.clampToLine(InputLine(Units), Rate, false);
-        f.clampToLine(InputLine(624), Rate, true);
+        f.clampToLine(InputLine(Units), Rate, false, 0);
+        f.clampToLine(InputLine(624), Rate, true, 0);
         CHECK(f == before);
     }
 }
@@ -440,22 +515,22 @@ TEST_CASE("the capture window never takes the hsync pulse")
     }
 
     SUBCASE("zooming all the way out stops clear of the sync") {
-        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(Bench, Rate, false);
+        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(Bench, Rate, false, 0);
         CHECK(huge.sp() >= Bench.syncUnits());
     }
 
     SUBCASE("and takes the whole tail, because nothing there is derivable") {
-        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(Bench, Rate, false);
+        CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(Bench, Rate, false, 0);
         CHECK(huge.st() == BenchUnits - 1);
     }
 
     SUBCASE("panning to the left stop cannot walk into the sync") {
-        CaptureWindow left = PanAndZoom(0, 0, -5000, 0).capture(Bench, Rate, false);
+        CaptureWindow left = PanAndZoom(0, 0, -5000, 0).capture(Bench, Rate, false, 0);
         CHECK(left.sp() >= Bench.syncUnits());
     }
 
     SUBCASE("panning to the right stop still reaches the end of the line") {
-        CaptureWindow right = PanAndZoom(0, 0, +5000, 0).capture(Bench, Rate, false);
+        CaptureWindow right = PanAndZoom(0, 0, +5000, 0).capture(Bench, Rate, false, 0);
         CHECK(right.st() == BenchUnits - 1);
     }
 
@@ -463,8 +538,8 @@ TEST_CASE("the capture window never takes the hsync pulse")
         // The default capture is 1009 units of a 1277 unit line and the pulse
         // takes 91 at the head, so 1185 remain: the picture nobody complained
         // about must not move by so much as a unit.
-        CaptureWindow guarded = PanAndZoom().capture(Bench, Rate, false);
-        CaptureWindow whole = PanAndZoom().capture(InputLine(BenchUnits), Rate, false);
+        CaptureWindow guarded = PanAndZoom().capture(Bench, Rate, false, 0);
+        CaptureWindow whole = PanAndZoom().capture(InputLine(BenchUnits), Rate, false, 0);
         CHECK(guarded.sp() == whole.sp());
         CHECK(guarded.st() == whole.st());
     }
@@ -472,8 +547,8 @@ TEST_CASE("the capture window never takes the hsync pulse")
     SUBCASE("zoom out still has somewhere to go") {
         // Clipping the sync must not cost the reach that finds active video the
         // 0.76 assumption crops.
-        CaptureWindow rest = PanAndZoom().capture(Bench, Rate, false);
-        CaptureWindow out = PanAndZoom(-40, 0, 0, 0).capture(Bench, Rate, false);
+        CaptureWindow rest = PanAndZoom().capture(Bench, Rate, false, 0);
+        CaptureWindow out = PanAndZoom(-40, 0, 0, 0).capture(Bench, Rate, false, 0);
         CHECK(out.st() - out.sp() == (rest.st() - rest.sp()) + 40);
     }
 
@@ -482,12 +557,12 @@ TEST_CASE("the capture window never takes the hsync pulse")
         // difference of one unit between them is the dead zone of 2026-08-09.
         PanAndZoom f;
         f.panBy(-5000, 0);
-        f.clampToLine(Bench, Rate, false);
-        CaptureWindow at_edge = f.capture(Bench, Rate, false);
+        f.clampToLine(Bench, Rate, false, 0);
+        CaptureWindow at_edge = f.capture(Bench, Rate, false, 0);
         CHECK(at_edge.sp() == Bench.syncUnits());
 
         f.panBy(+1, 0);
-        CHECK(f.capture(Bench, Rate, false).sp() > at_edge.sp());
+        CHECK(f.capture(Bench, Rate, false, 0).sp() > at_edge.sp());
     }
 
     SUBCASE("an unmeasurable duty falls back to what the retimer is set for") {
@@ -523,9 +598,13 @@ TEST_CASE("the solver places every output register")
         CHECK(solved.windowStop() == AxisHorizontal.windowStopMin());
     }
 
-    SUBCASE("the solver takes every pixel of margin available") {
-        // VDS_HB_ST must stay STRICTLY below VDS_HSYNC_RST (1444).
-        CHECK(solved.windowStart() == 1443);
+    SUBCASE("the memory window is exactly the display window") {
+        // Allocate only what is displayed. Taking the whole raster is not free:
+        // memory past the picture is memory the playback stage still walks, and
+        // on the bench it showed as artefacts down the LEFT edge. EQUAL to the
+        // display window, not merely under the last usable value.
+        CHECK(solved.windowStart() == solved.displayStart());
+        CHECK(solved.windowStart() <= 1443);
     }
 
     SUBCASE("the display window hugs the picture") {
@@ -576,8 +655,8 @@ TEST_CASE("nothing is inherited from the registers")
     RegisterSolution s(798, 513, 1445, 1126);
 
     SUBCASE("both scales are computed, not read") {
-        CHECK(((s.horizontalScale() >= Scale::Min) && (s.horizontalScale() <= Scale::Max)));
-        CHECK(((s.verticalScale() >= Scale::Min) && (s.verticalScale() <= Scale::Max)));
+        CHECK(((s.horizontalScale() >= AxisHorizontal.scaleMin()) && (s.horizontalScale() <= Scale::Max)));
+        CHECK(((s.verticalScale() >= AxisVertical.scaleMin()) && (s.verticalScale() <= Scale::Max)));
     }
 
     SUBCASE("both memory windows clear their floor") {
@@ -617,7 +696,7 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
     // The stock preset leaves IF_VB_ST <= IF_VB_SP on 56 of 66 archived
     // snapshots, and what the chip means by that is not established. Rather
     // than decode a register state we are deleting, compute one.
-    CaptureWindow w = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false);
+    CaptureWindow w = PanAndZoom(0, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
 
     SUBCASE("a default capture is centred on the line") {
         CHECK(w.st() > w.sp());
@@ -632,7 +711,7 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
 
     SUBCASE("a default capture never exceeds the line it sits in") {
         for (uint16_t units : {64, 256, 624, 1277, 2559}) {
-            CaptureWindow any = PanAndZoom(0, 0, 0, 0).capture(InputLine(units), 50.0f, false);
+            CaptureWindow any = PanAndZoom(0, 0, 0, 0).capture(InputLine(units), 50.0f, false, 0);
             CHECK(any.st() <= units);
             CHECK(any.st() > any.sp());
         }
@@ -648,7 +727,7 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
     }
 
     SUBCASE("a line of zero yields nothing rather than a wrapped window") {
-        CaptureWindow none = PanAndZoom(0, 0, 0, 0).capture(InputLine(0), 50.0f, false);
+        CaptureWindow none = PanAndZoom(0, 0, 0, 0).capture(InputLine(0), 50.0f, false, 0);
         CHECK(((none.sp() == 0) && (none.st() == 0)));
     }
 }
@@ -705,7 +784,7 @@ static void dumpGrid()
     // Python vertical equivalent, so that half is covered by the host tests only.
     for (uint16_t units : {320, 624, 1277, 2048, 2559})
         for (float rate : {50.0f, 60.0f}) {
-            CaptureWindow w = PanAndZoom(0, 0, 0, 0).capture(InputLine(units), rate, false);
+            CaptureWindow w = PanAndZoom(0, 0, 0, 0).capture(InputLine(units), rate, false, 0);
             std::printf("default %u %.0f %u %u\n", units, rate, w.sp(), w.st());
         }
 
@@ -721,3 +800,57 @@ int main(int argc, char **argv)
     }
     return doctest::Context(argc, argv).run();
 }
+
+// --- the zoom stops before the memory bus tears the picture --------------------
+
+// --- the memory bus is not solved here any more -------------------------------
+
+TEST_CASE("the horizontal window goes where the geometry puts it")
+{
+    // Asserting an absence. Memory::fetchFor sizes PB_FETCH_NUM from the capture
+    // width, which makes the beat independent of HSCALE, so there is no tearing
+    // band left for the window to dodge and no table to consult.
+    for (uint16_t capture = 400; capture <= 1009; capture += 3) {
+        RegisterSolution solved(capture, 512, 1445, 1126);
+        REQUIRE(solved.usable());
+        CHECK(solved.h().windowStart() == solved.h().displayStart());
+    }
+}
+
+TEST_CASE("the scale is exactly what fitToRaster produced")
+{
+    // The scale must never fall back to a different HSCALE -- it has to move
+    // fluidly with the zoom pad rather than jump. A shrink search moves it by up
+    // to 56 counts and steps backwards 71 times across this range while the pad
+    // goes one way.
+    uint16_t previous = 0;
+    for (uint16_t capture = 400; capture <= 1009; ++capture) {
+        RegisterSolution solved(capture, 512, 1445, 1126);
+        REQUIRE(solved.usable());
+        AxisSolution plain = AxisHorizontal.solve(capture, solved.horizontalScale(), 1445);
+        CHECK(solved.h().windowStop() == plain.windowStop());
+        CHECK(solved.h().windowStart() == plain.windowStart());
+        CHECK(solved.h().displayStop() == plain.displayStop());
+        CHECK(solved.h().displayStart() == plain.displayStart());
+        CHECK(solved.horizontalScale().reg() >= previous);
+        previous = solved.horizontalScale().reg();
+    }
+}
+
+TEST_CASE("both axes allocate only the memory the picture occupies")
+{
+    // A property of the memory, not of one axis, so Axis::solve applies it and
+    // both axes get it. The artefact was seen horizontally, but a rule holding
+    // on one axis only would be a special case nobody measured.
+    RegisterSolution solved(749, 512, 1445, 1126);
+    CHECK(solved.h().windowStart() == solved.h().displayStart());
+    CHECK(solved.v().windowStart() == solved.v().displayStart());
+
+    SUBCASE("and neither reaches the value that wraps") {
+        // VDS_VB_ST at VDS_VSYNC_RST rolls the frame; VDS_HB_ST at
+        // VDS_HSYNC_RST wraps.
+        CHECK(solved.h().windowStart() <= 1445 - 2);
+        CHECK(solved.v().windowStart() <= 1126 - 2);
+    }
+}
+

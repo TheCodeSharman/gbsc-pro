@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry hold-ramp segment-select register-queue clean help
+.PHONY: all test geometry sampling memory hold-ramp segment-select register-queue clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -44,6 +44,27 @@ geometry:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_geometry" \
 	  "$(HERE)/test_geometry.cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/test_geometry"
+
+## sampling: host unit tests for the ADC sampling divider and the IF line
+#
+# PLLAD_MD and IF_HSYNC_RST are one quantity in two registers, and every fault
+# here has been something moving one without the other. Pure arithmetic, so it
+# costs a second to check.
+sampling:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sampling" \
+	  "$(HERE)/test_sampling.cpp" src/tv5725/Sampling.cpp
+	@"$(OUT)/test_sampling"
+
+## memory: host unit tests for the playback burst structure
+#
+# PB_FETCH_NUM sets the memory read request rate, which is one side of the beat
+# that tore the picture across 80 of 493 framings. Pure arithmetic.
+memory:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_memory" \
+	  "$(HERE)/test_memory.cpp" src/tv5725/Memory.cpp
+	@"$(OUT)/test_memory"
 
 ## hold-ramp: host unit tests for the IR hold-to-accelerate ramp
 hold-ramp:
@@ -77,7 +98,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry hold-ramp segment-select register-queue
+test: geometry sampling memory hold-ramp segment-select register-queue
 all: test
 
 ## clean: remove the compiled test binaries

@@ -1,8 +1,5 @@
-#ifndef GEOMETRY_SOLUTION_H_
-#define GEOMETRY_SOLUTION_H_
-
-// Both axes at once: every output register from the capture windows and the
-// raster alone.
+#ifndef TV5725_REGISTER_SOLUTION_H_
+#define TV5725_REGISTER_SOLUTION_H_
 
 #include <stdint.h>
 
@@ -10,9 +7,8 @@
 
 namespace Tv5725 {
 
-// Every output register from the capture windows and the raster alone. Nothing
-// reads the windows or the scale it is about to replace -- compute the
-// geometry, never inherit it. The caller must clear VDS_?SCALE_BYPS.
+// Computes every output register from the capture windows and the raster, both
+// axes at once. The caller must clear VDS_?SCALE_BYPS.
 class RegisterSolution {
 public:
     RegisterSolution(uint16_t captureH, uint16_t captureV, uint16_t linePx,
@@ -32,4 +28,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_SOLUTION_H_
+#endif  // TV5725_REGISTER_SOLUTION_H_

@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_LINE_H_
-#define GEOMETRY_LINE_H_
+#ifndef TV5725_INPUT_LINE_H_
+#define TV5725_INPUT_LINE_H_
 
 // The source line a capture window is placed on: how long it is, and how much
 // of it the framing may not have.
@@ -63,4 +63,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_LINE_H_
+#endif  // TV5725_INPUT_LINE_H_

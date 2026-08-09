@@ -1,11 +1,12 @@
-#ifndef GEOMETRY_FRAMING_H_
-#define GEOMETRY_FRAMING_H_
+#ifndef TV5725_PAN_AND_ZOOM_H_
+#define TV5725_PAN_AND_ZOOM_H_
 
 // The user's framing: the only state the geometry keeps, and the thing every
 // register is an output of.
 
 #include <stdint.h>
 
+#include "Axis.h"
 #include "InputLine.h"
 #include "CaptureWindow.h"
 
@@ -68,16 +69,22 @@ public:
     // The capture window this framing means, on `line`. Derived from the
     // framing and the line alone -- nothing is read back. At rest this IS the
     // default window, so there is no second definition of it.
-    CaptureWindow capture(const InputLine &line, float fieldRateHz, bool vertical) const;
+    CaptureWindow capture(const InputLine &line, float fieldRateHz, bool vertical,
+                   uint16_t rasterTotal) const;
 
     // Bring this framing back to what the line can actually realise. capture()
     // clamps the WINDOW, and a framing left beyond anything reachable kills the
     // control in that direction -- see Geometry::readCapture().
-    void clampToLine(const InputLine &line, float fieldRateHz, bool vertical);
+    void clampToLine(const InputLine &line, float fieldRateHz, bool vertical,
+                     uint16_t rasterTotal);
 
     // A width wider than the line can hold wraps; one narrower than the minimum
-    // is a dead picture.
-    static long clampWidth(long width, const InputLine &line);
+    // is a dead picture. The floor is whichever is larger: what the control must
+    // not crop past, and what the SCALE can still magnify to fill the raster --
+    // without the second, zooming past the magnification ceiling keeps cropping
+    // and the picture letterboxes instead of the control stopping.
+    static long clampWidth(long width, const InputLine &line, uint16_t rasterTotal,
+                           const Axis &axis);
 
 private:
     int16_t zoomH_;   // input units cropped off the default width; negative widens
@@ -88,4 +95,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_FRAMING_H_
+#endif  // TV5725_PAN_AND_ZOOM_H_

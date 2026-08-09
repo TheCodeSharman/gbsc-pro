@@ -171,19 +171,24 @@ bool Geometry::readCapture(Capture &capture)
     // pv -51 against a limit of -46, ph -144 against -134.
     InputLine h = capture.lineH();
     InputLine v = capture.lineV();
-    framing_.clampToLine(h, fieldRate, false);
-    framing_.clampToLine(v, fieldRate, true);
+    framing_.clampToLine(h, fieldRate, false, capture.linePx());
+    framing_.clampToLine(v, fieldRate, true, capture.frameLines());
 
-    capture.setWindows(framing_.capture(h, fieldRate, false),
-                       framing_.capture(v, fieldRate, true));
+    capture.setWindows(framing_.capture(h, fieldRate, false, capture.linePx()),
+                       framing_.capture(v, fieldRate, true, capture.frameLines()));
     return capture.usable() ? true : fail();
 }
 
 void Geometry::write(const RegisterSolution &solved, const Capture &capture)
 {
-    // 1. Far edges to maximum: can only add headroom.
-    GBS::VDS_HB_ST::write(solved.h().windowStart());
-    GBS::VDS_VB_ST::write(solved.v().windowStart());
+    // 1. Far edges OUTWARD only, which can only add headroom. The memory window
+    // hugs the picture, so it moves in as well as out; narrowing it here would
+    // leave the old, wider display window showing unwritten memory at the far
+    // edge for the length of a write. Inward moves wait for step 5b.
+    if (solved.h().windowStart() > GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.h().windowStart());
+    if (solved.v().windowStart() > GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.v().windowStart());
 
     // 2. Near edges down, if down is where they are going.
     if (solved.h().windowStop() < GBS::VDS_HB_SP::read())
@@ -216,6 +221,25 @@ void Geometry::write(const RegisterSolution &solved, const Capture &capture)
     GBS::VDS_DIS_HB_ST::write(solved.h().displayStart());
     GBS::VDS_DIS_VB_SP::write(solved.v().displayStop());
     GBS::VDS_DIS_VB_ST::write(solved.v().displayStart());
+
+    // 5b. Far edges INWARD, now that the aperture they bound has closed. The
+    // mirror of step 2: a window edge may only cross the display window's in
+    // the direction that keeps the picture covered.
+    if (solved.h().windowStart() < GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.h().windowStart());
+    if (solved.v().windowStart() < GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.v().windowStart());
+
+    // 6. The playback burst, only if it is not already right. Rewriting
+    // PB_FETCH_NUM reprograms the playback FIFO while the picture is being read
+    // out of it, which flickers even when the value written is identical.
+    // docs/investigations/hscale-tearing-characterisation.md
+    uint16_t fetch = Memory::fetchFor(capture.linePx(), capture.captureH());
+    uint16_t offset = Memory::offsetFor(capture.linePx());
+    if (GBS::PB_FETCH_NUM::read() != fetch)
+        GBS::PB_FETCH_NUM::write(fetch);
+    if (GBS::PB_CAP_OFFSET::read() != offset)
+        GBS::PB_CAP_OFFSET::write(offset);
 }
 
 bool Geometry::step(const PanAndZoom &wanted)

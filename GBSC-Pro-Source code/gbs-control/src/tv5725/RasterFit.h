@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_FIT_H_
-#define GEOMETRY_FIT_H_
+#ifndef TV5725_RASTER_FIT_H_
+#define TV5725_RASTER_FIT_H_
 
 // The scale that fills a raster, and how big the picture then is.
 #include <stdint.h>
@@ -21,4 +21,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_FIT_H_
+#endif  // TV5725_RASTER_FIT_H_

@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_CONTROL_STEPS_H_
-#define GEOMETRY_CONTROL_STEPS_H_
+#ifndef TV5725_CONTROL_STEPS_H_
+#define TV5725_CONTROL_STEPS_H_
 
 // What one press asks for, in OUTPUT PIXELS. Controls translates it into the
 // input units the engine takes.
@@ -17,4 +17,4 @@ public:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_CONTROL_STEPS_H_
+#endif  // TV5725_CONTROL_STEPS_H_

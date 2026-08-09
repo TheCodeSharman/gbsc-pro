@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_AXIS_SOLUTION_H_
-#define GEOMETRY_AXIS_SOLUTION_H_
+#ifndef TV5725_AXIS_SOLUTION_H_
+#define TV5725_AXIS_SOLUTION_H_
 
 // One axis's four output registers.
 #include <stdint.h>
@@ -26,4 +26,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_AXIS_SOLUTION_H_
+#endif  // TV5725_AXIS_SOLUTION_H_

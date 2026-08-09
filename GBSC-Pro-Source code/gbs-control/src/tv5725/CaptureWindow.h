@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_WINDOW_H_
-#define GEOMETRY_WINDOW_H_
+#ifndef TV5725_CAPTURE_WINDOW_H_
+#define TV5725_CAPTURE_WINDOW_H_
 
 // A capture window: IF units horizontally, HALF-LINES vertically.
 #include <stdint.h>
@@ -22,4 +22,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_WINDOW_H_
+#endif  // TV5725_CAPTURE_WINDOW_H_

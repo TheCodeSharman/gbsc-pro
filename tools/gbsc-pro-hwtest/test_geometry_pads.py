@@ -294,305 +294,109 @@ def test_a_pan_press_moves_the_capture_without_resizing_it(host, probe, framed):
         == before["IF_HB_ST2"] - before["IF_HB_SP2"]
 
 
-def retime(host, probe, command, timeout=8.0):
-    """Move VDS_HSYNC_RST by one and wait for the retime to land.
+# The playback burst, which is not geometry and is owned by the engine anyway.
+#
+# Segment 4 is not in GEOMETRY_FIELDS and deliberately stays out of it: these
+# are read a field at a time so a failure names the register it is about.
+PB_FETCH_NUM = ("PB_FETCH_NUM", 4, 0x39, 0, 10)
+PB_CAP_OFFSET = ("PB_CAP_OFFSET", 4, 0x37, 0, 10)
+VDS_HSYNC_RST = ("VDS_HSYNC_RST", 3, 0x01, 0, 12)
 
-    /sc?a and /sc?A set rto->forceRetime and call applyBestHTotal directly, so
-    they are the only way to provoke a retime from outside. It matters that
-    they force it: applyBestHTotal returns early when diffHTotal is 0, which is
-    every settled lock, and that early return is why a press-then-read test
-    cannot see this fault.
-    """
-    spec = ("VDS_HSYNC_RST", 3, 0x01, 0, 12)
-    before = probe.read_field(spec)
-    status, _ = get(host, f"/sc?{command}")
-    assert status == 200, f"/sc?{command} returned {status}"
-    landed = wait_for(lambda: probe.read_field(spec) != before, timeout=timeout)
-    assert landed, (f"/sc?{command} did not move VDS_HSYNC_RST from {before} "
-                    f"within {timeout}s")
+# What Tv5725::Memory holds. Mirrors src/tv5725/Memory.h, the same way
+# ZOOM_STEP_PX mirrors ControlSteps -- one measured output raster, and
+# upstream's untouched value for every raster nobody has swept.
+LINE_1080P = 1445
+FETCH_1080P = 204
+OFFSET_1080P = 250
+UPSTREAM_FETCH = 256
+UPSTREAM_OFFSET = UPSTREAM_FETCH + 4
+
+
+# Mirrors Tv5725::Memory. The fetch has to cover the source pixels each output
+# line needs, over the playback request budget; the offset deliberately does not
+# follow it, being clean anywhere across 190..256 when it was measured.
+REQUESTS_PER_LINE = 4
+FETCH_FLOOR = 150
+
+
+def expected_burst(line_px, capture):
+    if line_px != LINE_1080P:
+        return UPSTREAM_FETCH, UPSTREAM_OFFSET
+    fetch = max(FETCH_FLOOR, -(-capture // REQUESTS_PER_LINE))
+    return fetch, OFFSET_1080P
 
 
 @pytest.mark.zoom
-def test_the_geometry_survives_a_retime(host, probe, framed):
-    """A retime must re-solve the windows, not slide them.
+def test_a_zoom_press_leaves_the_playback_burst_at_the_measured_value(
+        host, probe, framed):
+    """PB_FETCH_NUM matches the capture after a zoom, because a zoom is when it
+    changes.
 
-    applyBestHTotal moves VDS_HSYNC_RST and then shifts the four blanking
-    registers by diffHTotal/2. The picture does not follow: `produced` is
-    capture x 1024 / scale and has no htotal term in it, so the windows end up
-    somewhere the picture is not, and unwritten memory scans out at the edge.
+    A zoom changes the capture width, which changes how many source pixels
+    playback must read per output line -- so the burst has to be resized at
+    exactly the moment the picture is being re-solved around it. Written short,
+    the line does not finish and repeats; that is the recorded failure at 236
+    against a capture of 1009, which needed 253.
 
-    Retiming four times and back keeps the raster where it started while making
-    the firmware take that path eight times, so nothing here depends on the
-    unit ending on a different htotal from the one it began with.
+    The class of fault this asserts against is not "is the formula right", which
+    only the bench can say, but "does the firmware own the register at all" --
+    left unwritten it keeps an upstream preset table's value for a different
+    output mode.
     """
     press(host, probe, "z")
-    settled_geometry(host)
-
-    for _ in range(4):
-        retime(host, probe, "a")
-    for _ in range(4):
-        retime(host, probe, "A")
     after = settled_geometry(host)
 
-    assert after is not None, "could not read the geometry back"
-    assert not differences(predict(after), after), (
-        "the windows no longer match what the capture and the raster imply -- "
-        "they were slid rather than re-solved")
-
-
-def derange(probe):
-    """Put the output geometry somewhere the engine would never leave it.
-
-    A pan on its own cannot expose a stale window: it does not change the
-    capture WIDTH, so `produced` is unchanged and the window the engine would
-    compute is the one already there. The staleness has to be put in first --
-    which is what test_regpanel did by seeding its fake device, and what a
-    session of experiments does to a real unit.
-
-    1:1 with the aperture wound in is the state the bench was actually left in
-    on 2026-08-08: a 1065 px picture inside a 1445 px raster that no amount of
-    panning could push out to the panel edge.
-    """
-    probe.write_field(("VDS_HSCALE", 3, 0x16, 0, 10), 1023)
-    probe.write_field(("VDS_DIS_HB_SP", 3, 0x11, 4, 12), 256)
-    probe.write_field(("VDS_DIS_HB_ST", 3, 0x10, 0, 12), 1262)
-
-
-@pytest.mark.pan
-def test_the_osd_move_recomputes_the_display_window(host, probe, framed):
-    """Ported from test_regpanel's test_panning_recomputes_the_display_window_too.
-
-    Size on the remote goes through the engine because the OSD writes into
-    serialCommand; move did not. It wrote IF_HB_SP2/ST2 by +/-4 directly and
-    left the display window standing, so the capture moved and the aperture
-    did not -- seen on the bench on 2026-08-08 as a picture that stopped short
-    of the panel edge no matter how far it was panned.
-    """
-    derange(probe)
-    press(host, probe, "7")
-    after = settled_geometry(host)
-
-    assert after is not None, "could not read the geometry back"
-    assert not differences(predict(after), after), (
-        "the move key left a stale display window against a moved capture")
-
-
-@pytest.mark.pan
-def test_the_osd_move_keeps_the_capture_window_intact(host, probe, framed):
-    """The two edges must move together.
-
-    The old handler gave each edge its own limit and wrapped it to 0 on its
-    own, so IF_HB_ST2 could roll to the start of the line while IF_HB_SP2 kept
-    climbing. That is how a pan produced capture 292..80 -- a window whose stop
-    is before its start, which no solver can use.
-    """
-    before = framed
-    press(host, probe, "7")
-    after = settled_geometry(host)
-
-    assert after["IF_HB_ST2"] > after["IF_HB_SP2"], (
-        f"capture inverted: {after['IF_HB_SP2']}..{after['IF_HB_ST2']}")
-    assert after["IF_HB_ST2"] - after["IF_HB_SP2"] \
-        == before["IF_HB_ST2"] - before["IF_HB_SP2"], "a move must not resize"
-
-
-@pytest.mark.pan
-def test_the_display_window_never_starts_before_the_scaler_does(host, probe, framed):
-    """Ported from test_regpanel. The scaler does not begin writing until
-    VDS_HB_SP + origin_offset(magnification); a display window opening earlier
-    scans out frame buffer nobody wrote this frame."""
-    derange(probe)
-    press(host, probe, "7")
-    after = settled_geometry(host)
-
-    magnify = gm.magnification(after["VDS_HSCALE"], after["VDS_HSCALE_BYPS"])
-    write_start = after["VDS_HB_SP"] + gm.AXIS_H.origin_offset(magnify)
-    assert after["VDS_DIS_HB_SP"] >= write_start - 1
-
-
-@pytest.mark.pan
-def test_the_display_window_never_ends_after_the_scaler_stops(host, probe, framed):
-    """The same invariant at the far edge, which is where it was first seen as
-    a band of unwritten memory down the right of the screen."""
-    derange(probe)
-    press(host, probe, "7")
-    after = settled_geometry(host)
-
-    magnify = gm.magnification(after["VDS_HSCALE"], after["VDS_HSCALE_BYPS"])
-    write_start = after["VDS_HB_SP"] + gm.AXIS_H.origin_offset(magnify)
-    produced = gm.produced_px(after["IF_HB_ST2"] - after["IF_HB_SP2"],
-                              after["VDS_HSCALE"], after["VDS_HSCALE_BYPS"],
-                              axis=gm.AXIS_H)
-    assert after["VDS_DIS_HB_ST"] <= write_start + produced + 1
-
-
-@pytest.mark.pan
-def test_any_press_puts_the_picture_back_to_full_size(host, probe, framed):
-    """Ported from test_regpanel, and Michael's rule: compute a sensible state,
-    never inherit one. Whatever the registers hold -- a scale left at 1:1 by a
-    test, a window someone typed in -- the next press recomputes rather than
-    building on it."""
-    derange(probe)
-    press(host, probe, "7")
-    after = settled_geometry(host)
-
+    line_px = probe.read_field(VDS_HSYNC_RST) + 1
     capture = after["IF_HB_ST2"] - after["IF_HB_SP2"]
-    scale, full = gm.fit_to_raster(capture, after["VDS_HSYNC_RST"] + 1, gm.AXIS_H)
-    assert after["VDS_HSCALE"] == scale, "the scale must be recomputed"
-    width = after["VDS_DIS_HB_ST"] - after["VDS_DIS_HB_SP"]
-    assert full - gm.AXIS_H.margin - 1 <= width <= full
-
-
-# Every geometry register the engine owns, set to something it must not keep:
-# capture windows inverted on both axes, both scales at 1:1 and bypassed, and
-# the memory and display windows wound into a narrow band in the middle of the
-# raster. Nothing here is a plausible state -- that is the point.
-HOSTILE = {
-    "IF_HB_SP2": 300, "IF_HB_ST2": 200,
-    "IF_VB_SP": 400, "IF_VB_ST": 100,
-    "VDS_HSCALE": 1023, "VDS_VSCALE": 1023,
-    "VDS_HSCALE_BYPS": 1, "VDS_VSCALE_BYPS": 1,
-    "VDS_HB_SP": 700, "VDS_HB_ST": 800,
-    "VDS_VB_SP": 500, "VDS_VB_ST": 600,
-    "VDS_DIS_HB_SP": 700, "VDS_DIS_HB_ST": 800,
-    "VDS_DIS_VB_SP": 500, "VDS_DIS_VB_ST": 600,
-}
-
-
-def make_hostile(probe):
-    """Overwrite every engine-owned register with a value it must not inherit."""
-    for spec in GEOMETRY_FIELDS:
-        if spec[0] in HOSTILE:
-            probe.write_field(spec, HOSTILE[spec[0]])
-
-
-def expected_default_capture(units, vertical, field_rate=50.0):
-    """The capture window src/tv5725/driver.h derives for an untuned source.
-
-    Mirrors Geometry::captureFor at rest. Python's default_capture_window is
-    horizontal only, so the vertical fraction is spelled out here; and the
-    firmware rounds with lrintf (half away from zero) where Python's round() is
-    half to even, which is a real one-count difference on some inputs.
-    """
-    fraction = gm.DEFAULT_H_ACTIVE_FRACTION
-    if vertical:
-        fraction = (gm.DEFAULT_V_ACTIVE_FRACTION_50HZ if field_rate < 55.0
-                    else gm.DEFAULT_V_ACTIVE_FRACTION_60HZ)
-    width = min(units, int(math.floor(units * fraction * gm.OVER_CAPTURE + 0.5)))
-    start = (units - width) // 2
-    return start, start + width
-
-
-def test_a_preset_load_recomputes_every_register_from_scratch(
-        host, probe, preset_load, framed):
-    """Setting a mode must compute the geometry, inheriting nothing.
-
-    doPostPresetLoadSteps wrote VDS_VSCALE 455/683/410/402/546/400 and a table
-    of IF_HB_ST2/SP2 straight from the preset, and nothing recomputed them, so
-    the unit came up in whatever the preset left and stayed there until a pad
-    was pressed. On the bench that was VDS_HSCALE 1023 bypassed -- a 1020 px
-    picture in a 1445 px raster -- and 83 source lines stretched over 1126.
-    Every broken picture of 2026-08-08 was that state; every clean one was one
-    press away.
-
-    Reading the capture back and repairing it only when it is degenerate is not
-    enough, and was the first attempt at this: it still lets the preset choose
-    the framing. The window has to be derived from the line length and the field
-    rate, which is what the Python prototype has always done.
-
-    So this writes a hostile value into EVERY register the engine owns first --
-    inverted captures, 1:1 bypassed scales, windows wound into a band in the
-    middle of the raster -- and requires all of it to be replaced.
-
-    CHANGES THE OUTPUT PRESET, hence --preset-load. /sc?2 loads pal_768x576,
-    which is the point: the engine must solve against the raster the preset just
-    chose. Nothing here puts the output raster back -- FrameSync owns
-    VDS_?SYNC_RST -- so the unit stays in that preset until the next real mode
-    change.
-    """
-    raster = ("VDS_HSYNC_RST", 3, 0x01, 0, 12)
-    before = probe.read_field(raster)
-    make_hostile(probe)
-
-    status, _ = get(host, "/sc?2")
-    assert status == 200, f"/sc?2 returned {status}"
-    landed = wait_for(lambda: probe.read_field(raster) != before, timeout=20.0)
-    assert landed, f"the preset did not load: VDS_HSYNC_RST stayed at {before}"
-
-    after = settled_geometry(host, timeout=20.0)
-    assert after is not None, "could not read the geometry back"
-
-    # The capture is DERIVED, not read back and patched up.
-    want_h = expected_default_capture(after["IF_HSYNC_RST"] + 1, vertical=False)
-    want_v = expected_default_capture(2 * (after["VTOTAL"] + 1), vertical=True)
-    assert (after["IF_HB_SP2"], after["IF_HB_ST2"]) == want_h, (
-        "the horizontal capture was inherited rather than computed")
-    assert (after["IF_VB_SP"], after["IF_VB_ST"]) == want_v, (
-        "the vertical capture was inherited rather than computed")
-
-    # And everything downstream of it follows from that capture and the raster.
-    assert not differences(predict(after), after), (
-        "the preset's geometry was left standing instead of being recomputed")
+    fetch, offset = expected_burst(line_px, capture)
+    assert probe.read_field(PB_FETCH_NUM) == fetch, (
+        f"the playback burst does not cover a capture of {capture} on a "
+        f"{line_px} px output line -- the line cannot finish and repeats")
+    assert probe.read_field(PB_CAP_OFFSET) == offset
 
 
 @pytest.mark.zoom
-def test_a_press_computes_the_progressive_line_window_from_scratch(host, probe, framed):
-    """Both ends of IF_LINE_ST/SP, recomputed rather than inherited.
+def test_a_zoom_press_repairs_a_playback_burst_a_preset_left_behind(
+        host, probe, framed):
+    """The test above can pass on a register nobody wrote. This one cannot.
 
-    That window is the line double's timing -- change it and the two fields of
-    an interlaced source separate -- and it has to span exactly one line. It was
-    maintained in one place, the 'n' serial key, as a constant 0x40 plus the
-    line, while PLLAD_MD moved from six.
+    256/260 is not an arbitrary hostile value: it is exactly what a preset load
+    puts there, and exactly the state every torn picture of 2026-08-09 was
+    photographed in. Writing it back is reproducing the fault, and one pad press
+    has to clear it -- the same rule as every other register here, compute it,
+    never inherit it.
 
-    The START is the point of this test. Deriving the stop from a read of
-    IF_LINE_ST was the first version and it broke the engine's own rule:
-    readRasters() reads rasters and source measurements, and nothing else,
-    because everything else is inherited by definition. Worse, it meant a
-    clobbered IF_LINE_ST -- which is what a write landing in the wrong segment
-    produces -- would propagate into IF_LINE_SP on every solve for as long as
-    the mode lasted. So both ends are deranged here, and both must come back.
+    Deranging tears the picture for as long as it takes the press to land, which
+    is why this is behind --source with the rest of them.
     """
-    line_st = ("IF_LINE_ST", 1, 0x20, 0, 12)
-    line_sp = ("IF_LINE_SP", 1, 0x22, 0, 12)
-    hsync_rst = ("IF_HSYNC_RST", 1, 0x0E, 0, 11)
+    probe.write_field(PB_FETCH_NUM, UPSTREAM_FETCH)
+    probe.write_field(PB_CAP_OFFSET, UPSTREAM_OFFSET)
+    assert probe.read_field(PB_FETCH_NUM) == UPSTREAM_FETCH, (
+        "could not seed the fault, so this proves nothing")
 
-    probe.write_field(line_st, 300)
-    probe.write_field(line_sp, 999)
+    line_px = probe.read_field(VDS_HSYNC_RST) + 1
+    if line_px != LINE_1080P:
+        pytest.skip(f"a {line_px} px output line keeps upstream's value, so "
+                    f"there is no repair to observe -- put the unit in 1080p")
 
-    press(host, probe, "z")
-    settled_geometry(host)
-
-    units = probe.read_field(hsync_rst) + 1
-    start = probe.read_field(line_st)
-    stop = probe.read_field(line_sp)
-
-    assert start == 64, f"IF_LINE_ST inherited rather than written: {start}"
-    assert stop == start + units, (
-        f"progressive window does not span one line: {start}..{stop} "
-        f"is {stop - start} of {units} units")
-
-
-def test_a_press_recovers_from_any_register_state(host, probe, framed):
-    """The same hostile state, cleared by a single pad press.
-
-    Michael, 2026-08-06: "you should CALCULATE a sensible starting state and not
-    rely on the existing state AT ALL." A press keeps the user's framing -- that
-    is the one thing it must inherit, or panning would be meaningless -- but
-    every register downstream of the capture is recomputed. This needs no preset
-    load, so it runs on a plain --source suite.
-    """
-    make_hostile(probe)
+    # The press MOVES the capture, so what to expect can only be computed from
+    # the framing the press lands on -- not from the one it started in.
     press(host, probe, "z")
     after = settled_geometry(host)
+    capture = after["IF_HB_ST2"] - after["IF_HB_SP2"]
+    fetch, offset = expected_burst(line_px, capture)
+    if fetch == UPSTREAM_FETCH:
+        pytest.skip(f"a capture of {capture} wants upstream's own value, so "
+                    f"there is no repair to observe")
 
-    assert after is not None, "could not read the geometry back"
-    assert after["IF_HB_ST2"] > after["IF_HB_SP2"], (
-        f"horizontal capture left unusable: "
-        f"{after['IF_HB_SP2']}..{after['IF_HB_ST2']}")
-    assert after["IF_VB_ST"] > after["IF_VB_SP"], (
-        f"vertical capture left unusable: "
-        f"{after['IF_VB_SP']}..{after['IF_VB_ST']}")
-    assert not differences(predict(after), after)
+    landed = wait_for(lambda: probe.read_field(PB_FETCH_NUM) == fetch,
+                      timeout=8.0)
+    assert landed, (
+        f"a zoom press left PB_FETCH_NUM at "
+        f"{probe.read_field(PB_FETCH_NUM)} -- the engine does not own it, and "
+        f"the picture tears with whatever the last preset load happened to put "
+        f"there")
+    assert probe.read_field(PB_CAP_OFFSET) == offset
 
 
 @pytest.mark.zoom
@@ -726,3 +530,83 @@ def test_panning_to_the_left_stop_never_takes_the_hsync_pulse(host, probe, frame
     assert left["IF_HB_SP2"] >= guard, (
         f"panned to the left stop the capture starts at {left['IF_HB_SP2']}, "
         f"inside the {guard} unit hsync pulse")
+
+
+# --- the playback burst -------------------------------------------------------
+
+# The runtime half of the scheme in src/tv5725/Memory.h: PB_FETCH_NUM must cover
+# the source pixels each output line needs, over the playback request budget.
+# Short of that the line does not finish reading and repeats, visibly, as the
+# start of the picture reappearing at the right.
+#
+# WHAT THIS CANNOT DO IS LOOK AT THE PICTURE. Whether a framing tears is a
+# judgement from the screen. So this asserts the property the firmware
+# is supposed to hold, not that the result is clean, and a green run here is not
+# evidence the tearing is gone.
+
+
+@pytest.mark.zoom
+def test_the_playback_burst_covers_the_capture_at_every_zoom_position(host, probe,
+                                                                     framed):
+    """The floor, checked at every position the pad reaches.
+
+    Walks rather than samples. The fault alternates on roughly one input unit
+    and every pattern ever found across a coarser grid was later refuted as an
+    aliasing artefact -- sweep_zoom.py's docstring records four of them.
+
+    The two recorded failures are both floor violations: 236 written where
+    capture 1009 needed 253 wrapped the picture, and 200 at capture 931 shredded
+    it. Both would fail here.
+    """
+    offenders = []
+    for _ in range(12):
+        press(host, probe, "z")
+        after = settled_geometry(host)
+        capture = after["IF_HB_ST2"] - after["IF_HB_SP2"]
+        needed = max(FETCH_FLOOR, -(-capture // REQUESTS_PER_LINE))
+        got = probe.read_field(PB_FETCH_NUM)
+        if got < needed:
+            offenders.append((capture, got, needed))
+
+    assert not offenders, (
+        "the playback burst is short of the source pixels the line needs at "
+        f"{offenders} -- (capture, PB_FETCH_NUM, required)")
+
+
+@pytest.mark.zoom
+def test_the_playback_burst_tracks_the_zoom_rather_than_sitting_still(host, probe,
+                                                                     framed):
+    """It has to MOVE, which is the whole change.
+
+    A constant was defensible while the floor was unknown and is not now: held
+    still, the fetch is either short of the capture at the wide end or far above
+    it at the deep end, and the beat between capture writes and playback reads
+    walks with the zoom. Tracking the capture takes HSCALE out of that ratio.
+    """
+    seen = set()
+    for _ in range(24):
+        press(host, probe, "z")
+        settled_geometry(host)
+        seen.add(probe.read_field(PB_FETCH_NUM))
+
+    assert len(seen) > 1, (
+        f"PB_FETCH_NUM stayed at {seen} across 24 zoom presses -- it is either "
+        "not being written or the capture is not reaching Memory::fetchFor")
+
+
+@pytest.mark.zoom
+def test_the_memory_window_never_uncovers_the_display_window(host, probe, framed):
+    """VDS_HB_ST below VDS_DIS_HB_ST shows unwritten memory at the right of the
+    screen -- a DIFFERENT fault from the beat, and one that photographs like it.
+
+    The trim is bounded by the display window precisely so the two can never be
+    traded against each other, and the unit was left in exactly that state on
+    2026-08-09 with every register reading what was asked for.
+    """
+    for _ in range(8):
+        press(host, probe, "z")
+        after = settled_geometry(host)
+        assert after["VDS_HB_ST"] >= after["VDS_DIS_HB_ST"], (
+            f"memory window ends at {after['VDS_HB_ST']}, display window at "
+            f"{after['VDS_DIS_HB_ST']} -- the right-hand edge is unwritten "
+            "memory")

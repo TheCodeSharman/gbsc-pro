@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_CONTROLS_H_
-#define GEOMETRY_CONTROLS_H_
+#ifndef TV5725_CONTROLS_H_
+#define TV5725_CONTROLS_H_
 
 // What a user press means, and the only place output pixels become input units.
 //
@@ -43,4 +43,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_CONTROLS_H_
+#endif  // TV5725_CONTROLS_H_

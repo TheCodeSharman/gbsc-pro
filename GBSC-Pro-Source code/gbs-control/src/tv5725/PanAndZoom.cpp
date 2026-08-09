@@ -1,5 +1,7 @@
 #include "PanAndZoom.h"
 
+#include "Scale.h"
+
 #include <math.h>
 
 namespace Tv5725 {
@@ -57,12 +59,15 @@ uint16_t PanAndZoom::defaultWidth(const InputLine &line, float fieldRateHz,
     if (vertical)
         fraction = fieldRateHz < 55.0f ? DefaultVActiveFraction50Hz
                                        : DefaultVActiveFraction60Hz;
+    // No raster here: the DEFAULT width is a property of the line alone, and
+    // the scale floor is applied by the callers that know the raster.
     return (uint16_t)clampWidth(
-        lrintf(line.units() * fraction * OverCapture), line);
+        lrintf(line.units() * fraction * OverCapture), line, 0,
+        vertical ? AxisVertical : AxisHorizontal);
 }
 
 CaptureWindow PanAndZoom::capture(const InputLine &line, float fieldRateHz,
-                        bool vertical) const
+                        bool vertical, uint16_t rasterTotal) const
 {
     if (line.units() == 0)
         return CaptureWindow();
@@ -71,7 +76,8 @@ CaptureWindow PanAndZoom::capture(const InputLine &line, float fieldRateHz,
     int16_t pan = vertical ? panV_ : panH_;
 
     long width = clampWidth(
-        (long)defaultWidth(line, fieldRateHz, vertical) - zoomUnits, line);
+        (long)defaultWidth(line, fieldRateHz, vertical) - zoomUnits, line,
+        rasterTotal, vertical ? AxisVertical : AxisHorizontal);
 
     long start = (long)(line.units() - width) / 2 + pan;
     if (start < (long)line.firstCapture())
@@ -81,7 +87,8 @@ CaptureWindow PanAndZoom::capture(const InputLine &line, float fieldRateHz,
     return CaptureWindow((uint16_t)start, (uint16_t)(start + width));
 }
 
-void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vertical)
+void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vertical,
+                          uint16_t rasterTotal)
 {
     if (line.units() == 0)
         return;
@@ -93,7 +100,8 @@ void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vert
     int16_t &pan = vertical ? panV_ : panH_;
 
     long full = defaultWidth(line, fieldRateHz, vertical);
-    long width = clampWidth(full - zoomUnits, line);
+    long width = clampWidth(full - zoomUnits, line, rasterTotal,
+                            vertical ? AxisVertical : AxisHorizontal);
     zoomUnits = (int16_t)(full - width);
 
     long centre = (long)(line.units() - width) / 2;
@@ -105,13 +113,26 @@ void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vert
     pan = (int16_t)(start - centre);
 }
 
-long PanAndZoom::clampWidth(long width, const InputLine &line)
+long PanAndZoom::clampWidth(long width, const InputLine &line, uint16_t rasterTotal,
+                         const Axis &axis)
 {
     if (width > (long)line.capturable())
         return line.capturable();
-    if (width < (long)MinimumCapture)
-        return MinimumCapture;
-    return width;
+
+    // Two floors, and the scale's is usually the higher. MinimumCapture stops
+    // the control cropping to nothing; Axis::minimumCapture stops it cropping
+    // past what the magnification can put back, which without it letterboxes
+    // instead of stopping. Measured: a 1126 vertical raster floors at 282, and
+    // 282 is exactly the last capture that filled the screen.
+    long floor = (long)MinimumCapture;
+    if (rasterTotal > 0) {
+        long scaleFloor = (long)axis.minimumCapture(rasterTotal);
+        if (scaleFloor > floor)
+            floor = scaleFloor;
+    }
+
+
+    return width < floor ? floor : width;
 }
 
 }  // namespace Tv5725

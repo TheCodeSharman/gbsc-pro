@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_SCALE_H_
-#define GEOMETRY_SCALE_H_
+#ifndef TV5725_SCALE_H_
+#define TV5725_SCALE_H_
 
 // VDS_?SCALE: the register, what it magnifies by, and what it produces.
 #include <stdint.h>
@@ -9,6 +9,9 @@ namespace Tv5725 {
 class Scale {
 public:
     static const uint16_t Unity = 1024;
+
+    // The register's own limits. How far an AXIS is willing to magnify is a
+    // picture-quality judgement, so it lives on Axis -- see Axis::scaleMin.
     static const uint16_t Min = 256;
     static const uint16_t Max = 1023;
 
@@ -43,4 +46,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_SCALE_H_
+#endif  // TV5725_SCALE_H_

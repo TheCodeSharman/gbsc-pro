@@ -1,5 +1,5 @@
-#ifndef GEOMETRY_PLACEMENT_H_
-#define GEOMETRY_PLACEMENT_H_
+#ifndef TV5725_PICTURE_ORIGIN_H_
+#define TV5725_PICTURE_ORIGIN_H_
 
 // Where the picture lands on the raster, and the register that puts it there.
 #include <stdint.h>
@@ -19,4 +19,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // GEOMETRY_PLACEMENT_H_
+#endif  // TV5725_PICTURE_ORIGIN_H_
