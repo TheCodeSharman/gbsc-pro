@@ -45,7 +45,7 @@ Finding = collections.namedtuple("Finding", "name value limit because")
 # the positions measured against it.
 GROUPS = [
     ("IF_HSYNC_RST", lambda t: t + 1, "IF_HSYNC_RST + 1", [
-        "IF_HB_ST", "IF_HB_SP", "IF_HB_SP1", "IF_HB_ST2", "IF_HB_SP2",
+        "IF_HB_ST", "IF_HB_SP", "IF_HB_ST1", "IF_HB_SP1", "IF_HB_ST2", "IF_HB_SP2",
         "IF_LINE_ST", "IF_LINE_SP", "IF_HBIN_ST", "IF_HBIN_SP"]),
     ("STATUS_SYNC_PROC_VTOTAL", lambda t: 2 * (t + 1), "2 x (VTOTAL + 1)", [
         "IF_VB_ST", "IF_VB_SP", "IF_INI_ST"]),

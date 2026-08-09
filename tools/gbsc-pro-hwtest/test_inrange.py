@@ -12,7 +12,7 @@ import inrange
 BENCH = {
     "IF_HSYNC_RST": 1276, "STATUS_SYNC_PROC_VTOTAL": 311,
     "VDS_HSYNC_RST": 1444, "VDS_VSYNC_RST": 1125, "PLLAD_MD": 2553,
-    "IF_HB_ST": 258, "IF_HB_SP": 72, "IF_HB_SP1": 72,
+    "IF_HB_ST": 258, "IF_HB_SP": 72, "IF_HB_ST1": 1088, "IF_HB_SP1": 72,
     "IF_HB_ST2": 1143, "IF_HB_SP2": 134,
     "IF_LINE_ST": 64, "IF_LINE_SP": 1200,
     "IF_HBIN_ST": 0, "IF_HBIN_SP": 272,
@@ -62,6 +62,14 @@ def test_the_last_unit_of_the_line_is_allowed():
     wrap point, so it is legal and units itself is not."""
     assert check(IF_HB_ST2=1276) == []
     assert names(check(IF_HB_ST2=1277)) == ["IF_HB_ST2"]
+
+
+def test_the_blanking_set_the_header_was_missing_is_checked_too():
+    # IF_HB_ST1 was absent from tv5725.h until 2026-08-09, so it was absent from
+    # this check as well -- a register the map never declared has no entry to
+    # look up. Set 1 is loaded by every preset table and written by no code, so
+    # nothing else would ever notice it out of range.
+    assert names(check(IF_HB_ST1=1300)) == ["IF_HB_ST1"]
 
 
 def test_it_catches_the_standing_fault_nobody_had_noticed():
