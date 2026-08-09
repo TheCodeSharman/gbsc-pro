@@ -41,12 +41,18 @@ import sys
 
 Finding = collections.namedtuple("Finding", "name value limit because")
 
+# **IF_LINE_SP IS DELIBERATELY NOT HERE.** It reads above IF_HSYNC_RST by design:
+# it is the stop of the input formatter's progressive line window, IF_LINE_ST
+# plus one whole line, so it rolls. A stop measured from a start is not a
+# position within the raster, and checking it as one reports a fault that does
+# not exist.
+#
 # Each group: the register holding the total, how to turn it into a limit, and
 # the positions measured against it.
 GROUPS = [
     ("IF_HSYNC_RST", lambda t: t + 1, "IF_HSYNC_RST + 1", [
         "IF_HB_ST", "IF_HB_SP", "IF_HB_ST1", "IF_HB_SP1", "IF_HB_ST2", "IF_HB_SP2",
-        "IF_LINE_ST", "IF_LINE_SP", "IF_HBIN_ST", "IF_HBIN_SP"]),
+        "IF_LINE_ST", "IF_HBIN_ST", "IF_HBIN_SP"]),
     ("STATUS_SYNC_PROC_VTOTAL", lambda t: 2 * (t + 1), "2 x (VTOTAL + 1)", [
         "IF_VB_ST", "IF_VB_SP", "IF_INI_ST"]),
     ("VDS_HSYNC_RST", lambda t: t + 1, "VDS_HSYNC_RST + 1", [

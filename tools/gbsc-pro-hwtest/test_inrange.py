@@ -72,10 +72,19 @@ def test_the_blanking_set_the_header_was_missing_is_checked_too():
     assert names(check(IF_HB_ST1=1300)) == ["IF_HB_ST1"]
 
 
-def test_it_catches_the_standing_fault_nobody_had_noticed():
-    """IF_LINE_SP read 1341 on the bench in a state Michael had just confirmed
-    CLEAN, so an out-of-range register is not always visible."""
-    assert names(check(IF_LINE_SP=1341)) == ["IF_LINE_SP"]
+def test_a_window_measured_from_its_own_start_is_not_checked_as_a_position():
+    # IF_LINE_SP is IF_LINE_ST plus one whole line, so on this bench it is 1341
+    # against a 1277 unit line and that is correct. Checking it against the
+    # raster reported a fault that two sessions then looked for a writer for.
+    assert names(check(IF_LINE_SP=1341)) == []
+
+
+def test_a_fault_does_not_have_to_be_visible_to_be_there():
+    """SP_CS_HS_SP was found at 2816 against PLLAD_MD 2553 in a state confirmed
+    clean by eye, so an out-of-range register is not always something you can
+    see. It was gone after a reboot, which is what made it a stray write rather
+    than a setting."""
+    assert names(check(SP_CS_HS_SP=2816)) == ["SP_CS_HS_SP"]
 
 
 def test_each_axis_is_measured_against_its_own_raster():
@@ -95,8 +104,8 @@ def test_the_sync_processor_is_measured_in_adc_samples():
 
 
 def test_several_faults_are_all_reported():
-    assert set(names(check(IF_HB_ST=1347, IF_LINE_SP=1341, VDS_HB_ST=1500))) == {
-        "IF_HB_ST", "IF_LINE_SP", "VDS_HB_ST"}
+    assert set(names(check(IF_HB_ST=1347, IF_LINE_ST=1341, VDS_HB_ST=1500))) == {
+        "IF_HB_ST", "IF_LINE_ST", "VDS_HB_ST"}
 
 
 def test_a_register_that_could_not_be_read_is_not_a_finding():

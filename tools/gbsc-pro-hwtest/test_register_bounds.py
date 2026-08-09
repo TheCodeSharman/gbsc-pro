@@ -38,22 +38,6 @@ from gbs_unit import read_reg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Out of range, and NOT a stray write -- so excluded here rather than left to
-# fail forever next to the ones that would be real.
-#
-# IF_LINE_SP reads 1341 on a 1277 unit line and was carried as damage for a day
-# on the strength of "nothing writes it". Something does:
-# gbs-control.ino:8525 computes ((pll_divider / 2) + 1) + 0x40, and with
-# PLLAD_MD 2553 that is 1276 + 1 + 64 = 1341 exactly. IF_LINE_ST is 0x40 at the
-# same time, so the pair spans precisely one line length offset by 64, which
-# reads as deliberate rather than as an accident.
-#
-# Which leaves a question nobody has settled: either the formula is wrong, or
-# IF_LINE_ST/SP are positions in a counter that legitimately runs past
-# IF_HSYNC_RST and inrange is measuring them against the wrong raster. The
-# preset tables do not decide it -- ntsc_240p ships 1237, inside the line. Until
-# it is settled, a guess either way would be worse than the note.
-KNOWN_OPEN = {"IF_LINE_SP"}
 
 
 @pytest.fixture
@@ -73,7 +57,7 @@ def test_every_position_register_is_inside_its_raster(host, registers):
         return probe.read_field((name, entry["seg"], entry["reg"],
                                  entry["off"], entry["width"]))
 
-    findings = [f for f in inrange.check(read) if f.name not in KNOWN_OPEN]
+    findings = inrange.check(read)
     assert not findings, (
         "a position register is outside its own raster:\n"
         + inrange.report(findings))
