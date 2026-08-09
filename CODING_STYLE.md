@@ -15,7 +15,7 @@ State and the operations on it go in a class, with the state **private**.
 ```cpp
 // no
 namespace Geometry { struct Axis { float startConst; ... }; }
-static Geometry::Framing geometryFraming;          // mutable static IN A HEADER
+static Tv5725::Framing geometryFraming;          // mutable static IN A HEADER
 inline Fit fitToRaster(uint16_t capture, uint16_t raster, const Axis &axis);
 
 // yes
@@ -56,9 +56,63 @@ Deep hierarchies and template metaprogramming make low-level concerns
 unreviewable, which on an ESP8266 with 80 KB of RAM is the thing you least want
 to lose sight of. `tv5725.h` already spends the project's entire template budget.
 
+## `src/tv5725/` is the driver, and the name is the boundary
+
+Renamed from `src/tv5725/` on 2026-08-09, because the old name was refusing
+work that belonged there. `PLLAD_MD` sets the ADC sampling rate, `PB_FETCH_NUM`
+sets the memory read burst — neither is "geometry", both are computed from the
+same model, and both were left inherited from preset tables for exactly that
+reason. Every fault of that evening was in the inherited set.
+
+**It is a device driver, not a geometry engine**, and naming it one is what
+stops other registers feeling out of scope. The DRM comparison settles it:
+display drivers compute PLL dividers, blanking and memory FIFO watermarks, and
+`PB_FETCH_NUM` is a watermark. Three layers result:
+
+| layer | what | where |
+|---|---|---|
+| bus | how to get a byte to the chip: banking and the queue | `src/net/RegisterQueue`, `tv5725.h` |
+| **driver** | **what the chip needs: sampling, capture, memory, playback, output timing** | **`src/tv5725/`** |
+| board | anything spanning two devices, or not the TV5725 at all | the sketch, for now |
+
+The bus layer is `regmap`, not the driver — a driver is the thing that knows
+what the device needs.
+
+**The boundary is what the TV5725 can decide alone.** `ADC_INPUT_SEL` is a
+TV5725 register and belongs here; *selecting an input* does not, because
+`ASW_01`-`ASW_04` live on the HC32F460, are reached over UART and are
+write-only. Two muxes in series, two microcontrollers. No TV5725 driver should
+know about a UART to another chip — see CLAUDE.md, "The system has three
+control domains".
+
+That is a boundary with a reason behind it, which is what `geometry` lacked: it
+excluded `PLLAD_MD` on the strength of a word.
+
+### `GBS::Tv5725` is not available, and the reason is worth knowing
+
+The obvious nesting — one project namespace, the driver inside it — was tried
+and **does not compile**:
+
+```
+gbs_types.h:12:   typedef class TV5725<23u> GBS;
+error: 'namespace GBS' redeclared as different kind of symbol
+```
+
+**`GBS` is not a namespace. It is a typedef for a class template
+instantiation**, and `GBS::VDS_HSCALE` resolves by *class member* lookup. A
+namespace cannot be opened inside it. Note the host tests compile happily
+either way, because the pure-arithmetic files never include `gbs_types.h`; only
+the firmware build catches it.
+
+So `Tv5725` sits at the top level beside the `GBS` typedef, and yes, that is
+the chip named twice. It is transitional: `Tv5725` is the eventual home of every
+register set behind one abstraction. Moving the catalogue behind it is the change
+that resolves the duplication, and it reaches 2021 call sites, so it waits for a
+reason better than tidiness.
+
 ## One class per file, named after the class — `ClassName.h`
 
-`src/tv5725/Scale.h` holds `Geometry::Scale` and nothing else, and
+`src/tv5725/Scale.h` holds `Tv5725::Scale` and nothing else, and
 `src/tv5725/Scale.cpp` holds its definitions. If you are looking for an
 implementation, it is in the file named after the class.
 
@@ -68,10 +122,10 @@ Arduino's convention — `WiFiClient.h`, `HardwareSerial.h`, `OLEDDisplay.h`, an
 the Arduino Library Specification — and it is already what `OSDManager.cpp` and
 `OLEDMenuManager.cpp` do here. The geometry was briefly `axis_solution.h` in
 Google style, which made the rule above *approximately* true instead of literally
-true, and left the tree using two conventions at once. Michael, 2026-08-09:
-*"half the files use Capitalisation the other _"*.
+true, and left the tree using two conventions at once -- half the files
+capitalised and half underscored.
 
-**A file that is not a class stays lowercase.** `src/tv5725/driver.h` is an umbrella,
+**A file that is not a class stays lowercase.** `driver.h` is an umbrella,
 `gbs_types.h` is a typedef, `tv5725.h` is a register catalogue — none of them is
 a class, and the lowercase name is what says so at a glance.
 
@@ -191,15 +245,15 @@ gets its own copy.
 
 ## One namespace per module, and everything in it
 
-`Geometry::Scale`, `Geometry::Window`, `Geometry::Fit`, `Geometry::Solution`,
-`Geometry::Axis` — names that generic would collide in a sketch that also pulls
+`Tv5725::Scale`, `Tv5725::Window`, `Tv5725::Fit`, `Tv5725::Solution`,
+`Tv5725::Axis` — names that generic would collide in a sketch that also pulls
 in Arduino, an OLED driver and WebSockets. That is what the namespace is for and
 it earns its keep.
 
 **What does not earn its keep is using it for half the module.** `GeometryEngine`,
 `GeometryControls` and `GeometryCapture` sat *outside* `namespace Geometry` and
 paid a `Geometry` prefix instead, so one module had two mechanisms for one job.
-They are now `Geometry::Engine`, `Geometry::Controls` and `Geometry::Capture`,
+They are now `Tv5725::Engine`, `Tv5725::Controls` and `Tv5725::Capture`,
 and the stutter is gone.
 
 A namespace is all-or-nothing. If a type belongs to the module, it goes in.
