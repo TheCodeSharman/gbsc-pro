@@ -30,6 +30,7 @@ BOOTLOG_BYTES ?= 0
 #   make -C build flash GBS_TRACE_WRITES=1
 GBS_TRACE_WRITES ?= 0
 
+
 FQBN := esp8266:esp8266:nodemcuv2:xtal=80,eesz=4M2M,ssl=all,exception=legacy,ip=lm2f,vt=flash,dbg=Disabled,lvl=None____,wipe=none
 
 # Not in the Arduino registry, so installed by git URL. The maintained forks

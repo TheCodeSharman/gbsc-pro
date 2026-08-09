@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry hold-ramp clean help
+.PHONY: all test geometry hold-ramp segment-select register-queue clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -52,8 +52,32 @@ hold-ramp:
 	  "$(HERE)/test_hold_ramp.cpp" src/input/HoldRamp.cpp
 	@"$(OUT)/test_hold_ramp"
 
+## segment-select: host unit tests for the TV5725 segment pointer in tw.h
+#
+# tw.h needs only <Wire.h>, so test/fake supplies one backed by an in-memory
+# model of the six register banks behind the pointer at 0xF0. That is what makes
+# this testable off the board at all: the question is which bank a write landed
+# in, and the fake can answer it where an HTTP register read never could.
+segment-select:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" -o "$(OUT)/test_segment_select" \
+	  "$(HERE)/test_segment_select.cpp"
+	@"$(OUT)/test_segment_select"
+
+
+## register-queue: host unit tests for the deferred register queue
+#
+# The queue is plain bookkeeping with no Arduino dependency, deliberately: the
+# delicate part is a request object that the async side can delete while loop()
+# holds it, and that is far cheaper to get right here than on the board.
+register-queue:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_register_queue" \
+	  "$(HERE)/test_register_queue.cpp" src/net/RegisterQueue.cpp
+	@"$(OUT)/test_register_queue"
+
 ## test: every host unit test
-test: geometry hold-ramp
+test: geometry hold-ramp segment-select register-queue
 all: test
 
 ## clean: remove the compiled test binaries

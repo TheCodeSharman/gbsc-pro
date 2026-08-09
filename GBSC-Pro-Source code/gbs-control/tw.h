@@ -350,14 +350,27 @@ namespace tw
         typedef typename Segment::Value SegValue;
 
     private:
+        // Aim the slave's register window, every time, without believing a
+        // cached copy of where it already points.
+        //
+        // This used to skip the write when the segment had not changed since
+        // last time. That is only sound if nothing else can move the pointer,
+        // and on 2026-08-09 the bench disproved it: after a pytest --source run
+        // segment 1 held segment 3's bytes at the same offsets -- IF_HB_ST was
+        // 1348, which is VDS_DIS_HB_ST -- and segment 3 held segment 1's back.
+        // The zigzag that cost an evening was that write. There are at least two
+        // ways it happens, an HTTP handler running from a network callback
+        // between the aim and the access, and a 0xF0 write lost on a bus shared
+        // with the Si5351 and the OLED; a cache that is never revalidated cannot
+        // survive either, and cannot tell you which one it met.
+        //
+        // The cost is one 2-byte transaction per access that would previously
+        // have been skipped. Correct is worth that: the cache made a disturbed
+        // pointer PERMANENT, because every subsequent access to the same segment
+        // agreed with the cache and left the window where it had strayed to.
         static void setSeg(SegValue seg)
         {
-            static SegValue curSeg = Attrs::SegInitial;
-            if (curSeg != seg)
-            {
-                Segment::write(seg);
-                curSeg = seg;
-            }
+            Segment::write(seg);
         }
 
     public:

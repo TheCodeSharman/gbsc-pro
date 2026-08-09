@@ -70,6 +70,7 @@ TV5725
 #include "options.h"
 #include "slot.h"
 #include "osd.h"
+#include "src/net/RegisterQueue.h"
 #include "gbs_types.h"   // typedef TV5725<GBS_ADDR> GBS, in one place
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/Controls.h"
@@ -631,6 +632,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 // Declared here rather than by the .ino prototype generator, which inserts
 // prototypes above the ESPAsyncWebServer.h include where the type is unknown.
 static bool getHexParam(AsyncWebServerRequest *request, const char *name, long limit, long *out);
+static void submitRegisterJob(AsyncWebServerRequest *request, const RegisterQueue::Job &job);
+static void serviceRegisterQueue();
 #endif
 static String presetPathForVideoMode(uint8_t videoMode, Ascii8 slot);
 bool savePresetToFS();
@@ -7726,6 +7729,10 @@ void setup()
 }
 void loop()
 {
+#if GBS_DEBUG
+    serviceRegisterQueue();
+#endif
+
     // Hand the boot backlog to the first console that attaches, so the web
     // console opens on the whole boot rather than starting mid-sentence.
     //
@@ -9574,6 +9581,100 @@ static bool getHexParam(AsyncWebServerRequest *request, const char *name, long l
 }
 #endif
 
+#if GBS_DEBUG
+// The web server's register work, done in loop() so the bus has one owner.
+// Reaching a TV5725 register is two I2C transactions, so an access landing
+// between them uses the segment pointer the first one set.
+// docs/register-bus-ownership.md
+static RegisterQueue registerQueue;
+
+// Park a request for loop() to answer, and arrange for its cancellation.
+//
+// onDisconnect fires from the async side, which is the context that can delete
+// the request while loop() holds it, so registering the callback BEFORE
+// submitting is the ordering that matters: a disconnect between the two would
+// leave a job pointing at freed memory with nothing to cancel it.
+static void submitRegisterJob(AsyncWebServerRequest *request, const RegisterQueue::Job &job)
+{
+    request->onDisconnect([request]() { registerQueue.cancel(request); });
+
+    if (!registerQueue.submit(job)) {
+        // Full. A retryable status beats a parked request nobody answers.
+        request->send(503, "application/json",
+            F("{\"error\":\"register queue full, retry\"}"));
+    }
+}
+
+// Drains ONE job per pass, not all of them: a whole-segment read is 256 accesses
+// and the rest of loop() -- the sync watcher, FrameSync, the OSD -- has to get
+// its turn between them.
+static void serviceRegisterQueue()
+{
+    RegisterQueue::Job job;
+    if (!registerQueue.claim(job)) {
+        return;
+    }
+
+    String body;
+    switch (job.kind) {
+        case RegisterQueue::ReadOne: {
+            char text[64];
+            snprintf_P(text, sizeof(text),
+                PSTR("{\"segment\":%u,\"register\":\"0x%02x\",\"value\":\"0x%02x\"}"),
+                job.segment, job.first, GBS::read(job.segment, job.first));
+            body = text;
+            break;
+        }
+        case RegisterQueue::WriteOne: {
+            uint8_t was = GBS::read(job.segment, job.first);
+            GBS::write(job.segment, job.first, job.value);
+            uint8_t now = GBS::read(job.segment, job.first);
+            char text[96];
+            snprintf_P(text, sizeof(text),
+                PSTR("{\"segment\":%u,\"register\":\"0x%02x\",\"was\":\"0x%02x\",\"value\":\"0x%02x\"}"),
+                job.segment, job.first, was, now);
+            body = text;
+            break;
+        }
+        case RegisterQueue::ReadRange: {
+            String hex;
+            hex.reserve((job.last - job.first + 1) * 2 + 1);
+            for (uint16_t reg = job.first; reg <= job.last; reg++) {
+                char pair[3];
+                snprintf_P(pair, sizeof(pair), PSTR("%02x"), GBS::read(job.segment, (uint8_t)reg));
+                hex += pair;
+                if ((reg & 0x0f) == 0x0f) {
+                    ESP.wdtFeed();
+                }
+            }
+            body.reserve(hex.length() + 64);
+            body += F("{\"segment\":");
+            body += job.segment;
+            body += F(",\"from\":");
+            body += job.first;
+            body += F(",\"to\":");
+            body += job.last;
+            body += F(",\"values\":\"");
+            body += hex;
+            body += F("\"}");
+            break;
+        }
+        default:
+            registerQueue.complete();
+            return;
+    }
+
+    // Ask AFTER the transfer and before answering. The client may have gone
+    // while we were on the bus, and the server deletes the request as soon as
+    // its disconnect callback returns -- answering then writes into freed
+    // memory, which is a crash that costs a trip to the bench.
+    if (!registerQueue.claimCancelled()) {
+        static_cast<AsyncWebServerRequest *>(job.token)->send(200, "application/json", body);
+    }
+    registerQueue.complete();
+}
+#endif
+
 void startWebserver()
 {
 
@@ -9663,29 +9764,13 @@ void startWebserver()
             return;
         }
 
-        String hex;
-        hex.reserve((to - from + 1) * 2 + 1);
-        for (long reg = from; reg <= to; reg++) {
-            char pair[3];
-            snprintf_P(pair, sizeof(pair), PSTR("%02x"), GBS::read(segment, reg));
-            hex += pair;
-            if ((reg & 0x0f) == 0x0f) {
-                ESP.wdtFeed();
-            }
-        }
-
-        String body;
-        body.reserve(hex.length() + 64);
-        body += F("{\"segment\":");
-        body += segment;
-        body += F(",\"from\":");
-        body += from;
-        body += F(",\"to\":");
-        body += to;
-        body += F(",\"values\":\"");
-        body += hex;
-        body += F("\"}");
-        request->send(200, "application/json", body);
+        RegisterQueue::Job job;
+        job.kind = RegisterQueue::ReadRange;
+        job.token = request;
+        job.segment = (uint8_t)segment;
+        job.first = (uint8_t)from;
+        job.last = (uint8_t)to;
+        submitRegisterJob(request, job);
     });
 
     server.on("/getreg", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -9696,10 +9781,12 @@ void startWebserver()
             return;
         }
 
-        char body[64];
-        snprintf_P(body, sizeof(body), PSTR("{\"segment\":%ld,\"register\":\"0x%02lx\",\"value\":\"0x%02x\"}"),
-            segment, reg, GBS::read(segment, reg));
-        request->send(200, "application/json", body);
+        RegisterQueue::Job job;
+        job.kind = RegisterQueue::ReadOne;
+        job.token = request;
+        job.segment = (uint8_t)segment;
+        job.first = (uint8_t)reg;
+        submitRegisterJob(request, job);
     });
 
     server.on("/setreg", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -9711,15 +9798,13 @@ void startWebserver()
             return;
         }
 
-        uint8_t was = GBS::read(segment, reg);
-        GBS::write(segment, reg, (uint8_t)value);
-        uint8_t now = GBS::read(segment, reg);
-
-        char body[96];
-        snprintf_P(body, sizeof(body),
-            PSTR("{\"segment\":%ld,\"register\":\"0x%02lx\",\"was\":\"0x%02x\",\"value\":\"0x%02x\"}"),
-            segment, reg, was, now);
-        request->send(200, "application/json", body);
+        RegisterQueue::Job job;
+        job.kind = RegisterQueue::WriteOne;
+        job.token = request;
+        job.segment = (uint8_t)segment;
+        job.first = (uint8_t)reg;
+        job.value = (uint8_t)value;
+        submitRegisterJob(request, job);
     });
 #endif
 
