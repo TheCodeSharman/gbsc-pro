@@ -384,6 +384,39 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **Don't read the scaler's raster as what the TV sees.** The MS9288A samples
   the analog output and re-encodes it, so `VDS_HSYNC_RST` and friends describe
   the scaler's own timing, not the HDMI mode the display locks to.
+- **Read `s0_49` before chasing any output register — half the output pads are
+  off.** The MS9288A takes the analog RGB output plus HSOUT/VSOUT, so the digital
+  video output port is never driven, and the preset tables switch it off:
+
+  | `s0_49` bit | | every scaling preset |
+  |---|---|---|
+  | 0 | `PAD_CKIN_ENZ` | 0 — external clock in, **enabled** |
+  | 1 | `PAD_CKOUT_ENZ` | 1 — CLKOUT pin, **disabled** |
+  | 2 | `PAD_SYNC_OUT_ENZ` | 0 — HSOUT/VSOUT, **enabled** |
+  | 3 | `PAD_BLK_OUT_ENZ` | 1 — HBOUT/VBOUT, **disabled** |
+
+  Two consequences that have each cost time. **`VDS_EXT_HB_*` and `VDS_EXT_VB_*`
+  do nothing.** They program the HBOUT/VBOUT blanking ("this blanking is for
+  external used") and those pins are off; `VDS_SYNC_IN_SEL` is 0 as well, so the
+  VDS takes sync from the IF module and there is no internal consumer either.
+  `applyPresets()` copies `VDS_DIS_?B_*` into them (`gbs-control.ino:4097`) and
+  nothing refreshes them afterwards, so they are *always* stale after the first
+  pad press — measured at `EXT_HB` 348..1356 against `DIS_HB` 99..1501, with a
+  perfect picture. Michael had already reached the same answer the other way:
+  *"I played with the external `VDS_EXT_HB_*` etc and nothing happened."* Do not
+  add them to a solver and do not suspect them for an edge artefact.
+
+  And **the datasheet's 108 MHz `CLKOUT` rating is a pad spec for a pin nobody
+  loads**, so it is not the proven limit on the display clock. What bounds the
+  internal VCLK is stated nowhere; the divider register offers 129.6 MHz and
+  162 MHz above it, and `ntsc_1280x1024`/`ntsc_240p` already ship `0xA5`. Treat
+  108 MHz as the largest value with evidence (Tvia's own tested condition, and a
+  raster running 108.23 MHz on this bench) rather than as a wall.
+  `src/tv5725/DisplayClock.h`.
+
+  The live trap is the inverse: `ofw_RGBS` and `ofw_ypbpr` are the only presets
+  that **clear** bit 3, so loading either brings HBOUT/VBOUT alive carrying
+  whatever stale window was left behind.
 
 ## Working with the unit
 
