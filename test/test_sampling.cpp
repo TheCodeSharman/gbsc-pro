@@ -122,14 +122,20 @@ TEST_CASE("an oversample ratio of zero is treated as one")
 
 TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
 {
-    // A mode change reloads a preset and rebuilds the picture, so a write there
-    // costs nothing visible; a write during a zoom reprograms the sampling under
-    // a picture the user is watching. So this moves at a mode change and never
-    // at a zoom.
+    // On a mode change, never on a zoom -- the same rule PB_FETCH_NUM follows.
+    // A mode change rebuilds the picture anyway; a write during a zoom
+    // reprograms the sampling under a picture the user is watching.
     const uint32_t BenchLine = 15550;   // VTOTAL 311 at 50 Hz
     const uint8_t Oversample = 4;
 
-    SUBCASE("and it still samples every mode that gets scaled at all") {
+    SUBCASE("the ADC rating is what binds, at every line rate") {
+        // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, and 85% of that is 2212.
+        // 31500 Hz: room for 1285, and 85% is 1092.
+        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) == 2212);
+        CHECK(Sampling::recommendedDivider(31500, Oversample) == 1092);
+    }
+
+    SUBCASE("it samples every mode that gets scaled at all") {
         // It has to resolve the widest source the scaler ever sees, and anything
         // over 535 lines is trapped in RGBHV bypass and never reaches the sampler
         // (docs/rgbhv-bypass-trap.md), so 640x512 and 800x512 are the widest that
@@ -139,6 +145,16 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         uint16_t active = (uint16_t)(chosen * 0.76f * 1.04f);
         CHECK(active >= 800);                  // 1:1 on the widest scaled mode
         CHECK(active >= 2 * 640);              // and 2x on the common one
+    }
+
+    SUBCASE("the bench divider is above what the rating recommends") {
+        // The unit runs PLLAD_MD 2553 against a 2212 recommendation -- 98% of the
+        // 162 MSPS rating rather than 85%, measured 2026-08-11. Recorded because
+        // wiring this class in would LOWER the divider, and that is a real
+        // trade against sampling headroom rather than a free fix.
+        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) < 2553);
+        CHECK(Sampling::withinLimit(2553, BenchLine, Oversample));
+        CHECK_FALSE(Sampling::withinLimit(2604 + 1, BenchLine, Oversample));
     }
 
     SUBCASE("a line rate nobody can measure yields nothing, not a guess") {

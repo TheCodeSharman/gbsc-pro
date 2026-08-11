@@ -44,8 +44,6 @@ public:
     // brief PLL unlock was seen; a ceiling is not a target.
     static const uint16_t RecommendedPercent = 85;
 
-    // The divider above which the memory-bus beat becomes reachable by zooming.
-    //
     // **DO NOT ADD A CEILING ON PLLAD_MD.** Memory::fetchFor sizes the fetch
     // from the capture width, which cancels HSCALE out of the beat quantity, so
     // there is no tearing band left to keep the divider below -- the bench ran
@@ -68,8 +66,14 @@ public:
     // rate of 0 (no lock) is also 0.
     static uint16_t maxDivider(uint32_t lineRateHz, uint8_t oversample);
 
-    // Where to start: under the ceiling by RecommendedPercent, and even, so
-    // ifLineFor() divides exactly rather than truncating half a sample away.
+    // The divider to write at a MODE CHANGE: under the ADC rating by
+    // RecommendedPercent, and even, so ifLineFor() divides exactly rather than
+    // truncating half a sample away. A zoom must never move it -- that would
+    // resample the picture the user is watching.
+    //
+    // Returns 0 for an unmeasurable line rate rather than a default. A divider
+    // written from a measurement that did not happen takes the sync processor
+    // with it, leaving no picture to diagnose from.
     static uint16_t recommendedDivider(uint32_t lineRateHz, uint8_t oversample);
 };
 

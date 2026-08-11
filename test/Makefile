@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry sampling memory hold-ramp segment-select register-queue clean help
+.PHONY: all test geometry sampling memory display-clock hold-ramp segment-select register-queue clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -85,6 +85,18 @@ segment-select:
 	  "$(HERE)/test_segment_select.cpp"
 	@"$(OUT)/test_segment_select"
 
+## display-clock: host unit tests for the display clock and the raster it affords
+#
+# A preset's raster demands htotal x frameLines x fieldRate hertz, so the
+# datasheet's CLKOUT ceiling is a constraint on which rasters are legal -- and
+# pal_1920x1080 spends 81 of the 108 MHz available. Pure arithmetic, which is the
+# cheapest possible place to check it.
+display-clock:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_display_clock" \
+	  "$(HERE)/test_display_clock.cpp" src/tv5725/DisplayClock.cpp
+	@"$(OUT)/test_display_clock"
+
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -98,7 +110,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry sampling memory hold-ramp segment-select register-queue
+test: geometry sampling memory display-clock hold-ramp segment-select register-queue
 all: test
 
 ## clean: remove the compiled test binaries

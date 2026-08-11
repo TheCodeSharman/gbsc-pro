@@ -74,6 +74,7 @@ TV5725
 #include "gbs_types.h"   // typedef TV5725<GBS_ADDR> GBS, in one place
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/Controls.h"
+#include "src/tv5725/DisplayClock.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
 
@@ -957,33 +958,29 @@ void externalClockGenResetClock()
 
     uint8_t activeDisplayClock = GBS::PLL648_CONTROL_01::read();
 
-    if (activeDisplayClock == 0x25)
-        rto->freqExtClockGen = 40500000;
-    else if (activeDisplayClock == 0x45)
-        rto->freqExtClockGen = 54000000;
-    else if (activeDisplayClock == 0x55)
-        rto->freqExtClockGen = 64800000;
-    else if (activeDisplayClock == 0x65)
-        rto->freqExtClockGen = 81000000;
-    else if (activeDisplayClock == 0x85)
-        rto->freqExtClockGen = 108000000;
-    else if (activeDisplayClock == 0x95)
-        rto->freqExtClockGen = 129600000;
-    else if (activeDisplayClock == 0xa5)
-        rto->freqExtClockGen = 162000000;
-    else if (activeDisplayClock == 0x35)
-        rto->freqExtClockGen = 81000000;
-    else if (activeDisplayClock == 0)
-        rto->freqExtClockGen = 81000000;
-    else {
-        // Nothing matched — normally the 0x75 sentinel, meaning the stashed
-        // divider was lost. Falling through used to leave freqExtClockGen holding
-        // a frequency from some earlier preset, which is then programmed into the
-        // Si5351 as the display clock: the TV sees timing it cannot lock to and
-        // goes blank, while every scaler register still reads correct.
+    // The lookup is Tv5725::DisplayClock, where it is host-testable and carries
+    // its own datasheet ceiling. It was twenty lines of if-chain here, and what
+    // the byte actually costs -- the preset's raster needs
+    // htotal x frameLines x fieldRate hertz, and this seed decides whether the
+    // Si5351 can be steered there -- had nowhere to be written down.
+    // See src/tv5725/DisplayClock.h.
+    rto->freqExtClockGen = Tv5725::DisplayClock::hzFor(activeDisplayClock);
+
+    if (rto->freqExtClockGen == 0) {
+        // No mapping -- normally the 0x75 sentinel, meaning the stashed divider
+        // is lost. Falling through leaves freqExtClockGen holding a frequency
+        // from some earlier preset, which then goes to the Si5351 as the display
+        // clock: the TV sees timing it cannot lock to and goes blank, while every
+        // scaler register still reads correct.
+        //
+        // The fallback is a GUESS, and an expensive one -- 81 MHz against a
+        // preset wanting 108 costs a quarter of the horizontal resolution and
+        // still looks like a working picture. rto->presetDisplayClock holds the
+        // real byte, but only applyPresets() restores it before calling here;
+        // the other three call sites do not, so it cannot be consulted yet.
         SerialM.printf_P(PSTR("extClockGen: display clock 0x%02x unmapped, using 81MHz\n"),
                          activeDisplayClock);
-        rto->freqExtClockGen = 81000000;
+        rto->freqExtClockGen = Tv5725::DisplayClock::FallbackHz;
     }
 
     if (rto->freqExtClockGen == 108000000) {
@@ -3291,23 +3288,19 @@ boolean applyBestHTotal(uint16_t bestHTotal)
     return true;
 }
 
-// The OSD bar's four controls, and the only way it reaches the geometry.
-//
-// It was calling shiftHorizontal, shiftVertical, scaleHorizontal and
-// scaleVertical, none of which go through the engine: between them they wrote
-// VDS_HB_SP, VDS_HB_ST, VDS_DIS_HB_ST, VDS_HSCALE and VDS_VSCALE by hand and
-// re-solved nothing. Driving the unit by remote therefore exercised the code
-// the engine replaced, which is how a green suite and a broken picture were
-// true at the same time.
+// The OSD bar's four controls, and **the only way it may reach the geometry**.
+// Anything here that writes a register directly -- VDS_HB_SP, VDS_HSCALE and
+// the rest -- re-solves nothing and is invisible to the pad tests, so the suite
+// stays green while the picture breaks.
 //
 // A size bar reads as "bigger picture", and bigger means cropping harder --
 // which is why zoom in is a NEGATIVE delta, the same convention the 'z' pad
 // uses.
 // One line per IR frame, naming which of loop()'s two consumers took it.
 //
-// Michael, 2026-08-09: "it seems like the remote buttons are queued and only the
-// second-to-last press is actioned." Two mechanisms are both real and both in
-// the code, and this is the cheapest thing that tells them apart:
+// Remote buttons behave as though queued, with only the second-to-last press
+// actioned. Two mechanisms are both real and both in the code, and this is the
+// cheapest thing that tells them apart:
 //
 //   - OSD_selectOption() decodes inside whichever oled_menuItem branch matches.
 //     Where no branch matches, OSD_IR() takes the frame instead -- and it acts

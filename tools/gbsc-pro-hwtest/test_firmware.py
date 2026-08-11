@@ -465,20 +465,86 @@ DISPLAY_CLOCK_SENTINEL = 0x75
 # scaling presets, 0x25 in pal_downscale/ntsc_downscale.
 PRESET_STASH_VALUES = {0x00, 0x25}
 
+# DS-5725-3.2 Table 15, Video Output Port AC timing: CLKOUT Frequency 1/Tmc max
+# 108 MHz at 20pF. The display output clock, not Table 14's 80 MHz CLKIN (the
+# digital video INPUT port, unused on this board) and not the memory interface's
+# 162 MHz FBCLK. See src/tv5725/DisplayClock.h.
+CLKOUT_CEILING_HZ = 108_000_000
 
-def _function_body(source, name):
-    """The braced body of a C function, by brace matching from its opening `{`."""
-    start = source.index(f"void {name}(")
-    open_brace = source.index("{", start)
-    depth = 0
-    for index in range(open_brace, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[open_brace : index + 1]
-    raise AssertionError(f"unbalanced braces in {name}()")
+# A raster is allowed to sit slightly over the rated maximum, because one
+# measurably does: ntsc_1920x1080's 1602 x 1126 @ 60 Hz demands 108.23 MHz and
+# the encoder locks to it. This is the observed margin, not a licence.
+CLKOUT_TOLERANCE = 1.005
+
+# How much of the budget a raster must actually spend. pal_1920x1080 shipped
+# 1445 x 1126 @ 50 Hz -- 81.35 MHz, 75.3% -- which is what this catches.
+CLKOUT_MIN_SPEND = 0.90
+
+# Source VTOTAL above this is a 50 Hz standard. The firmware's own mode detect
+# splits the same way: PAL-like sources run 312 lines (the bench RiscPC 311),
+# NTSC-like 262.
+SOURCE_VTOTAL_50HZ_MIN = 290
+
+SYNC_PROC_VTOTAL = (0, 0x1B, 0, 11)  # STATUS_SYNC_PROC_VTOTAL
+VDS_HSYNC_RST = (3, 0x01, 0, 12)
+VDS_VSYNC_RST = (3, 0x02, 4, 11)
+
+
+def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
+    """A 1080p output raster must use most of the 108 MHz the part is rated for.
+
+    The raster is a preset table constant -- nothing computes it and, settled,
+    nothing trims it. FrameSync::findBestHTotal() returns the htotal it was
+    handed once the input and output periods agree within four clocks, and the
+    Si5351 is then steered to whatever that raster demands. So the table's five
+    raster bytes decide how much horizontal resolution the board produces, and
+    the only thing bounding them is the datasheet.
+
+    pal_1920x1080 shipped 1445 x 1126 for a 50 Hz source, demanding 81.35 MHz of
+    an available 108 -- a quarter of every line thrown away, while
+    ntsc_1920x1080 asked for the full 108 at 60 Hz. Nothing recorded a reason,
+    and the arithmetic says there is not one.
+
+    Deliberately NOT keyed to a resolution or a field rate. Both output rasters
+    have to answer the same question, so the test that catches the next one like
+    it is the one that asks what fraction of the budget is being spent.
+    """
+    source_vtotal = read_field(host, *SYNC_PROC_VTOTAL)
+    assert source_vtotal, "no source VTOTAL: nothing is locked, so there is no field rate"
+
+    field_rate = 50 if source_vtotal > SOURCE_VTOTAL_50HZ_MIN else 60
+
+    htotal_reg = read_field(host, *VDS_HSYNC_RST)
+    vtotal_reg = read_field(host, *VDS_VSYNC_RST)
+    assert htotal_reg and vtotal_reg, "could not read the output raster registers"
+
+    if vtotal_reg + 1 < 1000:
+        pytest.skip(
+            f"output raster is {htotal_reg + 1} x {vtotal_reg + 1}, not a 1080p-class "
+            "mode; this test is about how much of the clock a large raster spends"
+        )
+
+    # Both registers hold total-1, confirmed against the register docs.
+    demanded = (htotal_reg + 1) * (vtotal_reg + 1) * field_rate
+    spend = demanded / CLKOUT_CEILING_HZ
+    context = (
+        f"raster {htotal_reg + 1} x {vtotal_reg + 1} at {field_rate} Hz demands "
+        f"{demanded / 1e6:.3f} MHz, {spend:.1%} of the {CLKOUT_CEILING_HZ / 1e6:.0f} MHz "
+        f"CLKOUT ceiling (source VTOTAL {source_vtotal})"
+    )
+
+    assert spend <= CLKOUT_TOLERANCE, (
+        f"the output raster asks for more than the part is rated for: {context}. "
+        "DS-5725-3.2 Table 15 rates CLKOUT at 108 MHz; a raster past it is out of spec "
+        "even if a particular encoder happens to lock."
+    )
+    assert spend >= CLKOUT_MIN_SPEND, (
+        f"the output raster is leaving pixel clock unused: {context}. At this field rate "
+        f"the ceiling affords {int(CLKOUT_CEILING_HZ / field_rate / (vtotal_reg + 1))} "
+        f"pixels per line against the {htotal_reg + 1} programmed. That is horizontal "
+        "resolution the board could produce and is not -- check s0_41 and s3_01/s3_02 in "
+        "the preset table for this field rate."
+    )
 
 
 def test_display_clock_stash_is_not_a_preset_register():
@@ -526,27 +592,16 @@ def test_display_clock_stash_is_not_a_preset_register():
     )
 
 
-def test_display_clock_lookup_has_no_silent_fallthrough():
-    """externalClockGenResetClock() must assign a frequency on every path.
-
-    The lookup is a chain of `if (activeDisplayClock == ...)`. Without a final
-    unconditional `else`, an unrecognised value — the 0x75 sentinel above all —
-    leaves rto->freqExtClockGen holding whatever the last preset put there, and
-    that stale value is programmed into the Si5351 regardless.
-    """
-    sketch = (FIRMWARE / "gbs-control.ino").read_text(errors="replace")
-    body = _function_body(sketch, "externalClockGenResetClock")
-
-    assert "freqExtClockGen" in body, "externalClockGenResetClock() no longer sets the frequency"
-
-    # a terminal `else` — i.e. one not immediately followed by `if`
-    fallthrough_guard = re.search(r"\belse\s*(?!if\b)\{", body)
-    assert fallthrough_guard, (
-        "no terminal `else` in externalClockGenResetClock(): an unmapped display "
-        "clock silently reuses the previous frequency. Add a fallback that assigns "
-        "rto->freqExtClockGen and says so, rather than falling through."
-    )
-
+# The display-clock lookup has no silent fallthrough, and that is STRUCTURAL
+# rather than guarded here: externalClockGenResetClock() assigns
+# rto->freqExtClockGen unconditionally on its first line from
+# DisplayClock::hzFor(), which returns on every path, so a stale frequency is not
+# representable. Assigning inside the branches instead leaves the previous
+# frequency in place for a byte matching none of them.
+#
+# The real decision -- that an unrecognised byte yields 0 rather than a plausible
+# default -- is pinned in test/test_display_clock.cpp, "the external-clock
+# sentinel names no clock at all". `make -C test display-clock`.
 
 def test_display_clock_is_not_stashed_in_a_preset_register(host):
     """Live check of the same invariant: nothing has written a divider to s1_2D.
