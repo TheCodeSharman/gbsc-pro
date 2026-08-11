@@ -1,0 +1,13 @@
+{
+  "STATUS_16": 6,
+  "adc_input_sel": 1,
+  "display_clock_reg": 117,
+  "hperiod_if": 223,
+  "hscale_byps": 0,
+  "htotal": 1445,
+  "pb_fetch_num": 253,
+  "source_vtotal": 308,
+  "vds_hb_sp": 9,
+  "vscale_byps": 0,
+  "vtotal": 1126
+}
