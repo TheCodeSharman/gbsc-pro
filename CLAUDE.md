@@ -180,6 +180,14 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   nothing, OSD dead, picture dead. **Do not read "HTTP responds" as "the unit is
   healthy".** The serial console is the honest test — silence there with a live
   HTTP stack means the loop is not running.
+- **But `/getreg` timing out while `/freeze` answers instantly is a *useful*
+  signal, not a dead unit.** Register access is deferred to `loop()` through
+  `RegisterQueue`, so a read blocks for as long as `loop()` is busy, while the
+  plain-JSON routes keep answering from the network callback. Intermittent empty
+  `/getreg` replies with ping at 2 ms therefore mean the firmware is *inside*
+  one of detection's long searches — the 6000 ms `getVideoMode()` sweeps in
+  `detectAndSwitchToActiveInput()`. Used exactly that way on 2026-08-13 to tell
+  "unit wedged" from "unit hunting", which are opposite diagnoses.
 - **Check for stray tooling before diagnosing anything.** On 2026-08-05 a
   `soak_watch.py --interval 5` had been polling for **2 days 22 hours** and a
   `regpanel.py` for **1 day 23 hours**, both left from earlier sessions, leaving
@@ -431,8 +439,23 @@ python3 tools/gbsc-pro-hwtest/snapdiff.py --diff snapshots/before.json snapshots
 
 ```sh
 python3 tools/gbsc-pro-hwtest/dump_registers.py --host <ip> \
-  --restore snapshots/dis-hb-st-tweak-2026-08-03.dump.json --segments 1,3,4,5 --repeat 2
+  --restore snapshots/dis-hb-st-tweak-2026-08-03.dump.json --segments 0,1,2,3,4,5 --repeat 2
 ```
+
+**Restore every segment, and note that this line used to say `1,3,4,5`.** Low
+power calls `setResetParameters()`, which zeroes segment 0 — DAC power, the pad
+enables, the display clock select — and segment 2, so a restore that skips them
+cannot recover from the state you are most likely recovering from. Segment 2 is
+the expensive one to miss: the registers that matter there are *bypass* bits
+(`MADPT_PD_RAM_BYPS`, `DIAG_BOB_PLDY_RAM_BYPS`, `MADPT_Y_WOUT_BYPS`,
+`MADPT_VIIR_BYPS`), so zeroed they route video *through* the deinterlacer RAM
+with every coefficient at zero, and the screen fills with random colour pixels
+while all 608 config registers still read correct.
+
+**A restore is not a recovery on its own.** The firmware has to agree that the
+source is present, or `sourceDisconnected` stays true and `loop()` keeps
+ratcheting `ADC_SOGCTRL` down every 500 ms underneath the picture you just
+restored — see the freeze note below, because `/freeze` does not stop it.
 
 The two snapshot formats are not interchangeable: `dump_registers.py` writes 496
 config registers, `snapdiff.py` writes all 1536. Diff like against like.
