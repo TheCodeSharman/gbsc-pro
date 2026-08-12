@@ -784,3 +784,77 @@ def test_a_zoom_out_stops_at_the_line_rather_than_wrapping_it():
         sp, st = step["sp"], step["st"]
 
     assert sp >= 0 and st <= 1276
+
+
+# --- the active window ---------------------------------------------------------
+#
+# With a standard back porch there is a real active window inside the raster, and
+# the picture belongs in that rather than centred on the whole raster with the
+# write latency as its only floor.
+#
+# The blanking is symmetric -- the back porch reserved at BOTH ends. That
+# guarantees a front porch rather than assuming the encoder tolerates none, it is
+# derived rather than measured off one TV, and it lands within 30 px of the
+# 110..2189 state confirmed working on the bench at a 2301 raster.
+
+
+def test_the_active_window_narrows_the_room_at_both_ends():
+    """A back porch larger than the write floor becomes the binding constraint.
+
+    Which is the point of it: at a 1918 raster the write floor is about 105 and
+    the standard back porch is 140, so the latency now lands INSIDE the blanking
+    instead of eating active video.
+    """
+    raster = 1918
+    without = gm.max_display_window(raster, gm.AXIS_H)
+    with_bp = gm.max_display_window(raster, gm.AXIS_H, active_start=140)
+
+    assert with_bp < without
+    assert with_bp == (raster - 2) - 2 * 140
+
+
+def test_an_active_start_below_the_write_floor_changes_nothing():
+    """The write floor is physical and the back porch cannot argue with it.
+
+    So the room is bounded by whichever is LARGER, and a small back porch is
+    simply not the binding constraint.
+    """
+    raster = 1918
+    floor = gm.AXIS_H.window_sp_min + gm.AXIS_H.start_const
+    unbounded = gm.max_display_window(raster, gm.AXIS_H)
+
+    assert gm.max_display_window(raster, gm.AXIS_H, active_start=floor - 20) == unbounded
+    assert gm.max_display_window(raster, gm.AXIS_H, active_start=0) == unbounded
+
+
+def test_the_picture_starts_no_earlier_than_the_back_porch():
+    """Centred, but never before active video is allowed to begin."""
+    raster, produced = 1918, 1638.0
+    corner, window_sp = gm.place_picture(produced, raster, 1.69, gm.AXIS_H,
+                                         active_start=140)
+    assert corner >= 140
+    assert window_sp >= gm.AXIS_H.window_sp_min
+
+    # and symmetric: what is reserved at the near end is reserved at the far end
+    assert raster - (corner + produced) == pytest.approx(corner, abs=1.5)
+
+
+def test_a_picture_too_big_to_centre_starts_at_the_back_porch():
+    """Overscan off the far end rather than start inside the blanking."""
+    raster = 1918
+    corner, _ = gm.place_picture(2400.0, raster, 2.0, gm.AXIS_H, active_start=140)
+    assert corner == 140
+
+
+def test_the_default_is_the_old_behaviour_exactly():
+    """active_start defaults to 0, so every existing caller is unchanged.
+
+    This is what makes the change additive: the whole geometry suite, and the
+    eleven bench readings it encodes, still describe the same arithmetic.
+    """
+    for raster in (1445, 1918, 2301, 2877):
+        assert gm.max_display_window(raster, gm.AXIS_H) == \
+               gm.max_display_window(raster, gm.AXIS_H, active_start=0)
+        for produced in (800.0, 1253.0, 2079.0):
+            assert gm.place_picture(produced, raster, 1.5, gm.AXIS_H) == \
+                   gm.place_picture(produced, raster, 1.5, gm.AXIS_H, active_start=0)
