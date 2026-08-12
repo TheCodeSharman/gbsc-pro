@@ -139,24 +139,40 @@ def set_display_clock(host, divider, settle=1.5):
     write_field(host, *PLL648_CONTROL_01, 0, 8, EXTERNAL_SENTINEL)
     time.sleep(settle)
 
-    # 5. NOW steer the rate, which is the step whose absence Michael saw as a
-    #    rolling bar every ~30 s.
-    #
-    # The Si5351 is left sitting at the divider's NOMINAL frequency, but a raster
-    # almost never demands exactly that -- htotal_for() floors, so 2301 x 1126 at
-    # 50 Hz wants 129.546 MHz against the 129.600 programmed. That is 50.021 Hz
-    # out against 50 Hz in: a 0.021 Hz beat, so a bar rolls through about every
-    # 48 s.
-    #
-    # externalClockGenSyncInOutRate() fixes it exactly and is UNCLAMPED, unlike
-    # runFrequency()'s +/-0.06% per pass -- and the residual here sits right at
-    # that clamp, so the loop alone never catches up. ':' is that function, and it
-    # has to come after the sentinel is parked because it bails out on the same
-    # `!= 0x75` guard that made the second ';' press a no-op.
+    # This leaves the Si5351 at the divider's NOMINAL frequency, which a raster
+    # almost never demands exactly -- htotal_for() floors, so 2301 x 1126 at 50 Hz
+    # wants 129.546 MHz against the 129.600 programmed. That residual is 50.021 Hz
+    # out against 50 Hz in, and a 0.021 Hz beat shows as a rolling bar every
+    # 30 seconds or so. steer_rate() closes it, and apply_raster() calls it at the
+    # only point in the sequence where it can measure the right thing.
+    return our.DIVIDER_HZ.get(divider)
+
+
+def steer_rate(host, settle=3.0):
+    """Pull the Si5351 to exactly what the CURRENT raster demands.
+
+    **THE ORDERING IS THE WHOLE POINT, AND GETTING IT WRONG BLACKED THE SCREEN.**
+    externalClockGenSyncInOutRate() measures getOutputFrameRate() and scales the
+    clock by sourceRate/outputRate. That measurement is taken against whatever
+    raster is programmed right now, so calling it before the new raster is written
+    corrects the new clock against the OLD raster:
+
+        clock set to 129.6 MHz with the raster still 1445 x 1126
+          -> ofr reads 129.6e6/(1445 x 1126) = 79.7 Hz
+          -> inside the 47..86 guard, so it proceeds
+          -> clock set to (50/79.7) x 129.6 = 81.3 MHz, undoing the change
+        then the 2301 raster lands on 81.3 MHz -> 31.4 Hz, and nothing locks
+
+    It also has to come after the sentinel is parked, because it bails out on the
+    same `!= 0x75` guard that makes a second ';' press a no-op.
+
+    So: raster, then clock, then re-solve, then this. Which is exactly the order
+    applyPresets() uses -- preset table, externalClockGenResetClock(),
+    externalClockGenSyncInOutRate(). apply_raster() owns the sequence so a caller
+    cannot reorder it.
+    """
     _get(host, "/sc?%3A")
     time.sleep(settle)
-
-    return our.DIVIDER_HZ.get(divider)
 
 
 def framing(host):
@@ -193,27 +209,41 @@ def show(label, state):
     print(f"    source VTOTAL {state['STATUS_SYNC_PROC_VTOTAL']}")
 
 
-def apply_raster(host, htotal, vtotal, hsync, vsync, pause):
-    """Write the raster as a SET, then re-solve.
+def apply_raster(host, raster, pause, divider=None):
+    """Apply a whole output mode: raster, clock, windows, rate. In that order.
 
-    Output timing moves as a set or not at all -- a previous session wrote
-    VDS_HSYNC_RST alone with the sync and windows left behind and the screen went
-    black. Totals first, so a sync position is never briefly outside the raster.
+    **THE ORDER IS THE CONTRACT, and this function owns it precisely because the
+    caller got it wrong and blacked the screen.** It is the order applyPresets()
+    uses, for the same reasons:
+
+      1. the raster registers, totals first so a sync position is never briefly
+         outside the raster. Output timing moves as a set or not at all.
+      2. the display clock, chosen for THIS raster.
+      3. the engine re-solves every window against it.
+      4. the rate steer LAST, because it measures the output frame rate off the
+         raster that is programmed at the time -- see steer_rate().
+
+    `divider` defaults to the raster's own. Pass it explicitly only to test a
+    deliberate mismatch between clock and raster.
     """
     writes = [
-        ("VDS_HSYNC_RST", 3, 0x01, 0, 12, htotal - 1),
-        ("VDS_VSYNC_RST", 3, 0x02, 4, 11, vtotal - 1),
-        ("VDS_HS_ST", 3, 0x0A, 0, 12, hsync[0]),
-        ("VDS_HS_SP", 3, 0x0B, 4, 12, hsync[1]),
-        ("VDS_VS_ST", 3, 0x0D, 0, 11, vsync[0]),
-        ("VDS_VS_SP", 3, 0x0E, 4, 11, vsync[1]),
+        (3, 0x01, 0, 12, raster.htotal - 1),      # VDS_HSYNC_RST
+        (3, 0x02, 4, 11, raster.vtotal - 1),      # VDS_VSYNC_RST
+        (3, 0x0A, 0, 12, raster.hsync_start),     # VDS_HS_ST
+        (3, 0x0B, 4, 12, raster.hsync_stop),      # VDS_HS_SP
+        (3, 0x0D, 0, 11, raster.vsync_start),     # VDS_VS_ST
+        (3, 0x0E, 4, 11, raster.vsync_stop),      # VDS_VS_SP
     ]
-    for name, segment, register, offset, width, value in writes:
+    for segment, register, offset, width, value in writes:
         write_field(host, segment, register, offset, width, value)
 
+    actual = set_display_clock(host, raster.divider if divider is None else divider)
     resolve(host)
+    steer_rate(host)
+
     if pause:
         time.sleep(pause)
+    return actual
 
 
 def main(argv=None):
@@ -290,10 +320,7 @@ def main(argv=None):
                 if step is None:
                     print(f"  {mhz} MHz: no raster fits {args.mode} at {args.rate} Hz")
                     continue
-                actual = set_display_clock(args.host, divider)
-                apply_raster(args.host, step.htotal, step.vtotal,
-                             (step.hsync_start, step.hsync_stop),
-                             (step.vsync_start, step.vsync_stop), args.pause)
+                actual = apply_raster(args.host, step, args.pause)
                 print(f"  --- {actual / 1e6:g} MHz seed {divider:#04x}: "
                       f"{step.htotal} x {step.vtotal}, active {step.active_width()} px")
                 show("readback", snapshot(args.host))
@@ -302,14 +329,20 @@ def main(argv=None):
             shapes = our.iso_frame_rasters(target.htotal, target.vtotal)
             print(f"  sweeping {len(shapes)} iso-frame shapes, {args.pause}s each\n")
             for htotal, vtotal in shapes:
-                apply_raster(args.host, htotal, vtotal,
-                             (target.hsync_start, target.hsync_stop),
-                             (target.vsync_start, target.vsync_stop), args.pause)
+                from dataclasses import replace
+                apply_raster(args.host, replace(target, htotal=htotal, vtotal=vtotal),
+                             args.pause)
                 show(f"{htotal} x {vtotal}", snapshot(args.host))
         else:
-            apply_raster(args.host, target.htotal, target.vtotal,
-                         (target.hsync_start, target.hsync_stop),
-                         (target.vsync_start, target.vsync_stop), args.pause)
+            # THE CLOCK COMES FIRST, and this path used not to set it at all.
+            # The model chooses a divider, so applying its raster without the
+            # matching clock leaves the old one driving a new line length: the
+            # 2301-px raster on the 81 MHz the 1445 preset was using is a 31 Hz
+            # frame, which no display locks to. It read as "the model produces a
+            # broken raster" when the tool simply had not finished the set.
+            actual = apply_raster(args.host, target, args.pause)
+            print(f"  display clock -> {actual / 1e6:g} MHz "
+                  f"(seed {target.divider:#04x}), rate steered after the raster")
             print()
             show("after", snapshot(args.host))
     finally:

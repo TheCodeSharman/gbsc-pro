@@ -39,8 +39,27 @@ def read_field(host, segment, register, offset, width):
     return (raw >> offset) & ((1 << width) - 1)
 
 
-# STATUS_16: 0x02 is HS active, 0x04 is VS active, so a lock reads 0x06.
-LOCKED = 0x06
+# STATUS_16, from tv5725.h rather than from memory:
+#
+#     bit 0  HSPOL   H-sync polarity
+#     bit 1  HSACT   H-sync active      <- the lock signal
+#     bit 2  VSPOL   V-sync polarity
+#     bit 3  VSACT   V-sync active
+#
+# **THIS WAS WRONG AND IT COST A FALSE DIAGNOSIS BOTH WAYS.** It read `LOCKED =
+# 0x06`, which is HSACT | VSPOL -- H-sync active plus a *polarity* bit. So a
+# working unit "passed" for the wrong reason, and when VSPOL later flipped the
+# same unit "failed" with a picture on screen. test_firmware.py:45 had the bits
+# right all along; this invented its own.
+#
+# The lock test is HSACT alone, which is what the firmware itself uses
+# (getStatus16SpHsStable checks `status16 & 0x02`). VSACT is NOT usable here: it
+# reads 0 on this source while STATUS_SYNC_PROC_VTOTAL counts a steady 308 lines,
+# so vertical sync is plainly being measured. Reported below as information, never
+# asserted on.
+HS_ACTIVE = 1 << 1
+VS_ACTIVE = 1 << 3
+VS_POLARITY = 1 << 2
 
 # The sync processor's line count is garbage the instant a preset lands -- a 97/98
 # reading is normal and settles. Anything the VDS scales has far more lines.
@@ -73,19 +92,25 @@ def checks_for(state):
     """Ordered so the FIRST failure is the cause and the rest are consequences."""
     return [
         (
-            "source H and V both active",
-            state["STATUS_16"] == LOCKED,
-            f"STATUS_16 {state['STATUS_16']:#04x}, need {LOCKED:#04x}",
-            "0x02 means HSync only -- for RGBHV that is the VSync wire or the "
-            "analog switch, since VGA is the only input raising asw_01 AND asw_04. "
-            "0x04 means the reverse. Neither is a geometry fault.",
+            "H-sync active",
+            bool(state["STATUS_16"] & HS_ACTIVE),
+            f"STATUS_16 {state['STATUS_16']:#04x}"
+            f" (HSACT {bool(state['STATUS_16'] & HS_ACTIVE):d},"
+            f" VSACT {bool(state['STATUS_16'] & VS_ACTIVE):d},"
+            f" VSPOL {bool(state['STATUS_16'] & VS_POLARITY):d})",
+            "The same bit the firmware's own getStatus16SpHsStable() tests. Clear "
+            "means no usable H-sync: for RGBHV that is the cable or the analog "
+            "switch, since VGA is the only input raising asw_01 AND asw_04. Not a "
+            "geometry fault. VSACT and VSPOL are shown but NOT asserted on -- "
+            "VSACT reads 0 on this bench source with a perfect picture.",
         ),
         (
             "source line count settled",
             SOURCE_VTOTAL_MIN < state["source_vtotal"] < SOURCE_VTOTAL_MAX,
             f"srcVTOTAL {state['source_vtotal']}",
-            "0 is no measurement at all; under 200 is a reading in progress, so "
-            "wait ~6 s after any mode change before believing it.",
+            "This is the real proof vertical sync is being measured, whatever "
+            "VSACT says. 0 is no measurement at all; under 200 is a reading in "
+            "progress, so wait ~6 s after any mode change before believing it.",
         ),
         (
             "an explicit scale on both axes",
