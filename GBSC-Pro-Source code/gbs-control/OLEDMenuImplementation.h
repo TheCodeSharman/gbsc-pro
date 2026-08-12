@@ -100,6 +100,9 @@ bool InputSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav);
 
 void Checksum_Send(const unsigned char *buff);
 void Checksum_Sendmode(const unsigned char *buff, uint8_t mode);
+// The frame the OLED handlers send, from a restored preference instead of a
+// keypress. See the definition for why nothing did this at boot.
+bool sendSavedInputToAvModule(uint8_t source, uint8_t rgbCom);
 void InputRGBs(void);
 void InputRGsB(void);
 void InputVGA(void);

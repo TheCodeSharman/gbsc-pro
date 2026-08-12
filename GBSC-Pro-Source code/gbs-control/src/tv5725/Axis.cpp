@@ -34,14 +34,27 @@ float Axis::originOffset(float magnification) const
     return startConst_ + startPerMag_ * magnification;
 }
 
-float Axis::maxDisplayWindow(uint16_t rasterTotal) const
+float Axis::blankingEachEnd(uint16_t activeStart) const
 {
-    return (rasterTotal - 2) - 2.0f * (windowStopMin_ + startConst_);
+    float floor = windowStopMin_ + startConst_;
+    return (float)activeStart > floor ? (float)activeStart : floor;
 }
 
-RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal) const
+float Axis::placementFloor(float offset, uint16_t activeStart) const
 {
-    float room = maxDisplayWindow(rasterTotal);
+    float floor = windowStopMin_ + offset;
+    return (float)activeStart > floor ? (float)activeStart : floor;
+}
+
+float Axis::maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart) const
+{
+    return (rasterTotal - 2) - 2.0f * blankingEachEnd(activeStart);
+}
+
+RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal,
+                      uint16_t activeStart) const
+{
+    float room = maxDisplayWindow(rasterTotal, activeStart);
     if (capture == 0 || room <= 0.0f)
         return RasterFit(Scale(Scale::Max), 0.0f);
 
@@ -58,8 +71,8 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal) const
     // unused raster costs nothing; an overflow shows scratch.
     while (scale < Scale::Max
            && lrintf((rasterTotal - produced) / 2.0f)
-                  < windowStopMin_
-                        + originOffset((float)Scale::Unity / scale)) {
+                  < placementFloor(originOffset((float)Scale::Unity / scale),
+                                   activeStart)) {
         ++scale;
         produced = capture * (float)Scale::Unity / scale;
     }
@@ -68,7 +81,7 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal) const
 
 
 PictureOrigin Axis::placePicture(float produced, uint16_t rasterTotal,
-                             float magnification) const
+                             float magnification, uint16_t activeStart) const
 {
     float offset = originOffset(magnification);
     int32_t corner = lrintf((rasterTotal - produced) / 2.0f);
@@ -77,11 +90,23 @@ PictureOrigin Axis::placePicture(float produced, uint16_t rasterTotal,
         windowStop = windowStopMin_;
         corner = lrintf(windowStop + offset);
     }
+
+    // The back porch is applied ON TOP of the write floor rather than folded into
+    // one max() with it. The two forms are measurably equivalent; this one leaves
+    // activeStart = 0 as the previous behaviour by construction rather than by an
+    // equivalence a reader has to re-derive. The drift test does not distinguish
+    // them -- mutation-tested -- so a passing suite is not evidence for either.
+    if (corner < (int32_t)activeStart) {
+        corner = activeStart;
+        windowStop = lrintf(corner - offset);
+        if (windowStop < (int32_t)windowStopMin_)
+            windowStop = windowStopMin_;
+    }
     return PictureOrigin(corner, windowStop);
 }
 
 AxisSolution Axis::solve(uint16_t capture, Scale scale,
-                         uint16_t rasterTotal) const
+                         uint16_t rasterTotal, uint16_t activeStart) const
 {
     AxisSolution solved;
     solved.produced_ = scale.produced(capture);
@@ -89,7 +114,7 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale,
         return solved;
 
     PictureOrigin placed = placePicture(solved.produced_, rasterTotal,
-                                    scale.magnification());
+                                    scale.magnification(), activeStart);
     solved.origin_ = placed.corner();
     solved.windowStop_ = placed.windowStop();
 

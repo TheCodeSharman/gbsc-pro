@@ -734,9 +734,66 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
 
 // --- the oracle for the drift check ------------------------------------------
 
-// `--dump` prints a grid for test_geometry_port.py to diff against
-// geometry_math.py. The tests above cannot catch a port that is wrong the same
-// way on both sides. See docs/firmware-geometry-engine.md "Testing".
+// --- the active window, 2026-08-12 -------------------------------------------
+
+TEST_CASE("the active window narrows the room at both ends")
+{
+    // The picture belongs in the raster's active window, not on the whole
+    // raster. Symmetric blanking -- the back porch reserved at BOTH ends --
+    // guarantees a front porch rather than assuming the encoder tolerates none,
+    // and lands within 30 px of the 110..2189 state confirmed on the bench.
+    const uint16_t Raster = 1918;
+    CHECK(AxisHorizontal.maxDisplayWindow(Raster, 140)
+          < AxisHorizontal.maxDisplayWindow(Raster));
+    CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 140), (Raster - 2) - 2 * 140, 0.01);
+
+    SUBCASE("an active start below the write floor changes nothing") {
+        // The write floor is physical and a back porch cannot argue with it, so
+        // the room is bounded by whichever is LARGER.
+        CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 40),
+                   AxisHorizontal.maxDisplayWindow(Raster), 0.01);
+        CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 0),
+                   AxisHorizontal.maxDisplayWindow(Raster), 0.01);
+    }
+
+    SUBCASE("the vertical floor is not truncated to zero") {
+        // AxisVertical's startConst is 0.2. An integer blankingEachEnd would round it
+        // away and move every vertical solve.
+        CHECK(AxisVertical.blankingEachEnd(0) > 0.0f);
+        CHECK_NEAR(AxisVertical.blankingEachEnd(0), 0.2, 0.001);
+    }
+}
+
+TEST_CASE("the picture starts no earlier than the back porch")
+{
+    const uint16_t Raster = 1918;
+    PictureOrigin placed = AxisHorizontal.placePicture(1638.0f, Raster, 1.69f, 140);
+    CHECK(placed.corner() >= 140);
+    CHECK(placed.windowStop() >= (int32_t)AxisHorizontal.windowStopMin());
+
+    SUBCASE("and symmetrically, so what is reserved near is reserved far") {
+        CHECK_NEAR(Raster - (placed.corner() + 1638.0f), placed.corner(), 1.5);
+    }
+
+    SUBCASE("a picture too big to centre starts AT the back porch") {
+        // Overscan off the far end rather than begin inside the blanking.
+        CHECK(AxisHorizontal.placePicture(2400.0f, Raster, 2.0f, 140).corner() == 140);
+    }
+
+    SUBCASE("the default is the old behaviour exactly") {
+        // This is what makes the change additive: the eleven bench readings this
+        // suite encodes still describe the same arithmetic.
+        for (uint16_t raster : {1445, 1918, 2301, 2877})
+            for (float produced : {800.0f, 1253.0f, 2079.0f}) {
+                PictureOrigin without = AxisHorizontal.placePicture(produced, raster, 1.5f);
+                PictureOrigin zero = AxisHorizontal.placePicture(produced, raster, 1.5f, 0);
+                CHECK(without.corner() == zero.corner());
+                CHECK(without.windowStop() == zero.windowStop());
+            }
+    }
+}
+
+// `--dump` prints the solved grid for inspection by hand.
 static void dumpGrid()
 {
     const uint16_t rasters[] = {1445, 1716, 858};
@@ -779,6 +836,20 @@ static void dumpGrid()
                             s.h().origin(), s.h().windowStop(), s.h().displayStop(), s.h().displayStart(),
                             s.v().origin(), s.v().windowStop(), s.v().displayStop(), s.v().displayStart());
             }
+
+    // The active window, which the grid above cannot see because it never varies
+    // activeStart -- so a divergence in the new parameter would go unnoticed.
+    for (uint16_t raster : {1918, 2301, 2877})
+        for (uint16_t activeStart : {0, 40, 140, 167, 209, 400})
+            for (unsigned capture = 200; capture <= 1200; capture += 143)
+                for (int i = 0; i < 2; ++i) {
+                    RasterFit f = axes[i]->fitToRaster(capture, raster, activeStart);
+                    PictureOrigin p = axes[i]->placePicture(
+                        f.produced(), raster, f.scale().magnification(), activeStart);
+                    std::printf("active %s %u %u %u %u %.4f %d %d\n", names[i],
+                                raster, activeStart, capture, f.scale().reg(),
+                                f.produced(), p.corner(), p.windowStop());
+                }
 
     // The horizontal default, which geometry_math has a twin for. There is no
     // Python vertical equivalent, so that half is covered by the host tests only.

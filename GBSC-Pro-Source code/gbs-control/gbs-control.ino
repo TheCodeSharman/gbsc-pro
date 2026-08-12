@@ -75,6 +75,8 @@ TV5725
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/DisplayClock.h"
+#include "src/clock/ClockRamp.h"
+#include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
 
@@ -519,6 +521,9 @@ audio
 */
 #include "src/si5351mcu.h"
 Si5351mcu Si;
+// The board's use of it -- detection, bring-up, every write. See
+// src/clock/ClockGen.h; the driver above stays the driver.
+Clock::ClockGen clockGen(Si);
 
 /*
 wifi
@@ -958,13 +963,14 @@ void externalClockGenResetClock()
 
     uint8_t activeDisplayClock = GBS::PLL648_CONTROL_01::read();
 
-    // The lookup is Tv5725::DisplayClock, where it is host-testable and carries
-    // its own datasheet ceiling. It was twenty lines of if-chain here, and what
-    // the byte actually costs -- the preset's raster needs
-    // htotal x frameLines x fieldRate hertz, and this seed decides whether the
-    // Si5351 can be steered there -- had nowhere to be written down.
-    // See src/tv5725/DisplayClock.h.
+    // The lookup is Tv5725::DisplayClock, which carries the datasheet ceiling.
+    // What the byte costs: the preset's raster needs htotal x frameLines x
+    // fieldRate hertz, and this seed decides whether the Si5351 can be steered
+    // there.
     rto->freqExtClockGen = Tv5725::DisplayClock::hzFor(activeDisplayClock);
+    bootLogPrintf("CLOCK: s0_41=0x%02x -> %lu Hz t=%lums\n",
+                  activeDisplayClock, (unsigned long)rto->freqExtClockGen,
+                  (unsigned long)millis());
 
     if (rto->freqExtClockGen == 0) {
         // No mapping -- normally the 0x75 sentinel, meaning the stashed divider
@@ -983,17 +989,14 @@ void externalClockGenResetClock()
         rto->freqExtClockGen = Tv5725::DisplayClock::FallbackHz;
     }
 
-    if (rto->freqExtClockGen == 108000000) {
-        Si.setFreq(0, 87000000);
-        delay(1);
-    }
+    // Preloads through an intermediate where the target needs one -- see
+    // Clock::ClockRamp::preloadFor for the little that is known about that.
+    clockGen.setFrequency(rto->freqExtClockGen);
 
-    if (rto->freqExtClockGen == 40500000) {
-        Si.setFreq(0, 48500000);
-        delay(1);
-    }
-
-    Si.setFreq(0, rto->freqExtClockGen);
+    // clockGen.begin() leaves the output disabled and setFrequency() does not
+    // enable it, so handing the display clock over means enabling the source and
+    // the pin together.
+    clockGen.enable();
     GBS::PAD_CKIN_ENZ::write(0);
     FrameSync::clearFrequency();
 }
@@ -1048,7 +1051,6 @@ void externalClockGenSyncInOutRate()
 
 void externalClockGenDetectAndInitialize()
 {
-    const uint8_t xtal_cl = 0xD2;
 
     rto->freqExtClockGen = 81000000;
     rto->extClockGenDetected = 0;
@@ -1058,38 +1060,15 @@ void externalClockGenDetectAndInitialize()
         return;
     }
 
-    uint8_t retVal = 0;
-    Wire.beginTransmission(SIADDR);
-    retVal = Wire.endTransmission();
-
-    if (retVal != 0) {
+    if (!clockGen.detect()) {
+        bootLogPrintf("CLOCKGEN: detect FAILED t=%lums (no external display clock)\n",
+                      (unsigned long)millis());
         return;
     }
-
-    Wire.beginTransmission(SIADDR);
-    Wire.write(0);
-    Wire.endTransmission();
-    size_t bytes_read = Wire.requestFrom((uint8_t)SIADDR, (size_t)1, false);
-
-    if (bytes_read == 1) {
-        retVal = Wire.read();
-        if ((retVal & 0x80) == 0) {
-            rto->extClockGenDetected = 1;
-        } else {
-            return;
-        }
-    } else {
-        return;
-    }
-
-    Si.init(25000000L);
-    Wire.beginTransmission(SIADDR);
-    Wire.write(183);
-    Wire.write(xtal_cl);
-    Wire.endTransmission();
-    Si.setPower(0, SIOUT_6mA);
-    Si.setFreq(0, rto->freqExtClockGen);
-    Si.disable(0);
+    rto->extClockGenDetected = 1;
+    clockGen.begin(rto->freqExtClockGen);
+    bootLogPrintf("CLOCKGEN: detected, begin(%lu) t=%lums\n",
+                  (unsigned long)rto->freqExtClockGen, (unsigned long)millis());
 }
 
 static inline void writeOneByte(uint8_t slaveRegister, uint8_t value)
@@ -2121,13 +2100,33 @@ void applySavedInputSource()
             break;
         default:
             // Nothing meaningful saved; leave the mux alone and let detection
-            // sweep, which is the old behaviour.
+            // sweep.
             break;
     }
+
+    // ADC_INPUT_SEL is only half the path -- the HC32's asw_01..04 decide what is
+    // actually connected to it, and appear in no register dump.
+    bool sent = sendSavedInputToAvModule(SeleInputSource, RGB_Com);
+    bootLogPrintf("INPUT: SeleInputSource=%u RGB_Com=%u frameSent=%d "
+                  "ADC_INPUT_SEL=%u t=%lums\n",
+                  (unsigned)SeleInputSource, (unsigned)RGB_Com, (int)sent,
+                  (unsigned)GBS::ADC_INPUT_SEL::read(), (unsigned long)millis());
 }
 
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
+    // First few passes only: the boot log is 2 KB and this runs forever.
+    static uint8_t traceLeft = 4;
+    if (traceLeft > 0) {
+        --traceLeft;
+        bootLogPrintf("DETECT: enter t=%lums ADCsel=%u S16=0x%02x srcVT=%u "
+                      "HPERIOD=%u videoStd=%u\n",
+                      (unsigned long)millis(), (unsigned)GBS::ADC_INPUT_SEL::read(),
+                      (unsigned)GBS::STATUS_16::read(),
+                      (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
+                      (unsigned)GBS::HPERIOD_IF::read(),
+                      (unsigned)rto->videoStandardInput);
+    }
     // Frozen: docs/gbs-control-debug-interface.md
     if (AUTOMATION_FROZEN()) {
         return 0;
@@ -6409,7 +6408,7 @@ void runSyncWatcher() //
 
                                 rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
 
-                                Si.enable(0);
+                                clockGen.enable();
                                 ESP.wdtFeed();
                                 delayMicroseconds(800);
                                 GBS::PLL648_CONTROL_01::write(0x75);
@@ -6502,7 +6501,7 @@ void runSyncWatcher() //
 
                                     rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
 
-                                    Si.enable(0);
+                                    clockGen.enable();
                                     ESP.wdtFeed();
                                     delayMicroseconds(800);
                                     GBS::PLL648_CONTROL_01::write(0x75);
@@ -7972,7 +7971,7 @@ void loop()
                 if (!rto->outModeHdBypass) {
                     if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
                         rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-                        Si.enable(0);
+                        clockGen.enable();
                         ESP.wdtFeed();
                         delayMicroseconds(800);
                         GBS::PLL648_CONTROL_01::write(0x75);
@@ -8812,7 +8811,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             rto->freqExtClockGen = Serial.parseInt();
 
                             if (rto->freqExtClockGen >= 1000000 && rto->freqExtClockGen <= 250000000) {
-                                Si.setFreq(0, rto->freqExtClockGen);
+                                clockGen.setFrequency(rto->freqExtClockGen);
                                 rto->clampPositionIsSet = 0; // Clamp position setting
                                 rto->coastPositionIsSet = 0; // coast position setting
                             }

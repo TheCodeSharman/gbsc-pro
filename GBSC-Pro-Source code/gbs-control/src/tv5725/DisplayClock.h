@@ -48,6 +48,13 @@ public:
     // instead of announcing itself.
     static const uint32_t FallbackHz = 81000000;
 
+    // The DISTINCT divider bytes, in ascending clock order, for a caller that has
+    // to pick one rather than decode one. 0x35 and 0x00 are absent deliberately:
+    // hzFor() maps both to 81 MHz, but they are aliases of 0x65, and three ways
+    // to ask for 81 MHz would make "the largest seed under the ceiling" ambiguous.
+    static const uint8_t SeedCount = 7;
+    static const uint8_t Seeds[SeedCount];
+
     // This divider byte's pixel clock, or 0 when the byte does not name one.
     // 0 rather than a default: the sentinel is a byte the firmware writes itself,
     // and answering FallbackHz for it is how externalClockGenResetClock() lost

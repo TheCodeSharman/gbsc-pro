@@ -503,6 +503,28 @@ ChecksumSender sender;
 //     Serial.write(buff_lin, 7);
 // }
 
+// The ESP and the HC32 each persist the selected input separately and neither
+// can read the other back, so nothing else reconciles them at boot. `rgbCom` is
+// inverted because Checksum_Sendmode ORs the low nibble in.
+bool sendSavedInputToAvModule(uint8_t source, uint8_t rgbCom)
+{
+    switch (source) {
+        case S_RGBs:
+            Checksum_Sendmode(RGBs, !rgbCom);
+            return true;
+        case S_VGA:
+            Checksum_Sendmode(VGA, !rgbCom);
+            return true;
+        case S_YUV:
+            Checksum_Sendmode(Ypbpr, !rgbCom);
+            return true;
+        default:
+            // 0 is "nothing meaningful saved" -- the same case
+            // applySavedInputSource() leaves the mux alone for.
+            return false;
+    }
+}
+
 void Checksum_Sendmode(const unsigned char *buff, uint8_t mode)
 {     
     unsigned char buff_lin[7];

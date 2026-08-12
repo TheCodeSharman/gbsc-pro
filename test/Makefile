@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry sampling memory display-clock hold-ramp segment-select register-queue clean help
+.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp segment-select register-queue clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -97,6 +97,25 @@ display-clock:
 	  "$(HERE)/test_display_clock.cpp" src/tv5725/DisplayClock.cpp
 	@"$(OUT)/test_display_clock"
 
+## output-raster: host unit tests for the computed output raster
+#
+output-raster:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_output_raster" \
+	  "$(HERE)/test_output_raster.cpp" src/tv5725/OutputRaster.cpp src/tv5725/DisplayClock.cpp
+	@"$(OUT)/test_output_raster"
+
+## clock-ramp: host unit tests for how the external clock is allowed to move
+#
+# The pure half of the Si5351 board logic: the 1 kHz ramp and the two preload
+# frequencies, both carried over from the sketch unexplained and untested. The
+# device half stays in the .ino because it needs Wire.
+clock-ramp:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_clock_ramp" \
+	  "$(HERE)/test_clock_ramp.cpp" src/clock/ClockRamp.cpp
+	@"$(OUT)/test_clock_ramp"
+
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -110,9 +129,10 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry sampling memory display-clock hold-ramp segment-select register-queue
+test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp segment-select register-queue
 all: test
 
 ## clean: remove the compiled test binaries
 clean:
 	rm -rf "$(OUT)"
+

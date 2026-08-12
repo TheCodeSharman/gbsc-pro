@@ -5,6 +5,12 @@ namespace Tv5725 {
 const uint32_t DisplayClock::CeilingHz;
 const uint8_t DisplayClock::ExternalSentinel;
 const uint32_t DisplayClock::FallbackHz;
+const uint8_t DisplayClock::SeedCount;
+
+// Ascending clock: 40.5, 54, 64.8, 81, 108, 129.6, 162 MHz.
+const uint8_t DisplayClock::Seeds[DisplayClock::SeedCount] = {
+    0x25, 0x45, 0x55, 0x65, 0x85, 0x95, 0xA5
+};
 
 uint32_t DisplayClock::hzFor(uint8_t divider)
 {

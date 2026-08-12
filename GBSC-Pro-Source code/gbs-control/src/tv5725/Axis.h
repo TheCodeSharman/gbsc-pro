@@ -49,10 +49,21 @@ public:
 
     float originOffset(float magnification) const;
 
-    // The biggest picture this raster can hold. Bounded by the write floor at
-    // BOTH ends, because the picture is centred and equal margins are the only
-    // kind of overscan a user can reason about.
-    float maxDisplayWindow(uint16_t rasterTotal) const;
+    // What must stay blank at BOTH ends, in output units: whichever of the write
+    // floor and the raster's own back porch is larger. The write floor is
+    // physical -- nothing can be written before windowStopMin + startConst. The
+    // back porch (OutputRaster.h) is reserved at the FAR end too, which
+    // guarantees a front porch rather than assuming the encoder tolerates none.
+    // activeStart 0 asks for the write floor alone.
+    //
+    // Float, matching geometry_math.blanking_each_end: startConst_ is 0.2 on the
+    // vertical axis and truncating it to 0 would move every vertical solve.
+    float blankingEachEnd(uint16_t activeStart) const;
+
+    // The biggest picture this raster can hold. Bounded at BOTH ends, because the
+    // picture is centred and equal margins are the only kind of overscan a user
+    // can reason about.
+    float maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart = 0) const;
 
     // The scale making the picture as big as this raster allows.
     //
@@ -63,19 +74,25 @@ public:
     //              = room x capture / (capture + 2 x startPerMag)
     //
     // A capture too small to fill the raster is bounded by the register at x4.
-    RasterFit fitToRaster(uint16_t capture, uint16_t rasterTotal) const;
+    RasterFit fitToRaster(uint16_t capture, uint16_t rasterTotal,
+                    uint16_t activeStart = 0) const;
 
     // Centre the picture on the raster. A picture too big to centre starts at
     // the write floor and overscans off the far end.
     PictureOrigin placePicture(float produced, uint16_t rasterTotal,
-                           float magnification) const;
+                           float magnification, uint16_t activeStart = 0) const;
 
     // This axis's four output registers. `capture` is IF units horizontally and
     // HALF-LINES vertically -- reading IF_VB as whole lines doubles the picture.
     AxisSolution solve(uint16_t capture, Scale scale,
-                       uint16_t rasterTotal) const;
+                       uint16_t rasterTotal, uint16_t activeStart = 0) const;
 
 private:
+    // The earliest a picture may START, at this magnification: past the write
+    // floor and past the back porch. fitToRaster and placePicture must agree on
+    // it, so it lives in one place.
+    float placementFloor(float offset, uint16_t activeStart) const;
+
     float startConst_, startPerMag_;
     uint16_t windowStopMin_, margin_, scaleMin_;
 };
