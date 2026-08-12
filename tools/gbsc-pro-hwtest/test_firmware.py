@@ -437,6 +437,60 @@ def test_the_sync_processor_holds_a_lock(host, source):
         )
 
 
+# --- detection settles on an input instead of hunting between them -----------
+
+ADC_INPUT_SEL = (5, 0x02, 6, 2)  # which ADC input the sync processor is watching
+
+# The livelock alternated on a ~1 s beat, so ten seconds is eight or nine
+# flips — far more than enough to catch it, and short enough to leave in a
+# routine --source run.
+MUX_HOLD_SECONDS = 10.0
+
+
+def test_detection_settles_on_one_input_instead_of_hunting(host, source):
+    """Detection has to converge. When it cannot, it does not fail loudly — it
+    flips ADC_INPUT_SEL to the other input and tries again, forever, tearing
+    down the picture it just built on every pass.
+
+    The livelock, measured 2026-08-13 with the RiscPC at 320x256@50:
+
+        s5_02=0x4b  ADC_INPUT_SEL 1  STATUS_16 0x02   the source, sync present
+        s5_02=0x0d  ADC_INPUT_SEL 0  STATUS_16 0x00   nothing connected
+        ... alternating on a ~1 s beat, indefinitely
+
+    Cause: detectAndSwitchToActiveInput() ran the V-sync-absent search only for
+    SeleInputSource == S_RGBs, while the V-sync-present search accepted S_VGA
+    too. A unit saved as S_VGA on a source reading VSACT 0 -- which is the
+    NORMAL reading on this bench, with a perfect picture -- matched neither, so
+    detection fell out of the bottom of the function every time. Every boot
+    ended in low power with the DAC down.
+
+    This is the behavioural test for that: not "did detection succeed", which a
+    single sample cannot distinguish from a livelock caught mid-flip, but "did
+    it stop moving". SyncSearch covers which branch is chosen on the host; this
+    covers the thing the user actually sees.
+    """
+    settled = wait_for(
+        lambda: (read_reg(host, *STATUS_16) or 0) & HS_ACTIVE == HS_ACTIVE,
+        timeout=LOCK_TIMEOUT,
+    )
+    assert settled, f"no H-sync within {LOCK_TIMEOUT:.0f}s, so there is nothing to settle on"
+
+    seen = []
+    deadline = time.monotonic() + MUX_HOLD_SECONDS
+    while time.monotonic() < deadline:
+        seen.append(read_field(host, *ADC_INPUT_SEL))
+        time.sleep(0.4)
+
+    distinct = sorted({v for v in seen if v is not None})
+    assert len(distinct) == 1, (
+        f"the input mux is hunting: ADC_INPUT_SEL took {distinct} across "
+        f"{len(seen)} samples in {MUX_HOLD_SECONDS:.0f}s. Detection is not "
+        f"converging, so every picture it builds is torn down on the next pass. "
+        f"Samples: {seen}"
+    )
+
+
 # --- external clock generator: the display-clock stash -----------------------
 #
 # While the external clock generator drives the display, PLL648_CONTROL_01 is

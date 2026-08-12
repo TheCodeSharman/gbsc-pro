@@ -34,6 +34,11 @@ Useful ones:
 |----------|---------|
 | `GET /getreg?s=<seg>&r=<reg>` | read one TV5725 register byte |
 | `GET /setreg?s=<seg>&r=<reg>&v=<val>` | write one, and report what it was |
+| `GET /getregs?s=<seg>&from=<reg>&to=<reg>` | read a range as one hex string, index 0 being `from` |
+
+All three are behind `GBS_DEBUG`, and they do not touch the chip from the
+handler: they submit to a queue that `loop()` drains, so the I2C bus has one
+owner. `docs/register-bus-ownership.md`.
 
 Segment `0`–`5`, register and value `00`–`ff`. Every field is hex, with or
 without an `0x` prefix — never decimal, so `r=11` means the same register the
@@ -116,6 +121,23 @@ covers nine call sites, but not FrameSync steering the Si5351, which
   the sharpest edge of the mode.
 - **Never persisted.** A reboot always returns to normal, so a unit frozen into a
   state you cannot drive is one power cycle from usable.
+- **The freeze leaks, and the leak is in the recovery path.** `loop()` calls
+  `inputAndSyncDetect()` directly (`gbs-control.ino:8148`), *not* through
+  `runSyncWatcher()`, so the guard at `runSyncWatcher()` never sees it. Frozen,
+  `detectAndSwitchToActiveInput()` does return 0 immediately — but its caller
+  then goes on to `goLowPowerWithInputDetection()`, and the `ADC_SOGCTRL` ratchet
+  beside it runs regardless. Measured 2026-08-13 with `/freeze` reporting
+  `{"frozen":true}`:
+
+  ```
+  wrote ADC_SOGCTRL 24 -> read back 21, 19, 17, 15, 13, 11 ... one step per 500 ms
+  ```
+
+  So the documented "freeze, then restore a snapshot" recovery is defeated by the
+  firmware it was supposed to hold still, and only while `sourceDisconnected` is
+  true — which is exactly when you are recovering. A hand-restored picture decays
+  under it. **If a restore looks correct and the screen is still wrong, read
+  `ADC_SOGCTRL` twice a second before believing the registers.**
 - **This freezes the ESP, not the chip.** The TV5725 keeps running Mode Detect,
   the ADC PLL and the sync processor. "Does nothing" means the firmware stops
   writing, not that the hardware stops adapting.

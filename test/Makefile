@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp segment-select register-queue clean help
+.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -116,6 +116,18 @@ clock-ramp:
 	  "$(HERE)/test_clock_ramp.cpp" src/clock/ClockRamp.cpp
 	@"$(OUT)/test_clock_ramp"
 
+## sync-search: host unit tests for which sync search a saved input selects
+#
+# The V-sync-absent search was gated on S_RGBs while the V-sync-present one
+# accepted S_VGA too, so a unit saved as VGA on a source reading VSACT 0 matched
+# neither and detection livelocked -- ADC_INPUT_SEL flipping 1/0 on a ~1 s beat
+# forever. Pure logic, so it costs a millisecond here and a power cycle there.
+sync-search:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sync_search" \
+	  "$(HERE)/test_sync_search.cpp" src/input/SyncSearch.cpp
+	@"$(OUT)/test_sync_search"
+
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -129,7 +141,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp segment-select register-queue
+test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue
 all: test
 
 ## clean: remove the compiled test binaries

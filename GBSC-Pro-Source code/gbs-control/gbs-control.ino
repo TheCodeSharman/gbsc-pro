@@ -79,6 +79,7 @@ TV5725
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
+#include "src/input/SyncSearch.h"
 
 struct MenuAttrs
 {
@@ -2113,6 +2114,13 @@ void applySavedInputSource()
                   (unsigned)GBS::ADC_INPUT_SEL::read(), (unsigned long)millis());
 }
 
+// SyncSearch repeats the SeleInputSource values rather than including
+// OLEDMenuImplementation.h, which would pull in Arduino and cost it its host
+// test. This is where both are visible, so this is where the copy is checked.
+static_assert(SyncSearch::SourceRgbs == S_RGBs, "SyncSearch::SourceRgbs drifted from S_RGBs");
+static_assert(SyncSearch::SourceVga == S_VGA, "SyncSearch::SourceVga drifted from S_VGA");
+static_assert(SyncSearch::SourceYuv == S_YUV, "SyncSearch::SourceYuv drifted from S_YUV");
+
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
     // First few passes only: the boot log is 2 KB and this runs forever.
@@ -2159,8 +2167,8 @@ uint8_t detectAndSwitchToActiveInput()
                 }
 
 
-                if ((vsyncActive && Info_sate == 0) && (SeleInputSource == S_VGA || SeleInputSource == S_RGBs)) // 20240919
-                {
+                if (Info_sate == 0 &&
+                    SyncSearch::searchFor(SeleInputSource, vsyncActive) == SyncSearch::VsyncPresent) {
                     // SerialMprintln(F("VSync: present"));
                     GBS::MD_SEL_VGA60::write(1); 
                     boolean hsyncActive = 0;
@@ -2233,9 +2241,9 @@ uint8_t detectAndSwitchToActiveInput()
                     }
                 }
 
-                if ((!vsyncActive && Info_sate == 0) && SeleInputSource == S_RGBs) // 20240919
-                {
-                    
+                if (Info_sate == 0 &&
+                    SyncSearch::searchFor(SeleInputSource, vsyncActive) == SyncSearch::VsyncAbsent) {
+
                     rto->syncTypeCsync = true;
                     GBS::MD_SEL_VGA60::write(0); 
                     uint16_t testCycle = 0;
