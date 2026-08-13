@@ -3929,6 +3929,24 @@ void doPostPresetLoadSteps()
             GBS::VDS_UV_STEP_BYPS::write(1);
         }
 
+        // The output raster, computed rather than inherited from the table just
+        // written -- both totals, both sync pulses, and the clock seed that
+        // affords them. This is the step that makes the preset's own raster
+        // bytes inert, and it has to be HERE: externalClockGenResetClock() reads
+        // PLL648_CONTROL_01 to decide what to steer the Si5351 to, so the seed
+        // must already be in the register.
+        //
+        // The ordering below is docs/investigations/preset-abandonment-audit.md's, and it is
+        // not optional: raster (here), clock (next line), windows
+        // (geometry.solveFromScratch(), further down), rate steer LAST from
+        // loop(). Running the steer early corrects the new clock against the OLD
+        // raster -- 2026-08-12, a 31 Hz frame and a black screen that looked
+        // like the raster model was wrong.
+        //
+        // Returns false and writes nothing for an output mode it has no timings
+        // for, which leaves the table's raster alone.
+        geometry.solveRaster();
+
         externalClockGenResetClock();
 
         Menu::init();
@@ -7727,6 +7745,47 @@ void setup()
     }
     halfPeriod.reset();
 }
+
+// The source-recovery poll: while the firmware believes nothing is plugged in,
+// re-run detection every 500 ms and step the SOG slice level down, sweeping for
+// a level that finds sync.
+//
+// loop() reaches this directly rather than through runSyncWatcher(), so the
+// freeze has to be checked here as well. Guarding detectAndSwitchToActiveInput()
+// instead does not work: frozen it returns 0, which is what tells
+// inputAndSyncDetect() nothing is plugged in.
+//
+// lastTimeSourceCheck is shared with the sync-present branch in loop() so the
+// two cadences cannot drift apart.
+void runSourceRecovery(unsigned long &lastTimeSourceCheck)
+{
+    // Frozen: docs/gbs-control-debug-interface.md
+    if (AUTOMATION_FROZEN()) {
+        return;
+    }
+    if ((millis() - lastTimeSourceCheck) < 500) {
+        return;
+    }
+
+    if (checkBoardPower()) {
+        inputAndSyncDetect();
+    } else {
+        rto->boardHasPower = false;
+        rto->continousStableCounter = 0;
+        rto->syncWatcherEnabled = false;
+    }
+    lastTimeSourceCheck = millis();
+
+    uint8_t currentSOG = GBS::ADC_SOGCTRL::read();
+    if (currentSOG >= 3) {
+        rto->currentLevelSOG = currentSOG - 1;
+        GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
+    } else {
+        rto->currentLevelSOG = 6;
+        GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
+    }
+}
+
 void loop()
 {
 #if GBS_DEBUG
@@ -8009,25 +8068,7 @@ void loop()
     }
 
     if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && rto->boardHasPower) {
-        if ((millis() - lastTimeSourceCheck) >= 500) {
-            if (checkBoardPower()) {
-                inputAndSyncDetect();
-            } else {
-                rto->boardHasPower = false;      // 
-                rto->continousStableCounter = 0; // 
-                rto->syncWatcherEnabled = false; // 
-            }
-            lastTimeSourceCheck = millis();
-
-            uint8_t currentSOG = GBS::ADC_SOGCTRL::read();
-            if (currentSOG >= 3) {
-                rto->currentLevelSOG = currentSOG - 1;
-                GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
-            } else {
-                rto->currentLevelSOG = 6;
-                GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
-            }
-        }
+        runSourceRecovery(lastTimeSourceCheck);
     } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && rto->boardHasPower)) {
         if ((millis() - lastTimeSourceCheck) >= 500) {
             // if (CheckInputFrequency() && rto->HdmiHoldDetection)

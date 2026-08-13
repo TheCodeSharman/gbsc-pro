@@ -1,5 +1,7 @@
 #include "Geometry.h"
 
+#include "OutputRaster.h"
+
 namespace Tv5725 {
 
 // --- Capture ---------------------------------------------------------
@@ -94,6 +96,51 @@ bool Geometry::apply()
 
     write(solved, capture);
     solvePending_ = false;
+    return true;
+}
+
+bool Geometry::solveRaster()
+{
+    // The frame height is the mode the user chose, and the only thing taken
+    // from what is already programmed. A preset load has just put it there;
+    // everything else about the raster is computed from it below.
+    const OutputMode *mode =
+        OutputRaster::modeFor(GBS::VDS_VSYNC_RST::read() + 1);
+    if (mode == 0)
+        return false;
+
+    // **REFUSED RATHER THAN GUESSED.** sourceFieldRateOr50Hz() falls back to 50
+    // because a capture window solved at the wrong rate is a few pixels out; a
+    // RASTER solved at the wrong rate is out by the ratio of the rates, so
+    // calling a 60 Hz source 50 Hz asks for a line 20% too long. That is the
+    // black-screen class of fault, and the table's own raster is a better answer
+    // than a computed one built on a measurement that did not happen. Same
+    // doctrine as RasterSolution::usable().
+    float fieldRate = getSourceFieldRate(0);
+    if (!(fieldRate > 40.0f && fieldRate < 100.0f))
+        return false;
+
+    // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
+    // run at: a wider raster costs zoom travel. See the constant.
+    RasterSolution raster = mode->solve(fieldRate, OutputRaster::EngineCeilingHz);
+    if (!raster.usable())
+        return false;
+
+    // Totals before sync positions, per
+    // docs/investigations/preset-abandonment-audit.md. Both hold total-1.
+    GBS::VDS_HSYNC_RST::write(raster.horizontalTotal - 1);
+    GBS::VDS_VSYNC_RST::write(raster.verticalTotal - 1);
+
+    GBS::VDS_HS_ST::write(raster.hsyncStart);
+    GBS::VDS_HS_SP::write(raster.hsyncStop);
+    GBS::VDS_VS_ST::write(raster.vsyncStart);
+    GBS::VDS_VS_SP::write(raster.vsyncStop);
+
+    // The seed, last of the raster group and first of the clock's: the caller
+    // runs externalClockGenResetClock() next, which reads this byte back and
+    // steers the Si5351 from it. loop() then stashes it and parks the 0x75
+    // external sentinel here, which is why writing a real divider is safe.
+    GBS::PLL648_CONTROL_01::write(raster.divider);
     return true;
 }
 

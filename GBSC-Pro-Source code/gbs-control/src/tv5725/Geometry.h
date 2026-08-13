@@ -93,6 +93,18 @@ public:
     // DERIVED; nothing is read back to decide it.
     bool apply();
 
+    // The OUTPUT raster, computed rather than taken from the preset table:
+    // both totals, both sync pulses, and the display clock seed that affords
+    // them. Returns false and writes NOTHING when the frame height belongs to
+    // no OutputMode, which leaves the table's raster in place.
+    //
+    // **CALL IT BEFORE externalClockGenResetClock(), NOT AFTER**, which reads
+    // PLL648_CONTROL_01 to program the Si5351. The order is raster, clock,
+    // windows, then the rate steer LAST -- steering early corrects a new clock
+    // against the old raster, giving a 31 Hz frame and a black screen.
+    // docs/investigations/preset-abandonment-audit.md "Ordering, which is not optional".
+    bool solveRaster();
+
     // A mode change has no framing worth keeping, only the previous mode's.
     // test_geometry_pads.py::test_a_preset_load_recomputes_every_register_from_scratch
     bool solveFromScratch();

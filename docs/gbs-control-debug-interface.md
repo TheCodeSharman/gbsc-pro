@@ -104,11 +104,11 @@ curl 'http://<ip>/freeze'         # report
 curl 'http://<ip>/freeze?on=0'
 ```
 
-Frozen, the ESP writes **no** TV5725 register unless you ask. Five guards, on
+Frozen, the ESP writes **no** TV5725 register unless you ask. Six guards, on
 `applyPresets()`, `runSyncWatcher()`, `runAutoBestHTotal()`,
-`detectAndSwitchToActiveInput()` and `runAutoGain()` — `applyPresets()` alone
-covers nine call sites, but not FrameSync steering the Si5351, which
-`syncWatcherEnabled` does not gate either.
+`detectAndSwitchToActiveInput()`, `runAutoGain()` and `runSourceRecovery()` —
+`applyPresets()` alone covers nine call sites, but not FrameSync steering the
+Si5351, which `syncWatcherEnabled` does not gate either.
 
 - **`/setreg`, `/uc`, `/sc` and the OLED still work.** A mode that blocked those
   could not drive an experiment.
@@ -121,23 +121,30 @@ covers nine call sites, but not FrameSync steering the Si5351, which
   the sharpest edge of the mode.
 - **Never persisted.** A reboot always returns to normal, so a unit frozen into a
   state you cannot drive is one power cycle from usable.
-- **The freeze leaks, and the leak is in the recovery path.** `loop()` calls
-  `inputAndSyncDetect()` directly (`gbs-control.ino:8148`), *not* through
-  `runSyncWatcher()`, so the guard at `runSyncWatcher()` never sees it. Frozen,
-  `detectAndSwitchToActiveInput()` does return 0 immediately — but its caller
-  then goes on to `goLowPowerWithInputDetection()`, and the `ADC_SOGCTRL` ratchet
-  beside it runs regardless. Measured 2026-08-13 with `/freeze` reporting
-  `{"frozen":true}`:
+- **The recovery-path leak is FIXED — the sixth guard is what fixed it.** Worth
+  knowing because it invalidated the documented recovery for months. `loop()`
+  called `inputAndSyncDetect()` *directly*, not through `runSyncWatcher()`, so
+  that guard never saw it, and the `ADC_SOGCTRL` ratchet beside it ran
+  regardless. Measured 2026-08-13 with `/freeze` reporting `{"frozen":true}`:
 
   ```
-  wrote ADC_SOGCTRL 24 -> read back 21, 19, 17, 15, 13, 11 ... one step per 500 ms
+  wrote ADC_SOGCTRL 24 -> read back 23, 22, 21, 20, 19, 18 ... one step per 500 ms
   ```
 
-  So the documented "freeze, then restore a snapshot" recovery is defeated by the
-  firmware it was supposed to hold still, and only while `sourceDisconnected` is
-  true — which is exactly when you are recovering. A hand-restored picture decays
-  under it. **If a restore looks correct and the screen is still wrong, read
-  `ADC_SOGCTRL` twice a second before believing the registers.**
+  The guard on `detectAndSwitchToActiveInput()` made it *worse*: frozen it
+  returns 0, which is exactly what tells `inputAndSyncDetect()` nothing is
+  plugged in, so the firmware powered the DAC down and called
+  `setResetParameters()` **because** it was frozen. It leaked only while
+  `sourceDisconnected` was true — precisely when you are recovering — so a
+  hand-restored picture decayed into colour noise with all 608 config registers
+  still reading correct. The block is now `runSourceRecovery()` and carries the
+  same guard clause as the other five. Guarded by
+  `test_frozen_firmware_does_not_ratchet_the_sog_level`.
+- **`/sc?~` is the only HTTP route to `sourceDisconnected`.** It runs
+  `goLowPowerWithInputDetection()` directly — an explicit request, so honoured
+  frozen. Everything else that sets the flag is an OLED handler. That makes it
+  the trigger for any test about the recovery path, and it drops the picture on
+  purpose; unfreezing is what brings it back.
 - **This freezes the ESP, not the chip.** The TV5725 keeps running Mode Detect,
   the ADC PLL and the sync processor. "Does nothing" means the firmware stops
   writing, not that the hardware stops adapting.

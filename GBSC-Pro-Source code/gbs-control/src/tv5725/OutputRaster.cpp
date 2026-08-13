@@ -6,11 +6,11 @@
 
 namespace Tv5725 {
 
-// doctest's CHECK binds each operand to a `const &`, which is an ODR-use.
-// Same reason as Memory.cpp.
 const uint32_t OutputRaster::WorkingCeilingHz;
+const uint32_t OutputRaster::EngineCeilingHz;
 const uint16_t OutputRaster::HorizontalTotalMax;
 const uint16_t OutputRaster::VerticalTotalMax;
+const uint16_t OutputRaster::PalNtscSplitHz;
 
 RasterSolution::RasterSolution()
     : horizontalTotal(0), verticalTotal(0), divider(0), hsyncStart(0), hsyncStop(0),
@@ -76,6 +76,15 @@ uint8_t OutputRaster::dividerFor(uint16_t frameLines, float fieldRateHz,
         }
     }
     return best;
+}
+
+const OutputMode *OutputRaster::modeFor(uint16_t frameLines)
+{
+    if (frameLines == Mode1080p.frameLines())
+        return &Mode1080p;
+    if (frameLines == Mode720p.frameLines())
+        return &Mode720p;
+    return 0;
 }
 
 OutputMode::OutputMode(uint16_t frameLines, float syncNs, float backPorchNs,

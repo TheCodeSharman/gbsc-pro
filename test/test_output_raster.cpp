@@ -111,6 +111,64 @@ TEST_CASE("a solved raster reports whether it is usable")
     }
 }
 
+TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
+{
+    // NOT the same question as WorkingCeilingHz, which is what the part
+    // demonstrably does. This is a usability limit: a wider raster costs zoom
+    // travel, because the zoom floor is raster / maxMagnification while the
+    // default capture depends on the INPUT line alone.
+    //
+    // **RAISING IT IS AN UNTRIED BENCH EXPERIMENT.** The argument for 108 over
+    // 129.6 rests on a fixed scale floor of 500 putting the zoom floor on the
+    // default framing, and Axis::scaleMin() is derived -- so the argument does
+    // not stand on its own terms. 129.6 MHz has been swept by hand and never run
+    // through the engine, which is what would settle it.
+    CHECK(OutputRaster::EngineCeilingHz == 108000000u);
+
+    RasterSolution solved = Mode1080p.solve(50.0f, OutputRaster::EngineCeilingHz);
+    CHECK(solved.horizontalTotal == 1918);
+    CHECK(solved.verticalTotal == 1126);
+    CHECK(solved.demandedHz() <= OutputRaster::EngineCeilingHz);
+
+    SUBCASE("which is a third more line than the tables shipped") {
+        // pal_1920x1080 ships 1445. The point of computing the raster at all.
+        CHECK(solved.horizontalTotal > 1445);
+    }
+
+    SUBCASE("and leaves real travel where 129.6 MHz left none") {
+        // ceil(raster * scaleMin / Unity) is Axis::smallestCapture's arithmetic.
+        // The bench's usable capture tops out near 1187 -- the source line is
+        // 1277 IF units and the window starts at 90 to clear the hsync pulse.
+        const uint32_t scaleMin = 500, unity = 1024, usable = 1187;
+        uint32_t at108 = (1918u * scaleMin + unity - 1) / unity;
+        uint32_t at129 = (2298u * scaleMin + unity - 1) / unity;
+        CHECK(at129 == 1123);              // measured clamp, exactly
+        CHECK(usable - at129 < 100);       // ~64 units, and none at the default
+        CHECK(usable - at108 > 200);       // ~250 units
+    }
+}
+
+TEST_CASE("a frame height selects the output mode that owns it")
+{
+    // The frame height is the one part of the raster that is a CHOICE rather
+    // than a calculation. Everything else -- the line total, the divider, both
+    // sync pulses, the active window -- is derived from it and the measured
+    // field rate.
+    CHECK(OutputRaster::modeFor(1126) == &Mode1080p);
+    CHECK(OutputRaster::modeFor(751) == &Mode720p);
+
+    SUBCASE("and an unknown height selects nothing") {
+        // NOT a fallback to 1080p. A height nobody has swept gets the preset
+        // table's own raster left alone, which is the same rule Memory used to
+        // have and DisplayClock still has: better an untouched value than one
+        // computed for a mode this is not. 625 is PAL 576p, 525 NTSC 480p --
+        // both real output modes with no OutputMode entry yet.
+        CHECK_FALSE(OutputRaster::modeFor(625));
+        CHECK_FALSE(OutputRaster::modeFor(525));
+        CHECK_FALSE(OutputRaster::modeFor(0));
+    }
+}
+
 // --- the oracle grid ---------------------------------------------------------
 
 // `--dump` prints the solved grid for inspection by hand.

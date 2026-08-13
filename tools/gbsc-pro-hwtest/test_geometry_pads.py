@@ -235,6 +235,30 @@ def press(host, probe, command, timeout=6.0):
                     f"within {timeout}s -- was the press absorbed?")
 
 
+def press_until_saturated(host, probe, command, limit=24):
+    """Press until the control stops moving, and report how many landed.
+
+    press() asserts every press moves something, which is right for a test about
+    ONE press and wrong for a test that walks a control to its end -- a zoom has
+    a finite range and reaching it is correct behaviour, not a fault.
+
+    That range is not a constant, which is why this counts rather than assuming.
+    AxisH magnifies at most geometry_math.MAX_MAGNIFICATION, so the smallest
+    capture that fills the raster is ceil(raster / that). The raster is COMPUTED,
+    so a wider one leaves less zoom travel and no press count can be hardcoded.
+    """
+    spec = WATCH[command]
+    landed = 0
+    for _ in range(limit):
+        before = probe.read_field(spec)
+        status, _ = get(host, f"/sc?{command}")
+        assert status == 200, f"/sc?{command} returned {status}"
+        if not wait_for(lambda: probe.read_field(spec) != before, timeout=6.0):
+            break
+        landed += 1
+    return landed
+
+
 def differences(want, got):
     return {name: (want[name], got[name])
             for name in SOLVED_REGISTERS if want[name] != got[name]}
@@ -303,10 +327,8 @@ PB_CAP_OFFSET = ("PB_CAP_OFFSET", 4, 0x37, 0, 10)
 VDS_HSYNC_RST = ("VDS_HSYNC_RST", 3, 0x01, 0, 12)
 
 # What Tv5725::Memory holds. Mirrors src/tv5725/Memory.h, the same way
-# ZOOM_STEP_PX mirrors ControlSteps -- one measured output raster, and
-# upstream's untouched value for every raster nobody has swept.
+# ZOOM_STEP_PX mirrors ControlSteps.
 LINE_1080P = 1445
-FETCH_1080P = 204
 OFFSET_1080P = 250
 UPSTREAM_FETCH = 256
 UPSTREAM_OFFSET = UPSTREAM_FETCH + 4
@@ -317,13 +339,29 @@ UPSTREAM_OFFSET = UPSTREAM_FETCH + 4
 # follow it, being clean anywhere across 190..256 when it was measured.
 REQUESTS_PER_LINE = 4
 FETCH_FLOOR = 150
+FETCH_MAX = 512
 
 
 def expected_burst(line_px, capture):
-    if line_px != LINE_1080P:
-        return UPSTREAM_FETCH, UPSTREAM_OFFSET
-    fetch = max(FETCH_FLOOR, -(-capture // REQUESTS_PER_LINE))
-    return fetch, OFFSET_1080P
+    """The pair Tv5725::Memory computes for this raster and capture.
+
+    **THE FETCH HAS NO RASTER GATE, AND THIS MIRRORED ONE FOR TOO LONG.**
+    Memory::fetchFor dropped its gate deliberately and records why: a preset
+    load moved the unit to a 1435 px raster, the rule switched itself off, and
+    PB_FETCH_NUM sat at upstream's 256 against a capture of 1185 that needed
+    297. 256 is not a neutral default; it is a value tuned for a raster it is
+    not, and it can sit below the floor.
+
+    Keeping the gate here meant this file asserted the fault. On the bench's
+    1436 px raster it expected 256 while the firmware correctly computed 251,
+    which failed the test above and silently SKIPPED the stronger one below --
+    so the register that tore 80 of 493 framings has had no live cover at all.
+
+    The offset keeps its gate, because Memory::offsetFor still has one.
+    """
+    fetch = min(FETCH_MAX, max(FETCH_FLOOR, -(-capture // REQUESTS_PER_LINE)))
+    offset = OFFSET_1080P if line_px == LINE_1080P else UPSTREAM_OFFSET
+    return fetch, offset
 
 
 @pytest.mark.zoom
@@ -375,9 +413,6 @@ def test_a_zoom_press_repairs_a_playback_burst_a_preset_left_behind(
         "could not seed the fault, so this proves nothing")
 
     line_px = probe.read_field(VDS_HSYNC_RST) + 1
-    if line_px != LINE_1080P:
-        pytest.skip(f"a {line_px} px output line keeps upstream's value, so "
-                    f"there is no repair to observe -- put the unit in 1080p")
 
     # The press MOVES the capture, so what to expect can only be computed from
     # the framing the press lands on -- not from the one it started in.
@@ -582,16 +617,33 @@ def test_the_playback_burst_tracks_the_zoom_rather_than_sitting_still(host, prob
     still, the fetch is either short of the capture at the wide end or far above
     it at the deep end, and the beat between capture writes and playback reads
     walks with the zoom. Tracking the capture takes HSCALE out of that ratio.
+
+    Walks the control to its end rather than pressing a fixed 24 times. The zoom
+    range is a function of the raster, and the engine now COMPUTES the raster --
+    at 1915 the horizontal saturates after 16 presses, where the preset table's
+    1436 had room for about 61. Running out of travel is correct behaviour; a
+    fetch that never moved on the way there is not.
     """
     seen = set()
-    for _ in range(24):
-        press(host, probe, "z")
+    landed = 0
+    while True:
+        moved = press_until_saturated(host, probe, "z", limit=1)
+        if not moved:
+            break
+        landed += 1
         settled_geometry(host)
         seen.add(probe.read_field(PB_FETCH_NUM))
+        if landed >= 24:
+            break
 
+    assert landed >= 4, (
+        f"only {landed} zoom press(es) moved the capture before it saturated, "
+        "which is too little travel to say anything about the burst. The raster "
+        "may have been computed far wider than the source can fill")
     assert len(seen) > 1, (
-        f"PB_FETCH_NUM stayed at {seen} across 24 zoom presses -- it is either "
-        "not being written or the capture is not reaching Memory::fetchFor")
+        f"PB_FETCH_NUM stayed at {seen} across {landed} zoom presses -- it is "
+        "either not being written or the capture is not reaching "
+        "Memory::fetchFor")
 
 
 @pytest.mark.zoom

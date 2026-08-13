@@ -18,6 +18,8 @@
 
 namespace Tv5725 {
 
+class OutputMode;
+
 // A solved raster: every output timing register, from a mode and a field rate.
 class RasterSolution {
 public:
@@ -60,6 +62,21 @@ public:
     // disables.
     static const uint32_t WorkingCeilingHz = 129600000;
 
+    // What the engine asks for, which is a different question from what the part
+    // does: a wider raster costs zoom travel, because the zoom floor is
+    // raster / maxMagnification while the default capture depends on the INPUT
+    // line alone, so the two do not track.
+    //
+    // A usability choice, not a picture-quality one -- the sweep above clears
+    // both 1918 and 2301. Equal to DisplayClock::CeilingHz by COINCIDENCE; that
+    // is a pad rating. Do not merge them.
+    static const uint32_t EngineCeilingHz = 108000000;
+
+    // Below this a source is 50 Hz. The same split docs/vesa-gtf.md settled --
+    // PAL or NTSC on field rate, no curve -- and far from both 50 and 59.94, so
+    // a source measured a little off still lands on the right side.
+    static const uint16_t PalNtscSplitHz = 55;
+
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits
 
@@ -72,6 +89,13 @@ public:
     // whose horizontalTotal overflows the 12-bit register. 0 means "do not write".
     static uint8_t dividerFor(uint16_t frameLines, float fieldRateHz,
                               uint32_t ceilingHz = WorkingCeilingHz);
+
+    // The mode that owns this frame height, or NULL if none does. The height is
+    // the one part of a raster that is a CHOICE rather than a calculation.
+    //
+    // NULL is not a failure and must NOT fall back to 1080p: a height nobody has
+    // swept keeps the raster it already had.
+    static const OutputMode *modeFor(uint16_t frameLines);
 };
 
 // One output mode: its frame height, and the CEA-861 timings that place the sync

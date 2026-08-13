@@ -43,7 +43,25 @@ PRESET_VALUE_COUNT = 432  # see presetRegisterRanges[] in gbs-control.ino
 # Sync processor state, all reachable through /getreg.
 STATUS_16 = (0, 0x16)  # what every "is there sync?" test in the firmware reads
 HS_ACTIVE, VS_ACTIVE = 1 << 1, 1 << 3
-LOCKED = HS_ACTIVE | VS_ACTIVE
+# The lock signal is HSACT ALONE, which is what the firmware itself waits on:
+# getStatus16SpHsStable() checks `status16 & 0x02` and nothing else.
+#
+# This read `HS_ACTIVE | VS_ACTIVE` from 2026-08-01 until today, and the test
+# below therefore never once ran its own body -- it timed out in the first
+# assert, on every build, on this bench. VSACT reads 0 on this source WITH A
+# PERFECT PICTURE while STATUS_SYNC_PROC_VTOTAL counts a steady 308 lines, so
+# vertical sync is plainly being measured; measured again 2026-08-13, VSACT was
+# low in 3761 of 3761 samples over 90 s with HSACT high in all of them.
+#
+# It was written during the RISC PC no-sync investigation, when "V sync never
+# registers" was believed to BE the fault. It turned out to be this source's
+# normal reading -- docs/investigations/riscpc-no-sync.md still carries it as an open question
+# about the source, not the scaler. baseline.py was corrected on 2026-08-12 and
+# says so in its own header; this file was missed.
+#
+# So the hold loop below -- the half that catches a lock which arrives and then
+# collapses -- has never actually protected anything. That is what this fixes.
+LOCKED = HS_ACTIVE
 
 SYNC_PROC_00 = (5, 0x20)
 EXT_SYNC_SEL = 1 << 3  # take V sync off the HS line instead of the VS input
@@ -382,10 +400,15 @@ def _sync_sample(host):
 
 
 def test_the_sync_processor_holds_a_lock(host, source):
-    """H and V active at the same moment is what every downstream stage waits
+    """H sync active and staying active is what every downstream stage waits
     for. The no-sync fault shows up here twice over: as a lock that never
     arrives, and as one that arrives and collapses seconds later when the sync
     watcher reconfigures the sync processor underneath it.
+
+    VSACT is deliberately not part of the lock -- see the LOCKED constant. It
+    reads 0 on this source with a perfect picture, so requiring it made this
+    test time out in its first assert for twelve days without ever reaching the
+    hold loop that is the point of it.
 
     A dropout is confirmed before it fails the test: either it survives an
     immediate re-read, or the ADC PLL was unlocked in the same burst. Both forms
@@ -547,21 +570,20 @@ VDS_VSYNC_RST = (3, 0x02, 4, 11)
 def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
     """A 1080p output raster must use most of the 108 MHz the part is rated for.
 
-    The raster is a preset table constant -- nothing computes it and, settled,
-    nothing trims it. FrameSync::findBestHTotal() returns the htotal it was
-    handed once the input and output periods agree within four clocks, and the
-    Si5351 is then steered to whatever that raster demands. So the table's five
-    raster bytes decide how much horizontal resolution the board produces, and
-    the only thing bounding them is the datasheet.
+    Engine::solveRaster() derives the raster from the frame height and the
+    measured field rate, so this reads the engine's output. Measured on the
+    bench either side of that:
 
-    pal_1920x1080 shipped 1445 x 1126 for a 50 Hz source, demanding 81.35 MHz of
-    an available 108 -- a quarter of every line thrown away, while
-    ntsc_1920x1080 asked for the full 108 at 60 Hz. Nothing recorded a reason,
-    and the arithmetic says there is not one.
+        preset table   1436 x 1126 @ 50 Hz   80.85 MHz   74.9%
+        computed       1915 x 1126 @ 50 Hz  107.81 MHz   99.8%
 
-    Deliberately NOT keyed to a resolution or a field rate. Both output rasters
-    have to answer the same question, so the test that catches the next one like
-    it is the one that asks what fraction of the budget is being spent.
+    **Do not repair a failure here by patching a preset table.** That turns it
+    green and destroys its meaning. If it goes red, the engine stopped computing
+    the raster.
+
+    Deliberately NOT keyed to a resolution or a field rate: every output raster
+    has to answer the same question, so asking what fraction of the budget is
+    spent is what catches the next one.
     """
     source_vtotal = read_field(host, *SYNC_PROC_VTOTAL)
     assert source_vtotal, "no source VTOTAL: nothing is locked, so there is no field rate"
@@ -1284,6 +1306,112 @@ def test_an_explicit_framing_request_applies_while_frozen(host, source):
     finally:
         get(host, f"/geometry?ph={restore['ph']}")
         get(host, "/freeze?on=0")
+
+
+# ADC_SOGCTRL, the sync-on-green slice level: s5_02 bits [5:1]. The
+# source-recovery poll steps it down one notch every 500 ms while the firmware
+# believes nothing is plugged in, sweeping for a level that finds sync.
+SOG_LEVEL = (5, 0x02, 1, 5)
+DAC_POWER = (0, 0x44, 0, 1)  # DAC_RGBS_PWDNZ, 0 in low power
+
+# Six poll intervals. The ratchet is one step per 500 ms, so a leaking firmware
+# has moved the level by about six by the time this elapses -- far enough that
+# no rounding or single missed sample can explain a pass.
+SOG_OBSERVATION_SECONDS = 3.0
+
+# Above anything the ratchet resets to (it floors at 3 and jumps back to 6), so
+# a value that has not moved cannot be a coincidence of the sweep passing
+# through where we put it.
+SOG_WITNESS = 24
+
+
+def _sog_level(host):
+    return read_field(host, *SOG_LEVEL)
+
+
+@pytest.mark.freeze
+def test_frozen_firmware_does_not_ratchet_the_sog_level(host, source):
+    """Frozen, the source-recovery poll must not run -- it writes ADC_SOGCTRL.
+
+    The freeze's guards sit on applyPresets(), runSyncWatcher(),
+    runAutoBestHTotal(), detectAndSwitchToActiveInput() and runAutoGain(). None
+    of them covers loop()'s own source-recovery block, which calls
+    inputAndSyncDetect() DIRECTLY rather than through runSyncWatcher() and steps
+    ADC_SOGCTRL beside it. Measured on the bench 2026-08-13 with /freeze
+    reporting {"frozen":true}:
+
+        wrote ADC_SOGCTRL 24 -> read back 21, 19, 17, 15, 13, 11 ...
+
+    The guard on detectAndSwitchToActiveInput() makes it worse rather than
+    better: frozen it returns 0, which is exactly what tells inputAndSyncDetect()
+    nothing is plugged in, so the firmware powers the DAC down and calls
+    setResetParameters() -- while reporting itself frozen.
+
+    It leaks only while sourceDisconnected is true, **which is precisely when you
+    are recovering**, so the documented "freeze, then restore a snapshot" recipe
+    is undone by the firmware that is supposed to be holding still: a
+    hand-restored picture decays into colour noise with every config register
+    still reading correct.
+
+    /sc?~ is the trigger: it runs goLowPowerWithInputDetection() directly, which
+    is an explicit request and so is honoured frozen, and it is the only route to
+    sourceDisconnected that is not an OLED button. That makes this test drop the
+    picture on purpose -- hence @freeze -- and unfreezing is what brings it back.
+    """
+    assert _freeze_state(host) is not None, "unit has no /freeze support"
+
+    get(host, "/freeze?on=1")
+    assert _freeze_state(host) is True, "could not arm the freeze"
+    try:
+        # Reach the disconnected state, and confirm it through the DAC rather
+        # than through the ratchet -- reading the leak to prove the leak's
+        # precondition would pass by construction.
+        get(host, "/sc?~")
+        went_dark = wait_for(
+            lambda: read_field(host, *DAC_POWER) == 0, timeout=10.0
+        )
+        assert went_dark, (
+            "DAC_RGBS_PWDNZ never reached 0 after /sc?~, so the unit did not "
+            "enter low power and this test never reached the state it is about."
+        )
+
+        write_reg(host, 5, 0x02, (read_reg(host, 5, 0x02) & ~0x3E) | (SOG_WITNESS << 1))
+        assert _sog_level(host) == SOG_WITNESS, "could not place the SOG witness"
+
+        # Sample across the window rather than reading once at the end. A single
+        # closing read cannot tell a level that never moved from one the sweep
+        # walked back through, and it mostly returns None anyway: the leaking
+        # firmware is inside detection's 6000 ms getVideoMode() sweep, /getreg
+        # defers to loop() through RegisterQueue, and the read times out. That
+        # silence is a symptom, not a flake, so it gets its own assertion instead
+        # of being averaged into the value.
+        samples, blocked = [], 0
+        deadline = time.monotonic() + SOG_OBSERVATION_SECONDS
+        while time.monotonic() < deadline:
+            level = _sog_level(host)
+            if level is None:
+                blocked += 1
+            else:
+                samples.append(level)
+
+        assert samples, (
+            f"frozen, every ADC_SOGCTRL read in {SOG_OBSERVATION_SECONDS} s "
+            f"timed out ({blocked} of them). /getreg defers to loop(), so loop() "
+            f"is busy -- it is running detection's sweep behind the freeze."
+        )
+        walked = sorted({level for level in samples if level != SOG_WITNESS})
+        assert not walked, (
+            f"frozen, ADC_SOGCTRL walked off {SOG_WITNESS} to {walked} within "
+            f"{SOG_OBSERVATION_SECONDS} s with nobody asking. loop()'s "
+            f"source-recovery block ran behind the freeze."
+        )
+    finally:
+        get(host, "/freeze?on=0")
+        # Leave the bench with a picture: unfrozen, the recovery poll is
+        # supposed to run, and it is the thing that finds the source again.
+        wait_for(
+            lambda: read_field(host, *DAC_POWER) == 1, timeout=LOCK_TIMEOUT
+        )
 
 
 def test_the_console_delivers_anything_at_all(console):
