@@ -243,6 +243,60 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   ping *from the router* to rule out your own host's path before concluding
   anything about the unit.
 
+## The datasheet contradicts itself, and `tv5725.h` is the survivor
+
+**Rediscovered three times now, so it is written down.** RD-5725-1.1 gives a wide
+field's bit slices in three places, and they disagree:
+
+1. the **bit diagram** above each register's table
+2. the **Bit/Name table rows**
+3. the `bit[hi:lo]` written inside the **Function description text**
+
+`VDS_HB_ST` is the canonical case — diagram `[7:0]`/`[11:8]` (right), table rows
+`[9:8]`/`[3:0]` (wrong) — and reading the table makes it 10 bits at `s3_05`
+instead of 12 at `s3_04`. It holds 1342 on this bench, which does not fit in 10
+bits, so the header is right and the table is simply an error.
+
+- **Cross-check all three; do not trust one.** `c922c80` (2026-08-04) cut the open
+  disagreements from 12 to 2 that way. **The diagram is not automatically the
+  authority either** — `SP_H_CST_SP` has the wrong slice in its diagram and the
+  right one in its table.
+- **Where `tv5725.h` and the datasheet disagree, the header wins.** Its values are
+  that audit's output plus bench proof. Eleven such fields remain, listed by name
+  in `tools/tv5725-header/test_fielddocs.py::HEADER_WINS`, and a *new*
+  disagreement fails that test rather than joining a tolerated count.
+- **Assert known widths before believing any extraction.** `VDS_HSCALE` 10,
+  `PLLAD_MD` 12, `IF_HB_ST1` 11, `MEM_MODE_REG` 16. Two attempts at re-deriving
+  the field set on 2026-08-13 both produced complete-looking tables that failed
+  exactly there — one keyed the parse by name so later slices of a wide field
+  overwrote earlier ones, one read `(hi, lo)` as `(lo, hi)`. Both looked fine.
+- **The danger is one-directional.** A field declared *narrower* than it is
+  truncates every value written through it and says nothing.
+- **`merged.json` is the artefact, not `fielddocs.parse()` output.** Parsing must
+  use `keep_slices=True`, or the `[9:8]` suffixes are stripped and every slice of
+  a wide field collides on one dict key.
+- **The extractor invents names if you let it.** On 2026-08-13 it produced 32 —
+  `ALUE`, `EG0`, `FFSET`, `R_B` — from names the PDF wraps across two lines, and
+  they reached `tv5725.h` looking like real registers. Every genuine field name
+  contains an underscore; the six in the document that do not are all fragments.
+
+## What a preset actually writes
+
+`preset_common.py` measures it, `test_preset_common.py` pins it. Of the 432
+registers one `writeProgramArrayNew()` call writes:
+
+- **306 are identical in all twelve scaling tables** — static bring-up wearing a
+  preset's clothes — and 126 differ somewhere.
+- **No read-only register is written.** All 16 RO registers are `s0_00..s0_2e`
+  and the preset ranges start at `s0_40`. There is no overlap.
+- **73 registers are written `0x00` by every table** because the ranges overrun
+  the documented register set — the datasheet stops at `s4_5b`, `s5_63`, `s0_98`
+  and the preset writes past all three. Nobody chose those; they are padding.
+- Counting only datasheet-attested names, 188 of the 432 are fully named, 147
+  partly, 97 not at all. Counting gbs-control's own convenience typedefs too it
+  is 229/136/67 — **that is the number not to quote**, because a whole-byte view
+  like `STATUS_00` reads no better than a raw byte.
+
 ## Register facts that are not obvious
 
 - **`STATUS_SYNC_PROC_HTOTAL` echoes `PLLAD_MD`.** The sync processor counts in
