@@ -376,6 +376,21 @@ registers one `writeProgramArrayNew()` call writes:
   zoom step could grow. `scale_step` deliberately takes no `scale` argument —
   there is a test asserting the parameter does not exist, because its existence
   was the bug. Every pad press recomputes every window, pan included.
+- **The output raster is computed too, since 2026-08-13.**
+  `Engine::solveRaster()` derives both totals, both sync pulses and the display
+  clock seed from the frame height and the measured field rate, so a preset
+  table's raster bytes are overwritten on every mode change. Measured
+  1436 x 1126 @ 80.85 MHz before, **1915 x 1126 @ 107.81 MHz after** — a third
+  more horizontal resolution. Two rules come with it. It runs from
+  `applyPresets()` **before** `externalClockGenResetClock()`, because that reads
+  back the seed it writes; the order is raster → clock → windows → rate steer
+  last, and running the steer early gave a 31 Hz frame and a black screen.
+  And **a wider raster costs zoom range**: `AxisH` magnifies at most 2.048x, so
+  the capture cannot go below `ceil(raster x 500 / 1024)`. At the 2298 the
+  129.6 MHz ceiling gives, that floor is 1123 and the *default* framing sits on
+  it — horizontal zoom-in dead, measured. Hence
+  `OutputRaster::EngineCeilingHz` is 108 MHz while `WorkingCeilingHz` stays at
+  the 129.6 the part really does. Do not merge them.
 - **The output hsync position affects left-hand corruption, and nothing models
   it.** `VDS_HB_SP` below 8 corrupts, measured with `VDS_HS_ST` at 10; left-hand
   corruption that survived everything else then cleared by moving the pulse to
@@ -464,17 +479,22 @@ registers one `writeProgramArrayNew()` call writes:
   `applyPresets()` copies `VDS_DIS_?B_*` into them (`gbs-control.ino:4097`) and
   nothing refreshes them afterwards, so they are *always* stale after the first
   pad press — measured at `EXT_HB` 348..1356 against `DIS_HB` 99..1501, with a
-  perfect picture. Michael had already reached the same answer the other way:
-  *"I played with the external `VDS_EXT_HB_*` etc and nothing happened."* Do not
+  perfect picture. Writing `VDS_EXT_HB_*` by hand changes nothing either. Do not
   add them to a solver and do not suspect them for an edge artefact.
 
   And **the datasheet's 108 MHz `CLKOUT` rating is a pad spec for a pin nobody
   loads**, so it is not the proven limit on the display clock. What bounds the
   internal VCLK is stated nowhere; the divider register offers 129.6 MHz and
-  162 MHz above it, and `ntsc_1280x1024`/`ntsc_240p` already ship `0xA5`. Treat
-  108 MHz as the largest value with evidence (Tvia's own tested condition, and a
-  raster running 108.23 MHz on this bench) rather than as a wall.
-  `src/tv5725/DisplayClock.h`.
+  162 MHz above it, and `ntsc_1280x1024`/`ntsc_240p` already ship `0xA5`.
+  The 2026-08-11 sweep settled the range: 108 MHz and **129.6 MHz both work and
+  are sharp**, 162 MHz flickers then goes black. So 129.6 is the measured
+  ceiling — `OutputRaster::WorkingCeilingHz`. `src/tv5725/DisplayClock.h`.
+
+  **The engine nevertheless asks for 108, and that is not a contradiction.**
+  `OutputRaster::EngineCeilingHz` is a *usability* limit, not an electrical one:
+  a wider raster needs a wider capture to fill it, and at 129.6 MHz the floor
+  lands exactly on the default framing so horizontal zoom-in has no travel.
+  Three constants, three different questions — do not collapse them.
 
   The live trap is the inverse: `ofw_RGBS` and `ofw_ypbpr` are the only presets
   that **clear** bit 3, so loading either brings HBOUT/VBOUT alive carrying
