@@ -87,6 +87,41 @@ Two of the `/sc` commands bite:
 - `/uc?1` is the big hammer. It clears a wedged config, and it also destroys a
   working setup.
 
+## Freezing the firmware
+
+For a targeted register experiment, the firmware is the confound: a source mode
+change makes it load a preset, which moves `PLLAD_MD` and rewrites most of the
+chip underneath you.
+
+```sh
+curl 'http://<ip>/freeze?on=1'    # {"frozen":true}
+curl 'http://<ip>/freeze'         # report
+curl 'http://<ip>/freeze?on=0'
+```
+
+Frozen, the ESP writes **no** TV5725 register unless you ask. Five guards, on
+`applyPresets()`, `runSyncWatcher()`, `runAutoBestHTotal()`,
+`detectAndSwitchToActiveInput()` and `runAutoGain()` — `applyPresets()` alone
+covers nine call sites, but not FrameSync steering the Si5351, which
+`syncWatcherEnabled` does not gate either.
+
+- **`/setreg`, `/uc`, `/sc` and the OLED still work.** A mode that blocked those
+  could not drive an experiment.
+- **Input mux selection is deliberately not frozen.** It is the OLED handler
+  writing `ADC_INPUT_SEL` plus the HC32 UART frame driving `ASW_01`-`ASW_04`,
+  neither of which is this automation. But the handler also sets
+  `sourceDisconnected = true`, and *that* is what normally triggers re-detection —
+  so frozen, picking an input switches the mux and stops there. **No preset, no
+  picture, until you write the registers yourself.** That is the point, and it is
+  the sharpest edge of the mode.
+- **Never persisted.** A reboot always returns to normal, so a unit frozen into a
+  state you cannot drive is one power cycle from usable.
+- **This freezes the ESP, not the chip.** The TV5725 keeps running Mode Detect,
+  the ADC PLL and the sync processor. "Does nothing" means the firmware stops
+  writing, not that the hardware stops adapting.
+
+`pytest --host=… --source --freeze` exercises it.
+
 ## Live status WebSocket
 
 `ws://<scaler>:81/`, subprotocol `"arduino"`. Two kinds of frame:
