@@ -77,6 +77,7 @@ TIMING_REGISTERS = {
 # looks like a successful read of a firmware that printed less than it should.
 TIMINGS_ATTEMPTS = 4
 TIMINGS_MIN_ROWS = 5
+TIMINGS_COLLECT_SECONDS = 2.5
 
 
 # --- /getreg and /setreg ----------------------------------------------------
@@ -214,7 +215,7 @@ def _collect_timings(host, console, attempts=TIMINGS_ATTEMPTS, minimum=TIMINGS_M
     for _ in range(attempts):
         console.drain()
         get(host, "/sc?,")
-        lines = console.collect()
+        lines = console.collect(seconds=TIMINGS_COLLECT_SECONDS)
         rows = parse_timings(lines)
         if len(rows) > len(best_rows):
             best_rows, best_lines = rows, lines
@@ -824,4 +825,97 @@ def test_unit_survives_a_hostile_pllad(host, source):
     restored = read_field(host, *PLLAD_MD_FIELD)
     assert restored == baseline, (
         f"PLLAD_MD did not go back: wanted {baseline}, reads {restored}"
+    )
+
+
+# --- the boot log ------------------------------------------------------------
+
+PREFS_PATH = "/preferencesv2.txt"
+PREFS_BYTES = 39
+
+
+def test_bootlog_reports_the_preferences_read(host):
+    """/bootlog must show how this boot loaded its settings.
+
+    This endpoint exists because the boot that matters cannot be watched: the
+    trace prints before WiFi is up, so only serial sees it live, and serial is
+    USB, and USB backfeeds power -- so attaching it stops the boot being the
+    mains-only one that fails. Reading it back over HTTP is the whole point, and
+    an empty or truncated log is the regression.
+
+    Asserts the shape of the trace rather than its values, because a good boot
+    and a bad one both have to be legible here.
+    """
+    status, body = get(host, "/bootlog")
+    assert status == 200, f"/bootlog answered {status}: {body[:120]}"
+    assert "(boot log empty)" not in body, (
+        "the boot log is empty. Nothing was captured before the first console "
+        "client attached, or bootLogAppend() is no longer being fed"
+    )
+
+    assert "PREFS:" in body, f"no preferences trace in the boot log:\n{body}"
+    assert re.search(r"PREFS: attempt \d+ .*got=\d+ .*plausible=[01]", body), (
+        f"the per-attempt read line is missing or reshaped:\n{body}"
+    )
+    loaded = re.search(
+        r"PREFS: loaded presetPreference=(\d+) frameTimeLock=(\d+).*suspect=([01])",
+        body,
+    )
+    assert loaded, f"no 'PREFS: loaded' summary line:\n{body}"
+
+    preference, lock, suspect = (int(g) for g in loaded.groups())
+    print(f"\nboot log: presetPreference={preference} frameTimeLock={lock} "
+          f"suspect={suspect}")
+
+    # The defaults signature. Not asserted as a failure on its own -- a unit that
+    # genuinely has no settings yet reads this way -- but it must never appear
+    # while the loader believes it read the file, because that combination is
+    # exactly the wipe that cost two sessions.
+    if preference == 5 and lock == 0:
+        assert suspect == 1, (
+            "the boot loaded presetPreference=5 with frameTimeLock=0 -- the "
+            "defaults signature -- while reporting suspect=0, meaning it read "
+            "the file successfully and still ended up on defaults. Something "
+            "wrote them. This is the 290b0a7 regression"
+        )
+
+
+def test_preferences_survive_a_round_trip(host):
+    """Toggling one setting must not disturb the rest of the file.
+
+    The failure this guards is not a wrong value, it is collateral: a save path
+    that rebuilds the whole file from RAM persists whatever else was reset on the
+    way past, which is how selecting an input takes presetPreference and
+    enableFrameTimeLock with it.
+
+    /uc?5 toggles frame time lock and saves, so toggling twice should land
+    exactly where it started, byte for byte.
+    """
+    before = spiffs_read(host, PREFS_PATH)
+    assert before and len(before) == PREFS_BYTES, (
+        f"{PREFS_PATH} is {len(before) if before else 0} bytes, expected "
+        f"{PREFS_BYTES}"
+    )
+
+    try:
+        get(host, "/uc?5")
+        time.sleep(2.5)
+        middle = spiffs_read(host, PREFS_PATH)
+        assert middle and len(middle) == PREFS_BYTES, "file went malformed mid-toggle"
+        assert middle[1] != before[1], (
+            f"/uc?5 did not change frame time lock (byte 1 stayed {before[1]!r}); "
+            "this test is not exercising a save"
+        )
+        changed = [i for i in range(PREFS_BYTES) if middle[i] != before[i]]
+        assert changed == [1], (
+            f"toggling frame time lock also changed bytes {changed}. "
+            f"before={before!r} after={middle!r}"
+        )
+    finally:
+        get(host, "/uc?5")
+        time.sleep(2.5)
+
+    after = spiffs_read(host, PREFS_PATH)
+    assert after == before, (
+        f"preferences did not round-trip.\n  before {before!r}\n  after  {after!r}"
     )
