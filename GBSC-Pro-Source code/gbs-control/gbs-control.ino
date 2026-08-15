@@ -389,6 +389,37 @@ uint8_t Info = 0;
 // uint8_t InputChanged = 0;
 uint8_t SeleInputSource = 0;
 
+// saveUserPrefs() writes exactly this many bytes -- 39 live f.write() calls,
+// not the 42 you get by counting the commented-out ones too. A shorter file
+// cannot be a whole one, whatever SPIFFS says about the open. Verified against
+// the unit: /preferencesv2.txt is 39 bytes.
+#define PREFS_BYTES 39
+
+// Set when this boot could not read the preferences file. Everything running
+// afterwards is on defaults that were never the user's, so nothing may write
+// them back over the copy that is still on flash.
+bool prefsAreSuspect = false;
+
+// Does a buffer that came back from /preferencesv2.txt look like content?
+//
+// The count is checked by the caller; this catches a read that returned the
+// right number of bytes but not the right bytes. Deliberately weak, because
+// only some fields are digit-encoded -- presetSlot and the BCSH values are
+// written raw -- so byte 0 is the one position that can be asserted on, and
+// "not all bytes identical" rules out erased flash and zero fill.
+static bool prefsLookPlausible(const uint8_t *buf)
+{
+    if (buf[0] < '0' || buf[0] > '9') {
+        return false;
+    }
+    for (uint8_t i = 1; i < PREFS_BYTES; i++) {
+        if (buf[i] != buf[0]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /*
 audio
 */
@@ -7542,16 +7573,90 @@ void setup()
     GBS::PLLAD_VCORST::write(1);
     GBS::PLLAD_PDZ::write(0);
 
-    if (!SPIFFS.begin()) {
-        ; // SerialMprintln(F("SPIFFS mount failed! ((1M SPIFFS) selected?)"));
+    const uint32_t spiffsBeginStart = millis();
+    const bool spiffsUp = SPIFFS.begin();
+    printf("PREFS: SPIFFS.begin()=%d at t=%lums (took %lums)\n",
+        spiffsUp ? 1 : 0, (unsigned long)millis(),
+        (unsigned long)(millis() - spiffsBeginStart));
+
+    if (!spiffsUp) {
+        printf("PREFS: SPIFFS mount FAILED -- running on defaults, will not save\n");
+        prefsAreSuspect = true;
     } else {
-        File f = SPIFFS.open("/preferencesv2.txt", "r");
-        if (!f) {
-            //  SerialMprintln(F("no preferences file yet, create new"));
-            printf("no preferences file yet, create new\n");
+        // Wait for the file to be READABLE, not merely openable.
+        //
+        // The parser below reads a byte at a time and clamps anything out of
+        // range to a default. File::read() returns -1 once there is nothing
+        // left, and (uint8_t)(-1 - '0') is 207 -- out of range for every one of
+        // those checks. So an empty or truncated read does not fail the load: it
+        // silently yields a complete set of defaults, which the next
+        // saveUserPrefs() writes to flash for good. presetPreference 5 with
+        // enableFrameTimeLock 0 is that signature.
+        //
+        // **RETRY THE READ, NOT THE OPEN OR THE SIZE.** A flash awake enough to
+        // serve metadata and not yet awake enough to serve content satisfies
+        // both of those on the first attempt and hands the parser a file it
+        // cannot read.
+        //
+        // Ten attempts at 100 ms is a second of patience before giving up, and
+        // costs nothing on a healthy boot where the first attempt succeeds.
+        File f;
+        bool prefsReadable = false;
+        uint8_t probe[PREFS_BYTES];
+
+        printf("PREFS: exists=%d t=%lums\n",
+            SPIFFS.exists("/preferencesv2.txt") ? 1 : 0, (unsigned long)millis());
+
+        for (uint8_t attempt = 0; attempt < 10; attempt++) {
+            const uint32_t attemptStart = millis();
+            f = SPIFFS.open("/preferencesv2.txt", "r");
+
+            if (f && f.size() >= PREFS_BYTES) {
+                const size_t got = f.read(probe, PREFS_BYTES);
+                const bool plausible = (got == PREFS_BYTES) && prefsLookPlausible(probe);
+
+                printf("PREFS: attempt %u t=%lums open=1 size=%u got=%u plausible=%d",
+                    (unsigned)attempt + 1, (unsigned long)attemptStart,
+                    (unsigned)f.size(), (unsigned)got, plausible ? 1 : 0);
+                if (got > 0) {
+                    printf(" first=[%02x %02x %02x %02x]",
+                        probe[0], got > 1 ? probe[1] : 0,
+                        got > 2 ? probe[2] : 0, got > 3 ? probe[3] : 0);
+                }
+                printf("\n");
+
+                if (plausible) {
+                    f.seek(0, SeekSet);
+                    prefsReadable = true;
+                    break;
+                }
+            } else {
+                printf("PREFS: attempt %u t=%lums open=%d size=%u\n",
+                    (unsigned)attempt + 1, (unsigned long)attemptStart,
+                    f ? 1 : 0, f ? (unsigned)f.size() : 0u);
+            }
+
+            if (f) {
+                f.close();
+            }
+            delay(100);
+        }
+
+        if (!prefsReadable && SPIFFS.exists("/preferencesv2.txt")) {
+            // The file is there but will not come back whole. Defaults would be
+            // wrong, and writing them destroys the settings still on flash. Run
+            // on whatever loadDefaultUserOptions() left in RAM and touch
+            // nothing: a bad boot the user can power cycle out of beats a good
+            // boot with their settings gone.
+            printf("PREFS: UNREADABLE after 10 attempts; NOT overwriting them\n");
+            prefsAreSuspect = true;
+        } else if (!prefsReadable) {
+            printf("PREFS: no file yet, creating\n");
             loadDefaultUserOptions();
             saveUserPrefs();
-        } else {
+        }
+
+        if (f && prefsReadable) {
             uopt->presetPreference = (PresetPreference)(f.read() - '0'); 
             if (uopt->presetPreference > 10)
                 uopt->presetPreference = Output1080P;
@@ -7678,6 +7783,16 @@ void setup()
 
             f.close();
         }
+
+        // The one line worth reading on a cold boot. presetPreference 5 with
+        // frameTimeLock 0 is the defaults signature -- if it shows up here while
+        // suspect=0, the read passed validation and still produced defaults, and
+        // the guard above has another hole in it.
+        printf("PREFS: loaded presetPreference=%u frameTimeLock=%u slot=%u "
+               "SeleInputSource=%u suspect=%d t=%lums\n",
+            (unsigned)uopt->presetPreference, (unsigned)uopt->enableFrameTimeLock,
+            (unsigned)uopt->presetSlot, (unsigned)SeleInputSource,
+            prefsAreSuspect ? 1 : 0, (unsigned long)millis());
     }
 
     // ReadUserIRRemote();
@@ -10508,6 +10623,15 @@ void ReadUserIRRemote()
 // = (uint8_t)(f.read() - '0');
 void saveUserPrefs()
 {
+    // Refuse if this boot never managed to read the file. Otherwise the first
+    // option the user touches -- or any of the several paths that save as a
+    // side effect -- persists a full set of defaults over settings that are
+    // still perfectly good on flash. That is how the loss actually happened:
+    // not one bad write, but a silent bad read followed by an ordinary save.
+    if (prefsAreSuspect) {
+        printf("not saving preferences: this boot could not read them\n");
+        return;
+    }
 
     File f = SPIFFS.open("/preferencesv2.txt", "w");
     if (!f) {
