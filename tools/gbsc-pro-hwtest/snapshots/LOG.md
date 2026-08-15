@@ -45,8 +45,15 @@ nix develop -c python3 tools/gbsc-pro-hwtest/geometry.py --host <ip> \
     --label "<what changed>" --log ~/geometry-photos.log
 ```
 
-Then add a row below, drop the photo in `photos/`, and say what it decided.
-One change per row.
+Then add a row below and say what it decided. One change per row.
+
+The photograph goes in `photos/` as before, but **that path is gitignored and
+the images live in
+[gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos)**
+— this repo is a public fork and GitHub refuses LFS uploads to a fork. So drop
+the file in `photos/` here to work with it, and commit it to that repo, which
+mirrors this path. The row you write below stays here: it is what the photograph
+decided, and it is the half that diffs.
 
 ---
 
@@ -66,10 +73,40 @@ Full 6-segment dumps, diffable with
 | `clean-not-filling-2026-08-02.json` | 08-02 16:01 | 320x256, clean, does **not** fill |
 | `before-capture-display-region-2026-08-02.json` | 08-02 16:25 | the above, re-captured immediately before the next test |
 | `capture-display-region-2026-08-02.json` | 08-02 16:26 | capture narrowed to 732 units, x3.28 into a 2400 px window |
+| `glitching-2026-08-14.json` | 08-14 00:46 | the shear glitch **happening**, csync path |
+| `CLEAN-riscpc-320x256-50-2026-08-15.json` | 08-15 | **certified glitch-free**, 608 config + 48 status, restorable |
+| `CLEAN-full-1536-riscpc-320x256-50-2026-08-15.json` | 08-15 | the same state, all 1536, for `snapdiff.py` |
 
 Note `zarch-akf50-fullscreen` is labelled "hand-tuned to full screen", **not**
 clean. It sits at the worst overflow in the set and very likely carries the same
 edge corruption. It was mistaken for a clean counter-example once already.
+
+**The last three are the first certified pair in this archive.** Every other
+snapshot here was taken for a geometry reason and none is known glitch-free, so
+until 08-15 a known-good comparison had never actually been runnable. Note the
+two `CLEAN` files are the same moment in the two incompatible formats —
+`dump_registers.py` writes 608+48 and can `--restore`, `snapdiff.py` writes 1536
+and cannot. Diff like against like.
+
+### What the pair says
+
+The glitch was closed as **source-generated** — it went away when the RiscPC was
+cold-booted along with the unit, and has not returned. So the diff between these
+two is *not* a glitch diff, and must not be read as one. What it does record is
+that the two states sit on different sync paths, and that four things moved
+together:
+
+| | `glitching-2026-08-14` | `CLEAN-…-2026-08-15` |
+|---|---|---|
+| `SP_SOG_MODE` / `SP_EXT_SYNC_SEL` | 1 / 1 | 0 / 0 |
+| coast pre/post, `SP_H_PULSE_IGNOR` | 7 / 3, 107 | 0 / 0, 255 |
+| `GBS_OPTION_SCALING_RGBHV` | 0 | 1 |
+| `STATUS_SYNC_PROC_VSACT` | 0 in 2375/2375 | 1 in 150/150 |
+| `SP_VTOTAL` | 308, 7.34% off-mode | 311, 0.00% off-mode |
+
+`ADC_INPUT_SEL` is 1 and `PLLAD_MD` is 2553 in both, so the TV5725-side mux and
+the horizontal timing are identical — the difference is upstream of the chip.
+The `VSACT` row is why CLAUDE.md no longer says that bit is dead.
 
 ## Photographs
 

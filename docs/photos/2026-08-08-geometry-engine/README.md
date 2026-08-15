@@ -9,6 +9,14 @@ Written up in `~/riscpc-gbsc-firmware-session-handover-2026-08-08-night.md`.
 Register states are from a `geometry.py` or `/getregs` read taken adjacent to
 each photo.
 
+**The images themselves live in
+[gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos),
+not here** — this repo is a public fork and GitHub refuses LFS uploads to a
+fork. That repo mirrors these paths, so copying its tree into a checkout lands
+the files beside this table. See
+[../2026-08-05-horizontal-geometry/README.md](../2026-08-05-horizontal-geometry/README.md)
+for the commands and the reasoning.
+
 **Two different faults, and the second post-dates the first.** They are not the
 same bug and should not be merged.
 
