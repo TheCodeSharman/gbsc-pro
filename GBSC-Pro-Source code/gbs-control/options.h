@@ -117,6 +117,7 @@ struct runTimeOptions
     bool phaseIsSet;
     bool inputIsYpBpR;
     bool syncWatcherEnabled;
+    bool freezeAutomation;
     bool outModeHdBypass;
     bool printInfos;
     bool sourceDisconnected;   //源断开

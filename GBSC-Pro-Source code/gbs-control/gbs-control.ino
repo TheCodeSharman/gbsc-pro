@@ -90,6 +90,14 @@ enum PresetID : uint8_t {
 };
 struct runTimeOptions rtos;
 struct runTimeOptions *rto = &rtos;
+
+// /freeze belongs to the debug surface, so without GBS_DEBUG the guards below
+// compile to nothing and the endpoint is never registered.
+#if GBS_DEBUG
+#define AUTOMATION_FROZEN() (rto->freezeAutomation)
+#else
+#define AUTOMATION_FROZEN() (false)
+#endif
 struct userOptions uopts;
 struct userOptions *uopt = &uopts;
 struct adcOptions adcopts;
@@ -2108,6 +2116,10 @@ void applySavedInputSource()
 
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
+    // Frozen: docs/gbs-control-debug-interface.md
+    if (AUTOMATION_FROZEN()) {
+        return 0;
+    }
     uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
     // printf("currentInput = %d \n",currentInput);
     unsigned long timeout = millis();
@@ -3318,6 +3330,10 @@ void fastGetBestHtotal()
 
 boolean runAutoBestHTotal()
 {
+    // Frozen: docs/gbs-control-debug-interface.md
+    if (AUTOMATION_FROZEN()) {
+        return false;
+    }
     if (!FrameSync::ready() && rto->autoBestHtotalEnabled == true && rto->videoStandardInput > 0 && rto->videoStandardInput < 15) {
 
         boolean stableNow = 1;
@@ -4459,6 +4475,10 @@ void doPostPresetLoadSteps()
 
 void applyPresets(uint8_t result)
 {
+    // Frozen: docs/gbs-control-debug-interface.md
+    if (AUTOMATION_FROZEN()) {
+        return;
+    }
 
     // printf("result %d \n", result);
     if (!rto->boardHasPower) {
@@ -5679,6 +5699,10 @@ void bypassModeSwitch_RGBHV()
 
 void runAutoGain() //
 {
+    // Frozen: docs/gbs-control-debug-interface.md
+    if (AUTOMATION_FROZEN()) {
+        return;
+    }
     static unsigned long lastTimeAutoGain = millis();
     uint8_t limit_found = 0, greenValue = 0;
     uint8_t loopCeiling = 0;
@@ -6033,6 +6057,10 @@ void fastSogAdjust() //
 
 void runSyncWatcher() // 
 {
+    // Frozen: docs/gbs-control-debug-interface.md
+    if (AUTOMATION_FROZEN()) {
+        return;
+    }
     if (!rto->boardHasPower) {
         return;
     }
@@ -7601,6 +7629,7 @@ void setup()
     loadDefaultUserOptions();
 
     rto->allowUpdatesOTA = false;      
+    rto->freezeAutomation = false; // never persisted: a reboot returns to normal
     rto->enableDebugPings = false;     
     rto->autoBestHtotalEnabled = true; 
     rto->syncLockFailIgnore = 16;      
@@ -10074,6 +10103,26 @@ void startWebserver()
         snprintf_P(body, sizeof(body),
             PSTR("{\"segment\":%ld,\"register\":\"0x%02lx\",\"was\":\"0x%02x\",\"value\":\"0x%02x\"}"),
             segment, reg, was, now);
+        request->send(200, "application/json", body);
+    });
+#endif
+
+    // GET /freeze            report the flag
+    // GET /freeze?on=1|0     freeze / unfreeze the ESP's automation
+    //
+    // Frozen, nothing writes a TV5725 register unless you ask.
+    // Deliberately not persisted: a unit frozen into a state you cannot drive is
+    // one power cycle from being usable again.
+    // docs/gbs-control-debug-interface.md
+#if GBS_DEBUG
+    server.on("/freeze", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("on")) {
+            String value = request->getParam("on")->value();
+            rto->freezeAutomation = !(value == "0" || value == "false");
+        }
+        char body[48];
+        snprintf_P(body, sizeof(body), PSTR("{\"frozen\":%s}"),
+            rto->freezeAutomation ? "true" : "false");
         request->send(200, "application/json", body);
     });
 #endif
