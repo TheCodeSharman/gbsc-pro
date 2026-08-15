@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; `tv5725.h` has the register map |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | TV5725 datasheet and register definitions; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading |
+| `docs/` | TV5725 datasheet and register definitions; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 
 ## Commands
