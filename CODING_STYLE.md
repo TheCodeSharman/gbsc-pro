@@ -282,6 +282,41 @@ The *why* — a hidden constraint, a measurement, a bug that shaped the code —
 belongs next to the code, briefly. The reasoning belongs in the tests and in
 `docs/`. Prefer extracting a well-named function over explaining an unnamed one.
 
+**Keep the process out of the code.** What we tried, what was refuted, which
+session measured it, how the bug was found: none of that goes in a source file.
+A code comment is one or two lines of *why*, and a pointer to the `docs/` page
+carrying the detail. Detailed explanations go in the doc files.
+
+This applies to commit messages too — a feature commit says what the feature does
+and why, and nothing else. **Keep the word count as low as possible.** Generated
+prose runs long by default; the discipline is cutting it.
+
+## Docs describe this codebase, in the present tense
+
+Write for someone arriving with no history. They want to know what the code does
+now — not what it used to do, not what some other tree does, not what changed and
+when. Nobody arriving here cares what other forks do; they are interested in what
+THIS code base does.
+
+So: no "the fork silences…", no "restored from", no "upstream ships…", no "so
+far". State the behaviour. If a reader needs the history, `git log` has it.
+
+```
+no   The fork blanked its debug output with a search-replace that turned
+     every SerialM.print(...) call into `; // SerialMprint(...)`.
+yes  Most debug output is inert. SerialM.print(...) calls are written
+     `; // SerialMprint(...)`, with the identifier mangled so un-commenting
+     one does not compile.
+```
+
+**A count is a fact that rots.** "310 calls" was wrong within a few commits and
+wrong when written. Give the command that answers it — `grep -c SerialMprint` —
+or pin the number to something fixed, like a released version.
+
+The exception is a page whose *subject* is an investigation: `docs/*-audit.md`
+and the falsification records exist to carry refuted hypotheses, and that history
+is their content, not narration around it.
+
 ## Host unit tests are doctest
 
 `test/test_geometry.cpp` and `test/test_hold_ramp.cpp`, run by `make -C test`
