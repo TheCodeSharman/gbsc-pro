@@ -329,6 +329,31 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **Blanking cannot be auto-detected.** A border is black *active* video,
   electrically identical to back porch. Sync-domain measurement finds the raster,
   never the picture inside it.
+- **The headroom rule is RETRACTED — do not reinstate it.** The old rule
+  (`memory window - produced >= ~13 px`) rested on `SOLVED-mode13-fullscreen-clean`,
+  whose `VDS_DIS_HB_ST` of 1372 blanked 74 px of a picture ending at 1446 — and
+  tearing shows worst at the *right* of the line, so its evidence was hidden.
+  Points taken the same evening at HSCALE 993 and 850 failed identically, with
+  24.9 px and 163 px of picture hidden. **Any headroom measurement is worthless
+  unless the display window contains the whole picture.**
+
+  Only two points survive scrutiny, and they do not fit a rule:
+
+  ```
+  HSCALE 1023 (x1.001) -> produced  798.78, edge at VDS_HB_ST  881    33.2 px
+  HSCALE  850 (x1.205) -> produced  961.36, edge at VDS_HB_ST 1095   ~84.6 px
+  ```
+
+  The requirement is **not monotonic in HSCALE**, and the corruption comes in
+  **multiple stable bands**, so an edge found by creeping down is only the true
+  edge if you creep past all of them. More measurement does not fix that.
+
+  So `geometry_math.py` no longer computes a margin: `VDS_?B_ST` goes to the last
+  value below the raster total, taking all of it, and `HEADROOM_WARN_PX = 100` is
+  **a floor to warn below, not a budget to reserve**. Michael's reading, which
+  fits: banded non-monotonic thresholds look like marginal signal integrity, in
+  which case the numbers are facts about *this board*. A torn picture is still
+  not automatically a fault to chase.
 - **EDID is unreachable.** The MS9288A HDMI encoder is on no MCU's I2C bus (see
   the schematic), so output rasters are chosen blind.
 - **Sync stability does not mean the divider is right.** `getStatus16SpHsStable()`
