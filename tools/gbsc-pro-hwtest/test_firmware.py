@@ -27,8 +27,8 @@ from gbs_unit import (
     read_reg,
     read_field,
     read_segment,
-    spiffs_dir,
-    spiffs_read,
+    fs_dir,
+    fs_read,
     wait_for,
     write_reg,
 )
@@ -576,15 +576,42 @@ def test_display_clock_is_not_stashed_in_a_preset_register(host):
     )
 
 
+# --- filesystem -------------------------------------------------------------
+
+
+def test_the_filesystem_lists_each_file_once(host):
+    """A file listed twice is a corrupt directory, not a quirk of the listing.
+
+    SPIFFS updates its directory metadata in place and is not power-loss safe,
+    and this unit gets hard-power-cycled mid-write routinely: two entries for
+    /slots.bin, one serving HTTP 200 with 0 bytes and then hanging for the full
+    client timeout, stalls the web UI on its splash because main() waits on
+    fetchSlotNamesAndInit() before it paints anything.
+
+    There is no fsck for SPIFFS, so a duplicate entry cannot be repaired in
+    place, which is the argument the migration to LittleFS rests on. This guards
+    the class, not that one file.
+    """
+    files = fs_dir(host)
+    assert files is not None, "/fs/dir did not answer"
+
+    duplicated = sorted({f for f in files if files.count(f) > 1})
+    assert duplicated == [], (
+        f"the filesystem lists {duplicated} more than once, out of {files}. A "
+        "duplicate directory entry is the classic power-loss corruption "
+        "signature, and an unreadable one stalls the web UI on its splash."
+    )
+
+
 # --- preset save ------------------------------------------------------------
 
 
 def test_no_leftover_temp_presets(host):
-    """savePresetToSPIFFS() writes '<preset>~' and renames it into place. One
+    """savePresetToFS() writes '<preset>~' and renames it into place. One
     left behind means a save failed part way and did not clean up."""
-    files = spiffs_dir(host)
+    files = fs_dir(host)
 
-    assert files is not None, "/spiffs/dir did not answer"
+    assert files is not None, "/fs/dir did not answer"
     assert [f for f in files if f.endswith("~")] == []
 
 
@@ -599,9 +626,9 @@ def test_preset_save_completes_or_refuses_cleanly(host, console):
     on the unit's current video mode — mode 15, for one, has no preset file —
     so both are accepted, and the test asserts the contract either way.
     """
-    before = spiffs_dir(host)
-    assert before is not None, "/spiffs/dir did not answer before the save"
-    prefs_before = spiffs_read(host, "/preferencesv2.txt")
+    before = fs_dir(host)
+    assert before is not None, "/fs/dir did not answer before the save"
+    prefs_before = fs_read(host, "/preferencesv2.txt")
     assert prefs_before is not None, "could not read the preferences file"
 
     console.drain()
@@ -609,14 +636,14 @@ def test_preset_save_completes_or_refuses_cleanly(host, console):
     assert status == 200
     output = console.collect(5.0)
 
-    after = spiffs_dir(host)
-    assert after is not None, "/spiffs/dir did not answer after the save"
+    after = fs_dir(host)
+    assert after is not None, "/fs/dir did not answer after the save"
     assert [f for f in after if f.endswith("~")] == [], f"temp file left behind: {after}"
 
     presets = [f for f in after if f.startswith("/preset_")]
     if not presets:
         # Refused. The preference must not have moved, and it must have said why.
-        assert spiffs_read(host, "/preferencesv2.txt") == prefs_before, (
+        assert fs_read(host, "/preferencesv2.txt") == prefs_before, (
             "the save was refused but the preferences changed anyway — the unit "
             "may now boot into a preset that does not exist"
         )
@@ -629,7 +656,7 @@ def test_preset_save_completes_or_refuses_cleanly(host, console):
         return
 
     written = sorted(presets, key=lambda f: f in before)[0]
-    content = spiffs_read(host, written)
+    content = fs_read(host, written)
     assert content is not None, f"could not download {written}"
 
     values = [v for v in content.split("}")[0].split(",") if v.strip()]
@@ -918,7 +945,7 @@ def test_preferences_survive_a_round_trip(host):
     /uc?5 toggles frame time lock and saves, so toggling twice should land
     exactly where it started, byte for byte.
     """
-    before = spiffs_read(host, PREFS_PATH)
+    before = fs_read(host, PREFS_PATH)
     assert before and len(before) == PREFS_BYTES, (
         f"{PREFS_PATH} is {len(before) if before else 0} bytes, expected "
         f"{PREFS_BYTES}"
@@ -927,7 +954,7 @@ def test_preferences_survive_a_round_trip(host):
     try:
         get(host, "/uc?5")
         time.sleep(2.5)
-        middle = spiffs_read(host, PREFS_PATH)
+        middle = fs_read(host, PREFS_PATH)
         assert middle and len(middle) == PREFS_BYTES, "file went malformed mid-toggle"
         assert middle[1] != before[1], (
             f"/uc?5 did not change frame time lock (byte 1 stayed {before[1]!r}); "
@@ -942,7 +969,7 @@ def test_preferences_survive_a_round_trip(host):
         get(host, "/uc?5")
         time.sleep(2.5)
 
-    after = spiffs_read(host, PREFS_PATH)
+    after = fs_read(host, PREFS_PATH)
     assert after == before, (
         f"preferences did not round-trip.\n  before {before!r}\n  after  {after!r}"
     )

@@ -225,12 +225,12 @@ def parse_timings(lines):
 # --- filesystem -------------------------------------------------------------
 
 
-def spiffs_dir(host, attempts=3):
-    """SPIFFS listing, or None. Retried because /spiffs/dir calls delay(1) inside
+def fs_dir(host, attempts=3):
+    """Filesystem listing, or None. Retried because /fs/dir calls delay(1) inside
     an async handler and intermittently drops the first request after WebSocket
     traffic — upstream behaviour, unrelated to what these tests cover."""
     for attempt in range(attempts):
-        status, payload = get_json(host, "/spiffs/dir", timeout=15)
+        status, payload = get_json(host, "/fs/dir", timeout=15)
         if status == 200 and payload is not None:
             return payload
         if attempt + 1 < attempts:
@@ -238,7 +238,7 @@ def spiffs_dir(host, attempts=3):
     return None
 
 
-def spiffs_read(host, path, timeout=15):
+def fs_read(host, path, timeout=15):
     """Fetch a file off the unit as text, or None."""
-    status, body = get(host, f"/spiffs/download?f={path}", timeout=timeout)
+    status, body = get(host, f"/fs/download?f={path}", timeout=timeout)
     return body if status == 200 else None
