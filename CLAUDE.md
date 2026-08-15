@@ -189,8 +189,24 @@ horizontal extents disagree — the fastest read on why a picture is wrong.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
+- **Load the `tdd` skill before writing code.** Not a formality here: this
+  codebase punishes the alternative. An evening went into a preferences bug that
+  three sessions "fixed" without a failing test to say what fixed meant, and each
+  fix guarded the wrong thing — the open instead of the read, then the read
+  instead of the writer. A test that fails for the stated reason first is what
+  stops that. Write the test at the cheapest layer that really exercises the
+  behaviour, watch it fail, then make it pass.
 - Firmware changes ship as a bounded commit plus a commit adding a runtime
   acceptance test. No source-parsing tests — test behaviour, not implementation.
   No tests for removals.
+- **When a fix cannot be tested, say so in the commit and say why.** Several
+  reliability fixes here have no acceptance test because their trigger is not
+  reachable over HTTP — the preference wipe fires only from the OSD and IR
+  handlers, so it has three manual confirmations and no automation. That is an
+  acceptable answer; silently shipping untested and letting the next session
+  assume coverage is not.
+- Tests that disturb the picture or write flash are opt-in flags in
+  `conftest.py` (`--source`, `--preset-save`, `--no-sync`, `--pllad-hostile`),
+  so a bare `pytest --host=…` stays safe to run on a working unit.
 - The Makefile never shells out to nix; entering the dev shell is the caller's
   job, so the rules work outside NixOS.
