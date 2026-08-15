@@ -72,10 +72,22 @@ def test_vtotal_is_a_property_of_the_output_mode_alone():
     shared = {mode: heights for mode, heights in by_mode.items() if len(heights) > 1}
     assert not shared, f"a mode ships two different frame heights: {shared}"
 
+    # **ONE LINE BELOW THE TABLES, FOR EVERY MODE, AND THAT IS THE CORRECTION.**
+    # RD-5725-1.1 on VDS_VSYNC_RST: "This field contains vertical total value
+    # minus 1", so the standard's total written into it costs a line -- which is
+    # what every shipped table does, six for six:
+    #
+    #     1080p 1126/1125   1024p 1067/1066   480p 526/525
+    #      720p  751/750     960p 1001/1000   576p 626/625
+    #
+    # Asserted as exactly one rather than merely "different", so a mode whose
+    # blanking is entered wrongly fails here rather than looking like more of the
+    # same defect.
     for mode, heights in by_mode.items():
-        assert our.MODE_VTOTAL[mode] == next(iter(heights)), (
-            f"MODE_VTOTAL[{mode!r}] is {our.MODE_VTOTAL[mode]} but the tables ship "
-            f"{next(iter(heights))}"
+        shipped = next(iter(heights))
+        assert our.MODE_VTOTAL[mode] == shipped - 1, (
+            f"MODE_VTOTAL[{mode!r}] is {our.MODE_VTOTAL[mode]}; the tables ship "
+            f"{shipped}, and the standard total is one less than the tables'"
         )
 
 
@@ -121,19 +133,33 @@ def test_each_swept_clock_reproduces_the_raster_the_bench_ran():
     these assert what the BENCH did -- tying them to the default made them fail
     the moment the measured ceiling moved from 108 to 129.6 MHz, which is a test
     coupled to a config value rather than to a measurement.
+
+    **`vtotal` is now passed for the same reason.** The bench ran these at 1126
+    lines; the model's 1080p is 1125 since the one-line correction, and at 1125 it
+    produces 1920/2304/2880 instead. Rewriting the expected numbers would have
+    quietly turned three measurements into three predictions. Pinning the frame
+    height the bench actually used keeps them measurements, and they still pass
+    unchanged -- which is the real claim: the model reproduces the bench when
+    given the bench's inputs.
     """
     for mhz, expected_htotal in ((108, 1918), (129.6, 2301), (162, 2877)):
-        raster = our.raster_for("1080p", 50.0, ceiling_hz=int(mhz * 1e6))
+        raster = our.raster_for("1080p", 50.0, ceiling_hz=int(mhz * 1e6), vtotal=1126)
         assert (raster.htotal, raster.vtotal) == (expected_htotal, 1126), (
             f"{mhz} MHz should give {expected_htotal} x 1126"
         )
 
 
 def test_the_default_raster_is_the_best_measured_state():
-    """2301 x 1126 at 129.6 MHz: under both limits, and filling more of its raster
-    than any other step in the sweep. 1.59x the shipped 1445-px line."""
+    """2304 x 1125 at 129.6 MHz: under both limits, and filling more of its raster
+    than any other step in the sweep. 1.59x the shipped 1445-px line.
+
+    The bench measured 2301 x 1126 on 2026-08-11 and the sweep above still pins
+    that at the frame height it was measured with. This is the same state after
+    the one-line correction: the frame gives up a line and the line takes three
+    pixels, because htotal is clock / (vtotal x rate).
+    """
     raster = our.raster_for("1080p", 50.0)
-    assert (raster.htotal, raster.vtotal) == (2301, 1126)
+    assert (raster.htotal, raster.vtotal) == (2304, 1125)
     assert raster.demanded_hz() <= our.WORKING_CEILING_HZ
 
     shipped = our.preset("pal_1920x1080")

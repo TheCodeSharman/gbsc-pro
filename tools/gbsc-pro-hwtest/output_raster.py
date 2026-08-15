@@ -94,28 +94,17 @@ VTOTAL_MAX = 2048  # VDS_VSYNC_RST is 11 bits
 
 # --- what the output modes are ---------------------------------------------
 
-# Frame height per output mode, taken from the shipped tables -- where the PAL and
-# NTSC pair for each mode agree exactly, which is what makes this a property of
-# the mode rather than a coincidence.
+# ACTIVE lines per output mode. The frame total is DERIVED from these and the
+# blanking below -- see MODE_VTOTAL.
 #
-# These are not CEA-861 frame heights. 1080p is 1126 lines where CEA says 1125,
-# and 720p is 751 where CEA says 750 -- each one line long. Kept as shipped for
-# now because changing the frame height moves the vertical geometry, and the
-# horizontal is the axis under test. One line is 0.09%.
-MODE_VTOTAL = {
-    "240p": 1001,
-    "480p": 526,
-    "576p": 626,
-    "720p": 751,
-    "1024p": 1067,
-    "1080p": 1126,
-}
-
+# "960p" is named for the OUTPUT. The 240p in the preset family's names is the
+# SOURCE standard; the mode it serves outputs 1280x960, which is what the OLED's
+# MT_1280x960 says and what a 1001-line frame can hold.
 MODE_ACTIVE = {
-    "240p": (None, 240),
     "480p": (720, 480),
     "576p": (768, 576),
     "720p": (1280, 720),
+    "960p": (1280, 960),
     "1024p": (1280, 1024),
     "1080p": (1920, 1080),
 }
@@ -130,27 +119,47 @@ MODE_ACTIVE = {
 # (528 against 88). So sync + back porch is a fixed 1.293 us of every 1080p line
 # regardless of rate, and that is the quantity to reproduce.
 #
-# Michael, 2026-08-11: "might be worthwhile making the sync pulses what is
-# expected by the standard." It is also the safer bet for the one thing we cannot
-# query -- EDID is unreachable, so the encoder's tolerance is unknown and
-# conformant timing is the best blind guess available.
+# Conformant timing is the safer bet for the one thing that cannot be queried:
+# EDID is unreachable, so the encoder's tolerance is unknown.
 #
 # (nanoseconds of sync, nanoseconds of back porch)
-CEA_SYNC_NS = {
+SYNC_NS = {
     "1080p": (44 / 148.5e6 * 1e9, 148 / 148.5e6 * 1e9),   # 296.3, 996.6
+    "1024p": (112 / 108.0e6 * 1e9, 248 / 108.0e6 * 1e9),  # 1037.0, 2296.3  VESA
+    "960p":  (112 / 108.0e6 * 1e9, 312 / 108.0e6 * 1e9),  # 1037.0, 2888.9  VESA
     "720p":  (40 / 74.25e6 * 1e9, 220 / 74.25e6 * 1e9),   # 538.7, 2962.9
     "576p":  (64 / 27.0e6 * 1e9,  68 / 27.0e6 * 1e9),     # 2370.4, 2518.5
     "480p":  (62 / 27.0e6 * 1e9,  60 / 27.0e6 * 1e9),     # 2296.3, 2222.2
 }
 
 # Vertical, in LINES, which need no conversion -- a line is a line at any clock.
-# 1080p: sync 5, back porch 36. The shipped tables already ship a 5-line vsync
+# 1080p: sync 5, back porch 36. The shipped tables carry a 5-line vsync
 # (VDS_VS_ST/SP of 1..6), so the vertical is standard already.
-CEA_VSYNC_LINES = {
-    "1080p": (5, 36),
-    "720p":  (5, 20),
-    "576p":  (5, 39),
-    "480p":  (6, 30),
+# (sync, back porch, FRONT porch), all in lines.
+#
+# **THE FRONT PORCH IS WHY EVERY SHIPPED TABLE RUNS ONE LINE LONG.** With no
+# front-porch term, active runs from the end of the back porch to the end of
+# frame and the standard's front-porch lines have nowhere to live but the total.
+# RD-5725-1.1 on VDS_VSYNC_RST: "This field contains vertical total value minus
+# 1", so the standard's total written into it costs a line -- six modes, six for
+# six against preset_tables.json.
+#
+# 1024p and 960p are VESA DMT rather than CEA-861; the rest are CEA.
+VSYNC_LINES = {
+    "1080p": (5, 36, 4),    # 1080 + 45 = 1125
+    "1024p": (3, 38, 1),    # 1024 + 42 = 1066
+    "960p":  (3, 36, 1),    #  960 + 40 = 1000
+    "720p":  (5, 20, 5),    #  720 + 30 =  750
+    "576p":  (5, 39, 5),    #  576 + 49 =  625
+    "480p":  (6, 30, 9),    #  480 + 45 =  525
+}
+
+# Frame total per mode: active + front + sync + back. A property of the mode, as
+# it always was -- but computed from the standard rather than copied out of a
+# table, which is what removes the extra line.
+MODE_VTOTAL = {
+    mode: MODE_ACTIVE[mode][1] + sum(VSYNC_LINES[mode])
+    for mode in MODE_ACTIVE
 }
 
 # The only output hsync pair measured working, at 108 MHz, shipped by both 1080p
@@ -272,14 +281,14 @@ def raster_for(mode, field_rate, ceiling_hz=WORKING_CEILING_HZ, hsync=None,
         hsync_start, hsync_stop = hsync
         back_porch = 0
     else:
-        sync_ns, porch_ns = CEA_SYNC_NS.get(mode, CEA_SYNC_NS["1080p"])
+        sync_ns, porch_ns = SYNC_NS.get(mode, SYNC_NS["1080p"])
         width = max(1, round(sync_ns * clock_hz / 1e9))
         back_porch = round(porch_ns * clock_hz / 1e9)
         # The pulse starts at 0: the front porch is whatever is left at the end of
         # the line, which is how CEA absorbs the field-rate difference.
         hsync_start, hsync_stop = 0, width
 
-    vsync_lines, v_back_porch = CEA_VSYNC_LINES.get(mode, CEA_VSYNC_LINES["1080p"])
+    vsync_lines, v_back_porch, _front = VSYNC_LINES.get(mode, VSYNC_LINES["1080p"])
 
     return Raster(
         mode=mode,
@@ -374,12 +383,12 @@ class ShippedPreset:
 # pal_1920x1080 is listed at its ORIGINAL 1445/0x65, which is the defect this
 # model exists to remove -- not at any patched value.
 SHIPPED_PRESETS = (
-    ShippedPreset("pal_240p",       "240p",  50.0, 0x85, 2167, 1001,  24, 152),
+    ShippedPreset("pal_240p",       "960p",  50.0, 0x85, 2167, 1001,  24, 152),
     ShippedPreset("pal_768x576",    "576p",  50.0, 0x65, 2600,  626, 196,  28),
     ShippedPreset("pal_1280x720",   "720p",  50.0, 0x65, 2166,  751,  24, 128),
     ShippedPreset("pal_1280x1024",  "1024p", 50.0, 0x85, 2033, 1067,   0, 132),
     ShippedPreset("pal_1920x1080",  "1080p", 50.0, 0x65, 1445, 1126,   8,  56),
-    ShippedPreset("ntsc_240p",      "240p",  60.0, 0xA5, 2705, 1001,   8, 160),
+    ShippedPreset("ntsc_240p",      "960p",  60.0, 0xA5, 2705, 1001,   8, 160),
     ShippedPreset("ntsc_720x480",   "480p",  60.0, 0x65, 2574,  526, 180,  12),
     ShippedPreset("ntsc_1280x720",  "720p",  60.0, 0x85, 2403,  751,  16, 144),
     ShippedPreset("ntsc_1280x1024", "1024p", 60.0, 0xA5, 2536, 1067,  16, 144),

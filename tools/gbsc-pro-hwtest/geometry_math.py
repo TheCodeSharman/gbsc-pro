@@ -23,23 +23,29 @@ snapshots without a unit on the bench.
 import math
 
 # VDS_HSCALE is a divisor of 1024, so smaller means more magnification. The
-# register is 10 bits; 1023 is the practical floor at x1.001 and scaleHorizontal()
-# has always clamped the other end at 256 (x4).
+# register is 10 bits: 1023 is the practical floor at x1.001, 256 the ceiling at
+# x4.
 HSCALE_UNITY = 1024
-# **A PICTURE-QUALITY CEILING, HORIZONTAL ONLY, NOT THE REGISTER'S LIMIT.** The
-# register reaches 256, which is 4.0x. Michael swept it on 2026-08-09 and
-# stopped here: the scale "shouldn't be any smaller than 500 - after that the
-# scaling artifacts a lot." Below 500 the interpolator stretches too few source
-# pixels over too much raster and the picture degrades however clean the memory
-# path is.
+# **DERIVED, NOT SWEPT.** The floor is the unity divisor over how far the axis
+# will magnify, in output pixels per captured ADC sample:
 #
-# The VERTICAL keeps 256. 500 was tried on both and taken off again -- "I made a
-# mistake can you remove the clamp from the VSCALE it's too small" -- because
-# the default capture is 82% of the frame against 76% of the line, so the
-# vertical starts closer to its stop and the same ratio buys far less travel.
-# The floor is therefore a property of the AXIS. See Axis.scale_min.
-HSCALE_MIN = 500
-VSCALE_MIN = 256
+#     scale_min = HSCALE_UNITY / max magnification
+#
+# RD-5725-1.1 states NO minimum for VDS_HSCALE. regdef.txt gives only the ratio
+# -- HSCALE = 1024 x input resolution / output resolution -- and the field is 10
+# bits, so the part accepts 1..1023 and there is no hardware floor to derive.
+#
+# **A FIXED FLOOR COLLAPSES THE ZOOM WHEN THE RASTER WIDENS.** The clamp is
+# raster / max magnification while the DEFAULT capture is a property of the input
+# line alone, so the two do not track: a floor of 500 leaves 307 units of travel
+# at a 1436 raster and 73 at 1916, which clamps before the picture reaches full
+# screen. Deriving it from the magnification keeps the floor at raster / 4.
+#
+# Where interpolation starts to look bad is perceptual and cannot be computed, so
+# it is the USER'S to find by zooming.
+MAX_MAGNIFICATION = 4
+HSCALE_MIN = HSCALE_UNITY // MAX_MAGNIFICATION
+VSCALE_MIN = HSCALE_UNITY // MAX_MAGNIFICATION
 HSCALE_MAX = 1023
 
 # The product fitting inside the memory window is NOT sufficient. The scaler has

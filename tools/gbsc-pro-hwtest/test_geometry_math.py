@@ -706,14 +706,21 @@ def test_a_smaller_capture_still_fills_the_raster():
 
 
 def test_the_scale_register_bounds_how_big_the_picture_can_get():
-    """A tiny capture cannot fill the raster -- 2.048x is the most magnification
+    """A tiny capture cannot fill the raster -- 4.0x is the most magnification
     allowed. That is a limit, not a failure, and it must still fit.
 
-    Michael, 2026-08-09: the scale "shouldn't be any smaller than 500 - after
-    that the scaling artifacts a lot." The register itself reaches 256; this is
-    a picture-quality ceiling above it.
+    **THIS PINNED 500 AND THE MEASUREMENT BEHIND IT EXPIRED.** The floor of 500
+    came from a sweep taken while the output raster was 1436: below it the
+    scaling artifacts badly. The raster became 1916 once solveRaster() computed
+    it, and since the zoom floor is raster / magnification while the default
+    capture is a property of the input line alone, horizontal travel fell from
+    307 units to 73.
+
+    RD-5725-1.1 states no minimum for VDS_HSCALE, so the floor is derived from a
+    magnification chosen deliberately -- the 4.0x the vertical has always used.
     """
-    assert gm.HSCALE_MIN == 500
+    assert gm.HSCALE_MIN == gm.HSCALE_UNITY // gm.MAX_MAGNIFICATION
+    assert gm.HSCALE_MIN == 256
     scale, produced = gm.fit_to_raster(50, 1445, gm.AXIS_H)
 
     assert scale == gm.HSCALE_MIN
