@@ -46,17 +46,16 @@ def read_field(host, segment, register, offset, width):
 #     bit 2  VSPOL   V-sync polarity
 #     bit 3  VSACT   V-sync active
 #
-# **THIS WAS WRONG AND IT COST A FALSE DIAGNOSIS BOTH WAYS.** It read `LOCKED =
-# 0x06`, which is HSACT | VSPOL -- H-sync active plus a *polarity* bit. So a
-# working unit "passed" for the wrong reason, and when VSPOL later flipped the
-# same unit "failed" with a picture on screen. test_firmware.py:45 had the bits
-# right all along; this invented its own.
+# **THE LOCK TEST IS HSACT ALONE**, which is what the firmware itself uses --
+# getStatus16SpHsStable() checks `status16 & 0x02`. 0x06 is HSACT | VSPOL, a
+# polarity bit, so a working unit passes for the wrong reason and fails with a
+# picture on screen once the polarity flips.
 #
-# The lock test is HSACT alone, which is what the firmware itself uses
-# (getStatus16SpHsStable checks `status16 & 0x02`). VSACT is NOT usable here: it
-# reads 0 on this source while STATUS_SYNC_PROC_VTOTAL counts a steady 308 lines,
-# so vertical sync is plainly being measured. Reported below as information, never
-# asserted on.
+# VSACT is NOT usable here: on the csync path it reads 0 while
+# STATUS_SYNC_PROC_VTOTAL counts a steady 308 lines, and on the separate-sync
+# path (2026-08-15) the same source reads it high with VTOTAL 311. Both values
+# occur with a perfect picture. Reported below as information, never asserted
+# on.
 HS_ACTIVE = 1 << 1
 VS_ACTIVE = 1 << 3
 VS_POLARITY = 1 << 2
@@ -102,7 +101,9 @@ def checks_for(state):
             "means no usable H-sync: for RGBHV that is the cable or the analog "
             "switch, since VGA is the only input raising asw_01 AND asw_04. Not a "
             "geometry fault. VSACT and VSPOL are shown but NOT asserted on -- "
-            "VSACT reads 0 on this bench source with a perfect picture.",
+            "this bench source gives a perfect picture with VSACT 0 on the csync "
+            "path and VSACT 1 on the separate-sync path, so neither value means "
+            "anything on its own.",
         ),
         (
             "source line count settled",

@@ -136,6 +136,74 @@ def diff(a_path, b_path, include_status):
     return 0 if not any_diff else 1
 
 
+# The three fields that make a written value take effect. Each is documented
+# "this bit's rising edge is used to latch", so writing the value is half of it --
+# the edge is the other half, and a snapshot cannot carry one.
+PLLAD_REG = (5, 0x11)   # bit 0 VCORST, bit 4 PDZ, bit 7 LAT
+PA_ADC_REG = (5, 0x18)  # bit 7 PA_ADC_LAT
+PA_SP_REG = (5, 0x19)   # bit 7 PA_SP_LAT
+
+
+SP_VTOTAL_REG = (0, 0x1B)  # [10:0], spans 0x1b and 0x1c
+
+
+def is_locked(status16, sp_vtotal):
+    """Has the sync processor got the source, as opposed to merely seeing edges?
+
+    NOT the V-active bit. STATUS_16 bit 3 is clear on the RiscPC bench source
+    while it produces a perfectly good picture, so an indicator that required
+    it reported every restore as failed. What does discriminate is whether the
+    vertical counter is counting: 308 with a picture, 0 with a black screen and
+    an unlatched ADC PLL.
+    """
+    return bool(status16 & 0x02) and sp_vtotal > 0
+
+
+def _sync_report(host):
+    """One line saying whether the sync processor has the source."""
+    status = read_reg(host, 0, 0x16) or 0
+    segment, reg = SP_VTOTAL_REG
+    vtotal = (((read_reg(host, segment, reg + 1) or 0) << 8)
+              | (read_reg(host, segment, reg) or 0)) & 0x7FF
+    return (f"STATUS_16=0x{status:02x}  SP_VTOTAL={vtotal:4d}"
+            + ("   <<< LOCKED" if is_locked(status, vtotal) else ""))
+
+
+def _set_bit(host, write_reg, current, segment, reg, bit, value):
+    """Read-modify-write one bit, returning the new byte."""
+    updated = (current | (1 << bit)) if value else (current & ~(1 << bit))
+    write_reg(host, segment, reg, updated)
+    return updated
+
+
+def latch(host, write_reg, read_reg_fn):
+    """Pulse every latch, so the restored values actually load.
+
+    Mirrors resetPLLAD() in gbs-control.ino: the ADC PLL holds its old divider
+    until PLLAD_LAT sees a rising edge, so a restore across a change of
+    PLLAD_MD leaves the PLL unlocked with every register reading back correct.
+    That is a black screen with H sync present and V sync absent, and it is not
+    distinguishable from a bad snapshot by reading registers.
+
+    The two phase registers latch the same way and are restored the same way,
+    so they get the same treatment.
+    """
+    segment, reg = PLLAD_REG
+    byte = read_reg_fn(host, segment, reg) or 0
+    byte = _set_bit(host, write_reg, byte, segment, reg, 0, 1)  # VCORST
+    byte = _set_bit(host, write_reg, byte, segment, reg, 4, 1)  # PDZ, powered
+    byte = _set_bit(host, write_reg, byte, segment, reg, 7, 0)
+    byte = _set_bit(host, write_reg, byte, segment, reg, 7, 1)  # rising edge
+    byte = _set_bit(host, write_reg, byte, segment, reg, 0, 0)  # release VCORST
+    byte = _set_bit(host, write_reg, byte, segment, reg, 7, 0)
+    _set_bit(host, write_reg, byte, segment, reg, 7, 1)         # and again
+
+    for segment, reg in (PA_ADC_REG, PA_SP_REG):
+        byte = read_reg_fn(host, segment, reg) or 0
+        byte = _set_bit(host, write_reg, byte, segment, reg, 7, 0)
+        _set_bit(host, write_reg, byte, segment, reg, 7, 1)
+
+
 def restore(host, path, segments, repeat):
     """Write a snapshot's registers back, for the segments named. Separates cause
     from effect: if a known-good configuration makes the unit lock, the signal was
@@ -156,10 +224,11 @@ def restore(host, path, segments, repeat):
             if current != value:
                 write_reg(host, int(segment), int(reg, 16), value)
                 changed += 1
-        state = read_reg(host, 0, 0x16) or 0
-        print(f"  pass {round_+1}: rewrote {changed:3d}   STATUS_16=0x{state:02x}"
-              f"  H={'yes' if state & 2 else 'no ':>3} V={'yes' if state & 8 else 'no'}"
-              + ("   <<< LOCKED" if (state & 0x0A) == 0x0A else ""))
+        print(f"  pass {round_+1}: rewrote {changed:3d}   {_sync_report(host)}")
+
+    if 5 in segments:
+        latch(host, write_reg, read_reg)
+        print(f"  latched:              {_sync_report(host)}")
     return 0
 
 
