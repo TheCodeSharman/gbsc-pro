@@ -31,7 +31,7 @@ static unsigned long lastVsyncLock = millis();
 #endif
 
 static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t numValues);
-const uint8_t *loadPresetFromSPIFFS(byte forVideoMode);
+const uint8_t *loadPresetFromFS(byte forVideoMode);
 
 /*
 TIM
@@ -399,7 +399,7 @@ uint8_t SeleInputSource = 0;
 
 // saveUserPrefs() writes exactly this many bytes -- 39 live f.write() calls,
 // not the 42 you get by counting the commented-out ones too. A shorter file
-// cannot be a whole one, whatever SPIFFS says about the open. Verified against
+// cannot be a whole one, whatever the filesystem says about the open. Verified against
 // the unit: /preferencesv2.txt is 39 bytes.
 #define PREFS_BYTES 39
 
@@ -408,41 +408,25 @@ uint8_t SeleInputSource = 0;
 // them back over the copy that is still on flash.
 bool prefsAreSuspect = false;
 
-// The first seconds of a boot, held in RAM and served over HTTP at /bootlog.
+// The first seconds of a boot, held in RAM and served over HTTP at /bootlog,
+// and replayed to the first WebSocket client so the web console is complete.
 //
-// A true cold start cannot be watched live: the boot trace prints at ~1.6 s,
-// before WiFi is up, so only the serial cable can see it -- and the serial cable
-// is USB, and USB backfeeds power, so attaching it means the boot is no longer
-// the mains-only one that has been failing. That is precisely the case we need
-// to read, and it was unobservable.
+// A cold start cannot be watched live. The boot trace prints at ~1.6 s, before
+// WiFi is up, so only the serial cable sees it -- and the serial cable is USB,
+// and USB backfeeds power, so it stops being the mains-only boot under
+// diagnosis. Buffering reads it without either: power up
+// with nothing attached, then `curl http://<ip>/bootlog`. Attaching serial
+// changes the boot being measured.
 //
-// Buffering solves it without either. The unit joins WiFi a few seconds after
-// boot, so a mains-only cold start can be powered up with nothing attached and
-// then read at leisure:
+// **RAM, NOT LittleFS.** What this exists to diagnose is whether the flash
+// answers reads early in boot, so writing the answer to that flash would
+// perturb the measurement. The cost is that the log does not survive a reset.
 //
-//     curl http://<ip>/bootlog
+// Everything printed through SerialM lands here, not just the boot trace.
 //
-// Nothing is written to flash. The alternative was a file in SPIFFS, but the
-// thing being diagnosed is whether that flash answers reads early in boot, and
-// writing to it to record the answer would perturb the measurement. RAM has no
-// such conflict. The cost is that the log does not survive a reboot -- if the
-// ESP resets, the buffer goes with it and what is served is the new boot.
-// The console is a live stream with no history, so everything the firmware says
-// before a browser attaches is simply lost -- and boot is when it says the things
-// worth knowing. Hence a backlog: capture console output from the first line,
-// hold it, and replay it to the first client that connects. Opening the web UI
-// then shows the boot you were not there for, rather than starting mid-sentence.
-//
-// It captures everything printed through SerialM, not just the boot trace, so
-// this is general: any future early-boot diagnostic lands here for free.
-//
-// Two consumers, and both earn their place:
-//   - replayed to the first WebSocket client, so the web console is complete
-//   - GET /bootlog, a stateless read for scripts and for the case where you want
-//     the boot trace without attaching a console at all
-// Off by default. The buffer is 2 KB of globals on a unit with ~20 KB of free
-// heap, and the console stops broadcasting below its threshold -- so carrying it
-// permanently costs the console. Turn it on for a boot-time investigation:
+// Off by default: the buffer is 2 KB of globals on a unit with ~20 KB of free
+// heap, and the console stops broadcasting below its heap threshold, so
+// carrying it permanently costs the console.
 //
 //     make -C build flash BOOTLOG_BYTES=2048
 #ifndef BOOTLOG_BYTES
@@ -534,6 +518,7 @@ wifi
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include "FS.h"
+#include <LittleFS.h>
 
 #include <DNSServer.h>
 #include <WiFiUdp.h>
@@ -641,7 +626,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 static bool getHexParam(AsyncWebServerRequest *request, const char *name, long limit, long *out);
 #endif
 static String presetPathForVideoMode(uint8_t videoMode, Ascii8 slot);
-bool savePresetToSPIFFS();
+bool savePresetToFS();
 void UpDisplay(void);
 void printBinary(unsigned char num);
 void turnOffWiFi();
@@ -4601,7 +4586,7 @@ void applyPresets(uint8_t result)
         }
 #if defined(ESP8266)
         else if (uopt->presetPreference == OutputCustomized) {
-            const uint8_t *preset = loadPresetFromSPIFFS(result);
+            const uint8_t *preset = loadPresetFromFS(result);
             writeProgramArrayNew(preset, false);
             if (applySavedBypassPreset()) {
                 return;
@@ -4634,7 +4619,7 @@ void applyPresets(uint8_t result)
         }
 #if defined(ESP8266)
         else if (uopt->presetPreference == OutputCustomized) {
-            const uint8_t *preset = loadPresetFromSPIFFS(result);
+            const uint8_t *preset = loadPresetFromFS(result);
             writeProgramArrayNew(preset, false);
             if (applySavedBypassPreset()) {
                 return;
@@ -7716,14 +7701,14 @@ void setup()
     bootLogPrintf("BOOT: reason='%s' t=%lums\n",
         ESP.getResetReason().c_str(), (unsigned long)millis());
 
-    const uint32_t spiffsBeginStart = millis();
-    const bool spiffsUp = SPIFFS.begin();
-    bootLogPrintf("PREFS: SPIFFS.begin()=%d at t=%lums (took %lums)\n",
-        spiffsUp ? 1 : 0, (unsigned long)millis(),
-        (unsigned long)(millis() - spiffsBeginStart));
+    const uint32_t fsBeginStart = millis();
+    const bool fsUp = LittleFS.begin();
+    bootLogPrintf("PREFS: LittleFS.begin()=%d at t=%lums (took %lums)\n",
+        fsUp ? 1 : 0, (unsigned long)millis(),
+        (unsigned long)(millis() - fsBeginStart));
 
-    if (!spiffsUp) {
-        bootLogPrintf("PREFS: SPIFFS mount FAILED -- running on defaults, will not save\n");
+    if (!fsUp) {
+        bootLogPrintf("PREFS: LittleFS mount FAILED -- running on defaults, will not save\n");
         prefsAreSuspect = true;
     } else {
         // Wait for the file to be READABLE, not merely openable.
@@ -7748,11 +7733,11 @@ void setup()
         uint8_t probe[PREFS_BYTES];
 
         bootLogPrintf("PREFS: exists=%d t=%lums\n",
-            SPIFFS.exists("/preferencesv2.txt") ? 1 : 0, (unsigned long)millis());
+            LittleFS.exists("/preferencesv2.txt") ? 1 : 0, (unsigned long)millis());
 
         for (uint8_t attempt = 0; attempt < 10; attempt++) {
             const uint32_t attemptStart = millis();
-            f = SPIFFS.open("/preferencesv2.txt", "r");
+            f = LittleFS.open("/preferencesv2.txt", "r");
 
             if (f && f.size() >= PREFS_BYTES) {
                 const size_t got = f.read(probe, PREFS_BYTES);
@@ -7788,7 +7773,7 @@ void setup()
             delay(100);
         }
 
-        if (!prefsReadable && SPIFFS.exists("/preferencesv2.txt")) {
+        if (!prefsReadable && LittleFS.exists("/preferencesv2.txt")) {
             // The file is there but will not come back whole. Defaults would be
             // wrong, and writing them destroys the settings still on flash. Run
             // on whatever loadDefaultUserOptions() left in RAM and touch
@@ -9355,7 +9340,7 @@ void handleType2Command(char argument)
         case '4': // Saving customized presets
             // Only switch to custom presets once one exists, or a failed save
             // leaves the unit booting into a missing or half-written preset.
-            if (savePresetToSPIFFS()) {
+            if (savePresetToFS()) {
                 uopt->presetPreference = OutputCustomized; // custom
                 saveUserPrefs();
             }
@@ -9399,9 +9384,9 @@ void handleType2Command(char argument)
             delay(60);
             ESP.reset(); // don't use restart(), messes up websocket reconnects
             break;
-        case 'e': // print files on spiffs
+        case 'e': // print files on the filesystem
         {
-            Dir dir = SPIFFS.openDir("/");
+            Dir dir = LittleFS.openDir("/");
             while (dir.next()) {
                 ;         // SerialMprint(dir.fileName());
                 ;         // SerialMprint(" ");
@@ -9409,7 +9394,7 @@ void handleType2Command(char argument)
                 delay(1); // wifi stack
             }
             ////
-            File f = SPIFFS.open("/preferencesv2.txt", "r");
+            File f = LittleFS.open("/preferencesv2.txt", "r");
             if (!f) {
                 ; // SerialMprintln(F("failed opening preferences file"));
             } else {
@@ -10163,11 +10148,11 @@ void startWebserver()
     if (ESP.getFreeHeap() > 10000)
     {
       SlotMetaArray slotsObject;
-      File slotsBinaryFileRead = SPIFFS.open(SLOTS_FILE, "r");
+      File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
 
       if (!slotsBinaryFileRead)
       {
-        File slotsBinaryFileWrite = SPIFFS.open(SLOTS_FILE, "w");
+        File slotsBinaryFileWrite = LittleFS.open(SLOTS_FILE, "w");
         for (int i = 0; i < SLOTS_TOTAL; i++)
         {
           slotsObject.slot[i].slot = i;
@@ -10188,7 +10173,7 @@ void startWebserver()
         slotsBinaryFileRead.close();
       }
 
-      request->send(SPIFFS, "/slots.bin", "application/octet-stream");
+      request->send(LittleFS, "/slots.bin", "application/octet-stream");
     } });
 
     server.on("/slot/set", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -10223,7 +10208,7 @@ void startWebserver()
       if (params > 0)
       {
         SlotMetaArray slotsObject;
-        File slotsBinaryFileRead = SPIFFS.open(SLOTS_FILE, "r");
+        File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
 
         if (slotsBinaryFileRead)
         {
@@ -10232,7 +10217,7 @@ void startWebserver()
         }
         else
         {
-          File slotsBinaryFileWrite = SPIFFS.open(SLOTS_FILE, "w");
+          File slotsBinaryFileWrite = LittleFS.open(SLOTS_FILE, "w");
 
           for (int i = 0; i < SLOTS_TOTAL; i++)
           {
@@ -10274,7 +10259,7 @@ void startWebserver()
         slotsObject.slot[slotIndex].wantStepResponse = uopt->wantStepResponse;
         slotsObject.slot[slotIndex].wantPeaking = uopt->wantPeaking;
 
-        File slotsBinaryOutputFile = SPIFFS.open(SLOTS_FILE, "w");
+        File slotsBinaryOutputFile = LittleFS.open(SLOTS_FILE, "w");
         slotsBinaryOutputFile.write((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryOutputFile.close();
 
@@ -10303,21 +10288,21 @@ fail:
         auto currentSlot = slotIndexMap.indexOf(slot);
 
         SlotMetaArray slotsObject;
-        File slotsBinaryFileRead = SPIFFS.open(SLOTS_FILE, "r");
+        File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
         slotsBinaryFileRead.read((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryFileRead.close();
         String slotName = slotsObject.slot[currentSlot].name;
 
         
-        SPIFFS.remove("/preset_ntsc." + String((char)slot));
-        SPIFFS.remove("/preset_pal." + String((char)slot));
-        SPIFFS.remove("/preset_ntsc_480p." + String((char)slot));
-        SPIFFS.remove("/preset_pal_576p." + String((char)slot));
-        SPIFFS.remove("/preset_ntsc_720p." + String((char)slot));
-        SPIFFS.remove("/preset_ntsc_1080p." + String((char)slot));
-        SPIFFS.remove("/preset_medium_res." + String((char)slot));
-        SPIFFS.remove("/preset_vga_upscale." + String((char)slot));
-        SPIFFS.remove("/preset_unknown." + String((char)slot));
+        LittleFS.remove("/preset_ntsc." + String((char)slot));
+        LittleFS.remove("/preset_pal." + String((char)slot));
+        LittleFS.remove("/preset_ntsc_480p." + String((char)slot));
+        LittleFS.remove("/preset_pal_576p." + String((char)slot));
+        LittleFS.remove("/preset_ntsc_720p." + String((char)slot));
+        LittleFS.remove("/preset_ntsc_1080p." + String((char)slot));
+        LittleFS.remove("/preset_medium_res." + String((char)slot));
+        LittleFS.remove("/preset_vga_upscale." + String((char)slot));
+        LittleFS.remove("/preset_unknown." + String((char)slot));
 
         uint8_t loopCount = 0;
         uint8_t flag = 1;
@@ -10326,15 +10311,15 @@ fail:
           slot = slotIndexMap[currentSlot + loopCount];
           nextSlot = slotIndexMap[currentSlot + loopCount + 1];
           flag = 0;
-          flag += SPIFFS.rename("/preset_ntsc." + String((char)(nextSlot)), "/preset_ntsc." + String((char)slot));
-          flag += SPIFFS.rename("/preset_pal." + String((char)(nextSlot)), "/preset_pal." + String((char)slot));
-          flag += SPIFFS.rename("/preset_ntsc_480p." + String((char)(nextSlot)), "/preset_ntsc_480p." + String((char)slot));
-          flag += SPIFFS.rename("/preset_pal_576p." + String((char)(nextSlot)), "/preset_pal_576p." + String((char)slot));
-          flag += SPIFFS.rename("/preset_ntsc_720p." + String((char)(nextSlot)), "/preset_ntsc_720p." + String((char)slot));
-          flag += SPIFFS.rename("/preset_ntsc_1080p." + String((char)(nextSlot)), "/preset_ntsc_1080p." + String((char)slot));
-          flag += SPIFFS.rename("/preset_medium_res." + String((char)(nextSlot)), "/preset_medium_res." + String((char)slot));
-          flag += SPIFFS.rename("/preset_vga_upscale." + String((char)(nextSlot)), "/preset_vga_upscale." + String((char)slot));
-          flag += SPIFFS.rename("/preset_unknown." + String((char)(nextSlot)), "/preset_unknown." + String((char)slot));
+          flag += LittleFS.rename("/preset_ntsc." + String((char)(nextSlot)), "/preset_ntsc." + String((char)slot));
+          flag += LittleFS.rename("/preset_pal." + String((char)(nextSlot)), "/preset_pal." + String((char)slot));
+          flag += LittleFS.rename("/preset_ntsc_480p." + String((char)(nextSlot)), "/preset_ntsc_480p." + String((char)slot));
+          flag += LittleFS.rename("/preset_pal_576p." + String((char)(nextSlot)), "/preset_pal_576p." + String((char)slot));
+          flag += LittleFS.rename("/preset_ntsc_720p." + String((char)(nextSlot)), "/preset_ntsc_720p." + String((char)slot));
+          flag += LittleFS.rename("/preset_ntsc_1080p." + String((char)(nextSlot)), "/preset_ntsc_1080p." + String((char)slot));
+          flag += LittleFS.rename("/preset_medium_res." + String((char)(nextSlot)), "/preset_medium_res." + String((char)slot));
+          flag += LittleFS.rename("/preset_vga_upscale." + String((char)(nextSlot)), "/preset_vga_upscale." + String((char)slot));
+          flag += LittleFS.rename("/preset_unknown." + String((char)(nextSlot)), "/preset_unknown." + String((char)slot));
 
           slotsObject.slot[currentSlot + loopCount].slot = slotsObject.slot[currentSlot + loopCount + 1].slot;
           slotsObject.slot[currentSlot + loopCount].presetID = slotsObject.slot[currentSlot + loopCount + 1].presetID;
@@ -10348,7 +10333,7 @@ fail:
           loopCount++;
         }
 
-        File slotsBinaryFileWrite = SPIFFS.open(SLOTS_FILE, "w");
+        File slotsBinaryFileWrite = LittleFS.open(SLOTS_FILE, "w");
         slotsBinaryFileWrite.write((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryFileWrite.close();
         result = true;
@@ -10358,16 +10343,16 @@ fail:
 fail:
     request->send(200, "application/json", result ? "true" : "false"); });
 
-    server.on("/spiffs/upload", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", "true"); });
+    server.on("/fs/upload", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", "true"); });
 
     server.on(
-        "/spiffs/upload", HTTP_POST,
+        "/fs/upload", HTTP_POST,
         [](AsyncWebServerRequest *request) {
             request->send(200, "application/json", "true");
         },
         [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
             if (!index) {
-                request->_tempFile = SPIFFS.open("/" + filename, "w");
+                request->_tempFile = LittleFS.open("/" + filename, "w");
             }
             if (len) {
                 request->_tempFile.write(data, len);
@@ -10377,13 +10362,13 @@ fail:
             }
         });
 
-    server.on("/spiffs/download", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/fs/download", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (ESP.getFreeHeap() > 10000)
     {
       int params = request->params();
       if (params > 0)
       {
-        request->send(SPIFFS, request->getParam(0)->value(), String(), true);
+        request->send(LittleFS, request->getParam(0)->value(), String(), true);
       }
       else
       {
@@ -10395,18 +10380,32 @@ fail:
       request->send(200, "application/json", "false");
     } });
 
-    server.on("/spiffs/dir", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/fs/dir", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (ESP.getFreeHeap() > 10000)
     {
-      Dir dir = SPIFFS.openDir("/");
+      Dir dir = LittleFS.openDir("/");
       String output = "[";
 
       while (dir.next())
       {
-        output += "\"";
+        // Two differences from SPIFFS, both of which reach the web UI:
+        //
+        // LittleFS emits synthetic "." and ".." entries before any real file,
+        // so an unfiltered listing offers the UI two names it cannot download.
+        // isFile() drops them.
+        //
+        // And fileName() returns the bare name where SPIFFS returned the full
+        // path. The UI feeds these straight back to /fs/download?file=,
+        // so the leading slash is part of this endpoint's contract and is put
+        // back here rather than letting the listing change shape.
+        if (!dir.isFile())
+        {
+          continue;
+        }
+        output += "\"/";
         output += dir.fileName();
         output += "\",";
-        delay(1); 
+        delay(1);
       }
 
       output += "]";
@@ -10418,7 +10417,7 @@ fail:
     }
     request->send(200, "application/json", "false"); });
 
-    server.on("/spiffs/format", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", SPIFFS.format() ? "true" : "false"); });
+    server.on("/fs/format", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", LittleFS.format() ? "true" : "false"); });
 
     // The boot trace, from RAM. Read after a mains-only cold start with nothing
     // attached -- the boot that could not be watched over serial.
@@ -10477,7 +10476,7 @@ fail:
 
     server.on("/gbs/restore-filters", HTTP_GET, [](AsyncWebServerRequest *request) {
     SlotMetaArray slotsObject;
-    File slotsBinaryFileRead = SPIFFS.open(SLOTS_FILE, "r");
+    File slotsBinaryFileRead = LittleFS.open(SLOTS_FILE, "r");
     bool result = false;
     if (slotsBinaryFileRead)
     {
@@ -10558,7 +10557,7 @@ void initUpdateOTA()
       type = "filesystem";
 
     
-    SPIFFS.end();
+    LittleFS.end();
     ; });
     ArduinoOTA.onEnd([]() { ; });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) { ; });
@@ -10587,7 +10586,7 @@ void StrClear(char *str, uint16_t length)
 
 // A custom preset is these register ranges, in this order. They add up to
 // presetRegisterCount bytes, which is what a preset file holds and what
-// loadPresetFromSPIFFS() reads back.
+// loadPresetFromFS() reads back.
 static const struct {
     uint8_t segment;
     uint8_t first;
@@ -10668,7 +10667,7 @@ static const uint8_t *builtinPresetFor(byte forVideoMode)
     return (forVideoMode == 2 || forVideoMode == 4) ? pal_240p : ntsc_240p;
 }
 
-const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
+const uint8_t *loadPresetFromFS(byte forVideoMode) //
 {
 
     static uint8_t preset[presetRegisterCount]; //
@@ -10676,7 +10675,7 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
     Ascii8 slot = 0;
     File f;
 
-    f = SPIFFS.open("/preferencesv2.txt", "r");
+    f = LittleFS.open("/preferencesv2.txt", "r");
     if (f) {
         uint8_t result[3];
         uint8_t dump = 0;
@@ -10691,7 +10690,7 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
 
     String path = presetPathForVideoMode(forVideoMode, slot);
     if (path.length() > 0) {
-        f = SPIFFS.open(path, "r");
+        f = LittleFS.open(path, "r");
     }
 
     if (!f) // open failed, or a video mode with no custom preset
@@ -10702,10 +10701,11 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
         f.close();
     }
 
-    // The bound is load-bearing. readStringUntil() stops before the '}', so a
-    // well-formed file ends "...,\r\n" and strtok yields the trailing "\r\n" as
-    // one token more than there are values; a file uploaded through
-    // /spiffs/upload can be any length at all.
+    // The bound is not belt-and-braces. readStringUntil() stops before the '}',
+    // so a well-formed file ends "...,\r\n" and strtok hands back the trailing
+    // "\r\n" as one more token than there are values — every custom preset load
+    // used to write that token's atoi() of 0 one byte past preset[]. A file
+    // uploaded through /fs/upload can be any length at all.
     char *tmp;
     uint16_t i = 0;
     tmp = strtok(&s[0], ","); //
@@ -10734,9 +10734,9 @@ const uint8_t *loadPresetFromSPIFFS(byte forVideoMode) //
 // old preset, and swap only once the new one is complete, so a save that fails
 // part-way leaves the old preset untouched.
 // docs/investigations/riscpc-game-modes.md
-bool savePresetToSPIFFS()
+bool savePresetToFS()
 {
-    File f = SPIFFS.open("/preferencesv2.txt", "r");
+    File f = LittleFS.open("/preferencesv2.txt", "r");
     if (!f) {
         debugPrintf("preset save: no preferences file, so no slot to save into\n");
         return false;
@@ -10782,7 +10782,7 @@ bool savePresetToSPIFFS()
     }
 
     String tempPath = path + "~";
-    f = SPIFFS.open(tempPath, "w");
+    f = LittleFS.open(tempPath, "w");
     if (!f) {
         debugPrintf("preset save: cannot open %s\n", tempPath.c_str());
         free(dump);
@@ -10809,17 +10809,19 @@ bool savePresetToSPIFFS()
 
     if (!complete) {
         debugPrintf("preset save: %s came up short, discarding it\n", tempPath.c_str());
-        SPIFFS.remove(tempPath);
+        LittleFS.remove(tempPath);
         return false;
     }
 
-    // SPIFFS_rename refuses an existing destination, so the old preset has to go
-    // first. If the rename then fails there is no preset at all, which loads the
-    // built-in one: worse than the old preset, far better than a broken one.
-    SPIFFS.remove(path);
-    if (!SPIFFS.rename(tempPath, path)) {
+    // The remove is belt and braces under LittleFS: lfs_rename replaces an
+    // existing destination itself, where SPIFFS_rename refused one, which is why
+    // this was written. Kept because the ordering still matters -- if the rename
+    // fails there is no preset at all, which loads the built-in one: worse than
+    // the old preset, far better than a half-written one.
+    LittleFS.remove(path);
+    if (!LittleFS.rename(tempPath, path)) {
         debugPrintf("preset save: cannot move %s into place\n", tempPath.c_str());
-        SPIFFS.remove(tempPath);
+        LittleFS.remove(tempPath);
         return false;
     }
 
@@ -10828,7 +10830,7 @@ bool savePresetToSPIFFS()
 // void SaveUserIRRemote()
 // {
 
-//   File f = SPIFFS.open("/IRmote.txt", "w");
+//   File f = LittleFS.open("/IRmote.txt", "w");
 //   if (!f)
 //   {
 //     return;
@@ -10852,7 +10854,7 @@ bool savePresetToSPIFFS()
 void ReadUserIRRemote()
 {
 
-    File f = SPIFFS.open("/IRmote.txt", "r");
+    File f = LittleFS.open("/IRmote.txt", "r");
     if (!f) {
         return;
     }
@@ -10883,7 +10885,7 @@ void saveUserPrefs()
         return;
     }
 
-    File f = SPIFFS.open("/preferencesv2.txt", "w");
+    File f = LittleFS.open("/preferencesv2.txt", "w");
     if (!f) {
         return;
     }
