@@ -9608,6 +9608,56 @@ void startWebserver()
     // Read and write TV5725 registers over HTTP. Hex throughout, 0x optional;
     // /setreg reports the previous value, so a poke can be undone.
     // docs/gbs-control-debug-interface.md.
+
+    // Read a whole segment in one request. /getreg costs an HTTP round trip per
+    // register, so reading a segment to inspect it meant hundreds of them —
+    // slow enough that tooling avoided doing it at all. Returns the values as
+    // one hex string, index 0 being register `from`.
+    server.on("/getregs", HTTP_GET, [](AsyncWebServerRequest *request) {
+        long segment = 0, from = 0, to = 0xff;
+
+        if (!getHexParam(request, "s", 5, &segment)) {
+            request->send(400, "application/json", F("{\"error\":\"expected s=0..5\"}"));
+            return;
+        }
+        if (request->hasParam("from") && !getHexParam(request, "from", 0xff, &from)) {
+            request->send(400, "application/json", F("{\"error\":\"bad from\"}"));
+            return;
+        }
+        if (request->hasParam("to") && !getHexParam(request, "to", 0xff, &to)) {
+            request->send(400, "application/json", F("{\"error\":\"bad to\"}"));
+            return;
+        }
+        if (to < from) {
+            request->send(400, "application/json", F("{\"error\":\"to below from\"}"));
+            return;
+        }
+
+        String hex;
+        hex.reserve((to - from + 1) * 2 + 1);
+        for (long reg = from; reg <= to; reg++) {
+            char pair[3];
+            snprintf_P(pair, sizeof(pair), PSTR("%02x"), GBS::read(segment, reg));
+            hex += pair;
+            if ((reg & 0x0f) == 0x0f) {
+                ESP.wdtFeed();
+            }
+        }
+
+        String body;
+        body.reserve(hex.length() + 64);
+        body += F("{\"segment\":");
+        body += segment;
+        body += F(",\"from\":");
+        body += from;
+        body += F(",\"to\":");
+        body += to;
+        body += F(",\"values\":\"");
+        body += hex;
+        body += F("\"}");
+        request->send(200, "application/json", body);
+    });
+
     server.on("/getreg", HTTP_GET, [](AsyncWebServerRequest *request) {
         long segment = 0, reg = 0;
 
