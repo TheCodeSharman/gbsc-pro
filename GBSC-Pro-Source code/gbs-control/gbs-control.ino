@@ -861,8 +861,6 @@ class SerialMirror : public Stream
         bootLogAppend((const char *)data, size);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(data, size);
-        } else {
-            webSocket.disconnect();
         }
         Serial.write(data, size);
         return size;
@@ -873,8 +871,6 @@ class SerialMirror : public Stream
         bootLogAppend(data, size);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(data, size);
-        } else {
-            webSocket.disconnect();
         }
         Serial.write(data, size);
         return size;
@@ -885,8 +881,6 @@ class SerialMirror : public Stream
         bootLogAppend((const char *)&data, 1);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(&data, 1);
-        } else {
-            webSocket.disconnect();
         }
         Serial.write(data);
         return 1;
@@ -897,8 +891,6 @@ class SerialMirror : public Stream
         bootLogAppend(&data, 1);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(&data, 1);
-        } else {
-            webSocket.disconnect();
         }
         Serial.write(data);
         return 1;
@@ -7499,9 +7491,10 @@ void updateWebSocketData()
 
             if (ESP.getFreeHeap() > 14000) {
                 webSocket.broadcastTXT(toSend, MESSAGE_LEN);
-            } else {
-                webSocket.disconnect();
             }
+            // Same reasoning as SerialMirror: skip the update, keep the client.
+            // Hanging up on everyone to save 14 KB loses the session that was
+            // about to tell you why the heap was low.
         }
     }
 }
@@ -8031,7 +8024,27 @@ void loop()
 #if BOOTLOG_BYTES > 0
     if (!bootLogDelivered && bootLogLen > 0 && webSocket.connectedClients() > 0) {
         bootLogDelivered = true; // set first: broadcastTXT re-enters SerialMirror
-        webSocket.broadcastTXT((const char *)bootLog, bootLogLen);
+
+        // **SEND IT IN PIECES, NOT ONE 2 KB FRAME.** A single broadcast of the
+        // whole backlog allocates for every connected client at once, and
+        // SerialMirror drops clients when free heap falls below its threshold
+        // during a console write -- so the replay hangs up the very client it is
+        // replaying to. Chunked with a yield between, and skipped entirely when
+        // the heap is already tight: losing the backlog is a smaller loss than
+        // losing the console session it was meant to enrich.
+        const uint16_t chunk = 256;
+        for (uint16_t sent = 0; sent < bootLogLen; sent += chunk) {
+            if (ESP.getFreeHeap() < 22000) {
+                Serial.println(F("BOOTLOG: heap low, replay truncated"));
+                break;
+            }
+            uint16_t n = bootLogLen - sent;
+            if (n > chunk) {
+                n = chunk;
+            }
+            webSocket.broadcastTXT((const char *)bootLog + sent, n);
+            yield();
+        }
     }
 #endif
 
@@ -10354,23 +10367,46 @@ fail:
     // attached -- the boot that could not be watched over serial.
 #if GBS_DEBUG
     server.on("/bootlog", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // Streamed, not copied into a String: building a 2 KB String to answer a
+        // diagnostic request allocates more heap than this unit has spare.
+        String header = "free heap: " + String(ESP.getFreeHeap()) + " bytes\n";
 #if BOOTLOG_BYTES == 0
         // Distinguishable from "empty" on purpose: empty is a regression, and
         // disabled is a build choice.
-        request->send(200, "text/plain",
-            F("(boot log disabled: rebuild with BOOTLOG_BYTES=2048)\n"));
+        header += F("(boot log disabled: rebuild with BOOTLOG_BYTES=2048)\n");
+        request->send(200, "text/plain", header);
+        return;
 #else
-        String out;
-        out.reserve(bootLogLen + 64);
-        out.concat(bootLog, bootLogLen);
         if (bootLogLen == 0) {
-            out = F("(boot log empty)\n");
-        } else if (bootLogLen >= BOOTLOG_BYTES - 1) {
-            out += F("\n(TRUNCATED: buffer full, raise BOOTLOG_BYTES)\n");
+            header += F("(boot log empty)\n");
+            request->send(200, "text/plain", header);
+            return;
         }
-        request->send(200, "text/plain", out);
-#endif
+        if (bootLogLen >= BOOTLOG_BYTES - 1) {
+            header += F("(TRUNCATED: buffer full, raise BOOTLOG_BYTES)\n");
+        }
+
+        const size_t headerLen = header.length();
+        const size_t total = headerLen + bootLogLen;
+        AsyncWebServerResponse *response = request->beginChunkedResponse(
+            "text/plain",
+            [header, headerLen, total](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                if (index >= total) {
+                    return 0;
+                }
+                size_t written = 0;
+                while (written < maxLen && index + written < total) {
+                    const size_t at = index + written;
+                    buffer[written] = (at < headerLen)
+                        ? (uint8_t)header[at]
+                        : (uint8_t)bootLog[at - headerLen];
+                    written++;
+                }
+                return written;
+            });
+        request->send(response);
     });
+#endif
 #endif
 
     server.on("/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
