@@ -244,3 +244,43 @@ def test_the_derivation_is_empty_because_every_field_has_an_owner(fields):
     which a static value cannot serve.
     """
     assert sorted(fields) == []
+
+
+def test_the_subsystem_list_comes_from_BringUp_cpp_not_from_a_copy():
+    """Which classes are the bring-up is read out of the code that calls them.
+
+    A hand-kept list here would drift the day a tenth subsystem is added, and
+    drift silently: the new class's registers would simply be treated as
+    somebody else's and drop out of the hardware check.
+    """
+    subsystems = bringup_map.bringup_subsystems()
+
+    assert "Chip" in subsystems and "VideoProcessor" in subsystems
+    assert len(subsystems) >= 9, (
+        f"BringUp::init() calls {len(subsystems)} subsystems, which is fewer "
+        "than the nine that graduated -- the parse has broken")
+
+
+def test_a_field_only_the_bringup_writes_is_not_counted_as_overwritten():
+    """The filter that made the old hardware test unfalsifiable, asked directly.
+
+    **runtime_written() CANNOT ANSWER THIS ANY MORE, AND THAT IS WHY THE TEST
+    IT FED DIED.** It skips src/tv5725/bringup/, a directory that no longer
+    exists: the nine classes graduated into src/tv5725/*.cpp, which it globs.
+    So every field the bring-up writes counts as "written at runtime", by the
+    bring-up itself, and bringup_fields() correctly returns nothing --
+    test_the_derivation_is_empty is the guard for that and it is the end state,
+    not a fault.
+
+    What the hardware still needs to know is different and narrower: of the
+    registers the bring-up writes, which does something LATER write over? Only
+    those may disagree with the block when read back off a live chip.
+    """
+    overwritten = bringup_map.written_outside_bringup()
+
+    # PLLAD_MD is Tv5725::Sampling's, written on every solve, so a read-back
+    # will not match anything the bring-up left.
+    assert "PLLAD_MD" in overwritten
+    # VDS_PK_HH_GAIN is a peaking filter coefficient in Tv5725::Vds and nothing
+    # else touches it -- exactly the silent class the hardware check exists for.
+    assert "VDS_PK_HH_GAIN" not in overwritten

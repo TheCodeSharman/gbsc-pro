@@ -77,6 +77,12 @@ WRITE = re.compile(r"GBS::([A-Za-z_][A-Za-z0-9_]*)::write")
 # brace at depth 0 is about to open.
 SIGNATURE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\([^()]*\)\s*(?:const\s*)?$")
 
+# Every translation unit a register write can be in. Callers drop the files they
+# are asking ABOUT -- written_outside_bringup() drops the nine subsystems.
+SOURCE_PATTERNS = ["*.ino", "*.cpp", "*.h",
+                   os.path.join("src", "**", "*.cpp"),
+                   os.path.join("src", "**", "*.h")]
+
 
 # Functions whose register writes are NOT ownership, because they do not run on
 # the scaling path. Each one drives the chip somewhere a scaling preset has to
@@ -245,6 +251,58 @@ def writes_by_function(text):
     return out
 
 
+INIT_CALL = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)::init\(\);", re.M)
+
+
+def bringup_subsystems():
+    """The class names BringUp::init() calls, read out of BringUp.cpp.
+
+    Parsed rather than listed, because a copy here would drift the day a tenth
+    subsystem is added and would drift SILENTLY -- the new class's registers
+    would simply be attributed to somebody else and drop out of the checks
+    written_outside_bringup() feeds.
+    """
+    path = os.path.join(SKETCH, "src", "tv5725", "BringUp.cpp")
+    try:
+        source = strip_noise(open(path, encoding="utf-8", errors="replace").read())
+    except OSError:
+        return []
+    return INIT_CALL.findall(source)
+
+
+def written_outside_bringup():
+    """Every field something OTHER than the nine bring-up classes writes.
+
+    **A DIFFERENT QUESTION FROM runtime_written(), AND THE ONE THE HARDWARE
+    NEEDS.** That function asks "does anything own this", to decide what a
+    static block must supply; it can no longer answer anything about the block
+    itself, because the nine classes graduated out of src/tv5725/bringup/ --
+    which it skips -- into src/tv5725/*.cpp, which it globs. So every field the
+    bring-up writes now counts as written at runtime by the bring-up, and
+    bringup_fields() returns nothing. That is the end state and
+    test_the_derivation_is_empty guards it.
+
+    The hardware check needs the narrower question: of the registers the block
+    writes, which does something LATER write over? Only those may legitimately
+    disagree with the block when read back off a live chip -- PLLAD_MD is
+    Tv5725::Sampling's on every solve, the raster is Engine's, the windows move
+    with every pad press. Everything else should still hold what the bring-up
+    put there, and a Vds filter coefficient that does not is invisible in the
+    picture until someone displays the content that shows it.
+    """
+    subsystem_files = {name + ".cpp" for name in bringup_subsystems()}
+    names = set()
+    for pattern in SOURCE_PATTERNS:
+        for path in glob.glob(os.path.join(SKETCH, pattern), recursive=True):
+            base = os.path.basename(path)
+            if base == "tv5725.h" or base in subsystem_files:
+                continue
+            text = open(path, encoding="utf-8", errors="replace").read()
+            names.update(name for function, name in writes_by_function(text)
+                         if function not in NON_OWNING)
+    return names
+
+
 def runtime_written():
     """Every field a writer that runs on the SCALING PATH writes.
 
@@ -263,10 +321,8 @@ def runtime_written():
     fault -- DAC_RGBS_B0ENZ, "the firmware never writes that bit to 0 anywhere"
     -- is the same shape, and predates step 4 by weeks.
     """
-    patterns = ["*.ino", "*.cpp", "*.h", os.path.join("src", "**", "*.cpp"),
-                os.path.join("src", "**", "*.h")]
     names = set()
-    for pattern in patterns:
+    for pattern in SOURCE_PATTERNS:
         for path in glob.glob(os.path.join(SKETCH, pattern), recursive=True):
             if os.path.basename(path) == "tv5725.h":
                 continue
