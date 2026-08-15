@@ -41,9 +41,8 @@ public:
     //
     // 87 MHz before 108, 48.5 before 40.5, each with a 1 ms settle. Unexplained
     // and kept verbatim: it is in every working state measured on this board,
-    // while the 2026-08-11 sweep reached 129.6 MHz sharp with no preload at all,
-    // so it looks specific to those two ratios rather than to high frequencies.
-    // It costs 1 ms and buys something nobody has characterised.
+    // and 129.6 MHz reaches sharp with no preload at all, so it looks specific
+    // to those two ratios rather than to high frequencies.
     static uint32_t preloadFor(uint32_t targetHz);
 };
 

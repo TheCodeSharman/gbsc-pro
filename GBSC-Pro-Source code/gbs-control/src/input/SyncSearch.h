@@ -4,12 +4,10 @@
 // Which sync search detection should run, given the saved input source and
 // whether the sync processor reports a V-sync.
 //
-// detectAndSwitchToActiveInput() spelled this out twice, inline, and the two
-// disagreed: the V-sync-present search accepted S_VGA and S_RGBs, the
-// V-sync-absent one only S_RGBs. A unit saved as S_VGA on a source with H-sync
-// and no V-sync matched neither, so detection fell out of the bottom of the
-// function and livelocked -- ADC_INPUT_SEL alternating on a ~1 s beat, every
-// boot ending in low power with the DAC down, measured 2026-08-13.
+// One search for both cases, because two spellings disagree: a saved S_VGA on a
+// source with H-sync and no V-sync must match, or detection falls out of the
+// bottom of the function and livelocks, alternating ADC_INPUT_SEL on a ~1 s beat
+// and ending every boot in low power with the DAC down.
 //
 // V-sync absent is not exotic here: VSACT reads 0 on this bench source with a
 // perfect picture, so the search that handles it has to be reachable from the

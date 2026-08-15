@@ -20,6 +20,10 @@ float getSourceFieldRate(boolean useSPBus);
 
 namespace Tv5725 {
 
+// Defined in OutputRaster.h, deliberately not included: only a pointer is held,
+// and including it would pull the raster arithmetic into every user.
+class OutputMode;
+
 // The capture window and the two rasters it has to fit, read from the chip in
 // one place so nothing downstream reads a register to decide what to write.
 class Capture {
@@ -53,12 +57,23 @@ public:
     static const uint16_t SourceVerticalTotalMin = 200;
     static const uint16_t SourceVerticalTotalMax = 1300;
 
+    // Above this the source is a 50 Hz standard -- PAL-like ~312 lines, NTSC-like
+    // ~262. Sanity-checks a measured field rate, which is transient during a
+    // preset load where the line count is not.
+    static const uint16_t PalVerticalTotalMin = 290;
+
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 
     // Read the rasters and where each capture window rolls over. False when the
     // source has not settled far enough to derive a window from.
-    bool readRasters();
+    //
+    // The sampling is an ARGUMENT, not a read. PLLAD_LAT is what loads the
+    // divider into the ADC PLL, so between a write and the latch the register
+    // reports a value the chip is not using. Everything read here is a raster
+    // or a live measurement; the divider is a choice, and belongs to whoever
+    // made it.
+    bool readRasters(const Sampling &sampling);
 
     void setWindows(const CaptureWindow &h, const CaptureWindow &v);
 
@@ -74,10 +89,6 @@ private:
 
 // The geometry engine: the user's framing, and every TV5725 register that is an
 // output of it.
-//
-// A class rather than statics in this header, which gave every translation unit
-// a silent copy and left "the framing is the truth, the registers follow"
-// enforced by convention alone.
 class Geometry {
 public:
     Geometry();
@@ -93,31 +104,66 @@ public:
     // DERIVED; nothing is read back to decide it.
     bool apply();
 
-    // The OUTPUT raster, computed rather than taken from the preset table:
-    // both totals, both sync pulses, and the display clock seed that affords
-    // them. Returns false and writes NOTHING when the frame height belongs to
-    // no OutputMode, which leaves the table's raster in place.
+    // The OUTPUT raster: both totals, both sync pulses, and the display clock
+    // seed that affords them. `mode` comes from the user's preference, via
+    // OutputRaster::modeForPreference(); NULL, or a frame height belonging to
+    // no OutputMode, writes NOTHING and leaves the raster registers alone.
     //
     // **CALL IT BEFORE externalClockGenResetClock(), NOT AFTER**, which reads
     // PLL648_CONTROL_01 to program the Si5351. The order is raster, clock,
     // windows, then the rate steer LAST -- steering early corrects a new clock
-    // against the old raster, giving a 31 Hz frame and a black screen.
-    // docs/investigations/preset-abandonment-audit.md "Ordering, which is not optional".
+    // against the old raster, which gives a 31 Hz frame and a black screen.
+    // docs/investigations/preset-abandonment-audit.md
+    bool solveRaster(const OutputMode *mode);
+
+    // The deferred retry, against the mode the last call named, so the caller
+    // need not hold it across the settle.
     bool solveRaster();
 
+    // The output has gone into bypass: video routes around the VDS, so a
+    // deferred solve is void and dropping it stops runSyncWatcher()'s retry
+    // writing a scaled raster over the bypass setup.
+    void enterBypass();
+
+    // True when solveRaster() refused because the source was still settling,
+    // rather than because the mode has no timings. The caller must retry the
+    // WHOLE sequence -- raster, clock, windows -- which is why the retry lives
+    // in the sketch beside externalClockGenResetClock().
+    bool rasterPending() const;
+
+    // True when solveSampling() has no measurable line rate and adopts the
+    // divider already on the chip. Adopting is necessary -- an engine with no
+    // divider defers every solve forever -- but it must be REMEMBERED as a
+    // fallback, or a cold boot keeps whatever divider bypass left and only a
+    // manual reset clears it. Retry the whole sequence: moving the divider moves
+    // the capture window with it.
+    bool samplingPending() const;
+
     // A mode change has no framing worth keeping, only the previous mode's.
-    // test_geometry_pads.py::test_a_preset_load_recomputes_every_register_from_scratch
     bool solveFromScratch();
 
     // Finish a solve the source was too unsettled to allow. Cheap when there is
     // nothing to do, so the sync watcher can call it every pass. Freeze stops it.
     bool solveIfPending();
 
-    // Apply a framing the USER asked for. Drained from loop() whether or not
-    // automation is frozen, like /setreg, /uc and /sc. Cleared before the solve,
-    // so a request that cannot be met is refused rather than retried unseen.
-    // test_firmware.py::test_an_explicit_framing_request_applies_while_frozen
+    // Apply a requested framing, if one is waiting. The request is cleared before
+    // the solve, so one that cannot be met is refused rather than retried on
+    // every pass.
     bool applyRequested();
+
+    // The ADC sampling divider this engine solves against: state, not a register
+    // read. adopt() is for the paths that compute none -- a custom preset, and
+    // bypass -- and writes all three registers, so it cannot go half-applied.
+    void adoptSampling();
+
+    // Compute the divider from the line rate and write all three registers.
+    // `lineRateHz` is field rate x source lines; setOverSampleRatio() must have
+    // settled rto->osr first, because the sample clock is the product of both.
+    //
+    // False when the rate is unmeasurable, falling back to adopt() or to the
+    // previous choice. Refusing to compute from a measurement that did not
+    // happen is the rule; refusing to hold a divider at all is not the same thing.
+    bool solveSampling(uint32_t lineRateHz, uint8_t oversample);
 
     // Re-solve against the raster as it stands, for callers that have just
     // changed the output timing: `produced` is capture x 1024 / scale and has no
@@ -152,8 +198,12 @@ private:
     bool step(const PanAndZoom &wanted);
 
     PanAndZoom framing_;
+    Sampling sampling_;      // the divider this engine solves against
+    bool rasterPending_;     // solveRaster() refused: the field rate was not settled
+    bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool solvePending_;      // a solve refused because the source was settling
     bool framingRequested_;  // the user asked; loop() drains it, freeze does not
+    const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
 };
 
 }  // namespace Tv5725

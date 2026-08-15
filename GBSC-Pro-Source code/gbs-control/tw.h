@@ -1,6 +1,8 @@
 #ifndef TW_H_
 #define TW_H_
 
+#include <string.h>   // memset, used by regRead below
+
 #include <Wire.h>
 
 #if GBS_TRACE_WRITES

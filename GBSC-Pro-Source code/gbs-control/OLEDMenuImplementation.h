@@ -79,7 +79,6 @@ enum MenuItemTag : uint16_t
     MT1280x720,
     MT1920x1080,
     MT_480s576,
-    MT_DOWNSCALE,
     MT_BYPASS,
     MT_RESET_GBS,
     MT_RESTORE_FACTORY,

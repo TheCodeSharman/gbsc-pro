@@ -11,6 +11,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "fake/Wire.h"
+
+FakeTwoWire Wire;
+
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Sampling.h"
 
 using namespace Tv5725;
@@ -129,10 +133,10 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
     const uint8_t Oversample = 4;
 
     SUBCASE("the ADC rating is what binds, at every line rate") {
-        // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, and 85% of that is 2212.
-        // 31500 Hz: room for 1285, and 85% is 1092.
-        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) == 2212);
-        CHECK(Sampling::recommendedDivider(31500, Oversample) == 1092);
+        // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, and 98% of that is 2550.
+        // 31500 Hz: room for 1285, and 98% is 1258.
+        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) == 2550);
+        CHECK(Sampling::recommendedDivider(31500, Oversample) == 1258);
     }
 
     SUBCASE("it samples every mode that gets scaled at all") {
@@ -147,12 +151,18 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         CHECK(active >= 2 * 640);              // and 2x on the common one
     }
 
-    SUBCASE("the bench divider is above what the rating recommends") {
-        // The unit runs PLLAD_MD 2553 against a 2212 recommendation -- 98% of the
-        // 162 MSPS rating rather than 85%, measured 2026-08-11. Recorded because
-        // wiring this class in would LOWER the divider, and that is a real
-        // trade against sampling headroom rather than a free fix.
-        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) < 2553);
+    SUBCASE("it lands where the shipped tables already ran") {
+        // 98 rather than 85. The twelve tables ran 2269..2559 on this part for
+        // years, 87..98% of the 162 MSPS rating, with the bench pair at 98%;
+        // computing 2212 instead throws away 13% of the horizontal input samples
+        // for headroom nothing asked for. The remaining 2% is not derating but
+        // jitter: the line rate comes from a MEASURED field rate, and a reading
+        // that comes in low would put a divider computed at the ceiling over the
+        // rating.
+        uint16_t chosen = Sampling::recommendedDivider(BenchLine, Oversample);
+        CHECK(chosen >= 2500);
+        CHECK(chosen <= 2553);
+        CHECK(Sampling::withinLimit(chosen, BenchLine, Oversample));
         CHECK(Sampling::withinLimit(2553, BenchLine, Oversample));
         CHECK_FALSE(Sampling::withinLimit(2604 + 1, BenchLine, Oversample));
     }
@@ -161,5 +171,158 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // A divider written from a zero measurement is how the screen goes
         // green. Sampling has no business inventing one.
         CHECK(Sampling::recommendedDivider(0, Oversample) == 0);
+    }
+}
+
+TEST_CASE("the sync processor's retime window is the divider a third time")
+{
+    // SP_RT_HS_SP is the third register holding this quantity: the stop of the
+    // sync processor's retiming window, in the same ADC samples PLLAD_MD divides
+    // the line into. Measured on the unit, which holds 2553 and 2374.
+    CHECK(Sampling::retimeStopFor(BenchDivider) == 2374);
+
+    SUBCASE("and it follows a divider that changes") {
+        // 2212 is what recommendedDivider() asks for at the bench line rate.
+        // Leaving 2374 behind would put the stop past the end of the line.
+        CHECK(Sampling::retimeStopFor(2212) == 2057);
+        CHECK(Sampling::retimeStopFor(1276) == 1186);
+    }
+
+    SUBCASE("it is integer arithmetic, and agrees with the float it replaces") {
+        // The sketch wrote `PLLAD_MD::read() * 0.93f` and truncated. The ESP8266
+        // has no FPU and this runs on every solve; the two must not disagree by
+        // a sample, so every legal divider is checked rather than a sample of
+        // them.
+        for (uint32_t d = 0; d <= Sampling::DividerMax; d++) {
+            CHECK(Sampling::retimeStopFor((uint16_t)d) == (uint16_t)(d * 0.93f));
+        }
+    }
+}
+
+// --- the divider as STATE, not as a register read back -------------------
+//
+// The registers cannot be the source of truth here: PLLAD_MD is loaded into the
+// ADC PLL by a rising edge on PLLAD_LAT, so between a write and that latch a
+// read-back reports what was WRITTEN, never what the chip is DOING. PLLAD_MD
+// reading 2210 against a PLL running 2553, with IF_HSYNC_RST sized for 2210, is
+// a solid green screen and every register self-consistent. So Sampling holds the
+// number it chose and hands it to whoever needs it.
+
+// Where the three registers live, so the assertions below name bytes rather
+// than repeat tv5725.h's arithmetic:
+//   PLLAD_MD      s5_12[0:11]
+//   IF_HSYNC_RST  s1_0E[0:11]
+//   SP_RT_HS_SP   s5_4B[0:11]
+static uint16_t twelveBits(uint8_t seg, uint8_t reg)
+{
+    return (uint16_t)((Wire.bank[seg][reg] | (Wire.bank[seg][reg + 1] << 8)) & 0x0FFF);
+}
+
+TEST_CASE("a solved divider is held, and every register follows from it")
+{
+    Wire.reset();
+    Sampling sampling;
+
+    // Nothing chosen yet is a state a caller must be able to see, not a zero it
+    // silently writes.
+    CHECK_FALSE(sampling.usable());
+
+    REQUIRE(sampling.solve(BenchLineRate, 4));
+    CHECK(sampling.usable());
+
+    const uint16_t chosen = sampling.divider();
+    CHECK(chosen == Sampling::recommendedDivider(BenchLineRate, 4));
+
+    SUBCASE("the derived values come from the held divider") {
+        CHECK(sampling.ifLine() == Sampling::ifLineFor(chosen));
+        CHECK(sampling.retimeStop() == Sampling::retimeStopFor(chosen));
+    }
+
+    SUBCASE("write() puts all three in the right bytes, from the one value") {
+        sampling.write();
+        CHECK(twelveBits(5, 0x12) == chosen);
+        CHECK(twelveBits(1, 0x0E) == Sampling::ifLineFor(chosen));
+        CHECK(twelveBits(5, 0x4B) == Sampling::retimeStopFor(chosen));
+    }
+}
+
+TEST_CASE("an unmeasurable line rate leaves the previous choice alone")
+{
+    Wire.reset();
+    Sampling sampling;
+    REQUIRE(sampling.solve(BenchLineRate, 4));
+    const uint16_t chosen = sampling.divider();
+
+    // getSourceFieldRate() reports 0 with no lock, and that reaches here. A
+    // divider written from a measurement that did not happen is how the screen
+    // goes green -- and it takes the sync processor with it, so there is no
+    // picture left to diagnose from.
+    CHECK_FALSE(sampling.solve(0, 4));
+    CHECK(sampling.divider() == chosen);
+    CHECK(sampling.usable());
+}
+
+TEST_CASE("adopt() is how a path that does not compute says so out loud")
+{
+    Wire.reset();
+    Sampling sampling;
+
+    // A custom preset is a register dump replayed off the filesystem and bypass
+    // routes around the VDS, so neither has a computed divider and both must
+    // INHERIT one. The point is that they name the act, where a silent read-back
+    // inside readRasters() would be the same inheritance unaccounted for.
+    Wire.bank[5][0x12] = 0xF9;   // 2553, as the bench table ships
+    Wire.bank[5][0x13] = 0x09;
+
+    sampling.adopt();
+    CHECK(sampling.usable());
+    CHECK(sampling.divider() == 2553);
+
+    SUBCASE("and adopting still makes the other two agree with it") {
+        // The dump carries all three bytes, so this normally rewrites them with
+        // what is already there. It stops mattering only when the slot records
+        // the inputs to the calculation instead of the outputs.
+        sampling.write();
+        CHECK(twelveBits(1, 0x0E) == 1276);
+        CHECK(twelveBits(5, 0x4B) == 2374);
+    }
+}
+
+// --- the line rate has to be SETTLED, not merely in range --------------------
+
+TEST_CASE("a field rate that disagrees with the line count is refused")
+{
+    // A source locked at 311 lines / 50.08 Hz yields PLLAD_MD 2204 against the
+    // 2548 due when the solve sees the ~57.9 Hz transient a preset load leaves,
+    // which a bare 40..100 Hz check passes. The line count is reliable where the
+    // period measurement is not, so it says which rate is plausible.
+    // solveRaster() refuses the same way.
+    CHECK(Sampling::lineRateFrom(311, 50.08f) == 15574u);
+
+    SUBCASE("the bench transient that actually caused it") {
+        CHECK(Sampling::lineRateFrom(311, 57.9f) == 0u);
+    }
+
+    SUBCASE("a PAL-like line count wants a PAL-like rate") {
+        CHECK(Sampling::lineRateFrom(311, 60.0f) == 0u);
+        CHECK(Sampling::lineRateFrom(312, 50.0f) != 0u);
+    }
+
+    SUBCASE("an NTSC-like line count wants an NTSC-like rate") {
+        CHECK(Sampling::lineRateFrom(262, 50.0f) == 0u);
+        CHECK(Sampling::lineRateFrom(262, 59.94f) != 0u);
+    }
+
+    SUBCASE("the 97/98 a preset load leaves behind is refused outright") {
+        // Documented as normal for a moment after a load, and the reason
+        // solveRaster() defers rather than solving. Below SourceVerticalTotalMin, so
+        // it never reaches the rate check at all.
+        CHECK(Sampling::lineRateFrom(97, 50.0f) == 0u);
+        CHECK(Sampling::lineRateFrom(98, 50.0f) == 0u);
+    }
+
+    SUBCASE("2% either side is accepted, beyond it is not") {
+        CHECK(Sampling::lineRateFrom(311, 50.9f) != 0u);
+        CHECK(Sampling::lineRateFrom(311, 51.5f) == 0u);
     }
 }

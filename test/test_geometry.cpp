@@ -310,35 +310,28 @@ TEST_CASE("the framing is held as state and the window is derived")
 
 // --- the framing must never hold a value the line cannot realise --------------
 
-// capture() clamps the WINDOW. Nothing clamped the FRAMING, so a press big
-// enough to overshoot the edge -- which only the accelerating hold ramp makes --
-// still moved the window a unit or two, was accepted, and left the framing
-// beyond anything achievable; every smaller press back then produced an
-// identical window and was reverted, killing the control in that direction.
+// capture() clamps the WINDOW, and the FRAMING has to be clamped with it, or a
+// press past the edge leaves the framing beyond anything achievable and every
+// smaller press back produces an identical window -- the control dies in that
+// direction. Only the accelerating hold ramp presses that far.
 //
 // On the bench line: 1277 units, default width 1009, so the centred start is 134
 // and the largest the line allows is 1276 - 1009 = 267, giving a largest
 // achievable panH of 133.
-TEST_CASE("the scale never magnifies past the point the picture degrades")
+TEST_CASE("the scale floor is derived from the magnification, on both axes")
 {
-    // Michael, 2026-08-09: the scale "shouldn't be any smaller than 500 - after
-    // that the scaling artifacts a lot." A ceiling on the interpolator, not on
-    // the memory path -- everything else this session was about whether the
-    // data arrives, and this is about whether it is worth looking at once it
-    // has.
-    CHECK(AxisHorizontal.scaleMin() == 500);
-    CHECK_NEAR(Scale(AxisHorizontal.scaleMin()).magnification(), 2.048, 0.001);
+    // Nothing in the part settles the floor -- RD-5725-1.1 states no minimum for
+    // VDS_HSCALE -- so it is derived from a magnification chosen deliberately.
+    // A swept constant cannot hold it: Axis::minimumCapture() is raster over
+    // magnification while PanAndZoom::defaultWidth() depends on the input line
+    // alone, so widening the raster eats the zoom travel.
+    CHECK(AxisHorizontal.scaleMin() == Scale::Min);
+    CHECK_NEAR(Scale(AxisHorizontal.scaleMin()).magnification(), 4.0, 0.001);
 
     SUBCASE("the VERTICAL keeps the register's own floor") {
-        // **HORIZONTAL ONLY, and that is measured.** Michael set 500 on both
-        // and came back: "I made a mistake can you remove the clamp from the
-        // VSCALE it's too small." 2.048x vertically stops the zoom well before
-        // the picture is anywhere near degraded, because the vertical starts
-        // from a much narrower default capture -- 82% of the frame against 76%
-        // of the line -- so the same ratio buys far less travel.
-        //
-        // So the floor belongs to the AXIS, not to Scale. Scale::Min is the
-        // register's limit and nothing else.
+        // The floor belongs to the AXIS rather than to Scale even though the two
+        // agree today: an axis wanting a different magnification should be able
+        // to say so without moving the register's own limit.
         CHECK(AxisVertical.scaleMin() == Scale::Min);
         CHECK(AxisVertical.scaleMin() == 256);
     }
@@ -353,7 +346,7 @@ TEST_CASE("the scale never magnifies past the point the picture degrades")
     SUBCASE("and the zoom stops there rather than shrinking the picture") {
         // PanAndZoom::clampWidth stops the capture where the magnification runs
         // out, so the picture stays full size and the control simply stops.
-        CHECK(AxisHorizontal.minimumCapture(1445) == 706);
+        CHECK(AxisHorizontal.minimumCapture(1445) == 362);
         CHECK(AxisVertical.minimumCapture(1126) == 282);
     }
 }
@@ -382,8 +375,8 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
     SUBCASE("and the floor is the raster's, not a constant") {
         // A different output raster has a different ceiling, so the floor has
         // to be computed from it rather than remembered.
-        CHECK(AxisHorizontal.minimumCapture(1445) == 706);
-        CHECK(AxisHorizontal.minimumCapture(720) == 352);
+        CHECK(AxisHorizontal.minimumCapture(1445) == 362);
+        CHECK(AxisHorizontal.minimumCapture(720) == 180);
     }
 
     SUBCASE("a caller with no raster keeps the old floor") {
@@ -925,3 +918,30 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
     }
 }
 
+
+// --- the zoom floor follows from the magnification, not from a swept number ---
+
+TEST_CASE("horizontal zoom keeps its travel when the raster widens")
+{
+    // The clamp is rasterTotal / maxMagnification: the smallest capture that
+    // still fills the raster once VDS_HSCALE is at its floor. The numerator
+    // moves with the output and the denominator does not, and the default
+    // capture is a property of the INPUT line (1277 x 0.76 x 1.04), so the two
+    // do not track -- when solveRaster() took the raster 1436 -> 1916, three
+    // quarters of the horizontal zoom travel went with it, 307 units to 73.
+    const uint16_t Raster = 1916;
+    const uint16_t DefaultCapture = 1009;  // PanAndZoom::defaultWidth on this bench
+
+    uint16_t floor = AxisHorizontal.minimumCapture(Raster);
+
+    CHECK(floor == Raster / 4);  // 4.0x, the same the vertical axis already uses
+    CHECK(DefaultCapture - floor > 400);
+}
+
+TEST_CASE("both axes magnify equally far, because nothing in the part says otherwise")
+{
+    // RD-5725-1.1 states no minimum for VDS_HSCALE -- regdef.txt:7684 gives only
+    // the ratio, and the field is 10 bits -- so there is no hardware bound to
+    // derive, which is why the horizontal floor was a swept number for so long.
+    CHECK(AxisHorizontal.scaleMin() == AxisVertical.scaleMin());
+}

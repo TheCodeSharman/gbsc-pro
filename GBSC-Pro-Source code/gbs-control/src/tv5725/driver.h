@@ -6,6 +6,9 @@
 //     magnification = 1024 / VDS_?SCALE            (BYPS means 1:1)
 //     produced      = capture x magnification      simple multiply, both axes
 //     write start   = VDS_?B_SP + startConst + startPerMag x magnification
+//
+// docs/firmware-geometry-engine.md and docs/scaler-geometry-model.md have the
+// measurements.
 
 #include "Scale.h"
 #include "CaptureWindow.h"
@@ -19,5 +22,6 @@
 #include "ControlSteps.h"
 #include "Memory.h"
 #include "Sampling.h"
+#include "PresetLoad.h"
 
 #endif  // TV5725_DRIVER_H_

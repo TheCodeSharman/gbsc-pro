@@ -54,24 +54,24 @@ TEST_CASE("the divider is the largest seed at or under the ceiling")
 
 TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at")
 {
-    // **THE CONVERSION IS UNAMBIGUOUS BECAUSE THE STANDARD IS A TIME.** 1080p sync
-    // is 44 px at 148.5 MHz = 296.3 ns and the back porch 148 px = 996.6 ns, both
-    // identical at 50 and 60 Hz -- only the front porch absorbs the rate
-    // difference. So the pixel count scales with OUR clock.
-    //
-    // These are the values the bench actually applied, 2026-08-11/12.
+    // The standard is a TIME, so the conversion is unambiguous: 1080p sync is
+    // 44 px at 148.5 MHz = 296.3 ns and the back porch 148 px = 996.6 ns, both
+    // identical at 50 and 60 Hz because only the front porch absorbs the rate
+    // difference. The pixel count then scales with OUR clock. The bench figures
+    // 1918/2301/2877 were taken at 1126 lines; CEA's 1125 raises each by 2-3,
+    // since a shorter frame buys a longer line.
     RasterSolution at108 = Mode1080p.solve(50.0f, 108000000u);
-    CHECK(at108.horizontalTotal == 1918);
+    CHECK(at108.horizontalTotal == 1920);
     CHECK(at108.hsyncStart == 0);
     CHECK(at108.hsyncStop == 32);
     CHECK(at108.activeStart == 32 + 108);
 
     RasterSolution at1296 = Mode1080p.solve(50.0f, 129600000u);
-    CHECK(at1296.horizontalTotal == 2301);
+    CHECK(at1296.horizontalTotal == 2304);
     CHECK(at1296.hsyncStop == 38);
 
     RasterSolution at162 = Mode1080p.solve(50.0f, 162000000u);
-    CHECK(at162.horizontalTotal == 2877);
+    CHECK(at162.horizontalTotal == 2880);
     CHECK(at162.hsyncStop == 48);
 
     SUBCASE("all three are the same 296 ns, which is the point") {
@@ -94,8 +94,8 @@ TEST_CASE("the default ceiling is the highest clock the bench demonstrated")
     CHECK(OutputRaster::WorkingCeilingHz == 129600000u);
 
     RasterSolution best = Mode1080p.solve(50.0f);
-    CHECK(best.horizontalTotal == 2301);
-    CHECK(best.verticalTotal == 1126);
+    CHECK(best.horizontalTotal == 2304);
+    CHECK(best.verticalTotal == 1125);
     CHECK(best.divider == 0x95);
     CHECK(best.demandedHz() <= OutputRaster::WorkingCeilingHz);
 }
@@ -126,8 +126,8 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
     CHECK(OutputRaster::EngineCeilingHz == 108000000u);
 
     RasterSolution solved = Mode1080p.solve(50.0f, OutputRaster::EngineCeilingHz);
-    CHECK(solved.horizontalTotal == 1918);
-    CHECK(solved.verticalTotal == 1126);
+    CHECK(solved.horizontalTotal == 1920);
+    CHECK(solved.verticalTotal == 1125);
     CHECK(solved.demandedHz() <= OutputRaster::EngineCeilingHz);
 
     SUBCASE("which is a third more line than the tables shipped") {
@@ -136,15 +136,19 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
     }
 
     SUBCASE("and leaves real travel where 129.6 MHz left none") {
-        // ceil(raster * scaleMin / Unity) is Axis::smallestCapture's arithmetic.
-        // The bench's usable capture tops out near 1187 -- the source line is
-        // 1277 IF units and the window starts at 90 to clear the hsync pulse.
+        // ceil(raster * scaleMin / Unity) is Axis::minimumCapture's arithmetic.
+        // The bench's usable capture tops out near 1187: the source line is 1277
+        // IF units and the window starts at 90 to clear the hsync pulse. Both
+        // rasters are derived from the solves rather than pinned, because the
+        // test is about the GAP between them and a literal would need editing
+        // every time either moved.
         const uint32_t scaleMin = 500, unity = 1024, usable = 1187;
-        uint32_t at108 = (1918u * scaleMin + unity - 1) / unity;
-        uint32_t at129 = (2298u * scaleMin + unity - 1) / unity;
-        CHECK(at129 == 1123);              // measured clamp, exactly
-        CHECK(usable - at129 < 100);       // ~64 units, and none at the default
-        CHECK(usable - at108 > 200);       // ~250 units
+        uint32_t raster108 = Mode1080p.solve(50.0f, OutputRaster::EngineCeilingHz).horizontalTotal;
+        uint32_t raster129 = Mode1080p.solve(50.0f, OutputRaster::WorkingCeilingHz).horizontalTotal;
+        uint32_t at108 = (raster108 * scaleMin + unity - 1) / unity;
+        uint32_t at129 = (raster129 * scaleMin + unity - 1) / unity;
+        CHECK(at129 > usable - 100);       // no useful travel at the top ceiling
+        CHECK(usable - at108 > 200);       // ~250 units at the engine's
     }
 }
 
@@ -154,17 +158,23 @@ TEST_CASE("a frame height selects the output mode that owns it")
     // than a calculation. Everything else -- the line total, the divider, both
     // sync pulses, the active window -- is derived from it and the measured
     // field rate.
-    CHECK(OutputRaster::modeFor(1126) == &Mode1080p);
-    CHECK(OutputRaster::modeFor(751) == &Mode720p);
+    CHECK(OutputRaster::modeFor(1125) == &Mode1080p);
+    CHECK(OutputRaster::modeFor(1066) == &Mode1024p);
+    CHECK(OutputRaster::modeFor(1000) == &Mode960p);
+    CHECK(OutputRaster::modeFor(750) == &Mode720p);
+    CHECK(OutputRaster::modeFor(625) == &Mode576p);
+    CHECK(OutputRaster::modeFor(525) == &Mode480p);
 
     SUBCASE("and an unknown height selects nothing") {
-        // NOT a fallback to 1080p. A height nobody has swept gets the preset
-        // table's own raster left alone, which is the same rule Memory used to
-        // have and DisplayClock still has: better an untouched value than one
-        // computed for a mode this is not. 625 is PAL 576p, 525 NTSC 480p --
-        // both real output modes with no OutputMode entry yet.
-        CHECK_FALSE(OutputRaster::modeFor(625));
-        CHECK_FALSE(OutputRaster::modeFor(525));
+        // NOT a fallback to 1080p: a height nobody has swept keeps whatever
+        // raster it had, the same rule DisplayClock follows. 264 and 314 are the
+        // dropped downscale tables'; 1126 and 751 are the one-line-long totals
+        // every shipped table carried, and a build still producing those should
+        // find no mode rather than the nearest one.
+        CHECK_FALSE(OutputRaster::modeFor(264));
+        CHECK_FALSE(OutputRaster::modeFor(314));
+        CHECK_FALSE(OutputRaster::modeFor(1126));
+        CHECK_FALSE(OutputRaster::modeFor(751));
         CHECK_FALSE(OutputRaster::modeFor(0));
     }
 }
@@ -211,6 +221,68 @@ static void dumpGrid()
     }
 }
 
+TEST_CASE("the output mode comes from the user's preference, not from the chip")
+{
+    // The mode arrives explicitly rather than being read back from
+    // GBS::VDS_VSYNC_RST, whose only writer is the preset table it replaces. The
+    // values are PresetPreference's, from options.h; all six resolve.
+    CHECK((OutputRaster::modeForPreference(5, 50.0f) == &Mode1080p));   // Output1080P
+    CHECK((OutputRaster::modeForPreference(4, 50.0f) == &Mode1024p));   // Output1024P
+    CHECK((OutputRaster::modeForPreference(0, 50.0f) == &Mode960p));    // Output960P
+    CHECK((OutputRaster::modeForPreference(3, 50.0f) == &Mode720p));    // Output720P
+}
+
+TEST_CASE("the four resolutions that are one height resolve to it at either rate")
+{
+    // 1080p, 1024p, 960p and 720p ship ONE frame height across their PAL and
+    // NTSC tables -- verified in test_output_raster.py against the archive --
+    // so the field rate cannot change which mode they select. Only the clock
+    // and horizontalTotal move with the rate, inside solve().
+    CHECK((OutputRaster::modeForPreference(5, 50.0f)
+           == OutputRaster::modeForPreference(5, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(4, 50.0f)
+           == OutputRaster::modeForPreference(4, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(0, 50.0f)
+           == OutputRaster::modeForPreference(0, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(3, 50.0f)
+           == OutputRaster::modeForPreference(3, 59.94f)));
+}
+
+TEST_CASE("the SD preference is two different resolutions, and the rate picks one")
+{
+    // Output480P is not one mode at two rates: 480p and 576p are different
+    // active line counts sharing a PresetPreference value, which is why their
+    // tables ship 526 and 626 where every other mode's pair agrees. So it is the
+    // one preference the field rate disambiguates, and it picks a RESOLUTION
+    // rather than adjusting a timing. docs/vesa-gtf.md settled the split.
+    CHECK((OutputRaster::modeForPreference(1, 59.94f) == &Mode480p));
+    CHECK((OutputRaster::modeForPreference(1, 50.0f) == &Mode576p));
+
+    CHECK(Mode480p.activeLines() == 480);
+    CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back
+    CHECK(Mode576p.activeLines() == 576);
+    CHECK(Mode576p.frameLines() == 625);    // 576 + 5 front + 5 sync + 39 back
+}
+
+TEST_CASE("a preference that is not a resolution resolves to no mode")
+{
+    // 0 leaves the caller to fall back rather than silently solving the wrong
+    // raster. Downscale went with the tables on 2026-08-14 -- it was reachable
+    // from the OLED alone, never from the web UI, and its one assignment site in
+    // the sketch was already commented out.
+    CHECK((OutputRaster::modeForPreference(6, 50.0f) == 0));    // OutputDownscale, gone
+    CHECK((OutputRaster::modeForPreference(10, 50.0f) == 0));   // OutputBypass, no raster
+}
+
+TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
+{
+    // OutputCustomized is not a resolution -- it means "load the one I saved",
+    // and that file's own frame height is the answer. The caller reads it back,
+    // which is the last place that inherits on purpose; it goes when a saved
+    // slot records the inputs to the calculation instead of a register dump.
+    CHECK((OutputRaster::modeForPreference(2, 50.0f) == 0));   // OutputCustomized
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && std::strcmp(argv[1], "--dump") == 0) {
@@ -220,4 +292,22 @@ int main(int argc, char **argv)
     doctest::Context context;
     context.applyCommandLine(argc, argv);
     return context.run();
+}
+
+TEST_CASE("a mode's frame total is its active lines plus the standard blanking")
+{
+    // The shipped tables run one line long, all six of them, against the
+    // standards:
+    //
+    //     1080p 1126 / CEA 1125    1024p 1067 / VESA 1066    480p 526 / CEA 525
+    //      720p  751 / CEA  750     960p 1001 / VESA 1000    576p 626 / CEA 625
+    //
+    // RD-5725-1.1 on VDS_VSYNC_RST: "This field contains vertical total value
+    // minus 1", so writing the standard's total into it costs a line. The cause
+    // is a missing vertical FRONT porch term: active runs to the end of frame
+    // and CEA's 4 front-porch lines become one extra line.
+    CHECK(Mode1080p.activeLines() == 1080);
+    CHECK(Mode1080p.frameLines() == 1125);   // 1080 + 4 front + 5 sync + 36 back
+    CHECK(Mode720p.activeLines() == 720);
+    CHECK(Mode720p.frameLines() == 750);     // 720 + 5 front + 5 sync + 20 back
 }

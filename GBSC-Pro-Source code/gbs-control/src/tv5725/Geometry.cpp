@@ -1,5 +1,6 @@
 #include "Geometry.h"
 
+#include "MemoryMap.h"
 #include "OutputRaster.h"
 
 namespace Tv5725 {
@@ -40,18 +41,18 @@ bool Capture::scaling() const
 
 bool Capture::usable() const { return horizontalStart_ > horizontalStop_ && verticalStart_ > verticalStop_; }
 
-bool Capture::readRasters()
+bool Capture::readRasters(const Sampling &sampling)
 {
     linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
-    wrapH_ = GBS::IF_HSYNC_RST::read() + 1;
+    wrapH_ = sampling.ifLine() + 1;
 
     // How much of the line the hsync pulse takes is a property of the source, so
     // it is measured. Both are in ADC samples, the one space they share -- the
     // denominator is the divider, not STATUS_SYNC_PROC_HTOTAL, which only echoes
     // PLLAD_MD back.
     hlowLen_ = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-    adcLine_ = GBS::PLLAD_MD::read();
+    adcLine_ = sampling.divider();
 
     uint16_t sourceVerticalTotal = GBS::STATUS_SYNC_PROC_VTOTAL::read();
     if (wrapH_ < 64 || sourceVerticalTotal < SourceVerticalTotalMin
@@ -73,7 +74,9 @@ void Capture::setWindows(const CaptureWindow &h, const CaptureWindow &v)
 
 // --- Geometry ----------------------------------------------------------
 
-Geometry::Geometry() : solvePending_(false), framingRequested_(false) {}
+Geometry::Geometry()
+    : rasterPending_(false), samplingPending_(false), solvePending_(false),
+      framingRequested_(false), rasterMode_(0) {}
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
@@ -99,26 +102,56 @@ bool Geometry::apply()
     return true;
 }
 
+bool Geometry::solveRaster(const OutputMode *mode)
+{
+    // Remembered so the deferred retry solves the mode the load asked for. It
+    // cannot re-derive one: by then the caller's preference is out of reach and
+    // the raster registers may hold a half-written attempt.
+    rasterMode_ = mode;
+    return solveRaster();
+}
+
 bool Geometry::solveRaster()
 {
-    // The frame height is the mode the user chose, and the only thing taken
-    // from what is already programmed. A preset load has just put it there;
-    // everything else about the raster is computed from it below.
-    const OutputMode *mode =
-        OutputRaster::modeFor(GBS::VDS_VSYNC_RST::read() + 1);
-    if (mode == 0)
+    // The mode is an input, not a read-back. Deriving it from VDS_VSYNC_RST
+    // would leave the preset table -- the thing this replaces -- its only
+    // writer. docs/chip-initialisation.md.
+    const OutputMode *mode = rasterMode_;
+    if (mode == 0) {
+        // Not a failure, and NOT a fall back to 1080p: the caller could not name
+        // a mode, and a raster nobody has swept keeps what it had. Nothing may
+        // stay pending either -- a deferral outliving the mode it was for is how
+        // a stale solve reaches a bypass.
+        rasterPending_ = false;
         return false;
+    }
 
-    // **REFUSED RATHER THAN GUESSED.** sourceFieldRateOr50Hz() falls back to 50
-    // because a capture window solved at the wrong rate is a few pixels out; a
-    // RASTER solved at the wrong rate is out by the ratio of the rates, so
-    // calling a 60 Hz source 50 Hz asks for a line 20% too long. That is the
-    // black-screen class of fault, and the table's own raster is a better answer
-    // than a computed one built on a measurement that did not happen. Same
-    // doctrine as RasterSolution::usable().
+    // A raster solved at the wrong rate is out by the ratio of the rates, and
+    // this runs during a preset load while the source is still settling -- a
+    // plain bounds check passes a transient comfortably. The line count is
+    // reliable where the period measurement is not, so it picks the nominal and
+    // the measurement only has to agree with it.
+    // docs/firmware-geometry-engine.md
     float fieldRate = getSourceFieldRate(0);
-    if (!(fieldRate > 40.0f && fieldRate < 100.0f))
+    uint16_t sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    if (sourceLines < Capture::SourceVerticalTotalMin || sourceLines > Capture::SourceVerticalTotalMax) {
+        // Deferred, not abandoned: the sync processor reads 97 or 98 for a
+        // moment after a preset load and this is called in exactly that moment.
+        // Giving up leaves the previous raster standing for the session,
+        // invisibly -- the picture is fine and FrameSync steers the Si5351 to
+        // whatever raster it finds.
+        rasterPending_ = true;
         return false;
+    }
+
+    float nominal = sourceLines > Capture::PalVerticalTotalMin ? 50.0f : 60.0f;
+    float error = fieldRate > nominal ? fieldRate / nominal : nominal / fieldRate;
+    if (!(error < 1.02f)) {
+        // Deferred for the same reason: the source settles a second or two
+        // later and the retry gets it right.
+        rasterPending_ = true;
+        return false;
+    }
 
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.
@@ -131,6 +164,14 @@ bool Geometry::solveRaster()
     GBS::VDS_HSYNC_RST::write(raster.horizontalTotal - 1);
     GBS::VDS_VSYNC_RST::write(raster.verticalTotal - 1);
 
+    // One quantity in three registers, so all three are written here.
+    // VDS_VSYN_SIZE1 and _2 are the vertical totals the frame-rate selector
+    // picks between, and VDS_FR_SELECT never alternates, so both are the frame.
+    // doPostPresetLoadSteps() wrote them once, in a function the deferred solve
+    // never re-enters, leaving them sized for the total the preset loaded with.
+    GBS::VDS_VSYN_SIZE1::write(raster.verticalTotal + 1);
+    GBS::VDS_VSYN_SIZE2::write(raster.verticalTotal + 1);
+
     GBS::VDS_HS_ST::write(raster.hsyncStart);
     GBS::VDS_HS_SP::write(raster.hsyncStop);
     GBS::VDS_VS_ST::write(raster.vsyncStart);
@@ -141,8 +182,18 @@ bool Geometry::solveRaster()
     // steers the Si5351 from it. loop() then stashes it and parks the 0x75
     // external sentinel here, which is why writing a real divider is safe.
     GBS::PLL648_CONTROL_01::write(raster.divider);
+    rasterPending_ = false;
     return true;
 }
+
+void Geometry::enterBypass()
+{
+    rasterMode_ = 0;
+    rasterPending_ = false;
+    samplingPending_ = false;
+}
+
+bool Geometry::rasterPending() const { return rasterPending_; }
 
 bool Geometry::solveFromScratch()
 {
@@ -164,6 +215,28 @@ bool Geometry::applyRequested()
     solvePending_ = false;
     return solved;
 }
+
+void Geometry::adoptSampling() { sampling_.adopt(); sampling_.write(); }
+
+bool Geometry::solveSampling(uint32_t lineRateHz, uint8_t oversample)
+{
+    if (sampling_.solve(lineRateHz, oversample)) {
+        sampling_.write();
+        samplingPending_ = false;
+        return true;
+    }
+
+    // Deferred, not settled for: the line rate could not be measured, so take
+    // whatever divider is on the chip and ask again later. Adopting is needed
+    // or every window defers forever; the flag is what stops it being
+    // permanent, at 1856 -- bypassModeSwitch_RGBHV()'s literal -- every boot.
+    samplingPending_ = true;
+    if (!sampling_.usable())
+        adoptSampling();
+    return false;
+}
+
+bool Geometry::samplingPending() const { return samplingPending_; }
 
 bool Geometry::recompute() { return apply(); }
 
@@ -195,7 +268,7 @@ bool Geometry::fail()
 
 bool Geometry::readCapture(Capture &capture)
 {
-    if (!capture.readRasters()) {
+    if (!capture.readRasters(sampling_)) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;
@@ -221,8 +294,20 @@ bool Geometry::readCapture(Capture &capture)
     framing_.clampToLine(h, fieldRate, false, capture.linePx());
     framing_.clampToLine(v, fieldRate, true, capture.frameLines());
 
-    capture.setWindows(framing_.capture(h, fieldRate, false, capture.linePx()),
-                       framing_.capture(v, fieldRate, true, capture.frameLines()));
+    CaptureWindow windowH = framing_.capture(h, fieldRate, false, capture.linePx());
+    CaptureWindow windowV = framing_.capture(v, fieldRate, true, capture.frameLines());
+
+    // A pixel costs one 32-bit word and the capture buffer holds 1,703,936 of
+    // them; capture width is in ADC samples and PLLAD_MD is 12 bits, so a line
+    // wide enough to overrun is reachable. The chip's answer to an overrun is to
+    // wrap, putting a wrong address on screen and reporting nothing. Narrowed
+    // rather than refused, for the reason clampToLine() clamps: a dead picture
+    // with no way back is the worse failure.
+    const uint16_t fits = MemoryMap::clampWidth(windowH.width(), windowV.width());
+    if (fits < windowH.width())
+        windowH = CaptureWindow(windowH.sp(), windowH.sp() + fits);
+
+    capture.setWindows(windowH, windowV);
     return capture.usable() ? true : fail();
 }
 

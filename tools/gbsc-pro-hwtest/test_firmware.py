@@ -46,21 +46,13 @@ HS_ACTIVE, VS_ACTIVE = 1 << 1, 1 << 3
 # The lock signal is HSACT ALONE, which is what the firmware itself waits on:
 # getStatus16SpHsStable() checks `status16 & 0x02` and nothing else.
 #
-# This read `HS_ACTIVE | VS_ACTIVE` from 2026-08-01 until today, and the test
-# below therefore never once ran its own body -- it timed out in the first
-# assert, on every build, on this bench. VSACT reads 0 on this source WITH A
-# PERFECT PICTURE while STATUS_SYNC_PROC_VTOTAL counts a steady 308 lines, so
-# vertical sync is plainly being measured; measured again 2026-08-13, VSACT was
-# low in 3761 of 3761 samples over 90 s with HSACT high in all of them.
-#
-# It was written during the RISC PC no-sync investigation, when "V sync never
-# registers" was believed to BE the fault. It turned out to be this source's
-# normal reading -- docs/investigations/riscpc-no-sync.md still carries it as an open question
-# about the source, not the scaler. baseline.py was corrected on 2026-08-12 and
-# says so in its own header; this file was missed.
-#
-# So the hold loop below -- the half that catches a lock which arrives and then
-# collapses -- has never actually protected anything. That is what this fixes.
+# **VSACT MUST NOT BE PART OF IT.** It reports the sync path, not the lock:
+# measured 2026-08-13 on the csync path (SP_SOG_MODE 1) it read low in 3761 of
+# 3761 samples over 90 s with HSACT high throughout and VTOTAL a steady 308,
+# and measured 2026-08-15 on the separate-sync path it read high in 150 of 150
+# with VTOTAL 311. Both of its values occur with a perfect picture, so including
+# it makes the hold loop below time out in its first assert and never run its own
+# body. See CLAUDE.md.
 LOCKED = HS_ACTIVE
 
 SYNC_PROC_00 = (5, 0x20)
@@ -567,6 +559,52 @@ VDS_HSYNC_RST = (3, 0x01, 0, 12)
 VDS_VSYNC_RST = (3, 0x02, 4, 11)
 
 
+def test_the_output_raster_is_the_one_the_engine_computed(host, source):
+    """VDS_HSYNC_RST holds what OutputRaster solved, not something steered to.
+
+    The engine computes htotal = floor(clock / fieldRate / frameLines) and
+    writes it once per mode change. Nothing else may move it: with an external
+    clock generator FrameSync locks the frame time by steering the Si5351 --
+    visible in the console as "Setting clock frequency" every 1.76 s -- so
+    applyBestHTotal() also rewriting the raster is a SECOND correction for the
+    same error, and the two do not converge to the same place.
+
+    Measured across three boots of the same firmware: the engine computes 1918
+    every time (the boot log's s0_41=0x85 -> 108000000 Hz is unambiguous) and the
+    raster settles at 1915, 1436 and 1740. That last gives away 9% of the
+    horizontal resolution to a correction the clock has already made.
+
+    Tolerance is PROPORTIONAL, and 0.5% is chosen to separate the two cases
+    rather than to be generous. The engine divides by the MEASURED field rate,
+    which is 50.08 Hz on this bench and not the nominal 50 this test can compute
+    from -- worth 3 px, or 0.16%. A steered raster is out by 8-25%. There is no
+    overlap, and an absolute +-1 would fail on the correct value.
+    """
+    source_vtotal = read_field(host, *SYNC_PROC_VTOTAL)
+    assert source_vtotal, "no source VTOTAL: nothing is locked"
+    field_rate = 50 if source_vtotal > SOURCE_VTOTAL_50HZ_MIN else 60
+
+    htotal_reg = read_field(host, *VDS_HSYNC_RST)
+    vtotal_reg = read_field(host, *VDS_VSYNC_RST)
+    assert htotal_reg and vtotal_reg, "could not read the output raster"
+
+    frame_lines = vtotal_reg + 1
+    if frame_lines < 1000:
+        pytest.skip(f"frame height {frame_lines} is not a 1080p-class mode")
+
+    # Tv5725::OutputRaster::htotalFor, floored, at EngineCeilingHz.
+    wanted = int(CLKOUT_CEILING_HZ / field_rate / frame_lines)
+
+    drift = abs((htotal_reg + 1) - wanted) / float(wanted)
+    assert drift <= 0.005, (
+        f"raster is {htotal_reg + 1} x {frame_lines} at ~{field_rate} Hz, "
+        f"{drift:.1%} from the {wanted} the engine computes at "
+        f"{CLKOUT_CEILING_HZ / 1e6:.0f} MHz. "
+        f"Something moved it after solveRaster() -- applyBestHTotal() is the "
+        f"one thing that does, and with an external clock generator it must "
+        f"not: the Si5351 is already being steered to lock the frame time.")
+
+
 def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
     """A 1080p output raster must use most of the 108 MHz the part is rated for.
 
@@ -626,9 +664,23 @@ def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
 def test_display_clock_stash_is_not_a_preset_register():
     """The divider must not be stashed anywhere a preset load can overwrite.
 
-    Asserts both halves, so neither can drift: that the presets really do write
-    s1_2D (making it unusable as a stash), and that the firmware no longer
-    writes a divider there.
+    **THE ORIGINAL HAZARD IS GONE, AND THIS RECORDS THAT RATHER THAN PRETENDING
+    OTHERWISE.** s1_2D was unusable as a stash because all but two of the twelve
+    preset arrays wrote 0 into it, so a preset load wiped the divider and the
+    Si5351 kept a stale frequency -- blank output with correct-looking registers.
+    The arrays went on 2026-08-14 and nothing compiled in writes that register any
+    more, which is what its own failure message said to expect:
+
+        "If that is deliberate the register is safe to stash in again, but this
+         test's premise is gone and it should be rewritten rather than deleted."
+
+    So the clobbering half is dropped. What is kept is the part that still bites:
+    the address, because the reasoning above is about s1_2D specifically and a
+    moved declaration would silently invalidate it; and the RAM stash, because
+    rto->presetDisplayClock is still the mechanism and putting the value back in
+    a register should be a decision somebody makes, not a regression. A CUSTOM
+    preset is still a register dump loaded from the filesystem and still covers
+    s1_2D, so the hazard returns for that path alone.
     """
     segment, register = PRESET_DISPLAY_CLOCK
 
@@ -642,18 +694,6 @@ def test_display_clock_stash_is_not_a_preset_register():
         "recheck whether the new address is inside preset coverage before trusting this test"
     )
 
-    label = f"// s{segment}_{register:02X}"
-    clobbering = sorted(
-        path.name
-        for path in FIRMWARE.glob("*.h")
-        if label in path.read_text(errors="replace").upper().replace("// S", "// s")
-    )
-    assert clobbering, (
-        f"no preset array writes s{segment}_{register:02X} any more. If that is "
-        "deliberate the register is safe to stash in again, but this test's premise "
-        "is gone and it should be rewritten rather than deleted."
-    )
-
     sketch = (FIRMWARE / "gbs-control.ino").read_text(errors="replace")
     writes = [
         line.strip()
@@ -661,10 +701,12 @@ def test_display_clock_stash_is_not_a_preset_register():
         if "GBS_PRESET_DISPLAY_CLOCK::write" in line
     ]
     assert not writes, (
-        f"the display clock is being stashed in s{segment}_{register:02X} again, which "
-        f"{len(clobbering)} preset arrays overwrite ({', '.join(clobbering[:3])}...). "
-        f"A preset load wipes it, the restore is skipped, and the Si5351 keeps a stale "
-        f"frequency — blank output with correct-looking registers. Offending lines: {writes}"
+        f"the display clock is being stashed in s{segment}_{register:02X} again. No "
+        "compiled-in preset array overwrites it any longer, so this is no longer the "
+        "outright bug it was -- but a CUSTOM preset is a register dump covering that "
+        "address, so loading one still wipes it, the restore is skipped, and the Si5351 "
+        f"keeps a stale frequency: blank output with correct-looking registers. "
+        f"rto->presetDisplayClock is out of reach of both. Offending lines: {writes}"
     )
 
 
@@ -1451,3 +1493,66 @@ def test_the_console_delivers_anything_at_all(console):
         "every cycle, so this is the heap gate in SerialMirror refusing to "
         "broadcast, not a quiet firmware. Check /bootlog for 'free heap'."
     )
+
+
+def test_bypass_does_not_leave_the_scaling_flag_set(host, source):
+    """Entering RGBHV bypass clears GBS_OPTION_SCALING_RGBHV.
+
+    Measured on the bench 2026-08-15, on a real 320x256 -> 800x600 source change:
+    the unit landed in bypass with GBS_PRESET_ID 0x22 and the scaling flag still
+    reading 1. bypassModeSwitch_RGBHV() never wrote it -- only
+    setResetParameters() does, and that is the low-power path, not this one. The
+    >535-line branch that sends the source here sets rto->isValidForScalingRGBHV
+    = false in RAM and leaves the register alone.
+
+    So a bypass register dump claims the unit is scaling RGBHV when video is
+    routing around the VDS entirely. It is not cosmetic: five sites read the bit
+    back to make decisions, including PresetLoad via writeProgramArrayNew() and
+    the autoBestHtotal guard in doPostPresetLoadSteps().
+
+    /sc?k calls bypassModeSwitch_RGBHV() directly, which is what makes this
+    reachable without a source mode change. It drops the picture on purpose;
+    /sc?~ at the end forces a fresh detection pass to get it back.
+
+    **AUTOMATION IS FROZEN FOR THE MEASUREMENT, AND WITHOUT THAT THIS TEST IS A
+    COIN TOSS.** It was, from the day it was written: measured 2026-08-14 on the
+    firmware it shipped with, four runs gave three passes and a failure, and a
+    tighter probe on the same build caught the flag reading 0 a full 1.6 s BEFORE
+    GBS_PRESET_ID reached 0x22 and back to 1 by the time it did.
+
+    The race is not a defect in the thing under test. /sc?k forces bypass onto a
+    311-line source that is perfectly scalable, so detection re-runs, decides the
+    source is fine, sets GBS_OPTION_SCALING_RGBHV back to 1 (:6508, :6557, :6651)
+    and reloads a scaling preset -- which is correct. The window in which both
+    halves of the invariant hold is however long it takes loop() to notice, and
+    reading it through /getreg cannot even sample cleanly, because register reads
+    are deferred to loop() and block exactly while detection is busy.
+
+    Freezing removes the other party rather than widening the window. /sc is
+    honoured while frozen and detectAndSwitchToActiveInput() is one of the six
+    guarded entry points, so bypassModeSwitch_RGBHV() runs and nothing undoes it.
+    That leaves the assertion asking what the commit that added it claimed:
+    entering bypass writes the flag.
+    """
+    write_reg(host, 1, 0x2C, read_reg(host, 1, 0x2C) | 0x02)
+    assert read_field(host, 1, 0x2C, 1, 1) == 1, (
+        "could not set the scaling flag, so the test cannot show it being "
+        "cleared rather than merely being clear already")
+
+    try:
+        get(host, "/freeze?on=1")
+        get(host, "/sc?k")  # bypassModeSwitch_RGBHV()
+
+        assert wait_for(lambda: read_field(host, 1, 0x2B, 0, 7) == 0x22,
+                        timeout=15.0), (
+            "GBS_PRESET_ID never became PresetBypassRGBHV: bypass did not run, "
+            "so the flag says nothing either way")
+
+        assert read_field(host, 1, 0x2C, 1, 1) == 0, (
+            "in RGBHV bypass with GBS_OPTION_SCALING_RGBHV still 1: the register "
+            "claims the unit is scaling while video routes around the VDS")
+    finally:
+        # Unfreeze FIRST: frozen, /sc?~ switches the mux and stops, because the
+        # re-detection it relies on is exactly what the freeze suspends.
+        get(host, "/freeze?on=0")
+        get(host, "/sc?~")  # re-detect, which recovers the picture

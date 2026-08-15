@@ -72,11 +72,6 @@ public:
     // is a pad rating. Do not merge them.
     static const uint32_t EngineCeilingHz = 108000000;
 
-    // Below this a source is 50 Hz. The same split docs/vesa-gtf.md settled --
-    // PAL or NTSC on field rate, no curve -- and far from both 50 and 59.94, so
-    // a source measured a little off still lands on the right side.
-    static const uint16_t PalNtscSplitHz = 55;
-
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits
 
@@ -96,6 +91,27 @@ public:
     // NULL is not a failure and must NOT fall back to 1080p: a height nobody has
     // swept keeps the raster it already had.
     static const OutputMode *modeFor(uint16_t frameLines);
+
+    // The mode the USER asked for, so the engine does not read its own input off
+    // the chip.
+    //
+    // NULL for two reasons the caller must not conflate:
+    //   - OutputCustomized (2): the saved preset's bytes ARE the mode, so reading
+    //     the raster back is correct there.
+    //   - OutputBypass (10): no scaled raster to solve.
+    //
+    // fieldRateHz disambiguates one preference and picks a RESOLUTION, not a
+    // timing: Output480P is 480 active lines at 60 Hz and 576 at 50, per CEA-861.
+    //
+    // Plain uint8_t rather than PresetPreference: options.h cannot be included
+    // here, as its `#ifndef _USER_H_` has no matching #define.
+    static const OutputMode *modeForPreference(uint8_t presetPreference,
+                                               float fieldRateHz);
+
+    // Below this a source is 50 Hz. The same split docs/vesa-gtf.md settled --
+    // PAL or NTSC on field rate, no curve -- and far from both 50 and 59.94, so
+    // a source measured a little off still lands on the right side.
+    static const uint16_t PalNtscSplitHz = 55;
 };
 
 // One output mode: its frame height, and the CEA-861 timings that place the sync
@@ -111,9 +127,17 @@ public:
 // horizontalTotal, and two stop BEFORE they start.
 class OutputMode {
 public:
-    OutputMode(uint16_t frameLines, float syncNs, float backPorchNs,
-               uint16_t vsyncLines, uint16_t vBackPorchLines);
+    // ACTIVE LINES, NOT THE FRAME TOTAL, which is derived. Deriving it corrects a
+    // one-line error every shipped table carried: RD-5725-1.1 documents
+    // VDS_VSYNC_RST as "vertical total value minus 1" and upstream wrote the
+    // standard's total, so all six modes ran a line long.
+    OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
+               uint16_t vsyncLines, uint16_t vBackPorchLines,
+               uint16_t vFrontPorchLines);
 
+    uint16_t activeLines() const;
+
+    // active + front + sync + back. What VDS_VSYNC_RST is written from, less one.
     uint16_t frameLines() const;
 
     // Everything, for a measured field rate. Pass the ceiling only to sweep it.
@@ -121,17 +145,20 @@ public:
                          uint32_t ceilingHz = OutputRaster::WorkingCeilingHz) const;
 
 private:
-    uint16_t frameLines_;
+    uint16_t activeLines_;
     float syncNs_, backPorchNs_;
-    uint16_t vsyncLines_, vBackPorchLines_;
+    uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };
 
-// Defined in OutputRaster.cpp. Frame heights are the shipped tables' own, where
-// each mode's PAL and NTSC pair agree exactly -- 1126 rather than CEA's 1125, one
-// line long, kept because changing it moves the vertical geometry and the
-// horizontal is the axis under test.
+// Defined in OutputRaster.cpp, from the STANDARDS rather than from the tables --
+// CEA-861 for 1080p/720p/480p/576p, VESA DMT for 1024p/960p. The tables' own
+// heights were one line longer than every one of these; see the constructor.
 extern const OutputMode Mode1080p;
+extern const OutputMode Mode1024p;
+extern const OutputMode Mode960p;
 extern const OutputMode Mode720p;
+extern const OutputMode Mode576p;
+extern const OutputMode Mode480p;
 
 }  // namespace Tv5725
 

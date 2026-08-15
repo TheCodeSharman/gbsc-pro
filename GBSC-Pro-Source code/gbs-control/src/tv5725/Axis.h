@@ -30,16 +30,14 @@ public:
     // residual. A window short by 2 is invisible; long by 2 shows scratch.
     uint16_t margin() const;
 
-    // How far this axis is willing to magnify, as a VDS_?SCALE floor.
-    //
-    // **PER AXIS, AND THAT IS MEASURED.** Horizontally 500 -- 2.048x -- because
-    // below that the scaling artifacts badly. Vertically the register's own 256,
-    // since a 500 clamp there is too tight.
-    //
-    // The two differ because the same ratio buys different travel. The default
-    // capture is 76% of the line horizontally against 82% of the frame
-    // vertically, so the vertical starts closer to its stop and a 2.048x floor
-    // cuts the zoom off long before the picture degrades.
+    // How far this axis is willing to magnify, as a VDS_?SCALE floor. DERIVED as
+    // Scale::Unity / max magnification -- 4.0x on both axes -- and it must stay
+    // derived: a fixed horizontal 500 left only 73 units of zoom travel once
+    // solveRaster() widened the raster, because minimumCapture() follows the
+    // raster while PanAndZoom::defaultWidth() follows the input line alone.
+    // Nothing in the part bounds it -- RD-5725-1.1 states no minimum and the
+    // field is 10 bits -- so where interpolation starts to look bad is
+    // perceptual, and the user's to find.
     uint16_t scaleMin() const;
 
     // The smallest capture that can still fill `rasterTotal` at this axis's full

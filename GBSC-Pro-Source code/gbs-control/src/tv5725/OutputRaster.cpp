@@ -78,45 +78,91 @@ uint8_t OutputRaster::dividerFor(uint16_t frameLines, float fieldRateHz,
     return best;
 }
 
+const OutputMode *OutputRaster::modeForPreference(uint8_t presetPreference,
+                                                  float fieldRateHz)
+{
+    // PresetPreference's values, from options.h, which is not includable here --
+    // see the header. Named rather than bare, because 3 and 5 next to a mode
+    // name are unreadable and this file is the one place they are asserted.
+    const uint8_t Output960P = 0;
+    const uint8_t Output480P = 1;
+    const uint8_t Output720P = 3;
+    const uint8_t Output1024P = 4;
+    const uint8_t Output1080P = 5;
+
+    if (presetPreference == Output1080P)
+        return &Mode1080p;
+    if (presetPreference == Output1024P)
+        return &Mode1024p;
+    if (presetPreference == Output960P)
+        return &Mode960p;
+    if (presetPreference == Output720P)
+        return &Mode720p;
+
+    // The one preference that is two resolutions: Output480P means 480 active
+    // lines at 60 Hz and 576 at 50. So the rate picks a RESOLUTION here, where
+    // everywhere else it only moves the clock. docs/vesa-gtf.md settled the
+    // split -- PAL or NTSC on field rate, no curve.
+    if (presetPreference == Output480P)
+        return fieldRateHz < PalNtscSplitHz ? &Mode576p : &Mode480p;
+
+    return 0;
+}
+
 const OutputMode *OutputRaster::modeFor(uint16_t frameLines)
 {
     if (frameLines == Mode1080p.frameLines())
         return &Mode1080p;
+    if (frameLines == Mode1024p.frameLines())
+        return &Mode1024p;
+    if (frameLines == Mode960p.frameLines())
+        return &Mode960p;
     if (frameLines == Mode720p.frameLines())
         return &Mode720p;
+    if (frameLines == Mode576p.frameLines())
+        return &Mode576p;
+    if (frameLines == Mode480p.frameLines())
+        return &Mode480p;
     return 0;
 }
 
-OutputMode::OutputMode(uint16_t frameLines, float syncNs, float backPorchNs,
-                       uint16_t vsyncLines, uint16_t vBackPorchLines)
-    : frameLines_(frameLines), syncNs_(syncNs), backPorchNs_(backPorchNs),
-      vsyncLines_(vsyncLines), vBackPorchLines_(vBackPorchLines) {}
+OutputMode::OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
+                       uint16_t vsyncLines, uint16_t vBackPorchLines,
+                       uint16_t vFrontPorchLines)
+    : activeLines_(activeLines), syncNs_(syncNs), backPorchNs_(backPorchNs),
+      vsyncLines_(vsyncLines), vBackPorchLines_(vBackPorchLines),
+      vFrontPorchLines_(vFrontPorchLines) {}
 
-uint16_t OutputMode::frameLines() const { return frameLines_; }
+uint16_t OutputMode::activeLines() const { return activeLines_; }
+
+uint16_t OutputMode::frameLines() const
+{
+    return activeLines_ + vFrontPorchLines_ + vsyncLines_ + vBackPorchLines_;
+}
 
 RasterSolution OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 {
     RasterSolution solved;
 
-    uint8_t divider = OutputRaster::dividerFor(frameLines_, fieldRateHz,
+    uint8_t divider = OutputRaster::dividerFor(frameLines(), fieldRateHz,
                                                ceilingHz);
     if (divider == 0)
         return solved;
 
     uint16_t horizontalTotal = OutputRaster::horizontalTotalFor(DisplayClock::hzFor(divider),
-                                              frameLines_, fieldRateHz);
+                                              frameLines(), fieldRateHz);
     if (horizontalTotal == 0)
         return solved;
 
     solved.divider = divider;
     solved.horizontalTotal = horizontalTotal;
-    solved.verticalTotal = frameLines_;
+    solved.verticalTotal = frameLines();
     solved.fieldRate = fieldRateHz;
 
     // Converted at the clock the line will actually run at, not at the seed's
     // nominal frequency: the seed is a starting point and the raster is the
     // truth. They differ by up to 0.5%, under a pixel here.
-    float clockHz = (float)horizontalTotal * (float)frameLines_ * fieldRateHz;
+    float clockHz = (float)horizontalTotal * (float)frameLines() * fieldRateHz;
 
     long width = lrintf(syncNs_ * clockHz / 1e9f);
     if (width < 1)
@@ -145,11 +191,29 @@ RasterSolution OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 //   1080p  44 px and 148 px at 148.5 MHz  ->  296.30 ns, 996.63 ns
 //   720p   40 px and 220 px at 74.25 MHz  ->  538.72 ns, 2962.96 ns
 //
-// Vertical is in lines, which need no conversion. 1080p is 5 and 36; the shipped
-// tables already ship a 5-line vsync, so the vertical was standard already.
+// Vertical is in lines, which need no conversion, and is the STANDARD's in full
+// -- active, front porch, sync, back porch:
 //
-// Frame heights are the tables' own, where every mode's PAL and NTSC pair agree.
-const OutputMode Mode1080p(1126, 296.2963f, 996.6330f, 5, 36);
-const OutputMode Mode720p(751, 538.7205f, 2962.9630f, 5, 20);
+//   1080p  CEA-861   1080 + 4 + 5 + 36 = 1125
+//   720p   CEA-861    720 + 5 + 5 + 20 =  750
+//
+// RD-5725-1.1 wants total-1 in VDS_VSYNC_RST, so a total written there directly
+// runs one line long -- which is what the shipped tables did, all six of them.
+//
+// 1024p and 960p are VESA DMT rather than CEA-861, converted the same way at
+// their own 108 MHz pixel clock:
+//
+//   1024p  112 px sync and 248 px back porch  ->  1037.04 ns, 2296.30 ns
+//    960p  112 px and 312 px                  ->  1037.04 ns, 2888.89 ns
+//    576p   64 px and  68 px at 27 MHz        ->  2370.37 ns, 2518.52 ns
+//    480p   62 px and  60 px at 27 MHz        ->  2296.30 ns, 2222.22 ns
+//
+// Arguments are (activeLines, syncNs, backPorchNs, vsync, vBackPorch, vFrontPorch).
+const OutputMode Mode1080p(1080, 296.2963f, 996.6330f, 5, 36, 4);    // 1125
+const OutputMode Mode1024p(1024, 1037.0370f, 2296.2963f, 3, 38, 1);  // 1066
+const OutputMode Mode960p(960, 1037.0370f, 2888.8889f, 3, 36, 1);    // 1000
+const OutputMode Mode720p(720, 538.7205f, 2962.9630f, 5, 20, 5);     //  750
+const OutputMode Mode576p(576, 2370.3704f, 2518.5185f, 5, 39, 5);    //  625
+const OutputMode Mode480p(480, 2296.2963f, 2222.2222f, 6, 30, 9);    //  525
 
 }  // namespace Tv5725

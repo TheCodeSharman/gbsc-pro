@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue clean help
+.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -21,23 +21,23 @@ help:
 
 ## geometry: host-compile and run the geometry unit tests
 #
-# The geometry is pure arithmetic with no Arduino dependency, precisely so this
-# is possible: the alternative is flashing a board over USB to find out whether
-# a formula is right. Seconds here against minutes there, and the eleven bench
-# readings from 2026-08-05 are acceptance criteria rather than a memory.
+# The eleven bench readings from 2026-08-05 are the acceptance criteria here.
 #
 # The definitions live in src/tv5725/*.cpp, so they have to be compiled in or
-# the test links with every method undefined. The list is GLOBBED, never written
-# out.
+# the test links with every method undefined. GLOB the list, never write it out.
 #
-# Geometry.cpp and Controls.cpp are excluded: they touch GBS registers and
-# Arduino, so they build for the ESP8266 only.
+# Geometry.cpp, Controls.cpp and Sampling.cpp are excluded: they address real
+# registers, so they build for the ESP8266 only. test_geometry does not use
+# Sampling at all; the class is covered by `make -C test sampling`, which does
+# link the fake bus.
 #
 # The `cd` is load-bearing. The sketch directory is "GBSC-Pro-Source code" --
 # with a space -- so an absolute glob comes back as a word-split list that no
 # amount of quoting inside a make variable survives. Relative to the sketch
 # root, every path is space-free.
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls)\.cpp$$')
+GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$')
+
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Sampling|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$')
 
 geometry:
 	@mkdir -p "$(OUT)"
@@ -52,7 +52,8 @@ geometry:
 # costs a second to check.
 sampling:
 	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sampling" \
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sampling" \
 	  "$(HERE)/test_sampling.cpp" src/tv5725/Sampling.cpp
 	@"$(OUT)/test_sampling"
 
@@ -128,6 +129,136 @@ sync-search:
 	  "$(HERE)/test_sync_search.cpp" src/input/SyncSearch.cpp
 	@"$(OUT)/test_sync_search"
 
+## preset-load: host unit tests for the mode state a preset load decides
+#
+# The non-byte half of writeProgramArrayNew(). It has to outlive the twelve
+# tables it is currently buried in, so it is a class over plain integers with
+# no chip and no globals -- and therefore checkable here rather than by
+# flashing a board and reading rto-> back out of a log.
+preset-load:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_preset_load" \
+	  "$(HERE)/test_preset_load.cpp" src/tv5725/PresetLoad.cpp
+	@"$(OUT)/test_preset_load"
+
+## memory-map: host unit tests for the SDRAM layout and the capture capacity
+#
+# Whether the frame the engine is about to capture fits in the buffer the chip
+# was told to write it into -- a question nothing in this firmware has ever
+# asked. Pure address arithmetic, so it costs a second here against a flash
+# cycle and a corrupted picture there.
+memory-map:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_memory_map" \
+	  "$(HERE)/test_memory_map.cpp" src/tv5725/MemoryMap.cpp
+	@"$(OUT)/test_memory_map"
+
+## sdram-timing: host unit tests for how fast the SDRAM bus may run
+#
+# Derives the memory clock from the EM638325TS-6's tCK, tRCD and tRP, so
+# "fastest in spec" is arithmetic against a datasheet rather than a number
+# somebody chose.
+sdram-timing:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sdram_timing" \
+	  "$(HERE)/test_sdram_timing.cpp" src/tv5725/SdramTiming.cpp
+	@"$(OUT)/test_sdram_timing"
+
+## memory-bus: host unit tests for the SDRAM bus bring-up, off the board
+#
+# The first subsystem bring-up testable without hardware. tw.h is pure C++ whose
+# only Arduino dependency is Wire, so test/fake/Wire.h -- already here for
+# segment-select -- is the entire seam, and MemoryBus.cpp compiles unchanged.
+#
+# The include flags are load-bearing: -I test/fake is what makes tw.h's
+# `#include <Wire.h>` resolve to the fake, and -I test is what lets the test say
+# "fake/Wire.h" to define the instance.
+memory-bus:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_memory_bus" \
+	  "$(HERE)/test_memory_bus.cpp" src/tv5725/MemoryBus.cpp src/tv5725/SdramTiming.cpp
+	@"$(OUT)/test_memory_bus"
+
+## bringup: host unit tests for the whole static bring-up, and its --dump
+#
+# The ONE test that spans every bring-up class, which is what makes it the
+# behaviour-preservation proof for retiring Tv5725::Bringup::. Each subsystem
+# graduates into an ordinary Tv5725::<Subsystem>::init() one commit at a time,
+# every one of those commits claims to be a pure move, and
+#
+#     ./output/test_bringup --dump
+#
+# is how the claim is checked: every register the bring-up touches, in order,
+# so a reordering shows up here instead of on the bench. Ordering is not
+# cosmetic -- the six SFTRST_*_RSTZ resets must be released before the blocks
+# they hold are configured, which is a constraint BETWEEN classes that no
+# per-class view can see.
+#
+# GLOBBED, never written out, for the reason the geometry target gives: a
+# hand-written source list drifted within an hour of being written. Controls.cpp
+# and Geometry.cpp are the only exclusions -- the first needs more of Arduino than
+# the fake provides, the second calls getSourceFieldRate(), which lives in the
+# sketch and not in src/.
+BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls)\.cpp$$')
+
+bringup:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_bringup" \
+	  "$(HERE)/test_bringup.cpp" $(BRINGUP_SRC)
+	@"$(OUT)/test_bringup"
+
+## frame-buffer: host unit tests for the SDRAM map and the FIFO watermarks
+#
+# Same fake-Wire seam as memory-bus. Added when the FIFO request watermarks
+# acquired an owner: they are mode-dependent, so the generated bring-up block
+# can never emit them, and until this test existed nothing could tell a written
+# watermark from one the preset table happened to leave behind.
+frame-buffer:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_frame_buffer" \
+	  "$(HERE)/test_frame_buffer.cpp" src/tv5725/FrameBuffer.cpp src/tv5725/MemoryMap.cpp
+	@"$(OUT)/test_frame_buffer"
+
+## input-formatter: host unit tests for the input formatter's owned fields
+#
+# One field today -- IF_LD_ST, the last gap-report name outside segment 4 -- and
+# the landing site for the rest of Bringup::InputFormatter when it graduates.
+# Same fake-Wire seam as frame-buffer.
+input-formatter:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_input_formatter" \
+	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp
+	@"$(OUT)/test_input_formatter"
+
+## geometry-raster: host unit tests for Geometry::solveRaster()'s refuse/defer split
+#
+# The geometry engine, off the board. Geometry.cpp was excluded from every host
+# build for touching GBS:: and including <Arduino.h>; fake/Wire.h covered the
+# first and fake/Arduino.h -- three lines, for `boolean` -- covers the second.
+# getSourceFieldRate() is the sketch's, and the test supplies its own, which is
+# what makes the source measurement holdable still.
+geometry-raster:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_geometry_raster" \
+	  "$(HERE)/test_geometry_raster.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_geometry_raster"
+
+## geometry-windows: host unit tests for the registers one Geometry::apply() writes
+#
+# The net under deleting doPostPresetLoadSteps()'s geometry writes. Those all sit
+# behind videoStandardInput 1-4, 8 or 9, and the bench source comes up as 14, so
+# no bench test can reach them -- see the header of test_geometry_windows.cpp.
+geometry-windows:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_geometry_windows" \
+	  "$(HERE)/test_geometry_windows.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_geometry_windows"
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -141,7 +272,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue
+test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows
 all: test
 
 ## clean: remove the compiled test binaries

@@ -39,10 +39,9 @@ uint16_t Memory::fetchFor(uint16_t outputLinePx, uint16_t captureWidth)
 
 uint16_t Memory::offsetFor(uint16_t outputLinePx)
 {
-    // Deliberately NOT tracking the fetch. Measured 2026-08-09, the offset is
-    // not critical -- clean anywhere across 190..256 against a fetch of 204 --
-    // so it stays the value that was verified rather than gaining a second
-    // register that moves on every pad press for no measured reason.
+    // Deliberately NOT tracking the fetch: the offset is clean anywhere across
+    // 190..256 against a fetch of 204, so it stays fixed rather than gaining a
+    // second register that moves on every pad press for no measured reason.
     uint32_t offset = (outputLinePx == Line1080p)
         ? Offset1080p
         : (uint32_t)DefaultFetch + OffsetOverFetch;

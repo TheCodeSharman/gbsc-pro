@@ -139,7 +139,7 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, 500);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min);
 
 const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min);
 

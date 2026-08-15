@@ -49,23 +49,10 @@ TV5725
 */
 #include "tv5725.h"
 #include <Wire.h>
-#include "ntsc_240p.h"
-#include "pal_240p.h"
-#include "ntsc_720x480.h"
-#include "pal_768x576.h"
-#include "ntsc_1280x720.h"
-#include "ntsc_1280x1024.h"
-#include "ntsc_1920x1080.h"
-#include "pal_1280x720.h"
-#include "pal_1280x1024.h"
-#include "pal_1920x1080.h"
-#include "ntsc_downscale.h"
-#include "pal_downscale.h"
 
 #include "presetMdSection.h"
 #include "presetDeinterlacerSection.h"
 #include "presetHdBypassSection.h"
-#include "ofw_RGBS.h"
 
 #include "options.h"
 #include "slot.h"
@@ -74,7 +61,14 @@ TV5725
 #include "gbs_types.h"   // typedef TV5725<GBS_ADDR> GBS, in one place
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/Controls.h"
+#include "src/tv5725/PresetLoad.h"
+#include "src/tv5725/FrameBuffer.h"
+#include "src/tv5725/InputFormatter.h"
+#include "src/tv5725/Sampling.h"
 #include "src/tv5725/DisplayClock.h"
+#include "src/tv5725/OutputRaster.h"
+#include "src/tv5725/BringUp.h"
+#include "src/tv5725/Sampling.h"
 #include "src/clock/ClockRamp.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
@@ -1158,29 +1152,25 @@ void loadPresetMdSection()
     writeBytes(8 * 16, bank, 4);
 }
 
-void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
+// The bytes, and only the bytes. Everything that is not a table byte lives in
+// writeProgramArrayNew() below, so that when the twelve tables go this function
+// is what gets replaced and the mode-state work around it survives untouched.
+static void writePresetTable(const uint8_t *programArray, boolean skipMDSection)
 {
   uint16_t index = 0;
   uint8_t bank[16];
   uint8_t y = 0;
-  uint16_t dump_count = 0;
-  FrameSync::cleanup();
 
-  if (rto->videoStandardInput == 15)
-  {
-    rto->videoStandardInput = 0;
-  }
-
-  rto->outModeHdBypass = 0; // Output HD Bypass
-  if (GBS::ADC_INPUT_SEL::read() == 0)
-  {
-    rto->inputIsYpBpR = 1;
-  }
-  else
-  {
-    rto->inputIsYpBpR = 0;
-  }
-
+  // Read live and written back below in place of the table's own bytes, so the
+  // preset's 0x46 and 0x47 are discarded and these two registers are never
+  // loaded from a table.
+  //
+  // It is not defending against different data: all twelve tables carry 0x7f
+  // and 0x17, which is also what the chip reads when nothing is held in reset.
+  // The two agree in the steady state, so this only does anything when a preset
+  // loads while the firmware holds some block in reset -- it preserves that
+  // transient instead of releasing it early. It exists only because a table has
+  // bytes here, and goes with the tables.
   uint8_t reset46 = GBS::RESET_CONTROL_0x46::read();
   uint8_t reset47 = GBS::RESET_CONTROL_0x47::read();
 
@@ -1190,6 +1180,12 @@ void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
     switch (y)
     {
     case 0:
+      // MUST SURVIVE THE TABLES. The two useHdmiSyncFix patches below are a
+      // board-level workaround, not preset data: they clear s0_44[0] and set
+      // s0_49[2] on top of whatever the table says. They are byte patches only
+      // because a byte is what is passing through here -- once the bring-up
+      // block owns these registers they become two ordinary field writes after
+      // it runs, not a special case inside a loop.
       for (int j = 0; j <= 1; j++)
       {
         for (int x = 0; x <= 15; x++)
@@ -1248,19 +1244,13 @@ void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
         }
         writeBytes(j * 16, bank, 16);
       }
-      if (!skipMDSection)
-      {
-        loadPresetMdSection();
-        if (rto->syncTypeCsync)
-          GBS::MD_SEL_VGA60::write(0);
-        else
-          GBS::MD_SEL_VGA60::write(1);
-
-        GBS::MD_HD1250P_CNTRL::write(rto->medResLineCount);
-      }
+      // Neither the MD section nor the deinterlacer section is table data;
+      // loadStaticSections() applies both.
       break;
     case 2:
-      loadPresetDeinterlacerSection();
+      // **NOT A TABLE SEGMENT AT ALL.** No preset writes segment 2:
+      // presetRegisterRanges covers 0, 1, 3, 4 and 5, and the twelve archived
+      // tables contain no s2 byte.
       break;
     case 3:
       for (int j = 0; j <= 7; j++)
@@ -1343,11 +1333,120 @@ void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
     }
   }
 
-  if (uopt->preferScalingRgbhv && rto->isValidForScalingRGBHV)
+}
+
+// The two blobs that are NOT preset data, applied whether or not a table loaded.
+//
+// **DO NOT GUARD THIS ON `programArray != 0`.** That takes both out with the
+// tables, leaving 37 of segment 2's bytes at 0x00 -- every MADPT coefficient
+// plus MADPT_PD_RAM_BYPS, MADPT_VIIR_BYPS, MADPT_Y_WOUT_BYPS and
+// DIAG_BOB_PLDY_RAM_BYPS. Zeroed, those bypass bits route video THROUGH the
+// deinterlacer RAM with every coefficient at zero.
+//
+// Neither belongs to a preset. **No preset writes segment 2 at all**:
+// presetRegisterRanges covers segments 0, 1, 3, 4 and 5, and no archived table
+// holds an s2 byte. The MD section is segment 1 rows 6..8, outside the 0x00..0x2F
+// a table carries. Both are static chip configuration, and both are still owed
+// a Tv5725:: subsystem.
+static void loadStaticSections(boolean skipMDSection)
+{
+  loadPresetDeinterlacerSection();
+
+  if (!skipMDSection) {
+    loadPresetMdSection();
+
+    // Beside the loadPresetMdSection() call and travelling with it: both
+    // depend on runtime state rather than on any table.
+    GBS::MD_SEL_VGA60::write(rto->syncTypeCsync ? 0 : 1);
+    GBS::MD_HD1250P_CNTRL::write(rto->medResLineCount);
+  }
+}
+
+void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
+{
+  FrameSync::cleanup();
+
+  // Read before the table write, which is also where the sentinel has to be
+  // cleared: the byte loop reads videoStandardInput while it runs, to choose
+  // the table's byte at index 375.
+  const Tv5725::PresetLoad load(rto->videoStandardInput,
+                                GBS::ADC_INPUT_SEL::read(),
+                                uopt->preferScalingRgbhv,
+                                rto->isValidForScalingRGBHV);
+
+  rto->videoStandardInput = load.videoStandardInput();
+  rto->outModeHdBypass = 0; // Output HD Bypass
+  rto->inputIsYpBpR = load.inputIsYpBpR();
+
+  // **NULL IS THE NORMAL CASE.** The bring-up block, the subsystem classes and
+  // the geometry engine write every byte a scaling table would. Only a
+  // CUSTOM preset arrives with a table, and that is a register dump loaded from
+  // the filesystem -- it goes when a slot records the inputs to the calculation.
+  //
+  // **THE POSITION IS LOAD-BEARING.** The byte loop reads
+  // rto->videoStandardInput, so it has to sit after the three assignments above
+  // and before videoStandardInputAfterLoad() below.
+  if (programArray != 0) {
+    writePresetTable(programArray, skipMDSection);
+  }
+
+  loadStaticSections(skipMDSection);
+
+  if (load.enableScalingRgbhv())
   {
     GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-    rto->videoStandardInput = 3;
   }
+  rto->videoStandardInput = load.videoStandardInputAfterLoad();
+}
+
+// The preset id, as the tables carried it in their s1_2B byte: low nibble the
+// resolution, high nibble the source standard.
+//
+//     960p 0x01/0x11   1024p 0x02/0x12   720p 0x03/0x13
+//     480p 0x04/0x14   1080p 0x05/0x15        (NTSC/PAL)
+//
+// **NOTHING ELSE WRITES THIS FOR A SCALING LOAD.** bypassModeSwitch_RGBHV()
+// writes GBS_PRESET_ID, so the field looks owned, but not on this path -- and
+// doPostPresetLoadSteps() branches on rto->presetID in a dozen places, so a
+// stale id left by an earlier bypass sends a scaling load down bypass paths.
+//
+// It stays a table-shaped number. Whether presetID should survive at all is a
+// separate question from where it comes from.
+static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
+{
+  uint8_t code = 0;
+  if (mode == &Tv5725::Mode960p) {
+    code = 0x01;
+  } else if (mode == &Tv5725::Mode1024p) {
+    code = 0x02;
+  } else if (mode == &Tv5725::Mode720p) {
+    code = 0x03;
+  } else if (mode == &Tv5725::Mode480p || mode == &Tv5725::Mode576p) {
+    code = 0x04;
+  } else if (mode == &Tv5725::Mode1080p) {
+    code = 0x05;
+  }
+  return code | (pal ? 0x10 : 0x00);
+}
+
+// A preset load with nothing loaded: the mode state a load decides, and then
+// every register computed. `mode` is the output resolution this load is for and
+// is remembered for doPostPresetLoadSteps(), which solves the raster from it.
+//
+// The two bytes at s1_2B and s1_2C are reset here because every table wrote
+// them: the id and custom flag, and the option bits, which otherwise latch
+// across loads. PALFORCED60 in particular is set by doPostPresetLoadSteps() and
+// has no other clear.
+void loadComputedPreset(const Tv5725::OutputMode *mode, uint8_t presetId)
+{
+  rto->outputMode = mode;
+  GBS::GBS_PRESET_ID::write(presetId);
+  GBS::GBS_PRESET_CUSTOM::write(0);
+  GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
+  GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+  GBS::GBS_OPTION_PALFORCED60_ENABLED::write(0);
+  GBS::GBS_RUNTIME_FTL_ADJUSTED::write(0);
+  writeProgramArrayNew(0, false);
 }
 
 void activeFrameTimeLockInitialSteps()
@@ -2730,82 +2829,6 @@ void invertVS()
     writeOneByte(0x0f, (uint8_t)((newSP & 0x0ff0) >> 4));
 }
 
-void setHSyncStartPosition(uint16_t value)
-{
-    if (rto->outModeHdBypass) {
-
-        GBS::SP_CS_HS_ST::write(value);
-    } else {
-        GBS::VDS_HS_ST::write(value);
-    }
-}
-
-void setHSyncStopPosition(uint16_t value)
-{
-    if (rto->outModeHdBypass) {
-
-        GBS::SP_CS_HS_SP::write(value);
-    } else {
-        GBS::VDS_HS_SP::write(value);
-    }
-}
-
-void setMemoryHblankStartPosition(uint16_t value)
-{
-    GBS::VDS_HB_ST::write(value);
-    GBS::HD_HB_ST::write(value);
-}
-
-void setMemoryHblankStopPosition(uint16_t value)
-{
-    GBS::VDS_HB_SP::write(value);
-    GBS::HD_HB_SP::write(value);
-}
-
-void setDisplayHblankStartPosition(uint16_t value)
-{
-    GBS::VDS_DIS_HB_ST::write(value);
-}
-
-void setDisplayHblankStopPosition(uint16_t value)
-{
-    GBS::VDS_DIS_HB_SP::write(value);
-}
-
-void setVSyncStartPosition(uint16_t value)
-{
-    GBS::VDS_VS_ST::write(value);
-    GBS::HD_VS_ST::write(value);
-}
-
-void setVSyncStopPosition(uint16_t value)
-{
-    GBS::VDS_VS_SP::write(value);
-    GBS::HD_VS_SP::write(value);
-}
-
-void setMemoryVblankStartPosition(uint16_t value)
-{
-    GBS::VDS_VB_ST::write(value);
-    GBS::HD_VB_ST::write(value);
-}
-
-void setMemoryVblankStopPosition(uint16_t value)
-{
-    GBS::VDS_VB_SP::write(value);
-    GBS::HD_VB_SP::write(value);
-}
-
-void setDisplayVblankStartPosition(uint16_t value)
-{
-    GBS::VDS_DIS_VB_ST::write(value);
-}
-
-void setDisplayVblankStopPosition(uint16_t value)
-{
-    GBS::VDS_DIS_VB_SP::write(value);
-}
-
 uint16_t getCsVsStart()
 {
     return (GBS::SP_SDCS_VSST_REG_H::read() << 8) + GBS::SP_SDCS_VSST_REG_L::read();
@@ -2861,53 +2884,6 @@ void printVideoTimings()
     SerialM.printf_P(PSTR("CsVT         : %d\n"), GBS::STATUS_SYNC_PROC_VTOTAL::read());
     SerialM.printf_P(PSTR("CsVS_ST/SP   : %d %d\n"), getCsVsStart(), getCsVsStop());
 #endif
-}
-
-void set_htotal(uint16_t htotal)
-{
-
-    uint16_t h_blank_display_start_position = htotal - 1;
-    uint16_t h_blank_display_stop_position = htotal - ((htotal * 3) / 4);
-    uint16_t center_blank = ((h_blank_display_stop_position / 2) * 3) / 4;
-    uint16_t h_sync_start_position = center_blank - (center_blank / 2);
-    uint16_t h_sync_stop_position = center_blank + (center_blank / 2);
-    uint16_t h_blank_memory_start_position = h_blank_display_start_position - 1;
-    uint16_t h_blank_memory_stop_position = h_blank_display_stop_position - (h_blank_display_stop_position / 50);
-
-    GBS::VDS_HSYNC_RST::write(htotal);
-    GBS::VDS_HS_ST::write(h_sync_start_position);
-    GBS::VDS_HS_SP::write(h_sync_stop_position);
-    GBS::VDS_DIS_HB_ST::write(h_blank_display_start_position);
-    GBS::VDS_DIS_HB_SP::write(h_blank_display_stop_position);
-    GBS::VDS_HB_ST::write(h_blank_memory_start_position);
-    GBS::VDS_HB_SP::write(h_blank_memory_stop_position);
-}
-
-void set_vtotal(uint16_t vtotal)
-{
-    uint16_t VDS_DIS_VB_ST = vtotal - 2;
-    uint16_t VDS_DIS_VB_SP = (vtotal >> 6) + 8;
-    uint16_t VDS_VB_ST = ((uint16_t)(vtotal * 0.016f)) & 0xfffe;
-    uint16_t VDS_VB_SP = VDS_VB_ST + 2;
-    uint16_t v_sync_start_position = 1;
-    uint16_t v_sync_stop_position = 5;
-
-    if ((vtotal < 530) || (vtotal >= 803 && vtotal <= 809) || (vtotal >= 793 && vtotal <= 798)) {
-        uint16_t temp = v_sync_start_position;
-        v_sync_start_position = v_sync_stop_position;
-        v_sync_stop_position = temp;
-    }
-
-    GBS::VDS_VSYNC_RST::write(vtotal);
-    GBS::VDS_VS_ST::write(v_sync_start_position);
-    GBS::VDS_VS_SP::write(v_sync_stop_position);
-    GBS::VDS_VB_ST::write(VDS_VB_ST);
-    GBS::VDS_VB_SP::write(VDS_VB_SP);
-    GBS::VDS_DIS_VB_ST::write(VDS_DIS_VB_ST);
-    GBS::VDS_DIS_VB_SP::write(VDS_DIS_VB_SP);
-
-    GBS::VDS_VSYN_SIZE1::write(GBS::VDS_VSYNC_RST::read() + 2);
-    GBS::VDS_VSYN_SIZE2::write(GBS::VDS_VSYNC_RST::read() + 2);
 }
 
 void resetDebugPort()
@@ -3091,6 +3067,25 @@ boolean runAutoBestHTotal()
 boolean applyBestHTotal(uint16_t bestHTotal)
 {
     if (rto->outModeHdBypass) {
+        return true;
+    }
+
+    // **THE RASTER IS THE ENGINE'S, AND WITH A CLOCK GENERATOR THIS IS A SECOND
+    // CORRECTION FOR THE SAME ERROR.** The engine owns the TV5725's registers.
+    //
+    // Frame time is locked by steering the Si5351 -- FrameSync does it
+    // continuously, visible on the console as "Setting clock frequency" about
+    // every 1.76 s. Retiming the raster as well means two independent
+    // corrections chasing one error, and they do not agree on where to stop:
+    // across three boots of identical firmware Geometry::solveRaster() computes
+    // 1918 every time and the raster settles at 1915, 1436 and 1740, the last
+    // giving away 9% of the horizontal resolution the clock already accounts
+    // for.
+    //
+    // Only gated on extClockGenDetected. A board with no Si5351 has nothing
+    // else that can match the frame time, so there the htotal search IS the
+    // mechanism and it must keep working.
+    if (rto->extClockGenDetected) {
         return true;
     }
 
@@ -3473,8 +3468,109 @@ uint32_t getPllRate()
 
 #define AUTO_GAIN_INIT 0x48
 
+// The output mode this preset load is for, as an INPUT to the raster solver.
+// The user's preference answers it for every resolution the interfaces offer;
+// reading the raster registers back instead inherits from whatever loaded last.
+//
+// Two cases still inherit, deliberately and visibly:
+//
+//   - OutputCustomized: the saved preset's bytes ARE the mode, so the read-back
+//     is correct there. It goes when a slot records the inputs to the
+//     calculation rather than a register dump.
+//   - OutputBypass: no scaled raster to solve, and modeFor() finds none.
+//
+// THE FIELD RATE IS MEASURED HERE, NOT INSIDE THE ENGINE. It disambiguates one
+// preference -- Output480P is 480 active lines at 60 Hz and 576 at 50, two
+// resolutions sharing an enum value. getSourceFieldRate() spins, so it must not
+// be called from a network callback; this runs from doPostPresetLoadSteps(),
+// which is loop() context, and only when the preference actually needs it.
+static const Tv5725::OutputMode *outputModeForThisLoad()
+{
+    // Chosen in applyPresets() and carried on rto, because the inputs to the
+    // choice are gone by the time this runs -- see runTimeOptions::outputMode.
+    if (rto->outputMode != 0)
+        return rto->outputMode;
+
+    // The last thing that inherits: a custom preset, whose saved bytes ARE the
+    // mode, and bypass, which has no scaled raster. Goes when a slot records the
+    // inputs to the calculation rather than a register dump.
+    return Tv5725::OutputRaster::modeFor(GBS::VDS_VSYNC_RST::read() + 1);
+}
+
+// The output resolution a load is for, from the user's preference and the source
+// standard the detection just reported.
+//
+// **THE STANDARD COMES FROM `result`, NOT FROM A MEASUREMENT.** The table ladder
+// this replaces picked a pal_* or ntsc_* table on exactly this test, so taking
+// it from the detection result keeps getSourceFieldRate() -- which spins --
+// off the preset-load path entirely.
+static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
+{
+    const uint8_t Output960P = 0;
+    const uint8_t Output1024P = 4;
+    uint8_t preference = uopt->presetPreference;
+
+    const bool pal = (result == 2 || result == 4);
+
+    // matchPresetSource, the web UI's "default to 1280x960 for NTSC 60 and
+    // 1280x1024 for PAL 50". The tables expressed it by swapping which one a
+    // preference loaded, and it is ported here verbatim -- including the
+    // asymmetry, which is upstream's and not a design: the PAL side has no
+    // guards while the NTSC side excludes standard 8 and scaling RGBHV.
+    if (uopt->matchPresetSource) {
+        if (pal && preference == Output960P) {
+            preference = Output1024P;
+        } else if (!pal && preference == Output1024P && result != 8 &&
+                   GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
+            preference = Output960P;
+        }
+    }
+
+    return Tv5725::OutputRaster::modeForPreference(preference,
+                                                   pal ? 50.0f : 60.0f);
+}
+
+// The line rate the source is running at, in Hz, or 0 when it cannot be
+// measured. Field rate x source lines -- the two quantities the sampling divider
+// is a function of, and the only inputs Tv5725::Sampling needs.
+//
+// A measurement, kept HERE rather than in the engine, because
+// getSourceFieldRate() spins. The engine is handed the number.
+static uint32_t measuredLineRateHz()
+{
+    // **A PLAIN BOUNDS CHECK IS NOT ENOUGH.** A field rate measured while the
+    // source is still settling after a preset load passes one comfortably --
+    // 57.9 Hz against a real 50.08 -- and the divider comes out proportionally
+    // wrong: PLLAD_MD 2204 where 2548 is due, on a source locked at 311 lines /
+    // 50.08 Hz. Sampling::lineRateFrom() cross-checks the rate against the line
+    // count and returns 0 when they disagree.
+    //
+    // **THE CROSS-CHECK IS NECESSARY AND NOT SUFFICIENT, so it says what it
+    // saw.** It catches a rate that disagrees with the line count; it cannot
+    // catch a line count that is simply wrong, because any count above
+    // Capture::PalVtotalMin makes 50 Hz plausible. Both inputs are printed for
+    // that reason: the divider is derived from them and nothing downstream can
+    // report which of them was wrong.
+    // docs/firmware-geometry-engine.md
+    uint16_t lines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    float fieldRate = getSourceFieldRate(0);
+    uint32_t lineRate = Tv5725::Sampling::lineRateFrom(lines, fieldRate);
+    fsDebugPrintf("sampling: %u lines x %u.%02u Hz -> line rate %u\n", lines,
+                  (unsigned)fieldRate, (unsigned)(fieldRate * 100) % 100, lineRate);
+    return lineRate;
+}
+
 void doPostPresetLoadSteps()
 {
+    // Static chip bring-up, over the top of whatever a custom preset loaded.
+    // Every value it writes is one the scaling tables also wrote, identically
+    // across all twelve, so on a correct block nothing moves.
+    //
+    // **THE ORDERING IS TABLE, BRING-UP, RASTER, CLOCK, WINDOWS**, which is why
+    // this sits here rather than beside the writeProgramArrayNew() calls.
+    // docs/investigations/preset-abandonment-audit.md.
+    Tv5725::BringUp::init();
+
     // if(Info_sate == 0)
     {
         if (uopt->enableAutoGain) {
@@ -3622,8 +3718,13 @@ void doPostPresetLoadSteps()
 
             GBS::IF_LD_WRST_SEL::write(1);
 
+            // SP_RT_HS_ST stays: the retime window STARTS at 0 whatever the
+            // divider is, in all twelve preset tables and in every runtime path,
+            // so it is a constant rather than part of the quantity below.
             GBS::SP_RT_HS_ST::write(0);
-            GBS::SP_RT_HS_SP::write(GBS::PLLAD_MD::read() * 0.93f);
+            // SP_RT_HS_SP was written HERE, as PLLAD_MD::read() * 0.93f. It has
+            // moved to geometry.solveSampling() below, beside the two registers
+            // it has to agree with -- see the note there.
 
             GBS::VDS_PK_LB_CORE::write(0);
             GBS::VDS_PK_LH_CORE::write(0);
@@ -3641,19 +3742,6 @@ void doPostPresetLoadSteps()
             GBS::VDS_STEP_GAIN::write(1);
 
             setOverSampleRatio(2, true);
-
-            if (uopt->wantFullHeight) {
-                if (rto->videoStandardInput == 1 || rto->videoStandardInput == 3) {
-                } else if (rto->videoStandardInput == 2 || rto->videoStandardInput == 4) {
-                    if (rto->presetID == 0x15) {
-                        GBS::VDS_VSCALE::write(455);
-                        GBS::VDS_DIS_VB_ST::write(GBS::VDS_VSYNC_RST::read());
-                        GBS::VDS_DIS_VB_SP::write(42);
-                        GBS::IF_VB_SP::write(GBS::IF_VB_SP::read() + 22);
-                        GBS::IF_VB_ST::write(GBS::IF_VB_ST::read() + 22);
-                    }
-                }
-            }
 
             if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
 
@@ -3682,13 +3770,12 @@ void doPostPresetLoadSteps()
                     GBS::MADPT_PD_RAM_BYPS::write(0);
                     GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
                     GBS::MADPT_SEL_PHASE_INI::write(0);
+                    // IF_HB_ST2/SP2 dropped: the capture window is the engine's.
+                    // IF_HB_SP and IF_HBIN_SP stay -- nothing computes those.
                     if (rto->videoStandardInput == 1) {
-                        GBS::IF_HB_ST2::write(0x490);
-                        GBS::IF_HB_SP2::write(0x80);
                         GBS::IF_HB_SP::write(0x4A);
                         GBS::IF_HBIN_SP::write(0xD0);
                     } else if (rto->videoStandardInput == 2) {
-                        GBS::IF_HB_SP2::write(0x74);
                         GBS::IF_HB_SP::write(0x50);
                         GBS::IF_HBIN_SP::write(0xD0);
                     }
@@ -3721,7 +3808,14 @@ void doPostPresetLoadSteps()
                         delay(20);
                         if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
                             GBS::PLLAD_KS::write(0);
-                            GBS::VDS_VSCALE_BYPS::write(1);
+                            // VDS_VSCALE_BYPS::write(1) was here, and it is the
+                            // one deletion where the two owners DISAGREE rather
+                            // than repeat: this asked for vertical scaling off
+                            // on a tall source, and Geometry::write() clears the
+                            // bit unconditionally because it has computed an
+                            // explicit scale. The engine already won on
+                            // ordering, so removing this changes nothing --
+                            // test_geometry_windows.cpp asserts the bit is 0.
                         }
                     }
                 }
@@ -3741,44 +3835,10 @@ void doPostPresetLoadSteps()
                 GBS::IF_HB_ST::write(30);
                 GBS::IF_HBIN_ST::write(0x20);
                 GBS::IF_HBIN_SP::write(0x60);
-                if (rto->presetID == 0x5) {
-                    GBS::IF_HB_SP2::write(0xB0);
-                    GBS::IF_HB_ST2::write(0x4BC);
-                } else if (rto->presetID == 0x3) {
-                    GBS::VDS_VSCALE::write(683);
-                    GBS::IF_HB_ST2::write(0x478);
-                    GBS::IF_HB_SP2::write(0x84);
-                } else if (rto->presetID == 0x2) {
-                    GBS::IF_HB_SP2::write(0x84);
-                    GBS::IF_HB_ST2::write(0x478);
-                } else if (rto->presetID == 0x1) {
-                    GBS::IF_HB_SP2::write(0x84);
-                    GBS::IF_HB_ST2::write(0x478);
-                } else if (rto->presetID == 0x4) {
-                    GBS::IF_HB_ST2::write(0x478);
-                    GBS::IF_HB_SP2::write(0x90);
-                }
             } else if (rto->videoStandardInput == 4 && rto->presetID != 0x16) {
                 GBS::IF_HBIN_SP::write(0x40);
                 GBS::IF_HBIN_ST::write(0x20);
                 GBS::IF_HB_ST::write(0x30);
-                if (rto->presetID == 0x15) {
-                    GBS::IF_HB_ST2::write(0x4C0);
-                    GBS::IF_HB_SP2::write(0xC8);
-                } else if (rto->presetID == 0x13) {
-                    GBS::IF_HB_ST2::write(0x478);
-                    GBS::IF_HB_SP2::write(0x88);
-                } else if (rto->presetID == 0x12) {
-
-                    GBS::IF_HB_ST2::write(0x454);
-                    GBS::IF_HB_SP2::write(0x88);
-                } else if (rto->presetID == 0x11) {
-                    GBS::IF_HB_ST2::write(0x454);
-                    GBS::IF_HB_SP2::write(0x88);
-                } else if (rto->presetID == 0x14) {
-                    GBS::IF_HB_ST2::write(0x478);
-                    GBS::IF_HB_SP2::write(0x90);
-                }
             } else if (rto->videoStandardInput == 5) {
                 GBS::ADC_FLTR::write(1);
                 GBS::IF_PRGRSV_CNTRL::write(1);
@@ -3809,15 +3869,9 @@ void doPostPresetLoadSteps()
                 GBS::IF_HB_ST::write(30);
 
                 GBS::IF_HBIN_SP::write(0x60);
-                if (rto->presetID == 0x1) {
-                    GBS::VDS_VSCALE::write(410);
-                } else if (rto->presetID == 0x2) {
-                    GBS::VDS_VSCALE::write(402);
-                } else if (rto->presetID == 0x3) {
-                    GBS::VDS_VSCALE::write(546);
-                } else if (rto->presetID == 0x5) {
-                    GBS::VDS_VSCALE::write(400);
-                }
+                // And a four-branch VDS_VSCALE ladder here: 410, 402, 546, 400
+                // per output resolution. Geometry::write() computes the scale from
+                // the capture and the raster it has to fill.
             }
         }
 
@@ -3837,6 +3891,31 @@ void doPostPresetLoadSteps()
                     delay(4);
                 }
             }
+        }
+
+        // **THE SAMPLING DIVIDER, AND IT MUST BE ON THIS SIDE OF THE LATCH.**
+        // PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are ONE quantity in three
+        // registers, and Tv5725::Sampling is the single owner of all three.
+        //
+        // Directly above latchPLLAD(), and that ordering is the whole point.
+        // PLLAD_LAT is what loads MD, ND, KS, CKOS and ICP into the ADC PLL, so
+        // a divider written AFTER it leaves the PLL running the old value with
+        // every register reading back correct -- solid green screen, nothing to
+        // diagnose from. STATUS_SYNC_PROC_HTOTAL is the one witness, since it
+        // counts real ADC clocks per line and so reports the LATCHED divider.
+        //
+        // AFTER setOverSampleRatio() has settled rto->osr, because the sample
+        // clock is the product of the divider and the oversampling.
+        //
+        // **BOTH BRANCHES MUST RUN**, or the engine has no divider and every
+        // solve defers forever. A custom preset is a register dump replayed off
+        // the filesystem, so its saved PLLAD_MD is a value the user has a
+        // picture from and adopting it keeps that; computing over it would not.
+        // The branch goes when a slot records the INPUTS to the calculation.
+        if (rto->isCustomPreset) {
+            geometry.adoptSampling();
+        } else {
+            geometry.solveSampling(measuredLineRateHz(), rto->osr);
         }
 
         latchPLLAD();
@@ -3864,13 +3943,10 @@ void doPostPresetLoadSteps()
 
         if (rto->presetIsPalForce60) {
             if (GBS::GBS_OPTION_PALFORCED60_ENABLED::read() != 1) {
-                uint16_t vshift = 56;
-                if (rto->presetID == 0x5) {
-                    GBS::IF_VB_SP::write(4);
-                } else {
-                    GBS::IF_VB_SP::write(GBS::IF_VB_SP::read() + vshift);
-                }
-                GBS::IF_VB_ST::write(GBS::IF_VB_SP::read() - 2);
+                // The 56-line IF_VB shift that was here is gone with the rest:
+                // the vertical capture window is derived from the source line
+                // count, which is what a PAL source forced to 60 changes. The
+                // flag stays -- it is state, and other code reads it.
                 GBS::GBS_OPTION_PALFORCED60_ENABLED::write(1);
             }
         }
@@ -3929,23 +4005,11 @@ void doPostPresetLoadSteps()
             GBS::VDS_UV_STEP_BYPS::write(1);
         }
 
-        // The output raster, computed rather than inherited from the table just
-        // written -- both totals, both sync pulses, and the clock seed that
-        // affords them. This is the step that makes the preset's own raster
-        // bytes inert, and it has to be HERE: externalClockGenResetClock() reads
-        // PLL648_CONTROL_01 to decide what to steer the Si5351 to, so the seed
-        // must already be in the register.
-        //
-        // The ordering below is docs/investigations/preset-abandonment-audit.md's, and it is
-        // not optional: raster (here), clock (next line), windows
-        // (geometry.solveFromScratch(), further down), rate steer LAST from
-        // loop(). Running the steer early corrects the new clock against the OLD
-        // raster -- 2026-08-12, a 31 Hz frame and a black screen that looked
-        // like the raster model was wrong.
-        //
-        // Returns false and writes nothing for an output mode it has no timings
-        // for, which leaves the table's raster alone.
-        geometry.solveRaster();
+        // Before externalClockGenResetClock(), which reads PLL648_CONTROL_01 to
+        // decide what to steer the Si5351 to, so the seed must already be in the
+        // register. docs/investigations/preset-abandonment-audit.md.
+
+        geometry.solveRaster(outputModeForThisLoad());
 
         externalClockGenResetClock();
 
@@ -4014,23 +4078,12 @@ void doPostPresetLoadSteps()
             GBS::PAD_SYNC_OUT_ENZ::write(0); //
         }
 
-        if (!rto->isCustomPreset) {
-            if (videoStandardInputIsPalNtscSd() && !rto->outModeHdBypass) {
-
-                if (GBS::VPERIOD_IF::read() == 523) {
-                    GBS::IF_VB_SP::write(GBS::IF_VB_SP::read() + 4);
-                    GBS::IF_VB_ST::write(GBS::IF_VB_ST::read() + 4);
-                }
-            }
-        }
 
         GBS::VDS_EXT_HB_ST::write(GBS::VDS_DIS_HB_ST::read());
         GBS::VDS_EXT_HB_SP::write(GBS::VDS_DIS_HB_SP::read());
         GBS::VDS_EXT_VB_ST::write(GBS::VDS_DIS_VB_ST::read());
         GBS::VDS_EXT_VB_SP::write(GBS::VDS_DIS_VB_SP::read());
 
-        GBS::VDS_VSYN_SIZE1::write(GBS::VDS_VSYNC_RST::read() + 2);
-        GBS::VDS_VSYN_SIZE2::write(GBS::VDS_VSYNC_RST::read() + 2);
         GBS::VDS_FRAME_RST::write(4);
 
         GBS::VDS_FRAME_NO::write(1);
@@ -4050,7 +4103,15 @@ void doPostPresetLoadSteps()
             GBS::DEC_IDREG_EN::write(1);
             GBS::DEC_WEN_MODE::write(1);
 
-            GBS::CAP_SAFE_GUARD_EN::write(0);
+            // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
+            // owns that bit and switches it ON; a write here runs later in this
+            // same function and wins, leaving the capture buffer unbounded.
+            //
+            // Upstream disabled it against a memory map whose capture buffer
+            // started at 0x100000, only 356 KB below the guard address, where a
+            // large capture could genuinely trip it. MemoryMap puts the guard at
+            // the top of the address space with the engine clamping the capture
+            // below it, so nothing but a real overrun reaches it.
 
             GBS::PB_CUT_REFRESH::write(1);
             GBS::RFF_LREQ_CUT::write(0);
@@ -4059,10 +4120,11 @@ void doPostPresetLoadSteps()
             GBS::PB_REQ_SEL::write(3);
 
             GBS::RFF_WFF_OFFSET::write(0x0);
-            if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4) {
-
-                GBS::PB_CAP_OFFSET::write(GBS::PB_FETCH_NUM::read() + 4);
-            }
+            // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
+            // Both halves of that pair are Tv5725::Memory's: the offset is
+            // Memory::offsetFor(the output line) and the fetch is computed
+            // against it, so deriving one from the other after the fact could
+            // only fight the model. Geometry::write() sets both.
         }
 
         if (!rto->outModeHdBypass) {
@@ -4294,64 +4356,33 @@ void applyPresets(uint8_t result)
         return false;
     };
 
-    if (result == 1 || result == 3 || result == 8 || result == 9 || result == 14) {
+    if (result == 1 || result == 3 || result == 8 || result == 9 || result == 14 ||
+        result == 2 || result == 4) {
 
-        // printf(" This == 3 \n");
-        if (uopt->presetPreference == 0) {
-            writeProgramArrayNew(ntsc_240p, false);
-        } else if (uopt->presetPreference == 1) {
-            writeProgramArrayNew(ntsc_720x480, false);   //ntsc_720x480   pal_768x576
-        } else if (uopt->presetPreference == 3) {
-            writeProgramArrayNew(ntsc_1280x720, false);
-        }
+        // **TWO BRANCHES AND TWELVE TABLE LOADS WERE HERE, AND THEY DIFFERED IN
+        // NOTHING BUT WHICH TABLE.** One branch per source standard, each a
+        // ladder on presetPreference picking a pal_* or ntsc_* blob. The
+        // standard and the preference now select an OutputMode instead --
+        // chooseOutputMode() -- and every register is computed from it, so the
+        // two branches are one and the ladder is gone.
 #if defined(ESP8266)
-        else if (uopt->presetPreference == OutputCustomized) {
-            const uint8_t *preset = loadPresetFromFS(result);
-            writeProgramArrayNew(preset, false);
+        const uint8_t *saved = (uopt->presetPreference == OutputCustomized)
+                                   ? loadPresetFromFS(result)
+                                   : 0;
+        if (saved != 0) {
+            rto->outputMode = 0;  // the saved file's own bytes are the mode
+            writeProgramArrayNew(saved, false);
             if (applySavedBypassPreset()) {
                 return;
             }
-        } else if (uopt->presetPreference == 4) {
-            if (uopt->matchPresetSource && (result != 8) && (GBS::GBS_OPTION_SCALING_RGBHV::read() == 0)) {
-                writeProgramArrayNew(ntsc_240p, false);
-            } else {
-                writeProgramArrayNew(ntsc_1280x1024, false);
-            }
-        }
+        } else
 #endif
-        else if (uopt->presetPreference == 5) {
-            writeProgramArrayNew(ntsc_1920x1080, false);   //ntsc_1920x1080
-        } else if (uopt->presetPreference == 6) {
-            writeProgramArrayNew(ntsc_downscale, false);
-        }
-    } else if (result == 2 || result == 4) {
-
-        if (uopt->presetPreference == 0) {
-            if (uopt->matchPresetSource) {
-                writeProgramArrayNew(pal_1280x1024, false);
-            } else {
-                writeProgramArrayNew(pal_240p, false);
-            }
-        } else if (uopt->presetPreference == 1) {
-            writeProgramArrayNew(pal_768x576, false);
-        } else if (uopt->presetPreference == 3) {
-            writeProgramArrayNew(pal_1280x720, false);
-        }
-#if defined(ESP8266)
-        else if (uopt->presetPreference == OutputCustomized) {
-            const uint8_t *preset = loadPresetFromFS(result);
-            writeProgramArrayNew(preset, false);
-            if (applySavedBypassPreset()) {
-                return;
-            }
-        } else if (uopt->presetPreference == 4) {
-            writeProgramArrayNew(pal_1280x1024, false);
-        }
-#endif
-        else if (uopt->presetPreference == 5) {
-            writeProgramArrayNew(pal_1920x1080, false);
-        } else if (uopt->presetPreference == 6) {
-            writeProgramArrayNew(pal_downscale, false);
+        {
+            // Also where an unusable custom slot lands: the raster is computed
+            // for the preference the user actually asked for.
+            const bool pal = (result == 2 || result == 4);
+            const Tv5725::OutputMode *mode = chooseOutputMode(result);
+            loadComputedPreset(mode, presetIdFor(mode, pal));
         }
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
 
@@ -5008,6 +5039,14 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     rto->autoBestHtotalEnabled = false;
     rto->outModeHdBypass = 1;
 
+    // No scaled raster in bypass: video routes around the VDS entirely. A solve
+    // deferred by the previous mode would otherwise be retried by
+    // runSyncWatcher() once sync stabilised and write a scaled raster over this
+    // setup -- neither bypass path reaches doPostPresetLoadSteps(), so nothing
+    // else clears it. See Geometry::enterBypass(), which is also where the
+    // bypass register writes below belong once the engine owns them.
+    geometry.enterBypass();
+
     externalClockGenResetClock();
     updateSpDynamic(0);
     loadHdBypassSection();
@@ -5287,6 +5326,14 @@ void bypassModeSwitch_RGBHV()
     GBS::DAC_RGBS_PWDNZ::write(0);
     GBS::PAD_SYNC_OUT_ENZ::write(1);
 
+    // No scaled raster in bypass: video routes around the VDS entirely. A solve
+    // deferred by the previous mode would otherwise be retried by
+    // runSyncWatcher() once sync stabilised and write a scaled raster over this
+    // setup -- neither bypass path reaches doPostPresetLoadSteps(), so nothing
+    // else clears it. See Geometry::enterBypass(), which is also where the
+    // bypass register writes below belong once the engine owns them.
+    geometry.enterBypass();
+
     loadHdBypassSection();
     externalClockGenResetClock();
     FrameSync::cleanup();
@@ -5407,6 +5454,16 @@ void bypassModeSwitch_RGBHV()
 
     rto->presetID = PresetBypassRGBHV;
     GBS::GBS_PRESET_ID::write(PresetBypassRGBHV);
+
+    // Beside the preset id, because they are one fact: which mode the chip is
+    // in. The >535-line branch that sends a source here clears
+    // rto->isValidForScalingRGBHV in RAM only, and outside the low-power path
+    // nothing else clears the register -- so without this the bit says the
+    // opposite of the truth. Several sites read it back to decide things,
+    // including PresetLoad via writeProgramArrayNew() and the autoBestHtotal
+    // guard in doPostPresetLoadSteps().
+    GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+
     delay(200);
 }
 
@@ -5787,6 +5844,50 @@ void runSyncWatcher() //
     }
     if (!rto->boardHasPower) {
         return;
+    }
+
+    // The raster solve that the preset load was too early for.
+    //
+    // Geometry::solveRaster() computes htotal from the source field rate
+    // directly, so a reading taken while the source is still settling gives a
+    // proportionally wrong raster -- 54.47, 55.12 and 66.79 Hz on a source that
+    // runs 50.08, for rasters of 1761, 1740 and 1436 against the 1918 due. The
+    // solve refuses those, and this is what stops refusing meaning inheriting.
+    //
+    // The WHOLE sequence is redone, not just the raster: the clock seed has to
+    // be re-read by externalClockGenResetClock(), and the windows re-solved
+    // against the new raster. That ordering is why this lives here rather than
+    // inside Geometry -- the clock functions are the sketch's.
+    if (geometry.rasterPending() && getStatus16SpHsStable()) {
+        if (geometry.solveRaster()) {
+            externalClockGenResetClock();
+            geometry.solveFromScratch();
+        }
+    }
+
+    // And the sampling solve the preset load was too early for, with a worse
+    // failure than the raster's.
+    //
+    // Geometry::solveSampling() needs a line rate, and the line rate needs a
+    // settled line count AND a settled field rate. A cold boot has neither
+    // 3.6 s in -- `sampling: 271 lines x 49.22 Hz -> line rate 0` on a source
+    // that is 311 lines at 50.08 -- so the solve adopts whatever divider the
+    // chip holds, which is bypassModeSwitch_RGBHV()'s literal 1856. Without
+    // this retry every boot runs the ADC 27% under-sampling the line, and only
+    // a re-detect ever solves again.
+    //
+    // latchPLLAD() straight after, because PLLAD_LAT is what loads the divider
+    // into the ADC PLL -- a write without it leaves the PLL on the old value
+    // with every register reading back correct.
+    //
+    // Then the WHOLE sequence, as above: the divider is the unit the capture
+    // window is measured in (Tv5725::Sampling owns PLLAD_MD, IF_HSYNC_RST and
+    // SP_RT_HS_SP off one value), so moving it invalidates every window.
+    if (geometry.samplingPending() && getStatus16SpHsStable()) {
+        if (geometry.solveSampling(measuredLineRateHz(), rto->osr)) {
+            latchPLLAD();
+            geometry.solveFromScratch();
+        }
     }
 
     static uint8_t newVideoModeCounter = 0;
@@ -7501,6 +7602,11 @@ void setup()
             uopt->presetPreference = (PresetPreference)(f.read() - '0'); 
             if (uopt->presetPreference > 10)
                 uopt->presetPreference = Output1080P;
+            // 6 was OutputDownscale. No interface could select it, so nothing
+            // should have it saved -- but a file that does would name a
+            // resolution that does not exist and get no raster at all.
+            if (uopt->presetPreference == 6)
+                uopt->presetPreference = Output1080P;
 
             uopt->enableFrameTimeLock = (uint8_t)(f.read() - '0');
             if (uopt->enableFrameTimeLock > 1)
@@ -8331,11 +8437,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     delay(200);
                     break;
                 case 'Y':
-                    writeProgramArrayNew(ntsc_1280x720, false);
+                    loadComputedPreset(&Tv5725::Mode720p, 0x03);
                     doPostPresetLoadSteps();
                     break;
                 case 'y':
-                    writeProgramArrayNew(pal_1280x720, false);
+                    loadComputedPreset(&Tv5725::Mode720p, 0x13);
                     doPostPresetLoadSteps();
                     break;
                 case 'P':; // SerialMprint(F("auto deinterlace: "));
@@ -8379,11 +8485,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     saveUserPrefs();
                     break;
                 case 'e':
-                    writeProgramArrayNew(ntsc_240p, false);
+                    loadComputedPreset(&Tv5725::Mode960p, 0x01);
                     doPostPresetLoadSteps();
                     break;
                 case 'r':
-                    writeProgramArrayNew(pal_240p, false);
+                    loadComputedPreset(&Tv5725::Mode960p, 0x11);
                     doPostPresetLoadSteps();
                     break;
                 case '.': {
@@ -8606,11 +8712,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     uopt->enableFrameTimeLock = !uopt->enableFrameTimeLock;
                     break;
                 case 'E':
-                    writeProgramArrayNew(ntsc_1280x1024, false);
+                    loadComputedPreset(&Tv5725::Mode1024p, 0x02);
                     doPostPresetLoadSteps();
                     break;
                 case 'R':
-                    writeProgramArrayNew(pal_1280x1024, false);
+                    loadComputedPreset(&Tv5725::Mode1024p, 0x12);
                     doPostPresetLoadSteps();
                     break;
                 case '0':
@@ -8620,7 +8726,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     moveHS(4, false);
                     break;
                 case '2':
-                    writeProgramArrayNew(pal_768x576, false);
+                    loadComputedPreset(&Tv5725::Mode576p, 0x14);
                     doPostPresetLoadSteps();
                     break;
                 case '3':
@@ -8649,7 +8755,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     break;
                 case '9':
-                    writeProgramArrayNew(ntsc_720x480, false);
+                    loadComputedPreset(&Tv5725::Mode480p, 0x04);
                     doPostPresetLoadSteps();
                     break;
                 case 'o': {
@@ -8884,40 +8990,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             } else {
                                 GBS::VDS_HSYNC_RST::write(value);
                             }
-                        } else if (what.equals("vt")) {
-                            set_vtotal(value);
-                        } else if (what.equals("hsst")) {
-                            setHSyncStartPosition(value);
-                        } else if (what.equals("hssp")) {
-                            setHSyncStopPosition(value);
-                        } else if (what.equals("hbst")) {
-                            setMemoryHblankStartPosition(value);
-                        } else if (what.equals("hbsp")) {
-                            setMemoryHblankStopPosition(value);
-                        } else if (what.equals("hbstd")) {
-                            setDisplayHblankStartPosition(value);
-                        } else if (what.equals("hbspd")) {
-                            setDisplayHblankStopPosition(value);
-                        } else if (what.equals("vsst")) {
-                            setVSyncStartPosition(value);
-                        } else if (what.equals("vssp")) {
-                            setVSyncStopPosition(value);
-                        } else if (what.equals("vbst")) {
-                            setMemoryVblankStartPosition(value);
-                        } else if (what.equals("vbsp")) {
-                            setMemoryVblankStopPosition(value);
-                        } else if (what.equals("vbstd")) {
-                            setDisplayVblankStartPosition(value);
-                        } else if (what.equals("vbspd")) {
-                            setDisplayVblankStopPosition(value);
                         } else if (what.equals("sog")) {
                             setAndUpdateSogLevel(value);
                         } else if (what.equals("ifini")) {
                             GBS::IF_INI_ST::write(value);
-                        } else if (what.equals("ifvst")) {
-                            GBS::IF_VB_ST::write(value);
-                        } else if (what.equals("ifvsp")) {
-                            GBS::IF_VB_SP::write(value);
                         } else if (what.equals("vsstc")) {
                             setCsVsStart(value);
                         } else if (what.equals("vsspc")) {
@@ -8940,11 +9016,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprintln((if_hblank_scale_stop - 1), HEX);
                 } break;
                 case '(': {
-                    writeProgramArrayNew(ntsc_1920x1080, false);
+                    loadComputedPreset(&Tv5725::Mode1080p, 0x05);
                     doPostPresetLoadSteps();
                 } break;
                 case ')': {
-                    writeProgramArrayNew(pal_1920x1080, false);
+                    loadComputedPreset(&Tv5725::Mode1080p, 0x15);
                     doPostPresetLoadSteps();
                 } break;
                 case 'V': {
@@ -9175,7 +9251,6 @@ void handleType2Command(char argument)
             if (argument == 's')
                 uopt->presetPreference = Output1080P; // 1920x1080
             // if (argument == 'L')
-            //   uopt->presetPreference = OutputDownscale; // downscale
 
             rto->useHdmiSyncFix = 1; // 
             if (rto->videoStandardInput == 14) {
@@ -10452,9 +10527,13 @@ static bool capturePresetRegisters(uint8_t *dump)
 }
 
 // The preset to fall back on when a custom one cannot be used.
+//
+// NULL, because there are no built-in presets any more. The caller treats that
+// as "compute one".
 static const uint8_t *builtinPresetFor(byte forVideoMode)
 {
-    return (forVideoMode == 2 || forVideoMode == 4) ? pal_240p : ntsc_240p;
+    (void)forVideoMode;
+    return 0;
 }
 
 const uint8_t *loadPresetFromFS(byte forVideoMode) //
@@ -17036,7 +17115,7 @@ void OSD_IR()
 
                 /////////new
                 // loadDefaultUserOptions();
-                writeProgramArrayNew(ntsc_720x480, false); 
+                loadComputedPreset(&Tv5725::Mode480p, 0x04); 
                 doPostPresetLoadSteps();
                 GBS::VDS_DIS_HB_ST::write(0x00);
                 GBS::VDS_DIS_HB_SP::write(0xffff);

@@ -8,7 +8,9 @@ enum PresetPreference : uint8_t {
     Output720P = 3,
     Output1024P = 4,
     Output1080P = 5,
-    OutputDownscale = 6,
+    // 6 was OutputDownscale, a 240p/288p output for an SD display. Nothing
+    // selected it, and this board's video leaves through an HDMI encoder that
+    // would re-encode it.
     OutputBypass = 10,
 };
 
@@ -57,11 +59,12 @@ enum TVMODE_PresetPreference : uint8_t {
 struct userOptions
 {
     // 0 - normal, 1 - x480/x576, 2 - customized, 3 - 1280x720, 4 - 1280x1024, 5 - 1920x1080,
-    // 6 - downscale, 10 - bypass
+    // 10 - bypass
     PresetPreference presetPreference;
-    INPUT_PresetPreference   INPUT_presetPreference;
-    SETTING_PresetPreference  SETTING_presetPreference;
-    TVMODE_PresetPreference  TVMODE_presetPreference;
+    // INPUT_/SETTING_/TVMODE_presetPreference were here: three members the OLED
+    // menu assigned and NOTHING ever read, in RAM only -- not saved, not
+    // broadcast, not branched on. The enums stay; the OLED uses them as locals,
+    // which is the whole of what they were doing.
 
     Ascii8 presetSlot;
     uint8_t enableFrameTimeLock;   //启用帧时间锁定
@@ -84,9 +87,26 @@ struct userOptions
 };
 
 
+// Declared in src/tv5725/OutputRaster.h, forward-declared here so runTimeOptions
+// can hold one without this header pulling the raster arithmetic in.
+namespace Tv5725 { class OutputMode; }
+
 // runTimeOptions holds system variables
 struct runTimeOptions
 {
+    // The output resolution THIS preset load is for, chosen in applyPresets()
+    // where the detection result is still in scope and read back in
+    // doPostPresetLoadSteps().
+    //
+    // It cannot be re-derived at the far end: rto->videoStandardInput is
+    // rewritten by PresetLoad::videoStandardInputAfterLoad(), which returns 14
+    // whenever scaling RGBHV is on -- so by the time the raster is solved the
+    // value the choice was made from is gone.
+    //
+    // NULL means "no mode named": a custom preset, whose saved bytes are the
+    // mode, or bypass. The raster is then read back rather than computed, which
+    // is the last place anything inherits.
+    const Tv5725::OutputMode *outputMode;
     uint32_t freqExtClockGen;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
     // PLL648_CONTROL_01 is parked at the 0x75 sentinel while the external clock

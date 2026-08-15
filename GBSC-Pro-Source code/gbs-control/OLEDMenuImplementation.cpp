@@ -11,7 +11,6 @@
 #include "OSDManager.h"
 #include <stdio.h>
 
-#include "ntsc_1920x1080.h"
 
 // #define ACE
 
@@ -132,9 +131,6 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
         break;
     case MT_480s576:
         preset = PresetPreference::Output480P;
-        break;
-    case MT_DOWNSCALE:
-        preset = PresetPreference::OutputDownscale;
         break;
     case MT_BYPASS:
         preset = PresetPreference::OutputBypass;//  OutputBypass   OutputCustomized
@@ -796,7 +792,7 @@ void InputSV_mode(uint8_t mode)
     rto->sourceDisconnected = true;
     // doPostPresetLoadSteps()
     // loadDefaultUserOptions();
-    // writeProgramArrayNew(ntsc_1920x1080, true);
+    // A commented-out table load was here; the tables went 2026-08-14.
     // doPostPresetLoadSteps();
     rto->isInLowPowerMode = false;
     saveUserPrefs();
@@ -936,7 +932,6 @@ switch (item->tag) {
         break;
 }
 
-    uopt->TVMODE_presetPreference = preset;
     // 更新后的条件处理逻辑
 // if (preset == TVMODE_PresetPreference::MT_MODE_AUTO) {  
     if (Info == InfoAV) ChangeAvModeOption(0);
@@ -1003,7 +998,6 @@ bool InputSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
         break;
     }
 
-    uopt->INPUT_presetPreference = preset;
 
     if (preset == INPUT_PresetPreference::MT_RGBs)
     {
@@ -1098,7 +1092,6 @@ bool SettingHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
         break;
     }
 
-    uopt->SETTING_presetPreference = preset;
 
     if (preset == SETTING_PresetPreference::MT_7391_1X)
     {
@@ -1299,8 +1292,8 @@ void initOLEDMenu()
         oledMenu.registerItem(resMenu, tags[i], resolutions[i], resolutionMenuHandler);
     }
 
-    // downscale and passthrough
-    // oledMenu.registerItem(resMenu, MT_DOWNSCALE, IMAGE_ITEM(OM_DOWNSCALE), resolutionMenuHandler);
+    // Passthrough, never registered. MT_DOWNSCALE was beside it and is gone
+    // with the mode.
     // oledMenu.registerItem(resMenu, MT_BYPASS, IMAGE_ITEM(OM_PASSTHROUGH), resolutionMenuHandler);
 
     OLEDMenuItem *SettingMenu = oledMenu.registerItem(root, MT_NULL, IMAGE_ITEM(OM_SETTING)); // setting
