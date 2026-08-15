@@ -11,8 +11,9 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; `tv5725.h` has the register map |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `preset-load-clobber.md` is what to read before rewriting preset loading; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
+| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
+| [gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos) | **a separate repo** — the 67 bench photographs, 146 MB. Mirrors this repo's paths, so its tree drops into a checkout and lands ignored. *What each one shows stays here*, in `docs/photos/*/README.md` and `snapshots/LOG.md` |
 
 ## Commands
 
@@ -139,6 +140,18 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 
 ## Things that will cost you an hour if you don't know them
 
+- **Power-cycle the SOURCE too, before spending a session on the scaler.** The
+  intermittent shear glitch — a few scanlines high, content compressed and
+  diagonally sheared, ~3% of frames — cost several sessions on this board and
+  was closed on 2026-08-15 by powering down the RiscPC as well as the unit. It
+  has not returned. Every scaler-side hypothesis was refuted in turn (sync
+  processor miscount, boot state, accumulated state, `MEM_FF_STATUS`, the four
+  separate-sync registers), and the one thing never varied was the source.
+  The source had been ruled out the day before and should not have been. **Do
+  not re-open this without new evidence**, and if a comparable artefact appears,
+  cold-boot both ends first — it is one minute against an evening.
+  Paired artefacts are in the archive: `CLEAN-*-2026-08-15` and
+  `glitching-2026-08-14`.
 - **Check the preferences before diagnosing anything.** A short read of
   `/preferencesv2.txt` silently yields a full set of defaults, and one evening
   produced three separate investigations with this single cause: the custom
@@ -224,6 +237,23 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **`make -p | grep VAR`** to check what Make really assigned. A bare `#` starts a
   comment mid-assignment, which silently dropped a library commit pin and cost a
   build failure that looked like a library incompatibility.
+- **Nix copies the working tree into the store to evaluate the flake from a
+  dirty git checkout, and it copies TRACKED FILES ONLY.** One copy per distinct
+  tree state, so an editing session is several GB — this is what took `/nix/store`
+  to 233 GB and the root filesystem to 100% on 2026-08-13. Untracking a large
+  path is what stops it; `.gitignore` is hygiene. The opposite was written down
+  twice ("untracked-and-unignored is still copied") and is **refuted**: a 5 MB
+  untracked, unignored file at the repo root, with a tracked file touched to
+  force a fresh evaluation so it could not be a cache hit, produced a new store
+  path that did not contain it. Untracking the photographs took the copy from
+  211 MB to 65 MB. Weekly GC and `auto-optimise-store` are configured in
+  `~/Projects/nix-config`; **stop invoking `nix develop -c` once per command.**
+- **LFS is not available in this repo, and retrying will not change that.** It
+  is a public fork of `RetroScaler/gbsc-pro`; LFS objects on a fork bill to the
+  parent, so GitHub rejects the push outright — *"can not upload new objects to
+  public fork"*. And `git lfs migrate` rewrites from the **root commit** whatever
+  you scope it to, which moves upstream's SHAs and the six vendor tags. Large
+  binaries go in a separate repo; see the photo repo in the table above.
 - **Flashing preserves the filesystem** (`wipe=none` in the FQBN), so stored timings and
   preferences survive.
 - **The `framesync.h` hang is fixed — do not diagnose with it.**
@@ -261,6 +291,23 @@ bits, so the header is right and the table is simply an error.
   disagreements from 12 to 2 that way. **The diagram is not automatically the
   authority either** — `SP_H_CST_SP` has the wrong slice in its diagram and the
   right one in its table.
+- **One name per field — there are no intended aliases.** Settled 2026-08-13:
+  prefer the datasheet's name unless the firmware's has a tangible benefit, and
+  the benefit that counts is *granularity* — `SDRAM_RESET_SIGNAL` names one bit
+  the datasheet only has inside `MEM_INI_REG[7:0]`, so it stays. A better
+  wording counts too (`INT_CONTROL_RST_SOGBAD` over the datasheet's bare
+  `INT_RST_0`), and a name commented "fake name" does not. **An alias is not
+  untidiness, it is a second owner**: the bring-up block wrote `INT_RST_0` while
+  the sketch wrote `INT_CONTROL_RST_SOGBAD`, four bits had two owners, and every
+  check passed because checks compare names. Guarded by
+  `test_no_bits_have_two_owners_under_two_names`, which asks in bits.
+- **The 25 whole-byte convenience names are a live campaign, not settled.**
+  `PLL648_CONTROL_01::write(0x75)` sets five documented fields under a name the
+  datasheet lacks. 109 call sites; 77 are literal writes and are the target, 20
+  are save/restore and are legitimate, and **12 of the 25 bytes have bits no
+  datasheet name covers — so decomposing those is not equivalent**, because the
+  byte write zeroes them and field writes do not.
+  `docs/whole-byte-convenience-names.md`.
 - **Where `tv5725.h` and the datasheet disagree, the header wins.** Its values are
   that audit's output plus bench proof. Eleven such fields remain, listed by name
   in `tools/tv5725-header/test_fielddocs.py::HEADER_WINS`, and a *new*
@@ -279,6 +326,32 @@ bits, so the header is right and the table is simply an error.
   `ALUE`, `EG0`, `FFSET`, `R_B` — from names the PDF wraps across two lines, and
   they reached `tv5725.h` looking like real registers. Every genuine field name
   contains an underscore; the six in the document that do not are all fragments.
+- **And it silently DROPS fields, which is the worse half.** The wrap can put the
+  whole name on the line above and leave the bit row holding only `[7:0]`.
+  `BITROW` required the Name cell to start with `[A-Z_]`, so those rows parsed as
+  description text and the field never arrived — no fragment, no wrong width,
+  just absent. Seven were lost that way, all the wide multi-byte address fields
+  (`WFF_SAFE_GUARD_A`/`_B`, `CAP_SAFE_GAURD_A`, `RFF_WFF_STA_ADDR_A`/`_B`,
+  `VDS_NS_SQUARE_RAD`). Fixed 2026-08-13; the six invented fragments above
+  existed *because* of it and disappeared with the fix.
+- **"The header is complete with respect to the datasheet" was false, and was
+  unfalsifiable.** Every test compared the header against the extraction, and
+  both had the same hole. Now
+  `test_the_shipped_header_declares_every_field_the_datasheet_does`, with
+  `NOT_IN_HEADER` giving a reason per deliberate absence.
+- **The datasheet has typos in field NAMES, not just in bit slices.**
+  `CAP_SAFE_GAURD_A` ("GAURD") and `OSD_YCBCR_RGB_FORMATE` ("FORMATE"). The
+  header carries the corrected spelling at the same address — so searching
+  RD-5725-1.1 for the header's name will fail on exactly those two.
+- **A "gap" in the register map may be a documented register the tooling lost.**
+  s4_47..49 was carried for a session as an unnamed hole with a proposed bench
+  experiment. It is `WFF_SAFE_GUARD_B`, documented in full, with its own table.
+  Read `tools/tv5725-header/regdef.txt` before designing an experiment.
+- **A bit the preset writes is not automatically a field.** Of the four
+  addresses whose unnamed bits some preset table sets, three — `s3_14[3]`,
+  `s3_71[3]`, `s4_5b[6:0]` — are marked **RESERVED** in the datasheet's own
+  tables. The preset writes 1s into reserved bits. Only `s5_5d` is genuinely
+  absent from RD-5725-1.1, appearing zero times in it.
 
 ## What a preset actually writes
 
@@ -301,7 +374,64 @@ registers one `writeProgramArrayNew()` call writes:
 
 - **`STATUS_SYNC_PROC_HTOTAL` echoes `PLLAD_MD`.** The sync processor counts in
   ADC clocks and the ADC PLL is locked to HSync with `PLLAD_MD` as divider, so it
-  reports your own setting back. Never key anything on it.
+  reports your own setting back. Never key anything on it — **except as the one
+  witness that the divider was LATCHED**, which is the next entry.
+- **Reading `PLLAD_MD` back does not tell you what the ADC is doing.** It is
+  loaded into the PLL by a *rising edge* on `PLLAD_LAT`, so between the write and
+  that edge the register reports the new value while the chip still clocks at the
+  old one. Anything that reads it back to derive something else is asking a
+  question the register cannot answer. That is not theoretical: on 2026-08-15 a
+  divider written **after** `latchPLLAD()` left `PLLAD_MD` reading 2210, the PLL
+  running 2553 and `IF_HSYNC_RST` sized for 2210 — solid green screen, every
+  register self-consistent, nothing to diagnose from. **Whatever writes
+  `PLLAD_MD` must run before the latch, not after it.**
+
+  `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP` (= 93% of `MD`, the
+  sync processor's retime window) are **ONE quantity in THREE registers**, and
+  `Tv5725::Sampling` owns all three off one held value. It is *state*, handed to
+  `Engine::Capture` rather than read back — the same rule
+  `Capture::ProgressiveStart` already carried. Verified across all twelve shipped
+  tables: `IF_HSYNC_RST == PLLAD_MD/2` without exception, while `SP_RT_HS_SP` is
+  wrong in five of them (`ntsc_1280x720` ships **68** against 2180) and is only
+  saved by the runtime write.
+
+  **`STATUS_SYNC_PROC_HTOTAL` is the only thing on the board that can see a
+  missing latch**, because it counts real ADC clocks per line and so reports the
+  *latched* divider. Locked, it equals `PLLAD_MD` — 2553 against 2553, with an
+  occasional ±1. **Unlocked it is noise that looks like a small latch error**: it
+  held a steady 2558 against 2553 across 22 samples while `SP_VTOTAL` sat at
+  97/98. Steady is not valid; ask whether `SP_VTOTAL` is counting first. And it
+  reads wrong for a third reason too — an *unconfigured sync processor*. With
+  `SP_PRE_COAST`/`SP_POST_COAST`/`SP_DLT_REG` zeroed it read 2400 and did not
+  move when 2553 was written and latched by hand.
+- **`STATUS_SYNC_PROC_VSACT` is not a lock indicator, and it is not dead
+  either — it reports the sync path you are already on.** Both readings are
+  measured, on the same source, a day apart:
+
+  | | `VSACT` | `SP_VTOTAL` | picture |
+  |---|---|---|---|
+  | csync path (`SP_SOG_MODE` 1, coast 7/3) 08-14 | **0 in 2375/2375** | 308, 7.34% off-mode | glitching |
+  | separate-sync path (`SP_SOG_MODE` 0, coast 0/0) 08-15 | **1 in 150/150** | 311, 0.00% off-mode | clean |
+
+  So `V=no` is the normal locked state *in the csync configuration* — the
+  earlier "dead on this board" reading was that configuration seen alone, and
+  clearing `SP_EXT_SYNC_SEL` on its own does not revive the bit. **Never judge
+  lock on it**; ask whether `SP_VTOTAL` is counting. That mistake cost an hour
+  recovering a unit that was fine, and `dump_registers.py`'s lock indicator
+  required it, so **every successful restore printed as failed** until `96efeec`.
+
+  **And the firmware steers by it, which makes the decision self-latching** —
+  `gbs-control.ino:4431` and `:4469` set `rto->syncTypeCsync = (VSACT == 0)`.
+  It reads the bit to choose the sync type, but the bit only reports correctly
+  once the sync type is already right, so a unit that lands on csync stays
+  there. Note also that `sourceHasOwnVsync()` — the probe written to answer
+  this properly — is called at 2340 and 6257 but *not* at either decision site.
+  Before "fixing" it: forcing the separate-sync registers by hand on 08-14 did
+  **not** change the picture, which is consistent — telling the sync processor
+  to use separate sync does nothing if the routing has `HS_IN = SOGIN` and
+  there is no separate HSync on the pin to use. That test never reached the
+  hypothesis; it does not refute it. `docs/sync-type-selection.md` has the
+  measurements, all four decision sites, and what a fix costs.
 - **`HPERIOD_IF` going bad is three different faults**, and the old note here
   merged them. A stable `0` means the IF is out of the path (RGBHV bypass —
   expected, not a fault). Noisy multi-valued garbage is the second. The third is
@@ -329,6 +459,20 @@ registers one `writeProgramArrayNew()` call writes:
   writes that bit to 0 anywhere. Fix: `curl '…/setreg?s=0&r=0x45&v=0x11'`.
   Same mechanism is the leading explanation for the `HPERIOD_IF` failures.
   `docs/preset-load-clobber.md`.
+- **"Something writes it" is not "something owns it", and there are TWO levels
+  of that.** The first is settled: a field written only by `setResetParameters()`
+  or one of the two bypass switches has no owner on the *scaling* path, because
+  those functions leave a state a preset had to undo —
+  `bringup_map.py`'s `NON_OWNING`. The second cost step 4 a second time and no
+  tool can see it: attribution is per FUNCTION, so a field
+  `doPostPresetLoadSteps()` writes only inside `if (rto->outModeHdBypass)` or
+  `if (rto->inputIsYpBpR)` reads as owned by a function that unquestionably
+  runs. **22 fields were in that state on 2026-08-15 with `--gap` reporting
+  zero.** A brace-depth heuristic was tried and reverted — it flags 146 where 15
+  matter, because most of that function is inside `if (!rto->isCustomPreset)`.
+  **The check that works is a bench diff of a step-4 dump against a working
+  `dev` one, minus the divider-derived differences.**
+  `docs/investigations/preset-abandonment-audit.md`.
 - **`/uc?h` does not clear Mode Detect.** It sets `presetPreference =
   Output480P` — a persistent user preference — and force-calls `applyPresets()`,
   falling back to the remembered standard when `getVideoMode()` returns 0. It
@@ -385,12 +529,25 @@ registers one `writeProgramArrayNew()` call writes:
   `applyPresets()` **before** `externalClockGenResetClock()`, because that reads
   back the seed it writes; the order is raster → clock → windows → rate steer
   last, and running the steer early gave a 31 Hz frame and a black screen.
-  And **a wider raster costs zoom range**: `AxisH` magnifies at most 2.048x, so
-  the capture cannot go below `ceil(raster x 500 / 1024)`. At the 2298 the
-  129.6 MHz ceiling gives, that floor is 1123 and the *default* framing sits on
-  it — horizontal zoom-in dead, measured. Hence
-  `OutputRaster::EngineCeilingHz` is 108 MHz while `WorkingCeilingHz` stays at
-  the 129.6 the part really does. Do not merge them.
+  And **a wider raster costs zoom range, because the zoom floor is
+  `raster / maxMagnification` while the default capture is a property of the
+  INPUT line alone** — `1277 x 0.76 x 1.04 = 1009` here — so the two do not
+  track and widening the output silently eats the travel. That is the mechanism;
+  the numbers below are what it cost, twice.
+
+  `AxisH` used to magnify at most 2.048x (`scaleMin` 500, swept 2026-08-09).
+  At the 1436 raster that left 307 units of travel; when `Engine::solveRaster()`
+  made the raster 1916 on 2026-08-13 it left **73**, which is what Michael hit
+  on 2026-08-15 as *"the horizontal scale clamps before I can get to full
+  screen"*. **`scaleMin` is now DERIVED — `Scale::Unity / maxMagnification`,
+  both axes at 4.0x** — so the floor is `raster / 4` (479 at 1916, 530 units of
+  travel) and it no longer collapses each time the output widens.
+
+  **RD-5725-1.1 states no minimum for `VDS_HSCALE`**: `regdef.txt:7684` gives
+  only `HSCALE = 1024 x in / out` and the field is 10 bits, so there is no
+  hardware bound to calculate and any floor is a picture-quality choice. Where
+  interpolation starts to look bad depends on the resolution ratio, so it is the
+  user's to find by zooming: only the picture can say when it is clean.
 - **The output hsync position affects left-hand corruption, and nothing models
   it.** `VDS_HB_SP` below 8 corrupts, measured with `VDS_HS_ST` at 10; left-hand
   corruption that survived everything else then cleared by moving the pulse to
@@ -491,10 +648,18 @@ registers one `writeProgramArrayNew()` call writes:
   ceiling — `OutputRaster::WorkingCeilingHz`. `src/tv5725/DisplayClock.h`.
 
   **The engine nevertheless asks for 108, and that is not a contradiction.**
-  `OutputRaster::EngineCeilingHz` is a *usability* limit, not an electrical one:
-  a wider raster needs a wider capture to fill it, and at 129.6 MHz the floor
-  lands exactly on the default framing so horizontal zoom-in has no travel.
+  `OutputRaster::EngineCeilingHz` is a *usability* limit, not an electrical one.
   Three constants, three different questions — do not collapse them.
+
+  **But its original justification is GONE, and nobody has re-tested the
+  alternative.** It read: at 129.6 MHz the raster is 2298, the zoom floor lands
+  exactly on the default framing, and horizontal zoom-in has no travel. That was
+  true at `scaleMin` 500. With the floor now `raster / 4` it is `575` against a
+  1009 default — **434 units of travel, not zero** — so the usability argument
+  for 108 over 129.6 no longer holds on its own terms. 129.6 MHz would buy a
+  third more horizontal resolution and is already measured as working and sharp.
+  Raising `EngineCeilingHz` is now a live bench experiment
+  rather than a settled no; it has not been tried, so do not assume it works.
 
   The live trap is the inverse: `ofw_RGBS` and `ofw_ypbpr` are the only presets
   that **clear** bit 3, so loading either brings HBOUT/VBOUT alive carrying
@@ -509,12 +674,28 @@ python3 tools/gbsc-pro-hwtest/dump_registers.py --host <ip> --out snapshots/befo
 python3 tools/gbsc-pro-hwtest/snapdiff.py --diff snapshots/before.json snapshots/after.json
 ```
 
-`snapshots/` holds known-good states. To recover a working picture:
+**The archive is `tools/gbsc-pro-hwtest/snapshots/`** — 100 tracked states plus
+`LOG.md` saying what each one was. The `snapshots/` directory at the repo root
+holds a handful of recent scratch dumps and is *not* it; reading this section as
+pointing there found three files, concluded the archive did not exist, and cost
+a session on 2026-08-14. To recover a working picture:
 
 ```sh
 python3 tools/gbsc-pro-hwtest/dump_registers.py --host <ip> \
-  --restore snapshots/dis-hb-st-tweak-2026-08-03.dump.json --segments 0,1,2,3,4,5 --repeat 2
+  --restore tools/gbsc-pro-hwtest/snapshots/dis-hb-st-tweak-2026-08-03.dump.json \
+  --segments 0,1,2,3,4,5 --repeat 2
 ```
+
+**A restore latches** since `96efeec` — `PLLAD_LAT` is what loads `PLLAD_MD`,
+`ND`, `KS`, `CKOS` and `ICP`, and a snapshot cannot carry a rising edge. Before
+that fix a restore across a change of divider left the ADC PLL on the old one
+with **every register reading back correct** and the screen black. If you write
+registers back by any other route, latch them yourself.
+
+**Not every "known-good" is a full dump.** Some are 11-field summaries
+(`known-good-riscpc-320x256-50-2026-08-11.json`), which `--restore` cannot use
+and `snapdiff.py` crashes on rather than reporting the mismatch. Check the size
+before planning an experiment around one.
 
 **Restore every segment, and note that this line used to say `1,3,4,5`.** Low
 power calls `setResetParameters()`, which zeroes segment 0 — DAC power, the pad

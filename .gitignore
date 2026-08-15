@@ -12,6 +12,30 @@ build/output/
 # compiled host unit-test binaries
 test/output/
 
+# Arduino IDE build output sitting INSIDE the sketch folder. Inherited from the
+# vendor drops (v1.2.1, v1.2.3), referenced by nothing, and superseded by
+# build/output/ which the Makefile writes. It was tracked, and the patterns
+# above did not cover it: a gitignore pattern containing a slash is anchored to
+# the repo root, so `build/output/` never matched this path.
+#
+# **It cost 17.8 MB on every `nix develop`.** Nix copies the working tree into
+# the store to evaluate a flake from a DIRTY git tree, so each distinct tree
+# state during a session is a fresh copy. Measured 2026-08-13: ~230 MB per two
+# evaluations, which is how the root filesystem reached 100% with 233 GB of
+# /nix/store.
+#
+# **It copies TRACKED files only** -- an earlier note here claimed untracking
+# alone would not help and that the ignore entry is what stops the copy. That is
+# refuted. Measured the same day with a control: a 5 MB untracked, *unignored*
+# file at the repo root, with a tracked file touched to force a fresh evaluation
+# so the result could not be a cache hit. A new store path was created and the
+# file was absent from it.
+#
+# So untracking is what stops the copy and these entries are hygiene -- they
+# keep `git status` readable and stop an accidental `git add -A`. Worth having
+# for that alone, but do not credit them with the disk saving.
+GBSC-Pro-Source code/gbs-control/build/
+
 # Python bytecode (test_loopback.py imports the flasher module)
 __pycache__/
 
@@ -22,3 +46,31 @@ __pycache__/
 # web UI toolchain: `npm ci` in GBSC-Pro-Source code/gbs-control/public installs
 # the tsc the repo pins (4.1.3), which the build needs and nixpkgs cannot supply
 node_modules/
+
+# Bench photographs and video -- 67 files, 146 MB -- now in their own repo:
+#
+#     https://github.com/TheCodeSharman/gbsc-pro-bench-photos
+#
+# Not a preference. This is a PUBLIC FORK of RetroScaler/gbsc-pro, LFS objects
+# on a fork bill to the parent's storage, and GitHub refuses them outright:
+# "can not upload new objects to public fork". Converting this repo's history to
+# LFS is therefore unavailable however it is scoped -- and `git lfs migrate`
+# rewrites from the root commit regardless, which would move upstream's SHAs.
+#
+# Untracking them cut the nix evaluation copy from 211 MB to 65 MB, measured
+# 2026-08-13. That is the largest single saving in the whole exercise, and LFS
+# could never have delivered it: LFS smudges the images back into the working
+# tree and they stay tracked, so the copy would still have been 211 MB.
+#
+# The photo repo mirrors these paths exactly, so its tree drops straight back
+# into a checkout and lands right here, ignored. WHAT EACH PHOTOGRAPH SHOWS
+# stays in this repo -- the tables in docs/photos/*/README.md and
+# snapshots/LOG.md are the part that is read and the part that diffs.
+docs/photos/**/*.jpg
+docs/photos/**/*.jpeg
+docs/photos/**/*.png
+docs/photos/**/*.mov
+tools/gbsc-pro-hwtest/snapshots/**/*.jpg
+tools/gbsc-pro-hwtest/snapshots/**/*.jpeg
+tools/gbsc-pro-hwtest/snapshots/**/*.png
+tools/gbsc-pro-hwtest/snapshots/**/*.mov
