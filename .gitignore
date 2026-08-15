@@ -16,3 +16,7 @@ __pycache__/
 # Editor and agent settings, which are one person's machine rather than the
 # project: .claude/settings.json holds absolute paths under /home/msharman.
 .claude/
+
+# web UI toolchain: `npm ci` in GBSC-Pro-Source code/gbs-control/public installs
+# the tsc the repo pins (4.1.3), which the build needs and nixpkgs cannot supply
+node_modules/

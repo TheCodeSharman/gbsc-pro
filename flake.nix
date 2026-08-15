@@ -37,10 +37,28 @@
               pkgs.esptool       # flash / dump the ESP8266 half
               pkgs.arduino-cli   # firmware build (build/Makefile drives it)
               pkgs.gnumake
+
+              # The web UI build chain: public/src/index.ts -> index.js -> webui.html
+              # -> webui_html.h, driven by `npm run build` in public/. Without these
+              # the chain cannot run at all, which is how the /spiffs/ -> /fs/ rename
+              # nearly shipped a UI still calling the old routes: three of the four
+              # files are checked-in build artefacts, so hand-editing whichever one
+              # you found looked like it worked. See CLAUDE.md, "The web UI is
+              # generated four times over".
+              #
+              # nodejs brings npm, and `npm ci` in public/ installs the tsc the repo
+              # pins -- 4.1.3, per package-lock.json. Deliberately NOT pkgs.typescript:
+              # that is 5.9.3, which rejects this source outright
+              # (index.ts:35, TS2322 on Uint8Array vs ArrayBuffer). A missing tsc is a
+              # better failure than one that type-errors on code that compiles fine
+              # with the pinned version.
+              pkgs.nodejs           # node runs public/scripts/build.js; npm supplies tsc
+              pkgs.xxd              # public/scripts/html2h.sh pipes gzip through it
             ];
             shellHook = ''
-              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest), esptool, arduino-cli + make"
+              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest), esptool, arduino-cli + make, node/tsc (web UI)"
               echo "  firmware: make -C build setup   (once)   then   make -C build"
+              echo "  web UI:   cd 'GBSC-Pro-Source code/gbs-control/public' && npm run build"
               echo "  hardware: pytest --host=gbscontrol.local   (needs a running unit)"
             '';
           };
