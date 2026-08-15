@@ -109,9 +109,20 @@ distinguish these:
 - **Cold boot and warm reset are different tests.** The preferences bug is a
   power-up race on the SPI flash — `SPIFFS.begin()` returning true does not mean
   reads work yet. Reflashing tests nothing; only a true cold start does.
-- **One WebSocket client at a time.** A second connection crashes the ESP. Close
-  the web UI before running anything that opens the console (`mode_watch.py`,
-  `soak_watch.py`, the `console` fixture, OTA).
+- **The console drops every client when heap runs low — it is not a one-client
+  limit.** The old note here said a second connection crashes the ESP. That is
+  wrong on three counts, and Michael had six clients attached at once.
+  `WEBSOCKETS_SERVER_CLIENT_MAX` is **5**
+  (`3rdparty/WebSockets/src/WebSocketsServer.h:31`), nothing crashes, and the
+  trigger is memory: all four `SerialMirror::write()` overloads run
+  `if (ESP.getFreeHeap() > 20000) broadcastTXT(...); else webSocket.disconnect();`
+  and the no-argument `disconnect()` drops **all** clients, not the newest one.
+  So any console write while free heap is under 20 KB disconnects everyone.
+  Globals already take 47.5 KB of 81.9 KB, so the margin is thin, and a
+  `GBS_DEBUG=1` build makes it likelier by printing more. Symptoms look
+  nondeterministic because they track heap, not client count. Still worth closing
+  the web UI before a long capture — but because it costs heap, not because two
+  clients are forbidden.
 - **SPIFFS access blocks the firmware loop.** `/spiffs/dir` calls `delay(1)` in a
   loop. Hammering it can make the sync watcher see instability. Read-only over
   HTTP is not the same as zero-impact.

@@ -16,6 +16,13 @@ CLI          = $(ARDUINO_CLI) --config-file "$(CFG)"
 # endpoints. On for the lab build; pass GBS_DEBUG=0 for a release-shaped one.
 GBS_DEBUG ?= 1
 
+# BOOTLOG_BYTES: RAM for the boot trace served at /bootlog. Default 0 -- OFF.
+# At 2048 it costs ~2160 bytes of globals, which is enough to put free heap
+# under the threshold SerialMirror needs before it will broadcast, so the web
+# console goes silent. Turn it on only for a boot-time investigation:
+#   make -C build flash BOOTLOG_BYTES=2048
+BOOTLOG_BYTES ?= 0
+
 FQBN := esp8266:esp8266:nodemcuv2:xtal=80,eesz=4M2M,ssl=all,exception=legacy,ip=lm2f,vt=flash,dbg=Disabled,lvl=None____,wipe=none
 
 # Not in the Arduino registry, so installed by git URL. The maintained forks
@@ -42,10 +49,10 @@ HOST ?= 192.168.88.108
 build: check-cli
 	$(CLI) compile \
 	  --fqbn '$(FQBN)' \
-	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG)' \
+	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES)' \
 	  --build-path "$(OUT)" \
 	  "$(SKETCH)"
-	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG))"
+	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) BOOTLOG_BYTES=$(BOOTLOG_BYTES))"
 
 ## flash: build, then upload over USB serial (PORT=/dev/ttyUSB0)
 #

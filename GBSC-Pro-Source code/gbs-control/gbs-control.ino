@@ -400,6 +400,99 @@ uint8_t SeleInputSource = 0;
 // them back over the copy that is still on flash.
 bool prefsAreSuspect = false;
 
+// The first seconds of a boot, held in RAM and served over HTTP at /bootlog.
+//
+// A true cold start cannot be watched live: the boot trace prints at ~1.6 s,
+// before WiFi is up, so only the serial cable can see it -- and the serial cable
+// is USB, and USB backfeeds power, so attaching it means the boot is no longer
+// the mains-only one that has been failing. That is precisely the case we need
+// to read, and it was unobservable.
+//
+// Buffering solves it without either. The unit joins WiFi a few seconds after
+// boot, so a mains-only cold start can be powered up with nothing attached and
+// then read at leisure:
+//
+//     curl http://<ip>/bootlog
+//
+// Nothing is written to flash. The alternative was a file in SPIFFS, but the
+// thing being diagnosed is whether that flash answers reads early in boot, and
+// writing to it to record the answer would perturb the measurement. RAM has no
+// such conflict. The cost is that the log does not survive a reboot -- if the
+// ESP resets, the buffer goes with it and what is served is the new boot.
+// The console is a live stream with no history, so everything the firmware says
+// before a browser attaches is simply lost -- and boot is when it says the things
+// worth knowing. Hence a backlog: capture console output from the first line,
+// hold it, and replay it to the first client that connects. Opening the web UI
+// then shows the boot you were not there for, rather than starting mid-sentence.
+//
+// It captures everything printed through SerialM, not just the boot trace, so
+// this is general: any future early-boot diagnostic lands here for free.
+//
+// Two consumers, and both earn their place:
+//   - replayed to the first WebSocket client, so the web console is complete
+//   - GET /bootlog, a stateless read for scripts and for the case where you want
+//     the boot trace without attaching a console at all
+// Off by default. The buffer is 2 KB of globals on a unit with ~20 KB of free
+// heap, and the console stops broadcasting below its threshold -- so carrying it
+// permanently costs the console. Turn it on for a boot-time investigation:
+//
+//     make -C build flash BOOTLOG_BYTES=2048
+#ifndef BOOTLOG_BYTES
+#define BOOTLOG_BYTES 0
+#endif
+
+#if BOOTLOG_BYTES > 0
+static char bootLog[BOOTLOG_BYTES];
+static uint16_t bootLogLen = 0;
+static bool bootLogDelivered = false;
+#else
+static const uint16_t bootLogLen = 0;
+static bool bootLogDelivered = true;   // nothing to hand over
+#endif
+
+// Capture stops once the backlog has been handed over. This is boot history, not
+// a rolling buffer -- past the first client the live stream is the record, and a
+// ring buffer here would cost RAM to duplicate it.
+static void bootLogAppend(const char *data, size_t len)
+{
+#if BOOTLOG_BYTES == 0
+    (void)data;
+    (void)len;
+    return;
+#else
+    if (bootLogDelivered || len == 0) {
+        return;
+    }
+    if (bootLogLen + len >= BOOTLOG_BYTES) {
+        len = BOOTLOG_BYTES - 1 - bootLogLen; // keep the head; the tail is live anyway
+    }
+    if (len == 0) {
+        return;
+    }
+    memcpy(bootLog + bootLogLen, data, len);
+    bootLogLen += len;
+#endif
+}
+
+// For the early trace, which runs before SerialM exists.
+static void bootLogPrintf(const char *fmt, ...)
+{
+    char line[192];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        return;
+    }
+    if (n > (int)sizeof(line) - 1) {
+        n = sizeof(line) - 1; // vsnprintf reports what it wanted, not what it wrote
+    }
+
+    Serial.print(line);
+    bootLogAppend(line, (size_t)n);
+}
+
 // Does a buffer that came back from /preferencesv2.txt look like content?
 //
 // The count is checked by the caller; this catches a read that returned the
@@ -433,6 +526,7 @@ wifi
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include "FS.h"
+
 #include <DNSServer.h>
 #include <WiFiUdp.h>
 #include <ESP8266mDNS.h> 
@@ -764,6 +858,7 @@ class SerialMirror : public Stream
 {
     size_t write(const uint8_t *data, size_t size)
     {
+        bootLogAppend((const char *)data, size);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(data, size);
         } else {
@@ -775,6 +870,7 @@ class SerialMirror : public Stream
 
     size_t write(const char *data, size_t size)
     {
+        bootLogAppend(data, size);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(data, size);
         } else {
@@ -786,6 +882,7 @@ class SerialMirror : public Stream
 
     size_t write(uint8_t data)
     {
+        bootLogAppend((const char *)&data, 1);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(&data, 1);
         } else {
@@ -797,6 +894,7 @@ class SerialMirror : public Stream
 
     size_t write(char data)
     {
+        bootLogAppend(&data, 1);
         if (ESP.getFreeHeap() > 20000) {
             webSocket.broadcastTXT(&data, 1);
         } else {
@@ -1748,8 +1846,16 @@ void goLowPowerWithInputDetection_re()
     delay(100);
     // rto->isInLowPowerMode = true;
 }
-void goLowPowerWithInputDetection() 
+void goLowPowerWithInputDetection()
 {
+    // The dark-boot state, recorded at the moment it is entered. This powers the
+    // DAC down and setResetParameters() zeroes the chip, which is the register
+    // signature of a boot that comes up with no signal. If this line is in the
+    // boot log, the unit is not failing to drive the display -- it has decided
+    // nothing is plugged in.
+    bootLogPrintf("LOWPOWER: entered at t=%lums (no sync found)\n",
+        (unsigned long)millis());
+
     GBS::OUT_SYNC_CNTRL::write(0);
     GBS::DAC_RGBS_PWDNZ::write(0);
 
@@ -7573,14 +7679,21 @@ void setup()
     GBS::PLLAD_VCORST::write(1);
     GBS::PLLAD_PDZ::write(0);
 
+    // The reset reason is the one fact that says whether this was a real
+    // power-up or a reset with the rails still charged. Without it a bench cold
+    // boot and an RTS reset are indistinguishable in the log, and they are not
+    // the same test -- the failure being chased only shows up on the former.
+    bootLogPrintf("BOOT: reason='%s' t=%lums\n",
+        ESP.getResetReason().c_str(), (unsigned long)millis());
+
     const uint32_t spiffsBeginStart = millis();
     const bool spiffsUp = SPIFFS.begin();
-    printf("PREFS: SPIFFS.begin()=%d at t=%lums (took %lums)\n",
+    bootLogPrintf("PREFS: SPIFFS.begin()=%d at t=%lums (took %lums)\n",
         spiffsUp ? 1 : 0, (unsigned long)millis(),
         (unsigned long)(millis() - spiffsBeginStart));
 
     if (!spiffsUp) {
-        printf("PREFS: SPIFFS mount FAILED -- running on defaults, will not save\n");
+        bootLogPrintf("PREFS: SPIFFS mount FAILED -- running on defaults, will not save\n");
         prefsAreSuspect = true;
     } else {
         // Wait for the file to be READABLE, not merely openable.
@@ -7604,7 +7717,7 @@ void setup()
         bool prefsReadable = false;
         uint8_t probe[PREFS_BYTES];
 
-        printf("PREFS: exists=%d t=%lums\n",
+        bootLogPrintf("PREFS: exists=%d t=%lums\n",
             SPIFFS.exists("/preferencesv2.txt") ? 1 : 0, (unsigned long)millis());
 
         for (uint8_t attempt = 0; attempt < 10; attempt++) {
@@ -7615,15 +7728,18 @@ void setup()
                 const size_t got = f.read(probe, PREFS_BYTES);
                 const bool plausible = (got == PREFS_BYTES) && prefsLookPlausible(probe);
 
-                printf("PREFS: attempt %u t=%lums open=1 size=%u got=%u plausible=%d",
+                // One call, not three. Split across separate printfs the tail of
+                // this line reached the serial cable but not the buffer, which
+                // dropped the first= bytes and the newline from /bootlog -- and
+                // those bytes are the evidence that distinguishes a file holding
+                // defaults from a read that failed.
+                bootLogPrintf(
+                    "PREFS: attempt %u t=%lums open=1 size=%u got=%u plausible=%d "
+                    "first=[%02x %02x %02x %02x]\n",
                     (unsigned)attempt + 1, (unsigned long)attemptStart,
-                    (unsigned)f.size(), (unsigned)got, plausible ? 1 : 0);
-                if (got > 0) {
-                    printf(" first=[%02x %02x %02x %02x]",
-                        probe[0], got > 1 ? probe[1] : 0,
-                        got > 2 ? probe[2] : 0, got > 3 ? probe[3] : 0);
-                }
-                printf("\n");
+                    (unsigned)f.size(), (unsigned)got, plausible ? 1 : 0,
+                    got > 0 ? probe[0] : 0, got > 1 ? probe[1] : 0,
+                    got > 2 ? probe[2] : 0, got > 3 ? probe[3] : 0);
 
                 if (plausible) {
                     f.seek(0, SeekSet);
@@ -7631,7 +7747,7 @@ void setup()
                     break;
                 }
             } else {
-                printf("PREFS: attempt %u t=%lums open=%d size=%u\n",
+                bootLogPrintf("PREFS: attempt %u t=%lums open=%d size=%u\n",
                     (unsigned)attempt + 1, (unsigned long)attemptStart,
                     f ? 1 : 0, f ? (unsigned)f.size() : 0u);
             }
@@ -7648,10 +7764,10 @@ void setup()
             // on whatever loadDefaultUserOptions() left in RAM and touch
             // nothing: a bad boot the user can power cycle out of beats a good
             // boot with their settings gone.
-            printf("PREFS: UNREADABLE after 10 attempts; NOT overwriting them\n");
+            bootLogPrintf("PREFS: UNREADABLE after 10 attempts; NOT overwriting them\n");
             prefsAreSuspect = true;
         } else if (!prefsReadable) {
-            printf("PREFS: no file yet, creating\n");
+            bootLogPrintf("PREFS: no file yet, creating\n");
             loadDefaultUserOptions();
             saveUserPrefs();
         }
@@ -7788,7 +7904,7 @@ void setup()
         // frameTimeLock 0 is the defaults signature -- if it shows up here while
         // suspect=0, the read passed validation and still produced defaults, and
         // the guard above has another hole in it.
-        printf("PREFS: loaded presetPreference=%u frameTimeLock=%u slot=%u "
+        bootLogPrintf("PREFS: loaded presetPreference=%u frameTimeLock=%u slot=%u "
                "SeleInputSource=%u suspect=%d t=%lums\n",
             (unsigned)uopt->presetPreference, (unsigned)uopt->enableFrameTimeLock,
             (unsigned)uopt->presetSlot, (unsigned)SeleInputSource,
@@ -7906,6 +8022,19 @@ void setup()
 }
 void loop()
 {
+    // Hand the boot backlog to the first console that attaches, so the web
+    // console opens on the whole boot rather than starting mid-sentence.
+    //
+    // Polled rather than driven by an onEvent() callback because none is
+    // registered -- setup() only calls webSocket.begin(). A poll costs one
+    // comparison and avoids introducing a callback nothing else uses.
+#if BOOTLOG_BYTES > 0
+    if (!bootLogDelivered && bootLogLen > 0 && webSocket.connectedClients() > 0) {
+        bootLogDelivered = true; // set first: broadcastTXT re-enters SerialMirror
+        webSocket.broadcastTXT((const char *)bootLog, bootLogLen);
+    }
+#endif
+
     static uint8_t readout = 0;
     static uint8_t segmentCurrent = 255;
     static uint8_t registerCurrent = 255;
@@ -10220,6 +10349,29 @@ fail:
     request->send(200, "application/json", "false"); });
 
     server.on("/spiffs/format", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", SPIFFS.format() ? "true" : "false"); });
+
+    // The boot trace, from RAM. Read after a mains-only cold start with nothing
+    // attached -- the boot that could not be watched over serial.
+#if GBS_DEBUG
+    server.on("/bootlog", HTTP_GET, [](AsyncWebServerRequest *request) {
+#if BOOTLOG_BYTES == 0
+        // Distinguishable from "empty" on purpose: empty is a regression, and
+        // disabled is a build choice.
+        request->send(200, "text/plain",
+            F("(boot log disabled: rebuild with BOOTLOG_BYTES=2048)\n"));
+#else
+        String out;
+        out.reserve(bootLogLen + 64);
+        out.concat(bootLog, bootLogLen);
+        if (bootLogLen == 0) {
+            out = F("(boot log empty)\n");
+        } else if (bootLogLen >= BOOTLOG_BYTES - 1) {
+            out += F("\n(TRUNCATED: buffer full, raise BOOTLOG_BYTES)\n");
+        }
+        request->send(200, "text/plain", out);
+#endif
+    });
+#endif
 
     server.on("/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
     WiFiMode_t wifiMode = WiFi.getMode();
