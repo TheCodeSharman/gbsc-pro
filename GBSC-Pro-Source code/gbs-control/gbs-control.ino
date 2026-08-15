@@ -2303,10 +2303,10 @@ void resetPLL()
 
 void ResetSDRAM()
 {
-    GBS::SDRAM_RESET_CONTROL::write(0x02);
+    GBS::MEM_INI_REG::write(0x02);
     GBS::SDRAM_RESET_SIGNAL::write(1);
     GBS::SDRAM_RESET_SIGNAL::write(0);
-    GBS::SDRAM_RESET_CONTROL::write(0x82);
+    GBS::MEM_INI_REG::write(0x82);
 }
 
 void resetDigital()
@@ -16639,7 +16639,7 @@ void OSD_selectOption()
         static uint8_t S0_Read_Resolution;
         static unsigned long Tim_info = 0;
         if ((millis() - Tim_info) >= 1000) {
-            S0_Read_Resolution = GBS::REG_S0_00::read();
+            S0_Read_Resolution = GBS::STATUS_00::read();
 
             // GBS::IF_LD_RAM_BYPS::write(1);
             // printf( "Scanning method: %d\n",GBS::STATUS_SYNC_PROC_VTOTAL::read() );   // 0x%02x  
