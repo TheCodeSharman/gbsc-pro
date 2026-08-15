@@ -749,5 +749,12 @@ because it cost a session. Read it before writing firmware C++.
 - Tests that disturb the picture or write flash are opt-in flags in
   `conftest.py` (`--source`, `--preset-save`, `--no-sync`, `--pllad-hostile`),
   so a bare `pytest --host=…` stays safe to run on a working unit.
+  **`--source` leaves the picture wrong, and a cold boot is the fix** — say so
+  before running it if someone is watching the screen. Measured 2026-08-15: the
+  pad tests left the framing at `zh 176 / ph 8` and an oversampling test left
+  `PLLAD_MD` 4012 against the 2548 the source wants, so the picture is zoomed
+  and softer. Neither is persisted, so an ESP reset re-detects and re-solves
+  both — `nix develop -c esptool --port /dev/ttyUSB0 --after hard_reset
+  --no-stub flash_id`, then check `/geometry` reads `0,0,0,0`.
 - The Makefile never shells out to nix; entering the dev shell is the caller's
   job, so the rules work outside NixOS.
