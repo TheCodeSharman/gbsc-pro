@@ -218,6 +218,22 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   build failure that looked like a library incompatibility.
 - **Flashing preserves the filesystem** (`wipe=none` in the FQBN), so stored timings and
   preferences survive.
+- **The `framesync.h` hang is fixed — do not diagnose with it.**
+  `sampleVsyncPeriod()` used to spin 3,000,000 passes with `ESP.wdtDisable()`,
+  exiting only on a vsync pulse, so a `PLLAD_MD` write that broke sync killed
+  serial, ping and HTTP while the picture kept running. `38df4e5` (2026-08-03)
+  bounded the wait in *time* (`FS_SAMPLE_TIMEOUT_MS`) and left the watchdog
+  running and fed. It is in every build since.
+  **The old rule of thumb inverted with it**, and the stale note cost a wrong
+  diagnosis on 2026-08-05 within minutes of a session starting: *station present
+  with low inactive time but no ping* no longer means wedged. It now means the
+  fault is below the firmware loop — WiFi association without a working IP path.
+  A ~2 minute unexplained dropout that recovered unaided was seen the same day.
+  The check itself is still the right non-invasive first move, only read the
+  other way:
+  `ssh router "iw dev phy1-ap0 station dump | grep -A6 fc:f5:c4:b1:f2:38"`, and
+  ping *from the router* to rule out your own host's path before concluding
+  anything about the unit.
 
 ## Register facts that are not obvious
 
