@@ -21,6 +21,7 @@
 #include <doctest/doctest.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -85,6 +86,24 @@ static uint32_t written(uint8_t segment, uint8_t reg, uint8_t offset,
     return under[0] == under[1] ? under[0] : NotWritten;
 }
 
+// The bring-up run under one poison, as a final byte per address. A byte is not
+// a unit of ownership -- every write is read-modify-write, so a touched byte
+// still carries the poison wherever no field writes -- which is why the caller
+// chooses the poison: two complementary dumps, and the bits that agree are the
+// mask the block owns. test_geometry_pads.py compares that against a live chip.
+static void dumpFinalState(uint8_t poison)
+{
+    Wire.reset();
+    Wire.poison(poison);
+    Tv5725::BringUp::init();
+
+    for (uint8_t segment = 0; segment < FakeTwoWire::Segments; ++segment)
+        for (int reg = 0; reg < 256; ++reg)
+            if (Wire.touched[segment][reg])
+                std::printf("s%u_%02x = 0x%02x\n", segment,
+                            static_cast<unsigned>(reg), Wire.bank[segment][reg]);
+}
+
 static void dumpWrites()
 {
     std::vector<Write> writes = runBringUp();
@@ -100,6 +119,13 @@ int main(int argc, char **argv)
     // know.
     if (argc > 1 && std::strcmp(argv[1], "--dump") == 0) {
         dumpWrites();
+        return 0;
+    }
+    // --final-state <poison>: the settled byte per address rather than the write
+    // sequence. Run twice with complementary poisons to recover which BITS the
+    // block owns; see dumpFinalState().
+    if (argc > 2 && std::strcmp(argv[1], "--final-state") == 0) {
+        dumpFinalState(static_cast<uint8_t>(std::strtoul(argv[2], 0, 0)));
         return 0;
     }
     return doctest::Context(argc, argv).run();

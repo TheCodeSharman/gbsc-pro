@@ -134,6 +134,19 @@ struct runTimeOptions
     bool isInLowPowerMode;
     bool clampPositionIsSet;
     bool coastPositionIsSet;
+
+    // Whether the composite-vs-separate sync choice has been made for THIS
+    // source. Same shape as the two above, and for the same reason: it is
+    // expensive to establish and does not change while the source does not.
+    //
+    // sourceHasOwnVsync() costs ~500 ms, and applyPresets() runs on every mode
+    // change -- docs/sync-type-selection.md costed calling it there and that is
+    // why it had never been done. It is a property of the SOURCE and the analog
+    // routing, not of the output resolution, so it is decided once and this flag
+    // is what stops a mode change paying for it again. Cleared wherever the
+    // other two are, which is every path that means "the source may have
+    // changed".
+    bool syncTypeIsSet;
     bool phaseIsSet;
     bool inputIsYpBpR;
     bool syncWatcherEnabled;

@@ -623,6 +623,7 @@ static void LoadDefault()
     // rto->presetVlineShift = 0;    
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
+    rto->syncTypeIsSet = 0;
     rto->continousStableCounter = 0; 
     rto->currentLevelSOG = 5;        
     rto->thisSourceMaxLevelSOG = 31; 
@@ -1494,6 +1495,7 @@ void setResetParameters_re()
     rto->outModeHdBypass = 0;        
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
+    rto->syncTypeIsSet = 0;
     rto->phaseIsSet = 0;             
     rto->continousStableCounter = 0; 
     rto->noSyncCounter = 0;          
@@ -1523,6 +1525,7 @@ void setResetParameters()
     rto->outModeHdBypass = 0;       
     rto->clampPositionIsSet = 0;    
     rto->coastPositionIsSet = 0;    
+    rto->syncTypeIsSet = 0;
     rto->phaseIsSet = 0;
     rto->continousStableCounter = 0;
     rto->noSyncCounter = 0;         
@@ -1618,6 +1621,7 @@ void setResetParameters()
     GBS::PAD_SYNC_OUT_ENZ::write(0); 
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
+    rto->syncTypeIsSet = 0;
     rto->phaseIsSet = 0;
     rto->continousStableCounter = 0; 
     serialCommand = '@';
@@ -4263,10 +4267,32 @@ void applyPresets(uint8_t result)
     if (result == 14) {
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
             rto->inputIsYpBpR = 0;
-            if (GBS::STATUS_SYNC_PROC_VSACT::read() == 0) {
-                rto->syncTypeCsync = 1;
-            } else {
-                rto->syncTypeCsync = 0;
+
+            // **DO NOT DECIDE THE SYNC TYPE FROM STATUS_SYNC_PROC_VSACT.** That
+            // is circular -- VSACT only reports correctly once the sync type is
+            // already right, so the choice latches to whatever the chip happens
+            // to be configured for. Landing in the wrong basin has
+            // updateSpDynamic() write the separate-sync quadruple (SP_PRE_COAST
+            // 0, SP_POST_COAST 0, SP_DLT_REG 0, SP_H_PULSE_IGNOR 0xFF) onto a
+            // source with no separate sync. docs/sync-type-selection.md
+            //
+            // sourceHasOwnVsync() answers it properly: it switches
+            // SP_EXT_SYNC_SEL off and asks whether a V sync line actually
+            // arrives. It costs ~500 ms, so it runs ONCE PER SOURCE --
+            // rto->syncTypeIsSet is cleared wherever coastPositionIsSet and
+            // clampPositionIsSet are, which is every path meaning the source may
+            // have changed. A mode change pays nothing.
+            //
+            // **IT CANNOT BE LEFT TO inputAndSyncDetect() ALONE.** Its probe
+            // sits behind `SyncSearch::searchFor(...) == VsyncPresent`, so on a
+            // source with no separate vsync -- the csync case -- the block is
+            // skipped and syncTypeCsync keeps its initial false. Circular in the
+            // same way, one level up.
+            if (!rto->syncTypeIsSet) {
+                rto->syncTypeCsync = !sourceHasOwnVsync();
+                rto->syncTypeIsSet = 1;
+                debugPrintf("sync type: probed once for this source -> %s\n",
+                    rto->syncTypeCsync ? "csync" : "separate H/V");
             }
         }
     }
@@ -4301,11 +4327,14 @@ void applyPresets(uint8_t result)
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
             rto->inputIsYpBpR = 0;
             rto->syncWatcherEnabled = 1;
-            if (GBS::STATUS_SYNC_PROC_VSACT::read() == 0) {
-                rto->syncTypeCsync = 1;
-            } else {
-                rto->syncTypeCsync = 0;
-            }
+
+            // HERE the probe IS worth its ~500 ms, and the bare VSACT read is
+            // not: this arm has just moved ADC_INPUT_SEL, so whatever detection
+            // concluded was about a different input and there is nothing to
+            // inherit. It runs only when getVideoMode() found nothing at all,
+            // not on a mode change.
+            rto->syncTypeCsync = !sourceHasOwnVsync();
+            rto->syncTypeIsSet = 1;
         } else {
             GBS::ADC_INPUT_SEL::write(0);
             delay(100);
@@ -7470,6 +7499,7 @@ void setup()
     rto->presetVlineShift = 0;         
     rto->clampPositionIsSet = 0;       
     rto->coastPositionIsSet = 0;       
+    rto->syncTypeIsSet = 0;
     rto->continousStableCounter = 0;   
     rto->currentLevelSOG = 5;          
     rto->thisSourceMaxLevelSOG = 31;   

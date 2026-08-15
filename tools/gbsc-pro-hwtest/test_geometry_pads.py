@@ -26,6 +26,8 @@ moving rather than one caught mid-write.
 
 import math
 import os
+import re
+import subprocess
 import sys
 import time
 
@@ -690,65 +692,122 @@ def test_the_memory_window_never_uncovers_the_display_window(host, probe, framed
 
 # --- the static bring-up block ------------------------------------------------
 
-def _bringup_expectations():
-    """(name, seg, reg, lo, width, value) for every field BringUp writes."""
+BRINGUP_DUMP = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", "..", "test", "output", "test_bringup")
+
+# Below this the derivation has broken and the test would prove nothing. 165
+# addresses survive the overwritten filter as of 2026-08-15, 56 of them the Vds
+# filter coefficients this exists for.
+BRINGUP_MIN_ADDRESSES = 120
+
+
+def _bringup_final_state():
+    """{(segment, register): (value, mask)} the bring-up leaves.
+
+    **THE SOURCE OF TRUTH MOVED, AND THIS TEST DIED WHERE IT USED TO BE.** It
+    asked bringup_map.bringup_fields(), which answers "what the twelve tables
+    agree on that nothing owns" -- correctly EMPTY now that the nine subsystems
+    graduated and own it all. The block's contents live in C++, so this reads
+    them from the artefact that prints them.
+
+    **THE MASK IS THE WHOLE TRICK.** A byte is not a unit of ownership: every
+    write is read-modify-write, so a byte the block touches still carries
+    whatever the fake was poisoned with in the bits no field of it writes.
+    Comparing bytes fails on every partially-owned register -- s4_04 came back
+    0xB2 against the chip's 0x32, a difference that is entirely poison. Running
+    --final-state under two COMPLEMENTARY poisons and keeping the bits that
+    agree recovers exactly the bits the block owns.
+    """
+    def under(poison):
+        result = subprocess.run([BRINGUP_DUMP, "--final-state", poison],
+                                capture_output=True, text=True, timeout=30)
+        state = {}
+        for line in result.stdout.splitlines():
+            match = re.match(r"s(\d)_([0-9a-f]{2}) = 0x([0-9a-f]{2})$", line)
+            if match:
+                state[(int(match.group(1)), int(match.group(2), 16))] = \
+                    int(match.group(3), 16)
+        return state
+
+    a, b = under("0xA5"), under("0x5A")
+    owned = {}
+    for address, value in a.items():
+        mask = 0xFF & ~(value ^ b.get(address, ~value & 0xFF))
+        if mask:
+            owned[address] = (value & mask, mask)
+    return owned
+
+
+def _overwritten_addresses():
+    """Addresses something after the bring-up writes, so a read-back may differ."""
     import bringup_map
-    return [(name, seg, reg, lo, width, value)
-            for _, name, seg, reg, lo, width, value in bringup_map.bringup_fields()]
+
+    overwritten = bringup_map.written_outside_bringup()
+    addresses = set()
+    for seg, reg, lo, width, name in bringup_map.header_fields():
+        if name in overwritten or name.startswith("GBS_"):
+            for i in range((lo + width + 7) // 8):
+                addresses.add((seg, reg + i))
+    return addresses
 
 
-def test_the_bringup_block_lands_every_field_it_owns(host, probe, scaling):
-    """Tv5725::Bringup::BringUp writes what bringup_map.py says it writes.
+def test_the_bringup_block_lands_every_register_nothing_else_moves(host, probe, scaling):
+    """The chip holds what Tv5725::BringUp wrote, wherever nothing wrote after it.
 
-    The block replaces the static two-thirds of a preset table with named
-    register writes, and the risk it carries is silent: a wrong value in Vds is
-    a filter coefficient, which may only show on content nobody is displaying.
-    So this reads all of them back rather than trusting the picture.
+    The block replaces the static two-thirds of a preset table, and the risk it
+    carries is silent: a wrong value in Vds is a filter coefficient, which may
+    only show on content nobody is displaying. So this reads them back rather
+    than trusting the picture. That intent is unchanged; what changed is where
+    the expectation comes from.
 
-    It is a REGRESSION GUARD, not a red-to-green: BringUp::apply() currently runs
-    over the top of the table that just wrote the same values, so this passes
-    either way. That is the point of running it in that position -- the values
-    are proven against the live chip while the table is still what made the
-    picture. It becomes the discriminating test the moment the table goes.
+    **IT USED TO ASK bringup_map.bringup_fields(), AND THAT ANSWER IS NOW
+    CORRECTLY ZERO.** The derivation means "what the twelve tables agree on that
+    has no owner", and the graduation gave it all owners --
+    test_the_derivation_is_empty guards that as the end state. The test asserted
+    the list had more than 250 entries, so it failed with `--source` from the
+    moment the last class landed, and nobody saw it because the clean run that
+    signed the work off did not pass `--source`.
 
-    Reads through /getregs a segment at a time. 300 individual /getreg round
+    So the expectation now comes from the block itself, via
+    test/output/test_bringup --dump, minus the addresses something LATER writes
+    -- the raster, the windows, the divider, the clock seed. Those may
+    legitimately disagree; everything else may not.
+
+    Reads through /getregs a segment at a time. 233 individual /getreg round
     trips would take minutes and hammer RegisterQueue, which the sync watcher
     notices.
     """
-    expectations = _bringup_expectations()
-    assert len(expectations) > 250, (
-        f"bringup_map resolved only {len(expectations)} fields; the derivation "
-        "is broken, so this test would prove nothing")
+    if not os.path.exists(BRINGUP_DUMP):
+        pytest.skip(f"{BRINGUP_DUMP} is not built -- run `make -C test bringup`")
 
-    by_segment = {}
-    for _, seg, reg, _, width, _ in expectations:
-        span = (reg, reg + (width + 7) // 8)
-        lo, hi = by_segment.get(seg, span)
-        by_segment[seg] = (min(lo, span[0]), max(hi, span[1]))
+    final = _bringup_final_state()
+    assert final, "test_bringup --final-state printed no register writes"
+
+    expectations = {address: pair for address, pair in final.items()
+                    if address not in _overwritten_addresses()}
+    assert len(expectations) >= BRINGUP_MIN_ADDRESSES, (
+        f"only {len(expectations)} of {len(final)} bring-up addresses survive "
+        f"the overwritten filter; the derivation is broken, so this test would "
+        f"prove nothing")
 
     live = {}
-    for seg, (first, last) in by_segment.items():
-        live[seg] = read_segment(host, seg, first, min(last, 0xFF))
+    for seg in sorted({s for s, _ in expectations}):
+        live[seg] = read_segment(host, seg)
+        assert live[seg] is not None, f"could not read segment {seg}"
 
     wrong = []
-    for name, seg, reg, lo, width, want in expectations:
-        raw, missing = 0, False
-        for i in range((lo + width + 7) // 8):
-            byte = live[seg].get(reg + i)
-            if byte is None:
-                missing = True
-                break
-            raw |= byte << (8 * i)
-        if missing:
+    for (seg, reg), (want, mask) in sorted(expectations.items()):
+        got = live[seg].get(reg)
+        if got is None:
             continue
-        got = (raw >> lo) & ((1 << width) - 1)
-        if got != want:
-            wrong.append(f"{name} (s{seg}_{reg:02x}[{lo + width - 1}:{lo}]) "
-                         f"= 0x{got:X}, bring-up writes 0x{want:X}")
+        if (got & mask) != want:
+            wrong.append(f"s{seg}_{reg:02x} = 0x{got:02X}, bring-up writes "
+                         f"0x{want:02X} in mask 0x{mask:02X}")
 
     assert not wrong, (
-        f"{len(wrong)} of {len(expectations)} bring-up fields do not hold the "
-        f"value the block writes:\n  " + "\n  ".join(wrong[:25]))
+        f"{len(wrong)} of {len(expectations)} bring-up registers do not hold "
+        f"what the block wrote, and nothing else writes them:\n  "
+        + "\n  ".join(wrong[:25]))
 
 
 # The SDRAM memory map, owned by Tv5725::FrameBuffer. Word addresses: 2^21
@@ -1254,3 +1313,167 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(host, source):
         f"still running the previous divider while every register reads back "
         f"correct. PLLAD_LAT loads MD, ND, KS, CKOS and ICP together -- whatever "
         f"writes PLLAD_MD must run BEFORE latchPLLAD(), not after it.")
+
+
+# updateSpDynamic()'s two branches for videoStandardInput >= 13, which is the
+# whole of what the sync-type choice does to the sync processor.
+SP_PRE_COAST = (5, 0x38, 0, 8)
+SP_POST_COAST = (5, 0x39, 0, 8)
+SP_DLT_REG = (5, 0x35, 0, 12)
+SP_H_PULSE_IGNOR = (5, 0x37, 0, 8)
+
+SYNC_CSYNC = {SP_PRE_COAST: 0x04, SP_POST_COAST: 0x07,
+              SP_DLT_REG: 0x70, SP_H_PULSE_IGNOR: 0x02}
+SYNC_SEPARATE = {SP_PRE_COAST: 0x00, SP_POST_COAST: 0x00,
+                 SP_DLT_REG: 0x00, SP_H_PULSE_IGNOR: 0xFF}
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "sourceHasOwnVsync() answers yes on a source that has none, so the probe "
+    "picks separate H/V. Reproduces every boot; docs/sync-type-selection.md. "
+    "Strict so fixing the probe turns this red and the marker comes out."))
+def test_a_preset_load_does_not_redecide_the_sync_type(host, source):
+    """The bench source has no separate V sync, and a preset load must not say it has.
+
+    **THE CHOICE MUST NOT BE MADE FROM A BIT THAT ONLY ANSWERS ONCE THE CHOICE IS
+    RIGHT.** `syncTypeCsync = (STATUS_SYNC_PROC_VSACT == 0)` on every mode change
+    is circular: VSACT reports the sync path you are already on, so the read
+    agrees with whatever the chip is configured for and latches it. A preset table
+    loading first hides that -- the table establishes a csync-ish sync processor,
+    VSACT reads 0, and the answer comes out right for the wrong reason.
+    See CLAUDE.md and docs/sync-type-selection.md.
+
+    The consequence is entirely visible in the sync processor, because
+    updateSpDynamic() writes one of exactly two quadruples for
+    videoStandardInput >= 13, and they share no value:
+
+        csync     SP_PRE_COAST 0x04  SP_POST_COAST 0x07  DLT 0x70  IGNOR 0x02
+        separate  SP_PRE_COAST 0x00  SP_POST_COAST 0x00  DLT 0x00  IGNOR 0xFF
+
+    So this reads the quadruple and asks which decision was taken, rather than
+    trying to observe a bool in the firmware.
+
+    **WHY CSYNC IS THE RIGHT ANSWER HERE AND NOT JUST THE CURRENT ONE.** The
+    bench RiscPC feeds RGBS with sync on green, and the schematic's routing for
+    that input is HS_IN = SOGIN -- there is no separate HSync on the pin and no
+    separate VSync line at all. A source with its own V sync is by definition not
+    composite-sync; this one has none, so "separate H/V" is not a tuning
+    preference here, it is wrong. inputAndSyncDetect() establishes that once with
+    sourceHasOwnVsync(), which switches SP_EXT_SYNC_SEL off and asks whether a V
+    sync actually arrives; a preset load has no business overruling it.
+
+    Not a value pin: nothing here asserts the divider, the raster or any framing.
+    """
+    before = {spec: read_field(host, *spec) for spec in SYNC_CSYNC}
+    assert None not in before.values(), "could not read the sync processor"
+
+    get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
+    restore_the_preset_the_suite_expects(host)
+
+    after = {spec: read_field(host, *spec) for spec in SYNC_CSYNC}
+    assert None not in after.values(), (
+        "could not read the sync processor back after the preset load")
+
+    def name(spec):
+        return {SP_PRE_COAST: "SP_PRE_COAST", SP_POST_COAST: "SP_POST_COAST",
+                SP_DLT_REG: "SP_DLT_REG",
+                SP_H_PULSE_IGNOR: "SP_H_PULSE_IGNOR"}[spec]
+
+    if after == SYNC_SEPARATE:
+        pytest.fail(
+            "a preset load configured the sync processor for SEPARATE H/V on a "
+            "source that has none -- the sync type was re-decided from "
+            "STATUS_SYNC_PROC_VSACT, which reports the path already in force and "
+            "so latches. It belongs to inputAndSyncDetect(), once per source. "
+            f"before: { {name(k): hex(v) for k, v in before.items()} }")
+
+    wrong = {name(k): (hex(after[k]), hex(v)) for k, v in SYNC_CSYNC.items()
+             if after[k] != v}
+    assert not wrong, (
+        "the sync processor holds neither of updateSpDynamic()'s two quadruples "
+        "after a preset load, so something else has written it and this test no "
+        "longer measures what it claims -- check updateSpDynamic() before "
+        f"trusting the verdict: {wrong} (got, want-csync)")
+
+
+# Tv5725::Sampling's own constants, so the expected divider is computed the way
+# the firmware computes it rather than pinned to this bench's source.
+SAMPLING_MAX_RATE_HZ = 162000000
+SAMPLING_RECOMMENDED_PERCENT = 98
+SAMPLING_DIVIDER_MAX = 4095
+SAMPLING_PAL_VTOTAL_MIN = 290  # Capture::PalVtotalMin
+SAMPLING_DEC1_BYPS = (5, 0x1F, 0, 1)
+SAMPLING_DEC2_BYPS = (5, 0x1F, 1, 1)
+
+
+def _expected_divider(lines, oversample, field_rate):
+    """Sampling::recommendedDivider(), in Python."""
+    line_rate = int(field_rate * lines)
+    largest = min(SAMPLING_MAX_RATE_HZ // (line_rate * oversample),
+                  SAMPLING_DIVIDER_MAX)
+    return ((largest * SAMPLING_RECOMMENDED_PERCENT) // 100) & ~1
+
+
+def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, source):
+    """On a settled source the divider is the one the line rate implies.
+
+    **THE COMPANION TEST DELIBERATELY DOES NOT PIN THE VALUE, AND THAT LEFT A
+    HOLE THE SIZE OF A WHOLE BOOT.** It checks that PLLAD_MD, IF_HSYNC_RST and
+    SP_RT_HS_SP describe the same line and that the divider was latched -- all
+    of which a WRONG divider satisfies perfectly, because Tv5725::Sampling
+    writes all three off whatever value it holds. "Which divider the unit lands
+    on is the table's business" was true while a table chose it. It is not any
+    more: the engine computes it, so it can be checked.
+
+    Measured on a cold boot 2026-08-15 with the tables gone, deterministically
+    and on every boot:
+
+        sampling: 271 lines x 49.22 Hz -> line rate 0
+        PLLAD_MD 1856, where 2548 was due
+
+    Sampling::lineRateFrom() correctly refused an unsettled 271 lines at
+    49.22 Hz, solveSampling() fell back to adopting whatever was on the chip,
+    and what was on the chip was the 1856 that bypassModeSwitch_RGBHV() writes
+    as a literal. Nothing retried. The ADC under-sampled every line by 27% for
+    the whole session, all three registers agreed with each other about it, the
+    latch check passed, and `/sc?~` was the only cure.
+
+    So this asks the one question those cannot: is the divider a MEASUREMENT of
+    this source, or a number that was already there?
+
+    The expected value is computed from the source's own line count rather than
+    pinned, so the test travels to another source. The field rate is not
+    readable over HTTP, so the nominal implied by the line count is used -- the
+    same 290-line split Capture::PalVtotalMin makes -- and the tolerance covers
+    a real rate a couple of percent off nominal. A divider inherited from
+    somewhere else is out by far more than that: 1856 against 2548 is 27%.
+    """
+    locked = wait_for(
+        lambda: (read_field(host, *SAMPLING_SYNC_VTOTAL) or 0) >= SAMPLING_LOCKED_VTOTAL_MIN,
+        timeout=25.0)
+    if not locked:
+        pytest.skip("the source is not locked, so there is no line rate to "
+                    "have solved the divider from")
+
+    lines = read_field(host, *SAMPLING_SYNC_VTOTAL)
+    divider = read_field(host, *SAMPLING_PLLAD_MD)
+    dec1 = read_field(host, *SAMPLING_DEC1_BYPS)
+    dec2 = read_field(host, *SAMPLING_DEC2_BYPS)
+    assert None not in (lines, divider, dec1, dec2), (
+        "could not read the source line count, the divider and the decimators")
+
+    # rto->osr, as doPostPresetLoadSteps() derives it for a custom preset.
+    oversample = 1 if (dec1 and dec2) else (2 if dec1 else 4)
+
+    nominal = 50.0 if lines > SAMPLING_PAL_VTOTAL_MIN else 60.0
+    expected = _expected_divider(lines, oversample, nominal)
+
+    # 4%: the divider moves inversely with the field rate, so a source running
+    # 50.08 against a nominal 50 shifts it 0.16%, and a mode a couple of percent
+    # off nominal shifts it that much. An INHERITED divider is not close.
+    assert abs(divider - expected) <= expected * 4 // 100, (
+        f"PLLAD_MD is {divider}, but {lines} lines at {nominal} Hz with "
+        f"{oversample}x oversampling wants about {expected}. The divider is not "
+        f"a measurement of this source -- solveSampling() adopted whatever was "
+        f"on the chip and nothing retried. 1856 is the literal "
+        f"bypassModeSwitch_RGBHV() writes.")
