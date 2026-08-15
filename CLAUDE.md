@@ -60,7 +60,7 @@ running.
 Two things that bite regardless of route, both detailed under the traps below:
 **opening the serial port resets the board** (`stty -F /dev/ttyUSB0 115200 -hupcl
 raw -echo` first), and **USB backfeeds power**, so leaving the cable attached
-means later "power cycles" are not power cycles. Flashing preserves SPIFFS
+means later "power cycles" are not power cycles. Flashing preserves the filesystem
 (`wipe=none` in the FQBN), so stored timings and preferences survive.
 
 ## The system has three control domains, and you can only see one
@@ -145,12 +145,12 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   preset "not loading" (`presetPreference` 5 means it was never looked for),
   FrameSync "broken" (`enableFrameTimeLock` 0 means it never ran), and the input
   not applying. Read byte 0 first — 2 is a saved setting, 5 is defaults:
-  `spiffs_read(host, "/preferencesv2.txt")`.
+  `fs_read(host, "/preferencesv2.txt")`.
 - **USB backfeeds power.** A "power cycle" with the USB cable attached does not
   drop the rails, so the MS9288A and HC32F460 never reset. Pull mains *and* USB,
   and wait. Several apparent power-cycle results were nothing of the kind.
 - **Cold boot and warm reset are different tests.** The preferences bug is a
-  power-up race on the SPI flash — `SPIFFS.begin()` returning true does not mean
+  power-up race on the SPI flash — `LittleFS.begin()` returning true does not mean
   reads work yet. Reflashing tests nothing; only a true cold start does.
 - **A connected-but-silent console means the heap gate is shut, not that the
   firmware is quiet.** `SerialMirror` only calls `broadcastTXT` when free heap
@@ -195,7 +195,20 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   1068 bytes of globals (46516 vs 47584) and costs the diagnosis. Use
   `GBS_DEBUG=1 GBS_TRACE_WRITES=0`: full diagnostics, none of the
   per-write trace flood.
-- **SPIFFS access blocks the firmware loop.** `/spiffs/dir` calls `delay(1)` in a
+- **The filesystem is LittleFS, and the routes are `/fs/*`.** Migrated from
+  SPIFFS on 2026-08-05, because SPIFFS updates directory metadata in place, is
+  not power-loss safe and has no fsck — and this unit is hard-power-cycled
+  mid-write routinely. It had left `/slots.bin` listed twice with one entry
+  serving 0 bytes and hanging, which stalled the web UI on its splash for two
+  days. Endpoints were renamed `/spiffs/*` → `/fs/*` at the same time; the Python
+  helpers are `fs_dir()` and `fs_read()`. Two LittleFS behaviours differ and are
+  handled in `/fs/dir`: `lfs_dir_read()` emits synthetic `.` and `..` entries,
+  and `fileName()` returns the bare name where SPIFFS returned the full path.
+  **The on-flash format differs**, so a first boot after the switch auto-formats
+  and the old contents are gone — `wipe=none` preserves the region, not the
+  meaning of what is in it. Free heap went *up* (~20.5 K → ~22 K): SPIFFS's
+  mount-time page buffers were larger.
+- **Filesystem access blocks the firmware loop.** `/fs/dir` calls `delay(1)` in a
   loop. Hammering it can make the sync watcher see instability. Read-only over
   HTTP is not the same as zero-impact.
 - **Opening the serial port resets the board** (DTR/RTS). `stty -F /dev/ttyUSB0
@@ -203,7 +216,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **`make -p | grep VAR`** to check what Make really assigned. A bare `#` starts a
   comment mid-assignment, which silently dropped a library commit pin and cost a
   build failure that looked like a library incompatibility.
-- **Flashing preserves SPIFFS** (`wipe=none` in the FQBN), so stored timings and
+- **Flashing preserves the filesystem** (`wipe=none` in the FQBN), so stored timings and
   preferences survive.
 
 ## Register facts that are not obvious

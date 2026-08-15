@@ -59,7 +59,7 @@ preset load, undoes whatever you poked.
 
 ### Saving what you poked
 
-`/uc?4` writes the live registers to SPIFFS as the custom preset for the current
+`/uc?4` writes the live registers to the filesystem as the custom preset for the current
 video mode and slot, and switches the unit's preset preference to
 `OutputCustomized` — so from then on it boots into that file.
 

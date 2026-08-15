@@ -69,9 +69,9 @@ esptool --chip esp8266 --port /dev/ttyUSB0 --baud 460800 \
 
 ## Notes on flakiness
 
-`/spiffs/dir` calls `delay(1)` inside an async request handler and intermittently
+`/fs/dir` calls `delay(1)` inside an async request handler and intermittently
 drops the first request after a burst of WebSocket traffic. That is upstream
-behaviour in a handler none of these changes touch, so `spiffs_dir()` retries
+behaviour in a handler none of these changes touch, so `fs_dir()` retries
 rather than failing the suite over it.
 
 `timings_agree_with_getreg` brackets its console read with register reads taken
