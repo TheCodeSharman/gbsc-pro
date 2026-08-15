@@ -1,19 +1,31 @@
 #!/usr/bin/env python3
-"""Regenerate webui_html.h from webui.html.
+"""Regenerate webui_html.h from webui.html -- the last link of the UI build.
 
 The firmware serves the web UI from a gzipped PROGMEM array, not from the
 filesystem -- see the `server.on("/")` handler, which sends `webui_html` with a
-`Content-Encoding: gzip` header. That array lives in a checked-in generated
-header, and until 2026-08-05 nothing regenerated it: editing webui.html changed
-nothing on the device, silently, because the stale blob still built and still
-served. The /spiffs/ -> /fs/ rename hit exactly that.
+`Content-Encoding: gzip` header. Until 2026-08-05 the arduino-cli build did not
+regenerate that array, so editing webui.html changed nothing on the device,
+silently: the stale blob still compiled and still served. The /spiffs/ -> /fs/
+rename hit exactly that.
 
-So this exists to make the two impossible to disagree about. `make -C build
-webui` regenerates, and `make -C build webui-check` fails if the header is out
-of date, which is the half that catches the mistake.
+**webui.html is itself generated.** The real source is public/src/index.ts:
+
+    index.ts --tsc--> index.js --build.js--> webui.html --this--> webui_html.h
+
+`npm run build` in public/ runs the whole chain, and this script covers only its
+last step -- a Python equivalent of public/scripts/html2h.sh, which needs node
+and xxd that the nix dev shell does not provide. Editing webui.html directly
+works until someone runs the real build. See CLAUDE.md, "The web UI is generated
+four times over".
+
+`make -C build webui` regenerates; `make -C build webui-check` fails if the
+header is out of date, which is the half that catches the mistake. It cannot
+check the earlier links.
 
 Deterministic on purpose: mtime is zeroed so identical input gives an identical
-header, and a diff means the UI really changed.
+header, and a diff means the UI really changed. html2h.sh does not do this --
+gzip stamps the current time -- so their outputs differ byte-wise for identical
+input, which is why --check compares decompressed content instead.
 """
 
 import argparse
