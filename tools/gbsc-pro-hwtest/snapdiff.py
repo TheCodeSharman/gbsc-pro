@@ -84,19 +84,15 @@ def diff(before, after, register_map, include_volatile=False):
             if old != new:
                 changed_fields[name] = (old, new, spec)
 
-    named = {n: v for n, v in changed_fields.items() if not v[2].get("fake")}
-    unnamed = {n: v for n, v in changed_fields.items() if v[2].get("fake")}
-
+    # Every field in the map is datasheet-attested now, so there is no second
+    # group to separate out. A byte that resolves to no field still shows in the
+    # byte count above, which is what keeps an undocumented change visible.
     print(f"{len(changed_bytes)} bytes differ, resolving to {len(changed_fields)} fields\n")
-    for title, group in (("DOCUMENTED", named), ("NOT IN DATASHEET", unnamed)):
-        if not group:
-            continue
-        print(f"  --- {title} ---")
-        for name in sorted(group):
-            old, new, spec = group[name]
-            print(f"    {name:26} {str(old):>7} -> {str(new):<7}"
-                  f"  (s{spec['seg']} 0x{spec['reg']:02x} b{spec['off']} w{spec['width']})")
-        print()
+    for name in sorted(changed_fields):
+        old, new, spec = changed_fields[name]
+        print(f"    {name:26} {str(old):>7} -> {str(new):<7}"
+              f"  (s{spec['seg']} 0x{spec['reg']:02x} b{spec['off']} w{spec['width']})")
+    print()
 
     orphans = [k for k, x, y in changed_bytes
                if not fields_at(register_map, int(k.split(':')[0]), int(k.split(':')[1], 16))]
