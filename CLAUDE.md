@@ -731,15 +731,78 @@ firmware C++.
 - **The default is NO comment, and a densely commented file is a defect rather
   than a matter of taste.** Commentary reads as machine-written, and a heavily
   commented file says its author thought the code was unreadable. Nothing checks
-  it, which is how `src/tv5725/` reached **2195 comment lines against 4386 of
-  code — half the engine, in 138 blocks of four lines or more, the longest 67**
-  (2026-08-16), so removing them is now a pass of its own. Write one or two
-  lines of *why* only where a constraint is genuinely hidden — a measurement, a
-  datasheet contradiction, a bug that shaped the code — and put anything longer
-  in `docs/` with a pointer to it. What was tried, what was refuted and which
-  session measured it never belong in a source file, and extracting a
+  it, so removing it is a pass of its own —
+  `grep -c '^\s*//' <file>` against `wc -l` is the measure. Write one or two
+  lines of *why* only where a constraint is genuinely hidden, put anything
+  longer in `docs/` with a pointer to it, and remember that extracting a
   well-named function beats explaining an unnamed one. `CODING_STYLE.md`,
   "Comments are pointers, not essays".
+- **A detailed comment is a COPY of a fact, and copies diverge silently.** This
+  is the concrete harm, and it is not hypothetical. **The more detail a comment
+  lists, the more likely it is to go stale, and the same misinformation then
+  spreads through the code base.** A single document can be reviewed and updated
+  as understanding changes; *n* copies cannot. Two examples found in one pass:
+
+  | the fact | the copies |
+  |---|---|
+  | what causes the tail green at IF 1126 | `InputLine.h` and `test_geometry.cpp` both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
+  | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against the **4.0x** `test_geometry.cpp` asserts, `Scale::Min` having become derived |
+
+  One fact, three copies, two wrong, and every test passed — because tests check
+  code, and nothing checks prose. A single doc can be reviewed and corrected in
+  one place; *n* copies in source cannot, and each one reads as authoritative to
+  whoever finds it first. **So the length of a comment is a good predictor of
+  how wrong it will be**: put the detail in `docs/`, leave a pointer, and let
+  the doc be the thing that gets updated.
+- **NEVER quote the user. State the requirement instead.** No name, no date, no
+  speech marks — in source, tests, tooling, `docs/`, **and in this file and
+  `CODING_STYLE.md` too**. These are the rules for the project, not one person's
+  opinions recorded with a byline. Three costs:
+
+  - **An attribution reads as scare quotes.** A rule with a name on it says *"I
+    don't agree with this, but I was told to"* — the writer standing apart from
+    the rule instead of stating it. Whoever reads it next inherits that doubt
+    about a decision that was never in doubt.
+  - **It freezes a live requirement** at the moment it was said, so it reads as
+    history rather than as the spec it still is.
+  - **It gets repeated verbatim rather than updated**, so it outlives the
+    requirement it describes — which is how a scale floor of 500 reached four
+    files and stayed there after it became 256.
+
+  *"One unit of zoom is one pixel of the output screen"* is the comment. A
+  decision worth keeping is recorded as a decision.
+- **"Narrative" means anything that only makes sense to someone who was in the
+  room.** That is the test — not whether it is long, and not whether it is true.
+  Text that means nothing to someone who was not part of the investigation
+  fails it: the reader does not want the mis-steps, only the current shape of the
+  code and why it is like that. It also ages worse than anything else in the file, because it describes a state
+  no reader can check any more. The recurring forms, every one of them found in
+  this tree:
+
+  | form | example |
+  |---|---|
+  | defending a signature | *"injected so a test can hand it a different one"* |
+  | defending the default style | *"a class rather than statics in this header"* |
+  | counterfactual history | *"used to be maintained from one"*, *"was reverted"* |
+  | an unsourced duration | *"it did not look like one for two years"* |
+  | a quote from a session | *"can you create a top level folder…"* |
+  | the test build, from production source | *"doctest's CHECK binds each operand"* |
+  | a path that rots | `test/test_hold_ramp.cpp`, `snapshots/CLEAN-*.json` |
+  | a count that rots | *"all 107 decode sites"* |
+
+  **What survives is what the reader cannot derive**: a measurement, a datasheet
+  contradiction, an ordering constraint, a trap with a live consequence, and a
+  "do not reinstate this" guard. A failure mode stated in the present tense is
+  not narrative — *"writing the divider after the latch leaves the PLL on the old
+  value"* is a live warning; *"we wrote it after the latch once and it took an
+  evening"* is a diary.
+- **A `docs/` page is current state; `docs/investigations/` carries the models
+  that were refuted.** Even there, write for someone who was not present: what
+  the code does now, why not the obvious alternative, and what going back would
+  look like from the outside. A refuted model earns its page only when the wrong
+  answer was convincing — `docs/investigations/moving-write-origin.md` is the
+  shape, and its point is that a two-term fit matched eleven readings to 0.43 px
+  and was still wrong.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
