@@ -163,8 +163,8 @@ def test_two_names_for_the_same_bits_are_reported():
         s3_33[7:0]  _GAIN    shadowing  VDS_SVM_GAIN
         s3_3e[4]    BYPS     shadowing  VDS_DYN_BYPS
 
-    bringup_map.py then picked the fragments over the real names, which is how
-    they were found -- a generated bring-up block full of `GBS::AIN::write()`.
+    A generated bring-up block then picked the fragments over the real names,
+    which is how they were found -- it was full of `GBS::AIN::write()`.
     """
     src = """
     typedef UReg<0x03, 0x1A, 4, 1> VDS_FLOCK_EN;

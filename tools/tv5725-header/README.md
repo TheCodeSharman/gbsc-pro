@@ -40,10 +40,6 @@ claim. `wordings` is the same trick one level up: identical wordings across a
 commit means the comments only *moved*, and different wordings means something
 was actually said.
 
-`rewrite.apply_identities(src, target)` goes the other way — it gives a header
-exactly the register set you ask for and changes nothing else, which is how a
-mixed commit gets split into a register commit and a comment commit.
-
 ## Is the declaration order load-bearing? No.
 
 Worth settling, because the answer decides whether reordering 793 declarations is
@@ -75,27 +71,15 @@ compiles; and the firmware binary built from the pre-regrouping header is
 
 The one genuine ordering constraint in the file is the OSD constants and
 `osdIcon()`, since static member initialisers are order-dependent within a
-class. `restructure.py` lifts that block out verbatim as a unit and re-emits it
-below the registers, so its internal order never changes.
+class, so that block sits below the registers as a unit.
 
-## Regrouping the header
+## How the header is grouped
 
-```sh
-python3 tools/tv5725-header/restructure.py            # report only
-python3 tools/tv5725-header/restructure.py --write
-```
-
-Puts the fields in RD-5725-1.1's own order: thirteen chapters, then address,
-then bit offset. The grouping is **functional, not by segment**, which is the
-reason it is worth having — segment 0 carries STATUS, MISCELLANEOUS and OSD;
-segment 1 carries INPUT FORMATTER, HD_BYPS and MODE_DETECT; segment 5 carries
-ADC and SYNC_PROC. Sorting by address would interleave them.
-
-It refuses to write unless `compare` reports no register moved, `wordings`
-reports no comment reworded, and no name is declared twice. Every one of those
-guards has fired during development and each time it was a real bug — the OSD
-constants sitting in the middle of the register block, and `/* new_S*/` markers
-1800 lines apart, both caused the whole block to be emitted twice.
+The fields are in RD-5725-1.1's own order: thirteen chapters, then address, then
+bit offset. The grouping is **functional, not by segment**, which is the reason
+it is worth having — segment 0 carries STATUS, MISCELLANEOUS and OSD; segment 1
+carries INPUT FORMATTER, HD_BYPS and MODE_DETECT; segment 5 carries ADC and
+SYNC_PROC. Sorting by address would interleave them.
 
 `regdef.txt` is `pdftotext -layout` output from
 `docs/Tvia TrueView 5725 Registers Definition (RD-5725-1.1).pdf`. It is

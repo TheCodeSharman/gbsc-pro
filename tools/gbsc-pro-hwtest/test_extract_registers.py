@@ -1,8 +1,13 @@
-"""Unit tests for the datasheet description extractor. No PDF needed.
+"""What the panel's register map must get right.
 
-The samples are the RD's real layout, copied out of `pdftotext -layout` output:
-a page header, a bit grid, then a Bit/Name/Function table whose Function column
-trails its Name by a line or two.
+The map is a join, not a parse: addressing from tv5725.h, wording from the
+datasheet extraction in tools/tv5725-header. Everything about *reading the PDF*
+is pinned over there, in test_fielddocs.py, because there is one extraction and
+it should have one test suite.
+
+What is pinned here is the join itself, and the two rules that make it correct:
+match on bits rather than names, and hold a partition of the chip's bit space
+rather than a pile of overlapping names.
 """
 
 import os
@@ -13,126 +18,110 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import extract_registers as extract
 
-# S1_14 and S1_15, verbatim. IF_HB_ST1 was absent from tv5725.h until
-# 2026-08-09 and is the register that caused the zigzag.
-ONE_FIELD_PER_REGISTER = """
-INPUT_FORMATTER 14                                                       REG S1_14, R/W
 
-             7            6           5              4                3               2              1           0
- Bit                                                 IF_HB_ST1 [7:0]
-
-       Bit       Name                     Function
-                                          Horizontal blanking start position (set 1)
-       7-0       IF_HB_ST1 [7:0]
-                                          Horizontal blanking (set 1) start position [7:0].
-
-                                                   RD-5725-1.1                                            01-8
-TRUEVIEW5725                                                            Registers Definition
-
-INPUT_FORMATTER 16                                                       REG S1_16, R/W
-
-             7            6            5              4                3               2               1           0
- Bit                                                  IF_HB_SP1 [7:0]
-
-       Bit       Name                      Function
-                                           Horizontal blanking stop position (set 1)
-       7-0       IF_HB_SP1 [7:0]
-                                           Horizontal blanking (set 1) stop position [7:0].
-"""
+@pytest.fixture(scope="module")
+def fields():
+    return extract.build()
 
 
-# S5_02, verbatim, and the hard case. THE FUNCTION CELL IS VERTICALLY CENTRED ON
-# THE NAME ROW, so a field's text sits both above and below its own name:
-# "SOG control signal" belongs to ADC_SOGCTRL below it, while "ADC input
-# selection" two lines later belongs to ADC_INPUT_SEL three lines below THAT.
-#
-# An invented fixture that put every field's text after its name made the tests
-# here pass while the real map stayed wrong, which is worse than no test.
-SEVERAL_FIELDS_PER_REGISTER = """
-ADC CONTROL 00                                                           REG S5_02, R/W
+def test_the_join_is_on_bits_not_on_names(fields):
+    """The datasheet misspells names and the header carries the correction, so a
+    name-keyed join silently drops real registers. CAP_SAFE_GUARD_A is filed
+    under "GAURD" in RD-5725-1.1; OSD_YCBCR_RGB_FORMAT under "FORMATE". Worse,
+    the PDF wraps long names and the extraction keeps the fragment, so
+    VDS_SVM_GAIN is documented as `_GAIN` and VDS_FLOCK_EN as `K_EN`.
 
-             7          6         5            4            3              2            1            0
- Bit       ADC_INPUT_SEL                              ADC_SOGCTRL                                ADC_SOGEN
-
-       Bit       Name                 Function
-                                      ADC SOG enable
-       0         ADC_SOGEN            When = 0, ADC disable SOG mode
-                                      When = 1, ADC enable SOG mode
-                                      SOG control signal
-       5-1       ADC_SOGCTRL
-                                      ADC input selection
-                                      When = 00, R0/G0/B0/SOG0 as input
-       7-6       ADC_INPUT_SEL        When = 01, R1/G1/B1/SOG1 as input
-                                      When = 10, R2/G2/B2 as input
-                                      When = 11, reserved
-"""
+    Eighteen fields reach the panel only through their bits.
+    """
+    for name in ("CAP_SAFE_GUARD_A", "OSD_YCBCR_RGB_FORMAT", "HPERIOD_IF",
+                 "VPERIOD_IF", "VDS_SVM_GAIN", "VDS_FLOCK_EN"):
+        assert name in fields, f"{name} lost: its datasheet name differs"
+        assert fields[name]["desc"], f"{name} matched but carries no description"
 
 
-def describe(text, *names):
-    return extract.describe(text, set(names))
+def test_every_bit_has_exactly_one_owner(fields):
+    """The map is a partition of the chip's bit space, at the finest naming
+    tv5725.h offers. Two names over one bit is two owners: a write through the
+    coarse one silently rewrites everything the fine ones describe, and a panel
+    showing both invites exactly that."""
+    spans = sorted((e["seg"], extract._span(e["reg"], e["off"], e["width"]), n)
+                   for n, e in fields.items())
+    overlaps = [(a[2], b[2]) for a, b in zip(spans, spans[1:])
+                if a[0] == b[0] and b[1][0] <= a[1][1]]
+    assert not overlaps, f"bits with two owners: {overlaps[:5]}"
 
 
-def test_it_finds_a_description_at_all():
-    got = describe(ONE_FIELD_PER_REGISTER, "IF_HB_ST1")
-    assert "Horizontal blanking" in got["IF_HB_ST1"]
+def test_a_name_covering_finer_fields_is_dropped(fields):
+    """The whole-byte convenience names. PLL648_CONTROL_01 sets five documented
+    fields under a name RD-5725-1.1 does not have, and PAD_CONTROL_00_0x48 sits
+    over eight. Keeping the container as well as its contents is what puts the
+    same bit in the panel twice."""
+    for name in ("PLL648_CONTROL_01", "STATUS_16", "PAD_CONTROL_00_0x48",
+                 "RESET_CONTROL_0x47", "INTERRUPT_CONTROL_00",
+                 "MADPT_Y_DELAY_UV_DELAY"):
+        assert name not in fields, f"{name} covers finer fields and should go"
 
 
-def test_it_does_not_swallow_the_table_headings():
-    """'Bit  Name  Function Horizontal blanking start position (set 1)' is what
-    the old extractor produced for this exact register."""
-    got = describe(ONE_FIELD_PER_REGISTER, "IF_HB_ST1")
-    assert not got["IF_HB_ST1"].startswith("Bit")
-    for heading in ("Bit", "Name", "Function"):
-        assert f" {heading} " not in f" {got['IF_HB_ST1']} "
+def test_a_field_with_nothing_finer_inside_it_stays(fields):
+    """Dropping containers is about overlap, not about documentation. A byte
+    with no finer naming is the only owner its bits have, so it stays even
+    where the datasheet says nothing about it — the panel and tv5725.h are
+    meant to agree on what exists."""
+    for name in ("ADC_UNUSED_60", "GBS_PRESET_ID"):
+        assert name in fields, f"{name} is the only name those bits have"
 
 
-def test_a_description_does_not_run_forward_into_the_next_field():
-    """Half of the aggregation bug, and the half a line-based rule can fix:
-    ADC_SOGEN's chunk used to run down into ADC_SOGCTRL's row."""
-    got = describe(SEVERAL_FIELDS_PER_REGISTER,
-                   "ADC_SOGEN", "ADC_SOGCTRL", "ADC_INPUT_SEL")
-    assert "SOG enable" in got["ADC_SOGEN"]
-    assert "ADC_SOGCTRL" not in got["ADC_SOGEN"]
-    assert "input selection" not in got["ADC_SOGEN"]
+def test_a_field_inside_a_documented_block_is_documented(fields):
+    """The datasheet documents segment 0's status as a few very wide blocks --
+    SYNC_PROC_STATUS_ is 56 bits spanning s0_16..s0_1C -- while tv5725.h names
+    the individual counters inside it. Those bits ARE attested; the datasheet
+    just describes them a register at a time rather than a field at a time, and
+    the header's finer naming is the more useful of the two.
+
+    Requiring an exact bit match dropped STATUS_SYNC_PROC_VTOTAL, the field
+    every lock check on this board reads.
+    """
+    for name in ("STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HLOW_LEN",
+                 "STATUS_IF_INP_INT"):
+        assert name in fields, f"{name} lost: it sits inside a wider block"
+        assert fields[name]["desc"]
 
 
-def test_a_field_gets_its_own_title_and_its_own_enum():
-    """The headline case. ADC_INPUT_SEL lost its 00 line to the field above, so
-    the map's channel numbering looked as though it started at 01."""
-    got = describe(SEVERAL_FIELDS_PER_REGISTER, "ADC_SOGCTRL", "ADC_INPUT_SEL",
-                   "ADC_SOGEN")
-    assert "00" in got["ADC_INPUT_SEL"]
-    assert got["ADC_SOGCTRL"].startswith("SOG control signal")
+def test_addressing_comes_from_the_header_where_the_two_disagree(fields):
+    """RD-5725-1.1 gives VDS_HB_ST's slice in both its bit diagram and its
+    Bit/Name rows, and they disagree; the rows make it 10 bits at s3_05 instead
+    of 12 at s3_04. The header is right and provably so — the field routinely
+    holds 1342, which does not fit in 10 bits."""
+    got = fields["VDS_HB_ST"]
+    assert (got["seg"], got["reg"], got["off"], got["width"]) == (3, 0x04, 0, 12)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "A field whose Function cell is a SINGLE line still absorbs the next "
-    "field's title. ADC_SOGCTRL is just 'SOG control signal' with no enum "
-    "under it, so there is no blank row between its title and "
-    "ADC_INPUT_SEL's, and taking one line above / stopping one short cannot "
-    "tell them apart. Everything with a body -- ADC_SOGEN, ADC_INPUT_SEL, "
-    "every IF_HB_* -- comes out clean. Separating these needs the PDF's cell "
-    "geometry (pdftotext -bbox / pdfplumber) rather than flattened text."))
-def test_a_single_line_cell_does_not_absorb_the_next_title():
-    got = describe(SEVERAL_FIELDS_PER_REGISTER, "ADC_SOGCTRL", "ADC_INPUT_SEL",
-                   "ADC_SOGEN")
-    assert "input selection" not in got["ADC_SOGCTRL"]
+# The two the centring rule cannot place, both in s0_90/s0_93. Their cells are
+# multi-row VALUE TABLES rather than prose -- "0 0 1  1 0 3  1 1 4" -- so the
+# rows carry no left-column marker and counting lines cannot find the boundary.
+# OSD_DISP_EN swallows the whole of OSD_VERTICAL_ZOOM's cell, which is left
+# empty. Listed rather than tolerated: a THIRD one fails this test.
+VALUE_TABLE_BLEED = [
+    ("OSD_DISP_EN", "OSD_VERTICAL_ZOOM"),
+    ("OSD_MENU_MOD_SEL", "OSD_MENU_ICON_SEL"),
+]
 
 
-def test_a_description_does_not_run_into_the_next_register():
-    got = describe(ONE_FIELD_PER_REGISTER, "IF_HB_ST1", "IF_HB_SP1")
-    assert "stop position" not in got["IF_HB_ST1"]
-    assert "start position" not in got["IF_HB_SP1"]
-
-
-def test_page_furniture_never_appears():
-    got = describe(ONE_FIELD_PER_REGISTER, "IF_HB_ST1", "IF_HB_SP1")
-    for value in got.values():
-        assert "RD-5725" not in value
-        assert "TRUEVIEW5725" not in value
-        assert "Registers Definition" not in value
-
-
-def test_a_name_that_is_not_in_the_text_gets_no_description():
-    got = describe(ONE_FIELD_PER_REGISTER, "IF_HB_ST1", "MADPT_Y_MI_OFFSET")
-    assert got.get("MADPT_Y_MI_OFFSET", "") == ""
+def test_no_description_carries_a_sibling_fields_name(fields):
+    """The bleed this whole chain exists to remove, checked at the far end: a
+    field's text must not name a different field of the same register. That is
+    what "IF_UV_REVERT ... Select CCIR656 data" looked like, and it read as
+    ordinary datasheet prose all the way into tv5725.h."""
+    by_reg = {}
+    for name, e in fields.items():
+        by_reg.setdefault((e["seg"], e["reg"]), []).append(name)
+    found = []
+    for names in by_reg.values():
+        for name in names:
+            if fields[name].get("block"):
+                continue          # a pointer names its own block, deliberately
+            for other in names:
+                if other != name and len(other) > 6 and other in fields[name]["desc"]:
+                    found.append((name, other))
+    assert sorted(found) == sorted(VALUE_TABLE_BLEED), (
+        f"sibling bleed changed: {sorted(found)}")

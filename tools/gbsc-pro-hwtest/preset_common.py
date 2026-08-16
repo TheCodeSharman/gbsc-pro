@@ -32,13 +32,11 @@ SKETCH = os.path.join(HERE, "..", "..", "GBSC-Pro-Source code", "gbs-control")
 # The scaling presets the sketch still compiles. ofw_RGBS and ofw_ypbpr are
 # deliberately excluded: they differ in ways nobody has explained -- IF_LINE_ST
 # 0x18, and they are the only two tables that ENABLE HBOUT/VBOUT -- so folding
-# them in would contaminate "identical" with a disagreement that is real. See the
-# audit's open questions.
+# them in contaminates "identical" with a disagreement that is real.
 #
-# pal_downscale and ntsc_downscale were removed on 2026-08-14 with the
-# OutputDownscale mode. They stay in ARCHIVED_PRESETS below, because
-# preset_tables.json is a historical record and the 306/126 split, bringup_map.py
-# and the drift audit are all statements about the twelve that shipped.
+# The two downscale tables stay in ARCHIVED_PRESETS below: preset_tables.json is
+# a historical record and the 306/126 split is a statement about the twelve that
+# shipped.
 SCALING_PRESETS = [
     "pal_240p", "pal_768x576", "pal_1280x720", "pal_1280x1024",
     "pal_1920x1080",
@@ -65,8 +63,8 @@ ENTRY = re.compile(r"(0[xX][0-9a-fA-F]+|\d+)\s*,?\s*//\s*s(\d)_([0-9a-fA-F]{1,2}
 #
 # Every tool that audits the preset tables reads the preset tables, so deleting
 # the twelve headers from the firmware would blind the checks that prove the
-# deletion was safe -- bringup_map.py's gap report, the agreed/varying split
-# below, and the drift test all stop working at once. That is the wrong order:
+# deletion was safe -- the agreed/varying split below would stop working.
+# That is the wrong order:
 # the audit trail has to outlive the thing it audits.
 #
 # So the twelve tables are archived here as measured data, and this file reads

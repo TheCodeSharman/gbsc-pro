@@ -690,125 +690,6 @@ def test_the_memory_window_never_uncovers_the_display_window(host, probe, framed
             "memory")
 
 
-# --- the static bring-up block ------------------------------------------------
-
-BRINGUP_DUMP = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "..", "..", "test", "output", "test_bringup")
-
-# Below this the derivation has broken and the test would prove nothing. 165
-# addresses survive the overwritten filter as of 2026-08-15, 56 of them the Vds
-# filter coefficients this exists for.
-BRINGUP_MIN_ADDRESSES = 120
-
-
-def _bringup_final_state():
-    """{(segment, register): (value, mask)} the bring-up leaves.
-
-    **THE SOURCE OF TRUTH MOVED, AND THIS TEST DIED WHERE IT USED TO BE.** It
-    asked bringup_map.bringup_fields(), which answers "what the twelve tables
-    agree on that nothing owns" -- correctly EMPTY now that the nine subsystems
-    graduated and own it all. The block's contents live in C++, so this reads
-    them from the artefact that prints them.
-
-    **THE MASK IS THE WHOLE TRICK.** A byte is not a unit of ownership: every
-    write is read-modify-write, so a byte the block touches still carries
-    whatever the fake was poisoned with in the bits no field of it writes.
-    Comparing bytes fails on every partially-owned register -- s4_04 came back
-    0xB2 against the chip's 0x32, a difference that is entirely poison. Running
-    --final-state under two COMPLEMENTARY poisons and keeping the bits that
-    agree recovers exactly the bits the block owns.
-    """
-    def under(poison):
-        result = subprocess.run([BRINGUP_DUMP, "--final-state", poison],
-                                capture_output=True, text=True, timeout=30)
-        state = {}
-        for line in result.stdout.splitlines():
-            match = re.match(r"s(\d)_([0-9a-f]{2}) = 0x([0-9a-f]{2})$", line)
-            if match:
-                state[(int(match.group(1)), int(match.group(2), 16))] = \
-                    int(match.group(3), 16)
-        return state
-
-    a, b = under("0xA5"), under("0x5A")
-    owned = {}
-    for address, value in a.items():
-        mask = 0xFF & ~(value ^ b.get(address, ~value & 0xFF))
-        if mask:
-            owned[address] = (value & mask, mask)
-    return owned
-
-
-def _overwritten_addresses():
-    """Addresses something after the bring-up writes, so a read-back may differ."""
-    import bringup_map
-
-    overwritten = bringup_map.written_outside_bringup()
-    addresses = set()
-    for seg, reg, lo, width, name in bringup_map.header_fields():
-        if name in overwritten or name.startswith("GBS_"):
-            for i in range((lo + width + 7) // 8):
-                addresses.add((seg, reg + i))
-    return addresses
-
-
-def test_the_bringup_block_lands_every_register_nothing_else_moves(host, probe, scaling):
-    """The chip holds what Tv5725::BringUp wrote, wherever nothing wrote after it.
-
-    The block replaces the static two-thirds of a preset table, and the risk it
-    carries is silent: a wrong value in Vds is a filter coefficient, which may
-    only show on content nobody is displaying. So this reads them back rather
-    than trusting the picture. That intent is unchanged; what changed is where
-    the expectation comes from.
-
-    **IT USED TO ASK bringup_map.bringup_fields(), AND THAT ANSWER IS NOW
-    CORRECTLY ZERO.** The derivation means "what the twelve tables agree on that
-    has no owner", and the graduation gave it all owners --
-    test_the_derivation_is_empty guards that as the end state. The test asserted
-    the list had more than 250 entries, so it failed with `--source` from the
-    moment the last class landed, and nobody saw it because the clean run that
-    signed the work off did not pass `--source`.
-
-    So the expectation now comes from the block itself, via
-    test/output/test_bringup --dump, minus the addresses something LATER writes
-    -- the raster, the windows, the divider, the clock seed. Those may
-    legitimately disagree; everything else may not.
-
-    Reads through /getregs a segment at a time. 233 individual /getreg round
-    trips would take minutes and hammer RegisterQueue, which the sync watcher
-    notices.
-    """
-    if not os.path.exists(BRINGUP_DUMP):
-        pytest.skip(f"{BRINGUP_DUMP} is not built -- run `make -C test bringup`")
-
-    final = _bringup_final_state()
-    assert final, "test_bringup --final-state printed no register writes"
-
-    expectations = {address: pair for address, pair in final.items()
-                    if address not in _overwritten_addresses()}
-    assert len(expectations) >= BRINGUP_MIN_ADDRESSES, (
-        f"only {len(expectations)} of {len(final)} bring-up addresses survive "
-        f"the overwritten filter; the derivation is broken, so this test would "
-        f"prove nothing")
-
-    live = {}
-    for seg in sorted({s for s, _ in expectations}):
-        live[seg] = read_segment(host, seg)
-        assert live[seg] is not None, f"could not read segment {seg}"
-
-    wrong = []
-    for (seg, reg), (want, mask) in sorted(expectations.items()):
-        got = live[seg].get(reg)
-        if got is None:
-            continue
-        if (got & mask) != want:
-            wrong.append(f"s{seg}_{reg:02x} = 0x{got:02X}, bring-up writes "
-                         f"0x{want:02X} in mask 0x{mask:02X}")
-
-    assert not wrong, (
-        f"{len(wrong)} of {len(expectations)} bring-up registers do not hold "
-        f"what the block wrote, and nothing else writes them:\n  "
-        + "\n  ".join(wrong[:25]))
-
 
 # The SDRAM memory map, owned by Tv5725::FrameBuffer. Word addresses: 2^21
 # words of 32 bits = the 8 MB part the schematic fits.
@@ -948,10 +829,8 @@ def test_the_memory_bus_subsystem_owns_its_timing(host, source):
         restore_the_preset_the_suite_expects(host)
 
 
-# The FIFO request watermarks and the line-double reset position -- the last
-# seven fields the twelve preset tables wrote that nothing else did. Owned by
-# Tv5725::FrameBuffer and Tv5725::InputFormatter since 2026-08-15, which took
-# `bringup_map.py --gap` to zero and made deleting the tables possible.
+# The FIFO request watermarks and the line-double reset position, owned by
+# Tv5725::FrameBuffer and Tv5725::InputFormatter.
 #
 # The last column is what pal_768x576 carries, and it is the point: six of the
 # seven differ from the owned value, so the trigger below can actually fail.

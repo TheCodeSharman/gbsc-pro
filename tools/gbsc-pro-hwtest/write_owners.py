@@ -6,12 +6,11 @@
     python3 tools/gbsc-pro-hwtest/write_owners.py --sites
 
 The campaign in docs/chip-initialisation.md is "one class per subsystem owns its
-registers". Progress on it has been tracked by `bringup_map.py --gap`, which asks
-whether every address a PRESET writes has SOME owner -- that reached zero on
-2026-08-15. It is not the same question as whether the ENGINE owns them.
+registers". Every address a PRESET writes has had SOME owner since 2026-08-15.
+That is not the same question as whether the ENGINE owns them.
 
-This asks the second question. Michael, 2026-08-15: "audit ... where we are at in
-terms of pre existing code programming the tv5725 without going via the engine".
+This asks the second question: how much pre-existing code programs the TV5725
+without going via the engine.
 
 Four owners, and only the first is the destination:
 
@@ -32,9 +31,8 @@ Counting rules, all of which matter:
     written five times in one function does not read as five problems. --sites
     gives the raw call sites instead.
   - Raw writeOneByte()/writeBytes() are counted SEPARATELY and by address where
-    one is visible, because they carry no field name -- which is exactly why
-    test_no_bits_have_two_owners_under_two_names cannot see them. They are the
-    blind spot, not a footnote.
+    one is visible, because they carry no field name -- which is exactly why a
+    by-name check cannot see them. They are the blind spot, not a footnote.
   - tv5725.h is skipped: it declares the fields, it does not write them.
 """
 
