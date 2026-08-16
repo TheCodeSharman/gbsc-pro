@@ -300,8 +300,8 @@ bits, so the header is right and the table is simply an error.
   `INT_RST_0`), and a name commented "fake name" does not. **An alias is not
   untidiness, it is a second owner**: the bring-up block wrote `INT_RST_0` while
   the sketch wrote `INT_CONTROL_RST_SOGBAD`, four bits had two owners, and every
-  check passed because checks compare names. Guarded by
-  `test_no_bits_have_two_owners_under_two_names`, which asks in bits.
+  check passed because checks compare names. **Ask in bits, not in names** —
+  nothing guards this automatically since the ownership tooling was deleted.
 - **The 25 whole-byte convenience names are a live campaign, not settled.**
   `PLL648_CONTROL_01::write(0x75)` sets five documented fields under a name the
   datasheet lacks. 109 call sites; 77 are literal writes and are the target, 20
@@ -390,7 +390,7 @@ registers one `writeProgramArrayNew()` call writes:
   `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP` (= 93% of `MD`, the
   sync processor's retime window) are **ONE quantity in THREE registers**, and
   `Tv5725::Sampling` owns all three off one held value. It is *state*, handed to
-  `Engine::Capture` rather than read back — the same rule
+  `Geometry::Capture` rather than read back — the same rule
   `Capture::ProgressiveStart` already carried. Verified across all twelve shipped
   tables: `IF_HSYNC_RST == PLLAD_MD/2` without exception, while `SP_RT_HS_SP` is
   wrong in five of them (`ntsc_1280x720` ships **68** against 2180) and is only
@@ -463,9 +463,8 @@ registers one `writeProgramArrayNew()` call writes:
 - **"Something writes it" is not "something owns it", and there are TWO levels
   of that.** The first is settled: a field written only by `setResetParameters()`
   or one of the two bypass switches has no owner on the *scaling* path, because
-  those functions leave a state a preset had to undo —
-  `bringup_map.py`'s `NON_OWNING`. The second cost step 4 a second time and no
-  tool can see it: attribution is per FUNCTION, so a field
+  those functions leave a state a preset had to undo. The second cost step 4 a
+  second time and no tool can see it: attribution is per FUNCTION, so a field
   `doPostPresetLoadSteps()` writes only inside `if (rto->outModeHdBypass)` or
   `if (rto->inputIsYpBpR)` reads as owned by a function that unquestionably
   runs. **22 fields were in that state on 2026-08-15 with `--gap` reporting
@@ -522,7 +521,7 @@ registers one `writeProgramArrayNew()` call writes:
   there is a test asserting the parameter does not exist, because its existence
   was the bug. Every pad press recomputes every window, pan included.
 - **The output raster is computed too, since 2026-08-13.**
-  `Engine::solveRaster()` derives both totals, both sync pulses and the display
+  `Geometry::solveRaster()` derives both totals, both sync pulses and the display
   clock seed from the frame height and the measured field rate, so a preset
   table's raster bytes are overwritten on every mode change. Measured
   1436 x 1126 @ 80.85 MHz before, **1915 x 1126 @ 107.81 MHz after** — a third
@@ -536,11 +535,11 @@ registers one `writeProgramArrayNew()` call writes:
   track and widening the output silently eats the travel. That is the mechanism;
   the numbers below are what it cost, twice.
 
-  `AxisH` used to magnify at most 2.048x (`scaleMin` 500, swept 2026-08-09).
-  At the 1436 raster that left 307 units of travel; when `Engine::solveRaster()`
-  made the raster 1916 on 2026-08-13 it left **73**, which is what Michael hit
-  on 2026-08-15 as *"the horizontal scale clamps before I can get to full
-  screen"*. **`scaleMin` is now DERIVED — `Scale::Unity / maxMagnification`,
+  `AxisHorizontal` used to magnify at most 2.048x (`scaleMin` 500, swept 2026-08-09).
+  At the 1436 raster that left 307 units of travel; when `Geometry::solveRaster()`
+  made the raster 1916 on 2026-08-13 it left **73**, at which point the
+  horizontal scale clamps before the picture reaches full screen.
+  **`scaleMin` is now DERIVED — `Scale::Unity / maxMagnification`,
   both axes at 4.0x** — so the floor is `raster / 4` (479 at 1916, 530 units of
   travel) and it no longer collapses each time the output widens.
 
@@ -583,15 +582,15 @@ registers one `writeProgramArrayNew()` call writes:
   **multiple stable bands**, so an edge found by creeping down is only the true
   edge if you creep past all of them. More measurement does not fix that.
 
-  So `geometry_math.py` no longer computes a margin: `VDS_?B_ST` goes to the last
-  value below the raster total, taking all of it, and `HEADROOM_WARN_PX = 100` is
-  **a floor to warn below, not a budget to reserve**. Michael's reading, which
-  fits: banded non-monotonic thresholds look like marginal signal integrity, in
-  which case the numbers are facts about *this board*. A torn picture is still
-  not automatically a fault to chase.
-- **The zigzag is NOT HSCALE-banded, and that is measured.** Michael swept
-  `VDS_HSCALE` by hand across the corrupted state on 2026-08-09 and **no value
-  cleared it**. The previous session's reading — clean at 823 and 762, torn at
+  So `geometry_math.py` no longer computes a margin: the memory window IS the
+  display window, `VDS_?B_ST == VDS_DIS_?B_ST`, allocating nothing spare, and
+  `HEADROOM_WARN_PX = 100` is **a floor to warn below, not a budget to reserve**.
+  Banded non-monotonic thresholds look like marginal signal integrity, in which
+  case the numbers are facts about *this board*. A torn picture is still not
+  automatically a fault to chase.
+- **The zigzag is NOT HSCALE-banded, and that is measured.** `VDS_HSCALE` was
+  swept by hand across the corrupted state on 2026-08-09 and **no value cleared
+  it**. The previous session's reading — clean at 823 and 762, torn at
   795, therefore banded like the left-edge corruption above — does not survive
   a full sweep. Do not reach for "move the scale" as the explanation or the fix.
   The two banding observations are **separate**: the headroom/left-corruption
@@ -724,10 +723,23 @@ horizontal extents disagree — the fastest read on why a picture is wrong.
 **`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
 than namespaces over file-scope globals, one class per file named after it,
 declare-in-header/define-in-.cpp, minimal OO with no inheritance or virtuals,
-dependency injection over reaching for globals, and a behaviour-preserving
-refactor proven by diffing `test_geometry --dump`. Every rule in it is there
-because it cost a session. Read it before writing firmware C++.
+dependency injection over reaching for globals, a default of no comment at all,
+and a behaviour-preserving refactor proven by diffing `test_geometry --dump`.
+Every rule in it is there because it cost a session. Read it before writing
+firmware C++.
 
+- **The default is NO comment, and a densely commented file is a defect rather
+  than a matter of taste.** Commentary reads as machine-written, and a heavily
+  commented file says its author thought the code was unreadable. Nothing checks
+  it, which is how `src/tv5725/` reached **2195 comment lines against 4386 of
+  code — half the engine, in 138 blocks of four lines or more, the longest 67**
+  (2026-08-16), so removing them is now a pass of its own. Write one or two
+  lines of *why* only where a constraint is genuinely hidden — a measurement, a
+  datasheet contradiction, a bug that shaped the code — and put anything longer
+  in `docs/` with a pointer to it. What was tried, what was refuted and which
+  session measured it never belong in a source file, and extracting a
+  well-named function beats explaining an unnamed one. `CODING_STYLE.md`,
+  "Comments are pointers, not essays".
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.

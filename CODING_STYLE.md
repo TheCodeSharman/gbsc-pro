@@ -15,21 +15,21 @@ State and the operations on it go in a class, with the state **private**.
 ```cpp
 // no
 namespace Geometry { struct Axis { float startConst; ... }; }
-static Tv5725::Framing geometryFraming;          // mutable static IN A HEADER
-inline Fit fitToRaster(uint16_t capture, uint16_t raster, const Axis &axis);
+static Tv5725::PanAndZoom geometryFraming;       // mutable static IN A HEADER
+inline RasterFit fitToRaster(uint16_t capture, uint16_t raster, const Axis &axis);
 
 // yes
 class Axis {
 public:
-    Fit fitToRaster(uint16_t capture, uint16_t rasterTotal) const;
+    RasterFit fitToRaster(uint16_t capture, uint16_t rasterTotal) const;
 private:
     float startConst_, startPerMag_;
 };
 ```
 
 **Why.** A namespace of free functions makes you pass the data alongside every
-call, which is more code and harder to follow — `fitToRaster(c, r, AxisH)` says
-less than `AxisH.fitToRaster(c, r)`.
+call, which is more code and harder to follow — `fitToRaster(c, r, AxisHorizontal)`
+says less than `AxisHorizontal.fitToRaster(c, r)`.
 
 And the globals are a real defect, not a taste question. `geometryFraming`,
 `geometrySolvePending` and `geometryFramingRequested` were mutable `static`s in
@@ -176,8 +176,9 @@ and reviewability win. **Do not re-argue this from the size number.**
 Two things that only appear once the bodies move out, both of which bit here:
 
 - Instances belong in the `.cpp` with an `extern` declaration in the header.
-  `static const Axis AxisH(...)` in a header was one silent copy per translation
-  unit; it is now `extern const Axis AxisH;` and one definition in `Axis.cpp`.
+  `static const Axis AxisHorizontal(...)` in a header was one silent copy per
+  translation unit; it is now `extern const Axis AxisHorizontal;` and one
+  definition in `Axis.cpp`.
 - An in-class initialiser is **not** a definition, so `static const uint16_t Max
   = 1023;` needs `const uint16_t Scale::Max;` in a `.cpp` — **but only if
   something ODR-uses it**, meaning binds it to a reference or takes its address.
@@ -200,13 +201,13 @@ three constants; `ControlSteps.h` alone is the whole class. "Define in the
 
 **The host test build globs `src/tv5725/*.cpp`** in `test/Makefile`. Glob it,
 never write the list out: a new class needs nothing added, but a new class that
-must NOT host-compile has to join the `Engine|Controls` exclusion.
+must NOT host-compile has to join the `Geometry|Controls` exclusion.
 
 ## Inject dependencies, by reference, from a composition root
 
 Collaborators are **handed** what they need rather than reaching for a global by
 name. It decouples the pieces and, more usefully here, makes them testable — a
-test can give `OSDManager` its own `GeometryControls` and press every bar
+test can give `OSDManager` its own `Tv5725::Controls` and press every bar
 without a board.
 
 **Reference, not pointer.** A reference cannot be null and cannot be rebound, so
@@ -215,7 +216,7 @@ missing-dependency branch to get wrong. Take it in the constructor and store it
 as a reference member:
 
 ```cpp
-explicit OSDManager(GeometryControls &geometry) : geometry_(geometry) {}
+explicit OSDManager(Tv5725::Controls &geometry) : geometry_(geometry) {}
 ```
 
 A pointer is right only when the dependency genuinely can be absent or replaced
@@ -227,8 +228,8 @@ translation unit, and injected downward. Headers declare *types*; they do not
 declare or define instances.
 
 ```cpp
-GeometryEngine geometry;
-GeometryControls geometryControls(geometry, reportGeometryAdjust);
+Tv5725::Geometry geometry;
+Tv5725::Controls geometryControls(geometry, reportGeometryAdjust);
 OSDManager osdManager(geometryControls);
 ```
 
@@ -245,16 +246,16 @@ gets its own copy.
 
 ## One namespace per module, and everything in it
 
-`Tv5725::Scale`, `Tv5725::Window`, `Tv5725::Fit`, `Tv5725::Solution`,
-`Tv5725::Axis` — names that generic would collide in a sketch that also pulls
+`Tv5725::Scale`, `Tv5725::CaptureWindow`, `Tv5725::RasterFit`,
+`Tv5725::RegisterSolution`, `Tv5725::Axis` — names that generic would collide in a sketch that also pulls
 in Arduino, an OLED driver and WebSockets. That is what the namespace is for and
 it earns its keep.
 
-**What does not earn its keep is using it for half the module.** `GeometryEngine`,
-`GeometryControls` and `GeometryCapture` sat *outside* `namespace Geometry` and
-paid a `Geometry` prefix instead, so one module had two mechanisms for one job.
-They are now `Tv5725::Engine`, `Tv5725::Controls` and `Tv5725::Capture`,
-and the stutter is gone.
+**What does not earn its keep is using it for half the module.** The engine, its
+controls and its capture once sat *outside* the namespace and paid a `Geometry`
+prefix instead, so one module had two mechanisms for one job. They are
+`Tv5725::Geometry`, `Tv5725::Controls` and `Tv5725::Capture`, and the stutter is
+gone.
 
 A namespace is all-or-nothing. If a type belongs to the module, it goes in.
 
@@ -271,16 +272,19 @@ else. That duplication is *why* the geometry had to be header-only: no `.cpp`
 could name `GBS` without repeating it.
 
 The same rule at the behaviour level: there is **one entry point** for a user
-geometry adjustment — `GeometryControls::panH` / `panV` / `zoomH` / `zoomV`. The
+geometry adjustment — `Tv5725::Controls::panH` / `panV` / `zoomH` / `zoomV`. The
 web pads, the OSD bar and the IR menus all land there. When there were three
 ways in, two of them bypassed the engine and the acceptance suite was green
 against a broken picture for a whole evening.
 
 ## Comments are pointers, not essays
 
-The *why* — a hidden constraint, a measurement, a bug that shaped the code —
-belongs next to the code, briefly. The reasoning belongs in the tests and in
-`docs/`. Prefer extracting a well-named function over explaining an unnamed one.
+**The default is no comment at all.** A densely commented file is a defect rather
+than a matter of taste: it reads as machine-written, and it says its author
+thought the code was unreadable. The *why* — a hidden constraint, a measurement,
+a bug that shaped the code — belongs next to the code, briefly, where a name
+cannot carry it. The reasoning belongs in the tests and in `docs/`. Prefer
+extracting a well-named function over explaining an unnamed one.
 
 **Keep the process out of the code.** What we tried, what was refuted, which
 session measured it, how the bug was found: none of that goes in a source file.
@@ -313,9 +317,9 @@ yes  Most debug output is inert. SerialM.print(...) calls are written
 wrong when written. Give the command that answers it — `grep -c SerialMprint` —
 or pin the number to something fixed, like a released version.
 
-The exception is a page whose *subject* is an investigation: `docs/*-audit.md`
-and the falsification records exist to carry refuted hypotheses, and that history
-is their content, not narration around it.
+The exception is a page whose *subject* is an investigation: `docs/investigations/`
+exists to carry refuted hypotheses, and that history is its content rather than
+narration around it.
 
 ## Host unit tests are doctest
 
