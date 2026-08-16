@@ -283,6 +283,17 @@ the experiment is two writes and is reversible.
   ending at 1072.5 and the front porch starting at 1182.2. No single origin
   offset reconciles it with the head, which is already pinned. So it is not the
   source's blanking.
+
+  **Untested: the tail green is the head's HSYNC pulse, reached by the capture
+  window wrapping past the end of the line.** That would make it the same pulse
+  after all, seen from the other side, and it fits what the window does — the
+  progressive stop follows the line length and may roll past it. Two numbers
+  argue against it as it stands and are what to settle first: the tail is ~120
+  units against the pulse's 91, and it stops around 1246 rather than running to
+  the line's end at 1276. The cheap discriminator is whether its width tracks
+  `HLOW_LEN` — change the sampling divider or drive a source with a different
+  sync duty, and a wrapped pulse must move with it while an unrelated region
+  will not.
 - **The zigzag is not HSCALE-banded.** A manual sweep across the corrupted state
   found no value that cleared it. Cause unknown.
 - **Whether the capture should be centred on the active region rather than the
