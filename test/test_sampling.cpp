@@ -209,7 +209,7 @@ TEST_CASE("the sync processor's retime window is the divider a third time")
 // number it chose and hands it to whoever needs it.
 
 // Where the three registers live, so the assertions below name bytes rather
-// than repeat tv5725.h's arithmetic:
+// than repeat Tv5725.h's arithmetic:
 //   PLLAD_MD      s5_12[0:11]
 //   IF_HSYNC_RST  s1_0E[0:11]
 //   SP_RT_HS_SP   s5_4B[0:11]

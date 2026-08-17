@@ -46,7 +46,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 /*
 TV5725
 */
-#include "tv5725.h"
+#include "src/tv5725/Tv5725.h"
 #include <Wire.h>
 
 #include "presetMdSection.h"
@@ -57,7 +57,7 @@ TV5725
 #include "slot.h"
 #include "osd.h"
 #include "src/net/RegisterQueue.h"
-#include "gbs_types.h"   // typedef TV5725<GBS_ADDR> GBS, in one place
+#include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/PresetLoad.h"

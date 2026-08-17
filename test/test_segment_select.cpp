@@ -21,9 +21,9 @@
 
 FakeTwoWire Wire;
 
-#include "../GBSC-Pro-Source code/gbs-control/tv5725.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
 
-typedef TV5725<GBS_ADDR> GBS;
+typedef Tv5725::Tv5725 GBS;
 
 // Two registers at the same offset in different banks -- the pair the bench
 // fault actually swapped. IF_HB_ST is the input formatter's set 0 horizontal

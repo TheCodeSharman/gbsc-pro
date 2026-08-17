@@ -13,7 +13,7 @@
 // releasing a block's reset after configuring it discards the configuration. So
 // the dump is a sequence, not a set.
 //
-// The seam is test/fake/Wire.h: tv5725.h is header-only C++ whose only Arduino
+// The seam is test/fake/Wire.h: Tv5725.h is header-only C++ whose only Arduino
 // dependency is Wire, so compiling against the fake bus needs no #ifdef in the
 // firmware.
 

@@ -3,7 +3,7 @@
 #include <LittleFS.h>
 #include "OLEDMenuImplementation.h"
 #include "options.h"
-#include "tv5725.h"
+#include "gbs_types.h"
 #include "slot.h"
 #include "src/WebSockets.h"
 #include "src/WebSocketsServer.h"
@@ -25,7 +25,6 @@ extern uint8_t RGB_Com;
 #define RGBs_Sync 2
 #define Ypbpr_Sync 3
 
-typedef TV5725<GBS_ADDR> GBS;
 extern void applyPresets(uint8_t videoMode);
 extern void setOutModeHdBypass(bool bypass);
 extern void saveUserPrefs();

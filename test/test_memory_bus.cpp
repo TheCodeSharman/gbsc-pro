@@ -1,6 +1,6 @@
 // Host-compiled unit tests for src/tv5725/MemoryBus.cpp -- `make -C test memory-bus`.
 //
-// No seam had to be invented: tv5725.h is header-only C++ whose only Arduino
+// No seam had to be invented: Tv5725.h is header-only C++ whose only Arduino
 // dependency is Wire, and test/fake/Wire.h already models the segmented slave
 // for test_segment_select.cpp, so compiling MemoryBus.cpp against it is the whole
 // trick and the firmware needs no #ifdef.

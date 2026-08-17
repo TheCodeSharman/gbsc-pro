@@ -1,9 +1,12 @@
-#ifndef TV5725_H_
-#define TV5725_H_
+#ifndef TV5725_TV5725_H_
+#define TV5725_TV5725_H_
 
-#include "tw.h"
+#include "../../tw.h"
 
 #define GBS_ADDR 0x17 // 7 bit GBS I2C Address
+
+namespace Tv5725
+{
 
 namespace detail
 {
@@ -17,15 +20,15 @@ namespace detail
     };
 } // namespace detail
 
-template <uint8_t Addr>
-class TV5725 : public tw::SegmentedSlave<Addr, detail::TVAttrs>
+// The chip: the segmented bus below, every register field above. Registers
+// migrate out of here into the subsystem class that owns them, so what is left
+// is whatever has no owner yet. docs/chip-initialisation.md.
+class Tv5725 : public tw::SegmentedSlave<GBS_ADDR, detail::TVAttrs>
 {
 private:
-    // Stupid template boilerplate
-    typedef tw::SegmentedSlave<Addr, detail::TVAttrs> Base;
-    using typename Base::SegValue;
+    typedef tw::SegmentedSlave<GBS_ADDR, detail::TVAttrs> Base;
     template <SegValue Seg, uint8_t ByteOffset, uint8_t BitOffset, uint8_t BitWidth, tw::Signage Signed>
-    using Register = typename Base::template Register<Seg, ByteOffset, BitOffset, BitWidth, Signed>;
+    using Register = Base::Register<Seg, ByteOffset, BitOffset, BitWidth, Signed>;
     template <SegValue Seg, uint8_t ByteOffset, uint8_t BitOffset, uint8_t BitWidth>
     using UReg = Register<Seg, ByteOffset, BitOffset, BitWidth, tw::Signage::UNSIGNED>;
 
@@ -3891,5 +3894,7 @@ public:
     static const uint8_t OSD_FORMAT_YCBCR = 1;
     static const uint8_t OSD_FORMAT_RGB = 0;
 };
+
+} // namespace Tv5725
 
 #endif
