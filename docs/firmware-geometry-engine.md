@@ -11,7 +11,7 @@ is about the code.
 
 | File | What |
 |---|---|
-| `…/gbs-control/src/tv5725/` | the driver. One class per file; `driver.h` is the umbrella include |
+| `…/gbs-control/src/tv5725/` | the driver. One class per file; every caller includes the classes it names, and there is no umbrella header |
 | `…/src/tv5725/Geometry.cpp`, `Controls.cpp` | the only two that touch registers or Arduino — everything else is pure arithmetic and host-compiles |
 | `test/test_geometry*.cpp` | host-compiled unit tests, `make -C test` |
 
