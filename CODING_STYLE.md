@@ -58,6 +58,22 @@ to lose sight of. `tw.h`'s register machinery is the project's entire template
 budget. `Tv5725.h` spends it through one alias, `UReg`, and adds none of its own —
 the chip is a plain class, because there is only ever one of it on the board.
 
+**The one inheritance in the driver is `GBS`, and it is deliberate.** It is a
+mixin: `class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor {}`,
+aggregating names and nothing else — no state, no constructors, no virtuals, and
+a byte-identical binary either side of it, so it costs nothing.
+
+It exists because registers migrate out of `Tv5725::Tv5725` into the subsystem
+that owns them a block at a time, and `GBS::VDS_HSCALE` has to keep resolving
+while its callers still say that. Each migration adds one base; the class is
+deleted when the last caller names its owner directly. **Removing it early breaks
+every unmigrated call site at once**, so it goes when the base list is empty, not
+when someone notices the inheritance.
+
+Ambiguity is not a risk worth guarding: the field names are disjoint, and the
+compiler rejects the build the moment two subsystems claim the same one — which
+is a better check than the flat catalogue ever had.
+
 ## `src/tv5725/` is the driver, and the name is the boundary
 
 Renamed from `src/tv5725/` on 2026-08-09, because the old name was refusing
