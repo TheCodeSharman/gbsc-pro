@@ -31,7 +31,7 @@ HSCALE_UNITY = 1024
 #
 #     scale_min = HSCALE_UNITY / max magnification
 #
-# RD-5725-1.1 states NO minimum for VDS_HSCALE. regdef.txt gives only the ratio
+# RD-5725-1.1 states NO minimum for VDS_HSCALE. It gives only the ratio
 # -- HSCALE = 1024 x input resolution / output resolution -- and the field is 10
 # bits, so the part accepts 1..1023 and there is no hardware floor to derive.
 #

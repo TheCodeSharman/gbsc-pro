@@ -123,8 +123,8 @@ REGISTER_DOC = {}
 
 
 def load_register_doc():
-    """The merged map from extract_registers.py: addressing from the firmware
-    header, descriptions from the datasheet. Optional — the panel works without
+    """The suite's own register map, addressing and descriptions both anchored
+    to RD-5725-1.1 via datasheet_fields.json. Optional — the panel works without
     it, just without descriptions or the search list."""
     path = pathlib.Path(__file__).resolve().parent / "tv5725_registers.json"
     try:

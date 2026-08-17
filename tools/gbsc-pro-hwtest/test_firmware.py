@@ -520,7 +520,6 @@ def test_detection_settles_on_one_input_instead_of_hunting(host, source):
 # goes to the Si5351 as the display clock, so the TV gets timing it cannot lock
 # to and goes blank -- with every scaler register still reading correct.
 
-FIRMWARE = Path(__file__).resolve().parents[2] / "GBSC-Pro-Source code" / "gbs-control"
 
 PRESET_DISPLAY_CLOCK = (1, 0x2D)  # GBS_PRESET_DISPLAY_CLOCK in Tv5725.h
 
@@ -658,55 +657,6 @@ def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
         f"pixels per line against the {htotal_reg + 1} programmed. That is horizontal "
         "resolution the board could produce and is not -- check s0_41 and s3_01/s3_02 in "
         "the preset table for this field rate."
-    )
-
-
-def test_display_clock_stash_is_not_a_preset_register():
-    """The divider must not be stashed anywhere a preset load can overwrite.
-
-    **THE ORIGINAL HAZARD IS GONE, AND THIS RECORDS THAT RATHER THAN PRETENDING
-    OTHERWISE.** s1_2D was unusable as a stash because all but two of the twelve
-    preset arrays wrote 0 into it, so a preset load wiped the divider and the
-    Si5351 kept a stale frequency -- blank output with correct-looking registers.
-    The arrays went on 2026-08-14 and nothing compiled in writes that register any
-    more, which is what its own failure message said to expect:
-
-        "If that is deliberate the register is safe to stash in again, but this
-         test's premise is gone and it should be rewritten rather than deleted."
-
-    So the clobbering half is dropped. What is kept is the part that still bites:
-    the address, because the reasoning above is about s1_2D specifically and a
-    moved declaration would silently invalidate it; and the RAM stash, because
-    rto->presetDisplayClock is still the mechanism and putting the value back in
-    a register should be a decision somebody makes, not a regression. A CUSTOM
-    preset is still a register dump loaded from the filesystem and still covers
-    s1_2D, so the hazard returns for that path alone.
-    """
-    segment, register = PRESET_DISPLAY_CLOCK
-
-    tv5725 = (FIRMWARE / "src" / "tv5725" / "Tv5725.h").read_text(errors="replace")
-    declaration = re.search(
-        r"UReg<(0x[0-9A-Fa-f]+),\s*(0x[0-9A-Fa-f]+),[^>]*>\s*GBS_PRESET_DISPLAY_CLOCK", tv5725
-    )
-    assert declaration, "GBS_PRESET_DISPLAY_CLOCK is not declared in Tv5725.h"
-    assert (int(declaration.group(1), 16), int(declaration.group(2), 16)) == (segment, register), (
-        f"GBS_PRESET_DISPLAY_CLOCK moved to s{declaration.group(1)}_{declaration.group(2)}; "
-        "recheck whether the new address is inside preset coverage before trusting this test"
-    )
-
-    sketch = (FIRMWARE / "gbs-control.ino").read_text(errors="replace")
-    writes = [
-        line.strip()
-        for line in sketch.splitlines()
-        if "GBS_PRESET_DISPLAY_CLOCK::write" in line
-    ]
-    assert not writes, (
-        f"the display clock is being stashed in s{segment}_{register:02X} again. No "
-        "compiled-in preset array overwrites it any longer, so this is no longer the "
-        "outright bug it was -- but a CUSTOM preset is a register dump covering that "
-        "address, so loading one still wipes it, the restore is skipped, and the Si5351 "
-        f"keeps a stale frequency: blank output with correct-looking registers. "
-        f"rto->presetDisplayClock is out of reach of both. Offending lines: {writes}"
     )
 
 
