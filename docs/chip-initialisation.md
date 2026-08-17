@@ -244,7 +244,7 @@ the exception.
 
 Every address a *preset* writes has an owner — that gap reached zero on
 2026-08-15. That is not the same as the engine owning them, which is what
-`write_owners.py` measures:
+Measured 2026-08-17, before the tool that counted it was deleted:
 
 | owner | distinct fields | call sites | raw byte writes |
 |---|---|---|---|

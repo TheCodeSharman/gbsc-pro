@@ -120,6 +120,6 @@ two views built from one broken parse is not evidence. That is now
 `test_the_shipped_header_declares_every_field_the_datasheet_does`.
 
 So: before treating an address as undocumented, grep
-`tools/tv5725-header/regdef.txt` for its table. s4_47 spent a session as an
+RD-5725-1.1 for its table. s4_47 spent a session as an
 unnamed hole with a bench experiment proposed for it, and the datasheet had a
 full page on it the whole time.
