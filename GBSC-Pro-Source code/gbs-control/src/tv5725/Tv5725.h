@@ -1105,584 +1105,69 @@ public:
 
 // MEMORY REGISTERS
 
-    typedef UReg<0x04, 0x00, 0, 8> MEM_INI_REG;                       // refresh cycle; otherwise refresh cycle will be before
-                                                                      // mode cycle. SDRAM Start Initial Cycle: This register
-                                                                      // should work with the register 80/[2:0]; When this bit is
-                                                                      // 1, memory controller initial cycle enable; When this bit
-                                                                      // is 0, memory controller initial cycle disable
 
-    typedef UReg<0x04, 0x00, 4, 1> SDRAM_RESET_SIGNAL;                // Part of MEM_INI_REG, which RD-5725-1.1 documents as one
-                                                                      // 8-bit block at s4_00 rather than field by field.
 
 
-    typedef UReg<0x04, 0x01, 0, 16> MEM_MODE_REG;                     // SDRAM Mode Information Low 8bits: [2:0] Burst length, [3]
-                                                                      // Wrap type : 0 = Sequential , 1= interleave ; [6:4]
-                                                                      // Latency mode, 010: select Latency =2; 011: select Latency
-                                                                      // =3
 
 
-    typedef UReg<0x04, 0x03, 0, 1> MEM_MODE_BA0;                      // Bank0 Select Value In Load Mode Register Cycle : This
-                                                                      // register ‘s aim is compatible with more sdram chips
 
-    typedef UReg<0x04, 0x03, 1, 1> MEM_MODE_BA1;                      // Bank1 Select Value In Load Mode Register Cycle : This
-                                                                      // register ‘s aim is compatible with more sdram chips
 
-    typedef UReg<0x04, 0x03, 2, 1> MEM_MODE_CS0;                      // Chip0 Select Value in Load Mode Register Cycle : This
-                                                                      // register ‘s aim is compatible with more sdram chips
 
-    typedef UReg<0x04, 0x03, 3, 1> MEM_MODE_CS1;                      // Chip1 Select Value in Load Mode Register Cycle : This
-                                                                      // register ‘s aim is compatible with more sdram chips
 
-    typedef UReg<0x04, 0x03, 4, 1> MEM_MODE_CYC;                      // Mode Cycle Period Select When this bit is 1, then mode
-                                                                      // cycle for memory initialization will be 3 clocks
 
-    typedef UReg<0x04, 0x03, 5, 1> MEM_INI_REF_CYC;                   // otherwise be 2 clocks ; Initial Cycle Refresh Period
-                                                                      // Clock Number Select: This register is control the delays
-                                                                      // of Command, address and data sent to PAD When it is at 1,
-                                                                      // select NCASDLY cell, when it is at 0, select DLY8LV cell
 
 
-    typedef UReg<0x04, 0x04, 0, 3> MEM_FK_RD_DLY;                     // SDRAM Rising Edge Clock Delay for Latching Read Data:
-                                                                      // (default set 3’b 000); With DLY8LV and NCASDLY
-                                                                      // MEM_FK_RD_DLY [2:0] #of Mclk 0 0 0 0.00/0.0 0 0 1
-                                                                      // 0.25/2.0 0 1 0 0.50/4.0 0 1 1 0.75/6.0 1 0 0 1.00 1 0 1
-                                                                      // 1.50 1 1 0 2.00
 
-    typedef UReg<0x04, 0x04, 4, 3> MEM_RD_LAT_PIP;                    // MEM_RD_LAT_PIP [2:0] #of Mclk 0 0 0 3 0 0 1 2 0 1 0 1 0 1
-                                                                      // 1 4 1 0 0 5
 
 
-    typedef UReg<0x04, 0x05, 0, 2> MEM_ACT_CYCLE;                     // Number of Memory Clock For SDRAM Active Cycle:
-                                                                      // MEM_ACT_CYCLE [1:0] # of Mclk 0 0 2 0 1 3 1 0 4 1 1 5
 
-    typedef UReg<0x04, 0x05, 4, 2> MEM_PCHG_CYCLE;                    // MEM_PCHG_CYCLE [1:0] # of Mclk 0 0 2 0 1 3 1 0 4
 
 
-    typedef UReg<0x04, 0x06, 0, 3> MEM_REF_RATE;                      // For VGA Mode of Refresh Cycle: #of MEM_REF_RATE [2:0]
-                                                                      // refresh 0 0 0 3 0 0 1 5 0 1 X 1 1 0 X 2 1 1 X 4
 
-    typedef UReg<0x04, 0x06, 4, 3> MEM_REF_CYCLE;                     // MEM_REF_CYCLE [2:0] # Of Mclk 0 0 0 6 0 0 1 7 0 1 0 8
 
 
-    typedef UReg<0x04, 0x07, 0, 3> MEM_TWR_SEL;                       // TWR Period Select (Number of Memory Clock Inserted from
-                                                                      // Last Write Cycle to Precharge) MEM_TWR_SEL [2:0] #OF MCLK
-                                                                      // 0 0 0 0 0 0 1 1 0 1 0 2 0 1 1 3 1 0 0 4
 
-    typedef UReg<0x04, 0x07, 4, 3> MEM_TRAS_SEL;                      // 0 0 0 3 0 0 1 4
 
 
-    typedef UReg<0x04, 0x08, 0, 2> MEM_R2W_NOP_CYC;                   // Number of Dummy Clock For SDRAM Read to Write Cycle:
-                                                                      // MEM_R2W_NOP_CYC [1:0] #OF MCLK 0 0 0 0 1 1 1 0 2 1 1 3
 
-    typedef UReg<0x04, 0x08, 4, 2> MEM_W2R_SEL_CYC;                   // MEM_W2R_SEL_CYC [1:0] #OF MCLK 0 0 0 0 1 1 1 0 2
 
 
-    typedef UReg<0x04, 0x09, 0, 2> MEM_BK0_SEL;                       // Bank Select Address Mux: MEM_BK0_SEL [1:0] # OF ADDRESS
-                                                                      // BIT 0 0 ADR 19 0 1 ADR 20 1 0 ADR 21 1 1 NOP
-
-    typedef UReg<0x04, 0x09, 2, 2> MEM_BK1_SEL;                       // Bank Select Address Mux: MEM_BK1_SEL [1:0] # OF ADDRESS
-                                                                      // BIT 0 0 ADR 19 0 1 ADR 20 1 0 ADR 21 1 1 NOP
-
-    typedef UReg<0x04, 0x09, 4, 2> MEM_CS0_SEL;                       // Bank Select Address Mux: MEM_CS0_SEL [1:0] # OF ADDRESS
-                                                                      // BIT 0 0 ADR 19 0 1 ADR 20 1 0 ADR 21 1 1 NOP
-
-    typedef UReg<0x04, 0x09, 6, 2> MEM_CS1_SEL;                       // Bank Select Address Mux: MEM_CS1_SEL [1:0] # OF ADDRESS
-                                                                      // BIT 0 0 ADR 19 0 1 ADR 20 1 0 ADR 21 1 1 NOP
-
-
-    typedef UReg<0x04, 0x0A, 0, 2> MEM_COL_ST_SEL;                    // When this bit is 0,column address will not start with
-                                                                      // address bit 0 Col Address Start with address bit 1
-                                                                      // (default value 0). When this bit is 1,column address
-                                                                      // starts with address bit 1 When this bit is 0,column
-                                                                      // address will not start with address bit 1
-
-    typedef UReg<0x04, 0x0A, 4, 2> MEM_ROW_ST_SEL;                    // When this bit is 0,row address will not start with
-                                                                      // address bit 8. Row Address Start with address bit 9
-                                                                      // (default value 0). When this bit is 1,row address starts
-                                                                      // with address bit 9; When this bit is 0,row address will
-                                                                      // not start with address bit 9
-
-
-    typedef UReg<0x04, 0x0B, 0, 7> MEM_ADR_REG;                       // When this bit is 0,address 19 changed will not do
-                                                                      // precharge. Memory Row Address Precharge enable for
-                                                                      // Address 20 When this bit is 1,address 20 changed will do
-                                                                      // precharge; When this bit is 0,address 20 changed will not
-                                                                      // do precharge
-
-
-    typedef UReg<0x04, 0x0C, 0, 4> MEM_COL_ADR_VLD;                   // Memory Column Address Enable For Address bit 10 (default
-                                                                      // value 0) For others SDRAM chip that column address more
-                                                                      // than 8bits When this bit is 1,address 10 will act as
-                                                                      // column address; When this bit is 0,address 10 will not be
-                                                                      // column address
-
-
-    typedef UReg<0x04, 0x0D, 0, 3> MEM_SPECIAL_PIN;                   // Special Pin10 For Precharge: default value 0 If Memory
-                                                                      // module Address 10 is special Pin, In initialization
-                                                                      // cycle, must set this register to 1, and precharge all
-                                                                      // banks; otherwise, will set 0
-
-    typedef UReg<0x04, 0x0D, 4, 1> MEM_BA_ADR11_SEL;                  // When this register is 1: bank select pad will be memory
-                                                                      // address 11 bit, support 1M x 16bits x4 banks memory chip;
-
-    typedef UReg<0x04, 0x0D, 5, 1> MEM_CS0_BA0_SEL;                   // When this register is 0: bank select pad will be bank
-                                                                      // select pad, support 1M x16bits x 2banks memory chip; CHIP
-                                                                      // SELECT 0 PAD SAHRE WITH BANK SELECT 0 : When this
-                                                                      // register is 1: chip select 0pad will be bank select 0
-                                                                      // pad, support 1M x 16bits x 4 banks memory chip; When this
-                                                                      // register is 0: chip select 0 pad will be chip select 0
-                                                                      // pad, support 1M x16bits x 2banks memory chip; CHIP SELECT
-                                                                      // 1 PAD SAHRE WITH BANK SELECT 1 :
-
-    typedef UReg<0x04, 0x0D, 6, 1> MEM_CS1_BA1_SEL;                   // When this register is 1: chip select 1 pad will be bank
-                                                                      // select 1 pad, support 1M x 16bits x 4 banks memory chip;
-
-
-    typedef UReg<0x04, 0x0E, 0, 3> MEM_CMD_PIPE;                      // SDRAM RAS Command Pipe Select: When it is at 0, RAS
-                                                                      // signal pass through a pipe, or it will bypass a pipe;
-
-
-    typedef UReg<0x04, 0x0F, 0, 4> MEM_FST_REG;                       // SDRAM Write and Read Signal Fast Mode Signal Don’t care,
-                                                                      // default value 0;In fast mode, When this bit is 1,DQM
-                                                                      // signal will advance. When this bit is 0,DQM signal will
-                                                                      // be normal
-
-
-    typedef UReg<0x04, 0x10, 0, 5> MEM_MISC_REG;                      // When this bit sets 0, will make state machine hold during
-                                                                      // read/write operation Add No Operation For Precharge Cycle
-                                                                      // Don’t care, default value 0; When this bit sets 0, will
-                                                                      // add NOP for precharge cycle ; When this bit sets 1,will
-                                                                      // no add NOP for precharge cycle. Turn Off Qualified Active
-                                                                      // Cycle Done: default value 0;
-
-
-    typedef UReg<0x04, 0x11, 0, 1> MEM_FBK_CLK_SEL;                   // Select Clock Feed Back from PAD; This register will be
-                                                                      // valid when the register BC/[4] = 1’b0; When this bit is
-                                                                      // 1, select external pad feed back clock; When this bit is
-                                                                      // 0, select internal PAD feed back clock
-
-    typedef UReg<0x04, 0x11, 1, 1> MEM_FBK_SEL_MCLK;                  // If BC/[4] = 1’b1,this bit should be set 0 ; FEEDBACK
-                                                                      // CLOCK SELECT SOURCE: When this bit sets 1, feedback clock
-                                                                      // will select PLL clock; When this bit sets 0, feedback
-                                                                      // clock will select clock from PAD
-
-    typedef UReg<0x04, 0x11, 2, 1> MEM_FBK_CS2_SEL;                   // FEEDBACK CLOCK PAD SHARE WITH CHIP SELECT 2: When this
-                                                                      // register is 1: Pad will be chip select 2 PAD; When this
-                                                                      // register is 0: Pad will be feedback clock pad; This
-                                                                      // register uses only 6M memory, 3 chips
-
-    typedef UReg<0x04, 0x11, 4, 1> MEM_FBK_INV_PATH_SEL;              // When this register set 1, it will select falling edge
-                                                                      // fetch feedback data;
-
-    typedef UReg<0x04, 0x11, 7, 1> MEM_FBK_PATH_SEL;                  // When this bit is 1, it will capture data with feedback
-                                                                      // clock path, When this bit is 0, It will capture data with
-                                                                      // memory clock
-
-
-    typedef UReg<0x04, 0x12, 0, 1> MEM_INTER_DLYCELL_SEL;             // Select SDRAM Delay Cell: MEM_INTER_DLYCELL_S This
-                                                                      // register is control the delay of data/address/command EL
-
-    typedef UReg<0x04, 0x12, 1, 1> MEM_CLK_DLYCELL_SEL;               // When it is at 0, select bypass delay cell, when it is at
-                                                                      // 1, select DLY8LV cell. Select SDRAM Delay Cell: This
-                                                                      // register is only control the delay of clock send to PAD
-                                                                      // When it is at 0, select bypass delay cell, when it is at
-                                                                      // 1, select DLY8LV cell
-
-    typedef UReg<0x04, 0x12, 2, 1> MEM_FBK_CLK_DLYCELL_SEL;           // Select SDRAM Delay Cell: This register is only control
-                                                                      // the delay of feed back clock. When it is at 0, select
-                                                                      // bypass delay cell, when it is at 1, select DLY8LV cell
-
-
-    typedef UReg<0x04, 0x13, 0, 1> MEM_PAD_CLK_INVERT;                // Invert Memory Rising Edge Clock to PAD: When this bit is
-                                                                      // 1, invert memory clock and send to PAD;
-
-    typedef UReg<0x04, 0x13, 1, 1> MEM_RD_DATA_CLK_INVERT;            // When this bit is 0, will bypass memory clock and send to
-                                                                      // PAD. Read memory data with Memory Clock rising or falling
-                                                                      // edge: When this bit is 1, with Memory clock falling edge;
-                                                                      // When this bit is 0, with Memory clock rising edge.
-                                                                      // Control feedback clock register
-
-    typedef UReg<0x04, 0x13, 2, 1> MEM_FBK_CLK_INVERT;                // When this bit is at 1, will invert feedback clock;
-
-
-    typedef UReg<0x04, 0x14, 0, 3> MEM_NEW_FUNC_CTL;                  // When this register sets 0, no change. REFRESH CYCLE
-                                                                      // SIGNAL IS LOW: When this bit is 1, when refresh more than
-                                                                      // 2 times, in refresh cycle, make DQM will high; When this
-                                                                      // bit is 0, only for refresh one time, DQM will high.
-                                                                      // CONTROL TIMING FOR ACTIVE TO PRECHARGE;
-
-    typedef UReg<0x04, 0x14, 4, 1> MEM_WRITE_CYCL_CTL;                // When this bit sets 1, read cycle hold will enter write
-                                                                      // cycle directly. When this bit sets 0, will not enter
-                                                                      // write cycle directly
-
-    typedef UReg<0x04, 0x14, 7, 1> MEM_MBUS32OR16_SEL;                // When this bit sets 1, memory bus is 32-bit. When this bit
-                                                                      // set2 0, memory bus is 16-bit
-
-
-    typedef UReg<0x04, 0x15, 0, 1> MEM_REQ_PBH_RFFH;                  // Play back high request priority exchange with read FIFO
-                                                                      // high request When this bit is 1, read FIFO high request >
-                                                                      // play back high request;
-
-    typedef UReg<0x04, 0x15, 1, 1> MEM_REQ_PB_RFF_CAP;                // When this bit is 0, play back high request >read FIFO
-                                                                      // high request; Capture request exchange with PlayBack low
-                                                                      // request and Read FIFO low request When this bit is 0:
-                                                                      // play back low req > read FIFO low req > capture req When
-                                                                      // this bit is 1: cap req > play back low req > read FIFO
-                                                                      // low req Write FIFO request priority exchange with capture
-                                                                      // request
-
-    typedef UReg<0x04, 0x15, 2, 1> MEM_REQ_WFF_CAP;                   // When this bit is 1, capture request >write FIFO request
-
-
-    typedef UReg<0x04, 0x16, 0, 3> MEM_TEST_SEL;                      // Test Logic Controll Select four groups test signals
-                                                                      // (internal hardware debug use only)
-
-
-    typedef UReg<0x04, 0x17, 0, 3> MEM_WOEZ_DLY;                      // Data TRI_STATE Enable Delay Control Bits: with DLY8LV and
-                                                                      // NCASDLY MEM_WOEZ_DLY [2:0] #OF NS 0 0 0 0.00/0.0 0 0 1
-                                                                      // 0.25/2.0 0 1 0 0.50/4.0 0 1 1 0.75/6.0 1 0 0 1.00 1 0 1
-                                                                      // 1.50 1 1 0 2.00 1 1 1 3.00
-
-    typedef UReg<0x04, 0x17, 4, 1> MEM_WOEZ_PIP;                      // When this register is 1: the sdram data tri_state enable
-                                                                      // will extend a pipe; When this register is 0: the sdram
-                                                                      // data tri_state enable will be selected by
-
-    typedef UReg<0x04, 0x17, 5, 1> MEM_WOEZ_SEL_DLYCELL;              // the other registers. SDRAM DATA TRI_state ENABLE DELAY
-                                                                      // SELECT: When this register is 0: will select extension
-                                                                      // from delay cells; When this register is 1: will select
-                                                                      // not extension. This register will control sdram data
-                                                                      // tri_state enable with the register r_mwoeslpz
-
-
-    typedef UReg<0x04, 0x18, 0, 3> MEM_DATA_DLY_REG;                  // Data Delay Control Bits: with DLY8LV MEM_DATA_DLY_REG
-                                                                      // [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0 0.50 0 1 1 0.75
-                                                                      // 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00 1 1 1 3.00
-
-    typedef UReg<0x04, 0x18, 4, 2> MEM_WR_DATA_PIP;                   // (In 5705,only 2’b00) MEM_WR_DATA_PIP [1:0] # OF PIPE
-
-
-    typedef UReg<0x04, 0x19, 0, 3> MEM_RAS_DLY_REG;                   // RAS Delay Control bits: default value 3’b000;with DLY8LV
-                                                                      // MEM_RAS_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00 1 1 1
-                                                                      // 3.00
-
-    typedef UReg<0x04, 0x19, 4, 3> MEM_CAS_DLY_REG;                   // MEM_CAS_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00
-
-
-    typedef UReg<0x04, 0x1A, 0, 3> MEM_WE_DLY_REG;                    // WE Delay Control bits High 2 bits: with DLY8LV
-                                                                      // MEM_WE_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00 1 1 1
-                                                                      // 3.00
-
-    typedef UReg<0x04, 0x1A, 4, 3> MEM_DQM_DLY_REG;                   // MEM_DQM_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00
-
-
-    typedef UReg<0x04, 0x1B, 0, 3> MEM_ADR_DLY_REG;                   // Address Delay Control bits: with DLY8LV MEM_ADR_DLY_REG
-                                                                      // [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0 0.50 0 1 1 0.75
-                                                                      // 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00 1 1 1 3.00
-
-    typedef UReg<0x04, 0x1B, 4, 3> MEM_CLK_DLY_REG;                   // MEM_CLK_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.20 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00
-
-
-    typedef UReg<0x04, 0x1C, 0, 3> MEM_CS0_DLY_REG;                   // Chip Select 0 Delay Control Low 2bits: with DLY8LV
-                                                                      // MEM_CS0_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00 1 1 1
-                                                                      // 3.00
-
-    typedef UReg<0x04, 0x1C, 4, 3> MEM_CS1_DLY_REG;                   // MEM_CS1_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00
-
-
-    typedef UReg<0x04, 0x1D, 0, 3> MEM_BA0_DLY_REG;                   // Bank0 Delay Control bits: with DLY8LV MEM_BA0_DLY_REG
-                                                                      // [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0 0.50 0 1 1 0.75
-                                                                      // 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00 1 1 1 3.00
-
-    typedef UReg<0x04, 0x1D, 4, 3> MEM_BA1_DLY_REG;                   // MEM_BA1_DLY_REG [2:0] #OF NS 0 0 0 0.00 0 0 1 0.25 0 1 0
-                                                                      // 0.50 0 1 1 0.75 1 0 0 1.00 1 0 1 1.50 1 1 0 2.00
 
 // CAPTURE & PLAYBACK REGISTERS
 
-    typedef UReg<0x04, 0x20, 0, 3> CAP_CNTRL_TST;                     // Capture Test logic control: Bit [2:0]: select capture
-                                                                      // internal test bus
 
 
-    typedef UReg<0x04, 0x21, 0, 1> CAPTURE_ENABLE;                    // Enable capture When it’s set 1, capture will be turn on.
-                                                                      // When it’s set 0, capture will be turn off. Request
-                                                                      // generated when capture FIFO half
-
-    typedef UReg<0x04, 0x21, 1, 1> CAP_FF_HALF_REQ;                   // When set to 1, request generated when capture FIFO half
-
-    typedef UReg<0x04, 0x21, 2, 1> CAP_BUF_STA_INV;                   // When set to 0, request generated when capture FIFO write
-                                                                      // pointer is 1. Capture double buffer status invert before
-                                                                      // output When set to 1, double buffer status invert. When
-                                                                      // set to 0, double buffer status doesn’t change
-
-    typedef UReg<0x04, 0x21, 3, 1> CAP_DOUBLE_BUFFER;                 // Enable double buffer When set to 1, enable double buffer
-
-    typedef UReg<0x04, 0x21, 5, 1> CAP_SAFE_GUARD_EN;                 // When set to 1, turn on safe guard function
-
-    typedef UReg<0x04, 0x21, 6, 1> CAP_VRST_FFRST_EN;                 // When set to 0, turn off safe guard function. Enable input
-                                                                      // v-sync reset FIFO When set to 1, enable feed back v-sync
-                                                                      // reset FIFO. When set to 0, disable feed back v-sync reset
-                                                                      // FIFO
-
-    typedef UReg<0x04, 0x21, 7, 1> CAP_ADR_ADD_2;                     // Enable address add by 2 When set to 1,address added by 2
-                                                                      // per pixel, When set to 0,added by 1 per pixel
 
 
-    typedef UReg<0x04, 0x22, 0, 1> CAP_REQ_OVER;                      // Horizontal request end When this bit set 1, the final
-                                                                      // capture request of one line is in the horizontal blank
-
-    typedef UReg<0x04, 0x22, 1, 1> CAP_STATUS_SEL;                    // rising edge, set 0 capture request will free run Capture
-                                                                      // FIFO half status select When set to 1, request generated
-                                                                      // when capture FIFO is half. When set to 0, request
-                                                                      // generated when capture FIFO is delm’s value
-
-    typedef UReg<0x04, 0x22, 2, 1> CAP_LAST_POP_CTL;                  // Capture POP data control When set to 1, horizontal or
-                                                                      // vertical load start address will check if there is pop
-
-    typedef UReg<0x04, 0x22, 3, 1> CAP_REQ_FREEZ;                     // When set to 0, horizontal or vertical load start address
-                                                                      // will not check. Capture Request Freeze When set to 1,
-                                                                      // capture FIFO will pause the FIFO write and read . When
-                                                                      // set to 0, capture FIFO will operate normally
 
 
-    typedef UReg<0x04, 0x23, 0, 8> CAP_FF_STATUS;                     // Capture FIFO status When cap_cntrl_[17] set 1’b1, this
-                                                                      // register will be valid, this value will less than 64
 
 
-    typedef UReg<0x04, 0x24, 0, 21> CAP_SAFE_GUARD_A;                 // Safe Guard Address For Buffer A[20:16]: Safe guard
-                                                                      // address A [20:16], Mapping to 32bits width data bus field
 
 
-    typedef UReg<0x04, 0x27, 0, 21> CAP_SAFE_GUARD_B;                 // Safe Guard Address For Buffer B[20:16]: Safe guard
-                                                                      // address B [20:16], Mapping to 32bits width data bus field
 
 
-    typedef UReg<0x04, 0x2B, 0, 1> PB_CUT_REFRESH;                    // Disable refresh request generation When set to 1, disable
-                                                                      // refresh request generation
-
-    typedef UReg<0x04, 0x2B, 1, 2> PB_REQ_SEL;                        // When set to 0, enable refresh request generation. Enable
-                                                                      // playback request mode PB_REQ_SEL PBHREQ PBLREQ 00 0 Low
-                                                                      // request 01 0 High request Enable VDS input to select
-                                                                      // playback output or de-interlace data out
-
-    typedef UReg<0x04, 0x2B, 3, 1> PB_BYPASS;                         // When this bit is 1, select de-interlace data out to VDS
-
-    typedef UReg<0x04, 0x2B, 4, 1> PB_DB_FIELD_EN;                    // When this bit is 0, select playback output to VDS. Enable
-                                                                      // double field display When set to 1, enable double field
-                                                                      // display. When set to 0, disable double field display
-
-    typedef UReg<0x04, 0x2B, 5, 1> PB_DB_BUFFER_EN;                   // Enable double buffer When set to 1, enable double buffer
-
-    typedef UReg<0x04, 0x2B, 6, 1> PB_2FRAME_EXCHG;                   // When set to 0, disable double buffer. Exchange playback
-                                                                      // two frames output data When set to 1, exchange playback
-                                                                      // current frame with past frame and output. When set to 0,
-                                                                      // don’t exchange
-
-    typedef UReg<0x04, 0x2B, 7, 1> PB_ENABLE;                         // Enable Playback When it’s set 1, play back will be on
-                                                                      // work, or will not work
 
 
-    typedef UReg<0x04, 0x2C, 0, 6> PB_MAST_FLAG_REG;                  // Master line flag [5:0] Playback FIFO policy master value:
 
 
-    typedef UReg<0x04, 0x2D, 0, 6> PB_GENERAL_FLAG_REG;               // General line flag [5:0] Playback FIFO policy general
-                                                                      // value:
-
-
-    typedef UReg<0x04, 0x2E, 0, 1> PB_UP_DOW_RBUF_INV;                // PB_RBUF_INV When rate convert from up to down, capture
-                                                                      // FIFO will refer to the play back
-
-    typedef UReg<0x04, 0x2E, 1, 1> PB_UP_DOW_RBUF_SEL;                // buffer status, this bit is invert play back buffer
-                                                                      // status. PB_RBUF_SEL When rate convert from up to down,
-                                                                      // capture FIFO will refer to the play back buffer status,
-                                                                      // this bit will be set to 1. Otherwise, it will be set to 0
-
-    typedef UReg<0x04, 0x2E, 7, 1> PB_DOUBLE_REFRESH_EN;              // When set to 1, refresh request will at the rising and
-                                                                      // falling edge of hbout. When set to 0, refresh will be
-                                                                      // only at the rising edge of hbout
-
-
-    typedef UReg<0x04, 0x2F, 0, 4> PB_TST_REG;                        // PlayBack Test Logic To select playback test bus, total 8
-                                                                      // groups can be selected
-
-
-    typedef UReg<0x04, 0x30, 0, 4> PB_CAP_NOISE_CMD;                  // Capture Noise Reduction Command 0: disable noise reduce
-                                                                      // function 1: turn on PAL mode 2 (50hz to 50hz) and storage
-                                                                      // in memory 5 frames 2: turn on PAL mode 3 5: turn on NTSC
-                                                                      // mode 2 and storage memory 3 frames 6: turn on NTSC mode 3
-                                                                      // 9: turn on PAL mode 2 (50hz to 50hz, 50hz to 60hz, 50hz
-                                                                      // to 100hz) and storage memory 6 frames. D: turn on NTSC
-                                                                      // mode 2 (60hz to 60hz, 60hz to 120hz) and storage memory 4
-                                                                      // frames
-
-
-    typedef UReg<0x04, 0x31, 0, 21> PB_CAP_BUF_STA_ADDR_A;            // Capture and Play Back Buffer A START ADDRESS[20:16]:
-                                                                      // Start address buffer A [20:16], Mapping to 32bits width
-                                                                      // data bus field
-
-
-    typedef UReg<0x04, 0x34, 0, 21> PB_CAP_BUF_STA_ADDR_B;            // Buffer B START address [15:8] PB_CAP_BUF_STA_ADD When in
-                                                                      // double buffer mode, this is defined as capture and
-                                                                      // playback buffer B R_B [15:8] start address. Mapping to
-                                                                      // 32bits width data bus field
-
-
-    typedef UReg<0x04, 0x37, 0, 10> PB_CAP_OFFSET;                    // Capture and Play Back Offset [7:0]: Offset [7:0] will
-                                                                      // determine next line start address, Mapping to 64bits
-                                                                      // width data bus field
-
-
-    typedef UReg<0x04, 0x39, 0, 10> PB_FETCH_NUM;                     // Fetch number: Fetch number [7:0] will determine to fetch
-                                                                      // the number of pixels from memory, Mapping to 64bits width
-                                                                      // data bus field
-
-
-    typedef UReg<0x04, 0x3B, 0, 21> PB_CAP_BUF_STA_ADDR_C;            // Capture and Play Back Buffer C Start Address [20:16]
-                                                                      // Start address buffer C [20:16] When in noise reduction
-                                                                      // mode, this is defined as capture and playback buffer C
-                                                                      // start address. Mapping to 32 bits width data bus field
-
-
-    typedef UReg<0x04, 0x3E, 0, 21> PB_CAP_BUF_STA_ADDR_D;            // Capture and Play Back Buffer D Start Address [20:16]
-                                                                      // Start address buffer D [20:16], When in noise reduction
-                                                                      // mode, this is defined as capture and playback buffer D
-                                                                      // start address. Mapping to 32 bits width data bus field
 
 // WRITE & READ FIFO REGISTERS
 
-    typedef UReg<0x04, 0x41, 0, 8> WFF_TST_REG;                       // WRITE FIFO Test logic control: BIT[7:0] : SELECT CAPTURE
-                                                                      // INTERNAL TEST BUS
 
 
-    typedef UReg<0x04, 0x42, 0, 1> WFF_ENABLE;                        // Enable write FIFO When it’s set 1, write FIFO will be
-                                                                      // turn on
-
-    typedef UReg<0x04, 0x42, 1, 1> WFF_FF_HALF_REQ;                   // When it’s set 0, write FIFO will be turn off. Request
-                                                                      // generated when FIFO half When set to 1, request generated
-                                                                      // when FIFO half. When set to 0, request generate when FIFO
-                                                                      // write pointer is 1
-
-    typedef UReg<0x04, 0x42, 2, 1> WFF_FF_STA_INV;                    // Write FIFO status invert When set to 1, write FIFO status
-                                                                      // invert
-
-    typedef UReg<0x04, 0x42, 3, 1> WFF_SAFE_GUARD;                    // When set to 0, write FIFO status don’t change. Enable
-                                                                      // write FIFO safe guard When set to 1, enable write FIFO
-                                                                      // safe guard. When set to 0, disable write FIFO safe guard
-
-    typedef UReg<0x04, 0x42, 4, 1> WFF_VRST_FF_RST;                   // Enable input V-sync reset FIFO When set to 1, enable
-                                                                      // feedback v-sync reset FIFO
-
-    typedef UReg<0x04, 0x42, 5, 1> WFF_ADR_ADD_2;                     // When set to 0, disable feedback v-sync reset FIFO. WRITE
-                                                                      // FIFO Address count select: When it’s set to 1, address
-                                                                      // added by 2 per pixel. When it’s set to 0, address added
-                                                                      // by 1 per pixel
-
-    typedef UReg<0x04, 0x42, 6, 1> WFF_REQ_OVER;                      // WRITE FIFO Horizontal Request End When this bit set 1,
-                                                                      // the final write FIFO request of one line is in the
-                                                                      // horizontal
-
-    typedef UReg<0x04, 0x42, 7, 1> WFF_FF_STATUS_SEL;                 // blank rising edge, set 0 write FIFO request will free run
-                                                                      // WRITE FIFO HALF STATUS SELECT When set to 1, request
-                                                                      // generated when FIFO is half. When set to 0, request
-                                                                      // generated when c FIFO is delm’s value
 
 
-    typedef UReg<0x04, 0x43, 0, 8> WFF_FF_STATUS;                     // Write FIFO status When wff_cntrl_[15] set 1’b1, this
-                                                                      // register will be valid, this value will less than 64
 
 
-    typedef UReg<0x04, 0x44, 0, 21> WFF_SAFE_GUARD_A;                 // Write FIFO Buffer A Safe Guard Address [20:16] Safe guard
-                                                                      // address buffer A [20:16], Mapping to 32bits width data
-                                                                      // bus field
 
 
-    typedef UReg<0x04, 0x47, 0, 21> WFF_SAFE_GUARD_B;                 // WRITE FIFO 06-08, s4_47..49. The pair to _A, and the same
-                                                                      // shape. It was missing here because the extraction lost it
-                                                                      // too, so every check that compared header against
-                                                                      // datasheet agreed -- on a set with the same hole in both.
-                                                                      // RD-5725-1.1 documents it in full. Write FIFO Buffer B
-                                                                      // Safe Guard Address [20:16] Safe guard address buffer B
-                                                                      // [20:16], Mapping to 32bits width data bus field
 
 
-    typedef UReg<0x04, 0x4A, 0, 1> WFF_YUV_DEINTERLACE;               // WRITE FIFO YUV DE-INTERLACE When set 1, write FIFO will
-                                                                      // write one field YUV, set 0, will write one frame Y
-
-    typedef UReg<0x04, 0x4A, 4, 1> WFF_LINE_FLIP;                     // When set 1, line id will be inverted;
-
-    typedef UReg<0x04, 0x4A, 7, 1> WFF_LAST_POP_CTL;                  // When set to 1, horizontal or vertical load start address
-                                                                      // will check if there is pop When set to 0, horizontal or
-                                                                      // vertical load start address will not check
 
 
-    typedef UReg<0x04, 0x4B, 0, 3> WFF_HB_DELAY;                      // Write FIFO H-Timing Programmable Delay:
-
-    typedef UReg<0x04, 0x4B, 4, 3> WFF_VB_DELAY;                      // Write FIFO V-Timing Programmable Delay:
 
 
-    typedef UReg<0x04, 0x4D, 0, 4> RFF_NEW_PAGE;                      // Read buffer page select from 1 to 16 RFF_NEW_PAGE Read
-                                                                      // buffer page 0 1 1 2 2 3 3 4 4 5 5 6 6 7 7 8 8 9 9 10 A 11
-                                                                      // B 12 C 13 D 14 E 15 F 16
-
-    typedef UReg<0x04, 0x4D, 4, 1> RFF_ADR_ADD_2;                     // Enable read FIFO address add by 2: Default 0 for added by
-                                                                      // 1 When set 1, read FIFO address will count by 2
-
-    typedef UReg<0x04, 0x4D, 5, 2> RFF_REQ_SEL;                       // When set 0, read FIFO address will count by 1. Enable
-                                                                      // read FIFO request mode RFF_REQ_SEL RFFHREQ RFFLREQ 00 0
-                                                                      // Low request 01 0 High request Enable Read FIFO
-
-    typedef UReg<0x04, 0x4D, 7, 1> RFF_ENABLE;                        // When set 1, read FIFO will be turned on; When set 0, read
-                                                                      // FIFO will be turned off
-
-
-    typedef UReg<0x04, 0x4E, 0, 6> RFF_MASTER_FLAG;                   // Master line flag [5:0] Read FIFO policy master value:
-
-
-    typedef UReg<0x04, 0x4F, 0, 6> RFF_GENERAL_FLAG;                  // General line flag [5:0] Read FIFO policy master value:
-
-
-    typedef UReg<0x04, 0x50, 0, 4> RFF_TST_REG;                       // General Test Logic [3:0] Read FIFO test bus select
-
-    typedef UReg<0x04, 0x50, 5, 1> RFF_LINE_FLIP;                     // When set 1, line ID will be inverted;
-
-    typedef UReg<0x04, 0x50, 6, 1> RFF_YUV_DEINTERLACE;               // When set 0, line ID will be normal. Read FIFO YUV De-
-                                                                      // interlace When set 1, Read FIFO will read Frame 2 YUV
-                                                                      // data in line = 1, line =0, read Frame 1 YUV data. When
-                                                                      // set 0, Read FIFO will read Frame 2 Y data in line = 1,
-                                                                      // line =0 , read Frame 1 Y data
-
-    typedef UReg<0x04, 0x50, 7, 1> RFF_LREQ_CUT;                      // READ FIFO LOW REQUEST CUT ENABLE Cut the read FIFO low
-                                                                      // request, only output high request to memory
-
-
-    typedef UReg<0x04, 0x51, 0, 21> RFF_WFF_STA_ADDR_A;               // Read FIFO and Write FIFO START Address Buffer A [20:16]
-                                                                      // Start address buffer A [20:16], Mapping to 32bits width
-                                                                      // data bus field
-
-
-    typedef UReg<0x04, 0x54, 0, 21> RFF_WFF_STA_ADDR_B;               // Read FIFO AND Write FIFO START Address [20:16] Start
-                                                                      // address buffer B [20:16], Mapping to 32 bits width data
-                                                                      // bus field
-
-
-    typedef UReg<0x04, 0x57, 0, 10> RFF_WFF_OFFSET;                   // Read FIFO and Write FIFO offset: Offset [7:0] will
-                                                                      // determine next line start address, Mapping to 64bits
-                                                                      // width data bus field
-
-
-    typedef UReg<0x04, 0x59, 0, 10> RFF_FETCH_NUM;                    // Fetch number [7:0] (READ FIFO USE ONLY) This will
-                                                                      // determine to fetch the number of pixels from memory each
-                                                                      // horizontal line. Mapping to 64bits width data bus field
-
-
-    typedef UReg<0x04, 0x5B, 7, 1> MEM_FF_TOP_FF_SEL;                 // When set 1, all FIFO status output, can read FIFO status
-                                                                      // through test bus; When set 0, not FIFO status output.
-                                                                      // ISTERS
 
 // PIP REGISTERS
 
@@ -2082,193 +1567,25 @@ public:
 
 // ADC REGISTERS
 
-    typedef UReg<0x05, 0x00, 0, 8> ADC_5_00;
 
-    typedef UReg<0x05, 0x00, 0, 2> ADC_CLK_PA;                        // Clock selection for PA_ADC When = 00, PA_ADC input clock
-                                                                      // is from PLLAD’s CLKO2 When = 01, PA_ADC input clock is
-                                                                      // from PCLKIN When = 10, PA_ADC input clock is from V4CLK
 
-    typedef UReg<0x05, 0x00, 2, 1> ADC_CLK_PLLAD;                     // When = 11, reserved Clock selection for PLLAD When = 0,
-                                                                      // PLLAD input clock is from sync processor When = 1, PLLAD
-                                                                      // input clock is from OSC
 
-    typedef UReg<0x05, 0x00, 3, 1> ADC_CLK_ICLK2X;                    // ICLK2X control When = 0, ICLK2X = ADC output clock
 
-    typedef UReg<0x05, 0x00, 4, 1> ADC_CLK_ICLK1X;                    // When = 1, ICLK2X = ADC output clock / 2 ICLK1X control
-                                                                      // When = 0, ICLK1X = ICLK2X When = 1, ICLK1X = ICLK2X /2
 
 
-    typedef UReg<0x05, 0x02, 0, 1> ADC_SOGEN;                         // ADC SOG enable When = 0, ADC disable SOG mode
 
-    typedef UReg<0x05, 0x02, 1, 5> ADC_SOGCTRL;                       // When = 1, ADC enable SOG mode SOG control signal ADC
-                                                                      // input selection When = 00, R0/G0/B0/SOG0 as input
 
-    typedef UReg<0x05, 0x02, 6, 2> ADC_INPUT_SEL;                     // When = 01, R1/G1/B1/SOG1 as input When = 10, R2/G2/B2 as
-                                                                      // input When = 11, reserved
 
 
-    typedef UReg<0x05, 0x03, 0, 8> ADC_5_03;
 
-    typedef UReg<0x05, 0x03, 0, 1> ADC_POWDZ;                         // ADC power down control When = 0, ADC in power down mode
 
-    typedef UReg<0x05, 0x03, 1, 1> ADC_RYSEL_R;                       // When = 1, ADC work normally Clamp to ground or midscale
-                                                                      // for R ADC When = 0, clamp to GND When = 1, clamp to
-                                                                      // midscale
 
-    typedef UReg<0x05, 0x03, 2, 1> ADC_RYSEL_G;                       // Clamp to ground or midscale for G ADC When = 0, clamp to
-                                                                      // GND
 
-    typedef UReg<0x05, 0x03, 3, 1> ADC_RYSEL_B;                       // When = 1, clamp to midscale Clamp to ground or midscale
-                                                                      // for B ADC When = 0, clamp to GND When = 1, clamp to
-                                                                      // midscale
 
-    typedef UReg<0x05, 0x03, 4, 2> ADC_FLTR;                          // ADC internal filter control When = 00, 150MHz When = 01,
-                                                                      // 110MHz When = 10, 70MHz
 
 
-    typedef UReg<0x05, 0x04, 0, 8> ADC_TEST_04;
 
-    typedef UReg<0x05, 0x04, 0, 2> ADC_TR_RSEL;                       // REF test resistor selection
 
-    typedef UReg<0x05, 0x04, 2, 3> ADC_TR_ISEL;                       // REF test currents selection
-
-
-    typedef UReg<0x05, 0x05, 0, 8> ADC_TA_05_CTRL;
-
-    typedef UReg<0x05, 0x05, 0, 1> ADC_TA_EN;                         // ADC test enable When = 0, ADC work normally
-
-    typedef UReg<0x05, 0x05, 1, 4> ADC_TA_CTRL;                       // When = 1, ADC is in test mode ADC test bus control bit
-
-
-    typedef UReg<0x05, 0x06, 0, 7> ADC_ROFCTRL;                       // Offset control for R channel of ADC
-
-
-    typedef UReg<0x05, 0x07, 0, 7> ADC_GOFCTRL;                       // Offset control for G channel of ADC
-
-
-    typedef UReg<0x05, 0x08, 0, 7> ADC_BOFCTRL;                       // Offset control for B channel of ADC
-
-
-    typedef UReg<0x05, 0x09, 0, 8> ADC_RGCTRL;                        // Gain control for R channel of ADC
-
-
-    typedef UReg<0x05, 0x0A, 0, 8> ADC_GGCTRL;                        // Gain control for G channel of ADC
-
-
-    typedef UReg<0x05, 0x0B, 0, 8> ADC_BGCTRL;                        // Gain control for B channel of ADC
-
-
-    typedef UReg<0x05, 0x0C, 0, 8> ADC_TEST_0C;
-
-    typedef UReg<0x05, 0x0C, 0, 1> ADC_CKBS;                          // ADC output clock invert control When = 0, default
-
-    typedef UReg<0x05, 0x0C, 1, 4> ADC_TEST;                          // When = 1, ADC output clock will be invert For ADC test
-                                                                      // reserved
-
-
-    typedef UReg<0x05, 0x0E, 0, 1> ADC_AUTO_OFST_EN;                  // Auto offset adjustment enable When = 0, auto offset
-                                                                      // adjustment disable
-
-    typedef UReg<0x05, 0x0E, 1, 1> ADC_AUTO_OFST_PRD;                 // When = 1, auto offset adjustment enable Offset adjustment
-                                                                      // by frame When = 0, offset adjustment by frame When = 1,
-                                                                      // offset adjustment by line
-
-    typedef UReg<0x05, 0x0E, 2, 2> ADC_AUTO_OFST_DELAY;               // Horizontal sample delay control When = 00, offset
-                                                                      // adjustment horizontal sample delay 1 pipe When = 01,
-                                                                      // offset adjustment horizontal sample delay 2 pipe When =
-                                                                      // 10, offset adjustment horizontal sample delay 3 pipe
-
-    typedef UReg<0x05, 0x0E, 4, 2> ADC_AUTO_OFST_STEP;                // When = 11, offset adjustment horizontal sample delay 4
-                                                                      // pipe Offset adjustment step control When = 00, offset
-                                                                      // adjustment by absolute difference. When = 01, offset
-                                                                      // adjustment by 1 When = 10, offset adjustment by 2 When =
-                                                                      // 11, offset adjustment by 3
-
-    typedef UReg<0x05, 0x0E, 7, 1> ADC_AUTO_OFST_TEST;                // Auto offset adjustment test control
-
-
-    typedef UReg<0x05, 0x0F, 0, 8> ADC_AUTO_OFST_RANGE_REG;
-
-    typedef UReg<0x05, 0x0F, 0, 4> ADC_AUTO_OFST_U_RANGE;             // U channel offset detection range Define U channel offset
-                                                                      // detection range 0~15
-
-    typedef UReg<0x05, 0x0F, 4, 4> ADC_AUTO_OFST_V_RANGE;             // V channel offset detection range Define V channel offset
-                                                                      // detection range 0~15
-
-
-    typedef UReg<0x05, 0x11, 0, 8> PLLAD_CONTROL_00_5x11;
-
-    typedef UReg<0x05, 0x11, 0, 1> PLLAD_VCORST;                      // VCORST Initial VCO control voltage
-
-    typedef UReg<0x05, 0x11, 1, 1> PLLAD_LEN;                         // LEN Enable signal for clock
-
-    typedef UReg<0x05, 0x11, 2, 1> PLLAD_TEST;                        // TEST Test clock selection
-
-    typedef UReg<0x05, 0x11, 3, 1> PLLAD_TS;                          // TS Test clock selection and HSL clock selection
-
-    typedef UReg<0x05, 0x11, 4, 1> PLLAD_PDZ;                         // PDZ When = 0, PLLAD is power down mode
-
-    typedef UReg<0x05, 0x11, 5, 1> PLLAD_FS;                          // When = 1, PLLAD work normally FS, VCO gain selection When
-                                                                      // = 0, default When = 1, high gain selected
-
-    typedef UReg<0x05, 0x11, 6, 1> PLLAD_BPS;                         // BPS When = 0, default
-
-    typedef UReg<0x05, 0x11, 7, 1> PLLAD_LAT;                         // When = 1, bypass input clock to CKO1 and CKO2 Latch
-                                                                      // control for PLLAD control This bit’s rising edge is used
-                                                                      // to trigger PLLAD control bit: ND, MD, KS, CKOS, ICP
-
-
-    typedef UReg<0x05, 0x12, 0, 12> PLLAD_MD;                         // MD[11:8] PLLAD feedback divider control
-
-
-    typedef UReg<0x05, 0x14, 0, 12> PLLAD_ND;                         // ND[11:8] PLLAD input divider control
-
-
-    typedef UReg<0x05, 0x16, 0, 8> PLLAD_5_16;
-
-    typedef UReg<0x05, 0x16, 0, 2> PLLAD_R;                           // R Skew control for testing
-
-    typedef UReg<0x05, 0x16, 2, 2> PLLAD_S;                           // S Skew control for testing
-
-    typedef UReg<0x05, 0x16, 4, 2> PLLAD_KS;                          // KS VCO post divider control, it is determined by CKO
-                                                                      // frequency When = 00, divide by 1 (162MHz~80MHz) When =
-                                                                      // 01, divide by 2 (80MHz~40MHz) When = 10, divide by 4
-                                                                      // (40MHz~20MHz) When = 11, divide by 8 (20MHz~min MHz)
-
-    typedef UReg<0x05, 0x16, 6, 2> PLLAD_CKOS;                        // Part of PLLAD_CKOS, which RD-5725-1.1 documents as one
-                                                                      // 2-bit block at s5_16 rather than field by field.
-
-
-    typedef UReg<0x05, 0x17, 0, 3> PLLAD_ICP;                         // ICP Charge pump current selection When = 000, Icp = 50uA
-                                                                      // When = 001, Icp = 100uA When = 010, Icp = 150uA When =
-                                                                      // 011, Icp = 250uA When = 100, Icp = 350uA When = 101, Icp
-                                                                      // = 500uA When = 110, Icp = 750uA When = 111, Icp = 1mA
-
-
-    typedef UReg<0x05, 0x18, 0, 1> PA_ADC_BYPSZ;                      // BYPSZ, PA for ADC bypass control When = 0, PA_ADC is
-                                                                      // bypass
-
-    typedef UReg<0x05, 0x18, 1, 5> PA_ADC_S;                          // When = 1, PA_ADC work normally PA_ADC phase control
-                                                                      // LOCKOFF
-
-    typedef UReg<0x05, 0x18, 6, 1> PA_ADC_LOCKOFF;                    // When = 0, default
-
-    typedef UReg<0x05, 0x18, 7, 1> PA_ADC_LAT;                        // When = 1, PA_ADC lock circuit disable PA_ADC latch signal
-                                                                      // This bit’s rising edge is used to trigger
-                                                                      // PA_ADC_CNTRL_[5:1]
-
-
-    typedef UReg<0x05, 0x19, 0, 1> PA_SP_BYPSZ;                       // BYPSZ, PA for PLLAD bypass control When = 0, PA_PLLAD is
-                                                                      // bypass
-
-    typedef UReg<0x05, 0x19, 1, 5> PA_SP_S;                           // When = 1, PA_PLLAD work normally PA_PLLAD phase control
-                                                                      // LOCKOFF
-
-    typedef UReg<0x05, 0x19, 6, 1> PA_SP_LOCKOFF;                     // When = 0, default
-
-    typedef UReg<0x05, 0x19, 7, 1> PA_SP_LAT;                         // When = 1, PA_PLLAD lock circuit disable PA_PLLAD latch
-                                                                      // signal This bit’s rising edge is used to trigger
-                                                                      // PA_PLLAD_CNTRL_[5:1]
 
 
     typedef UReg<0x05, 0x1E, 7, 1> DEC_WEN_MODE;                      // Write enable mode enable. When this bit is 1, then
@@ -2295,199 +1612,42 @@ public:
 
 // SYNC_PROC REGISTERS
 
-    typedef UReg<0x05, 0x20, 0, 1> SP_SOG_SRC_SEL;                    // sog_src_sel Sog signal source select. 0: from ADC. 1:
-                                                                      // select hs as sog source
 
-    typedef UReg<0x05, 0x20, 1, 1> SP_SOG_P_ATO;                      // sog_p_ato sog auto correct polarity
 
-    typedef UReg<0x05, 0x20, 2, 1> SP_SOG_P_INV;                      // Sog invert Invert sog
 
-    typedef UReg<0x05, 0x20, 3, 1> SP_EXT_SYNC_SEL;                   // ext_sync_sel Ext 2 set Hs_Hs select
 
-    typedef UReg<0x05, 0x20, 4, 1> SP_JITTER_SYNC;                    // Sync using both rising and falling trigger Use falling
-                                                                      // and rising edge to sync input Hsync
 
 
-    typedef UReg<0x05, 0x21, 0, 8> SP_SYNC_TGL_THD;                   // h active detect control Sync toggle times threshold
 
 
-    typedef UReg<0x05, 0x22, 0, 8> SP_L_DLT_REG;                      // h active detect control Sync pulse width different
-                                                                      // threshold (little than this as equal)
 
 
-    typedef UReg<0x05, 0x24, 0, 12> SP_T_DLT_REG;                     // H active detect control H total width different threshold
 
 
-    typedef UReg<0x05, 0x26, 0, 12> SP_SYNC_PD_THD;                   // H active detect control H sync pulse width threshold
 
 
-    typedef UReg<0x05, 0x2A, 0, 8> SP_PRD_EQ_THD;                     // H active detect control How many continue legal line as
-                                                                      // valid
 
 
-    typedef UReg<0x05, 0x2D, 0, 8> SP_VSYNC_TGL_THD;                  // V active detect control V sync toggle times threshold
 
 
-    typedef UReg<0x05, 0x2E, 0, 8> SP_SYNC_WIDTH_DTHD;                // V active detect control V sync pulse width threshod
 
 
-    typedef UReg<0x05, 0x2F, 0, 8> SP_V_PRD_EQ_THD;                   // V active detect control How many continue legal v sync as
-                                                                      // valid
 
 
-    typedef UReg<0x05, 0x31, 0, 8> SP_VT_DLT_REG;                     // v active detect control V total different threshold
 
 
-    typedef UReg<0x05, 0x32, 0, 1> SP_VSIN_INV_REG;                   // V active detect control Input v sync invert to v active
-                                                                      // detect
 
 
-    typedef UReg<0x05, 0x33, 0, 8> SP_H_TIMER_VAL;                    // Timer value control H timer value for h detect
 
 
-    typedef UReg<0x05, 0x34, 0, 8> SP_V_TIMER_VAL;                    // Timer value control V timer for V detect
 
 
-    typedef UReg<0x05, 0x35, 0, 12> SP_DLT_REG;                       // Sync separation control Sync pulse width difference
-                                                                      // threshold
 
 
-    typedef UReg<0x05, 0x37, 0, 8> SP_H_PULSE_IGNOR;                  // Sync separation control H pulse less than this value will
-                                                                      // be ignore this counter is start when sync large different
 
 
-    typedef UReg<0x05, 0x38, 0, 8> SP_PRE_COAST;                      // Sync separation control Set the coast will valid before
-                                                                      // vertical sync (line number)
 
 
-    typedef UReg<0x05, 0x39, 0, 8> SP_POST_COAST;                     // Sync separation control When line cnt reach this value
-                                                                      // coast goes down
-
-
-    typedef UReg<0x05, 0x3A, 0, 8> SP_H_TOTAL_EQ_THD;                 // Sync separation control How many regular line regard it
-                                                                      // as legal
-
-
-    typedef UReg<0x05, 0x3B, 0, 3> SP_SDCS_VSST_REG_H;                // Sync separation control
-
-    typedef UReg<0x05, 0x3B, 4, 3> SP_SDCS_VSSP_REG_H;                // High bit of SD vs. stop position
-
-
-    typedef UReg<0x05, 0x3E, 0, 8> SP_CS_0x3E;
-
-    typedef UReg<0x05, 0x3E, 0, 1> SP_CS_P_SWAP;                      // Sync separation control cs_p_swap cs edge reference
-                                                                      // select default rising edge
-
-    typedef UReg<0x05, 0x3E, 1, 1> SP_HD_MODE;                        // hd_mode 1: HD mode 0: SD mode
-
-    typedef UReg<0x05, 0x3E, 2, 1> SP_H_COAST;                        // h_coast 1: with sub coast out
-
-    typedef UReg<0x05, 0x3E, 3, 1> SP_CS_INV_REG;                     // cs_inv_reg cs input invert
-
-    typedef UReg<0x05, 0x3E, 4, 1> SP_H_PROTECT;                      // H count overflow protect
-
-    typedef UReg<0x05, 0x3E, 5, 1> SP_DIS_SUB_COAST;                  // Disable sub coast
-
-
-    typedef UReg<0x05, 0x3F, 0, 8> SP_SDCS_VSST_REG_L;                // Sync separation control SD vs. start position
-
-
-    typedef UReg<0x05, 0x40, 0, 8> SP_SDCS_VSSP_REG_L;                // Sync separation control SD vs. stop position
-
-
-    typedef UReg<0x05, 0x41, 0, 12> SP_CS_CLP_ST;                     // Sync separation control SOG clamp start position
-
-
-    typedef UReg<0x05, 0x43, 0, 12> SP_CS_CLP_SP;                     // Sync separation control SOG clamp stop position
-
-
-    typedef UReg<0x05, 0x45, 0, 12> SP_CS_HS_ST;                      // Sync separation control If the horizontal period number
-                                                                      // is equal to the defined value, in XGA modes, It’s XGA
-                                                                      // 75Hz mode
-
-
-    typedef UReg<0x05, 0x47, 0, 12> SP_CS_HS_SP;                      // Sync separation control SOG hs stop position
-
-
-    typedef UReg<0x05, 0x49, 0, 12> SP_RT_HS_ST;                      // Retiming control Retiming hs start position
-
-
-    typedef UReg<0x05, 0x4B, 0, 12> SP_RT_HS_SP;                      // Retiming control Retiming hs stop postion
-
-
-    typedef UReg<0x05, 0x4D, 0, 12> SP_H_CST_ST;                      // Retiming control H coast start position (total-this
-                                                                      // value)
-
-
-    typedef UReg<0x05, 0x4F, 0, 12> SP_H_CST_SP;                      // Retiming control H coast stop position
-
-
-    typedef UReg<0x05, 0x51, 0, 12> SP_RT_VS_ST;                      // Retiming control Retiming vs start position
-
-
-    typedef UReg<0x05, 0x53, 0, 12> SP_RT_VS_SP;                      // Retiming control Retiming vs stop position
-
-
-    typedef UReg<0x05, 0x55, 0, 3> SP_HS_EP_DLY_SEL;                  // Retiming control Hs pulse delay sel for ( sync with vs )
-
-    typedef UReg<0x05, 0x55, 3, 1> SP_HS_INV_REG;                     // Retiming control hs_inv_reg inver hs to retimming module
-
-    typedef UReg<0x05, 0x55, 4, 1> SP_HS_POL_ATO;                     // Retiming control hs auto correct in retiming module
-
-    typedef UReg<0x05, 0x55, 5, 1> SP_VS_INV_REG;                     // Retiming control vs inv_reg invert hs to retiming module
-
-    typedef UReg<0x05, 0x55, 6, 1> SP_VS_POL_ATO;                     // Retiming control vs auto correct in retiming module
-
-    typedef UReg<0x05, 0x55, 7, 1> SP_HCST_AUTO_EN;                   // Retiming control If enable h coast will start at ( V
-                                                                      // total - hcst_st)
-
-
-    typedef UReg<0x05, 0x56, 0, 8> SP_5_56;
-
-    typedef UReg<0x05, 0x56, 0, 1> SP_SOG_MODE;                       // Out control 1: SOG mode; 0: normal mode
-
-    typedef UReg<0x05, 0x56, 1, 1> SP_HS2PLL_INV_REG;                 // Out control When =1, HS to PLL invert
-
-    typedef UReg<0x05, 0x56, 2, 1> SP_CLAMP_MANUAL;                   // Out control 1: clamp turn on off by control by software
-                                                                      // (default)
-
-    typedef UReg<0x05, 0x56, 3, 1> SP_CLP_SRC_SEL;                    // 0: for test Out control Clamp source select 1: pixel
-                                                                      // clock generate 0: 27Mhz clock generate Out control
-
-    typedef UReg<0x05, 0x56, 4, 1> SP_SYNC_BYPS;                      // External sync bypass to decimator
-
-    typedef UReg<0x05, 0x56, 5, 1> SP_HS_PROC_INV_REG;                // Out control HS to decimator invert
-
-    typedef UReg<0x05, 0x56, 6, 1> SP_VS_PROC_INV_REG;                // Out control VS to decimator invert
-
-    typedef UReg<0x05, 0x56, 7, 1> SP_CLAMP_INV_REG;                  // Out control Clamp to ADC invert
-
-
-    typedef UReg<0x05, 0x57, 0, 8> SP_5_57;
-
-    typedef UReg<0x05, 0x57, 0, 1> SP_NO_CLAMP_REG;                   // Out control Clamp always be 0
-
-    typedef UReg<0x05, 0x57, 1, 1> SP_COAST_INV_REG;                  // Out control Coast invert
-
-    typedef UReg<0x05, 0x57, 2, 1> SP_NO_COAST_REG;                   // Out control Coast always be REG S5_57[3]
-
-    typedef UReg<0x05, 0x57, 3, 1> SP_COAST_VALUE_REG;                // Out control Coast use 1x clk generate
-
-    typedef UReg<0x05, 0x57, 6, 1> SP_HS_LOOP_SEL;                    // Bypass PLL HS to 57 core
-
-    typedef UReg<0x05, 0x57, 7, 1> SP_HS_REG;                         // Out control When sub_coast enable will select this value
-
-
-    typedef UReg<0x05, 0x58, 0, 12> SP_HT_DIFF_REG;                   // Auto clamp control H total difference less this value as
-                                                                      // valid for auto clamp enable control
-
-
-    typedef UReg<0x05, 0x5A, 0, 11> SP_VT_DIFF_REG;                   // Auto clamp control V total difference less this value as
-                                                                      // valid for auto clamp enable control
-
-
-    typedef UReg<0x05, 0x5C, 0, 8> SP_STBLE_CNT_REG;                  // Auto clamp control Stable indicate frame threshold for
-                                                                      // auto clamp enable control
 
 
     typedef UReg<0x05, 0x60, 0, 8> ADC_UNUSED_60;
@@ -2500,15 +1660,6 @@ public:
 
 
     typedef UReg<0x05, 0x63, 0, 8> TEST_BUS_SP_SEL;
-
-    typedef UReg<0x05, 0x63, 0, 1> SP_TEST_EN;                        // Test control Test bus enable
-
-    typedef UReg<0x05, 0x63, 1, 3> SP_TEST_MODULE;                    // Test control test module select # 0 none # 1 hs_pol_det
-                                                                      // module # 2 hs_act_det module # 3 vs_pol_det module # 4
-                                                                      // vs_act_det module # 5 cs_sep module # 6 retiming module #
-                                                                      // 7 out proc module
-
-    typedef UReg<0x05, 0x63, 4, 3> SP_TEST_SIGNAL_SEL;                // Test control Test signal select
 
 
     typedef UReg<0x05, 0x64, 0, 8> ADC_UNUSED_64;

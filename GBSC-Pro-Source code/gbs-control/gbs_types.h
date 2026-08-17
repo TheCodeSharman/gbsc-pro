@@ -12,6 +12,10 @@
 // no call site changes on the day a block moves.
 
 #include "src/tv5725/Tv5725.h"
+#include "src/tv5725/SyncProcessor.h"
+#include "src/tv5725/MemoryBus.h"
+#include "src/tv5725/FrameBuffer.h"
+#include "src/tv5725/Adc.h"
 #include "src/tv5725/Chip.h"
 #include "src/tv5725/InputFormatter.h"
 #include "src/tv5725/Gpio.h"
@@ -22,6 +26,10 @@ class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor,
             public Tv5725::Interrupts,
             public Tv5725::Gpio,
             public Tv5725::InputFormatter,
-            public Tv5725::Chip {};
+            public Tv5725::Chip,
+            public Tv5725::Adc,
+            public Tv5725::FrameBuffer,
+            public Tv5725::MemoryBus,
+            public Tv5725::SyncProcessor {};
 
 #endif  // GBS_TYPES_H_
