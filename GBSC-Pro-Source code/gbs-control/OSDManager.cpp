@@ -1,6 +1,6 @@
 #include "OSDManager.h"
 #include "options.h"
-#include "src/tv5725/driver.h"   // Tv5725::ControlSteps::Pan / ZoomPixels
+#include "src/tv5725/ControlSteps.h"
 #include "stdio.h"
 
 extern userOptions *uopt;

@@ -1,5 +1,6 @@
 #include "Geometry.h"
 
+#include "Memory.h"
 #include "MemoryMap.h"
 #include "OutputRaster.h"
 

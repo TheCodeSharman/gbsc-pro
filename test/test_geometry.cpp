@@ -13,7 +13,16 @@
 #include <cstring>
 #include <initializer_list>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/driver.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/AxisSolution.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/CaptureWindow.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PanAndZoom.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PictureOrigin.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/RasterFit.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/RegisterSolution.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
 
 // An absolute tolerance, because every tolerance here is a count of pixels
 // rather than a proportion.

@@ -12,7 +12,12 @@
 #include <stdint.h>
 
 #include "../../gbs_types.h"
-#include "driver.h"
+#include "CaptureWindow.h"
+#include "InputLine.h"
+#include "OutputRaster.h"
+#include "PanAndZoom.h"
+#include "RegisterSolution.h"
+#include "Sampling.h"
 
 // Global scope, NOT namespace Tv5725, or the call in sourceFieldRateOr50Hz()
 // resolves to a function that does not exist.

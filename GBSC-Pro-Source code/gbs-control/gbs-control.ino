@@ -60,6 +60,7 @@ TV5725
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/Controls.h"
+#include "src/tv5725/ControlSteps.h"
 #include "src/tv5725/PresetLoad.h"
 #include "src/tv5725/FrameBuffer.h"
 #include "src/tv5725/InputFormatter.h"
