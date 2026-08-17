@@ -24,7 +24,7 @@ which the engine already knows how to derive most of what matters.
 
 Reproduce with the script in this file's history, or by hand: extract the
 `// sN_XX` labels from the preset headers, map every `GBS::NAME::write` in the
-sketch through `tv5725.h` to (segment, register, offset, width), and diff.
+sketch through `Tv5725.h` to (segment, register, offset, width), and diff.
 
 ## The twenty, and what each one needs
 
@@ -55,7 +55,7 @@ gets.
 The IF module has **three** horizontal blanking sets — `IF_HB_ST`/`SP` (set 0) at
 `s1_10`/`s1_12`, set 1 at `s1_14`/`s1_16`, set 2 at `s1_18`/`s1_1a`. The engine
 owns set 2. Nothing in the firmware has ever written set 0 or set 1; only preset
-tables do. `tv5725.h` documents no selector between them.
+tables do. `Tv5725.h` documents no selector between them.
 
 Set 1 was written to a **zero-width window** — `IF_HB_ST1 = IF_HB_SP1 = 0` — from
 a clean default framing, with set 2, `VDS_HSCALE` and the framing all confirmed
@@ -222,7 +222,7 @@ UReg<0x04, 0x34, 0, 21>  PB_CAP_BUF_STA_ADDR_B     21 bits: s4_34, s4_35, s4_36
 ```
 
 They are the **top bytes of two 21-bit SDRAM capture buffer start addresses**.
-`tv5725.h` declares only the low address of a multi-byte field, so every high
+`Tv5725.h` declares only the low address of a multi-byte field, so every high
 byte looks undocumented — the exact trap already recorded in this project's own
 notes, and I walked into it again in the same session that wrote them down. **A
 gap in the register map is a continuation byte until proven otherwise.**

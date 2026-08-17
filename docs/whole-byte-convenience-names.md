@@ -1,6 +1,6 @@
 # The whole-byte convenience names
 
-`tv5725.h` declares 25 names that cover a whole byte whose individual bits the
+`Tv5725.h` declares 25 names that cover a whole byte whose individual bits the
 datasheet already names. `GBS::PLL648_CONTROL_01::write(0x75)` sets five
 documented fields at once under a name RD-5725-1.1 does not contain, and `0x75`
 cannot be looked up anywhere.

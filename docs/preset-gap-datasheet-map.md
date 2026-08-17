@@ -112,7 +112,7 @@ start with `[A-Z_]`, and the PDF's wrap can leave the bit row holding nothing
 but `[7:0]`, with the name on the line above. Those rows parsed as description
 text, so the field vanished — no fragment, no wrong width, **absent**. Seven
 fields, all of them wide multi-byte address fields. Two of them
-(`WFF_SAFE_GUARD_B`, `VDS_NS_SQUARE_RAD`) were missing from `tv5725.h` too.
+(`WFF_SAFE_GUARD_B`, `VDS_NS_SQUARE_RAD`) were missing from `Tv5725.h` too.
 
 The reason that survived so long is worth keeping: **every test compared the
 header against the extraction, and both had the same hole.** Agreement between
