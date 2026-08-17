@@ -59,9 +59,10 @@ budget. `Tv5725.h` spends it through one alias, `UReg`, and adds none of its own
 the chip is a plain class, because there is only ever one of it on the board.
 
 **The one inheritance in the driver is `GBS`, and it is deliberate.** It is a
-mixin: `class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor {}`,
-aggregating names and nothing else — no state, no constructors, no virtuals, and
-a byte-identical binary either side of it, so it costs nothing.
+mixin — `class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor, …{}`,
+one base per subsystem — aggregating names and nothing else: no state, no
+constructors, no virtuals, and a byte-identical binary either side of it, so it
+costs nothing.
 
 It exists because registers migrate out of `Tv5725::Tv5725` into the subsystem
 that owns them a block at a time, and `GBS::VDS_HSCALE` has to keep resolving
@@ -89,7 +90,7 @@ display drivers compute PLL dividers, blanking and memory FIFO watermarks, and
 
 | layer | what | where |
 |---|---|---|
-| bus | how to get a byte to the chip: banking and the queue | `src/net/RegisterQueue`, `Tv5725.h` |
+| bus | how to get a byte to the chip: banking and the queue | `src/net/RegisterQueue`, `tw.h` |
 | **driver** | **what the chip needs: sampling, capture, memory, playback, output timing** | **`src/tv5725/`** |
 | board | anything spanning two devices, or not the TV5725 at all | the sketch, for now |
 
@@ -108,9 +109,10 @@ excluded `PLLAD_MD` on the strength of a word.
 
 ### The chip is `Tv5725::Tv5725`, a class inside the namespace of the same name
 
-`Tv5725.h` declares the register catalogue as a class; the subsystems are its
-siblings in `namespace Tv5725`. `GBS` is a typedef for it, kept so the legacy
-call sites still compile, and it goes when they do.
+`Tv5725.h` declares the chip as a class; the subsystems are its siblings in
+`namespace Tv5725`, and each declares the registers it owns. `GBS` is the flat
+view of all of them, kept so the legacy call sites still compile, and it goes
+when they do.
 
 **Inside `namespace Tv5725`, the injected class name shadows the namespace.** A
 sibling written `Tv5725::Sampling` resolves to the *class* and fails to compile;

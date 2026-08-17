@@ -8,7 +8,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 
 | Path | What |
 |---|---|
-| `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; `src/tv5725/Tv5725.h` is `Tv5725::Tv5725`, the chip and its register map |
+| `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
 | `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
@@ -274,7 +274,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   ping *from the router* to rule out your own host's path before concluding
   anything about the unit.
 
-## The datasheet contradicts itself, and `Tv5725.h` is the survivor
+## The datasheet contradicts itself, and the header is the survivor
 
 **Rediscovered three times now, so it is written down.** RD-5725-1.1 gives a wide
 field's bit slices in three places, and they disagree:
@@ -309,7 +309,7 @@ bits, so the header is right and the table is simply an error.
   datasheet name covers — so decomposing those is not equivalent**, because the
   byte write zeroes them and field writes do not.
   `docs/whole-byte-convenience-names.md`.
-- **Where `Tv5725.h` and the datasheet disagree, the header wins.** Its values are
+- **Where the header and the datasheet disagree, the header wins.** Its values are
   that audit's output plus bench proof. Eleven such fields remain, listed by name
   in `tools/tv5725-header/test_fielddocs.py::HEADER_WINS`, and a *new*
   disagreement fails that test rather than joining a tolerated count.
@@ -325,7 +325,7 @@ bits, so the header is right and the table is simply an error.
   a wide field collides on one dict key.
 - **The extractor invents names if you let it.** On 2026-08-13 it produced 32 —
   `ALUE`, `EG0`, `FFSET`, `R_B` — from names the PDF wraps across two lines, and
-  they reached `Tv5725.h` looking like real registers. Every genuine field name
+  they reached the header looking like real registers. Every genuine field name
   contains an underscore; the six in the document that do not are all fragments.
 - **And it silently DROPS fields, which is the worse half.** The wrap can put the
   whole name on the line above and leave the bit row holding only `[7:0]`.
