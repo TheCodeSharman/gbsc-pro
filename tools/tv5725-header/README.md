@@ -1,4 +1,4 @@
-# tv5725-header — read tv5725.h as data
+# tv5725-header — read Tv5725.h as data
 
 The register header is ~2000 lines of
 

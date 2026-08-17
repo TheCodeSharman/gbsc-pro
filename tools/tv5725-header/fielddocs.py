@@ -184,7 +184,7 @@ def parse(path, keep_slices=False):
                 # CCIR656 data", which is IF_SEL_656's heading, and TEST_BUS_SEL
                 # carried TEST_BUS_EN's description. Both read as real datasheet
                 # prose about a real register, so nothing downstream could catch
-                # it, and both reached tv5725.h.
+                # it, and both reached Tv5725.h.
                 title = []
                 if pending:
                     if rows:

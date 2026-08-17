@@ -33,7 +33,8 @@ Counting rules, all of which matter:
   - Raw writeOneByte()/writeBytes() are counted SEPARATELY and by address where
     one is visible, because they carry no field name -- which is exactly why a
     by-name check cannot see them. They are the blind spot, not a footnote.
-  - tv5725.h is skipped: it declares the fields, it does not write them.
+  - Tv5725.h is skipped: it declares the fields, it does not write them. It sits
+    under src/tv5725/ where owner_of() would otherwise count it as the engine.
 """
 
 import argparse
@@ -71,7 +72,7 @@ def sources():
                     os.path.join("src", "**", "*.cpp"),
                     os.path.join("src", "**", "*.h")):
         for path in glob.glob(os.path.join(SKETCH, pattern), recursive=True):
-            if os.path.basename(path) == "tv5725.h":
+            if os.path.basename(path) == "Tv5725.h":
                 continue
             yield path
 

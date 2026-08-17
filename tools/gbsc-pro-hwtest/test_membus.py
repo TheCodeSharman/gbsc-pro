@@ -33,7 +33,7 @@ class FakeChip:
 
 
 def test_the_clock_table_matches_the_datasheet():
-    """tv5725.h PLL_MS, s0 0x40 bits 4-6. 010 is not a frequency at all -- it
+    """Tv5725.h PLL_MS, s0 0x40 bits 4-6. 010 is not a frequency at all -- it
     takes the memory clock from FBCLK on pin 110 -- and naming it as one would
     invent a number the chip never ran at."""
     assert membus.clock_name(7) == "129.6 MHz"

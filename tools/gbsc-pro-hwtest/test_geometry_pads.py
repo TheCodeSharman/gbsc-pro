@@ -913,7 +913,7 @@ def test_the_subsystems_own_the_fifo_watermarks(host, source):
 
 
 # Every register Engine::write() and Engine::solveRaster() produce, addresses
-# taken from tv5725.h rather than recalled -- five were fumbled from memory in
+# taken from Tv5725.h rather than recalled -- five were fumbled from memory in
 # one session and each produced a confident wrong reading.
 ENGINE_OUTPUTS = [
     ("IF_HB_SP2", 1, 0x1A, 0, 11),

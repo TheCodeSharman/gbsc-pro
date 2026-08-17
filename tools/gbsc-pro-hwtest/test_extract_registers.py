@@ -1,6 +1,6 @@
 """What the panel's register map must get right.
 
-The map is a join, not a parse: addressing from tv5725.h, wording from the
+The map is a join, not a parse: addressing from Tv5725.h, wording from the
 datasheet extraction in tools/tv5725-header. Everything about *reading the PDF*
 is pinned over there, in test_fielddocs.py, because there is one extraction and
 it should have one test suite.
@@ -41,7 +41,7 @@ def test_the_join_is_on_bits_not_on_names(fields):
 
 def test_every_bit_has_exactly_one_owner(fields):
     """The map is a partition of the chip's bit space, at the finest naming
-    tv5725.h offers. Two names over one bit is two owners: a write through the
+    Tv5725.h offers. Two names over one bit is two owners: a write through the
     coarse one silently rewrites everything the fine ones describe, and a panel
     showing both invites exactly that."""
     spans = sorted((e["seg"], extract._span(e["reg"], e["off"], e["width"]), n)
@@ -65,7 +65,7 @@ def test_a_name_covering_finer_fields_is_dropped(fields):
 def test_a_field_with_nothing_finer_inside_it_stays(fields):
     """Dropping containers is about overlap, not about documentation. A byte
     with no finer naming is the only owner its bits have, so it stays even
-    where the datasheet says nothing about it — the panel and tv5725.h are
+    where the datasheet says nothing about it — the panel and Tv5725.h are
     meant to agree on what exists."""
     for name in ("ADC_UNUSED_60", "GBS_PRESET_ID"):
         assert name in fields, f"{name} is the only name those bits have"
@@ -73,7 +73,7 @@ def test_a_field_with_nothing_finer_inside_it_stays(fields):
 
 def test_a_field_inside_a_documented_block_is_documented(fields):
     """The datasheet documents segment 0's status as a few very wide blocks --
-    SYNC_PROC_STATUS_ is 56 bits spanning s0_16..s0_1C -- while tv5725.h names
+    SYNC_PROC_STATUS_ is 56 bits spanning s0_16..s0_1C -- while Tv5725.h names
     the individual counters inside it. Those bits ARE attested; the datasheet
     just describes them a register at a time rather than a field at a time, and
     the header's finer naming is the more useful of the two.
@@ -111,7 +111,7 @@ def test_no_description_carries_a_sibling_fields_name(fields):
     """The bleed this whole chain exists to remove, checked at the far end: a
     field's text must not name a different field of the same register. That is
     what "IF_UV_REVERT ... Select CCIR656 data" looked like, and it read as
-    ordinary datasheet prose all the way into tv5725.h."""
+    ordinary datasheet prose all the way into Tv5725.h."""
     by_reg = {}
     for name, e in fields.items():
         by_reg.setdefault((e["seg"], e["reg"]), []).append(name)

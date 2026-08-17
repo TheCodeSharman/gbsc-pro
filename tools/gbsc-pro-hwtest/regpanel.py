@@ -13,7 +13,7 @@ firmware change and nothing to flash. The unit's own /getreg and /setreg do the
 work; the browser talks to this process to avoid cross-origin restrictions.
 
 Fields are addressed as (segment, register, bit offset, width) exactly as the
-firmware's tv5725.h declares them, and read/written through one generic routine.
+firmware's Tv5725.h declares them, and read/written through one generic routine.
 That matters: several TV5725 fields start partway through a byte and run into the
 next one — VDS_VSYNC_RST begins at bit 4 of S3_02 — so the masking belongs in one
 place rather than at every call site.

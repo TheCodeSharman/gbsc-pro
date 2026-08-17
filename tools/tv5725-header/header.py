@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read tv5725.h as data: what registers it declares, and what it says about them.
+"""Read Tv5725.h as data: what registers it declares, and what it says about them.
 
 The header is 2000 lines of `typedef UReg<seg, reg, offset, width> NAME;` and
 nothing else mechanical, which makes it easy to reformat and dangerously easy to

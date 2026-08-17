@@ -320,12 +320,12 @@ only ever exposed set 2:
 
 ```
 set 0   IF_HB_ST  s1 0x10   IF_HB_SP  s1 0x12      (start < stop: unused/disabled)
-set 1   IF_HB_ST1 s1 0x14   IF_HB_SP1 s1 0x16      NOT declared in tv5725.h
+set 1   IF_HB_ST1 s1 0x14   IF_HB_SP1 s1 0x16      NOT declared in Tv5725.h
 set 2   IF_HB_ST2 s1 0x18   IF_HB_SP2 s1 0x1a      the one every tool writes
         IF_HBIN_ST s1 0x24  IF_HBIN_SP s1 0x26     "blank for scale down"
 ```
 
-`IF_HB_ST1` is absent from `tv5725.h` and was absent from the register map; it was
+`IF_HB_ST1` is absent from `Tv5725.h` and was absent from the register map; it was
 read out of the address gap and has since been added to the map with
 `status: inferred`.
 
@@ -356,9 +356,9 @@ which is exactly what happened at photo 21.
 
 **Three IF blanking sets exist**, RD-5725-1.1 pages 01-7..01-10, S1_10..S1_1B:
 set 0 is unsuffixed (`IF_HB_ST`/`IF_HB_SP`), then set 1, then set 2. Hard to spot
-because **`tv5725.h` omits `IF_HB_ST1` at S1_14 entirely**, leaving an `SP1` with no
+because **`Tv5725.h` omits `IF_HB_ST1` at S1_14 entirely**, leaving an `SP1` with no
 matching `ST1` and an address jump 0x12 -> 0x16. Now added to
-`tv5725_registers.json`; it should also be added to `tv5725.h`.
+`tv5725_registers.json`; it should also be added to `Tv5725.h`.
 
 **The IF horizontal scaler can only decimate.** `IF_HS_RATE_SEG0..SEG7` (S1_03..0A)
 are eight 12-bit DDA increments — 8 bits each plus a shared low nibble

@@ -3,7 +3,7 @@
 Every case here is a field the parser silently got wrong, and "silently" is the
 point: a missed field looks like a register the datasheet does not document, and
 a mis-joined one looks like a field nobody has heard of. Neither announces
-itself, and both ended up in tv5725.h.
+itself, and both ended up in Tv5725.h.
 """
 
 import os
@@ -19,7 +19,7 @@ import merge_slices
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGDEF = os.path.join(HERE, "regdef.txt")
 HEADER = os.path.join(HERE, "..", "..", "GBSC-Pro-Source code",
-                      "gbs-control", "tv5725.h")
+                      "gbs-control", "src", "tv5725", "Tv5725.h")
 
 
 @pytest.fixture(scope="module")
@@ -184,7 +184,7 @@ def test_a_field_does_not_carry_the_next_fields_title(fields):
     Taking a fixed one line above and running to the next Name row gives every
     field the NEXT one's title. It is invisible in isolation -- the text is real
     datasheet prose about a real register -- and it reached both merged.json and
-    tv5725.h's comments, where IF_UV_REVERT explains how to select CCIR656 data.
+    Tv5725.h's comments, where IF_UV_REVERT explains how to select CCIR656 data.
     """
     assert "Select CCIR656 data" not in fields["IF_UV_REVERT"][5]
     assert fields["IF_SEL_656"][5].startswith("Select CCIR656 data")
@@ -208,7 +208,7 @@ def test_a_field_whose_whole_cell_is_one_line_keeps_it(fields, name):
     assert fields[name][5], f"{name} lost its one-line description"
 
 
-# Where the extraction and tv5725.h disagree, and the header is right.
+# Where the extraction and Tv5725.h disagree, and the header is right.
 #
 # **These are the datasheet's own errors, not the parser's.** RD-5725-1.1
 # labels a wide field twice per register -- once in the bit diagram above the
@@ -276,14 +276,14 @@ def test_the_extraction_agrees_with_the_header_everywhere_else(merged):
                 unexpected.append((name, header_fields[name],
                                    (f["seg"], f["reg"], f["lo"], f["width"])))
     assert not unexpected, (
-        "new disagreement between tv5725.h and the datasheet extraction: "
+        "new disagreement between Tv5725.h and the datasheet extraction: "
         f"{unexpected}. Check which is right before adding to HEADER_WINS -- a "
         "width that is too small truncates every write through that field."
     )
 
 
 def test_known_fragments_from_the_2026_08_13_regression_are_gone(fields):
-    """The exact names commit 940774a wrote into tv5725.h before this was fixed.
+    """The exact names commit 940774a wrote into Tv5725.h before this was fixed.
     Named individually so the failure says which wrap broke rather than just
     that a count moved."""
     were_shipped = ["R_B", "EG0", "EG1", "EG7", "ALUE", "LUE", "FFSET", "FSET",
@@ -295,7 +295,7 @@ def test_known_fragments_from_the_2026_08_13_regression_are_gone(fields):
 def test_the_bit_diagram_is_a_second_opinion_and_not_an_authority():
     """diagram.py places fields from the bit graphic rather than the table rows.
 
-    It agrees with only ~61% of the fields where tv5725.h and the table already
+    It agrees with only ~61% of the fields where Tv5725.h and the table already
     agree, so it must never overrule either on its own. Pinned as a number
     because the temptation is real: it gets VDS_HB_ST right, which is the
     headline disagreement.
@@ -367,12 +367,12 @@ def test_the_hand_verified_multibyte_fields_keep_their_addressing(name, seg, reg
                encoding="utf-8", errors="replace").read()
     m = re.search(r"typedef\s+UReg<\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)"
                   r"\s*,\s*(\d+)\s*,\s*(\d+)\s*>\s*" + name + r"\s*;", hdr)
-    assert m, f"{name} is no longer declared in tv5725.h"
+    assert m, f"{name} is no longer declared in Tv5725.h"
     assert (int(m.group(1), 0), int(m.group(2), 0),
             int(m.group(3)), int(m.group(4))) == (seg, reg, lo, width)
 
 
-# Names in merged.json that tv5725.h deliberately does NOT declare, each with
+# Names in merged.json that Tv5725.h deliberately does NOT declare, each with
 # the reason. Categorised rather than counted: a NEW absence fails the test
 # below instead of joining a tolerated total.
 NOT_IN_HEADER = {
@@ -423,7 +423,7 @@ def test_the_shipped_header_declares_every_field_the_datasheet_does(merged):
     **THE DATASHEET IS THE AUTHORITY, NOT THE EXTRACTION.** Comparing the header
     against the extraction is unfalsifiable when both have the same hole:
     WFF_SAFE_GUARD_B and VDS_NS_SQUARE_RAD are documented in RD-5725-1.1, absent
-    from tv5725.h, and invisible to every test that compared the two.
+    from Tv5725.h, and invisible to every test that compared the two.
 
     This asserts the other thing: what the datasheet declares, the header
     declares.
@@ -435,6 +435,6 @@ def test_the_shipped_header_declares_every_field_the_datasheet_does(merged):
     absent = sorted(set(merged) - declared - set(NOT_IN_HEADER))
 
     assert not absent, (
-        f"the datasheet declares these and tv5725.h does not: {absent}. Add "
+        f"the datasheet declares these and Tv5725.h does not: {absent}. Add "
         "them, or add them to NOT_IN_HEADER with the reason -- a heading, a PDF "
         "typo the header corrects, or a wrap fragment.")

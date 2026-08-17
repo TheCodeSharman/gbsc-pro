@@ -6,7 +6,8 @@ import header
 def header_path():
     return os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "GBSC-Pro-Source code", "gbs-control", "tv5725.h")
+        "..", "..", "GBSC-Pro-Source code", "gbs-control",
+        "src", "tv5725", "Tv5725.h")
 
 
 def test_a_typedef_yields_the_register_it_names():
@@ -210,7 +211,7 @@ def test_the_shipped_header_declares_no_wrap_fragment():
 
 def test_the_shipped_header_declares_no_field_twice_under_two_names():
     """The real header, as a regression. Read it rather than a fixture: the
-    point is that tv5725.h itself stays clean, not that the parser works.
+    point is that Tv5725.h itself stays clean, not that the parser works.
 
     **THERE ARE NO INTENDED ALIASES.** Prefer the datasheet's name unless the
     firmware's has a tangible benefit; resolve each pair to ONE name rather than

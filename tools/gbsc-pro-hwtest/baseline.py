@@ -39,7 +39,7 @@ def read_field(host, segment, register, offset, width):
     return (raw >> offset) & ((1 << width) - 1)
 
 
-# STATUS_16, from tv5725.h rather than from memory:
+# STATUS_16, from Tv5725.h rather than from memory:
 #
 #     bit 0  HSPOL   H-sync polarity
 #     bit 1  HSACT   H-sync active      <- the lock signal

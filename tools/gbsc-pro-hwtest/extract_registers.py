@@ -12,7 +12,7 @@ the same PDF is a second owner of the same facts, and the two drifted: the
 panel and the header audit disagreed about which fields the datasheet documents
 while both claimed to have read it.
 
-**Addressing comes from tv5725.h.** It is what the firmware writes through, and
+**Addressing comes from Tv5725.h.** It is what the firmware writes through, and
 where it disagrees with the datasheet it is right: RD-5725-1.1 gives a wide
 field's slice in both the bit diagram and the Bit/Name rows, and for eleven
 fields those contradict each other. VDS_HB_ST is the clearest — the rows make it
@@ -28,7 +28,7 @@ the segment, register, offset and width match.
 registers it pokes without knowing what they do — ADC_5_00, ADC_UNUSED_60,
 GBS_PRESET_ID — and the header labels eight "fake name". A panel row for one of
 those offers a value to write and nothing to write it against. They stay in
-tv5725.h, which is the firmware's business; they do not belong in a tuning UI.
+Tv5725.h, which is the firmware's business; they do not belong in a tuning UI.
 """
 
 import json
@@ -37,7 +37,7 @@ import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HEADER = os.path.join(HERE, "..", "..", "GBSC-Pro-Source code",
-                      "gbs-control", "tv5725.h")
+                      "gbs-control", "src", "tv5725", "Tv5725.h")
 MERGED = os.path.join(HERE, "..", "tv5725-header", "merged.json")
 OUT = os.path.join(HERE, "tv5725_registers.json")
 
@@ -47,7 +47,7 @@ TYPEDEF = re.compile(
 
 
 def header_fields(path=HEADER):
-    """Every field tv5725.h declares, as {name: (seg, reg, offset, width)}."""
+    """Every field Tv5725.h declares, as {name: (seg, reg, offset, width)}."""
     with open(path, encoding="utf-8", errors="replace") as handle:
         return {name: (int(seg, 16), int(reg, 16), int(off), int(width))
                 for seg, reg, off, width, name in TYPEDEF.findall(handle.read())}
@@ -80,7 +80,7 @@ def datasheet_fields(path=MERGED):
 def partition(fields):
     """The header's fields minus the ones that merely wrap other fields.
 
-    tv5725.h declares both `PLL648_CONTROL_01` and the five documented fields
+    Tv5725.h declares both `PLL648_CONTROL_01` and the five documented fields
     inside it, so the same bits carry two names. That is two owners: a write
     through the byte silently rewrites everything the finer names describe, and
     a panel listing both offers the reader that mistake. Keep the finest naming
@@ -101,7 +101,7 @@ def partition(fields):
 
 
 def build(header_path=HEADER, merged_path=MERGED, partitioned=True):
-    """The map: what tv5725.h declares, as a partition, described where it can be.
+    """The map: what Tv5725.h declares, as a partition, described where it can be.
 
     A field is documented if the datasheet names it, or covers its exact bits
     under another name, or sits inside a wider entry.
@@ -117,7 +117,7 @@ def build(header_path=HEADER, merged_path=MERGED, partitioned=True):
     by_name, by_addr, blocks = datasheet_fields(merged_path)
     out = {}
     fields = header_fields(header_path)
-    # tv5725.h keeps its convenience typedefs — the firmware writes through
+    # Tv5725.h keeps its convenience typedefs — the firmware writes through
     # them — so rewording the header asks for all of them. Only the panel wants
     # the partition.
     for name, (seg, reg, off, width) in (partition(fields) if partitioned

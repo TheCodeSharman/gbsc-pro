@@ -106,7 +106,7 @@ IF_UNIT_FIELDS = [
     ("IF_INI_ST", 1, 0x0C, 5, 11),     # per-line pixel shift, so a length too
 ]
 
-# **PLLAD_MD DOES NOT TAKE EFFECT UNTIL IT IS LATCHED.** tv5725.h: "This bit's
+# **PLLAD_MD DOES NOT TAKE EFFECT UNTIL IT IS LATCHED.** Tv5725.h: "This bit's
 # rising edge is..." -- so 0, settle, 1. latchPLLAD() waits 128us between.
 #
 # Without it the register holds the new divider while the PLL keeps running at
@@ -143,7 +143,7 @@ READABLE = WRITABLE + [PB_FETCH_NUM, PB_CAP_OFFSET, VDS_HSCALE]
 # DS-5725-3.2 front page: "Maximum analog sampling rate up to 162MSPS".
 MAX_SAMPLE_RATE_HZ = 162_000_000
 
-# tv5725.h PLL_MS, s0 0x40 bits 4-6. 010 is not a frequency -- it takes the
+# Tv5725.h PLL_MS, s0 0x40 bits 4-6. 010 is not a frequency -- it takes the
 # memory clock from FBCLK on pin 110 -- so it is named rather than numbered, and
 # it is what the firmware writes at three call sites while the bench unit reads 7.
 CLOCKS = {0: 108.0, 1: 81.0, 2: None, 3: 162.0, 4: 144.0, 5: 185.0, 6: 216.0,

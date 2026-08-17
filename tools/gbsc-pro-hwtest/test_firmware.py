@@ -67,7 +67,7 @@ HOLD_SECONDS = 15.0  # long enough to catch a lock the sync watcher takes back
 
 # Console label -> the registers behind each printed column, as
 # (segment, low byte, bit offset, width), copied from the UReg declarations in
-# tv5725.h. Both the scaling and the HD bypass blocks are here so the cross-check
+# Tv5725.h. Both the scaling and the HD bypass blocks are here so the cross-check
 # runs in either mode.
 #
 # The offsets matter: VDS_VSYNC_RST and VDS_VSCALE start at bit 4, sharing their
@@ -522,7 +522,7 @@ def test_detection_settles_on_one_input_instead_of_hunting(host, source):
 
 FIRMWARE = Path(__file__).resolve().parents[2] / "GBSC-Pro-Source code" / "gbs-control"
 
-PRESET_DISPLAY_CLOCK = (1, 0x2D)  # GBS_PRESET_DISPLAY_CLOCK in tv5725.h
+PRESET_DISPLAY_CLOCK = (1, 0x2D)  # GBS_PRESET_DISPLAY_CLOCK in Tv5725.h
 
 # The eight values externalClockGenResetClock() maps to a frequency, plus the
 # sentinel it parks at. A divider showing up in the stash register means someone
@@ -684,11 +684,11 @@ def test_display_clock_stash_is_not_a_preset_register():
     """
     segment, register = PRESET_DISPLAY_CLOCK
 
-    tv5725 = (FIRMWARE / "tv5725.h").read_text(errors="replace")
+    tv5725 = (FIRMWARE / "src" / "tv5725" / "Tv5725.h").read_text(errors="replace")
     declaration = re.search(
         r"UReg<(0x[0-9A-Fa-f]+),\s*(0x[0-9A-Fa-f]+),[^>]*>\s*GBS_PRESET_DISPLAY_CLOCK", tv5725
     )
-    assert declaration, "GBS_PRESET_DISPLAY_CLOCK is not declared in tv5725.h"
+    assert declaration, "GBS_PRESET_DISPLAY_CLOCK is not declared in Tv5725.h"
     assert (int(declaration.group(1), 16), int(declaration.group(2), 16)) == (segment, register), (
         f"GBS_PRESET_DISPLAY_CLOCK moved to s{declaration.group(1)}_{declaration.group(2)}; "
         "recheck whether the new address is inside preset coverage before trusting this test"

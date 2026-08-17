@@ -145,7 +145,7 @@ def read_word(host, segment, low_register, mask):
     Only correct for fields that start at bit 0 of low_register. Plenty do not —
     VDS_VSYNC_RST is at bit 4 of s3_02, sharing the byte with VDS_HSYNC_RST's top
     nibble — and for those this returns a plausible wrong number rather than
-    failing. Use read_field() unless you have checked the offset in tv5725.h.
+    failing. Use read_field() unless you have checked the offset in Tv5725.h.
     """
     low = read_reg(host, segment, low_register)
     high = read_reg(host, segment, low_register + 1)
@@ -156,7 +156,7 @@ def read_word(host, segment, low_register, mask):
 
 def read_field(host, segment, register, offset, width):
     """A field of any width starting at any bit, across as many registers as it
-    needs. Offsets and widths are as declared in tv5725.h."""
+    needs. Offsets and widths are as declared in Tv5725.h."""
     span = (offset + width + 7) // 8
     raw = 0
     for index in range(span):

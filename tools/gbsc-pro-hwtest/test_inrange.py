@@ -65,7 +65,7 @@ def test_the_last_unit_of_the_line_is_allowed():
 
 
 def test_the_blanking_set_the_header_was_missing_is_checked_too():
-    # IF_HB_ST1 was absent from tv5725.h until 2026-08-09, so it was absent from
+    # IF_HB_ST1 was absent from Tv5725.h until 2026-08-09, so it was absent from
     # this check as well -- a register the map never declared has no entry to
     # look up. Set 1 is loaded by every preset table and written by no code, so
     # nothing else would ever notice it out of range.

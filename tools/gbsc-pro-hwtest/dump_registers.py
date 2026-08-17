@@ -51,7 +51,7 @@ CONFIG_RANGES = [
 # Live measurements — captured for context, excluded from diffs by default.
 STATUS_RANGES = [(0, 0x00, 0x2F)]
 
-# Registers worth naming in the output, from tv5725.h.
+# Registers worth naming in the output, from Tv5725.h.
 NAMES = {
     (0, 0x16): "STATUS_16 (HS/VS pol+active)",
     (0, 0x17): "SYNC_PROC_HTOTAL lo",
