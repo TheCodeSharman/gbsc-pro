@@ -22,11 +22,13 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
-// The sketch's GBS, reproduced rather than included: gbs_types.h is the legacy
-// compatibility layer and pulls in the whole sketch's worth of headers.
-class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor {};
+// Named through their owning subsystems rather than the GBS mixin, so this test
+// does not need editing every time a block migrates.
+using Tv5725::InputFormatter;
+using Tv5725::VideoProcessor;
 
 // Two registers at the same offset in different banks -- the pair the bench
 // fault actually swapped. IF_HB_ST is the input formatter's set 0 horizontal
@@ -38,8 +40,8 @@ TEST_CASE("a register write lands in that register's own segment")
     Wire.reset();
 
     SUBCASE("when nothing has disturbed the segment pointer") {
-        GBS::IF_HB_ST::write(258);
-        GBS::VDS_DIS_HB_ST::write(1348);
+        InputFormatter::IF_HB_ST::write(258);
+        VideoProcessor::VDS_DIS_HB_ST::write(1348);
 
         CHECK(Wire.bank[1][SharedOffset] == (258 & 0xFF));
         CHECK(Wire.bank[3][SharedOffset] == (1348 & 0xFF));
@@ -49,10 +51,10 @@ TEST_CASE("a register write lands in that register's own segment")
         // Establish the cache, then move the slave's pointer behind the
         // library's back. This stands in for whatever really moves it; the
         // point is that the library has no way to know it happened.
-        GBS::IF_HB_ST::write(258);
+        InputFormatter::IF_HB_ST::write(258);
         Wire.segment = 3;
 
-        GBS::IF_HB_ST::write(2);
+        InputFormatter::IF_HB_ST::write(2);
 
         CHECK(Wire.bank[1][SharedOffset] == 2);
         CHECK(Wire.bank[3][SharedOffset] == 0);
@@ -63,11 +65,11 @@ TEST_CASE("a register write lands in that register's own segment")
         // and it stays wrong for as long as the caller keeps using the same
         // segment -- the cache agrees with itself every time. Two writes, so a
         // fix that only happens to re-aim once cannot pass.
-        GBS::VDS_DIS_HB_ST::write(1348);
+        VideoProcessor::VDS_DIS_HB_ST::write(1348);
         Wire.segment = 1;
 
-        GBS::VDS_DIS_HB_ST::write(1300);
-        GBS::VDS_DIS_HB_ST::write(1262);
+        VideoProcessor::VDS_DIS_HB_ST::write(1300);
+        VideoProcessor::VDS_DIS_HB_ST::write(1262);
 
         CHECK(Wire.bank[3][SharedOffset] == (1262 & 0xFF));
         CHECK(Wire.bank[1][SharedOffset] == 0);
@@ -83,10 +85,10 @@ TEST_CASE("a register read comes from that register's own segment")
     Wire.bank[1][SharedOffset] = 0x02;
     Wire.bank[3][SharedOffset] = 0x44;
 
-    GBS::IF_HB_ST::read();
+    InputFormatter::IF_HB_ST::read();
     Wire.segment = 3;
 
-    CHECK((GBS::IF_HB_ST::read() & 0xFF) == 0x02);
+    CHECK((InputFormatter::IF_HB_ST::read() & 0xFF) == 0x02);
 }
 
 TEST_CASE("a register declared by its owning subsystem still aims its own segment")
@@ -97,9 +99,9 @@ TEST_CASE("a register declared by its owning subsystem still aims its own segmen
     // and a segment mis-transcribed during the move is silent everywhere else.
     Wire.reset();
 
-    Tv5725::VideoProcessor::VDS_HSCALE::write(512);
+    VideoProcessor::VDS_HSCALE::write(512);
 
     CHECK(Wire.bank[3][0x16] == (512 & 0xFF));
-    CHECK(Tv5725::VideoProcessor::VDS_HSCALE::read() == 512);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 512);
     CHECK(Wire.bank[1][0x16] == 0);
 }

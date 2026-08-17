@@ -375,251 +375,35 @@ public:
 
 // INPUT FORMATTER REGISTERS
 
-    typedef UReg<0x01, 0x00, 0, 1> IF_IN_DREG_BYPS;                   // Input pipe by pass Use the falling or rising edge of
-                                                                      // clock to get the input data. 0: Clock input data on the
-                                                                      // falling edge of ICLK. 1: Clock input date on the rising
-                                                                      // edge of ICLK
-
-    typedef UReg<0x01, 0x00, 1, 1> IF_MATRIX_BYPS;                    // Rgb2yuv matrix bypass If source is yuv24bit, bypass the
-                                                                      // rgb2yuv matrix. 0:source is 24bit RGB. Do rgb2yuv. 1:
-                                                                      // data bypass
-
-    typedef UReg<0x01, 0x00, 2, 1> IF_UV_REVERT;                      // 8bit to 16bit convert Y/UV flip control If input is 8bit
-                                                                      // data, when it convert to 16bit, this bit control Y and UV
-                                                                      // order: 0: Keep the designed order 1: Flip the Y and UV
-                                                                      // order
-
-    typedef UReg<0x01, 0x00, 3, 1> IF_SEL_656;                        // Select CCIR656 data If input data is 8bit CCIR656 mode,
-                                                                      // choose the 656 data path. 0: input is CCIR 601 mode.
-                                                                      // Choose the CCIR601mode timing. 1: input is CCIR 656 mode.
-                                                                      // Choose the CCIR656 mode timing
-
-    typedef UReg<0x01, 0x00, 4, 1> IF_SEL16BIT;                       // Select 16bit data If source data is 16bit. Choose the
-                                                                      // 16bits data path. Use in conjunction with register
-                                                                      // sel_24bit to choose the input data format. Sel_16bit
-                                                                      // Sel_24bit IF_SEL16BIT 8bit 656/601 input 0 0
-
-    typedef UReg<0x01, 0x00, 5, 1> IF_VS_SEL;                         // 16bit 601 input 1 0 24bit yuv/rgb 601 input * 1 Vertical
-                                                                      // sync select Choose the periodical or virtual vertical
-                                                                      // timing. 0: choose the VCR mode timing generation. 1:
-                                                                      // choose the normal mode timing generation. Select
-                                                                      // progressive data Progressive mode. Choose the progressive
-                                                                      // data
-
-    typedef UReg<0x01, 0x00, 6, 1> IF_PRGRSV_CNTRL;                   // 0: source is interlaced
-
-    typedef UReg<0x01, 0x00, 7, 1> IF_HS_FLIP;                        // 1: source is progressive. Horizontal sync flip control
-                                                                      // Control the horizontal sync output from CCIR process 0:
-                                                                      // keep the original horizontal sync. 1: flip horizontal
-                                                                      // sync
-
-
-    typedef UReg<0x01, 0x01, 0, 1> IF_VS_FLIP;                        // Vertical sync flip control Control the vertical sync
-                                                                      // output from CCIR process 0: keep original vertical sync.
-                                                                      // 1: flip vertical sync
-
-    typedef UReg<0x01, 0x01, 1, 1> IF_UV_FLIP;                        // YUV 422to444 UV flip control Control the U and V order in
-                                                                      // yuv422to444 conversion. 0: keep original U and V order.
-                                                                      // 1: exchange the U and V order
-
-    typedef UReg<0x01, 0x01, 2, 1> IF_U_DELAY;                        // U data select in YUV 422to444 conversion Select original
-                                                                      // U data or 1-clock delayed U data, so that it can align
-                                                                      // with V data. 0: select original U data after dmux. 1:
-                                                                      // select 1-clock delayed U data after dmux
-
-    typedef UReg<0x01, 0x01, 3, 1> IF_V_DELAY;                        // V data select in YUV 422to444 conversion Select original
-                                                                      // V data or 1-clock delayed V data, so that it can align
-                                                                      // with U data. 0: select original V data after dmux. 1:
-                                                                      // select 1-clock delayed V data after dmux
-
-    typedef UReg<0x01, 0x01, 4, 1> IF_TAP6_BYPS;                      // Tap6 interpolator bypass control in YUV 422to444
-                                                                      // conversion Select the data if pass the tap6 interpolator
-                                                                      // or not
-
-    typedef UReg<0x01, 0x01, 5, 2> IF_Y_DELAY;                        // Part of IF_Y_DELAY, which RD-5725-1.1 documents as one
-                                                                      // 2-bit block at s1_01 rather than field by field.
-
-    typedef UReg<0x01, 0x01, 7, 1> IF_SEL24BIT;                       // If input source is 24bit data, choose the 24bit data path
 
 
     typedef UReg<0x01, 0x02, 0, 8> INPUT_FORMATTER_02;
 
-    typedef UReg<0x01, 0x02, 0, 1> IF_SEL_WEN;                        // Select the write enable for line double If the input is
-                                                                      // HD source, this bit will be set to 1. 0: if the source is
-                                                                      // SD data. 1: if the source is HD data
 
-    typedef UReg<0x01, 0x02, 1, 1> IF_HS_SEL_LPF;                     // Low pass filter or interpolator selection The low pass
-                                                                      // filter and interpolator data path is combined together.
-                                                                      // 0: select interpolator data path. 1: select low pass
-                                                                      // filter data path
 
-    typedef UReg<0x01, 0x02, 2, 1> IF_HS_INT_LPF_BYPS;                // Combined INT and LPF data path bypass control If the data
-                                                                      // can’t do horizontal scaling-down, bypass the INT/LPF data
-                                                                      // path. 0: select the INT/LPF data path. 1: bypass the
-                                                                      // INT/LPF data path
 
-    typedef UReg<0x01, 0x02, 3, 1> IF_HS_PSHIFT_BYPS;                 // Phase adjustment bypass control If the data can’t do
-                                                                      // phase adjustment, this bit should be set to 1. 0: select
-                                                                      // phase adjustment data path. 1: bypass phase adjustment
 
-    typedef UReg<0x01, 0x02, 4, 1> IF_HS_TAP11_BYPS;                  // Tap11 LPF bypass control in YUV444to422 conversion Select
-                                                                      // the data if pass the tap11 LPF or not. 0: the data will
-                                                                      // pass the tap11 low pass filter. 1: the data will not pass
-                                                                      // the tap11 low pass filter
 
-    typedef UReg<0x01, 0x02, 5, 2> IF_HS_Y_PDELAY;                    // Y data pipes control in YUV444to422 conversion Control
-                                                                      // the Y data pipe delay, so that it can align with UV.
-                                                                      // IF_HS_Y_DELAY Y data delay pipes 00 1 01 2 10 3
 
-    typedef UReg<0x01, 0x02, 7, 1> IF_HS_UV_SIGN2UNSIGN;              // 11 4 UV data select If UV is signed, select the unsigned
-                                                                      // UV data 0: select the original UV 1: select the UV after
-                                                                      // sign processing
 
 
-    typedef UReg<0x01, 0x03, 0, 8> IF_HS_RATE_SEG0;                   // Horizontal non-linear scaling-down 1st segment DDA
-                                                                      // increment [11:4] (total 12 bits) The entire segment share
-                                                                      // the lowest 4bit, that is to say, the whole scale ration
-                                                                      // is hscale = {hscale0, hscale_low}. Assume the scaling
-                                                                      // ratio is n/m, then the value should be 4095x(m-n)/n
 
 
-    typedef UReg<0x01, 0x04, 0, 8> IF_HS_RATE_SEG1;                   // Horizontal non-linear scaling-down 2nd segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x05, 0, 8> IF_HS_RATE_SEG2;                   // Horizontal non-linear scaling-down 3rd segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x06, 0, 8> IF_HS_RATE_SEG3;                   // Horizontal non-linear scaling-down 4th segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x07, 0, 8> IF_HS_RATE_SEG4;                   // Horizontal non-linear scaling-down 5th segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x08, 0, 8> IF_HS_RATE_SEG5;                   // Horizontal non-linear scaling-down 6th segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x09, 0, 8> IF_HS_RATE_SEG6;                   // Horizontal non-linear scaling-down 7th segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x0A, 0, 8> IF_HS_RATE_SEG7;                   // Horizontal non-linear scaling-down 8th segment DDA
-                                                                      // increment [11:4] (total 12 bits)
 
 
-    typedef UReg<0x01, 0x0B, 0, 4> IF_HS_RATE_LOW;                    // Horizontal non-linear scaling-down DDA increment shared
-                                                                      // lowest 4 bits [3:0] (total 12 bits)
 
-    typedef UReg<0x01, 0x0B, 4, 2> IF_HS_DEC_FACTOR;                  // Horizontal non-linear scaling-down factor select If the
-                                                                      // scaling ratio is less than ½, use it and DDA to generate
-                                                                      // the we and phase 00: scaling-ratio is more than ½. 01:
-                                                                      // scaling-ratio is less than ½
-
-    typedef UReg<0x01, 0x0B, 6, 1> IF_SEL_HSCALE;                     // 10: scaling-ratio is less than ¼. Select the data path
-                                                                      // after horizontal scaling-down If the data have do
-                                                                      // scaling-down, this bit should be open. 0: select the data
-                                                                      // and write enable from CCIR to line double. 1: select the
-                                                                      // scaling-down data and write enable to line double. Line
-                                                                      // double read reset select
-
-    typedef UReg<0x01, 0x0B, 7, 1> IF_LD_SEL_PROV;                    // If source is progressive data, choose the related
-                                                                      // progressive timing as read reset timing. 0: select read
-                                                                      // reset timing of interlace data. 1: select read reset
-                                                                      // timing of progressive data
-
-
-    typedef UReg<0x01, 0x0C, 0, 1> IF_LD_RAM_BYPS;                    // Line double bypass control If the interlace data can’t do
-                                                                      // line double, if the progressive data can’t do scaling-
-                                                                      // down, line double FIFO should be bypass. 0: select
-                                                                      // interlace line double data from FIFO
-
-    typedef UReg<0x01, 0x0C, 1, 4> IF_LD_ST;                          // 1: bypass line double FIFO. Line double write reset
-                                                                      // generation start position If the internal counter equals
-                                                                      // the defined value the write reset will be high pulse.
-                                                                      // Initial position
-
-    typedef UReg<0x01, 0x0C, 5, 11> IF_INI_ST;                        // Initial position Start position indicator of vertical
-                                                                      // blanking. For the internal line_counter, the detail
-                                                                      // pixel’s shift that the line_counter count compare to the
-                                                                      // horizontal sync
-
-
-    typedef UReg<0x01, 0x0E, 0, 11> IF_HSYNC_RST;                     // Total pixel number per line Use to generate progressive
-                                                                      // timing if input is interlace data [7:0]
-
-
-    typedef UReg<0x01, 0x10, 0, 11> IF_HB_ST;                         // Horizontal blanking start position (set 0) Horizontal
-                                                                      // blanking (set 0) start position [7:0]
-
-
-    typedef UReg<0x01, 0x12, 0, 11> IF_HB_SP;                         // Horizontal blanking stop position (set 0) Horizontal
-                                                                      // blanking (set 0) stop position [7:0]
-
-
-    typedef UReg<0x01, 0x14, 0, 11> IF_HB_ST1;                        // Horizontal blanking start position (set 1) Horizontal
-                                                                      // blanking (set 1) start position [7:0]
-
-
-    typedef UReg<0x01, 0x16, 0, 11> IF_HB_SP1;                        // Horizontal blanking stop position (set 1) Horizontal
-                                                                      // blanking (set 1) stop position [7:0]
-
-
-    typedef UReg<0x01, 0x18, 0, 11> IF_HB_ST2;                        // Horizontal blanking start position (set 2) Horizontal
-                                                                      // blanking (set 2) start position [7:0]
-
-
-    typedef UReg<0x01, 0x1A, 0, 11> IF_HB_SP2;                        // Horizontal blanking stop position (set 2) Horizontal
-                                                                      // blanking (set 2) stop position [7:0]
-
-
-    typedef UReg<0x01, 0x1C, 0, 11> IF_VB_ST;                         // Vertical blanking start position Vertical blanking start
-                                                                      // position [7:0]
-
-
-    typedef UReg<0x01, 0x1E, 0, 11> IF_VB_SP;                         // Vertical blanking stop position Vertical blanking stop
-                                                                      // position [7:0]
-
-
-    typedef UReg<0x01, 0x20, 0, 12> IF_LINE_ST;                       // Line signal start position Progressive line start
-                                                                      // position
-
-
-    typedef UReg<0x01, 0x22, 0, 12> IF_LINE_SP;                       // Line signal stop position Progressive line stop position
-
-
-    typedef UReg<0x01, 0x24, 0, 12> IF_HBIN_ST;                       // Horizontal blank for scale down start position Horizontal
-                                                                      // blank for scale down line reset start position
-
-
-    typedef UReg<0x01, 0x26, 0, 12> IF_HBIN_SP;                       // Horizontal blank for scale down stop position Horizontal
-                                                                      // blank for scale down line reset stop position
-
-
-    typedef UReg<0x01, 0x28, 1, 1> IF_LD_WRST_SEL;                    // Line double write reset select Select hbin/line write
-                                                                      // reset 0: select line generated write reset 1: select hbin
-                                                                      // generated write reset
-
-    typedef UReg<0x01, 0x28, 2, 1> IF_SEL_ADC_SYNC;                   // ADC sync select Select ADC sync to data path
-
-    typedef UReg<0x01, 0x28, 3, 1> IF_TEST_EN;                        // IF test bus control enable Enable test signal
-
-    typedef UReg<0x01, 0x28, 4, 4> IF_TEST_SEL;                       // Test signals select bits. Select which signal to the test
-                                                                      // bus
-
-
-    typedef UReg<0x01, 0x29, 0, 1> IF_AUTO_OFST_EN;                   // Auto offset adjustment enable 1: enable
-
-    typedef UReg<0x01, 0x29, 1, 1> IF_AUTO_OFST_PRD;                  // 0: disable Auto offset adjustment period control 1: by
-                                                                      // frame
-
-
-    typedef UReg<0x01, 0x2A, 0, 4> IF_AUTO_OFST_U_RANGE;              // U channel offset detection range
-
-    typedef UReg<0x01, 0x2A, 4, 4> IF_AUTO_OFST_V_RANGE;
 
 
     typedef UReg<0x01, 0x2B, 0, 7> GBS_PRESET_ID;
@@ -1243,168 +1027,18 @@ public:
     typedef UReg<0x00, 0x43, 5, 1> PLL_VCORST;                        // VCORST VCO control voltage reset bit
 
 
-    typedef UReg<0x00, 0x44, 0, 1> DAC_RGBS_PWDNZ;                    // DAC enable When = 0, DAC (R,G,B,S) in power down mode
-
-    typedef UReg<0x00, 0x44, 1, 1> DAC_RGBS_RPD;                      // When = 1, DAC (R,G,B,S) is enable RPD, RDAC power down
-                                                                      // control When = 0, RDAC work normally When = 1, RDAC is in
-                                                                      // power down mode
-
-    typedef UReg<0x00, 0x44, 2, 1> DAC_RGBS_R0ENZ;                    // R0ENZ, DAC min output bypass When = 0, RDAC output Min
-                                                                      // voltage
-
-    typedef UReg<0x00, 0x44, 3, 1> DAC_RGBS_R1EN;                     // When = 1, RDAC output follow input R data R1EN, RDAC max
-                                                                      // output control When = 0, RDAC output follow input R data
-                                                                      // When = 1, RDAC output Max voltage
-
-    typedef UReg<0x00, 0x44, 4, 1> DAC_RGBS_GPD;                      // GPD, GDAC power down control When = 0, GDAC work normally
-
-    typedef UReg<0x00, 0x44, 5, 1> DAC_RGBS_G0ENZ;                    // When = 1, GDAC is in power down mode G0ENZ, GDAC min
-                                                                      // output bypass When = 0, GDAC output Min voltage When = 1,
-                                                                      // GDAC output follow input G data
-
-    typedef UReg<0x00, 0x44, 6, 1> DAC_RGBS_G1EN;                     // G1EN, GDAC max output control When = 0, GDAC output
-                                                                      // follow input G data
-
-    typedef UReg<0x00, 0x44, 7, 1> DAC_RGBS_BPD;                      // When = 1, GDAC output Max voltage BPD, BDAC power down
-                                                                      // control When = 0, BDAC work normally When = 1, BDAC is in
-                                                                      // power down mode
-
-
-    typedef UReg<0x00, 0x45, 0, 1> DAC_RGBS_B0ENZ;                    // B0ENZ, BDAC min output bypass When = 0, BDAC output Min
-                                                                      // voltage
-
-    typedef UReg<0x00, 0x45, 1, 1> DAC_RGBS_B1EN;                     // When = 1, BDAC output follow input B data B1EN, BDAC max
-                                                                      // output control When = 0, BDAC output follow input B data
-                                                                      // When = 1, BDAC output Max voltage
-
-    typedef UReg<0x00, 0x45, 2, 1> DAC_RGBS_SPD;                      // SPD, SDAC power down control When = 0, GDAC work normally
-
-    typedef UReg<0x00, 0x45, 3, 1> DAC_RGBS_S0ENZ;                    // When = 1, GDAC is in power down mode S0ENZ, SDAC min
-                                                                      // output bypass When = 0, SDAC output Min voltage When = 1,
-                                                                      // SDAC output follow input S data
-
-    typedef UReg<0x00, 0x45, 4, 1> DAC_RGBS_S1EN;                     // S1EN, SDAC max output control When = 0, SDAC output
-                                                                      // follow input S data
 
     typedef UReg<0x00, 0x45, 6, 2> CKT_FF_CNTRL;                      // CKT used to control FIFO
 
 
     typedef UReg<0x00, 0x46, 0, 8> RESET_CONTROL_0x46;
 
-    typedef UReg<0x00, 0x46, 0, 1> SFTRST_IF_RSTZ;                    // Input formatter reset control When = 0, input formatter
-                                                                      // is in reset status
-
-    typedef UReg<0x00, 0x46, 1, 1> SFTRST_DEINT_RSTZ;                 // When = 1, input formatter work normally Deint_madpt3
-                                                                      // reset control When = 0, deint_madpt3 is in reset status
-                                                                      // When = 1, deint_madpt3 work normally
-
-    typedef UReg<0x00, 0x46, 2, 1> SFTRST_MEM_FF_RSTZ;                // Mem_ff (wff/rff/playback/capture) reset control When = 0,
-                                                                      // mem_ff is in reset status
-
-    typedef UReg<0x00, 0x46, 3, 1> SFTRST_MEM_RSTZ;                   // When = 1, mem_ff work normally Mem controller reset
-                                                                      // control When = 0, mem controller is in reset status When
-                                                                      // = 1, mem controller work normally
-
-    typedef UReg<0x00, 0x46, 4, 1> SFTRST_FIFO_RSTZ;                  // FIFO reset control When = 0, all FIFO (FF64/FF512) is in
-                                                                      // reset status
-
-    typedef UReg<0x00, 0x46, 5, 1> SFTRST_OSD_RSTZ;                   // When = 1, all FIFO work normally OSD reset control When =
-                                                                      // 0, OSD generator is in reset status When = 1, OSD
-                                                                      // generator work normally
-
-    typedef UReg<0x00, 0x46, 6, 1> SFTRST_VDS_RSTZ;                   // Vds_proc reset control When = 0, vds_proc is in reset
-                                                                      // status
-
 
     typedef UReg<0x00, 0x47, 0, 8> RESET_CONTROL_0x47;
 
-    typedef UReg<0x00, 0x47, 0, 1> SFTRST_DEC_RSTZ;                   // Decimation reset control When = 0, decimation is in reset
-                                                                      // status
-
-    typedef UReg<0x00, 0x47, 1, 1> SFTRST_MODE_RSTZ;                  // When = 1, decimation work normally Mode detection reset
-                                                                      // control When = 0, mode detection is in reset status When
-                                                                      // = 1, mode detection work normally
-
-    typedef UReg<0x00, 0x47, 2, 1> SFTRST_SYNC_RSTZ;                  // Sync procesor reset control When = 0, sync processor is
-                                                                      // in reset status
-
-    typedef UReg<0x00, 0x47, 3, 1> SFTRST_HDBYPS_RSTZ;                // When = 1, sync processor work normally HD bypass channel
-                                                                      // reset control When = 0, HD bypass is in reset status When
-                                                                      // = 1, HD bypasswork normally
-
-    typedef UReg<0x00, 0x47, 4, 1> SFTRST_INT_RSTZ;                   // Interrupt generator reset control When = 0, interrupt
-                                                                      // generator is in reset status
 
 
-    typedef UReg<0x00, 0x48, 0, 8> PAD_CONTROL_00_0x48;
 
-    typedef UReg<0x00, 0x48, 0, 1> PAD_BOUT_EN;                       // VB_[7:0] output control When = 0, disable VB_[7:0]
-                                                                      // (test_out_[7:0]) output
-
-    typedef UReg<0x00, 0x48, 1, 1> PAD_BIN_ENZ;                       // When = 1, enable VB_[7:0] (test_out_[7:0]) output
-                                                                      // VB_[7:0] input control When = 0, enable VB_[7:0] input
-                                                                      // When = 1, disable VB_[7:0] input
-
-    typedef UReg<0x00, 0x48, 2, 1> PAD_ROUT_EN;                       // VR_[7:0] output control When = 0, disable VR_[7:0]
-                                                                      // (test_out_[15:8]) output
-
-    typedef UReg<0x00, 0x48, 3, 1> PAD_RIN_ENZ;                       // When = 1, enable VR_[7:0] (test_out_[15:8]) output
-                                                                      // VR_[7:0] input control When = 0, enable VR_[7:0] input
-                                                                      // When = 1, disable VR_[7:0] input
-
-    typedef UReg<0x00, 0x48, 4, 1> PAD_GOUT_EN;                       // VG_[7:0] output control When = 0, disable VG_[7:0]
-                                                                      // (test_out_[23:16]) output
-
-    typedef UReg<0x00, 0x48, 5, 1> PAD_GIN_ENZ;                       // When = 1, enable VG_[7:0] (test_out_[23:16]) output
-                                                                      // VG_[7:0] input control When = 0, enable VG_[7:0] input
-                                                                      // When = 1, disable VG_[7:0] input
-
-    typedef UReg<0x00, 0x48, 6, 1> PAD_SYNC1_IN_ENZ;                  // H/V sync1 input control When = 0, enable H/V sync1 input
-                                                                      // filter
-
-    typedef UReg<0x00, 0x48, 7, 1> PAD_SYNC2_IN_ENZ;                  // When = 1, disable H/V sync1 input filter H/V sync2 input
-                                                                      // control When = 0, enable H/V sync2 input filter When = 1,
-                                                                      // disable H/V sync2 input filter
-
-
-    typedef UReg<0x00, 0x49, 0, 8> PAD_CONTROL_01_0x49;
-
-    typedef UReg<0x00, 0x49, 0, 1> PAD_CKIN_ENZ;                      // PCLKIN control When = 0, PCLKIN input enable
-
-    typedef UReg<0x00, 0x49, 1, 1> PAD_CKOUT_ENZ;                     // When = 1, PCLKIN input disable CLKOUT control When = 0,
-                                                                      // CLKOUT output enable When = 1, CLKOUT output disable
-
-    typedef UReg<0x00, 0x49, 2, 1> PAD_SYNC_OUT_ENZ;                  // HSOUT/VSOUT control When = 0, HSOUT/VSOUT output enable
-
-    typedef UReg<0x00, 0x49, 3, 1> PAD_BLK_OUT_ENZ;                   // When = 1, HSOUT/VSOUT output disable HBOUT/VBOUT control
-                                                                      // When = 0, HBOUT/VBOUT output enable When = 1, HBOUT/VBOUT
-                                                                      // output disable
-
-    typedef UReg<0x00, 0x49, 4, 1> PAD_TRI_ENZ;                       // Tri-state gate control When = 0, enable output pad’s tri-
-                                                                      // state gate
-
-    typedef UReg<0x00, 0x49, 5, 1> PAD_PLDN_ENZ;                      // When = 1, disable output pad’s tri-state gate Pull-down
-                                                                      // control When = 0, enable pad’s pull-down transistor When
-                                                                      // = 1, disable pad’s pull-down transistor
-
-    typedef UReg<0x00, 0x49, 6, 1> PAD_PLUP_ENZ;                      // Pull-up control When = 0, enable pad’s pull-up transistor
-
-
-    typedef UReg<0x00, 0x4A, 0, 3> PAD_OSC_CNTRL;                     // OSC pad C2/C1/C0 control OSC pad C2/C1/C0 control
-
-    typedef UReg<0x00, 0x4A, 3, 1> PAD_XTOUT_TTL;                     // OSC pad output control When = 0, enable OSC pad output by
-                                                                      // schmitt
-
-
-    typedef UReg<0x00, 0x4B, 0, 1> DAC_RGBS_BYPS_IREG;                // DAC input DFF control When = 0, DAC input DFF is falling
-                                                                      // edge D-flipflop
-
-    typedef UReg<0x00, 0x4B, 1, 1> DAC_RGBS_BYPS2DAC;                 // When = 1, bypass falling edge D-flipflop HD bypass to DAC
-                                                                      // control When = 0, disable HD bypass channel to DAC When =
-                                                                      // 1, enable HD bypass channel to DAC directly
-
-    typedef UReg<0x00, 0x4B, 2, 1> DAC_RGBS_ADC2DAC;                  // ADC to DAC control When = 0, disable ADC (with
-                                                                      // decimation) to DAC
 
 
     typedef UReg<0x00, 0x4D, 0, 5> TEST_BUS_SEL;                      // Test bus selection Test bus enable
@@ -1420,8 +1054,6 @@ public:
                                                                       // 0, disable ADC to digital output When = 1, enable ADC
                                                                       // (with decimation) to digital output (VG, VR, VB)
 
-
-    typedef UReg<0x00, 0x4F, 0, 1> DAC_RGBS_V4CLK_INVT;               // V4CLK invert control When = 0, V4CLK to DAC directly
 
     typedef UReg<0x00, 0x4F, 1, 1> OUT_CLK_PHASE_CNTRL;               // When = 1, V4CLK will invert before go to DAC CLKOUT
                                                                       // invert control When = 0, CLKOUT output no invert When =
@@ -1459,83 +1091,7 @@ public:
                                                                       // DFF
 
 
-    typedef UReg<0x00, 0x52, 0, 8> GPIO_CONTROL_00;
 
-    typedef UReg<0x00, 0x52, 0, 1> GPIO_SEL_0;                        // GPIO bit0 selection When = 0, GPIO (pin76) is used as
-                                                                      // INTZ output
-
-    typedef UReg<0x00, 0x52, 1, 1> GPIO_SEL_1;                        // When = 1, GPIO (pin76) is used as GPIO bit0 GPIO bit1
-                                                                      // selection When = 0, HALF (pin77) is used as half tone
-                                                                      // input When = 1, HALF (pin77) is used as GPIO bit1
-
-    typedef UReg<0x00, 0x52, 2, 1> GPIO_SEL_2;                        // GPIO bit2 selection When = 0, SCLSA (pin43) is used as
-                                                                      // two wire serial bus slave address selection
-
-    typedef UReg<0x00, 0x52, 3, 1> GPIO_SEL_3;                        // When = 1, SCLSA (pin43) is used as GPIO bit2 GPIO bit3
-                                                                      // selection When = 0, MBA (pin107) is used as external
-                                                                      // memory BA When = 1, MBA (pin107) is used as GPIO bit3
-
-    typedef UReg<0x00, 0x52, 4, 1> GPIO_SEL_4;                        // GPIO bit4 selection When = 0, MCS1 (pin109) is used as
-                                                                      // external memory CS1
-
-    typedef UReg<0x00, 0x52, 5, 1> GPIO_SEL_5;                        // When = 1, MCS1 (pin109) is used as GPIO bit4 GPIO bit5
-                                                                      // selection When = 0, HBOUT (pin6) is used as H-blank
-                                                                      // output When = 1, HBOUT (pin6) is used as GPIO bit5
-
-    typedef UReg<0x00, 0x52, 6, 1> GPIO_SEL_6;                        // GPIO bit6 selection When = 0, VBOUT (pin7) is used as
-                                                                      // V-blank output
-
-    typedef UReg<0x00, 0x52, 7, 1> GPIO_SEL_7;                        // When = 1, VBOUT (pin7) is used as GPIO bit6 GPIO bit7
-                                                                      // selection When = 0, CLKOUT (pin4) is used as clock output
-                                                                      // When = 1, CLKOUT (pin4) is used as GPIO bit7
-
-
-    typedef UReg<0x00, 0x53, 0, 8> GPIO_CONTROL_01;
-
-    typedef UReg<0x00, 0x53, 0, 1> GPIO_EN_0;                         // GPIO bit0 output enable When = 0, GPIO bit0 output
-                                                                      // disable
-
-    typedef UReg<0x00, 0x53, 1, 1> GPIO_EN_1;                         // When = 1, GPIO bit0 output enable GPIO bit1 output enable
-                                                                      // When = 0, GPIO bit1 output disable When = 1, GPIO bit1
-                                                                      // output enable
-
-    typedef UReg<0x00, 0x53, 2, 1> GPIO_EN_2;                         // GPIO bit2 output enable When = 0, GPIO bit2 output
-                                                                      // disable
-
-    typedef UReg<0x00, 0x53, 3, 1> GPIO_EN_3;                         // When = 1, GPIO bit2 output enable GPIO bit3 output enable
-                                                                      // When = 0, GPIO bit3 output disable When = 1, GPIO bit3
-                                                                      // output enable
-
-    typedef UReg<0x00, 0x53, 4, 1> GPIO_EN_4;                         // GPIO bit4 output enable When = 0, GPIO bit4 output
-                                                                      // disable
-
-    typedef UReg<0x00, 0x53, 5, 1> GPIO_EN_5;                         // When = 1, GPIO bit4 output enable GPIO bit5 output enable
-                                                                      // When = 0, GPIO bit5 output disable When = 1, GPIO bit5
-                                                                      // output enable
-
-    typedef UReg<0x00, 0x53, 6, 1> GPIO_EN_6;                         // GPIO bit6 output enable When = 0, GPIO bit6 output
-                                                                      // disable
-
-    typedef UReg<0x00, 0x53, 7, 1> GPIO_EN_7;                         // When = 1, GPIO bit6 output enable GPIO bit7 output enable
-                                                                      // When = 0, GPIO bit7 output disable When = 1, GPIO bit7
-                                                                      // output enable
-
-
-    typedef UReg<0x00, 0x54, 0, 1> GPIO_VAL_0;                        // GPIO bit0 output value
-
-    typedef UReg<0x00, 0x54, 1, 1> GPIO_VAL_1;                        // GPIO bit1 output value
-
-    typedef UReg<0x00, 0x54, 2, 1> GPIO_VAL_2;                        // GPIO bit2 output value
-
-    typedef UReg<0x00, 0x54, 3, 1> GPIO_VAL_3;                        // GPIO bit3 output value
-
-    typedef UReg<0x00, 0x54, 4, 1> GPIO_VAL_4;                        // GPIO bit4 output value
-
-    typedef UReg<0x00, 0x54, 5, 1> GPIO_VAL_5;                        // GPIO bit5 output value
-
-    typedef UReg<0x00, 0x54, 6, 1> GPIO_VAL_6;                        // GPIO bit6 output value
-
-    typedef UReg<0x00, 0x54, 7, 1> GPIO_VAL_7;                        // GPIO bit7 output value
 
 
     typedef UReg<0x00, 0x57, 7, 1> INVT_RING_EN;                      // When = 0, disable invert ring When = 1, enable invert
