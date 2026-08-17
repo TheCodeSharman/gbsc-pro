@@ -15,10 +15,39 @@ carries:
 A formatting pass may move any amount of presentation and must move no identity
 at all. `identities()` is what makes that checkable rather than hopeful.
 """
+import glob
+import os
 import re
 from collections import namedtuple
 
 Typedef = namedtuple("Typedef", "name seg reg offset width")
+
+DRIVER = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                      "..", "..", "GBSC-Pro-Source code", "gbs-control",
+                      "src", "tv5725")
+
+
+def catalogue_paths(driver=DRIVER):
+    """Every header declaring registers, found rather than listed.
+
+    The catalogue is migrating out of Tv5725.h into the subsystem that owns each
+    block, so the set grows with each move. Discovering it by content means a
+    move needs no change here -- and, more to the point, a block that lands in a
+    file nobody listed cannot go missing from the completeness check.
+    """
+    declares = re.compile(r"typedef\s+UReg<")
+    found = [path for path in sorted(glob.glob(os.path.join(driver, "*.h")))
+             if declares.search(open(path, encoding="utf-8",
+                                     errors="replace").read())]
+    if not found:
+        raise RuntimeError(f"no register declarations found under {driver}")
+    return found
+
+
+def catalogue(driver=DRIVER):
+    """Every register-declaring header, concatenated."""
+    return "\n".join(open(path, encoding="utf-8", errors="replace").read()
+                     for path in catalogue_paths(driver))
 
 COMMENT_ONLY = re.compile(r"^\s*//")
 

@@ -11,6 +11,7 @@ import re
 import pytest
 
 import fielddocs
+import header
 import merge_slices
 
 # Resolved against this file, not the working directory, so `pytest` at the repo
@@ -18,8 +19,8 @@ import merge_slices
 # suite error out from anywhere else, which read as 25 broken tests.
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGDEF = os.path.join(HERE, "regdef.txt")
-HEADER = os.path.join(HERE, "..", "..", "GBSC-Pro-Source code",
-                      "gbs-control", "src", "tv5725", "Tv5725.h")
+# The catalogue spans one header per subsystem; header.catalogue() finds them
+# all, so a block that moves does not quietly leave the completeness check.
 
 
 @pytest.fixture(scope="module")
@@ -261,8 +262,7 @@ def test_the_extraction_agrees_with_the_header_everywhere_else(merged):
     source for new declarations at all -- and the eleven exceptions are why a
     width from it must never be trusted over the header's."""
     import re
-    hdr = open(HEADER,
-               encoding="utf-8", errors="replace").read()
+    hdr = header.catalogue()
     ureg = re.compile(r"typedef\s+UReg<\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)"
                       r"\s*,\s*(\d+)\s*,\s*(\d+)\s*>\s*(\w+)\s*;")
     header_fields = {n: (int(s, 0), int(r, 0), int(o), int(w))
@@ -307,8 +307,7 @@ def test_the_bit_diagram_is_a_second_opinion_and_not_an_authority():
     import diagram
 
     placed = diagram.fields(REGDEF)
-    hdr = open(HEADER,
-               encoding="utf-8", errors="replace").read()
+    hdr = header.catalogue()
     ureg = re.compile(r"typedef\s+UReg<\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)"
                       r"\s*,\s*(\d+)\s*,\s*(\d+)\s*>\s*(\w+)\s*;")
     header_fields = {n: (int(s, 0), int(r, 0), int(o), int(w))
@@ -363,8 +362,7 @@ def test_the_hand_verified_multibyte_fields_keep_their_addressing(name, seg, reg
     written by a preset, and declared from an extraction that is known to
     understate widths. Read off the pages by hand, all five already right."""
     import re
-    hdr = open(HEADER,
-               encoding="utf-8", errors="replace").read()
+    hdr = header.catalogue()
     m = re.search(r"typedef\s+UReg<\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)"
                   r"\s*,\s*(\d+)\s*,\s*(\d+)\s*>\s*" + name + r"\s*;", hdr)
     assert m, f"{name} is no longer declared in Tv5725.h"
@@ -428,8 +426,7 @@ def test_the_shipped_header_declares_every_field_the_datasheet_does(merged):
     This asserts the other thing: what the datasheet declares, the header
     declares.
     """
-    hdr = open(HEADER,
-               encoding="utf-8", errors="replace").read()
+    hdr = header.catalogue()
     declared = set(re.findall(r"UReg<[^>]+>\s*(\w+)\s*;", hdr))
 
     absent = sorted(set(merged) - declared - set(NOT_IN_HEADER))

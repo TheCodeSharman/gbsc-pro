@@ -47,7 +47,16 @@ from collections import defaultdict
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKETCH = os.path.join(HERE, "..", "..", "GBSC-Pro-Source code", "gbs-control")
 
-WRITE = re.compile(r"GBS::([A-Za-z_][A-Za-z0-9_]*)::write\s*\(")
+# A field reached through the legacy flat view (GBS::VDS_HSCALE), through its
+# owning subsystem (Tv5725::VideoProcessor::VDS_HSCALE), or unqualified from
+# inside that subsystem's own .cpp. Requiring the GBS:: prefix used to be safe
+# and stopped being so the moment a block moved into its owner: the writes were
+# still there, and this counted none of them.
+# The name must carry an underscore, which every genuine field does. That is what
+# separates a field write from the bulk GBS::write(segment, reg, value), whose
+# bytes carry no field name at all and are counted as raw below.
+WRITE = re.compile(
+    r"\b(?:[A-Za-z_][A-Za-z0-9_]*::)*?([A-Z][A-Z0-9]*_[A-Z0-9_]*(?:x[0-9A-F]+)?)::write\s*\(")
 RAW = re.compile(r"\b(writeOneByte|writeBytes)\s*\(\s*(0[xX][0-9a-fA-F]+)?")
 
 # A function definition at column 0 -- good enough for the .ino, which is where

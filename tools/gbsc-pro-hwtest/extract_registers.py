@@ -34,23 +34,30 @@ Tv5725.h, which is the firmware's business; they do not belong in a tuning UI.
 import json
 import os
 import re
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HEADER = os.path.join(HERE, "..", "..", "GBSC-Pro-Source code",
-                      "gbs-control", "src", "tv5725", "Tv5725.h")
 MERGED = os.path.join(HERE, "..", "tv5725-header", "merged.json")
 OUT = os.path.join(HERE, "tv5725_registers.json")
+
+sys.path.insert(0, os.path.join(HERE, "..", "tv5725-header"))
+import header  # noqa: E402  -- the path above has to be set first
 
 TYPEDEF = re.compile(
     r"typedef\s+UReg<\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)\s*,"
     r"\s*(\d+)\s*,\s*(\d+)\s*>\s*([A-Za-z_]\w*)")
 
 
-def header_fields(path=HEADER):
-    """Every field Tv5725.h declares, as {name: (seg, reg, offset, width)}."""
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        return {name: (int(seg, 16), int(reg, 16), int(off), int(width))
-                for seg, reg, off, width, name in TYPEDEF.findall(handle.read())}
+def header_fields(src=None):
+    """Every field the driver declares, as {name: (seg, reg, offset, width)}.
+
+    The catalogue spans a header per subsystem, so this takes the concatenation
+    header.catalogue() finds rather than one path.
+    """
+    if src is None:
+        src = header.catalogue()
+    return {name: (int(seg, 16), int(reg, 16), int(off), int(width))
+            for seg, reg, off, width, name in TYPEDEF.findall(src)}
 
 
 def _span(reg, lo, width):
@@ -100,8 +107,8 @@ def partition(fields):
     return keep
 
 
-def build(header_path=HEADER, merged_path=MERGED, partitioned=True):
-    """The map: what Tv5725.h declares, as a partition, described where it can be.
+def build(src=None, merged_path=MERGED, partitioned=True):
+    """The map: what the driver declares, as a partition, described where it can be.
 
     A field is documented if the datasheet names it, or covers its exact bits
     under another name, or sits inside a wider entry.
@@ -116,7 +123,7 @@ def build(header_path=HEADER, merged_path=MERGED, partitioned=True):
     """
     by_name, by_addr, blocks = datasheet_fields(merged_path)
     out = {}
-    fields = header_fields(header_path)
+    fields = header_fields(src)
     # Tv5725.h keeps its convenience typedefs — the firmware writes through
     # them — so rewording the header asks for all of them. Only the panel wants
     # the partition.

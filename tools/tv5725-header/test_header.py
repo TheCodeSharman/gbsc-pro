@@ -3,11 +3,10 @@ import os
 import header
 
 
-def header_path():
-    return os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..", "..", "GBSC-Pro-Source code", "gbs-control",
-        "src", "tv5725", "Tv5725.h")
+def catalogue():
+    """Every register-declaring header, concatenated. The catalogue spans one
+    file per subsystem, so these checks read all of them or miss a block."""
+    return header.catalogue()
 
 
 def test_a_typedef_yields_the_register_it_names():
@@ -206,7 +205,7 @@ def test_the_shipped_header_declares_no_wrap_fragment():
     over PLLAD_PDZ, SP_CS_0x3E over SP_H_COAST). Exactly one is a fragment, and
     what distinguishes it is the missing underscore.
     """
-    assert header.fragments(open(header_path()).read()) == []
+    assert header.fragments(catalogue()) == []
 
 
 def test_the_shipped_header_declares_no_field_twice_under_two_names():
@@ -230,6 +229,6 @@ def test_the_shipped_header_declares_no_field_twice_under_two_names():
     A tolerated list is where an invented fragment hides. An empty assertion
     cannot hide anything.
     """
-    src = open(header_path()).read()
+    src = catalogue()
 
     assert header.aliases(src) == []
