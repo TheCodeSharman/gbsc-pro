@@ -54,7 +54,9 @@ at runtime or in flash.
 
 Deep hierarchies and template metaprogramming make low-level concerns
 unreviewable, which on an ESP8266 with 80 KB of RAM is the thing you least want
-to lose sight of. `tv5725.h` already spends the project's entire template budget.
+to lose sight of. `tw.h`'s register machinery is the project's entire template
+budget. `Tv5725.h` spends it through one alias, `UReg`, and adds none of its own —
+the chip is a plain class, because there is only ever one of it on the board.
 
 ## `src/tv5725/` is the driver, and the name is the boundary
 
@@ -71,7 +73,7 @@ display drivers compute PLL dividers, blanking and memory FIFO watermarks, and
 
 | layer | what | where |
 |---|---|---|
-| bus | how to get a byte to the chip: banking and the queue | `src/net/RegisterQueue`, `tv5725.h` |
+| bus | how to get a byte to the chip: banking and the queue | `src/net/RegisterQueue`, `Tv5725.h` |
 | **driver** | **what the chip needs: sampling, capture, memory, playback, output timing** | **`src/tv5725/`** |
 | board | anything spanning two devices, or not the TV5725 at all | the sketch, for now |
 
@@ -88,27 +90,20 @@ control domains".
 That is a boundary with a reason behind it, which is what `geometry` lacked: it
 excluded `PLLAD_MD` on the strength of a word.
 
-### `GBS::Tv5725` is not available, and the reason is worth knowing
+### The chip is `Tv5725::Tv5725`, a class inside the namespace of the same name
 
-The obvious nesting — one project namespace, the driver inside it — was tried
-and **does not compile**:
+`Tv5725.h` declares the register catalogue as a class; the subsystems are its
+siblings in `namespace Tv5725`. `GBS` is a typedef for it, kept so the legacy
+call sites still compile, and it goes when they do.
 
-```
-gbs_types.h:12:   typedef class TV5725<23u> GBS;
-error: 'namespace GBS' redeclared as different kind of symbol
-```
+**Inside `namespace Tv5725`, the injected class name shadows the namespace.** A
+sibling written `Tv5725::Sampling` resolves to the *class* and fails to compile;
+write `Sampling`, or `::Tv5725::Sampling` where the qualification is wanted.
+Outside the namespace both `Tv5725::Tv5725` and `Tv5725::VideoProcessor` resolve
+as expected, including after a `using namespace Tv5725;`.
 
-**`GBS` is not a namespace. It is a typedef for a class template
-instantiation**, and `GBS::VDS_HSCALE` resolves by *class member* lookup. A
-namespace cannot be opened inside it. Note the host tests compile happily
-either way, because the pure-arithmetic files never include `gbs_types.h`; only
-the firmware build catches it.
-
-So `Tv5725` sits at the top level beside the `GBS` typedef, and yes, that is
-the chip named twice. It is transitional: `Tv5725` is the eventual home of every
-register set behind one abstraction. Moving the catalogue behind it is the change
-that resolves the duplication, and it reaches 2021 call sites, so it waits for a
-reason better than tidiness.
+Registers migrate out of `Tv5725::Tv5725` into the subsystem that owns them, so
+what remains in it is whatever has no owner yet. `docs/chip-initialisation.md`.
 
 ## One class per file, named after the class — `ClassName.h`
 
@@ -125,9 +120,10 @@ Google style, which made the rule above *approximately* true instead of literall
 true, and left the tree using two conventions at once -- half the files
 capitalised and half underscored.
 
-**A file that is not a class stays lowercase.** `driver.h` is an umbrella,
-`gbs_types.h` is a typedef, `tv5725.h` is a register catalogue — none of them is
-a class, and the lowercase name is what says so at a glance.
+**A file that is not a class stays lowercase.** `driver.h` is an umbrella and
+`gbs_types.h` is a typedef — neither is a class, and the lowercase name is what
+says so at a glance. `Tv5725.h` is capitalised because it holds
+`Tv5725::Tv5725`, and the rule above applies to it like any other class.
 
 `src/tv5725/driver.h` is an **umbrella** that includes the parts, so callers
 keep one include and reviewers get a small diff per class.
@@ -266,10 +262,9 @@ exist, and the failure is at link time.
 
 ## One name for one thing
 
-`typedef TV5725<GBS_ADDR> GBS;` was written out three times — twice in
-`OSDManager.h`, once in the sketch. It now lives in `gbs_types.h` and nowhere
-else. That duplication is *why* the geometry had to be header-only: no `.cpp`
-could name `GBS` without repeating it.
+The `GBS` typedef was written out in several files at once. It now lives in
+`gbs_types.h` and nowhere else. That duplication is *why* the geometry had to be
+header-only: no `.cpp` could name `GBS` without repeating it.
 
 The same rule at the behaviour level: there is **one entry point** for a user
 geometry adjustment — `Tv5725::Controls::panH` / `panV` / `zoomH` / `zoomV`. The
