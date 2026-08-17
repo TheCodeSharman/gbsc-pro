@@ -12,7 +12,6 @@ static unsigned long lastVsyncLock = millis();
 // LED_BUILTIN    15
 // #define LEDON     pinMode(LED_BUILTIN, OUTPUT); digitalWrite(LED_BUILTIN, LOW)
 // #define LEDOFF    pinMode(LED_BUILTIN, INPUT);  digitalWrite(LED_BUILTIN, HIGH)
-#define HAVE_BUTTONS 0
 
 // GBS_DEBUG: compile in the debug surface -- traces, dumps and the register
 // endpoints. Off by default. Must be defined before the framesync.h include
@@ -7178,69 +7177,6 @@ void ICACHE_RAM_ATTR isrRotaryEncoderPushForNewMenu()
 }
 #endif
 
-#if HAVE_BUTTONS
-#define INPUT_SHIFT 0
-#define DOWN_SHIFT 1
-#define UP_SHIFT 2
-#define MENU_SHIFT 3
-#define BACK_SHIFT 4
-
-static const uint8_t historySize = 32;
-static const uint16_t buttonPollInterval = 10; // Encode
-static uint8_t buttonHistory[historySize];
-static uint8_t buttonIndex;
-static uint8_t buttonState;
-static uint8_t buttonChanged;
-
-// uint8_t readButtons(void)
-// {
-//     return ~(
-//               (digitalRead(pin_b) << INPUT_SHIFT) |
-//               (digitalRead(pin_a) << DOWN_SHIFT) |
-//               (digitalRead(pin_b) << UP_SHIFT) |
-//               (digitalRead(pin_switch) << MENU_SHIFT)
-//             );
-// }
-
-// void debounceButtons(void) 
-// {
-//     buttonHistory[buttonIndex++ % historySize] = readButtons();
-//     buttonChanged = 0xFF;
-//     for (uint8_t i = 0; i < historySize; ++i)
-//         buttonChanged &= buttonState ^ buttonHistory[i];
-//     buttonState ^= buttonChanged;
-// }
-
-// bool buttonDown(uint8_t pos)
-// {
-//     return (buttonState & (1 << pos)) && (buttonChanged & (1 << pos));
-// }
-
-// void handleButtons(void)
-// {
-// #if USE_NEW_OLED_MENU
-//     OLEDMenuNav btn = OLEDMenuNav::IDLE;
-//     debounceButtons();
-//     if (buttonDown(MENU_SHIFT))
-//         btn = OLEDMenuNav::ENTER;
-//     if (buttonDown(DOWN_SHIFT))
-//         btn = OLEDMenuNav::UP;
-//     if (buttonDown(UP_SHIFT))
-//         btn = OLEDMenuNav::DOWN;
-//     oledMenu.tick(btn);
-// #else
-//     debounceButtons();
-//     if (buttonDown(INPUT_SHIFT))
-//         Menu::run(MenuInput::BACK);
-//     if (buttonDown(DOWN_SHIFT))
-//         Menu::run(MenuInput::DOWN);
-
-//     if (buttonDown(MENU_SHIFT))
-//         Menu::run(MenuInput::FORWARD);
-// #endif
-// }
-#endif
-
 void discardSerialRxData()
 {
     uint16_t maxThrowAway = 0x1fff;
@@ -7986,16 +7922,6 @@ void loop()
     //     OneSec = millis();
     //   }
 
-    // #if HAVE_BUTTONS
-    //   static unsigned long lastButton = micros();
-    //   if (micros() - lastButton > buttonPollInterval)  // 10
-    //   {
-    //       printf(" IDLESTART \n");
-    //     lastButton = micros();
-    //     handleButtons();
-    //   }
-    // #endif
-    
     // versatile_encoder->ReadEncoder();
 
     // How slow a loop pass gets between frames: an IR frame arriving while the
