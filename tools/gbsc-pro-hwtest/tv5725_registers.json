@@ -377,6 +377,14 @@
   "seg": 4,
   "width": 1
  },
+ "CHIP_ID_FOUNDRY": {
+  "block": "CHIP_ID_",
+  "desc": "Part of CHIP_ID_, which RD-5725-1.1 documents as one 24-bit block at s0_0B rather than field by field.",
+  "off": 0,
+  "reg": 11,
+  "seg": 0,
+  "width": 8
+ },
  "CHIP_ID_PRODUCT": {
   "block": "CHIP_ID_",
   "desc": "Part of CHIP_ID_, which RD-5725-1.1 documents as one 24-bit block at s0_0B rather than field by field.",
@@ -581,13 +589,6 @@
   "reg": 30,
   "seg": 5,
   "width": 1
- },
- "DEINT_STATUS_": {
-  "desc": "3:2 pull-down indicator When =1, means de-interlace is in 3:2 pull-down mode",
-  "off": 0,
-  "reg": 21,
-  "seg": 0,
-  "width": 8
  },
  "DIAG_BOB_COEF_SEL": {
   "desc": "vertically two pixels average. Diagonal Bob Low pass Filter Coefficient Selection Select coefficients for pixel difference low pass filter DIAG_BOB_COEF_SEL Internal Selected Coefficient 1 15/16 0 14/16",
@@ -819,13 +820,6 @@
   "reg": 82,
   "seg": 0,
   "width": 1
- },
- "GPIO_STATUS_": {
-  "desc": "GPIO bit2 status GPIO bit2 (SCLSA pin43) status",
-  "off": 0,
-  "reg": 14,
-  "seg": 0,
-  "width": 8
  },
  "GPIO_VAL_0": {
   "desc": "GPIO bit0 output value",
@@ -2956,13 +2950,6 @@
   "seg": 4,
   "width": 1
  },
- "MEM_FF_STATUS_": {
-  "desc": "Memory control initial indicator When =1, means external memory chip initial is finished",
-  "off": 0,
-  "reg": 19,
-  "seg": 0,
-  "width": 16
- },
  "MEM_FF_TOP_FF_SEL": {
   "desc": "When set 1, all FIFO status output, can read FIFO status through test bus; When set 0, not FIFO status output. ISTERS",
   "off": 7,
@@ -4737,13 +4724,77 @@
   "seg": 5,
   "width": 8
  },
- "STATUS_03": {
-  "block": "IF_STATUS_",
-  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
-  "off": 0,
-  "reg": 3,
+ "STATUS_DEINT_PULLDN": {
+  "block": "DEINT_STATUS_",
+  "desc": "Part of DEINT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_15 rather than field by field.",
+  "off": 7,
+  "reg": 21,
   "seg": 0,
-  "width": 8
+  "width": 1
+ },
+ "STATUS_GPIO_CLKOUT": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 7,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_GPIO": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 0,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_HALF": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 1,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_HBOUT": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 5,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_MBA": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 3,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_MCS1": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 4,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_SCLSA": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 2,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_GPIO_VBOUT": {
+  "block": "GPIO_STATUS_",
+  "desc": "Part of GPIO_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0E rather than field by field.",
+  "off": 6,
+  "reg": 14,
+  "seg": 0,
+  "width": 1
  },
  "STATUS_IF_HT_BAD": {
   "block": "IF_STATUS_",
@@ -4761,11 +4812,331 @@
   "seg": 0,
   "width": 1
  },
+ "STATUS_IF_HVT_OK": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 2,
+  "reg": 0,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_1080I": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 0,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_1808P": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 4,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_2200_1125I": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 5,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_2200_1125P": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 1,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_2376_1250I": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 6,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_2376_1250P": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 2,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_2640_1125I": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 7,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_2640_1125P": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 3,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_720": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 4,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_720P50": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 2,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_720P60": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 3,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_HD": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 5,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
  "STATUS_IF_INP_INT": {
   "block": "IF_STATUS_",
   "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
   "off": 6,
   "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_NTSC_INT": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 3,
+  "reg": 0,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_NTSC_PRG": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 4,
+  "reg": 0,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_PAL_INT": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 5,
+  "reg": 0,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_PAL_PRG": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 6,
+  "reg": 0,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_PC": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 1,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_PRG": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 7,
+  "reg": 4,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SD": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 7,
+  "reg": 0,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SVGA": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 7,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SVGA60": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 4,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SVGA75": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 5,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SVGA85": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 6,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SW": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 4,
+  "reg": 5,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SXGA": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 0,
+  "reg": 3,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SXGA60": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 5,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SXGA75": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 6,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_SXGA85": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 7,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_USER": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 0,
+  "reg": 5,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_VGA": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 3,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_VGA60": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 0,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_VGA75": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 1,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_VGA86": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 2,
+  "reg": 1,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_XGA": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 4,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_XGA60": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 0,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_XGA70": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 1,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_XGA75": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 2,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_INP_XGA85": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 3,
+  "reg": 2,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_IF_NO_SYNC": {
+  "block": "IF_STATUS_",
+  "desc": "Part of IF_STATUS_, which RD-5725-1.1 documents as one 45-bit block at s0_00 rather than field by field.",
+  "off": 1,
+  "reg": 5,
   "seg": 0,
   "width": 1
  },
@@ -4785,10 +5156,42 @@
   "seg": 0,
   "width": 1
  },
+ "STATUS_INT_INP_CSYNC": {
+  "block": "INT_STATUS_",
+  "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
+  "off": 7,
+  "reg": 15,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_INT_INP_HSYNC": {
+  "block": "INT_STATUS_",
+  "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
+  "off": 5,
+  "reg": 15,
+  "seg": 0,
+  "width": 1
+ },
  "STATUS_INT_INP_NO_SYNC": {
   "block": "INT_STATUS_",
   "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
   "off": 4,
+  "reg": 15,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_INT_INP_SW": {
+  "block": "INT_STATUS_",
+  "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
+  "off": 3,
+  "reg": 15,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_INT_INP_VSYNC": {
+  "block": "INT_STATUS_",
+  "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
+  "off": 6,
   "reg": 15,
   "seg": 0,
   "width": 1
@@ -4801,6 +5204,14 @@
   "seg": 0,
   "width": 1
  },
+ "STATUS_INT_SOG_OK": {
+  "block": "INT_STATUS_",
+  "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
+  "off": 2,
+  "reg": 15,
+  "seg": 0,
+  "width": 1
+ },
  "STATUS_INT_SOG_SW": {
   "block": "INT_STATUS_",
   "desc": "Part of INT_STATUS_, which RD-5725-1.1 documents as one 8-bit block at s0_0F rather than field by field.",
@@ -4809,11 +5220,127 @@
   "seg": 0,
   "width": 1
  },
+ "STATUS_MEM_FF_CAP_FIFO_EMPTY": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 5,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_CAP_FIFO_FULL": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 4,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_EXT_FIN": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 0,
+  "reg": 20,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_PLY_FIFO_EMPTY": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 7,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_PLY_FIFO_FULL": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 6,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_RFF_FIFO_EMPTY": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 3,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_RFF_FIFO_FULL": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 2,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_WFF_FIFO_EMPTY": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 1,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MEM_FF_WFF_FIFO_FULL": {
+  "block": "MEM_FF_STATUS_",
+  "desc": "Part of MEM_FF_STATUS_, which RD-5725-1.1 documents as one 16-bit block at s0_13 rather than field by field.",
+  "off": 0,
+  "reg": 19,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MISC_HBLK": {
+  "desc": "",
+  "off": 5,
+  "reg": 10,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MISC_HSYNC": {
+  "desc": "",
+  "off": 7,
+  "reg": 10,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MISC_PIP_EN_H": {
+  "desc": "",
+  "off": 1,
+  "reg": 10,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MISC_PIP_EN_V": {
+  "block": "MISC_STATUS_",
+  "desc": "Part of MISC_STATUS_, which RD-5725-1.1 documents as one 9-bit block at s0_09 rather than field by field.",
+  "off": 0,
+  "reg": 10,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MISC_PLL648_LOCK": {
+  "block": "MISC_STATUS_",
+  "desc": "Part of MISC_STATUS_, which RD-5725-1.1 documents as one 9-bit block at s0_09 rather than field by field.",
+  "off": 6,
+  "reg": 9,
+  "seg": 0,
+  "width": 1
+ },
  "STATUS_MISC_PLLAD_LOCK": {
   "block": "MISC_STATUS_",
   "desc": "Part of MISC_STATUS_, which RD-5725-1.1 documents as one 9-bit block at s0_09 rather than field by field.",
   "off": 7,
   "reg": 9,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_MISC_VBLK": {
+  "desc": "",
+  "off": 4,
+  "reg": 10,
   "seg": 0,
   "width": 1
  },
@@ -4888,6 +5415,38 @@
   "seg": 0,
   "width": 1
  },
+ "STATUS_VDS_FR_NUM": {
+  "block": "VDS_STATUS_",
+  "desc": "Part of VDS_STATUS_, which RD-5725-1.1 documents as one 24-bit block at s0_10 rather than field by field.",
+  "off": 0,
+  "reg": 16,
+  "seg": 0,
+  "width": 4
+ },
+ "STATUS_VDS_OUT_BLANK": {
+  "block": "VDS_STATUS_",
+  "desc": "Part of VDS_STATUS_, which RD-5725-1.1 documents as one 24-bit block at s0_10 rather than field by field.",
+  "off": 1,
+  "reg": 17,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_VDS_OUT_HSYNC": {
+  "block": "VDS_STATUS_",
+  "desc": "Part of VDS_STATUS_, which RD-5725-1.1 documents as one 24-bit block at s0_10 rather than field by field.",
+  "off": 5,
+  "reg": 16,
+  "seg": 0,
+  "width": 1
+ },
+ "STATUS_VDS_OUT_VSYNC": {
+  "block": "VDS_STATUS_",
+  "desc": "Part of VDS_STATUS_, which RD-5725-1.1 documents as one 24-bit block at s0_10 rather than field by field.",
+  "off": 4,
+  "reg": 16,
+  "seg": 0,
+  "width": 1
+ },
  "STATUS_VDS_VERT_COUNT": {
   "block": "VDS_STATUS_",
   "desc": "Part of VDS_STATUS_, which RD-5725-1.1 documents as one 24-bit block at s0_10 rather than field by field.",
@@ -4895,6 +5454,21 @@
   "reg": 17,
   "seg": 0,
   "width": 11
+ },
+ "TEST_BUS_1F": {
+  "desc": "",
+  "off": 0,
+  "reg": 31,
+  "seg": 0,
+  "width": 8
+ },
+ "TEST_BUS_2E": {
+  "block": "TEST_BUS_",
+  "desc": "Part of TEST_BUS_, which RD-5725-1.1 documents as one 24-bit block at s0_2E rather than field by field.",
+  "off": 0,
+  "reg": 46,
+  "seg": 0,
+  "width": 8
  },
  "TEST_BUS_2F": {
   "block": "TEST_BUS_",
