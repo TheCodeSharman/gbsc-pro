@@ -806,6 +806,28 @@ firmware C++.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
+- **A commit holds ONE of these four, never a mixture.** The firmware is a fork
+  and its commits have to be cherry-pickable upstream on their own; a commit that
+  also edits our Python or our conventions cannot be taken without them.
+
+  | kind | paths | prefix |
+  |---|---|---|
+  | firmware | `GBSC-Pro-Source code/**`, `test/**` | `tv5725:`, `framesync:`, … |
+  | Python tooling | `tools/**` | `tools:`, `tools/hwtest:` |
+  | project conventions | `CLAUDE.md`, `CODING_STYLE.md` | `project:` |
+  | design notes | `docs/**` | `docs:` |
+
+  `test/` travels with the firmware — it is the host-compiled C++ that proves it.
+  When one change needs two kinds, land the firmware first and the rest straight
+  after; the pair is still one push. Check before committing:
+
+  ```sh
+  git show --name-only --format= HEAD | \
+    sed 's#^GBSC-Pro.*#firmware#;s#^test/.*#firmware#;s#^tools/.*#tools#;
+         s#^\(CLAUDE\|CODING_STYLE\).md#project#;s#^docs/.*#docs#' | sort -u
+  ```
+
+  One line out means one kind, which is the rule. More than one means split it.
 - **Load the `tdd` skill before writing code.** Not a formality here: this
   codebase punishes the alternative. An evening went into a preferences bug that
   three sessions "fixed" without a failing test to say what fixed meant, and each
