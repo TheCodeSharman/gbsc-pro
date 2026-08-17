@@ -120,13 +120,18 @@ Google style, which made the rule above *approximately* true instead of literall
 true, and left the tree using two conventions at once -- half the files
 capitalised and half underscored.
 
-**A file that is not a class stays lowercase.** `driver.h` is an umbrella and
-`gbs_types.h` is a typedef — neither is a class, and the lowercase name is what
-says so at a glance. `Tv5725.h` is capitalised because it holds
-`Tv5725::Tv5725`, and the rule above applies to it like any other class.
+**A file that is not a class stays lowercase.** `gbs_types.h` is a typedef, not
+a class, and the lowercase name is what says so at a glance. `Tv5725.h` is
+capitalised because it holds `Tv5725::Tv5725`, and the rule above applies to it
+like any other class.
 
-`src/tv5725/driver.h` is an **umbrella** that includes the parts, so callers
-keep one include and reviewers get a small diff per class.
+**There is no umbrella header, and adding one back is a regression.** Every file
+includes the classes it names. `src/tv5725/driver.h` used to include thirteen
+headers on its callers' behalf, and what it really did was hide dependencies:
+`Geometry.cpp` used `Memory` without including it, and the sketch reached
+`ControlSteps` through two levels of someone else's include. Both compiled until
+the umbrella went. A header that saves a caller from naming what it uses also
+stops the caller from seeing what can break it.
 
 ## `src/` means reviewed; the sketch root means legacy
 
