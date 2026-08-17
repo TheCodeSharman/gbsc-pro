@@ -309,10 +309,12 @@ bits, so the header is right and the table is simply an error.
   datasheet name covers — so decomposing those is not equivalent**, because the
   byte write zeroes them and field writes do not.
   `docs/whole-byte-convenience-names.md`.
-- **Where the header and the datasheet disagree, the header wins.** Its values are
-  that audit's output plus bench proof. Eleven such fields remain, listed by name
-  in `tools/tv5725-header/test_fielddocs.py::HEADER_WINS`, and a *new*
-  disagreement fails that test rather than joining a tolerated count.
+- **Where the header and the datasheet disagree, the header wins.** Its values
+  are that audit's output plus bench proof, and eleven such fields remain.
+  **Nothing checks this any more** — the audit was deleted on 2026-08-17 once it
+  had finished finding things, so a new disagreement now arrives silently.
+  `tools/gbsc-pro-hwtest/datasheet_fields.json` is the extraction it was checked
+  against, and git has the tooling.
 - **Assert known widths before believing any extraction.** `VDS_HSCALE` 10,
   `PLLAD_MD` 12, `IF_HB_ST1` 11, `MEM_MODE_REG` 16. Two attempts at re-deriving
   the field set on 2026-08-13 both produced complete-looking tables that failed
@@ -320,26 +322,18 @@ bits, so the header is right and the table is simply an error.
   overwrote earlier ones, one read `(hi, lo)` as `(lo, hi)`. Both looked fine.
 - **The danger is one-directional.** A field declared *narrower* than it is
   truncates every value written through it and says nothing.
-- **`merged.json` is the artefact, not `fielddocs.parse()` output.** Parsing must
-  use `keep_slices=True`, or the `[9:8]` suffixes are stripped and every slice of
-  a wide field collides on one dict key.
-- **The extractor invents names if you let it.** On 2026-08-13 it produced 32 —
-  `ALUE`, `EG0`, `FFSET`, `R_B` — from names the PDF wraps across two lines, and
-  they reached the header looking like real registers. Every genuine field name
-  contains an underscore; the six in the document that do not are all fragments.
-- **And it silently DROPS fields, which is the worse half.** The wrap can put the
-  whole name on the line above and leave the bit row holding only `[7:0]`.
-  `BITROW` required the Name cell to start with `[A-Z_]`, so those rows parsed as
-  description text and the field never arrived — no fragment, no wrong width,
-  just absent. Seven were lost that way, all the wide multi-byte address fields
+- **The PDF's line wrapping is what breaks any re-derivation, in two
+  directions.** A long field name wraps across two lines, and a parser that
+  keeps only the second gets a fragment — `ALUE`, `EG0`, `R_B` — which reaches
+  the header looking like a real register. Every genuine field name contains an
+  underscore, so a name without one is a fragment. The worse direction is the
+  quiet one: the wrap can put the whole name on the line above and leave the bit
+  row holding only `[7:0]`, and the field then arrives as nothing at all. Seven
+  went that way, every wide multi-byte address field
   (`WFF_SAFE_GUARD_A`/`_B`, `CAP_SAFE_GAURD_A`, `RFF_WFF_STA_ADDR_A`/`_B`,
-  `VDS_NS_SQUARE_RAD`). Fixed 2026-08-13; the six invented fragments above
-  existed *because* of it and disappeared with the fix.
-- **"The header is complete with respect to the datasheet" was false, and was
-  unfalsifiable.** Every test compared the header against the extraction, and
-  both had the same hole. Now
-  `test_the_shipped_header_declares_every_field_the_datasheet_does`, with
-  `NOT_IN_HEADER` giving a reason per deliberate absence.
+  `VDS_NS_SQUARE_RAD`). **A completeness check that compares a header against an
+  extraction cannot see this**, because both have the same hole — count against
+  the PDF's own table count instead.
 - **The datasheet has typos in field NAMES, not just in bit slices.**
   `CAP_SAFE_GAURD_A` ("GAURD") and `OSD_YCBCR_RGB_FORMATE` ("FORMATE"). The
   header carries the corrected spelling at the same address — so searching
@@ -347,7 +341,7 @@ bits, so the header is right and the table is simply an error.
 - **A "gap" in the register map may be a documented register the tooling lost.**
   s4_47..49 was carried for a session as an unnamed hole with a proposed bench
   experiment. It is `WFF_SAFE_GUARD_B`, documented in full, with its own table.
-  Read `tools/tv5725-header/regdef.txt` before designing an experiment.
+  Search RD-5725-1.1 itself before designing an experiment.
 - **A bit the preset writes is not automatically a field.** Of the four
   addresses whose unnamed bits some preset table sets, three — `s3_14[3]`,
   `s3_71[3]`, `s4_5b[6:0]` — are marked **RESERVED** in the datasheet's own
@@ -356,8 +350,8 @@ bits, so the header is right and the table is simply an error.
 
 ## What a preset actually writes
 
-`preset_common.py` measures it, `test_preset_common.py` pins it. Of the 432
-registers one `writeProgramArrayNew()` call writes:
+Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
+`writeProgramArrayNew()` call writes:
 
 - **306 are identical in all twelve scaling tables** — static bring-up wearing a
   preset's clothes — and 126 differ somewhere.
@@ -543,7 +537,7 @@ registers one `writeProgramArrayNew()` call writes:
   both axes at 4.0x** — so the floor is `raster / 4` (479 at 1916, 530 units of
   travel) and it no longer collapses each time the output widens.
 
-  **RD-5725-1.1 states no minimum for `VDS_HSCALE`**: `regdef.txt:7684` gives
+  **RD-5725-1.1 states no minimum for `VDS_HSCALE`**: it gives
   only `HSCALE = 1024 x in / out` and the field is 10 bits, so there is no
   hardware bound to calculate and any floor is a picture-quality choice. Where
   interpolation starts to look bad depends on the resolution ratio, so it is the
