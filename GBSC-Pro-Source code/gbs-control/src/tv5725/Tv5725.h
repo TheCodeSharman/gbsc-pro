@@ -1544,56 +1544,8 @@ public:
 
     typedef UReg<0x00, 0x58, 0, 8> INTERRUPT_CONTROL_00;
 
-    typedef UReg<0x00, 0x58, 0, 1> INT_CONTROL_RST_SOGBAD;            // Interrupt bit0 reset control When = 1, interrupt bit0
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 1, 1> INT_CONTROL_RST_SOGSWITCH;         // Interrupt bit1 reset control When = 1, interrupt bit1
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 2, 1> INT_RST_2;                         // Interrupt bit2 reset control When = 1, interrupt bit2
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 3, 1> INT_RST_3;                         // Interrupt bit3 reset control When = 1, interrupt bit3
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 4, 1> INT_CONTROL_RST_NOHSYNC;           // Interrupt bit4 reset control When = 1, interrupt bit4
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 5, 1> INT_RST_5;                         // Interrupt bit5 reset control When = 1, interrupt bit5
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 6, 1> INT_RST_6;                         // Interrupt bit6 reset control When = 1, interrupt bit6
-                                                                      // status will be reset to zero
-
-    typedef UReg<0x00, 0x58, 7, 1> INT_RST_7;                         // Interrupt bit7 reset control When = 1, interrupt bit7
-                                                                      // status will be reset to zero
-
 
     typedef UReg<0x00, 0x59, 0, 8> INTERRUPT_CONTROL_01;
-
-    typedef UReg<0x00, 0x59, 0, 1> INT_ENABLE0;                       // Interrupt bit0 enable When = 1, enable interrupt bit0
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 1, 1> INT_ENABLE1;                       // Interrupt bit1 enable When = 1, enable interrupt bit1
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 2, 1> INT_ENABLE2;                       // Interrupt bit2 enable When = 1, enable interrupt bit2
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 3, 1> INT_ENABLE3;                       // Interrupt bit3 enable When = 1, enable interrupt bit3
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 4, 1> INT_ENABLE4;                       // Interrupt bit4 enable When = 1, enable interrupt bit4
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 5, 1> INT_ENABLE5;                       // Interrupt bit5 enable When = 1, enable interrupt bit5
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 6, 1> INT_ENABLE6;                       // Interrupt bit6 enable When = 1, enable interrupt bit6
-                                                                      // generator
-
-    typedef UReg<0x00, 0x59, 7, 1> INT_ENABLE7;                       // Interrupt bit7 enable When = 1, enable interrupt bit7
-                                                                      // generator GISTERS
 
 // MEMORY REGISTERS
 
