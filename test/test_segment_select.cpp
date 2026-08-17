@@ -22,8 +22,11 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
-typedef Tv5725::Tv5725 GBS;
+// The sketch's GBS, reproduced rather than included: gbs_types.h is the legacy
+// compatibility layer and pulls in the whole sketch's worth of headers.
+class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor {};
 
 // Two registers at the same offset in different banks -- the pair the bench
 // fault actually swapped. IF_HB_ST is the input formatter's set 0 horizontal
@@ -84,4 +87,19 @@ TEST_CASE("a register read comes from that register's own segment")
     Wire.segment = 3;
 
     CHECK((GBS::IF_HB_ST::read() & 0xFF) == 0x02);
+}
+
+TEST_CASE("a register declared by its owning subsystem still aims its own segment")
+{
+    // The catalogue is migrating out of Tv5725::Tv5725 into the subsystem that
+    // owns each block. A field carries its segment in its own type, so moving
+    // the declaration to another class must not change where a write lands --
+    // and a segment mis-transcribed during the move is silent everywhere else.
+    Wire.reset();
+
+    Tv5725::VideoProcessor::VDS_HSCALE::write(512);
+
+    CHECK(Wire.bank[3][0x16] == (512 & 0xFF));
+    CHECK(Tv5725::VideoProcessor::VDS_HSCALE::read() == 512);
+    CHECK(Wire.bank[1][0x16] == 0);
 }
