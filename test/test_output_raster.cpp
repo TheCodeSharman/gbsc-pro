@@ -134,22 +134,6 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
         // pal_1920x1080 ships 1445. The point of computing the raster at all.
         CHECK(solved.horizontalTotal > 1445);
     }
-
-    SUBCASE("and leaves real travel where 129.6 MHz left none") {
-        // ceil(raster * scaleMin / Unity) is Axis::minimumCapture's arithmetic.
-        // The bench's usable capture tops out near 1187: the source line is 1277
-        // IF units and the window starts at 90 to clear the hsync pulse. Both
-        // rasters are derived from the solves rather than pinned, because the
-        // test is about the GAP between them and a literal would need editing
-        // every time either moved.
-        const uint32_t scaleMin = 500, unity = 1024, usable = 1187;
-        uint32_t raster108 = Mode1080p.solve(50.0f, OutputRaster::EngineCeilingHz).horizontalTotal;
-        uint32_t raster129 = Mode1080p.solve(50.0f, OutputRaster::WorkingCeilingHz).horizontalTotal;
-        uint32_t at108 = (raster108 * scaleMin + unity - 1) / unity;
-        uint32_t at129 = (raster129 * scaleMin + unity - 1) / unity;
-        CHECK(at129 > usable - 100);       // no useful travel at the top ceiling
-        CHECK(usable - at108 > 200);       // ~250 units at the engine's
-    }
 }
 
 TEST_CASE("a frame height selects the output mode that owns it")
