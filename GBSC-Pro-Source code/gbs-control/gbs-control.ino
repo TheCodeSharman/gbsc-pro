@@ -43,10 +43,6 @@ static unsigned long Tim_sys = 0;
 static unsigned long Tim_web = 0;
 static unsigned long Tim_menuItem = 0;
 static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
-/*
-TV5725
-*/
-#include "src/tv5725/Tv5725.h"
 #include <Wire.h>
 
 #include "presetMdSection.h"
