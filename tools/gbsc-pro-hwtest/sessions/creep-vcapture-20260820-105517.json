@@ -1,0 +1,41 @@
+{
+  "tool": "creep_vcapture",
+  "host": "192.168.88.108",
+  "started": "2026-08-20T10:55:17",
+  "marks": [
+    {
+      "field": "IF_VB_ST",
+      "value": 494,
+      "note": "the display started working (bt its squashed into the to of the screen)",
+      "registers": {
+        "IF_VB_ST": 494,
+        "IF_VB_SP": 6,
+        "IF_HSYNC_RST": 1124,
+        "IF_PRGRSV_CNTRL": 1,
+        "IF_LD_RAM_BYPS": 1,
+        "IF_LD_SEL_PROV": 1,
+        "PLLAD_MD": 1124,
+        "VDS_VSCALE": 904,
+        "VDS_VSCALE_BYPS": 0,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_VB_ST": 1119,
+        "VDS_VB_SP": 2,
+        "VDS_DIS_VB_ST": 1119,
+        "VDS_DIS_VB_SP": 3,
+        "PB_FETCH_NUM": 223,
+        "PB_CAP_OFFSET": 282,
+        "STATUS_SYNC_PROC_VTOTAL": 499,
+        "STATUS_SYNC_PROC_HTOTAL": 1124
+      },
+      "derived": {
+        "capture": 488,
+        "magnification": 1.1327433628318584,
+        "produced": 552.7787610619469,
+        "origin": 3.106194690265487,
+        "picture_ends": 555.8849557522124,
+        "wrap_if_doubled": 1000,
+        "wrap_if_line_rate": 500
+      }
+    }
+  ]
+}

@@ -79,6 +79,8 @@ Full 6-segment dumps, diffable with
 | `CLEAN-neyron-320x256-50-2026-08-19.json` | 08-19 | Nevryon, frame time lock **holding** for the first time: 1901 x 1125 raster, clock steered to 107942912 Hz against a 50.475 Hz source. 656 registers, restorable |
 | `CLEAN-full-1536-neyron-2026-08-19.json` | 08-19 | the same moment, all 1536, for `snapdiff.py` |
 | `SHEARED-preset-clobber-2026-08-19.json` | 08-19 | the shear **happening**, untouched by hand. Diff against the pair above |
+| `BYPASS-800x600-trapped-2026-08-20.json` | 08-20 | RGBHV 800x600 forced to bypass by the >535-line override, `GBS_OPTION_SCALING_RGBHV` cleared to 0 with the preference set |
+| `SCALING-640x480-75-2026-08-20.json` | 08-20 | 640x480@75 **scaled**, the doubler bypassed: `IF_VB` 3..497 of a 500-line frame, `VDS_VSCALE` 453, `PLLAD_MD` 1124 = `IF_HSYNC_RST`. Assuming the vertical wrap doubled puts `IF_VB_ST` at 994, which the counter never reaches, and the screen fills with alternating written and unwritten lines |
 
 Note `zarch-akf50-fullscreen` is labelled "hand-tuned to full screen", **not**
 clean. It sits at the worst overflow in the set and very likely carries the same
