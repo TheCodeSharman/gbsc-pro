@@ -31,22 +31,22 @@ public:
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 
-    // Read the output rasters and the bounds the window sits in. False when the
-    // source has not settled far enough to derive a window from.
-    //
-    // The sampling is an ARGUMENT, not a read. PLLAD_LAT is what loads the
-    // divider into the ADC PLL, so between a write and the latch the register
-    // reports a value the chip is not using.
-    //
-    // `fieldRateHz` is the raw measurement, not a defaulted one: it is here to
-    // CONTRADICT the line count, and a fallback that always looks plausible
-    // cannot. docs/firmware-geometry-engine.md.
     // The output raster this capture is for. Zero on both means bypass, where
     // there is no scaled raster and nothing to solve.
     void setRasters(uint16_t linePx, uint16_t frameLines);
 
-    bool readRasters(const SourceMeasurement &sampling, float fieldRateHz,
-                     uint16_t sourceLines, uint16_t hsyncLow);
+    // Read the output rasters and the bounds the window sits in. False when the
+    // source has not settled far enough to derive a window from.
+    //
+    // The measurement is an ARGUMENT, not a read. PLLAD_LAT is what loads the
+    // divider into the ADC PLL, so between a write and the latch the register
+    // reports a value the chip is not using.
+    //
+    // `hsyncLow` is a parameter because the measurement does not hold it. The
+    // line count and the field rate do come off the measurement, which is what
+    // keeps the two being cross-checked against each other rather than against
+    // a value some caller chose. docs/firmware-geometry-engine.md
+    bool readRasters(const SourceMeasurement &source, uint16_t hsyncLow);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

@@ -12,10 +12,10 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), linePx_(0), frameLines_(0) {}
 
-bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRateHz,
-                                uint16_t sourceLines, uint16_t hsyncLow)
+bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncLow)
 {
-    const uint16_t horizontalWrap = sampling.ifLine() + 1;
+    const uint16_t sourceLines = source.sourceLines();
+    const uint16_t horizontalWrap = source.ifLine() + 1;
 
     if (horizontalWrap < 64)
         return false;
@@ -30,16 +30,16 @@ bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRa
     //
     // lineRateFrom() is the one owner of the bounds already, on both the count
     // and the rate.
-    if (SourceMeasurement::lineRateFrom(sourceLines, fieldRateHz) == 0)
+    if (SourceMeasurement::lineRateFrom(sourceLines, source.fieldRateHz()) == 0)
         return false;
 
-    horizontalLine_ = InputLine::measured(horizontalWrap, hsyncLow, sampling.divider());
+    horizontalLine_ = InputLine::measured(horizontalWrap, hsyncLow, source.divider());
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and
     // whole source lines otherwise. docs/scaler-geometry-model.md
-    verticalLine_ = InputLine(sampling.lineDoubled() ? 2 * (sourceLines + 1)
-                                                     : sourceLines + 1);
+    verticalLine_ = InputLine(source.lineDoubled() ? 2 * (sourceLines + 1)
+                                                   : sourceLines + 1);
     return true;
 }
 

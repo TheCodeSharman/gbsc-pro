@@ -1,4 +1,4 @@
-// Host-compiled unit tests for src/tv5725/SourceMeasurement.h -- `make -C test sampling`.
+// Host-compiled unit tests for src/tv5725/SourceMeasurement.h -- `make -C test source-measurement`.
 //
 // Pure arithmetic over the ADC front end: how finely the incoming line is
 // sampled, and what the IF's own line counter must be set to as a result.
