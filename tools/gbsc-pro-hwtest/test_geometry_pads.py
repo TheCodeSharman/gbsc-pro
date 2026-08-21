@@ -71,7 +71,7 @@ ZOOM_STEP_PX = 8
 
 # InputLine::WriteLimitUnits. Past it the capture path writes blanking rather
 # than video, so it bounds the tail of the capture window and, through
-# Sampling::recommendedDivider(), the divider itself. docs/capture-limits.md
+# SourceMeasurement::recommendedDivider(), the divider itself. docs/capture-limits.md
 WRITE_LIMIT_UNITS = 1125
 
 
@@ -681,7 +681,7 @@ def test_a_zoomed_out_capture_takes_the_tail_down_to_whichever_bound_is_lower(
     not units - 1: a stop ON the reset value stops the input formatter producing
     pixels and freezes the picture, so InputLine stands off by one more. The
     write limit is the other: past it the capture path writes blanking instead
-    of video, which destroys picture rather than showing it, and Sampling caps
+    of video, which destroys picture rather than showing it, and SourceMeasurement caps
     the divider so an ordinary line stays inside it.
     See InputLine::lastCapture() and docs/capture-limits.md."""
     units = framed["IF_HSYNC_RST"] + 1
@@ -1137,7 +1137,7 @@ def _compare_engine_outputs_across_a_preset_load(host):
                       for n, (a, b) in sorted(disagree.items())))
 
 
-# The ADC sampling divider, owned by Tv5725::Sampling. One quantity, three
+# The ADC sampling divider, owned by Tv5725::SourceMeasurement. One quantity, three
 # registers, plus the one live counter that can witness whether it was LATCHED.
 SAMPLING_PLLAD_MD = (5, 0x12, 0, 12)
 SAMPLING_IF_HSYNC_RST = (1, 0x0E, 0, 11)
@@ -1222,7 +1222,7 @@ def poisoned_if_hsync_rst(host, source):
     # of a poison is to distinguish a fresh write from a leftover -- the TV5725
     # keeps its registers across an ESP reboot, so reading the right value proves
     # nothing on its own. One register is enough to establish that here, because
-    # Tv5725::Sampling::write() writes all three from one held value or writes
+    # Tv5725::SourceMeasurement::write() writes all three from one held value or writes
     # none: if IF_HSYNC_RST came back computed, write() ran, and the other two
     # assertions below are then about what it computed.
     #
@@ -1301,7 +1301,7 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
     # the table's business and it moved 2553 -> 2558 across this very run; what
     # must hold is that the three registers describe the SAME line.
 
-    # Tv5725::Sampling::ifLineFor and ::retimeStopFor. The IF counts the ADC line
+    # Tv5725::SourceMeasurement::ifLineFor and ::retimeStopFor. The IF counts the ADC line
     # after decimation by two; the retime stop sits 93% of the way along it.
     assert if_line == divider // 2, (
         f"IF_HSYNC_RST is {if_line}, want {divider // 2} for PLLAD_MD {divider}. "
@@ -1421,7 +1421,7 @@ def test_a_preset_load_does_not_redecide_the_sync_type(host, source):
         f"trusting the verdict: {wrong} (got, want-csync)")
 
 
-# Tv5725::Sampling's own constants, so the expected divider is computed the way
+# Tv5725::SourceMeasurement's own constants, so the expected divider is computed the way
 # the firmware computes it rather than pinned to this bench's source.
 SAMPLING_MAX_RATE_HZ = 162000000
 SAMPLING_RECOMMENDED_PERCENT = 98
@@ -1432,7 +1432,7 @@ SAMPLING_DEC2_BYPS = (5, 0x1F, 1, 1)
 
 
 def _expected_divider(lines, oversample, field_rate):
-    """Sampling::recommendedDivider(), in Python."""
+    """SourceMeasurement::recommendedDivider(), in Python."""
     line_rate = int(field_rate * lines)
     largest = min(SAMPLING_MAX_RATE_HZ // (line_rate * oversample),
                   SAMPLING_DIVIDER_MAX)
@@ -1448,7 +1448,7 @@ def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, sour
     **THE COMPANION TEST DELIBERATELY DOES NOT PIN THE VALUE, AND THAT LEFT A
     HOLE THE SIZE OF A WHOLE BOOT.** It checks that PLLAD_MD, IF_HSYNC_RST and
     SP_RT_HS_SP describe the same line and that the divider was latched -- all
-    of which a WRONG divider satisfies perfectly, because Tv5725::Sampling
+    of which a WRONG divider satisfies perfectly, because Tv5725::SourceMeasurement
     writes all three off whatever value it holds. "Which divider the unit lands
     on is the table's business" was true while a table chose it. It is not any
     more: the engine computes it, so it can be checked.
@@ -1459,7 +1459,7 @@ def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, sour
         sampling: 271 lines x 49.22 Hz -> line rate 0
         PLLAD_MD 1856, where 2548 was due
 
-    Sampling::lineRateFrom() correctly refused an unsettled 271 lines at
+    SourceMeasurement::lineRateFrom() correctly refused an unsettled 271 lines at
     49.22 Hz, solveSampling() fell back to adopting whatever was on the chip,
     and what was on the chip was the 1856 that bypassModeSwitch_RGBHV() writes
     as a literal. Nothing retried. The ADC under-sampled every line by 27% for

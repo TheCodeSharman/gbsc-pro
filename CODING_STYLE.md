@@ -115,8 +115,9 @@ view of all of them, kept so the legacy call sites still compile, and it goes
 when they do.
 
 **Inside `namespace Tv5725`, the injected class name shadows the namespace.** A
-sibling written `Tv5725::Sampling` resolves to the *class* and fails to compile;
-write `Sampling`, or `::Tv5725::Sampling` where the qualification is wanted.
+sibling written `Tv5725::SourceMeasurement` resolves to the *class* and fails
+to compile; write `SourceMeasurement`, or `::Tv5725::SourceMeasurement` where
+the qualification is wanted.
 Outside the namespace both `Tv5725::Tv5725` and `Tv5725::VideoProcessor` resolve
 as expected, including after a `using namespace Tv5725;`.
 

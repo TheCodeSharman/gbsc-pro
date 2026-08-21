@@ -169,7 +169,7 @@ settling, `runSyncWatcher()` retries it later, and the retry re-solves the
 raster, the clock and the windows **without going back through
 `doPostPresetLoadSteps()`**. So `VDS_VSYNC_RST` moved and its two derived
 registers did not. It is `solveRaster()`'s now, beside the register it is derived
-from — one quantity, one owner, the same rule `Tv5725::Sampling` carries for
+from — one quantity, one owner, the same rule `Tv5725::SourceMeasurement` carries for
 `PLLAD_MD` / `IF_HSYNC_RST` / `SP_RT_HS_SP`.
 
 ### Automating this was TRIED and does not work

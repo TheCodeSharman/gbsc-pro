@@ -190,7 +190,7 @@ nobody is using. See [rgbhv-bypass-trap.md](rgbhv-bypass-trap.md).
 
 ## The sampling divider
 
-`Tv5725::Sampling` owns `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP`
+`Tv5725::SourceMeasurement` owns `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP`
 (= 93% of `MD`) off one held value, and computes it from the measured line rate.
 It must be written **before** `latchPLLAD()`; after it, the register reads the new
 value while the PLL still runs the old one.

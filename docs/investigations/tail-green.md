@@ -162,7 +162,7 @@ capture stop is not new evidence; a creep at a different stop would be.
 Two changes, and they compose: the divider does the work and the clamp is the
 backstop.
 
-`Sampling::recommendedDivider()` caps `PLLAD_MD` so `ifLineFor()` stays at or
+`SourceMeasurement::recommendedDivider()` caps `PLLAD_MD` so `ifLineFor()` stays at or
 below `InputLine::WriteLimitUnits` — a divider of 2250, since the IF halves it.
 That is a **second** ceiling alongside the ADC's 162 MSPS rating, with its own
 justification, and the tighter of the two binds. `InputLine::lastCapture()` then clamps the far end of

@@ -96,7 +96,7 @@ Two floors bound the trade:
 
 Two things, and they compose.
 
-`Sampling::recommendedDivider()` caps `PLLAD_MD` at 2250, so the line the ADC
+`SourceMeasurement::recommendedDivider()` caps `PLLAD_MD` at 2250, so the line the ADC
 delivers is at most 1125 IF units long and the whole of it is inside the limit.
 This is a **second** ceiling beside the ADC's 162 MSPS rating, and whichever is
 tighter binds. At four-times oversampling the rating is the tighter above about
@@ -105,7 +105,7 @@ tighter binds. At four-times oversampling the rating is the tighter above about
 
 `InputLine::lastCapture()` clamps the far end of the capture window at
 `WriteLimitUnits`. With the divider capped this never fires — it is there for the
-lines the divider did not choose, since `Sampling::adopt()` takes whatever a
+lines the divider did not choose, since `SourceMeasurement::adopt()` takes whatever a
 custom preset or a bypass switch left in the register.
 
 **The clamp is a measured constant and the cap is what keeps it off real

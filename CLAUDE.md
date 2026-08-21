@@ -402,8 +402,8 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
 
   `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP` (= 93% of `MD`, the
   sync processor's retime window) are **ONE quantity in THREE registers**, and
-  `Tv5725::Sampling` owns all three off one held value. It is *state*, handed to
-  `Geometry::Capture` rather than read back — the same rule
+  `Tv5725::SourceMeasurement` owns all three off one held value. It is *state*,
+  handed to `Geometry::Capture` rather than read back — the same rule
   `Capture::ProgressiveStart` already carried. Verified across all twelve shipped
   tables: `IF_HSYNC_RST == PLLAD_MD/2` without exception, while `SP_RT_HS_SP` is
   wrong in five of them (`ntsc_1280x720` ships **68** against 2180) and is only
@@ -536,10 +536,10 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   Two consequences. **A register written by anything outside the engine corrupts
   the calculation**, which is why the OSD, the IR handler and the web pads must
   call the engine rather than write registers — and why a value the engine did
-  not choose is *adopted* explicitly (`Sampling::adopt()`) rather than silently
-  read. And **state living outside the registers is not a problem to solve**: it
-  is the design. Hold it, derive from it, expose it over `/geometry` so tests
-  and presets can set it.
+  not choose is *adopted* explicitly (`SourceMeasurement::adopt()`) rather than
+  silently read. And **state living outside the registers is not a problem to
+  solve**: it is the design. Hold it, derive from it, expose it over
+  `/geometry` so tests and presets can set it.
 
   **Inheriting means reading it off the chip**, and every geometry fault of
   2026-08-06 was one: inheriting the corner put 41 px of the previous frame down

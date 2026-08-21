@@ -53,7 +53,7 @@ MEM_REQ_PB_RFF_CAP = ("MEM_REQ_PB_RFF_CAP", 4, 0x15, 1, 1)
 
 # The ADC sampling divider, and the ONE register that must move with it.
 #
-# Tv5725::Sampling maintains IF_HSYNC_RST = PLLAD_MD / 2 in the firmware, but
+# Tv5725::SourceMeasurement maintains IF_HSYNC_RST = PLLAD_MD / 2 in the firmware, but
 # PLLAD_MD is written from other places too. Halving the divider by hand without
 # it turns the display solid green, and sync stays "stable" throughout so nothing
 # warns. This tool writes the pair or neither.
