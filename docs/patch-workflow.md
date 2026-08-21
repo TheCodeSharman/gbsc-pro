@@ -192,6 +192,36 @@ the host suites and the binary size were all unchanged with them present. Pass
 scratch branch is checked out writes the partly-rewritten log into the list that
 drives the rewrite. Anchor every range on the tag taken before starting.
 
+### Split a group by kind, and split its MESSAGE with it
+
+A squash group becomes one commit per kind. Its subject and its `Folded, in
+order` list describe the whole group, so copying them into every part makes each
+commit advertise its siblings' work as its own: folded lines naming files the
+commit does not hold, and a subject naming work that landed somewhere else. The
+files are all in the right place, which is why it survives review -- only the
+prose is wrong, and it is the prose a reader trusts.
+
+Trim each part's folded list to the lines whose kind that part holds, and write
+each subject from what the commit contains rather than from the group. A subject
+that enumerates is where this bites hardest: split three ways, two of the parts
+keep naming an item that is now only in the third.
+
+The folded lists are checkable over the unpublished range:
+
+```sh
+git log --format='%H' origin/main..dev | while read h; do
+  kinds=$(git show --name-only --format= "$h" | sed 's#^GBSC-Pro.*#firmware#;s#^test/.*#firmware#;
+    s#^tools/.*#tools#;s#^docs/.*#docs#;s#^build/.*#build#;s#^\(CLAUDE\|CODING_STYLE\)\.md#project#;
+    s#^\(LICENSE\|README\.md\|\.gitignore\)$#project#' | sort -u)
+  git log -1 --format=%B "$h" | sed -n 's/^    \([a-z/0-9]*\):.*/\1/p' | sort -u | while read pfx; do
+    case $pfx in tools*) pfx=tools;; tv5725|framesync|input|test) pfx=firmware;; esac
+    echo "$kinds" | grep -qx "$pfx" || echo "$h claims $pfx"
+  done
+done
+```
+
+Subjects need reading; no check finds those.
+
 ### Afterwards
 
 ```sh
