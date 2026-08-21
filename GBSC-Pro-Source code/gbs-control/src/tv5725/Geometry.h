@@ -98,6 +98,10 @@ private:
     // The divider, the IF line counter and the retime stop, to their owners.
     void writeSampling();
 
+    // A divider the source cannot lock to, moved off. Always false: correcting
+    // a divider is not a solve, and the mode change has not landed.
+    bool recoverSampling();
+
     // Output pixels -> input units. A press of nothing has to be skipped
     // outright: stepUnits() floors at one granule, so an axis the press did not
     // name would drift a unit per press.
@@ -126,7 +130,6 @@ private:
     DisplayClock &displayClock_;
     PanAndZoom framing_;
     SourceMeasurement sampling_;      // the divider this engine solves against
-    bool rasterPending_;     // solveRaster() refused: the field rate was not settled
     bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool solvePending_;
     bool modePending_;

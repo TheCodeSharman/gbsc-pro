@@ -15,7 +15,7 @@ namespace Tv5725 {
 
 Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
-      rasterPending_(false), samplingPending_(false), solvePending_(false),
+      samplingPending_(false), solvePending_(false),
       modePending_(false),
       modeIsCustomPreset_(false), modeOversample_(4), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
@@ -73,10 +73,7 @@ bool Geometry::solveRaster()
     const OutputMode *mode = rasterMode_;
     if (mode == 0) {
         // Not a failure, and NOT a fall back to 1080p: the caller could not name
-        // a mode, and a raster nobody has swept keeps what it had. Nothing may
-        // stay pending either -- a deferral outliving the mode it was for is how
-        // a stale solve reaches a bypass.
-        rasterPending_ = false;
+        // a mode, and a raster nobody has swept keeps what it had.
         return false;
     }
 
@@ -93,7 +90,6 @@ bool Geometry::solveRaster()
     if (!raster.usable()) {
         // Refused, not deferred: the frame height and the rate are settled, so
         // waiting produces the same answer at the cost of a measurement a pass.
-        rasterPending_ = false;
         return false;
     }
 
@@ -128,7 +124,6 @@ bool Geometry::solveRaster()
     activeStop_ = raster.activeStop;
     activeLinesStop_ = raster.activeLinesStop;
 
-    rasterPending_ = false;
     return true;
 }
 
@@ -178,7 +173,7 @@ bool Geometry::poll()
     // The cheap gate. Everything below this line measures, and the field rate
     // costs up to 250 ms a vsync pulse.
     if (!sampling_.sampleSteady())
-        return false;
+        return recoverSampling();
 
     // THE measurement of the source for this pass. Everything below derives
     // from it -- the divider, the raster, both windows -- so nothing can end up
@@ -215,13 +210,10 @@ bool Geometry::poll()
     // that still refuses leaves the windows sized for what the table loaded.
     adoptRaster();
     if (!solveRaster(rasterMode_)) {
-        // Deferred means retry; refused means there were never any timings to
-        // wait for, and every further pass would pay for a field rate
-        // measurement to reach the same answer.
-        if (!rasterPending_) {
-            modePending_ = false;
-            FrameBuffer::releaseCapture();
-        }
+        // solveRaster() never defers: both its refusals are final, so a retry
+        // would pay for a field rate measurement to reach the same answer.
+        modePending_ = false;
+        FrameBuffer::releaseCapture();
         return false;
     }
 
@@ -261,7 +253,6 @@ void Geometry::enterBypass()
     rasterMode_ = 0;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
-    rasterPending_ = false;
     samplingPending_ = false;
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
@@ -296,6 +287,22 @@ void Geometry::writeSampling()
                          modeOversample_);
     InputFormatter::writeLineCounter(sampling_.ifLine());
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
+}
+
+// The gate above refuses a count outside what any source runs, and one cause of
+// such a count is the divider itself: held over from a mode whose line rate was
+// higher, it asks the ADC PLL for a frequency under its lock range and the PLL
+// locks to every other hsync. The refusal is then self-latching -- the count
+// never becomes measurable, so nothing recomputes the divider that made it
+// unmeasurable. docs/investigations/divider-latched-measurement.md
+bool Geometry::recoverSampling()
+{
+    if (!sampling_.recoverDivider(modeOversample_))
+        return false;
+
+    writeSampling();
+    samplingPending_ = true;
+    return false;
 }
 
 bool Geometry::solveSampling(uint8_t oversample)

@@ -1947,10 +1947,10 @@ boolean optimizePhaseSP()
     uint8_t badHt = 0, prevBadHt = 0, worstBadHt = 0, worstPhaseSP = 0, prevPrevBadHt = 0, goodHt = 0;
     boolean runTest = 1;
 
-    if (GBS::STATUS_SYNC_PROC_HTOTAL::read() < (pixelClock - 8)) {
-        return 0;
-    }
-    if (GBS::STATUS_SYNC_PROC_HTOTAL::read() > (pixelClock + 8)) {
+    // Eight samples rather than the two the other sites use: this asks whether
+    // a phase sweep is worth running, not whether the divider was latched.
+    if (!Tv5725::SourceMeasurement::dividerLatched(
+            Tv5725::SourceMeasurement::measureLineSamples(), pixelClock, 8)) {
         return 0;
     }
 
@@ -7397,10 +7397,9 @@ void loop()
         millis() - lastVsyncLock > FrameSyncAttrs::lockInterval &&
         rto->continousStableCounter > 20 &&
         rto->noSyncCounter == 0) {
-        uint16_t htotal = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-        uint16_t pllad = GBS::PLLAD_MD::read();
-
-        if (((htotal > (pllad - 3)) && (htotal < (pllad + 3)))) {
+        if (Tv5725::SourceMeasurement::dividerLatched(
+                Tv5725::SourceMeasurement::measureLineSamples(),
+                GBS::PLLAD_MD::read())) {
             fsDebugPrintf("running frame sync, clock gen enabled = %d\n", rto->extClockGenDetected);
 
             bool success = rto->extClockGenDetected ? FrameSync::runFrequency() : FrameSync::runVsync(uopt->frameTimeLockMethod);
@@ -7452,9 +7451,9 @@ void loop()
         lastTimeSyncWatcher = millis();
 
         if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && rto->videoStandardInput > 0 && rto->clampPositionIsSet && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
-            uint16_t htotal = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-            uint16_t pllad = GBS::PLLAD_MD::read();
-            if (((htotal > (pllad - 3)) && (htotal < (pllad + 3)))) {
+            if (Tv5725::SourceMeasurement::dividerLatched(
+                    Tv5725::SourceMeasurement::measureLineSamples(),
+                    GBS::PLLAD_MD::read())) {
                 uint8_t debugRegBackup = 0, debugPinBackup = 0;
                 debugPinBackup = GBS::PAD_BOUT_EN::read();
                 debugRegBackup = GBS::TEST_BUS_SEL::read();
@@ -7477,9 +7476,9 @@ void loop()
         if (rto->continousStableCounter >= 10 && rto->coastPositionIsSet &&
             ((millis() - lastVsyncLock) > 500)) {
             if ((rto->continousStableCounter % 5) == 0) {
-                uint16_t htotal = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-                uint16_t pllad = GBS::PLLAD_MD::read();
-                if (((htotal > (pllad - 3)) && (htotal < (pllad + 3))))
+                if (Tv5725::SourceMeasurement::dividerLatched(
+                        Tv5725::SourceMeasurement::measureLineSamples(),
+                        GBS::PLLAD_MD::read()))
                     FrameSync::init();
             }
         }

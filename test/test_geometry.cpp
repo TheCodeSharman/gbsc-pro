@@ -549,3 +549,78 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     CHECK(InputFormatter::IF_VB_ST::read() == 497);
     CHECK(VideoProcessor::VDS_VSCALE::read() == 453);
 }
+
+// --- a divider carried over from the previous mode ---------------------------
+
+TEST_CASE("a divider the source cannot lock to is corrected without help")
+{
+    // Measured 2026-08-20, changing the RiscPC live from 640x480@60 down to
+    // 320x256@50. The divider the engine chose for the faster line is far too
+    // small for the slower one: it asks the ADC PLL for a frequency under its
+    // lock range, and the PLL locks to every other hsync instead. The sync
+    // processor then counts one line per two sent and twice the samples per
+    // line -- 155 lines against 2248 samples.
+    //
+    // 155 is outside what any source runs, so the steadiness gate refuses it on
+    // every pass and the line rate is never measured. That makes the refusal
+    // self-latching: nothing recomputes the divider that caused it, and the
+    // screen stays blank and stable rather than settling.
+    Wire.reset();
+    Wire.poison(Poison);
+    seedField(3, 0x01, 0, 12, 1278);   // VDS_HSYNC_RST, output line - 1
+    seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
+    seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
+    g_fieldRate = 60.0f;
+
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.scanModeChanged(false);
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    // The capture write limit is what caps it here, not the ADC rating, which
+    // is why the same 1124 comes out of the 75 Hz mode as well.
+    REQUIRE(Adc::PLLAD_MD::read() == 1124);
+
+    // The source changes down. The sketch reloads a preset for the new
+    // standard, so the engine is told the mode changed -- but the divider it is
+    // holding is the one that made the count unmeasurable.
+    seedField(0, 0x1B, 0, 11, 155);    // one line counted per two sent
+    seedField(0, 0x17, 0, 12, 2119);   // twice the samples, wobbling by one
+    seedField(0, 0x19, 0, 12, 181);
+    g_fieldRate = 50.08f;
+    engine.scanModeChanged(true);
+    engine.modeChanged(benchMode(), false, 4);
+
+    // The correction costs a field rate measurement, so it waits for the count
+    // to prove it is not going to settle on its own. Neither register holds
+    // still while it does: measured across a 23.5 s trapped window, the count
+    // alternates 155/156 with no identical run longer than 18, and the sample
+    // count spans 2247..2251. A gate wanting either to repeat never opens.
+    for (uint16_t i = 0; i < SourceMeasurement::UnmeasurableRunLimit - 1; ++i) {
+        seedField(0, 0x1B, 0, 11, 155 + (i % 2));
+        seedField(0, 0x17, 0, 12, 2247 + (i % 5));
+        CHECK_FALSE(engine.poll());
+    }
+    CHECK(Adc::PLLAD_MD::read() == 1124);
+
+    // A divider correction is not a solve: the mode change has not landed, so
+    // the capture stays frozen and poll() still says no.
+    CHECK_FALSE(engine.poll());
+    CHECK(Adc::PLLAD_MD::read() == 2250);
+    CHECK(InputFormatter::IF_HSYNC_RST::read() == 1125);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2092);
+    CHECK(Adc::PLLAD_LAT::read() == 1);
+
+    SUBCASE("and the source it was blind to is then solved for") {
+        // With the divider latched the PLL locks to every hsync, so the sync
+        // processor counts the source as it really is.
+        seedField(0, 0x1B, 0, 11, 311);
+        seedField(0, 0x17, 0, 12, 2250);
+        REQUIRE(pollUntilSolved(engine));
+        checkBenchGeometry();
+    }
+}

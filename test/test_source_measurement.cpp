@@ -25,8 +25,12 @@ using namespace Tv5725;
 // The two the sketch supplies. getSourceFieldRate() spins on the board, which
 // is why it is injected rather than called; tv5725Log() reaches the web console
 // there and a buffer here, so the diagnostic is assertable.
+// Counted because the cost is the point: this spins for vsync edges through
+// FrameSync, up to 250 ms a pulse, so anything asking speculatively has to be
+// able to use the answer.
 static float g_fieldRate = 50.08f;
-float getSourceFieldRate(boolean) { return g_fieldRate; }
+static unsigned g_fieldRateCalls = 0;
+float getSourceFieldRate(boolean) { ++g_fieldRateCalls; return g_fieldRate; }
 
 static std::string g_log;
 void tv5725Log(const char *message) { g_log = message; }
@@ -594,4 +598,261 @@ TEST_CASE("a mode change abandons the run rather than counting through it")
 
     measurement.resetSteadiness();
     CHECK_FALSE(measurement.sampleSteady());
+}
+
+// --- was the divider actually latched? ---------------------------------------
+
+TEST_CASE("a latched divider is the one the sync processor counts")
+{
+    // STATUS_SYNC_PROC_HTOTAL counts real ADC clocks per line, so with the PLL
+    // locked at the ratio the divider asked for it EQUALS the divider. That
+    // makes it the only witness on the board to a divider that was written but
+    // never loaded -- PLLAD_MD reads back the new value either way.
+    CHECK(SourceMeasurement::dividerLatched(2250, 2250));
+
+    SUBCASE("and it wobbles by a sample either way") {
+        CHECK(SourceMeasurement::dividerLatched(2252, 2250));
+        CHECK(SourceMeasurement::dividerLatched(2248, 2250));
+        CHECK_FALSE(SourceMeasurement::dividerLatched(2253, 2250));
+        CHECK_FALSE(SourceMeasurement::dividerLatched(2247, 2250));
+    }
+
+    SUBCASE("an unlocked sync processor reads steady and wrong") {
+        // 2558 against 2553 held over 22 samples while SP_VTOTAL sat at 97.
+        CHECK_FALSE(SourceMeasurement::dividerLatched(2558, 2553));
+    }
+
+    SUBCASE("and a PLL locked to every other hsync counts twice the line") {
+        CHECK_FALSE(SourceMeasurement::dividerLatched(2249, 1124));
+    }
+
+    SUBCASE("a divider of zero was never latched, whatever the count reads") {
+        CHECK_FALSE(SourceMeasurement::dividerLatched(0, 0));
+    }
+
+    SUBCASE("the tolerance is the caller's, because the question differs") {
+        // A phase sweep asks whether it is worth running at all, and answers it
+        // eight samples wide.
+        CHECK(SourceMeasurement::dividerLatched(2558, 2553, 8));
+    }
+}
+
+TEST_CASE("a near-integer multiple of the divider is a PLL counting several lines")
+{
+    // The trap's signature: the count is twice the divider because the PLL
+    // locked to every other hsync, so one line is counted per two sent.
+    CHECK(SourceMeasurement::linesPerCount(2249, 1124) == 2);
+    CHECK(SourceMeasurement::linesPerCount(4500, 1125) == 4);
+
+    SUBCASE("a latched divider is not a multiple of itself") {
+        CHECK(SourceMeasurement::linesPerCount(2250, 2250) == 0);
+    }
+
+    SUBCASE("an unlocked sync processor is not one either") {
+        // 2558 against 2553 is a five-sample offset, which is arithmetically
+        // incapable of looking like a multiple: the nearest is 5106.
+        CHECK(SourceMeasurement::linesPerCount(2558, 2553) == 0);
+
+        // And a reading that is simply unrelated to the divider -- 2400 with
+        // the sync processor unconfigured -- is unrelated to every multiple.
+        CHECK(SourceMeasurement::linesPerCount(2400, 2553) == 0);
+    }
+
+    SUBCASE("beyond the multiples any offset can be made to fit one") {
+        CHECK(SourceMeasurement::linesPerCount(5620, 1124) == 0);
+    }
+
+    SUBCASE("and nothing is a multiple of nothing") {
+        CHECK(SourceMeasurement::linesPerCount(0, 1124) == 0);
+        CHECK(SourceMeasurement::linesPerCount(2249, 0) == 0);
+        CHECK(SourceMeasurement::linesPerCount(0, 0) == 0);
+    }
+}
+
+// --- escaping a divider the source cannot lock to ----------------------------
+
+// The three source-side reads at once, plus the divider held over from the
+// mode before. seedSourceLines() resets the bus, so the order matters.
+static void seedSource(SourceMeasurement &sampling, uint16_t lines,
+                       uint16_t lineSamples, uint16_t divider)
+{
+    seedSourceLines(lines);
+    Wire.bank[0][0x17] = (uint8_t)(lineSamples & 0xFF);
+    Wire.bank[0][0x18] = (uint8_t)((lineSamples >> 8) & 0x0F);
+    Wire.bank[5][0x12] = (uint8_t)(divider & 0xFF);
+    Wire.bank[5][0x13] = (uint8_t)((divider >> 8) & 0x0F);
+    sampling.adopt();
+}
+
+// A count outside what any source runs never settles, so the run is what says
+// it is not going to.
+static void spendRun(SourceMeasurement &sampling)
+{
+    for (uint16_t i = 0; i < SourceMeasurement::UnmeasurableRunLimit; ++i)
+        sampling.sampleSteady();
+}
+
+TEST_CASE("a divider the ADC PLL cannot lock to is recovered from")
+{
+    // 1124 on a 15.6 kHz line asks the PLL for 17.6 MHz, under its lock range,
+    // so it locks to every other hsync: 155 lines counted of 311 sent, and
+    // 2249 samples counted of the 1124 the divider asked for.
+    SourceMeasurement sampling;
+    seedSource(sampling, 155, 2249, 1124);
+    g_fieldRate = 50.08f;
+    spendRun(sampling);
+
+    CHECK(sampling.recoverDivider(4));
+    CHECK(sampling.divider() == 2250);
+
+    // The line rate is the half a divider-only correction gets wrong:
+    // Adc::applySampleRate() picks the post divider from divider x line rate,
+    // so one left on the old mode's crossover row makes every later
+    // measurement garbage. 2 x 155 lines at 50.08 Hz.
+    CHECK(sampling.lineRateHz() == 15524);
+    CHECK(sampling.fieldRateHz() == doctest::Approx(50.08f));
+
+    // The firmware says what it did. A divider moving on its own is otherwise
+    // indistinguishable from a preset load having moved it, and the console is
+    // the only place the reasoning can be checked on a live unit.
+    CHECK(g_log.find("1124 -> 2250") != std::string::npos);
+    CHECK(g_log.find("310 lines") != std::string::npos);
+
+    SUBCASE("but not before the count has proved it will not settle") {
+        SourceMeasurement early;
+        seedSource(early, 155, 2249, 1124);
+        for (uint16_t i = 0; i < SourceMeasurement::UnmeasurableRunLimit - 1; ++i)
+            early.sampleSteady();
+        CHECK_FALSE(early.recoverDivider(4));
+        CHECK(early.divider() == 1124);
+    }
+}
+
+TEST_CASE("a count that is not a multiple of the divider leaves it alone")
+{
+    // The ratio alone is not enough, and these are the two readings that look
+    // like a fault and are not one.
+    SourceMeasurement sampling;
+    g_fieldRate = 50.08f;
+
+    SUBCASE("an unlocked sync processor, steady and wrong") {
+        seedSource(sampling, 97, 2558, 2553);
+        spendRun(sampling);
+        CHECK_FALSE(sampling.recoverDivider(4));
+        CHECK(sampling.divider() == 2553);
+    }
+
+    SUBCASE("and an unconfigured one, unrelated to the divider entirely") {
+        seedSource(sampling, 97, 2400, 2553);
+        spendRun(sampling);
+        CHECK_FALSE(sampling.recoverDivider(4));
+        CHECK(sampling.divider() == 2553);
+    }
+
+    SUBCASE("a multiple whose corrected count is still not a source count") {
+        // 97 is what a preset load leaves behind, and it is perfectly steady.
+        // Two lines per count makes 194, which is still nothing video runs at,
+        // so the correction has no measurement to size a divider from.
+        seedSource(sampling, 97, 2249, 1124);
+        spendRun(sampling);
+        g_fieldRateCalls = 0;
+        CHECK_FALSE(sampling.recoverDivider(4));
+        CHECK(sampling.divider() == 1124);
+        CHECK(g_fieldRateCalls == 0);
+    }
+
+    SUBCASE("and an absent source counts nothing at all") {
+        seedSource(sampling, 0, 0, 1124);
+        spendRun(sampling);
+        CHECK_FALSE(sampling.recoverDivider(4));
+        CHECK(sampling.divider() == 1124);
+    }
+}
+
+TEST_CASE("a source the engine can already measure is never corrected")
+{
+    // The correction is only reachable where the engine has already refused
+    // the count. A plausible one never gets here.
+    SourceMeasurement sampling;
+    seedSource(sampling, 311, 2250, 2250);
+    g_fieldRate = 50.08f;
+    spendRun(sampling);
+
+    CHECK_FALSE(sampling.recoverDivider(4));
+    CHECK(sampling.divider() == 2250);
+}
+
+TEST_CASE("the correction gives up rather than hunting forever")
+{
+    // Each attempt costs a field rate measurement, up to 250 ms a vsync pulse,
+    // and a source that keeps producing the signature is one nothing here can
+    // fix.
+    SourceMeasurement sampling;
+    seedSource(sampling, 155, 2249, 1124);
+    g_fieldRate = 50.08f;
+
+    for (uint8_t attempt = 0; attempt < SourceMeasurement::RecoveryAttempts; ++attempt) {
+        spendRun(sampling);
+        REQUIRE(sampling.recoverDivider(4));
+        seedSource(sampling, 155, 2249, 1124);
+    }
+
+    spendRun(sampling);
+    CHECK_FALSE(sampling.recoverDivider(4));
+
+    SUBCASE("and is re-armed by a measurement that works") {
+        seedSource(sampling, 311, 2250, 2250);
+        REQUIRE(sampling.measureLineRate());
+        seedSource(sampling, 155, 2249, 1124);
+        spendRun(sampling);
+        CHECK(sampling.recoverDivider(4));
+    }
+
+    SUBCASE("and by a mode change") {
+        sampling.resetSteadiness();
+        seedSource(sampling, 155, 2249, 1124);
+        spendRun(sampling);
+        CHECK(sampling.recoverDivider(4));
+    }
+}
+
+// The count wobbles by a line and the sample count by a few, measured across a
+// 23.5 s trapped window on 2026-08-20: SP_VTOTAL alternating 155/156 with no
+// identical run longer than 18, and SP_HTOTAL spanning 2247..2251 against a
+// divider of 1124. A gate that wants a value to repeat exactly never fires.
+static void spendWobblingRun(SourceMeasurement &sampling)
+{
+    for (uint16_t i = 0; i < SourceMeasurement::UnmeasurableRunLimit * 2; ++i) {
+        Wire.bank[0][0x1B] = (uint8_t)(155 + (i % 2));
+        Wire.bank[0][0x17] = (uint8_t)((2247 + (i % 5)) & 0xFF);
+        Wire.bank[0][0x18] = (uint8_t)(((2247 + (i % 5)) >> 8) & 0x0F);
+        sampling.sampleSteady();
+    }
+}
+
+TEST_CASE("a count that wobbles is still unmeasurable, and still recovered from")
+{
+    SourceMeasurement sampling;
+    seedSource(sampling, 155, 2249, 1124);
+    g_fieldRate = 50.08f;
+    spendWobblingRun(sampling);
+
+    CHECK(sampling.recoverDivider(4));
+    CHECK(sampling.divider() == 2250);
+}
+
+TEST_CASE("the multiple tolerates the jitter of every line it counts")
+{
+    // One counted line carries the jitter of k source lines, so the window
+    // scales with k rather than being the latch check's fixed two samples.
+    // Measured: 2251 against a divider of 1124, where twice is 2248.
+    CHECK(SourceMeasurement::linesPerCount(2251, 1124) == 2);
+    CHECK(SourceMeasurement::linesPerCount(2247, 1124) == 2);
+
+    SUBCASE("and widening it does not reach the readings that are not multiples") {
+        // 2558 against 2553 is 2548 away from twice the divider, so no
+        // plausible widening makes it one.
+        CHECK(SourceMeasurement::linesPerCount(2558, 2553) == 0);
+        CHECK(SourceMeasurement::linesPerCount(2400, 2553) == 0);
+    }
 }

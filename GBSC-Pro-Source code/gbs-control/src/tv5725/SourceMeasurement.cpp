@@ -13,6 +13,8 @@ const uint32_t SourceMeasurement::MaxSampleRateHz;
 const uint16_t SourceMeasurement::DividerMax;
 const uint16_t SourceMeasurement::RecommendedPercent;
 const uint16_t SourceMeasurement::RetimeStopPercent;
+const uint16_t SourceMeasurement::LatchedSamplesTolerance;
+const uint8_t SourceMeasurement::LinesPerCountMax;
 
 // A dropped read of ADC_CLK_ICLK1X/2X arrives as 0. Treating that as "no
 // oversampling" keeps the ceiling honest; treating it as a divisor would make
@@ -66,8 +68,7 @@ uint16_t SourceMeasurement::maxDivider(uint32_t lineRateHz, uint8_t oversample)
 
 uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
 {
-    if (sourceLines < CaptureWindow::SourceVerticalTotalMin
-        || sourceLines > CaptureWindow::SourceVerticalTotalMax)
+    if (!countIsSource(sourceLines))
         return 0;
 
     if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
@@ -118,25 +119,38 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
 const uint8_t SourceMeasurement::SteadySamples;
 const uint16_t SourceMeasurement::RateAgreementPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
+const uint16_t SourceMeasurement::UnmeasurableRunLimit;
+const uint8_t SourceMeasurement::RecoveryAttempts;
 
 SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
       rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
-      rateAttempts_(0)
+      rateAttempts_(0), recoveries_(0), unmeasurableRun_(0),
+      unmeasurableLines_(0)
 {
+}
+
+bool SourceMeasurement::countIsSource(uint16_t lines)
+{
+    return lines >= CaptureWindow::SourceVerticalTotalMin
+        && lines <= CaptureWindow::SourceVerticalTotalMax;
 }
 
 bool SourceMeasurement::sampleSteady()
 {
     uint16_t lines = measureSourceLines();
 
-    if (lines < CaptureWindow::SourceVerticalTotalMin
-        || lines > CaptureWindow::SourceVerticalTotalMax) {
+    if (!countIsSource(lines)) {
+        if (unmeasurableRun_ < UnmeasurableRunLimit)
+            ++unmeasurableRun_;
+        unmeasurableLines_ = lines;
+        steadyLines_ = lines;
         steadyRun_ = 0;
-        steadyLines_ = 0;
         return false;
     }
+
+    unmeasurableRun_ = 0;
 
     if (lines != steadyLines_) {
         steadyLines_ = lines;
@@ -153,8 +167,70 @@ void SourceMeasurement::resetSteadiness()
 {
     steadyRun_ = 0;
     steadyLines_ = 0;
+    unmeasurableRun_ = 0;
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
+    recoveries_ = 0;
+}
+
+// A PLL asked for a frequency below its lock range locks to every kth hsync
+// instead, so the sync processor counts one line per k sent and k times the
+// samples per line -- and the count it lands on is outside what any source
+// runs, which is exactly where sampleSteady() refuses forever and the line
+// rate is never measured.
+//
+// The multiple between the two is what identifies it, and four guards are what
+// keep an unlocked or unconfigured reading from authorising a change: this is
+// only reached where the count is already unmeasurable, the multiple must be
+// near-exact, the corrected count must itself be a source count, and the field
+// rate is the independent half, counted at the ESP rather than through the ADC.
+bool SourceMeasurement::recoverDivider(uint8_t oversample)
+{
+    if (recoveries_ >= RecoveryAttempts)
+        return false;
+    if (unmeasurableRun_ < UnmeasurableRunLimit)
+        return false;
+
+    uint8_t lines = linesPerCount(measureLineSamples(), divider_);
+    if (lines == 0)
+        return false;
+
+    // Before the field rate, not after: an eleven-bit count times four cannot
+    // overflow, and a corrected count nothing runs at is one no measurement
+    // could rescue.
+    uint16_t counted = (uint16_t)((uint32_t)unmeasurableLines_ * lines);
+    if (!countIsSource(counted))
+        return false;
+
+    // Past here an attempt has been made whatever it concludes: the field rate
+    // costs up to 250 ms a vsync pulse, and the run is what stops it being
+    // paid on every pass.
+    ++recoveries_;
+    unmeasurableRun_ = 0;
+
+    float fieldRateHz = getSourceFieldRate(0);
+    uint32_t lineRateHz = lineRateFrom(counted, fieldRateHz);
+    if (lineRateHz == 0)
+        return false;
+
+    uint16_t chosen = recommendedDivider(lineRateHz, oversample, lineDoubled_);
+    if (chosen == 0 || chosen == divider_)
+        return false;
+
+    // The line rate goes with it. Adc::applySampleRate() picks the post divider
+    // from divider x line rate, so one left on the old mode's crossover row
+    // makes every later measurement garbage.
+    char line[96];
+    snprintf(line, sizeof(line),
+             "divider: %u samples / %u = %u lines per count -> %u lines, %u -> %u",
+             (unsigned)measureLineSamples(), (unsigned)divider_, (unsigned)lines,
+             (unsigned)counted, (unsigned)divider_, (unsigned)chosen);
+    tv5725Log(line);
+
+    divider_ = chosen;
+    lineRateHz_ = lineRateHz;
+    fieldRateHz_ = fieldRateHz;
+    return true;
 }
 
 bool SourceMeasurement::rateSettled()
@@ -202,6 +278,7 @@ bool SourceMeasurement::measureLineRate()
         goodLines_ = sourceLines_;
         goodLineRateHz_ = lineRateHz_;
         rateRejections_ = 0;
+        recoveries_ = 0;
     }
 
     char line[72];
@@ -248,6 +325,42 @@ uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_);
 uint16_t SourceMeasurement::measureSourceLines()
 {
     return GBS::STATUS_SYNC_PROC_VTOTAL::read();
+}
+
+uint16_t SourceMeasurement::measureLineSamples()
+{
+    return GBS::STATUS_SYNC_PROC_HTOTAL::read();
+}
+
+bool SourceMeasurement::dividerLatched(uint16_t lineSamples, uint16_t divider,
+                                       uint16_t tolerance)
+{
+    if (divider == 0)
+        return false;
+
+    uint16_t larger = lineSamples > divider ? lineSamples : divider;
+    uint16_t smaller = lineSamples > divider ? divider : lineSamples;
+    return (uint16_t)(larger - smaller) <= tolerance;
+}
+
+bool SourceMeasurement::dividerLatched() const
+{
+    return dividerLatched(measureLineSamples(), divider_);
+}
+
+uint8_t SourceMeasurement::linesPerCount(uint16_t lineSamples, uint16_t divider)
+{
+    if (divider == 0 || lineSamples == 0)
+        return 0;
+
+    for (uint8_t lines = 2; lines <= LinesPerCountMax; ++lines) {
+        uint32_t wanted = (uint32_t)divider * lines;
+        uint32_t apart = lineSamples > wanted ? lineSamples - wanted
+                                              : wanted - lineSamples;
+        if (apart <= (uint32_t)LatchedSamplesTolerance * lines)
+            return lines;
+    }
+    return 0;
 }
 
 // How much of the line the hsync pulse takes, in ADC samples -- the same space

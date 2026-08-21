@@ -113,6 +113,10 @@ public:
     // How many consecutive agreeing samples make the source worth measuring.
     static const uint8_t SteadySamples = 4;
 
+    // Whether a line count is something video runs at. Both bounds are
+    // gross-error nets rather than a classification.
+    static bool countIsSource(uint16_t lines);
+
     // Take ONE line-count sample and say whether enough consecutive ones have
     // agreed. A single register read, so a caller can ask on every pass;
     // measureLineRate() spins for up to 250 ms a vsync pulse and cannot be
@@ -122,8 +126,27 @@ public:
     // settling source is lineRateFrom()'s cross-check of the rate against the
     // count, so letting one through early costs a measurement, not a wrong
     // answer. A count outside what any source runs never settles, because the
-    // 97 a preset load leaves behind is perfectly steady.
+    // 97 a preset load leaves behind is perfectly steady -- and it also counts
+    // the unmeasurable run behind it, which is what recoverDivider() goes on.
     bool sampleSteady();
+
+    // How many consecutive UNMEASURABLE samples make a divider correction worth
+    // a field rate measurement. Consecutive unmeasurable, not consecutive
+    // identical: the trapped count wobbles by a line and holds no single value
+    // for long, so a gate wanting one to repeat never opens.
+    static const uint16_t UnmeasurableRunLimit = 200;
+
+    // How many corrections may be attempted before the source is taken as one
+    // nothing here can fix. Cleared by a measurement that works, and by a mode
+    // change.
+    static const uint8_t RecoveryAttempts = 3;
+
+    // Move the divider off one the ADC PLL cannot lock to, using the multiple
+    // between the sample count and the divider as the evidence. Writes no
+    // register: the caller owns the three the divider lives in, and the order
+    // the latch requires. False, with nothing moved, for every reading that is
+    // ambiguous.
+    bool recoverDivider(uint8_t oversample);
 
     // A mode change is about to move the count and the rate, so the run so far
     // and the rate agreed on mean nothing.
@@ -196,6 +219,34 @@ public:
     static uint16_t measureSourceLines();
     static uint16_t measureHsyncLow();
 
+    // The line in ADC samples, which is what STATUS_SYNC_PROC_HTOTAL counts.
+    // Read to decide whether the other two can be believed at all, never to
+    // derive a register from.
+    static uint16_t measureLineSamples();
+
+    // How far the count may sit from the divider and still be the same
+    // quantity. The register wobbles by a sample either way when locked.
+    static const uint16_t LatchedSamplesTolerance = 2;
+
+    // Whether the ADC PLL is running at the ratio the divider asked for. A
+    // divider of zero was never latched whatever the count reads.
+    static bool dividerLatched(uint16_t lineSamples, uint16_t divider,
+                               uint16_t tolerance = LatchedSamplesTolerance);
+    bool dividerLatched() const;
+
+    // How many source lines the sync processor is counting as one. A PLL asked
+    // for a frequency under its lock range locks to every kth hsync instead,
+    // which halves the line count and multiplies the sample count by k. Beyond
+    // this any offset can be made to fit some multiple, so the answer stops
+    // being evidence.
+    static const uint8_t LinesPerCountMax = 4;
+
+    // The multiple, or 0 when the count is not one -- which is the answer for a
+    // latched divider and for a reading unrelated to it alike. One counted line
+    // carries the jitter of every source line inside it, so the window scales
+    // with the multiple rather than being the latch check's fixed two samples.
+    static uint8_t linesPerCount(uint16_t lineSamples, uint16_t divider);
+
     bool usable() const;
     uint16_t divider() const;
     uint32_t lineRateHz() const;
@@ -212,10 +263,6 @@ public:
     bool lineDoubled() const;
     uint16_t retimeStop() const;
 
-    // All three registers, from the one held value.
-    //
-    // **THIS DOES NOT LATCH, AND THE CALLER MUST RUN BEFORE ONE THAT DOES.**
-
 private:
     uint16_t divider_;
     uint32_t lineRateHz_;
@@ -229,7 +276,10 @@ private:
 
     uint16_t steadyLines_;
     uint8_t steadyRun_;
+    uint16_t unmeasurableRun_;
+    uint16_t unmeasurableLines_;
     uint8_t rateAttempts_;
+    uint8_t recoveries_;
 };
 
 }  // namespace Tv5725
