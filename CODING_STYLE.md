@@ -134,23 +134,22 @@ implementation, it is in the file named after the class.
 `AxisSolution.h`, `ControlSteps.h`, `HoldRamp.h`, `IrReceiver.h`. That is
 Arduino's convention — `WiFiClient.h`, `HardwareSerial.h`, `OLEDDisplay.h`, and
 the Arduino Library Specification — and it is already what `OSDManager.cpp` and
-`OLEDMenuManager.cpp` do here. The geometry was briefly `axis_solution.h` in
-Google style, which made the rule above *approximately* true instead of literally
-true, and left the tree using two conventions at once -- half the files
-capitalised and half underscored.
+`OLEDMenuManager.cpp` do here. Google-style lowercase names make the rule above
+*approximately* true instead of literally true, and a tree mixing the two
+conventions has no rule at all.
 
 **A file that is not a class stays lowercase.** `gbs_types.h` is a typedef, not
 a class, and the lowercase name is what says so at a glance. `Tv5725.h` is
 capitalised because it holds `Tv5725::Tv5725`, and the rule above applies to it
 like any other class.
 
-**There is no umbrella header, and adding one back is a regression.** Every file
-includes the classes it names. `src/tv5725/driver.h` used to include thirteen
-headers on its callers' behalf, and what it really did was hide dependencies:
-`Geometry.cpp` used `Memory` without including it, and the sketch reached
-`ControlSteps` through two levels of someone else's include. Both compiled until
-the umbrella went. A header that saves a caller from naming what it uses also
-stops the caller from seeing what can break it.
+**There is no umbrella header, and adding one is a regression.** Every file
+includes the classes it names. An umbrella that includes a subsystem's headers
+on its callers' behalf hides dependencies rather than removing them: a .cpp uses
+a class it never includes, and the sketch reaches another through two levels of
+someone else's include. It all compiles until the umbrella moves. A header that
+saves a caller from naming what it uses also stops the caller from seeing what
+can break it.
 
 ## `src/` means reviewed; the sketch root means legacy
 
@@ -202,11 +201,10 @@ Two things that only appear once the bodies move out, both of which bit here:
 - An in-class initialiser is **not** a definition, so `static const uint16_t Max
   = 1023;` needs `const uint16_t Scale::Max;` in a `.cpp` — **but only if
   something ODR-uses it**, meaning binds it to a reference or takes its address.
-  Passing it by value does not. Do not add these speculatively: a whole
-  `control_steps.cpp` was written containing three such lines and nothing else,
-  and deleting it changed neither the host tests nor the binary by one byte --
-  a whole file with no actual code in it. Add one when the linker asks for it,
-  and its error names exactly which.
+  Passing it by value does not. Do not add these speculatively — a .cpp holding
+  nothing but out-of-class definitions nothing ODR-uses changes neither the host
+  tests nor the binary by one byte. Add one when the linker asks, and its error
+  names exactly which.
 
   **A test framework will ask where the firmware never does.** doctest's `CHECK`
   decomposes its expression by binding each operand to a `const &`, so
@@ -395,11 +393,10 @@ wrote and forgot to wire up silently never ran, and reported success. doctest
 registers them itself. The migration preserved the assertion counts exactly,
 145 and 65, which is how it was checked.
 
-**`--dump` is intercepted before doctest sees `argv`.** The three suites that
-double as oracle generators below exit non-zero on an option doctest does not
-recognise, so `test_axis.cpp`, `test_active_image.cpp` and
-`test_register_solution.cpp` use `DOCTEST_CONFIG_IMPLEMENT` with their own
-`main` while every other suite uses `..._WITH_MAIN`.
+**`--dump` is intercepted before doctest sees `argv`**, because doctest exits
+non-zero on an option it does not recognise. A suite that doubles as an oracle
+generator therefore uses `DOCTEST_CONFIG_IMPLEMENT` and supplies its own `main`;
+every other suite uses `..._WITH_MAIN`.
 
 Two things to know when writing an assertion:
 

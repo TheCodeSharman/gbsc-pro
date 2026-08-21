@@ -108,7 +108,7 @@ diagnosing "the unit" while able to observe roughly a third of it.
 - **Both MCUs persist "which input", separately, and neither can read the other
   back.** The ESP keeps `SeleInputSource` in `/preferencesv2.txt`; the HC32 keeps
   `asw_01..04` in its own flash and restores them via `Video_ReadNot2()`. The ESP
-  reconciles them at boot: `applySavedInputSource()` (`gbs-control.ino:7793`,
+  reconciles them at boot: `applySavedInputSource()` (
   after `calibrateAdcOffset()` and `setResetParameters()` so neither overwrites
   it) points `ADC_INPUT_SEL` at the saved input and calls
   `sendSavedInputToAvModule()`, which transmits the frame.
@@ -223,7 +223,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   in `d3a4426`. **Leave the panels open.** Nothing has ever gone wrong from a
   regpanel or a web UI being left running, and the cap is five.
 - **HTTP answering does not mean the firmware is running.** The web server is
-  `ESPAsyncWebServer` (`gbs-control.ino:544`), which serves from network-stack
+  `ESPAsyncWebServer`, which serves from network-stack
   callbacks, **not** from `loop()`. So `/getreg`, `/setreg`, `/freeze` and the
   200 from `/sc?c` keep working while `loop()` is stalled — and `webSocket.loop()`,
   the OSD, the IR handler and FrameSync's steering of the Si5351 all stop. The
@@ -247,7 +247,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   A **polling** loop is the thing to look at, because it changes what the unit
   is doing between your reads.
 - **Never flash `GBS_DEBUG=0` while diagnosing.** It is the flag gating
-  `fsDebugPrintf` (`framesync.h:28`), so it silences `no INPUT vsync`,
+  `fsDebugPrintf` (`framesync.h`), so it silences `no INPUT vsync`,
   `no OUTPUT vsync` and every `runFrequency()` reason — precisely the messages
   the "no HDMI with every register perfect" section tells you to read. It buys
   1068 bytes of globals (46516 vs 47584) and costs the diagnosis. Use
@@ -350,13 +350,13 @@ bits, so the header is right and the table is simply an error.
   the sketch wrote `INT_CONTROL_RST_SOGBAD`, four bits had two owners, and every
   check passed because checks compare names. **Ask in bits, not in names** —
   nothing guards this automatically since the ownership tooling was deleted.
-- **The 25 whole-byte convenience names are a live campaign, not settled.**
+- **The whole-byte convenience names are a live campaign, not settled.**
   `PLL648_CONTROL_01::write(0x75)` sets five documented fields under a name the
-  datasheet lacks. 109 call sites; 77 are literal writes and are the target, 20
-  are save/restore and are legitimate, and **12 of the 25 bytes have bits no
-  datasheet name covers — so decomposing those is not equivalent**, because the
-  byte write zeroes them and field writes do not.
-  `docs/whole-byte-convenience-names.md`.
+  datasheet lacks. A literal byte write is the target; a save/restore pair
+  through one is legitimate and stays. **Where a byte has bits no datasheet name
+  covers, decomposing it is not equivalent** — the byte write zeroes those bits
+  and field writes leave them. The inventory, the counts and the order are
+  `docs/whole-byte-convenience-names.md`; do not restate a count here, it rots.
 - **Where the header and the datasheet disagree, the header wins.** Its values
   are that audit's output plus bench proof, and eleven such fields remain.
   **Nothing checks this any more** — the audit was deleted on 2026-08-17 once it
@@ -450,8 +450,8 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP` (= 93% of `MD`, the
   sync processor's retime window) are **ONE quantity in THREE registers**, and
   `Tv5725::SourceMeasurement` owns all three off one held value. It is *state*,
-  handed to `Geometry::Capture` rather than read back — the same rule
-  `Capture::ProgressiveStart` already carried. Verified across all twelve shipped
+  handed to `Tv5725::CaptureWindow` rather than read back — the same rule
+  `CaptureWindow::ProgressiveStart` already carried. Verified across all twelve shipped
   tables: `IF_HSYNC_RST == PLLAD_MD/2` without exception, while `SP_RT_HS_SP` is
   wrong in five of them (`ntsc_1280x720` ships **68** against 2180) and is only
   saved by the runtime write.
@@ -481,20 +481,14 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   recovering a unit that was fine, and `dump_registers.py`'s lock indicator
   required it, so **every successful restore printed as failed** until `96efeec`.
 
-  **And the firmware steers by it, which makes the decision self-latching** —
-  `gbs-control.ino:4431` and `:4469` set `rto->syncTypeCsync = (VSACT == 0)`.
-  It reads the bit to choose the sync type, but the bit only reports correctly
-  once the sync type is already right, so a unit that lands on csync stays
-  there. Note also that `sourceHasOwnVsync()` — the probe written to answer
-  this properly — is called at 2340 and 6257 but *not* at either decision site.
-  Before "fixing" it: forcing the separate-sync registers by hand on 08-14 did
-  **not** change the picture, which is consistent — telling the sync processor
-  to use separate sync does nothing if the routing has `HS_IN = SOGIN` and
-  there is no separate HSync on the pin to use. That test never reached the
-  hypothesis; it does not refute it. `docs/sync-type-selection.md` has the
-  measurements, all four decision sites, and what a fix costs.
-- **`HPERIOD_IF` going bad is three different faults**, and the old note here
-  merged them. A stable `0` means the IF is out of the path (RGBHV bypass —
+  **Never steer the sync type off it.** Choosing `rto->syncTypeCsync` by reading
+  `VSACT` is self-latching: the bit only reports correctly once the sync type is
+  already right, so a unit that lands on csync stays there. `applyPresets()`
+  decides with `sourceHasOwnVsync()` instead, which switches `SP_EXT_SYNC_SEL`
+  and asks whether a V sync line actually arrives. It costs ~500 ms, so
+  `rto->syncTypeIsSet` runs it once per SOURCE rather than once per mode change.
+  `docs/sync-type-selection.md`.
+- **`HPERIOD_IF` going bad is three different faults.** A stable `0` means the IF is out of the path (RGBHV bypass —
   expected, not a fault). Noisy multi-valued garbage is the second. The third is
   the dangerous one: **a single stable value that is simply wrong** (192 where
   212 was due), which every health check ever written here scores as healthy
@@ -636,7 +630,8 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   picture that reaches it — it is a bound on usable width, not an artefact to
   hide. The position is absolute in the line and unmoved by the capture start,
   the source's timings or the memory clock; what counts to 2250 ADC samples is
-  unknown. `Sampling` caps `PLLAD_MD` at 2250 so the whole line arrives, which
+  unknown. `InputLine::WriteLimitUnits` is 1125 IF units — 2250 ADC samples —
+  and `SourceMeasurement` caps `PLLAD_MD` there so the whole line arrives, which
   is why the bench now runs a 1126-unit IF line rather than 1277, and
   `InputLine::lastCapture()` clamps the lines the divider did not choose. Do not
   read the divider cap as the tearing ceiling that was removed — that one stays
@@ -718,7 +713,7 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   do nothing.** They program the HBOUT/VBOUT blanking ("this blanking is for
   external used") and those pins are off; `VDS_SYNC_IN_SEL` is 0 as well, so the
   VDS takes sync from the IF module and there is no internal consumer either.
-  `applyPresets()` copies `VDS_DIS_?B_*` into them (`gbs-control.ino:4097`) and
+  `applyPresets()` copies `VDS_DIS_?B_*` into them and
   nothing refreshes them afterwards, so they are *always* stale after the first
   pad press — measured at `EXT_HB` 348..1356 against `DIS_HB` 99..1501, with a
   perfect picture. Writing `VDS_EXT_HB_*` by hand changes nothing either. Do not
@@ -730,10 +725,10 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   162 MHz above it, and `ntsc_1280x1024`/`ntsc_240p` already ship `0xA5`.
   The 2026-08-11 sweep settled the range: 108 MHz and **129.6 MHz both work and
   are sharp**, 162 MHz flickers then goes black. So 129.6 is the measured
-  ceiling — `OutputRaster::WorkingCeilingHz`. `src/tv5725/DisplayClock.h`.
+  ceiling — `OutputMode::WorkingCeilingHz`. `src/tv5725/OutputMode.h`.
 
   **The engine nevertheless asks for 108, and that is not a contradiction.**
-  `OutputRaster::EngineCeilingHz` is a *usability* limit, not an electrical one.
+  `OutputMode::EngineCeilingHz` is a *usability* limit, not an electrical one.
   Three constants, three different questions — do not collapse them.
 
   **But its original justification is GONE, and nobody has re-tested the
