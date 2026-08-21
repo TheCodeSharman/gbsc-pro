@@ -10,7 +10,7 @@ Controls::Controls(Geometry &engine, Print &console)
 
 bool Controls::panH(int16_t pixels)
 {
-    int16_t units = unitsFor(pixels, GBS::VDS_HSCALE::read());
+    int16_t units = unitsFor(pixels, GBS::VDS_HSCALE::read(), AxisHorizontal);
     bool moved = engine_.pan(units, 0);
     report("panH", pixels, units);
     return moved;
@@ -18,7 +18,7 @@ bool Controls::panH(int16_t pixels)
 
 bool Controls::panV(int16_t pixels)
 {
-    int16_t units = unitsFor(pixels, GBS::VDS_VSCALE::read());
+    int16_t units = unitsFor(pixels, GBS::VDS_VSCALE::read(), AxisVertical);
     bool moved = engine_.pan(0, units);
     report("panV", pixels, units);
     return moved;
@@ -26,7 +26,7 @@ bool Controls::panV(int16_t pixels)
 
 bool Controls::zoomH(int16_t pixels)
 {
-    int16_t units = unitsFor(pixels, GBS::VDS_HSCALE::read());
+    int16_t units = unitsFor(pixels, GBS::VDS_HSCALE::read(), AxisHorizontal);
     bool moved = engine_.zoom(units, 0);
     report("zoomH", pixels, units);
     return moved;
@@ -34,7 +34,7 @@ bool Controls::zoomH(int16_t pixels)
 
 bool Controls::zoomV(int16_t pixels)
 {
-    int16_t units = unitsFor(pixels, GBS::VDS_VSCALE::read());
+    int16_t units = unitsFor(pixels, GBS::VDS_VSCALE::read(), AxisVertical);
     bool moved = engine_.zoom(0, units);
     report("zoomV", pixels, units);
     return moved;
@@ -42,15 +42,9 @@ bool Controls::zoomV(int16_t pixels)
 
 Geometry &Controls::engine() const { return engine_; }
 
-int16_t Controls::unitsFor(int16_t pixels, uint16_t scaleReg)
+int16_t Controls::unitsFor(int16_t pixels, uint16_t scaleReg, const Axis &axis)
 {
-    float magnification = Scale(scaleReg).magnification();
-    if (magnification <= 0.0f)
-        return pixels;      // scale read as 0: a dropped read, not a setting
-    long units = lrintf((pixels < 0 ? -pixels : pixels) / magnification);
-    if (units < 1)
-        units = 1;
-    return pixels < 0 ? (int16_t)-units : (int16_t)units;
+    return axis.stepUnits(pixels, Scale(scaleReg).magnification());
 }
 
 void Controls::report(const char *control, int16_t pixels,

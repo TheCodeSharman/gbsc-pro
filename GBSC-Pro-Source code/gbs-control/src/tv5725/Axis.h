@@ -13,7 +13,7 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t margin, uint16_t scaleMin);
+         uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity);
 
     // write start = VDS_?B_SP + startConst + startPerMag x magnification.
     // Pipeline latency before the first write: ~25 input samples of run-up for
@@ -39,6 +39,17 @@ public:
     // field is 10 bits -- so where interpolation starts to look bad is
     // perceptual, and the user's to find.
     uint16_t scaleMin() const;
+
+    // The smallest change of capture POSITION this axis's hardware acts on.
+    // Horizontally 2 IF units -- the low bit of IF_HB_SP2 does nothing, so a
+    // one-unit move leaves the picture where it was. Vertically 1.
+    // docs/scaler-geometry-model.md.
+    uint16_t captureGranularity() const;
+
+    // A move of `pixels` output pixels, in capture units, quantised to something
+    // the hardware acts on: never less than one granule, always a whole number
+    // of them.
+    int16_t stepUnits(int16_t pixels, float magnification) const;
 
     // The smallest capture that can still fill `rasterTotal` at this axis's full
     // magnification. Below it cropping cannot be compensated, so the picture
@@ -92,7 +103,7 @@ private:
     float placementFloor(float offset, uint16_t activeStart) const;
 
     float startConst_, startPerMag_;
-    uint16_t windowStopMin_, margin_, scaleMin_;
+    uint16_t windowStopMin_, margin_, scaleMin_, captureGranularity_;
 };
 
 // The two axes, defined once in Axis.cpp: `static const` in a header gives every

@@ -5,9 +5,10 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t margin, uint16_t scaleMin)
+           uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity)
     : startConst_(startConst), startPerMag_(startPerMag),
-      windowStopMin_(windowStopMin), margin_(margin), scaleMin_(scaleMin) {}
+      windowStopMin_(windowStopMin), margin_(margin), scaleMin_(scaleMin),
+      captureGranularity_(captureGranularity) {}
 
 float Axis::startConst() const { return startConst_; }
 
@@ -18,6 +19,23 @@ uint16_t Axis::windowStopMin() const { return windowStopMin_; }
 uint16_t Axis::margin() const { return margin_; }
 
 uint16_t Axis::scaleMin() const { return scaleMin_; }
+
+uint16_t Axis::captureGranularity() const { return captureGranularity_; }
+
+int16_t Axis::stepUnits(int16_t pixels, float magnification) const
+{
+    float wanted = (pixels < 0 ? -pixels : pixels) / magnification;
+
+    // Rounded ONCE, in output pixels. Rounding to units first and to granules
+    // after biases every request upwards: 4.73 units becomes 5, then 6, when 4
+    // is the nearer of the two the hardware can reach.
+    long granules = lrintf(wanted / captureGranularity_);
+    if (granules < 1)
+        granules = 1;
+
+    long units = granules * captureGranularity_;
+    return pixels < 0 ? (int16_t)-units : (int16_t)units;
+}
 
 uint16_t Axis::minimumCapture(uint16_t rasterTotal) const
 {
@@ -139,8 +157,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min, 2);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min);
+const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min, 1);
 
 }  // namespace Tv5725

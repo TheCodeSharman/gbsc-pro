@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "Axis.h"
 #include "Geometry.h"
 
 class Print;
@@ -29,9 +30,8 @@ private:
     // Output pixels -> input units, at the magnification actually in force: a
     // fixed unit step gets coarser the further you zoom in, and the two axes
     // move differently for the same press whenever their magnifications differ.
-    // One input unit is the floor -- finer has to come from the output side, and
-    // would be a different control.
-    static int16_t unitsFor(int16_t pixels, uint16_t scaleReg);
+    // The axis decides the floor, because it owns what its hardware can act on.
+    static int16_t unitsFor(int16_t pixels, uint16_t scaleReg, const Axis &axis);
 
     // The ADJ line: what the press asked for, what it became, and the registers
     // it landed in. Under GBS_DEBUG, like every other console line.

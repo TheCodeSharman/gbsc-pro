@@ -88,6 +88,44 @@ TEST_CASE("produced is a pure multiply")
     }
 }
 
+// The horizontal capture position is effective only in steps of 2 IF units, so
+// a press that rounds to 1 moves the register without moving the picture.
+// Vertical moves on every unit. docs/scaler-geometry-model.md
+TEST_CASE("one step is visible to the user")
+{
+    // 1024/606, the magnification these steps are checked at.
+    const float measured = Scale(606).magnification();
+
+    SUBCASE("one horizontal tap moves a whole granule") {
+        CHECK(AxisHorizontal.captureGranularity() == 2);
+        CHECK(AxisHorizontal.stepUnits(1, measured) == 2);
+        CHECK(AxisHorizontal.stepUnits(-1, measured) == -2);
+    }
+
+    SUBCASE("every horizontal step is a multiple of the granule") {
+        for (int16_t pixels = 1; pixels <= 40; ++pixels) {
+            int16_t units = AxisHorizontal.stepUnits(pixels, measured);
+            CHECK(units >= AxisHorizontal.captureGranularity());
+            CHECK(units % AxisHorizontal.captureGranularity() == 0);
+        }
+    }
+
+    SUBCASE("a bigger request keeps its size rather than being rounded up") {
+        // The pads ask for 8 output pixels, which is 4.73 units here. Nearest
+        // granule is 4 -- 6.8 px -- not 6, which would overshoot by more than
+        // rounding down undershoots.
+        CHECK(AxisHorizontal.stepUnits(8, measured) == 4);
+    }
+
+    SUBCASE("the vertical axis moves at least one line") {
+        const float vertical = Scale(487).magnification();
+        CHECK(AxisVertical.captureGranularity() == 1);
+        CHECK(AxisVertical.stepUnits(1, vertical) == 1);
+        CHECK(AxisVertical.stepUnits(-1, vertical) == -1);
+        CHECK(AxisVertical.stepUnits(8, vertical) == 4);
+    }
+}
+
 // Measured 2026-08-05 with measure_produced.py, floor() of the real value.
 // Taken with VDS_HB_SP 35 / VDS_VB_SP 37 against a corner assumed constant at
 // 129 / 63; the corner was not constant, so they are re-expressed against where
