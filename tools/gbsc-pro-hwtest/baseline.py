@@ -176,7 +176,7 @@ def main(argv=None):
             print(f"\n  {len(failures) - 1} later check(s) also fail; expect those "
                   "to clear once this one does.")
         print("\n  Also worth ruling out before anything else:")
-        print("    - stray tooling:  ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel'")
+        print("    - a polling loop: ps -eo pid,etime,cmd | grep -E 'soak_watch|sweeplog'")
         print("    - a cold boot:    pull mains AND USB, since USB backfeeds the rails")
         return 1
 

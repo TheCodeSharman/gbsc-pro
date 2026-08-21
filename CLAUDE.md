@@ -193,8 +193,8 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   clients have been attached at once. The one-client story came from the old
   `else webSocket.disconnect()` — the no-argument form drops *all* clients, so a
   single heap dip during one console write killed every session at once. Removed
-  in `d3a4426`. Still worth closing the web UI before a long capture, because it
-  costs heap, not because two clients are forbidden.
+  in `d3a4426`. **Leave the panels open.** Nothing has ever gone wrong from a
+  regpanel or a web UI being left running, and the cap is five.
 - **HTTP answering does not mean the firmware is running.** The web server is
   `ESPAsyncWebServer` (`gbs-control.ino:544`), which serves from network-stack
   callbacks, **not** from `loop()`. So `/getreg`, `/setreg`, `/freeze` and the
@@ -212,14 +212,13 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   one of detection's long searches — the 6000 ms `getVideoMode()` sweeps in
   `detectAndSwitchToActiveInput()`. Used exactly that way on 2026-08-13 to tell
   "unit wedged" from "unit hunting", which are opposite diagnoses.
-- **Check for stray tooling before diagnosing anything.** On 2026-08-05 a
-  `soak_watch.py --interval 5` had been polling for **2 days 22 hours** and a
-  `regpanel.py` for **1 day 23 hours**, both left from earlier sessions, leaving
-  hundreds of sockets in `TIME-WAIT` and starving the websocket server (which
-  caps at 5 clients). An evening went into "the websocket is wedged" with that
-  running underneath. One command:
-  `ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel|sweeplog'`, and
-  `ss -tanp | grep <ip>` for what is actually connected.
+- **What is attached is worth KNOWING, not closing.**
+  `ss -tanp | grep <ip>` says what is actually connected, and
+  `ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel|sweeplog'` says what
+  started it. That is context for reading a result, not a hazard to clear: a
+  panel left running is not a fault and closing one has never fixed anything.
+  A **polling** loop is the thing to look at, because it changes what the unit
+  is doing between your reads.
 - **Never flash `GBS_DEBUG=0` while diagnosing.** It is the flag gating
   `fsDebugPrintf` (`framesync.h:28`), so it silences `no INPUT vsync`,
   `no OUTPUT vsync` and every `runFrequency()` reason — precisely the messages

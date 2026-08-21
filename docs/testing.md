@@ -182,9 +182,11 @@ and letting the next session assume coverage is not.
   distinguishes "wedged" from "hunting", which are opposite diagnoses.
 - **Discard ~6 s after any mode change** before judging a sample. Raw sampling
   across a sweep produced 15 false positives in one run.
-- **Check for stray tooling first.** A `soak_watch.py` left running for three
-  days starved the websocket server and cost an evening.
-  `ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel|sweeplog'`
+- **Know what else is talking to the unit**, so a result can be read in context:
+  `ss -tanp | grep <ip>` for what is connected, and
+  `ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel|sweeplog'` for what
+  started it. A panel left open is not a fault; a polling loop changes what the
+  unit is doing between reads, which is the part worth knowing.
 - **`test_the_sampling_divider_is_one_quantity_in_three_registers` fails in the
   suite and passes alone.** State leaks between the `--source` tests. It presents
   as a divider fault on the unit and is not one — re-run it by itself before

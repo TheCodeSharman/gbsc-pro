@@ -261,8 +261,7 @@ def _console_diagnosis(console):
         return "the console is connected, so the firmware really did print this little"
     return (
         f"the WebSocket dropped ({console.failure}), so this says nothing about the "
-        "firmware. Each client costs heap: close the web UI and regpanel.py, then "
-        "re-run"
+        "firmware -- re-run"
     )
 
 
