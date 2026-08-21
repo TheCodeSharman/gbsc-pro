@@ -114,12 +114,14 @@ public:
     // picture is not.
     bool recompute();
 
-    // Which part of the source is grabbed, in INPUT UNITS.
-    bool pan(int16_t dx, int16_t dy);
+    // Which part of the source is grabbed, in OUTPUT PIXELS. The engine holds
+    // the scale it solved, so a press is sized from that rather than from a
+    // register read back off the chip.
+    bool pan(int16_t dxPixels, int16_t dyPixels);
 
-    // Zoom, in INPUT UNITS cropped off the default width. Positive crops in;
-    // the picture stays as big as the raster allows and the scale follows.
-    bool zoom(int16_t dh, int16_t dv);
+    // Zoom, in OUTPUT PIXELS. Positive crops in; the picture stays as big as
+    // the raster allows and the scale follows.
+    bool zoom(int16_t dhPixels, int16_t dvPixels);
 
 private:
     // Only the 50/60 split is taken from it, so anything outside FrameSync's own
@@ -127,6 +129,11 @@ private:
     static float sourceFieldRateOr50Hz();
 
     bool fail();
+
+    // Output pixels -> input units. A press of nothing has to be skipped
+    // outright: stepUnits() floors at one granule, so an axis the press did not
+    // name would drift a unit per press.
+    static int16_t unitsFor(int16_t pixels, const Scale &scale, const Axis &axis);
 
     bool readCapture(CaptureWindow &capture);
 
@@ -147,6 +154,7 @@ private:
     bool solvePending_;      // a solve refused because the source was settling
     bool framingRequested_;  // the user asked; loop() drains it, freeze does not
     const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
+    Scale horizontalScale_, verticalScale_;  // what the last solve produced
 
     // Where the front porch starts, from the raster this engine solved. Held
     // rather than re-derived because apply() reads the raster back off the chip

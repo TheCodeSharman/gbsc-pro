@@ -13,75 +13,11 @@
 // docs/chip-initialisation.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest/doctest.h>
+#include "BenchGeometry.h"
 
-#include "fake/Wire.h"
-
-FakeTwoWire Wire;
-
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
 
 using namespace Tv5725;
-
-// The sketch defines this for real; here the test drives it, so the one input
-// that cannot be held still on a board is a constant here.
-static float g_fieldRate = 50.08f;
-float getSourceFieldRate(boolean) { return g_fieldRate; }
-
-// Chosen field by field rather than for looking unlikely. The binding
-// constraint is VDS_VSCALE_BYPS, s3_00 bit 5, which the engine writes 0: under
-// the neighbouring tests' 0xC2 that bit is ALREADY 0 and the byte is touched by
-// VDS_HSCALE_BYPS regardless, so dropping the write would pass both a value and
-// a touched check. 0xE2 sets bits 4 and 5, the two the engine clears.
-static const uint8_t Poison = 0xE2;
-
-// A field written straight into the fake's banks, bypassing the bus, so seeding
-// an INPUT does not read as the code under test having written it.
-// Read-modify-write because these fields share bytes -- VDS_HSYNC_RST and
-// VDS_VSYNC_RST both live in s3_02.
-static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
-                 uint32_t value)
-{
-    uint8_t span = static_cast<uint8_t>((offset + width + 7) / 8);
-    uint32_t mask = ((1u << width) - 1u) << offset;
-    uint32_t raw = 0;
-    for (uint8_t i = 0; i < span; ++i)
-        raw |= static_cast<uint32_t>(Wire.bank[seg][static_cast<uint8_t>(reg + i)])
-               << (8 * i);
-    raw = (raw & ~mask) | ((value << offset) & mask);
-    for (uint8_t i = 0; i < span; ++i)
-        Wire.bank[seg][static_cast<uint8_t>(reg + i)] =
-            static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
-}
-
-// The bench RiscPC at 320x256@50 into the engine's own 1915 x 1126 raster, the
-// state of snapshots/CLEAN-engine-raster-1915-2026-08-15.json. Every value here
-// is an INPUT: a raster the engine already solved, and three source
-// measurements.
-struct Bench {
-    Geometry engine;
-
-    Bench()
-    {
-        Wire.reset();
-        Wire.poison(Poison);
-
-        seed(3, 0x01, 0, 12, 1914);   // VDS_HSYNC_RST, output line - 1
-        seed(3, 0x02, 4, 11, 1125);   // VDS_VSYNC_RST, output frame - 1
-        seed(1, 0x0E, 0, 11, 1276);   // IF_HSYNC_RST, capture wrap - 1
-        seed(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN, hsync low
-        seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD, the line in ADC samples
-        seed(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL, source lines
-
-        // The divider is GIVEN to the engine, never read back mid-solve. Here
-        // the bench inherits it the way a custom preset does -- adopt() reads
-        // PLLAD_MD once, out loud -- which reproduces the seeds above.
-        engine.adoptSampling();
-
-        REQUIRE(engine.solveFromScratch());
-    }
-};
 
 // Every field doPostPresetLoadSteps() writes into that the engine also owns,
 // with the bytes each one spans. Named so a failure says which.
@@ -274,4 +210,81 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
         CHECK_FALSE(bench.engine.solveSampling(0, 4));
         CHECK(Wire.field(5, 0x12, 0, 12) == solved);
     }
+}
+
+// A source measurement that has not settled is not a mode, and the vertical
+// axis is the one that can be fooled by it: the horizontal line comes from the
+// held divider, while the vertical is entirely 2 x (STATUS_SYNC_PROC_VTOTAL + 1).
+//
+// Measured on the bench, sampled through a preset load: VTOTAL passes through
+// 506, 251, 269, 259 and 511 before settling. Every one of those is inside the
+// 200..1300 bounds the solve accepts, so a solve landing on one writes a
+// vertical window sized for a frame the source is not sending -- and, having
+// succeeded, never revisits it.
+//
+// solveRaster() already refuses this: it takes the line count as the reliable
+// figure, picks the nominal rate from it, and requires the measured field rate
+// to agree within 2%. The capture solve owes the same test.
+TEST_CASE("a vertical total that disagrees with the field rate defers the solve")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    seed(3, 0x01, 0, 12, 1914);   // VDS_HSYNC_RST
+    seed(3, 0x02, 4, 11, 1125);   // VDS_VSYNC_RST
+    seed(1, 0x0E, 0, 11, 1276);   // IF_HSYNC_RST
+    seed(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
+    seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD
+
+    // 251 lines at the source's own 50 Hz is a 12.6 kHz line rate against the
+    // 15.6 kHz it is really sending: in range, and wrong by a fifth.
+    seed(0, 0x1B, 0, 11, 251);    // STATUS_SYNC_PROC_VTOTAL, mid-settle
+    g_fieldRate = 50.08f;
+
+    Geometry engine;
+    engine.adoptSampling();
+
+    CHECK_FALSE(engine.solveFromScratch());
+    CHECK_FALSE(Wire.touched[1][0x1C]);   // IF_VB_ST
+    CHECK_FALSE(Wire.touched[1][0x1E]);   // IF_VB_SP
+
+    g_fieldRate = 50.08f;
+}
+
+// One press step is one pixel of the output screen, so the engine sizes a press
+// from the scale its own solve produced. Reading VDS_?SCALE back to size it
+// instead makes a register an input to the calculation.
+TEST_CASE("a press is asked for in output pixels, not input units")
+{
+    Bench bench;
+
+    // As an outside observer reads it, from the register the solve wrote.
+    const float magnification = Scale(Wire.field(3, 0x16, 0, 10)).magnification();
+    REQUIRE(magnification > 1.5f);   // or pixels and units are indistinguishable
+
+    const int16_t wanted = AxisHorizontal.stepUnits(16, magnification);
+    REQUIRE(wanted != 16);
+
+    SUBCASE("zooming") {
+        REQUIRE(bench.engine.zoom(16, 0));
+        CHECK(bench.engine.framing().horizontalZoom() == wanted);
+    }
+
+    SUBCASE("and panning, once a zoom has left room to pan into") {
+        REQUIRE(bench.engine.zoom(400, 0));
+        const int16_t before = bench.engine.framing().horizontalPan();
+        REQUIRE(bench.engine.pan(16, 0));
+        CHECK(bench.engine.framing().horizontalPan() - before == wanted);
+    }
+}
+
+TEST_CASE("a press on one axis leaves the other where it was")
+{
+    // stepUnits() floors at one granule, so an axis the press did not name
+    // drifts a unit per press unless a press of nothing is skipped outright.
+    Bench bench;
+    const int16_t verticalZoom = bench.engine.framing().verticalZoom();
+
+    REQUIRE(bench.engine.zoom(16, 0));
+    CHECK(bench.engine.framing().verticalZoom() == verticalZoom);
 }

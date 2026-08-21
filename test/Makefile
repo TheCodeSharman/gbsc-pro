@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows clean help
+.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -26,10 +26,10 @@ help:
 # The definitions live in src/tv5725/*.cpp, so they have to be compiled in or
 # the test links with every method undefined. GLOB the list, never write it out.
 #
-# Geometry.cpp and Controls.cpp are excluded because they reach for the whole
-# sketch, not because they touch registers -- this target links the fake bus,
-# so a class that reads the chip is testable here rather than exiled to the
-# ESP8266. docs/testing.md.
+# Every target here links the fake bus, so a class that reads the chip is
+# testable on the host rather than exiled to the ESP8266. docs/testing.md.
+# Controls.cpp is left out of the lists below only because it needs a Print,
+# which the `controls` target supplies and these have no use for.
 #
 # The `cd` is load-bearing. The sketch directory is "GBSC-Pro-Source code" --
 # with a space -- so an absolute glob comes back as a word-split list that no
@@ -261,6 +261,18 @@ geometry-windows:
 	  "$(HERE)/test_geometry_windows.cpp" $(GEOMETRY_RASTER_SRC)
 	@"$(OUT)/test_geometry_windows"
 
+## controls: host unit tests for the OSD and IR control surface
+#
+# Controls is what the OSD and the remote call. The hardware pad suite reaches
+# the engine over HTTP instead, so nothing there can see a press landing on the
+# wrong axis.
+controls:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_controls" \
+	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp)
+	@"$(OUT)/test_controls"
+
 ## register-queue: host unit tests for the deferred register queue
 #
 # The queue is plain bookkeeping with no Arduino dependency, deliberately: the
@@ -273,7 +285,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows
+test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls
 all: test
 
 ## clean: remove the compiled test binaries

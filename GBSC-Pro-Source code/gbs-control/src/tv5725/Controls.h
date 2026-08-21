@@ -1,10 +1,8 @@
 #ifndef TV5725_CONTROLS_H_
 #define TV5725_CONTROLS_H_
 
-// What a user press means, and the only place output pixels become input units.
-//
-// Separate from Geometry because it is a property of the CONTROLS: the engine
-// takes input units and neither knows nor cares what a press is.
+// A user press, routed to the engine and logged. The engine takes output
+// pixels and sizes them from the scale it solved.
 
 #include <stdint.h>
 
@@ -27,15 +25,9 @@ public:
     Geometry &engine() const;
 
 private:
-    // Output pixels -> input units, at the magnification actually in force: a
-    // fixed unit step gets coarser the further you zoom in, and the two axes
-    // move differently for the same press whenever their magnifications differ.
-    // The axis decides the floor, because it owns what its hardware can act on.
-    static int16_t unitsFor(int16_t pixels, uint16_t scaleReg, const Axis &axis);
-
-    // The ADJ line: what the press asked for, what it became, and the registers
-    // it landed in. Under GBS_DEBUG, like every other console line.
-    void report(const char *control, int16_t pixels, int16_t units) const;
+    // The ADJ line: what the press asked for and the registers it landed in.
+    // Under GBS_DEBUG, like every other console line.
+    void report(const char *control, int16_t pixels) const;
 
     Geometry &engine_;
     Print &console_;

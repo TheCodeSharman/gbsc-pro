@@ -42,7 +42,11 @@ public:
     // The sampling is an ARGUMENT, not a read. PLLAD_LAT is what loads the
     // divider into the ADC PLL, so between a write and the latch the register
     // reports a value the chip is not using.
-    bool readRasters(const Sampling &sampling);
+    //
+    // `fieldRateHz` is the raw measurement, not a defaulted one: it is here to
+    // CONTRADICT the line count, and a fallback that always looks plausible
+    // cannot. docs/firmware-geometry-engine.md.
+    bool readRasters(const Sampling &sampling, float fieldRateHz);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

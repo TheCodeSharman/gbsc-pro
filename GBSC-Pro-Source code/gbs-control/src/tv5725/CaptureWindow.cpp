@@ -13,7 +13,7 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), linePx_(0), frameLines_(0) {}
 
-bool CaptureWindow::readRasters(const Sampling &sampling)
+bool CaptureWindow::readRasters(const Sampling &sampling, float fieldRateHz)
 {
     linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
@@ -26,8 +26,20 @@ bool CaptureWindow::readRasters(const Sampling &sampling)
     const uint16_t hlowLen = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
     const uint16_t sourceVerticalTotal = GBS::STATUS_SYNC_PROC_VTOTAL::read();
 
-    if (horizontalWrap < 64 || sourceVerticalTotal < SourceVerticalTotalMin
-        || sourceVerticalTotal > SourceVerticalTotalMax)
+    if (horizontalWrap < 64)
+        return false;
+
+    // **A MEASUREMENT IN RANGE IS NOT A MEASUREMENT THAT SETTLED**, and the
+    // vertical axis is the one it fools: the horizontal line comes from the held
+    // divider, while this is entirely 2 x (VTOTAL + 1). Sampled through a preset
+    // load the count passes through 506, 251, 269, 259 and 511 -- all inside the
+    // bounds a range check applies, and a solve that lands on one sizes the
+    // vertical window for a frame the source is not sending. Having SUCCEEDED it
+    // is never revisited.
+    //
+    // lineRateFrom() is the one owner of the settling rule already: the line
+    // count picks the nominal rate, and the measured rate has to agree with it.
+    if (Sampling::lineRateFrom(sourceVerticalTotal, fieldRateHz) == 0)
         return false;
 
     horizontalLine_ = InputLine::measured(horizontalWrap, hlowLen, sampling.divider());

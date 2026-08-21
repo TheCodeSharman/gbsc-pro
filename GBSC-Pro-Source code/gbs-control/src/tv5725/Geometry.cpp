@@ -35,6 +35,8 @@ bool Geometry::apply()
         return fail();
 
     write(solved, capture);
+    horizontalScale_ = solved.horizontalScale();
+    verticalScale_ = solved.verticalScale();
     solvePending_ = false;
     return true;
 }
@@ -187,17 +189,24 @@ bool Geometry::samplingPending() const { return samplingPending_; }
 
 bool Geometry::recompute() { return apply(); }
 
-bool Geometry::pan(int16_t dx, int16_t dy)
+int16_t Geometry::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)
+{
+    return pixels == 0 ? 0 : axis.stepUnits(pixels, scale.magnification());
+}
+
+bool Geometry::pan(int16_t dxPixels, int16_t dyPixels)
 {
     PanAndZoom wanted = framing_;
-    wanted.panBy(dx, dy);
+    wanted.panBy(unitsFor(dxPixels, horizontalScale_, AxisHorizontal),
+                 unitsFor(dyPixels, verticalScale_, AxisVertical));
     return step(wanted);
 }
 
-bool Geometry::zoom(int16_t dh, int16_t dv)
+bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
 {
     PanAndZoom wanted = framing_;
-    wanted.zoomBy(dh, dv);
+    wanted.zoomBy(unitsFor(dhPixels, horizontalScale_, AxisHorizontal),
+                  unitsFor(dvPixels, verticalScale_, AxisVertical));
     return step(wanted);
 }
 
@@ -215,7 +224,7 @@ bool Geometry::fail()
 
 bool Geometry::readCapture(CaptureWindow &capture)
 {
-    if (!capture.readRasters(sampling_)) {
+    if (!capture.readRasters(sampling_, getSourceFieldRate(0))) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;
