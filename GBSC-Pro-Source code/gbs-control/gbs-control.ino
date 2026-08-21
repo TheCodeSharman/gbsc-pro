@@ -9412,6 +9412,35 @@ fail:
     }
     request->send(200, "application/json", "false"); });
 
+    // Remove ONE file. /fs/format was the only way to delete anything and it
+    // takes /preferencesv2.txt and /slots.bin with it -- and /fs/upload is a
+    // stub that writes nothing, so a format cannot be undone.
+    //
+    // Deliberately general: it will delete the preferences too. Losing those
+    // costs a set of defaults, and a route that silently refused some paths
+    // would be worse than one that does what it is told and says so.
+    server.on("/fs/rm", HTTP_GET, [](AsyncWebServerRequest *request) {
+    bool result = false;
+
+    if (request->params() > 0)
+    {
+      String path = request->getParam(0)->value();
+
+      // A bare "/" is the root, not a file, and LittleFS::remove() on it is not
+      // something to find out about the hard way.
+      if (path.length() > 1 && path.startsWith("/") && LittleFS.exists(path))
+      {
+        result = LittleFS.remove(path);
+        SerialM.printf("fs/rm: %s %s\n", path.c_str(), result ? "removed" : "FAILED");
+      }
+      else
+      {
+        SerialM.printf("fs/rm: %s not removed, no such file\n", path.c_str());
+      }
+    }
+
+    request->send(200, "application/json", result ? "true" : "false"); });
+
     server.on("/fs/format", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", LittleFS.format() ? "true" : "false"); });
 
     // The boot trace, from RAM. Read after a mains-only cold start with nothing
