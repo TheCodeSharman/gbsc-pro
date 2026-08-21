@@ -60,6 +60,14 @@ def pytest_addoption(parser):
         "until the next real mode change or a power cycle. Writes no flash.",
     )
     group.addoption(
+        "--reboot",
+        action="store_true",
+        default=False,
+        help="restart the unit, to prove the boot restore brings the saved input "
+        "back. Costs a few seconds of black screen and a re-detection; writes no "
+        "flash. Opt-in because it takes the unit away mid-run.",
+    )
+    group.addoption(
         "--pllad-hostile",
         action="store_true",
         default=False,
@@ -83,6 +91,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "freeze: needs a build with /freeze support; needs --freeze"
     )
+    config.addinivalue_line(
+        "markers", "reboot: restarts the unit while it runs; needs --reboot"
+    )
     # SELECTORS, not gates -- absent from the `gates` list below, so they never
     # skip anything. Assigned by which pad the test presses, because -k matches
     # words in the NAME: -k "pan" also catches a zoom test that "moves" the
@@ -105,6 +116,8 @@ def pytest_collection_modifyitems(config, items):
          "corrupts the picture while it runs; pass --pllad-hostile to run it"),
         ("freeze", "--freeze",
          "needs a build with /freeze support; pass --freeze to run it"),
+        ("reboot", "--reboot",
+         "restarts the unit while it runs; pass --reboot to run it"),
     ]
     for keyword, option, reason in gates:
         if config.getoption(option):

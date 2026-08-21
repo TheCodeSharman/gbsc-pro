@@ -1565,3 +1565,130 @@ def test_the_scan_mode_is_not_half_applied(host):
         f"{LINE_DOUBLED} and progressive wants {PROGRESSIVE}; a mixed set means "
         "one branch of the preset load configured half of it and left the rest "
         "standing, which shears the picture per scanline")
+
+
+# --- selecting the input over HTTP -------------------------------------------
+
+INPUT_NAMES = ("rgbs", "rgsb", "vga", "ypbpr", "sv", "av")
+
+
+def test_the_input_route_refuses_what_it_does_not_recognise(host):
+    """A bad or missing src is a 400, never a selection.
+
+    Selecting the wrong input is worse than refusing one: it retimes the ADC
+    mux, sends the AV module a frame, forces a re-detection that blocks loop()
+    for seconds, and saves the result to flash. So a name nobody recognises must
+    not be guessed at.
+
+    Safe without --source because nothing is selected on this path.
+    """
+    status, body = get(host, "/input")
+    assert status == 400, f"missing src returned {status}, body {body!r}"
+
+    # No trailing-space case: the server normalises that out of the query before
+    # the parser sees it, so asserting it here would test ESPAsyncWebServer.
+    # InputSource::fromName() refuses it, and the host suite says so.
+    for bad in ("component", "VGA", "", "1"):
+        status, body = get(host, f"/input?src={bad}")
+        assert status == 400, (
+            f"src={bad!r} returned {status} rather than refusing it: {body!r}")
+
+
+def test_the_input_route_queues_a_selection(host, source):
+    """The six names the OLED offers are accepted and queued.
+
+    **A 200 means the request was understood, not that the input is selected.**
+    The route answers from a network callback, where it must not touch the bus,
+    the UART or the filesystem -- so it records the choice and loop() acts on it.
+    That is the same split as /sc?c, where a 200 does not mean the unit armed.
+
+    Only the input already in use is actually selected, so a passing run leaves
+    the bench where it found it. The other five names are checked for acceptance
+    against the parser, which is host-tested in full.
+    """
+    status, body = get(host, "/input?src=vga")
+    assert status == 200, f"vga was refused: {status} {body!r}"
+    assert "vga" in body, f"the reply does not name what it queued: {body!r}"
+
+
+# The preferences file is positional and unversioned; this is the byte
+# applySavedInputSource() keys on. Six values against SeleInputSource's three,
+# which is what lets a restore tell RGsB from RGBs and VGA from either.
+PREFS_INFO_BYTE = 28
+
+# Its six values, in the order INPUT_NAMES lists them. 0 is nothing chosen.
+STORED_INPUT_IDS = range(1, 1 + len(INPUT_NAMES))
+
+RESTART_TIMEOUT = 30.0  # the unit is back inside 5 s; the margin is for WiFi
+
+# The outage is under two seconds, so the probe has to be shorter than it. At
+# get()'s default a single connect to the resetting unit outlasts the whole
+# reboot and the gap closes before the poll returns.
+RESTART_PROBE_TIMEOUT = 0.5
+
+
+def _answering(host):
+    status, _ = get(host, "/wifi/status", timeout=RESTART_PROBE_TIMEOUT)
+    return status == 200
+
+
+def _settled_vtotal(host, samples=3, interval=0.3):
+    """The source's vertical total once it holds still, or None while it does not.
+
+    A single non-zero read proves nothing here. Detection sweeps the inputs and
+    the sync processor counts whatever it finds on the way, so the first reading
+    after a restart is as likely to be a mode nobody selected as the real one --
+    256 was measured mid-sweep on a source sending 311.
+    """
+    first = read_field(host, *SYNC_PROC_VTOTAL)
+    if not first:
+        return None
+    for _ in range(samples - 1):
+        time.sleep(interval)
+        if read_field(host, *SYNC_PROC_VTOTAL) != first:
+            return None
+    return first
+
+
+@pytest.mark.reboot
+def test_the_saved_input_survives_a_restart(host, source):
+    """A reboot must leave the sync processor counting the source it counted before.
+
+    **This is the one fault a register dump cannot show.** The frame the ESP
+    sends the HC32 at boot sets asw_01..04, which nothing can read back, so the
+    only evidence that the right frame went out is whether the source arrives.
+    Sent VGA's byte without its low nibble the HC32 leaves HS_IN on SOGIN, a VGA
+    source with separate sync has nothing for the sync processor to count, and
+    SP_VTOTAL reads 0 while HPERIOD_IF measures the line perfectly -- so every
+    check that correlates registers against each other passes.
+
+    Reboots the unit, which is why it is behind --reboot.
+    """
+    prefs = fs_read(host, "/preferencesv2.txt")
+    assert prefs and len(prefs) > PREFS_INFO_BYTE, (
+        f"could not read the preferences: {prefs!r}")
+    stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
+    assert stored in STORED_INPUT_IDS, (
+        f"no input is stored (Info={stored}), so the boot restore is expected to "
+        "send nothing and let detection sweep -- select one first, over /input "
+        "or at the OLED")
+
+    before = wait_for(lambda: _settled_vtotal(host), timeout=LOCK_TIMEOUT)
+    assert before, "nothing is locked before the restart, so a recovery proves nothing"
+
+    status, _ = get(host, "/uc?a")
+    assert status == 200, f"the restart command was refused: {status}"
+
+    assert wait_for(lambda: not _answering(host), timeout=RESTART_TIMEOUT), (
+        "the unit never went away, so it did not restart and this test measured "
+        "nothing")
+    assert wait_for(lambda: _answering(host), timeout=RESTART_TIMEOUT), (
+        f"{host} did not come back within {RESTART_TIMEOUT} s of the restart")
+
+    recovered = wait_for(lambda: _settled_vtotal(host) == before, timeout=LOCK_TIMEOUT)
+    assert recovered, (
+        f"the source counted {before} before the restart and settles at "
+        f"{_settled_vtotal(host)!r} within {LOCK_TIMEOUT} s after it, on a source "
+        "that did not change: the boot restore sent the AV module a frame that "
+        "does not connect the saved input. 0 is the input left unconnected; any "
+        "other number is a different input connected instead")

@@ -74,3 +74,8 @@ tools/gbsc-pro-hwtest/snapshots/**/*.jpg
 tools/gbsc-pro-hwtest/snapshots/**/*.jpeg
 tools/gbsc-pro-hwtest/snapshots/**/*.png
 tools/gbsc-pro-hwtest/snapshots/**/*.mov
+
+# The Gerbers extracted from the tracked zip beside them. Nix copies TRACKED
+# files into the store on every dirty evaluation, so a second uncompressed copy
+# of something the repo already holds is 3.3 MB per edit for nothing.
+Gerber/GBSC-AV-IR-v1.1-20240923/
