@@ -591,7 +591,6 @@ static void LoadDefault()
 
     rto->autoBestHtotalEnabled = true; 
     rto->syncLockFailIgnore = 16;      
-    rto->forceRetime = false;          
     rto->syncWatcherEnabled = true;    
     rto->phaseADC = 16;                
     rto->phaseSP = 16;                 
@@ -2900,373 +2899,6 @@ void readEeprom()
     }
 }
 
-void fastGetBestHtotal()
-{
-    uint32_t inStart, inStop;
-    signed long inPeriod = 1;
-    double inHz = 1.0;
-    GBS::TEST_BUS_SEL::write(0xa);
-    if (FrameSync::sampleVsyncPeriod(&inStart, &inStop)) {
-        inPeriod = (inStop - inStart) >> 1;
-        if (inPeriod > 1) {
-            inHz = (double)1000000 / (double)inPeriod;
-        }
-    } else {
-    }
-
-    uint16_t newVtotal = GBS::VDS_VSYNC_RST::read();
-    double bestHtotal = 108000000 / ((double)newVtotal * inHz);
-    double bestHtotal50 = 108000000 / ((double)newVtotal * 50);
-    double bestHtotal60 = 108000000 / ((double)newVtotal * 60);
-
-    if (bestHtotal > 800 && bestHtotal < 3200) {
-    }
-}
-
-boolean runAutoBestHTotal()
-{
-    // Frozen: docs/gbs-control-debug-interface.md
-    if (AUTOMATION_FROZEN()) {
-        return false;
-    }
-    if (!FrameSync::ready() && rto->autoBestHtotalEnabled == true && rto->videoStandardInput > 0 && rto->videoStandardInput < 15) {
-
-        boolean stableNow = 1;
-
-        for (uint8_t i = 0; i < 64; i++) {
-            if (!getStatus16SpHsStable()) {
-                stableNow = 0;
-
-                break;
-            }
-        }
-
-        if (stableNow) {
-            if (GBS::STATUS_INT_SOG_BAD::read()) {
-
-                resetInterruptSogBadBit();
-                delay(40);
-                stableNow = false;
-            }
-            resetInterruptSogBadBit();
-
-            if (stableNow && (getVideoMode() == rto->videoStandardInput)) {
-                uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-                uint8_t vdsBusSelBackup = GBS::VDS_TEST_BUS_SEL::read();
-                uint8_t ifBusSelBackup = GBS::IF_TEST_SEL::read();
-
-                if (testBusSelBackup != 0)
-                    GBS::TEST_BUS_SEL::write(0);
-                if (vdsBusSelBackup != 0)
-                    GBS::VDS_TEST_BUS_SEL::write(0);
-                if (ifBusSelBackup != 3)
-                    GBS::IF_TEST_SEL::write(3);
-
-                yield();
-                uint16_t bestHTotal = FrameSync::init();
-                yield();
-
-                GBS::TEST_BUS_SEL::write(testBusSelBackup);
-                if (vdsBusSelBackup != 0)
-                    GBS::VDS_TEST_BUS_SEL::write(vdsBusSelBackup);
-                if (ifBusSelBackup != 3)
-                    GBS::IF_TEST_SEL::write(ifBusSelBackup);
-
-                if (GBS::STATUS_INT_SOG_BAD::read()) {
-
-                    stableNow = false;
-                }
-                for (uint8_t i = 0; i < 16; i++) {
-                    if (!getStatus16SpHsStable()) {
-                        stableNow = 0;
-
-                        break;
-                    }
-                }
-                resetInterruptSogBadBit();
-
-                if (bestHTotal > 4095) {
-                    if (!rto->forceRetime) {
-                        stableNow = false;
-                    } else {
-
-                        bestHTotal = 4095;
-                    }
-                }
-
-                if (stableNow) {
-                    for (uint8_t i = 0; i < 24; i++) {
-                        delay(1);
-                        if (!getStatus16SpHsStable()) {
-                            stableNow = false;
-
-                            break;
-                        }
-                    }
-                }
-
-                if (bestHTotal > 0 && stableNow) {
-                    boolean success = applyBestHTotal(bestHTotal);
-                    if (success) {
-                        rto->syncLockFailIgnore = 16;
-
-                        return true;
-                    }
-                }
-            }
-        }
-
-        if (!stableNow) {
-            FrameSync::reset(uopt->frameTimeLockMethod);
-
-            if (rto->syncLockFailIgnore > 0) {
-                rto->syncLockFailIgnore--;
-                if (rto->syncLockFailIgnore == 0) {
-                    GBS::DAC_RGBS_PWDNZ::write(1); 
-                    if (!uopt->wantOutputComponent) {
-                        GBS::PAD_SYNC_OUT_ENZ::write(0); 
-                    }
-                    rto->autoBestHtotalEnabled = false;
-                }
-            }
-
-            Serial.println(")");
-        }
-    } else if (FrameSync::ready()) {
-
-        return true;
-    }
-
-    if (rto->continousStableCounter != 0 && rto->continousStableCounter != 255) {
-        rto->continousStableCounter++;
-    }
-
-    return false;
-}
-
-boolean applyBestHTotal(uint16_t bestHTotal)
-{
-    if (rto->outModeHdBypass) {
-        return true;
-    }
-
-    // **THE RASTER IS THE ENGINE'S, AND WITH A CLOCK GENERATOR THIS IS A SECOND
-    // CORRECTION FOR THE SAME ERROR.** The engine owns the TV5725's registers.
-    //
-    // Frame time is locked by steering the Si5351 -- FrameSync does it
-    // continuously, visible on the console as "Setting clock frequency" about
-    // every 1.76 s. Retiming the raster as well means two independent
-    // corrections chasing one error, and they do not agree on where to stop:
-    // across three boots of identical firmware Geometry::solveRaster() computes
-    // 1918 every time and the raster settles at 1915, 1436 and 1740, the last
-    // giving away 9% of the horizontal resolution the clock already accounts
-    // for.
-    //
-    // Only gated on extClockGenDetected. A board with no Si5351 has nothing
-    // else that can match the frame time, so there the htotal search IS the
-    // mechanism and it must keep working.
-    if (rto->extClockGenDetected) {
-        return true;
-    }
-
-    uint16_t orig_htotal = GBS::VDS_HSYNC_RST::read();
-    int diffHTotal = bestHTotal - orig_htotal;
-    uint16_t diffHTotalUnsigned = abs(diffHTotal);
-
-    if (((diffHTotalUnsigned == 0) || (rto->extClockGenDetected && diffHTotalUnsigned == 1)) &&
-        !rto->forceRetime) {
-        if (!uopt->enableFrameTimeLock) {
-
-            if (!rto->extClockGenDetected) {
-                float sfr = getSourceFieldRate(0);
-                yield();
-                float ofr = getOutputFrameRate();
-                if (sfr < 1.0f) {
-                    sfr = getSourceFieldRate(0);
-                }
-                if (ofr < 1.0f) {
-                    ofr = getOutputFrameRate();
-                }
-            }
-        }
-        return true;
-    }
-
-    if (GBS::GBS_OPTION_PALFORCED60_ENABLED::read() == 1) {
-
-        return true;
-    }
-
-    boolean isLargeDiff = (diffHTotalUnsigned > (orig_htotal * 0.06f)) ? true : false;
-
-    if (isLargeDiff && (getVideoMode() == 8 || rto->videoStandardInput == 14)) {
-
-        isLargeDiff = (diffHTotalUnsigned > (orig_htotal * 0.16f)) ? true : false;
-    }
-
-    if (isLargeDiff) {
-        ;
-    }
-
-    if (isLargeDiff && (rto->forceRetime == false)) {
-        if (rto->videoStandardInput != 14) {
-            rto->failRetryAttempts++;
-            if (rto->failRetryAttempts < 8) {
-
-                FrameSync::reset(uopt->frameTimeLockMethod);
-                delay(60);
-            } else {
-
-                rto->autoBestHtotalEnabled = false;
-            }
-        }
-        return false;
-    }
-
-    if (bestHTotal == 0) {
-
-        return false;
-    }
-
-    if (rto->forceRetime == false) {
-        if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-
-            return false;
-        }
-    }
-
-    rto->failRetryAttempts = 0; 
-
-    uint16_t h_blank_display_start_position = GBS::VDS_DIS_HB_ST::read();
-    uint16_t h_blank_display_stop_position = GBS::VDS_DIS_HB_SP::read();
-    uint16_t h_blank_memory_start_position = GBS::VDS_HB_ST::read();
-    uint16_t h_blank_memory_stop_position = GBS::VDS_HB_SP::read();
-
-    if (h_blank_memory_start_position == h_blank_display_start_position) {
-        h_blank_display_start_position += (diffHTotal / 2);
-        h_blank_display_stop_position += (diffHTotal / 2);
-        h_blank_memory_start_position = h_blank_display_start_position;
-        h_blank_memory_stop_position += (diffHTotal / 2);
-    } else {
-        h_blank_display_start_position += (diffHTotal / 2);
-        h_blank_display_stop_position += (diffHTotal / 2);
-        h_blank_memory_start_position += (diffHTotal / 2);
-        h_blank_memory_stop_position += (diffHTotal / 2);
-    }
-
-    if (diffHTotal < 0) {
-        h_blank_display_start_position &= 0xfffe;
-        h_blank_display_stop_position &= 0xfffe;
-        h_blank_memory_start_position &= 0xfffe;
-        h_blank_memory_stop_position &= 0xfffe;
-    } else if (diffHTotal > 0) {
-        h_blank_display_start_position += 1;
-        h_blank_display_start_position &= 0xfffe;
-        h_blank_display_stop_position += 1;
-        h_blank_display_stop_position &= 0xfffe;
-        h_blank_memory_start_position += 1;
-        h_blank_memory_start_position &= 0xfffe;
-        h_blank_memory_stop_position += 1;
-        h_blank_memory_stop_position &= 0xfffe;
-    }
-
-    uint16_t h_sync_start_position = GBS::VDS_HS_ST::read();
-    uint16_t h_sync_stop_position = GBS::VDS_HS_SP::read();
-
-    if (h_blank_display_start_position > (bestHTotal - 8) || isLargeDiff) {
-
-        h_blank_display_start_position = bestHTotal * 0.936f;
-    }
-    if (h_blank_display_stop_position > bestHTotal || isLargeDiff) {
-
-        h_blank_display_stop_position = bestHTotal * 0.178f;
-    }
-    if ((h_blank_memory_start_position > bestHTotal) || (h_blank_memory_start_position > h_blank_display_start_position) || isLargeDiff) {
-
-        h_blank_memory_start_position = h_blank_display_start_position * 0.971f;
-    }
-    if (h_blank_memory_stop_position > bestHTotal || isLargeDiff) {
-
-        h_blank_memory_stop_position = h_blank_display_stop_position * 0.64f;
-    }
-
-    if (h_sync_start_position > h_sync_stop_position && (h_sync_start_position < (bestHTotal / 2))) {
-        if (h_sync_start_position >= h_blank_display_stop_position) {
-            h_sync_start_position = h_blank_display_stop_position * 0.8f;
-            h_sync_stop_position = 4;
-        }
-    } else {
-        if (h_sync_stop_position >= h_blank_display_stop_position) {
-            h_sync_stop_position = h_blank_display_stop_position * 0.8f;
-            h_sync_start_position = 4; //
-        }
-    }
-
-    if (isLargeDiff) {
-        if (h_sync_start_position > h_sync_stop_position && (h_sync_start_position < (bestHTotal / 2))) {
-            h_sync_stop_position = 4;
-
-            h_sync_start_position = 16 + (h_blank_display_stop_position * 0.3f);
-        } else {
-            h_sync_start_position = 4;
-            h_sync_stop_position = 16 + (h_blank_display_stop_position * 0.3f);
-        }
-    }
-
-    if (diffHTotal != 0) {
-
-        // Retime on a field boundary. Both waits need their terminating
-        // semicolon, or the statement after becomes the inner loop's body.
-        uint16_t timeout = 0;
-        while ((GBS::STATUS_VDS_FIELD::read() == 1) && (++timeout < 400))
-            ;
-        while ((GBS::STATUS_VDS_FIELD::read() == 0) && (++timeout < 800))
-            ;
-        // The sync pulse stays ours; the total and everything fitted to it are
-        // the engine's, so it is told rather than written behind.
-        GBS::VDS_HS_ST::write(h_sync_start_position);
-        GBS::VDS_HS_SP::write(h_sync_stop_position);
-        if (!geometry.rasterWidthChanged(bestHTotal + 1)) {
-            // Bypass or an unreadable capture: leave the slid windows.
-            GBS::VDS_DIS_HB_ST::write(h_blank_display_start_position);
-            GBS::VDS_DIS_HB_SP::write(h_blank_display_stop_position);
-            GBS::VDS_HB_ST::write(h_blank_memory_start_position);
-            GBS::VDS_HB_SP::write(h_blank_memory_stop_position);
-        }
-    }
-
-    boolean print = 1;
-    if (uopt->enableFrameTimeLock) {
-        if ((GBS::GBS_RUNTIME_FTL_ADJUSTED::read() == 1) && !rto->forceRetime) {
-
-            print = 0;
-        }
-        GBS::GBS_RUNTIME_FTL_ADJUSTED::write(0);
-    }
-
-    rto->forceRetime = false;
-
-    if (print) {
-        ;
-        if (diffHTotal >= 0) {
-        }
-
-        if (!rto->extClockGenDetected) {
-            float sfr = getSourceFieldRate(0);
-            delay(0);
-            float ofr = getOutputFrameRate();
-            if (sfr < 1.0f) {
-                sfr = getSourceFieldRate(0);
-            }
-            if (ofr < 1.0f) {
-                ofr = getOutputFrameRate();
-            }
-        }
-    }
-
-    return true;
-}
-
 // The OSD bar's four controls, and **the only way it may reach the geometry**.
 // Anything here that writes a register directly -- VDS_HB_SP, VDS_HSCALE and
 // the rest -- re-solves nothing and is invisible to the pad tests, so the suite
@@ -3459,7 +3091,7 @@ uint32_t getPllRate()
 //   - OutputCustomized: the saved preset's bytes ARE the mode, so the read-back
 //     is correct there. It goes when a slot records the inputs to the
 //     calculation rather than a register dump.
-//   - OutputBypass: no scaled raster to solve, and modeFor() finds none.
+//   - OutputBypass: no scaled raster to solve, and OutputRaster::modeFor() finds none.
 //
 // THE FIELD RATE IS MEASURED HERE, NOT INSIDE THE ENGINE. It disambiguates one
 // preference -- Output480P is 480 active lines at 60 Hz and 576 at 50, two
@@ -3990,7 +3622,6 @@ void doPostPresetLoadSteps()
                                 ok = 1;
                         }
                         if (ok) {
-                            runAutoBestHTotal();
                             delay(1);
                             break;
                         }
@@ -5582,77 +5213,6 @@ void disableMotionAdaptDeinterlace() //
     GBS::MADPT_Y_MI_DET_BYPS::write(1);
 
     rto->motionAdaptiveDeinterlaceActive = false; 
-}
-
-boolean snapToIntegralFrameRate(void) // Capture Equalized Frame Rate
-{
-
-    float ofr = getOutputFrameRate();
-
-    if (ofr < 1.0f) {
-        delay(1);
-        ofr = getOutputFrameRate();
-    }
-
-    float target;
-    if (ofr > 56.5f && ofr < 64.5f) {
-        target = 60.0f;
-    } else if (ofr > 46.5f && ofr < 54.5f) {
-        target = 50.0f;
-    } else {
-
-        return false;
-    }
-
-    uint16_t currentHTotal = GBS::VDS_HSYNC_RST::read();
-    uint16_t closestHTotal = currentHTotal;
-
-    float closestDifference = fabs(target - ofr);
-
-    for (;;) {
-
-        delay(0);
-
-        if (target > ofr) {
-            if (currentHTotal > 0 && applyBestHTotal(currentHTotal - 1)) {
-                --currentHTotal;
-            } else {
-                return false;
-            }
-        } else if (target < ofr) {
-            if (currentHTotal < 4095 && applyBestHTotal(currentHTotal + 1)) {
-                ++currentHTotal;
-            } else {
-                return false;
-            }
-        } else {
-            return true;
-        }
-
-        ofr = getOutputFrameRate();
-
-        if (ofr < 1.0f) {
-            delay(1);
-            ofr = getOutputFrameRate();
-        }
-        if (ofr < 1.0f) {
-            return false;
-        }
-
-        float newDifference = fabs(target - ofr);
-        if (newDifference < closestDifference) {
-            closestDifference = newDifference;
-            closestHTotal = currentHTotal;
-        } else {
-            break;
-        }
-    }
-
-    if (closestHTotal != currentHTotal) {
-        applyBestHTotal(closestHTotal);
-    }
-
-    return true;
 }
 
 void printInfo()
@@ -7276,7 +6836,6 @@ void setup()
     rto->enableDebugPings = false;     
     rto->autoBestHtotalEnabled = true; 
     rto->syncLockFailIgnore = 16;      
-    rto->forceRetime = false;          
     rto->syncWatcherEnabled = true;    
     rto->phaseADC = 16;
     rto->phaseSP = 16;
@@ -7920,15 +7479,17 @@ void loop()
         }
     }
 
+    // FrameSync only runs once armed, and FrameSync::init() is the one thing
+    // that arms it. Worth arming only on a source that has been stable a while
+    // with the divider latched, which STATUS_SYNC_PROC_HTOTAL is the witness for.
     if (rto->autoBestHtotalEnabled && !FrameSync::ready() && rto->syncWatcherEnabled) {
         if (rto->continousStableCounter >= 10 && rto->coastPositionIsSet &&
             ((millis() - lastVsyncLock) > 500)) {
             if ((rto->continousStableCounter % 5) == 0) {
                 uint16_t htotal = GBS::STATUS_SYNC_PROC_HTOTAL::read();
                 uint16_t pllad = GBS::PLLAD_MD::read();
-                if (((htotal > (pllad - 3)) && (htotal < (pllad + 3)))) {
-                    runAutoBestHTotal();
-                }
+                if (((htotal > (pllad - 3)) && (htotal < (pllad + 3))))
+                    FrameSync::init();
             }
         }
     }
@@ -8294,7 +7855,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     rto->syncLockFailIgnore = 16;
                     FrameSync::reset(uopt->frameTimeLockMethod);
-                    rto->forceRetime = true;
 
                     delay(200);
                     break;
@@ -8354,24 +7914,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     loadComputedPreset(&Tv5725::Mode960p, 0x11);
                     doPostPresetLoadSteps();
                     break;
-                case '.': {
-                    if (!rto->outModeHdBypass) {
-
-                        rto->autoBestHtotalEnabled = true;
-                        rto->syncLockFailIgnore = 16;
-                        rto->forceRetime = true;
-                        FrameSync::reset(uopt->frameTimeLockMethod);
-
-                        if (!rto->syncWatcherEnabled) {
-                            boolean autoBestHtotalSuccess = 0;
-                            delay(30);
-                            autoBestHtotalSuccess = runAutoBestHTotal();
-                            if (!autoBestHtotalSuccess) {
-                                ; // SerialMprintln(F("(unchanged)"));
-                            }
-                        }
-                    }
-                } break;
                 case '!':
                     Serial.print(F("sfr: "));
                     Serial.println(getSourceFieldRate(1));
@@ -8463,28 +8005,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         enableScanlines();
                     }
                 } break;
-                case 'a':; // SerialMprint(F("HTotal++: "));
-                    ;      // SerialMprintln(GBS::VDS_HSYNC_RST::read() + 1);
-                    if (GBS::VDS_HSYNC_RST::read() < 4095) {
-                        if (uopt->enableFrameTimeLock) {
-
-                            FrameSync::reset(uopt->frameTimeLockMethod);
-                        }
-                        rto->forceRetime = 1;
-                        applyBestHTotal(GBS::VDS_HSYNC_RST::read() + 1);
-                    }
-                    break;
-                case 'A':; // SerialMprint(F("HTotal--: "));
-                    ;      // SerialMprintln(GBS::VDS_HSYNC_RST::read() - 1);
-                    if (GBS::VDS_HSYNC_RST::read() > 0) {
-                        if (uopt->enableFrameTimeLock) {
-
-                            FrameSync::reset(uopt->frameTimeLockMethod);
-                        }
-                        rto->forceRetime = 1;
-                        applyBestHTotal(GBS::VDS_HSYNC_RST::read() - 1);
-                    }
-                    break;
                 case 'M': {
                 } break;
                 case 'm':; // SerialMprint(F("syncwatcher "));
@@ -8845,15 +8365,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         ; // SerialMprint(what);
                         ; // SerialMprint(" ");
                         ; // SerialMprintln(value);
-                        if (what.equals("ht")) {
-
-                            if (!rto->outModeHdBypass) {
-                                rto->forceRetime = 1;
-                                applyBestHTotal(value);
-                            } else {
-                                GBS::VDS_HSYNC_RST::write(value);
-                            }
-                        } else if (what.equals("sog")) {
+                        if (what.equals("sog")) {
                             setAndUpdateSogLevel(value);
                         } else if (what.equals("ifini")) {
                             GBS::IF_INI_ST::write(value);
@@ -8898,10 +8410,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                     saveUserPrefs();
                 } break;
-                case 'S': {
-                    snapToIntegralFrameRate();
-                    break;
-                }
                 case ':':
                     externalClockGenSyncInOutRate();
                     break;

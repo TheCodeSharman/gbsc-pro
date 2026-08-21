@@ -550,7 +550,6 @@ static void LoadDefault()
 
     rto->autoBestHtotalEnabled = true; // 已启用自动最佳总计
     rto->syncLockFailIgnore = 16;      //
-    rto->forceRetime = false;          //
     rto->syncWatcherEnabled = true;    //
     rto->phaseADC = 16;                //
     rto->phaseSP = 16;                 //

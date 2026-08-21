@@ -27,13 +27,7 @@ public:
 
     const PanAndZoom &framing() const;
 
-    // The horizontal total was retimed outside the engine, by the htotal search
-    // on a board with no clock generator to steer instead. The engine holds the
-    // raster rather than reading it back, so it has to be told: every window and
-    // both scales are fitted to the total this names.
-    bool rasterWidthChanged(uint16_t horizontalTotal);
-
-    // Notify the engine that the source is about to change mode. The registers are
+    // Notify the engine that the source has changed mode. The registers are
     // not written until the source has settled. 
     void modeChanged(const OutputMode *mode, bool customPreset,
                      uint8_t oversample);

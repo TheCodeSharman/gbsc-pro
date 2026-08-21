@@ -6,7 +6,6 @@
 #include "InputFormatter.h"
 #include "Memory.h"
 #include "MemoryMap.h"
-#include "OutputRaster.h"
 #include "SyncProcessor.h"
 
 namespace Tv5725 {
@@ -50,25 +49,6 @@ bool Geometry::solveWindows()
     verticalScale_ = solved.verticalScale();
     solvePending_ = false;
     return true;
-}
-
-bool Geometry::rasterWidthChanged(uint16_t horizontalTotal)
-{
-    // No raster of its own is what bypass looks like, and widening a line the
-    // VDS is not driving would size the next scaled mode's picture.
-    if (rasterLinePx_ == 0 || horizontalTotal == 0)
-        return false;
-
-    // The front porch is a fixed number of pixels at a fixed display clock, so
-    // every unit the line gains belongs to the picture. Skipped where no porch
-    // is known -- a custom preset adopts a raster without one, and moving zero
-    // would invent a bound the solve is better off without.
-    if (activeStop_ != 0)
-        activeStop_ = (uint16_t)(activeStop_ + horizontalTotal - rasterLinePx_);
-    rasterLinePx_ = horizontalTotal;
-
-    GBS::VDS_HSYNC_RST::write(horizontalTotal - 1);
-    return resolve();
 }
 
 bool Geometry::solveRaster(const OutputMode *mode)

@@ -20,7 +20,6 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputRaster.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
@@ -461,35 +460,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     }
 }
 
-// --- a horizontal total retimed outside the engine ---------------------------
-
-TEST_CASE("a hand-retimed horizontal total is what the windows are fitted to")
-{
-    // The htotal search moves VDS_HSYNC_RST itself, on a board with no clock
-    // generator to steer the frame time instead. The engine holds the raster
-    // rather than reading it back, so a re-solve that is not told the new total
-    // fits every window and both scales to the one the last solve chose.
-    seedBenchSource();
-    DisplayClock clock;
-    Geometry engine(clock);
-
-    engine.modeChanged(benchMode(), false, 4);
-    REQUIRE(pollUntilSolved(engine));
-    const uint16_t scaleAtSolvedRaster = VideoProcessor::VDS_HSCALE::read();
-    const uint16_t farEdgeAtSolvedRaster = VideoProcessor::VDS_DIS_HB_ST::read();
-
-    REQUIRE(engine.rasterWidthChanged(2016));
-
-    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 2015);
-
-    // 100 px more raster to fill from the same capture, so the picture is
-    // magnified further and reaches further along the line. VDS_HSCALE counts
-    // DOWN with magnification.
-    CHECK(VideoProcessor::VDS_HSCALE::read() < scaleAtSolvedRaster);
-    CHECK(VideoProcessor::VDS_DIS_HB_ST::read() > farEdgeAtSolvedRaster);
-}
-
-// --- a framing request, which re-solves every window -------------------------
+// --- every window follows the framing ----------------------------------------
 
 TEST_CASE("a framed picture holds every window against the framing")
 {
