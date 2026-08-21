@@ -15,7 +15,7 @@ const float DutyMin = 0.041f;
 const float DutyMax = 0.152f;
 
 // What the chip is already configured for when the duty cannot be measured.
-// Sampling writes SP_RT_HS_SP = PLLAD_MD x 0.93, so 1 - 0.93 IS the sync width
+// SourceMeasurement writes SP_RT_HS_SP = PLLAD_MD x 0.93, so 1 - 0.93 IS the sync width
 // the retiming module expects rather than a fudge factor. Failing open here
 // restores the green bands. docs/scaler-geometry-model.md
 const float FallbackDuty = 0.07f;
@@ -47,7 +47,7 @@ uint16_t InputLine::lastCapture() const
     uint16_t beforeWrap = units_ < 2 ? 0 : units_ - 2;
 
     // And the far end: past WriteLimitUnits the capture path writes blanking
-    // rather than video. Sampling caps the divider to keep the line inside the
+    // rather than video. SourceMeasurement caps the divider to keep the line inside the
     // limit, so what this catches is the lines it did not choose -- a custom
     // preset's, a bypass switch's.
     return beforeWrap > WriteLimitUnits ? WriteLimitUnits : beforeWrap;

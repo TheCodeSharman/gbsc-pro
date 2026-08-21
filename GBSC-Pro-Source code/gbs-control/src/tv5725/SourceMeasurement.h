@@ -1,5 +1,5 @@
-#ifndef TV5725_SAMPLING_H_
-#define TV5725_SAMPLING_H_
+#ifndef TV5725_SOURCE_MEASUREMENT_H_
+#define TV5725_SOURCE_MEASUREMENT_H_
 
 // How finely the incoming line is sampled, and what the input formatter's line
 // counter must be set to as a result.
@@ -23,7 +23,7 @@
 
 namespace Tv5725 {
 
-class Sampling {
+class SourceMeasurement {
 public:
     // DS-5725-3.2, front page: "Maximum analog sampling rate up to 162MSPS".
     static const uint32_t MaxSampleRateHz = 162000000u;
@@ -93,7 +93,7 @@ public:
 
     // Nothing chosen yet. A caller must be able to SEE that rather than get a
     // zero it would go on to write.
-    Sampling();
+    SourceMeasurement();
 
     // Choose one for this line rate. False and NO state change when the rate is
     // unmeasurable, so the previous choice survives a dropped measurement --
@@ -125,4 +125,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_SAMPLING_H_
+#endif  // TV5725_SOURCE_MEASUREMENT_H_

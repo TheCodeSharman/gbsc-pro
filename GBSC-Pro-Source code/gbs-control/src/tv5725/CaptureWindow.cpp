@@ -13,7 +13,7 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), linePx_(0), frameLines_(0) {}
 
-bool CaptureWindow::readRasters(const Sampling &sampling, float fieldRateHz)
+bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRateHz)
 {
     linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
@@ -39,7 +39,7 @@ bool CaptureWindow::readRasters(const Sampling &sampling, float fieldRateHz)
     //
     // lineRateFrom() is the one owner of the settling rule already: the line
     // count picks the nominal rate, and the measured rate has to agree with it.
-    if (Sampling::lineRateFrom(sourceVerticalTotal, fieldRateHz) == 0)
+    if (SourceMeasurement::lineRateFrom(sourceVerticalTotal, fieldRateHz) == 0)
         return false;
 
     horizontalLine_ = InputLine::measured(horizontalWrap, hlowLen, sampling.divider());

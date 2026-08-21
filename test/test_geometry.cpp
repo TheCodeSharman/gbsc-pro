@@ -639,7 +639,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
 
 TEST_CASE("the capture stops at the write limit, however long the line is")
 {
-    // Sampling caps the divider so the line arrives inside the limit, but
+    // SourceMeasurement caps the divider so the line arrives inside the limit, but
     // adopt() takes whatever a custom preset or a bypass switch left in
     // PLLAD_MD, so a longer line still reaches the engine. Past the limit
     // nothing is written, and a window that reaches there loses the picture in
@@ -647,7 +647,7 @@ TEST_CASE("the capture stops at the write limit, however long the line is")
     CHECK(InputLine(1277).lastCapture() == InputLine::WriteLimitUnits);
 
     SUBCASE("a line already inside it is bound by its own wrap") {
-        // The two bounds meet at the divider Sampling now chooses: 1126 units,
+        // The two bounds meet at the divider SourceMeasurement now chooses: 1126 units,
         // where the wrap is the tighter by two.
         CHECK(InputLine(1126).lastCapture() == 1124);
         CHECK(InputLine(1126).lastCapture() < InputLine::WriteLimitUnits);

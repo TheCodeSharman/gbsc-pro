@@ -15,7 +15,7 @@ namespace Tv5725 {
 //
 // What is not here is everything that moves per source: updateSpDynamic() owns
 // the coast and delta quadruple, updateCoastPosition() SP_H_CST_ST/SP,
-// updateClampPosition() the clamp, and Tv5725::Sampling SP_RT_HS_SP. A static
+// updateClampPosition() the clamp, and Tv5725::SourceMeasurement SP_RT_HS_SP. A static
 // write of any of those would fight a per-source decision.
 //
 // DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. Set 1110 against a 2553-sample

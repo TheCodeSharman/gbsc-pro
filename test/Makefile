@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls clean help
+.PHONY: all test geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -46,17 +46,17 @@ geometry:
 	  "$(HERE)/test_geometry.cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/test_geometry"
 
-## sampling: host unit tests for the ADC sampling divider and the IF line
+## source-measurement: host unit tests for the ADC sampling divider and the IF line
 #
 # PLLAD_MD and IF_HSYNC_RST are one quantity in two registers, and every fault
 # here has been something moving one without the other. Pure arithmetic, so it
 # costs a second to check.
-sampling:
+source-measurement:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_sampling" \
-	  "$(HERE)/test_sampling.cpp" src/tv5725/Sampling.cpp src/tv5725/InputLine.cpp
-	@"$(OUT)/test_sampling"
+	  -o "$(OUT)/test_source_measurement" \
+	  "$(HERE)/test_source_measurement.cpp" src/tv5725/SourceMeasurement.cpp src/tv5725/InputLine.cpp
+	@"$(OUT)/test_source_measurement"
 
 ## memory: host unit tests for the playback burst structure
 #
@@ -285,7 +285,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry sampling memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls
+test: geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls
 all: test
 
 ## clean: remove the compiled test binaries

@@ -1,4 +1,4 @@
-#include "Sampling.h"
+#include "SourceMeasurement.h"
 
 #include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
 #include "InputLine.h"   // the capture write limit, likewise
@@ -7,10 +7,10 @@
 
 namespace Tv5725 {
 
-const uint32_t Sampling::MaxSampleRateHz;
-const uint16_t Sampling::DividerMax;
-const uint16_t Sampling::RecommendedPercent;
-const uint16_t Sampling::RetimeStopPercent;
+const uint32_t SourceMeasurement::MaxSampleRateHz;
+const uint16_t SourceMeasurement::DividerMax;
+const uint16_t SourceMeasurement::RecommendedPercent;
+const uint16_t SourceMeasurement::RetimeStopPercent;
 
 // A dropped read of ADC_CLK_ICLK1X/2X arrives as 0. Treating that as "no
 // oversampling" keeps the ceiling honest; treating it as a divisor would make
@@ -20,25 +20,25 @@ static uint8_t atLeastOne(uint8_t oversample)
     return oversample == 0 ? 1 : oversample;
 }
 
-uint16_t Sampling::ifLineFor(uint16_t divider)
+uint16_t SourceMeasurement::ifLineFor(uint16_t divider)
 {
     return (uint16_t)(divider / 2);
 }
 
 // Integer, because the ESP8266 has no FPU and this runs on every solve. The
 // float form it replaces truncated too, and 4095 x 93 is well inside 32 bits.
-uint16_t Sampling::retimeStopFor(uint16_t divider)
+uint16_t SourceMeasurement::retimeStopFor(uint16_t divider)
 {
     return (uint16_t)(((uint32_t)divider * RetimeStopPercent) / 100);
 }
 
-uint32_t Sampling::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
+uint32_t SourceMeasurement::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
                                 uint8_t oversample)
 {
     return (uint32_t)divider * lineRateHz * atLeastOne(oversample);
 }
 
-bool Sampling::withinLimit(uint16_t divider, uint32_t lineRateHz,
+bool SourceMeasurement::withinLimit(uint16_t divider, uint32_t lineRateHz,
                            uint8_t oversample)
 {
     if (lineRateHz == 0)
@@ -46,7 +46,7 @@ bool Sampling::withinLimit(uint16_t divider, uint32_t lineRateHz,
     return sampleRateHz(divider, lineRateHz, oversample) <= MaxSampleRateHz;
 }
 
-uint16_t Sampling::maxDivider(uint32_t lineRateHz, uint8_t oversample)
+uint16_t SourceMeasurement::maxDivider(uint32_t lineRateHz, uint8_t oversample)
 {
     if (lineRateHz == 0)
         return 0;
@@ -62,7 +62,7 @@ uint16_t Sampling::maxDivider(uint32_t lineRateHz, uint8_t oversample)
     return (uint16_t)largest;
 }
 
-uint32_t Sampling::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
+uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
 {
     if (sourceLines < CaptureWindow::SourceVerticalTotalMin
         || sourceLines > CaptureWindow::SourceVerticalTotalMax)
@@ -79,7 +79,7 @@ uint32_t Sampling::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
     return (uint32_t)(fieldRateHz * (float)sourceLines);
 }
 
-uint16_t Sampling::recommendedDivider(uint32_t lineRateHz, uint8_t oversample)
+uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t oversample)
 {
     uint16_t ceiling = maxDivider(lineRateHz, oversample);
     if (ceiling == 0)
@@ -101,9 +101,9 @@ uint16_t Sampling::recommendedDivider(uint32_t lineRateHz, uint8_t oversample)
 
 // --- the chosen divider, held ----------------------------------------------
 
-Sampling::Sampling() : divider_(0) {}
+SourceMeasurement::SourceMeasurement() : divider_(0) {}
 
-bool Sampling::solve(uint32_t lineRateHz, uint8_t oversample)
+bool SourceMeasurement::solve(uint32_t lineRateHz, uint8_t oversample)
 {
     uint16_t chosen = recommendedDivider(lineRateHz, oversample);
     if (chosen == 0)
@@ -112,20 +112,20 @@ bool Sampling::solve(uint32_t lineRateHz, uint8_t oversample)
     return true;
 }
 
-void Sampling::adopt()
+void SourceMeasurement::adopt()
 {
     divider_ = GBS::PLLAD_MD::read();
 }
 
-bool Sampling::usable() const { return divider_ != 0; }
+bool SourceMeasurement::usable() const { return divider_ != 0; }
 
-uint16_t Sampling::divider() const { return divider_; }
+uint16_t SourceMeasurement::divider() const { return divider_; }
 
-uint16_t Sampling::ifLine() const { return ifLineFor(divider_); }
+uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_); }
 
-uint16_t Sampling::retimeStop() const { return retimeStopFor(divider_); }
+uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
 
-void Sampling::write() const
+void SourceMeasurement::write() const
 {
     if (!usable())
         return;

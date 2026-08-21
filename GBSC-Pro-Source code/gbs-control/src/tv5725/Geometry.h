@@ -18,7 +18,7 @@
 #include "OutputRaster.h"
 #include "PanAndZoom.h"
 #include "RegisterSolution.h"
-#include "Sampling.h"
+#include "SourceMeasurement.h"
 
 // Global scope, NOT namespace Tv5725, or the call in sourceFieldRateOr50Hz()
 // resolves to a function that does not exist.
@@ -148,7 +148,7 @@ private:
     bool step(const PanAndZoom &wanted);
 
     PanAndZoom framing_;
-    Sampling sampling_;      // the divider this engine solves against
+    SourceMeasurement sampling_;      // the divider this engine solves against
     bool rasterPending_;     // solveRaster() refused: the field rate was not settled
     bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool solvePending_;      // a solve refused because the source was settling

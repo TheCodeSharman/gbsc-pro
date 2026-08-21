@@ -6,7 +6,7 @@
 
 #include "InputLine.h"
 #include "PanAndZoom.h"
-#include "Sampling.h"
+#include "SourceMeasurement.h"
 #include "BlankingTiming.h"
 
 namespace Tv5725 {
@@ -46,7 +46,7 @@ public:
     // `fieldRateHz` is the raw measurement, not a defaulted one: it is here to
     // CONTRADICT the line count, and a fallback that always looks plausible
     // cannot. docs/firmware-geometry-engine.md.
-    bool readRasters(const Sampling &sampling, float fieldRateHz);
+    bool readRasters(const SourceMeasurement &sampling, float fieldRateHz);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

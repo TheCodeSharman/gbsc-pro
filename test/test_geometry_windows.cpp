@@ -176,19 +176,19 @@ TEST_CASE("solveSampling computes the divider and writes all three registers")
     // 311 lines at 50 Hz, which is what the seeds above describe.
     REQUIRE(bench.engine.solveSampling(15550, 4));
 
-    const uint16_t wanted = Sampling::recommendedDivider(15550, 4);
+    const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4);
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
 
     CHECK(Wire.field(5, 0x12, 0, 12) == wanted);
-    CHECK(Wire.field(1, 0x0E, 0, 11) == Sampling::ifLineFor(wanted));
-    CHECK(Wire.field(5, 0x4B, 0, 12) == Sampling::retimeStopFor(wanted));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted));
+    CHECK(Wire.field(5, 0x4B, 0, 12) == SourceMeasurement::retimeStopFor(wanted));
 
     SUBCASE("and the solve that follows uses it") {
         // The seeded IF_HSYNC_RST was 1276 for a 2553 divider. If the engine
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
         REQUIRE(bench.engine.solveFromScratch());
-        CHECK(Wire.field(1, 0x0E, 0, 11) == Sampling::ifLineFor(wanted));
+        CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted));
     }
 }
 
@@ -202,7 +202,7 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     const uint32_t adopted = Wire.field(5, 0x12, 0, 12);
 
     CHECK_FALSE(bench.engine.solveSampling(0, 4));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == Sampling::ifLineFor((uint16_t)adopted));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)adopted));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
         REQUIRE(bench.engine.solveSampling(15550, 4));

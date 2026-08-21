@@ -60,11 +60,11 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/PresetLoad.h"
 #include "src/tv5725/FrameBuffer.h"
 #include "src/tv5725/InputFormatter.h"
-#include "src/tv5725/Sampling.h"
+#include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputRaster.h"
 #include "src/tv5725/BringUp.h"
-#include "src/tv5725/Sampling.h"
+#include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
@@ -3528,7 +3528,7 @@ static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
 
 // The line rate the source is running at, in Hz, or 0 when it cannot be
 // measured. Field rate x source lines -- the two quantities the sampling divider
-// is a function of, and the only inputs Tv5725::Sampling needs.
+// is a function of, and the only inputs Tv5725::SourceMeasurement needs.
 //
 // A measurement, kept HERE rather than in the engine, because
 // getSourceFieldRate() spins. The engine is handed the number.
@@ -3538,7 +3538,7 @@ static uint32_t measuredLineRateHz()
     // source is still settling after a preset load passes one comfortably --
     // 57.9 Hz against a real 50.08 -- and the divider comes out proportionally
     // wrong: PLLAD_MD 2204 where 2548 is due, on a source locked at 311 lines /
-    // 50.08 Hz. Sampling::lineRateFrom() cross-checks the rate against the line
+    // 50.08 Hz. SourceMeasurement::lineRateFrom() cross-checks the rate against the line
     // count and returns 0 when they disagree.
     //
     // **THE CROSS-CHECK IS NECESSARY AND NOT SUFFICIENT, so it says what it
@@ -3550,7 +3550,7 @@ static uint32_t measuredLineRateHz()
     // docs/firmware-geometry-engine.md
     uint16_t lines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
     float fieldRate = getSourceFieldRate(0);
-    uint32_t lineRate = Tv5725::Sampling::lineRateFrom(lines, fieldRate);
+    uint32_t lineRate = Tv5725::SourceMeasurement::lineRateFrom(lines, fieldRate);
     fsDebugPrintf("sampling: %u lines x %u.%02u Hz -> line rate %u\n", lines,
                   (unsigned)fieldRate, (unsigned)(fieldRate * 100) % 100, lineRate);
     return lineRate;
@@ -3891,7 +3891,7 @@ void doPostPresetLoadSteps()
 
         // **THE SAMPLING DIVIDER, AND IT MUST BE ON THIS SIDE OF THE LATCH.**
         // PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are ONE quantity in three
-        // registers, and Tv5725::Sampling is the single owner of all three.
+        // registers, and Tv5725::SourceMeasurement is the single owner of all three.
         //
         // Directly above latchPLLAD(), and that ordering is the whole point.
         // PLLAD_LAT is what loads MD, ND, KS, CKOS and ICP into the ADC PLL, so
@@ -5902,7 +5902,7 @@ void runSyncWatcher() //
     // with every register reading back correct.
     //
     // Then the WHOLE sequence, as above: the divider is the unit the capture
-    // window is measured in (Tv5725::Sampling owns PLLAD_MD, IF_HSYNC_RST and
+    // window is measured in (Tv5725::SourceMeasurement owns PLLAD_MD, IF_HSYNC_RST and
     // SP_RT_HS_SP off one value), so moving it invalidates every window.
     if (geometry.samplingPending() && getStatus16SpHsStable()) {
         if (geometry.solveSampling(measuredLineRateHz(), rto->osr)) {
