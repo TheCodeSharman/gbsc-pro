@@ -141,7 +141,7 @@ TEST_CASE("108 MHz is the highest display clock with evidence behind it")
         // 0x95 and 0xA5 are register-reachable and shipped by ntsc_1280x1024 and
         // ntsc_240p. The 2026-08-11 sweep settled them: 129.6 MHz is sharp and
         // 162 MHz flickers then goes black, which is why
-        // OutputRaster::WorkingCeilingHz is the higher of the two and not this.
+        // OutputMode::WorkingCeilingHz is the higher of the two and not this.
         CHECK(DisplayClock::hzFor(0x95) > DisplayClock::CeilingHz);
         CHECK(DisplayClock::hzFor(0xA5) > DisplayClock::CeilingHz);
     }

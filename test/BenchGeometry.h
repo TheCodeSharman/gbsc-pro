@@ -14,7 +14,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputRaster.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 // The sketch defines this for real; here the test drives it, so the one input
 // that cannot be held still on a board is a constant here.

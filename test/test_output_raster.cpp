@@ -15,7 +15,7 @@ FakeTwoWire Wire;
 #include <cstdio>
 #include <cstring>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputRaster.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 using namespace Tv5725;
 
@@ -23,18 +23,18 @@ TEST_CASE("htotal is the frame clock budget over the frame height, floored")
 {
     // A raster needs horizontalTotal x frameLines x fieldRate hertz, so horizontalTotal floors:
     // rounding up asks the part for a clock above the target.
-    CHECK(OutputRaster::horizontalTotalFor(108000000u, 1126, 50.0f) == 1918);
-    CHECK(OutputRaster::horizontalTotalFor(108000000u, 1126, 60.0f) == 1598);
-    CHECK(OutputRaster::horizontalTotalFor(81000000u, 1126, 50.0f) == 1438);
-    CHECK(OutputRaster::horizontalTotalFor(129600000u, 1126, 50.0f) == 2301);
-    CHECK(OutputRaster::horizontalTotalFor(162000000u, 1126, 50.0f) == 2877);
+    CHECK(OutputMode::horizontalTotalFor(108000000u, 1126, 50.0f) == 1918);
+    CHECK(OutputMode::horizontalTotalFor(108000000u, 1126, 60.0f) == 1598);
+    CHECK(OutputMode::horizontalTotalFor(81000000u, 1126, 50.0f) == 1438);
+    CHECK(OutputMode::horizontalTotalFor(129600000u, 1126, 50.0f) == 2301);
+    CHECK(OutputMode::horizontalTotalFor(162000000u, 1126, 50.0f) == 2877);
 
     SUBCASE("and a raster that will not fit its register is refused") {
         // VDS_HSYNC_RST is twelve bits. Wrapping would roll the picture.
-        CHECK(OutputRaster::horizontalTotalFor(162000000u, 262, 50.0f) == 0);
-        CHECK(OutputRaster::horizontalTotalFor(0u, 1126, 50.0f) == 0);
-        CHECK(OutputRaster::horizontalTotalFor(108000000u, 0, 50.0f) == 0);
-        CHECK(OutputRaster::horizontalTotalFor(108000000u, 1126, 0.0f) == 0);
+        CHECK(OutputMode::horizontalTotalFor(162000000u, 262, 50.0f) == 0);
+        CHECK(OutputMode::horizontalTotalFor(0u, 1126, 50.0f) == 0);
+        CHECK(OutputMode::horizontalTotalFor(108000000u, 0, 50.0f) == 0);
+        CHECK(OutputMode::horizontalTotalFor(108000000u, 1126, 0.0f) == 0);
     }
 }
 
@@ -42,18 +42,18 @@ TEST_CASE("the divider is the largest seed at or under the ceiling")
 {
     // The seed only has to put the Si5351 in range -- the rate is steered to
     // whatever the raster demands afterwards -- so take the most clock available.
-    CHECK(OutputRaster::dividerFor(1126, 50.0f, 129600000u) == 0x95);
-    CHECK(OutputRaster::dividerFor(1126, 50.0f, 108000000u) == 0x85);
-    CHECK(OutputRaster::dividerFor(1126, 50.0f, 162000000u) == 0xA5);
+    CHECK(OutputMode::dividerFor(1126, 50.0f, 129600000u) == 0x95);
+    CHECK(OutputMode::dividerFor(1126, 50.0f, 108000000u) == 0x85);
+    CHECK(OutputMode::dividerFor(1126, 50.0f, 162000000u) == 0xA5);
 
     SUBCASE("and it skips seeds whose htotal would overflow the register") {
         // A short frame at a high clock cannot be expressed, so the seed below it
         // is the answer rather than a wrapped raster.
-        CHECK(OutputRaster::dividerFor(262, 50.0f, 162000000u) != 0xA5);
+        CHECK(OutputMode::dividerFor(262, 50.0f, 162000000u) != 0xA5);
     }
 
     SUBCASE("an unmeasurable field rate yields nothing, not a guess") {
-        CHECK(OutputRaster::dividerFor(1126, 0.0f, 129600000u) == 0);
+        CHECK(OutputMode::dividerFor(1126, 0.0f, 129600000u) == 0);
     }
 }
 
@@ -139,13 +139,13 @@ TEST_CASE("the default ceiling is the highest clock the bench demonstrated")
     // so this is a FLOOR on the true limit rather than the limit -- nothing
     // between 129.6 and 162 has been tried. Not the datasheet's 108 MHz CLKOUT
     // figure, which rates a pad PAD_CKOUT_ENZ disables.
-    CHECK(OutputRaster::WorkingCeilingHz == 129600000u);
+    CHECK(OutputMode::WorkingCeilingHz == 129600000u);
 
     RasterSolution best = Mode1080p.solve(50.0f);
     CHECK(best.horizontalTotal == 2304);
     CHECK(best.verticalTotal == 1125);
     CHECK(best.divider == 0x95);
-    CHECK(best.demandedHz() <= OutputRaster::WorkingCeilingHz);
+    CHECK(best.demandedHz() <= OutputMode::WorkingCeilingHz);
 }
 
 TEST_CASE("a solved raster reports whether it is usable")
@@ -171,12 +171,12 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
     // default framing, and Axis::scaleMin() is derived -- so the argument does
     // not stand on its own terms. 129.6 MHz has been swept by hand and never run
     // through the engine, which is what would settle it.
-    CHECK(OutputRaster::EngineCeilingHz == 108000000u);
+    CHECK(OutputMode::EngineCeilingHz == 108000000u);
 
-    RasterSolution solved = Mode1080p.solve(50.0f, OutputRaster::EngineCeilingHz);
+    RasterSolution solved = Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz);
     CHECK(solved.horizontalTotal == 1920);
     CHECK(solved.verticalTotal == 1125);
-    CHECK(solved.demandedHz() <= OutputRaster::EngineCeilingHz);
+    CHECK(solved.demandedHz() <= OutputMode::EngineCeilingHz);
 
     SUBCASE("which is a third more line than the tables shipped") {
         // pal_1920x1080 ships 1445. The point of computing the raster at all.
@@ -190,12 +190,12 @@ TEST_CASE("a frame height selects the output mode that owns it")
     // than a calculation. Everything else -- the line total, the divider, both
     // sync pulses, the active window -- is derived from it and the measured
     // field rate.
-    CHECK(OutputRaster::modeFor(1125) == &Mode1080p);
-    CHECK(OutputRaster::modeFor(1066) == &Mode1024p);
-    CHECK(OutputRaster::modeFor(1000) == &Mode960p);
-    CHECK(OutputRaster::modeFor(750) == &Mode720p);
-    CHECK(OutputRaster::modeFor(625) == &Mode576p);
-    CHECK(OutputRaster::modeFor(525) == &Mode480p);
+    CHECK(OutputMode::forFrameHeight(1125) == &Mode1080p);
+    CHECK(OutputMode::forFrameHeight(1066) == &Mode1024p);
+    CHECK(OutputMode::forFrameHeight(1000) == &Mode960p);
+    CHECK(OutputMode::forFrameHeight(750) == &Mode720p);
+    CHECK(OutputMode::forFrameHeight(625) == &Mode576p);
+    CHECK(OutputMode::forFrameHeight(525) == &Mode480p);
 
     SUBCASE("and an unknown height selects nothing") {
         // NOT a fallback to 1080p: a height nobody has swept keeps whatever
@@ -203,11 +203,11 @@ TEST_CASE("a frame height selects the output mode that owns it")
         // dropped downscale tables'; 1126 and 751 are the one-line-long totals
         // every shipped table carried, and a build still producing those should
         // find no mode rather than the nearest one.
-        CHECK_FALSE(OutputRaster::modeFor(264));
-        CHECK_FALSE(OutputRaster::modeFor(314));
-        CHECK_FALSE(OutputRaster::modeFor(1126));
-        CHECK_FALSE(OutputRaster::modeFor(751));
-        CHECK_FALSE(OutputRaster::modeFor(0));
+        CHECK_FALSE(OutputMode::forFrameHeight(264));
+        CHECK_FALSE(OutputMode::forFrameHeight(314));
+        CHECK_FALSE(OutputMode::forFrameHeight(1126));
+        CHECK_FALSE(OutputMode::forFrameHeight(751));
+        CHECK_FALSE(OutputMode::forFrameHeight(0));
     }
 }
 
@@ -246,7 +246,7 @@ static void dumpGrid()
                 std::printf("htotal %u %u %.2f %u\n",
                             (unsigned)ceilings[c], (unsigned)heights[h],
                             (double)rates[r],
-                            (unsigned)OutputRaster::horizontalTotalFor(
+                            (unsigned)OutputMode::horizontalTotalFor(
                                 ceilings[c], heights[h], rates[r]));
             }
         }
@@ -257,10 +257,10 @@ TEST_CASE("the output mode comes from the user's preference, not from the chip")
 {
     // The mode arrives explicitly rather than being read back from
     // GBS::VDS_VSYNC_RST, whose only writer is the preset table it replaces.
-    CHECK((OutputRaster::modeForPreference(Output1080P, 50.0f) == &Mode1080p));
-    CHECK((OutputRaster::modeForPreference(Output1024P, 50.0f) == &Mode1024p));
-    CHECK((OutputRaster::modeForPreference(Output960P, 50.0f) == &Mode960p));
-    CHECK((OutputRaster::modeForPreference(Output720P, 50.0f) == &Mode720p));
+    CHECK((OutputMode::forPreference(Output1080P, 50.0f) == &Mode1080p));
+    CHECK((OutputMode::forPreference(Output1024P, 50.0f) == &Mode1024p));
+    CHECK((OutputMode::forPreference(Output960P, 50.0f) == &Mode960p));
+    CHECK((OutputMode::forPreference(Output720P, 50.0f) == &Mode720p));
 }
 
 TEST_CASE("the four resolutions that are one height resolve to it at either rate")
@@ -269,14 +269,14 @@ TEST_CASE("the four resolutions that are one height resolve to it at either rate
     // NTSC tables -- verified in test_output_raster.py against the archive --
     // so the field rate cannot change which mode they select. Only the clock
     // and horizontalTotal move with the rate, inside solve().
-    CHECK((OutputRaster::modeForPreference(Output1080P, 50.0f)
-           == OutputRaster::modeForPreference(Output1080P, 59.94f)));
-    CHECK((OutputRaster::modeForPreference(Output1024P, 50.0f)
-           == OutputRaster::modeForPreference(Output1024P, 59.94f)));
-    CHECK((OutputRaster::modeForPreference(Output960P, 50.0f)
-           == OutputRaster::modeForPreference(Output960P, 59.94f)));
-    CHECK((OutputRaster::modeForPreference(Output720P, 50.0f)
-           == OutputRaster::modeForPreference(Output720P, 59.94f)));
+    CHECK((OutputMode::forPreference(Output1080P, 50.0f)
+           == OutputMode::forPreference(Output1080P, 59.94f)));
+    CHECK((OutputMode::forPreference(Output1024P, 50.0f)
+           == OutputMode::forPreference(Output1024P, 59.94f)));
+    CHECK((OutputMode::forPreference(Output960P, 50.0f)
+           == OutputMode::forPreference(Output960P, 59.94f)));
+    CHECK((OutputMode::forPreference(Output720P, 50.0f)
+           == OutputMode::forPreference(Output720P, 59.94f)));
 }
 
 TEST_CASE("the SD preference is two different resolutions, and the rate picks one")
@@ -286,8 +286,8 @@ TEST_CASE("the SD preference is two different resolutions, and the rate picks on
     // tables ship 526 and 626 where every other mode's pair agrees. So it is the
     // one preference the field rate disambiguates, and it picks a RESOLUTION
     // rather than adjusting a timing. docs/vesa-gtf.md settled the split.
-    CHECK((OutputRaster::modeForPreference(Output480P, 59.94f) == &Mode480p));
-    CHECK((OutputRaster::modeForPreference(Output480P, 50.0f) == &Mode576p));
+    CHECK((OutputMode::forPreference(Output480P, 59.94f) == &Mode480p));
+    CHECK((OutputMode::forPreference(Output480P, 50.0f) == &Mode576p));
 
     CHECK(Mode480p.activeLines() == 480);
     CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back
@@ -298,12 +298,10 @@ TEST_CASE("the SD preference is two different resolutions, and the rate picks on
 TEST_CASE("a preference that is not a resolution resolves to no mode")
 {
     // 0 leaves the caller to fall back rather than silently solving the wrong
-    // raster. 6 was OutputDownscale, which went with the tables on 2026-08-14 --
-    // reachable from the OLED alone, never from the web UI, and its one
-    // assignment site in the sketch was already commented out -- so it is cast
-    // rather than named: the enumerator no longer exists.
-    CHECK((OutputRaster::modeForPreference((PresetPreference)6, 50.0f) == 0));
-    CHECK((OutputRaster::modeForPreference(OutputBypass, 50.0f) == 0));
+    // raster. 6 is cast rather than named because the enumerator no longer
+    // exists: OutputDownscale went with the preset tables.
+    CHECK((OutputMode::forPreference((PresetPreference)6, 50.0f) == 0));
+    CHECK((OutputMode::forPreference(OutputBypass, 50.0f) == 0));
 }
 
 TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
@@ -312,7 +310,7 @@ TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
     // and that file's own frame height is the answer. The caller reads it back,
     // which is the last place that inherits on purpose; it goes when a saved
     // slot records the inputs to the calculation instead of a register dump.
-    CHECK((OutputRaster::modeForPreference(OutputCustomized, 50.0f) == 0));
+    CHECK((OutputMode::forPreference(OutputCustomized, 50.0f) == 0));
 }
 
 int main(int argc, char **argv)

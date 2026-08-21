@@ -150,7 +150,8 @@ output-raster:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_output_raster" \
-	  "$(HERE)/test_output_raster.cpp" src/tv5725/OutputRaster.cpp src/tv5725/DisplayClock.cpp \
+	  "$(HERE)/test_output_raster.cpp" src/tv5725/OutputMode.cpp \
+	  src/tv5725/RasterSolution.cpp src/tv5725/DisplayClock.cpp \
 	  $(CLOCK_SRC)
 	@"$(OUT)/test_output_raster"
 

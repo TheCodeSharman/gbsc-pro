@@ -20,6 +20,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
@@ -72,7 +73,7 @@ static void seedBenchSource()
     g_fieldRate = 50.08f;
 }
 
-static const OutputMode *benchMode() { return OutputRaster::modeFor(1125); }
+static const OutputMode *benchMode() { return OutputMode::forFrameHeight(1125); }
 
 // A stray write lands somewhere nothing below reads, so it moves this and
 // nothing else. Reading every field but counting none would miss it.

@@ -1,10 +1,10 @@
 #ifndef _USER_H_
-#include "src/tv5725/OutputRaster.h"
+#include "src/tv5725/OutputMode.h"
 
 using Ascii8 = uint8_t;
 
 /// Output resolution requested by user, *given to* applyPresets(). Defined by
-/// OutputRaster, which is the one thing that resolves a preference to a raster,
+/// OutputMode, which is the one thing that resolves a preference to a raster,
 /// and re-exported here because the sketch names it unqualified. An enumerator
 /// added there and not listed here fails at its first use site rather than
 /// silently reading as a different value.
@@ -89,7 +89,7 @@ struct userOptions
 };
 
 
-// Declared in src/tv5725/OutputRaster.h, forward-declared here so runTimeOptions
+// Declared in src/tv5725/OutputMode.h, forward-declared here so runTimeOptions
 // can hold one without this header pulling the raster arithmetic in.
 namespace Tv5725 { class OutputMode; }
 

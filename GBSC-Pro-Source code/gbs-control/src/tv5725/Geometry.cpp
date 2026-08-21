@@ -6,6 +6,7 @@
 #include "InputFormatter.h"
 #include "Memory.h"
 #include "MemoryMap.h"
+#include "OutputMode.h"
 #include "SyncProcessor.h"
 
 namespace Tv5725 {
@@ -84,7 +85,7 @@ bool Geometry::solveRaster()
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.
     RasterSolution raster = mode->solve(sampling_.fieldRateHz(),
-                                        OutputRaster::EngineCeilingHz);
+                                        OutputMode::EngineCeilingHz);
     if (!raster.usable()) {
         // Refused, not deferred: the frame height and the rate are settled, so
         // waiting produces the same answer at the cost of a measurement a pass.

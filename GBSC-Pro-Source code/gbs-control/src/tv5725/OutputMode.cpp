@@ -1,4 +1,6 @@
-#include "OutputRaster.h"
+#include "OutputMode.h"
+
+#include "DisplayClock.h"
 
 #include <math.h>
 
@@ -6,35 +8,12 @@
 
 namespace Tv5725 {
 
-const uint32_t OutputRaster::WorkingCeilingHz;
-const uint32_t OutputRaster::EngineCeilingHz;
-const uint16_t OutputRaster::HorizontalTotalMax;
-const uint16_t OutputRaster::VerticalTotalMax;
-const uint16_t OutputRaster::PalNtscSplitHz;
+const uint32_t OutputMode::WorkingCeilingHz;
+const uint32_t OutputMode::EngineCeilingHz;
+const uint16_t OutputMode::HorizontalTotalMax;
+const uint16_t OutputMode::VerticalTotalMax;
 
-RasterSolution::RasterSolution()
-    : horizontalTotal(0), verticalTotal(0), divider(0), hsyncStart(0), hsyncStop(0),
-      vsyncStart(0), vsyncStop(0), activeStart(0), activeLinesStart(0),
-      activeStop(0), activeLinesStop(0), fieldRate(0.0f) {}
-
-bool RasterSolution::usable() const
-{
-    return horizontalTotal != 0 && verticalTotal != 0 && divider != 0 && fieldRate > 0.0f;
-}
-
-uint32_t RasterSolution::demandedHz() const
-{
-    if (!usable())
-        return 0;
-    return (uint32_t)((float)horizontalTotal * (float)verticalTotal * fieldRate);
-}
-
-uint16_t RasterSolution::activeWidth() const
-{
-    return activeStart >= activeStop ? 0 : (uint16_t)(activeStop - activeStart);
-}
-
-uint16_t OutputRaster::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
+uint16_t OutputMode::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
                                  float fieldRateHz)
 {
     if (hz == 0 || frameLines == 0 || fieldRateHz <= 0.0f)
@@ -57,7 +36,7 @@ uint16_t OutputRaster::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
     return (uint16_t)horizontalTotal;
 }
 
-uint8_t OutputRaster::dividerFor(uint16_t frameLines, float fieldRateHz,
+uint8_t OutputMode::dividerFor(uint16_t frameLines, float fieldRateHz,
                                  uint32_t ceilingHz)
 {
     uint8_t best = 0;
@@ -78,7 +57,9 @@ uint8_t OutputRaster::dividerFor(uint16_t frameLines, float fieldRateHz,
     return best;
 }
 
-const OutputMode *OutputRaster::modeForPreference(PresetPreference presetPreference,
+const uint16_t OutputMode::PalNtscSplitHz;
+
+const OutputMode *OutputMode::forPreference(PresetPreference presetPreference,
                                                   float fieldRateHz)
 {
     if (presetPreference == Output1080P)
@@ -100,7 +81,7 @@ const OutputMode *OutputRaster::modeForPreference(PresetPreference presetPrefere
     return 0;
 }
 
-const OutputMode *OutputRaster::modeFor(uint16_t frameLines)
+const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
 {
     if (frameLines == Mode1080p.frameLines())
         return &Mode1080p;
@@ -135,12 +116,12 @@ RasterSolution OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 {
     RasterSolution solved;
 
-    uint8_t divider = OutputRaster::dividerFor(frameLines(), fieldRateHz,
+    uint8_t divider = OutputMode::dividerFor(frameLines(), fieldRateHz,
                                                ceilingHz);
     if (divider == 0)
         return solved;
 
-    uint16_t horizontalTotal = OutputRaster::horizontalTotalFor(DisplayClock::hzFor(divider),
+    uint16_t horizontalTotal = OutputMode::horizontalTotalFor(DisplayClock::hzFor(divider),
                                               frameLines(), fieldRateHz);
     if (horizontalTotal == 0)
         return solved;

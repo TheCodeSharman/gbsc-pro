@@ -18,7 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputRaster.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 using namespace Tv5725;
 

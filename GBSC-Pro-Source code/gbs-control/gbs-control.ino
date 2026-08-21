@@ -62,7 +62,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/InputFormatter.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/DisplayClock.h"
-#include "src/tv5725/OutputRaster.h"
+#include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
@@ -3091,7 +3091,7 @@ uint32_t getPllRate()
 //   - OutputCustomized: the saved preset's bytes ARE the mode, so the read-back
 //     is correct there. It goes when a slot records the inputs to the
 //     calculation rather than a register dump.
-//   - OutputBypass: no scaled raster to solve, and OutputRaster::modeFor() finds none.
+//   - OutputBypass: no scaled raster to solve, and OutputMode::forFrameHeight() finds none.
 //
 // THE FIELD RATE IS MEASURED HERE, NOT INSIDE THE ENGINE. It disambiguates one
 // preference -- Output480P is 480 active lines at 60 Hz and 576 at 50, two
@@ -3108,7 +3108,7 @@ static const Tv5725::OutputMode *outputModeForThisLoad()
     // The last thing that inherits: a custom preset, whose saved bytes ARE the
     // mode, and bypass, which has no scaled raster. Goes when a slot records the
     // inputs to the calculation rather than a register dump.
-    return Tv5725::OutputRaster::modeFor(GBS::VDS_VSYNC_RST::read() + 1);
+    return Tv5725::OutputMode::forFrameHeight(GBS::VDS_VSYNC_RST::read() + 1);
 }
 
 // The output resolution a load is for, from the user's preference and the source
@@ -3138,7 +3138,7 @@ static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
         }
     }
 
-    return Tv5725::OutputRaster::modeForPreference(preference,
+    return Tv5725::OutputMode::forPreference(preference,
                                                    pal ? 50.0f : 60.0f);
 }
 
