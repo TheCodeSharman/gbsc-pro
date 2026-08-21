@@ -126,6 +126,71 @@ upstream has, and fifty of those fifty-one are our own edits to
 `gbs-control.ino`. Upstream provenance matters when sending patches out, not
 when advancing `main`.
 
+## Executing a bulk squash
+
+**The proof is the TREE, not the tests.** A rewrite that loses a file still
+builds, still passes every suite, and still produces a working binary — the
+stale file simply sits there unreferenced. The only check that catches it:
+
+```sh
+git tag pre-squash <dev>
+...rewrite onto a scratch branch...
+git diff pre-squash squash        # must be EMPTY
+```
+
+An empty diff is the whole guarantee. Run it before moving `dev`, and treat a
+green test run with a non-empty diff as a failed rewrite.
+
+**The one-kind rule constrains the grouping, and it costs commits.** Folding a
+subsystem change together with its test, its Python coverage and its `docs/`
+page reads best and is exactly what `## The rules` forbids. Measured over one
+227-commit pass:
+
+    227  before
+    113  one kind per commit, strictly
+     78  firmware separated, tools+docs+project folded per theme
+     50  thematic, kinds mixed
+
+The middle row is the one that satisfies the rule: split each thematic group
+into a firmware half (`GBSC-Pro-Source code/`, `test/`) and everything else, so
+no firmware commit ever carries a Python test or a doc page and stays liftable
+on its own. Splitting is per PATH, not per commit — one original commit
+routinely changes a class and its doc together.
+
+**Reordering is bounded by shared files.** A commit editing `Geometry.cpp`
+cannot move past twenty others editing `Geometry.cpp`, so a group whose members
+are separated by such a commit stays separated. Check before planning a move —
+a fragment is free to merge only when every commit in the gap touches a disjoint
+set of files. On the same pass, 20 of 32 fragment merges were free and 12 were
+blocked; taking the 12 would have meant hand-resolving conflicts on the busiest
+files in the tree, which is where a resolution silently pulls later work into an
+earlier commit.
+
+### Two traps that make a rewrite lose files silently
+
+**`git diff --cached --name-only` collapses a rename to the new path alone.**
+Staging per-path from that list drops the deletion side of every rename, so the
+old file survives into the rewrite: seven files did on one pass, and the build,
+the host suites and the binary size were all unchanged with them present. Pass
+`--no-renames` wherever a path list drives staging.
+
+**Generate the input list from a tag, never from `HEAD`.** Building it while the
+scratch branch is checked out writes the partly-rewritten log into the list that
+drives the rewrite. Anchor every range on the tag taken before starting.
+
+### Afterwards
+
+```sh
+git diff pre-squash dev                  # empty, or stop
+git push --force-with-lease origin dev
+git tag -d pre-squash                    # or the graph shows two histories
+git for-each-ref 'refs/original/**'      # must be empty
+```
+
+The old commits stay in the reflog for 90 days, so the tag is not the only way
+back — and leaving it is worse than losing it, because a reviewer opening the
+stale line reviews commits that no longer exist.
+
 ## The review round
 
 `main` is advanced one reviewed chunk at a time. Per round:
