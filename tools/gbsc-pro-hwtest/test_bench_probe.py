@@ -83,3 +83,37 @@ def test_a_dropped_read_is_reported_rather_than_guessed():
                               lambda segment, register, value: True)
 
     assert probe.read_field(SPEC) is None
+
+
+def test_a_write_that_could_not_happen_is_reported_rather_than_silent():
+    """The read half of a read-modify-write failing means the field was never
+    written, and returning quietly makes that indistinguishable from a write
+    that landed and did nothing.
+
+    That is not hypothetical: a bench script set PLLAD_CKOS, saw no change, and
+    recorded "this field has no effect" from a write that never happened. The
+    same field, written with the failure made loud, holds the screen green.
+    """
+    probe = bench_probe.Probe(lambda segment, register: None,
+                              lambda segment, register, value: True)
+
+    with pytest.raises(bench_probe.WriteFailed):
+        probe.write_field(SPEC, 0x123)
+
+
+def test_a_field_left_half_written_is_reported():
+    """A 12-bit field spans two registers. If the second write fails the field
+    holds neither the old value nor the new one, and that is worse than either.
+    """
+    unit = FakeUnit({(3, 0x11): 0xAF, (3, 0x12): 0x5C})
+    written = []
+
+    def failing_write(segment, register, value):
+        written.append(register)
+        return register == 0x11          # the first byte lands, the second does not
+
+    probe = bench_probe.Probe(unit.read, failing_write)
+
+    with pytest.raises(bench_probe.WriteFailed, match="half set"):
+        probe.write_field(SPEC, 0x123)
+    assert written == [0x11, 0x12], f"stopped at the wrong point: {written}"

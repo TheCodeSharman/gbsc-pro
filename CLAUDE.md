@@ -429,6 +429,24 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   register self-consistent, nothing to diagnose from. **Whatever writes
   `PLLAD_MD` must run before the latch, not after it.**
 
+  **A solid green screen has a SECOND cause, and it is not the divider.**
+  `PLLAD_CKOS` selects which tap of the ADC clock feeds the pipeline, and the
+  decimators (`ADC_CLK_ICLK1X`, `ADC_CLK_ICLK2X`, `DEC1_BYPS`, `DEC2_BYPS`) undo
+  in the digital domain what that tap added — so the two have to describe the
+  same oversampling ratio. `Adc::applySampleRate()` writes all five together for
+  that reason. Set `PLLAD_CKOS` to 2 against the decimators the firmware runs at
+  oversample 4 and the screen is green and stays green: measured at +2 s and
+  still green at +20 s, cleared by putting it back. Throughout it,
+  `PLLAD_MD`, `IF_HSYNC_RST`, `SP_RT_HS_SP`, `HPERIOD_IF`, `SP_VTOTAL`,
+  `STATUS_MISC_PLLAD_LOCK` and `STATUS_IF_HT_BAD` all read exactly what a healthy
+  unit reads. **There is nothing in a register dump that distinguishes it**, and a
+  detection pass is what repairs it, because that is what rewrites the group.
+
+  Two traps come with it. The picture is the only instrument, so a still that
+  misses it and a still that catches it look like the write not working — record
+  a clip. And `HPERIOD_IF` stays perfectly healthy while the screen is green, so
+  this is not the railing and the two must not be merged.
+
   `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP` (= 93% of `MD`, the
   sync processor's retime window) are **ONE quantity in THREE registers**, and
   `Tv5725::SourceMeasurement` owns all three off one held value. It is *state*,

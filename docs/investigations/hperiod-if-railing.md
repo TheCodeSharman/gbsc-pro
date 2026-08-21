@@ -196,6 +196,44 @@ twelve `SFTRST_*_RSTZ` held low together rather than pulsed one at a time. If on
 of them clears it, the firmware gains a recovery for a state that currently needs
 someone to pull the plug.
 
+## What does not reproduce it
+
+Fourteen attempts on a parked source, none of which railed it. Recorded because
+each one is a hypothesis somebody would otherwise spend an evening on, and
+because the negative result is what says the state is not a deterministic
+consequence of the obvious causes.
+
+Five held states, each applied frozen, held, then unfrozen and re-detected:
+
+| held | hold |
+|---|---|
+| `PLLAD_CKOS` against the decimators the firmware runs | 15 s |
+| the same | 90 s |
+| `PLLAD_KS` and `PLLAD_CKOS` both off-nominal | 45 s |
+| parked at an unlocked VCO -- `KS` 2, `PLLAD_MD` 1600, 100 MHz | 45 s |
+| unlocked VCO with the clock chain mismatched too | 90 s |
+
+Then the walk that preceded it, replayed three times: the same hand-written
+divider script, killed at the same point, leaving the unit frozen on a divider
+it did not choose, unfrozen by hand after 90 s and re-detected. Then the
+firmware's own `SamplingLog` divider sweep -- `PLLAD_MD` 1000..2900, which drives
+`Adc::applySampleRate()` so the whole clock group moves together -- six times.
+
+All fourteen came back healthy.
+
+Two things fall out of this beyond the negative. **A held mismatch of the ADC
+clock chain greens the screen without touching the measurement**: the trials
+above ran with the picture green and `HPERIOD_IF` reading 431 throughout, so the
+green screen and the railing are separate faults and a session that finds one
+should not assume the other. And **parking at an unlocked VCO for 45 s does not
+disturb the measurement either**, which is the same conclusion the divider walk
+reaches by a different route.
+
+So the trigger is still unknown, and it is not any of: a mismatched clock chain,
+an off-nominal post divider, an unlocked PLL, a divider left where the firmware
+did not put it, being unfrozen onto a wrong divider, or repeated divider changes
+through either the hand path or the firmware path.
+
 ## `STATUS_IF_HT_BAD` says when not to believe the value
 
 It reads a constant 0 across a survey of six healthy states, which is what got it
