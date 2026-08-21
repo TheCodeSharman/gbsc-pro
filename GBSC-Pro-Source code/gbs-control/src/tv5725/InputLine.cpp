@@ -37,13 +37,11 @@ uint16_t InputLine::firstCapture() const { return syncUnits_; }
 
 uint16_t InputLine::lastCapture() const
 {
-    // The capture STOP may never reach `units`, only units - 1. That value is
-    // the wrap point -- IF_VB_ST rolls at 2 x (VTOTAL + 1) and IF_HB_ST2 at
-    // IF_HSYNC_RST + 1 -- and a window written onto it does not clamp, it
-    // rolls, which reads as the picture jumping rather than as a capture fault.
-    // geometry_math.py is the reference and has always had it, as `wrap_at - 1`
-    // in scale_step() and pan_capture() alike.
-    return units_ == 0 ? 0 : units_ - 1;
+    // Neither of the last two units is a capture stop. `units` is the wrap
+    // point, and a window written onto it rolls rather than clamping;
+    // units - 1 is the line reset value, where the input formatter stops
+    // producing pixels at all. docs/scaler-geometry-model.md
+    return units_ < 2 ? 0 : units_ - 2;
 }
 
 uint16_t InputLine::capturable() const

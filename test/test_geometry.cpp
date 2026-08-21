@@ -304,6 +304,12 @@ TEST_CASE("the framing is held as state and the window is derived")
         }
     }
 
+    SUBCASE("the capture stop never lands on the line reset itself") {
+        for (int16_t p : {+5000, +600, +132}) {
+            CHECK(PanAndZoom(0, 0, p, 0).capture(InputLine(1265), 50.0f, false, 0).st() <= 1263);
+        }
+    }
+
     SUBCASE("a zoom out never runs past the line") {
         CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(InputLine(1277), 50.0f, false, 0);
         CHECK(huge.st() <= 1277);
@@ -402,7 +408,7 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         PanAndZoom f;
         f.panBy(200, 0);                       // one accelerated press, way past
         f.clampToLine(InputLine(Units), Rate, false, 0);
-        CHECK(f.panH() == 133);
+        CHECK(f.panH() == 132);
     }
 
     SUBCASE("and one unit back then actually moves the window") {
@@ -521,9 +527,9 @@ TEST_CASE("the capture window never takes the hsync pulse")
         CHECK(huge.sp() >= Bench.syncUnits());
     }
 
-    SUBCASE("and takes the whole tail, because nothing there is derivable") {
+    SUBCASE("and takes the tail down to the line reset, which it may not have") {
         CaptureWindow huge = PanAndZoom(-5000, 0, 0, 0).capture(Bench, Rate, false, 0);
-        CHECK(huge.st() == BenchUnits - 1);
+        CHECK(huge.st() == BenchUnits - 2);
     }
 
     SUBCASE("panning to the left stop cannot walk into the sync") {
@@ -531,9 +537,9 @@ TEST_CASE("the capture window never takes the hsync pulse")
         CHECK(left.sp() >= Bench.syncUnits());
     }
 
-    SUBCASE("panning to the right stop still reaches the end of the line") {
+    SUBCASE("panning to the right stop reaches the last unit before the reset") {
         CaptureWindow right = PanAndZoom(0, 0, +5000, 0).capture(Bench, Rate, false, 0);
-        CHECK(right.st() == BenchUnits - 1);
+        CHECK(right.st() == BenchUnits - 2);
     }
 
     SUBCASE("the resting picture is untouched") {
@@ -581,7 +587,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
     SUBCASE("a line with nothing measured keeps all of itself") {
         CHECK(InputLine(1277).syncUnits() == 0);
         CHECK(InputLine(1277).firstCapture() == 0);
-        CHECK(InputLine(1277).lastCapture() == 1276);
+        CHECK(InputLine(1277).lastCapture() == 1275);
     }
 }
 
