@@ -12,9 +12,10 @@ they are about how many round trips a read costs and what it decodes to — neve
 about which URL was built.
 """
 
+import json
 import math
+import urllib.parse
 
-import geometry_math as gm
 import regpanel
 
 
@@ -183,170 +184,69 @@ class RecordingPanel:
         return regpanel.read_fields(self.fetch, regpanel.GEOMETRY_FIELDS)[name]
 
 
-def test_scaling_moves_the_capture_so_more_source_comes_into_view(monkeypatch):
-    """This asserted the opposite until 2026-08-06 -- that the capture was the
-    user's and a scale step must not touch it. That is exactly what stopped the
-    control from ever revealing more of the source, so the capture now takes the
-    step and the picture keeps its size."""
-    panel = RecordingPanel(monkeypatch, a_geometry_device())
-    regpanel.rescale(dh=-8, dv=0)
+class RecordingEngine:
+    """regpanel wired to a fake /geometry.
 
-    assert "IF_HB_SP2" in panel.wrote and "IF_HB_ST2" in panel.wrote
-    capture = panel.final("IF_HB_ST2") - panel.final("IF_HB_SP2")
-    _, full = gm.fit_to_raster(capture, 1445, gm.AXIS_H)
-    after = capture * 1024 / panel.final("VDS_HSCALE")
-    assert abs(after - full) < 1, "the picture must fill the raster, not inherit"
-
-
-def test_at_the_ceiling_scaling_zooms_the_capture_instead(monkeypatch):
-    """798 units fill the 1424 px window at HSCALE 574, so a further zoom has to
-    come out of the capture or `produced` overruns the window."""
-    panel = RecordingPanel(monkeypatch, a_geometry_device(hscale=574))
-    regpanel.rescale(dh=-8, dv=0)
-
-    assert panel.wrote["IF_HB_ST2"] - panel.wrote["IF_HB_SP2"] < 798
-    produced = ((panel.wrote["IF_HB_ST2"] - panel.wrote["IF_HB_SP2"])
-                * 1024 / panel.wrote["VDS_HSCALE"])
-    assert produced <= 1424, "the zoom overran the memory window"
-
-
-def test_an_aperture_cropping_the_picture_is_opened_to_fit(monkeypatch):
-    """The bench fault, vertically: a 676-line aperture on a ~786-line picture.
-    It letterboxed the top and bottom AND made the scale control look dead,
-    because changing VSCALE only changed how much got thrown away."""
-    panel = RecordingPanel(monkeypatch,
-                           a_geometry_device(vscale=685, dis_v=676))
-    regpanel.rescale(dh=0, dv=-40)
-
-    produced = gm.produced_px(panel.final("IF_VB_ST") - panel.final("IF_VB_SP"),
-                              panel.final("VDS_VSCALE"), axis=gm.AXIS_V)
-    height = panel.final("VDS_DIS_VB_ST") - panel.final("VDS_DIS_VB_SP")
-    assert height > 676, "still letterboxed"
-    assert produced - gm.AXIS_V.margin - 1 <= height <= produced, (
-        f"aperture {height} against a {produced:.1f} line picture")
-
-
-def test_an_aperture_past_the_end_of_the_picture_is_pulled_in(monkeypatch):
-    """The same fault horizontally and the other way up: a 1262 px aperture on
-    a 1176 px picture showed 86 px of unwritten memory as garbage down the
-    right-hand side."""
-    panel = RecordingPanel(monkeypatch,
-                           a_geometry_device(hscale=695, dis_h=1262))
-    regpanel.rescale(dh=-8, dv=0)
-
-    produced = gm.produced_px(panel.final("IF_HB_ST2") - panel.final("IF_HB_SP2"),
-                              panel.final("VDS_HSCALE"), axis=gm.AXIS_H)
-    width = panel.final("VDS_DIS_HB_ST") - panel.final("VDS_DIS_HB_SP")
-    assert produced - gm.AXIS_H.margin - 1 <= width <= produced, (
-        f"aperture {width} against a {produced:.1f} px picture")
-
-
-def test_panning_recomputes_the_display_window_too(monkeypatch):
-    """Pan and scale are the only controls, so between them they have to leave
-    the display window right. Panning does not change how big the picture is,
-    but it must not leave a stale window standing either."""
-    panel = RecordingPanel(monkeypatch,
-                           a_geometry_device(vscale=685, dis_v=676))
-
-    regpanel.pan(0, 4)
-
-    produced = gm.produced_px(panel.final("IF_VB_ST") - panel.final("IF_VB_SP"),
-                              panel.final("VDS_VSCALE"), axis=gm.AXIS_V)
-    height = panel.final("VDS_DIS_VB_ST") - panel.final("VDS_DIS_VB_SP")
-    top, bottom = panel.final("VDS_DIS_VB_SP"), panel.final("VDS_DIS_VB_ST")
-    assert abs((1125 - bottom) - top) <= gm.AXIS_V.margin + 1, "centred"
-    assert produced - gm.AXIS_V.margin - 1 <= height <= produced
-
-
-# --- the display window against where the scaler actually starts --------------
-
-
-def test_the_display_window_never_starts_before_the_scaler_does(monkeypatch):
-    """Tonight's bench fault, as a test.
-
-    The panel pinned the picture's corner to a constant 129 while the source sat
-    at x3.2, where the scaler does not start writing until VDS_HB_SP + 135. The
-    leftmost ~41 px of the display window were therefore frame buffer nobody had
-    written this frame -- frozen scratch, with every register reading exactly
-    what it had been asked for.
+    Pan and zoom go to the ENGINE now, so what a press does is the request it
+    makes -- not the registers it writes. The panel no longer solves anything,
+    which is why the placement tests that used to live here are gone: that
+    behaviour is the firmware's, and test_geometry.cpp and the pad tests own it.
     """
-    panel = RecordingPanel(monkeypatch,
-                           a_geometry_device(hscale=320, capture_h=200))
 
-    regpanel.pan(4, 0)
+    def __init__(self, monkeypatch, held):
+        self.held = dict(held)
+        self.asked = []
+        monkeypatch.setattr(regpanel, "_get", self._get)
+        monkeypatch.setattr(regpanel.time, "sleep", lambda _: None)
 
-    # The scale the PANEL solved, not the one the device came up with. Nothing
-    # is inherited -- resolve_output refits from the capture -- so an expectation
-    # built on the device's stale 320 is measuring a magnification the panel
-    # never used. Its sibling below has always read it this way.
-    # The scale the PANEL solved, not the one the device came up with. Nothing
-    # is inherited -- resolve_output refits from the capture -- so an expectation
-    # built on the device's stale 320 is measuring a magnification the panel
-    # never used. Its sibling below has always read it this way.
-    scale = panel.final("VDS_HSCALE")
-    write_start = (panel.final("VDS_HB_SP")
-                   + gm.AXIS_H.origin_offset(1024 / scale))
-
-    # WHOLE PIXELS. VDS_HB_SP is rounded and the write start is fractional, so
-    # the two can disagree by up to half a pixel in either direction -- 518
-    # against 518.2 at scale 500. Sub-pixel cannot expose scratch and the fault
-    # this guards against is 41 px, so comparing the pixel each lands in keeps
-    # every bit of the guard that does work.
-    assert panel.final("VDS_DIS_HB_SP") >= math.floor(write_start)
+    def _get(self, path, timeout=5):
+        if path == "/geometry":
+            return json.dumps(self.held)
+        if path.startswith("/geometry?"):
+            wanted = {name: int(value) for name, value in
+                      urllib.parse.parse_qsl(path.split("?", 1)[1])}
+            self.asked.append(wanted)
+            self.held.update(wanted)
+            return json.dumps(self.held)
+        raise AssertionError(f"unexpected request {path}")
 
 
-def test_the_display_window_never_ends_after_the_scaler_stops(monkeypatch):
-    """The same fault at the other edge, which is where it was first seen: a band
-    of unwritten memory down the right of the screen."""
-    panel = RecordingPanel(monkeypatch,
-                           a_geometry_device(hscale=320, capture_h=200))
+def test_a_pan_press_asks_the_engine_rather_than_writing_registers(monkeypatch):
+    engine = RecordingEngine(monkeypatch, {"zh": 0, "zv": 0, "ph": 0, "pv": 0})
 
-    regpanel.pan(4, 0)
+    assert regpanel.pan(4, -2)["ok"]
 
-    scale = panel.final("VDS_HSCALE")
-    write_start = (panel.final("VDS_HB_SP")
-                   + gm.AXIS_H.origin_offset(1024 / scale))
-    produced = gm.produced_px(panel.final("IF_HB_ST2") - panel.final("IF_HB_SP2"),
-                              scale, axis=gm.AXIS_H)
-    assert panel.final("VDS_DIS_HB_ST") <= write_start + produced
+    assert engine.asked == [{"zh": 0, "zv": 0, "ph": 4, "pv": -2}]
 
 
-def test_the_picture_stays_centred_when_the_scale_changes(monkeypatch):
-    """Scaling grows the picture about its middle rather than its left edge, so
-    the user sees it expand toward both edges and can find whichever one their
-    own panel cuts off. That is the point of centring: the scaler cannot know
-    where this TV stops showing, so it gets out of the way and lets pan and scale
-    find it."""
-    for hscale in (900, 660):
-        panel = RecordingPanel(monkeypatch, a_geometry_device(hscale=hscale))
-        regpanel.pan(4, 0)
+def test_a_zoom_press_is_negated_into_the_engines_sense(monkeypatch):
+    """**THE SIGN FLIPS.** These pads send a NEGATIVE delta to crop in, where the
+    engine's zoom is POSITIVE to crop in. Getting it backwards puts the zoom pads
+    the wrong way round, which the picture shows and nothing else would."""
+    engine = RecordingEngine(monkeypatch, {"zh": 0, "zv": 0, "ph": 0, "pv": 0})
 
-        left = panel.final("VDS_DIS_HB_SP")
-        right = panel.final("VDS_DIS_HB_ST")
-        assert abs((1445 - right) - left) <= gm.AXIS_H.margin + 1, (
-            f"HSCALE {hscale}: {left} left, {1445 - right} right")
+    assert regpanel.rescale(-6, 3)["ok"]
+
+    assert engine.asked == [{"zh": 6, "zv": -3, "ph": 0, "pv": 0}]
 
 
-def test_any_pad_press_puts_the_picture_back_to_full_size(monkeypatch):
-    """The starting state is CALCULATED, never inherited from the registers.
+def test_a_press_accumulates_on_the_framing_the_engine_holds(monkeypatch):
+    """Read what the engine holds, add the delta, hand it back. The panel keeps
+    no framing of its own -- one owner, and it is not this one."""
+    engine = RecordingEngine(monkeypatch, {"zh": 10, "zv": 0, "ph": 5, "pv": 0})
 
-    A pan does it too, not just a zoom. Whatever the registers happen to hold
-    -- a picture left small by an experiment, a scale someone typed in -- the
-    next press computes the state rather than inheriting it.
-    """
-    panel = RecordingPanel(monkeypatch,
-                           a_geometry_device(hscale=1023, vscale=1023))
+    regpanel.pan(3, 0)
 
-    regpanel.pan(4, 0)
-
-    capture = panel.final("IF_HB_ST2") - panel.final("IF_HB_SP2")
-    scale, full = gm.fit_to_raster(capture, 1445, gm.AXIS_H)
-    assert panel.final("VDS_HSCALE") == scale, "the scale must be recomputed"
-    width = panel.final("VDS_DIS_HB_ST") - panel.final("VDS_DIS_HB_SP")
-    assert full - gm.AXIS_H.margin - 1 <= width <= full
+    assert engine.asked[-1] == {"zh": 10, "zv": 0, "ph": 8, "pv": 0}
 
 
-# --- every register is reachable without searching for it ---------------------
+def test_a_press_that_asks_for_nothing_does_not_reach_the_engine(monkeypatch):
+    engine = RecordingEngine(monkeypatch, {"zh": 0, "zv": 0, "ph": 0, "pv": 0})
+
+    assert not regpanel.pan(0, 0)["ok"]
+    assert not regpanel.rescale(0, 0)["ok"]
+
+    assert engine.asked == []
 
 
 def section_fields():

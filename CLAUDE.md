@@ -755,6 +755,28 @@ config registers, `snapdiff.py` writes all 1536. Diff like against like.
 `geometry.py --host <ip>` prints the input side, output side, and where the three
 horizontal extents disagree — the fastest read on why a picture is wrong.
 
+**NEVER hand-write a field's segment/register/offset/width. Look it up by
+NAME.** `tools/gbsc-pro-hwtest/tv5725_registers.json` holds all 956 of them and
+is the same map `snapdiff.py` and `setfield.py` decode with:
+
+```python
+import json, gbs_unit
+field = json.load(open("tools/gbsc-pro-hwtest/tv5725_registers.json"))["STATUS_SYNC_PROC_VTOTAL"]
+gbs_unit.read_field(host, field["seg"], field["reg"], field["off"], field["width"])
+```
+
+`setfield.py --set NAME=VALUE` writes by name, read-modify-write, so a field
+sharing a byte with its neighbour does not destroy it. `dump_registers.py` reads
+everything in one pass.
+
+**A wrong address does not error, it returns a plausible number**, which is what
+makes this expensive rather than merely tedious: four invented addresses read as
+`SP_VTOTAL` 71 steady, `HTOTAL` 2723 against a 2250 divider and an 88% sync
+duty — every one a textbook no-lock signature, diagnosed as a dead source, while
+the picture on the screen was perfect. Read by name and the same registers give
+311, 2250 and 7.1%. **If a status read disagrees with what the screen is doing,
+check the addresses before believing the registers.**
+
 ### The shape of an eye-in-the-loop measurement
 
 Where the picture is the only instrument, the tool is a **jog the user drives**,

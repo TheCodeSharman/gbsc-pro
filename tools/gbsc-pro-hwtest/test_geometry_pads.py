@@ -2,11 +2,15 @@
 
 The firmware is the implementation. These tests assert the properties its
 geometry has to hold -- the windows hug the picture, the picture fills the
-raster, nothing is inherited -- by recomputing them from the capture and the
-raster the unit actually holds after a press. geometry_math is used only as a
-convenient calculator for that arithmetic; it is scratch tooling, not a
-specification, and a disagreement between it and the firmware is not by itself
-a firmware fault.
+raster, nothing is inherited -- against the capture and the raster the unit
+actually holds after a press.
+
+**NOTHING HERE RE-IMPLEMENTS THE SOLVE.** A second implementation in Python is
+not a specification: it goes stale against the firmware, and every disagreement
+then reads as a firmware fault when it is a maintenance failure in the copy.
+What these assert are RELATIONSHIPS the firmware's own output must satisfy --
+one register against another, and against the measured
+`produced = capture x 1024 / scale`.
 
 Needs --source, and needs a source the unit is SCALING. In RGBHV bypass the VDS
 is out of the video path and there is no geometry to solve, so these skip rather
@@ -24,6 +28,7 @@ consecutive reads agree, so the comparison is against a state that has stopped
 moving rather than one caught mid-write.
 """
 
+import collections
 import math
 import os
 import re
@@ -35,7 +40,6 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-import geometry_math as gm
 from gbs_unit import (field_from, get, get_json, read_field, read_reg, read_segment,
                       wait_for, write_reg)
 
@@ -96,9 +100,24 @@ def units_for(pixels, scale_reg, granularity=HORIZONTAL_GRANULE):
     units = granules * granularity
     return -units if pixels < 0 else units
 
-SOLVED_REGISTERS = ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST",
-                    "VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST",
-                    "VDS_HSCALE", "VDS_VSCALE")
+# Scale::Unity, and the two axes' constructor arguments from
+# src/tv5725/Axis.cpp. These are BOUNDS the firmware's output must respect --
+# nothing here recomputes where the picture lands, which is the part that goes
+# stale.
+SCALE_UNITY = 1024
+
+OutputAxis = collections.namedtuple(
+    "OutputAxis",
+    "name capture_sp capture_st window_sp window_st display_sp display_st "
+    "scale raster_rst margin window_sp_min")
+
+AXIS_HORIZONTAL = OutputAxis(
+    "horizontal", "IF_HB_SP2", "IF_HB_ST2", "VDS_HB_SP", "VDS_HB_ST",
+    "VDS_DIS_HB_SP", "VDS_DIS_HB_ST", "VDS_HSCALE", "VDS_HSYNC_RST", 2, 8)
+AXIS_VERTICAL = OutputAxis(
+    "vertical", "IF_VB_SP", "IF_VB_ST", "VDS_VB_SP", "VDS_VB_ST",
+    "VDS_DIS_VB_SP", "VDS_DIS_VB_ST", "VDS_VSCALE", "VDS_VSYNC_RST", 3, 0)
+OUTPUT_AXES = (AXIS_HORIZONTAL, AXIS_VERTICAL)
 
 
 def framing(host):
@@ -182,29 +201,6 @@ def read_geometry(host, attempts=3):
     return None
 
 
-def predict(state):
-    """The ten output registers implied by the capture the unit actually holds.
-
-    Re-derived from the capture read back AFTER the press, not from what we
-    asked for: the property under test is that the windows follow the capture
-    and the raster, and reading it back stops a firmware that ignored the press
-    from passing by accident. That a press moves the capture at all is asserted
-    separately.
-    """
-    line_px = state["VDS_HSYNC_RST"] + 1
-    frame_lines = state["VDS_VSYNC_RST"] + 1
-    capture_h = state["IF_HB_ST2"] - state["IF_HB_SP2"]
-    capture_v = state["IF_VB_ST"] - state["IF_VB_SP"]
-    hscale, _ = gm.fit_to_raster(capture_h, line_px, gm.AXIS_H)
-    vscale, _ = gm.fit_to_raster(capture_v, frame_lines, gm.AXIS_V)
-    solved = gm.solve_geometry(
-        capture_h=capture_h, capture_v=capture_v,
-        hscale=hscale, vscale=vscale,
-        line_px=line_px, frame_lines=frame_lines)
-    registers = dict(solved["registers"])
-    registers["VDS_HSCALE"] = hscale
-    registers["VDS_VSCALE"] = vscale
-    return registers
 
 
 @pytest.fixture
@@ -286,7 +282,7 @@ def press_until_saturated(host, probe, command, limit=24):
     a finite range and reaching it is correct behaviour, not a fault.
 
     That range is not a constant, which is why this counts rather than assuming.
-    AxisH magnifies at most geometry_math.MAX_MAGNIFICATION, so the smallest
+    AxisHorizontal magnifies at most Scale::Unity / Scale::Min, so the smallest
     capture that fills the raster is ceil(raster / that). The raster is COMPUTED,
     so a wider one leaves less zoom travel and no press count can be hardcoded.
     """
@@ -302,20 +298,86 @@ def press_until_saturated(host, probe, command, limit=24):
     return landed
 
 
-def differences(want, got):
-    return {name: (want[name], got[name])
-            for name in SOLVED_REGISTERS if want[name] != got[name]}
+def windows_following_the_capture(state):
+    """What the output windows get wrong, given the capture the unit holds.
+
+    Read back AFTER the press rather than taken from what was asked for, so a
+    firmware that ignored the press cannot pass by agreeing with itself. That a
+    press moves the capture at all is asserted separately.
+
+    The picture's WIDTH is checkable exactly: Scale::produced is
+    `capture x 1024 / scale`, measured on the bench with no loss term at either
+    end, and Axis::solve truncates it. Its POSITION is not, because the front
+    porch clamping the far edge comes from the solved raster and no register
+    carries it -- so the far edge is BOUNDED rather than predicted, in the
+    direction that matters: a window longer than the picture shows scratch,
+    where one shorter is invisible.
+    """
+    wrong = []
+    for axis in OUTPUT_AXES:
+        capture = state[axis.capture_st] - state[axis.capture_sp]
+        scale = state[axis.scale]
+        window_sp, window_st = state[axis.window_sp], state[axis.window_st]
+        display_sp, display_st = state[axis.display_sp], state[axis.display_st]
+        raster = state[axis.raster_rst] + 1
+
+        if capture <= 0:
+            wrong.append(f"{axis.name}: the capture window is empty "
+                         f"({axis.capture_st} {state[axis.capture_st]}, "
+                         f"{axis.capture_sp} {state[axis.capture_sp]})")
+            continue
+        if not 0 < scale <= SCALE_UNITY:
+            wrong.append(f"{axis.name}: {axis.scale} is {scale}, which is no "
+                         f"magnification at all")
+            continue
+
+        produced = capture * SCALE_UNITY // scale
+        widest = produced - axis.margin
+
+        # Axis::solve: the memory window IS the display window, allocating
+        # nothing spare. Memory past the picture is memory the playback stage
+        # still walks, and taking the whole raster shows as artefacts down the
+        # LEFT edge.
+        if window_st != display_st:
+            wrong.append(f"{axis.name}: {axis.window_st} {window_st} != "
+                         f"{axis.display_st} {display_st}, so the memory window "
+                         f"no longer hugs the display window")
+
+        if display_st - display_sp > widest:
+            wrong.append(f"{axis.name}: the display window is "
+                         f"{display_st - display_sp} wide but a capture of "
+                         f"{capture} at scale {scale} produces {produced} "
+                         f"({widest} after the {axis.margin} margin), so it "
+                         f"opens past the picture onto unwritten memory")
+
+        if display_st <= display_sp:
+            wrong.append(f"{axis.name}: the display window is empty "
+                         f"({axis.display_sp} {display_sp}, "
+                         f"{axis.display_st} {display_st})")
+
+        # Axis::windowStopMin -- below it the near edge corrupts.
+        if window_sp < axis.window_sp_min:
+            wrong.append(f"{axis.name}: {axis.window_sp} {window_sp} is below "
+                         f"the write floor {axis.window_sp_min}")
+
+        # Axis::farBound -- ST registers wrap rather than clamp, and a wrapped
+        # VDS_VB_ST rolls the frame.
+        if display_st > raster - 2:
+            wrong.append(f"{axis.name}: {axis.display_st} {display_st} is past "
+                         f"the raster's last usable position {raster - 2}")
+    return wrong
 
 
 @pytest.mark.zoom
 def test_a_zoom_press_leaves_the_windows_following_the_capture(host, probe, framed):
     """End to end: press the pad, read the registers back, and check every
-    output window is the one the capture and the raster imply."""
+    output window still follows the capture the unit holds."""
     press(host, probe, "z")
     after = settled_geometry(host)
 
     assert after is not None, "could not read the geometry back"
-    assert not differences(predict(after), after)
+    wrong = windows_following_the_capture(after)
+    assert not wrong, "after a zoom press:\n  " + "\n  ".join(wrong)
 
 
 @pytest.mark.pan
@@ -324,7 +386,8 @@ def test_a_pan_press_leaves_the_windows_following_the_capture(host, probe, frame
     after = settled_geometry(host)
 
     assert after is not None, "could not read the geometry back"
-    assert not differences(predict(after), after)
+    wrong = windows_following_the_capture(after)
+    assert not wrong, "after a pan press:\n  " + "\n  ".join(wrong)
 
 
 @pytest.mark.zoom
@@ -393,11 +456,10 @@ def test_every_horizontal_pan_press_moves_the_picture(host, probe, framed):
 PB_FETCH_NUM = ("PB_FETCH_NUM", 4, 0x39, 0, 10)
 PB_CAP_OFFSET = ("PB_CAP_OFFSET", 4, 0x37, 0, 10)
 VDS_HSYNC_RST = ("VDS_HSYNC_RST", 3, 0x01, 0, 12)
+IF_HSYNC_RST = ("IF_HSYNC_RST", 1, 0x0E, 0, 11)
 
-# What Tv5725::Memory holds. Mirrors src/tv5725/Memory.h, the same way
-# ZOOM_STEP_PX mirrors ControlSteps.
-LINE_1080P = 1445
-OFFSET_1080P = 250
+# What a preset load leaves behind, and what every torn picture of 2026-08-09 was
+# photographed in. Seeded as the hostile state, never expected as an answer.
 UPSTREAM_FETCH = 256
 UPSTREAM_OFFSET = UPSTREAM_FETCH + 4
 
@@ -410,26 +472,32 @@ FETCH_FLOOR = 150
 FETCH_MAX = 512
 
 
-def expected_burst(line_px, capture):
-    """The pair Tv5725::Memory computes for this raster and capture.
+def burst_units(units):
+    """Tv5725::Memory::fetchFor -- requests rounded UP, then floored and capped.
 
-    **THE FETCH HAS NO RASTER GATE, AND THIS MIRRORED ONE FOR TOO LONG.**
-    Memory::fetchFor dropped its gate deliberately and records why: a preset
-    load moved the unit to a 1435 px raster, the rule switched itself off, and
-    PB_FETCH_NUM sat at upstream's 256 against a capture of 1185 that needed
-    297. 256 is not a neutral default; it is a value tuned for a raster it is
-    not, and it can sit below the floor.
-
-    Keeping the gate here meant this file asserted the fault. On the bench's
-    1436 px raster it expected 256 while the firmware correctly computed 251,
-    which failed the test above and silently SKIPPED the stronger one below --
-    so the register that tore 80 of 493 framings has had no live cover at all.
-
-    The offset keeps its gate, because Memory::offsetFor still has one.
+    Rounded up because a line one pixel short of its source still fails to
+    finish, and it repeats: the start of the picture reappearing at the right.
     """
-    fetch = min(FETCH_MAX, max(FETCH_FLOOR, -(-capture // REQUESTS_PER_LINE)))
-    offset = OFFSET_1080P if line_px == LINE_1080P else UPSTREAM_OFFSET
-    return fetch, offset
+    return min(FETCH_MAX, max(FETCH_FLOOR, -(-units // REQUESTS_PER_LINE)))
+
+
+def expected_burst(line_units, capture):
+    """The pair Tv5725::Memory computes: fetch from the CAPTURE, stride from the
+    whole IF LINE.
+
+    **NEITHER IS GATED ON THE OUTPUT RASTER, AND THIS MIRRORED A GATE ON BOTH.**
+    Memory::fetchFor takes the raster and ignores it -- the gate was dropped
+    because a preset load onto a 1435 px raster switched the rule off, leaving
+    PB_FETCH_NUM at upstream's 256 against a capture of 1185 that needed 297.
+
+    The stride was a raster-gated constant here long after the firmware stopped
+    using one. Sizing it from the line rather than the framing is what keeps it
+    still through a zoom: the fetch follows the capture, the capture GROWS as the
+    picture zooms out, and a stride sized for one framing is passed by the fetch
+    partway through the range -- after which lines overlap in the buffer and each
+    overwrites its predecessor's tail.
+    """
+    return burst_units(capture), burst_units(line_units)
 
 
 @pytest.mark.zoom
@@ -452,9 +520,9 @@ def test_a_zoom_press_leaves_the_playback_burst_at_the_measured_value(
     press(host, probe, "z")
     after = settled_geometry(host)
 
-    line_px = probe.read_field(VDS_HSYNC_RST) + 1
+    line_units = probe.read_field(IF_HSYNC_RST) + 1
     capture = after["IF_HB_ST2"] - after["IF_HB_SP2"]
-    fetch, offset = expected_burst(line_px, capture)
+    fetch, offset = expected_burst(line_units, capture)
     assert probe.read_field(PB_FETCH_NUM) == fetch, (
         f"the playback burst does not cover a capture of {capture} on a "
         f"{line_px} px output line -- the line cannot finish and repeats")
@@ -480,14 +548,14 @@ def test_a_zoom_press_repairs_a_playback_burst_a_preset_left_behind(
     assert probe.read_field(PB_FETCH_NUM) == UPSTREAM_FETCH, (
         "could not seed the fault, so this proves nothing")
 
-    line_px = probe.read_field(VDS_HSYNC_RST) + 1
+    line_units = probe.read_field(IF_HSYNC_RST) + 1
 
     # The press MOVES the capture, so what to expect can only be computed from
     # the framing the press lands on -- not from the one it started in.
     press(host, probe, "z")
     after = settled_geometry(host)
     capture = after["IF_HB_ST2"] - after["IF_HB_SP2"]
-    fetch, offset = expected_burst(line_px, capture)
+    fetch, offset = expected_burst(line_units, capture)
     if fetch == UPSTREAM_FETCH:
         pytest.skip(f"a capture of {capture} wants upstream's own value, so "
                     f"there is no repair to observe")
@@ -552,7 +620,7 @@ def test_the_memory_window_never_lands_below_its_floor(host, probe, framed):
         press(host, probe, "z")
     after = settled_geometry(host)
 
-    assert after["VDS_HB_SP"] >= gm.AXIS_H.window_sp_min
+    assert after["VDS_HB_SP"] >= AXIS_HORIZONTAL.window_sp_min
 
 
 # --- the capture window may never take the hsync pulse ------------------------
@@ -674,7 +742,7 @@ def test_the_playback_burst_covers_the_capture_at_every_zoom_position(host, prob
         press(host, probe, "z")
         after = settled_geometry(host)
         capture = after["IF_HB_ST2"] - after["IF_HB_SP2"]
-        needed = max(FETCH_FLOOR, -(-capture // REQUESTS_PER_LINE))
+        needed = burst_units(capture)
         got = probe.read_field(PB_FETCH_NUM)
         if got < needed:
             offenders.append((capture, got, needed))
@@ -1129,7 +1197,57 @@ def _write_field(host, spec, value):
               (high & keep) | ((value >> 8) & ~keep & 0xFF))
 
 
-def test_the_sampling_divider_is_one_quantity_in_three_registers(host, source):
+@pytest.fixture
+def poisoned_if_hsync_rst(host, source):
+    """IF_HSYNC_RST holding a value the firmware cannot have chosen, checked
+    back out however the test ends.
+
+    **A fixture rather than the test's own teardown, because a skip has to
+    check it back in too.** The divider test skips when the source has not
+    relocked after its preset load, and that path leaves no failure behind to
+    explain a poisoned unit.
+
+    leave_the_bench_usable() does not cover this. That fixture rests on the
+    engine recomputing whatever the tests derange, which holds for the geometry
+    registers and not for this one: the divider is written only on a MODE
+    CHANGE. So an un-restored poison outlives the run, an ESP reboot and a
+    reflash, because the TV5725 keeps its registers across all three -- leaving
+    the input formatter counting to the end of a line the ADC is not
+    delivering, with every other register reading back correct.
+    """
+    divider = read_field(host, *SAMPLING_PLLAD_MD)
+    assert divider, "could not read PLLAD_MD, so there is no divider to poison"
+
+    # **ONLY IF_HSYNC_RST IS POISONED, AND SP_RT_HS_SP MUST NOT BE.** The point
+    # of a poison is to distinguish a fresh write from a leftover -- the TV5725
+    # keeps its registers across an ESP reboot, so reading the right value proves
+    # nothing on its own. One register is enough to establish that here, because
+    # Tv5725::Sampling::write() writes all three from one held value or writes
+    # none: if IF_HSYNC_RST came back computed, write() ran, and the other two
+    # assertions below are then about what it computed.
+    #
+    # That matters because SP_RT_HS_SP IS the sync processor's retime window, and
+    # poisoning it takes the source out: measured twice, at 1110 against a
+    # 2553-sample line and again only 100 low, SP_VTOTAL falls to a steady 97/98
+    # and stays there through the preset load and minutes after it, needing /sc?~
+    # to re-detect. The neighbouring tests poison segment 4, the memory map,
+    # where a wild value costs a frame and not the lock.
+    poison = divider // 2 - 100
+    _write_field(host, SAMPLING_IF_HSYNC_RST, poison)
+    landed = read_field(host, *SAMPLING_IF_HSYNC_RST)
+    assert landed == poison, (
+        f"could not poison IF_HSYNC_RST, got {landed} want {poison} -- "
+        f"without this the test cannot tell a fresh write from a leftover")
+
+    yield poison
+
+    held = read_field(host, *SAMPLING_PLLAD_MD)
+    if held:
+        _write_field(host, SAMPLING_IF_HSYNC_RST, held // 2)
+
+
+def test_the_sampling_divider_is_one_quantity_in_three_registers(
+        host, poisoned_if_hsync_rst):
     """A preset load leaves PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP agreeing.
 
     **AND THE FOURTH READING IS THE ONE THAT MATTERS.** The other three are all
@@ -1163,29 +1281,7 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(host, source):
     test_the_frame_buffer_subsystem_owns_the_memory_map waiting on
     PB_CAP_BUF_STA_ADDR_A.
     """
-    divider = read_field(host, *SAMPLING_PLLAD_MD)
-    assert divider, "could not read PLLAD_MD, so there is no divider to check"
-
-    # **ONLY IF_HSYNC_RST IS POISONED, AND SP_RT_HS_SP MUST NOT BE.** The point
-    # of a poison is to distinguish a fresh write from a leftover -- the TV5725
-    # keeps its registers across an ESP reboot, so reading the right value proves
-    # nothing on its own. One register is enough to establish that here, because
-    # Tv5725::Sampling::write() writes all three from one held value or writes
-    # none: if IF_HSYNC_RST came back computed, write() ran, and the other two
-    # assertions below are then about what it computed.
-    #
-    # That matters because SP_RT_HS_SP IS the sync processor's retime window, and
-    # poisoning it takes the source out: measured twice, at 1110 against a
-    # 2553-sample line and again only 100 low, SP_VTOTAL falls to a steady 97/98
-    # and stays there through the preset load and minutes after it, needing /sc?~
-    # to re-detect. The neighbouring tests poison segment 4, the memory map,
-    # where a wild value costs a frame and not the lock.
-    poison_if = divider // 2 - 100
-    _write_field(host, SAMPLING_IF_HSYNC_RST, poison_if)
-    landed = read_field(host, *SAMPLING_IF_HSYNC_RST)
-    assert landed == poison_if, (
-        f"could not poison IF_HSYNC_RST, got {landed} want {poison_if} -- "
-        f"without this the test cannot tell a fresh write from a leftover")
+    poison_if = poisoned_if_hsync_rst
 
     get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
 

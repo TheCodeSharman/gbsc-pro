@@ -35,8 +35,6 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import geometry_math          # the geometry arithmetic, in one place only
-import write_origin           # for ordered_writes: never dip the headroom
 
 HOST = None
 
@@ -433,9 +431,9 @@ def set_pllad_scaled(target):
 
 # --- pan and scale ------------------------------------------------------------
 #
-# The arithmetic is geometry_math's, not a fourth copy. This layer only reads the
-# registers it needs, hands them over, and writes the answer back in an order
-# that never dips the headroom.
+# The ENGINE owns these. This panel asks it for a framing and reads the result
+# back; it does not solve the geometry and it does not write the answer. A second
+# solver here was a second owner of the same registers.
 
 GEOMETRY_FIELDS = [
     ("IF_HB_SP2", 1, 0x1A, 0, 11), ("IF_HB_ST2", 1, 0x18, 0, 11),
@@ -477,101 +475,20 @@ def geometry_now():
     state = read_fields(fetch_span, GEOMETRY_FIELDS)
     if state is None:
         return None
-    solved = resolve_output(state)
     wrap_h, wrap_v = capture_wraps_at(state)
     return {
         "state": state,
-        "solved": solved,
+        "framing": framing(),
         "wrap": {"horizontal": wrap_h, "vertical": wrap_v},
-        "drift": {name: value for name, value in solved["registers"].items()
-                  if name in HEADROOM_ONLY + DISPLAY_WINDOW
-                  and state.get(name) != value},
     }
 
 
-def display_changes(state):
-    """The display registers that disagree with the formula, and what they owe.
-
-    This is the whole placement model: the picture's top left corner is a
-    measured constant, and its size is what the scaler makes of the capture.
-
-        corner        = (raster - produced) / 2          centred
-        VDS_?B_SP     = corner - (START_CONST + START_PER_MAG x m)
-        VDS_DIS_?B_SP = corner
-        VDS_DIS_?B_ST = corner + capture x 1024 / scale - margin
-
-    Every term derives from the registers. The corner is NOT a measured constant:
-    it is the write start at one magnification, and holding it fixed while the
-    scale moves puts frozen scratch down the left of the screen.
-    """
-    wanted = resolve_output(state)["registers"]
-    return {name: value for name, value in wanted.items()
-            if name in DISPLAY_WINDOW and state.get(name) != value}
 
 
-def with_display_window(state, changes):
-    """`changes` plus whatever the display window owes once they land.
-
-    Every pad press goes through this, so the aperture is recomputed from the
-    capture and the scale each time rather than being a thing the user maintains
-    separately.
-    """
-    return dict(changes, **display_changes(dict(state, **changes)))
-
-
-def apply_changes(state, changes):
-    """Write in an order that never dips the headroom, then report what stuck."""
-    for name, value in write_origin.ordered_writes(state, changes):
-        seg, reg, off, width = GEOMETRY_SPECS[name]
-        write_field(seg, reg, off, width, max(0, min(value, (1 << width) - 1)))
-    time.sleep(0.2)
-    return {"ok": True, "wrote": changes}
-
-
-def resolve_output(state):
-    """The eight output registers for whatever the capture and scale now say.
-
-    The picture is pinned to the measured corner and sized by the formula, so
-    nothing here reads the windows it is about to replace -- including the memory
-    window's near edge, which is placed at corner - offset so that the first
-    written pixel lands on the corner.
-
-    Inheriting that edge is what broke the bench: VDS_VB_SP had been left at 199
-    while the corner stayed pinned at 63, so the display window began 136 lines
-    before any valid frame buffer and the picture was really 162 lines lower than
-    the window said. Letterboxed at the top and clipped at the bottom at once.
-    """
-    # THE SCALE IS COMPUTED, NOT READ. fit_to_raster makes the picture as big as
-    # the raster allows and says what scale gets it there, so whatever the
-    # registers happen to hold -- a size left over from an experiment, a scale
-    # someone typed in -- the next pad press replaces it rather than inheriting
-    # it. Inheriting is what froze a picture at 620 lines nothing could grow.
-    #
-    # No origin is passed either: the solver centres on the raster. Pinning to a
-    # panel edge needs a number the scaler cannot know -- see place_picture.
-    line_px = state["VDS_HSYNC_RST"] + 1
-    frame_lines = state["VDS_VSYNC_RST"] + 1
-    capture_h = state["IF_HB_ST2"] - state["IF_HB_SP2"]
-    capture_v = state["IF_VB_ST"] - state["IF_VB_SP"]
-    hscale, _ = geometry_math.fit_to_raster(capture_h, line_px,
-                                            geometry_math.AXIS_H)
-    vscale, _ = geometry_math.fit_to_raster(capture_v, frame_lines,
-                                            geometry_math.AXIS_V)
-    solved = geometry_math.solve_geometry(
-        capture_h=capture_h, capture_v=capture_v,
-        hscale=hscale, vscale=vscale,
-        line_px=line_px, frame_lines=frame_lines,
-        hscale_bypassed=bool(state["VDS_HSCALE_BYPS"]),
-        vscale_bypassed=bool(state["VDS_VSCALE_BYPS"]),
-    )
-    solved["registers"]["VDS_HSCALE"] = hscale
-    solved["registers"]["VDS_VSCALE"] = vscale
-    return solved
 
 
 # Only the far edge of each memory window. Widening it can only add headroom --
 # it cannot move the picture, cannot crop it, and cannot expose scratch.
-HEADROOM_ONLY = ("VDS_HB_ST", "VDS_VB_ST")
 
 # The aperture the picture is seen through, all four edges. The near edges are
 # pinned to the measured corner and the far edges follow `produced`, so the
@@ -584,100 +501,66 @@ HEADROOM_ONLY = ("VDS_HB_ST", "VDS_VB_ST")
 # aperture on a ~786-line picture, cropping the bottom and making the scale
 # control look dead, because VSCALE then only changes how much of the picture is
 # thrown away, never how much is visible.
-DISPLAY_WINDOW = ("VDS_DIS_HB_SP", "VDS_DIS_HB_ST",
-                  "VDS_DIS_VB_SP", "VDS_DIS_VB_ST",
-                  "VDS_HB_SP", "VDS_VB_SP",
-                  # The scales are derived too, so they belong to the panel and
-                  # not to the user. Every press recomputes them from the capture
-                  # and the raster.
-                  "VDS_HSCALE", "VDS_VSCALE")
+
+
+
+
+def framing():
+    """The engine's own framing: zoom and pan per axis, in input units."""
+    body = _get("/geometry")
+    if not body:
+        return None
+    try:
+        return json.loads(body)
+    except ValueError:
+        return None
+
+
+def set_framing(**wanted):
+    body = _get("/geometry?" + urllib.parse.urlencode(wanted))
+    return json.loads(body) if body else None
 
 
 def pan(dx, dy):
-    """Move the capture window. The width does not change, so `produced` does
-    not either -- the output windows are left exactly where they are."""
-    state = read_fields(fetch_span, GEOMETRY_FIELDS)
-    if state is None:
-        return {"ok": False, "why": "could not read the geometry"}
-    wrap_h, wrap_v = capture_wraps_at(state)
+    """Move the picture, by asking the ENGINE rather than writing registers.
 
-    changes = {}
-    if dx:
-        sp, st = geometry_math.pan_capture(
-            state["IF_HB_SP2"], state["IF_HB_ST2"], dx, wrap_h)
-        changes.update(IF_HB_SP2=sp, IF_HB_ST2=st)
-    if dy:
-        sp, st = geometry_math.pan_capture(
-            state["IF_VB_SP"], state["IF_VB_ST"], dy, wrap_v)
-        changes.update(IF_VB_SP=sp, IF_VB_ST=st)
-    if not changes:
+    The engine calculates every register from held state, so a register written
+    behind its back is state it does not know it has. This panel used to solve
+    the geometry itself and write the answer, which made it a second owner of
+    the same registers and a second implementation to keep in step.
+
+    `ph` and `pv` are the engine's pan in input units -- the units this panel's
+    step box already counts in, so a delta passes straight through.
+    """
+    held = framing()
+    if held is None:
+        return {"ok": False, "why": "could not read /geometry"}
+    if not dx and not dy:
         return {"ok": False, "why": "no movement asked for"}
-    return apply_changes(state, with_display_window(state, changes))
+    wanted = dict(held, ph=held["ph"] + dx, pv=held["pv"] + dy)
+    if set_framing(**wanted) is None:
+        return {"ok": False, "why": "the engine refused the framing"}
+    time.sleep(0.2)
+    return {"ok": True, "wrote": wanted}
 
 
 def rescale(dh, dv):
-    """Zoom. One control, and it crops.
+    """Zoom, by asking the engine. It crops; the picture keeps filling the raster.
 
-    The picture is always as big as the raster allows and the scale is computed
-    to fill it, so zooming in captures less source and magnifies harder while the
-    picture stays exactly where and how big it is. Both windows are managed for
-    the user; neither is theirs to maintain.
-
-    NOTHING IS INHERITED FROM THE CURRENT SCALE OR THE CURRENT SIZE. Every size
-    fault on 2026-08-06 came from deriving the new state from whatever the
-    registers held: a picture froze at 620 lines with no zoom step able to grow
-    it, and before that a corner held fixed put 41 px of the previous frame down
-    the left of the screen. Capture and raster in, everything else computed.
-
-    Lower scale means a bigger picture, so the caller's '+' arrives as a negative
-    delta. The memory windows are widened first by ordered_writes, so the picture
-    never overflows them mid-change.
+    **THE SIGN FLIPS HERE.** These pads send a NEGATIVE delta to crop in, where
+    the engine's zoom is positive to crop in, so it is negated on the way past.
     """
-    state = read_fields(fetch_span, GEOMETRY_FIELDS)
-    if state is None:
-        return {"ok": False, "why": "could not read the geometry"}
-    wrap_h, wrap_v = capture_wraps_at(state)
-
-    axes = (
-        ("horizontal", dh, "VDS_HSCALE", ("IF_HB_SP2", "IF_HB_ST2"),
-         geometry_math.AXIS_H, wrap_h, state["VDS_HSYNC_RST"] + 1),
-        ("vertical", dv, "VDS_VSCALE", ("IF_VB_SP", "IF_VB_ST"),
-         geometry_math.AXIS_V, wrap_v, state["VDS_VSYNC_RST"] + 1),
-    )
-
-    wanted = dict(state)
-    zoomed = []
-    for name, delta, scale_reg, (cap_sp, cap_st), axis, wrap_at, raster in axes:
-        if not delta:
-            continue
-        # Note what is NOT passed: the scale that happens to be set. The step
-        # crops the capture and the scale is computed to fill the raster, so a
-        # wrong or stale scale cannot be inherited into the new state.
-        step = geometry_math.scale_step(
-            sp=state[cap_sp], st=state[cap_st], delta=delta,
-            raster_total=raster, axis=axis, wrap_at=wrap_at)
-        wanted[scale_reg] = step["scale"]
-        wanted[cap_sp], wanted[cap_st] = step["sp"], step["st"]
-        if step["zoomed"]:
-            zoomed.append(name)
-
-    if wanted == state:
+    held = framing()
+    if held is None:
+        return {"ok": False, "why": "could not read /geometry"}
+    if not dh and not dv:
         return {"ok": False, "why": "no scale change asked for"}
-
-    solved = resolve_output(wanted)
-    changes = {name: value for name, value in solved["registers"].items()
-               if name in HEADROOM_ONLY}
-    for name in ("VDS_HSCALE", "VDS_VSCALE",
-                 "IF_HB_SP2", "IF_HB_ST2", "IF_VB_SP", "IF_VB_ST"):
-        if wanted[name] != state[name]:
-            changes[name] = wanted[name]
-    changes = with_display_window(wanted, changes)
-
-    result = apply_changes(state, changes)
-    result["zoomed"] = zoomed
-    result["horizontal"] = solved["horizontal"]
-    result["vertical"] = solved["vertical"]
-    return result
+    wanted = dict(held, zh=held["zh"] - dh, zv=held["zv"] - dv)
+    if set_framing(**wanted) is None:
+        return {"ok": False, "why": "the engine refused the framing"}
+    time.sleep(0.2)
+    return {"ok": True, "wrote": wanted,
+            "zoomed": [n for n, d in (("horizontal", dh), ("vertical", dv)) if d]}
 
 
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>TV5725 register panel</title>
@@ -878,24 +761,13 @@ function pad(label,keys){
     '</div></div>';
 }
 
-function axisRow(name,a){
-  var warn = a.clamped && a.clamped.length;
-  return '<tr><td>'+name+'</td>'+
-    '<td style="text-align:right">'+a.produced.toFixed(2)+'</td>'+
-    '<td style="text-align:right">'+a.origin+'</td>'+
-    '<td style="text-align:right">'+a.window_sp+'..'+a.window_st+'</td>'+
-    '<td style="text-align:right">'+a.display_sp+'..'+a.display_st+'</td>'+
-    '<td class="'+(a.covers_panel?'ok':'warn')+'">'+
-      (a.covers_panel?'fills screen':'smaller than screen')+'</td>'+
-    '<td class="warn">'+(warn?a.clamped.join('; '):'')+'</td></tr>';
-}
 
 async function geo(){
   const box=document.getElementById('geo');
   const d=await api('/api/geometry');
   if(!d.ok){box.innerHTML='<section><h2>pan &amp; scale</h2><p class="warn">'+
     (d.why||'no answer')+'</p></section>';return}
-  const s=d.state, sol=d.solved;
+  const s=d.state, f=d.framing;
   let h='<section><h2>Pan &amp; scale</h2>'+
     pad('move the picture',
         ['panBy(0,step())','panBy(0,-step())',
@@ -909,28 +781,22 @@ async function geo(){
     'style="width:44px;text-align:center">'+
     '<div class="d" style="margin-top:4px">units per press</div></div>'+
     '<div style="display:inline-block;vertical-align:top">'+
-    '<div class="d" style="margin-bottom:4px">windows</div>'+
-    (Object.keys(d.drift).length?
-      '<div class="warn" style="margin-top:6px">'+Object.keys(d.drift).length+
-      ' register(s) differ from the solved placement</div>':
-      '<div class="ok" style="margin-top:6px">windows match the solver</div>')+
+    '<div class="d" style="margin-bottom:4px">engine framing</div>'+
+    (f? '<div class="ok" style="margin-top:6px">zoom '+f.zh+'/'+f.zv+
+        ' &nbsp;pan '+f.ph+'/'+f.pv+'</div>'
+      : '<div class="warn" style="margin-top:6px">/geometry did not answer</div>')+
     '</div>'+
-    '<table style="margin-top:10px"><tr><th>axis</th><th>produced</th><th>origin</th>'+
-    '<th>memory window</th><th>display window</th>'+
-    '<th>vs panel</th><th></th></tr>'+
-    axisRow('horizontal',sol.horizontal)+axisRow('vertical',sol.vertical)+
-    '</table>'+
     '<p class="d">capture '+(s.IF_HB_ST2-s.IF_HB_SP2)+' IF units ['+
       s.IF_HB_SP2+'..'+s.IF_HB_ST2+'] of '+d.wrap.horizontal+
       ' &nbsp;&middot;&nbsp; '+(s.IF_VB_ST-s.IF_VB_SP)+' half-lines ['+
       s.IF_VB_SP+'..'+s.IF_VB_ST+'] of '+d.wrap.vertical+
       ' &nbsp;&middot;&nbsp; HSCALE '+s.VDS_HSCALE+' VSCALE '+s.VDS_VSCALE+
       ' &nbsp;&middot;&nbsp; raster '+(s.VDS_HSYNC_RST+1)+'x'+(s.VDS_VSYNC_RST+1)+
-      ' (never written)</p>';
-  if(Object.keys(d.drift).length){
-    h+='<p class="d">would change: '+Object.keys(d.drift).map(function(k){
-      return k+' '+s[k]+'&rarr;'+d.drift[k]}).join(', ')+'</p>';
-  }
+      '</p>'+
+    '<p class="d">memory '+s.VDS_HB_SP+'..'+s.VDS_HB_ST+' x '+
+      s.VDS_VB_SP+'..'+s.VDS_VB_ST+' &nbsp;&middot;&nbsp; display '+
+      s.VDS_DIS_HB_SP+'..'+s.VDS_DIS_HB_ST+' x '+
+      s.VDS_DIS_VB_SP+'..'+s.VDS_DIS_VB_ST+'</p>';
   box.innerHTML=h+'</section>';
 }
 
