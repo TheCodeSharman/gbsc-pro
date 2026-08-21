@@ -76,12 +76,22 @@ Full 6-segment dumps, diffable with
 | `glitching-2026-08-14.json` | 08-14 00:46 | the shear glitch **happening**, csync path |
 | `CLEAN-riscpc-320x256-50-2026-08-15.json` | 08-15 | **certified glitch-free**, 608 config + 48 status, restorable |
 | `CLEAN-full-1536-riscpc-320x256-50-2026-08-15.json` | 08-15 | the same state, all 1536, for `snapdiff.py` |
+| `CLEAN-neyron-320x256-50-2026-08-19.json` | 08-19 | Nevryon, frame time lock **holding** for the first time: 1901 x 1125 raster, clock steered to 107942912 Hz against a 50.475 Hz source. 656 registers, restorable |
+| `CLEAN-full-1536-neyron-2026-08-19.json` | 08-19 | the same moment, all 1536, for `snapdiff.py` |
+| `SHEARED-preset-clobber-2026-08-19.json` | 08-19 | the shear **happening**, untouched by hand. Diff against the pair above |
 
 Note `zarch-akf50-fullscreen` is labelled "hand-tuned to full screen", **not**
 clean. It sits at the worst overflow in the set and very likely carries the same
 edge corruption. It was mistaken for a clean counter-example once already.
 
-**The last three are the first certified pair in this archive.** Every other
+The 08-19 pair is the reference for the preset clobber: diffing an untouched
+sheared capture against it gives six IF fields, `IF_HBIN_ST`, `IF_LD_RAM_BYPS`,
+`IF_LD_SEL_PROV`, `IF_PRGRSV_CNTRL`, `SP_H_CST_SP` and `VDS_V_DELAY`. The good
+state runs the line-doubler path; the sheared one had SD horizontal decimation
+against a progressive line-doubler configuration, which is a state neither
+branch of `doPostPresetLoadSteps()` produces on its own.
+
+**The 08-15 pair is the first certified pair in this archive.** Every other
 snapshot here was taken for a geometry reason and none is known glitch-free, so
 until 08-15 a known-good comparison had never actually been runnable. Note the
 two `CLEAN` files are the same moment in the two incompatible formats —
