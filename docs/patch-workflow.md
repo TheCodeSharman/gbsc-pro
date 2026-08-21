@@ -20,12 +20,26 @@ groups by eye.
 Merge a series into `main` once it has stopped churning:
 
 ```
-git checkout main && git merge --ff-only dev && git push
+git checkout main && git merge --ff-only dev
 ```
 
 `--ff-only` is the point: it keeps `main` linear, and refuses if `dev` isn't a
 descendant — which is the alarm you want if something was committed to `main`
 by mistake.
+
+**Advancing `main` and publishing it are two decisions, not one.** Advance the
+local branch as chunks pass; hold the push until the series is unlikely to need
+rewriting. That is the whole difference in cost: an unpushed `main` is rewound
+with `git branch -f`, while a published one has to be force-pushed, and the
+force-push is exactly what `main` exists to avoid.
+
+```
+git push        # separately, once the series has settled
+```
+
+It will not always work out — something merged three rounds ago still turns out
+to need a word changed. Holding the push is what keeps that a local amend
+instead of published history being rewritten.
 
 When upstream ships a release, `main` takes it as a merge (one merge commit,
 a few times a year) and `dev` rebases onto the result:
@@ -213,8 +227,15 @@ stale line reviews commits that no longer exist.
    `<commit>~1..HEAD`, keyed on `$GIT_COMMIT`. It rewrites the SHA of every
    commit after the target, so re-quote any hash already given to the reviewer,
    and it leaves `refs/original/**` behind — see the cleanup below.
-6. **`git merge --ff-only`** into `main` once the review passes.
+6. **`git merge --ff-only`** into `main` once the review passes — **locally,
+   without pushing.** A later round regularly turns up something that belongs in
+   a chunk already merged; while `main` is unpushed that is an amend and a
+   `branch -f`, and once it is published it is a force-push of published
+   history. Expect it to happen and keep the cheap option open.
 7. Repeat.
+8. **Push `main`** when the review finishes, or once it is clear that no earlier
+   chunk will move. `dev` is pushed whenever it is rewritten, so the graph does
+   not carry the abandoned line — see above.
 
 **Any rewrite invalidates every hash already quoted.** Rewriting one commit
 rewrites the SHA of everything after it, so a hash from an earlier message opens
