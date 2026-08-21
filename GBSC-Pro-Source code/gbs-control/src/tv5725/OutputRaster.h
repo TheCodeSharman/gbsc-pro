@@ -20,6 +20,23 @@ namespace Tv5725 {
 
 class OutputMode;
 
+// The output resolution the user asked for, as stored in the preferences and
+// handed to applyPresets(). Declared here because modeForPreference() below is
+// the one thing that resolves it to a raster, and options.h re-exports it into
+// the sketch's global scope.
+enum PresetPreference : uint8_t {
+    Output960P = 0,
+    Output480P = 1,
+    OutputCustomized = 2,
+    Output720P = 3,
+    Output1024P = 4,
+    Output1080P = 5,
+    // 6 was OutputDownscale, a 240p/288p output for an SD display. Nothing
+    // selected it, and this board's video leaves through an HDMI encoder that
+    // would re-encode it.
+    OutputBypass = 10,
+};
+
 // A solved raster: every output timing register, from a mode and a field rate.
 class RasterSolution {
 public:
@@ -103,16 +120,13 @@ public:
     // the chip.
     //
     // NULL for two reasons the caller must not conflate:
-    //   - OutputCustomized (2): the saved preset's bytes ARE the mode, so reading
+    //   - OutputCustomized: the saved preset's bytes ARE the mode, so reading
     //     the raster back is correct there.
-    //   - OutputBypass (10): no scaled raster to solve.
+    //   - OutputBypass: no scaled raster to solve.
     //
     // fieldRateHz disambiguates one preference and picks a RESOLUTION, not a
     // timing: Output480P is 480 active lines at 60 Hz and 576 at 50, per CEA-861.
-    //
-    // Plain uint8_t rather than PresetPreference: options.h cannot be included
-    // here, as its `#ifndef _USER_H_` has no matching #define.
-    static const OutputMode *modeForPreference(uint8_t presetPreference,
+    static const OutputMode *modeForPreference(PresetPreference presetPreference,
                                                float fieldRateHz);
 
     // Below this a source is 50 Hz. The same split docs/vesa-gtf.md settled --

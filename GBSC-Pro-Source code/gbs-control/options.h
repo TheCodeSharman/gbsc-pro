@@ -1,18 +1,21 @@
 #ifndef _USER_H_
+#include "src/tv5725/OutputRaster.h"
+
 using Ascii8 = uint8_t;
-/// Output resolution requested by user, *given to* applyPresets().
-enum PresetPreference : uint8_t {
-    Output960P = 0,
-    Output480P = 1,
-    OutputCustomized = 2,
-    Output720P = 3,
-    Output1024P = 4,
-    Output1080P = 5,
-    // 6 was OutputDownscale, a 240p/288p output for an SD display. Nothing
-    // selected it, and this board's video leaves through an HDMI encoder that
-    // would re-encode it.
-    OutputBypass = 10,
-};
+
+/// Output resolution requested by user, *given to* applyPresets(). Defined by
+/// OutputRaster, which is the one thing that resolves a preference to a raster,
+/// and re-exported here because the sketch names it unqualified. An enumerator
+/// added there and not listed here fails at its first use site rather than
+/// silently reading as a different value.
+using Tv5725::PresetPreference;
+using Tv5725::Output960P;
+using Tv5725::Output480P;
+using Tv5725::OutputCustomized;
+using Tv5725::Output720P;
+using Tv5725::Output1024P;
+using Tv5725::Output1080P;
+using Tv5725::OutputBypass;
 
 enum INPUT_PresetPreference : uint8_t {
   MT_RGBs   ,

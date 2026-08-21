@@ -78,18 +78,9 @@ uint8_t OutputRaster::dividerFor(uint16_t frameLines, float fieldRateHz,
     return best;
 }
 
-const OutputMode *OutputRaster::modeForPreference(uint8_t presetPreference,
+const OutputMode *OutputRaster::modeForPreference(PresetPreference presetPreference,
                                                   float fieldRateHz)
 {
-    // PresetPreference's values, from options.h, which is not includable here --
-    // see the header. Named rather than bare, because 3 and 5 next to a mode
-    // name are unreadable and this file is the one place they are asserted.
-    const uint8_t Output960P = 0;
-    const uint8_t Output480P = 1;
-    const uint8_t Output720P = 3;
-    const uint8_t Output1024P = 4;
-    const uint8_t Output1080P = 5;
-
     if (presetPreference == Output1080P)
         return &Mode1080p;
     if (presetPreference == Output1024P)

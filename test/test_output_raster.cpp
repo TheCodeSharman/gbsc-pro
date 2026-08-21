@@ -256,12 +256,11 @@ static void dumpGrid()
 TEST_CASE("the output mode comes from the user's preference, not from the chip")
 {
     // The mode arrives explicitly rather than being read back from
-    // GBS::VDS_VSYNC_RST, whose only writer is the preset table it replaces. The
-    // values are PresetPreference's, from options.h; all six resolve.
-    CHECK((OutputRaster::modeForPreference(5, 50.0f) == &Mode1080p));   // Output1080P
-    CHECK((OutputRaster::modeForPreference(4, 50.0f) == &Mode1024p));   // Output1024P
-    CHECK((OutputRaster::modeForPreference(0, 50.0f) == &Mode960p));    // Output960P
-    CHECK((OutputRaster::modeForPreference(3, 50.0f) == &Mode720p));    // Output720P
+    // GBS::VDS_VSYNC_RST, whose only writer is the preset table it replaces.
+    CHECK((OutputRaster::modeForPreference(Output1080P, 50.0f) == &Mode1080p));
+    CHECK((OutputRaster::modeForPreference(Output1024P, 50.0f) == &Mode1024p));
+    CHECK((OutputRaster::modeForPreference(Output960P, 50.0f) == &Mode960p));
+    CHECK((OutputRaster::modeForPreference(Output720P, 50.0f) == &Mode720p));
 }
 
 TEST_CASE("the four resolutions that are one height resolve to it at either rate")
@@ -270,14 +269,14 @@ TEST_CASE("the four resolutions that are one height resolve to it at either rate
     // NTSC tables -- verified in test_output_raster.py against the archive --
     // so the field rate cannot change which mode they select. Only the clock
     // and horizontalTotal move with the rate, inside solve().
-    CHECK((OutputRaster::modeForPreference(5, 50.0f)
-           == OutputRaster::modeForPreference(5, 59.94f)));
-    CHECK((OutputRaster::modeForPreference(4, 50.0f)
-           == OutputRaster::modeForPreference(4, 59.94f)));
-    CHECK((OutputRaster::modeForPreference(0, 50.0f)
-           == OutputRaster::modeForPreference(0, 59.94f)));
-    CHECK((OutputRaster::modeForPreference(3, 50.0f)
-           == OutputRaster::modeForPreference(3, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(Output1080P, 50.0f)
+           == OutputRaster::modeForPreference(Output1080P, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(Output1024P, 50.0f)
+           == OutputRaster::modeForPreference(Output1024P, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(Output960P, 50.0f)
+           == OutputRaster::modeForPreference(Output960P, 59.94f)));
+    CHECK((OutputRaster::modeForPreference(Output720P, 50.0f)
+           == OutputRaster::modeForPreference(Output720P, 59.94f)));
 }
 
 TEST_CASE("the SD preference is two different resolutions, and the rate picks one")
@@ -287,8 +286,8 @@ TEST_CASE("the SD preference is two different resolutions, and the rate picks on
     // tables ship 526 and 626 where every other mode's pair agrees. So it is the
     // one preference the field rate disambiguates, and it picks a RESOLUTION
     // rather than adjusting a timing. docs/vesa-gtf.md settled the split.
-    CHECK((OutputRaster::modeForPreference(1, 59.94f) == &Mode480p));
-    CHECK((OutputRaster::modeForPreference(1, 50.0f) == &Mode576p));
+    CHECK((OutputRaster::modeForPreference(Output480P, 59.94f) == &Mode480p));
+    CHECK((OutputRaster::modeForPreference(Output480P, 50.0f) == &Mode576p));
 
     CHECK(Mode480p.activeLines() == 480);
     CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back
@@ -299,11 +298,12 @@ TEST_CASE("the SD preference is two different resolutions, and the rate picks on
 TEST_CASE("a preference that is not a resolution resolves to no mode")
 {
     // 0 leaves the caller to fall back rather than silently solving the wrong
-    // raster. Downscale went with the tables on 2026-08-14 -- it was reachable
-    // from the OLED alone, never from the web UI, and its one assignment site in
-    // the sketch was already commented out.
-    CHECK((OutputRaster::modeForPreference(6, 50.0f) == 0));    // OutputDownscale, gone
-    CHECK((OutputRaster::modeForPreference(10, 50.0f) == 0));   // OutputBypass, no raster
+    // raster. 6 was OutputDownscale, which went with the tables on 2026-08-14 --
+    // reachable from the OLED alone, never from the web UI, and its one
+    // assignment site in the sketch was already commented out -- so it is cast
+    // rather than named: the enumerator no longer exists.
+    CHECK((OutputRaster::modeForPreference((PresetPreference)6, 50.0f) == 0));
+    CHECK((OutputRaster::modeForPreference(OutputBypass, 50.0f) == 0));
 }
 
 TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
@@ -312,7 +312,7 @@ TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
     // and that file's own frame height is the answer. The caller reads it back,
     // which is the last place that inherits on purpose; it goes when a saved
     // slot records the inputs to the calculation instead of a register dump.
-    CHECK((OutputRaster::modeForPreference(2, 50.0f) == 0));   // OutputCustomized
+    CHECK((OutputRaster::modeForPreference(OutputCustomized, 50.0f) == 0));
 }
 
 int main(int argc, char **argv)

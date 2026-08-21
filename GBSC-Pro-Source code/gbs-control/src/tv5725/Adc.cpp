@@ -42,10 +42,61 @@ void Adc::latch()
     PLLAD_LAT::write(1);
 }
 
-void Adc::applySampleRate(uint16_t divider)
+uint8_t Adc::postDividerFor(uint32_t ckoHz)
 {
+    if (ckoHz >= 80000000u)
+        return 0;
+    if (ckoHz >= 40000000u)
+        return 1;
+    if (ckoHz >= 20000000u)
+        return 2;
+    return 3;
+}
+
+uint8_t Adc::oversampleFor(uint8_t postDivider, uint8_t wanted)
+{
+    uint8_t ratio = wanted < 1 ? 1 : wanted;
+    while (ratio > 1 && stepsFor(ratio) > postDivider)
+        ratio /= 2;
+    return ratio;
+}
+
+uint8_t Adc::stepsFor(uint8_t oversample)
+{
+    uint8_t steps = 0;
+    for (uint8_t ratio = oversample; ratio > 1; ratio /= 2)
+        ++steps;
+    return steps;
+}
+
+uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
+                             uint8_t oversample)
+{
+    if (lineRateHz == 0) {
+        // No CKO, so no row to read the crossover table against. The divider is
+        // the caller's own and still goes in; picking a row by arithmetic on a
+        // zero would be a guess wearing a calculation's clothes.
+        PLLAD_MD::write(divider);
+        latch();
+        return oversample < 1 ? 1 : oversample;
+    }
+
+    uint8_t postDivider = postDividerFor((uint32_t)divider * lineRateHz);
+    uint8_t ratio = oversampleFor(postDivider, oversample);
+
     PLLAD_MD::write(divider);
+    PLLAD_KS::write(postDivider);
+    PLLAD_CKOS::write((uint8_t)(postDivider - stepsFor(ratio)));
+
+    // The decimators undo in the digital domain what the faster tap added, so
+    // they follow the ratio rather than the tap.
+    ADC_CLK_ICLK1X::write(ratio >= 2 ? 1 : 0);
+    ADC_CLK_ICLK2X::write(ratio >= 4 ? 1 : 0);
+    DEC1_BYPS::write(ratio >= 4 ? 0 : 1);
+    DEC2_BYPS::write(ratio >= 2 ? 0 : 1);
+
     latch();
+    return ratio;
 }
 
 }  // namespace Tv5725

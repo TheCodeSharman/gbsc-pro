@@ -189,6 +189,12 @@ public:
                                                                       // PA_PLLAD_CNTRL_[5:1]
 
     // Every static register of this subsystem, in address order.
+    typedef UReg<0x05, 0x1F, 0, 1> DEC1_BYPS;                         // The 4x to 2x decimator bypass enable When 1, the 4x to 2x
+                                                                      // decimator bypass
+
+    typedef UReg<0x05, 0x1F, 1, 1> DEC2_BYPS;                         // The 2x to 1x decimator bypass enable When 1, the 2x to 1x
+                                                                      // decimator hypass
+
     static void init();
 
     // A rising edge on PLLAD_LAT loads MD, ND, KS, CKOS and ICP together. The
@@ -198,7 +204,30 @@ public:
 
     // The divider and the latch that loads it. Separating them leaves the PLL
     // running the old value with every register reading back correct.
-    static void applySampleRate(uint16_t divider);
+    // The VCO post divider for a CKO frequency, off RD-5725-1.1's own crossover
+    // table. Read against CKO -- what the divider alone produces -- not against
+    // the oversampled rate the ADC then runs at.
+    static uint8_t postDividerFor(uint32_t ckoHz);
+
+    // The oversampling that post divider can carry. Each doubling takes an
+    // output tap one step faster, and there is none above the top, so a ratio
+    // the clock cannot give comes back reduced.
+    static uint8_t oversampleFor(uint8_t postDivider, uint8_t wanted);
+
+    // Everything PLLAD_LAT loads, and the decimators that follow the tap it
+    // selects, from the rate the caller holds. Returns the oversampling
+    // actually installed.
+    //
+    // ALL OF IT, in one call, because the latch loads MD, KS and CKOS together:
+    // a group assembled across two calls latches whatever the chip was holding
+    // for the rest. The sync processor counts in ADC clocks, so a KS left on
+    // the wrong crossover row makes every source measurement garbage.
+    static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
+                                   uint8_t oversample);
+
+private:
+    // How many taps above the post divider a ratio asks for: one per doubling.
+    static uint8_t stepsFor(uint8_t oversample);
 };
 
 }  // namespace Tv5725

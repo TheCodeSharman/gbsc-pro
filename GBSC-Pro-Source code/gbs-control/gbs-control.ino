@@ -3483,9 +3483,7 @@ static const Tv5725::OutputMode *outputModeForThisLoad()
 // off the preset-load path entirely.
 static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
 {
-    const uint8_t Output960P = 0;
-    const uint8_t Output1024P = 4;
-    uint8_t preference = uopt->presetPreference;
+    PresetPreference preference = uopt->presetPreference;
 
     const bool pal = (result == 2 || result == 4);
 
@@ -8213,7 +8211,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // Back to the default framing. The framing is the engine's own
                 // state and no register holds it, so without this a picture
                 // zoomed into a corner needs a mode change or a reboot.
-                case '@':
+                case 'B':
                     geometry.reset();
                     break;
                 case 'q':

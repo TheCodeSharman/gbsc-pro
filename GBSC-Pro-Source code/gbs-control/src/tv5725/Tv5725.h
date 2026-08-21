@@ -1595,13 +1595,7 @@ public:
 
     typedef UReg<0x05, 0x1F, 0, 8> DEC_5_1F;
 
-    typedef UReg<0x05, 0x1F, 0, 1> DEC1_BYPS;                         // The 4x to 2x decimator bypass enable When 1, the 4x to 2x
-                                                                      // decimator bypass
-
-    typedef UReg<0x05, 0x1F, 1, 1> DEC2_BYPS;                         // The 2x to 1x decimator bypass enable When 1, the 2x to 1x
-                                                                      // decimator hypass
-
-    typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;                   // Color space convert bypass enable When set to 1, color
+typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;                   // Color space convert bypass enable When set to 1, color
                                                                       // space convert module bypass
 
     typedef UReg<0x05, 0x1F, 3, 4> DEC_TEST_SEL;

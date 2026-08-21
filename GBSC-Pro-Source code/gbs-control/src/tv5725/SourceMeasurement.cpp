@@ -104,10 +104,12 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
 // --- the chosen divider, held ----------------------------------------------
 
 const uint8_t SourceMeasurement::SteadySamples;
+const uint16_t SourceMeasurement::RateAgreementPerMille;
+const uint8_t SourceMeasurement::RateAgreementAttempts;
 
 SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
-      steadyLines_(0), steadyRun_(0)
+      agreedRateHz_(0.0f), steadyLines_(0), steadyRun_(0), rateAttempts_(0)
 {
 }
 
@@ -137,6 +139,25 @@ void SourceMeasurement::resetSteadiness()
 {
     steadyRun_ = 0;
     steadyLines_ = 0;
+    agreedRateHz_ = 0.0f;
+    rateAttempts_ = 0;
+}
+
+bool SourceMeasurement::rateSettled()
+{
+    float previous = agreedRateHz_;
+    agreedRateHz_ = fieldRateHz_;
+
+    if (rateAttempts_ < RateAgreementAttempts)
+        ++rateAttempts_;
+
+    if (previous > 0.0f && fieldRateHz_ > 0.0f) {
+        float error = fieldRateHz_ > previous ? fieldRateHz_ / previous
+                                              : previous / fieldRateHz_;
+        if (error < 1.0f + (float)RateAgreementPerMille / 1000.0f)
+            return true;
+    }
+    return rateAttempts_ >= RateAgreementAttempts;
 }
 
 // The line rate the source is running at, in Hz, or 0 when it cannot be

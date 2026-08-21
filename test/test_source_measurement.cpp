@@ -440,6 +440,83 @@ TEST_CASE("a count that moves starts the run again")
     CHECK_FALSE(measurement.sampleSteady());
 }
 
+TEST_CASE("the field rate has to REPEAT before anything is sized from it")
+{
+    // Measured on the bench: settled, getSourceFieldRate() returns 50.08 Hz on
+    // eighty consecutive readings. Taken across a preset load it lands anywhere
+    // in 49.92..50.26 -- 0.35% out, and lineRateFrom()'s 2% cross-check passes
+    // every one of them, because that band is a gross-error net rather than a
+    // precision gate.
+    //
+    // The raster is where it costs: horizontalTotal = clock / rate / lines, so
+    // 0.35% off the rate is 0.35% off the line, and nothing re-solves it. Three
+    // preset loads in four came out at 1923 or 1910 against the 1916 the same
+    // engine computes once the source has settled.
+    seedSourceLines(311);
+    g_fieldRate = 50.26f;
+
+    SourceMeasurement measurement;
+    REQUIRE(measurement.measureLineRate());
+    CHECK_FALSE(measurement.rateSettled());
+
+    SUBCASE("a rate that lands somewhere else has not repeated either") {
+        g_fieldRate = 49.92f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK_FALSE(measurement.rateSettled());
+    }
+
+    SUBCASE("but a rate that never repeats is taken as it stands rather than "
+            "holding the mode change open for ever") {
+        // The capture is frozen while a mode change is outstanding, so a source
+        // whose period genuinely wanders would sit on a frozen picture. A
+        // raster a fraction of a percent wrong is the better failure.
+        // Every reading a fifth of a percent from the last -- twice the
+        // agreement band, and inside lineRateFrom()'s 2% of the nominal 50, so
+        // each one is measurable and none of them agrees. One attempt is
+        // already spent above.
+        for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
+            CAPTURE(i);
+            g_fieldRate = 50.0f + (float)i * 0.1f;
+            REQUIRE(measurement.measureLineRate());
+            CHECK_FALSE(measurement.rateSettled());
+        }
+        g_fieldRate = 49.5f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK(measurement.rateSettled());
+    }
+
+    SUBCASE("the same rate twice is the source holding still") {
+        REQUIRE(measurement.measureLineRate());
+        CHECK(measurement.rateSettled());
+    }
+
+    SUBCASE("and the reading noise of a settled source is not a change") {
+        // Two readings of one field period at the ESP's clock, so they differ
+        // in the last place. The band is a tenth of a percent: ten times that
+        // noise, and a third of the smallest settling error seen.
+        g_fieldRate = 50.26f * 1.0005f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK(measurement.rateSettled());
+    }
+}
+
+TEST_CASE("a mode change abandons the field rate it had agreed on")
+{
+    // The rate is about to move, so a reading from the mode before it must not
+    // be the one the next reading agrees with.
+    seedSourceLines(311);
+    g_fieldRate = 50.08f;
+
+    SourceMeasurement measurement;
+    REQUIRE(measurement.measureLineRate());
+    REQUIRE_FALSE(measurement.rateSettled());
+
+    measurement.resetSteadiness();
+
+    REQUIRE(measurement.measureLineRate());
+    CHECK_FALSE(measurement.rateSettled());
+}
+
 TEST_CASE("a count outside what any source runs never settles")
 {
     // 97 and 98 are what a preset load leaves behind, and they are steady --

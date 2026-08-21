@@ -176,6 +176,19 @@ void Geometry::modeChanged(const OutputMode *mode, bool customPreset,
     // The line count is about to move, so the steadiness run so far means
     // nothing.
     sampling_.resetSteadiness();
+
+    // A custom preset's saved divider is on the chip right now, and the write
+    // below is about to cover it. Taken first, so what gets re-asserted is the
+    // dump's own value rather than the mode before it.
+    if (customPreset)
+        sampling_.adopt();
+
+    // The sampling clock, BEFORE anything tries to measure. A load leaves the
+    // ADC PLL on the bring-up's crossover row, and the sync processor counts in
+    // ADC clocks -- so every measurement is garbage until this runs, the
+    // steadiness gate never passes, and the pass that would have fixed the
+    // clock never arrives.
+    writeSampling();
 }
 
 bool Geometry::poll()
@@ -208,6 +221,14 @@ bool Geometry::poll()
             adoptSampling();
         return false;
     }
+
+    // A rate is worth sizing a raster from once it has REPEATED. The cross-check
+    // inside measureLineRate() bounds the rate against the line count, which
+    // catches a settling source off by tens of percent and passes one off by
+    // tenths -- and the raster is out by whatever fraction the rate is, for
+    // good, because nothing re-solves it.
+    if (!sampling_.rateSettled())
+        return false;
 
     // BOTH branches must run, or the engine has no divider and every window
     // defers forever. A custom preset is a register dump replayed off the
@@ -299,7 +320,8 @@ void Geometry::writeSampling()
     if (!sampling_.usable())
         return;
 
-    Adc::applySampleRate(sampling_.divider());
+    Adc::applySampleRate(sampling_.divider(), sampling_.lineRateHz(),
+                         modeOversample_);
     InputFormatter::writeLineCounter(sampling_.ifLine());
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }

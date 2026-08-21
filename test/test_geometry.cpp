@@ -167,10 +167,20 @@ static void checkBenchGeometry()
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
     CHECK(FrameBuffer::PB_FETCH_NUM::read() == 223);
 
+    // The rest of what PLLAD_LAT loads, and the decimators that follow the tap
+    // it selects. 2250 samples on a 15574 Hz line is 35.0 MHz, the datasheet's
+    // 40..20 MHz row, and 4x oversampling takes the tap two steps faster.
+    CHECK(Adc::PLLAD_KS::read() == 2);
+    CHECK(Adc::PLLAD_CKOS::read() == 0);
+    CHECK(Adc::ADC_CLK_ICLK1X::read() == 1);
+    CHECK(Adc::ADC_CLK_ICLK2X::read() == 1);
+    CHECK(Adc::DEC1_BYPS::read() == 0);
+    CHECK(Adc::DEC2_BYPS::read() == 0);
+
     // Capture, released now the windows under it are the new mode's.
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
 
-    CHECK(registersWritten() == 54);
+    CHECK(registersWritten() == 57);
 }
 
 // poll() runs on every loop() pass, and the steadiness gate wants a few before
@@ -340,9 +350,12 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     Geometry engine(clock);
     engine.modeChanged(benchMode(), false, 4);
 
+    // Two for a mode change, and no more: one reading has nothing to agree
+    // with, so the pass that takes it stops there and the next one solves
+    // everything from its own single reading.
     const unsigned before = g_fieldRateCalls;
     REQUIRE(pollUntilSolved(engine));
-    CHECK(g_fieldRateCalls - before == 1);
+    CHECK(g_fieldRateCalls - before == 2);
 
     SUBCASE("and once for a framing the user asked for") {
         const unsigned solved = g_fieldRateCalls;

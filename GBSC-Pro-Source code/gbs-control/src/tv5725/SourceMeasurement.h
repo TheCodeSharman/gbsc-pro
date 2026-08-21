@@ -125,10 +125,33 @@ public:
     // 97 a preset load leaves behind is perfectly steady.
     bool sampleSteady();
 
-    // A mode change is about to move the count, so the run so far means nothing.
+    // A mode change is about to move the count and the rate, so the run so far
+    // and the rate agreed on mean nothing.
     void resetSteadiness();
 
     bool measureLineRate();
+
+    // How far two field-rate readings may differ and still be the same rate, in
+    // parts per thousand. One reading of one field period at the ESP's clock,
+    // so settled readings differ in the last place; 0.1% is ten times that and
+    // a third of the smallest settling error measured.
+    static const uint16_t RateAgreementPerMille = 1;
+
+    // How many readings may disagree before the rate is taken as it stands. A
+    // source whose period genuinely wanders would otherwise hold the mode
+    // change open for ever, and the capture stays frozen for as long as it is
+    // open -- a raster a fraction of a percent wrong is the better failure.
+    static const uint8_t RateAgreementAttempts = 8;
+
+    // Whether the rate measureLineRate() just took is worth sizing a raster
+    // from -- either because it repeated, or because it has been asked
+    // RateAgreementAttempts times. **THE RASTER MUST NOT BE SOLVED FIRST.**
+    //
+    // lineRateFrom()'s 2% cross-check is a gross-error net and passes a rate
+    // read across a preset load, which is out by tenths of a percent -- and
+    // horizontalTotal = clock / rate / lines, so the raster is out by the same
+    // fraction and nothing re-solves it. docs/firmware-geometry-engine.md
+    bool rateSettled();
 
     // Choose one for this line rate. False and NO state change when the rate is
     // unmeasurable, so the previous choice survives a dropped measurement --
@@ -163,9 +186,11 @@ private:
     uint16_t divider_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;
+    float fieldRateHz_;
+    float agreedRateHz_;
     uint16_t steadyLines_;
     uint8_t steadyRun_;
-    float fieldRateHz_;
+    uint8_t rateAttempts_;
 };
 
 }  // namespace Tv5725
