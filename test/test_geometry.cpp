@@ -345,8 +345,10 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("a pan cannot put the capture stop on the wrap point either") {
         // pan_capture() bounds it the same way, for the same reason.
         for (int16_t p : {+5000, +600, -5000}) {
-            CHECK(PanAndZoom(0, 0, 0, p).capture(InputLine(624), 50.0f, true, 0).start() <= 623);
-            CHECK(PanAndZoom(0, 0, p, 0).capture(InputLine(1126), 50.0f, false, 0).start() <= 1276);
+            CHECK(PanAndZoom(0, 0, 0, p).capture(InputLine(624), 50.0f, true, 0).start()
+                  <= InputLine(624).lastCapture());
+            CHECK(PanAndZoom(0, 0, p, 0).capture(InputLine(1126), 50.0f, false, 0).start()
+                  <= InputLine(1126).lastCapture());
         }
     }
 
@@ -1168,4 +1170,39 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
           <= (int32_t)fit.produced() + 1);
     CHECK(solved.displayStop() > 100);
     CHECK((int32_t)raster - solved.displayStart() > 100);
+}
+
+// The capture stop is what the pan walks toward the end of the line, and past
+// InputLine::lastCapture() the input formatter is writing blanking rather than
+// video. The control has to stop before that rather than the output hiding it
+// afterwards, so this is the invariant no framing may break.
+TEST_CASE("no framing puts the capture stop past what the line can write")
+{
+    const uint16_t lines[] = {624, 1126, 1265, 1277, 2250};
+    const int16_t pans[] = {0, +40, +600, +5000, -600, -5000};
+    const int16_t zooms[] = {0, +137, +800, +5000, -40, -5000};
+
+    for (uint16_t units : lines) {
+        for (bool vertical : {false, true}) {
+            const InputLine line = vertical ? InputLine(units)
+                                            : InputLine::measured(units, 181, 2553);
+            CAPTURE(units);
+            CAPTURE(vertical);
+            CAPTURE(line.lastCapture());
+
+            for (int16_t p : pans) {
+                for (int16_t z : zooms) {
+                    CAPTURE(p);
+                    CAPTURE(z);
+                    const PanAndZoom framing = vertical ? PanAndZoom(0, z, 0, p)
+                                                        : PanAndZoom(z, 0, p, 0);
+                    const BlankingTiming got =
+                        framing.capture(line, 50.0f, vertical, 1916);
+
+                    CHECK(got.start() <= line.lastCapture());
+                    CHECK(got.stop() >= line.firstCapture());
+                }
+            }
+        }
+    }
 }
