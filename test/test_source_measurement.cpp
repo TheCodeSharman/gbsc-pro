@@ -239,16 +239,6 @@ TEST_CASE("the sync processor's retime window is the divider a third time")
 // a solid green screen and every register self-consistent. So SourceMeasurement holds the
 // number it chose and hands it to whoever needs it.
 
-// Where the three registers live, so the assertions below name bytes rather
-// than repeat Tv5725.h's arithmetic:
-//   PLLAD_MD      s5_12[0:11]
-//   IF_HSYNC_RST  s1_0E[0:11]
-//   SP_RT_HS_SP   s5_4B[0:11]
-static uint16_t twelveBits(uint8_t seg, uint8_t reg)
-{
-    return (uint16_t)((Wire.bank[seg][reg] | (Wire.bank[seg][reg + 1] << 8)) & 0x0FFF);
-}
-
 TEST_CASE("a solved divider is held, and every register follows from it")
 {
     Wire.reset();
@@ -267,13 +257,6 @@ TEST_CASE("a solved divider is held, and every register follows from it")
     SUBCASE("the derived values come from the held divider") {
         CHECK(sampling.ifLine() == SourceMeasurement::ifLineFor(chosen));
         CHECK(sampling.retimeStop() == SourceMeasurement::retimeStopFor(chosen));
-    }
-
-    SUBCASE("write() puts all three in the right bytes, from the one value") {
-        sampling.write();
-        CHECK(twelveBits(5, 0x12) == chosen);
-        CHECK(twelveBits(1, 0x0E) == SourceMeasurement::ifLineFor(chosen));
-        CHECK(twelveBits(5, 0x4B) == SourceMeasurement::retimeStopFor(chosen));
     }
 }
 
@@ -308,15 +291,6 @@ TEST_CASE("adopt() is how a path that does not compute says so out loud")
     sampling.adopt();
     CHECK(sampling.usable());
     CHECK(sampling.divider() == 2553);
-
-    SUBCASE("and adopting still makes the other two agree with it") {
-        // The dump carries all three bytes, so this normally rewrites them with
-        // what is already there. It stops mattering only when the slot records
-        // the inputs to the calculation instead of the outputs.
-        sampling.write();
-        CHECK(twelveBits(1, 0x0E) == 1276);
-        CHECK(twelveBits(5, 0x4B) == 2374);
-    }
 }
 
 // --- the line rate has to be SETTLED, not merely in range --------------------

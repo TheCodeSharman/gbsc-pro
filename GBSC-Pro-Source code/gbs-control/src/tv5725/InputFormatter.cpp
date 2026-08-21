@@ -67,4 +67,9 @@ void InputFormatter::init()
     IF_SEL_ADC_SYNC::write(0x1);                 // s1_28[2:2]
 }
 
+void InputFormatter::writeLineCounter(uint16_t units)
+{
+    IF_HSYNC_RST::write(units);
+}
+
 }  // namespace Tv5725

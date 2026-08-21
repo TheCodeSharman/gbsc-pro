@@ -2577,13 +2577,7 @@ void resetPLLAD()
     rto->continousStableCounter = 1; 
 }
 
-void latchPLLAD()
-{
-    GBS::PLLAD_LAT::write(0);
-    ESP.wdtFeed();
-    delayMicroseconds(128);
-    GBS::PLLAD_LAT::write(1);
-}
+void latchPLLAD() { Tv5725::Adc::latch(); }
 
 // How long to wait for the source to lock again after moving the divider. The
 // sync processor needs a few frames; 1.2 s is several, and short enough that a
@@ -3913,8 +3907,6 @@ void doPostPresetLoadSteps()
         } else {
             geometry.solveSampling(measuredLineRateHz(), rto->osr);
         }
-
-        latchPLLAD();
 
         if (rto->isCustomPreset) {
 
@@ -5906,7 +5898,6 @@ void runSyncWatcher() //
     // SP_RT_HS_SP off one value), so moving it invalidates every window.
     if (geometry.samplingPending() && getStatus16SpHsStable()) {
         if (geometry.solveSampling(measuredLineRateHz(), rto->osr)) {
-            latchPLLAD();
             geometry.solveFromScratch();
         }
     }

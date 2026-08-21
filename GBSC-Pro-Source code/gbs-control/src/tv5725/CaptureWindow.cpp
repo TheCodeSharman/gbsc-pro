@@ -13,18 +13,12 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), linePx_(0), frameLines_(0) {}
 
-bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRateHz)
+bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRateHz,
+                                uint16_t sourceLines, uint16_t hsyncLow)
 {
     linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
     const uint16_t horizontalWrap = sampling.ifLine() + 1;
-
-    // How much of the line the hsync pulse takes is a property of the source, so
-    // it is measured. Both are in ADC samples, the one space they share -- the
-    // denominator is the divider, not STATUS_SYNC_PROC_HTOTAL, which only echoes
-    // PLLAD_MD back.
-    const uint16_t hlowLen = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-    const uint16_t sourceVerticalTotal = GBS::STATUS_SYNC_PROC_VTOTAL::read();
 
     if (horizontalWrap < 64)
         return false;
@@ -39,13 +33,13 @@ bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRa
     //
     // lineRateFrom() is the one owner of the settling rule already: the line
     // count picks the nominal rate, and the measured rate has to agree with it.
-    if (SourceMeasurement::lineRateFrom(sourceVerticalTotal, fieldRateHz) == 0)
+    if (SourceMeasurement::lineRateFrom(sourceLines, fieldRateHz) == 0)
         return false;
 
-    horizontalLine_ = InputLine::measured(horizontalWrap, hlowLen, sampling.divider());
+    horizontalLine_ = InputLine::measured(horizontalWrap, hsyncLow, sampling.divider());
 
     // IF_VB counts half-lines, so it rolls at twice the source frame.
-    verticalLine_ = InputLine(2 * (sourceVerticalTotal + 1));
+    verticalLine_ = InputLine(2 * (sourceLines + 1));
     return true;
 }
 

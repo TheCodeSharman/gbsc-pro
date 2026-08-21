@@ -106,6 +106,12 @@ public:
     // BYPASS. Both inherit by definition -- what changes is that they say so.
     void adopt();
 
+    // The source, as the sync processor counts it. These are the only reads of
+    // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,
+    // and every other quantity the engine needs it computed itself.
+    static uint16_t measureSourceLines();
+    static uint16_t measureHsyncLow();
+
     bool usable() const;
     uint16_t divider() const;
     uint16_t ifLine() const;
@@ -114,10 +120,6 @@ public:
     // All three registers, from the one held value.
     //
     // **THIS DOES NOT LATCH, AND THE CALLER MUST RUN BEFORE ONE THAT DOES.**
-    // PLLAD_LAT loads MD, ND, KS, CKOS and ICP together, so the latch belongs to
-    // whoever sets up the whole PLL. Writing the divider after that latch leaves
-    // the PLL on the old one with every register reading correct.
-    void write() const;
 
 private:
     uint16_t divider_;

@@ -41,4 +41,9 @@ void SyncProcessor::init()
     SP_TEST_SIGNAL_SEL::write(0x0);              // s5_63[6:4]
 }
 
+void SyncProcessor::writeRetimeStop(uint16_t samples)
+{
+    SP_RT_HS_SP::write(samples);
+}
+
 }  // namespace Tv5725

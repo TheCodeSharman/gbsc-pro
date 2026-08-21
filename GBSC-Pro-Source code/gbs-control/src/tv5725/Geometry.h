@@ -130,6 +130,10 @@ private:
 
     bool fail();
 
+    // The divider, the IF line counter and the retime stop, to the three
+    // subsystems that declare them.
+    void writeSampling();
+
     // Output pixels -> input units. A press of nothing has to be skipped
     // outright: stepUnits() floors at one granule, so an axis the press did not
     // name would drift a unit per press.

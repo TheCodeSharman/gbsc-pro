@@ -191,6 +191,10 @@ public:
 
     // Every static register of this subsystem, in address order.
     static void init();
+
+    // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
+    // value off the divider; this block is where the register lives.
+    static void writeRetimeStop(uint16_t samples);
 };
 
 }  // namespace Tv5725

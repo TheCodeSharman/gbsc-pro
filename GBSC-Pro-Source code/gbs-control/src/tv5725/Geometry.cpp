@@ -1,9 +1,12 @@
 #include "Geometry.h"
 
+#include "Adc.h"
 #include "CaptureWindow.h"
+#include "InputFormatter.h"
 #include "Memory.h"
 #include "MemoryMap.h"
 #include "OutputRaster.h"
+#include "SyncProcessor.h"
 
 namespace Tv5725 {
 
@@ -72,7 +75,7 @@ bool Geometry::solveRaster()
     // the measurement only has to agree with it.
     // docs/firmware-geometry-engine.md
     float fieldRate = getSourceFieldRate(0);
-    uint16_t sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    uint16_t sourceLines = SourceMeasurement::measureSourceLines();
     if (sourceLines < CaptureWindow::SourceVerticalTotalMin || sourceLines > CaptureWindow::SourceVerticalTotalMax) {
         // Deferred, not abandoned: the sync processor reads 97 or 98 for a
         // moment after a preset load and this is called in exactly that moment.
@@ -165,12 +168,29 @@ bool Geometry::applyRequested()
     return solved;
 }
 
-void Geometry::adoptSampling() { sampling_.adopt(); sampling_.write(); }
+void Geometry::adoptSampling()
+{
+    sampling_.adopt();
+    writeSampling();
+}
+
+// One quantity in three registers, each written by the block that declares it.
+// The divider goes first because Adc latches it, and the latch loads KS, CKOS
+// and ICP with it -- so anything setting those must already have run.
+void Geometry::writeSampling()
+{
+    if (!sampling_.usable())
+        return;
+
+    Adc::applySampleRate(sampling_.divider());
+    InputFormatter::writeLineCounter(sampling_.ifLine());
+    SyncProcessor::writeRetimeStop(sampling_.retimeStop());
+}
 
 bool Geometry::solveSampling(uint32_t lineRateHz, uint8_t oversample)
 {
     if (sampling_.solve(lineRateHz, oversample)) {
-        sampling_.write();
+        writeSampling();
         samplingPending_ = false;
         return true;
     }
@@ -224,7 +244,9 @@ bool Geometry::fail()
 
 bool Geometry::readCapture(CaptureWindow &capture)
 {
-    if (!capture.readRasters(sampling_, getSourceFieldRate(0))) {
+    if (!capture.readRasters(sampling_, getSourceFieldRate(0),
+                             SourceMeasurement::measureSourceLines(),
+                             SourceMeasurement::measureHsyncLow())) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;

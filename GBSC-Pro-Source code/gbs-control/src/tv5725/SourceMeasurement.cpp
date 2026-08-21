@@ -125,14 +125,17 @@ uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_); }
 
 uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
 
-void SourceMeasurement::write() const
+uint16_t SourceMeasurement::measureSourceLines()
 {
-    if (!usable())
-        return;
+    return GBS::STATUS_SYNC_PROC_VTOTAL::read();
+}
 
-    GBS::PLLAD_MD::write(divider_);
-    GBS::IF_HSYNC_RST::write(ifLine());
-    GBS::SP_RT_HS_SP::write(retimeStop());
+// How much of the line the hsync pulse takes, in ADC samples -- the same space
+// the divider is in, which is why the denominator is the divider and never
+// STATUS_SYNC_PROC_HTOTAL, that being an echo of PLLAD_MD.
+uint16_t SourceMeasurement::measureHsyncLow()
+{
+    return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
 }  // namespace Tv5725

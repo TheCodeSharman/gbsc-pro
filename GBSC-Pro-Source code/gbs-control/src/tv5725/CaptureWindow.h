@@ -46,7 +46,8 @@ public:
     // `fieldRateHz` is the raw measurement, not a defaulted one: it is here to
     // CONTRADICT the line count, and a fallback that always looks plausible
     // cannot. docs/firmware-geometry-engine.md.
-    bool readRasters(const SourceMeasurement &sampling, float fieldRateHz);
+    bool readRasters(const SourceMeasurement &sampling, float fieldRateHz,
+                     uint16_t sourceLines, uint16_t hsyncLow);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

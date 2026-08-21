@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls clean help
+.PHONY: all test geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -273,6 +273,17 @@ controls:
 	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp)
 	@"$(OUT)/test_controls"
 
+## adc: host unit tests for the ADC PLL's divider and latch
+#
+# PLLAD_LAT loads MD, ND, KS, CKOS and ICP on a rising edge, so only the ORDER
+# of the writes distinguishes a loaded divider from one the PLL never saw.
+adc:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_adc" \
+	  "$(HERE)/test_adc.cpp" src/tv5725/Adc.cpp
+	@"$(OUT)/test_adc"
+
 ## register-queue: host unit tests for the deferred register queue
 #
 # The queue is plain bookkeeping with no Arduino dependency, deliberately: the
@@ -285,7 +296,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls
+test: geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
 all: test
 
 ## clean: remove the compiled test binaries

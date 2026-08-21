@@ -1,5 +1,7 @@
 #include "Adc.h"
 
+#include <Arduino.h>
+
 namespace Tv5725 {
 
 void Adc::init()
@@ -31,6 +33,19 @@ void Adc::init()
     PLLAD_ICP::write(0x6);                       // s5_17[2:0]
     PA_ADC_LOCKOFF::write(0x0);                  // s5_18[6:6]
     PA_SP_LOCKOFF::write(0x0);                   // s5_19[6:6]
+}
+
+void Adc::latch()
+{
+    PLLAD_LAT::write(0);
+    delayMicroseconds(128);
+    PLLAD_LAT::write(1);
+}
+
+void Adc::applySampleRate(uint16_t divider)
+{
+    PLLAD_MD::write(divider);
+    latch();
 }
 
 }  // namespace Tv5725

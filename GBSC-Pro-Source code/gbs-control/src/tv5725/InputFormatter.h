@@ -241,6 +241,10 @@ public:
     // Every static register of this subsystem, in address order. Called from
     // the bring-up where a preset table would have been loaded.
     static void init();
+
+    // The line counter, in IF units. SourceMeasurement decides the value off
+    // the ADC divider; this block is where the register lives.
+    static void writeLineCounter(uint16_t units);
 };
 
 }  // namespace Tv5725
