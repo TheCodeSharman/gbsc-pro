@@ -53,7 +53,6 @@ TEST_CASE("the framing is held as state and the window is derived")
     }
 
     SUBCASE("one unit is one unit at a narrow capture too") {
-        // Where the proportional control was at its coarsest relative to width.
         BlankingTiming narrow = ActiveImage(PanAndZoom(800, 0, 0, 0)).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
         BlankingTiming narrower = ActiveImage(PanAndZoom(801, 0, 0, 0)).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK((narrow.start() - narrow.stop()) - (narrower.start() - narrower.stop())
@@ -153,8 +152,8 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         // Zooming past the ceiling otherwise shrinks the capture while the
         // scale sits at its minimum, so the picture gets smaller on screen and
         // the display window closes in around it. At 4.0x a 1126 raster floors
-        // at 1126 * 256 / 1024 = 282, measured 2026-08-09 as the last capture
-        // that fills the screen before the bars.
+        // at 1126 * 256 / 1024 = 282, the last capture that fills the screen
+        // before the bars.
         const uint16_t Raster = 1126;
         CHECK(AxisVertical.minimumCapture(Raster) == 282);
 
@@ -250,9 +249,9 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
 // docs/scaler-geometry-model.md "The two green regions in an IF line".
 TEST_CASE("the capture window never takes the hsync pulse")
 {
-    // The bench RiscPC: a 7.1% hsync duty, measured 2026-08-09 as HLOW_LEN 181
-    // of PLLAD_MD 2553 and read here at the 2250 the write limit caps the
-    // divider to. 160 x 1126 / 2250 = 80.07 -> 81.
+    // The bench RiscPC: a 7.1% hsync duty, HLOW_LEN 181 of PLLAD_MD 2553, read
+    // here at the 2250 the write limit caps the divider to.
+    // 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t BenchHlow = 160, BenchAdcLine = 2250, BenchUnits = 1126;
     const InputLine Bench = InputLine::measured(BenchUnits, BenchHlow, BenchAdcLine);
     const float Rate = 50.0f;
@@ -297,7 +296,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
 
     SUBCASE("the framing is clamped to the same bound the window is") {
         // capture() clamps the window and clampToLine() clamps the framing; a
-        // difference of one unit between them is the dead zone of 2026-08-09.
+        // difference of one unit between them is a dead zone.
         ActiveImage f;
         f.panBy(-5000, 0);
         f.clampToLine(Bench, Rate, AxisHorizontal, 0);
@@ -313,9 +312,9 @@ TEST_CASE("the capture window never takes the hsync pulse")
 
 TEST_CASE("a nonsense capture is replaced, not trusted")
 {
-    // The stock preset leaves IF_VB_ST <= IF_VB_SP on 56 of 66 archived
-    // snapshots, and what the chip means by that is not established. Rather
-    // than decode a register state we are deleting, compute one.
+    // The stock preset commonly leaves IF_VB_ST <= IF_VB_SP, and what the chip
+    // means by that is not established. The engine computes a window rather
+    // than decoding one.
     BlankingTiming w = ActiveImage(PanAndZoom(0, 0, 0, 0)).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
 
     SUBCASE("a default capture is centred on the line") {

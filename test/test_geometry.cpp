@@ -242,9 +242,8 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST, the raster
 
     SUBCASE("but the divider IS adopted, or every window defers forever") {
-        // Deliberate: without a divider the capture window has no unit to be
-        // measured in, and the pending flag is what stops the fallback becoming
-        // permanent.
+        // Without a divider the capture window has no unit to be measured in,
+        // and the pending flag is what stops the fallback becoming permanent.
         CHECK(Wire.touched[5][0x12]);     // PLLAD_MD
         CHECK(Wire.touched[5][0x11]);     // PLLAD_LAT
     }
@@ -449,8 +448,8 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
 
 TEST_CASE("a framed picture holds every window against the framing")
 {
-    // Every window is recomputed on every solve, pan included -- inheriting one
-    // is what froze a picture at 620 lines.
+    // Every window is recomputed on every solve, pan included. Inheriting one
+    // freezes the picture at the previous mode's size.
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
@@ -504,11 +503,10 @@ TEST_CASE("a framed picture holds every window against the framing")
 
 TEST_CASE("a progressive source's vertical capture fits the counter it is on")
 {
-    // Measured 2026-08-20 at 640x480@75, VTOTAL 499, doubler bypassed: every
-    // IF_VB_ST from 999 down to 500 left the picture untouched because the
-    // counter never reaches them, and 494 produced one. So the IF counts the
-    // source's own lines when the doubler is out and half-lines when it is in,
-    // the same halving IF_HSYNC_RST follows.
+    // The IF counts the source's own lines when the doubler is out and
+    // half-lines when it is in, the same halving IF_HSYNC_RST follows. A window
+    // written past the count the counter reaches never fires.
+    // docs/scaler-geometry-model.md "What the IF counter counts"
     Wire.reset();
     Wire.poison(Poison);
     seedField(3, 0x01, 0, 12, 1278);   // VDS_HSYNC_RST, output line - 1
@@ -538,17 +536,13 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
 
 TEST_CASE("a divider the source cannot lock to is corrected without help")
 {
-    // Measured 2026-08-20, changing the RiscPC live from 640x480@60 down to
-    // 320x256@50. The divider the engine chose for the faster line is far too
-    // small for the slower one: it asks the ADC PLL for a frequency under its
-    // lock range, and the PLL locks to every other hsync instead. The sync
-    // processor then counts one line per two sent and twice the samples per
-    // line -- 155 lines against 2248 samples.
-    //
-    // 155 is outside what any source runs, so the steadiness gate refuses it on
-    // every pass and the line rate is never measured. That makes the refusal
-    // self-latching: nothing recomputes the divider that caused it, and the
-    // screen stays blank and stable rather than settling.
+    // A divider carried from a faster line asks the ADC PLL for a frequency
+    // under its lock range, and the PLL locks to every other hsync instead: the
+    // sync processor then counts one line per two sent and twice the samples
+    // per line. The count that produces is outside what any source runs, so the
+    // steadiness gate refuses it on every pass and the line rate is never
+    // measured -- which makes the refusal self-latching, because nothing
+    // recomputes the divider that caused it.
     Wire.reset();
     Wire.poison(Poison);
     seedField(3, 0x01, 0, 12, 1278);   // VDS_HSYNC_RST, output line - 1
@@ -581,9 +575,7 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
 
     // The correction costs a field rate measurement, so it waits for the count
     // to prove it is not going to settle on its own. Neither register holds
-    // still while it does: measured across a 23.5 s trapped window, the count
-    // alternates 155/156 with no identical run longer than 18, and the sample
-    // count spans 2247..2251. A gate wanting either to repeat never opens.
+    // still while it does, so a gate wanting either to repeat never opens.
     for (uint16_t i = 0; i < SourceMeasurement::UnmeasurableRunLimit - 1; ++i) {
         seedField(0, 0x1B, 0, 11, 155 + (i % 2));
         seedField(0, 0x17, 0, 12, 2247 + (i % 5));

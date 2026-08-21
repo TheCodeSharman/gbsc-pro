@@ -1,6 +1,6 @@
 // Host-compiled unit tests for Tv5725::Axis -- `make -C test axis`.
-// The bench measurements of 2026-08-03 to 2026-08-06 are the acceptance
-// criteria. docs/firmware-geometry-engine.md.
+// The bench measurements are the acceptance criteria.
+// docs/firmware-geometry-engine.md.
 //
 // `--dump` is intercepted before the test runner sees argv, and prints the
 // solved grid for inspection by hand.
@@ -29,8 +29,8 @@ using namespace Tv5725;
 
 // --- where the scaler starts writing -----------------------------------------
 
-// measure_origin.py, 2026-08-05: the near edge crept up until the frozen
-// scratch band vanished. (magnification, offset from VDS_?B_SP).
+// (magnification, offset from VDS_?B_SP), measured at the near edge.
+// docs/scaler-geometry-model.md
 TEST_CASE("the write start is not a constant")
 {
     SUBCASE("the horizontal write start matches every reading") {
@@ -47,14 +47,14 @@ TEST_CASE("the write start is not a constant")
     }
 
     SUBCASE("the readings recorded as unexplained also fit") {
-        // 78 and 94 were carried as irreconcilable. One formula, four
-        // magnifications -- they were measured at different scales.
+        // One formula over four magnifications: 78 and 94 are the same
+        // relationship read at different scales.
         CHECK_NEAR(AxisHorizontal.originOffset(1.001f), 80, 1.5);
         CHECK_NEAR(AxisHorizontal.originOffset(1.575f), 93, 1.5);
     }
 
     SUBCASE("the bezel is not the write start") {
-        // CORNER_V 63 is PANEL_VISIBLE_TOP: 37 + 26 was the panel's edge.
+        // 63 is the panel's visible top, not where the scaler starts.
         CHECK(AxisVertical.originOffset(2.0f) < 5);
         CHECK_NEAR(AxisHorizontal.originOffset(1.58f), 94, 1.0);
     }
@@ -98,10 +98,8 @@ TEST_CASE("one step is visible to the user")
     }
 }
 
-// Measured 2026-08-05 with measure_produced.py, floor() of the real value.
-// Taken with VDS_HB_SP 35 / VDS_VB_SP 37 against a corner assumed constant at
-// 129 / 63; the corner was not constant, so they are re-expressed against where
-// the scaler actually starts. Nothing is refitted.
+// Produced width, floored, expressed against where the scaler actually starts
+// writing rather than against a fixed corner. docs/scaler-geometry-model.md
 struct Reading { unsigned capture; unsigned scale; int recorded; };
 
 static const Reading MeasuredH[] = {
@@ -143,7 +141,7 @@ TEST_CASE("the picture is centred on the raster")
     PictureOrigin p = AxisHorizontal.placePicture(845, 1445, 2.0f);
 
     SUBCASE("the picture is centred on the raster, not pinned to a panel edge") {
-        // PANEL_VISIBLE_LEFT was carried as 127 and measured 90 on the bench TV.
+        // PANEL_VISIBLE_LEFT is 90 on the bench TV.
         CHECK(p.corner() == 300);
         CHECK(1445 - (p.corner() + 845) == p.corner());
     }
@@ -199,9 +197,9 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 
     SUBCASE("a smaller capture still fills the raster") {
-        // 800, not 400. Below Scale::minimumCapture(1445) = 706 the
-        // magnification runs out and the picture CANNOT fill the raster, so a
-        // capture under it is testing the ceiling rather than the fit.
+        // 800, not 400. Below Axis::minimumCapture(1445) the magnification
+        // runs out and the picture CANNOT fill the raster, so a capture under
+        // it is testing the ceiling rather than the fit.
         RasterFit small = AxisHorizontal.fitToRaster(800, 1445);
         PictureOrigin smallPlaced = AxisHorizontal.placePicture(
             small.produced(), 1445, Scale::Unity / (float)small.scale().reg());
@@ -209,8 +207,8 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 
     SUBCASE("the scale register bounds how big the picture can get") {
-        // A capture too small to fill the raster is bounded at 2.048x. That is
-        // a limit, not a failure.
+        // A capture too small to fill the raster is bounded by the axis's
+        // scale floor. That is a limit, not a failure.
         RasterFit tiny = AxisHorizontal.fitToRaster(60, 1445);
         CHECK(tiny.scale().reg() == AxisHorizontal.scaleMin());
         CHECK(tiny.produced() < AxisHorizontal.maxDisplayWindow(1445));
@@ -287,8 +285,8 @@ TEST_CASE("the solver places every output register")
     }
 
     SUBCASE("the display window hugs the picture") {
-        // A window sized for a different picture invalidated two of the
-        // 2026-08-05 headroom measurements, by blanking where tearing shows.
+        // A window sized for a different picture blanks where tearing shows,
+        // so a headroom measurement taken through one is worthless.
         CHECK(solved.display().start()
               == solved.display().stop() + (int32_t)solved.produced() - AxisHorizontal.margin());
     }
@@ -324,7 +322,7 @@ TEST_CASE("the solver places every output register")
     }
 }
 
-// --- the active window, 2026-08-12 -------------------------------------------
+// --- the active window ------------------------------------------------------
 
 TEST_CASE("the active window narrows the room before the picture")
 {
@@ -447,9 +445,7 @@ TEST_CASE("the picture starts no earlier than the back porch")
         CHECK(AxisHorizontal.placePicture(2400.0f, Raster, 2.0f, 140).corner() == 140);
     }
 
-    SUBCASE("the default is the old behaviour exactly") {
-        // This is what makes the change additive: the eleven bench readings this
-        // suite encodes still describe the same arithmetic.
+    SUBCASE("omitting the active window places the picture identically") {
         for (uint16_t raster : {1445, 1918, 2301, 2877})
             for (float produced : {800.0f, 1253.0f, 2079.0f}) {
                 PictureOrigin without = AxisHorizontal.placePicture(produced, raster, 1.5f);
@@ -469,8 +465,7 @@ TEST_CASE("horizontal zoom keeps its travel when the raster widens")
     // still fills the raster once VDS_HSCALE is at its floor. The numerator
     // moves with the output and the denominator does not, and the default
     // capture is a property of the INPUT line (1126 x 0.76 x 1.04), so the two
-    // do not track -- when solveRaster() took the raster 1436 -> 1916, three
-    // quarters of the horizontal zoom travel went with it, 307 units to 73.
+    // do not track and widening the output raster eats the zoom travel.
     const uint16_t Raster = 1916;
     const uint16_t DefaultCapture = 890;  // ActiveImage::defaultWidth on this bench
 
@@ -482,9 +477,9 @@ TEST_CASE("horizontal zoom keeps its travel when the raster widens")
 
 TEST_CASE("both axes magnify equally far, because nothing in the part says otherwise")
 {
-    // RD-5725-1.1 states no minimum for VDS_HSCALE -- regdef.txt:7684 gives only
-    // the ratio, and the field is 10 bits -- so there is no hardware bound to
-    // derive, which is why the horizontal floor was a swept number for so long.
+    // RD-5725-1.1 states no minimum for VDS_HSCALE -- it gives only the ratio,
+    // and the field is 10 bits -- so there is no hardware bound to derive and
+    // the floor is a picture-quality choice.
     CHECK(AxisHorizontal.scaleMin() == AxisVertical.scaleMin());
 }
 
