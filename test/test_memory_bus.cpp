@@ -29,8 +29,8 @@ using Tv5725::SdramTimings;
 static const uint8_t Poison = 0xA5;
 
 // Poisoned, then brought up. Every test starts from the same place.
-struct Bench {
-    Bench()
+struct FreshChip {
+    FreshChip()
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -40,7 +40,7 @@ struct Bench {
 
 TEST_CASE("the bus comes up at the fastest clock the part is rated for")
 {
-    Bench bench;
+    FreshChip chip;
 
     // 162 MHz -- but not a number written down twice. SdramTimings derives it
     // from the EM638325TS-6's tCK, tRCD and tRP and test_sdram_timing.cpp pins
@@ -51,7 +51,7 @@ TEST_CASE("the bus comes up at the fastest clock the part is rated for")
 
 TEST_CASE("the cycle counts programmed are the ones that clock requires")
 {
-    Bench bench;
+    FreshChip chip;
 
     const uint8_t clock = SdramTimings::fastestInSpec();
     CHECK(Wire.field(4, 0x05, 0, 2) == SdramTimings::actCycleRegister(clock));
@@ -60,7 +60,7 @@ TEST_CASE("the cycle counts programmed are the ones that clock requires")
 
 TEST_CASE("CAS latency 3 is programmed, which is what makes 162MHz legal")
 {
-    Bench bench;
+    FreshChip chip;
 
     // MEM_MODE_REG [6:4] is the latency driven during the Load Mode Register
     // cycle. The part's 6 ns tCK is its CL3 figure, so this byte and the clock
@@ -72,7 +72,7 @@ TEST_CASE("CAS latency 3 is programmed, which is what makes 162MHz legal")
 
 TEST_CASE("the board's nanosecond trim is written, not left to a preset")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(4, 0x04, 0, 3) == 2);  // MEM_FK_RD_DLY
     CHECK(Wire.field(4, 0x18, 0, 3) == 0);  // MEM_DATA_DLY_REG, 0.00 ns
@@ -81,7 +81,7 @@ TEST_CASE("the board's nanosecond trim is written, not left to a preset")
 
 TEST_CASE("a neighbour sharing a byte survives the field beside it")
 {
-    Bench bench;
+    FreshChip chip;
 
     // MEM_FK_RD_DLY is [2:0] of s4_04 and MEM_RD_LAT_PIP is [6:4] of it, and
     // MEM_CLK_DLY_REG and MEM_ADR_DLY_REG share s4_1b the same way, so a
@@ -92,7 +92,7 @@ TEST_CASE("a neighbour sharing a byte survives the field beside it")
 
 TEST_CASE("every register the subsystem owns is actually written")
 {
-    Bench bench;
+    FreshChip chip;
 
     // Asked of the fake, not inferred from the value: a field whose owned value
     // happened to equal the poison would read correct having never been touched.
@@ -107,7 +107,7 @@ TEST_CASE("every register the subsystem owns is actually written")
 
 TEST_CASE("the bus is aimed at the right bank for every write")
 {
-    Bench bench;
+    FreshChip chip;
 
     // PLL_MS is segment 0 and the SDRAM controller segment 4, so this subsystem
     // crosses a bank boundary -- which is why the fake models the pointer rather
@@ -125,7 +125,7 @@ TEST_CASE("the bus is aimed at the right bank for every write")
 
 TEST_CASE("segment 0 gets the clock and nothing else")
 {
-    Bench bench;
+    FreshChip chip;
 
     // The one byte outside segment 4. Anything else touched there would be a
     // field this class writes without saying so in its header.

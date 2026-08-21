@@ -19,8 +19,8 @@ using Tv5725::InputFormatter;
 // NTSC tables carry, so the assertion below can fail.
 static const uint8_t Poison = 0xC2;
 
-struct Bench {
-    Bench()
+struct FreshChip {
+    FreshChip()
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -30,7 +30,7 @@ struct Bench {
 
 TEST_CASE("the line double write reset position is owned, one value for every mode")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x0C, 1, 4) == 5);  // IF_LD_ST
     CHECK(Wire.touched[1][0x0C]);
@@ -38,7 +38,7 @@ TEST_CASE("the line double write reset position is owned, one value for every mo
 
 TEST_CASE("the rest of s1_0c is left to its own owners")
 {
-    Bench bench;
+    FreshChip chip;
 
     // IF_LD_RAM_BYPS is bit 0 and IF_INI_ST is bits 7-5 of the same byte, and
     // both are written by doPostPresetLoadSteps(). Read-modify-write is what
@@ -52,7 +52,7 @@ TEST_CASE("the input formatter stays inside segment 1")
 {
     // The input formatter is segment 1, so a write anywhere else is a wrong-bank
     // write, which is the defect the fake bus exists to catch.
-    Bench bench;
+    FreshChip chip;
 
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s) {
         if (s == 1)
@@ -73,7 +73,7 @@ TEST_CASE("the input formatter writes the addresses it owns and no others")
     // stop at s1_26 are constants with no scaling-path writer, so they are here.
     // Set 1 at s1_14/s1_16 is measured inert and belongs to nobody, which
     // test_bringup.cpp asserts.
-    Bench bench;
+    FreshChip chip;
 
     const uint8_t owned[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                              0x08, 0x09, 0x0A, 0x0B, 0x0C,
@@ -92,7 +92,7 @@ TEST_CASE("the input formatter writes the addresses it owns and no others")
 
 TEST_CASE("a line-doubled source undoes every progressive setting")
 {
-    Bench bench;
+    FreshChip chip;
 
     InputFormatter::applyScanMode(InputFormatter::Progressive);
     InputFormatter::applyScanMode(InputFormatter::LineDoubled);
@@ -105,7 +105,7 @@ TEST_CASE("a line-doubled source undoes every progressive setting")
 
 TEST_CASE("a progressive source undoes every line-doubled setting")
 {
-    Bench bench;
+    FreshChip chip;
 
     InputFormatter::applyScanMode(InputFormatter::LineDoubled);
     InputFormatter::applyScanMode(InputFormatter::Progressive);

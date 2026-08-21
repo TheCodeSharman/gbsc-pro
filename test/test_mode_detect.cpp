@@ -17,8 +17,8 @@ using Tv5725::ModeDetect;
 
 static const uint8_t Poison = 0xA5;
 
-struct Bench {
-    Bench()
+struct FreshChip {
+    FreshChip()
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -33,7 +33,7 @@ TEST_CASE("every mode-detect threshold comes up at its bring-up value")
     // rewrites it dithered by random(-2,2) on every sweep, so what init()
     // establishes is the centre those dithered values wander around -- and if
     // it establishes nothing, the centre is whatever the last mode left.
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x60, 0,  5) ==  22);  // MD_HPERIOD_LOCK_VALUE
     CHECK(Wire.field(1, 0x60, 5,  3) ==   5);  // MD_HPERIOD_UNLOCK_VALUE
@@ -93,7 +93,7 @@ TEST_CASE("the sync type selects the VGA 60 Hz discriminator")
     // MD_SEL_VGA60 is not init() state: it follows rto->syncTypeCsync, which is
     // probed once per source. init() establishes the table's value and this
     // overrides it. docs/sync-type-selection.md.
-    Bench bench;
+    FreshChip chip;
 
     ModeDetect::applySyncType(ModeDetect::Csync);
     CHECK(Wire.field(1, 0x65, 7, 1) == 0);
@@ -104,7 +104,7 @@ TEST_CASE("the sync type selects the VGA 60 Hz discriminator")
 
 TEST_CASE("the medium-resolution line count is carried as a threshold")
 {
-    Bench bench;
+    FreshChip chip;
 
     ModeDetect::applyMedResLineCount(0x33);
     CHECK(Wire.field(1, 0x7F, 0, 8) == 0x33);
@@ -113,7 +113,7 @@ TEST_CASE("the medium-resolution line count is carried as a threshold")
 TEST_CASE("neither runtime field disturbs its neighbours")
 {
     // MD_SEL_VGA60 shares s1_65 with MD_VGA_CNTRL, which init() owns.
-    Bench bench;
+    FreshChip chip;
 
     ModeDetect::applySyncType(ModeDetect::SeparateSync);
     ModeDetect::applyMedResLineCount(0x33);
@@ -123,7 +123,7 @@ TEST_CASE("neither runtime field disturbs its neighbours")
 
 TEST_CASE("mode detect stays inside segment 1")
 {
-    Bench bench;
+    FreshChip chip;
 
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s) {
         if (s == 1)
@@ -138,7 +138,7 @@ TEST_CASE("mode detect stays inside segment 1")
 
 TEST_CASE("the block writes the addresses it owns and no others")
 {
-    Bench bench;
+    FreshChip chip;
 
     for (int r = 0; r < 256; ++r) {
         CAPTURE(r);
@@ -151,7 +151,7 @@ TEST_CASE("the top bit of a seven-bit threshold is left alone")
     // Thirteen of the thresholds are 7 bits wide with bit 7 carrying no
     // datasheet field. The blob wrote those bits 0 because it copied whole
     // banks; an undocumented bit gets no writer.
-    Bench bench;
+    FreshChip chip;
 
     const uint8_t sevenBit[] = {0x64, 0x68, 0x6D, 0x6F, 0x70, 0x71, 0x73,
                                 0x74, 0x75, 0x76, 0x79, 0x7D, 0x7E};

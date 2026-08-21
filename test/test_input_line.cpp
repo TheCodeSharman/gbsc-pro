@@ -23,16 +23,16 @@ using namespace Tv5725;
 // exactly one line from wherever it starts.
 TEST_CASE("the progressive line window spans exactly one line")
 {
-    const InputLine Bench = InputLine::measured(1126, 160, 2250);
+    const InputLine SourceLine = InputLine::measured(1126, 160, 2250);
 
     SUBCASE("it starts where IF_LINE_ST says and runs a whole line") {
         // The bench value: 64 + 1126 = 1190.
-        CHECK(Bench.progressiveStop(64) == 1190);
+        CHECK(SourceLine.progressiveStop(64) == 1190);
     }
 
     SUBCASE("a different start moves the stop with it") {
         // ofw_RGBS and ofw_ypbpr ship IF_LINE_ST 0x18.
-        CHECK(Bench.progressiveStop(24) == 1150);
+        CHECK(SourceLine.progressiveStop(24) == 1150);
     }
 
     SUBCASE("a longer line makes a longer window") {
@@ -44,7 +44,7 @@ TEST_CASE("the progressive line window spans exactly one line")
     SUBCASE("it may run past the end of the line, and that is not a fault") {
         // A stop of 1190 on a 1126 unit line was once reported as a stray write. It is a stop position measured from a start, not a
         // position within the raster, so it rolls.
-        CHECK(Bench.progressiveStop(64) > Bench.units());
+        CHECK(SourceLine.progressiveStop(64) > SourceLine.units());
     }
 }
 
@@ -56,11 +56,11 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     // The bench RiscPC: a 7.1% hsync duty, measured 2026-08-09 as HLOW_LEN 181
     // of PLLAD_MD 2553 and read here at the 2250 the write limit caps the
     // divider to. 160 x 1126 / 2250 = 80.07 -> 81.
-    const uint16_t BenchHlow = 160, BenchAdcLine = 2250, BenchUnits = 1126;
-    const InputLine Bench = InputLine::measured(BenchUnits, BenchHlow, BenchAdcLine);
+    const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
+    const InputLine SourceLine = InputLine::measured(LineUnits, HsyncLow, AdcLine);
 
     SUBCASE("the pulse width comes from the hsync duty") {
-        CHECK(Bench.syncUnits() == 81);
+        CHECK(SourceLine.syncUnits() == 81);
     }
 
     SUBCASE("a wider pulse excludes proportionally more") {

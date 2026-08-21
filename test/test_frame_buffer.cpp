@@ -25,8 +25,8 @@ using Tv5725::MemoryMap;
 // none of the four the memory map writes. docs/testing.md
 static const uint8_t Poison = 0xC2;
 
-struct Bench {
-    Bench()
+struct FreshChip {
+    FreshChip()
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -36,7 +36,7 @@ struct Bench {
 
 TEST_CASE("the memory map is written, not left to a preset")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(4, 0x51, 0, 21) == MemoryMap::FieldStoreStart);
     CHECK(Wire.field(4, 0x44, 0, 21) == MemoryMap::FieldStoreGuard);
@@ -49,7 +49,7 @@ TEST_CASE("the memory map is written, not left to a preset")
 
 TEST_CASE("both bounds are armed, including the one no preset ever switched on")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(4, 0x42, 3, 1) == 1);  // WFF_SAFE_GUARD, live in all twelve
     CHECK(Wire.field(4, 0x21, 5, 1) == 1);  // CAP_SAFE_GUARD_EN, 0 in all twelve
@@ -57,7 +57,7 @@ TEST_CASE("both bounds are armed, including the one no preset ever switched on")
 
 TEST_CASE("the FIFO request watermarks are owned, and are one value for every mode")
 {
-    Bench bench;
+    FreshChip chip;
 
     // MASTER_FLAG sets the FIFO's HIGH request timing and GENERAL_FLAG its LOW
     // (RD-5725-1.1, s4_2c/2d and s4_4e/4f). The datasheet gives no units and no
@@ -71,7 +71,7 @@ TEST_CASE("the FIFO request watermarks are owned, and are one value for every mo
 
 TEST_CASE("a low request watermark of zero can never be written")
 {
-    Bench bench;
+    FreshChip chip;
 
     // Two of the twelve tables carry PB_GENERAL_FLAG_REG = 0 where the other ten
     // carry 58-61. A zero low-request watermark is not a tuning choice, so
@@ -82,7 +82,7 @@ TEST_CASE("a low request watermark of zero can never be written")
 
 TEST_CASE("the write FIFO's two mode-dependent bits are owned")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(4, 0x42, 1, 1) == 0);  // WFF_FF_HALF_REQ
     CHECK(Wire.field(4, 0x4A, 4, 1) == 1);  // WFF_LINE_FLIP
@@ -90,7 +90,7 @@ TEST_CASE("the write FIFO's two mode-dependent bits are owned")
 
 TEST_CASE("the deinterlacer's FIFO settings are owned with the deinterlacer off")
 {
-    Bench bench;
+    FreshChip chip;
 
     // Four fields whose only other writers are the motion-adaptive
     // deinterlacer's enable and disable, neither of which runs on a progressive
@@ -106,7 +106,7 @@ TEST_CASE("the deinterlacer's FIFO settings are owned with the deinterlacer off"
 
 TEST_CASE("neighbours sharing a byte survive the fields beside them")
 {
-    Bench bench;
+    FreshChip chip;
 
     // Do six fields written one at a time into one byte all survive? A whole-byte
     // write carrying one field's value clears its neighbours, and
@@ -141,7 +141,7 @@ TEST_CASE("neighbours sharing a byte survive the fields beside them")
 
 TEST_CASE("every register the subsystem owns is actually written")
 {
-    Bench bench;
+    FreshChip chip;
 
     // Asked of the fake, not inferred from the value: a field whose owned value
     // equals the poison reads correct having never been touched. It does NOT
@@ -171,7 +171,7 @@ TEST_CASE("every register the subsystem owns is actually written")
 
 TEST_CASE("the frame buffer stays inside segment 4")
 {
-    Bench bench;
+    FreshChip chip;
 
     // Every field here is in the SDRAM controller's bank. A write landing
     // elsewhere means the segment pointer was misaimed, which is the failure

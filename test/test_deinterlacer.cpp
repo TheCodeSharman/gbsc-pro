@@ -44,8 +44,8 @@ static const uint8_t Reserved[64] = {
     0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x80, 0x80, 0xFF, 0xFF, 0xFF,};
 
-struct Bench {
-    Bench()
+struct FreshChip {
+    FreshChip()
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -55,7 +55,7 @@ struct Bench {
 
 TEST_CASE("every documented bit of the block comes up as the table left it")
 {
-    Bench bench;
+    FreshChip chip;
 
     for (int r = 0; r < 64; ++r) {
         const uint8_t owned = static_cast<uint8_t>(~Reserved[r]);
@@ -66,7 +66,7 @@ TEST_CASE("every documented bit of the block comes up as the table left it")
 
 TEST_CASE("reserved bits are left alone rather than written zero")
 {
-    Bench bench;
+    FreshChip chip;
 
     for (int r = 0; r < 64; ++r) {
         if (Reserved[r] == 0)
@@ -78,7 +78,7 @@ TEST_CASE("reserved bits are left alone rather than written zero")
 
 TEST_CASE("the deinterlacer stays inside segment 2")
 {
-    Bench bench;
+    FreshChip chip;
 
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s) {
         if (s == 2)
@@ -93,7 +93,7 @@ TEST_CASE("the deinterlacer stays inside segment 2")
 
 TEST_CASE("the block writes the addresses it owns and no others")
 {
-    Bench bench;
+    FreshChip chip;
 
     for (int r = 0; r < 256; ++r) {
         CAPTURE(r);
@@ -107,7 +107,7 @@ TEST_CASE("the motion index fixed value is owned, despite sharing a datasheet na
     // two different functions. Keying an extraction by name loses one of them,
     // which is how s2_0e came to be absent from the register catalogue while
     // the table quietly wrote it 0x7f.
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(2, 0x0D, 0, 7) == 4);    // MADPT_MI_THRESHOLD
     CHECK(Wire.field(2, 0x0E, 0, 7) == 127);  // MADPT_MI_FIXED_VALUE

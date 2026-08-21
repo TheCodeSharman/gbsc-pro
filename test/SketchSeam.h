@@ -5,7 +5,7 @@
 // binary linking SourceMeasurement.cpp needs both, and a suite that neither
 // measures nor reads the log wants nothing more than this.
 //
-// Header-only and defining its globals, the way BenchGeometry.h does: every host
+// Header-only and defining its globals, the way SolvedEngine.h does: every host
 // test is a single-translation-unit binary, so one include per binary is the
 // whole contract.
 //

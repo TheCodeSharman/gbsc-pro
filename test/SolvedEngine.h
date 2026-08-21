@@ -1,5 +1,5 @@
-#ifndef TEST_BENCH_GEOMETRY_H_
-#define TEST_BENCH_GEOMETRY_H_
+#ifndef TEST_SOLVED_ENGINE_H_
+#define TEST_SOLVED_ENGINE_H_
 
 // A solved Geometry over the fake bus, shared by the suites that need one.
 // Header-only and defining its globals: every host test is a single-translation
@@ -63,11 +63,11 @@ static bool pollUntilSolved(Tv5725::Geometry &engine)
 // divider, the raster and both windows are computed from them, so what is
 // seeded at PLLAD_MD and the raster registers is only what the previous load
 // left behind.
-struct Bench {
+struct SolvedEngine {
     Tv5725::DisplayClock clock;
     Tv5725::Geometry engine;
 
-    Bench() : engine(clock)
+    SolvedEngine() : engine(clock)
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -84,4 +84,4 @@ struct Bench {
     }
 };
 
-#endif  // TEST_BENCH_GEOMETRY_H_
+#endif  // TEST_SOLVED_ENGINE_H_

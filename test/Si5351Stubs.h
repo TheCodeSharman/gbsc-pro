@@ -5,7 +5,7 @@
 // any host binary linking DisplayClock.cpp needs the part to resolve.
 // si5351mcu.cpp is not linked: it is the half the host cannot have.
 //
-// Header-only and defining its symbols, the way BenchGeometry.h does -- every
+// Header-only and defining its symbols, the way SolvedEngine.h does -- every
 // host test is a single-translation-unit binary. A suite wanting to SEE what
 // reached the part defines these itself and does not include this.
 

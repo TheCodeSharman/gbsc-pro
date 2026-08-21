@@ -67,11 +67,11 @@ static bool pollUntilSolved(Geometry &engine)
     return false;
 }
 
-struct Bench {
+struct SettledEngine {
     DisplayClock clock;
     Geometry engine;
 
-    Bench() : engine(clock)
+    SettledEngine() : engine(clock)
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -82,10 +82,10 @@ struct Bench {
 
 TEST_CASE("a settled source gets the computed raster, not the table's")
 {
-    Bench bench;
+    SettledEngine settled;
 
-    bench.engine.modeChanged(&Mode1080p, 4);
-    REQUIRE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    REQUIRE(pollUntilSolved(settled.engine));
 
     CHECK(horizontalTotalWritten() == 1916);
 
@@ -98,14 +98,14 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
 
 TEST_CASE("an unsettled line count is waited out, not solved against")
 {
-    Bench bench;
+    SettledEngine settled;
 
     // 97 is the documented mid-preset-load reading -- see CaptureWindow's
     // comment and CLAUDE.md -- and it is perfectly steady, so steadiness alone
     // would call it settled.
     setSourceLines(97);
-    bench.engine.modeChanged(&Mode1080p, 4);
-    CHECK_FALSE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    CHECK_FALSE(pollUntilSolved(settled.engine));
 
     // A half-written raster is worse than none: the totals go in before the
     // sync positions, so bailing between them would leave the two disagreeing.
@@ -118,7 +118,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
         // table's 1445 x 1126 where the engine wanted 1915, with the Si5351 on
         // 81.48 MHz to match the wrong one.
         setSourceLines(311);
-        REQUIRE(pollUntilSolved(bench.engine));
+        REQUIRE(pollUntilSolved(settled.engine));
         CHECK(horizontalTotalWritten() == 1916);
 
         // VDS_VSYN_SIZE1/2 are the vertical totals the frame-rate selector picks
@@ -133,55 +133,55 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
 
 TEST_CASE("a field rate that moves without the line count is waited out too")
 {
-    Bench bench;
+    SettledEngine settled;
 
     g_fieldRate = 50.08f;
-    bench.engine.modeChanged(&Mode1080p, 4);
-    REQUIRE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    REQUIRE(pollUntilSolved(settled.engine));
     REQUIRE(horizontalTotalWritten() == 1916);
 
     // The same 311-line source now reading 60 Hz is the transient this guard
     // exists for. A raster solved at the wrong rate is out by the ratio of the
     // rates, so the previous answer has to stand.
     g_fieldRate = 60.0f;
-    bench.engine.modeChanged(&Mode1080p, 4);
-    CHECK_FALSE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    CHECK_FALSE(pollUntilSolved(settled.engine));
     CHECK(horizontalTotalWritten() == 1916);
 
     SUBCASE("and the poll after the rate returns lands it") {
         g_fieldRate = 50.08f;
-        REQUIRE(pollUntilSolved(bench.engine));
+        REQUIRE(pollUntilSolved(settled.engine));
         CHECK(horizontalTotalWritten() == 1916);
     }
 }
 
 TEST_CASE("entering bypass drops the outstanding solve")
 {
-    Bench bench;
+    SettledEngine settled;
 
     // Outstanding from the previous mode, which is the common state now that an
     // unsettled source waits rather than giving up.
     setSourceLines(97);
-    bench.engine.modeChanged(&Mode1080p, 4);
-    REQUIRE_FALSE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    REQUIRE_FALSE(pollUntilSolved(settled.engine));
 
     // Past 535 lines the unit drops to RGBHV bypass, where video routes around
     // the VDS and there is no raster to solve. bypassModeSwitch_RGBHV() returns
     // before doPostPresetLoadSteps(), so nothing else clears the mode change,
     // and a solve landing afterwards writes a scaled raster and a recomputed
     // divider straight over the bypass setup.
-    bench.engine.enterBypass();
+    settled.engine.enterBypass();
     Wire.reset();
     Wire.poison(Poison);
     setSourceLines(311);
 
-    CHECK_FALSE(pollUntilSolved(bench.engine));
+    CHECK_FALSE(pollUntilSolved(settled.engine));
     CHECK(registersWritten() == 0);
 }
 
 TEST_CASE("an unmeasurable line rate is retried, not settled for")
 {
-    Bench bench;
+    SettledEngine settled;
 
     // A cold boot reads `271 lines x 49.22 Hz -> line rate 0` 3.6 s in, so
     // lineRateFrom() refuses and the engine inherits what is on the chip: 1856,
@@ -192,13 +192,13 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
     Wire.bank[5][0x13] = 0x07;
     g_fieldRate = 0.0f;
 
-    bench.engine.modeChanged(&Mode1080p, 4);
-    REQUIRE_FALSE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    REQUIRE_FALSE(pollUntilSolved(settled.engine));
     CHECK(Wire.field(5, 0x12, 0, 12) == 1856);
 
     SUBCASE("and the poll that can measure it computes one") {
         g_fieldRate = 50.08f;
-        REQUIRE(pollUntilSolved(bench.engine));
+        REQUIRE(pollUntilSolved(settled.engine));
 
         // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
         // there, and the capture write limit takes it to 2250.
@@ -214,28 +214,28 @@ TEST_CASE("a solve points the part at the clock source that can serve the raster
     // to the register puts the display on the internal PLL, which frame time
     // lock cannot steer, so the output drifts against the source while every
     // register reads correct. docs/tv5725-chip.md
-    Bench bench;
+    SettledEngine settled;
 
     Si5351mcu part;
     Clock::ClockGen generator(part);
-    bench.clock.driveWith(generator);
+    settled.clock.driveWith(generator);
 
-    bench.engine.modeChanged(&Mode1080p, 4);
-    REQUIRE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    REQUIRE(pollUntilSolved(settled.engine));
 
     CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
 
     SUBCASE("and the seed it holds is still the frequency to steer to") {
-        CHECK(bench.clock.hz() == 108000000u);
+        CHECK(settled.clock.hz() == 108000000u);
     }
 }
 
 TEST_CASE("a board with no generator gets the seed's own internal divider")
 {
-    Bench bench;
+    SettledEngine settled;
 
-    bench.engine.modeChanged(&Mode1080p, 4);
-    REQUIRE(pollUntilSolved(bench.engine));
+    settled.engine.modeChanged(&Mode1080p, 4);
+    REQUIRE(pollUntilSolved(settled.engine));
 
     CHECK(Wire.bank[0][0x41] == 0x85);
 }

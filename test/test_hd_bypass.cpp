@@ -21,8 +21,8 @@ static const uint8_t Poison = 0xA5;
 
 // init() is the OFF state and enable() is the on state, so every assertion
 // about the block's registers runs against enable().
-struct Bench {
-    Bench()
+struct FreshChip {
+    FreshChip()
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -104,7 +104,7 @@ TEST_CASE("enabling the block releases its reset before configuring it")
 
 TEST_CASE("the input pipe and both converters are in circuit")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x30, 0, 1) == 0);  // HD_IN_DREG_BYPS
     CHECK(Wire.field(1, 0x30, 1, 1) == 0);  // HD_MATRIX_BYPS
@@ -114,7 +114,7 @@ TEST_CASE("the input pipe and both converters are in circuit")
 
 TEST_CASE("the dynamic range passes the sample through unchanged")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x31, 0, 8) == 128);  // HD_Y_GAIN
     CHECK(Wire.field(1, 0x32, 0, 8) == 0);    // HD_Y_OFFSET
@@ -126,7 +126,7 @@ TEST_CASE("the dynamic range passes the sample through unchanged")
 
 TEST_CASE("the bypass raster comes up at the resting timing")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x37, 0, 11) == 1023);  // HD_HSYNC_RST
     CHECK(Wire.field(1, 0x39, 0, 11) == 1046);  // HD_INI_ST
@@ -144,7 +144,7 @@ TEST_CASE("the DVI-mode blanking is owned here and nowhere else")
 {
     // No bypass switch and no runtime path writes these four, so init() is
     // their only writer.
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x4B, 0, 12) == 0);  // HD_EXT_VB_ST
     CHECK(Wire.field(1, 0x4D, 0, 12) == 6);  // HD_EXT_VB_SP
@@ -154,7 +154,7 @@ TEST_CASE("the DVI-mode blanking is owned here and nowhere else")
 
 TEST_CASE("the programmed blank is black on all three channels")
 {
-    Bench bench;
+    FreshChip chip;
 
     CHECK(Wire.field(1, 0x53, 0, 8) == 0);  // HD_BLK_GY_DATA
     CHECK(Wire.field(1, 0x54, 0, 8) == 0);  // HD_BLK_BU_DATA
@@ -165,7 +165,7 @@ TEST_CASE("the HD bypass block stays inside segment 1, bar its own reset")
 {
     // s0_47 is the one exception and it is deliberate: the block's reset bit
     // belongs to the block, so no other class has to know this one exists.
-    Bench bench;
+    FreshChip chip;
 
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s) {
         for (int r = 0; r < 256; ++r) {
@@ -183,7 +183,7 @@ TEST_CASE("the block writes the addresses it owns and no others")
     // s1_56..s1_5f carry no datasheet field. The blob wrote them 0x00 along
     // with the rest of its three banks; an address with no documented meaning
     // gets no writer, per docs/chip-initialisation.md.
-    Bench bench;
+    FreshChip chip;
 
     for (int r = 0; r < 256; ++r) {
         CAPTURE(r);

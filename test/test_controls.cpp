@@ -6,7 +6,7 @@
 // nowhere else.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "BenchGeometry.h"
+#include "SolvedEngine.h"
 
 // GBS_DEBUG is 0 in a host build, so report() compiles to its (void) casts and
 // the console is never written to. Controls.h forward-declares this.
@@ -17,13 +17,13 @@ class Print {};
 using namespace Tv5725;
 
 struct Panel {
-    Bench bench;
+    SolvedEngine solved;
     Print console;
     Controls controls;
 
-    Panel() : controls(bench.engine, console) {}
+    Panel() : controls(solved.engine, console) {}
 
-    const PanAndZoom &framing() const { return bench.engine.framing(); }
+    const PanAndZoom &framing() const { return solved.engine.framing(); }
 };
 
 TEST_CASE("a press moves the axis it names and leaves the other alone")

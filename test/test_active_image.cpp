@@ -252,36 +252,36 @@ TEST_CASE("the capture window never takes the hsync pulse")
     // The bench RiscPC: a 7.1% hsync duty, HLOW_LEN 181 of PLLAD_MD 2553, read
     // here at the 2250 the write limit caps the divider to.
     // 160 x 1126 / 2250 = 80.07 -> 81.
-    const uint16_t BenchHlow = 160, BenchAdcLine = 2250, BenchUnits = 1126;
-    const InputLine Bench = InputLine::measured(BenchUnits, BenchHlow, BenchAdcLine);
+    const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
+    const InputLine SourceLine = InputLine::measured(LineUnits, HsyncLow, AdcLine);
     const float Rate = 50.0f;
 
     SUBCASE("zooming all the way out stops clear of the sync") {
-        BlankingTiming huge = ActiveImage(PanAndZoom(-5000, 0, 0, 0)).capture(Bench, Rate, AxisHorizontal, 0);
-        CHECK(huge.stop() >= Bench.syncUnits());
+        BlankingTiming huge = ActiveImage(PanAndZoom(-5000, 0, 0, 0)).capture(SourceLine, Rate, AxisHorizontal, 0);
+        CHECK(huge.stop() >= SourceLine.syncUnits());
     }
 
     SUBCASE("and takes the tail down to the line reset, which it may not have") {
-        BlankingTiming huge = ActiveImage(PanAndZoom(-5000, 0, 0, 0)).capture(Bench, Rate, AxisHorizontal, 0);
-        CHECK(huge.start() == BenchUnits - 2);
+        BlankingTiming huge = ActiveImage(PanAndZoom(-5000, 0, 0, 0)).capture(SourceLine, Rate, AxisHorizontal, 0);
+        CHECK(huge.start() == LineUnits - 2);
     }
 
     SUBCASE("panning to the left stop cannot walk into the sync") {
-        BlankingTiming left = ActiveImage(PanAndZoom(0, 0, -5000, 0)).capture(Bench, Rate, AxisHorizontal, 0);
-        CHECK(left.stop() >= Bench.syncUnits());
+        BlankingTiming left = ActiveImage(PanAndZoom(0, 0, -5000, 0)).capture(SourceLine, Rate, AxisHorizontal, 0);
+        CHECK(left.stop() >= SourceLine.syncUnits());
     }
 
     SUBCASE("panning to the right stop reaches the last unit before the reset") {
-        BlankingTiming right = ActiveImage(PanAndZoom(0, 0, +5000, 0)).capture(Bench, Rate, AxisHorizontal, 0);
-        CHECK(right.start() == BenchUnits - 2);
+        BlankingTiming right = ActiveImage(PanAndZoom(0, 0, +5000, 0)).capture(SourceLine, Rate, AxisHorizontal, 0);
+        CHECK(right.start() == LineUnits - 2);
     }
 
     SUBCASE("the resting picture is untouched") {
         // The default capture is 890 units of a 1126 unit line and the pulse
         // takes 81 at the head, so 1045 remain: the picture nobody complained
         // about must not move by so much as a unit.
-        BlankingTiming guarded = ActiveImage(PanAndZoom()).capture(Bench, Rate, AxisHorizontal, 0);
-        BlankingTiming whole = ActiveImage(PanAndZoom()).capture(InputLine(BenchUnits), Rate, AxisHorizontal, 0);
+        BlankingTiming guarded = ActiveImage(PanAndZoom()).capture(SourceLine, Rate, AxisHorizontal, 0);
+        BlankingTiming whole = ActiveImage(PanAndZoom()).capture(InputLine(LineUnits), Rate, AxisHorizontal, 0);
         CHECK(guarded.stop() == whole.stop());
         CHECK(guarded.start() == whole.start());
     }
@@ -289,8 +289,8 @@ TEST_CASE("the capture window never takes the hsync pulse")
     SUBCASE("zoom out still has somewhere to go") {
         // Clipping the sync must not cost the reach that finds active video the
         // 0.76 assumption crops.
-        BlankingTiming rest = ActiveImage(PanAndZoom()).capture(Bench, Rate, AxisHorizontal, 0);
-        BlankingTiming out = ActiveImage(PanAndZoom(-40, 0, 0, 0)).capture(Bench, Rate, AxisHorizontal, 0);
+        BlankingTiming rest = ActiveImage(PanAndZoom()).capture(SourceLine, Rate, AxisHorizontal, 0);
+        BlankingTiming out = ActiveImage(PanAndZoom(-40, 0, 0, 0)).capture(SourceLine, Rate, AxisHorizontal, 0);
         CHECK(out.start() - out.stop() == (rest.start() - rest.stop()) + 40);
     }
 
@@ -299,12 +299,12 @@ TEST_CASE("the capture window never takes the hsync pulse")
         // difference of one unit between them is a dead zone.
         ActiveImage f;
         f.panBy(-5000, 0);
-        f.clampToLine(Bench, Rate, AxisHorizontal, 0);
-        BlankingTiming at_edge = f.capture(Bench, Rate, AxisHorizontal, 0);
-        CHECK(at_edge.stop() == Bench.syncUnits());
+        f.clampToLine(SourceLine, Rate, AxisHorizontal, 0);
+        BlankingTiming at_edge = f.capture(SourceLine, Rate, AxisHorizontal, 0);
+        CHECK(at_edge.stop() == SourceLine.syncUnits());
 
         f.panBy(+1, 0);
-        CHECK(f.capture(Bench, Rate, AxisHorizontal, 0).stop() > at_edge.stop());
+        CHECK(f.capture(SourceLine, Rate, AxisHorizontal, 0).stop() > at_edge.stop());
     }
 }
 

@@ -13,7 +13,7 @@
 // docs/chip-initialisation.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "BenchGeometry.h"
+#include "SolvedEngine.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
 
@@ -42,7 +42,7 @@ static const size_t OwnedCount = sizeof(OwnedFields) / sizeof(OwnedFields[0]);
 
 TEST_CASE("one solve writes every geometry register the sketch used to poke")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // Asked of the fake rather than inferred from the value: a field whose
     // computed value happened to equal the poison would read correct having
@@ -59,7 +59,7 @@ TEST_CASE("one solve writes every geometry register the sketch used to poke")
 
 TEST_CASE("no field is left holding what was there before the solve")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // The half `touched` cannot see: five of these nine share a byte with
     // another field the engine writes, so the byte is touched whether or not the
@@ -75,7 +75,7 @@ TEST_CASE("no field is left holding what was there before the solve")
 
 TEST_CASE("vertical scaling is switched ON, whatever a preset load asked for")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // doPostPresetLoadSteps() sets VDS_VSCALE_BYPS to 1 for a >650-line source
     // on videoStandardInput 9, and the engine clears it unconditionally because
@@ -87,7 +87,7 @@ TEST_CASE("vertical scaling is switched ON, whatever a preset load asked for")
 
 TEST_CASE("the capture window is a window, not a leftover")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // Start beyond stop is the shape a half-written window takes, and it is what
     // the sketch's own arithmetic produced when it ran late: IF_VB_SP 8 with
@@ -107,7 +107,7 @@ TEST_CASE("the capture window is a window, not a leftover")
 
 TEST_CASE("the playback stride covers the widest fetch, and holds still while zooming")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // The stride is the per-line allocation and the fetch is what playback
     // reads into it, so a stride below the fetch overlaps lines. The fetch
@@ -129,7 +129,7 @@ TEST_CASE("the playback stride covers the widest fetch, and holds still while zo
         // pulse, which moves by a unit between solves.
         const uint32_t stride = Wire.field(4, 0x37, 0, 10);
 
-        bench.engine.zoom(-5000, 0);
+        solved.engine.zoom(-5000, 0);
 
         CHECK(Wire.field(4, 0x37, 0, 10) == stride);
         CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
@@ -143,7 +143,7 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
     // solves the capture window for a line that is not arriving -- PLLAD_MD
     // reading 2210 against a PLL running 2553 is a solid green screen with every
     // register self-consistent.
-    Bench bench;
+    SolvedEngine solved;
 
     const uint32_t startBefore = Wire.field(1, 0x18, 0, 11);   // IF_HB_ST2
     const uint32_t stopBefore  = Wire.field(1, 0x1A, 0, 11);   // IF_HB_SP2
@@ -153,7 +153,7 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
     seed(5, 0x12, 0, 12, 1276);
     seed(1, 0x0E, 0, 11, 638);
 
-    REQUIRE(bench.engine.resolve());
+    REQUIRE(solved.engine.resolve());
 
     // Not vacuous: test_geometry.cpp's checkBenchGeometry() pins both of these
     // to the values measured on the unit, so "unchanged" is anchored to a
@@ -168,12 +168,12 @@ TEST_CASE("a preset load computes the divider it uses")
     // There is nothing to inherit, so the divider is COMPUTED from the line
     // rate the source is running at. The registers are outputs of that, never
     // inputs to it.
-    Bench bench;
+    SolvedEngine solved;
 
     // 311 lines at 50 Hz, which is what the seeds above describe.
     g_fieldRate = 50.08f;
-    bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
-    REQUIRE(pollUntilSolved(bench.engine));
+    solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+    REQUIRE(pollUntilSolved(solved.engine));
 
     const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4, true);
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
@@ -186,7 +186,7 @@ TEST_CASE("a preset load computes the divider it uses")
         // The seeded IF_HSYNC_RST was 1276 for a 2553 divider. If the engine
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
-        REQUIRE(bench.engine.resolve());
+        REQUIRE(solved.engine.resolve());
         CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted, true));
     }
 }
@@ -197,24 +197,24 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     // measurement that did not happen is the green screen. With the tables gone
     // there is nothing to fall back on either, and an engine with no divider
     // defers every solve forever -- so a first refusal adopts what it finds.
-    Bench bench;
+    SolvedEngine solved;
     const uint32_t inherited = Wire.field(5, 0x12, 0, 12);
 
     g_fieldRate = 0.0f;
-    bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
-    CHECK_FALSE(pollUntilSolved(bench.engine));
+    solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+    CHECK_FALSE(pollUntilSolved(solved.engine));
     CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited, true));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
         g_fieldRate = 50.08f;
-        bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
-        REQUIRE(pollUntilSolved(bench.engine));
-        const uint32_t solved = Wire.field(5, 0x12, 0, 12);
+        solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+        REQUIRE(pollUntilSolved(solved.engine));
+        const uint32_t heldDivider = Wire.field(5, 0x12, 0, 12);
 
         g_fieldRate = 0.0f;
-        bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
-        CHECK_FALSE(pollUntilSolved(bench.engine));
-        CHECK(Wire.field(5, 0x12, 0, 12) == solved);
+        solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+        CHECK_FALSE(pollUntilSolved(solved.engine));
+        CHECK(Wire.field(5, 0x12, 0, 12) == heldDivider);
     }
 }
 
@@ -264,7 +264,7 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
 // instead makes a register an input to the calculation.
 TEST_CASE("a press is asked for in output pixels, not input units")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // As an outside observer reads it, from the register the solve wrote.
     const float magnification = Scale(Wire.field(3, 0x16, 0, 10)).magnification();
@@ -274,20 +274,20 @@ TEST_CASE("a press is asked for in output pixels, not input units")
     REQUIRE(wanted != 16);
 
     SUBCASE("zooming") {
-        REQUIRE(bench.engine.zoom(16, 0));
-        CHECK(bench.engine.framing().horizontalZoom() == wanted);
+        REQUIRE(solved.engine.zoom(16, 0));
+        CHECK(solved.engine.framing().horizontalZoom() == wanted);
     }
 
     SUBCASE("and panning, once a zoom has left room to pan into") {
-        REQUIRE(bench.engine.zoom(400, 0));
+        REQUIRE(solved.engine.zoom(400, 0));
 
         // Sized from the scale the zoom LEFT, not the one it started from: a
         // press is converted at the magnification in force when it is made.
         const float zoomed = Scale(Wire.field(3, 0x16, 0, 10)).magnification();
         const int16_t step = AxisHorizontal.stepUnits(16, zoomed);
-        const int16_t before = bench.engine.framing().horizontalPan();
-        REQUIRE(bench.engine.pan(16, 0));
-        CHECK(bench.engine.framing().horizontalPan() - before == step);
+        const int16_t before = solved.engine.framing().horizontalPan();
+        REQUIRE(solved.engine.pan(16, 0));
+        CHECK(solved.engine.framing().horizontalPan() - before == step);
     }
 }
 
@@ -295,11 +295,11 @@ TEST_CASE("a press on one axis leaves the other where it was")
 {
     // stepUnits() floors at one granule, so an axis the press did not name
     // drifts a unit per press unless a press of nothing is skipped outright.
-    Bench bench;
-    const int16_t verticalZoom = bench.engine.framing().verticalZoom();
+    SolvedEngine solved;
+    const int16_t verticalZoom = solved.engine.framing().verticalZoom();
 
-    REQUIRE(bench.engine.zoom(16, 0));
-    CHECK(bench.engine.framing().verticalZoom() == verticalZoom);
+    REQUIRE(solved.engine.zoom(16, 0));
+    CHECK(solved.engine.framing().verticalZoom() == verticalZoom);
 }
 
 // The output raster is one the engine SOLVED, so it is held rather than read
@@ -307,7 +307,7 @@ TEST_CASE("a press on one axis leaves the other where it was")
 // calculation that produced it.
 TEST_CASE("the solve uses the raster the engine holds, not the one on the chip")
 {
-    Bench bench;
+    SolvedEngine solved;
 
     // Wiped after the solve that wrote them. A re-solve that reaches for these
     // sees no raster at all, reads it as bypass, and declines.
@@ -318,7 +318,7 @@ TEST_CASE("the solve uses the raster the engine holds, not the one on the chip")
     // A framing the engine has not solved before, so a solve that ran shows as
     // a moved window and one that declined shows as no change at all. Big
     // enough to move VDS_DIS_VB_SP, which sits on its floor.
-    bench.engine.zoom(0, 400);
+    solved.engine.zoom(0, 400);
 
     CHECK(Wire.field(3, 0x14, 4, 11) != stopBefore);
 }
