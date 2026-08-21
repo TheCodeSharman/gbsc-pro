@@ -35,6 +35,17 @@ BOOTLOG_BYTES ?= 0
 #   make -C build flash GBS_TRACE_WRITES=1
 GBS_TRACE_WRITES ?= 0
 
+# Compile in /samplinglog, the divider sweep and the per-sample register stream.
+# Off even when GBS_DEBUG is on, and separately switchable because it is the one
+# piece of the debug surface that WRITES: sweep mode latches PLLAD_MD through
+# Adc::applySampleRate, which makes it a second owner of the divider alongside
+# the geometry engine, and a sweep cut short by a reset leaves the divider where
+# it stopped -- a green screen with every register self-consistent. Turn it on
+# only for a clock-measurement investigation, and only with GBS_DEBUG=1, which
+# the sketch enforces:
+#   make -C build flash-ota HOST=... GBS_SAMPLING_LOG=1
+GBS_SAMPLING_LOG ?= 0
+
 
 FQBN := esp8266:esp8266:nodemcuv2:xtal=80,eesz=4M2M,ssl=all,exception=legacy,ip=lm2f,vt=flash,dbg=Disabled,lvl=None____,wipe=none
 
@@ -95,10 +106,10 @@ test test-geometry test-hold-ramp:
 build: check-cli webui-check
 	$(CLI) compile \
 	  --fqbn '$(FQBN)' \
-	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DGBS_TRACE_WRITES=$(GBS_TRACE_WRITES) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES)' \
+	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DGBS_TRACE_WRITES=$(GBS_TRACE_WRITES) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES) -DGBS_SAMPLING_LOG=$(GBS_SAMPLING_LOG)' \
 	  --build-path "$(OUT)" \
 	  "$(SKETCH)"
-	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) GBS_TRACE_WRITES=$(GBS_TRACE_WRITES) BOOTLOG_BYTES=$(BOOTLOG_BYTES))"
+	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) GBS_TRACE_WRITES=$(GBS_TRACE_WRITES) BOOTLOG_BYTES=$(BOOTLOG_BYTES) GBS_SAMPLING_LOG=$(GBS_SAMPLING_LOG))"
 
 ## flash: build, then upload over USB serial (PORT=/dev/ttyUSB0)
 #

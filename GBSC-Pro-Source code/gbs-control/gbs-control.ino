@@ -20,6 +20,15 @@ static unsigned long lastVsyncLock = millis();
 #define GBS_DEBUG 0
 #endif
 
+// GBS_SAMPLING_LOG: compile in /samplinglog. Off by default even at GBS_DEBUG=1,
+// because its sweep writes and latches PLLAD_MD outside the geometry engine.
+#ifndef GBS_SAMPLING_LOG
+#define GBS_SAMPLING_LOG 0
+#endif
+#if GBS_SAMPLING_LOG && !GBS_DEBUG
+#error "GBS_SAMPLING_LOG needs GBS_DEBUG=1: tv5725Log expands to nothing without it"
+#endif
+
 // The sketch-level twin of framesync.h's fsDebugPrintf: one line to the web
 // console, format string kept in flash, and nothing at all when the flag is
 // off. Expands where it is used, so SerialM does not have to exist yet here.
@@ -69,7 +78,9 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
 #include "src/input/InputSource.h"
+#if GBS_SAMPLING_LOG
 #include "src/tv5725/SamplingLog.h"
+#endif
 #include "src/input/SyncSearch.h"
 
 struct MenuAttrs
@@ -116,6 +127,7 @@ char userCommand;
 // route parses and queues; loop() selects.
 volatile uint8_t pendingInputSelection = InputSource::None;
 
+#if GBS_SAMPLING_LOG
 Tv5725::SamplingLog samplingLog;
 
 // What /samplinglog queued, for loop() to start. Two words rather than a call:
@@ -126,6 +138,7 @@ volatile uint16_t pendingSamplingA = 0;
 volatile uint16_t pendingSamplingB = 0;
 volatile uint16_t pendingSamplingC = 0;
 volatile uint32_t pendingSamplingD = 0;
+#endif
 
 // How many output pixels the pending press asked for, or 0 for the pad's own
 // step. Cleared as the command is consumed, so a press from the OSD or the
@@ -6978,7 +6991,9 @@ void loop()
     // At the top of loop() and nowhere else. Inside web_service()'s timed block
     // the samples came 300 ms apart with a 5 ms interval asked for, which is
     // coarser than the HTTP polling this exists to beat.
+#if GBS_SAMPLING_LOG
     samplingLog.poll(millis());
+#endif
 
     // Hand the boot backlog to the first console that attaches, so the web
     // console opens on the whole boot rather than starting mid-sentence.
@@ -8131,6 +8146,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             }
         }
 
+#if GBS_SAMPLING_LOG
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
             samplingLog.monitor(millis(), pendingSamplingA, pendingSamplingD);
@@ -8141,6 +8157,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                               pendingSamplingC, (uint16_t)pendingSamplingD,
                               rto->osr);
         }
+#endif
         if (pendingInputSelection != InputSource::None) {
             // Cleared before acting, not after: every handler below blocks for
             // seconds while detection runs, and a second request landing in that
@@ -9021,6 +9038,7 @@ void startWebserver()
     // Until this existed the OLED was the ONLY way to choose an input: the six
     // handlers had two callers between them, the menu and one IR key. A unit
     // that came up on the wrong one needed someone standing at it.
+#if GBS_SAMPLING_LOG
     // Log the source measurements from loop(), where HTTP polling cannot reach:
     // at tens of hertz a host cannot tell a value that dithers from one read
     // torn across two states, nor see how long a reading takes to settle after a
@@ -9054,6 +9072,7 @@ void startWebserver()
         }
         request->send(200, "application/json", "{\"queued\":\"samplinglog\"}");
     });
+#endif
 
     server.on("/input", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!request->hasParam("src")) {
