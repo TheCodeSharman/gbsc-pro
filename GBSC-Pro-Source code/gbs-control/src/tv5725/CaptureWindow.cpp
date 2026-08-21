@@ -16,8 +16,6 @@ CaptureWindow::CaptureWindow()
 bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRateHz,
                                 uint16_t sourceLines, uint16_t hsyncLow)
 {
-    linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
-    frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
     const uint16_t horizontalWrap = sampling.ifLine() + 1;
 
     if (horizontalWrap < 64)
@@ -41,6 +39,12 @@ bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRa
     // IF_VB counts half-lines, so it rolls at twice the source frame.
     verticalLine_ = InputLine(2 * (sourceLines + 1));
     return true;
+}
+
+void CaptureWindow::setRasters(uint16_t linePx, uint16_t frameLines)
+{
+    linePx_ = linePx;
+    frameLines_ = frameLines;
 }
 
 bool CaptureWindow::scaling() const { return linePx_ >= 64 && frameLines_ >= 64; }

@@ -3997,6 +3997,11 @@ void doPostPresetLoadSteps()
         // decide what to steer the Si5351 to, so the seed must already be in the
         // register. docs/investigations/preset-abandonment-audit.md.
 
+        // The table's raster, taken before the solve that replaces it: when the
+        // solve DEFERS -- the source is still settling, which is the common
+        // case here -- the windows are solved against what the table loaded,
+        // exactly as they were when CaptureWindow read the registers itself.
+        geometry.adoptRaster();
         geometry.solveRaster(outputModeForThisLoad());
 
         externalClockGenResetClock();

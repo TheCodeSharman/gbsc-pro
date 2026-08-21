@@ -288,3 +288,18 @@ TEST_CASE("a press on one axis leaves the other where it was")
     REQUIRE(bench.engine.zoom(16, 0));
     CHECK(bench.engine.framing().verticalZoom() == verticalZoom);
 }
+
+// The output raster is one the engine SOLVED, so it is held rather than read
+// back off VDS_?SYNC_RST. Reading it back makes a register an input to the
+// calculation that produced it.
+TEST_CASE("the solve uses the raster the engine holds, not the one on the chip")
+{
+    Bench bench;
+
+    // Wiped after adoptRaster() took them. A solve that reaches for these sees
+    // no raster at all, reads it as bypass, and declines.
+    seed(3, 0x01, 0, 12, 0);   // VDS_HSYNC_RST
+    seed(3, 0x02, 4, 11, 0);   // VDS_VSYNC_RST
+
+    CHECK(bench.engine.solveFromScratch());
+}

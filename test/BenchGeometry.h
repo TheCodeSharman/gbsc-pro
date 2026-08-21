@@ -63,10 +63,11 @@ struct Bench {
         seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL, source lines
 
-        // The divider is GIVEN to the engine, never read back mid-solve. Here
-        // the bench inherits it the way a custom preset does -- adopt() reads
-        // PLLAD_MD once, out loud -- which reproduces the seeds above.
+        // Both are GIVEN to the engine, never read back mid-solve. Here the
+        // bench inherits them the way a custom preset does -- each adopt()
+        // reads its registers once, out loud -- reproducing the seeds above.
         engine.adoptSampling();
+        engine.adoptRaster();
 
         REQUIRE(engine.solveFromScratch());
     }

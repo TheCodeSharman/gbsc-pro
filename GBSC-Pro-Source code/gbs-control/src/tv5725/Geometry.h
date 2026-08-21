@@ -63,6 +63,12 @@ public:
     // need not hold it across the settle.
     bool solveRaster();
 
+    // Take the output raster off the chip, for the one case that does not solve
+    // one: a preset table's bytes, replayed before solveRaster() runs and left
+    // standing whenever it defers. Named, like adoptSampling(), because a
+    // silent read-back is the same inheritance unaccounted for.
+    void adoptRaster();
+
     // The output has gone into bypass: video routes around the VDS, so a
     // deferred solve is void and dropping it stops runSyncWatcher()'s retry
     // writing a scaled raster over the bypass setup.
@@ -158,6 +164,10 @@ private:
     bool solvePending_;      // a solve refused because the source was settling
     bool framingRequested_;  // the user asked; loop() drains it, freeze does not
     const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
+
+    // The output raster in force, held rather than read back off VDS_?SYNC_RST.
+    // Zero means there is none, which is what bypass looks like.
+    uint16_t rasterLinePx_, rasterFrameLines_;
     Scale horizontalScale_, verticalScale_;  // what the last solve produced
 
     // Where the front porch starts, from the raster this engine solved. Held

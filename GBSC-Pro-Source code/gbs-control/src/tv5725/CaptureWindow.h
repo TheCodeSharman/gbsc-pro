@@ -46,6 +46,10 @@ public:
     // `fieldRateHz` is the raw measurement, not a defaulted one: it is here to
     // CONTRADICT the line count, and a fallback that always looks plausible
     // cannot. docs/firmware-geometry-engine.md.
+    // The output raster this capture is for. Zero on both means bypass, where
+    // there is no scaled raster and nothing to solve.
+    void setRasters(uint16_t linePx, uint16_t frameLines);
+
     bool readRasters(const SourceMeasurement &sampling, float fieldRateHz,
                      uint16_t sourceLines, uint16_t hsyncLow);
 

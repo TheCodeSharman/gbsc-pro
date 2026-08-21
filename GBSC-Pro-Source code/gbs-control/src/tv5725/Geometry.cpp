@@ -14,7 +14,8 @@ namespace Tv5725 {
 
 Geometry::Geometry()
     : rasterPending_(false), samplingPending_(false), solvePending_(false),
-      framingRequested_(false), rasterMode_(0), activeStop_(0),
+      framingRequested_(false), rasterMode_(0),
+      rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
@@ -105,6 +106,8 @@ bool Geometry::solveRaster()
     // docs/investigations/preset-abandonment-audit.md. Both hold total-1.
     GBS::VDS_HSYNC_RST::write(raster.horizontalTotal - 1);
     GBS::VDS_VSYNC_RST::write(raster.verticalTotal - 1);
+    rasterLinePx_ = raster.horizontalTotal;
+    rasterFrameLines_ = raster.verticalTotal;
 
     // One quantity in three registers, so all three are written here.
     // VDS_VSYN_SIZE1 and _2 are the vertical totals the frame-rate selector
@@ -133,9 +136,17 @@ bool Geometry::solveRaster()
     return true;
 }
 
+void Geometry::adoptRaster()
+{
+    rasterLinePx_ = GBS::VDS_HSYNC_RST::read() + 1;
+    rasterFrameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
+}
+
 void Geometry::enterBypass()
 {
     rasterMode_ = 0;
+    rasterLinePx_ = 0;
+    rasterFrameLines_ = 0;
     rasterPending_ = false;
     samplingPending_ = false;
 
@@ -244,6 +255,7 @@ bool Geometry::fail()
 
 bool Geometry::readCapture(CaptureWindow &capture)
 {
+    capture.setRasters(rasterLinePx_, rasterFrameLines_);
     if (!capture.readRasters(sampling_, getSourceFieldRate(0),
                              SourceMeasurement::measureSourceLines(),
                              SourceMeasurement::measureHsyncLow())) {
