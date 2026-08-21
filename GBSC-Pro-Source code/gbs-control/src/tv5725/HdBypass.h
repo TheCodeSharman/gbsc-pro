@@ -8,14 +8,21 @@ namespace Tv5725 {
 // The HD bypass block: the path video takes when the scaler is out of circuit,
 // carrying its own raster generator and its own blanking straight to the DAC.
 //
-// init() is the resting state. setOutModeHdBypass() and bypassModeSwitch_RGBHV()
-// overwrite the raster and both sync windows for the mode they are entering, so
-// what this block establishes alone is the dynamic range, the DVI-mode
-// blanking, and the programmed blank level.
+// The block's reset lives here rather than with the rest of s0_46/s0_47, so one
+// class owns the whole subsystem: init() is the off state and holds it, enable()
+// releases it and programs it. Scaling never goes through the block, so the
+// bring-up leaves it off.
+//
+// The bypass switches overwrite the raster and both sync windows for the mode
+// they are entering, so what enable() establishes alone is the dynamic range,
+// the DVI-mode blanking and the programmed blank level.
 //
 // s1_56..s1_5f carry no datasheet field and have no writer here.
 class HdBypass {
 public:
+    typedef UReg<0x00, 0x47, 3, 1> SFTRST_HDBYPS_RSTZ;                // When = 1, sync processor work normally HD bypass channel
+                                                                      // reset control When = 0, HD bypass is in reset status When
+                                                                      // = 1, HD bypasswork normally
 
     typedef UReg<0x01, 0x30, 0, 1> HD_IN_DREG_BYPS;                   // Input retiming bypass Use the falling or rising edge of
                                                                       // clock to get the input data. 0: Clock input data on the
@@ -124,8 +131,24 @@ public:
 
     typedef UReg<0x01, 0x55, 0, 8> HD_BLK_RV_DATA;
 
-    // Every static register of this subsystem, in address order.
+    // The off state, which is what the bring-up wants: scaling does not use
+    // this path.
     static void init();
+
+    // Release the reset and program every static register of the block, in
+    // address order. The reset goes first: released after the block is
+    // configured, it would discard the configuration.
+    static void enable();
+
+    // Hold the reset. Nothing is programmed behind it, because a block in reset
+    // is not configurable.
+    static void disable();
+
+    // Whether the block is out of reset. Read from the chip because it is the
+    // only thing that knows: a caller clearing the whole of s0_47 and putting
+    // back what it found cannot get this from rto->outModeHdBypass, which is
+    // the sketch's intent rather than the block's state.
+    static bool enabled();
 };
 
 }  // namespace Tv5725

@@ -44,13 +44,12 @@ void Chip::init()
     //
     // 1 releases. This group is why Chip::init() runs first, and
     // test_bringup.cpp fails if a later class's write overtakes it.
-    // SFTRST_HDBYPS_RSTZ stays held: scaling does not go through that block.
+    // SFTRST_HDBYPS_RSTZ is not here -- Tv5725::HdBypass owns its own reset.
     SFTRST_DEINT_RSTZ::write(0x1);               // s0_46[1:1]
     SFTRST_MEM_FF_RSTZ::write(0x1);              // s0_46[2:2]
     SFTRST_MEM_RSTZ::write(0x1);                 // s0_46[3:3]
     SFTRST_FIFO_RSTZ::write(0x1);                // s0_46[4:4]
     SFTRST_OSD_RSTZ::write(0x1);                 // s0_46[5:5]
-    SFTRST_HDBYPS_RSTZ::write(0x0);              // s0_47[3:3]
     SFTRST_INT_RSTZ::write(0x1);                 // s0_47[4:4]
 
     // --- the analog pads --------------------------------------------------

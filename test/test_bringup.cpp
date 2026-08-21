@@ -136,10 +136,10 @@ TEST_CASE("the bring-up writes something to every segment it configures")
 {
     runBringUp();
 
-    // s0 chip, s1 input formatter, s3 VDS, s4 memory and FIFOs, s5 ADC and sync
-    // processor. s2 is deliberately absent: no preset writes it, and the
-    // deinterlacer blob belongs to loadStaticSections(), not to this block.
-    const uint8_t configured[] = {0, 1, 3, 4, 5};
+    // s0 chip, s1 input formatter and mode detect, s2 deinterlacer, s3 VDS,
+    // s4 memory and FIFOs, s5 ADC and sync processor. Every segment the chip
+    // has.
+    const uint8_t configured[] = {0, 1, 2, 3, 4, 5};
     for (size_t i = 0; i < sizeof(configured) / sizeof(configured[0]); ++i) {
         uint8_t segment = configured[i];
         bool any = false;
@@ -148,9 +148,54 @@ TEST_CASE("the bring-up writes something to every segment it configures")
         CAPTURE(segment);
         CHECK(any);
     }
+}
 
-    for (int reg = 0; reg < 256; ++reg)
-        CHECK_FALSE(Wire.touched[2][reg]);
+TEST_CASE("holding every block holds every block, including HD bypass")
+{
+    // The three sites that wrote RESET_CONTROL_0x46 and _0x47 as 0x00 meant
+    // this. Spelling it as two byte writes hid that s0_46[7] and s0_47[7:5] are
+    // RESERVED and were being forced to 0 along with the eleven real fields --
+    // and hid that one of those fields is now HdBypass's.
+    Wire.reset();
+    Wire.poison(0xFF);
+    Tv5725::BringUp::holdAllBlocks();
+
+    const uint8_t held46[] = {0, 1, 2, 3, 4, 5, 6};
+    for (size_t i = 0; i < sizeof(held46) / sizeof(held46[0]); ++i) {
+        CAPTURE(held46[i]);
+        CHECK(Wire.field(0, 0x46, held46[i], 1) == 0);
+    }
+    for (uint8_t bit = 0; bit <= 4; ++bit) {
+        CAPTURE(bit);
+        CHECK(Wire.field(0, 0x47, bit, 1) == 0);
+    }
+
+    // The RESERVED bits are left as found, which a byte write cannot do.
+    CHECK(Wire.field(0, 0x46, 7, 1) == 1);
+    CHECK(Wire.field(0, 0x47, 5, 3) == 0x7);
+}
+
+TEST_CASE("the deinterlacer is configured after its reset is released")
+{
+    // SFTRST_DEINT_RSTZ is s0_46[1], written 1 by Chip::init() to RELEASE the
+    // deinterlacer, and a reset released after the block is configured discards
+    // the configuration. While the deinterlacer block was loaded from
+    // writeProgramArrayNew() it ran BEFORE Chip::init() and nothing could see
+    // it: the constraint is between two classes, so no per-class test reaches
+    // it and the whole-bring-up ordering test only knew about segments 0 to 5
+    // minus 2.
+    std::vector<Write> writes = runBringUp();
+
+    size_t deintReleased = writes.size();
+    size_t firstDeintConfig = writes.size();
+    for (size_t i = 0; i < writes.size(); ++i) {
+        if (writes[i].segment == 0 && writes[i].reg == 0x46)
+            deintReleased = i;
+        if (writes[i].segment == 2 && i < firstDeintConfig)
+            firstDeintConfig = i;
+    }
+
+    CHECK(deintReleased < firstDeintConfig);
 }
 
 TEST_CASE("the display PLL is brought out of reset on every preset load")

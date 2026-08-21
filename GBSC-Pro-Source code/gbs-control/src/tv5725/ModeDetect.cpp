@@ -57,4 +57,14 @@ void ModeDetect::init()
     MD_UNSTABLE_LOCK_VALUE::write(3);           // s1_83[5:2]
 }
 
+void ModeDetect::applySyncType(SyncType type)
+{
+    MD_SEL_VGA60::write(type == Csync ? 0 : 1);
+}
+
+void ModeDetect::applyMedResLineCount(uint8_t lines)
+{
+    MD_HD1250P_CNTRL::write(lines);
+}
+
 }  // namespace Tv5725

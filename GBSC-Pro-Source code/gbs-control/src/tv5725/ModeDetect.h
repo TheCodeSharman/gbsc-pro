@@ -246,6 +246,19 @@ public:
 
     // Every static register of this subsystem, in address order.
     static void init();
+
+    // Whether the source presents its own H/V sync or a composite one, which
+    // decides the VGA 60 Hz discriminator. Probed per source rather than read
+    // back off the chip -- docs/sync-type-selection.md.
+    enum SyncType {
+        Csync,
+        SeparateSync,
+    };
+
+    static void applySyncType(SyncType type);
+
+    // The line count the medium-resolution threshold is set from.
+    static void applyMedResLineCount(uint8_t lines);
 };
 
 }  // namespace Tv5725

@@ -4,6 +4,23 @@ namespace Tv5725 {
 
 void HdBypass::init()
 {
+    disable();
+}
+
+void HdBypass::disable()
+{
+    SFTRST_HDBYPS_RSTZ::write(0);                // s0_47[3:3]
+}
+
+bool HdBypass::enabled()
+{
+    return SFTRST_HDBYPS_RSTZ::read() == 1;
+}
+
+void HdBypass::enable()
+{
+    SFTRST_HDBYPS_RSTZ::write(1);                // s0_47[3:3]
+
     HD_IN_DREG_BYPS::write(0);                   // s1_30[0:0]
     HD_MATRIX_BYPS::write(0);                    // s1_30[1:1]
     HD_DYN_BYPS::write(0);                       // s1_30[2:2]

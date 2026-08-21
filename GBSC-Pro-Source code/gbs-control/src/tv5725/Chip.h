@@ -92,9 +92,6 @@ public:
     typedef UReg<0x00, 0x47, 2, 1> SFTRST_SYNC_RSTZ;                  // Sync procesor reset control When = 0, sync processor is
                                                                       // in reset status
 
-    typedef UReg<0x00, 0x47, 3, 1> SFTRST_HDBYPS_RSTZ;                // When = 1, sync processor work normally HD bypass channel
-                                                                      // reset control When = 0, HD bypass is in reset status When
-                                                                      // = 1, HD bypasswork normally
 
     typedef UReg<0x00, 0x47, 4, 1> SFTRST_INT_RSTZ;                   // Interrupt generator reset control When = 0, interrupt
                                                                       // generator is in reset status

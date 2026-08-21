@@ -19,14 +19,88 @@ using Tv5725::HdBypass;
 // reported rather than mistaken for a write.
 static const uint8_t Poison = 0xA5;
 
+// init() is the OFF state and enable() is the on state, so every assertion
+// about the block's registers runs against enable().
 struct Bench {
     Bench()
     {
         Wire.reset();
         Wire.poison(Poison);
-        HdBypass::init();
+        HdBypass::enable();
     }
 };
+
+TEST_CASE("the bring-up state holds the block in reset and programs nothing")
+{
+    // Scaling does not go through the HD bypass block, so its off state is its
+    // reset asserted -- and configuring a block held in reset is what the old
+    // arrangement did, because the reset bit belonged to Chip and the registers
+    // to nobody.
+    Wire.reset();
+    Wire.poison(Poison);
+    HdBypass::init();
+
+    CHECK(Wire.field(0, 0x47, 3, 1) == 0);  // SFTRST_HDBYPS_RSTZ, held
+
+    for (int r = 0x30; r <= 0x5F; ++r) {
+        CAPTURE(r);
+        CHECK_FALSE(Wire.touched[1][r]);
+    }
+}
+
+TEST_CASE("disabling holds the reset and is what the bring-up state is")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    HdBypass::enable();
+    CHECK(HdBypass::enabled());
+
+    HdBypass::disable();
+
+    CHECK(Wire.field(0, 0x47, 3, 1) == 0);
+    CHECK_FALSE(HdBypass::enabled());
+}
+
+TEST_CASE("enabled() reports the block, not what anyone remembers writing")
+{
+    // resetDigital() clears the whole of s0_47 and puts back what it found, so
+    // it has to ask the block. Nothing else can answer: rto->outModeHdBypass is
+    // the sketch's intent, and the two disagree while a reset is in progress.
+    Wire.reset();
+    Wire.poison(Poison);
+
+    HdBypass::disable();
+    CHECK_FALSE(HdBypass::enabled());
+
+    HdBypass::enable();
+    CHECK(HdBypass::enabled());
+}
+
+TEST_CASE("enabling the block releases its reset before configuring it")
+{
+    // A reset released AFTER its block is configured discards the
+    // configuration, which is the rule BringUp.h states for Chip::init() and
+    // the same one applies here.
+    Wire.reset();
+    Wire.poison(Poison);
+    Wire.trace.clear();
+    HdBypass::enable();
+
+    size_t released = Wire.trace.size();
+    size_t firstConfig = Wire.trace.size();
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &t = Wire.trace[i];
+        if (t.reg == FakeTwoWire::SegmentRegister)
+            continue;
+        if (t.segment == 0 && t.reg == 0x47)
+            released = i;
+        if (t.segment == 1 && t.reg >= 0x30 && i < firstConfig)
+            firstConfig = i;
+    }
+
+    CHECK(Wire.field(0, 0x47, 3, 1) == 1);  // SFTRST_HDBYPS_RSTZ, released
+    CHECK(released < firstConfig);
+}
 
 TEST_CASE("the input pipe and both converters are in circuit")
 {
@@ -87,14 +161,16 @@ TEST_CASE("the programmed blank is black on all three channels")
     CHECK(Wire.field(1, 0x55, 0, 8) == 0);  // HD_BLK_RV_DATA
 }
 
-TEST_CASE("the HD bypass block stays inside segment 1")
+TEST_CASE("the HD bypass block stays inside segment 1, bar its own reset")
 {
+    // s0_47 is the one exception and it is deliberate: the block's reset bit
+    // belongs to the block, so no other class has to know this one exists.
     Bench bench;
 
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s) {
-        if (s == 1)
-            continue;
         for (int r = 0; r < 256; ++r) {
+            if (s == 1 || (s == 0 && r == 0x47))
+                continue;
             CAPTURE(s);
             CAPTURE(r);
             REQUIRE_FALSE(Wire.touched[s][r]);

@@ -25,7 +25,8 @@ namespace Tv5725 {
 //
 // - Anything undocumented, including addresses past the end of the register set
 //   and holes inside it. "Every table writes 0x00" is not proof the reset
-//   default is 0.
+//   default is 0. That includes bits a preset table set inside a byte it owns:
+//   Deinterlacer leaves five RESERVED groups the table wrote 1.
 //
 // - The output raster, the windows, the scales, the clock. Geometry computes
 //   those.
@@ -34,6 +35,11 @@ public:
     // Call where a preset table would have been loaded, BEFORE the engine
     // solves the raster and the windows.
     static void init();
+
+    // Every block reset asserted. Lives here rather than on Chip because one of
+    // the twelve belongs to Tv5725::HdBypass, and a cross-subsystem sequence is
+    // what this class is for.
+    static void holdAllBlocks();
 };
 
 }  // namespace Tv5725

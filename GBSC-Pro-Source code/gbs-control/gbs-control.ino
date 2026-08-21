@@ -1120,7 +1120,7 @@ void zeroAll()
 // The bytes, and only the bytes. Everything that is not a table byte lives in
 // writeProgramArrayNew() below, so that when the twelve tables go this function
 // is what gets replaced and the mode-state work around it survives untouched.
-static void writePresetTable(const uint8_t *programArray, boolean skipMDSection)
+static void writePresetTable(const uint8_t *programArray)
 {
   uint16_t index = 0;
   uint8_t bank[16];
@@ -1209,13 +1209,13 @@ static void writePresetTable(const uint8_t *programArray, boolean skipMDSection)
         }
         writeBytes(j * 16, bank, 16);
       }
-      // Neither the MD section nor the deinterlacer section is table data;
-      // loadStaticSections() applies both.
+      // The MD section is not table data. Tv5725::ModeDetect owns s1 0x60..0x83
+      // and BringUp::init() applies it.
       break;
     case 2:
       // **NOT A TABLE SEGMENT AT ALL.** No preset writes segment 2:
       // presetRegisterRanges covers 0, 1, 3, 4 and 5, and the twelve archived
-      // tables contain no s2 byte.
+      // tables contain no s2 byte. Tv5725::Deinterlacer owns it.
       break;
     case 3:
       for (int j = 0; j <= 7; j++)
@@ -1302,32 +1302,7 @@ static void writePresetTable(const uint8_t *programArray, boolean skipMDSection)
 
 // The two blobs that are NOT preset data, applied whether or not a table loaded.
 //
-// **DO NOT GUARD THIS ON `programArray != 0`.** That takes both out with the
-// tables, leaving 37 of segment 2's bytes at 0x00 -- every MADPT coefficient
-// plus MADPT_PD_RAM_BYPS, MADPT_VIIR_BYPS, MADPT_Y_WOUT_BYPS and
-// DIAG_BOB_PLDY_RAM_BYPS. Zeroed, those bypass bits route video THROUGH the
-// deinterlacer RAM with every coefficient at zero.
-//
-// Neither belongs to a preset. **No preset writes segment 2 at all**:
-// presetRegisterRanges covers segments 0, 1, 3, 4 and 5, and no archived table
-// holds an s2 byte. The MD section is segment 1 rows 6..8, outside the 0x00..0x2F
-// a table carries. Both are static chip configuration, and both are still owed
-// a Tv5725:: subsystem.
-static void loadStaticSections(boolean skipMDSection)
-{
-  Tv5725::Deinterlacer::init();
-
-  if (!skipMDSection) {
-    Tv5725::ModeDetect::init();
-
-    // Beside ModeDetect::init() and travelling with it: both depend on
-    // runtime state rather than on any table.
-    GBS::MD_SEL_VGA60::write(rto->syncTypeCsync ? 0 : 1);
-    GBS::MD_HD1250P_CNTRL::write(rto->medResLineCount);
-  }
-}
-
-void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
+void writeProgramArrayNew(const uint8_t *programArray)
 {
   FrameSync::cleanup();
 
@@ -1352,10 +1327,8 @@ void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection)
   // rto->videoStandardInput, so it has to sit after the three assignments above
   // and before videoStandardInputAfterLoad() below.
   if (programArray != 0) {
-    writePresetTable(programArray, skipMDSection);
+    writePresetTable(programArray);
   }
-
-  loadStaticSections(skipMDSection);
 
   if (load.enableScalingRgbhv())
   {
@@ -1411,7 +1384,7 @@ void loadComputedPreset(const Tv5725::OutputMode *mode, uint8_t presetId)
   GBS::GBS_OPTION_SCALING_RGBHV::write(0);
   GBS::GBS_OPTION_PALFORCED60_ENABLED::write(0);
   GBS::GBS_RUNTIME_FTL_ADJUSTED::write(0);
-  writeProgramArrayNew(0, false);
+  writeProgramArrayNew(0);
 }
 
 void activeFrameTimeLockInitialSteps()
@@ -1540,8 +1513,7 @@ void setResetParameters()
     GBS::ADC_INPUT_SEL::write(1);
     GBS::ADC_POWDZ::write(1);
     setAndUpdateSogLevel(rto->currentLevelSOG);
-    GBS::RESET_CONTROL_0x46::write(0x00);
-    GBS::RESET_CONTROL_0x47::write(0x00);
+    Tv5725::BringUp::holdAllBlocks();
     GBS::GPIO_CONTROL_00::write(0x67);
     GBS::GPIO_CONTROL_01::write(0x00);
     GBS::DAC_RGBS_PWDNZ::write(0);
@@ -1577,8 +1549,18 @@ void setResetParameters()
     GBS::PLLAD_CONTROL_00_5x11::write(0x01);
     resetDebugPort();
 
-    GBS::RESET_CONTROL_0x46::write(0x41);
-    GBS::RESET_CONTROL_0x47::write(0x17);
+    GBS::SFTRST_IF_RSTZ::write(1);
+    GBS::SFTRST_DEINT_RSTZ::write(0);
+    GBS::SFTRST_MEM_FF_RSTZ::write(0);
+    GBS::SFTRST_MEM_RSTZ::write(0);
+    GBS::SFTRST_FIFO_RSTZ::write(0);
+    GBS::SFTRST_OSD_RSTZ::write(0);
+    GBS::SFTRST_VDS_RSTZ::write(1);
+    GBS::SFTRST_DEC_RSTZ::write(1);
+    GBS::SFTRST_MODE_RSTZ::write(1);
+    GBS::SFTRST_SYNC_RSTZ::write(1);
+    Tv5725::HdBypass::disable();
+    GBS::SFTRST_INT_RSTZ::write(1);
     GBS::INTERRUPT_CONTROL_01::write(0xff);
     GBS::INTERRUPT_CONTROL_00::write(0xff);
     GBS::INTERRUPT_CONTROL_00::write(0x00);
@@ -2650,21 +2632,40 @@ void ResetSDRAM()
 
 void resetDigital()
 {
-    boolean keepBypassActive = 0;
-    if (GBS::SFTRST_HDBYPS_RSTZ::read() == 1) {
-        keepBypassActive = 1;
-    }
-    GBS::RESET_CONTROL_0x47::write(0x17);
+    const boolean keepBypassActive = Tv5725::HdBypass::enabled();
+    GBS::SFTRST_DEC_RSTZ::write(1);
+    GBS::SFTRST_MODE_RSTZ::write(1);
+    GBS::SFTRST_SYNC_RSTZ::write(1);
+    Tv5725::HdBypass::disable();
+    GBS::SFTRST_INT_RSTZ::write(1);
     if (rto->outModeHdBypass) {
-        GBS::RESET_CONTROL_0x46::write(0x00);
-        GBS::RESET_CONTROL_0x47::write(0x1F);
+        GBS::SFTRST_IF_RSTZ::write(0);
+        GBS::SFTRST_DEINT_RSTZ::write(0);
+        GBS::SFTRST_MEM_FF_RSTZ::write(0);
+        GBS::SFTRST_MEM_RSTZ::write(0);
+        GBS::SFTRST_FIFO_RSTZ::write(0);
+        GBS::SFTRST_OSD_RSTZ::write(0);
+        GBS::SFTRST_VDS_RSTZ::write(0);
+        Tv5725::HdBypass::enable();
         return;
     }
-    GBS::RESET_CONTROL_0x46::write(0x41);
-    if (keepBypassActive == 1) {
-        GBS::RESET_CONTROL_0x47::write(0x1F);
+    GBS::SFTRST_IF_RSTZ::write(1);
+    GBS::SFTRST_DEINT_RSTZ::write(0);
+    GBS::SFTRST_MEM_FF_RSTZ::write(0);
+    GBS::SFTRST_MEM_RSTZ::write(0);
+    GBS::SFTRST_FIFO_RSTZ::write(0);
+    GBS::SFTRST_OSD_RSTZ::write(0);
+    GBS::SFTRST_VDS_RSTZ::write(1);
+    if (keepBypassActive) {
+        Tv5725::HdBypass::enable();
     }
-    GBS::RESET_CONTROL_0x46::write(0x7f);
+    GBS::SFTRST_IF_RSTZ::write(1);
+    GBS::SFTRST_DEINT_RSTZ::write(1);
+    GBS::SFTRST_MEM_FF_RSTZ::write(1);
+    GBS::SFTRST_MEM_RSTZ::write(1);
+    GBS::SFTRST_FIFO_RSTZ::write(1);
+    GBS::SFTRST_OSD_RSTZ::write(1);
+    GBS::SFTRST_VDS_RSTZ::write(1);
 }
 
 void resetSyncProcessor()
@@ -3149,6 +3150,13 @@ void doPostPresetLoadSteps()
     // this sits here rather than beside the writeProgramArrayNew() calls.
     // docs/investigations/preset-abandonment-audit.md.
     Tv5725::BringUp::init();
+
+    // Beside ModeDetect::init() inside that block and travelling with it: both
+    // depend on runtime state rather than on any table.
+    Tv5725::ModeDetect::applySyncType(rto->syncTypeCsync
+                                          ? Tv5725::ModeDetect::Csync
+                                          : Tv5725::ModeDetect::SeparateSync);
+    Tv5725::ModeDetect::applyMedResLineCount(rto->medResLineCount);
 
     // if(Info_sate == 0)
     {
@@ -3957,7 +3965,7 @@ void applyPresets(uint8_t result)
                                    : 0;
         if (saved != 0) {
             rto->outputMode = 0;  // the saved file's own bytes are the mode
-            writeProgramArrayNew(saved, false);
+            writeProgramArrayNew(saved);
             if (applySavedBypassPreset()) {
                 return;
             }
@@ -4635,7 +4643,6 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     externalClockGenResetClock();
     updateSpDynamic(0);
-    Tv5725::HdBypass::init();
     if (GBS::ADC_UNUSED_62::read() != 0x00) {
         if (uopt->presetPreference != 2) {
             serialCommand = 'D';
@@ -4647,8 +4654,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     FrameSync::cleanup();
     GBS::ADC_UNUSED_62::write(0x00);
-    GBS::RESET_CONTROL_0x46::write(0x00);
-    GBS::RESET_CONTROL_0x47::write(0x00);
+    Tv5725::BringUp::holdAllBlocks();
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
 
@@ -4679,7 +4685,11 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::PAD_TRI_ENZ::write(1);
     GBS::PLL_MS::write(2);
     GBS::MEM_PAD_CLK_INVERT::write(0);
-    GBS::RESET_CONTROL_0x47::write(0x1f);
+    GBS::SFTRST_DEC_RSTZ::write(1);
+    GBS::SFTRST_MODE_RSTZ::write(1);
+    GBS::SFTRST_SYNC_RSTZ::write(1);
+    GBS::SFTRST_INT_RSTZ::write(1);
+    Tv5725::HdBypass::enable();
 
     GBS::DAC_RGBS_BYPS2DAC::write(1);
     GBS::SP_HS_LOOP_SEL::write(1);     
@@ -4920,7 +4930,7 @@ void bypassModeSwitch_RGBHV()
     // bypass register writes below belong once the engine owns them.
     geometry.enterBypass();
 
-    Tv5725::HdBypass::init();
+    Tv5725::HdBypass::enable();
     externalClockGenResetClock();
     FrameSync::cleanup();
     GBS::ADC_UNUSED_62::write(0x00);
@@ -6891,8 +6901,7 @@ void setup()
     }
     display.clear();
 
-    GBS::RESET_CONTROL_0x46::write(0);
-    GBS::RESET_CONTROL_0x47::write(0);
+    Tv5725::BringUp::holdAllBlocks();
     GBS::PLLAD_VCORST::write(1);
     GBS::PLLAD_PDZ::write(0);
 

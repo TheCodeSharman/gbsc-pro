@@ -88,6 +88,39 @@ TEST_CASE("every mode-detect threshold comes up at its bring-up value")
     CHECK(Wire.field(1, 0x83, 2,  4) ==   3);  // MD_UNSTABLE_LOCK_VALUE
 }
 
+TEST_CASE("the sync type selects the VGA 60 Hz discriminator")
+{
+    // MD_SEL_VGA60 is not init() state: it follows rto->syncTypeCsync, which is
+    // probed once per source. init() establishes the table's value and this
+    // overrides it. docs/sync-type-selection.md.
+    Bench bench;
+
+    ModeDetect::applySyncType(ModeDetect::Csync);
+    CHECK(Wire.field(1, 0x65, 7, 1) == 0);
+
+    ModeDetect::applySyncType(ModeDetect::SeparateSync);
+    CHECK(Wire.field(1, 0x65, 7, 1) == 1);
+}
+
+TEST_CASE("the medium-resolution line count is carried as a threshold")
+{
+    Bench bench;
+
+    ModeDetect::applyMedResLineCount(0x33);
+    CHECK(Wire.field(1, 0x7F, 0, 8) == 0x33);
+}
+
+TEST_CASE("neither runtime field disturbs its neighbours")
+{
+    // MD_SEL_VGA60 shares s1_65 with MD_VGA_CNTRL, which init() owns.
+    Bench bench;
+
+    ModeDetect::applySyncType(ModeDetect::SeparateSync);
+    ModeDetect::applyMedResLineCount(0x33);
+
+    CHECK(Wire.field(1, 0x65, 0, 7) == 62);  // MD_VGA_CNTRL, untouched
+}
+
 TEST_CASE("mode detect stays inside segment 1")
 {
     Bench bench;
