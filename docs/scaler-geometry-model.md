@@ -318,9 +318,11 @@ The green starting at 1126 is **not** the same pulse, and not the same kind of
 thing. It is ~120 units against the pulse's 91, and **no multi-bit field in
 segments 0, 1 or 5 holds 1126, 2252, 151 or 302** — it is not an input setting.
 
-It is not captured content at all: `PB_CAP_OFFSET` positions it and 230 removes
-it. Unwritten frame buffer, green because unwritten 4:2:2 decodes to
-`RGB(0,135,0)`. [`investigations/tail-green.md`](investigations/tail-green.md).
+The capture path stops writing video past IF 1125 and writes `Y=U=V=0`, which
+decodes to green. It is neither unwritten frame buffer — genuinely unwritten
+memory reads as random colour noise — nor anything `PB_CAP_OFFSET` places;
+[`investigations/tail-green.md`](investigations/tail-green.md) carries both of
+those as refuted, with the evidence that killed them.
 
 Nothing clips it, and nothing should. **A test asserts the tail reaches the last
 capturable unit**, because clipping both ends by `syncUnits` excludes
@@ -418,26 +420,6 @@ the experiment is two writes and is reversible.
 
 ## Still open
 
-- **Why the capture-side threshold in the tail green exists at all.** The band is
-  **not** captured content: `PB_CAP_OFFSET` positions it and 230 removes it
-  entirely, across the zoom range. It is unwritten frame buffer, and unwritten
-  4:2:2 decodes to `RGB(0,135,0)` because U and V are offset-binary, which is the
-  whole of why it is green.
-
-  What is unresolved is that a creep of the capture stop, at a held width and so a
-  constant `PB_FETCH_NUM`, put the band's start at a fixed **IF 1125-1126** with
-  its width tracking `stop - 1125.5`. A pure offset error does not obviously
-  predict a threshold in the capture position, and neither result is in doubt.
-  **The experiment is to re-run that creep at offset 230.** It has never been run
-  against a varying offset.
-
-  The separate head green *is* captured content -- the sync tip digitised as
-  video -- and is solved: `InputLine::firstCapture()` returns `syncUnits`.
-
-  [`investigations/tail-green.md`](investigations/tail-green.md) has the readings,
-  why every source-side explanation was refuted, why the old absolute-versus-
-  relative question is retired as badly posed, and why clamping the capture window
-  is the wrong repair.
 - **The zigzag is not HSCALE-banded.** A manual sweep across the corrupted state
   found no value that cleared it. Cause unknown.
 - **Whether a badly latched black level skews colour measurements.** Auto-clamp is
