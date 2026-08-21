@@ -516,13 +516,27 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   the user finds their own edges with pan and scale. The vertical visible region
   is derivable — `1121 - 41 = 1080` exactly, the encoder's active window, same on
   every display — while the horizontal is real overscan and is not.
-- **Compute the geometry, never inherit it.** Read the capture and the raster;
-  derive everything else. Every geometry fault of 2026-08-06 was a violation:
-  inheriting the corner put 41 px of the previous frame down the left of the
-  screen, and inheriting the picture size froze a picture at 620 lines that no
-  zoom step could grow. `scale_step` deliberately takes no `scale` argument —
-  there is a test asserting the parameter does not exist, because its existence
-  was the bug. Every pad press recomputes every window, pan included.
+- **The engine CALCULATES every register from held state. Registers are an
+  output and are never an input.** The only reads permitted are measurements of
+  the source — the `STATUS_SYNC_PROC_*` registers, which nothing else can
+  supply. Everything else the engine needs, it already knows, because it
+  computed it: the raster, both scales, both windows, the divider. Reading one
+  back to derive another is what most of the geometry bugs here were.
+
+  Two consequences. **A register written by anything outside the engine corrupts
+  the calculation**, which is why the OSD, the IR handler and the web pads must
+  call the engine rather than write registers — and why a value the engine did
+  not choose is *adopted* explicitly (`Sampling::adopt()`) rather than silently
+  read. And **state living outside the registers is not a problem to solve**: it
+  is the design. Hold it, derive from it, expose it over `/geometry` so tests
+  and presets can set it.
+
+  **Inheriting means reading it off the chip**, and every geometry fault of
+  2026-08-06 was one: inheriting the corner put 41 px of the previous frame down
+  the left of the screen, and inheriting the picture size froze a picture at 620
+  lines that no zoom step could grow. `scale_step` deliberately takes no `scale`
+  argument — there is a test asserting the parameter does not exist, because its
+  existence was the bug. Every pad press recomputes every window, pan included.
 - **The output raster is computed too, since 2026-08-13.**
   `Geometry::solveRaster()` derives both totals, both sync pulses and the display
   clock seed from the frame height and the measured field rate, so a preset
