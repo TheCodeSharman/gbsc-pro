@@ -298,21 +298,58 @@ against a broken picture for a whole evening.
 
 ## Comments are pointers, not essays
 
-**The default is no comment at all.** A densely commented file is a defect rather
-than a matter of taste: it reads as machine-written, and it says its author
-thought the code was unreadable. The *why* — a hidden constraint, a measurement,
-a bug that shaped the code — belongs next to the code, briefly, where a name
-cannot carry it. The reasoning belongs in the tests and in `docs/`. Prefer
-extracting a well-named function over explaining an unnamed one.
+**The default is no comment at all.** The code is what gets read, and prose
+between the lines is what stops it being read at a glance. Prefer extracting a
+well-named function over explaining an unnamed one.
 
-**Keep the process out of the code.** What we tried, what was refuted, which
-session measured it, how the bug was found: none of that goes in a source file.
-A code comment is one or two lines of *why*, and a pointer to the `docs/` page
-carrying the detail. Detailed explanations go in the doc files.
+**Scope decides where context lives:**
 
-This applies to commit messages too — a feature commit says what the feature does
-and why, and nothing else. **Keep the word count as low as possible.** Generated
-prose runs long by default; the discipline is cutting it.
+| the context is | it belongs |
+|---|---|
+| one class's own — what it is for, what constrains it | the top of its header, above the class. Length is fine here: a reader goes there deliberately rather than scanning past |
+| how a method works, where the code cannot say it itself | in the `.cpp`, beside it |
+| two or more classes collaborating | a `docs/` page, with a pointer from the header |
+
+A collaboration written into each participant's header is n copies that diverge,
+every one authoritative to whoever finds it first, and no test checks any of them.
+
+**A header states the contract, not the mechanism.** What a caller gets, and
+nothing of how. Check the signature first: `ceilingHz` already implies the
+highest value under it, so *the largest* restates the parameter's own name.
+
+**Simplify before annotating.** A comment explaining convoluted code is the
+simplification that was not done. Where the code is already minimal and the
+difficulty is the domain, the comment is correct — this driver has plenty of
+both. Density is a **prompt to look again**, not proof that something is wrong.
+
+**Keep the process out.** What was tried, what was refuted, which session
+measured it: none of it. The urge is strongest straight after an investigation,
+when everything just learned feels load-bearing. The reader has none of that
+context and did not ask for it.
+
+Four tests, in the order they catch things:
+
+- **A blank `//` line means it is too long.** `grep -n '^\s*//$'`
+- **A measurement is evidence, and evidence lives in `docs/`.** A number that IS
+  the constraint stays: *PLLAD_MD is twelve bits*.
+- **If the sentence restates the name, delete it.** `reset()`, `pan()` and
+  `zoom()` need nothing.
+- **A header comment saying how belongs in the `.cpp`, or nowhere.**
+
+```
+no   The source is about to change mode. Everything the solve will need that
+     cannot be re-derived once it has rides along: videoStandardInput is
+     rewritten by PresetLoad::videoStandardInputAfterLoad(), so the mode the
+     choice was made from is gone by the time the raster is solved.
+
+     Nothing is solved here. The measurements a solve needs lag the mode
+     change by seconds, and read early they return 54.47, 55.12 and 66.79 Hz
+     on a source that runs 50.08.
+yes  Notify the engine that the source is about to change mode. The registers
+     are not written until the source has settled.
+```
+
+This applies to commit messages too. **Keep the word count as low as possible.**
 
 ## Docs describe this codebase, in the present tense
 
