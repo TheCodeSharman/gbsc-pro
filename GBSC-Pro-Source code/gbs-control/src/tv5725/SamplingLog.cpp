@@ -25,8 +25,8 @@ uint8_t ifStatusBits()
 // schema. One line per sample; the leader is what a log filter greps for.
 void emitLine(uint32_t sinceMs, uint16_t divider)
 {
-    char line[88];
-    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u,%u",
+    char line[96];
+    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u",
              (unsigned long)sinceMs,
              (unsigned)divider,
              (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read(),
@@ -35,7 +35,12 @@ void emitLine(uint32_t sinceMs, uint16_t divider)
              (unsigned)GBS::HPERIOD_IF::read(),
              (unsigned)GBS::VPERIOD_IF::read(),
              (unsigned)GBS::STATUS_SYNC_PROC_HSACT::read(),
-             (unsigned)ifStatusBits());
+             (unsigned)ifStatusBits(),
+             // The whole latched interrupt byte, unacknowledged. RD-5725-1.1
+             // documents s0_0F as one 8-bit block, and bit 3 is "input source
+             // switch the mode" -- read by nothing in the firmware, and the one
+             // signal of a mode change that no divider colours.
+             (unsigned)GBS::STATUS_0F::read());
     tv5725Log(line);
 }
 
@@ -61,7 +66,7 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
     lastSampleMs_ = startedMs_ - interval_;
     durationMs_ = durationMs;
     tv5725Log("smp,header,ms,divider,pllad_lock,sp_vtotal,sp_htotal,"
-              "hperiod_if,vperiod_if,hsact,ifbits");
+              "hperiod_if,vperiod_if,hsact,ifbits,intstatus");
 }
 
 uint32_t SamplingLog::lineRateFromHPeriod(uint16_t hperiod)
@@ -90,7 +95,7 @@ void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
     restoreDivider_ = GBS::PLLAD_MD::read();
     divider_ = low;
     tv5725Log("smp,header,ms_since_latch,divider,pllad_lock,sp_vtotal,"
-              "sp_htotal,hperiod_if,vperiod_if,hsact,ifbits");
+              "sp_htotal,hperiod_if,vperiod_if,hsact,ifbits,intstatus");
     applyStep(nowMs);
 }
 

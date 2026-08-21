@@ -11,6 +11,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <string>
+
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
@@ -18,7 +20,9 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingLog.h"
 #include "../GBSC-Pro-Source code/gbs-control/gbs_types.h"
 
-void tv5725Log(const char *) {}
+// The emitted line is the instrument, so one test reads it.
+static std::string g_lastLine;
+void tv5725Log(const char *line) { g_lastLine = line; }
 
 using namespace Tv5725;
 
@@ -87,4 +91,29 @@ TEST_CASE("a monitor run stops once its duration is up")
 TEST_CASE("the line rate comes off HPERIOD_IF against the chip's own 27 MHz")
 {
     CHECK(SamplingLog::lineRateFromHPeriod(431) == 15625u);
+}
+
+TEST_CASE("the sample carries the chip's interrupt status")
+{
+    // s0_0F is a LATCHED interrupt status byte, and bit 3 is documented "input
+    // source switch the mode". Whether it fires for a source mode change on
+    // this board is open, and it cannot be answered by polling from the host:
+    // register reads are deferred to loop(), so a poll fast enough to catch the
+    // transition starves the loop it is trying to observe -- measured, it
+    // wedges the mode change it was watching.
+    //
+    // Sampled from loop() it costs one register read and disturbs nothing.
+    // Read without acknowledging: the bit latches, so one sample after the
+    // change is enough to say whether it ever set.
+    // docs/investigations/divider-latched-measurement.md
+    sourceOnTheBus(2250);
+    GBS::STATUS_0F::write(0x08);   // bit 3, the mode switch
+
+    SamplingLog log;
+    log.monitor(0, 10, 1000);
+    log.poll(10);
+
+    // Last column, so the header the run emits stays aligned with the row.
+    CHECK(g_lastLine.rfind("smp,", 0) == 0);
+    CHECK(g_lastLine.substr(g_lastLine.rfind(',')) == ",8");
 }
