@@ -1941,6 +1941,11 @@ void goLowPowerWithInputDetection()
     rto->isInLowPowerMode = true;
 }
 
+// How long HSOUT/VSOUT are taken away to make the encoder re-acquire after the
+// output raster moves. Measured working at 1500; the minimum is unestablished,
+// and this blocks loop() once per mode change.
+static const uint16_t ENCODER_RELOCK_MS = 250;
+
 boolean optimizePhaseSP() 
 {
     uint16_t pixelClock = GBS::PLLAD_MD::read();
@@ -7444,6 +7449,24 @@ void loop()
         // applyPresetDoneStage block fires once and cannot see a later solve.
         FrameSync::clearFrequency();
         externalClockGenSyncInOutRate();
+
+        // The encoder samples the analog output and does not always notice the
+        // timing under it moved: it carries on transmitting the mode it locked
+        // to before, and the display reports that older rate and shows nothing.
+        // Taking sync away is what makes it re-acquire.
+        // docs/investigations/encoder-stale-timing.md
+        //
+        // **DROP AND RESTORE TOGETHER, HERE, AND NOWHERE ELSE.** Bounding it to
+        // one block is what makes it safe: a drop whose restore is conditional
+        // on some later state leaves a unit with correct registers driving no
+        // HSOUT/VSOUT at all, which is a worse fault than the one being fixed.
+        // The solve above has just written the new raster, so this is also the
+        // moment the encoder has something new to lock to.
+        if (!uopt->wantOutputComponent) {
+            GBS::PAD_SYNC_OUT_ENZ::write(1);
+            delay(ENCODER_RELOCK_MS);
+            GBS::PAD_SYNC_OUT_ENZ::write(0);
+        }
     }
 
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
