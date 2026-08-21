@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
+| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the two bounds on what arrives intact — the horizontal write limit and the vertical bypass threshold — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 | [gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos) | **a separate repo** — the 67 bench photographs, 146 MB. Mirrors this repo's paths, so its tree drops into a checkout and lands ignored. *What each one shows stays here*, in `docs/photos/*/README.md` and `snapshots/LOG.md` |
 | `gbsc-pro-bench-tools` | **a separate repo**, a sibling checkout — tooling for the bench *instruments*: a DSO Nano and a Rigol DS1000Z. **The dividing line: anything talking to the RetroScaler belongs here, anything driving one person's test gear belongs there.** |
@@ -525,7 +525,7 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   last, and running the steer early gave a 31 Hz frame and a black screen.
   And **a wider raster costs zoom range, because the zoom floor is
   `raster / maxMagnification` while the default capture is a property of the
-  INPUT line alone** — `1277 x 0.76 x 1.04 = 1009` here — so the two do not
+  INPUT line alone** — `1126 x 0.76 x 1.04 = 890` here — so the two do not
   track and widening the output silently eats the travel. That is the mechanism;
   the numbers below are what it cost, twice.
 
@@ -550,6 +550,16 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   `VDS_HB_SP` at 9, fifty units before the pulse. Position or width, one at a
   time, is the experiment. Treat 8 as measured at one hsync setting only.
   `snapshots/hsync-tuned-no-left-corruption-2026-08-06.json`.
+- **Nothing is captured past IF 1125.** The capture path stops writing video
+  there and writes `Y=U=V=0`, which decodes to green and **destroys** active
+  picture that reaches it — it is a bound on usable width, not an artefact to
+  hide. The position is absolute in the line and unmoved by the capture start,
+  the source's timings or the memory clock; what counts to 2250 ADC samples is
+  unknown. `Sampling` caps `PLLAD_MD` at 2250 so the whole line arrives, which
+  is why the bench now runs a 1126-unit IF line rather than 1277, and
+  `InputLine::lastCapture()` clamps the lines the divider did not choose. Do not
+  read the divider cap as the tearing ceiling that was removed — that one stays
+  refuted. `docs/capture-limits.md`.
 - **The horizontal axis has no native resolution.** The chip sees sync edges, not
   pixels, so the source's pixel clock is unknowable and 320x256 and 640x256 are
   indistinguishable. Capture is in ADC sample units, and how many there are per
@@ -648,8 +658,8 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   **But its original justification is GONE, and nobody has re-tested the
   alternative.** It read: at 129.6 MHz the raster is 2298, the zoom floor lands
   exactly on the default framing, and horizontal zoom-in has no travel. That was
-  true at `scaleMin` 500. With the floor now `raster / 4` it is `575` against a
-  1009 default — **434 units of travel, not zero** — so the usability argument
+  true at `scaleMin` 500. With the floor now `raster / 4` it is `575` against an
+  890 default — **315 units of travel, not zero** — so the usability argument
   for 108 over 129.6 no longer holds on its own terms. 129.6 MHz would buy a
   third more horizontal resolution and is already measured as working and sharp.
   Raising `EngineCeilingHz` is now a live bench experiment

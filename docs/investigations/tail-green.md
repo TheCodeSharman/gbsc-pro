@@ -1,12 +1,32 @@
 # The tail green
 
-A green band appears at the right of the picture. **`PB_CAP_OFFSET` positions it,
-and 230 removes it entirely** — measured on the bench across the horizontal zoom
-range, where the 260 the firmware used to write leaves it. `Tv5725::Memory`.
+A green band appears toward the right of the line, and **active picture that
+reaches it is destroyed** — not overlaid, not blanked, lost. It is a bound on
+usable capture width, and the engine now respects it two ways: see what the
+engine does about it, below.
 
-So it is not captured content. It is **unwritten frame buffer**, and the colour is
-arithmetic rather than a clue: U and V are offset-binary, so zero is not neutral.
-Decoded with the coefficients the firmware itself uses,
+Measured on a RiscPC with a stock AKF50 mode file, 320x256@50, at `PLLAD_MD`
+2548 and `IF_HSYNC_RST` 1274 — a 1275-unit line.
+
+## What it is not
+
+Every one of these was proposed with a mechanism and killed on the bench. They
+are listed because each is a plausible re-derivation, and rediscovering them
+costs a session each.
+
+| refuted | how |
+|---|---|
+| **the playback offset positions it** | `PB_CAP_OFFSET` 230 does not remove it. 230 is *below* the fetch, so lines overlap and each overwrites its predecessor's tail — it corrupts the gap rather than closing it |
+| **unwritten frame buffer** | genuinely unwritten memory reads as **random colour noise**, seen directly by bypassing the vertical scaler so the picture occupies only its captured lines. Flat green and random noise are different states |
+| **the source's blanking or front porch** | moving the border/porch boundary by 20 source px at constant line total does not move the band by one pixel |
+| **the source's border colour** | the band sits at the same place and width with the test card replaced by the desktop, and with the border black instead of purple |
+| **a capture-request shortfall** | `CAP_REQ_OVER` (`s4_22` bit 0) on and off is indistinguishable. It was the only write-side candidate the datasheet offers |
+| **sync-on-green** | this source drives separate H and V sync. `SP_SOG_MODE` is 0 and `VSACT` reads 1, the separate-sync path |
+| **the ADC's black level** | `ADC_ROFCTRL`, `ADC_GOFCTRL` and `ADC_BOFCTRL` are all 64. A per-channel offset error would tint the whole blanking interval |
+| **memory write bandwidth** | `PLL_MS` swept 162 -> 144 -> 108 -> 81 MHz, halving what the write path can absorb per unit time. X does not move by one unit. A fill-versus-drain race cannot survive that |
+| **the blank-insert registers** | `HD_BLK_GY_DATA`/`BU`/`RV` are all 0, which decodes to exactly this green — but writing 128 into the chroma pair changes nothing, so that path is not in circuit for RGB input |
+
+## The colour is arithmetic, and it says the zeros are written
 
 ```
 Y = U = V = 0
@@ -15,113 +35,146 @@ G = Y - 0.344  (U-128) - 0.714 (V-128)  =  135
 B = Y + 1.772  (U-128)  = -227  -> clamped to 0
 ```
 
-`RGB(0,135,0)`. Any unwritten or unreached region of the buffer displays as
-saturated green, which is why the artefact looked like a green *signal* problem
-for as long as it did.
+`RGB(0,135,0)`. U and V are offset-binary, so neutral chroma is 128 and zero is
+saturated green.
 
-Measured on a RiscPC with a stock AKF50 mode file, 320x256@50, at
-`PLLAD_MD` 2528 and `IF_HSYNC_RST` 1264 — a 1265-unit line.
-
-## Why every source-side explanation failed
-
-All four were tested on the bench and all four hold. They were refuted because
-they are explanations of *captured content*, and the band is not captured content.
-
-- **Not the source's blanking.** The band starts inside the right border, not at a
-  border or porch edge, and the border either side of it renders black.
-- **Not the ADC's black level.** The right border renders black immediately before
-  the band, so the black reference is correct there. This also disposes of the
-  standing suspicion of `SP_CS_CLP_ST`/`SP` — they are measurably inside the sync
-  tip at IF 13..74, which is worth fixing on its own terms, but a wrong black
-  reference would spoil the whole blanking interval rather than start part way
-  through the border.
-- **Not sync-on-green.** `ADC_SOGEN` is 1 with `SP_SOG_MODE` 0 — the ADC's
-  green-channel slicer running while the sync processor is on separate sync.
-  Setting `ADC_SOGEN` = 0 does not remove the band.
-- **Not the game's border colour**, and **not `VDS_VSYN_SIZE1`/`SIZE2`**, which are
-  the output vertical raster and cannot bound a horizontal input capture.
+**This is a digital signature, not an analogue one.** A source at blanking level
+puts 0 V on all three channels; digitised and converted that gives `Y=0` with
+**neutral chroma**, and comes out black. Only a stage writing zeros into the
+chroma bytes produces this colour. So something substitutes blank data — the
+question is what, and where in the line it decides to.
 
 ## Capturing the hsync pulse produces green too, and that is a different thing
 
-Shown directly. With the capture window written by hand to `62..1062` — a start of
-IF 62, inside the hsync pulse at IF 0..88.9 — a green band appears on the **left**.
-Move the start clear of the pulse (`114..1114`) and the left edge is clean.
+With the capture window written by hand to `62..1062` — a start of IF 62, inside
+the hsync pulse at IF 0..88.9 — a green band appears on the **left**. Move the
+start clear of the pulse (`114..1114`) and the left edge is clean.
 
-That one *is* captured content: the sync tip digitised as video. The head never
+That one is captured content: the sync tip digitised as video. The head never
 shows it in normal use because `InputLine::firstCapture()` returns `syncUnits`,
-96 in this configuration, and the solver keeps the window clear of it. Writing
-`IF_HB_SP2` directly bypasses that guard.
+96 in this configuration, and the solver keeps the window clear of it.
 
-Both bands are green for the same reason — low code values in a 4:2:2 buffer — but
-only the head one comes from the source.
+## Where X is
 
-## Unresolved: the capture-side dependence
+X is the position where video stops being written and the green starts.
+**X = 1125 IF units = 2250 ADC samples**, counted from the line start, and it is
+absolute: `IF_HB_ST2` was crept down one unit at a time to the value where the
+band exactly vanishes, and the register at that threshold is the reading. The
+capture start was 91 here and 62..263 across an earlier sweep, and X did not
+move.
 
-The band's position was crept before the offset was known, with the window width
-held at 1000 units:
+It falls at no boundary in the source's mode — an older reading put it 25.6 px
+into the 44 px right border — and that is now a confirmation rather than a
+suspicion, because the mode's boundaries were moved by 20 source px at constant
+line total and X ignored them.
 
-| capture stop | source px | result |
+Bandwidth is refuted (see the table above), which takes "fixed in time" with it.
+What survives is a **count**: something tallies samples per line and stops,
+indifferent to how fast memory can take them. **What counts to 2250 is not
+known.** No register holds it, it is not a power of two, and it is not
+`IF_LINE_SP - IF_LINE_ST`.
+
+**Neither datasheet states a line buffer depth**, searched 2026-08-18: DS-5725-3.2
+gives no capture width or buffer size at all, and RD-5725-1.1 mentions line
+buffers only for the deinterlacer's scaling-down and IIR paths, without depths.
+**The safe guards are not it either.** `CAP_SAFE_GUARD_EN` is on, but both
+capture guards are written to the top of the address space and are addresses in
+the frame buffer rather than positions in a line, so nothing there can stop a
+write 1125 units in. The one suggestive number in RD-5725-1.1 is that the chip's
+own largest input modes are 2200x1125 and 2640x1125 — a buffer sized for 1080i
+would be sized in exactly these units — but that is a coincidence of numbers
+until something on the bench moves X.
+
+That makes the divider a lever rather than a wall, since the line is `PLLAD_MD`
+samples long whatever the source does:
+
+| `PLLAD_MD` | line, IF units | lost |
 |---|---|---|
-| 1062 | 430.0 | clean |
-| 1114 | 450.9 | clean |
-| 1128 | 456.4 | green, ~1 source px wide |
-| 1142 | 462.2 | green, thin |
-| 1171 | 474.0 | green |
-| 1263 | 511.2 | green, wide |
+| 2548 | 1274 | 149 |
+| 2400 | 1200 | 75 |
+| 2250 | 1125 | none |
 
-The width tracks `stop − X` with X at IF **1125–1126**, and `PB_FETCH_NUM` was
-constant at 250 throughout, the width being held. A pure offset error does not
-obviously predict a threshold in the *capture position*, so this table and the
-`PB_CAP_OFFSET` result are in tension and neither is in doubt.
+**Confirmed at `PLLAD_MD` 2048.** The line becomes 1025 IF units, the capture is
+opened to 73..1020, and no band appears anywhere — the limit is out of reach. A
+fraction of the line would have put one at 904.
 
-AKF50's own line for reference, `h_timings: 36, 30, 44, 320, 44, 38` over 512
-source px, at 2.4707 IF units per source px:
+**The sharper confirmation has not been run.** At `PLLAD_MD` 2400 a count
+predicts a band of exactly 75 units in a 1200-unit line. "No band" is also what a
+broken capture path gives; a thin band appearing where predicted cannot be an
+accident.
 
-```
-sync          0 ..  36 px      IF    0.0 ..   88.9
-back porch   36 ..  66         IF   88.9 ..  163.1
-left border  66 .. 110         IF  163.1 ..  271.8
-display     110 .. 430         IF  271.8 .. 1062.4
-right border 430 .. 474        IF 1062.4 .. 1171.1
-front porch 474 .. 512         IF 1171.1 .. 1265.0
-```
+**A band seen at 2048 was cyan rather than green**, after the clamp was scaled
+for that divider. Either it is a different band — the capture reaching into the
+porch, coloured by the black reference — or the substituted value is not constant
+and "writes zeros" is too strong. Unresolved, and the arithmetic above is the
+only evidence for the zeros.
 
-X = 1125.5 is source px 455.6, 25.6 px into the 44 px right border — not a
-boundary in the mode, which was itself the first sign that the source was not
-where the answer lay.
+Changing the divider by hand needs four fields the tooling does not scale.
+`set_pllad_scaled()` moves `IF_HSYNC_RST`, `IF_LINE_ST`/`SP`, the capture window
+and `SP_RT_HS_SP`. It leaves behind `SP_H_CST_ST`/`SP`, which costs sync, and
+`SP_CS_CLP_ST`/`SP`, which costs colour: the line's duration is fixed by the
+source, so a shorter divider makes each sample longer and slides the clamp window
+later in real time, out of the sync tip and into the back porch.
 
-**The experiment is to re-run that creep at `PB_CAP_OFFSET` 230** and see whether
-the threshold has moved, gone, or stayed. It was never run against a varying
-offset, so the two results have never been measured together.
+## What it costs, in modes
 
-## Retired: absolute, or relative to the line end
+X bounds the capture at IF 1125, so the usable fraction of any line is
+`2250 / PLLAD_MD`. Across the 28 stock AKF50 modes, four are bypassed on line
+count and five more are scaled but cannot be captured whole:
 
-This page used to carry an open question about whether X is a fixed IF position or
-a fixed offset from the line end, with a large `PLLAD_MD` change as the experiment.
+| mode | htotal | VTOTAL | usable |
+|---|---|---|---|
+| 1056x250 / 1056x256 | 1536 | 312 | 73% |
+| 1280x480 | 1600 | 525 | 70% |
+| 1280x480 | 1664 | 520 | 67% |
+| 1280x480 | 1680 | 500 | 66% |
 
-**Do not run it.** It assumed the band is a capture position, and a memory-side
-register removes the band outright, so the divider is the wrong knob and the
-measurement would answer a question about the wrong quantity. If the creep above
-still shows a threshold at offset 230, the question can be re-posed then — against
-whatever the threshold turns out to depend on.
+Every one of those is an outlier geometry, and the ordinary modes clear the bound
+with about 9% to spare — the tightest is htotal 1024. So X is not currently costing
+a mode anyone wants.
+[`../capture-limits.md`](../capture-limits.md) has both bounds, the trade against
+`PLLAD_MD`, and the full mode audit.
 
-## A clamp is the wrong fix, and must not be reinstated
+## What the engine does about it
 
-The obvious repair is to clamp `lastCapture()` at X so the window can never reach
-the band. It is rejected, and the offset finding strengthens rather than weakens
-the argument: the band is removed without touching the capture window at all, so a
-clamp would crop picture to hide something that is not there.
+Two changes, and they compose: the divider does the work and the clamp is the
+backstop.
 
-X is a number measured from one source. Another mode's active picture may
-legitimately extend past that IF position, and the clamp would crop it silently.
-The head guard is legitimate precisely because `syncUnits` is *derived*,
-`ceil(units × HLOW_LEN / PLLAD_MD)`, recomputed per solve, so it tracks any
-source. An absolute constant does not.
+`Sampling::recommendedDivider()` caps `PLLAD_MD` so `ifLineFor()` stays at or
+below `InputLine::WriteLimitUnits` — a divider of 2250, since the IF halves it.
+That is a **second** ceiling alongside the ADC's 162 MSPS rating, with its own
+justification, and the tighter of the two binds. `InputLine::lastCapture()` then clamps the far end of
+the window at the limit, for the lines the divider did not choose — `adopt()`
+takes whatever a custom preset or a bypass switch left behind.
+
+**The constant is what to be careful of.** X is one board's number, measured
+once, and a source whose active picture legitimately extends further would be
+cropped by it silently. The head guard is derived —
+`ceil(units × HLOW_LEN / PLLAD_MD)`, recomputed per solve — and the far end
+cannot be, until what counts to 2250 is known. Capping the divider is what keeps
+the clamp off real picture: with the line inside the limit it never fires.
+
+The cost is sampling density. At the bench source the divider goes 2548 -> 2250,
+2.49 -> 2.20 IF units per source pixel, against a Nyquist floor of 2.00 for its
+512 px line. [`../capture-limits.md`](../capture-limits.md) has the trade.
+
+## The garbage past the picture is a different artefact
+
+Right of the picture there can also be structured junk and a repeat of the line.
+That is the display window extending past what the scaler produced: playback
+keeps fetching, so the region shows stale buffer from earlier framings, and when
+the fetch is exhausted the output stage re-emits. It is separated from the green
+by cause and by fix — `Axis::solve()` sets the display window to
+`origin + produced`, and the memory window with it.
+
+Extending the capture window into the source's blanking is a way to *mask* it:
+the IF writes blanking data into the buffer, so playback reads written green
+rather than stale memory. That works and costs capture width, a dependency on the
+source having porch to reach, and a green field instead of a black one.
 
 ## See also
 
-- [`../scaler-geometry-model.md`](../scaler-geometry-model.md) — the two green
-  regions in an IF line, and the arithmetic the capture window is solved from
+- [`../scaler-geometry-model.md`](../scaler-geometry-model.md) — the arithmetic
+  the capture window is solved from
 - [`output-front-porch.md`](output-front-porch.md) — the far end of the output
-  line, where a display window taken to the raster's edge produces its own
-  green-and-wrapping artefacts
+  line

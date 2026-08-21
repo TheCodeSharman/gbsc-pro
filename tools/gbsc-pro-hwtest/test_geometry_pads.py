@@ -65,6 +65,11 @@ GEOMETRY_FIELDS = [
 PAN_STEP_PX = 8
 ZOOM_STEP_PX = 8
 
+# InputLine::WriteLimitUnits. Past it the capture path writes blanking rather
+# than video, so it bounds the tail of the capture window and, through
+# Sampling::recommendedDivider(), the divider itself. docs/capture-limits.md
+WRITE_LIMIT_UNITS = 1125
+
 
 # The smallest change of capture POSITION each axis's hardware acts on. Mirrors
 # Tv5725::Axis::captureGranularity. Horizontally 2: the low bit of IF_HB_SP2 does
@@ -598,25 +603,28 @@ def test_a_zoomed_out_capture_never_takes_the_hsync_pulse(host, probe, framed):
 
 
 @pytest.mark.zoom
-def test_a_zoomed_out_capture_still_takes_the_whole_tail(host, probe, framed):
-    """The other half of the same decision, and the one a future guard would
-    quietly break. Nothing derivable bounds the tail beyond the line reset
-    itself, so zoom-out must still reach it -- that is the reach which recovers
-    active video the 0.76 default active fraction crops.
+def test_a_zoomed_out_capture_takes_the_tail_down_to_whichever_bound_is_lower(
+        host, probe, framed):
+    """The other half of the same decision. Zoom-out must reach the end of what
+    can be captured -- that is the reach which recovers active video the 0.76
+    default active fraction crops -- and stop there.
 
-    The bound is units - 2, not units - 1: a stop ON the reset value stops the
-    input formatter producing pixels and freezes the picture, so InputLine
-    stands off by one more. See InputLine::lastCapture()."""
+    Two bounds meet at the tail and the lower one wins. The wrap is units - 2,
+    not units - 1: a stop ON the reset value stops the input formatter producing
+    pixels and freezes the picture, so InputLine stands off by one more. The
+    write limit is the other: past it the capture path writes blanking instead
+    of video, which destroys picture rather than showing it, and Sampling caps
+    the divider so an ordinary line stays inside it.
+    See InputLine::lastCapture() and docs/capture-limits.md."""
     units = framed["IF_HSYNC_RST"] + 1
-    reach = units - 2
+    reach = min(units - 2, WRITE_LIMIT_UNITS)
 
     set_framing(host, -5000, 0, 0, 0)
     after = settled_geometry(host)
 
     assert after["IF_HB_ST2"] == reach, (
         f"the capture stops at {after['IF_HB_ST2']} of a {units} unit line, "
-        f"not the {reach} the wrap allows: something is guarding the "
-        "tail, and no measurement supports a bound there")
+        f"not the {reach} that the wrap and the write limit between them allow")
 
 
 @pytest.mark.pan
@@ -1332,7 +1340,10 @@ def _expected_divider(lines, oversample, field_rate):
     line_rate = int(field_rate * lines)
     largest = min(SAMPLING_MAX_RATE_HZ // (line_rate * oversample),
                   SAMPLING_DIVIDER_MAX)
-    return ((largest * SAMPLING_RECOMMENDED_PERCENT) // 100) & ~1
+    backed = (largest * SAMPLING_RECOMMENDED_PERCENT) // 100
+    # The second ceiling: the IF halves the divider, so twice the write limit is
+    # the longest line the capture path writes to the end of.
+    return min(backed, WRITE_LIMIT_UNITS * 2) & ~1
 
 
 def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, source):
