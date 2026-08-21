@@ -10,6 +10,9 @@ the same sample as the value it judges.
 
 Monitor mode is used throughout, never sweep: it writes no register, so this is
 safe on a working unit and needs no opt-in flag.
+
+The endpoint itself is compiled in only at GBS_SAMPLING_LOG=1, so against a
+default build every test here skips.
 """
 
 import json
@@ -32,9 +35,23 @@ DURATION_MS = 3000
 COLLECT_S = 6.0
 
 
+def start_monitor(host):
+    """Queue a monitor run, or skip if this firmware has no /samplinglog.
+
+    An unregistered route answers 500 with an empty body, not 404: the sketch
+    registers no onNotFound, so ESPAsyncWebServer's catch-all handler runs with
+    no callback set and sends 500 (WebHandlerImpl.h, handleRequest).
+    """
+    status, body = get(host, f"/samplinglog?ms={INTERVAL_MS}&for={DURATION_MS}")
+    if status == 500 and not body.strip():
+        pytest.skip("no /samplinglog on this firmware; rebuild with "
+                    "make -C build GBS_SAMPLING_LOG=1")
+    assert status == 200, f"/samplinglog answered {status}: {body}"
+
+
 def rows(host, console):
     """The header's column names, and the data rows as lists of ints."""
-    get(host, f"/samplinglog?ms={INTERVAL_MS}&for={DURATION_MS}")
+    start_monitor(host)
     lines = console.collect(COLLECT_S)
     header, data = None, []
     for line in lines:
