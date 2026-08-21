@@ -77,7 +77,7 @@ python3 tools/gbsc-pro-hwtest/precursor.py \
 per-transition verdicts behind the summary.
 
 The mechanism below is still the leading explanation, and it unifies this with
-[preset-load-clobber.md](preset-load-clobber.md): a deep sync loss makes the
+[preset-load-clobber.md](../preset-load-clobber.md): a deep sync loss makes the
 firmware re-detect and **reload a preset**, and the reload leaves part of the
 chip inconsistent. Freezing prevents the reload, which is exactly why every
 frozen sweep and both register-replay bisections came up clean — they were
@@ -150,7 +150,7 @@ window" as the better detector, since a legitimate source mode change produces
 one new stable value, never a scatter.
 
 Note also that in **RGBHV bypass the IF is out of the video path**, so garbage
-there is not a fault. See [rgbhv-bypass-trap.md](rgbhv-bypass-trap.md).
+there is not a fault. See [rgbhv-bypass-trap.md](../rgbhv-bypass-trap.md).
 
 **But out of the video path is not out of the MEASUREMENT path, and bypass does
 not predict the value.** Measured 2026-08-08 with the unit confirmed in bypass —

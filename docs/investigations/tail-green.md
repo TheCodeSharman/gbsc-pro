@@ -20,7 +20,8 @@ costs a session each.
 | **unwritten frame buffer** | genuinely unwritten memory reads as **random colour noise**, seen directly by bypassing the vertical scaler so the picture occupies only its captured lines. Flat green and random noise are different states |
 | **the source's blanking or front porch** | moving the border/porch boundary by 20 source px at constant line total does not move the band by one pixel |
 | **the source's border colour** | the band sits at the same place and width with the test card replaced by the desktop, and with the border black instead of purple |
-| **a capture-request shortfall** | `CAP_REQ_OVER` (`s4_22` bit 0) on and off is indistinguishable. It was the only write-side candidate the datasheet offers |
+| **a capture-request shortfall** | `CAP_REQ_OVER` (`s4_22` bit 0) on and off is indistinguishable, tested twice — the second time with the stride bug already fixed, so the right band was in view. It was the only write-side candidate the datasheet offers |
+| **the playback fetch** | `PB_FETCH_NUM` swept from 192 upward at a fixed framing has no effect on the band. Past about 224 it introduces TEARING instead, which is the ratio going the other way |
 | **sync-on-green** | this source drives separate H and V sync. `SP_SOG_MODE` is 0 and `VSACT` reads 1, the separate-sync path |
 | **the ADC's black level** | `ADC_ROFCTRL`, `ADC_GOFCTRL` and `ADC_BOFCTRL` are all 64. A per-channel offset error would tint the whole blanking interval |
 | **memory write bandwidth** | `PLL_MS` swept 162 -> 144 -> 108 -> 81 MHz, halving what the write path can absorb per unit time. X does not move by one unit. A fill-versus-drain race cannot survive that |
@@ -37,6 +38,11 @@ B = Y + 1.772  (U-128)  = -227  -> clamped to 0
 
 `RGB(0,135,0)`. U and V are offset-binary, so neutral chroma is 128 and zero is
 saturated green.
+
+**The zeros are inferred from the colour, not observed.** `PB_ENABLE` = 0 gives
+a **white** screen, and an all-ones idle through this same decode would be pink,
+so the colour space of that stage is not settled.
+[`playback-fetch-and-stride.md`](playback-fetch-and-stride.md).
 
 **This is a digital signature, not an analogue one.** A source at blanking level
 puts 0 V on all three channels; digitised and converted that gives `Y=0` with
@@ -96,7 +102,10 @@ samples long whatever the source does:
 
 **Confirmed at `PLLAD_MD` 2048.** The line becomes 1025 IF units, the capture is
 opened to 73..1020, and no band appears anywhere — the limit is out of reach. A
-fraction of the line would have put one at 904.
+fraction of the line would have put one at 904, and a deficit measured relative
+to the line end would have put a sliver at 1633. Neither appears. **X is a
+position, not a proportion and not a distance back from the capture stop**, and
+that is what makes reducing the divider the fix rather than a workaround.
 
 **The sharper confirmation has not been run.** At `PLLAD_MD` 2400 a count
 predicts a band of exactly 75 units in a 1200-unit line. "No band" is also what a
@@ -134,6 +143,19 @@ with about 9% to spare — the tightest is htotal 1024. So X is not currently co
 a mode anyone wants.
 [`../capture-limits.md`](../capture-limits.md) has both bounds, the trade against
 `PLLAD_MD`, and the full mode audit.
+
+## The limit is settled — do not reopen it
+
+There is a write limit. It is a fixed count of ADC samples, so `PLLAD_MD`
+decides whether a line reaches it, and the capture path writes dark green past
+it. **Reducing the divider is the fix**, and it is in the firmware.
+
+Two readings have been proposed against this and neither survives the bench:
+that the band is a proportion of the line, and that there is no limit at all and
+the write origin is wrong by ~50 px. The `PLLAD_MD` 2048 test refutes both — the
+whole line fits inside the limit and no band appears anywhere, where either
+model predicts one. Re-deriving a doubt from window creeps taken at a single
+capture stop is not new evidence; a creep at a different stop would be.
 
 ## What the engine does about it
 
@@ -200,3 +222,5 @@ source having porch to reach, and a green field instead of a black one.
   the capture window is solved from
 - [`output-front-porch.md`](output-front-porch.md) — the far end of the output
   line
+- [`playback-fetch-and-stride.md`](playback-fetch-and-stride.md) — the buffer
+  stage the stride band lives in

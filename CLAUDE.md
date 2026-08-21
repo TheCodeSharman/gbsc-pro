@@ -851,6 +851,23 @@ firmware C++.
   answer was convincing — `docs/investigations/moving-write-origin.md` is the
   shape, and its point is that a two-term fit matched eleven readings to 0.43 px
   and was still wrong.
+- **A HANDOVER IS NEVER COMMITTED.** Not to `docs/investigations/`, not
+  anywhere in the tree. A handover is addressed to the next session — where the
+  unit is, what is uncommitted, what to do first — and every one of those facts
+  is false within a day, so it arrives in review as a commit to delete. Write it
+  outside the repo, in `~/Projects/gbsc-pro-handovers/`.
+
+  **An investigation record is the opposite and is welcome.** It is addressed to
+  anyone, and it says what was tried, what was measured, and what the outcome
+  was — models refuted with the evidence that killed them, a measurement with
+  the framing it was taken at, a trap with a live consequence. It carries no
+  session state: no working-tree status, no "read this first", no "where the
+  unit is", no instruction to the reader about what to do next.
+
+  The test is the tense. A finding is stated in the present and stays true;
+  a handover is stated in the imperative and stops being true when the session
+  ends. When a session produces both, the findings go in `docs/investigations/`
+  and the rest leaves the repo.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
