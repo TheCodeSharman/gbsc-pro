@@ -12,17 +12,13 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
+.PHONY: all test axis scale input-line active-image register-solution geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
 help:
 	@grep -E '^## ' "$(HERE)/Makefile" | sed 's/^## /  /'
 
-## geometry: host-compile and run the geometry unit tests
-#
-# The eleven bench readings from 2026-08-05 are the acceptance criteria here.
-#
 # The definitions live in src/tv5725/*.cpp, so they have to be compiled in or
 # the test links with every method undefined. GLOB the list, never write it out.
 #
@@ -39,12 +35,55 @@ GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\
 
 HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$')
 
-geometry:
+# One target per class the geometry is built from. The eleven bench readings
+# from 2026-08-05 are the acceptance criteria across them.
+#
+# $(1) is the class's test, $(2) the target name.
+define geometry_unit
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry" \
-	  "$(HERE)/test_geometry.cpp" $(HOST_GEOMETRY_SRC)
-	@"$(OUT)/test_geometry"
+	  -o "$(OUT)/$(1)" \
+	  "$(HERE)/$(1).cpp" $(HOST_GEOMETRY_SRC)
+	@"$(OUT)/$(1)"
+endef
+
+## axis: host unit tests for Tv5725::Axis, and its --dump
+#
+# Where the scaler starts writing, how far it may magnify, and the room the
+# raster leaves -- the arithmetic every window is placed by. `--dump` prints the
+# solved grid, which is how a behaviour-preserving refactor is proven.
+axis:
+	$(call geometry_unit,test_axis)
+
+## scale: host unit tests for Tv5725::Scale
+#
+# produced IS capture x 1024 / scale. It did not look like a pure multiply
+# because the deficit against it changes sign with magnification.
+scale:
+	$(call geometry_unit,test_scale)
+
+## input-line: host unit tests for Tv5725::InputLine
+#
+# What of a line arrives intact: the hsync pulse at the head, and the write
+# limit past which nothing is captured at all. docs/capture-limits.md.
+input-line:
+	$(call geometry_unit,test_input_line)
+
+## active-image: host unit tests for Tv5725::ActiveImage, and its --dump
+#
+# The framing is held as state and every window derived from it. capture() and
+# clampToLine() recompute the same window and must agree exactly, or a press
+# past the edge leaves a dead zone the control never comes back from.
+active-image:
+	$(call geometry_unit,test_active_image)
+
+## register-solution: host unit tests for Tv5725::RegisterSolution, and its --dump
+#
+# Both axes from the capture and the raster alone. Nothing is read back off the
+# chip -- inheriting a corner or a picture size is what every geometry fault of
+# 2026-08-06 was.
+register-solution:
+	$(call geometry_unit,test_register_solution)
 
 ## source-measurement: host unit tests for the ADC sampling divider and the IF line
 #
@@ -284,6 +323,20 @@ adc:
 	  "$(HERE)/test_adc.cpp" src/tv5725/Adc.cpp
 	@"$(OUT)/test_adc"
 
+## geometry: the registers each Tv5725::Geometry entry point writes
+#
+# Each case drives Geometry at the top and reads the chip back through the
+# firmware's own register declarations -- InputFormatter::IF_HSYNC_RST and the
+# rest -- so a failure names the field and prints both values, and every number
+# is checkable against docs/scaler-geometry-model.md. The count of registers
+# written is asserted alongside, so a stray write fails too.
+geometry:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_geometry" \
+	  "$(HERE)/test_geometry.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_geometry"
+
 ## register-queue: host unit tests for the deferred register queue
 #
 # The queue is plain bookkeeping with no Arduino dependency, deliberately: the
@@ -296,7 +349,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
+test: axis scale input-line active-image register-solution geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
 all: test
 
 ## clean: remove the compiled test binaries
