@@ -234,10 +234,28 @@ the pulse's 91, it starts 151 units before the end of the line, and **no
 multi-bit field in segments 0, 1 or 5 holds 1126, 2252, 151 or 302** — it is not
 a setting.
 
-Nothing clips it. **A test asserts the tail reaches `units - 1`**, because
-clipping both ends by `syncUnits` excludes `1186..1276` — the clean porch *after*
-the green rather than the green itself — and costs 91 units of zoom-out reach for
-nothing.
+Nothing clips it. **A test asserts the tail reaches the last capturable unit**,
+because clipping both ends by `syncUnits` excludes `1186..1276` — the clean porch
+*after* the green rather than the green itself — and costs 91 units of zoom-out
+reach for nothing.
+
+### The last two units of the line are not capture stops
+
+`InputLine::lastCapture()` is `units - 2`, and both excluded units are excluded
+for their own reason.
+
+`units` is the wrap point — `IF_VB_ST` rolls at `2 x (VTOTAL + 1)` and
+`IF_HB_ST2` at `IF_HSYNC_RST + 1` — and a window written onto it rolls rather
+than clamping, which reads as the picture jumping rather than as a capture fault.
+
+`units - 1` is the line reset value itself, and a capture stopping there stops
+the input formatter producing pixels at all. Measured 2026-08-17 on a 1265-unit
+line with `IF_HSYNC_RST` 1264: a stop of 1264 froze the picture on the last frame
+the buffer held, with the raster nothing writes to showing green, every config
+register still reading correct and the firmware loop still running; 1263 was
+clean. **So the bound is the reset value, not a region before it** — a stop one
+unit further back is not safer, and nothing in a register dump distinguishes the
+frozen state.
 
 ### What is left
 
@@ -276,24 +294,31 @@ the experiment is two writes and is reversible.
 
 ## Still open
 
-- **Where the tail green comes from.** ~120 units starting 151 before the end of
-  the line, on a source whose sync pulse is 91 and lives at the head. Not a
-  register value, and **not a boundary in the mode**: IF 1126 is source pixel
-  451.5, which is 21.5 px into AKF50's 44 px right border, with the display
-  ending at 1072.5 and the front porch starting at 1182.2. No single origin
-  offset reconciles it with the head, which is already pinned. So it is not the
-  source's blanking.
+- **Where the tail green comes from.** Measured again 2026-08-17 with the capture
+  stop crept one bracket at a time: the band starts at **IF 1125-1126** and its
+  width is `stop - 1125.5`, on a 1265-unit line at `PLLAD_MD` 2528. That is
+  source px 455.6, 25.6 px into AKF50's 44 px right border, and not a boundary in
+  the mode.
 
-  **Untested: the tail green is the head's HSYNC pulse, reached by the capture
-  window wrapping past the end of the line.** That would make it the same pulse
-  after all, seen from the other side, and it fits what the window does — the
-  progressive stop follows the line length and may roll past it. Two numbers
-  argue against it as it stands and are what to settle first: the tail is ~120
-  units against the pulse's 91, and it stops around 1246 rather than running to
-  the line's end at 1276. The cheap discriminator is whether its width tracks
-  `HLOW_LEN` — change the sampling divider or drive a source with a different
-  sync duty, and a wrapped pulse must move with it while an unrelated region
-  will not.
+  **Capturing the hsync pulse produces green, and that much is now shown
+  directly**: a capture window written to start at IF 62, inside the pulse at
+  IF 0..88.9, puts a green band on the LEFT; start it at 114 and the left is
+  clean. The head never shows it because `InputLine::firstCapture()` returns
+  `syncUnits`.
+
+  Three explanations are refuted on the bench. Not the source's blanking -- the
+  border renders black either side of the start. Not the ADC's black level -- the
+  border immediately before the band is black, so the reference is right there.
+  Not sync-on-green -- `ADC_SOGEN` was 1 against `SP_SOG_MODE` 0, and clearing it
+  changed nothing.
+
+  **Still open: whether the start is absolute or relative to the line end.** This
+  reading and the earlier 1126 agree on an absolute position, but they were taken
+  at dividers 1% apart, which moves the line end by 12 units against a +-3 unit
+  uncertainty -- so they do not discriminate. The experiment is a large
+  `PLLAD_MD` change and a re-measure.
+  `docs/investigations/handover-2026-08-17.md` has the readings, and records why
+  clamping the capture window is the wrong repair.
 - **The zigzag is not HSCALE-banded.** A manual sweep across the corrupted state
   found no value that cleared it. Cause unknown.
 - **Whether the capture should be centred on the active region rather than the

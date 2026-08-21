@@ -951,3 +951,12 @@ Station present with low inactive time but no ping -> wedged. Absent -> rebooted
 - **Vertical is not solved the way horizontal now is.** At VSCALE 505 the scaler
   produces ~622 lines into a 1083-line display window, so the TV is doing some of
   the scaling.
+
+## FROZEN-pan-left-2026-08-17.json
+
+The capture freeze, captured live. `IF_HB_ST2` 1264 against `IF_HSYNC_RST` 1264:
+the stop is on the line reset, the input formatter stops producing pixels and the
+frame buffer reads the last frame it holds. Picture frozen, unwritten raster
+green, all 608 config registers correct and `loop()` still running. Diff against
+`after-flash-2026-08-17.json` shows two fields.
+Fixed in b70cddfb3; docs/investigations/handover-2026-08-17.md.
