@@ -48,6 +48,31 @@ Step sizes are `GEOMETRY_PAN_STEP` and `GEOMETRY_ZOOM_STEP`, in **input units**.
 Not a proportion of the current capture — proportional steps are not reversible,
 because out and back use different widths and the window walks.
 
+## What the sketch may call
+
+`Geometry` has six entry points, and nothing else is reachable from outside it:
+
+| | |
+|---|---|
+| `modeChanged(mode, customPreset, oversample)` | the source is about to change mode; nothing is solved here |
+| `poll()` | drives whatever is outstanding, on every pass of `loop()` |
+| `enterBypass()` | video routes around the VDS, so there is no solve coming |
+| `rasterWidthChanged(horizontalTotal)` | the total was retimed outside the engine |
+| `framing()` / `requestFraming(wanted)` | the framing the user asked for |
+| `pan(dx, dy)` / `zoom(dh, dv)` | one press, in OUTPUT PIXELS |
+
+The sequence a mode change runs — sampling, raster, clock, windows — is private,
+because running one step alone skips the rest of it and each depends on the one
+before. `poll()` is where the order lives.
+
+**A mode change is covered by a capture freeze, and every way out of `poll()`
+releases it.** The windows land seconds after the load, once the source has
+settled, so releasing at load time uncovers the *previous* mode's geometry
+applied to the new source. `modeChanged()` takes the freeze; the poll that lands
+the windows releases it, and so do the two ways the poll can stop without
+landing them — a mode with no timings, and bypass. Missing one leaves the
+picture a still frame with nothing left to unstick it.
+
 ## Rules
 
 **Compute the geometry, never inherit it.** Read the capture and the raster;
@@ -94,12 +119,16 @@ size, and five steps out then five back return exactly to `(264, 1062)`.
 change the mode the TV locks to, and `runAutoBestHTotal` and FrameSync steer
 them continuously — a solve that moved them would fight both, every pad press.
 
-`Geometry::solveRaster()` is the one exception and is not a solve: it runs once
-per mode change, from `applyPresets()`, **before**
-`externalClockGenResetClock()` — which reads back the `PLL648_CONTROL_01` seed
-it writes. `apply()`, `recompute()`, `pan()` and `zoom()` still must not touch
-them. The ordering is `docs/investigations/preset-abandonment-audit.md`'s and is not optional:
-raster, clock, windows, rate steer **last**.
+Two things write them, and neither is a solve. `solveRaster()` runs once per
+mode change, from `poll()`, which drives the whole sequence itself; and
+`rasterWidthChanged()` carries a total the htotal search already moved, on a
+board with no clock generator to steer instead — it holds the new total, moves
+the held active stop by the same amount, and re-fits every window to it.
+Everything else, `pan()` and `zoom()` included, must leave them alone. The ordering is
+`docs/investigations/preset-abandonment-audit.md`'s and is not optional: raster,
+clock, windows, rate steer **last**. It is expressed once, inside `poll()`,
+rather than assembled by the caller — the display clock reads the seed the
+raster just chose, and every window is sized against the raster it lands on.
 
 **The raster sets how far the zoom can go, so widening it is not free.** The
 capture cannot go below `Axis::minimumCapture` — `ceil(raster / maxMagnification)`
@@ -206,7 +235,7 @@ solid green screen with every register self-consistent:
 | fault | symptom | fix |
 |---|---|---|
 | rate read while the source settles | 311 lines / 50.08 Hz solved as ~57.9 Hz → `PLLAD_MD` 2204 | `lineRateFrom()` cross-checks rate against the line count within 2%, else returns 0 |
-| refused, then a fallback adopted | `271 lines x 49.22 Hz -> line rate 0`, `PLLAD_MD` 1856 every cold boot — the literal `bypassModeSwitch_RGBHV()` writes | `samplingPending()` retries from `runSyncWatcher()`, latch after, `solveFromScratch()` after that |
+| refused, then a fallback adopted | `271 lines x 49.22 Hz -> line rate 0`, `PLLAD_MD` 1856 every cold boot — the literal `bypassModeSwitch_RGBHV()` writes | `poll()` retries the whole sequence until the source settles, and `Adc` latches the divider it writes |
 | divider correct, `SP_RT_HS_SP` stale | written once by `doPostPresetLoadSteps()`, which the deferred retry never re-enters | one quantity, one owner — `Sampling` writes all three |
 
 The cross-check is necessary and not sufficient: it catches a rate disagreeing

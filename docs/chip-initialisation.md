@@ -94,11 +94,14 @@ Rules that come with it:
 holds the `SFTRST_*_RSTZ` fields: releasing a block's reset after configuring it
 discards the configuration.
 
-The full sequence in `doPostPresetLoadSteps()` is **table → bring-up → raster →
-clock → windows → rate steer**. Two ordering facts that cost time to find:
+The full sequence is **table → bring-up → raster → clock → windows → rate
+steer**. `doPostPresetLoadSteps()` does the first two and then says
+`Geometry::modeChanged()`; the rest is `Geometry::poll()`'s, which runs it in
+that order once the source has settled into the new mode. Two ordering facts
+that cost time to find:
 
-- `Geometry::solveRaster()` must run before `externalClockGenResetClock()`, which
-  reads back the seed it writes.
+- the raster is solved before the display clock is steered from it, because the
+  clock's frequency comes from the seed the raster chose.
 - Steering the frame rate early gave a 31 Hz frame and a black screen.
 
 ## Nothing here is generated
@@ -276,9 +279,9 @@ That is despite `enableFrameTimeLock` being 1 and `frameTimeLockMethod` 0 in
 the preferences — the option is on, the clock generator simply takes priority.
 
 **And the 41 writes in `doPostPresetLoadSteps()` are redundant, not
-conflicting.** All of them sit above the `geometry.solveFromScratch()` at the
-end of the same function, and the engine writes every field they touch, so it
-overwrites all 41. That is now asserted rather than assumed by
+conflicting.** All of them sit above the `geometry.modeChanged()` at the end of
+the same function, and the engine writes every field they touch when `poll()`
+solves, so it overwrites all 41. That is now asserted rather than assumed by
 `test_a_preset_load_leaves_the_engines_values_not_the_sketchs` — which compares
 the registers after a preset load against the engine re-solving the same
 framing alone, so the sketch winning any of them would show as a difference.

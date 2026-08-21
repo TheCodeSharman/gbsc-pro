@@ -552,10 +552,11 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   clock seed from the frame height and the measured field rate, so a preset
   table's raster bytes are overwritten on every mode change. Measured
   1436 x 1126 @ 80.85 MHz before, **1915 x 1126 @ 107.81 MHz after** — a third
-  more horizontal resolution. Two rules come with it. It runs from
-  `applyPresets()` **before** `externalClockGenResetClock()`, because that reads
-  back the seed it writes; the order is raster → clock → windows → rate steer
-  last, and running the steer early gave a 31 Hz frame and a black screen.
+  more horizontal resolution. Two rules come with it. The order is raster →
+  clock → windows → rate steer last — expressed inside `Geometry::poll()`, which
+  drives the whole sequence, because the display clock is steered from the seed
+  the raster chose. Running the steer early gave a 31 Hz frame and a black
+  screen.
   And **a wider raster costs zoom range, because the zoom floor is
   `raster / maxMagnification` while the default capture is a property of the
   INPUT line alone** — `1126 x 0.76 x 1.04 = 890` here — so the two do not

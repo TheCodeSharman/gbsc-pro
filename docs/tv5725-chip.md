@@ -301,7 +301,7 @@ genuinely how you tell the chip to take its display clock from the Si5351, and
 reads it back to learn which source is live. That is legitimate inference, not a
 magic marker.
 
-The set `externalClockGenResetClock()` maps — `0x25 0x35 0x45 0x55 0x65 0x85
+The set `Tv5725::DisplayClock::hzFor()` maps — `0x25 0x35 0x45 0x55 0x65 0x85
 0x95 0xa5` — decodes to real display clocks (40.5, 54, 64.8, 81, 108, 129.6,
 162 MHz and one more external row). `0x35` is `4XV=0, 2XV=0, VS4=11`, so it is
 *also* an external-source selection, not an internal divider.
