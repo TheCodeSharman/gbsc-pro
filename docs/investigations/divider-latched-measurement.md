@@ -20,12 +20,15 @@ double and every count taken through it is wrong by that ratio.
 
 ## Why it does not recover
 
-155 is below `CaptureWindow::SourceVerticalTotalMin`, so `lineRateFrom()` returns
-0, `CaptureWindow::readRasters()` returns false and the engine declines to solve.
-Declining leaves `PLLAD_MD` exactly as it was. **The divider that caused the bad
-reading is the one thing a refusal cannot change**, so the state is stable rather
-than transient — it held for as long as it was watched, and the picture stays
-black with every configuration register self-consistent.
+155 is below `CaptureWindow::SourceVerticalTotalMin`, so
+`SourceMeasurement::sampleSteady()` refuses the count and `poll()` returns
+before it measures anything. **The gate is the steadiness one, not
+`lineRateFrom()`** — `measureLineRate()` is never called at all, so the line
+rate and the field rate behind it are not read either. Refusing leaves
+`PLLAD_MD` exactly as it was, and **the divider that caused the bad reading is
+the one thing a refusal cannot change**, so the state is stable rather than
+transient: it held for as long as it was watched, and the picture stays black
+with every configuration register self-consistent.
 
 ## It is asymmetric
 
@@ -47,9 +50,86 @@ that a *persistent* refusal has no way out. Two shapes fit:
   the source, and step it toward what the held field rate implies before
   measuring again.
 
-Neither is implemented. `SourceMeasurement`'s own header still states that the
-line count is reliable where the period measurement is not, which is true only
-while the divider is already roughly right.
+## What is implemented
+
+The first shape, keyed off a third register. `STATUS_SYNC_PROC_HTOTAL` counts
+real ADC clocks per line, so with the PLL locked at the ratio the divider asked
+for it EQUALS the divider — and a near-integer multiple between them is direct
+evidence that it is not, taken from a `STATUS_SYNC_PROC_*` read the engine is
+already allowed. It is not read to derive a register; it decides whether the
+other two measurements can be believed at all.
+
+`SourceMeasurement::recoverDivider()` acts on that, and `Geometry::poll()`
+reaches it only where `sampleSteady()` has already refused. Four things keep the
+readings that look like this and are not from moving anything:
+
+| reading | divider | lines per count | why |
+|---|---|---|---|
+| 2249 trapped | 1124 | **2** | 2249 is one sample off 2248 |
+| 2250 locked | 2250 | 0 | two counts would be 4500 |
+| 2558 unlocked | 2553 | 0 | five out, and the nearest multiple is 5106 |
+| 2400 unconfigured | 2553 | 0 | unrelated to the divider, so to every multiple of it |
+
+The corrected count must itself be a source count, which is what the 97 a preset
+load leaves behind cannot reach: two lines per count makes 194. The field rate
+is then measured independently, at the ESP off `DEBUG_IN_PIN` rather than
+through the ADC, and only after a multiple has been found — it costs up to
+250 ms a vsync pulse. Attempts are capped, and every ambiguous outcome leaves
+the divider alone.
+
+The line rate moves with the divider, because `Adc::applySampleRate()` picks the
+post divider from `divider x lineRate`: one left on the old mode's crossover row
+makes every later measurement garbage.
+
+**The engine only polls while a mode change is outstanding.** On the measured
+trap the sketch reloads a preset, so it is; a source change that never reaches
+`modeChanged()` still has nothing watching it.
+
+## Measured working
+
+2026-08-20, source changed 640x480@75 down to 320x256@50 with the divider held
+at 1124. The trap appeared and cleared unaided in 1.7 s, the firmware naming
+its own reasoning on the console:
+
+```
+divider: 2251 samples / 1124 = 2 lines per count -> 310 lines, 1124 -> 2250
+```
+
+Two things the same run settles about the signal, both of which had made the
+correction unreachable in its first form:
+
+- **Neither register holds still.** `STATUS_SYNC_PROC_VTOTAL` alternates
+  155/156 across a longer window, and `STATUS_SYNC_PROC_HTOTAL` spans
+  2246..2251 against a target of 2248 — offsets of -2 to +3. A gate wanting
+  either value to repeat exactly never opens, and a fixed two-sample window
+  rejects the 2251 that in fact triggered this correction.
+- **The unmeasurable run is short in wall-clock terms.** 200 samples elapsed
+  inside 1.7 s, so `poll()` runs fast enough that the limit costs no visible
+  delay.
+
+`snapshots/divider-recovered-from-trap-2026-08-20.json` is the state afterwards.
+
+The encoder does not follow the scaler through this: both mode changes in the
+run left the TV holding the previous timing, cleared each time by the sync-pad
+toggle in [encoder-stale-timing.md](encoder-stale-timing.md). The two faults
+look identical on the screen and are unrelated.
+
+The second shape — stepping the divider toward what the held field rate implies
+— is not implemented and is not needed while the multiple is available.
+
+**There is no runtime acceptance test, because the state cannot be reached over
+HTTP.** The trap needs the engine to be *holding* a divider that is wrong for
+the source in front of it, and every route reachable remotely re-asserts the
+held divider rather than adopting the chip's: a forced preset load writes the
+engine's own value back and latches it, so hand-writing a hostile `PLLAD_MD`
+produces a chip that disagrees with the engine rather than an engine that is
+wrong. Only a real source change puts the held value out of date. The host
+suites carry the arithmetic and the four guards; the acceptance is the bench
+reproduction — change the source down and confirm the picture returns unaided.
+
+`SourceMeasurement`'s own header still states that the line count is reliable
+where the period measurement is not, which is true only while the divider is
+already roughly right.
 
 ## VPERIOD_IF cannot supply the independent count
 

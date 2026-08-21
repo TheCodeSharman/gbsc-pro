@@ -218,7 +218,7 @@ and 66.79 Hz where the source runs 50.08.
 **But both readings are taken at the same moment, and the line count is
 transient too.** When they are transient *together* they agree, the guard
 passes, and the wrong raster is written — and because the solve *succeeded*,
-`rasterPending_` is cleared and nothing ever retries it.
+`modePending_` is cleared and nothing ever retries it.
 
 Measured 2026-08-15, on a 50 Hz source counting 311 lines. After `/sc?)` the
 engine wrote a raster of **1602 x 1126**, which is exactly
@@ -239,9 +239,8 @@ rather than an A/B.
 
 The fix is not obvious and is not attempted here. Requiring the line count to
 be *settled* — two agreeing reads, or a minimum age since the load — would do
-it, but the whole point of `rasterPending_` is that the load is too early, so
-the cheap version is to make the deferral the default and the immediate solve
-the exception.
+it. `solveRaster()` itself cannot help: it never defers, both its failure paths
+are refusals, so the settling has to be established before it is called.
 
 ## What still programs the chip outside the engine
 
