@@ -158,6 +158,28 @@ The cost is sampling density. At the bench source the divider goes 2548 -> 2250,
 2.49 -> 2.20 IF units per source pixel, against a Nyquist floor of 2.00 for its
 512 px line. [`../capture-limits.md`](../capture-limits.md) has the trade.
 
+## Two green bands, and only one of them is X
+
+A green band down the right has two causes that look alike on screen and are
+told apart by whether it moves with the ZOOM.
+
+| | the write limit | the stride |
+|---|---|---|
+| cause | the capture path stops writing video past IF 1125 | `PB_CAP_OFFSET` below `PB_FETCH_NUM`, so lines overlap and each overwrites its predecessor's tail |
+| when | the capture window reaches past X | the capture is wide enough that the fetch passes the stride |
+| with the zoom | fixed in the line, so zooming out walks the window INTO it | appears as the picture zooms OUT, because the fetch follows the capture |
+| fix | cap the divider, and clamp `lastCapture()` | size the stride from the whole line |
+
+The stride one is the trap, because the *fetch* is derived and the stride was a
+constant: at rest the fetch sits well under it and the picture is clean, and the
+band only arrives once the zoom has widened the capture far enough. On the bench
+that was a capture of about 920 units. `Memory::offsetFor()` now takes the line,
+so the stride covers a capture of the whole of it and no framing can outgrow it.
+
+**Neither is `PB_CAP_OFFSET` 230 removing the green**, which is the refuted
+claim in the table above: 230 is below the fetch at every framing this board
+runs, so it *causes* the second band rather than curing the first.
+
 ## The garbage past the picture is a different artefact
 
 Right of the picture there can also be structured junk and a repeat of the line.
