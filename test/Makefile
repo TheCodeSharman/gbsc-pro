@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
+.PHONY: all test axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -165,6 +165,18 @@ clock-ramp:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_clock_ramp" \
 	  "$(HERE)/test_clock_ramp.cpp" src/clock/ClockRamp.cpp
 	@"$(OUT)/test_clock_ramp"
+
+## input-source: host unit tests for the six inputs the OLED offers
+#
+# The frame byte, the sync routing and what the preferences file keeps, as one
+# table. VGA's low nibble is the whole reason it exists: sent as 0x60 the HC32
+# leaves HS_IN on sync-on-green and a VGA source never locks.
+input-source:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) \
+	  -o "$(OUT)/test_input_source" \
+	  "$(HERE)/test_input_source.cpp" src/input/InputSource.cpp
+	@"$(OUT)/test_input_source"
 
 ## sync-search: host unit tests for which sync search a saved input selects
 #
@@ -358,7 +370,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
 all: test
 
 ## clean: remove the compiled test binaries

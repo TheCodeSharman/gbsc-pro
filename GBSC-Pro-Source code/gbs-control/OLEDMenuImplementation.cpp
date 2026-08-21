@@ -499,25 +499,13 @@ ChecksumSender sender;
 // }
 
 // The ESP and the HC32 each persist the selected input separately and neither
-// can read the other back, so nothing else reconciles them at boot. `rgbCom` is
-// inverted because Checksum_Sendmode ORs the low nibble in.
-bool sendSavedInputToAvModule(uint8_t source, uint8_t rgbCom)
+// can read the other back, so nothing else reconciles them at boot. The byte is
+// taken whole from InputSource, low nibble included -- assembling it from a
+// base array and a mode is what dropped VGA's asw_01.
+void sendInputFrame(uint8_t frame)
 {
-    switch (source) {
-        case S_RGBs:
-            Checksum_Sendmode(RGBs, !rgbCom);
-            return true;
-        case S_VGA:
-            Checksum_Sendmode(VGA, !rgbCom);
-            return true;
-        case S_YUV:
-            Checksum_Sendmode(Ypbpr, !rgbCom);
-            return true;
-        default:
-            // 0 is "nothing meaningful saved" -- the same case
-            // applySavedInputSource() leaves the mux alone for.
-            return false;
-    }
+    const unsigned char command[4] = {0x41, 0x44, 'S', frame};
+    sender.send(command);
 }
 
 void Checksum_Sendmode(const unsigned char *buff, uint8_t mode)

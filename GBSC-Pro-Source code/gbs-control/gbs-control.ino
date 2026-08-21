@@ -69,6 +69,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
+#include "src/input/InputSource.h"
 #include "src/input/SyncSearch.h"
 
 struct MenuAttrs
@@ -106,6 +107,14 @@ String slotIndexMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 
 char serialCommand;
 char userCommand;
+
+// An input selection asked for over HTTP, waiting for loop() to act on it.
+// **THE ROUTE CANNOT DO IT ITSELF.** Selecting an input writes TV5725 registers,
+// sends the AV module a frame over the UART and saves the preferences, and the
+// web server serves from network-stack callbacks rather than from loop() -- so
+// doing any of that in the handler touches the bus from the wrong context. The
+// route parses and queues; loop() selects.
+volatile uint8_t pendingInputSelection = InputSource::None;
 
 // How many output pixels the pending press asked for, or 0 for the pad's own
 // step. Cleared as the command is consumed, so a press from the OSD or the
@@ -2164,42 +2173,42 @@ boolean sourceHasOwnVsync()
     return active;
 }
 
-// Point the ADC at the input the user last chose, so detection starts where it
-// worked last time instead of wherever the mux happens to be sitting. Without
-// this, which input comes up is decided by detectAndSwitchToActiveInput()'s
-// sweep, which alternates 0/1 from wherever it started.
+// Point both halves of the input path at the input the user last chose, so
+// detection starts where it worked last time instead of wherever the muxes
+// happen to be sitting. Without this, which input comes up is decided by
+// detectAndSwitchToActiveInput()'s sweep, which alternates 0/1 from wherever it
+// started.
 //
-// SeleInputSource is a menu selection persisted in /preferencesv2.txt;
-// ADC_INPUT_SEL is the chip's mux, and the numbering differs, so the mapping is
-// derived here rather than stored. Only 0 and 1 carry video -- ADC_INPUT_SEL 2
-// is written solely by calibrateAdcOffset(), a calibration reference rather
-// than an input, which is why the 0/1 sweep is complete.
+// **KEYED ON `Info`, NOT `SeleInputSource`.** `Info` carries all six inputs;
+// `SeleInputSource` carries three, so a restore keyed on it sends RGsB the RGBs
+// frame, S-Video and composite the YPbPr frame, and VGA a frame without the low
+// nibble that raises asw_01.
 //
 // **THE COMMENTED-OUT LINES BESIDE THE SeleInputSource LOAD ARE NOT USABLE.**
 // Each calls f.read() again, so restoring them consumes two bytes the
 // preferences file does not contain and shifts every field after it.
 void applySavedInputSource()
 {
-    switch (SeleInputSource) {
-        case S_RGBs:
-        case S_VGA:
-            GBS::ADC_INPUT_SEL::write(1);
-            break;
-        case S_YUV:
-            GBS::ADC_INPUT_SEL::write(0);
-            break;
-        default:
-            // Nothing meaningful saved; leave the mux alone and let detection
-            // sweep.
-            break;
+    const InputSource::Id saved = InputSource::fromStored(Info);
+    if (saved == InputSource::None) {
+        // Nothing chosen, so leave the muxes alone and let detection sweep.
+        // Only ADC_INPUT_SEL 0 and 1 carry video -- 2 is written solely by
+        // calibrateAdcOffset() as a calibration reference -- which is what
+        // makes that 0/1 sweep complete.
+        bootLogPrintf("INPUT: nothing stored, Info=%u t=%lums\n",
+                      (unsigned)Info, (unsigned long)millis());
+        return;
     }
 
-    // ADC_INPUT_SEL is only half the path -- the HC32's asw_01..04 decide what is
-    // actually connected to it, and appear in no register dump.
-    bool sent = sendSavedInputToAvModule(SeleInputSource, RGB_Com);
-    bootLogPrintf("INPUT: SeleInputSource=%u RGB_Com=%u frameSent=%d "
-                  "ADC_INPUT_SEL=%u t=%lums\n",
-                  (unsigned)SeleInputSource, (unsigned)RGB_Com, (int)sent,
+    const InputSource::Settings settings = InputSource::settingsFor(saved);
+    GBS::ADC_INPUT_SEL::write(settings.adcInputSel);
+
+    // The other half of the path: the HC32's asw_01..04 decide what is actually
+    // connected to the ADC input just selected, and appear in no register dump.
+    sendInputFrame(settings.frame);
+
+    bootLogPrintf("INPUT: %s frame=0x%02x ADC_INPUT_SEL=%u t=%lums\n",
+                  InputSource::name(saved), (unsigned)settings.frame,
                   (unsigned)GBS::ADC_INPUT_SEL::read(), (unsigned long)millis());
 }
 
@@ -2209,6 +2218,15 @@ void applySavedInputSource()
 static_assert(SyncSearch::SourceRgbs == S_RGBs, "SyncSearch::SourceRgbs drifted from S_RGBs");
 static_assert(SyncSearch::SourceVga == S_VGA, "SyncSearch::SourceVga drifted from S_VGA");
 static_assert(SyncSearch::SourceYuv == S_YUV, "SyncSearch::SourceYuv drifted from S_YUV");
+
+// InputSource::Id IS the stored `Info` byte, which is what lets the boot restore
+// reconstruct all six. Nothing else checks the two spellings agree.
+static_assert(InputSource::Rgbs == InfoRGBs, "InputSource::Rgbs drifted from InfoRGBs");
+static_assert(InputSource::RgsB == InfoRGsB, "InputSource::RgsB drifted from InfoRGsB");
+static_assert(InputSource::Vga == InfoVGA, "InputSource::Vga drifted from InfoVGA");
+static_assert(InputSource::Ypbpr == InfoYUV, "InputSource::Ypbpr drifted from InfoYUV");
+static_assert(InputSource::SVideo == InfoSV, "InputSource::SVideo drifted from InfoSV");
+static_assert(InputSource::Composite == InfoAV, "InputSource::Composite drifted from InfoAV");
 
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
@@ -8462,6 +8480,24 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             }
         }
 
+        if (pendingInputSelection != InputSource::None) {
+            // Cleared before acting, not after: every handler below blocks for
+            // seconds while detection runs, and a second request landing in that
+            // window must queue a new selection rather than be swallowed.
+            const InputSource::Id wanted = (InputSource::Id)pendingInputSelection;
+            pendingInputSelection = InputSource::None;
+
+            switch (wanted) {
+                case InputSource::Rgbs: InputRGBs(); break;
+                case InputSource::RgsB: InputRGsB(); break;
+                case InputSource::Vga: InputVGA(); break;
+                case InputSource::Ypbpr: InputYUV(); break;
+                case InputSource::SVideo: InputSV(); break;
+                case InputSource::Composite: InputAV(); break;
+                default: break;
+            }
+        }
+
         if (userCommand != '@') {
             // printf("Web %c \n", userCommand);
 
@@ -9327,6 +9363,36 @@ void startWebserver()
     });
 #endif
 
+    // Select an input by name, the same six the OLED menu offers. Queued for
+    // loop(), so a 200 means the request was understood rather than that the
+    // input is now selected -- the handlers block for seconds while detection
+    // runs, and this route answers from a network callback.
+    //
+    // Until this existed the OLED was the ONLY way to choose an input: the six
+    // handlers had two callers between them, the menu and one IR key. A unit
+    // that came up on the wrong one needed someone standing at it.
+    server.on("/input", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("src")) {
+            request->send(400, "application/json",
+                "{\"error\":\"src required: rgbs rgsb vga ypbpr sv av\"}");
+            return;
+        }
+
+        const String value = request->getParam("src")->value();
+        const InputSource::Id wanted = InputSource::fromName(value.c_str());
+        if (wanted == InputSource::None) {
+            request->send(400, "application/json",
+                "{\"error\":\"unknown src: rgbs rgsb vga ypbpr sv av\"}");
+            return;
+        }
+
+        pendingInputSelection = wanted;
+        char body[64];
+        snprintf_P(body, sizeof(body), PSTR("{\"queued\":\"%s\"}"),
+            InputSource::name(wanted));
+        request->send(200, "application/json", body);
+    });
+
     // The framing: the engine's only state, and the one thing writing registers
     // back cannot restore. READ ONLY -- it moves through the pads, so nothing
     // can arrange a framing the user cannot reach.
@@ -10174,8 +10240,8 @@ void saveUserPrefs()
     // printf(" SV AV: %d  %d \n",SvModeOption,AvModeOption);
     f.write(SmoothOption + '0');
     f.write(LineOption + '0');
-    f.write(BriorCon + '0'); // 26
-    f.write(Info + '0');     // 27
+    f.write(BriorCon + '0'); // 27
+    f.write(Info + '0');     // 28
     f.write(RGB_Com + '0');
 
     f.write((Bright / 100) + '0');
