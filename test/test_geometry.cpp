@@ -1097,3 +1097,25 @@ TEST_CASE("both axes magnify equally far, because nothing in the part says other
     // derive, which is why the horizontal floor was a swept number for so long.
     CHECK(AxisHorizontal.scaleMin() == AxisVertical.scaleMin());
 }
+
+TEST_CASE("a picture too small for the raster is blanked, not left open")
+{
+    // Below Scale::minimumCapture() the magnification runs out and `produced`
+    // falls short of the raster. The room left over is not empty: playback
+    // keeps fetching past the end of the written data, so an open window there
+    // shows stale buffer. The display window has to stop where the picture does.
+    const uint16_t raster = 1445;
+    const uint16_t capture = 200;
+
+    RasterFit fit = AxisHorizontal.fitToRaster(capture, raster);
+    REQUIRE(fit.produced() < (float)raster);
+
+    AxisSolution solved =
+        AxisHorizontal.solve(capture, fit.scale(), raster, 0, 0);
+
+    // the window IS the picture, and the room left over is black at both ends
+    CHECK(solved.displayStart() - solved.displayStop()
+          <= (int32_t)fit.produced() + 1);
+    CHECK(solved.displayStop() > 100);
+    CHECK((int32_t)raster - solved.displayStart() > 100);
+}

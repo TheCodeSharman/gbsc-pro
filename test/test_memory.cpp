@@ -107,25 +107,36 @@ TEST_CASE("the fetch is the source pixels the line needs, over the request budge
     }
 }
 
-TEST_CASE("the measured pair is used whole, not reconstructed")
+TEST_CASE("the stride covers the widest fetch the line can ask for")
 {
-    // Both halves come from the same measurement rather than one being derived
-    // from the other. The agreement with the firmware's fetch + 4 invariant is a
-    // coincidence, not a rule: the offset was clean across 190..256 against a
-    // fetch of 204.
-    CHECK(Memory::offsetFor(Line1080p) == 250);
+    // The stride is the per-line allocation and the fetch is what playback
+    // reads into it, so a stride below the fetch overlaps successive lines and
+    // each overwrites its predecessor's tail. The fetch follows the capture and
+    // the capture grows as the picture zooms OUT, so the stride is sized for a
+    // capture of the WHOLE line: 230 against a zoomed-out capture of 1044 is a
+    // fetch of 261 into a stride of 230, measured on the bench as a green band
+    // down the right of the picture.
+    const uint16_t line = 1126;   // the bench line at PLLAD_MD 2250
 
-    SUBCASE("the offset does NOT follow the fetch, and that is deliberate") {
-        // Measured 2026-08-09: the offset is not critical -- clean anywhere
-        // across 190..256 against a fetch of 204. So it stays the verified
-        // constant rather than becoming a second register that moves on every
-        // pad press for no reason anyone has measured.
-        for (uint16_t capture = 256; capture <= 1009; capture += 97)
-            CHECK(Memory::offsetFor(Line1080p) == Offset1080pExpected);
+    SUBCASE("no framing of that line can ask for more than the stride") {
+        for (uint16_t capture = 128; capture <= line; capture += 4)
+            CHECK(Memory::offsetFor(line) >= Memory::fetchFor(1915, capture));
     }
 
-    SUBCASE("and nothing can overflow its ten bits") {
-        for (uint32_t line = 0; line < 4096; line += 7)
-            CHECK(Memory::offsetFor((uint16_t)line) <= Memory::OffsetMax);
+    SUBCASE("it is a property of the LINE, so a zoom cannot move it") {
+        // The alternative is the widest capture actually reachable, which
+        // subtracts the hsync pulse -- and that comes from a live measurement
+        // that moves by a unit between solves, so the stride would be rewritten
+        // on an arbitrary pad press, re-laying the buffer out under the picture.
+        CHECK(Memory::offsetFor(line) > Memory::fetchFor(1915, line - 80));
+    }
+
+    SUBCASE("it stays inside the register, at any line the divider allows") {
+        CHECK(Memory::offsetFor(line) <= Memory::OffsetMax);
+        CHECK(Memory::offsetFor(Memory::FetchMax * 8) <= Memory::OffsetMax);
+    }
+
+    SUBCASE("a dropped capture read gives the floor, not a stride of nothing") {
+        CHECK(Memory::offsetFor(0) >= Memory::FetchFloor);
     }
 }

@@ -39,10 +39,12 @@ public:
     // What key a frame really means. The IR handler dispatches on the key code
     // and a repeat frame matches no case, so a held key would be dropped before
     // it ever reached the ramp. Call this before the switch; it changes nothing.
-    uint32_t resolve(uint32_t key) const;
-
-    // The key has been let go: the next press starts a fresh, exact run.
-    void release();
+    //
+    // Takes the clock because a remote sends no key-up: only the gap after a run
+    // can end it. A repeat past RunGapMs belongs to nobody and resolves to
+    // itself, so the switch drops it -- otherwise it is attributed to the key
+    // last held and the control runs in the direction of the previous press.
+    uint32_t resolve(uint32_t key, unsigned long nowMs) const;
 
 private:
     // Repeat frames at each rate before doubling to the next.

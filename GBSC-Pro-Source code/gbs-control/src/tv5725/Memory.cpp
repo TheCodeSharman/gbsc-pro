@@ -12,9 +12,6 @@ const uint16_t Memory::Offset1080p;
 const uint16_t Memory::RequestsPerLine;
 const uint16_t Memory::FetchFloor;
 
-// What gbs-control.ino:4136 asks for where no pair was measured.
-static const uint16_t OffsetOverFetch = 4;
-
 uint16_t Memory::fetchFor(uint16_t outputLinePx, uint16_t captureWidth)
 {
     // NO RASTER GATE. Gating the rule on the swept 1445 px line meant a preset
@@ -37,16 +34,9 @@ uint16_t Memory::fetchFor(uint16_t outputLinePx, uint16_t captureWidth)
     return (uint16_t)needed;
 }
 
-uint16_t Memory::offsetFor(uint16_t outputLinePx)
+uint16_t Memory::offsetFor(uint16_t lineUnits)
 {
-    // Deliberately NOT tracking the fetch: the offset is clean anywhere across
-    // 190..256 against a fetch of 204, so it stays fixed rather than gaining a
-    // second register that moves on every pad press for no measured reason.
-    uint32_t offset = (outputLinePx == Line1080p)
-        ? Offset1080p
-        : (uint32_t)DefaultFetch + OffsetOverFetch;
-
-    return offset > OffsetMax ? OffsetMax : (uint16_t)offset;
+    return fetchFor(0, lineUnits);
 }
 
 }  // namespace Tv5725

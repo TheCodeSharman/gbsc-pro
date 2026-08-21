@@ -380,7 +380,7 @@ void Geometry::write(const RegisterSolution &solved, const Capture &capture)
     // out of it, which flickers even when the value written is identical.
     // docs/investigations/hscale-tearing-characterisation.md
     uint16_t fetch = Memory::fetchFor(capture.linePx(), capture.captureH());
-    uint16_t offset = Memory::offsetFor(capture.linePx());
+    uint16_t offset = Memory::offsetFor(capture.lineH().units());
     if (GBS::PB_FETCH_NUM::read() != fetch)
         GBS::PB_FETCH_NUM::write(fetch);
     if (GBS::PB_CAP_OFFSET::read() != offset)

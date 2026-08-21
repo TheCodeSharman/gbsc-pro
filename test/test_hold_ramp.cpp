@@ -155,16 +155,49 @@ TEST_CASE("a repeat frame resolves to the key it repeats")
         // The IR handler dispatches on the key code, and a repeat frame matches
         // no case, so a held key would be dropped before it ever reached the
         // ramp. Resolving it here keeps that knowledge in one place.
-        CHECK(ramp.resolve(HoldRamp::RepeatCode) == KeyRight);
+        CHECK(ramp.resolve(HoldRamp::RepeatCode, 1100) == KeyRight);
     }
 
     SUBCASE("an ordinary key resolves to itself") {
-        CHECK(ramp.resolve(KeyLeft) == KeyLeft);
+        CHECK(ramp.resolve(KeyLeft, 1100) == KeyLeft);
     }
 
     SUBCASE("a repeat frame with nothing held resolves to itself") {
         // No key to attribute it to, so it must not be turned into one.
         HoldRamp cold;
-        CHECK(cold.resolve(HoldRamp::RepeatCode) == HoldRamp::RepeatCode);
+        CHECK(cold.resolve(HoldRamp::RepeatCode, 1100) == HoldRamp::RepeatCode);
+    }
+}
+
+// A remote sends no key-up, so nothing can mark the end of a run except the gap
+// after it. Without that, a repeat frame arriving once the user has let go
+// resolves to the key they last HELD, and the control runs in the direction of
+// the previous press -- accelerating, because multiplierFor() sees the key it
+// expects and continues the run rather than resetting it. It reverses whichever
+// control is live, pan and zoom alike, since one ramp serves all four.
+//
+// It needs a dropped leading frame to trigger, which is why it is intermittent:
+// the handler blanks IR for a 400-iteration OSD write on every press.
+TEST_CASE("a stale run cannot capture a later repeat frame")
+{
+    HoldRamp ramp;
+    ramp.multiplierFor(KeyRight, 1000);
+
+    SUBCASE("inside the run gap the repeat still belongs to the run") {
+        CHECK(ramp.resolve(HoldRamp::RepeatCode, 1000 + HoldRamp::RunGapMs)
+              == KeyRight);
+    }
+
+    SUBCASE("past it the repeat is nobody's, and the switch drops it") {
+        CHECK(ramp.resolve(HoldRamp::RepeatCode, 1000 + HoldRamp::RunGapMs + 1)
+              == HoldRamp::RepeatCode);
+    }
+
+    SUBCASE("the guard is the same one multiplierFor already applies") {
+        // Both must agree on when a run has ended, or resolve() attributes a
+        // frame to a run multiplierFor() has already abandoned.
+        unsigned long stale = 1000 + HoldRamp::RunGapMs + 1;
+        CHECK(ramp.resolve(HoldRamp::RepeatCode, stale) == HoldRamp::RepeatCode);
+        CHECK(ramp.multiplierFor(KeyLeft, stale) == 1);
     }
 }

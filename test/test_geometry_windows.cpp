@@ -169,15 +169,33 @@ TEST_CASE("the capture window is a window, not a leftover")
     CHECK(Wire.field(3, 0x13, 0, 11) <= 1126);
 }
 
-TEST_CASE("the playback offset is the memory model's, not the sketch's")
+TEST_CASE("the playback stride covers the widest fetch, and holds still while zooming")
 {
     Bench bench;
 
-    // doPostPresetLoadSteps() writes PB_FETCH_NUM + 4 here. The engine writes
-    // Memory::offsetFor(), which is a function of the output line and is the
-    // value the fetch is computed against -- so this is the one deletion where
-    // the two owners disagree on a number rather than merely repeat each other.
-    CHECK(Wire.field(4, 0x37, 0, 10) == Memory::offsetFor(1915));
+    // The stride is the per-line allocation and the fetch is what playback
+    // reads into it, so a stride below the fetch overlaps lines. The fetch
+    // follows the capture, which grows as the picture zooms OUT -- so a stride
+    // sized for the framing on screen is short of the one the next press wants,
+    // and it arrives as a green band down the right of the picture.
+    // The bench line, from the seeds above: IF_HSYNC_RST 1276 wraps at 1277.
+    CHECK(Wire.field(4, 0x37, 0, 10) == Memory::offsetFor(1277));
+    CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
+
+    SUBCASE("and the zoom that widens the capture does not outgrow it") {
+        // Rewriting the stride re-lays the buffer out under a picture being
+        // read from it, so it may not move with the framing -- it has to be
+        // right for every framing of this line from the start. Sizing it from
+        // the widest capture would not do: that subtracts the measured hsync
+        // pulse, which moves by a unit between solves.
+        const uint32_t stride = Wire.field(4, 0x37, 0, 10);
+
+        bench.engine.requestFraming(PanAndZoom(-5000, 0, 0, 0));
+        REQUIRE(bench.engine.applyRequested());
+
+        CHECK(Wire.field(4, 0x37, 0, 10) == stride);
+        CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
+    }
 }
 
 TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register")

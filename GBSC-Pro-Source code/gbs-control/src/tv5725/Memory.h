@@ -4,10 +4,13 @@
 // The playback stage's burst structure: how much it pulls from SDRAM per
 // request, and where it reads relative to where capture is writing.
 //
-//     PB_FETCH_NUM = max(FetchFloor, ceil(captureWidth / RequestsPerLine))
+//     PB_FETCH_NUM  = max(FetchFloor, ceil(captureWidth  / RequestsPerLine))
+//     PB_CAP_OFFSET = max(FetchFloor, ceil(lineUnits     / RequestsPerLine))
 //
 // Deriving the fetch from the capture holds the capture/fetch ratio fixed as
-// the picture zooms, so no framing can walk into a tearing band.
+// the picture zooms, so no framing can walk into a tearing band. The stride
+// takes the WHOLE LINE instead, so it covers the fetch at every framing of it
+// and moves only when the divider does.
 // docs/investigations/hscale-tearing-characterisation.md
 
 #include <stdint.h>
@@ -44,10 +47,21 @@ public:
     // the source pixels the line needs, and only the framing knows how many.
     static uint16_t fetchFor(uint16_t outputLinePx, uint16_t captureWidth);
 
-    // A measured pair is used whole; otherwise PB_CAP_OFFSET = PB_FETCH_NUM + 4,
-    // the firmware's own invariant. Not critical -- clean across 190..256
-    // against a fetch of 204.
-    static uint16_t offsetFor(uint16_t outputLinePx);
+    // The line stride: where playback starts the next line, in the same 64-bit
+    // memory words as the fetch. Below the fetch, successive lines overlap and
+    // each overwrites its predecessor's tail -- which shows as a green band
+    // down the right of the picture.
+    //
+    // Takes the LINE, not the capture on screen. The fetch grows as the picture
+    // zooms out, and moving the stride re-lays the buffer out under a picture
+    // being read from it, so it is sized for a capture of the whole line: no
+    // framing of that line can outgrow it, and it holds still through a zoom.
+    //
+    // Not the line less the hsync pulse, which is the widest capture actually
+    // reachable: that comes from STATUS_SYNC_PROC_HLOW_LEN, a live measurement
+    // that moves by a unit between solves, and a stride that follows it would
+    // be rewritten on an arbitrary pad press.
+    static uint16_t offsetFor(uint16_t lineUnits);
 };
 
 }  // namespace Tv5725

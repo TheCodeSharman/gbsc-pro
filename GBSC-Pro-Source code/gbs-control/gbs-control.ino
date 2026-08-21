@@ -11608,7 +11608,7 @@ void OSD_selectOption()
             decode_flag = 1;
             // A held key sends repeat frames, not the key code, and a repeat
             // matches no case below -- so resolve it before dispatching.
-            uint32_t irKey = geometryHold.resolve(results.value);
+            uint32_t irKey = geometryHold.resolve(results.value, millis());
             switch (irKey) {
                 case IRKeyMenu:
                     OSD_menu_F(OSD_CROSS_TOP);
@@ -11717,7 +11717,7 @@ void OSD_selectOption()
             decode_flag = 1;
             // A held key sends repeat frames, not the key code, and a repeat
             // matches no case below -- so resolve it before dispatching.
-            uint32_t irKey = geometryHold.resolve(results.value);
+            uint32_t irKey = geometryHold.resolve(results.value, millis());
             switch (irKey) {
                 case IRKeyMenu:
                     OSD_menu_F(OSD_CROSS_MID);

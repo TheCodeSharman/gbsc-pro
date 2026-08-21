@@ -30,15 +30,11 @@ int16_t HoldRamp::multiplierFor(uint32_t key, unsigned long nowMs)
     return rateFor(heldRepeats - DeadRepeats);
 }
 
-uint32_t HoldRamp::resolve(uint32_t key) const
+uint32_t HoldRamp::resolve(uint32_t key, unsigned long nowMs) const
 {
-    return (key == RepeatCode && held_) ? lastKey_ : key;
-}
-
-void HoldRamp::release()
-{
-    held_ = false;
-    run_ = 0;
+    if (key != RepeatCode || !held_ || (nowMs - lastAt_) > RunGapMs)
+        return key;
+    return lastKey_;
 }
 
 int16_t HoldRamp::rateFor(uint16_t repeatsPastDeadTime)
