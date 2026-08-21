@@ -51,11 +51,13 @@ public:
     // percent. Upstream's, carried verbatim -- see retimeStopFor().
     static const uint16_t RetimeStopPercent = 93;
 
-    // **DO NOT ADD A CEILING ON PLLAD_MD.** Memory::fetchFor sizes the fetch
-    // from the capture width, which cancels HSCALE out of the beat quantity, so
-    // there is no tearing band left to keep the divider below -- the bench ran
-    // 2553 clean at four HSCALE values.
+    // **A TEARING CEILING MUST NOT BE REINSTATED.** The band it would keep the
+    // divider below does not exist: HSCALE was swept across the corrupted state
+    // and no value cleared it.
     // docs/investigations/hscale-tearing-characterisation.md has the measurement.
+    //
+    // The ceiling recommendedDivider() does apply is the capture write limit,
+    // which bounds the LINE rather than the tearing. docs/capture-limits.md
 
     // The IF counts the ADC line after decimation by two. Measured: PLLAD_MD
     // 2553 against IF_HSYNC_RST 1276.

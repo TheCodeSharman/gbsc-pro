@@ -54,7 +54,7 @@ sampling:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sampling" \
-	  "$(HERE)/test_sampling.cpp" src/tv5725/Sampling.cpp
+	  "$(HERE)/test_sampling.cpp" src/tv5725/Sampling.cpp src/tv5725/InputLine.cpp
 	@"$(OUT)/test_sampling"
 
 ## memory: host unit tests for the playback burst structure

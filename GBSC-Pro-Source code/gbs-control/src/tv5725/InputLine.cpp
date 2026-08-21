@@ -3,6 +3,9 @@
 #include <math.h>
 
 namespace Tv5725 {
+
+const uint16_t InputLine::WriteLimitUnits;
+
 namespace {
 
 // The sync processor's own validity window for the hsync duty.
@@ -41,7 +44,13 @@ uint16_t InputLine::lastCapture() const
     // point, and a window written onto it rolls rather than clamping;
     // units - 1 is the line reset value, where the input formatter stops
     // producing pixels at all. docs/scaler-geometry-model.md
-    return units_ < 2 ? 0 : units_ - 2;
+    uint16_t beforeWrap = units_ < 2 ? 0 : units_ - 2;
+
+    // And the far end: past WriteLimitUnits the capture path writes blanking
+    // rather than video. Sampling caps the divider to keep the line inside the
+    // limit, so what this catches is the lines it did not choose -- a custom
+    // preset's, a bypass switch's.
+    return beforeWrap > WriteLimitUnits ? WriteLimitUnits : beforeWrap;
 }
 
 uint16_t InputLine::capturable() const

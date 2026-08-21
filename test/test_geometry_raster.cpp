@@ -244,12 +244,11 @@ TEST_CASE("a measurable line rate leaves nothing pending")
     Bench bench;
     Geometry engine;
 
-    // 311 lines at 50.08 Hz is 15574 Hz, and 98% of the 162 MSPS ceiling over
-    // four-times oversampling is 2548 -- the divider this bench has run on all
-    // along.
+    // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
+    // there, and the capture write limit takes it to 2250.
     CHECK(engine.solveSampling(15574, 4));
     CHECK_FALSE(engine.samplingPending());
-    CHECK(Wire.field(5, 0x12, 0, 12) == 2548);
+    CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
 }
 
 TEST_CASE("the deferred sampling solve lands once the source can be measured")
@@ -262,9 +261,9 @@ TEST_CASE("the deferred sampling solve lands once the source can be measured")
 
     CHECK(engine.solveSampling(15574, 4));
     CHECK_FALSE(engine.samplingPending());
-    CHECK(Wire.field(5, 0x12, 0, 12) == 2548);
-    CHECK(Wire.field(1, 0x0E, 0, 11) == 1274);   // IF_HSYNC_RST, divider / 2
-    CHECK(Wire.field(5, 0x4B, 0, 12) == 2369);   // SP_RT_HS_SP, 93% of it
+    CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1125);   // IF_HSYNC_RST, divider / 2
+    CHECK(Wire.field(5, 0x4B, 0, 12) == 2092);   // SP_RT_HS_SP, 93% of it
 }
 
 TEST_CASE("entering bypass drops a deferred sampling solve too")

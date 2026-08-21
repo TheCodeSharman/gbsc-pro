@@ -15,6 +15,12 @@ namespace Tv5725 {
 // back produces an identical window. docs/firmware-geometry-engine.md
 class InputLine {
 public:
+    // How far into the line the capture path keeps writing video. Past it the
+    // writes are Y=U=V=0, which decodes to green and destroys the picture
+    // there, so this bounds usable capture width rather than hiding it.
+    // docs/capture-limits.md
+    static const uint16_t WriteLimitUnits = 1125;
+
     // The whole line is available. Vertical uses this: the exclusion is the
     // HSYNC pulse and there is no vertical equivalent.
     explicit InputLine(uint16_t units);
@@ -50,10 +56,8 @@ public:
     // The pulse is at the HEAD, because SP_RT_HS_ST reads 0 and the input
     // formatter counts from the sync's leading edge.
     //
-    // The TAIL IS DELIBERATELY UNBOUNDED. There is green there too and where it
-    // comes from is an open question: no register holds its position, and a
-    // black border is electrically identical to back porch -- so a guard there
-    // would be a number nobody can derive. docs/scaler-geometry-model.md.
+    // The tail is bounded by WriteLimitUnits, which is measured rather than
+    // derived from anything this class is handed. docs/capture-limits.md
     static InputLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine);
 
 private:

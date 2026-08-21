@@ -1,6 +1,7 @@
 #include "Sampling.h"
 
-#include "Geometry.h"   // Capture's settling bounds, so there is one owner of them
+#include "Geometry.h"    // Capture's settling bounds, so there is one owner of them
+#include "InputLine.h"   // the capture write limit, likewise
 
 #include "../../gbs_types.h"
 
@@ -85,6 +86,13 @@ uint16_t Sampling::recommendedDivider(uint32_t lineRateHz, uint8_t oversample)
         return 0;
 
     uint16_t backed = (uint16_t)(((uint32_t)ceiling * RecommendedPercent) / 100);
+
+    // The second ceiling: a line the capture path cannot write to the end of.
+    // InputLine::WriteLimitUnits is in IF units and ifLineFor() halves, so the
+    // divider that puts the line end exactly on the limit is twice it.
+    const uint16_t forWriteLimit = (uint16_t)(InputLine::WriteLimitUnits * 2);
+    if (backed > forWriteLimit)
+        backed = forWriteLimit;
 
     // Even, so ifLineFor() divides exactly. An odd divider leaves the IF half a
     // sample out from the line the ADC is delivering.

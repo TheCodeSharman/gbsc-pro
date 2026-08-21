@@ -15,6 +15,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Sampling.h"
 
 using namespace Tv5725;
@@ -132,10 +133,11 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
     const uint32_t BenchLine = 15550;   // VTOTAL 311 at 50 Hz
     const uint8_t Oversample = 4;
 
-    SUBCASE("the ADC rating is what binds, at every line rate") {
-        // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, and 98% of that is 2550.
-        // 31500 Hz: room for 1285, and 98% is 1258.
-        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) == 2550);
+    SUBCASE("whichever of the two ceilings is tighter is what binds") {
+        // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, 98% of that is 2550, and the
+        // write limit takes it down to 2250. 31500 Hz: room for 1285, 98% is
+        // 1258, and the write limit is nowhere near it.
+        CHECK(Sampling::recommendedDivider(BenchLine, Oversample) == 2250);
         CHECK(Sampling::recommendedDivider(31500, Oversample) == 1258);
     }
 
@@ -151,26 +153,55 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         CHECK(active >= 2 * 640);              // and 2x on the common one
     }
 
-    SUBCASE("it lands where the shipped tables already ran") {
+    SUBCASE("the backoff under the rating is 2 percent, not a derating") {
         // 98 rather than 85. The twelve tables ran 2269..2559 on this part for
-        // years, 87..98% of the 162 MSPS rating, with the bench pair at 98%;
-        // computing 2212 instead throws away 13% of the horizontal input samples
-        // for headroom nothing asked for. The remaining 2% is not derating but
-        // jitter: the line rate comes from a MEASURED field rate, and a reading
-        // that comes in low would put a divider computed at the ceiling over the
-        // rating.
+        // years, 87..98% of the 162 MSPS rating; computing 85% of the ceiling
+        // throws away 13% of the horizontal input samples for headroom nothing
+        // asked for. The 2% is jitter: the line rate comes from a MEASURED
+        // field rate, and a reading that comes in low would put a divider
+        // computed at the ceiling over the rating.
+        //
+        // Read at 31.5 kHz, the rate where the rating is the binding ceiling.
+        uint16_t chosen = Sampling::recommendedDivider(31500, Oversample);
+        CHECK(chosen > (uint16_t)(Sampling::maxDivider(31500, Oversample) * 0.97f));
+        CHECK(Sampling::withinLimit(chosen, 31500, Oversample));
+        CHECK_FALSE(Sampling::withinLimit(1285 + 1, 31500, Oversample));
+    }
+
+    SUBCASE("and at the bench rate it now sits below every shipped table") {
+        // 2250 against 2269..2559. Sampling the line more coarsely is what
+        // buys capturing the whole of it, and no table's divider does.
         uint16_t chosen = Sampling::recommendedDivider(BenchLine, Oversample);
-        CHECK(chosen >= 2500);
-        CHECK(chosen <= 2553);
+        CHECK(chosen < 2269);
+        CHECK(Sampling::ifLineFor(chosen) <= InputLine::WriteLimitUnits);
         CHECK(Sampling::withinLimit(chosen, BenchLine, Oversample));
-        CHECK(Sampling::withinLimit(2553, BenchLine, Oversample));
-        CHECK_FALSE(Sampling::withinLimit(2604 + 1, BenchLine, Oversample));
     }
 
     SUBCASE("a line rate nobody can measure yields nothing, not a guess") {
         // A divider written from a zero measurement is how the screen goes
         // green. Sampling has no business inventing one.
         CHECK(Sampling::recommendedDivider(0, Oversample) == 0);
+    }
+}
+
+TEST_CASE("the divider is capped so the whole line stays inside the write limit")
+{
+    // Past InputLine::WriteLimitUnits the capture path stops writing video, so
+    // a line longer than that loses its tail whatever the ADC rating allows.
+    // The divider is what decides the line length, which makes it the lever:
+    // sample the line more coarsely and 2250 samples reach the end of it.
+    // docs/capture-limits.md
+    uint16_t chosen = Sampling::recommendedDivider(BenchLineRate, 4);
+
+    CHECK(Sampling::ifLineFor(chosen) <= InputLine::WriteLimitUnits);
+
+    SUBCASE("and the ADC rating still binds where it is the tighter of the two") {
+        // 31.5 kHz has room for 1258 under the rating, well inside the limit.
+        CHECK(Sampling::recommendedDivider(31500, 4) == 1258);
+    }
+
+    SUBCASE("it is still even, so the IF line divides exactly") {
+        CHECK(chosen % 2 == 0);
     }
 }
 
