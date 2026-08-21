@@ -273,8 +273,8 @@ TEST_CASE("the solver places every output register")
     AxisSolution solved = AxisHorizontal.solve(798, Scale(650), 1445);
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
-        CHECK(solved.origin() == 102);
-        CHECK(solved.windowStop() == AxisHorizontal.windowStopMin());
+        CHECK(solved.display().stop() == 102);
+        CHECK(solved.memory().stop() == AxisHorizontal.windowStopMin());
     }
 
     SUBCASE("the memory window is exactly the display window") {
@@ -282,38 +282,37 @@ TEST_CASE("the solver places every output register")
         // memory past the picture is memory the playback stage still walks, and
         // on the bench it showed as artefacts down the LEFT edge. EQUAL to the
         // display window, not merely under the last usable value.
-        CHECK(solved.windowStart() == solved.displayStart());
-        CHECK(solved.windowStart() <= 1443);
+        CHECK(solved.memory().start() == solved.display().start());
+        CHECK(solved.memory().start() <= 1443);
     }
 
     SUBCASE("the display window hugs the picture") {
         // A window sized for a different picture invalidated two of the
         // 2026-08-05 headroom measurements, by blanking where tearing shows.
-        CHECK(solved.displayStop() == solved.origin());
-        CHECK(solved.displayStart()
-              == solved.origin() + (int32_t)solved.produced() - AxisHorizontal.margin());
+        CHECK(solved.display().start()
+              == solved.display().stop() + (int32_t)solved.produced() - AxisHorizontal.margin());
     }
 
     SUBCASE("the solver corrects the thirteen pixel offset seen on the bench") {
         // VDS_DIS_HB_SP 129 against an origin of 116.
-        CHECK(solved.displayStop() != 129);
+        CHECK(solved.display().stop() != 129);
     }
 
     SUBCASE("no returned register reaches the value that wraps") {
         // Tested at the boundary itself: off-by-one is the risk.
         AxisSolution h = AxisHorizontal.solve(500, Scale(650), 1445);
-        CHECK(h.windowStart() < 1444);
-        CHECK(h.displayStart() < 1444);
+        CHECK(h.memory().start() < 1444);
+        CHECK(h.display().start() < 1444);
         AxisSolution v = AxisVertical.solve(500, Scale(650), 1126);
-        CHECK(v.windowStart() < 1125);
-        CHECK(v.displayStart() < 1125);
+        CHECK(v.memory().start() < 1125);
+        CHECK(v.display().start() < 1125);
     }
 
     SUBCASE("the display window never runs past the last written pixel") {
         // VDS_DIS_?B_ST is where blanking STARTS, so it may equal origin +
         // produced but never exceed it. Rounding up shows scratch.
         AxisSolution tall = AxisVertical.solve(513, Scale(487), 1126);
-        CHECK(tall.displayStart() <= tall.origin() + tall.produced());
+        CHECK(tall.display().start() <= tall.display().stop() + tall.produced());
     }
 
     SUBCASE("a vertical solve treats IF_VB as half lines") {
@@ -321,7 +320,7 @@ TEST_CASE("the solver places every output register")
         // here. 513 half-lines at VSCALE 660 is 795.9 output lines, not 1591.
         AxisSolution half = AxisVertical.solve(513, Scale(660), 1125);
         CHECK(((half.produced() > 795) && (half.produced() < 797)));
-        CHECK(half.windowStart() < 1125);
+        CHECK(half.memory().start() < 1125);
     }
 }
 
@@ -423,7 +422,7 @@ TEST_CASE("the picture stops at the front porch, not at the raster edge")
         AxisSolution solved = AxisHorizontal.solve(
             Capture, AxisHorizontal.fitToRaster(Capture, Raster, 0, ActiveStop).scale(),
             Raster, 0, ActiveStop);
-        CHECK(solved.displayStart() <= (int32_t)ActiveStop);
+        CHECK(solved.display().start() <= (int32_t)ActiveStop);
     }
 
     SUBCASE("an activeStop of 0 keeps the raster edge, so nothing else moves") {
@@ -505,10 +504,10 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
         AxisHorizontal.solve(capture, fit.scale(), raster, 0, 0);
 
     // the window IS the picture, and the room left over is black at both ends
-    CHECK(solved.displayStart() - solved.displayStop()
+    CHECK(solved.display().start() - solved.display().stop()
           <= (int32_t)fit.produced() + 1);
-    CHECK(solved.displayStop() > 100);
-    CHECK((int32_t)raster - solved.displayStart() > 100);
+    CHECK(solved.display().stop() > 100);
+    CHECK((int32_t)raster - solved.display().start() > 100);
 }
 
 // The capture stop is what the pan walks toward the end of the line, and past
@@ -544,8 +543,8 @@ static void dumpGrid()
                                                     raster);
                     std::printf("solve %s %u %u %u %.4f %d %d %d %d %d\n",
                                 names[i], raster, capture, scale, s.produced(),
-                                s.origin(), s.windowStop(), s.windowStart(), s.displayStop(),
-                                s.displayStart());
+                                s.display().stop(), s.memory().stop(), s.memory().start(), s.display().stop(),
+                                s.display().start());
                 }
 
     // The active window, which the grid above cannot see because it never varies

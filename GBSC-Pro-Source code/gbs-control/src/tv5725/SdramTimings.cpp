@@ -1,13 +1,13 @@
-#include "SdramTiming.h"
+#include "SdramTimings.h"
 
 namespace Tv5725 {
 
-const uint32_t SdramTiming::TckMinPs;
-const uint32_t SdramTiming::TrcdMinPs;
-const uint32_t SdramTiming::TrpMinPs;
-const uint8_t SdramTiming::FbclkCode;
-const uint8_t SdramTiming::MaxCycles;
-const uint8_t SdramTiming::NotEncodable;
+const uint32_t SdramTimings::TckMinPs;
+const uint32_t SdramTimings::TrcdMinPs;
+const uint32_t SdramTimings::TrpMinPs;
+const uint8_t SdramTimings::FbclkCode;
+const uint8_t SdramTimings::MaxCycles;
+const uint8_t SdramTimings::NotEncodable;
 
 namespace {
 
@@ -32,17 +32,17 @@ uint32_t periodPs(uint32_t kHz)
 
 }  // namespace
 
-uint32_t SdramTiming::clockKHz(uint8_t pllMs)
+uint32_t SdramTimings::clockKHz(uint8_t pllMs)
 {
     return pllMs < 8 ? ClockKHz[pllMs] : 0;
 }
 
-uint8_t SdramTiming::cyclesFor(uint8_t registerValue)
+uint8_t SdramTimings::cyclesFor(uint8_t registerValue)
 {
     return (uint8_t)((registerValue & 0x03) + 2);
 }
 
-uint8_t SdramTiming::registerForCycles(uint8_t cycles)
+uint8_t SdramTimings::registerForCycles(uint8_t cycles)
 {
     if (cycles < 2 || cycles > MaxCycles) {
         return NotEncodable;
@@ -50,7 +50,7 @@ uint8_t SdramTiming::registerForCycles(uint8_t cycles)
     return (uint8_t)(cycles - 2);
 }
 
-uint8_t SdramTiming::cyclesNeeded(uint8_t pllMs, uint32_t minPs)
+uint8_t SdramTimings::cyclesNeeded(uint8_t pllMs, uint32_t minPs)
 {
     const uint32_t period = periodPs(clockKHz(pllMs));
     if (period == 0) {
@@ -63,17 +63,17 @@ uint8_t SdramTiming::cyclesNeeded(uint8_t pllMs, uint32_t minPs)
     return (uint8_t)(whole < 2 ? 2 : whole);
 }
 
-uint8_t SdramTiming::actCycleRegister(uint8_t pllMs)
+uint8_t SdramTimings::actCycleRegister(uint8_t pllMs)
 {
     return registerForCycles(cyclesNeeded(pllMs, TrcdMinPs));
 }
 
-uint8_t SdramTiming::pchgCycleRegister(uint8_t pllMs)
+uint8_t SdramTimings::pchgCycleRegister(uint8_t pllMs)
 {
     return registerForCycles(cyclesNeeded(pllMs, TrpMinPs));
 }
 
-bool SdramTiming::inSpec(uint8_t pllMs, uint8_t actCycleReg, uint8_t pchgCycleReg)
+bool SdramTimings::inSpec(uint8_t pllMs, uint8_t actCycleReg, uint8_t pchgCycleReg)
 {
     const uint32_t period = periodPs(clockKHz(pllMs));
     if (period == 0) {
@@ -88,7 +88,7 @@ bool SdramTiming::inSpec(uint8_t pllMs, uint8_t actCycleReg, uint8_t pchgCycleRe
     return (uint32_t)cyclesFor(pchgCycleReg) * period >= TrpMinPs;
 }
 
-uint8_t SdramTiming::fastestInSpec()
+uint8_t SdramTimings::fastestInSpec()
 {
     uint8_t best = 1;  // 81 MHz, the slowest the divider offers
     uint32_t bestKHz = 0;

@@ -4,8 +4,6 @@
 
 #include <math.h>
 
-#include "DisplayClock.h"
-
 namespace Tv5725 {
 
 const uint32_t OutputMode::WorkingCeilingHz;
@@ -36,7 +34,7 @@ uint16_t OutputMode::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
     return (uint16_t)horizontalTotal;
 }
 
-uint8_t OutputMode::dividerFor(uint16_t frameLines, float fieldRateHz,
+uint8_t OutputMode::clockDividerFor(uint16_t frameLines, float fieldRateHz,
                                  uint32_t ceilingHz)
 {
     uint8_t best = 0;
@@ -72,9 +70,7 @@ const OutputMode *OutputMode::forPreference(PresetPreference presetPreference,
         return &Mode720p;
 
     // The one preference that is two resolutions: Output480P means 480 active
-    // lines at 60 Hz and 576 at 50. So the rate picks a RESOLUTION here, where
-    // everywhere else it only moves the clock. docs/vesa-gtf.md settled the
-    // split -- PAL or NTSC on field rate, no curve.
+    // lines at 60 Hz and 576 at 50.
     if (presetPreference == Output480P)
         return fieldRateHz < PalNtscSplitHz ? &Mode576p : &Mode480p;
 
@@ -112,11 +108,11 @@ uint16_t OutputMode::frameLines() const
     return activeLines_ + vFrontPorchLines_ + vsyncLines_ + vBackPorchLines_;
 }
 
-RasterSolution OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
+OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 {
-    RasterSolution solved;
+    OutputTimings solved;
 
-    uint8_t divider = OutputMode::dividerFor(frameLines(), fieldRateHz,
+    uint8_t divider = OutputMode::clockDividerFor(frameLines(), fieldRateHz,
                                                ceilingHz);
     if (divider == 0)
         return solved;

@@ -42,18 +42,18 @@ TEST_CASE("the divider is the largest seed at or under the ceiling")
 {
     // The seed only has to put the Si5351 in range -- the rate is steered to
     // whatever the raster demands afterwards -- so take the most clock available.
-    CHECK(OutputMode::dividerFor(1126, 50.0f, 129600000u) == 0x95);
-    CHECK(OutputMode::dividerFor(1126, 50.0f, 108000000u) == 0x85);
-    CHECK(OutputMode::dividerFor(1126, 50.0f, 162000000u) == 0xA5);
+    CHECK(OutputMode::clockDividerFor(1126, 50.0f, 129600000u) == 0x95);
+    CHECK(OutputMode::clockDividerFor(1126, 50.0f, 108000000u) == 0x85);
+    CHECK(OutputMode::clockDividerFor(1126, 50.0f, 162000000u) == 0xA5);
 
     SUBCASE("and it skips seeds whose htotal would overflow the register") {
         // A short frame at a high clock cannot be expressed, so the seed below it
         // is the answer rather than a wrapped raster.
-        CHECK(OutputMode::dividerFor(262, 50.0f, 162000000u) != 0xA5);
+        CHECK(OutputMode::clockDividerFor(262, 50.0f, 162000000u) != 0xA5);
     }
 
     SUBCASE("an unmeasurable field rate yields nothing, not a guess") {
-        CHECK(OutputMode::dividerFor(1126, 0.0f, 129600000u) == 0);
+        CHECK(OutputMode::clockDividerFor(1126, 0.0f, 129600000u) == 0);
     }
 }
 
@@ -65,17 +65,17 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     // difference. The pixel count then scales with OUR clock. The bench figures
     // 1918/2301/2877 were taken at 1126 lines; CEA's 1125 raises each by 2-3,
     // since a shorter frame buys a longer line.
-    RasterSolution at108 = Mode1080p.solve(50.0f, 108000000u);
+    OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
     CHECK(at108.hsyncStart == 0);
     CHECK(at108.hsyncStop == 32);
     CHECK(at108.activeStart == 32 + 108);
 
-    RasterSolution at1296 = Mode1080p.solve(50.0f, 129600000u);
+    OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
     CHECK(at1296.hsyncStop == 38);
 
-    RasterSolution at162 = Mode1080p.solve(50.0f, 162000000u);
+    OutputTimings at162 = Mode1080p.solve(50.0f, 162000000u);
     CHECK(at162.horizontalTotal == 2880);
     CHECK(at162.hsyncStop == 48);
 
@@ -100,11 +100,11 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
 // porch"
 TEST_CASE("the front porch reserves CEA-861's minimum at our own clock")
 {
-    RasterSolution at108 = Mode1080p.solve(50.0f, 108000000u);
+    OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
     CHECK(at108.activeStop == 1920 - 64);
 
-    RasterSolution at1296 = Mode1080p.solve(50.0f, 129600000u);
+    OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
     CHECK(at1296.activeStop == 2304 - 77);
 
@@ -141,7 +141,7 @@ TEST_CASE("the default ceiling is the highest clock the bench demonstrated")
     // figure, which rates a pad PAD_CKOUT_ENZ disables.
     CHECK(OutputMode::WorkingCeilingHz == 129600000u);
 
-    RasterSolution best = Mode1080p.solve(50.0f);
+    OutputTimings best = Mode1080p.solve(50.0f);
     CHECK(best.horizontalTotal == 2304);
     CHECK(best.verticalTotal == 1125);
     CHECK(best.divider == 0x95);
@@ -173,7 +173,7 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
     // through the engine, which is what would settle it.
     CHECK(OutputMode::EngineCeilingHz == 108000000u);
 
-    RasterSolution solved = Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz);
+    OutputTimings solved = Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz);
     CHECK(solved.horizontalTotal == 1920);
     CHECK(solved.verticalTotal == 1125);
     CHECK(solved.demandedHz() <= OutputMode::EngineCeilingHz);
@@ -227,7 +227,7 @@ static void dumpGrid()
 
     for (unsigned c = 0; c < sizeof(ceilings) / sizeof(ceilings[0]); ++c) {
         for (unsigned r = 0; r < sizeof(rates) / sizeof(rates[0]); ++r) {
-            RasterSolution solved = Mode1080p.solve(rates[r], ceilings[c]);
+            OutputTimings solved = Mode1080p.solve(rates[r], ceilings[c]);
             std::printf("1080p %u %.2f %u %u %u %u %u %u %u\n",
                         (unsigned)ceilings[c], (double)rates[r],
                         (unsigned)solved.horizontalTotal, (unsigned)solved.verticalTotal,

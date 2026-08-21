@@ -36,7 +36,7 @@ namespace Tv5725 {
 //
 // 129.6 MHz, FBCLK and 162 MHz all give a clean picture under the heaviest
 // playback load the unit has.
-class SdramTiming {
+class SdramTimings {
 public:
     // EM638325TS-6 AC parameters, in picoseconds. Table 1 and the AC
     // characteristics table, "-6I" column.

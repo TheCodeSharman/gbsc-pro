@@ -153,25 +153,22 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
 
     PictureOrigin placed = placePicture(solved.produced_, rasterTotal,
                                     scale.magnification(), activeStart);
-    solved.origin_ = placed.corner();
-    solved.windowStop_ = placed.windowStop();
-
     // The front porch, or the raster's edge where no porch is known. ST registers
     // wrap rather than clamp, and a wrapped VDS_VB_ST rolls the frame.
     int32_t lastUsable = (int32_t)farBound(rasterTotal, activeStop);
 
     // Floor, never round: VDS_DIS_?B_ST is where blanking STARTS, so
     // rounding up exposes unwritten memory as a band of scratch.
-    solved.displayStop_ = solved.origin_;
-    solved.displayStart_ =
-        solved.displayStop_ + (int32_t)solved.produced_ - margin_;
-    if (solved.displayStart_ > lastUsable)
-        solved.displayStart_ = lastUsable;
+    int32_t displayStart = placed.corner() + (int32_t)solved.produced_ - margin_;
+    if (displayStart > lastUsable)
+        displayStart = lastUsable;
+    solved.display_ = BlankingTiming(placed.corner(), displayStart);
 
-    // The memory window IS the display window: allocate nothing spare. Memory
-    // past the picture is memory the playback stage still walks, and taking the
-    // whole raster showed on the bench as artefacts down the LEFT edge.
-    solved.windowStart_ = solved.displayStart_;
+    // The two windows share a far edge: allocate nothing spare. Memory past the
+    // picture is memory the playback stage still walks, and taking the whole
+    // raster showed on the bench as artefacts down the LEFT edge. The near edges
+    // differ by the write origin, which is why the windows are not one thing.
+    solved.memory_ = BlankingTiming(placed.windowStop(), displayStart);
     return solved;
 }
 

@@ -13,9 +13,9 @@
 #include "InputLine.h"
 #include "CaptureWindow.h"
 #include "OutputMode.h"
-#include "RasterSolution.h"
+#include "OutputTimings.h"
 #include "PanAndZoom.h"
-#include "RegisterSolution.h"
+#include "VideoProcessorTimings.h"
 #include "SourceMeasurement.h"
 
 namespace Tv5725 {
@@ -105,12 +105,12 @@ private:
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
 
     // The scales and output windows that map that capture to the full screen.
-    RegisterSolution calculateOutputRaster(const CaptureWindow &capture) const;
+    VideoProcessorTimings calculateOutputRaster(const CaptureWindow &capture) const;
 
     // Ordered so the headroom never dips: the solver always takes the whole
     // memory window, so the only edge that can narrow it is VDS_?B_SP moving up.
     // docs/firmware-geometry-engine.md "Write ordering".
-    static void write(const RegisterSolution &solved,
+    static void write(const VideoProcessorTimings &solved,
                       const CaptureWindow &capture);
 
     // A press that cannot move the window must not move the state either, or the

@@ -1,6 +1,6 @@
 #include "MemoryBus.h"
 
-#include "SdramTiming.h"
+#include "SdramTimings.h"
 #include "../../gbs_types.h"
 
 namespace Tv5725 {
@@ -11,8 +11,8 @@ void MemoryBus::init()
     // from registers is one that stops working when whatever wrote them goes
     // away. The derivation runs the other way -- pick the fastest clock the
     // part's tCK allows, then compute the activate and precharge counts that
-    // cover tRCD and tRP at it. See SdramTiming.
-    const uint8_t clock = SdramTiming::fastestInSpec();
+    // cover tRCD and tRP at it. See SdramTimings.
+    const uint8_t clock = SdramTimings::fastestInSpec();
     GBS::PLL_MS::write(clock);
 
     // --- The SDRAM's own mode register, driven during the Load Mode cycle ---
@@ -36,8 +36,8 @@ void MemoryBus::init()
     MEM_FK_RD_DLY::write(2);             // s4_04[2:0]
     MEM_RD_LAT_PIP::write(0x3);          // s4_04[6:4]
     // tRCD and tRP, computed for the clock chosen above rather than inherited.
-    MEM_ACT_CYCLE::write(SdramTiming::actCycleRegister(clock));    // s4_05[1:0]
-    MEM_PCHG_CYCLE::write(SdramTiming::pchgCycleRegister(clock));  // s4_05[5:4]
+    MEM_ACT_CYCLE::write(SdramTimings::actCycleRegister(clock));    // s4_05[1:0]
+    MEM_PCHG_CYCLE::write(SdramTimings::pchgCycleRegister(clock));  // s4_05[5:4]
     MEM_REF_RATE::write(0x2);            // s4_06[2:0]
     MEM_REF_CYCLE::write(0x4);           // s4_06[6:4]
     MEM_TWR_SEL::write(0x0);             // s4_07[2:0]
@@ -69,7 +69,7 @@ void MemoryBus::init()
     // --- The feedback clock path ---
     //
     // FBCLK is pin 110, and PLL_MS = 010 would take the memory clock FROM it.
-    // We never select that (SdramTiming refuses to derive an unknown
+    // We never select that (SdramTimings refuses to derive an unknown
     // frequency), but the return path is still how read data gets latched, so
     // these are configured regardless.
     MEM_FBK_CLK_SEL::write(0x0);         // s4_11[0:0]

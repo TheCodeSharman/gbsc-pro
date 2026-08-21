@@ -1,5 +1,5 @@
-#ifndef TV5725_RASTER_SOLUTION_H_
-#define TV5725_RASTER_SOLUTION_H_
+#ifndef TV5725_OUTPUT_TIMINGS_H_
+#define TV5725_OUTPUT_TIMINGS_H_
 
 // One solved output raster: every timing register an OutputMode produces for a
 // measured field rate.
@@ -9,9 +9,9 @@
 namespace Tv5725 {
 
 // A solved raster: every output timing register, from a mode and a field rate.
-class RasterSolution {
+class OutputTimings {
 public:
-    RasterSolution();
+    OutputTimings();
 
     uint16_t horizontalTotal, verticalTotal;
     uint8_t divider;
@@ -37,7 +37,7 @@ public:
     bool usable() const;
 
     // The clock this raster asks for. The Si5351 is steered here, so it is the
-    // real pixel clock rather than the seed's nominal frequency.
+    // real display clock rather than the seed's nominal frequency.
     uint32_t demandedHz() const;
 
     uint16_t activeWidth() const;
@@ -45,4 +45,4 @@ public:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_RASTER_SOLUTION_H_
+#endif  // TV5725_OUTPUT_TIMINGS_H_

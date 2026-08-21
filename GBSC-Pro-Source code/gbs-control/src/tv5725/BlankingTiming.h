@@ -10,15 +10,15 @@ namespace Tv5725 {
 class BlankingTiming {
 public:
     BlankingTiming();
-    BlankingTiming(uint16_t stop, uint16_t start);
+    BlankingTiming(int32_t stop, int32_t start);
 
-    uint16_t stop() const;
-    uint16_t start() const;
-    uint16_t width() const;
+    int32_t stop() const;
+    int32_t start() const;
+    int32_t width() const;
     bool usable() const;
 
 private:
-    uint16_t stop_, start_;
+    int32_t stop_, start_;
 };
 
 }  // namespace Tv5725

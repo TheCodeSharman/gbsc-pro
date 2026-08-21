@@ -20,10 +20,10 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryBus.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SdramTiming.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SdramTimings.h"
 
 using Tv5725::MemoryBus;
-using Tv5725::SdramTiming;
+using Tv5725::SdramTimings;
 
 // Neither a preset table's value nor the firmware's, for any field here.
 static const uint8_t Poison = 0xA5;
@@ -42,10 +42,10 @@ TEST_CASE("the bus comes up at the fastest clock the part is rated for")
 {
     Bench bench;
 
-    // 162 MHz -- but not a number written down twice. SdramTiming derives it
+    // 162 MHz -- but not a number written down twice. SdramTimings derives it
     // from the EM638325TS-6's tCK, tRCD and tRP and test_sdram_timing.cpp pins
     // that; this only checks init() programmed what it chose.
-    CHECK(Wire.field(0, 0x40, 4, 3) == SdramTiming::fastestInSpec());
+    CHECK(Wire.field(0, 0x40, 4, 3) == SdramTimings::fastestInSpec());
     CHECK(Wire.field(0, 0x40, 4, 3) == 3);
 }
 
@@ -53,9 +53,9 @@ TEST_CASE("the cycle counts programmed are the ones that clock requires")
 {
     Bench bench;
 
-    const uint8_t clock = SdramTiming::fastestInSpec();
-    CHECK(Wire.field(4, 0x05, 0, 2) == SdramTiming::actCycleRegister(clock));
-    CHECK(Wire.field(4, 0x05, 4, 2) == SdramTiming::pchgCycleRegister(clock));
+    const uint8_t clock = SdramTimings::fastestInSpec();
+    CHECK(Wire.field(4, 0x05, 0, 2) == SdramTimings::actCycleRegister(clock));
+    CHECK(Wire.field(4, 0x05, 4, 2) == SdramTimings::pchgCycleRegister(clock));
 }
 
 TEST_CASE("CAS latency 3 is programmed, which is what makes 162MHz legal")

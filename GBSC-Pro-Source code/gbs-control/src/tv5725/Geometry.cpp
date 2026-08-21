@@ -43,7 +43,7 @@ bool Geometry::solveWindows()
     if (!calculateInputFormatterRegisters(capture))
         return false;
 
-    RegisterSolution solved = calculateOutputRaster(capture);
+    VideoProcessorTimings solved = calculateOutputRaster(capture);
     if (!solved.usable())
         return fail();
 
@@ -86,7 +86,7 @@ bool Geometry::solveRaster()
     // docs/firmware-geometry-engine.md
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.
-    RasterSolution raster = mode->solve(sampling_.fieldRateHz(),
+    OutputTimings raster = mode->solve(sampling_.fieldRateHz(),
                                         OutputMode::EngineCeilingHz);
     if (!raster.usable()) {
         // Refused, not deferred: the frame height and the rate are settled, so
@@ -367,29 +367,29 @@ bool Geometry::calculateInputFormatterRegisters(CaptureWindow &capture)
     return capture.usable() ? true : fail();
 }
 
-RegisterSolution Geometry::calculateOutputRaster(const CaptureWindow &capture) const
+VideoProcessorTimings Geometry::calculateOutputRaster(const CaptureWindow &capture) const
 {
-    return RegisterSolution(capture.horizontal().width(), capture.vertical().width(),
+    return VideoProcessorTimings(capture.horizontal().width(), capture.vertical().width(),
                             capture.linePx(), capture.frameLines(),
                             activeStop_, activeLinesStop_);
 }
 
-void Geometry::write(const RegisterSolution &solved, const CaptureWindow &capture)
+void Geometry::write(const VideoProcessorTimings &solved, const CaptureWindow &capture)
 {
     // 1. Far edges OUTWARD only, which can only add headroom. The memory window
     // hugs the picture, so it moves in as well as out; narrowing it here would
     // leave the old, wider display window showing unwritten memory at the far
     // edge for the length of a write. Inward moves wait for step 5b.
-    if (solved.horizontal().windowStart() > GBS::VDS_HB_ST::read())
-        GBS::VDS_HB_ST::write(solved.horizontal().windowStart());
-    if (solved.vertical().windowStart() > GBS::VDS_VB_ST::read())
-        GBS::VDS_VB_ST::write(solved.vertical().windowStart());
+    if (solved.memory().horizontal().start() > GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.memory().horizontal().start());
+    if (solved.memory().vertical().start() > GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.memory().vertical().start());
 
     // 2. Near edges down, if down is where they are going.
-    if (solved.horizontal().windowStop() < GBS::VDS_HB_SP::read())
-        GBS::VDS_HB_SP::write(solved.horizontal().windowStop());
-    if (solved.vertical().windowStop() < GBS::VDS_VB_SP::read())
-        GBS::VDS_VB_SP::write(solved.vertical().windowStop());
+    if (solved.memory().horizontal().stop() < GBS::VDS_HB_SP::read())
+        GBS::VDS_HB_SP::write(solved.memory().horizontal().stop());
+    if (solved.memory().vertical().stop() < GBS::VDS_VB_SP::read())
+        GBS::VDS_VB_SP::write(solved.memory().vertical().stop());
 
     // 3. The picture. BYPS cleared because an explicit scale was computed.
     //
@@ -408,22 +408,22 @@ void Geometry::write(const RegisterSolution &solved, const CaptureWindow &captur
     GBS::VDS_VSCALE::write(solved.verticalScale().reg());
 
     // 4. Near edges up, now that the picture they bound is the new one.
-    GBS::VDS_HB_SP::write(solved.horizontal().windowStop());
-    GBS::VDS_VB_SP::write(solved.vertical().windowStop());
+    GBS::VDS_HB_SP::write(solved.memory().horizontal().stop());
+    GBS::VDS_VB_SP::write(solved.memory().vertical().stop());
 
     // 5. The aperture, which must hug the picture.
-    GBS::VDS_DIS_HB_SP::write(solved.horizontal().displayStop());
-    GBS::VDS_DIS_HB_ST::write(solved.horizontal().displayStart());
-    GBS::VDS_DIS_VB_SP::write(solved.vertical().displayStop());
-    GBS::VDS_DIS_VB_ST::write(solved.vertical().displayStart());
+    GBS::VDS_DIS_HB_SP::write(solved.display().horizontal().stop());
+    GBS::VDS_DIS_HB_ST::write(solved.display().horizontal().start());
+    GBS::VDS_DIS_VB_SP::write(solved.display().vertical().stop());
+    GBS::VDS_DIS_VB_ST::write(solved.display().vertical().start());
 
     // 5b. Far edges INWARD, now that the aperture they bound has closed. The
     // mirror of step 2: a window edge may only cross the display window's in
     // the direction that keeps the picture covered.
-    if (solved.horizontal().windowStart() < GBS::VDS_HB_ST::read())
-        GBS::VDS_HB_ST::write(solved.horizontal().windowStart());
-    if (solved.vertical().windowStart() < GBS::VDS_VB_ST::read())
-        GBS::VDS_VB_ST::write(solved.vertical().windowStart());
+    if (solved.memory().horizontal().start() < GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.memory().horizontal().start());
+    if (solved.memory().vertical().start() < GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.memory().vertical().start());
 
     // 6. The playback burst, only if it is not already right. Rewriting
     // PB_FETCH_NUM reprograms the playback FIFO while the picture is being read

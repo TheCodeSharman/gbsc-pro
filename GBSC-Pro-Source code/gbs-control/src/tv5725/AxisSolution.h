@@ -1,27 +1,31 @@
 #ifndef TV5725_AXIS_SOLUTION_H_
 #define TV5725_AXIS_SOLUTION_H_
 
-// One axis's four output registers.
+// One axis: where the picture landed, and the two blanking windows bounding it.
 #include <stdint.h>
 
+#include "BlankingTiming.h"
+
 namespace Tv5725 {
-// One axis's four output registers, plus where the picture actually landed.
+
 class AxisSolution {
 public:
     AxisSolution();
 
     float produced() const;
-    int32_t origin() const;
-    int32_t windowStop() const;
-    int32_t windowStart() const;
-    int32_t displayStop() const;
-    int32_t displayStart() const;
+
+    // VDS_?B_ST / VDS_?B_SP -- the window the playback stage fetches through.
+    const BlankingTiming &memory() const;
+
+    // VDS_DIS_?B_ST / VDS_DIS_?B_SP -- the aperture that reaches the encoder.
+    const BlankingTiming &display() const;
+
     bool usable() const;
 
 private:
     friend class Axis;   // the only thing that may fill one in
     float produced_;
-    int32_t origin_, windowStop_, windowStart_, displayStop_, displayStart_;
+    BlankingTiming memory_, display_;
 };
 
 }  // namespace Tv5725

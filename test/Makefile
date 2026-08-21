@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test axis scale input-line active-image register-solution geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
+.PHONY: all test axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -81,13 +81,13 @@ input-line:
 active-image:
 	$(call geometry_unit,test_active_image)
 
-## register-solution: host unit tests for Tv5725::RegisterSolution, and its --dump
+## video-processor-timings: host unit tests for Tv5725::VideoProcessorTimings, and its --dump
 #
 # Both axes from the capture and the raster alone. Nothing is read back off the
 # chip -- inheriting a corner or a picture size is what every geometry fault of
 # 2026-08-06 was.
-register-solution:
-	$(call geometry_unit,test_register_solution)
+video-processor-timings:
+	$(call geometry_unit,test_video_processor_timings)
 
 ## source-measurement: host unit tests for the ADC sampling divider and the IF line
 #
@@ -151,7 +151,7 @@ output-raster:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_output_raster" \
 	  "$(HERE)/test_output_raster.cpp" src/tv5725/OutputMode.cpp \
-	  src/tv5725/RasterSolution.cpp src/tv5725/DisplayClock.cpp \
+	  src/tv5725/OutputTimings.cpp src/tv5725/DisplayClock.cpp \
 	  $(CLOCK_SRC)
 	@"$(OUT)/test_output_raster"
 
@@ -202,16 +202,16 @@ memory-map:
 	  "$(HERE)/test_memory_map.cpp" src/tv5725/MemoryMap.cpp
 	@"$(OUT)/test_memory_map"
 
-## sdram-timing: host unit tests for how fast the SDRAM bus may run
+## sdram-timings: host unit tests for how fast the SDRAM bus may run
 #
 # Derives the memory clock from the EM638325TS-6's tCK, tRCD and tRP, so
 # "fastest in spec" is arithmetic against a datasheet rather than a number
 # somebody chose.
-sdram-timing:
+sdram-timings:
 	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sdram_timing" \
-	  "$(HERE)/test_sdram_timing.cpp" src/tv5725/SdramTiming.cpp
-	@"$(OUT)/test_sdram_timing"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sdram_timings" \
+	  "$(HERE)/test_sdram_timings.cpp" src/tv5725/SdramTimings.cpp
+	@"$(OUT)/test_sdram_timings"
 
 ## memory-bus: host unit tests for the SDRAM bus bring-up, off the board
 #
@@ -226,7 +226,7 @@ memory-bus:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_memory_bus" \
-	  "$(HERE)/test_memory_bus.cpp" src/tv5725/MemoryBus.cpp src/tv5725/SdramTiming.cpp
+	  "$(HERE)/test_memory_bus.cpp" src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp
 	@"$(OUT)/test_memory_bus"
 
 ## bringup: host unit tests for the whole static bring-up, and its --dump
@@ -358,7 +358,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image register-solution geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timing memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
 all: test
 
 ## clean: remove the compiled test binaries
