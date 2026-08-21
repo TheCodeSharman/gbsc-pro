@@ -712,6 +712,41 @@ config registers, `snapdiff.py` writes all 1536. Diff like against like.
 `geometry.py --host <ip>` prints the input side, output side, and where the three
 horizontal extents disagree — the fastest read on why a picture is wrong.
 
+### The shape of an eye-in-the-loop measurement
+
+Where the picture is the only instrument, the tool is a **jog the user drives**,
+not a sweep the session drives. `creep_window.py` is the worked example — coarse
+and fine keys, one keypress per step, marks recorded as it goes. Build the next
+one the same way; the rules below are each a wasted session.
+
+- **A scripted sweep with a prompt per step does not work.** Numbered steps
+  cannot be reported back reliably, and the answer arrives after the state has
+  moved on. Give the keys to whoever is watching the screen.
+- **Never jump to a value.** A transition that happens between two frames nobody
+  saw is not a measurement. Creep *to* the interesting value, do not land on it.
+- **Never bisect.** Corruption comes in bands, so a boundary found by halving is
+  only the real one if nothing clean lies beyond it — keep creeping past the
+  first edge to find out.
+- **Enter means "clean, continue".** One keypress per step is what makes a
+  one-unit creep bearable over eighty of them.
+- **Marks belong in the tool.** Values printed to scrollback are lost; a mark
+  with a note, printed as a table on exit, is the measurement.
+- **Read every register the arithmetic uses in ONE pass.** The engine re-solves
+  as the measured field rate wobbles, so a capture from one solve paired with a
+  window from another invents discrepancies. A 46 px overshoot was reported that
+  way and did not exist.
+- **Freeze automation first**, or the solver rewrites the windows underneath the
+  experiment.
+- **An open window past the end of the picture is not corruption.** It shows
+  whatever the playback stage fetches, which looks like a fault and is only
+  absence of data. Establish that there IS picture under the window before
+  reading anything as a floor — force the magnification if need be.
+- **Separate what the board must emit from what one display happens to show.**
+  The MS9288A consumes the scaler's analog blanking and generates HDMI blanking
+  of its own, so the minimum the scaler must emit is a board property, measured
+  once, portable. Where a set stops painting is that set's overscan. Sizing a
+  constant from the second reads as a fix and ships one panel's number.
+
 ## Conventions
 
 **`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
