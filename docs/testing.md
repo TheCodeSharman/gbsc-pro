@@ -93,6 +93,19 @@ The fake offers `bank[seg][reg]`, `touched[seg][reg]`, `poison(value)` and
 Files excluded from host builds are `test/Makefile`'s `HOST_GEOMETRY_SRC`. The
 list shrinks as subsystems graduate.
 
+**The glob means a new class joins every target, so one that will not compile on
+the host breaks all of them.** `HOST_GEOMETRY_SRC` lists what to leave out, not
+what to put in, which is deliberate -- a class that graduates needs no Makefile
+edit. The cost is that adding a `src/tv5725/*.cpp` calling `millis()`, `Serial`
+or anything else `test/fake/Arduino.h` withholds takes out `axis`, `scale`,
+`memory` and the rest at once, and the error names the new file while the
+failing target is one that has nothing to do with it. `make -C test` after
+adding a class, every time.
+
+A class that genuinely needs the time takes it as an argument -- `SamplingLog`
+is the worked example. A class that needs a subsystem the list already excludes
+has to be excluded with it, which is why `SamplingLog` sits beside `Adc`.
+
 ## Disciplines
 
 These are not style preferences. Each is here because its absence cost real
