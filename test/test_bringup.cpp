@@ -25,6 +25,7 @@
 #include <cstring>
 #include <vector>
 
+#include "SketchSeam.h"
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;

@@ -28,6 +28,7 @@ using namespace Tv5725;
 
 static float g_fieldRate = 50.08f;
 float getSourceFieldRate(boolean) { return g_fieldRate; }
+void tv5725Log(const char *) {}
 
 // Neither a preset table's value nor the firmware's, so a read-back
 // distinguishes a fresh write from a leftover.
@@ -63,7 +64,6 @@ static void seedBenchSource()
     g_fieldRate = 50.08f;
 }
 
-static const uint32_t BenchLineRate = 311 * 50;
 static const OutputMode *benchMode() { return OutputRaster::modeFor(1125); }
 
 // A stray write lands somewhere nothing below reads, so it moves this and
@@ -173,7 +173,7 @@ TEST_CASE("a scaled preset load writes the whole geometry")
     seedBenchSource();
     Geometry engine;
 
-    engine.solveSampling(BenchLineRate, 4);
+    engine.solveSampling(4);
     engine.adoptRaster();
     engine.solveRaster(benchMode());
     engine.solveFromScratch();
@@ -208,7 +208,7 @@ TEST_CASE("a raster that deferred is finished by the sync watcher")
     Geometry engine;
 
     g_fieldRate = 0.0f;
-    engine.solveSampling(BenchLineRate, 4);
+    engine.solveSampling(4);
     engine.adoptRaster();
     engine.solveRaster(benchMode());
     REQUIRE(engine.rasterPending());
@@ -230,10 +230,12 @@ TEST_CASE("a divider that deferred is finished by the sync watcher")
     engine.adoptSampling();
     engine.adoptRaster();
     engine.solveRaster(benchMode());
-    engine.solveSampling(0, 4);
+    g_fieldRate = 0.0f;
+    engine.solveSampling(4);
     REQUIRE(engine.samplingPending());
 
-    REQUIRE(engine.solveSampling(BenchLineRate, 4));
+    g_fieldRate = 50.08f;
+    REQUIRE(engine.solveSampling(4));
     engine.solveFromScratch();
 
     checkBenchGeometry();
@@ -246,7 +248,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     seedBenchSource();
     Geometry engine;
 
-    engine.solveSampling(BenchLineRate, 4);
+    engine.solveSampling(4);
     engine.adoptRaster();
     engine.solveRaster(benchMode());
     engine.solveFromScratch();
@@ -269,7 +271,7 @@ TEST_CASE("a framing request is drained and re-solves every window")
     seedBenchSource();
     Geometry engine;
 
-    engine.solveSampling(BenchLineRate, 4);
+    engine.solveSampling(4);
     engine.adoptRaster();
     engine.solveRaster(benchMode());
     engine.solveFromScratch();

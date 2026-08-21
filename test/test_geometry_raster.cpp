@@ -24,6 +24,7 @@ using namespace Tv5725;
 // real; here it is the test's to set, which is the point.
 static float g_fieldRate = 50.08f;
 float getSourceFieldRate(boolean) { return g_fieldRate; }
+void tv5725Log(const char *) {}
 
 // STATUS_SYNC_PROC_VTOTAL, s0_1B[10:0] -- the source's line count.
 static void setSourceLines(uint16_t lines)
@@ -235,7 +236,7 @@ TEST_CASE("an unmeasurable line rate DEFERS the sampling solve, it does not sett
     Wire.bank[5][0x12] = 0x40;  // PLLAD_MD = 1856, as the bypass path leaves it
     Wire.bank[5][0x13] = 0x07;
 
-    CHECK_FALSE(engine.solveSampling(0, 4));
+    CHECK_FALSE((g_fieldRate = 0.0f, engine.solveSampling(4)));
     CHECK(engine.samplingPending());
 }
 
@@ -246,7 +247,7 @@ TEST_CASE("a measurable line rate leaves nothing pending")
 
     // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
     // there, and the capture write limit takes it to 2250.
-    CHECK(engine.solveSampling(15574, 4));
+    CHECK((g_fieldRate = 50.08f, engine.solveSampling(4)));
     CHECK_FALSE(engine.samplingPending());
     CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
 }
@@ -256,10 +257,10 @@ TEST_CASE("the deferred sampling solve lands once the source can be measured")
     Bench bench;
     Geometry engine;
 
-    REQUIRE_FALSE(engine.solveSampling(0, 4));
+    REQUIRE_FALSE((g_fieldRate = 0.0f, engine.solveSampling(4)));
     REQUIRE(engine.samplingPending());
 
-    CHECK(engine.solveSampling(15574, 4));
+    CHECK((g_fieldRate = 50.08f, engine.solveSampling(4)));
     CHECK_FALSE(engine.samplingPending());
     CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
     CHECK(Wire.field(1, 0x0E, 0, 11) == 1125);   // IF_HSYNC_RST, divider / 2
@@ -275,7 +276,7 @@ TEST_CASE("entering bypass drops a deferred sampling solve too")
     // switch reaches doPostPresetLoadSteps(), so nothing else would clear it,
     // and a retry firing afterwards would move the divider out from under a
     // bypass setup that chose its own.
-    REQUIRE_FALSE(engine.solveSampling(0, 4));
+    REQUIRE_FALSE((g_fieldRate = 0.0f, engine.solveSampling(4)));
     REQUIRE(engine.samplingPending());
 
     engine.enterBypass();

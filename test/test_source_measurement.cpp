@@ -11,6 +11,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <string>
+
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
@@ -19,6 +21,23 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 
 using namespace Tv5725;
+
+// The two the sketch supplies. getSourceFieldRate() spins on the board, which
+// is why it is injected rather than called; tv5725Log() reaches the web console
+// there and a buffer here, so the diagnostic is assertable.
+static float g_fieldRate = 50.08f;
+float getSourceFieldRate(boolean) { return g_fieldRate; }
+
+static std::string g_log;
+void tv5725Log(const char *message) { g_log = message; }
+
+static void seedSourceLines(uint16_t lines)
+{
+    Wire.reset();
+    Wire.bank[0][0x1B] = (uint8_t)(lines & 0xFF);
+    Wire.bank[0][0x1C] = (uint8_t)((lines >> 8) & 0x07);
+    g_log.clear();
+}
 
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
@@ -329,5 +348,59 @@ TEST_CASE("a field rate that disagrees with the line count is refused")
     SUBCASE("2% either side is accepted, beyond it is not") {
         CHECK(SourceMeasurement::lineRateFrom(311, 50.9f) != 0u);
         CHECK(SourceMeasurement::lineRateFrom(311, 51.5f) == 0u);
+    }
+}
+
+// --- the line rate, measured off the chip ------------------------------------
+
+TEST_CASE("the line rate is measured rather than handed in")
+{
+    // Field rate x source lines, the two quantities the divider is a function
+    // of, both read where they live rather than passed down from the sketch.
+    seedSourceLines(311);
+    g_fieldRate = 50.08f;
+
+    SourceMeasurement measurement;
+    CHECK(measurement.measureLineRate());
+    CHECK(measurement.sourceLines() == 311);
+    CHECK(measurement.lineRateHz() == 15574u);
+
+    SUBCASE("and it holds both inputs, because nothing downstream can say which was wrong") {
+        CHECK(measurement.fieldRateHz() > 50.0f);
+        CHECK(measurement.fieldRateHz() < 50.1f);
+    }
+
+    SUBCASE("the diagnostic names both inputs and the result") {
+        CHECK(g_log == "sampling: 311 lines x 50.08 Hz -> line rate 15574");
+    }
+}
+
+TEST_CASE("a rate that disagrees with the line count is refused, and says so")
+{
+    // A field rate measured while the source is still settling passes a plain
+    // bounds check comfortably -- 57.9 Hz against a real 50.08 -- and the
+    // divider comes out proportionally wrong.
+    seedSourceLines(311);
+    g_fieldRate = 57.9f;
+
+    SourceMeasurement measurement;
+    CHECK_FALSE(measurement.measureLineRate());
+    CHECK(measurement.lineRateHz() == 0u);
+
+    SUBCASE("and reports what it saw, both halves") {
+        CHECK(measurement.sourceLines() == 311);
+        CHECK(g_log == "sampling: 311 lines x 57.90 Hz -> line rate 0");
+    }
+
+    SUBCASE("an unmeasurable field rate is refused the same way") {
+        g_fieldRate = 0.0f;
+        CHECK_FALSE(measurement.measureLineRate());
+        CHECK(measurement.lineRateHz() == 0u);
+    }
+
+    SUBCASE("so is the 97 lines a preset load leaves behind") {
+        seedSourceLines(97);
+        g_fieldRate = 50.08f;
+        CHECK_FALSE(measurement.measureLineRate());
     }
 }

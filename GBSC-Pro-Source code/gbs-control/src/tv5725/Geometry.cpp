@@ -198,9 +198,10 @@ void Geometry::writeSampling()
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
 
-bool Geometry::solveSampling(uint32_t lineRateHz, uint8_t oversample)
+bool Geometry::solveSampling(uint8_t oversample)
 {
-    if (sampling_.solve(lineRateHz, oversample)) {
+    if (sampling_.measureLineRate()
+        && sampling_.solve(sampling_.lineRateHz(), oversample)) {
         writeSampling();
         samplingPending_ = false;
         return true;

@@ -78,7 +78,7 @@ public:
 
     // setOverSampleRatio() must have settled rto->osr first: the sample clock
     // is the product of the divider and the oversampling.
-    bool solveSampling(uint32_t lineRateHz, uint8_t oversample);
+    bool solveSampling(uint8_t oversample);
 
     // `produced` is capture x 1024 / scale with no horizontalTotal term, so a
     // window shifted by diffHTotal/2 lands where the picture is not.

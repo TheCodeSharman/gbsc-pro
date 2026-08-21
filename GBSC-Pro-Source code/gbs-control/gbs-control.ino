@@ -3322,6 +3322,11 @@ static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
     irWorstLoopMs = 0;
 }
 
+// The sink src/tv5725/ composes its diagnostics for. Declared in
+// SourceMeasurement.h and defined here, so a class under src/ can report without
+// reaching for SerialM -- which lives above it and does not host-compile.
+void tv5725Log(const char *message) { fsDebugPrintf("%s\n", message); }
+
 float getSourceFieldRate(boolean useSPBus)
 {
     double esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
@@ -3518,36 +3523,6 @@ static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
 
     return Tv5725::OutputRaster::modeForPreference(preference,
                                                    pal ? 50.0f : 60.0f);
-}
-
-// The line rate the source is running at, in Hz, or 0 when it cannot be
-// measured. Field rate x source lines -- the two quantities the sampling divider
-// is a function of, and the only inputs Tv5725::SourceMeasurement needs.
-//
-// A measurement, kept HERE rather than in the engine, because
-// getSourceFieldRate() spins. The engine is handed the number.
-static uint32_t measuredLineRateHz()
-{
-    // **A PLAIN BOUNDS CHECK IS NOT ENOUGH.** A field rate measured while the
-    // source is still settling after a preset load passes one comfortably --
-    // 57.9 Hz against a real 50.08 -- and the divider comes out proportionally
-    // wrong: PLLAD_MD 2204 where 2548 is due, on a source locked at 311 lines /
-    // 50.08 Hz. SourceMeasurement::lineRateFrom() cross-checks the rate against the line
-    // count and returns 0 when they disagree.
-    //
-    // **THE CROSS-CHECK IS NECESSARY AND NOT SUFFICIENT, so it says what it
-    // saw.** It catches a rate that disagrees with the line count; it cannot
-    // catch a line count that is simply wrong, because any count above
-    // Capture::PalVtotalMin makes 50 Hz plausible. Both inputs are printed for
-    // that reason: the divider is derived from them and nothing downstream can
-    // report which of them was wrong.
-    // docs/firmware-geometry-engine.md
-    uint16_t lines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    float fieldRate = getSourceFieldRate(0);
-    uint32_t lineRate = Tv5725::SourceMeasurement::lineRateFrom(lines, fieldRate);
-    fsDebugPrintf("sampling: %u lines x %u.%02u Hz -> line rate %u\n", lines,
-                  (unsigned)fieldRate, (unsigned)(fieldRate * 100) % 100, lineRate);
-    return lineRate;
 }
 
 void doPostPresetLoadSteps()
@@ -3883,16 +3858,10 @@ void doPostPresetLoadSteps()
             }
         }
 
-        // **THE SAMPLING DIVIDER, AND IT MUST BE ON THIS SIDE OF THE LATCH.**
-        // PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are ONE quantity in three
-        // registers, and Tv5725::SourceMeasurement is the single owner of all three.
-        //
-        // Directly above latchPLLAD(), and that ordering is the whole point.
-        // PLLAD_LAT is what loads MD, ND, KS, CKOS and ICP into the ADC PLL, so
-        // a divider written AFTER it leaves the PLL running the old value with
-        // every register reading back correct -- solid green screen, nothing to
-        // diagnose from. STATUS_SYNC_PROC_HTOTAL is the one witness, since it
-        // counts real ADC clocks per line and so reports the LATCHED divider.
+        // **THE SAMPLING DIVIDER.** PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are
+        // ONE quantity in three registers, and Tv5725::SourceMeasurement is the
+        // single owner of all three. Tv5725::Adc writes the divider and latches
+        // it, so the write-before-latch ordering is no longer this caller's.
         //
         // AFTER setOverSampleRatio() has settled rto->osr, because the sample
         // clock is the product of the divider and the oversampling.
@@ -3905,7 +3874,7 @@ void doPostPresetLoadSteps()
         if (rto->isCustomPreset) {
             geometry.adoptSampling();
         } else {
-            geometry.solveSampling(measuredLineRateHz(), rto->osr);
+            geometry.solveSampling(rto->osr);
         }
 
         if (rto->isCustomPreset) {
@@ -5886,7 +5855,7 @@ void runSyncWatcher() //
     // And the sampling solve the preset load was too early for, with a worse
     // failure than the raster's.
     //
-    // Geometry::solveSampling() needs a line rate, and the line rate needs a
+    // Geometry::solveSampling() measures the line rate, and that needs a
     // settled line count AND a settled field rate. A cold boot has neither
     // 3.6 s in -- `sampling: 271 lines x 49.22 Hz -> line rate 0` on a source
     // that is 311 lines at 50.08 -- so the solve adopts whatever divider the
@@ -5902,7 +5871,7 @@ void runSyncWatcher() //
     // window is measured in (Tv5725::SourceMeasurement owns PLLAD_MD, IF_HSYNC_RST and
     // SP_RT_HS_SP off one value), so moving it invalidates every window.
     if (geometry.samplingPending() && getStatus16SpHsStable()) {
-        if (geometry.solveSampling(measuredLineRateHz(), rto->osr)) {
+        if (geometry.solveSampling(rto->osr)) {
             geometry.solveFromScratch();
         }
     }

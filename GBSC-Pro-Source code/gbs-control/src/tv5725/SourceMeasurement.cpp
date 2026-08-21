@@ -1,5 +1,7 @@
 #include "SourceMeasurement.h"
 
+#include <stdio.h>
+
 #include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
 #include "InputLine.h"   // the capture write limit, likewise
 
@@ -101,7 +103,41 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
 
 // --- the chosen divider, held ----------------------------------------------
 
-SourceMeasurement::SourceMeasurement() : divider_(0) {}
+SourceMeasurement::SourceMeasurement()
+    : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f)
+{
+}
+
+// The line rate the source is running at, in Hz, or 0 when it cannot be
+// measured -- field rate x source lines, the two quantities the divider is a
+// function of.
+//
+// **A PLAIN BOUNDS CHECK IS NOT ENOUGH.** A field rate measured while the
+// source is still settling after a preset load passes one comfortably -- 57.9
+// Hz against a real 50.08 -- and the divider comes out proportionally wrong:
+// PLLAD_MD 2204 where 2548 is due, on a source locked at 311 lines / 50.08 Hz.
+// lineRateFrom() cross-checks the rate against the line count.
+//
+// **THE CROSS-CHECK IS NECESSARY AND NOT SUFFICIENT, so both inputs are
+// logged.** It catches a rate that disagrees with the line count; it cannot
+// catch a line count that is simply wrong, because any count above
+// CaptureWindow::PalVerticalTotalMin makes 50 Hz plausible, and nothing
+// downstream can report which of the two was at fault.
+// docs/firmware-geometry-engine.md
+bool SourceMeasurement::measureLineRate()
+{
+    sourceLines_ = measureSourceLines();
+    fieldRateHz_ = getSourceFieldRate(0);
+    lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
+
+    char line[72];
+    snprintf(line, sizeof(line), "sampling: %u lines x %u.%02u Hz -> line rate %u",
+             (unsigned)sourceLines_, (unsigned)fieldRateHz_,
+             (unsigned)(fieldRateHz_ * 100) % 100, (unsigned)lineRateHz_);
+    tv5725Log(line);
+
+    return lineRateHz_ != 0;
+}
 
 bool SourceMeasurement::solve(uint32_t lineRateHz, uint8_t oversample)
 {
@@ -120,6 +156,12 @@ void SourceMeasurement::adopt()
 bool SourceMeasurement::usable() const { return divider_ != 0; }
 
 uint16_t SourceMeasurement::divider() const { return divider_; }
+
+uint32_t SourceMeasurement::lineRateHz() const { return lineRateHz_; }
+
+uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
+
+float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
 uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_); }
 

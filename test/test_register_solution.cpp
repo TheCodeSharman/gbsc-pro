@@ -13,6 +13,7 @@
 #include <initializer_list>
 
 #include "CheckNear.h"
+#include "SketchSeam.h"
 #include "fake/Wire.h"
 
 // The bus the register-touching sources link against.

@@ -174,7 +174,7 @@ TEST_CASE("solveSampling computes the divider and writes all three registers")
     Bench bench;
 
     // 311 lines at 50 Hz, which is what the seeds above describe.
-    REQUIRE(bench.engine.solveSampling(15550, 4));
+    REQUIRE((g_fieldRate = 50.08f, bench.engine.solveSampling(4)));
 
     const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4);
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
@@ -201,13 +201,13 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     Bench bench;
     const uint32_t adopted = Wire.field(5, 0x12, 0, 12);
 
-    CHECK_FALSE(bench.engine.solveSampling(0, 4));
+    CHECK_FALSE((g_fieldRate = 0.0f, bench.engine.solveSampling(4)));
     CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)adopted));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
-        REQUIRE(bench.engine.solveSampling(15550, 4));
+        REQUIRE((g_fieldRate = 50.08f, bench.engine.solveSampling(4)));
         const uint32_t solved = Wire.field(5, 0x12, 0, 12);
-        CHECK_FALSE(bench.engine.solveSampling(0, 4));
+        CHECK_FALSE((g_fieldRate = 0.0f, bench.engine.solveSampling(4)));
         CHECK(Wire.field(5, 0x12, 0, 12) == solved);
     }
 }

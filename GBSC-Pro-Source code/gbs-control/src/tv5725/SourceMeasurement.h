@@ -19,7 +19,15 @@
 // pixels. This computes a ceiling and a starting point; the last word is the
 // user's, from the screen.
 
+#include <Arduino.h>   // `boolean`
 #include <stdint.h>
+
+// Both supplied by the sketch. getSourceFieldRate() spins waiting for edges, so
+// it is injected rather than reached for; tv5725Log() routes to the web console
+// there and to a buffer in the host tests, which is what makes the diagnostic
+// assertable.
+float getSourceFieldRate(boolean useSPBus);
+void tv5725Log(const char *message);
 
 namespace Tv5725 {
 
@@ -95,6 +103,11 @@ public:
     // zero it would go on to write.
     SourceMeasurement();
 
+    // Read the line rate off the chip -- field rate x source lines -- and hold
+    // both inputs, because the cross-check inside can say the two disagree but
+    // never which of them was wrong. False when it is unmeasurable.
+    bool measureLineRate();
+
     // Choose one for this line rate. False and NO state change when the rate is
     // unmeasurable, so the previous choice survives a dropped measurement --
     // the safe direction to be wrong in, since the sync watcher re-solves once
@@ -114,6 +127,9 @@ public:
 
     bool usable() const;
     uint16_t divider() const;
+    uint32_t lineRateHz() const;
+    uint16_t sourceLines() const;
+    float fieldRateHz() const;
     uint16_t ifLine() const;
     uint16_t retimeStop() const;
 
@@ -123,6 +139,9 @@ public:
 
 private:
     uint16_t divider_;
+    uint32_t lineRateHz_;
+    uint16_t sourceLines_;
+    float fieldRateHz_;
 };
 
 }  // namespace Tv5725
