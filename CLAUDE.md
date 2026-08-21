@@ -131,8 +131,9 @@ diagnosing "the unit" while able to observe roughly a third of it.
   4/13 — so an NDA register map would still not reach it, and neither MCU's
   firmware addresses it: the HC32 drives one I²C device (0x42, the ADV7280)
   and the ESP drives the TV5725, Si5351, STV9426, PT2257 and the EEPROM. The
-  encoder configures itself from its own MCU and ROM, and reads the sink's
-  EDID over its own DDC master.
+  encoder configures itself from its own MCU and ROM — `MCUSEL` (pin 4) is
+  strapped low through R56, and the firmware is on-die mask ROM, not an
+  external part — and reads the sink's EDID over its own DDC master.
 
 ## "No HDMI" with every register perfect
 
