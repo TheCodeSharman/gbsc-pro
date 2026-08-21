@@ -185,6 +185,10 @@ and letting the next session assume coverage is not.
 - **Check for stray tooling first.** A `soak_watch.py` left running for three
   days starved the websocket server and cost an evening.
   `ps -eo pid,etime,cmd | grep -E 'soak_watch|regpanel|sweeplog'`
+- **`test_the_sampling_divider_is_one_quantity_in_three_registers` fails in the
+  suite and passes alone.** State leaks between the `--source` tests. It presents
+  as a divider fault on the unit and is not one — re-run it by itself before
+  believing it. Unfixed.
 - **The picture is the only judge of a picture.** No register distinguishes "the
   output clock is not running", "the encoder has stopped" and "the TV timed
   out". When a bench result is six clean readings in a row, run a **positive

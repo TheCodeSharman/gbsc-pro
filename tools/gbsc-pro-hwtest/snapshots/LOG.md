@@ -959,4 +959,4 @@ the stop is on the line reset, the input formatter stops producing pixels and th
 frame buffer reads the last frame it holds. Picture frozen, unwritten raster
 green, all 608 config registers correct and `loop()` still running. Diff against
 `after-flash-2026-08-17.json` shows two fields.
-Fixed in b70cddfb3; docs/investigations/handover-2026-08-17.md.
+Fixed in b70cddfb3.

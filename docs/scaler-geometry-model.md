@@ -193,6 +193,50 @@ moved both at once:
 1. Hold the pulse width, move its position; sweep HSCALE; record which glitch.
 2. Hold the position, change the width; sweep HSCALE again.
 
+## The output front porch
+
+The far end of the line needs a reserve, and the raster's edge is the wrong bound.
+Measured on a 1916 px raster by creeping the display window: `VDS_DIS_HB_ST` is
+good at **1900** and wrong at **1910**, so the floor is about **16 px**. Below it
+three artefacts arrive together — a black bar down the right that no zoom closes,
+grey pushed toward red, and a wrapping pixel down the *left* edge. All three clear
+together.
+
+`rasterTotal - 2` is not that bound. It exists only because `VDS_DIS_?B_ST` must
+stay strictly below the total register and wraps rather than clamps, which left a
+front porch of 6 px.
+
+**The reserve is CEA-861's own minimum front porch, taken as a TIME**, the same way
+`syncNs` and `backPorchNs` already are — 1080p60's 88 px at 148.5 MHz is 592.6 ns,
+which is 64 px at 108 MHz and 77 at 129.6. The 60 Hz figure is the standard's
+shortest because the front porch is the one CEA *varies* to absorb the field rate:
+1080p50 runs 528 px against 1080p60's 88. So it is a floor, and whatever is left
+above it stays the picture's.
+
+Vertically it is the standard's lines and needs no conversion. For 1080p that
+gives an active window of **41..1121**, which is the encoder window measured
+independently in *What one display shows* above — 1080 lines to the pixel, from the
+standard rather than from the measurement.
+
+`OutputRaster::activeStop` and `activeLinesStop` carry it, `Axis::farBound` applies
+it, and `Geometry` holds it between solves because `apply()` reads the raster back
+off the chip and no register records a porch. At the bench framing the picture goes
+from ending 6 px short of the raster to 65, with `VDS_HSCALE` 572 against 592.
+
+An `activeStop` of 0 means the raster's own edge, which is what a bypass or a
+custom preset gets — there is no solved raster to take a porch from.
+
+**The near end is not yet bounded the same way.** `activeStart` is threaded but
+always passed 0, so the picture is placed against the write floor rather than
+against the back porch. Horizontally the two nearly coincide, 106 against CEA's
+140. Vertically they do not: the picture starts at line 3 where the encoder
+transmits from 41, so **39 lines are discarded off the top**. Feeding
+`RasterSolution::activeLinesStart` in recovers them exactly.
+
+[`investigations/output-front-porch.md`](investigations/output-front-porch.md) has
+the three models that fitted the readings and were wrong, and why this is not the
+retracted headroom rule returning.
+
 ## The two green regions in an IF line
 
 Measured 2026-08-09 by creeping the capture window with the picture on screen.
@@ -317,10 +361,20 @@ the experiment is two writes and is reversible.
   at dividers 1% apart, which moves the line end by 12 units against a +-3 unit
   uncertainty -- so they do not discriminate. The experiment is a large
   `PLLAD_MD` change and a re-measure.
-  `docs/investigations/handover-2026-08-17.md` has the readings, and records why
-  clamping the capture window is the wrong repair.
+  [`investigations/tail-green.md`](investigations/tail-green.md) has the readings,
+  and records why clamping the capture window is the wrong repair.
 - **The zigzag is not HSCALE-banded.** A manual sweep across the corrupted state
   found no value that cleared it. Cause unknown.
+- **Whether a badly latched black level skews colour measurements.** Auto-clamp is
+  gated on timing stability, so a clamp can latch while timing is unsettled and
+  stay latched; a mode change appears to clear it. Until it is settled, any colour
+  reading taken after a period of unstable sync is suspect. The test is to
+  reproduce the state and force a mode change without touching the source.
+  [`investigations/output-front-porch.md`](investigations/output-front-porch.md).
+- **Where the MS9288A stops sampling the line.** Estimated at 1817 of a 1901 px
+  line from one indirect observation, never measured, and it decides whether a
+  conformant front porch costs visible picture. Creeping the display window down
+  until a black bar appears measures it.
 - **Whether the capture should be centred on the active region rather than the
   IF line.** It would fix the resting sliver, but the active region's edges are
   the thing the chip cannot see.
@@ -336,6 +390,9 @@ the experiment is two writes and is reversible.
 - [`investigations/moving-write-origin.md`](investigations/moving-write-origin.md)
   — why the write start is recomputed and not inherited, and the loss model that
   fitted the readings and was wrong anyway
+- [`investigations/output-front-porch.md`](investigations/output-front-porch.md)
+  — the far end of the line: three models that fitted and were wrong, and the
+  black level that may latch
 - [`riscpc-game-modes.md`](investigations/riscpc-game-modes.md) — the mode-side context, and
   earlier geometry work whose formulae this supersedes
 - [`tv5725-chip.md`](tv5725-chip.md) — what the status registers do and do not
