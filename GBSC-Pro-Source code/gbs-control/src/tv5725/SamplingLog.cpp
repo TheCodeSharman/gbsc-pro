@@ -10,12 +10,22 @@ namespace Tv5725 {
 
 namespace {
 
+// One byte, because the console cannot carry five more columns at 60 Hz.
+uint8_t ifStatusBits()
+{
+    return (uint8_t)(GBS::STATUS_IF_HT_OK::read()
+                     | (GBS::STATUS_IF_VT_OK::read() << 1)
+                     | (GBS::STATUS_IF_HT_BAD::read() << 2)
+                     | (GBS::STATUS_IF_VT_BAD::read() << 3)
+                     | (GBS::STATUS_IF_NO_SYNC::read() << 4));
+}
+
 // Short and fixed-width so a long capture stays readable and parses without a
 // schema. One line per sample; the leader is what a log filter greps for.
 void emitLine(uint32_t sinceMs, uint16_t divider)
 {
-    char line[80];
-    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u",
+    char line[88];
+    snprintf(line, sizeof(line), "smp,%lu,%u,%u,%u,%u,%u,%u,%u,%u",
              (unsigned long)sinceMs,
              (unsigned)divider,
              (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read(),
@@ -23,7 +33,8 @@ void emitLine(uint32_t sinceMs, uint16_t divider)
              (unsigned)GBS::STATUS_SYNC_PROC_HTOTAL::read(),
              (unsigned)GBS::HPERIOD_IF::read(),
              (unsigned)GBS::VPERIOD_IF::read(),
-             (unsigned)GBS::STATUS_SYNC_PROC_HSACT::read());
+             (unsigned)GBS::STATUS_SYNC_PROC_HSACT::read(),
+             (unsigned)ifStatusBits());
     tv5725Log(line);
 }
 
@@ -48,7 +59,7 @@ void SamplingLog::monitor(uint16_t intervalMs, uint32_t durationMs)
     lastSampleMs_ = startedMs_ - interval_;
     durationMs_ = durationMs;
     tv5725Log("smp,header,ms,divider,pllad_lock,sp_vtotal,sp_htotal,"
-              "hperiod_if,vperiod_if,hsact");
+              "hperiod_if,vperiod_if,hsact,ifbits");
 }
 
 uint32_t SamplingLog::lineRateFromHPeriod(uint16_t hperiod)
@@ -77,7 +88,7 @@ void SamplingLog::sweep(uint16_t low, uint16_t high, uint16_t step,
     restoreDivider_ = GBS::PLLAD_MD::read();
     divider_ = low;
     tv5725Log("smp,header,ms_since_latch,divider,pllad_lock,sp_vtotal,"
-              "sp_htotal,hperiod_if,vperiod_if,hsact");
+              "sp_htotal,hperiod_if,vperiod_if,hsact,ifbits");
     applyStep();
 }
 
