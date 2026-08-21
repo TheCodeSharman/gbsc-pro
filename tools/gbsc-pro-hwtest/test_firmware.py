@@ -1062,6 +1062,40 @@ def test_unit_survives_a_hostile_pllad(host, source):
 PREFS_PATH = "/preferencesv2.txt"
 PREFS_BYTES = 39
 
+# Byte 15 held wantFullHeight, an option nothing acted on. The file is
+# positional and unversioned and the load path admits any file of at least
+# PREFS_BYTES, so the byte could not be dropped without shifting volume, input
+# selection and the BCSH values on every file already on flash. It is written as
+# a constant and discarded on read.
+PREFS_RESERVED = 15
+PREFS_RESERVED_VALUE = "0"
+
+
+def _toggle_frame_time_lock(host):
+    """/uc?5 toggles frame time lock and saves the whole file as a side effect."""
+    get(host, "/uc?5")
+    time.sleep(2.5)
+
+
+def test_the_reserved_preferences_byte_holds_its_place(host):
+    """A save must write the reserved byte, keeping the file PREFS_BYTES long.
+
+    Dropping it is the silent failure: an existing 39-byte file still passes the
+    loader's size check while every field after byte 15 reads shifted by one.
+    """
+    _toggle_frame_time_lock(host)
+    _toggle_frame_time_lock(host)
+
+    prefs = fs_read(host, PREFS_PATH)
+    assert prefs and len(prefs) == PREFS_BYTES, (
+        f"{PREFS_PATH} is {len(prefs) if prefs else 0} bytes after a save, "
+        f"expected {PREFS_BYTES}"
+    )
+    assert prefs[PREFS_RESERVED] == PREFS_RESERVED_VALUE, (
+        f"byte {PREFS_RESERVED} reads {prefs[PREFS_RESERVED]!r}, expected "
+        f"{PREFS_RESERVED_VALUE!r}. Every field after it is now shifted"
+    )
+
 
 def test_bootlog_reports_the_preferences_read(host):
     """/bootlog must show how this boot loaded its settings.
@@ -1124,7 +1158,15 @@ def test_preferences_survive_a_round_trip(host):
 
     /uc?5 toggles frame time lock and saves, so toggling twice should land
     exactly where it started, byte for byte.
+
+    Primed with a toggle pair first so the baseline is a file THIS firmware
+    wrote. Otherwise a file left by a build with a different field set differs at
+    those positions on the first save, and the collateral this test looks for is
+    indistinguishable from that one-off migration.
     """
+    _toggle_frame_time_lock(host)
+    _toggle_frame_time_lock(host)
+
     before = fs_read(host, PREFS_PATH)
     assert before and len(before) == PREFS_BYTES, (
         f"{PREFS_PATH} is {len(before) if before else 0} bytes, expected "
@@ -1132,8 +1174,7 @@ def test_preferences_survive_a_round_trip(host):
     )
 
     try:
-        get(host, "/uc?5")
-        time.sleep(2.5)
+        _toggle_frame_time_lock(host)
         middle = fs_read(host, PREFS_PATH)
         assert middle and len(middle) == PREFS_BYTES, "file went malformed mid-toggle"
         assert middle[1] != before[1], (
@@ -1146,8 +1187,7 @@ def test_preferences_survive_a_round_trip(host):
             f"before={before!r} after={middle!r}"
         )
     finally:
-        get(host, "/uc?5")
-        time.sleep(2.5)
+        _toggle_frame_time_lock(host)
 
     after = fs_read(host, PREFS_PATH)
     assert after == before, (
