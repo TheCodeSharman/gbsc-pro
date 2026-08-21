@@ -18,6 +18,9 @@
 #include "src/tv5725/Adc.h"
 #include "src/tv5725/Chip.h"
 #include "src/tv5725/InputFormatter.h"
+#include "src/tv5725/HdBypass.h"
+#include "src/tv5725/ModeDetect.h"
+#include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/Gpio.h"
 #include "src/tv5725/Interrupts.h"
 #include "src/tv5725/VideoProcessor.h"
@@ -26,6 +29,9 @@ class GBS : public Tv5725::Tv5725, public Tv5725::VideoProcessor,
             public Tv5725::Interrupts,
             public Tv5725::Gpio,
             public Tv5725::InputFormatter,
+            public Tv5725::HdBypass,
+            public Tv5725::ModeDetect,
+            public Tv5725::Deinterlacer,
             public Tv5725::Chip,
             public Tv5725::Adc,
             public Tv5725::FrameBuffer,

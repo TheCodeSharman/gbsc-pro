@@ -45,9 +45,6 @@ static unsigned long Tim_menuItem = 0;
 static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include <Wire.h>
 
-#include "presetMdSection.h"
-#include "presetDeinterlacerSection.h"
-#include "presetHdBypassSection.h"
 
 #include "options.h"
 #include "slot.h"
@@ -60,6 +57,9 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/PresetLoad.h"
 #include "src/tv5725/FrameBuffer.h"
 #include "src/tv5725/InputFormatter.h"
+#include "src/tv5725/HdBypass.h"
+#include "src/tv5725/ModeDetect.h"
+#include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
@@ -1117,44 +1117,6 @@ void zeroAll()
     }
 }
 
-void loadHdBypassSection()
-{
-    uint16_t index = 0;
-    uint8_t bank[16];
-    writeOneByte(0xF0, 1);
-    for (int j = 3; j <= 5; j++) {
-        copyBank(bank, presetHdBypassSection, &index);
-        writeBytes(j * 16, bank, 16);
-    }
-}
-
-void loadPresetDeinterlacerSection()
-{
-    uint16_t index = 0;
-    uint8_t bank[16];
-    writeOneByte(0xF0, 2);
-    for (int j = 0; j <= 3; j++) {
-        copyBank(bank, presetDeinterlacerSection, &index);
-        writeBytes(j * 16, bank, 16);
-    }
-}
-
-void loadPresetMdSection()
-{
-    uint16_t index = 0;
-    uint8_t bank[16];
-    writeOneByte(0xF0, 1);
-    for (int j = 6; j <= 7; j++) {
-        copyBank(bank, presetMdSection, &index);
-        writeBytes(j * 16, bank, 16);
-    }
-    bank[0] = pgm_read_byte(presetMdSection + index);
-    bank[1] = pgm_read_byte(presetMdSection + index + 1);
-    bank[2] = pgm_read_byte(presetMdSection + index + 2);
-    bank[3] = pgm_read_byte(presetMdSection + index + 3);
-    writeBytes(8 * 16, bank, 4);
-}
-
 // The bytes, and only the bytes. Everything that is not a table byte lives in
 // writeProgramArrayNew() below, so that when the twelve tables go this function
 // is what gets replaced and the mode-state work around it survives untouched.
@@ -1353,13 +1315,13 @@ static void writePresetTable(const uint8_t *programArray, boolean skipMDSection)
 // a Tv5725:: subsystem.
 static void loadStaticSections(boolean skipMDSection)
 {
-  loadPresetDeinterlacerSection();
+  Tv5725::Deinterlacer::init();
 
   if (!skipMDSection) {
-    loadPresetMdSection();
+    Tv5725::ModeDetect::init();
 
-    // Beside the loadPresetMdSection() call and travelling with it: both
-    // depend on runtime state rather than on any table.
+    // Beside ModeDetect::init() and travelling with it: both depend on
+    // runtime state rather than on any table.
     GBS::MD_SEL_VGA60::write(rto->syncTypeCsync ? 0 : 1);
     GBS::MD_HD1250P_CNTRL::write(rto->medResLineCount);
   }
@@ -1593,8 +1555,8 @@ void setResetParameters()
     GBS::PLL_MS::write(2);
     GBS::PAD_CONTROL_00_0x48::write(0x2b);
     GBS::PAD_CONTROL_01_0x49::write(0x1f); 
-    loadHdBypassSection();
-    loadPresetMdSection();
+    Tv5725::HdBypass::init();
+    Tv5725::ModeDetect::init();
     setAdcParametersGainAndOffset();
     GBS::SP_PRE_COAST::write(9);
     GBS::SP_POST_COAST::write(18);  
@@ -4673,7 +4635,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     externalClockGenResetClock();
     updateSpDynamic(0);
-    loadHdBypassSection();
+    Tv5725::HdBypass::init();
     if (GBS::ADC_UNUSED_62::read() != 0x00) {
         if (uopt->presetPreference != 2) {
             serialCommand = 'D';
@@ -4958,7 +4920,7 @@ void bypassModeSwitch_RGBHV()
     // bypass register writes below belong once the engine owns them.
     geometry.enterBypass();
 
-    loadHdBypassSection();
+    Tv5725::HdBypass::init();
     externalClockGenResetClock();
     FrameSync::cleanup();
     GBS::ADC_UNUSED_62::write(0x00);

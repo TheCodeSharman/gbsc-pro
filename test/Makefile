@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
+.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -295,6 +295,41 @@ input-formatter:
 	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp
 	@"$(OUT)/test_input_formatter"
 
+## hd-bypass: host unit tests for Tv5725::HdBypass
+#
+# The HD bypass block's resting state -- what the two bypass switches overwrite
+# per mode, and the gains, offsets and DVI-mode blanking they never touch. Same
+# fake-Wire seam as input-formatter.
+hd-bypass:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_hd_bypass" \
+	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp
+	@"$(OUT)/test_hd_bypass"
+
+## mode-detect: host unit tests for Tv5725::ModeDetect
+#
+# The thresholds Mode Detect names a standard by. getVideoMode() rewrites eleven
+# of them dithered by random(-2,2) off a static captured on its first read, so
+# what init() writes is the centre they wander around.
+mode-detect:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_mode_detect" \
+	  "$(HERE)/test_mode_detect.cpp" src/tv5725/ModeDetect.cpp
+	@"$(OUT)/test_mode_detect"
+
+## deinterlacer: host unit tests for Tv5725::Deinterlacer
+#
+# The whole of segment 2, asserted as a byte image against the table it
+# replaced: a field nobody thought to list is invisible to per-field checks.
+deinterlacer:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_deinterlacer" \
+	  "$(HERE)/test_deinterlacer.cpp" src/tv5725/Deinterlacer.cpp
+	@"$(OUT)/test_deinterlacer"
+
 ## geometry-raster: host unit tests for what the engine does while the source is unsettled
 #
 # The geometry engine, off the board. Geometry.cpp was excluded from every host
@@ -381,7 +416,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc sampling-log
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries
