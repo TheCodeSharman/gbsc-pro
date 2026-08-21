@@ -30,7 +30,6 @@ static unsigned long lastVsyncLock = millis();
 #endif
 
 static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t numValues);
-const uint8_t *loadPresetFromFS(byte forVideoMode);
 
 /*
 TIM
@@ -200,7 +199,6 @@ const char *final_version = full_version.c_str();
 #define OSD_RESOLUTION_CLOSE_TIME 20000 // 20 sec
 #include "OSD_TV/remote.h"
 #include "OSD_TV/OSD_stv9426.h"
-#include "OSD_TV/profile_name.h"
 #include "OSD_TV/PT2257.h"
 
 #define New_oled_menuItem_Start 153
@@ -304,9 +302,6 @@ void handle_s(void);
 void handle_t(void);
 void handle_u(void);
 void handle_v(void);
-void handle_w(void);
-void handle_x(void);
-void handle_y(void);
 void handle_z(void);
 void handle_A(void);
 void handle_caret(void);
@@ -368,9 +363,6 @@ static const MenuEntry menuTable[] = {
     {'t', handle_t}, // ASCII 116
     {'u', handle_u}, // ASCII 117
     {'v', handle_v}, // ASCII 118
-    {'w', handle_w}, // ASCII 119
-    {'x', handle_x}, // ASCII 120
-    {'y', handle_y}, // ASCII 121
     {'z', handle_z}, // ASCII 122
 
 
@@ -617,7 +609,6 @@ static void LoadDefault()
     rto->phaseSP = 16;                 
     rto->failRetryAttempts = 0;        
     rto->presetID = 0;                 
-    rto->isCustomPreset = false;       
     rto->HPLLState = 0;
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
@@ -654,8 +645,6 @@ static bool getHexParam(AsyncWebServerRequest *request, const char *name, long l
 static void submitRegisterJob(AsyncWebServerRequest *request, const RegisterQueue::Job &job);
 static void serviceRegisterQueue();
 #endif
-static String presetPathForVideoMode(uint8_t videoMode, Ascii8 slot);
-bool savePresetToFS();
 void UpDisplay(void);
 void printBinary(unsigned char num);
 void turnOffWiFi();
@@ -689,27 +678,11 @@ void UpDisplay(void)
     if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
         videoMode = rto->videoStandardInput;
     }
-    if (uopt->presetPreference != 2) 
-    {
-        rto->useHdmiSyncFix = 1;
-        if (rto->videoStandardInput == 14) {
-            rto->videoStandardInput = 15;
-        } else {
-            applyPresets(videoMode);
-        }
+    rto->useHdmiSyncFix = 1;
+    if (rto->videoStandardInput == 14) {
+        rto->videoStandardInput = 15;
     } else {
-        // printf("out off-1\n");
-        setOutModeHdBypass(false); //    false
-        if (rto->videoStandardInput != 15) {
-            rto->autoBestHtotalEnabled = 0;
-            if (rto->applyPresetDoneStage == 11) {
-                rto->applyPresetDoneStage = 1;
-            } else {
-                rto->applyPresetDoneStage = 10;
-            }
-        } else {
-            rto->applyPresetDoneStage = 1;
-        }
+        applyPresets(videoMode);
     }
 }
 
@@ -1082,14 +1055,6 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
         GBS::write(lastSegment, slaveRegister, values, numValues);
 }
 
-void copyBank(uint8_t *bank, const uint8_t *programArray, uint16_t *index)
-{
-    for (uint8_t x = 0; x < 16; ++x) {
-        bank[x] = pgm_read_byte(programArray + *index);
-        (*index)++;
-    }
-}
-
 boolean videoStandardInputIsPalNtscSd()
 {
     if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
@@ -1115,226 +1080,6 @@ void zeroAll()
             writeBytes(z * 16, bank, 16);
         }
     }
-}
-
-// The bytes, and only the bytes. Everything that is not a table byte lives in
-// writeProgramArrayNew() below, so that when the twelve tables go this function
-// is what gets replaced and the mode-state work around it survives untouched.
-static void writePresetTable(const uint8_t *programArray)
-{
-  uint16_t index = 0;
-  uint8_t bank[16];
-  uint8_t y = 0;
-
-  // Read live and written back below in place of the table's own bytes, so the
-  // preset's 0x46 and 0x47 are discarded and these two registers are never
-  // loaded from a table.
-  //
-  // It is not defending against different data: all twelve tables carry 0x7f
-  // and 0x17, which is also what the chip reads when nothing is held in reset.
-  // The two agree in the steady state, so this only does anything when a preset
-  // loads while the firmware holds some block in reset -- it preserves that
-  // transient instead of releasing it early. It exists only because a table has
-  // bytes here, and goes with the tables.
-  uint8_t reset46 = GBS::RESET_CONTROL_0x46::read();
-  uint8_t reset47 = GBS::RESET_CONTROL_0x47::read();
-
-  for (; y < 6; y++)
-  {
-    writeOneByte(0xF0, (uint8_t)y);
-    switch (y)
-    {
-    case 0:
-      // MUST SURVIVE THE TABLES. The two useHdmiSyncFix patches below are a
-      // board-level workaround, not preset data: they clear s0_44[0] and set
-      // s0_49[2] on top of whatever the table says. They are byte patches only
-      // because a byte is what is passing through here -- once the bring-up
-      // block owns these registers they become two ordinary field writes after
-      // it runs, not a special case inside a loop.
-      for (int j = 0; j <= 1; j++)
-      {
-        for (int x = 0; x <= 15; x++)
-        {
-          if (j == 0 && x == 4)
-          {
-            if (rto->useHdmiSyncFix)
-            {
-              bank[x] = pgm_read_byte(programArray + index) & ~(1 << 0);
-            }
-            else
-            {
-              bank[x] = pgm_read_byte(programArray + index);
-            }
-          }
-          else if (j == 0 && x == 6)
-          {
-            bank[x] = reset46;
-          }
-          else if (j == 0 && x == 7)
-          {
-            bank[x] = reset47;
-          }
-          else if (j == 0 && x == 9)
-          {
-            if (rto->useHdmiSyncFix)
-            {
-              bank[x] = pgm_read_byte(programArray + index) | (1 << 2);
-            }
-            else
-            {
-              bank[x] = pgm_read_byte(programArray + index);
-            }
-          }
-          else
-          {
-            bank[x] = pgm_read_byte(programArray + index);
-          }
-          index++;
-        }
-        writeBytes(0x40 + (j * 16), bank, 16);
-      }
-      copyBank(bank, programArray, &index);
-      writeBytes(0x90, bank, 16);
-      break;
-    case 1:
-      for (int j = 0; j <= 2; j++)
-      {
-        copyBank(bank, programArray, &index);
-        if (j == 0)
-        {
-          bank[0] = bank[0] & ~(1 << 5);
-          bank[1] = bank[1] | (1 << 0);
-          bank[12] = bank[12] & 0x0f;
-          bank[13] = 0;
-        }
-        writeBytes(j * 16, bank, 16);
-      }
-      // The MD section is not table data. Tv5725::ModeDetect owns s1 0x60..0x83
-      // and BringUp::init() applies it.
-      break;
-    case 2:
-      // **NOT A TABLE SEGMENT AT ALL.** No preset writes segment 2:
-      // presetRegisterRanges covers 0, 1, 3, 4 and 5, and the twelve archived
-      // tables contain no s2 byte. Tv5725::Deinterlacer owns it.
-      break;
-    case 3:
-      for (int j = 0; j <= 7; j++)
-      {
-        copyBank(bank, programArray, &index);
-
-        writeBytes(j * 16, bank, 16);
-      }
-
-      for (int x = 0; x <= 15; x++)
-      {
-        writeOneByte(0x80 + x, 0x00);
-      }
-      break;
-    case 4:
-      for (int j = 0; j <= 5; j++)
-      {
-        copyBank(bank, programArray, &index);
-        writeBytes(j * 16, bank, 16);
-      }
-      break;
-    case 5:
-      for (int j = 0; j <= 6; j++)
-      {
-        for (int x = 0; x <= 15; x++)
-        {
-          bank[x] = pgm_read_byte(programArray + index);
-          if (index == 322)
-          {
-            if (rto->inputIsYpBpR && Info_sate == 0) //&& SeleInputSource == S_YUV)
-              bitClear(bank[x], 6);
-            else if (rto->inputIsYpBpR == false && Info_sate == 0) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs))
-              bitSet(bank[x], 6);
-          }
-
-          if (index == 323)
-          {
-            if (rto->inputIsYpBpR && Info_sate == 0) //&& SeleInputSource == S_YUV)
-            {
-              bitSet(bank[x], 1);
-              bitClear(bank[x], 2);
-              bitSet(bank[x], 3);
-            }
-            else if (rto->inputIsYpBpR == false && Info_sate == 0) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs))
-            {
-              bitClear(bank[x], 1);
-              bitClear(bank[x], 2);
-              bitClear(bank[x], 3);
-            }
-          }
-
-          if (index == 352)
-          {
-            bank[x] = 0x02;
-          }
-          if (index == 375)
-          {
-            if (videoStandardInputIsPalNtscSd())
-            {
-              bank[x] = 0x6b;
-            }
-            else
-            {
-              bank[x] = 0x02;
-            }
-          }
-          if (index == 382)
-          {
-            bitSet(bank[x], 5);
-          }
-          if (index == 407)
-          {
-            bitSet(bank[x], 0);
-          }
-          index++;
-        }
-        writeBytes(j * 16, bank, 16);
-      }
-      break;
-    }
-  }
-
-}
-
-// The two blobs that are NOT preset data, applied whether or not a table loaded.
-//
-void writeProgramArrayNew(const uint8_t *programArray)
-{
-  FrameSync::cleanup();
-
-  // Read before the table write, which is also where the sentinel has to be
-  // cleared: the byte loop reads videoStandardInput while it runs, to choose
-  // the table's byte at index 375.
-  const Tv5725::PresetLoad load(rto->videoStandardInput,
-                                GBS::ADC_INPUT_SEL::read(),
-                                uopt->preferScalingRgbhv,
-                                rto->isValidForScalingRGBHV);
-
-  rto->videoStandardInput = load.videoStandardInput();
-  rto->outModeHdBypass = 0; // Output HD Bypass
-  rto->inputIsYpBpR = load.inputIsYpBpR();
-
-  // **NULL IS THE NORMAL CASE.** The bring-up block, the subsystem classes and
-  // the geometry engine write every byte a scaling table would. Only a
-  // CUSTOM preset arrives with a table, and that is a register dump loaded from
-  // the filesystem -- it goes when a slot records the inputs to the calculation.
-  //
-  // **THE POSITION IS LOAD-BEARING.** The byte loop reads
-  // rto->videoStandardInput, so it has to sit after the three assignments above
-  // and before videoStandardInputAfterLoad() below.
-  if (programArray != 0) {
-    writePresetTable(programArray);
-  }
-
-  if (load.enableScalingRgbhv())
-  {
-    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-  }
-  rto->videoStandardInput = load.videoStandardInputAfterLoad();
 }
 
 // The preset id, as the tables carried it in their s1_2B byte: low nibble the
@@ -1367,24 +1112,48 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
   return code | (pal ? 0x10 : 0x00);
 }
 
-// A preset load with nothing loaded: the mode state a load decides, and then
-// every register computed. `mode` is the output resolution this load is for and
-// is remembered for doPostPresetLoadSteps(), which solves the raster from it.
+// A preset load: the mode state a load decides, and nothing else. Every
+// register is computed afterwards, from `mode` -- the output resolution this
+// load is for, remembered for doPostPresetLoadSteps(), which solves the raster
+// from it.
 //
-// The two bytes at s1_2B and s1_2C are reset here because every table wrote
-// them: the id and custom flag, and the option bits, which otherwise latch
-// across loads. PALFORCED60 in particular is set by doPostPresetLoadSteps() and
-// has no other clear.
+// s1_2B and s1_2C are cleared here because nothing else clears them and they
+// latch across loads. PALFORCED60 in particular is set by
+// doPostPresetLoadSteps() and has no other writer.
 void loadComputedPreset(const Tv5725::OutputMode *mode, uint8_t presetId)
 {
   rto->outputMode = mode;
   GBS::GBS_PRESET_ID::write(presetId);
+
+  // Nothing reads this any more. It is cleared because a unit upgraded from a
+  // firmware that had custom presets can have it set on the chip, and a
+  // register dump showing "custom" with no such thing in the build reads as a
+  // fault.
   GBS::GBS_PRESET_CUSTOM::write(0);
   GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
   GBS::GBS_OPTION_SCALING_RGBHV::write(0);
   GBS::GBS_OPTION_PALFORCED60_ENABLED::write(0);
   GBS::GBS_RUNTIME_FTL_ADJUSTED::write(0);
-  writeProgramArrayNew(0);
+
+  FrameSync::cleanup();
+
+  // Which standard this load lands on, and what it implies for the ADC input
+  // and the scaling-RGBHV option. Pure integer logic over rto->, so it lives in
+  // Tv5725::PresetLoad and is checked by test_preset_load.cpp.
+  const Tv5725::PresetLoad load(rto->videoStandardInput,
+                                GBS::ADC_INPUT_SEL::read(),
+                                uopt->preferScalingRgbhv,
+                                rto->isValidForScalingRGBHV);
+
+  rto->videoStandardInput = load.videoStandardInput();
+  rto->outModeHdBypass = 0;
+  rto->inputIsYpBpR = load.inputIsYpBpR();
+
+  if (load.enableScalingRgbhv())
+  {
+    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
+  }
+  rto->videoStandardInput = load.videoStandardInputAfterLoad();
 }
 
 void activeFrameTimeLockInitialSteps()
@@ -1489,7 +1258,6 @@ void setResetParameters()
     GBS::ADC_UNUSED_65::write(0);
     GBS::ADC_UNUSED_66::write(0);
     GBS::ADC_UNUSED_67::write(0);
-    GBS::GBS_PRESET_CUSTOM::write(0);
     GBS::GBS_PRESET_ID::write(0);
     GBS::GBS_OPTION_SCALING_RGBHV::write(0);
     GBS::GBS_OPTION_PALFORCED60_ENABLED::write(0);
@@ -1644,21 +1412,19 @@ void applyYuvPatches()
     GBS::DEC_MATRIX_BYPS::write(1);   //YUV 转RGB
     GBS::IF_MATRIX_BYPS::write(1);   // 1 旁路 0执行 rgb2yuv
 
-    if (GBS::GBS_PRESET_CUSTOM::read() == 0) {
 
-        GBS::VDS_Y_GAIN::write(128);
-        GBS::VDS_UCOS_GAIN::write(28);
-        GBS::VDS_VCOS_GAIN::write(41);
-        
-        GBS::ADC_RGCTRL::write(0x33);
-        GBS::ADC_GGCTRL::write(0x33);
-        GBS::ADC_BGCTRL::write(0x33);
+    GBS::VDS_Y_GAIN::write(128);
+    GBS::VDS_UCOS_GAIN::write(28);
+    GBS::VDS_VCOS_GAIN::write(41);
+    
+    GBS::ADC_RGCTRL::write(0x33);
+    GBS::ADC_GGCTRL::write(0x33);
+    GBS::ADC_BGCTRL::write(0x33);
 
-        GBS::VDS_Y_OFST::write(0x0E);//0x0a
-        GBS::VDS_U_OFST::write(0x03);//0x05
-        GBS::VDS_V_OFST::write(0x04);//0x06
+    GBS::VDS_Y_OFST::write(0x0E);//0x0a
+    GBS::VDS_U_OFST::write(0x03);//0x05
+    GBS::VDS_V_OFST::write(0x04);//0x06
 
-    }
     if (uopt->wantOutputComponent) 
     {
         applyComponentColorMixing();
@@ -1677,14 +1443,12 @@ void applyRGBPatches()
     GBS::DEC_MATRIX_BYPS::write(0);   //0: 跳过 CSC，信号直接通过
     GBS::IF_MATRIX_BYPS::write(1);
 
-    if (GBS::GBS_PRESET_CUSTOM::read() == 0) {
-        GBS::VDS_Y_GAIN::write(0x80);
-        GBS::VDS_UCOS_GAIN::write(0x1c);
-        GBS::VDS_VCOS_GAIN::write(0x29);
-        GBS::VDS_Y_OFST::write(0x00);
-        GBS::VDS_U_OFST::write(0x00);
-        GBS::VDS_V_OFST::write(0x00);
-    }
+    GBS::VDS_Y_GAIN::write(0x80);
+    GBS::VDS_UCOS_GAIN::write(0x1c);
+    GBS::VDS_VCOS_GAIN::write(0x29);
+    GBS::VDS_Y_OFST::write(0x00);
+    GBS::VDS_U_OFST::write(0x00);
+    GBS::VDS_V_OFST::write(0x00);
 
     if (uopt->wantOutputComponent) {
         applyComponentColorMixing();
@@ -3160,15 +2924,6 @@ void doPostPresetLoadSteps()
 
     // if(Info_sate == 0)
     {
-        if (uopt->enableAutoGain) {
-            if (uopt->presetPreference == OutputCustomized) 
-            {
-                adco->r_gain = GBS::ADC_RGCTRL::read();
-                adco->g_gain = GBS::ADC_GGCTRL::read();
-                adco->b_gain = GBS::ADC_BGCTRL::read();
-            }
-        }
-
         if (rto->videoStandardInput == 0) {
             uint8_t videoMode = getVideoMode();
             if (videoMode > 0) {
@@ -3177,7 +2932,6 @@ void doPostPresetLoadSteps()
         }
 
         rto->presetID = GBS::GBS_PRESET_ID::read();
-        rto->isCustomPreset = GBS::GBS_PRESET_CUSTOM::read();
 
         GBS::ADC_UNUSED_64::write(0);
         GBS::ADC_UNUSED_65::write(0);
@@ -3185,9 +2939,7 @@ void doPostPresetLoadSteps()
         GBS::ADC_UNUSED_67::write(0);
         GBS::PAD_CKIN_ENZ::write(0);
 
-        if (!rto->isCustomPreset) {
-            prepareSyncProcessor();
-        }
+        prepareSyncProcessor();
         if (rto->videoStandardInput == 14) {
 
             if (rto->syncTypeCsync == false) {
@@ -3267,10 +3019,8 @@ void doPostPresetLoadSteps()
 
         setAndUpdateSogLevel(rto->currentLevelSOG);
 
-        if (!rto->isCustomPreset) {
 
-            setAdcParametersGainAndOffset();
-        }
+        setAdcParametersGainAndOffset();
 
         GBS::GPIO_CONTROL_00::write(0x67);
         GBS::GPIO_CONTROL_01::write(0x00);
@@ -3286,180 +3036,170 @@ void doPostPresetLoadSteps()
         rto->sourceDisconnected = false;
         rto->boardHasPower = true;
 
-        if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-            rto->isCustomPreset = 0;
+        GBS::IF_INI_ST::write(0);
+
+        GBS::IF_HS_INT_LPF_BYPS::write(0);
+
+        GBS::IF_HS_SEL_LPF::write(1);
+        GBS::IF_HS_PSHIFT_BYPS::write(1);
+
+        GBS::IF_LD_WRST_SEL::write(1);
+
+        // SP_RT_HS_ST stays: the retime window STARTS at 0 whatever the
+        // divider is, in all twelve preset tables and in every runtime path,
+        // so it is a constant rather than part of the quantity below.
+        GBS::SP_RT_HS_ST::write(0);
+        // SP_RT_HS_SP is not written here. It is 93% of PLLAD_MD, one of
+        // the three registers Tv5725::SourceMeasurement owns off a single
+        // held divider, and splitting it from the other two is how it ends
+        // up describing a line the ADC is not sampling.
+
+        GBS::VDS_PK_LB_CORE::write(0);
+        GBS::VDS_PK_LH_CORE::write(0);
+        if (rto->presetID == 0x05 || rto->presetID == 0x15) {
+
+            GBS::VDS_PK_LB_GAIN::write(0x16);
+            GBS::VDS_PK_LH_GAIN::write(0x0A);
+        } else {
+            GBS::VDS_PK_LB_GAIN::write(0x16);
+            GBS::VDS_PK_LH_GAIN::write(0x18);
         }
+        GBS::VDS_PK_VL_HL_SEL::write(0);
+        GBS::VDS_PK_VL_HH_SEL::write(0);
 
-        if (!rto->isCustomPreset) {
-            GBS::IF_INI_ST::write(0);
+        GBS::VDS_STEP_GAIN::write(1);
 
-            GBS::IF_HS_INT_LPF_BYPS::write(0);
+        setOverSampleRatio(2, true);
 
-            GBS::IF_HS_SEL_LPF::write(1);
-            GBS::IF_HS_PSHIFT_BYPS::write(1);
+        if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
 
-            GBS::IF_LD_WRST_SEL::write(1);
-
-            // SP_RT_HS_ST stays: the retime window STARTS at 0 whatever the
-            // divider is, in all twelve preset tables and in every runtime path,
-            // so it is a constant rather than part of the quantity below.
-            GBS::SP_RT_HS_ST::write(0);
-            // SP_RT_HS_SP is not written here. It is 93% of PLLAD_MD, one of
-            // the three registers Tv5725::SourceMeasurement owns off a single
-            // held divider, and splitting it from the other two is how it ends
-            // up describing a line the ADC is not sampling.
-
-            GBS::VDS_PK_LB_CORE::write(0);
-            GBS::VDS_PK_LH_CORE::write(0);
-            if (rto->presetID == 0x05 || rto->presetID == 0x15) {
-
-                GBS::VDS_PK_LB_GAIN::write(0x16);
-                GBS::VDS_PK_LH_GAIN::write(0x0A);
-            } else {
-                GBS::VDS_PK_LB_GAIN::write(0x16);
-                GBS::VDS_PK_LH_GAIN::write(0x18);
-            }
-            GBS::VDS_PK_VL_HL_SEL::write(0);
-            GBS::VDS_PK_VL_HH_SEL::write(0);
-
-            GBS::VDS_STEP_GAIN::write(1);
-
-            setOverSampleRatio(2, true);
-
-            if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
-
-                GBS::ADC_FLTR::write(3);
-                GBS::PLLAD_KS::write(2);
-                setOverSampleRatio(4, true);
-                Tv5725::InputFormatter::applyScanMode(
-                    Tv5725::InputFormatter::LineDoubled);
-                geometry.scanModeChanged(true);
-                GBS::IF_SEL_WEN::write(0);
-                if (rto->inputIsYpBpR) {
-                    GBS::IF_HS_TAP11_BYPS::write(0);
-                    GBS::IF_HS_Y_PDELAY::write(2);
-                    GBS::VDS_V_DELAY::write(0);
-                    GBS::VDS_Y_DELAY::write(3);
-                }
-
-                if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-                    setCsVsStart(2);
-                    setCsVsStop(0);
-                    GBS::IF_VS_SEL::write(1);
-                    GBS::IF_VS_FLIP::write(0);
-                    GBS::IF_HB_ST::write(2);
-                    GBS::MADPT_Y_VSCALE_BYPS::write(0);
-                    GBS::MADPT_UV_VSCALE_BYPS::write(0);
-                    GBS::MADPT_PD_RAM_BYPS::write(0);
-                    GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
-                    GBS::MADPT_SEL_PHASE_INI::write(0);
-                    // IF_HB_ST2/SP2 dropped: the capture window is the engine's.
-                    // IF_HB_SP and IF_HBIN_SP stay -- nothing computes those.
-                    if (rto->videoStandardInput == 1) {
-                        GBS::IF_HB_SP::write(0x4A);
-                        GBS::IF_HBIN_SP::write(0xD0);
-                    } else if (rto->videoStandardInput == 2) {
-                        GBS::IF_HB_SP::write(0x50);
-                        GBS::IF_HBIN_SP::write(0xD0);
-                    }
-                }
-            }
-            if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 ||
-                rto->videoStandardInput == 8 || rto->videoStandardInput == 9) {
-
-                GBS::ADC_FLTR::write(3);
-                GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
-
-                if (rto->presetID != 0x06 && rto->presetID != 0x16) {
-                    setCsVsStart(14);
-                    setCsVsStop(11);
-                    GBS::IF_HB_SP::write(0);
-                }
-                setOverSampleRatio(2, true);
-                Tv5725::InputFormatter::applyScanMode(
-                    Tv5725::InputFormatter::Progressive);
-                geometry.scanModeChanged(false);
-                GBS::IF_SEL_WEN::write(1);
-                GBS::IF_HS_SEL_LPF::write(0);
+            GBS::ADC_FLTR::write(3);
+            GBS::PLLAD_KS::write(2);
+            setOverSampleRatio(4, true);
+            Tv5725::InputFormatter::applyScanMode(
+                Tv5725::InputFormatter::LineDoubled);
+            geometry.scanModeChanged(true);
+            GBS::IF_SEL_WEN::write(0);
+            if (rto->inputIsYpBpR) {
                 GBS::IF_HS_TAP11_BYPS::write(0);
-                GBS::IF_HS_Y_PDELAY::write(3);
-                GBS::VDS_V_DELAY::write(1);
-                GBS::MADPT_Y_DELAY_UV_DELAY::write(1);
+                GBS::IF_HS_Y_PDELAY::write(2);
+                GBS::VDS_V_DELAY::write(0);
                 GBS::VDS_Y_DELAY::write(3);
-                if (rto->videoStandardInput == 9) {
-                    if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
-                        delay(20);
-                        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
-                            GBS::PLLAD_KS::write(0);
-                            // VDS_VSCALE_BYPS::write(1) was here, and it is the
-                            // one deletion where the two owners DISAGREE rather
-                            // than repeat: this asked for vertical scaling off
-                            // on a tall source, and Geometry::write() clears the
-                            // bit unconditionally because it has computed an
-                            // explicit scale. The engine already won on
-                            // ordering, so removing this changes nothing --
-                            // test_geometry_windows.cpp asserts the bit is 0.
-                        }
-                    }
-                }
-
-                if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-                    GBS::MADPT_Y_VSCALE_BYPS::write(0);
-                    GBS::MADPT_UV_VSCALE_BYPS::write(0);
-                    GBS::MADPT_PD_RAM_BYPS::write(0);
-                    GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
-                    GBS::MADPT_SEL_PHASE_INI::write(1);
-                    GBS::MADPT_SEL_PHASE_INI::write(0);
-                }
             }
-            if (rto->videoStandardInput == 3 && rto->presetID != 0x06) {
-                setCsVsStart(16);
-                setCsVsStop(13); //
-                GBS::IF_HB_ST::write(30);
-                GBS::IF_HBIN_ST::write(0x20);
-                GBS::IF_HBIN_SP::write(0x60);
-            } else if (rto->videoStandardInput == 4 && rto->presetID != 0x16) {
-                GBS::IF_HBIN_SP::write(0x40);
-                GBS::IF_HBIN_ST::write(0x20);
-                GBS::IF_HB_ST::write(0x30);
-            } else if (rto->videoStandardInput == 5) {
-                GBS::ADC_FLTR::write(1);
-                GBS::IF_PRGRSV_CNTRL::write(1);
-                GBS::IF_HS_DEC_FACTOR::write(0);
-                GBS::INPUT_FORMATTER_02::write(0x74);
-                GBS::VDS_Y_DELAY::write(3);
-            } else if (rto->videoStandardInput == 6 || rto->videoStandardInput == 7) {
-                GBS::ADC_FLTR::write(1);
-                GBS::PLLAD_KS::write(0);
-                GBS::IF_PRGRSV_CNTRL::write(1);
-                GBS::IF_HS_DEC_FACTOR::write(0);
-                GBS::INPUT_FORMATTER_02::write(0x74);
-                GBS::VDS_Y_DELAY::write(3);
-            } else if (rto->videoStandardInput == 8) {
 
-                uint32_t pllRate = 0;
-                for (int i = 0; i < 8; i++) {
-                    pllRate += getPllRate();
+            if (rto->presetID == 0x06 || rto->presetID == 0x16) {
+                setCsVsStart(2);
+                setCsVsStop(0);
+                GBS::IF_VS_SEL::write(1);
+                GBS::IF_VS_FLIP::write(0);
+                GBS::IF_HB_ST::write(2);
+                GBS::MADPT_Y_VSCALE_BYPS::write(0);
+                GBS::MADPT_UV_VSCALE_BYPS::write(0);
+                GBS::MADPT_PD_RAM_BYPS::write(0);
+                GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
+                GBS::MADPT_SEL_PHASE_INI::write(0);
+                // IF_HB_ST2/SP2 dropped: the capture window is the engine's.
+                // IF_HB_SP and IF_HBIN_SP stay -- nothing computes those.
+                if (rto->videoStandardInput == 1) {
+                    GBS::IF_HB_SP::write(0x4A);
+                    GBS::IF_HBIN_SP::write(0xD0);
+                } else if (rto->videoStandardInput == 2) {
+                    GBS::IF_HB_SP::write(0x50);
+                    GBS::IF_HBIN_SP::write(0xD0);
                 }
-                pllRate /= 8;
-                if (pllRate > 200) {
-                    if (pllRate < 1800) {
-                        GBS::PLLAD_FS::write(0); 
-                    }
-                }
-                GBS::PLLAD_ICP::write(6);
-                GBS::ADC_FLTR::write(1);
-                GBS::IF_HB_ST::write(30);
-
-                GBS::IF_HBIN_SP::write(0x60);
-                // And a four-branch VDS_VSCALE ladder here: 410, 402, 546, 400
-                // per output resolution. Geometry::write() computes the scale from
-                // the capture and the raster it has to fill.
             }
         }
+        if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 ||
+            rto->videoStandardInput == 8 || rto->videoStandardInput == 9) {
 
-        if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-            rto->isCustomPreset = GBS::GBS_PRESET_CUSTOM::read();
+            GBS::ADC_FLTR::write(3);
+            GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
+
+            if (rto->presetID != 0x06 && rto->presetID != 0x16) {
+                setCsVsStart(14);
+                setCsVsStop(11);
+                GBS::IF_HB_SP::write(0);
+            }
+            setOverSampleRatio(2, true);
+            Tv5725::InputFormatter::applyScanMode(
+                Tv5725::InputFormatter::Progressive);
+            geometry.scanModeChanged(false);
+            GBS::IF_SEL_WEN::write(1);
+            GBS::IF_HS_SEL_LPF::write(0);
+            GBS::IF_HS_TAP11_BYPS::write(0);
+            GBS::IF_HS_Y_PDELAY::write(3);
+            GBS::VDS_V_DELAY::write(1);
+            GBS::MADPT_Y_DELAY_UV_DELAY::write(1);
+            GBS::VDS_Y_DELAY::write(3);
+            if (rto->videoStandardInput == 9) {
+                if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
+                    delay(20);
+                    if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
+                        GBS::PLLAD_KS::write(0);
+                        // VDS_VSCALE_BYPS::write(1) was here, and it is the
+                        // one deletion where the two owners DISAGREE rather
+                        // than repeat: this asked for vertical scaling off
+                        // on a tall source, and Geometry::write() clears the
+                        // bit unconditionally because it has computed an
+                        // explicit scale. The engine already won on
+                        // ordering, so removing this changes nothing --
+                        // test_geometry_windows.cpp asserts the bit is 0.
+                    }
+                }
+            }
+
+            if (rto->presetID == 0x06 || rto->presetID == 0x16) {
+                GBS::MADPT_Y_VSCALE_BYPS::write(0);
+                GBS::MADPT_UV_VSCALE_BYPS::write(0);
+                GBS::MADPT_PD_RAM_BYPS::write(0);
+                GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
+                GBS::MADPT_SEL_PHASE_INI::write(1);
+                GBS::MADPT_SEL_PHASE_INI::write(0);
+            }
+        }
+        if (rto->videoStandardInput == 3 && rto->presetID != 0x06) {
+            setCsVsStart(16);
+            setCsVsStop(13); //
+            GBS::IF_HB_ST::write(30);
+            GBS::IF_HBIN_ST::write(0x20);
+            GBS::IF_HBIN_SP::write(0x60);
+        } else if (rto->videoStandardInput == 4 && rto->presetID != 0x16) {
+            GBS::IF_HBIN_SP::write(0x40);
+            GBS::IF_HBIN_ST::write(0x20);
+            GBS::IF_HB_ST::write(0x30);
+        } else if (rto->videoStandardInput == 5) {
+            GBS::ADC_FLTR::write(1);
+            GBS::IF_PRGRSV_CNTRL::write(1);
+            GBS::IF_HS_DEC_FACTOR::write(0);
+            GBS::INPUT_FORMATTER_02::write(0x74);
+            GBS::VDS_Y_DELAY::write(3);
+        } else if (rto->videoStandardInput == 6 || rto->videoStandardInput == 7) {
+            GBS::ADC_FLTR::write(1);
+            GBS::PLLAD_KS::write(0);
+            GBS::IF_PRGRSV_CNTRL::write(1);
+            GBS::IF_HS_DEC_FACTOR::write(0);
+            GBS::INPUT_FORMATTER_02::write(0x74);
+            GBS::VDS_Y_DELAY::write(3);
+        } else if (rto->videoStandardInput == 8) {
+
+            uint32_t pllRate = 0;
+            for (int i = 0; i < 8; i++) {
+                pllRate += getPllRate();
+            }
+            pllRate /= 8;
+            if (pllRate > 200) {
+                if (pllRate < 1800) {
+                    GBS::PLLAD_FS::write(0); 
+                }
+            }
+            GBS::PLLAD_ICP::write(6);
+            GBS::ADC_FLTR::write(1);
+            GBS::IF_HB_ST::write(30);
+
+            GBS::IF_HBIN_SP::write(0x60);
+            // And a four-branch VDS_VSCALE ladder here: 410, 402, 546, 400
+            // per output resolution. Geometry::write() computes the scale from
+            // the capture and the raster it has to fill.
         }
 
         resetDebugPort();
@@ -3489,33 +3229,13 @@ void doPostPresetLoadSteps()
         // the filesystem, so its saved PLLAD_MD is a value the user has a
         // picture from and adopting it keeps that; computing over it would not.
         // The branch goes when a slot records the INPUTS to the calculation.
-        if (rto->isCustomPreset) {
-
-            if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 || rto->videoStandardInput == 8) {
-                GBS::MADPT_Y_DELAY_UV_DELAY::write(1);
-            }
-
-            if (GBS::DEC1_BYPS::read() && GBS::DEC2_BYPS::read()) {
-                rto->osr = 1;
-            } else if (GBS::DEC1_BYPS::read() && !GBS::DEC2_BYPS::read()) {
-                rto->osr = 2;
-            } else {
-                rto->osr = 4;
-            }
-
-            // Put the real divider back before the engine adopts it, or the
-            // PCLKIN selection reaches the lookup and matches nothing.
-            if (GBS::PLL648_CONTROL_01::read() == 0x75 && rto->presetDisplayClock != 0) {
-                GBS::PLL648_CONTROL_01::write(rto->presetDisplayClock);
-            }
-        }
 
         // The source is about to change mode, and nothing measurable about it
         // is true yet. Everything the solve needs that cannot be re-derived
         // later goes with the message; loop() drives the rest once the source
         // has settled into the new mode. AFTER the block above, which settles
         // rto->osr for a custom preset.
-        geometry.modeChanged(outputModeForThisLoad(), rto->isCustomPreset, rto->osr);
+        geometry.modeChanged(outputModeForThisLoad(), rto->osr);
 
         if (rto->presetIsPalForce60) {
             if (GBS::GBS_OPTION_PALFORCED60_ENABLED::read() != 1) {
@@ -3661,38 +3381,36 @@ void doPostPresetLoadSteps()
         resetPLLAD();
         GBS::PLLAD_LEN::write(1); //
 
-        if (!rto->isCustomPreset) {
-            GBS::VDS_IN_DREG_BYPS::write(0);
-            GBS::PLLAD_R::write(3);
-            GBS::PLLAD_S::write(3);
-            GBS::PLL_R::write(1);
-            GBS::PLL_S::write(2);
-            GBS::DEC_IDREG_EN::write(1);
-            GBS::DEC_WEN_MODE::write(1);
+        GBS::VDS_IN_DREG_BYPS::write(0);
+        GBS::PLLAD_R::write(3);
+        GBS::PLLAD_S::write(3);
+        GBS::PLL_R::write(1);
+        GBS::PLL_S::write(2);
+        GBS::DEC_IDREG_EN::write(1);
+        GBS::DEC_WEN_MODE::write(1);
 
-            // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
-            // owns that bit and switches it ON; a write here runs later in this
-            // same function and wins, leaving the capture buffer unbounded.
-            //
-            // Upstream disabled it against a memory map whose capture buffer
-            // started at 0x100000, only 356 KB below the guard address, where a
-            // large capture could genuinely trip it. MemoryMap puts the guard at
-            // the top of the address space with the engine clamping the capture
-            // below it, so nothing but a real overrun reaches it.
+        // **DO NOT DISABLE CAP_SAFE_GUARD_EN HERE.** Tv5725::FrameBuffer
+        // owns that bit and switches it ON; a write here runs later in this
+        // same function and wins, leaving the capture buffer unbounded.
+        //
+        // Upstream disabled it against a memory map whose capture buffer
+        // started at 0x100000, only 356 KB below the guard address, where a
+        // large capture could genuinely trip it. MemoryMap puts the guard at
+        // the top of the address space with the engine clamping the capture
+        // below it, so nothing but a real overrun reaches it.
 
-            GBS::PB_CUT_REFRESH::write(1);
-            GBS::RFF_LREQ_CUT::write(0);
-            GBS::CAP_REQ_OVER::write(0);
-            GBS::CAP_STATUS_SEL::write(1);
-            GBS::PB_REQ_SEL::write(3);
+        GBS::PB_CUT_REFRESH::write(1);
+        GBS::RFF_LREQ_CUT::write(0);
+        GBS::CAP_REQ_OVER::write(0);
+        GBS::CAP_STATUS_SEL::write(1);
+        GBS::PB_REQ_SEL::write(3);
 
-            GBS::RFF_WFF_OFFSET::write(0x0);
-            // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
-            // Both halves of that pair are Tv5725::Memory's: the offset is
-            // Memory::offsetFor(the output line) and the fetch is computed
-            // against it, so deriving one from the other after the fact could
-            // only fight the model. Geometry::write() sets both.
-        }
+        GBS::RFF_WFF_OFFSET::write(0x0);
+        // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
+        // Both halves of that pair are Tv5725::Memory's: the offset is
+        // Memory::offsetFor(the output line) and the fetch is computed
+        // against it, so deriving one from the other after the fact could
+        // only fight the model. Geometry::write() sets both.
 
         if (!rto->outModeHdBypass) {
             ResetSDRAM();
@@ -3874,14 +3592,10 @@ void applyPresets(uint8_t result)
     rto->presetIsPalForce60 = 0;
     rto->outModeHdBypass = 0; // 
 
-    GBS::GBS_PRESET_CUSTOM::write(0);
-    rto->isCustomPreset = false;
 
     if (GBS::ADC_UNUSED_62::read() != 0x00) {
 
-        if (uopt->presetPreference != 2) {
-            serialCommand = 'D';
-        }
+        serialCommand = 'D';
     }
 
     if (result == 0) {
@@ -3919,36 +3633,18 @@ void applyPresets(uint8_t result)
 
     if (uopt->PalForce60 == 1) 
     {
-        if (uopt->presetPreference != 2) 
+        if (result == 2 || result == 4) 
         {
-
-            if (result == 2 || result == 4) 
-            {
-                Serial.println(F("PAL@50 to 60Hz"));
-                rto->presetIsPalForce60 = 1;
-            }
-            if (result == 2) {
-                result = 1;
-            }
-            if (result == 4) {
-                result = 3;
-            }
+            Serial.println(F("PAL@50 to 60Hz"));
+            rto->presetIsPalForce60 = 1;
+        }
+        if (result == 2) {
+            result = 1;
+        }
+        if (result == 4) {
+            result = 3;
         }
     }
-
-    auto applySavedBypassPreset = [&result]() -> bool {
-        uint8_t rawPresetId = GBS::GBS_PRESET_ID::read();
-        if (rawPresetId == PresetHdBypass) {
-
-            rto->videoStandardInput = result;
-
-            setOutModeHdBypass(true);
-            return true;
-        }
-        if (rawPresetId == PresetBypassRGBHV) {
-        }
-        return false;
-    };
 
     if (result == 1 || result == 3 || result == 8 || result == 9 || result == 14 ||
         result == 2 || result == 4) {
@@ -3959,25 +3655,9 @@ void applyPresets(uint8_t result)
         // standard and the preference now select an OutputMode instead --
         // chooseOutputMode() -- and every register is computed from it, so the
         // two branches are one and the ladder is gone.
-#if defined(ESP8266)
-        const uint8_t *saved = (uopt->presetPreference == OutputCustomized)
-                                   ? loadPresetFromFS(result)
-                                   : 0;
-        if (saved != 0) {
-            rto->outputMode = 0;  // the saved file's own bytes are the mode
-            writeProgramArrayNew(saved);
-            if (applySavedBypassPreset()) {
-                return;
-            }
-        } else
-#endif
-        {
-            // Also where an unusable custom slot lands: the raster is computed
-            // for the preference the user actually asked for.
-            const bool pal = (result == 2 || result == 4);
-            const Tv5725::OutputMode *mode = chooseOutputMode(result);
-            loadComputedPreset(mode, presetIdFor(mode, pal));
-        }
+        const bool pal = (result == 2 || result == 4);
+        const Tv5725::OutputMode *mode = chooseOutputMode(result);
+        loadComputedPreset(mode, presetIdFor(mode, pal));
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
 
         rto->videoStandardInput = result;
@@ -4644,9 +4324,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     externalClockGenResetClock();
     updateSpDynamic(0);
     if (GBS::ADC_UNUSED_62::read() != 0x00) {
-        if (uopt->presetPreference != 2) {
-            serialCommand = 'D';
-        }
+        serialCommand = 'D';
     }
 
     GBS::SP_NO_COAST_REG::write(0);
@@ -4661,7 +4339,6 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::GBS_PRESET_ID::write(PresetHdBypass);
 
     if (!regsInitialized) {
-        GBS::GBS_PRESET_CUSTOM::write(0);
     }
     doPostPresetLoadSteps();
 
@@ -5953,27 +5630,22 @@ void runSyncWatcher() //
                     Serial.printf("sourceRate: ");
                     Serial.println(sourceRate);
 
-                    if (uopt->presetPreference == 2) {
+                    if (sourceLines < 280) {
 
-                        rto->videoStandardInput = 14;
+                        rto->videoStandardInput = 1;
+                    } else if (sourceLines < 380) {
+
+                        rto->videoStandardInput = 2;
+                    } else if (sourceRate > 44.0f && sourceRate < 53.8f) {
+
+                        rto->videoStandardInput = 4;
+                        needPostAdjust = 1;
                     } else {
-                        if (sourceLines < 280) {
 
-                            rto->videoStandardInput = 1;
-                        } else if (sourceLines < 380) {
-
-                            rto->videoStandardInput = 2;
-                        } else if (sourceRate > 44.0f && sourceRate < 53.8f) {
-
-                            rto->videoStandardInput = 4;
-                            needPostAdjust = 1;
-                        } else {
-
-                            rto->videoStandardInput = 3;
-                            needPostAdjust = 1;
-                        }
+                        rto->videoStandardInput = 3;
+                        needPostAdjust = 1;
                     }
-
+                
                     if (uopt->presetPreference == 10)
                         uopt->presetPreference = Output1080P;
 
@@ -6580,7 +6252,6 @@ void ICACHE_RAM_ATTR isrRotaryEncoderRotateForNewMenu()
         if ((newNav != lastNav && (interruptTime - lastNavUpdateTime < 120)) || (oled_menuItem != 0)) 
         {
             oledNav = lastNav = OLEDMenuNav::IDLE;   //
-            
         } 
         else 
         {
@@ -6634,10 +6305,7 @@ void updateWebSocketData()
             char toSend[MESSAGE_LEN] = {0};
             toSend[0] = '#';
 
-            if (rto->isCustomPreset) {
-                toSend[1] = '9';
-            } else
-                switch (rto->presetID) {
+            switch (rto->presetID) {
                     case 0x01:
                     case 0x11:
                         toSend[1] = '1';
@@ -6843,7 +6511,6 @@ void setup()
     rto->phaseSP = 16;
     rto->failRetryAttempts = 0;  
     rto->presetID = 0;           
-    rto->isCustomPreset = false; 
     rto->HPLLState = 0;
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
@@ -7007,6 +6674,18 @@ void setup()
             // resolution that does not exist and get no raster at all.
             if (uopt->presetPreference == 6)
                 uopt->presetPreference = Output1080P;
+
+            // 2 was OutputCustomized: load the register dump saved for this
+            // standard. There are no register dumps any more, and a unit
+            // upgraded from a build that had them boots with 2 stored. Say so
+            // rather than silently landing on a different resolution than the
+            // one the display has been showing. The VALUE stays reserved --
+            // docs/chip-initialisation.md step 7 re-points a slot at the inputs
+            // to the calculation, and the preferences layout must not shift.
+            if (uopt->presetPreference == OutputCustomized) {
+                bootLogPrintf("PREFS: preset 2 was a saved register dump; using 1080p\n");
+                uopt->presetPreference = Output1080P;
+            }
 
             uopt->enableFrameTimeLock = (uint8_t)(f.read() - '0');
             if (uopt->enableFrameTimeLock > 1)
@@ -7598,27 +7277,11 @@ void loop()
                 if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
                     videoMode = rto->videoStandardInput;
                 }
-                if (uopt->presetPreference != 2) // 
-                {
-                    rto->useHdmiSyncFix = 1;
-                    if (rto->videoStandardInput == 14) {
-                        rto->videoStandardInput = 15;
-                    } else {
-                        applyPresets(videoMode);
-                    }
+                rto->useHdmiSyncFix = 1;
+                if (rto->videoStandardInput == 14) {
+                    rto->videoStandardInput = 15;
                 } else {
-                    // printf("out off-1\n");
-                    setOutModeHdBypass(false); //    false
-                    if (rto->videoStandardInput != 15) {
-                        rto->autoBestHtotalEnabled = 0;
-                        if (rto->applyPresetDoneStage == 11) {
-                            rto->applyPresetDoneStage = 1;
-                        } else {
-                            rto->applyPresetDoneStage = 10;
-                        }
-                    } else {
-                        rto->applyPresetDoneStage = 1;
-                    }
+                    applyPresets(videoMode);
                 }
             }
 
@@ -8540,26 +8203,15 @@ void handleType2Command(char argument)
         case '2':
             //
             break;
+        // A slot used to be a register dump written to and replayed from flash.
+        // Both routes stay so the web UI's slot grid keeps its surface, and both
+        // refuse until a slot records the INPUTS to the calculation instead --
+        // step 7 of docs/chip-initialisation.md.
         case '3': // load custom preset
-        {
-            uopt->presetPreference = OutputCustomized; // custom
-            if (rto->videoStandardInput == 14) {
-                //
-                rto->videoStandardInput = 15;
-            } else {
-                // normal path
-                applyPresets(rto->videoStandardInput);
-            }
-            saveUserPrefs();
-            // printf("This load \n");
-        } break;
-        case '4': // Saving customized presets
-            // Only switch to custom presets once one exists, or a failed save
-            // leaves the unit booting into a missing or half-written preset.
-            if (savePresetToFS()) {
-                uopt->presetPreference = OutputCustomized; // custom
-                saveUserPrefs();
-            }
+            SerialM.println(F("slot load: no register dumps any more, ignoring"));
+            break;
+        case '4': // save custom preset
+            SerialM.println(F("slot save: no register dumps any more, ignoring"));
             break;
         case '5':
             // 
@@ -9530,8 +9182,10 @@ void startWebserver()
         String slotParamValue = slotParam->value();
         char slotValue[2];
         slotParamValue.toCharArray(slotValue, sizeof(slotValue));
+        // The slot is still recorded -- it is what the replacement mechanism
+        // keys off -- but it no longer means "load a register dump", so the
+        // preference is left alone. docs/chip-initialisation.md step 7.
         uopt->presetSlot = (uint8_t)slotValue[0];
-        uopt->presetPreference = OutputCustomized;
         saveUserPrefs();
         result = true;
       }
@@ -9925,253 +9579,6 @@ void StrClear(char *str, uint16_t length)
     }
 }
 
-// A custom preset is these register ranges, in this order. They add up to
-// presetRegisterCount bytes, which is what a preset file holds and what
-// loadPresetFromFS() reads back.
-static const struct {
-    uint8_t segment;
-    uint8_t first;
-    uint8_t last;
-} presetRegisterRanges[] = {
-    { 0, 0x40, 0x5F }, // 32
-    { 0, 0x90, 0x9F }, // 16
-    { 1, 0x00, 0x2F }, // 48
-    { 3, 0x00, 0x7F }, // 128
-    { 4, 0x00, 0x5F }, // 96
-    { 5, 0x00, 0x6F }, // 112
-};
-
-static const uint16_t presetRegisterCount = 432;
-
-// Path of the custom preset file for a video mode and slot; empty for a mode
-// that has no custom preset. Shared by the load and save paths so the two
-// cannot drift apart on a filename.
-static String presetPathForVideoMode(uint8_t videoMode, Ascii8 slot)
-{
-    switch (videoMode) {
-        case 0:
-            return String(F("/preset_unknown.")) + (char)slot;
-        case 1:
-            return String(F("/preset_ntsc.")) + (char)slot;
-        case 2:
-            return String(F("/preset_pal.")) + (char)slot;
-        case 3:
-            return String(F("/preset_ntsc_480p.")) + (char)slot;
-        case 4:
-            return String(F("/preset_pal_576p.")) + (char)slot;
-        case 5:
-            return String(F("/preset_ntsc_720p.")) + (char)slot;
-        case 6:
-            return String(F("/preset_ntsc_1080p.")) + (char)slot;
-        case 8:
-            return String(F("/preset_medium_res.")) + (char)slot;
-        case 14:
-            return String(F("/preset_vga_upscale.")) + (char)slot;
-        default:
-            return String();
-    }
-}
-
-// Read the live registers a custom preset is made of into dump[]. False if the
-// chip plainly did not answer: a readback of nothing but 0x00, or nothing but
-// 0xff, is not a preset, and persisting one replaces a working preset with a
-// dead one.
-static bool capturePresetRegisters(uint8_t *dump)
-{
-    uint16_t i = 0;
-    bool allZero = true;
-    bool allOnes = true;
-
-    for (uint8_t range = 0; range < (sizeof(presetRegisterRanges) / sizeof(presetRegisterRanges[0])); range++) {
-        writeOneByte(0xF0, presetRegisterRanges[range].segment);
-
-        for (uint16_t x = presetRegisterRanges[range].first; x <= presetRegisterRanges[range].last; x++) {
-            if (i >= presetRegisterCount) {
-                return false; // the ranges no longer match presetRegisterCount
-            }
-
-            readFromRegister((uint8_t)x, 1, &dump[i]);
-            allZero &= (dump[i] == 0x00);
-            allOnes &= (dump[i] == 0xFF);
-            i++;
-        }
-
-        yield();
-    }
-
-    return i == presetRegisterCount && !allZero && !allOnes;
-}
-
-// The preset to fall back on when a custom one cannot be used.
-//
-// NULL, because there are no built-in presets any more. The caller treats that
-// as "compute one".
-static const uint8_t *builtinPresetFor(byte forVideoMode)
-{
-    (void)forVideoMode;
-    return 0;
-}
-
-const uint8_t *loadPresetFromFS(byte forVideoMode) //
-{
-
-    static uint8_t preset[presetRegisterCount]; //
-    String s = "";
-    Ascii8 slot = 0;
-    File f;
-
-    f = LittleFS.open("/preferencesv2.txt", "r");
-    if (f) {
-        uint8_t result[3];
-        uint8_t dump = 0;
-        result[0] = f.read();
-        result[1] = f.read();
-        result[2] = f.read();
-        f.close();
-        slot = result[2];
-    } else {
-        return builtinPresetFor(forVideoMode);
-    }
-
-    String path = presetPathForVideoMode(forVideoMode, slot);
-    if (path.length() > 0) {
-        f = LittleFS.open(path, "r");
-    }
-
-    if (!f) // open failed, or a video mode with no custom preset
-    {
-        return builtinPresetFor(forVideoMode);
-    } else {
-        s = f.readStringUntil('}'); //
-        f.close();
-    }
-
-    // The bound is not belt-and-braces. readStringUntil() stops before the '}',
-    // so a well-formed file ends "...,\r\n" and strtok hands back the trailing
-    // "\r\n" as one more token than there are values, whose atoi() of 0 would
-    // land one byte past preset[]. A file uploaded through /fs/upload can be
-    // any length at all.
-    char *tmp;
-    uint16_t i = 0;
-    tmp = strtok(&s[0], ","); //
-    while (tmp != NULL && i < presetRegisterCount) {
-        preset[i++] = (uint8_t)atoi(tmp);
-        tmp = strtok(NULL, ",");
-        yield();
-    }
-
-    if (i < presetRegisterCount) {
-        // Short file. The rest of preset[] is whatever the previous load left
-        // in it, which belongs to some other video mode.
-        debugPrintf("preset load: %s holds %u of %u values, using the built-in preset\n",
-            path.c_str(), i, presetRegisterCount);
-        return builtinPresetFor(forVideoMode);
-    }
-
-    return preset;
-}
-
-// Capture the live registers as the custom preset for the current video mode.
-// False when nothing was saved, so the caller does not switch the unit over to
-// custom presets on the strength of a preset that is not there.
-//
-// **THE ORDER IS THE POINT**: capture and check the registers, write beside the
-// old preset, and swap only once the new one is complete, so a save that fails
-// part-way leaves the old preset untouched.
-// docs/investigations/riscpc-game-modes.md
-bool savePresetToFS()
-{
-    File f = LittleFS.open("/preferencesv2.txt", "r");
-    if (!f) {
-        debugPrintf("preset save: no preferences file, so no slot to save into\n");
-        return false;
-    }
-
-    uint8_t result[3];
-    result[0] = f.read();
-    result[1] = f.read();
-    result[2] = f.read();
-    f.close();
-    Ascii8 slot = result[2];
-
-    String path = presetPathForVideoMode(rto->videoStandardInput, slot);
-    if (path.length() == 0) {
-        debugPrintf("preset save: video mode %d has no preset file\n", rto->videoStandardInput);
-        return false;
-    }
-
-    // Normalise the state about to be captured: a preset should not bake in
-    // scanlines or a frame time lock correction.
-    GBS::GBS_PRESET_CUSTOM::write(1);
-
-    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-        disableScanlines();
-    }
-
-    if (!rto->extClockGenDetected) {
-        if (uopt->enableFrameTimeLock && FrameSync::getSyncLastCorrection() != 0) {
-            FrameSync::reset(uopt->frameTimeLockMethod);
-        }
-    }
-
-    uint8_t *dump = (uint8_t *)malloc(presetRegisterCount);
-    if (dump == NULL) {
-        debugPrintf("preset save: out of memory\n");
-        return false;
-    }
-
-    if (!capturePresetRegisters(dump)) {
-        debugPrintf("preset save: register readback is not a preset, keeping the old one\n");
-        free(dump);
-        return false;
-    }
-
-    String tempPath = path + "~";
-    f = LittleFS.open(tempPath, "w");
-    if (!f) {
-        debugPrintf("preset save: cannot open %s\n", tempPath.c_str());
-        free(dump);
-        return false;
-    }
-
-    bool complete = true;
-    for (uint16_t i = 0; i < presetRegisterCount; i++) {
-        char line[8];
-        int len = snprintf_P(line, sizeof(line), PSTR("%u,\r\n"), (unsigned)dump[i]);
-
-        if (f.write((const uint8_t *)line, len) != (size_t)len) {
-            complete = false;
-            break;
-        }
-    }
-
-    if (complete) {
-        complete = (f.print(F("};\r\n")) == 4);
-    }
-
-    f.close();
-    free(dump);
-
-    if (!complete) {
-        debugPrintf("preset save: %s came up short, discarding it\n", tempPath.c_str());
-        LittleFS.remove(tempPath);
-        return false;
-    }
-
-    // The remove is belt and braces under LittleFS: lfs_rename replaces an
-    // existing destination itself, where SPIFFS_rename refused one, which is why
-    // this was written. Kept because the ordering still matters -- if the rename
-    // fails there is no preset at all, which loads the built-in one: worse than
-    // the old preset, far better than a half-written one.
-    LittleFS.remove(path);
-    if (!LittleFS.rename(tempPath, path)) {
-        debugPrintf("preset save: cannot move %s into place\n", tempPath.c_str());
-        LittleFS.remove(tempPath);
-        return false;
-    }
-
-    return true;
-}
 // void SaveUserIRRemote()
 // {
 
@@ -14125,1896 +13532,6 @@ void OSD_selectOption()
         }
     }
 
-    else if (oled_menuItem == 112) {
-
-        if (OLED_clear_flag)
-            display.clear();
-        OLED_clear_flag = ~0;
-        display.setColor(OLEDDISPLAY_COLOR::WHITE);
-        display.setTextAlignment(TEXT_ALIGN_LEFT);
-        display.setFont(ArialMT_Plain_16);
-        display.drawString(1, 0, "Menu-");
-        display.drawString(1, 28, "Profile");
-        display.display();
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 113;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 138;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'A';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 113) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 114;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 112;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'B';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 114) // save
-    {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 115;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 113;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'C';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 115) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 116;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 114;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'D';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 116) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 117;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 115;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'E';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 117) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 118;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 116;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'F';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 118) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 126;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 117;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'G';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 119) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 120;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 151;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'A';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 120) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 121;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 119;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'B';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 121) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 122;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 120;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'C';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 122) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 123;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 121;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'D';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 123) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 124;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 122;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'E';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 124) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 125;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 123;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'F';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 125) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 139;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 124;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'G';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 126) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 127;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 118;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'H';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 127) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 128;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 126;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'I';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 128) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 129;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 127;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'J';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 129) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 130;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 128;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'K';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 130) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 131;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 129;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'L';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 131) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 132;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 130;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'M';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 132) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 133;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 131;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'N';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 133) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 134;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 132;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'O';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 134) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 135;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 133;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'P';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 135) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 136;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 134;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'Q';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 136) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 137;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 135;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'R';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 137) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 138;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 136;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'S';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 138) {
-
-        if (results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_menu_F('w');
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 119;
-                    OSD_menu_F(OSD_CROSS_MID);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 112;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 137;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'T';
-                    OSD_menu_F('y');
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 139) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 140;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 125;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'H';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 140) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 141;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 139;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'I';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 141) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 142;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 140;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'J';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 142) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 143;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 141;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'K';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 143) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 144;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 142;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'L';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 144) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 145;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 143;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'M';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 145) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 146;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 144;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'N';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 146) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 147;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 145;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'O';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 147) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 148;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 146;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'P';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 148) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 149;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 147;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'Q';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 149) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 150;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 148;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'R';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 150) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 151;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 149;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'S';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 151) {
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-        }
-
-        OSD_menu_F('x');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    COl_L = 1;
-                    OSD_menu_F('0');
-                    oled_menuItem = 62;
-                    break;
-                case IRKeyUp:
-                    oled_menuItem = 112;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('w');
-                    break;
-                case IRKeyRight:
-                    oled_menuItem = 119;
-                    break;
-                case IRKeyLeft:
-                    oled_menuItem = 150;
-                    break;
-                case IRKeyOk:
-                    uopt->presetSlot = 'T';
-                    uopt->presetPreference = OutputCustomized;
-                    saveUserPrefs();
-                    userCommand = '4';
-                    for (int i = 0; i <= 800; i++) {
-                        OSD_c2(O, P25, 0x14);
-                        OSD_c2(K, P26, 0x14);
-                    }
-                    OSD_c2(O, P25, blue_fill);
-                    OSD_c2(K, P26, blue_fill);
-                    break;
-                case IRKeyExit:
-                    oled_menuItem = 0;
-                    OSD_clear();
-                    OSD();
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
 
     else if (oled_menuItem == 1) {
         if (OLED_clear_flag)
@@ -16555,13 +14072,6 @@ void OSD_IR()
         //     PT_MUTE(0x79);
         // }
 
-        if (results.value == IRKeySave) {
-            Tim_menuItem = millis();
-            NEW_OLED_MENU = false;
-            OSD_menu_F(OSD_CROSS_TOP);
-            OSD_menu_F('w');
-            oled_menuItem = 112;
-        }
 
         if (results.value == IRKeyInfo) {
             Tim_menuItem = millis();
@@ -17957,349 +15467,6 @@ void handle_j(void)
             OSD_c1(F, P24, main0);
             OSD_c1(F, P25, main0);
         }
-    };
-    void handle_w(void)
-    {
-        if (COl_L == 1) {
-            A1_yellow = yellowT;
-            A2_main0 = main0;
-            A3_main0 = main0;
-        } else if (COl_L == 2) {
-            A1_yellow = main0;
-            A2_main0 = yellowT;
-            A3_main0 = main0;
-        }
-        colour1 = A1_yellow;
-        number_stroca = stroca1;
-        Osd_Display(1, "Loadprofile:");
-
-        colour1 = A2_main0;
-        number_stroca = stroca2;
-        Osd_Display(1, "Saveprofile:");
-
-        colour1 = yellowT;
-        number_stroca = stroca3;
-        Osd_Display(1, "Active save:");
-    };
-    void handle_x(void)
-    {
-        if (oled_menuItem == 112) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending1();
-            nameP();
-        } else if (oled_menuItem == 113) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending2();
-            nameP();
-        } else if (oled_menuItem == 114) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending3();
-            nameP();
-        } else if (oled_menuItem == 115) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending4();
-            nameP();
-        } else if (oled_menuItem == 116) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending5();
-            nameP();
-        } else if (oled_menuItem == 117) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending6();
-            nameP();
-        } else if (oled_menuItem == 118) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending7();
-            nameP();
-        } else if (oled_menuItem == 126) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending8();
-            nameP();
-        } else if (oled_menuItem == 127) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending9();
-            nameP();
-        } else if (oled_menuItem == 128) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending10();
-            nameP();
-        } else if (oled_menuItem == 129) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending11();
-            nameP();
-        } else if (oled_menuItem == 130) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending12();
-            nameP();
-        } else if (oled_menuItem == 131) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending13();
-            nameP();
-        } else if (oled_menuItem == 132) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending14();
-            nameP();
-        } else if (oled_menuItem == 133) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending15();
-            nameP();
-        } else if (oled_menuItem == 134) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending16();
-            nameP();
-        } else if (oled_menuItem == 135) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending17();
-            nameP();
-        } else if (oled_menuItem == 136) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending18();
-            nameP();
-        } else if (oled_menuItem == 137) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending19();
-            nameP();
-        } else if (oled_menuItem == 138) {
-            colour1 = main0;
-            number_stroca = stroca1;
-            sending20();
-            nameP();
-        }
-
-        if (uopt->presetSlot == 'A') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending1a();
-            nameP();
-        } else if (uopt->presetSlot == 'B') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending2a();
-            nameP();
-        } else if (uopt->presetSlot == 'C') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending3a();
-            nameP();
-        } else if (uopt->presetSlot == 'D') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending4a();
-            nameP();
-        } else if (uopt->presetSlot == 'E') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending5a();
-            nameP();
-        } else if (uopt->presetSlot == 'F') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending6a();
-            nameP();
-        } else if (uopt->presetSlot == 'G') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending7a();
-            nameP();
-        } else if (uopt->presetSlot == 'H') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending8a();
-            nameP();
-        } else if (uopt->presetSlot == 'I') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending9a();
-            nameP();
-        } else if (uopt->presetSlot == 'J') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending10a();
-            nameP();
-        } else if (uopt->presetSlot == 'K') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending11a();
-            nameP();
-        } else if (uopt->presetSlot == 'L') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending12a();
-            nameP();
-        } else if (uopt->presetSlot == 'M') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending13a();
-            nameP();
-        } else if (uopt->presetSlot == 'N') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending14a();
-            nameP();
-        } else if (uopt->presetSlot == 'O') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending15a();
-            nameP();
-        } else if (uopt->presetSlot == 'P') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending16a();
-            nameP();
-        } else if (uopt->presetSlot == 'Q') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending17a();
-            nameP();
-        } else if (uopt->presetSlot == 'R') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending18a();
-            nameP();
-        } else if (uopt->presetSlot == 'S') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending19a();
-            nameP();
-        } else if (uopt->presetSlot == 'T') {
-            colour1 = yellowT;
-            number_stroca = stroca3;
-            sending20a();
-            nameP();
-        }
-
-        if (oled_menuItem == 119) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending1b();
-            nameP();
-        } else if (oled_menuItem == 120) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending2b();
-            nameP();
-        } else if (oled_menuItem == 121) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending3b();
-            nameP();
-        } else if (oled_menuItem == 122) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending4b();
-            nameP();
-        } else if (oled_menuItem == 123) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending5b();
-            nameP();
-        } else if (oled_menuItem == 124) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending6b();
-            nameP();
-        } else if (oled_menuItem == 125) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending7b();
-            nameP();
-        } else if (oled_menuItem == 139) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending8b();
-            nameP();
-        } else if (oled_menuItem == 140) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending9b();
-            nameP();
-        } else if (oled_menuItem == 141) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending10b();
-            nameP();
-        } else if (oled_menuItem == 142) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending11b();
-            nameP();
-        } else if (oled_menuItem == 143) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending12b();
-            nameP();
-        } else if (oled_menuItem == 144) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending13b();
-            nameP();
-        } else if (oled_menuItem == 145) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending14b();
-            nameP();
-        } else if (oled_menuItem == 146) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending15b();
-            nameP();
-        } else if (oled_menuItem == 147) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending16b();
-            nameP();
-        } else if (oled_menuItem == 148) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending17b();
-            nameP();
-        } else if (oled_menuItem == 149) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending18b();
-            nameP();
-        } else if (oled_menuItem == 150) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending19b();
-            nameP();
-        } else if (oled_menuItem == 151) {
-            colour1 = main0;
-            number_stroca = stroca2;
-            sending20b();
-            nameP();
-        }
-    };
-    void handle_y(void)
-    {
-        uopt->presetPreference = OutputCustomized;
-        saveUserPrefs();
-        uopt->presetPreference = OutputCustomized;
-        if (rto->videoStandardInput == 14) {
-            rto->videoStandardInput = 15;
-        } else {
-            applyPresets(rto->videoStandardInput);
-        }
-        saveUserPrefs();
     };
 
     void handle_z(void)

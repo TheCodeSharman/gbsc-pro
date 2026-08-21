@@ -114,8 +114,11 @@ TEST_CASE("the playback stride covers the widest fetch, and holds still while zo
     // follows the capture, which grows as the picture zooms OUT -- so a stride
     // sized for the framing on screen is short of the one the next press wants,
     // and it arrives as a green band down the right of the picture.
-    // The bench line, from the seeds above: IF_HSYNC_RST 1276 wraps at 1277.
-    CHECK(Wire.field(4, 0x37, 0, 10) == Memory::offsetFor(1277));
+    // The bench line, COMPUTED rather than inherited: the divider caps at 2250
+    // ADC samples so the whole line arrives, giving IF_HSYNC_RST 1125 and a
+    // wrap at 1126. The 1276 seeded in the fixture is what the previous load
+    // left behind, and the engine writes over it.
+    CHECK(Wire.field(4, 0x37, 0, 10) == Memory::offsetFor(1126));
     CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
 
     SUBCASE("and the zoom that widens the capture does not outgrow it") {
@@ -152,30 +155,24 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
 
     REQUIRE(bench.engine.resolve());
 
+    // Not vacuous: test_geometry.cpp's checkBenchGeometry() pins both of these
+    // to the values measured on the unit, so "unchanged" is anchored to a
+    // number rather than to whatever the engine happened to leave.
     CHECK(Wire.field(1, 0x18, 0, 11) == startBefore);
     CHECK(Wire.field(1, 0x1A, 0, 11) == stopBefore);
 
-    SUBCASE("and a mode change, which inherits it, is what makes it move") {
-        // The other half of the claim: the window is not merely insensitive.
-        // 181/1276 is a 14.2% hsync duty against 7.1%, so the capture starts
-        // twice as far into the line -- a difference this assertion would have
-        // caught either way round.
-        bench.engine.modeChanged(&Tv5725::Mode1080p, true, 4);
-        REQUIRE(pollUntilSolved(bench.engine));
-        CHECK(Wire.field(1, 0x18, 0, 11) != startBefore);
-    }
 }
 
-TEST_CASE("a load that is not a custom preset computes the divider it uses")
+TEST_CASE("a preset load computes the divider it uses")
 {
-    // The step-4 shape: with no preset table there is nothing to inherit, so the
-    // divider is COMPUTED from the line rate the source is running at. The
-    // registers are outputs of that, never inputs to it.
+    // There is nothing to inherit, so the divider is COMPUTED from the line
+    // rate the source is running at. The registers are outputs of that, never
+    // inputs to it.
     Bench bench;
 
     // 311 lines at 50 Hz, which is what the seeds above describe.
     g_fieldRate = 50.08f;
-    bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+    bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
     REQUIRE(pollUntilSolved(bench.engine));
 
     const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4, true);
@@ -204,18 +201,18 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     const uint32_t inherited = Wire.field(5, 0x12, 0, 12);
 
     g_fieldRate = 0.0f;
-    bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+    bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
     CHECK_FALSE(pollUntilSolved(bench.engine));
     CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited, true));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
         g_fieldRate = 50.08f;
-        bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+        bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
         REQUIRE(pollUntilSolved(bench.engine));
         const uint32_t solved = Wire.field(5, 0x12, 0, 12);
 
         g_fieldRate = 0.0f;
-        bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+        bench.engine.modeChanged(&Tv5725::Mode1080p, 4);
         CHECK_FALSE(pollUntilSolved(bench.engine));
         CHECK(Wire.field(5, 0x12, 0, 12) == solved);
     }
@@ -254,7 +251,7 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(&Tv5725::Mode1080p, true, 4);
+    engine.modeChanged(&Tv5725::Mode1080p, 4);
     CHECK_FALSE(pollUntilSolved(engine));
     CHECK_FALSE(Wire.touched[1][0x1C]);   // IF_VB_ST
     CHECK_FALSE(Wire.touched[1][0x1E]);   // IF_VB_SP

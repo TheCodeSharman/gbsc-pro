@@ -208,7 +208,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     checkBenchGeometry();
@@ -221,22 +221,6 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     }
 }
 
-TEST_CASE("a custom preset inherits its divider rather than computing one")
-{
-    // A register dump replayed off the filesystem: its saved PLLAD_MD is a
-    // value the user has a picture from, so it is adopted, not recomputed. The
-    // saved divider is the one the solver would have chosen, so the chip ends
-    // up in the same state by a different route.
-    seedBenchSource();
-    DisplayClock clock;
-    Geometry engine(clock);
-
-    engine.modeChanged(benchMode(), true, 4);
-    REQUIRE(pollUntilSolved(engine));
-
-    checkBenchGeometry();
-}
-
 TEST_CASE("a source still settling gets no geometry solved against it")
 {
     // The measurements lag the mode change and do not fail when read early --
@@ -246,7 +230,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     g_fieldRate = 0.0f;
 
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
@@ -282,7 +266,7 @@ TEST_CASE("a line count outside what any source runs is never measured against")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
 
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(engine.poll());
@@ -300,7 +284,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     Wire.reset();
@@ -324,7 +308,7 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(0, false, 4);
+    engine.modeChanged(0, 4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(engine.poll());
 
@@ -350,7 +334,7 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
 
     // Two for a mode change, and no more: one reading has nothing to agree
     // with, so the pass that takes it stops there and the next one solves
@@ -376,7 +360,7 @@ TEST_CASE("a reset puts the framing back and re-solves everything from it")
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     REQUIRE(engine.zoom(400, 120));
@@ -412,7 +396,7 @@ TEST_CASE("capture is frozen across a mode change and released when it lands")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 0);
 
     REQUIRE(pollUntilSolved(engine));
@@ -425,7 +409,7 @@ TEST_CASE("capture stays frozen while the source is still settling")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     g_fieldRate = 0.0f;
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(engine.poll());
@@ -448,14 +432,14 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     Geometry engine(clock);
 
     SUBCASE("a mode with no timings") {
-        engine.modeChanged(0, false, 4);
+        engine.modeChanged(0, 4);
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(engine.poll());
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
 
     SUBCASE("and bypass, where there is no solve coming at all") {
-        engine.modeChanged(benchMode(), false, 4);
+        engine.modeChanged(benchMode(), 4);
         engine.enterBypass();
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
@@ -471,7 +455,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     frameAt(engine, 300, 120, 40, -15);
@@ -539,7 +523,7 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     DisplayClock clock;
     Geometry engine(clock);
     engine.scanModeChanged(false);
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     // 494 of the frame's 500 lines, magnified 2.26x to fill the 1125-line
@@ -578,7 +562,7 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
     DisplayClock clock;
     Geometry engine(clock);
     engine.scanModeChanged(false);
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     // The capture write limit is what caps it here, not the ADC rating, which
@@ -593,7 +577,7 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
     seedField(0, 0x19, 0, 12, 181);
     g_fieldRate = 50.08f;
     engine.scanModeChanged(true);
-    engine.modeChanged(benchMode(), false, 4);
+    engine.modeChanged(benchMode(), 4);
 
     // The correction costs a field rate measurement, so it waits for the count
     // to prove it is not going to settle on its own. Neither register holds

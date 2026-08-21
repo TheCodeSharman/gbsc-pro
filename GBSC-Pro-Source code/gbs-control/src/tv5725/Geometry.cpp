@@ -17,7 +17,7 @@ Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
       samplingPending_(false), solvePending_(false),
       modePending_(false),
-      modeIsCustomPreset_(false), modeOversample_(4), rasterMode_(0),
+      modeOversample_(4), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
@@ -134,7 +134,7 @@ void Geometry::adoptRaster()
     displayClock_.adopt();
 }
 
-void Geometry::modeChanged(const OutputMode *mode, bool customPreset,
+void Geometry::modeChanged(const OutputMode *mode,
                            uint8_t oversample)
 {
     // The windows land seconds from now, once the source has settled into the
@@ -143,19 +143,12 @@ void Geometry::modeChanged(const OutputMode *mode, bool customPreset,
     FrameBuffer::freezeCapture();
 
     modePending_ = true;
-    modeIsCustomPreset_ = customPreset;
     modeOversample_ = oversample;
     rasterMode_ = mode;
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
     sampling_.resetSteadiness();
-
-    // A custom preset's saved divider is on the chip right now, and the write
-    // below is about to cover it. Taken first, so what gets re-asserted is the
-    // dump's own value rather than the mode before it.
-    if (customPreset)
-        sampling_.adopt();
 
     // The sampling clock, BEFORE anything tries to measure. A load leaves the
     // ADC PLL on the bring-up's crossover row, and the sync processor counts in
@@ -197,17 +190,11 @@ bool Geometry::poll()
     if (!sampling_.rateSettled())
         return false;
 
-    // BOTH branches must run, or the engine has no divider and every window
-    // defers forever. A custom preset is a register dump replayed off the
-    // filesystem, so its saved PLLAD_MD is a value the user has a picture from
-    // and adopting it keeps that; computing over it would not.
-    if (modeIsCustomPreset_)
-        adoptSampling();
-    else if (!solveSampling(modeOversample_))
+    if (!solveSampling(modeOversample_))
         return false;
 
-    // The table's raster, taken before the solve that replaces it, so a solve
-    // that still refuses leaves the windows sized for what the table loaded.
+    // Whatever raster is on the chip, taken before the solve that replaces it,
+    // so a solve that still refuses leaves the windows sized for something.
     adoptRaster();
     if (!solveRaster(rasterMode_)) {
         // solveRaster() never defers: both its refusals are final, so a retry
@@ -234,7 +221,7 @@ void Geometry::reset()
     // that would have to keep step with it: the whole sequence -- freeze, wait
     // for the source, measure, sampling, raster, clock, windows -- is what a
     // reset wants, and solveFromScratch() drops the framing on the way through.
-    modeChanged(rasterMode_, modeIsCustomPreset_, modeOversample_);
+    modeChanged(rasterMode_, modeOversample_);
 }
 
 void Geometry::enterBypass()

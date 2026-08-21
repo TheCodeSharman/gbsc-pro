@@ -59,9 +59,10 @@ static bool pollUntilSolved(Tv5725::Geometry &engine)
 }
 
 // The bench RiscPC at 320x256@50 into the engine's own 1916 x 1125 raster.
-// The seeds are three source measurements plus the divider a custom preset
-// saved; the raster is solved from the mode, so what is seeded there is only
-// what the previous load left behind.
+// The seeds are the source measurements the engine is allowed to read; the
+// divider, the raster and both windows are computed from them, so what is
+// seeded at PLLAD_MD and the raster registers is only what the previous load
+// left behind.
 struct Bench {
     Tv5725::DisplayClock clock;
     Tv5725::Geometry engine;
@@ -78,10 +79,7 @@ struct Bench {
         seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL, source lines
 
-        // A custom preset: the saved divider is a value the user has a picture
-        // from, so it is inherited rather than recomputed, and the seeds above
-        // are what it inherits.
-        engine.modeChanged(&Tv5725::Mode1080p, true, 4);
+        engine.modeChanged(&Tv5725::Mode1080p, 4);
         REQUIRE(pollUntilSolved(engine));
     }
 };

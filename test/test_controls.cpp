@@ -79,12 +79,21 @@ TEST_CASE("a press is in output pixels all the way from the panel")
 
 TEST_CASE("a press with nowhere to go leaves the framing where it was")
 {
-    // The default capture already runs to the last unit the line can write, so
-    // there is nowhere further right to go and repeated presses must not drift.
+    // Panned to the last unit the line can write, further presses must not
+    // drift. Where that limit falls depends on the divider, so the test walks
+    // to it rather than assuming the default framing is already there.
     Panel panel;
-    const int16_t before = panel.framing().horizontalPan();
+
+    int16_t atLimit = panel.framing().horizontalPan();
+    for (int i = 0; i < 200; ++i) {
+        panel.controls.horizontalPan(16);
+        const int16_t now = panel.framing().horizontalPan();
+        if (now == atLimit)
+            break;
+        atLimit = now;
+    }
 
     for (int i = 0; i < 5; ++i)
         panel.controls.horizontalPan(16);
-    CHECK(panel.framing().horizontalPan() == before);
+    CHECK(panel.framing().horizontalPan() == atLimit);
 }

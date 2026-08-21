@@ -35,7 +35,6 @@ extern void ChangeAvModeOption(uint8_t num);
 extern void ChangeSvModeOption(uint8_t num);
 
 extern void doPostPresetLoadSteps();
-extern void writeProgramArrayNew(const uint8_t *programArray, boolean skipMDSection);
 extern runTimeOptions *rto;
 extern userOptions *uopt;
 extern const char *ap_ssid;
@@ -207,21 +206,14 @@ bool presetSelectionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OL
     display->setFont(ArialMT_Plain_16);
     display->setTextAlignment(OLEDDISPLAY_TEXT_ALIGNMENT::TEXT_ALIGN_CENTER);
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
-    display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uopt->presetSlot = 'A' + item->tag; // ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~()!*:,
-    uopt->presetPreference = PresetPreference::OutputCustomized;
-    saveUserPrefs();
-    if (rto->videoStandardInput == 14)
-    {
-        // VGA 升频路径：让同步器处理
-        rto->videoStandardInput = 15;
-    }
-    else
-    {
-        // 正常途径
-        applyPresets(rto->videoStandardInput);
-    }
+
+    // Selecting a slot RECORDS it and does nothing else. It used to mean "load
+    // the register dump saved here", and there are no register dumps -- so the
+    // TEXT_LOADED bitmap is not drawn either, because it would be a lie. The
+    // slot survives as the key the replacement mechanism will use:
+    // docs/chip-initialisation.md step 7.
+    uopt->presetSlot = 'A' + item->tag;
     saveUserPrefs();
     manager->freeze();
     oledMenuFreezeTimeoutInMS = 2000;
@@ -543,7 +535,6 @@ static void LoadDefault()
     rto->phaseSP = 16;                 //
     rto->failRetryAttempts = 0;        //
     rto->presetID = 0;                 //
-    rto->isCustomPreset = false;       //
     rto->HPLLState = 0;
     rto->motionAdaptiveDeinterlaceActive = false; // 运动自适应隔行扫描
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用

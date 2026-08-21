@@ -84,7 +84,7 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
 {
     Bench bench;
 
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     REQUIRE(pollUntilSolved(bench.engine));
 
     CHECK(horizontalTotalWritten() == 1916);
@@ -104,7 +104,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
     // comment and CLAUDE.md -- and it is perfectly steady, so steadiness alone
     // would call it settled.
     setSourceLines(97);
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     CHECK_FALSE(pollUntilSolved(bench.engine));
 
     // A half-written raster is worse than none: the totals go in before the
@@ -136,7 +136,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     Bench bench;
 
     g_fieldRate = 50.08f;
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     REQUIRE(pollUntilSolved(bench.engine));
     REQUIRE(horizontalTotalWritten() == 1916);
 
@@ -144,7 +144,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     // exists for. A raster solved at the wrong rate is out by the ratio of the
     // rates, so the previous answer has to stand.
     g_fieldRate = 60.0f;
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     CHECK_FALSE(pollUntilSolved(bench.engine));
     CHECK(horizontalTotalWritten() == 1916);
 
@@ -162,7 +162,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     // Outstanding from the previous mode, which is the common state now that an
     // unsettled source waits rather than giving up.
     setSourceLines(97);
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     REQUIRE_FALSE(pollUntilSolved(bench.engine));
 
     // Past 535 lines the unit drops to RGBHV bypass, where video routes around
@@ -192,7 +192,7 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
     Wire.bank[5][0x13] = 0x07;
     g_fieldRate = 0.0f;
 
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     REQUIRE_FALSE(pollUntilSolved(bench.engine));
     CHECK(Wire.field(5, 0x12, 0, 12) == 1856);
 
@@ -220,7 +220,7 @@ TEST_CASE("a solve points the part at the clock source that can serve the raster
     Clock::ClockGen generator(part);
     bench.clock.driveWith(generator);
 
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     REQUIRE(pollUntilSolved(bench.engine));
 
     CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
@@ -234,7 +234,7 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 {
     Bench bench;
 
-    bench.engine.modeChanged(&Mode1080p, false, 4);
+    bench.engine.modeChanged(&Mode1080p, 4);
     REQUIRE(pollUntilSolved(bench.engine));
 
     CHECK(Wire.bank[0][0x41] == 0x85);

@@ -29,8 +29,8 @@ public:
     const PanAndZoom &framing() const;
 
     // Notify the engine that the source has changed mode. The registers are
-    // not written until the source has settled. 
-    void modeChanged(const OutputMode *mode, bool customPreset,
+    // not written until the source has settled.
+    void modeChanged(const OutputMode *mode,
                      uint8_t oversample);
 
     // Called by the sketch main loop - allows the engine to determine when the
@@ -133,7 +133,6 @@ private:
     bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool solvePending_;
     bool modePending_;
-    bool modeIsCustomPreset_;
     uint8_t modeOversample_;      // a solve refused because the source was settling
     const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
 
