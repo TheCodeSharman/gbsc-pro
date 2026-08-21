@@ -190,7 +190,7 @@ class RecordingEngine:
     Pan and zoom go to the ENGINE now, so what a press does is the request it
     makes -- not the registers it writes. The panel no longer solves anything,
     which is why the placement tests that used to live here are gone: that
-    behaviour is the firmware's, and test_geometry.cpp and the pad tests own it.
+    behaviour is the firmware's, and the host geometry tests and the pad tests own it.
     """
 
     def __init__(self, monkeypatch, held):

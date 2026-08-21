@@ -13,7 +13,8 @@ is about the code.
 |---|---|
 | `…/gbs-control/src/tv5725/` | the driver. One class per file; every caller includes the classes it names, and there is no umbrella header |
 | `…/src/tv5725/Geometry.cpp`, `Controls.cpp` | the only two that touch registers or Arduino — everything else is pure arithmetic and host-compiles |
-| `test/test_geometry*.cpp` | host-compiled unit tests, `make -C test` |
+| `test/test_axis.cpp`, `test_scale.cpp`, `test_input_line.cpp`, `test_active_image.cpp`, `test_register_solution.cpp` | host-compiled unit tests, one per class, `make -C test` |
+| `test/test_geometry*.cpp` | what `Tv5725::Geometry` writes, asserted field by field, `make -C test geometry` |
 
 `geometry_math.py` is the reference implementation and stays that way. It holds
 every bench measurement from 2026-08-03 to 2026-08-06 as an acceptance test, and

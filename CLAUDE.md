@@ -818,7 +818,7 @@ one the same way; the rules below are each a wasted session.
 than namespaces over file-scope globals, one class per file named after it,
 declare-in-header/define-in-.cpp, minimal OO with no inheritance or virtuals,
 dependency injection over reaching for globals, a default of no comment at all,
-and a behaviour-preserving refactor proven by diffing `test_geometry --dump`.
+and a behaviour-preserving refactor proven by diffing the `--dump` oracles.
 Every rule in it is there because it cost a session. Read it before writing
 firmware C++.
 
@@ -839,8 +839,8 @@ firmware C++.
 
   | the fact | the copies |
   |---|---|
-  | what causes the tail green at IF 1126 | `InputLine.h` and `test_geometry.cpp` both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
-  | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against the **4.0x** `test_geometry.cpp` asserts, `Scale::Min` having become derived |
+  | what causes the tail green at IF 1126 | `InputLine.h` and the host tests both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
+  | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against the **4.0x** `test_axis.cpp` asserts, `Scale::Min` having become derived |
 
   One fact, three copies, two wrong, and every test passed — because tests check
   code, and nothing checks prose. A single doc can be reviewed and corrected in

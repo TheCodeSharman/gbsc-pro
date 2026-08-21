@@ -342,7 +342,7 @@ narration around it.
 
 ## Host unit tests are doctest
 
-`test/test_geometry.cpp` and `test/test_hold_ramp.cpp`, run by `make -C test`
+`test/test_axis.cpp` and `test/test_hold_ramp.cpp`, run by `make -C test`
 (`make -C build test` still works and delegates there). The flake supplies the header; nothing is vendored and
 nothing is linked.
 
@@ -358,11 +358,11 @@ wrote and forgot to wire up silently never ran, and reported success. doctest
 registers them itself. The migration preserved the assertion counts exactly,
 145 and 65, which is how it was checked.
 
-**`--dump` is intercepted before doctest sees `argv`.** `test_geometry` doubles
-as the oracle generator below, and doctest exits non-zero on an option it does
-not recognise. That is why `test_geometry.cpp` uses
-`DOCTEST_CONFIG_IMPLEMENT` with its own `main` while `test_hold_ramp.cpp`, which
-has no oracle, uses `..._WITH_MAIN`.
+**`--dump` is intercepted before doctest sees `argv`.** The three suites that
+double as oracle generators below exit non-zero on an option doctest does not
+recognise, so `test_axis.cpp`, `test_active_image.cpp` and
+`test_register_solution.cpp` use `DOCTEST_CONFIG_IMPLEMENT` with their own
+`main` while every other suite uses `..._WITH_MAIN`.
 
 Two things to know when writing an assertion:
 
@@ -370,14 +370,21 @@ Two things to know when writing an assertion:
   them and says so at compile time: `CHECK(((a < b) && (c < d)))`.
 - **There is no absolute-tolerance assertion.** `doctest::Approx`'s epsilon is
   *relative*, and every tolerance in the geometry is a count of pixels. Hence the
-  local `CHECK_NEAR(got, want, tol)` macro over `CHECK_MESSAGE`.
+  shared `CHECK_NEAR(got, want, tol)` macro in `test/CheckNear.h`, over
+  `CHECK_MESSAGE`.
 
 ## Prove a refactor changed nothing
 
 A behaviour-preserving change must be **shown** to be behaviour-preserving, not
-argued to be. `test/test_geometry.cpp --dump` prints a 760-row oracle grid;
-diff it across the change and it must be byte-identical. Both refactors on
-2026-08-09 were verified that way.
+argued to be. `test_axis`, `test_active_image` and `test_register_solution`
+each take `--dump` and print their share of an oracle grid; diff all three
+across the change and they must be byte-identical.
+
+`test/test_geometry.cpp` is the other half of the proof, and asks a different
+question. It drives `Tv5725::Geometry` at the top and asserts every field that
+reaches the chip **by name, against an expected value** — so it says whether the
+values are right, not merely whether they moved, and a stray write to a register
+no expectation names fails as well.
 
 If a refactor cannot be checked like that, say so in the commit.
 
