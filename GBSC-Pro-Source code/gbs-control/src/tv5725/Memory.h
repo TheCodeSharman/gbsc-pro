@@ -43,9 +43,11 @@ public:
     // run the part at. This stops where the measurement stops.
     static const uint16_t FetchFloor = 150;
 
-    // Takes the capture as well as the raster because the fetch has to cover
-    // the source pixels the line needs, and only the framing knows how many.
-    static uint16_t fetchFor(uint16_t outputLinePx, uint16_t captureWidth);
+    // The burst has to cover the source pixels the line needs, and only the
+    // framing knows how many. The output raster is deliberately not a
+    // parameter: gating the rule on one leaves the fetch short of what a wide
+    // capture asks for, and the shortfall shows as tearing.
+    static uint16_t fetchFor(uint16_t captureWidth);
 
     // The line stride: where playback starts the next line, in the same 64-bit
     // memory words as the fetch. Below the fetch, successive lines overlap and

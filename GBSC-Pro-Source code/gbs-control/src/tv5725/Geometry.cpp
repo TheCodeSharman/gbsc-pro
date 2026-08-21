@@ -425,7 +425,7 @@ void Geometry::write(const VideoProcessorTimings &solved, const CaptureWindow &c
     // PB_FETCH_NUM reprograms the playback FIFO while the picture is being read
     // out of it, which flickers even when the value written is identical.
     // docs/investigations/hscale-tearing-characterisation.md
-    uint16_t fetch = Memory::fetchFor(capture.linePx(), capture.horizontal().width());
+    uint16_t fetch = Memory::fetchFor(capture.horizontal().width());
     uint16_t offset = Memory::offsetFor(capture.horizontalLine().units());
     if (GBS::PB_FETCH_NUM::read() != fetch)
         GBS::PB_FETCH_NUM::write(fetch);
