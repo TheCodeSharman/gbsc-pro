@@ -95,11 +95,21 @@ diagnosing "the unit" while able to observe roughly a third of it.
   **VGA is the only input that raises `asw_01`** (the schematic's
   `ASW_01 = 0, HS_IN = SOGIN` — it selects the dedicated HSync pin over
   sync-on-green), and the only one raising `asw_01` and `asw_04` together.
-- **Both MCUs persist "which input", separately, and never reconcile.** The ESP
-  keeps `SeleInputSource` in `/preferencesv2.txt`; the HC32 keeps `asw_01..04` in
-  its own flash and restores them via `Video_ReadNot2()`. **Nothing sends a frame
-  at boot**, so a cold start can come up with the two disagreeing — which is what
-  picking the input on the OLED repairs.
+- **Both MCUs persist "which input", separately, and neither can read the other
+  back.** The ESP keeps `SeleInputSource` in `/preferencesv2.txt`; the HC32 keeps
+  `asw_01..04` in its own flash and restores them via `Video_ReadNot2()`. The ESP
+  reconciles them at boot: `applySavedInputSource()` (`gbs-control.ino:7793`,
+  after `calibrateAdcOffset()` and `setResetParameters()` so neither overwrites
+  it) points `ADC_INPUT_SEL` at the saved input and calls
+  `sendSavedInputToAvModule()`, which transmits the frame.
+  **The hole left is `SeleInputSource == 0`** — nothing meaningful saved, which
+  is also what a short preferences read produces — where the `default:` case
+  sends nothing and the two can still come up disagreeing. Picking the input on
+  the OLED repairs that, and saves the preference so the next boot sends it.
+  `applySavedInputSource()` records what it did as the boot log's `INPUT:` line,
+  **which the default build does not keep**: `BOOTLOG_BYTES=0`, so rebuild with
+  `BOOTLOG_BYTES=2048` before trying to tell "no frame sent" from "frame sent and
+  ignored".
 - **AV module v1.3 changes only the ADV7280/ADV7391 composite path** (525p vs
   625p encoder config). `uart_dma.c` and `flash.c` are byte-identical to v1.2.3.
   It cannot affect RGB/VGA routing — don't reach for it to fix a VGA fault.
