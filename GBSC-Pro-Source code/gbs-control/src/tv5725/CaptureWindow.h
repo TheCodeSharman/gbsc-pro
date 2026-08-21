@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #include "InputLine.h"
-#include "PanAndZoom.h"
+#include "ActiveImage.h"
 #include "SourceMeasurement.h"
 #include "BlankingTiming.h"
 
@@ -77,7 +77,7 @@ private:
     InputLine horizontalLine_, verticalLine_;
     uint16_t linePx_;         // output raster total, horizontal
     uint16_t frameLines_;     // output raster total, vertical
-    PanAndZoom framing_;
+    ActiveImage image_;
     BlankingTiming horizontal_, vertical_;
 };
 

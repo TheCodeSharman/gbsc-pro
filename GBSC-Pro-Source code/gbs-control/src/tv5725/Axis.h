@@ -13,7 +13,22 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity);
+         uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity,
+         float activeFraction50Hz, float activeFraction60Hz, bool vertical);
+
+    // Which axis this is. The one place that knows: callers pass the axis and
+    // the arithmetic reads what it needs off it, rather than each call taking a
+    // flag and re-deriving the same per-axis data from it.
+    bool vertical() const;
+
+    // How much of the line an untuned source is assumed to fill. Horizontal
+    // barely moves across VESA, CEA and the NES; vertical splits hard on field
+    // rate, because a 50 Hz source carries the same active height in a longer
+    // frame. A starting point, not a derivation.
+    //
+    // This is what the horizontal/vertical flag used to select. It is data on
+    // the axis now, so the arithmetic never asks which axis it is on.
+    float activeFraction(float fieldRateHz) const;
 
     // write start = VDS_?B_SP + startConst + startPerMag x magnification.
     // Pipeline latency before the first write: ~25 input samples of run-up for
@@ -111,6 +126,8 @@ private:
 
     float startConst_, startPerMag_;
     uint16_t windowStopMin_, margin_, scaleMin_, captureGranularity_;
+    float activeFraction50Hz_, activeFraction60Hz_;
+    bool vertical_;
 };
 
 // The two axes, defined once in Axis.cpp: `static const` in a header gives every

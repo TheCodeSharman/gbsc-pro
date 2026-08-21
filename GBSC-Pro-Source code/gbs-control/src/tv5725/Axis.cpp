@@ -5,10 +5,20 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity)
+           uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity,
+           float activeFraction50Hz, float activeFraction60Hz, bool vertical)
     : startConst_(startConst), startPerMag_(startPerMag),
       windowStopMin_(windowStopMin), margin_(margin), scaleMin_(scaleMin),
-      captureGranularity_(captureGranularity) {}
+      captureGranularity_(captureGranularity),
+      activeFraction50Hz_(activeFraction50Hz),
+      activeFraction60Hz_(activeFraction60Hz), vertical_(vertical) {}
+
+bool Axis::vertical() const { return vertical_; }
+
+float Axis::activeFraction(float fieldRateHz) const
+{
+    return fieldRateHz < 55.0f ? activeFraction50Hz_ : activeFraction60Hz_;
+}
 
 float Axis::startConst() const { return startConst_; }
 
@@ -165,8 +175,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min, 2);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min, 2, 0.76f, 0.76f, false);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min, 1);
+const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min, 1, 0.82f, 0.95f, true);
 
 }  // namespace Tv5725

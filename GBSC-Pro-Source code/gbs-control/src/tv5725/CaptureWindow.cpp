@@ -51,7 +51,7 @@ bool CaptureWindow::scaling() const { return linePx_ >= 64 && frameLines_ >= 64;
 
 void CaptureWindow::setFraming(const PanAndZoom &wanted, float fieldRateHz)
 {
-    framing_ = wanted;
+    image_.setFraming(wanted);
 
     // Clamped before the windows are taken, so the framing kept is one these
     // bounds can realise. A press big enough to overshoot still moves the
@@ -59,11 +59,11 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted, float fieldRateHz)
     // smaller press back then produces an identical window and is reverted,
     // leaving the control dead in that direction. Only the hold ramp presses
     // that far -- measured pv -51 against a limit of -46, ph -144 against -134.
-    framing_.clampToLine(horizontalLine_, fieldRateHz, false, linePx_);
-    framing_.clampToLine(verticalLine_, fieldRateHz, true, frameLines_);
+    image_.clampToLine(horizontalLine_, fieldRateHz, AxisHorizontal, linePx_);
+    image_.clampToLine(verticalLine_, fieldRateHz, AxisVertical, frameLines_);
 
-    horizontal_ = framing_.capture(horizontalLine_, fieldRateHz, false, linePx_);
-    vertical_ = framing_.capture(verticalLine_, fieldRateHz, true, frameLines_);
+    horizontal_ = image_.capture(horizontalLine_, fieldRateHz, AxisHorizontal, linePx_);
+    vertical_ = image_.capture(verticalLine_, fieldRateHz, AxisVertical, frameLines_);
 
     // A pixel costs one 32-bit word, and a line wide enough to overrun the
     // capture buffer is reachable because the width is in ADC samples and
@@ -76,7 +76,7 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted, float fieldRateHz)
         horizontal_ = BlankingTiming(horizontal_.stop(), horizontal_.stop() + fits);
 }
 
-const PanAndZoom &CaptureWindow::framing() const { return framing_; }
+const PanAndZoom &CaptureWindow::framing() const { return image_.framing(); }
 
 const BlankingTiming &CaptureWindow::horizontal() const { return horizontal_; }
 

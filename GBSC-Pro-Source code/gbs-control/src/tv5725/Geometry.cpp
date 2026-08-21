@@ -29,12 +29,12 @@ void Geometry::requestFraming(const PanAndZoom &wanted)
 bool Geometry::apply()
 {
     CaptureWindow capture;
-    if (!readCapture(capture))
+    if (!measureSourceTimings(capture))
+        return false;
+    if (!calculateInputFormatterRegisters(capture))
         return false;
 
-    RegisterSolution solved(capture.horizontal().width(), capture.vertical().width(),
-                              capture.linePx(), capture.frameLines(),
-                              activeStop_, activeLinesStop_);
+    RegisterSolution solved = calculateOutputRaster(capture);
     if (!solved.usable())
         return fail();
 
@@ -253,7 +253,7 @@ bool Geometry::fail()
     return false;
 }
 
-bool Geometry::readCapture(CaptureWindow &capture)
+bool Geometry::measureSourceTimings(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_);
     if (!capture.readRasters(sampling_, getSourceFieldRate(0),
@@ -270,10 +270,21 @@ bool Geometry::readCapture(CaptureWindow &capture)
         solvePending_ = false;
         return false;
     }
+    return true;
+}
 
+bool Geometry::calculateInputFormatterRegisters(CaptureWindow &capture)
+{
     capture.setFraming(framing_, sourceFieldRateOr50Hz());
     framing_ = capture.framing();
     return capture.usable() ? true : fail();
+}
+
+RegisterSolution Geometry::calculateOutputRaster(const CaptureWindow &capture) const
+{
+    return RegisterSolution(capture.horizontal().width(), capture.vertical().width(),
+                            capture.linePx(), capture.frameLines(),
+                            activeStop_, activeLinesStop_);
 }
 
 void Geometry::write(const RegisterSolution &solved, const CaptureWindow &capture)
