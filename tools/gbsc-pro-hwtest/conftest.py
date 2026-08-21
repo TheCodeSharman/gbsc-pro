@@ -26,14 +26,6 @@ def pytest_addoption(parser):
         "cannot see the input look identical from over here.",
     )
     group.addoption(
-        "--preset-save",
-        action="store_true",
-        default=False,
-        help="also run the destructive preset-save test: it overwrites the stored "
-        "preset for the current video mode and switches the unit to custom "
-        "presets. Have a flash backup.",
-    )
-    group.addoption(
         "--no-sync",
         action="store_true",
         default=False,
@@ -80,9 +72,6 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", "preset_save: writes to the unit's flash; needs --preset-save"
-    )
-    config.addinivalue_line(
         "markers", "no_sync: needs the source disconnected; needs --no-sync"
     )
     config.addinivalue_line(
@@ -110,7 +99,6 @@ def pytest_configure(config):
 
 def pytest_collection_modifyitems(config, items):
     gates = [
-        ("preset_save", "--preset-save", "destructive; pass --preset-save to run it"),
         ("no_sync", "--no-sync", "needs the source unplugged; pass --no-sync to run it"),
         ("pllad_hostile", "--pllad-hostile",
          "corrupts the picture while it runs; pass --pllad-hostile to run it"),

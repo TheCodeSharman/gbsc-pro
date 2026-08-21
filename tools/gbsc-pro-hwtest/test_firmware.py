@@ -1,10 +1,9 @@
 """Regression tests for this fork's firmware changes, run against a live unit.
 
     pytest --host=gbscontrol.local
-    pytest --host=192.168.1.20 --preset-save
 
 Covers the /getreg and /setreg endpoints, printVideoTimings() reaching the web
-console, the preset save path, and the external clock generator's display-clock
+console, the slot routes, and the external clock generator's display-clock
 stash. The timings tests need a GBS_DEBUG=1 build; they fail rather than
 skip if the console is silent, because a silent console is the regression they
 exist to catch.
@@ -40,7 +39,6 @@ from gbs_unit import (
 # scaling preset the guard fixture puts it straight back.
 SAFE_SEGMENT, SAFE_REGISTER = 3, 0x01
 
-PRESET_VALUE_COUNT = 432  # see presetRegisterRanges[] in gbs-control.ino
 
 # Sync processor state, all reachable through /getreg.
 STATUS_16 = (0, 0x16)  # what every "is there sync?" test in the firmware reads
@@ -727,72 +725,63 @@ def test_the_filesystem_lists_each_file_once(host):
     )
 
 
-# --- preset save ------------------------------------------------------------
+# --- the slot routes, now that a slot is not a register dump -----------------
 
 
-def test_no_leftover_temp_presets(host):
-    """savePresetToFS() writes '<preset>~' and renames it into place. One
-    left behind means a save failed part way and did not clean up."""
-    files = fs_dir(host)
+def test_slot_routes_refuse_and_change_nothing(host, console):
+    """/uc?3 and /uc?4 used to load and save 432 register bytes to flash.
 
-    assert files is not None, "/fs/dir did not answer"
-    assert [f for f in files if f.endswith("~")] == []
+    The dumps are gone -- they are the one mechanism that contradicts the
+    engine computing every register from held state -- but the routes stay, so
+    the web UI's slot grid keeps its surface for the mechanism that replaces
+    them: a slot recording the INPUTS to the calculation, keyed by
+    (vsync, hsync). See step 7 of docs/chip-initialisation.md.
 
-
-@pytest.mark.preset_save
-def test_preset_save_completes_or_refuses_cleanly(host, console):
-    """/uc?4 must either leave a complete 432-value preset, or refuse and change
-    nothing at all.
-
-    What it must never do is the old behaviour: write nothing (or a partial
-    file) and still leave the unit's preset preference pointing at it, so the
-    next boot loads a preset that was never written. Which branch runs depends
-    on the unit's current video mode — mode 15, for one, has no preset file —
-    so both are accepted, and the test asserts the contract either way.
+    Until then both must refuse, say so, and touch nothing. A silent no-op
+    would leave someone pressing save and believing it worked.
     """
-    before = fs_dir(host)
-    assert before is not None, "/fs/dir did not answer before the save"
     prefs_before = fs_read(host, "/preferencesv2.txt")
     assert prefs_before is not None, "could not read the preferences file"
+    files_before = fs_dir(host)
+    assert files_before is not None, "/fs/dir did not answer"
 
-    console.drain()
-    status, _ = get(host, "/uc?4")
-    assert status == 200
-    output = console.collect(5.0)
-
-    after = fs_dir(host)
-    assert after is not None, "/fs/dir did not answer after the save"
-    assert [f for f in after if f.endswith("~")] == [], f"temp file left behind: {after}"
-
-    presets = [f for f in after if f.startswith("/preset_")]
-    if not presets:
-        # Refused. The preference must not have moved, and it must have said why.
-        assert fs_read(host, "/preferencesv2.txt") == prefs_before, (
-            "the save was refused but the preferences changed anyway — the unit "
-            "may now boot into a preset that does not exist"
+    # One at a time. /uc? QUEUES a single command character for loop() to pick
+    # up, so two requests in flight lose the first -- and a 200 says only that
+    # the route was reached. CLAUDE.md, "HTTP answering does not mean the
+    # firmware is running".
+    refusals = []
+    for route, expected in (("/uc?3", "slot load"), ("/uc?4", "slot save")):
+        console.drain()
+        status, _ = get(host, route)
+        assert status == 200, f"{route} did not answer"
+        output = console.collect(5.0)
+        said = [line for line in output if expected in line]
+        assert said, (
+            f"{route} refused silently; expected a {expected!r} line, or a user "
+            f"cannot tell a no-op from a save. Got: {output!r}"
         )
-        refusals = [line for line in output if "preset save" in line]
-        assert refusals, (
-            "the save wrote nothing and gave no reason; expected a 'preset save: ...' "
-            f"line on the console. Got: {output!r}"
-        )
-        print(f"\nrefusal path verified: {refusals[0]!r}")
-        return
+        refusals += said
 
-    written = sorted(presets, key=lambda f: f in before)[0]
-    content = fs_read(host, written)
-    assert content is not None, f"could not download {written}"
-
-    values = [v for v in content.split("}")[0].split(",") if v.strip()]
-    assert len(values) == PRESET_VALUE_COUNT, (
-        f"{written} holds {len(values)} values, expected {PRESET_VALUE_COUNT}"
+    # Compared against BEFORE rather than against empty: a unit that ran a
+    # build with custom presets still has its /preset_*.<slot> files on flash.
+    # Nothing writes or reads them now, and deleting someone's files on upgrade
+    # is not this firmware's business -- what matters is that no route adds to
+    # them or half-writes a new one.
+    files_after = fs_dir(host)
+    assert files_after is not None, "/fs/dir did not answer after"
+    assert sorted(files_after) == sorted(files_before), (
+        f"a slot route changed the filesystem: {files_before} -> {files_after}"
+    )
+    assert [f for f in files_after if f.endswith("~")] == [], (
+        f"a half-written temp file was left behind: {files_after}"
     )
 
-    numbers = [int(v) for v in values]
-    assert all(0 <= v <= 255 for v in numbers), f"{written} holds non-byte values"
-    assert len(set(numbers)) > 1, f"{written} is a dead readback (every value identical)"
-    print(f"\nwrite path verified: {written}, {len(values)} values")
+    assert fs_read(host, "/preferencesv2.txt") == prefs_before, (
+        "a slot route changed the preferences; the unit may now boot expecting "
+        "something that was never saved"
+    )
 
+    assert len(refusals) == 2, refusals
 
 
 # --- surviving a lost lock --------------------------------------------------
