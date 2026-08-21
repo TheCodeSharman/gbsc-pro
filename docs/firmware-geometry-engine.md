@@ -136,10 +136,14 @@ wrap point *and* what is unusable on it, and `InputLine::measured()` derives the
 second
 from the source: `ceil(units x HLOW_LEN / PLLAD_MD)`, excluded at the **head**
 only, because `SP_RT_HS_ST` is 0 and the input formatter counts from the sync's
-leading edge. `capture()` and `clampToLine()` take that one object rather than
-two loose numbers, precisely so they cannot be given different bounds — they
-clamp the window and the framing respectively, and one unit between them is the
-dead zone.
+leading edge.
+
+`Tv5725::InputSignal` pairs the two lines into the rectangle the source
+presents, and `Tv5725::CaptureWindow` is the rectangle placed inside it: both
+axes together, holding the signal it must stay within, and clamping the framing
+on the way in. The window and the framing are therefore taken from one
+placement, so they cannot be given different bounds — one unit between them is
+the dead zone.
 
 **The tail is deliberately unbounded and there is a test saying so.** There is
 green there too, but it is not the sync pulse and nothing derives its position;
