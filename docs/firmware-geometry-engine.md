@@ -66,14 +66,13 @@ clamps the framing it is given and not every value is reachable.
 
 ## What the sketch may call
 
-`Geometry` has seven entry points, and nothing else is reachable from outside it:
+`Geometry` has six entry points, and nothing else is reachable from outside it:
 
 | | |
 |---|---|
 | `modeChanged(mode, customPreset, oversample)` | the source is about to change mode; nothing is solved here |
 | `poll()` | drives whatever is outstanding, on every pass of `loop()` |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
-| `rasterWidthChanged(horizontalTotal)` | the total was retimed outside the engine |
 | `framing()` | the framing the user has reached, read only |
 | `pan(dx, dy)` / `zoom(dh, dv)` | one press, in OUTPUT PIXELS |
 | `resolve()` | re-derive every register from what is held, without moving the framing |
@@ -134,15 +133,12 @@ behavioural tests carry it instead — a step crops and the picture stays full
 size, and five steps out then five back return exactly to `(264, 1062)`.
 
 **Never write `VDS_HSYNC_RST` or `VDS_VSYNC_RST` FROM A GEOMETRY SOLVE.** They
-change the mode the TV locks to, and `runAutoBestHTotal` and FrameSync steer
-them continuously — a solve that moved them would fight both, every pad press.
+change the mode the TV locks to, and FrameSync steers the frame time
+continuously — a solve that moved them would fight it, every pad press.
 
-Two things write them, and neither is a solve. `solveRaster()` runs once per
-mode change, from `poll()`, which drives the whole sequence itself; and
-`rasterWidthChanged()` carries a total the htotal search already moved, on a
-board with no clock generator to steer instead — it holds the new total, moves
-the held active stop by the same amount, and re-fits every window to it.
-Everything else, `pan()` and `zoom()` included, must leave them alone. The ordering is
+`solveRaster()` is the one writer, once per mode change, from `poll()`, which
+drives the whole sequence itself. Everything else, `pan()` and `zoom()`
+included, must leave them alone. The ordering is
 `docs/investigations/preset-abandonment-audit.md`'s and is not optional: raster,
 clock, windows, rate steer **last**. It is expressed once, inside `poll()`,
 rather than assembled by the caller — the display clock reads the seed the
@@ -159,6 +155,14 @@ magnified at most `1024/500 = 2.048x`:
 | 129.6 MHz | 2298 | 1123 | **0 presses** — the default sat on the clamp |
 | 108 MHz | 1915 | 936 | 16 presses |
 | 81 MHz | 1436 | 702 | ~61 presses |
+
+**The htotal search is gone.** `applyBestHTotal()`, `runAutoBestHTotal()` and
+`snapToIntegralFrameRate()` hunted for a horizontal total by nudging it and
+re-measuring the output frame rate. `solveRaster()` computes the same quantity
+directly — `clock / fieldRate / frameLines` — so the search was a second answer
+to a question already answered, and the two did not agree: across three boots of
+identical firmware the engine computed 1918 every time while the search settled
+at 1915, 1436 and 1740.
 
 That is why `OutputRaster::EngineCeilingHz` is 108 MHz and not the 129.6 MHz the
 part demonstrably runs at — a usability limit, since both were judged "works,

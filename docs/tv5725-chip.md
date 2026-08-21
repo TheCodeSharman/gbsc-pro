@@ -328,7 +328,7 @@ Two different pairs of registers report "totals", and they are not the same thin
 
 | register | segment | units | used by firmware for |
 |---|---|---|---|
-| `STATUS_SYNC_PROC_HTOTAL` | 0 `0x17` | **sample clocks** | gating `runAutoBestHTotal`, `runAutoGain`, frame sync |
+| `STATUS_SYNC_PROC_HTOTAL` | 0 `0x17` | **sample clocks** | gating `runAutoGain` and FrameSync's periodic lock |
 | `STATUS_SYNC_PROC_VTOTAL` | 0 `0x1B` | lines | preset selection, scaling threshold |
 | `HPERIOD_IF` | 0 `0x06` | **source H total / 4** | mode-change stability — a real source measurement |
 | `VPERIOD_IF` | 0 `0x07` | lines | deinterlace cadence, mode detect |

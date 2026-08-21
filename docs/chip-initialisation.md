@@ -262,11 +262,9 @@ by legacy code**, whichever runs later winning and nothing reporting the loser.
 **But the static count overstates the live conflict on a board with an Si5351,
 and by a lot.** Three of the largest contested writers cannot execute here:
 
-- `applyBestHTotal()` returns immediately on `rto->extClockGenDetected`, so its
-  seven geometry writes are unreachable. The search loop in
-  `setExternalClockGenFrequencySmooth()` that calls it for a *return value* is
-  inert with it — it gets `true`, decrements a local, measures no change and
-  breaks.
+- `applyBestHTotal()` and the rest of the htotal search are deleted, so their
+  seven geometry writes are gone rather than merely unreachable. The engine
+  computes the horizontal total in `solveRaster()`.
 - `FrameSync::runVsync()` is the only caller of the `VDS_VSYNC_RST` /
   `VDS_VS_ST` writes in `framesync.h`, and `gbs-control.ino:8143` reads
   `rto->extClockGenDetected ? runFrequency() : runVsync(...)`. With the clock

@@ -104,9 +104,9 @@ curl 'http://<ip>/freeze'         # report
 curl 'http://<ip>/freeze?on=0'
 ```
 
-Frozen, the ESP writes **no** TV5725 register unless you ask. Six guards, on
-`applyPresets()`, `runSyncWatcher()`, `runAutoBestHTotal()`,
-`detectAndSwitchToActiveInput()`, `runAutoGain()` and `runSourceRecovery()` —
+Frozen, the ESP writes **no** TV5725 register unless you ask. Five guards, on
+`applyPresets()`, `runSyncWatcher()`, `detectAndSwitchToActiveInput()`,
+`runAutoGain()` and `runSourceRecovery()` —
 `applyPresets()` alone covers nine call sites, but not FrameSync steering the
 Si5351, which `syncWatcherEnabled` does not gate either.
 
