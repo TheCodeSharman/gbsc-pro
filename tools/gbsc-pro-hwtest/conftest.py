@@ -1,12 +1,11 @@
 """Fixtures for the live-unit tests. Without --host (or GBSC_HOST) every test
 here skips, so a bare `pytest` at the repo root stays useful with no hardware."""
 
-import json
 import os
 
 import pytest
 
-from gbs_unit import Console, get, read_reg, write_reg
+from gbs_unit import Console, get, read_reg, reset_framing, write_reg
 
 
 def pytest_addoption(parser):
@@ -138,6 +137,11 @@ def leave_the_bench_usable(request):
     need rather than saving and restoring. That rule is about preconditions;
     this is teardown, which is a different thing and does not weaken it.
 
+    Reset rather than put back what the run started with, because the control a
+    user has is a reset and the suite may only reach for what a user can. The
+    default framing is a better place to leave a unit than whatever framing a
+    run happened to begin at.
+
     Also unfreezes, because a run interrupted inside the freeze test leaves
     automation off and the unit looks dead.
     """
@@ -146,21 +150,11 @@ def leave_the_bench_usable(request):
         yield
         return
 
-    before = None
-    try:
-        status, body = get(address, "/geometry")
-        if status == 200:
-            before = json.loads(body)
-    except Exception:  # noqa: BLE001 - no framing to restore is not an error
-        before = None
-
     yield
 
-    if before is None:
-        return
     try:
         get(address, "/freeze?on=0")
-        get(address, "/geometry?zh={zh}&zv={zv}&ph={ph}&pv={pv}".format(**before))
+        reset_framing(address)
     except Exception:  # noqa: BLE001 - teardown must not turn a pass into an error
         pass
 

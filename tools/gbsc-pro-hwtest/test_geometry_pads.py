@@ -40,7 +40,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-from gbs_unit import (field_from, get, get_json, read_field, read_reg, read_segment,
+from gbs_unit import (DEFAULT_FRAMING, RESET_COMMAND, field_from, get, get_json,
+                      read_field, read_reg, read_segment, recover_lock, reset_framing,
                       wait_for, write_reg)
 
 GEOMETRY_FIELDS = [
@@ -122,11 +123,19 @@ OUTPUT_AXES = (AXIS_HORIZONTAL, AXIS_VERTICAL)
 
 def framing(host):
     """The engine's framing: zoom steps and pan offsets, per axis."""
-    return get_json(host, "/geometry")
+    status, parsed = get_json(host, "/geometry")
+    return parsed if status == 200 else None
 
 
-def set_framing(host, zh, zv, ph, pv):
-    return get_json(host, f"/geometry?zh={zh}&zv={zv}&ph={ph}&pv={pv}")
+def moved_off(value, poison):
+    """True once a field holds something other than the poison written into it.
+
+    None is a read that did not arrive, not a value: register reads defer to
+    loop() and time out for as long as loop() is busy, which is precisely while
+    a preset load is running. A bare `!= poison` is satisfied by that timeout and
+    reports the poison overwritten by the very thing that was too busy to answer.
+    """
+    return value is not None and value != poison
 
 
 def probe_for(host):
@@ -233,7 +242,7 @@ def scaling(host, source):
 
 @pytest.fixture
 def framed(host, probe, scaling):
-    """The geometry at a KNOWN framing, supplied rather than inherited.
+    """The geometry at a KNOWN framing, reached the way a user reaches it.
 
     Each test states the state it needs instead of saving and restoring
     whatever it found, so nothing depends on what ran before it. The engine's
@@ -241,9 +250,26 @@ def framed(host, probe, scaling):
     writing registers back restores nothing -- the next press recomputes from a
     framing nobody reset. Getting that wrong let eleven zoom steps accumulate
     across a suite while every test believed it had made one.
+
+    Through the reset control rather than an absolute set, because a route the
+    user does not have is a door this suite must not use either: arranged that
+    way, a test stops exercising the system anyone else can reach.
     """
-    set_framing(host, 0, 0, 0, 0)
+    reset_the_framing(host)
     return settled_geometry(host)
+
+
+def reset_the_framing(host):
+    """Put the framing back to default, and CHECK IT LANDED.
+
+    A 200 from /sc only means the command was queued into a global that loop()
+    has yet to read, so it is no evidence the reset ran -- and a reset that
+    silently does nothing leaves every test running from whatever framing the
+    one before it left, which is the accumulation this fixture exists to stop.
+    """
+    assert reset_framing(host), (
+        f"/sc?{RESET_COMMAND} left the framing at {framing(host)} rather than "
+        f"{DEFAULT_FRAMING}: the reset control did not run.")
 
 
 # What a press moves first, so there is something to wait on.
@@ -272,6 +298,15 @@ def press(host, probe, command, timeout=6.0):
     landed = wait_for(lambda: probe.read_field(spec) != before, timeout=timeout)
     assert landed, (f"/sc?{command} did not move {spec[0]} from {before} "
                     f"within {timeout}s -- was the press absorbed?")
+
+
+# How many presses it can take to walk a control from wherever a test found it
+# to its stop. Not a property of the control: the zoom floor is raster / 4 and
+# the raster is COMPUTED, so the travel moves when the output does. High enough
+# that saturating is what ends the loop, and asserted at each call so a limit
+# which has fallen behind fails loudly instead of testing a half-zoomed picture.
+ZOOM_PRESSES_TO_A_STOP = 120
+PAN_PRESSES_TO_A_STOP = 200
 
 
 def press_until_saturated(host, probe, command, limit=24):
@@ -369,6 +404,31 @@ def windows_following_the_capture(state):
 
 
 @pytest.mark.zoom
+def test_the_reset_control_returns_the_framing_to_default(host, probe, scaling):
+    """/sc?<reset> puts the framing back to default and re-solves from the source.
+
+    The framing is the engine's state and the registers are an output of it, so
+    nothing else can put a test back at a known starting point: writing the
+    registers back restores nothing, because the next press recomputes from a
+    framing nobody reset.
+
+    **The character is the whole risk here.** web_service() parks '@' in
+    serialCommand to mean "nothing pending" and guards its switch on
+    serialCommand != '@', so a case labelled '@' is unreachable -- the route
+    answers 200, loop() consumes nothing, and the framing stays where the last
+    press left it. That is invisible to every other test in this file: they
+    would go on passing against an inherited framing, which is exactly the
+    accumulation the fixture was written to prevent.
+    """
+    press(host, probe, "z")
+    moved = framing(host)
+    assert moved != DEFAULT_FRAMING, (
+        f"a zoom press left the framing at {moved}, so this cannot show a reset "
+        f"returning it to {DEFAULT_FRAMING}")
+
+    reset_the_framing(host)
+
+
 def test_a_zoom_press_leaves_the_windows_following_the_capture(host, probe, framed):
     """End to end: press the pad, read the registers back, and check every
     output window still follows the capture the unit holds."""
@@ -662,7 +722,10 @@ def test_a_zoomed_out_capture_never_takes_the_hsync_pulse(host, probe, framed):
     units = framed["IF_HSYNC_RST"] + 1
     guard = sync_units(probe, units)
 
-    set_framing(host, -5000, 0, 0, 0)
+    landed = press_until_saturated(host, probe, "h", limit=ZOOM_PRESSES_TO_A_STOP)
+    assert landed < ZOOM_PRESSES_TO_A_STOP, (
+        f"zoom-out was still moving after {landed} presses, so this never "
+        "reached the stop it is about")
     after = settled_geometry(host)
 
     assert after["IF_HB_SP2"] >= guard, (
@@ -687,7 +750,10 @@ def test_a_zoomed_out_capture_takes_the_tail_down_to_whichever_bound_is_lower(
     units = framed["IF_HSYNC_RST"] + 1
     reach = min(units - 2, WRITE_LIMIT_UNITS)
 
-    set_framing(host, -5000, 0, 0, 0)
+    landed = press_until_saturated(host, probe, "h", limit=ZOOM_PRESSES_TO_A_STOP)
+    assert landed < ZOOM_PRESSES_TO_A_STOP, (
+        f"zoom-out was still moving after {landed} presses, so this never "
+        "reached the stop it is about")
     after = settled_geometry(host)
 
     assert after["IF_HB_ST2"] == reach, (
@@ -704,7 +770,10 @@ def test_panning_to_the_left_stop_never_takes_the_hsync_pulse(host, probe, frame
     units = framed["IF_HSYNC_RST"] + 1
     guard = sync_units(probe, units)
 
-    set_framing(host, 0, 0, -5000, 0)
+    landed = press_until_saturated(host, probe, "-", limit=PAN_PRESSES_TO_A_STOP)
+    assert landed < PAN_PRESSES_TO_A_STOP, (
+        f"the pan was still moving after {landed} presses, so this never "
+        "reached the stop it is about")
     left = settled_geometry(host)
     assert left["IF_HB_SP2"] >= guard, (
         f"panned to the left stop the capture starts at {left['IF_HB_SP2']}, "
@@ -929,7 +998,7 @@ def test_the_memory_bus_subsystem_owns_its_timing(host, source):
 
     get(host, "/sc?y")  # writeProgramArrayNew(pal_1280x720) + post steps
 
-    assert wait_for(lambda: read_field(host, 0, 0x40, 4, 3) != 4, timeout=15.0), (
+    assert wait_for(lambda: moved_off(read_field(host, 0, 0x40, 4, 3), 4), timeout=15.0), (
         "PLL_MS never moved off the poison after a preset load: "
         "MemoryBus::apply() did not run")
 
@@ -1012,7 +1081,7 @@ def test_the_subsystems_own_the_fifo_watermarks(host, source):
 
     get(host, "/sc?2")  # writeProgramArrayNew(pal_768x576) + post steps
 
-    assert wait_for(lambda: read_field(host, 4, 0x2C, 0, 6) != 7, timeout=15.0), (
+    assert wait_for(lambda: moved_off(read_field(host, 4, 0x2C, 0, 6), 7), timeout=15.0), (
         "PB_MAST_FLAG_REG never moved off the poison after a preset load: "
         "FrameBuffer::apply() did not run")
 
@@ -1105,24 +1174,21 @@ def test_a_preset_load_leaves_the_engines_values_not_the_sketchs(host, source):
         # by a VSACT read that the csync path itself makes come out wrong.
         # /sc?~ forces a fresh detection pass, which does.
         # docs/sync-type-selection.md
-        get(host, "/sc?~")
-        wait_for(lambda: read_field(host, 0, 0x1B, 0, 11) > 200, timeout=30.0)
+        recover_lock(host)
 
 
 def _compare_engine_outputs_across_a_preset_load(host):
     get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
-    assert wait_for(lambda: read_field(host, 3, 0x01, 0, 12) > 1000, timeout=20.0), (
+    assert wait_for(lambda: (read_field(host, 3, 0x01, 0, 12) or 0) > 1000, timeout=20.0), (
         "no raster after the preset load, so there is nothing to compare")
     time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
     after_preset = _engine_outputs(host)
 
-    # get_json returns (status, parsed); the module's own framing() helper does
-    # the same, which is why this unpacks rather than subscripting.
-    status, current = get_json(host, "/geometry")
-    assert status == 200 and current is not None, (
-        f"/geometry did not answer with the framing: {status}")
-    get(host, f"/geometry?ph={current['ph']}&pv={current['pv']}"
-              f"&zh={current['zh']}&zv={current['zv']}")
+    # The SAME framing, re-solved. A preset load leaves the framing at default
+    # and the reset control puts it there too, so nothing about the framing
+    # differs between the two states being compared -- only who computed the
+    # registers.
+    reset_the_framing(host)
     time.sleep(4)  # loop() drains the request and re-solves
     after_resolve = _engine_outputs(host)
 

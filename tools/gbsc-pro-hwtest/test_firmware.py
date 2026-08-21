@@ -27,6 +27,8 @@ from gbs_unit import (
     read_reg,
     read_field,
     read_segment,
+    recover_lock,
+    reset_framing,
     fs_dir,
     fs_read,
     wait_for,
@@ -1289,13 +1291,12 @@ def _capture_sp(host):
 
 @pytest.mark.freeze
 def test_an_explicit_framing_request_applies_while_frozen(host, source):
-    """Frozen, /geometry must move the picture, not queue a write for later.
+    """Frozen, a pad press must move the picture, not queue a write for later.
 
     Freeze exists so a geometry experiment measures the chip instead of racing
-    the firmware, and /geometry is the only way to drive the engine -- a freeze
-    that disarms it cannot be used for the thing it was built for. The same rule
-    already covers /setreg, /uc and /sc: an explicit request is honoured frozen,
-    automation is not.
+    the firmware, and a freeze that disarms the controls cannot be used for the
+    thing it was built for. The rule covers /setreg, /uc and /sc alike: an
+    explicit request is honoured frozen, automation is not.
 
     What it did instead, measured on the bench 2026-08-08: the framing state
     moved, the registers did not, and the write landed on its own four seconds
@@ -1306,12 +1307,6 @@ def test_an_explicit_framing_request_applies_while_frozen(host, source):
     """
     assert _freeze_state(host) is not None, "unit has no /freeze support"
 
-    status, framing = get_json(host, "/geometry")
-    assert status == 200 and isinstance(framing, dict), (
-        f"GET /geometry returned {status} {framing}; no framing to restore to"
-    )
-    restore = dict(framing)
-
     get(host, "/freeze?on=1")
     assert _freeze_state(host) is True, "could not arm the freeze"
     try:
@@ -1320,23 +1315,19 @@ def test_an_explicit_framing_request_applies_while_frozen(host, source):
 
         # A pan rather than a zoom: it moves the window without resizing it, so
         # a failure to apply cannot hide behind a scale that rounded to the same
-        # place. 16 units is two of the firmware's own pan steps.
-        wanted = int(restore["ph"]) + 16
-        status, payload = get_json(host, f"/geometry?ph={wanted}")
-        assert status == 200 and payload.get("ph") == wanted, (
-            f"/geometry?ph={wanted} returned {status} {payload}"
-        )
+        # place.
+        status, _ = get(host, "/sc?-")
+        assert status == 200, f"/sc?- returned {status}"
 
         moved = wait_for(lambda: _capture_sp(host) != before, timeout=6.0)
         assert moved, (
-            f"IF_HB_SP2 stayed at {before} for 6 s after /geometry?ph={wanted} "
-            f"while frozen, and /geometry reported ph={wanted}. The framing "
-            f"state and the chip now disagree, and the write is queued: it will "
-            f"fire the moment the freeze lifts."
+            f"IF_HB_SP2 stayed at {before} for 6 s after a pan press while "
+            f"frozen. The engine's framing and the chip now disagree, and the "
+            f"write is queued: it will fire the moment the freeze lifts."
         )
     finally:
-        get(host, f"/geometry?ph={restore['ph']}")
         get(host, "/freeze?on=0")
+        reset_framing(host)
 
 
 # ADC_SOGCTRL, the sync-on-green slice level: s5_02 bits [5:1]. The
@@ -1443,6 +1434,7 @@ def test_frozen_firmware_does_not_ratchet_the_sog_level(host, source):
         wait_for(
             lambda: read_field(host, *DAC_POWER) == 1, timeout=LOCK_TIMEOUT
         )
+        recover_lock(host)
 
 
 def test_the_console_delivers_anything_at_all(console):
@@ -1544,4 +1536,6 @@ def test_bypass_does_not_leave_the_scaling_flag_set(host, source):
         # Unfreeze FIRST: frozen, /sc?~ switches the mux and stops, because the
         # re-detection it relies on is exactly what the freeze suspends.
         get(host, "/freeze?on=0")
-        get(host, "/sc?~")  # re-detect, which recovers the picture
+        assert recover_lock(host), (
+            "the source never came back after the bypass round trip, so every "
+            "test after this one runs against a unit with no lock")

@@ -102,6 +102,83 @@ class Console:
             pass
 
 
+# --- the geometry engine ----------------------------------------------------
+
+# The framing a reset returns to, and the one every solve starts from.
+DEFAULT_FRAMING = {"zh": 0, "zv": 0, "ph": 0, "pv": 0}
+
+# The character /sc? carries to reach Geometry::reset().
+#
+# **NOT '@'.** web_service() parks that in serialCommand to mean "nothing
+# pending" and guards its switch on serialCommand != '@', so a case labelled
+# '@' can never be reached: the route answers 200 and loop() consumes nothing.
+RESET_COMMAND = "B"
+
+
+# STATUS_SYNC_PROC_VTOTAL, and the count below which the sync processor is not
+# following the source. Unlocked it settles on a steady low value -- 97 on this
+# bench -- so "steady" is no evidence of a lock and the count is what to ask.
+SYNC_PROC_VTOTAL = (0, 0x1B, 0, 11)
+LOCKED_VTOTAL_MIN = 200
+
+
+def recover_lock(host, attempts=3, timeout=40.0):
+    """Force detection until the sync processor is counting the source again.
+
+    A test that drives the unit through bypass or a preset load can leave a
+    separate-sync source on the csync path, where it loses lock and stays lost:
+    the sync type is decided by a VSACT read the csync path itself makes come
+    out wrong. docs/sync-type-selection.md.
+
+    /sc?~ runs a fresh detection pass, which is what breaks that -- but ONE is
+    not enough. Measured on the bench: the first left SP_VTOTAL at 97 for 45 s
+    and the second recovered in under one. So this retries, and returns whether
+    the source came back rather than assuming it did.
+
+    **A teardown that fires /sc?~ and returns has not finished.** Everything
+    after it then runs against a unit with no lock, where a pad press cannot be
+    honoured and the failure lands on a test that did nothing wrong.
+    """
+    for _ in range(attempts):
+        get(host, "/sc?~")
+        if wait_for(lambda: locked_steadily(host), timeout=timeout):
+            return True
+    return False
+
+
+# How many agreeing counts make a lock. Crossing the floor once is detection
+# FINDING the source, which is followed by a preset load and a solve -- and sync
+# can drop again through either. The firmware settles the same way, on its own
+# SteadySamples run.
+LOCK_SAMPLES = 4
+
+
+def locked_steadily(host, samples=LOCK_SAMPLES, interval=0.4):
+    """True when the sync processor counts the same plausible line total
+    `samples` times running. One reading above the floor is not a lock."""
+    first = read_field(host, *SYNC_PROC_VTOTAL)
+    if not first or first <= LOCKED_VTOTAL_MIN:
+        return False
+    for _ in range(samples - 1):
+        time.sleep(interval)
+        if read_field(host, *SYNC_PROC_VTOTAL) != first:
+            return False
+    return True
+
+
+def reset_framing(host, timeout=20.0):
+    """Put the engine's framing back to default. True once it has landed.
+
+    A 200 from /sc only means the command reached a global loop() has yet to
+    read, so waiting for the framing itself is the only evidence the reset ran.
+    """
+    status, _ = get(host, f"/sc?{RESET_COMMAND}")
+    if status != 200:
+        return False
+    return bool(wait_for(
+        lambda: get_json(host, "/geometry")[1] == DEFAULT_FRAMING, timeout=timeout))
+
+
 # --- registers --------------------------------------------------------------
 
 
