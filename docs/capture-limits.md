@@ -105,8 +105,8 @@ tighter binds. At four-times oversampling the rating is the tighter above about
 
 `InputLine::lastCapture()` clamps the far end of the capture window at
 `WriteLimitUnits`. With the divider capped this never fires — it is there for the
-lines the divider did not choose, since `SourceMeasurement::adopt()` takes whatever a
-custom preset or a bypass switch left in the register.
+lines the divider did not choose, since `SourceMeasurement::adopt()` takes
+whatever a bypass switch left in the register.
 
 **The clamp is a measured constant and the cap is what keeps it off real
 picture.** X is this board's number; a source whose active picture legitimately

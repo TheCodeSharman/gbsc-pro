@@ -118,11 +118,9 @@ a missing value is far harder to see, because whatever the register already held
 stays there and the picture usually looks perfect.
 
 The twelve scaling tables used to supply those forgotten fields, which made the
-error invisible on hardware right up until the tables were deleted. They are
-gone, and `writeProgramArrayNew(0, ...)` is the normal path, so an omission now
-shows on the bench at once. One route still supplies a table — a custom preset,
-which is a register dump replayed from flash — so a field only that path writes
-can still hide.
+error invisible on hardware right up until the tables were deleted. **Nothing
+replays a table any more** — the custom preset was the last route that could,
+and it is gone — so an omission shows on the bench at once.
 
 **The host tests are what make an omission visible without a board.** Poison
 every bank, run `init()`, and ask the fake which registers were actually
@@ -244,10 +242,9 @@ therefore invisible to any check that compares names.
    twelve scaling tables are gone, `writeProgramArrayNew(0, ...)` is the normal
    path, and the three static blobs that outlived them have `Tv5725::` owners:
    `HdBypass` (s1 0x30..0x55), `ModeDetect` (s1 0x60..0x83) and `Deinterlacer`
-   (the whole of segment 2). What is left of the step is dissolving
-   `loadStaticSections()` into `BringUp::init()` and redirecting
-   `setResetParameters()`, after which `writeProgramArrayNew()` and
-   `writePresetTable()` serve only the custom preset and die with it at step 7.
+   (the whole of segment 2). `loadStaticSections()` has dissolved into
+   `BringUp::init()`, and `writeProgramArrayNew()` and `writePresetTable()` are
+   deleted along with the custom preset that was their last caller.
 
    The safety net is a 1536-register diff across the reflash, and it works:
    moving all three blobs changed exactly five config bytes, every one a bit
@@ -268,13 +265,18 @@ therefore invisible to any check that compares names.
    goal is the engine owning every TV5725 register. Note this is the mode the
    RiscPC desktop boots into at
    800x600, so it is not a corner case — it is the first thing the bench sees.
-7. Redesign the custom-preset slots to save **the inputs to the calculation** —
-   capture, scale, pan, the framing choices — rather than a register dump.
-   A slot becomes a text record of the inputs, not of the outputs. Kept as a
-   follow-up deliberately so the
-   feature keeps working throughout; `writePresetTable()` survives step 5 for
-   custom presets alone and dies here.
+7. **Give the slots back a meaning.** They record **the inputs to the
+   calculation** — capture, scale, pan, the framing choices — keyed by the
+   source's **(vsync, hsync)** rather than by the `videoStandardInput`
+   classification, in a new file rather than `/preset_*`.
+
+   The register-dump half is already gone: no slot loads or saves registers,
+   `/uc?3` and `/uc?4` log a refusal, and `OutputCustomized` falls back to a
+   computed mode on read with its enum value left reserved so
+   `/preferencesv2.txt` keeps its layout. What survives is the whole surface
+   this re-points at — the web UI slot grid, `/slots.bin`, `SlotMeta`, and both
+   routes.
 
 Step 5 is the milestone that triggers a review pass over `dev`, a
-simplification, and resequencing into logical commits for main. It is now due:
-only the `loadStaticSections()` dissolve is outstanding.
+simplification, and resequencing into logical commits for main. **It is done,
+and so is the register-dump half of step 7, so the review is due now.**

@@ -264,8 +264,8 @@ it, and `Geometry` holds it between solves because `apply()` reads the raster ba
 off the chip and no register records a porch. At the bench framing the picture goes
 from ending 6 px short of the raster to 65, with `VDS_HSCALE` 572 against 592.
 
-An `activeStop` of 0 means the raster's own edge, which is what a bypass or a
-custom preset gets — there is no solved raster to take a porch from.
+An `activeStop` of 0 means the raster's own edge, which is what bypass gets —
+there is no solved raster to take a porch from.
 
 **The near end is not yet bounded the same way.** `activeStart` is threaded but
 always passed 0, so the picture is placed against the write floor rather than

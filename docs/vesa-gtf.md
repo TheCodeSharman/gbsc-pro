@@ -98,9 +98,9 @@ below: **there is no curve. Select between two standards.**
   in line period. They are also not samples of a function: 5.7 µs and 4.5 µs are
   committee decisions, so a fitted curve models the difference between two
   standards bodies. Select; do not interpolate.
-- **This restores an existing distinction.** The firmware already carries
-  `preset_pal`/`preset_ntsc`, and `gbs-control.ino` picks `pal_240p` vs
-  `ntsc_240p` on video mode.
+- **This restores a distinction the firmware always had.** The twelve shipped
+  tables came in `pal_*` and `ntsc_*` pairs and were picked on video mode, so
+  selecting on field rate is where that choice already lived.
 
 **The trade, stated honestly.** This drops the "contains all active video" guarantee
 for sources that are not broadcast-timed. For the primary user it costs nothing:

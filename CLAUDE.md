@@ -522,10 +522,9 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   `doPostPresetLoadSteps()` writes only inside `if (rto->outModeHdBypass)` or
   `if (rto->inputIsYpBpR)` reads as owned by a function that unquestionably
   runs. **22 fields were in that state on 2026-08-15 with `--gap` reporting
-  zero.** A brace-depth heuristic was tried and reverted — it flags 146 where 15
-  matter, because most of that function is inside `if (!rto->isCustomPreset)`.
-  **The check that works is a bench diff of a step-4 dump against a working
-  `dev` one, minus the divider-derived differences.**
+  zero.** A brace-depth heuristic flags an order of magnitude more than matter
+  and was reverted. **The check that works is a bench diff against a known-good
+  dump, minus the divider-derived differences.**
   `docs/investigations/preset-abandonment-audit.md`.
 - **`/uc?h` does not clear Mode Detect.** It sets `presetPreference =
   Output480P` — a persistent user preference — and force-calls `applyPresets()`,

@@ -71,7 +71,7 @@ clamps the framing it is given and not every value is reachable.
 
 | | |
 |---|---|
-| `modeChanged(mode, customPreset, oversample)` | the source is about to change mode; nothing is solved here |
+| `modeChanged(mode, oversample)` | the source is about to change mode; nothing is solved here |
 | `poll()` | drives whatever is outstanding, on every pass of `loop()` |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
 | `framing()` | the framing the user has reached, read only |

@@ -725,6 +725,40 @@ def test_the_filesystem_lists_each_file_once(host):
     )
 
 
+# --- deleting a file off the unit -------------------------------------------
+
+
+def test_fs_rm_refuses_what_it_will_not_delete(host):
+    """/fs/rm answers false and changes nothing for a path it will not touch.
+
+    The route exists because /fs/format was the only way to remove anything and
+    it takes /preferencesv2.txt and /slots.bin with it -- and /fs/upload is a
+    stub that returns true and writes nothing, so there is no way to put them
+    back.
+
+    Only the refusing half is automated. Deleting a real file is destructive and
+    self-evident from /fs/dir, so it is done by hand rather than by a test that
+    would need a file to destroy.
+    """
+    before = fs_dir(host)
+    assert before is not None, "/fs/dir did not answer"
+
+    for path in ("", "/", "/does_not_exist.txt", "no_leading_slash"):
+        status, body = get(host, "/fs/rm?file=" + path)
+        assert status == 200, f"/fs/rm?file={path!r} did not answer"
+        assert body.strip() == "false", (
+            f"/fs/rm?file={path!r} claimed to delete something: {body!r}"
+        )
+
+    status, body = get(host, "/fs/rm")
+    assert status == 200, "/fs/rm with no parameter did not answer"
+    assert body.strip() == "false", f"/fs/rm with no parameter returned {body!r}"
+
+    assert sorted(fs_dir(host)) == sorted(before), (
+        "a refused /fs/rm changed the filesystem"
+    )
+
+
 # --- the slot routes, now that a slot is not a register dump -----------------
 
 
