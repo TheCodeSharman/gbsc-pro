@@ -25,6 +25,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
+#include "FrameAt.h"
+
 using namespace Tv5725;
 
 static float g_fieldRate = 50.08f;
@@ -357,13 +359,6 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     REQUIRE(pollUntilSolved(engine));
     CHECK(g_fieldRateCalls - before == 2);
 
-    SUBCASE("and once for a framing the user asked for") {
-        const unsigned solved = g_fieldRateCalls;
-        engine.requestFraming(PanAndZoom(300, 120, 40, -15));
-        engine.poll();
-        CHECK(g_fieldRateCalls - solved == 1);
-    }
-
     SUBCASE("and once for a pad press") {
         const unsigned solved = g_fieldRateCalls;
         REQUIRE(engine.zoom(16, 0));
@@ -496,11 +491,10 @@ TEST_CASE("a hand-retimed horizontal total is what the windows are fitted to")
 
 // --- a framing request, which re-solves every window -------------------------
 
-TEST_CASE("a framing request is drained and re-solves every window")
+TEST_CASE("a framed picture holds every window against the framing")
 {
-    // The web handler runs in a network callback rather than loop(), so it sets
-    // the framing and loop() applies it. Every window is recomputed, pan
-    // included -- inheriting one is what froze a picture at 620 lines.
+    // Every window is recomputed on every solve, pan included -- inheriting one
+    // is what froze a picture at 620 lines.
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
@@ -508,12 +502,10 @@ TEST_CASE("a framing request is drained and re-solves every window")
     engine.modeChanged(benchMode(), false, 4);
     REQUIRE(pollUntilSolved(engine));
 
+    frameAt(engine, 300, 120, 40, -15);
     Wire.reset();
     Wire.poison(Poison);
-    // A framing is not a mode change, so poll() applies it and still reports
-    // nothing completed -- the caller's frame time lock has no ratio to forget.
-    engine.requestFraming(PanAndZoom(300, 120, 40, -15));
-    CHECK_FALSE(engine.poll());
+    REQUIRE(engine.resolve());
 
     // The capture narrows 300 units horizontally and 120 half-lines vertically,
     // then moves 40 right and 15 up.

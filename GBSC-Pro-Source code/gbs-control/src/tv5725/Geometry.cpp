@@ -16,24 +16,18 @@ namespace Tv5725 {
 Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
       rasterPending_(false), samplingPending_(false), solvePending_(false),
-      framingRequested_(false), modePending_(false),
+      modePending_(false),
       modeIsCustomPreset_(false), modeOversample_(4), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
-void Geometry::requestFraming(const PanAndZoom &wanted)
+bool Geometry::resolve()
 {
-    framing_ = wanted;
-    framingRequested_ = true;
-}
-
-bool Geometry::apply()
-{
-    // The entry points outside a poll pass -- a framing request, a pad press, a
-    // retimed total -- have no measurement of their own, so this is where they
-    // take one. poll() has already measured and calls solveWindows() directly.
+    // The entry points outside a poll pass -- a pad press, a retimed total --
+    // have no measurement of their own, so this is where they take one. poll()
+    // has already measured and calls solveWindows() directly.
     if (!sampling_.measureLineRate())
         return fail();
     return solveWindows();
@@ -74,7 +68,7 @@ bool Geometry::rasterWidthChanged(uint16_t horizontalTotal)
     rasterLinePx_ = horizontalTotal;
 
     GBS::VDS_HSYNC_RST::write(horizontalTotal - 1);
-    return apply();
+    return resolve();
 }
 
 bool Geometry::solveRaster(const OutputMode *mode)
@@ -145,7 +139,7 @@ bool Geometry::solveRaster()
     GBS::PLL648_CONTROL_01::write(raster.divider);
     displayClock_.hold(raster.divider);
 
-    // The porch is not a register, so the next apply() cannot read it back.
+    // The porch is not a register, so the next solve cannot read it back.
     activeStop_ = raster.activeStop;
     activeLinesStop_ = raster.activeLinesStop;
 
@@ -193,15 +187,8 @@ void Geometry::modeChanged(const OutputMode *mode, bool customPreset,
 
 bool Geometry::poll()
 {
-    // Ahead of the mode change: a framing the user asked for is not automation,
-    // and it must not wait on a source that is still settling.
-    if (framingRequested_) {
-        framingRequested_ = false;
-        apply();
-    }
-
     if (!modePending_)
-        return solvePending_ ? apply() : false;
+        return solvePending_ ? resolve() : false;
 
     // The cheap gate. Everything below this line measures, and the field rate
     // costs up to 250 ms a vsync pulse.
@@ -477,7 +464,7 @@ bool Geometry::step(const PanAndZoom &wanted)
     uint16_t verticalStop = GBS::IF_VB_SP::read();
     uint16_t verticalStart = GBS::IF_VB_ST::read();
 
-    if (!apply()) {
+    if (!resolve()) {
         framing_ = before;
         return false;
     }

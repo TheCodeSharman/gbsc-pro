@@ -27,11 +27,6 @@ public:
 
     const PanAndZoom &framing() const;
 
-    // Set outright, without solving: the web handler runs in a network-stack
-    // callback rather than loop(), and solving measures the source field rate,
-    // which spins.
-    void requestFraming(const PanAndZoom &wanted);
-
     // The horizontal total was retimed outside the engine, by the htotal search
     // on a board with no clock generator to steer instead. The engine holds the
     // raster rather than reading it back, so it has to be told: every window and
@@ -56,10 +51,11 @@ public:
     bool pan(int16_t dxPixels, int16_t dyPixels);
     bool zoom(int16_t dhPixels, int16_t dvPixels);
 
+    // Re-solve every register from the framing held and the source as it reads
+    // now. Measures, so it must run from loop().
+    bool resolve();
+
 private:
-    // Measure the source, then solve. The entry points that are not a poll pass
-    // have no measurement of their own.
-    bool apply();
 
     // Every window and both scales, from the framing and the source as the last
     // measurement found it. The raster is the held one, never a read-back.
@@ -131,7 +127,6 @@ private:
     bool modePending_;
     bool modeIsCustomPreset_;
     uint8_t modeOversample_;      // a solve refused because the source was settling
-    bool framingRequested_;  // the user asked; loop() drains it, freeze does not
     const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.

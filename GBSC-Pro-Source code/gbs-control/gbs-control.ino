@@ -106,6 +106,11 @@ String slotIndexMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 
 char serialCommand;
 char userCommand;
+
+// How many output pixels the pending press asked for, or 0 for the pad's own
+// step. Cleared as the command is consumed, so a press from the OSD or the
+// serial port never inherits one.
+int16_t serialCommandPixels;
 static uint8_t lastSegment = 0xFF;
 
 static uint16_t St;
@@ -8144,6 +8149,13 @@ void loop()
 /////////
 /////////
 
+// What a press asks for in output pixels: what /sc?<pad>=<n> named, or the pad's
+// own step.
+static int16_t pressStep(int16_t asked, int16_t step)
+{
+    return asked != 0 ? asked : step;
+}
+
 void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCurrent, uint8_t readout, uint8_t inputToogleBit)
 {
 
@@ -8156,6 +8168,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             serialCommand = ' ';
         }
         if (serialCommand != '@') {
+            const int16_t pressPixels = serialCommandPixels;
+            serialCommandPixels = 0;
 
             if (inputStage > 0) {
                 if (serialCommand != 's' && serialCommand != 't' && serialCommand != 'g') {
@@ -8188,25 +8202,37 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // The four pads. Every press recomputes every window from the
                 // capture and the raster. docs/firmware-geometry-engine.md
                 case '+':
-                    geometryControls.horizontalPan(+Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(+pressStep(pressPixels, Tv5725::ControlSteps::Pan));
                     break;
                 case '-':
-                    geometryControls.horizontalPan(-Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(-pressStep(pressPixels, Tv5725::ControlSteps::Pan));
                     break;
                 case '*':
-                    geometryControls.verticalPan(-Tv5725::ControlSteps::Pan);
+                    geometryControls.verticalPan(-pressStep(pressPixels, Tv5725::ControlSteps::Pan));
                     break;
                 case '/':
-                    geometryControls.verticalPan(+Tv5725::ControlSteps::Pan);
+                    geometryControls.verticalPan(+pressStep(pressPixels, Tv5725::ControlSteps::Pan));
                     break;
                 // Zoom in is a negative delta: it crops, and the scale follows.
                 case 'z':
-                    geometryControls.horizontalZoom(+Tv5725::ControlSteps::Zoom);
-                    geometryControls.verticalZoom(+Tv5725::ControlSteps::Zoom);
+                    geometryControls.horizontalZoom(+pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
+                    geometryControls.verticalZoom(+pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
                     break;
                 case 'h':
-                    geometryControls.horizontalZoom(-Tv5725::ControlSteps::Zoom);
-                    geometryControls.verticalZoom(-Tv5725::ControlSteps::Zoom);
+                    geometryControls.horizontalZoom(-pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
+                    geometryControls.verticalZoom(-pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
+                    break;
+                // Horizontal zoom on its own, the mirror of '4'/'5' vertically.
+                case 'I':
+                    geometryControls.horizontalZoom(+pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
+                    break;
+                case 'O':
+                    geometryControls.horizontalZoom(-pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
+                    break;
+                // Re-derive every register from the framing held and the source
+                // as it reads now, without moving the framing.
+                case 'U':
+                    geometry.resolve();
                     break;
                 // Back to the default framing. The framing is the engine's own
                 // state and no register holds it, so without this a picture
@@ -9659,6 +9685,7 @@ void startWebserver()
         AsyncWebParameter *p = request->getParam(0);
         
         serialCommand = p->name().charAt(0);
+        serialCommandPixels = (int16_t)p->value().toInt();
 
         
         if (serialCommand == ' ')
@@ -9777,33 +9804,9 @@ void startWebserver()
 #endif
 
     // The framing: the engine's only state, and the one thing writing registers
-    // back cannot restore. Read it, or set any of the four and re-solve.
-    //   GET /geometry
-    //   GET /geometry?zh=0&zv=0&ph=0&pv=0
+    // back cannot restore. READ ONLY -- it moves through the pads, so nothing
+    // can arrange a framing the user cannot reach.
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Tv5725::PanAndZoom wanted = geometry.framing();
-        bool changed = false;
-        if (request->hasParam("zh")) {
-            wanted.setHorizontalZoom((int16_t)request->getParam("zh")->value().toInt());
-            changed = true;
-        }
-        if (request->hasParam("zv")) {
-            wanted.setVerticalZoom((int16_t)request->getParam("zv")->value().toInt());
-            changed = true;
-        }
-        if (request->hasParam("ph")) {
-            wanted.setHorizontalPan((int16_t)request->getParam("ph")->value().toInt());
-            changed = true;
-        }
-        if (request->hasParam("pv")) {
-            wanted.setVerticalPan((int16_t)request->getParam("pv")->value().toInt());
-            changed = true;
-        }
-        // Requested, never applied here. This runs in a network-stack callback,
-        // not from loop(), and applying measures the source field rate -- which
-        // spins, and took the unit down every time.
-        if (changed)
-            geometry.requestFraming(wanted);
         char body[96];
         snprintf_P(body, sizeof(body),
             PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d}"),

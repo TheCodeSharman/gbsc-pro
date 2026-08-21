@@ -126,8 +126,7 @@ TEST_CASE("the playback stride covers the widest fetch, and holds still while zo
         // pulse, which moves by a unit between solves.
         const uint32_t stride = Wire.field(4, 0x37, 0, 10);
 
-        bench.engine.requestFraming(PanAndZoom(-5000, 0, 0, 0));
-        bench.engine.poll();
+        bench.engine.zoom(-5000, 0);
 
         CHECK(Wire.field(4, 0x37, 0, 10) == stride);
         CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
@@ -151,11 +150,7 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
     seed(5, 0x12, 0, 12, 1276);
     seed(1, 0x0E, 0, 11, 638);
 
-    // A framing request re-solves every window without re-reading the source,
-    // so it is the cheapest way to ask the engine to look again.
-    const Tv5725::PanAndZoom held = bench.engine.framing();
-    bench.engine.requestFraming(held);
-    bench.engine.poll();
+    REQUIRE(bench.engine.resolve());
 
     CHECK(Wire.field(1, 0x18, 0, 11) == startBefore);
     CHECK(Wire.field(1, 0x1A, 0, 11) == stopBefore);
@@ -194,9 +189,7 @@ TEST_CASE("a load that is not a custom preset computes the divider it uses")
         // The seeded IF_HSYNC_RST was 1276 for a 2553 divider. If the engine
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
-        const Tv5725::PanAndZoom held = bench.engine.framing();
-        bench.engine.requestFraming(held);
-        bench.engine.poll();
+        REQUIRE(bench.engine.resolve());
         CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted));
     }
 }
@@ -325,9 +318,9 @@ TEST_CASE("the solve uses the raster the engine holds, not the one on the chip")
     seed(3, 0x02, 4, 11, 0);   // VDS_VSYNC_RST
 
     // A framing the engine has not solved before, so a solve that ran shows as
-    // a moved window and one that declined shows as no change at all.
-    bench.engine.requestFraming(Tv5725::PanAndZoom(0, 200, 0, 0));
-    bench.engine.poll();
+    // a moved window and one that declined shows as no change at all. Big
+    // enough to move VDS_DIS_VB_SP, which sits on its floor.
+    bench.engine.zoom(0, 400);
 
     CHECK(Wire.field(3, 0x14, 4, 11) != stopBefore);
 }

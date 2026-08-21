@@ -7,6 +7,7 @@
 
 #include <doctest/doctest.h>
 
+#include "FrameAt.h"
 #include "Si5351Stubs.h"
 #include "fake/Wire.h"
 
