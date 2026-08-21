@@ -29,8 +29,9 @@ write start   = VDS_?B_SP + startConst + startPerMag x magnification
                 horizontal 55 + 25m, vertical 0.2 + 0.8m
 ```
 
-`captureV` is in **half-lines** — `IF_VB` counts them, and reading it as whole
-lines doubles the picture. That is the likeliest bug in this code.
+Both captures are in the input formatter's own units, and **what a unit is
+depends on the scan mode**, on both axes. See "What the IF counter counts" in
+[scaler-geometry-model.md](scaler-geometry-model.md).
 
 ## The control surface
 

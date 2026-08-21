@@ -19,7 +19,7 @@ VDS_?B_ST     = raster_total - 2
 
 | | horizontal | vertical |
 |---|---|---|
-| `capture` | `IF_HB_ST2 - IF_HB_SP2`, samples | `IF_VB_ST - IF_VB_SP`, **half-lines** |
+| `capture` | `IF_HB_ST2 - IF_HB_SP2`, IF units | `IF_VB_ST - IF_VB_SP`, IF lines |
 | `scale` | `VDS_HSCALE` | `VDS_VSCALE` |
 | `START_CONST` | **55.0** px | **0.2** lines |
 | `START_PER_MAG` | **25.0** px per x | **0.8** lines per x |
@@ -355,6 +355,39 @@ default capture is 1009 units centred on the IF line, so it is nearly the right
 The sliver at the right of the resting picture was read as the capture overhanging
 the tail green. With the tail green now removed by the playback offset, what
 remains of it — if anything — has not been re-measured.
+
+## What the IF counter counts
+
+The input formatter has one line counter, and the **line doubler is what sets its
+rate**. With the doubler in the path it runs at twice the source's line rate; with
+it bypassed it runs at the source's. Both axes are measured against that counter,
+so the scan mode decides the unit on both:
+
+| | doubler in path | doubler bypassed |
+|---|---|---|
+| `IF_HSYNC_RST` | `PLLAD_MD / 2` | `PLLAD_MD` |
+| `IF_VB_ST`/`IF_VB_SP` wrap at | `2 x (VTOTAL + 1)`, half-lines | `VTOTAL + 1`, source lines |
+
+RD-5725-1.1 states neither. `IF_VB_ST` and `IF_VB_SP` are documented only as
+"vertical blanking start/stop position", 11 bits, with no unit; `IF_HSYNC_RST` is
+"total pixel number per line". The wrap point is the only thing that can say, and
+both readings are measured:
+
+- **Doubled**, RiscPC 320x256@50, VTOTAL 311: `IF_VB_ST` **624** rolls the
+  picture, 623 is stable. 624 = 2 x 312.
+- **Bypassed**, RiscPC 640x480@75, VTOTAL 499: every `IF_VB_ST` from 999 down to
+  500 leaves the picture untouched, because the counter never reaches any of
+  them. 494 gives a picture, at the height a 488-unit capture predicts.
+
+Sizing the vertical window for the wrong one of these puts `IF_VB_ST` past the
+counter, where the write enable never falls: the frame buffer takes written and
+unwritten lines alternately and the screen is per-line noise. Nothing reports it
+and every register reads back correct.
+
+`Tv5725::SourceMeasurement` holds the scan mode and `Tv5725::CaptureWindow` sizes
+both lines from it. Half-line counting is how interlace is expressed — a field is
+a whole number of lines plus a half — so it is the doubler's presence rather than
+the source's own scan that decides.
 
 ## The sync processor counts in ADC samples
 

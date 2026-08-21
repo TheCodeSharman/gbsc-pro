@@ -237,7 +237,7 @@ def vertical_report(r):
     scale = r["VDS_VSCALE"]
     bypassed = r["VDS_VSCALE_BYPS"]
     magnify = gm.magnification(scale, bypassed)
-    produced = gm.produced_px(capture, scale, bypassed, axis=gm.AXIS_V)
+    produced = gm.produced_px(capture, scale, bypassed)
     if produced is None:
         produced = capture
 

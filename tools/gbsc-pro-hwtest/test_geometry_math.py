@@ -7,6 +7,7 @@ wrong, and no amount of bench time will make it right.
 """
 
 import glob
+import inspect
 import json
 import os
 
@@ -359,9 +360,8 @@ def test_a_pure_multiply_reproduces_every_vertical_reading(capture, scale,
 def test_produced_is_a_pure_multiply():
     """The headline. capture_offset and output_loss are gone from both axes --
     they were the write start's magnification term, seen from the far end."""
-    assert gm.produced_px(400, 512, axis=gm.AXIS_H) == pytest.approx(800.0)
-    assert gm.produced_px(200, 300, axis=gm.AXIS_V) == pytest.approx(682.67,
-                                                                    abs=0.01)
+    assert gm.produced_px(400, 512) == pytest.approx(800.0)
+    assert gm.produced_px(200, 300) == pytest.approx(682.67, abs=0.01)
 
 
 def test_the_old_two_term_model_is_not_quietly_restored():
@@ -379,9 +379,11 @@ def test_the_two_axes_differ_only_in_where_the_write_starts():
     """The old model had them as different SHAPES -- the horizontal needing both
     terms, the vertical only one. They are the same shape. What differs is the
     pipeline latency before the first write: ~25 px per unit magnification for an
-    11-tap horizontal filter, ~1 line for a vertical line buffer."""
-    assert gm.produced_px(400, 512, axis=gm.AXIS_H) == \
-           gm.produced_px(400, 512, axis=gm.AXIS_V)
+    11-tap horizontal filter, ~1 line for a vertical line buffer.
+
+    produced_px takes no axis, and the parameter's absence is asserted because
+    its presence said the multiply depended on which axis it was on."""
+    assert "axis" not in inspect.signature(gm.produced_px).parameters
     assert gm.AXIS_H.start_per_mag > 20 * gm.AXIS_V.start_per_mag
 
 

@@ -750,11 +750,17 @@ bar the arithmetic predicts.
 
 ### `IF_VB` counts half-lines
 
-**The unit is half-lines, not lines.** Measured directly: `IF_VB_ST` **624**
-rolls the picture, **623** is stable. 624 = 2 x 312, and 312 is the source's
-line count. Two earlier readings of the `IF_VB_ST`/`IF_VB_SP` pair each worked
-for one state and broke on the next; the direction was right and the unit was
-wrong.
+**The unit is half-lines, not lines** on this source. Measured directly:
+`IF_VB_ST` **624** rolls the picture, **623** is stable. 624 = 2 x 312, and 312
+is the source's line count.
+
+Two earlier readings of the `IF_VB_ST`/`IF_VB_SP` pair each worked for one state
+and broke on the next; the direction was right and the unit was wrong.
+
+> **This holds only while the line doubler is in the path**, which it is for
+> every mode on this page. Bypassed, the counter runs at the source's own line
+> rate and the wrap is `VTOTAL + 1`. See "What the IF counter counts" in
+> [scaler-geometry-model.md](../scaler-geometry-model.md).
 
 Half-line counting is how interlace is expressed — a field is a whole number of
 lines *plus a half*, which is what displaces the second field between the

@@ -1539,3 +1539,29 @@ def test_bypass_does_not_leave_the_scaling_flag_set(host, source):
         assert recover_lock(host), (
             "the source never came back after the bypass round trip, so every "
             "test after this one runs against a unit with no lock")
+
+
+# The four registers that decide whether the line doubler is in the capture path.
+# They are one setting, and a mixed set shears the picture per scanline.
+SCAN_MODE_FIELDS = {
+    "IF_HS_DEC_FACTOR": (1, 0x0B, 4, 2),
+    "IF_LD_SEL_PROV":   (1, 0x0B, 7, 1),
+    "IF_LD_RAM_BYPS":   (1, 0x0C, 0, 1),
+    "IF_PRGRSV_CNTRL":  (1, 0x00, 6, 1),
+}
+
+LINE_DOUBLED = {"IF_HS_DEC_FACTOR": 1, "IF_LD_SEL_PROV": 0,
+                "IF_LD_RAM_BYPS": 0, "IF_PRGRSV_CNTRL": 0}
+PROGRESSIVE = {"IF_HS_DEC_FACTOR": 0, "IF_LD_SEL_PROV": 1,
+               "IF_LD_RAM_BYPS": 1, "IF_PRGRSV_CNTRL": 1}
+
+
+def test_the_scan_mode_is_not_half_applied(host):
+    read = {name: read_field(host, *where)
+            for name, where in SCAN_MODE_FIELDS.items()}
+
+    assert read in (LINE_DOUBLED, PROGRESSIVE), (
+        f"the scan mode registers are a mixture: {read}. Line-doubled wants "
+        f"{LINE_DOUBLED} and progressive wants {PROGRESSIVE}; a mixed set means "
+        "one branch of the preset load configured half of it and left the rest "
+        "standing, which shears the picture per scanline")

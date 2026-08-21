@@ -211,7 +211,7 @@ def magnification(hscale, bypassed=False):
     return HSCALE_UNITY / hscale
 
 
-def produced_px(capture_units, hscale, bypassed=False, axis=None):
+def produced_px(capture_units, hscale, bypassed=False):
     """Output pixels the scaler makes from a capture window of this width.
 
         produced = capture x 1024 / scale
