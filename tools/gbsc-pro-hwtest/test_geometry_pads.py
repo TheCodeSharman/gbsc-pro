@@ -1222,8 +1222,8 @@ def poisoned_if_hsync_rst(host, source):
     # of a poison is to distinguish a fresh write from a leftover -- the TV5725
     # keeps its registers across an ESP reboot, so reading the right value proves
     # nothing on its own. One register is enough to establish that here, because
-    # Tv5725::SourceMeasurement::write() writes all three from one held value or writes
-    # none: if IF_HSYNC_RST came back computed, write() ran, and the other two
+    # Tv5725::Geometry::writeSampling() writes all three from one held value or
+    # writes none: if IF_HSYNC_RST came back computed, it ran, and the other two
     # assertions below are then about what it computed.
     #
     # That matters because SP_RT_HS_SP IS the sync processor's retime window, and

@@ -982,3 +982,4 @@ Every state below carries its own `note`; these say which question each answers.
 | `X-measured-1125` | `IF_HB_ST2` crept to the unit where the band exactly vanishes — X read off the register rather than estimated off the screen |
 | `CLEAN-horizontal-three-causes` | first green-free state, clean edge to edge, all three causes addressed at once at `PLLAD_MD` 2548 |
 | `pllad-2250-full-line` | the break-even divider: 1126 IF units, so the whole line is inside X. Rolling here, because the capture stops at `IF_HSYNC_RST` — the stop has to be strictly below it |
+| `sp-rt-hs-sp-left-at-preset-68-2026-08-19` | the one-quantity invariant broken on a live unit: `PLLAD_MD` 2250 and `IF_HSYNC_RST` 1125 both computed, `SP_RT_HS_SP` still holding the 68 a preset table ships. The retime stop is the register no fixture may poison, because poisoning it takes the source out, so nothing in the suite put it there |
