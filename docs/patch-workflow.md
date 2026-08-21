@@ -40,45 +40,91 @@ git checkout dev && git rebase main
 1. **The commit is the unit of work.**
 2. **Each commit builds on its own.** One behaviour per commit.
 3. **Curate before sending anything out.** Exploratory commits are fine while
-   working; `git rebase -i` to fold fixups, split and reorder into a clean,
-   narrated series.
+   working; rebase to fold fixups, split and reorder into a clean, narrated
+   series.
 4. **Docs live in the patch.** The commit message carries the *why*; any
    user-facing doc is updated in the same commit, so the two never drift.
 
 ## When to squash, and when not to
 
-**Squash a commit into its predecessor when it fixes a bug this fork's own work
-introduced. Keep it separate when it fixes a bug in the original firmware.**
+`main` is fast-forward-only and is never rewritten, so the question a queued
+commit has to answer is not "who wrote this file" but **what does `main` need to
+see**. Three rules, in order:
 
-A fix to code this fork introduced is churn: keep the final state, drop the
-attempts. A fix to upstream code has independent value and must stay
-cherry-pickable.
+1. **A file that is new since `main` collapses.** `main` only ever sees its
+   final state, so every intermediate state of it is a temporary side quest
+   with no reader. Fold the lot.
+2. **A file already on `main` is a correction to published work.** Read it, and
+   fold any commit that RETRACTS an earlier one, so the wrong claim is never
+   published. An addition is fine and may stay separate.
+3. **Unless the result is a massive commit** — then split it by intent or theme.
+   Rule 3 is what stops rule 1 fusing unrelated work, and it fires often enough
+   to need stating.
 
 Evidence is not lost by squashing — it lives in the `docs/` page, not the commit
-sequence. `docs/investigations/hscale-tearing-characterisation.md` still carries every refuted
-model after its commits are folded. Move detail to the doc *before* folding.
+sequence. `docs/investigations/hscale-tearing-characterisation.md` still carries
+every refuted model after its commits are folded. Move detail to the doc
+*before* folding.
+
+### Rule 1 applies to files that DIE, not to every new file
+
+Linking every commit that shares a new file over-merges badly. Measured on
+`main..dev` at 226 commits, it gave 18 components and the largest swallowed
+**31** — three days of unrelated work chained together by long-lived classes:
+
+    13 commits  src/tv5725/SourceMeasurement.h
+    11 commits  src/tv5725/SourceMeasurement.cpp
+    10 commits  test/BenchGeometry.h
+
+A new class extended later by an unrelated feature is the class doing its job,
+not churn. So the mandatory link is files on **neither `main` nor `dev`** — born
+and died inside the range:
+
+```sh
+git ls-tree -r --name-only main > /tmp/mainfiles
+git ls-tree -r --name-only dev  > /tmp/devfiles
+git log --format=%h --reverse main..dev | while read -r h; do
+  git diff-tree --no-commit-id --name-only -r "$h"
+done | sort -u | grep -vxF -f /tmp/mainfiles | grep -vxF -f /tmp/devfiles
+```
+
+That found 27 files of 66, giving 8 mandatory groups over 25 commits, none
+larger than five. The recurring shapes: a class added then renamed, a class
+added then dropped, a test layout tried and replaced, a snapshot committed to
+the wrong directory then moved, and **a handover page committed and taken back
+out** — which CLAUDE.md forbids outright, so it must not appear even briefly.
+
+**Where a side-quest file's creator and its deleter fall in different thematic
+groups, drop the file from the CREATING commit.** Do not merge the two groups to
+satisfy the link: that fuses unrelated themes to hide one file. Three of the
+eight needed this — the group that created a class creates its successor
+directly instead.
 
 ### Deciding which a commit is
 
-**File provenance.** A commit touching only files absent from `main` cannot be an
-upstream patch:
+**File provenance**, as the screen for rule 2:
 
 ```sh
 git ls-tree -r --name-only main > /tmp/mainfiles
 git diff-tree --no-commit-id --name-only -r <commit> | grep -qxF -f /tmp/mainfiles \
-  && echo "touches upstream — read it" || echo "internal — squash freely"
+  && echo "changes something already published — read it" || echo "new since main — folds"
 ```
-
-Measured on `main..dev` at 402 commits: **292 touch only new files** (136
-tooling-only, 77 docs-only), 110 touch an upstream file. Step 4 ran 17 → 4.
 
 Two traps, both hit:
 
-- **`git blame` at the parent does not work.** It returns `PURE-ADD` for 12 of
-  step 4's 16 commits — this work appends rather than edits, so a commit adding a
-  missing register write to a new class is invisible to it. Do not rebuild it.
+- **`git blame` at the parent does not work.** It returns `PURE-ADD` for most of
+  a refactor's commits — this work appends rather than edits, so a commit adding
+  a missing register write to a new class is invisible to it. Do not rebuild it.
 - **`GBSC-Pro-Source code/` contains a space.** Unquoted `for f in $(git
-  diff-tree …)` splits the path and reports that nothing touches upstream.
+  diff-tree …)` splits the path and reports that nothing touches an existing file.
+
+**Do not screen against `upstream/main` for this.** It answers a different
+question — whether a patch is worth offering upstream — and `main` has long
+since diverged far enough that the two give unrelated answers. On the same 226
+commits: 189 change a file already on `main`, while only 51 touch a file
+upstream has, and fifty of those fifty-one are our own edits to
+`gbs-control.ino`. Upstream provenance matters when sending patches out, not
+when advancing `main`.
 
 ## The review round
 
@@ -92,16 +138,26 @@ Two traps, both hit:
    files, a short *why* and a `docs/` pointer left behind. Doing this first means
    the review is of the code, not of the commentary.
 4. **Review.**
-5. **Apply review changes** with `git rebase -i main` and the target marked
-   `edit` — never `--fixup` at the tip, which folds a patch written against
+5. **Apply review changes** by rebasing onto `main` with the target commit
+   stopped at — never `--fixup` at the tip, which folds a patch written against
    today's code hundreds of commits back. Mark every fix for the chunk in one
    rebase so the stack replays once.
-6. **`git merge --ff-only`** into `main` once he is happy.
+
+   **`rebase -i` is not always available.** Where the interactive editor cannot
+   be driven, a message-only change is `git filter-branch --msg-filter` over
+   `<commit>~1..HEAD`, keyed on `$GIT_COMMIT`. It rewrites the SHA of every
+   commit after the target, so re-quote any hash already given to the reviewer,
+   and it leaves `refs/original/**` behind — see the cleanup below.
+6. **`git merge --ff-only`** into `main` once the review passes.
 7. Repeat.
 
-### What is still corrected later
+**Any rewrite invalidates every hash already quoted.** Rewriting one commit
+rewrites the SHA of everything after it, so a hash from an earlier message opens
+nothing. Give the old to new mapping for anything already named.
 
-List the files already on `main` that queued commits change again:
+### Finding what a later commit retracts
+
+Listing the files a queue changes repeatedly tells you where to look:
 
 ```sh
 git ls-tree -r --name-only main > /tmp/mainfiles
@@ -110,24 +166,44 @@ git diff --name-only main dev | while IFS= read -r f; do
 done | sort -rn
 ```
 
-Code evolving across commits is ordinary. A **document** doing it is the signal:
-read each change and ask whether it adds or retracts. An addition is fine; a
-retraction folds back into the commit that made the claim, so the claim is never
-published.
+Code evolving across commits is ordinary. A **document** doing it is the signal.
+But the list only says *where*, and reading every diff by hand is how two
+retractions reached `main` before this check existed.
 
-Two reached `main` before this check existed. `riscpc-no-sync.md` called `HTOTAL`
-1856 a "~118 MHz pixel clock" — 1856 is the scaler's sample count, and the
-source's line is 1728 pixels — with the correction still queued behind it. This
-file published a `git merge --squash <chunk-tip>` recipe that the commit two
-later withdrew. Reading the diffs found neither.
+**What finds them is a line-level pass: text one queued commit adds and another
+queued commit removes.** Nothing outside the queue is involved, so every hit is a
+claim written and withdrawn before publication:
 
-**That check sees only files already on `main`, so a new file's prose is invisible
-to it** — and prose in a new file is where a chunk's claims usually live. The
-register panel's docstring said "only `/uc?4` writes to flash"; two commits later
-came the finding that `/uc?f`, `?g`, `?h`, `?p` and `?s` all end in
-`saveUserPrefs()`, which corrected the README and not the panel, so the wrong
-claim survived to the tip. Read the chunk's own comments and docstrings against
-what the rest of the queue says, not just its diff.
+```sh
+python3 - <<'EOF'
+import subprocess, collections
+sh=lambda *a: subprocess.run(a,capture_output=True,text=True).stdout
+for doc in sh('git','diff','--name-only','main','dev').split('\n'):
+    if not doc.endswith('.md'): continue
+    addedby={}; churn=[]
+    for h in sh('git','log','--format=%h','--reverse','main..dev').split():
+        for line in sh('git','show','--format=','-U0',h,'--',doc).splitlines():
+            body=line[1:].strip()
+            if line[:3] in ('+++','---') or len(body)<40: continue
+            if line[0]=='+': addedby.setdefault(body,h)
+            elif line[0]=='-' and addedby.get(body,h)!=h: churn.append((addedby[body],h))
+    for (a,b),n in collections.Counter(churn).most_common(5):
+        print('%-40s %s -> %s  (%d lines)'%(doc,a,b,n))
+EOF
+```
+
+On the 226-commit pass it found five, the largest **40 lines of
+`CODING_STYLE.md`** — three separate attempts at the comment rule, all rewritten
+by a fourth commit. A retraction folds into the commit that made the claim, so
+the claim is never published.
+
+**It sees only files that exist on both ends**, so prose in a file the queue also
+deletes is invisible to it, and so is a claim in a *new* file's own comments and
+docstrings — which is where a chunk's claims usually live. A register panel
+docstring said "only `/uc?4` writes to flash"; two commits later came the finding
+that `/uc?f`, `?g`, `?h`, `?p` and `?s` all end in `saveUserPrefs()`, which
+corrected the README and not the panel, so the wrong claim survived to the tip.
+Read the chunk's own comments against what the rest of the queue says.
 
 ### Forward references to docs that have not landed
 
@@ -161,8 +237,9 @@ branch.
 stop.** It pulls later commits' changes into the one being edited. Caught once by
 diffing `--stat`; a targeted edit is the safe move.
 
-A chunk goes in front of the reviewer as a commit, read in GitLens — the Commit
-Graph, or Search & Compare over `main..dev`. Nothing is checked out, so the
+A chunk goes in front of the reviewer as a commit, read in the editor's own git
+view. Do not name an extension: which one provides the view changes. Nothing is
+checked out, so the
 working tree stays free for the next round's rebase. Name the hash and subject;
 one commit at a time is the point, because a range shows the whole chunk at once
 and hides exactly the split just made.
