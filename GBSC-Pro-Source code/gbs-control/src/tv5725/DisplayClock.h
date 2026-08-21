@@ -18,6 +18,10 @@
 
 #include <stdint.h>
 
+namespace Clock {
+class ClockGen;
+}
+
 namespace Tv5725 {
 
 class DisplayClock {
@@ -71,6 +75,58 @@ public:
     // less.
     static uint16_t horizontalTotalFor(uint32_t hz, uint16_t frameLines,
                               float fieldRateHz);
+
+    DisplayClock();
+
+    // The generator this board found, if it found one. Absent means the
+    // internal PLL is driving the display and there is nothing to steer.
+    void driveWith(Clock::ClockGen &generator);
+
+    // The seed the raster solve chose. HELD, because PLL648_CONTROL_01 stops
+    // answering what the raster asked for: loop() stashes the divider and parks
+    // ExternalSentinel there, which maps to no frequency at all.
+    void hold(uint8_t seed);
+
+    // For the paths that solve no raster -- bypass, and the serial toggle --
+    // where the register is the only source there is.
+    void adopt();
+
+    // Whether a seed has been held or adopted at all. 0x00 is a MAPPED seed --
+    // hzFor() answers 81 MHz for it -- so an unset one would otherwise report
+    // exactly the fallback frequency this exists to stop guessing.
+    bool known() const;
+
+    uint8_t seed() const;
+    uint32_t hz() const;
+
+    // Steer the generator to the held frequency and hand it the display clock.
+    // Returns what it steered to, or 0 when the board has no generator.
+    //
+    // A seed mapping to no frequency gets FallbackHz, which is a GUESS and an
+    // expensive one: 81 MHz against a raster wanting 108 costs a quarter of the
+    // horizontal resolution and still looks like a working picture. Compare the
+    // result against hz() to see that it happened.
+    uint32_t reset();
+
+    // What the part is running at NOW, which is not what the raster asked for:
+    // the frame time lock walks it away from that on every correction. hz() is
+    // what the held seed is worth, hzNow() is where the steering has got to.
+    uint32_t hzNow() const;
+
+    // Adopt a frequency nothing here steered to -- the pre-detection seed
+    // ClockGen::begin() is handed, and the serial override.
+    void assumeHz(uint32_t hz);
+
+    // Walk to a new frequency rather than jumping. The pump is called between
+    // steps: a slew is up to 750 I2C transactions, long enough that WiFi and
+    // the watchdog need servicing.
+    void slewTo(uint32_t hz, void (*pump)());
+
+private:
+    Clock::ClockGen *generator_;
+    uint32_t hzNow_;
+    uint8_t seed_;
+    bool known_;
 };
 
 }  // namespace Tv5725

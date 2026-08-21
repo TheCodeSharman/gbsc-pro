@@ -103,4 +103,8 @@ void FrameBuffer::init()
     WFF_FF_STA_INV::write(1);
 }
 
+void FrameBuffer::freezeCapture() { CAPTURE_ENABLE::write(0); }
+
+void FrameBuffer::releaseCapture() { CAPTURE_ENABLE::write(1); }
+
 }  // namespace Tv5725

@@ -1,4 +1,4 @@
-// Host-compiled unit tests for the registers Geometry::apply() writes --
+// Host-compiled unit tests for the registers one solve writes --
 // `make -C test geometry-windows`.
 //
 // The net under doPostPresetLoadSteps()'s geometry writes: what makes them
@@ -127,7 +127,7 @@ TEST_CASE("the playback stride covers the widest fetch, and holds still while zo
         const uint32_t stride = Wire.field(4, 0x37, 0, 10);
 
         bench.engine.requestFraming(PanAndZoom(-5000, 0, 0, 0));
-        REQUIRE(bench.engine.applyRequested());
+        bench.engine.poll();
 
         CHECK(Wire.field(4, 0x37, 0, 10) == stride);
         CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
@@ -150,31 +150,38 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
     // rather than the engine being told anything.
     seed(5, 0x12, 0, 12, 1276);
     seed(1, 0x0E, 0, 11, 638);
-    REQUIRE(bench.engine.solveFromScratch());
+
+    // A framing request re-solves every window without re-reading the source,
+    // so it is the cheapest way to ask the engine to look again.
+    const Tv5725::PanAndZoom held = bench.engine.framing();
+    bench.engine.requestFraming(held);
+    bench.engine.poll();
 
     CHECK(Wire.field(1, 0x18, 0, 11) == startBefore);
     CHECK(Wire.field(1, 0x1A, 0, 11) == stopBefore);
 
-    SUBCASE("and adopting the new value is what makes it change") {
+    SUBCASE("and a mode change, which inherits it, is what makes it move") {
         // The other half of the claim: the window is not merely insensitive.
         // 181/1276 is a 14.2% hsync duty against 7.1%, so the capture starts
         // twice as far into the line -- a difference this assertion would have
         // caught either way round.
-        bench.engine.adoptSampling();
-        REQUIRE(bench.engine.solveFromScratch());
+        bench.engine.modeChanged(&Tv5725::Mode1080p, true, 4);
+        REQUIRE(pollUntilSolved(bench.engine));
         CHECK(Wire.field(1, 0x18, 0, 11) != startBefore);
     }
 }
 
-TEST_CASE("solveSampling computes the divider and writes all three registers")
+TEST_CASE("a load that is not a custom preset computes the divider it uses")
 {
-    // The step-4 shape: with no preset table there is nothing to adopt, so the
+    // The step-4 shape: with no preset table there is nothing to inherit, so the
     // divider is COMPUTED from the line rate the source is running at. The
     // registers are outputs of that, never inputs to it.
     Bench bench;
 
     // 311 lines at 50 Hz, which is what the seeds above describe.
-    REQUIRE((g_fieldRate = 50.08f, bench.engine.solveSampling(4)));
+    g_fieldRate = 50.08f;
+    bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+    REQUIRE(pollUntilSolved(bench.engine));
 
     const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4);
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
@@ -187,7 +194,9 @@ TEST_CASE("solveSampling computes the divider and writes all three registers")
         // The seeded IF_HSYNC_RST was 1276 for a 2553 divider. If the engine
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
-        REQUIRE(bench.engine.solveFromScratch());
+        const Tv5725::PanAndZoom held = bench.engine.framing();
+        bench.engine.requestFraming(held);
+        bench.engine.poll();
         CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted));
     }
 }
@@ -199,15 +208,22 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     // there is nothing to fall back on either, and an engine with no divider
     // defers every solve forever -- so a first refusal adopts what it finds.
     Bench bench;
-    const uint32_t adopted = Wire.field(5, 0x12, 0, 12);
+    const uint32_t inherited = Wire.field(5, 0x12, 0, 12);
 
-    CHECK_FALSE((g_fieldRate = 0.0f, bench.engine.solveSampling(4)));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)adopted));
+    g_fieldRate = 0.0f;
+    bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+    CHECK_FALSE(pollUntilSolved(bench.engine));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
-        REQUIRE((g_fieldRate = 50.08f, bench.engine.solveSampling(4)));
+        g_fieldRate = 50.08f;
+        bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+        REQUIRE(pollUntilSolved(bench.engine));
         const uint32_t solved = Wire.field(5, 0x12, 0, 12);
-        CHECK_FALSE((g_fieldRate = 0.0f, bench.engine.solveSampling(4)));
+
+        g_fieldRate = 0.0f;
+        bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
+        CHECK_FALSE(pollUntilSolved(bench.engine));
         CHECK(Wire.field(5, 0x12, 0, 12) == solved);
     }
 }
@@ -241,10 +257,11 @@ TEST_CASE("a vertical total that disagrees with the field rate defers the solve"
     seed(0, 0x1B, 0, 11, 251);    // STATUS_SYNC_PROC_VTOTAL, mid-settle
     g_fieldRate = 50.08f;
 
-    Geometry engine;
-    engine.adoptSampling();
+    DisplayClock clock;
+    Geometry engine(clock);
 
-    CHECK_FALSE(engine.solveFromScratch());
+    engine.modeChanged(&Tv5725::Mode1080p, true, 4);
+    CHECK_FALSE(pollUntilSolved(engine));
     CHECK_FALSE(Wire.touched[1][0x1C]);   // IF_VB_ST
     CHECK_FALSE(Wire.touched[1][0x1E]);   // IF_VB_SP
 
@@ -272,9 +289,14 @@ TEST_CASE("a press is asked for in output pixels, not input units")
 
     SUBCASE("and panning, once a zoom has left room to pan into") {
         REQUIRE(bench.engine.zoom(400, 0));
+
+        // Sized from the scale the zoom LEFT, not the one it started from: a
+        // press is converted at the magnification in force when it is made.
+        const float zoomed = Scale(Wire.field(3, 0x16, 0, 10)).magnification();
+        const int16_t step = AxisHorizontal.stepUnits(16, zoomed);
         const int16_t before = bench.engine.framing().horizontalPan();
         REQUIRE(bench.engine.pan(16, 0));
-        CHECK(bench.engine.framing().horizontalPan() - before == wanted);
+        CHECK(bench.engine.framing().horizontalPan() - before == step);
     }
 }
 
@@ -296,10 +318,16 @@ TEST_CASE("the solve uses the raster the engine holds, not the one on the chip")
 {
     Bench bench;
 
-    // Wiped after adoptRaster() took them. A solve that reaches for these sees
-    // no raster at all, reads it as bypass, and declines.
+    // Wiped after the solve that wrote them. A re-solve that reaches for these
+    // sees no raster at all, reads it as bypass, and declines.
+    const uint32_t stopBefore = Wire.field(3, 0x14, 4, 11);   // VDS_DIS_VB_SP
     seed(3, 0x01, 0, 12, 0);   // VDS_HSYNC_RST
     seed(3, 0x02, 4, 11, 0);   // VDS_VSYNC_RST
 
-    CHECK(bench.engine.solveFromScratch());
+    // A framing the engine has not solved before, so a solve that ran shows as
+    // a moved window and one that declined shows as no change at all.
+    bench.engine.requestFraming(Tv5725::PanAndZoom(0, 200, 0, 0));
+    bench.engine.poll();
+
+    CHECK(Wire.field(3, 0x14, 4, 11) != stopBefore);
 }

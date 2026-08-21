@@ -265,6 +265,12 @@ public:
     // a preset table would have been loaded, and BEFORE the engine solves the
     // raster and the windows.
     static void init();
+
+    // Capture off stops the SDRAM being written, so the playback stage keeps
+    // showing the last frame. Held across a mode change, whose windows land
+    // seconds after the load.
+    static void freezeCapture();
+    static void releaseCapture();
 };
 
 }  // namespace Tv5725

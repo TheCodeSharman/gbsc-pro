@@ -11,6 +11,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "Si5351Stubs.h"
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
@@ -27,7 +28,12 @@ FakeTwoWire Wire;
 using namespace Tv5725;
 
 static float g_fieldRate = 50.08f;
-float getSourceFieldRate(boolean) { return g_fieldRate; }
+
+// Counted because the cost is the point: this samples vsync edges through
+// FrameSync, up to 250 ms a pulse, and the whole reason poll() has a cheap gate
+// in front of it is that loop() cannot afford it on every pass.
+static unsigned g_fieldRateCalls = 0;
+float getSourceFieldRate(boolean) { ++g_fieldRateCalls; return g_fieldRate; }
 void tv5725Log(const char *) {}
 
 // Neither a preset table's value nor the firmware's, so a read-back
@@ -61,6 +67,7 @@ static void seedBenchSource()
     seedField(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
     seedField(5, 0x12, 0, 12, 2250);   // PLLAD_MD
     seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
     g_fieldRate = 50.08f;
 }
 
@@ -160,25 +167,46 @@ static void checkBenchGeometry()
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
     CHECK(FrameBuffer::PB_FETCH_NUM::read() == 223);
 
-    CHECK(registersWritten() == 53);
+    // Capture, released now the windows under it are the new mode's.
+    CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
+
+    CHECK(registersWritten() == 54);
+}
+
+// poll() runs on every loop() pass, and the steadiness gate wants a few before
+// it will pay for a field rate measurement.
+static bool pollUntilSolved(Geometry &engine)
+{
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        if (engine.poll())
+            return true;
+    return false;
 }
 
 // --- the scenarios, each the sketch's own call sequence ----------------------
 //
-// What is pinned is the ORDER, which doPostPresetLoadSteps() and
-// runSyncWatcher() state and which the engine depends on.
+// Two messages: the sketch says the mode changed, and loop() polls. The ORDER
+// inside -- sampling, raster, clock, windows -- is the engine's, and what these
+// pin is that it lands on the same chip state whichever way the source behaves
+// on the way there.
 
-TEST_CASE("a scaled preset load writes the whole geometry")
+TEST_CASE("a settled source is solved on the first poll that can measure it")
 {
     seedBenchSource();
-    Geometry engine;
+    DisplayClock clock;
+    Geometry engine(clock);
 
-    engine.solveSampling(4);
-    engine.adoptRaster();
-    engine.solveRaster(benchMode());
-    engine.solveFromScratch();
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
 
     checkBenchGeometry();
+
+    SUBCASE("and nothing is outstanding afterwards") {
+        Wire.reset();
+        Wire.poison(Poison);
+        CHECK_FALSE(engine.poll());
+        CHECK(registersWritten() == 0);
+    }
 }
 
 TEST_CASE("a custom preset inherits its divider rather than computing one")
@@ -188,57 +216,68 @@ TEST_CASE("a custom preset inherits its divider rather than computing one")
     // saved divider is the one the solver would have chosen, so the chip ends
     // up in the same state by a different route.
     seedBenchSource();
-    Geometry engine;
+    DisplayClock clock;
+    Geometry engine(clock);
 
-    engine.adoptSampling();
-    engine.adoptRaster();
-    engine.solveRaster(benchMode());
-    engine.solveFromScratch();
-
-    checkBenchGeometry();
-}
-
-TEST_CASE("a raster that deferred is finished by the sync watcher")
-{
-    // The field rate is unmeasurable while the source settles, so solveRaster()
-    // refuses rather than solving against a transient. runSyncWatcher() retries
-    // the WHOLE sequence once sync is stable, and the retry has to land on the
-    // state a settled source would have solved for directly.
-    seedBenchSource();
-    Geometry engine;
-
-    g_fieldRate = 0.0f;
-    engine.solveSampling(4);
-    engine.adoptRaster();
-    engine.solveRaster(benchMode());
-    REQUIRE(engine.rasterPending());
-
-    g_fieldRate = 50.08f;
-    REQUIRE(engine.solveRaster());
-    engine.solveFromScratch();
+    engine.modeChanged(benchMode(), true, 4);
+    REQUIRE(pollUntilSolved(engine));
 
     checkBenchGeometry();
 }
 
-TEST_CASE("a divider that deferred is finished by the sync watcher")
+TEST_CASE("a source still settling gets no geometry solved against it")
 {
-    // Moving the divider moves the capture window with it, so the windows are
-    // re-solved after the retry rather than left sized for the old one.
+    // The measurements lag the mode change and do not fail when read early --
+    // they return plausible garbage. Refusing has to mean refusing rather than
+    // inheriting, so no window is written until they agree with each other.
     seedBenchSource();
-    Geometry engine;
+    DisplayClock clock;
+    Geometry engine(clock);
 
-    engine.adoptSampling();
-    engine.adoptRaster();
-    engine.solveRaster(benchMode());
+    engine.modeChanged(benchMode(), false, 4);
     g_fieldRate = 0.0f;
-    engine.solveSampling(4);
-    REQUIRE(engine.samplingPending());
 
-    g_fieldRate = 50.08f;
-    REQUIRE(engine.solveSampling(4));
-    engine.solveFromScratch();
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll());
 
-    checkBenchGeometry();
+    CHECK_FALSE(Wire.touched[1][0x18]);   // IF_HB_ST2, the capture window
+    CHECK_FALSE(Wire.touched[1][0x1C]);   // IF_VB_ST
+    CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
+    CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST, the raster
+
+    SUBCASE("but the divider IS adopted, or every window defers forever") {
+        // Deliberate: without a divider the capture window has no unit to be
+        // measured in, and the pending flag is what stops the fallback becoming
+        // permanent.
+        CHECK(Wire.touched[5][0x12]);     // PLLAD_MD
+        CHECK(Wire.touched[5][0x11]);     // PLLAD_LAT
+    }
+
+    SUBCASE("and it is solved by the poll after the source settles") {
+        g_fieldRate = 50.08f;
+        REQUIRE(pollUntilSolved(engine));
+        checkBenchGeometry();
+    }
+}
+
+TEST_CASE("a line count outside what any source runs is never measured against")
+{
+    // 97 lines is what a preset load leaves behind, and it is perfectly steady
+    // -- steadiness alone would call that settled and solve a raster for a
+    // source that is not there yet.
+    seedBenchSource();
+    seedField(0, 0x1B, 0, 11, 97);
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), false, 4);
+
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll());
+
+    CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
+    CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST
+    CHECK_FALSE(Wire.touched[5][0x12]);   // PLLAD_MD -- not even measured
 }
 
 TEST_CASE("entering bypass leaves nothing to solve")
@@ -246,19 +285,200 @@ TEST_CASE("entering bypass leaves nothing to solve")
     // In RGBHV bypass the VDS is out of the video path: there is no scaled
     // raster, so a solve must write nothing rather than size a window for one.
     seedBenchSource();
-    Geometry engine;
+    DisplayClock clock;
+    Geometry engine(clock);
 
-    engine.solveSampling(4);
-    engine.adoptRaster();
-    engine.solveRaster(benchMode());
-    engine.solveFromScratch();
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
 
     Wire.reset();
     Wire.poison(Poison);
     engine.enterBypass();
-    engine.solveFromScratch();
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll());
 
-    CHECK(registersWritten() == 0);
+    // Capture, and nothing else: bypass has no solve coming, so releasing it is
+    // the only thing left to do.
+    CHECK(registersWritten() == 1);
+    CHECK(Wire.touched[4][0x21]);
+}
+
+TEST_CASE("a mode with no timings is given up on, not asked about forever")
+{
+    // The output resolutions with no OutputMode arrive as NULL, and nothing
+    // about waiting will produce timings. Every pass that keeps the mode change
+    // outstanding pays for a field rate measurement first.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(0, false, 4);
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll());
+
+    const unsigned settled = g_fieldRateCalls;
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll());
+    CHECK(g_fieldRateCalls == settled);
+
+    // The raster is left exactly as it was: a mode nobody could name is not a
+    // reason to move one that is already driving a picture.
+    CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST
+}
+
+// --- how often the source is measured ----------------------------------------
+
+TEST_CASE("the source is measured once per poll, not once per thing that needs it")
+{
+    // getSourceFieldRate() samples vsync edges through FrameSync with no yield()
+    // in the spin, up to 250 ms a pulse and ~40 ms at 50 Hz. Paying for it once
+    // per consumer is not merely slow: each measurement is a separate reading of
+    // a moving quantity, so the capture can be solved against a rate the raster
+    // was not, and nothing downstream can tell.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), false, 4);
+
+    const unsigned before = g_fieldRateCalls;
+    REQUIRE(pollUntilSolved(engine));
+    CHECK(g_fieldRateCalls - before == 1);
+
+    SUBCASE("and once for a framing the user asked for") {
+        const unsigned solved = g_fieldRateCalls;
+        engine.requestFraming(PanAndZoom(300, 120, 40, -15));
+        engine.poll();
+        CHECK(g_fieldRateCalls - solved == 1);
+    }
+
+    SUBCASE("and once for a pad press") {
+        const unsigned solved = g_fieldRateCalls;
+        REQUIRE(engine.zoom(16, 0));
+        CHECK(g_fieldRateCalls - solved == 1);
+    }
+}
+
+// --- a reset -----------------------------------------------------------------
+
+TEST_CASE("a reset puts the framing back and re-solves everything from it")
+{
+    // Without one, a framing zoomed into a corner is only escapable by changing
+    // mode or rebooting: the framing is the engine's own state and no register
+    // holds it.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    REQUIRE(engine.zoom(400, 120));
+    REQUIRE(engine.framing().horizontalZoom() != 0);
+    REQUIRE(engine.framing().verticalZoom() != 0);
+
+    // Re-seeded rather than merely wiped: the source measurements are INPUTS
+    // the chip keeps supplying, and poisoning those would test the engine
+    // solving against garbage rather than resetting.
+    seedBenchSource();
+    engine.reset();
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.framing().horizontalZoom() == 0);
+    CHECK(engine.framing().verticalZoom() == 0);
+    CHECK(engine.framing().horizontalPan() == 0);
+    CHECK(engine.framing().verticalPan() == 0);
+
+    // Not just the framing: the divider, the raster, the clock and both windows
+    // land where a fresh mode change would put them.
+    checkBenchGeometry();
+}
+
+// --- the freeze that covers a mode change ------------------------------------
+//
+// The windows land seconds after the load, once the source has settled into the
+// new mode, so anything released at load time shows the previous mode's geometry
+// against the new source until then.
+
+TEST_CASE("capture is frozen across a mode change and released when it lands")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), false, 4);
+    CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 0);
+
+    REQUIRE(pollUntilSolved(engine));
+    CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
+}
+
+TEST_CASE("capture stays frozen while the source is still settling")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), false, 4);
+    g_fieldRate = 0.0f;
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll());
+
+    CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 0);
+
+    SUBCASE("and is released by the poll that solves it") {
+        g_fieldRate = 50.08f;
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
+    }
+}
+
+TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
+{
+    // Every path that stops the poll has to release it, or the picture is a
+    // still frame for the rest of the session with nothing left to unstick it.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    SUBCASE("a mode with no timings") {
+        engine.modeChanged(0, false, 4);
+        for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+            CHECK_FALSE(engine.poll());
+        CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
+    }
+
+    SUBCASE("and bypass, where there is no solve coming at all") {
+        engine.modeChanged(benchMode(), false, 4);
+        engine.enterBypass();
+        CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
+    }
+}
+
+// --- a horizontal total retimed outside the engine ---------------------------
+
+TEST_CASE("a hand-retimed horizontal total is what the windows are fitted to")
+{
+    // The htotal search moves VDS_HSYNC_RST itself, on a board with no clock
+    // generator to steer the frame time instead. The engine holds the raster
+    // rather than reading it back, so a re-solve that is not told the new total
+    // fits every window and both scales to the one the last solve chose.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
+    const uint16_t scaleAtSolvedRaster = VideoProcessor::VDS_HSCALE::read();
+    const uint16_t farEdgeAtSolvedRaster = VideoProcessor::VDS_DIS_HB_ST::read();
+
+    REQUIRE(engine.rasterWidthChanged(2016));
+
+    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 2015);
+
+    // 100 px more raster to fill from the same capture, so the picture is
+    // magnified further and reaches further along the line. VDS_HSCALE counts
+    // DOWN with magnification.
+    CHECK(VideoProcessor::VDS_HSCALE::read() < scaleAtSolvedRaster);
+    CHECK(VideoProcessor::VDS_DIS_HB_ST::read() > farEdgeAtSolvedRaster);
 }
 
 // --- a framing request, which re-solves every window -------------------------
@@ -269,17 +489,18 @@ TEST_CASE("a framing request is drained and re-solves every window")
     // the framing and loop() applies it. Every window is recomputed, pan
     // included -- inheriting one is what froze a picture at 620 lines.
     seedBenchSource();
-    Geometry engine;
+    DisplayClock clock;
+    Geometry engine(clock);
 
-    engine.solveSampling(4);
-    engine.adoptRaster();
-    engine.solveRaster(benchMode());
-    engine.solveFromScratch();
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
 
     Wire.reset();
     Wire.poison(Poison);
+    // A framing is not a mode change, so poll() applies it and still reports
+    // nothing completed -- the caller's frame time lock has no ratio to forget.
     engine.requestFraming(PanAndZoom(300, 120, 40, -15));
-    REQUIRE(engine.applyRequested());
+    CHECK_FALSE(engine.poll());
 
     // The capture narrows 300 units horizontally and 120 half-lines vertically,
     // then moves 40 right and 15 up.

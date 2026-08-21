@@ -1,5 +1,8 @@
 #include "DisplayClock.h"
 
+#include "../../gbs_types.h"
+#include "../clock/ClockGen.h"
+
 namespace Tv5725 {
 
 const uint32_t DisplayClock::CeilingHz;
@@ -52,6 +55,70 @@ uint16_t DisplayClock::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
 
     // VDS_HSYNC_RST is twelve bits, so the raster total cannot exceed 4096.
     return horizontalTotal > 4096 ? 4096 : (uint16_t)horizontalTotal;
+}
+
+DisplayClock::DisplayClock()
+    : generator_(0), hzNow_(0), seed_(0), known_(false)
+{
+}
+
+void DisplayClock::driveWith(Clock::ClockGen &generator) { generator_ = &generator; }
+
+void DisplayClock::hold(uint8_t seed)
+{
+    seed_ = seed;
+    known_ = true;
+}
+
+void DisplayClock::adopt()
+{
+    seed_ = GBS::PLL648_CONTROL_01::read();
+    known_ = true;
+}
+
+uint8_t DisplayClock::seed() const { return seed_; }
+
+bool DisplayClock::known() const { return known_; }
+
+uint32_t DisplayClock::hz() const { return known_ ? hzFor(seed_) : 0; }
+
+uint32_t DisplayClock::reset()
+{
+    if (generator_ == 0)
+        return 0;
+
+    uint32_t target = hz();
+    if (target == 0)
+        target = FallbackHz;
+
+    // Preloads through an intermediate where the target needs one -- see
+    // Clock::ClockRamp::preloadFor for the little that is known about that.
+    generator_->setFrequency(target);
+
+    // ClockGen::begin() leaves the output disabled and setFrequency() does not
+    // enable it, so handing the display clock over is the source and the pad
+    // together.
+    generator_->enable();
+    GBS::PAD_CKIN_ENZ::write(0);
+    hzNow_ = target;
+    return target;
+}
+
+uint32_t DisplayClock::hzNow() const { return hzNow_; }
+
+void DisplayClock::assumeHz(uint32_t hz) { hzNow_ = hz; }
+
+void DisplayClock::slewTo(uint32_t hz, void (*pump)())
+{
+    if (generator_ == 0) {
+        hzNow_ = hz;
+        return;
+    }
+
+    // The loop always finishes ON the target: a clock left even 500 Hz out
+    // shows as a rolling bar. The stepping policy is Clock::ClockRamp's.
+    generator_->slewTo(hzNow_, hz, pump);
+    hzNow_ = hz;
 }
 
 }  // namespace Tv5725

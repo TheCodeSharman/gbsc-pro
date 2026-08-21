@@ -22,10 +22,14 @@
 #include <Arduino.h>   // `boolean`
 #include <stdint.h>
 
-// Both supplied by the sketch. getSourceFieldRate() spins waiting for edges, so
-// it is injected rather than reached for; tv5725Log() routes to the web console
-// there and to a buffer in the host tests, which is what makes the diagnostic
-// assertable.
+// Declared here and defined outside this layer, which can reach neither: the
+// field rate is counted off the debug pin through FrameSync at the ESP's clock,
+// and the log goes to the web console.
+//
+// getSourceFieldRate() spins for vsync edges with no yield() -- framesync.h
+// says why -- so it costs up to FS_SAMPLE_TIMEOUT_MS a pulse. measureLineRate()
+// below is its one call site here, and everything downstream takes the rate
+// from what that held rather than measuring again.
 float getSourceFieldRate(boolean useSPBus);
 void tv5725Log(const char *message);
 
@@ -106,6 +110,24 @@ public:
     // Read the line rate off the chip -- field rate x source lines -- and hold
     // both inputs, because the cross-check inside can say the two disagree but
     // never which of them was wrong. False when it is unmeasurable.
+    // How many consecutive agreeing samples make the source worth measuring.
+    static const uint8_t SteadySamples = 4;
+
+    // Take ONE line-count sample and say whether enough consecutive ones have
+    // agreed. A single register read, so a caller can ask on every pass;
+    // measureLineRate() spins for up to 250 ms a vsync pulse and cannot be
+    // asked speculatively.
+    //
+    // An OPTIMISATION rather than the correctness guard. What rejects a
+    // settling source is lineRateFrom()'s cross-check of the rate against the
+    // count, so letting one through early costs a measurement, not a wrong
+    // answer. A count outside what any source runs never settles, because the
+    // 97 a preset load leaves behind is perfectly steady.
+    bool sampleSteady();
+
+    // A mode change is about to move the count, so the run so far means nothing.
+    void resetSteadiness();
+
     bool measureLineRate();
 
     // Choose one for this line rate. False and NO state change when the rate is
@@ -141,6 +163,8 @@ private:
     uint16_t divider_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;
+    uint16_t steadyLines_;
+    uint8_t steadyRun_;
     float fieldRateHz_;
 };
 

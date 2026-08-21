@@ -1,16 +1,18 @@
-// Host-compiled unit tests for Geometry::solveRaster() -- `make -C test geometry-raster`.
+// Host-compiled tests for what the engine does while the source is unsettled --
+// `make -C test geometry-raster`.
 //
 // getSourceFieldRate() is the sketch's, and this file supplies it instead, so
-// the test DRIVES the source measurement -- the input the whole function turns
-// on, and the one thing a bench test cannot hold still.
+// the test DRIVES the source measurement -- the input the whole solve turns on,
+// and the one thing a bench test cannot hold still.
 //
-// What it pins is the difference between "refuse" and "defer". Getting that
+// What it pins is the difference between waiting and giving up. Getting that
 // wrong does not look like a bug: the picture is fine, because the preset
 // table's raster is still there. It just means the engine never ran.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "Si5351Stubs.h"
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
@@ -39,8 +41,36 @@ static uint16_t horizontalTotalWritten() { return Wire.field(3, 0x01, 0, 12) + 1
 // Neither a preset table's value nor anything the engine writes.
 static const uint8_t Poison = 0xC2;
 
+static uint32_t horizontalTotalUnwritten()
+{
+    return (Poison | (Poison << 8)) & 0x0FFF;
+}
+
+static unsigned registersWritten()
+{
+    unsigned written = 0;
+    for (uint8_t seg = 0; seg < FakeTwoWire::Segments; ++seg)
+        for (int reg = 0; reg < 256; ++reg)
+            if (Wire.touched[seg][reg])
+                ++written;
+    return written;
+}
+
+// poll() gates on a line count steady over several passes before it will pay for
+// a field rate measurement, so a solve takes more than one call.
+static bool pollUntilSolved(Geometry &engine)
+{
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        if (engine.poll())
+            return true;
+    return false;
+}
+
 struct Bench {
-    Bench()
+    DisplayClock clock;
+    Geometry engine;
+
+    Bench() : engine(clock)
     {
         Wire.reset();
         Wire.poison(Poison);
@@ -52,97 +82,11 @@ struct Bench {
 TEST_CASE("a settled source gets the computed raster, not the table's")
 {
     Bench bench;
-    Geometry engine;
 
-    // 1916 x 1125, where the bench ran 1915 x 1126 until 2026-08-14. The frame
-    // lost the extra line every shipped table carried and the line gained a
-    // pixel for it -- horizontalTotal is clock / (verticalTotal x rate), so the two move
-    // opposite ways and the clock demand is unchanged.
-    REQUIRE(engine.solveRaster(&Mode1080p));
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    REQUIRE(pollUntilSolved(bench.engine));
+
     CHECK(horizontalTotalWritten() == 1916);
-    CHECK_FALSE(engine.rasterPending());
-}
-
-TEST_CASE("an unsettled line count DEFERS the solve, it does not abandon it")
-{
-    Bench bench;
-    Geometry engine;
-
-    // 97 is the documented mid-preset-load reading -- see Capture's comment and
-    // CLAUDE.md. It is exactly when solveRaster() is called, so this is the
-    // common case rather than an edge one.
-    setSourceLines(97);
-
-    CHECK_FALSE(engine.solveRaster(&Mode1080p));
-
-    // Refusing without deferring means nothing retries, so the preset table's
-    // raster stands for the session while the picture looks perfect. Measured
-    // 2026-08-15: stuck at the table's 1445 x 1126 where the engine wanted 1915,
-    // with FrameSync steering the Si5351 to 81.48 MHz to match the wrong one.
-    CHECK(engine.rasterPending());
-}
-
-TEST_CASE("nothing is written while the source is unsettled")
-{
-    Bench bench;
-    Geometry engine;
-    setSourceLines(97);
-
-    engine.solveRaster(&Mode1080p);
-
-    // A half-written raster is worse than none: the totals go in before the
-    // sync positions, so bailing between them would leave the two disagreeing.
-    CHECK(Wire.field(3, 0x01, 0, 12) == ((Poison | (Poison << 8)) & 0x0FFF));
-}
-
-TEST_CASE("the deferred solve lands as soon as the source settles")
-{
-    Bench bench;
-    Geometry engine;
-    setSourceLines(97);
-    REQUIRE_FALSE(engine.solveRaster(&Mode1080p));
-    REQUIRE(engine.rasterPending());
-
-    setSourceLines(311);
-
-    // The no-argument retry, against the mode the first call named. The caller
-    // does not have to have kept hold of it.
-    CHECK(engine.solveRaster());
-    CHECK(horizontalTotalWritten() == 1916);
-    CHECK_FALSE(engine.rasterPending());
-}
-
-TEST_CASE("a field rate disagreeing with the line count defers too")
-{
-    Bench bench;
-    Geometry engine;
-
-    // 311 lines says PAL, so ~50 Hz; a 60 Hz reading is the transient this
-    // guard exists for. Deferring was already right here -- pinned so it stays.
-    g_fieldRate = 60.0f;
-
-    CHECK_FALSE(engine.solveRaster(&Mode1080p));
-    CHECK(engine.rasterPending());
-}
-
-TEST_CASE("a mode with no timings is refused for good, not retried forever")
-{
-    Bench bench;
-    Geometry engine;
-
-    // The four output resolutions with no OutputMode yet, and a custom preset,
-    // arrive here as NULL. Nothing about waiting will produce timings, so
-    // deferring would spin getSourceFieldRate() -- which samples vsync and is
-    // not cheap -- on every pass of loop() for the whole session.
-    CHECK_FALSE(engine.solveRaster(0));
-    CHECK_FALSE(engine.rasterPending());
-}
-
-TEST_CASE("the raster the engine computes beats every table's")
-{
-    Bench bench;
-    Geometry engine;
-    REQUIRE(engine.solveRaster(&Mode1080p));
 
     // The twelve tables ship 1445 (PAL) and 1602 (NTSC) at this frame height.
     // Landing on either would mean the table won, which is the whole failure
@@ -151,135 +95,109 @@ TEST_CASE("the raster the engine computes beats every table's")
     CHECK(horizontalTotalWritten() != 1602);
 }
 
-TEST_CASE("entering bypass drops a deferred solve")
+TEST_CASE("an unsettled line count is waited out, not solved against")
 {
     Bench bench;
-    Geometry engine;
 
-    // A deferred solve from the previous mode, which is the COMMON state now
-    // that an unsettled source defers rather than abandoning.
+    // 97 is the documented mid-preset-load reading -- see CaptureWindow's
+    // comment and CLAUDE.md -- and it is perfectly steady, so steadiness alone
+    // would call it settled.
     setSourceLines(97);
-    REQUIRE_FALSE(engine.solveRaster(&Mode1080p));
-    REQUIRE(engine.rasterPending());
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    CHECK_FALSE(pollUntilSolved(bench.engine));
+
+    // A half-written raster is worse than none: the totals go in before the
+    // sync positions, so bailing between them would leave the two disagreeing.
+    CHECK(Wire.field(3, 0x01, 0, 12) == horizontalTotalUnwritten());
+
+    SUBCASE("and the poll after it settles lands the whole raster") {
+        // Giving up instead leaves the previous raster standing for the
+        // session, invisibly -- the picture is fine and FrameSync steers the
+        // Si5351 to whatever raster it finds. Measured 2026-08-15: stuck at the
+        // table's 1445 x 1126 where the engine wanted 1915, with the Si5351 on
+        // 81.48 MHz to match the wrong one.
+        setSourceLines(311);
+        REQUIRE(pollUntilSolved(bench.engine));
+        CHECK(horizontalTotalWritten() == 1916);
+
+        // VDS_VSYN_SIZE1/2 are the vertical totals the frame-rate selector picks
+        // between, and VDS_FR_SELECT never alternates, so both are the frame.
+        // One quantity in three registers has one owner, so they arrive with the
+        // raster rather than from whatever ran at load time.
+        uint32_t verticalTotal = Wire.field(3, 0x02, 4, 11) + 1;
+        CHECK(Wire.field(3, 0x20, 0, 11) == verticalTotal + 1);
+        CHECK(Wire.field(3, 0x22, 0, 11) == verticalTotal + 1);
+    }
+}
+
+TEST_CASE("a field rate disagreeing with the line count is waited out too")
+{
+    Bench bench;
+
+    // 311 lines says PAL, so ~50 Hz; a 60 Hz reading is the transient this guard
+    // exists for, and it passes a plain bounds check comfortably. A raster
+    // solved at the wrong rate is out by the ratio of the rates.
+    g_fieldRate = 60.0f;
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    CHECK_FALSE(pollUntilSolved(bench.engine));
+    CHECK(Wire.field(3, 0x01, 0, 12) == horizontalTotalUnwritten());
+
+    SUBCASE("and the poll after the two agree lands it") {
+        g_fieldRate = 50.08f;
+        REQUIRE(pollUntilSolved(bench.engine));
+        CHECK(horizontalTotalWritten() == 1916);
+    }
+}
+
+TEST_CASE("entering bypass drops the outstanding solve")
+{
+    Bench bench;
+
+    // Outstanding from the previous mode, which is the common state now that an
+    // unsettled source waits rather than giving up.
+    setSourceLines(97);
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    REQUIRE_FALSE(pollUntilSolved(bench.engine));
 
     // Past 535 lines the unit drops to RGBHV bypass, where video routes around
     // the VDS and there is no raster to solve. bypassModeSwitch_RGBHV() returns
-    // before doPostPresetLoadSteps() so nothing else clears the flag, and the
-    // retry is not gated on bypass -- a stale pending writes a scaled raster
-    // straight over the bypass setup.
-    engine.enterBypass();
-
-    CHECK_FALSE(engine.rasterPending());
-}
-
-TEST_CASE("a forgotten raster is not resurrected by the retry")
-{
-    Bench bench;
-    Geometry engine;
-    setSourceLines(97);
-    REQUIRE_FALSE(engine.solveRaster(&Mode1080p));
-    engine.enterBypass();
-
-    // Now settled -- but there is still no mode, so the retry must write
-    // nothing. Asserting on the register rather than the return value: the
-    // damage a resurrected solve does is the write, not the boolean.
+    // before doPostPresetLoadSteps(), so nothing else clears the mode change,
+    // and a solve landing afterwards writes a scaled raster and a recomputed
+    // divider straight over the bypass setup.
+    bench.engine.enterBypass();
+    Wire.reset();
+    Wire.poison(Poison);
     setSourceLines(311);
-    CHECK_FALSE(engine.solveRaster());
-    CHECK(Wire.field(3, 0x01, 0, 12) == ((Poison | (Poison << 8)) & 0x0FFF));
+
+    CHECK_FALSE(pollUntilSolved(bench.engine));
+    CHECK(registersWritten() == 0);
 }
 
-TEST_CASE("the vertical size registers move with the raster the engine solved")
+TEST_CASE("an unmeasurable line rate is retried, not settled for")
 {
     Bench bench;
-    Geometry engine;
-
-    // VDS_VSYN_SIZE1/2 are the vertical totals the frame-rate selector picks
-    // between, both holding the same total here, and ten of the twelve tables
-    // ship VDS_VSYNC_RST + 2. Written from doPostPresetLoadSteps() instead, they
-    // are left behind by a deferred solve: the retry re-solves the raster, the
-    // clock and the windows without re-entering that function. One quantity in
-    // three registers belongs to one owner.
-    REQUIRE(engine.solveRaster(&Mode1080p));
-
-    uint32_t verticalTotal = Wire.field(3, 0x02, 4, 11) + 1;
-    CHECK(Wire.field(3, 0x20, 0, 11) == verticalTotal + 1);
-    CHECK(Wire.field(3, 0x22, 0, 11) == verticalTotal + 1);
-}
-
-TEST_CASE("a deferred solve carries the vertical size registers with it")
-{
-    Bench bench;
-    Geometry engine;
-
-    // The path that was broken: refuse, then retry, with nothing running
-    // doPostPresetLoadSteps() in between.
-    setSourceLines(97);
-    REQUIRE_FALSE(engine.solveRaster(&Mode1080p));
-    setSourceLines(311);
-    REQUIRE(engine.solveRaster());
-
-    uint32_t verticalTotal = Wire.field(3, 0x02, 4, 11) + 1;
-    CHECK(Wire.field(3, 0x20, 0, 11) == verticalTotal + 1);
-    CHECK(Wire.field(3, 0x22, 0, 11) == verticalTotal + 1);
-}
-
-TEST_CASE("an unmeasurable line rate DEFERS the sampling solve, it does not settle for the register")
-{
-    Bench bench;
-    Geometry engine;
 
     // A cold boot reads `271 lines x 49.22 Hz -> line rate 0` 3.6 s in, so
-    // lineRateFrom() refuses and the engine adopts what is on the chip: 1856,
+    // lineRateFrom() refuses and the engine inherits what is on the chip: 1856,
     // bypassModeSwitch_RGBHV()'s literal, 27% below the 2548 the source wants.
-    // Adopting is right -- the engine needs some divider -- so what matters is
-    // that the fallback is REMEMBERED and retried.
+    // Inheriting is right -- without a divider the capture window has no unit to
+    // be measured in -- so what matters is that it is not the last word.
     Wire.bank[5][0x12] = 0x40;  // PLLAD_MD = 1856, as the bypass path leaves it
     Wire.bank[5][0x13] = 0x07;
+    g_fieldRate = 0.0f;
 
-    CHECK_FALSE((g_fieldRate = 0.0f, engine.solveSampling(4)));
-    CHECK(engine.samplingPending());
-}
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    REQUIRE_FALSE(pollUntilSolved(bench.engine));
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1856);
 
-TEST_CASE("a measurable line rate leaves nothing pending")
-{
-    Bench bench;
-    Geometry engine;
+    SUBCASE("and the poll that can measure it computes one") {
+        g_fieldRate = 50.08f;
+        REQUIRE(pollUntilSolved(bench.engine));
 
-    // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
-    // there, and the capture write limit takes it to 2250.
-    CHECK((g_fieldRate = 50.08f, engine.solveSampling(4)));
-    CHECK_FALSE(engine.samplingPending());
-    CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
-}
-
-TEST_CASE("the deferred sampling solve lands once the source can be measured")
-{
-    Bench bench;
-    Geometry engine;
-
-    REQUIRE_FALSE((g_fieldRate = 0.0f, engine.solveSampling(4)));
-    REQUIRE(engine.samplingPending());
-
-    CHECK((g_fieldRate = 50.08f, engine.solveSampling(4)));
-    CHECK_FALSE(engine.samplingPending());
-    CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
-    CHECK(Wire.field(1, 0x0E, 0, 11) == 1125);   // IF_HSYNC_RST, divider / 2
-    CHECK(Wire.field(5, 0x4B, 0, 12) == 2092);   // SP_RT_HS_SP, 93% of it
-}
-
-TEST_CASE("entering bypass drops a deferred sampling solve too")
-{
-    Bench bench;
-    Geometry engine;
-
-    // Same reason enterBypass() drops the deferred raster: neither bypass
-    // switch reaches doPostPresetLoadSteps(), so nothing else would clear it,
-    // and a retry firing afterwards would move the divider out from under a
-    // bypass setup that chose its own.
-    REQUIRE_FALSE((g_fieldRate = 0.0f, engine.solveSampling(4)));
-    REQUIRE(engine.samplingPending());
-
-    engine.enterBypass();
-
-    CHECK_FALSE(engine.samplingPending());
+        // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
+        // there, and the capture write limit takes it to 2250.
+        CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 1125);   // IF_HSYNC_RST, divider / 2
+        CHECK(Wire.field(5, 0x4B, 0, 12) == 2092);   // SP_RT_HS_SP, 93% of it
+    }
 }

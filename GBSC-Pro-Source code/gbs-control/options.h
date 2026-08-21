@@ -90,6 +90,8 @@ struct userOptions
 // can hold one without this header pulling the raster arithmetic in.
 namespace Tv5725 { class OutputMode; }
 
+#include "src/tv5725/DisplayClock.h"
+
 // runTimeOptions holds system variables
 struct runTimeOptions
 {
@@ -106,7 +108,11 @@ struct runTimeOptions
     // mode, or bypass. The raster is then read back rather than computed, which
     // is the last place anything inherits.
     const Tv5725::OutputMode *outputMode;
-    uint32_t freqExtClockGen;
+
+    // The display clock, which the engine steers from the raster it solved and
+    // the frame time lock walks away from that on every correction. It lives
+    // here because both reach it; Tv5725::Geometry is handed a reference.
+    Tv5725::DisplayClock displayClock;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
     // PLL648_CONTROL_01 is parked at the 0x75 sentinel while the external clock
     // generator drives the display, so the real divider is stashed here. It

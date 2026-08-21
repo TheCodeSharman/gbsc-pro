@@ -2,6 +2,7 @@
 
 #include "Adc.h"
 #include "CaptureWindow.h"
+#include "FrameBuffer.h"
 #include "InputFormatter.h"
 #include "Memory.h"
 #include "MemoryMap.h"
@@ -12,9 +13,11 @@ namespace Tv5725 {
 
 // --- Geometry ----------------------------------------------------------
 
-Geometry::Geometry()
-    : rasterPending_(false), samplingPending_(false), solvePending_(false),
-      framingRequested_(false), rasterMode_(0),
+Geometry::Geometry(DisplayClock &displayClock)
+    : displayClock_(displayClock),
+      rasterPending_(false), samplingPending_(false), solvePending_(false),
+      framingRequested_(false), modePending_(false),
+      modeIsCustomPreset_(false), modeOversample_(4), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
@@ -27,6 +30,16 @@ void Geometry::requestFraming(const PanAndZoom &wanted)
 }
 
 bool Geometry::apply()
+{
+    // The entry points outside a poll pass -- a framing request, a pad press, a
+    // retimed total -- have no measurement of their own, so this is where they
+    // take one. poll() has already measured and calls solveWindows() directly.
+    if (!sampling_.measureLineRate())
+        return fail();
+    return solveWindows();
+}
+
+bool Geometry::solveWindows()
 {
     CaptureWindow capture;
     if (!measureSourceTimings(capture))
@@ -43,6 +56,25 @@ bool Geometry::apply()
     verticalScale_ = solved.verticalScale();
     solvePending_ = false;
     return true;
+}
+
+bool Geometry::rasterWidthChanged(uint16_t horizontalTotal)
+{
+    // No raster of its own is what bypass looks like, and widening a line the
+    // VDS is not driving would size the next scaled mode's picture.
+    if (rasterLinePx_ == 0 || horizontalTotal == 0)
+        return false;
+
+    // The front porch is a fixed number of pixels at a fixed display clock, so
+    // every unit the line gains belongs to the picture. Skipped where no porch
+    // is known -- a custom preset adopts a raster without one, and moving zero
+    // would invent a bound the solve is better off without.
+    if (activeStop_ != 0)
+        activeStop_ = (uint16_t)(activeStop_ + horizontalTotal - rasterLinePx_);
+    rasterLinePx_ = horizontalTotal;
+
+    GBS::VDS_HSYNC_RST::write(horizontalTotal - 1);
+    return apply();
 }
 
 bool Geometry::solveRaster(const OutputMode *mode)
@@ -69,38 +101,22 @@ bool Geometry::solveRaster()
         return false;
     }
 
-    // A raster solved at the wrong rate is out by the ratio of the rates, and
-    // this runs during a preset load while the source is still settling -- a
-    // plain bounds check passes a transient comfortably. The line count is
-    // reliable where the period measurement is not, so it picks the nominal and
-    // the measurement only has to agree with it.
+    // The pass's own measurement. A raster solved at the wrong rate is out by
+    // the ratio of the rates, and lineRateFrom() is what refuses one: it bounds
+    // the line count, picks the nominal rate from it, and requires the measured
+    // rate to agree within 2%. Reaching here means that passed, so re-reading
+    // both to re-apply it would only add a second answer to disagree with.
     // docs/firmware-geometry-engine.md
-    float fieldRate = getSourceFieldRate(0);
-    uint16_t sourceLines = SourceMeasurement::measureSourceLines();
-    if (sourceLines < CaptureWindow::SourceVerticalTotalMin || sourceLines > CaptureWindow::SourceVerticalTotalMax) {
-        // Deferred, not abandoned: the sync processor reads 97 or 98 for a
-        // moment after a preset load and this is called in exactly that moment.
-        // Giving up leaves the previous raster standing for the session,
-        // invisibly -- the picture is fine and FrameSync steers the Si5351 to
-        // whatever raster it finds.
-        rasterPending_ = true;
-        return false;
-    }
-
-    float nominal = sourceLines > CaptureWindow::PalVerticalTotalMin ? 50.0f : 60.0f;
-    float error = fieldRate > nominal ? fieldRate / nominal : nominal / fieldRate;
-    if (!(error < 1.02f)) {
-        // Deferred for the same reason: the source settles a second or two
-        // later and the retry gets it right.
-        rasterPending_ = true;
-        return false;
-    }
-
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.
-    RasterSolution raster = mode->solve(fieldRate, OutputRaster::EngineCeilingHz);
-    if (!raster.usable())
+    RasterSolution raster = mode->solve(sampling_.fieldRateHz(),
+                                        OutputRaster::EngineCeilingHz);
+    if (!raster.usable()) {
+        // Refused, not deferred: the frame height and the rate are settled, so
+        // waiting produces the same answer at the cost of a measurement a pass.
+        rasterPending_ = false;
         return false;
+    }
 
     // Totals before sync positions, per
     // docs/investigations/preset-abandonment-audit.md. Both hold total-1.
@@ -122,11 +138,12 @@ bool Geometry::solveRaster()
     GBS::VDS_VS_ST::write(raster.vsyncStart);
     GBS::VDS_VS_SP::write(raster.vsyncStop);
 
-    // The seed, last of the raster group and first of the clock's: the caller
-    // runs externalClockGenResetClock() next, which reads this byte back and
-    // steers the Si5351 from it. loop() then stashes it and parks the 0x75
-    // external sentinel here, which is why writing a real divider is safe.
+    // The seed, last of the raster group and first of the clock's. Held as well
+    // as written: loop() stashes the divider and parks
+    // DisplayClock::ExternalSentinel here, so the register stops answering what
+    // this raster asked for and only the engine still knows.
     GBS::PLL648_CONTROL_01::write(raster.divider);
+    displayClock_.hold(raster.divider);
 
     // The porch is not a register, so the next apply() cannot read it back.
     activeStop_ = raster.activeStop;
@@ -140,10 +157,114 @@ void Geometry::adoptRaster()
 {
     rasterLinePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     rasterFrameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
+    displayClock_.adopt();
+}
+
+void Geometry::modeChanged(const OutputMode *mode, bool customPreset,
+                           uint8_t oversample)
+{
+    // The windows land seconds from now, once the source has settled into the
+    // mode; until then the previous mode's geometry is what the new source
+    // would be shown through.
+    FrameBuffer::freezeCapture();
+
+    modePending_ = true;
+    modeIsCustomPreset_ = customPreset;
+    modeOversample_ = oversample;
+    rasterMode_ = mode;
+
+    // The line count is about to move, so the steadiness run so far means
+    // nothing.
+    sampling_.resetSteadiness();
+}
+
+bool Geometry::poll()
+{
+    // Ahead of the mode change: a framing the user asked for is not automation,
+    // and it must not wait on a source that is still settling.
+    if (framingRequested_) {
+        framingRequested_ = false;
+        apply();
+    }
+
+    if (!modePending_)
+        return solvePending_ ? apply() : false;
+
+    // The cheap gate. Everything below this line measures, and the field rate
+    // costs up to 250 ms a vsync pulse.
+    if (!sampling_.sampleSteady())
+        return false;
+
+    // THE measurement of the source for this pass. Everything below derives
+    // from it -- the divider, the raster, both windows -- so nothing can end up
+    // solved against a rate something else was not.
+    if (!sampling_.measureLineRate()) {
+        // Deferred, not settled for. Without a divider the capture window has
+        // no unit to be measured in, so one is inherited or every window defers
+        // forever; the flag is what stops the inheritance becoming permanent,
+        // at 1856 -- bypassModeSwitch_RGBHV()'s literal -- every boot.
+        samplingPending_ = true;
+        if (!sampling_.usable())
+            adoptSampling();
+        return false;
+    }
+
+    // BOTH branches must run, or the engine has no divider and every window
+    // defers forever. A custom preset is a register dump replayed off the
+    // filesystem, so its saved PLLAD_MD is a value the user has a picture from
+    // and adopting it keeps that; computing over it would not.
+    if (modeIsCustomPreset_)
+        adoptSampling();
+    else if (!solveSampling(modeOversample_))
+        return false;
+
+    // The table's raster, taken before the solve that replaces it, so a solve
+    // that still refuses leaves the windows sized for what the table loaded.
+    adoptRaster();
+    if (!solveRaster(rasterMode_)) {
+        // Deferred means retry; refused means there were never any timings to
+        // wait for, and every further pass would pay for a field rate
+        // measurement to reach the same answer.
+        if (!rasterPending_) {
+            modePending_ = false;
+            FrameBuffer::releaseCapture();
+        }
+        return false;
+    }
+
+    // raster -> clock -> windows. The clock reads the seed the raster just
+    // chose, and every window is sized against the raster it lands on.
+    displayClock_.reset();
+    solveFromScratch();
+
+    modePending_ = false;
+    FrameBuffer::releaseCapture();
+    return true;
+}
+
+
+void Geometry::reset()
+{
+    // Re-arming the mode change already in force, rather than a second path
+    // that would have to keep step with it: the whole sequence -- freeze, wait
+    // for the source, measure, sampling, raster, clock, windows -- is what a
+    // reset wants, and solveFromScratch() drops the framing on the way through.
+    modeChanged(rasterMode_, modeIsCustomPreset_, modeOversample_);
 }
 
 void Geometry::enterBypass()
 {
+    // No raster is solved here, so the register is the only source of the seed
+    // the encoder is already running on.
+    displayClock_.adopt();
+
+    // The mode change goes with them: neither bypass switch reaches
+    // doPostPresetLoadSteps(), so nothing else would clear it, and a poll
+    // landing afterwards writes a scaled raster and a recomputed divider over
+    // the setup bypass just chose.
+    modePending_ = false;
+    FrameBuffer::releaseCapture();
+
     rasterMode_ = 0;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
@@ -156,28 +277,13 @@ void Geometry::enterBypass()
     activeLinesStop_ = 0;
 }
 
-bool Geometry::rasterPending() const { return rasterPending_; }
-
 bool Geometry::solveFromScratch()
 {
     framing_.reset();
-    return apply();
+    return solveWindows();
 }
 
-bool Geometry::solveIfPending()
-{
-    return solvePending_ ? apply() : false;
-}
 
-bool Geometry::applyRequested()
-{
-    if (!framingRequested_)
-        return false;
-    framingRequested_ = false;
-    bool solved = apply();
-    solvePending_ = false;
-    return solved;
-}
 
 void Geometry::adoptSampling()
 {
@@ -200,26 +306,14 @@ void Geometry::writeSampling()
 
 bool Geometry::solveSampling(uint8_t oversample)
 {
-    if (sampling_.measureLineRate()
-        && sampling_.solve(sampling_.lineRateHz(), oversample)) {
-        writeSampling();
-        samplingPending_ = false;
-        return true;
+    if (!sampling_.solve(sampling_.lineRateHz(), oversample)) {
+        samplingPending_ = true;
+        return false;
     }
-
-    // Deferred, not settled for: the line rate could not be measured, so take
-    // whatever divider is on the chip and ask again later. Adopting is needed
-    // or every window defers forever; the flag is what stops it being
-    // permanent, at 1856 -- bypassModeSwitch_RGBHV()'s literal -- every boot.
-    samplingPending_ = true;
-    if (!sampling_.usable())
-        adoptSampling();
-    return false;
+    writeSampling();
+    samplingPending_ = false;
+    return true;
 }
-
-bool Geometry::samplingPending() const { return samplingPending_; }
-
-bool Geometry::recompute() { return apply(); }
 
 int16_t Geometry::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)
 {
@@ -242,9 +336,9 @@ bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
     return step(wanted);
 }
 
-float Geometry::sourceFieldRateOr50Hz()
+float Geometry::sourceFieldRateOr50Hz() const
 {
-    float rate = getSourceFieldRate(0);
+    float rate = sampling_.fieldRateHz();
     return (rate > 40.0f && rate < 100.0f) ? rate : 50.0f;
 }
 
@@ -257,8 +351,8 @@ bool Geometry::fail()
 bool Geometry::measureSourceTimings(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_);
-    if (!capture.readRasters(sampling_, getSourceFieldRate(0),
-                             SourceMeasurement::measureSourceLines(),
+    if (!capture.readRasters(sampling_, sampling_.fieldRateHz(),
+                             sampling_.sourceLines(),
                              SourceMeasurement::measureHsyncLow())) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {

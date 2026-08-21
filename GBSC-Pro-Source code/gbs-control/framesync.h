@@ -21,6 +21,7 @@
 // Clock::ClockRamp in setExternalClockGenFrequencySmooth, and depending on the
 // sketch to include it first works only while the ordering happens to hold.
 #include "src/clock/ClockGen.h"
+#include "src/tv5725/DisplayClock.h"
 
 // FS_DEBUG:      full verbose debug over serial
 // FS_DEBUG_LED:  just blink LED (off = adjust phase, on = normal phase)
@@ -116,13 +117,10 @@ namespace MeasurePeriod
 // rolling bar.
 void setExternalClockGenFrequencySmooth(uint32_t freq)
 {
-    uint32_t current = rto->freqExtClockGen;
-    rto->freqExtClockGen = freq;
-
     // handleWiFi is passed in as the pump: a slew of up to 750 steps is 750 I2C
     // transactions, long enough that WiFi and the watchdog need servicing, and
     // dropping that turns a frequency change into a reboot.
-    clockGen.slewTo(current, freq, [] { handleWiFi(0); });
+    rto->displayClock.slewTo(freq, [] { handleWiFi(0); });
 }
 
 template <class GBS, class Attrs>
@@ -762,7 +760,8 @@ public:
 
         // This has floating-point conversion round-trip rounding errors, which
         // is suboptimal, but it's not a big deal.
-        const float prevFpsOutput = (float)rto->freqExtClockGen / maybeFreqExt_per_videoFps;
+        const float prevFpsOutput =
+            (float)rto->displayClock.hzNow() / maybeFreqExt_per_videoFps;
 
         // In case fpsInput is measured incorrectly, rawFpsOutput may be
         // drastically different from the previous frame's output FPS. To limit
@@ -791,7 +790,7 @@ public:
 
         fsDebugPrintf(
             "Setting clock frequency from %u to %u\n",
-            rto->freqExtClockGen, freqExtClockGen);
+            rto->displayClock.hzNow(), freqExtClockGen);
 
         setExternalClockGenFrequencySmooth(freqExtClockGen);
         return true;

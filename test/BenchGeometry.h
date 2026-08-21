@@ -7,11 +7,13 @@
 
 #include <doctest/doctest.h>
 
+#include "Si5351Stubs.h"
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputRaster.h"
 
 // The sketch defines this for real; here the test drives it, so the one input
 // that cannot be held still on a board is a constant here.
@@ -45,32 +47,41 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
-// The bench RiscPC at 320x256@50 into the engine's own 1915 x 1126 raster, the
-// state of snapshots/CLEAN-engine-raster-1915-2026-08-15.json. Every value here
-// is an INPUT: a raster the engine already solved, and three source
-// measurements.
+// poll() gates on a line count steady over several passes before it will pay
+// for a field rate measurement, so a solve takes more than one call.
+static bool pollUntilSolved(Tv5725::Geometry &engine)
+{
+    for (uint8_t i = 0; i < 4 * Tv5725::SourceMeasurement::SteadySamples; ++i)
+        if (engine.poll())
+            return true;
+    return false;
+}
+
+// The bench RiscPC at 320x256@50 into the engine's own 1916 x 1125 raster.
+// The seeds are three source measurements plus the divider a custom preset
+// saved; the raster is solved from the mode, so what is seeded there is only
+// what the previous load left behind.
 struct Bench {
+    Tv5725::DisplayClock clock;
     Tv5725::Geometry engine;
 
-    Bench()
+    Bench() : engine(clock)
     {
         Wire.reset();
         Wire.poison(Poison);
 
-        seed(3, 0x01, 0, 12, 1914);   // VDS_HSYNC_RST, output line - 1
-        seed(3, 0x02, 4, 11, 1125);   // VDS_VSYNC_RST, output frame - 1
+        seed(3, 0x01, 0, 12, 1915);   // VDS_HSYNC_RST, output line - 1
+        seed(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
         seed(1, 0x0E, 0, 11, 1276);   // IF_HSYNC_RST, capture wrap - 1
         seed(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN, hsync low
         seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL, source lines
 
-        // Both are GIVEN to the engine, never read back mid-solve. Here the
-        // bench inherits them the way a custom preset does -- each adopt()
-        // reads its registers once, out loud -- reproducing the seeds above.
-        engine.adoptSampling();
-        engine.adoptRaster();
-
-        REQUIRE(engine.solveFromScratch());
+        // A custom preset: the saved divider is a value the user has a picture
+        // from, so it is inherited rather than recomputed, and the seeds above
+        // are what it inherits.
+        engine.modeChanged(&Tv5725::Mode1080p, true, 4);
+        REQUIRE(pollUntilSolved(engine));
     }
 };
 

@@ -31,9 +31,13 @@ help:
 # with a space -- so an absolute glob comes back as a word-split list that no
 # amount of quoting inside a make variable survives. Relative to the sketch
 # root, every path is space-free.
-GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$')
+# Tv5725::DisplayClock steers the Si5351 through Clock::ClockGen, so every list
+# that links DisplayClock.cpp links the clock with it.
+CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$')
+GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
+
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -134,16 +138,20 @@ segment-select:
 # cheapest possible place to check it.
 display-clock:
 	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_display_clock" \
-	  "$(HERE)/test_display_clock.cpp" src/tv5725/DisplayClock.cpp
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_display_clock" \
+	  "$(HERE)/test_display_clock.cpp" src/tv5725/DisplayClock.cpp \
+	  src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 	@"$(OUT)/test_display_clock"
 
 ## output-raster: host unit tests for the computed output raster
 #
 output-raster:
 	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_output_raster" \
-	  "$(HERE)/test_output_raster.cpp" src/tv5725/OutputRaster.cpp src/tv5725/DisplayClock.cpp
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_output_raster" \
+	  "$(HERE)/test_output_raster.cpp" src/tv5725/OutputRaster.cpp src/tv5725/DisplayClock.cpp \
+	  $(CLOCK_SRC)
 	@"$(OUT)/test_output_raster"
 
 ## clock-ramp: host unit tests for how the external clock is allowed to move
@@ -240,7 +248,7 @@ memory-bus:
 # and Geometry.cpp are the only exclusions -- the first needs more of Arduino than
 # the fake provides, the second calls getSourceFieldRate(), which lives in the
 # sketch and not in src/.
-BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls)\.cpp$$')
+BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls)\.cpp$$') $(CLOCK_SRC)
 
 bringup:
 	@mkdir -p "$(OUT)"
@@ -274,7 +282,7 @@ input-formatter:
 	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp
 	@"$(OUT)/test_input_formatter"
 
-## geometry-raster: host unit tests for Geometry::solveRaster()'s refuse/defer split
+## geometry-raster: host unit tests for what the engine does while the source is unsettled
 #
 # The geometry engine, off the board. Geometry.cpp was excluded from every host
 # build for touching GBS:: and including <Arduino.h>; fake/Wire.h covered the
@@ -288,7 +296,7 @@ geometry-raster:
 	  "$(HERE)/test_geometry_raster.cpp" $(GEOMETRY_RASTER_SRC)
 	@"$(OUT)/test_geometry_raster"
 
-## geometry-windows: host unit tests for the registers one Geometry::apply() writes
+## geometry-windows: host unit tests for the registers one solve writes
 #
 # The net under deleting doPostPresetLoadSteps()'s geometry writes. Those all sit
 # behind videoStandardInput 1-4, 8 or 9, and the bench source comes up as 14, so
@@ -309,7 +317,7 @@ controls:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_controls" \
-	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp)
+	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC)
 	@"$(OUT)/test_controls"
 
 ## adc: host unit tests for the ADC PLL's divider and latch

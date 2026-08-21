@@ -926,7 +926,7 @@ SerialMirror SerialM;
 // initialised in the order they appear, so geometry is ready before the controls
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
-Tv5725::Geometry geometry;
+Tv5725::Geometry geometry(rtos.displayClock);
 Tv5725::Controls geometryControls(geometry, SerialM);
 OSDManager osdManager(geometryControls);
 
@@ -949,43 +949,23 @@ void externalClockGenResetClock()
     }
     fsDebugPrintf("externalClockGenResetClock()\n");
 
-    uint8_t activeDisplayClock = GBS::PLL648_CONTROL_01::read();
+    // The engine steers. It chose the seed when it solved the raster and holds
+    // it, because loop() stashes the divider and parks
+    // DisplayClock::ExternalSentinel in PLL648_CONTROL_01 -- so the register
+    // stops answering what the raster asked for. The paths that solve no raster
+    // adopt it through Geometry::enterBypass().
+    Tv5725::DisplayClock &displayClock = rto->displayClock;
+    uint32_t steered = displayClock.reset();
 
-    // The lookup is Tv5725::DisplayClock, which carries the datasheet ceiling.
-    // What the byte costs: the preset's raster needs htotal x frameLines x
-    // fieldRate hertz, and this seed decides whether the Si5351 can be steered
-    // there.
-    rto->freqExtClockGen = Tv5725::DisplayClock::hzFor(activeDisplayClock);
     bootLogPrintf("CLOCK: s0_41=0x%02x -> %lu Hz t=%lums\n",
-                  activeDisplayClock, (unsigned long)rto->freqExtClockGen,
+                  displayClock.seed(), (unsigned long)steered,
                   (unsigned long)millis());
 
-    if (rto->freqExtClockGen == 0) {
-        // No mapping -- normally the 0x75 sentinel, meaning the stashed divider
-        // is lost. Falling through leaves freqExtClockGen holding a frequency
-        // from some earlier preset, which then goes to the Si5351 as the display
-        // clock: the TV sees timing it cannot lock to and goes blank, while every
-        // scaler register still reads correct.
-        //
-        // The fallback is a GUESS, and an expensive one -- 81 MHz against a
-        // preset wanting 108 costs a quarter of the horizontal resolution and
-        // still looks like a working picture. rto->presetDisplayClock holds the
-        // real byte, but only applyPresets() restores it before calling here;
-        // the other three call sites do not, so it cannot be consulted yet.
-        SerialM.printf_P(PSTR("extClockGen: display clock 0x%02x unmapped, using 81MHz\n"),
-                         activeDisplayClock);
-        rto->freqExtClockGen = Tv5725::DisplayClock::FallbackHz;
+    if (steered != displayClock.hz()) {
+        SerialM.printf_P(PSTR("extClockGen: display clock 0x%02x unmapped, using %luMHz\n"),
+                         displayClock.seed(), (unsigned long)(steered / 1000000));
     }
 
-    // Preloads through an intermediate where the target needs one -- see
-    // Clock::ClockRamp::preloadFor for the little that is known about that.
-    clockGen.setFrequency(rto->freqExtClockGen);
-
-    // clockGen.begin() leaves the output disabled and setFrequency() does not
-    // enable it, so handing the display clock over means enabling the source and
-    // the pin together.
-    clockGen.enable();
-    GBS::PAD_CKIN_ENZ::write(0);
     FrameSync::clearFrequency();
 }
 
@@ -1016,12 +996,12 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
-    uint32_t old = rto->freqExtClockGen;
+    uint32_t old = rto->displayClock.hzNow();
     FrameSync::initFrequency(ofr, old);
 
-    setExternalClockGenFrequencySmooth((sfr / ofr) * rto->freqExtClockGen);
+    setExternalClockGenFrequencySmooth((sfr / ofr) * old);
 
-    int32_t diff = rto->freqExtClockGen - old;
+    int32_t diff = rto->displayClock.hzNow() - old;
 
     // F("source Hz: ");
     // ;//SerialMprint(F("source Hz: "));
@@ -1029,7 +1009,6 @@ void externalClockGenSyncInOutRate()
     // ;//SerialMprint(F(" new out: "));
     // ;//SerialMprint(getOutputFrameRate(), 5);
     // ;//SerialMprint(F(" clock: "));
-    // ;//SerialMprint(rto->freqExtClockGen);
     // ;//SerialMprint(F(" ("));
     // ;//SerialMprint(diff >= 0 ? "+" : "");
     // ;//SerialMprint(diff);
@@ -1040,7 +1019,7 @@ void externalClockGenSyncInOutRate()
 void externalClockGenDetectAndInitialize()
 {
 
-    rto->freqExtClockGen = 81000000;
+    rto->displayClock.assumeHz(Tv5725::DisplayClock::FallbackHz);
     rto->extClockGenDetected = 0;
     rto->presetDisplayClock = 0;
 
@@ -1054,9 +1033,15 @@ void externalClockGenDetectAndInitialize()
         return;
     }
     rto->extClockGenDetected = 1;
-    clockGen.begin(rto->freqExtClockGen);
+    clockGen.begin(rto->displayClock.hzNow());
+
+    // Without this the display clock is never handed over and the internal PLL
+    // keeps driving the encoder.
+    rto->displayClock.driveWith(clockGen);
+
     bootLogPrintf("CLOCKGEN: detected, begin(%lu) t=%lums\n",
-                  (unsigned long)rto->freqExtClockGen, (unsigned long)millis());
+                  (unsigned long)rto->displayClock.hzNow(),
+                  (unsigned long)millis());
 }
 
 static inline void writeOneByte(uint8_t slaveRegister, uint8_t value)
@@ -3226,20 +3211,17 @@ boolean applyBestHTotal(uint16_t bestHTotal)
     if (diffHTotal != 0) {
 
         // Retime on a field boundary. Both waits need their terminating
-        // semicolon: without it the write became the inner loop's body and
-        // never ran. test_the_geometry_survives_a_retime
+        // semicolon, or the statement after becomes the inner loop's body.
         uint16_t timeout = 0;
         while ((GBS::STATUS_VDS_FIELD::read() == 1) && (++timeout < 400))
             ;
         while ((GBS::STATUS_VDS_FIELD::read() == 0) && (++timeout < 800))
             ;
-        GBS::VDS_HSYNC_RST::write(bestHTotal);
-
-        // The raster changed, so re-solve the windows from the capture
-        // rather than sliding them. The sync pulse stays ours.
+        // The sync pulse stays ours; the total and everything fitted to it are
+        // the engine's, so it is told rather than written behind.
         GBS::VDS_HS_ST::write(h_sync_start_position);
         GBS::VDS_HS_SP::write(h_sync_stop_position);
-        if (!geometry.recompute()) {
+        if (!geometry.rasterWidthChanged(bestHTotal + 1)) {
             // Bypass or an unreadable capture: leave the slid windows.
             GBS::VDS_DIS_HB_ST::write(h_blank_display_start_position);
             GBS::VDS_DIS_HB_SP::write(h_blank_display_stop_position);
@@ -3687,9 +3669,10 @@ void doPostPresetLoadSteps()
             // divider is, in all twelve preset tables and in every runtime path,
             // so it is a constant rather than part of the quantity below.
             GBS::SP_RT_HS_ST::write(0);
-            // SP_RT_HS_SP was written HERE, as PLLAD_MD::read() * 0.93f. It has
-            // moved to geometry.solveSampling() below, beside the two registers
-            // it has to agree with -- see the note there.
+            // SP_RT_HS_SP is not written here. It is 93% of PLLAD_MD, one of
+            // the three registers Tv5725::SourceMeasurement owns off a single
+            // held divider, and splitting it from the other two is how it ends
+            // up describing a line the ADC is not sampling.
 
             GBS::VDS_PK_LB_CORE::write(0);
             GBS::VDS_PK_LH_CORE::write(0);
@@ -3872,12 +3855,6 @@ void doPostPresetLoadSteps()
         // picture from and adopting it keeps that; computing over it would not.
         // The branch goes when a slot records the INPUTS to the calculation.
         if (rto->isCustomPreset) {
-            geometry.adoptSampling();
-        } else {
-            geometry.solveSampling(rto->osr);
-        }
-
-        if (rto->isCustomPreset) {
 
             if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 || rto->videoStandardInput == 8) {
                 GBS::MADPT_Y_DELAY_UV_DELAY::write(1);
@@ -3891,12 +3868,19 @@ void doPostPresetLoadSteps()
                 rto->osr = 4;
             }
 
-            // Put the real divider back before externalClockGenResetClock() reads
-            // it, or the 0x75 sentinel reaches the lookup and matches nothing.
+            // Put the real divider back before the engine adopts it, or the
+            // 0x75 sentinel reaches the lookup and matches nothing.
             if (GBS::PLL648_CONTROL_01::read() == 0x75 && rto->presetDisplayClock != 0) {
                 GBS::PLL648_CONTROL_01::write(rto->presetDisplayClock);
             }
         }
+
+        // The source is about to change mode, and nothing measurable about it
+        // is true yet. Everything the solve needs that cannot be re-derived
+        // later goes with the message; loop() drives the rest once the source
+        // has settled into the new mode. AFTER the block above, which settles
+        // rto->osr for a custom preset.
+        geometry.modeChanged(outputModeForThisLoad(), rto->isCustomPreset, rto->osr);
 
         if (rto->presetIsPalForce60) {
             if (GBS::GBS_OPTION_PALFORCED60_ENABLED::read() != 1) {
@@ -3961,19 +3945,6 @@ void doPostPresetLoadSteps()
         } else {
             GBS::VDS_UV_STEP_BYPS::write(1);
         }
-
-        // Before externalClockGenResetClock(), which reads PLL648_CONTROL_01 to
-        // decide what to steer the Si5351 to, so the seed must already be in the
-        // register. docs/investigations/preset-abandonment-audit.md.
-
-        // The table's raster, taken before the solve that replaces it: when the
-        // solve DEFERS -- the source is still settling, which is the common
-        // case here -- the windows are solved against what the table loaded,
-        // exactly as they were when CaptureWindow read the registers itself.
-        geometry.adoptRaster();
-        geometry.solveRaster(outputModeForThisLoad());
-
-        externalClockGenResetClock();
 
         Menu::init();
         FrameSync::cleanup();
@@ -4131,7 +4102,11 @@ void doPostPresetLoadSteps()
             GBS::INTERRUPT_CONTROL_01::write(0xff);
             GBS::INTERRUPT_CONTROL_00::write(0xff);
             GBS::INTERRUPT_CONTROL_00::write(0x00);
-            unfreezeVideo();
+
+            // Video routes around the VDS here, so the mode change armed above
+            // has no solve coming and the freeze it took would never be
+            // released.
+            geometry.enterBypass();
 
             return;
         }
@@ -4197,12 +4172,10 @@ void doPostPresetLoadSteps()
             rto->applyPresetDoneStage = 1;
         }
 
-        // Setting a mode ends by computing every geometry register, inheriting
-        // none of the preset's. Before unfreezeVideo() so the first frame shown
-        // is already solved. docs/firmware-geometry-engine.md
-        geometry.solveFromScratch();
-
-        unfreezeVideo();
+        // Capture stays frozen: it is released by the poll() that lands the
+        // windows, seconds from now once the source has settled into the new
+        // mode. Releasing it here shows the previous mode's geometry against
+        // the new source until then.
 
         if (uopt->enableFrameTimeLock) {
             activeFrameTimeLockInitialSteps();
@@ -5833,49 +5806,6 @@ void runSyncWatcher() //
         return;
     }
 
-    // The raster solve that the preset load was too early for.
-    //
-    // Geometry::solveRaster() computes htotal from the source field rate
-    // directly, so a reading taken while the source is still settling gives a
-    // proportionally wrong raster -- 54.47, 55.12 and 66.79 Hz on a source that
-    // runs 50.08, for rasters of 1761, 1740 and 1436 against the 1918 due. The
-    // solve refuses those, and this is what stops refusing meaning inheriting.
-    //
-    // The WHOLE sequence is redone, not just the raster: the clock seed has to
-    // be re-read by externalClockGenResetClock(), and the windows re-solved
-    // against the new raster. That ordering is why this lives here rather than
-    // inside Geometry -- the clock functions are the sketch's.
-    if (geometry.rasterPending() && getStatus16SpHsStable()) {
-        if (geometry.solveRaster()) {
-            externalClockGenResetClock();
-            geometry.solveFromScratch();
-        }
-    }
-
-    // And the sampling solve the preset load was too early for, with a worse
-    // failure than the raster's.
-    //
-    // Geometry::solveSampling() measures the line rate, and that needs a
-    // settled line count AND a settled field rate. A cold boot has neither
-    // 3.6 s in -- `sampling: 271 lines x 49.22 Hz -> line rate 0` on a source
-    // that is 311 lines at 50.08 -- so the solve adopts whatever divider the
-    // chip holds, which is bypassModeSwitch_RGBHV()'s literal 1856. Without
-    // this retry every boot runs the ADC 27% under-sampling the line, and only
-    // a re-detect ever solves again.
-    //
-    // latchPLLAD() straight after, because PLLAD_LAT is what loads the divider
-    // into the ADC PLL -- a write without it leaves the PLL on the old value
-    // with every register reading back correct.
-    //
-    // Then the WHOLE sequence, as above: the divider is the unit the capture
-    // window is measured in (Tv5725::SourceMeasurement owns PLLAD_MD, IF_HSYNC_RST and
-    // SP_RT_HS_SP off one value), so moving it invalidates every window.
-    if (geometry.samplingPending() && getStatus16SpHsStable()) {
-        if (geometry.solveSampling(rto->osr)) {
-            geometry.solveFromScratch();
-        }
-    }
-
     static uint8_t newVideoModeCounter = 0;
     static uint16_t activeStableLineCount = 0;
     static unsigned long lastSyncDrop = millis();
@@ -6532,12 +6462,7 @@ void runSyncWatcher() //
                     }
 
                     if (needPostAdjust) {
-
                         GBS::IF_HBIN_SP::write(0x50);
-                        // The capture and the scale are the engine's. This
-                        // wrote IF_VB_SP 8 / IF_VB_ST 6 -- stop before start --
-                        // and knocked VDS_VSCALE down by 57.
-                        geometry.apply();
                     }
                 }
             }
@@ -6625,10 +6550,7 @@ void runSyncWatcher() //
                         }
 
                         if (needPostAdjust) {
-
                             GBS::IF_HBIN_SP::write(0x50);
-                            // The capture and the scale are the engine's.
-                            geometry.apply();
                         }
                     } else {
 
@@ -6713,11 +6635,6 @@ void runSyncWatcher() //
                 if (rto->continousStableCounter == 6) {
                     updateSpDynamic(1); 
                 }
-            }
-            // A preset load that landed before the sync processor had settled
-            // could not derive the capture window; finish it now.
-            if (rto->continousStableCounter >= 6) {
-                geometry.solveIfPending();
             }
         }
 
@@ -7967,8 +7884,15 @@ void loop()
     }
 
     // Deliberately ahead of every gate below: a framing the user requested is
-    // not automation, so neither freeze nor a disabled sync watcher may hold it.
-    geometry.applyRequested();
+    // not automation, so neither freeze nor a disabled sync watcher may hold
+    // it, and a mode change must finish even when the sync watcher is off.
+    //
+    // The engine decides when the source has settled into a new mode, because
+    // it owns the measurements that decide it. Cheap on every pass, and
+    // expensive only while a change is outstanding.
+    if (geometry.poll()) {
+        FrameSync::clearFrequency();
+    }
 
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
         runSyncWatcher();                                                                                               
@@ -8285,6 +8209,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'h':
                     geometryControls.horizontalZoom(-Tv5725::ControlSteps::Zoom);
                     geometryControls.verticalZoom(-Tv5725::ControlSteps::Zoom);
+                    break;
+                // Back to the default framing. The framing is the engine's own
+                // state and no register holds it, so without this a picture
+                // zoomed into a corner needs a mode change or a reboot.
+                case '@':
+                    geometry.reset();
                     break;
                 case 'q':
                     resetDigital();
@@ -8870,16 +8800,17 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     if (what.equals("f")) {
                         if (rto->extClockGenDetected) {
                             Serial.print(F("old freqExtClockGen: "));
-                            Serial.println((uint32_t)rto->freqExtClockGen);
-                            rto->freqExtClockGen = Serial.parseInt();
+                            Serial.println((uint32_t)rto->displayClock.hzNow());
+                            rto->displayClock.assumeHz(Serial.parseInt());
 
-                            if (rto->freqExtClockGen >= 1000000 && rto->freqExtClockGen <= 250000000) {
-                                clockGen.setFrequency(rto->freqExtClockGen);
+                            uint32_t wanted = rto->displayClock.hzNow();
+                            if (wanted >= 1000000 && wanted <= 250000000) {
+                                clockGen.setFrequency(wanted);
                                 rto->clampPositionIsSet = 0; // Clamp position setting
                                 rto->coastPositionIsSet = 0; // coast position setting
                             }
                             Serial.print(F("set freqExtClockGen: "));
-                            Serial.println((uint32_t)rto->freqExtClockGen);
+                            Serial.println((uint32_t)rto->displayClock.hzNow());
                         }
                         break;
                     }

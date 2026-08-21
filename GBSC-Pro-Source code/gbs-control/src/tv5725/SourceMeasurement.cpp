@@ -103,9 +103,40 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
 
 // --- the chosen divider, held ----------------------------------------------
 
+const uint8_t SourceMeasurement::SteadySamples;
+
 SourceMeasurement::SourceMeasurement()
-    : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f)
+    : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
+      steadyLines_(0), steadyRun_(0)
 {
+}
+
+bool SourceMeasurement::sampleSteady()
+{
+    uint16_t lines = measureSourceLines();
+
+    if (lines < CaptureWindow::SourceVerticalTotalMin
+        || lines > CaptureWindow::SourceVerticalTotalMax) {
+        steadyRun_ = 0;
+        steadyLines_ = 0;
+        return false;
+    }
+
+    if (lines != steadyLines_) {
+        steadyLines_ = lines;
+        steadyRun_ = 1;
+        return false;
+    }
+
+    if (steadyRun_ < SteadySamples)
+        ++steadyRun_;
+    return steadyRun_ >= SteadySamples;
+}
+
+void SourceMeasurement::resetSteadiness()
+{
+    steadyRun_ = 0;
+    steadyLines_ = 0;
 }
 
 // The line rate the source is running at, in Hz, or 0 when it cannot be

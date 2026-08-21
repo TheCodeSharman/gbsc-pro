@@ -7,6 +7,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
+#include "SketchSeam.h"
+#include "fake/Wire.h"
+
+FakeTwoWire Wire;
+
 #include <cstdio>
 #include <cstring>
 

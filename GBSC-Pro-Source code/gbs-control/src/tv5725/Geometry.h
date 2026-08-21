@@ -9,6 +9,7 @@
 
 #include "../../gbs_types.h"
 #include "BlankingTiming.h"
+#include "DisplayClock.h"
 #include "InputLine.h"
 #include "CaptureWindow.h"
 #include "OutputRaster.h"
@@ -16,17 +17,13 @@
 #include "RegisterSolution.h"
 #include "SourceMeasurement.h"
 
-// Global scope, NOT namespace Tv5725, or the call in sourceFieldRateOr50Hz()
-// resolves to a function that does not exist.
-float getSourceFieldRate(boolean useSPBus);
-
 namespace Tv5725 {
 
 class OutputMode;
 
 class Geometry {
 public:
-    Geometry();
+    explicit Geometry(DisplayClock &displayClock);
 
     const PanAndZoom &framing() const;
 
@@ -35,54 +32,43 @@ public:
     // which spins.
     void requestFraming(const PanAndZoom &wanted);
 
-    bool apply();
+    // The horizontal total was retimed outside the engine, by the htotal search
+    // on a board with no clock generator to steer instead. The engine holds the
+    // raster rather than reading it back, so it has to be told: every window and
+    // both scales are fitted to the total this names.
+    bool rasterWidthChanged(uint16_t horizontalTotal);
 
-    // Order: raster, clock, windows, rate steer LAST. Steering early corrects
-    // a new clock against the old raster -- 31 Hz frame, black screen.
-    // A null mode writes nothing.
-    bool solveRaster(const OutputMode *mode);
+    // The source is about to change mode. Everything the solve will need that
+    // cannot be re-derived once it has rides along: videoStandardInput is
+    // rewritten by PresetLoad::videoStandardInputAfterLoad(), so the mode the
+    // choice was made from is gone by the time the raster is solved.
+    //
+    // Nothing is solved here. The measurements a solve needs -- field rate,
+    // line count, hsync width -- lag the mode change by seconds, and read early
+    // they do not fail, they return plausible garbage: 54.47, 55.12 and 66.79 Hz
+    // on a source that runs 50.08, for rasters of 1761, 1740 and 1436 against
+    // the 1918 due.
+    void modeChanged(const OutputMode *mode, bool customPreset,
+                     uint8_t oversample);
 
-    // The deferred retry, against the mode the last call named, so the caller
-    // need not hold it across the settle.
-    bool solveRaster();
+    // Drive whatever is outstanding: a pending mode change once the source has
+    // settled into it, and any framing the user asked for. Cheap when there is
+    // nothing to do and cheap while the source is still moving, so it can be
+    // called on every pass.
+    //
+    // True on the pass that COMPLETES a mode change, which is when the display
+    // clock has moved and the first frame is worth showing.
+    bool poll();
 
-    // Take the output raster off the chip, for the one case that does not solve
-    // one: a preset table's bytes, replayed before solveRaster() runs and left
-    // standing whenever it defers. Named, like adoptSampling(), because a
-    // silent read-back is the same inheritance unaccounted for.
-    void adoptRaster();
+    // Back to the default framing, with everything the engine owns re-solved
+    // from the source as it reads now. The way out of a framing the user has
+    // zoomed into a corner, and the only one short of a reboot.
+    void reset();
 
-    // The output has gone into bypass: video routes around the VDS, so a
-    // deferred solve is void and dropping it stops runSyncWatcher()'s retry
-    // writing a scaled raster over the bypass setup.
+    // The output has gone into bypass: video routes around the VDS, so an
+    // outstanding solve is void, and dropping it stops a later poll writing a
+    // scaled raster over the bypass setup.
     void enterBypass();
-
-    // Settling, not unsupported. Retry the WHOLE sequence.
-    bool rasterPending() const;
-
-    // Adopted a divider rather than computed one. Remembered, or a cold boot
-    // keeps whatever bypass left. Moving the divider moves the capture with it.
-    bool samplingPending() const;
-
-    // A mode change has no framing worth keeping, only the previous mode's.
-    bool solveFromScratch();
-
-    // Cheap when there is nothing to do; the sync watcher calls it every pass.
-    bool solveIfPending();
-
-    // Cleared before the solve, so an impossible framing is refused, not retried.
-    bool applyRequested();
-
-    // For the paths that compute no divider: a custom preset, and bypass.
-    void adoptSampling();
-
-    // setOverSampleRatio() must have settled rto->osr first: the sample clock
-    // is the product of the divider and the oversampling.
-    bool solveSampling(uint8_t oversample);
-
-    // `produced` is capture x 1024 / scale with no horizontalTotal term, so a
-    // window shifted by diffHTotal/2 lands where the picture is not.
-    bool recompute();
 
     // OUTPUT PIXELS, sized from the scale the last solve produced.
     bool pan(int16_t dxPixels, int16_t dyPixels);
@@ -91,8 +77,40 @@ public:
     bool zoom(int16_t dhPixels, int16_t dvPixels);
 
 private:
+    // Measure the source, then solve. The entry points that are not a poll pass
+    // have no measurement of their own.
+    bool apply();
+
+    // Every window and both scales, from the framing and the source as the last
+    // measurement found it. The raster is the held one, never a read-back.
+    bool solveWindows();
+
+    // A mode change has no framing worth keeping, only the previous mode's.
+    bool solveFromScratch();
+
+    // Order: raster, clock, windows, rate steer LAST. Steering early corrects
+    // a new clock against the old raster -- 31 Hz frame, black screen.
+    // A null mode writes nothing and is refused rather than deferred.
+    bool solveRaster(const OutputMode *mode);
+
+    // The deferred retry, against the mode the last call named.
+    bool solveRaster();
+
+    // Take the output raster off the chip, for the one case that does not solve
+    // one: a preset table's bytes, replayed before solveRaster() runs and left
+    // standing whenever it defers. Named, like adoptSampling(), because a
+    // silent read-back is the same inheritance unaccounted for.
+    void adoptRaster();
+
+    // For the paths that compute no divider: a custom preset, and bypass.
+    void adoptSampling();
+
+    // The oversampling must have settled first: the sample clock is the product
+    // of the divider and it.
+    bool solveSampling(uint8_t oversample);
+
     // Only the 50/60 split is taken from it.
-    static float sourceFieldRateOr50Hz();
+    float sourceFieldRateOr50Hz() const;
 
     bool fail();
 
@@ -124,11 +142,15 @@ private:
     // control goes dead for as many presses as it was pushed past its limit.
     bool step(const PanAndZoom &wanted);
 
+    DisplayClock &displayClock_;
     PanAndZoom framing_;
     SourceMeasurement sampling_;      // the divider this engine solves against
     bool rasterPending_;     // solveRaster() refused: the field rate was not settled
     bool samplingPending_;   // solveSampling() adopted a fallback divider
-    bool solvePending_;      // a solve refused because the source was settling
+    bool solvePending_;
+    bool modePending_;
+    bool modeIsCustomPreset_;
+    uint8_t modeOversample_;      // a solve refused because the source was settling
     bool framingRequested_;  // the user asked; loop() drains it, freeze does not
     const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
 
@@ -137,10 +159,9 @@ private:
     uint16_t rasterLinePx_, rasterFrameLines_;
     Scale horizontalScale_, verticalScale_;  // what the last solve produced
 
-    // Where the front porch starts, from the raster this engine solved. Held
-    // rather than re-derived because apply() reads the raster back off the chip
-    // and the registers carry no porch. 0 until a raster is solved, which is what
-    // a bypass and a custom preset both stay on.
+    // Where the front porch starts, from the raster this engine solved. The
+    // registers carry no porch, so there is nothing to read back. 0 until a
+    // raster is solved, which is what bypass and a custom preset both stay on.
     uint16_t activeStop_, activeLinesStop_;
 };
 

@@ -404,3 +404,61 @@ TEST_CASE("a rate that disagrees with the line count is refused, and says so")
         CHECK_FALSE(measurement.measureLineRate());
     }
 }
+
+// --- the cheap gate before the expensive measurement -------------------------
+
+TEST_CASE("the line count has to hold still before the field rate is worth paying for")
+{
+    // ONE register read per sample, so a caller can ask on every pass.
+    // measureLineRate() cannot be asked speculatively: getSourceFieldRate()
+    // spins for up to 250 ms a pulse.
+    seedSourceLines(311);
+    SourceMeasurement measurement;
+
+    for (uint8_t i = 1; i < SourceMeasurement::SteadySamples; ++i) {
+        CAPTURE(i);
+        CHECK_FALSE(measurement.sampleSteady());
+    }
+    CHECK(measurement.sampleSteady());
+
+    SUBCASE("and stays steady while the count does") {
+        CHECK(measurement.sampleSteady());
+    }
+}
+
+TEST_CASE("a count that moves starts the run again")
+{
+    seedSourceLines(311);
+    SourceMeasurement measurement;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+    REQUIRE(measurement.sampleSteady());
+
+    // Mid-change. A one-sample blip is normal; what matters is that it does not
+    // report steady on the strength of the run before it.
+    seedSourceLines(97);
+    CHECK_FALSE(measurement.sampleSteady());
+}
+
+TEST_CASE("a count outside what any source runs never settles")
+{
+    // 97 and 98 are what a preset load leaves behind, and they are steady --
+    // steadiness alone would call that settled and solve against it.
+    seedSourceLines(97);
+    SourceMeasurement measurement;
+
+    for (uint8_t i = 0; i < 3 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(measurement.sampleSteady());
+}
+
+TEST_CASE("a mode change abandons the run rather than counting through it")
+{
+    seedSourceLines(311);
+    SourceMeasurement measurement;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+    REQUIRE(measurement.sampleSteady());
+
+    measurement.resetSteadiness();
+    CHECK_FALSE(measurement.sampleSteady());
+}

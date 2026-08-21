@@ -11,6 +11,25 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "fake/Wire.h"
+
+FakeTwoWire Wire;
+
+#include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/si5351mcu.h"
+
+// The real Si5351mcu declaration with the definitions supplied here instead of
+// linking si5351mcu.cpp, so what reaches the part is inspectable. Only the five
+// Clock::ClockGen actually calls.
+static uint32_t g_setFreqHz;
+static bool g_enabled;
+
+void Si5351mcu::init(uint32_t) {}
+void Si5351mcu::setFreq(uint8_t, uint32_t hz) { g_setFreqHz = hz; }
+void Si5351mcu::setPower(uint8_t, uint8_t) {}
+void Si5351mcu::enable(uint8_t) { g_enabled = true; }
+void Si5351mcu::disable(uint8_t) { g_enabled = false; }
+
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/DisplayClock.h"
 
 using namespace Tv5725;
@@ -133,4 +152,109 @@ TEST_CASE("108 MHz is the highest display clock with evidence behind it")
         CHECK((uint32_t)1918 * 1126 * 50 <= DisplayClock::CeilingHz);
         CHECK((uint32_t)1919 * 1126 * 50 > DisplayClock::CeilingHz);
     }
+}
+
+// --- the seed the raster solve chose, held rather than read back ------------
+
+TEST_CASE("the clock holds the seed the raster asked for")
+{
+    // PLL648_CONTROL_01 stops answering what the raster chose: loop() stashes
+    // the divider and parks the 0x75 external sentinel there, so a read-back
+    // finds a value that maps to nothing and the caller falls back to a guess.
+    DisplayClock clock;
+    clock.hold(0x85);
+
+    CHECK(clock.seed() == 0x85);
+    CHECK(clock.hz() == 108000000u);
+
+    SUBCASE("a new raster replaces it") {
+        clock.hold(0x65);
+        CHECK(clock.hz() == 81000000u);
+    }
+
+    SUBCASE("nothing held yet is a frequency of zero, not a guess") {
+        DisplayClock fresh;
+        CHECK(fresh.hz() == 0u);
+    }
+
+    SUBCASE("the sentinel maps to nothing, which is why it must not be read back") {
+        clock.hold(DisplayClock::ExternalSentinel);
+        CHECK(clock.hz() == 0u);
+    }
+}
+
+TEST_CASE("a path that solved no raster adopts what the chip holds")
+{
+    // Bypass and the serial toggle reach the clock without a raster solve, so
+    // there is nothing held and the register is the only source there is.
+    Wire.reset();
+    Wire.bank[0][0x41] = 0x45;
+
+    DisplayClock clock;
+    clock.adopt();
+
+    CHECK(clock.seed() == 0x45);
+    CHECK(clock.hz() == 54000000u);
+}
+
+// --- steering the generator ---------------------------------------------------
+
+TEST_CASE("the clock steers the generator to the frequency its seed asks for")
+{
+    Wire.reset();
+    g_setFreqHz = 0;
+    g_enabled = false;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.driveWith(generator);
+    clock.hold(0x85);
+
+    CHECK(clock.reset() == 108000000u);
+    CHECK(g_setFreqHz == 108000000u);
+
+    SUBCASE("and enables the source and the input pad together") {
+        // begin() leaves the output disabled and setFrequency() does not enable
+        // it, so handing the display clock over is both or neither.
+        CHECK(g_enabled);
+        CHECK(Wire.field(0, 0x49, 0, 1) == 0);   // PAD_CKIN_ENZ
+    }
+}
+
+TEST_CASE("a board with no generator steers nothing")
+{
+    // extClockGenDetected 0. The internal PLL is driving the display, and
+    // writing PAD_CKIN_ENZ would hand it to a pin nothing is on.
+    Wire.reset();
+    Wire.poison(0xE2);
+    g_setFreqHz = 0;
+
+    DisplayClock clock;
+    clock.hold(0x85);
+
+    CHECK(clock.reset() == 0u);
+    CHECK(g_setFreqHz == 0u);
+    CHECK_FALSE(Wire.touched[0][0x49]);
+}
+
+TEST_CASE("an unmapped seed falls back, and says that it did")
+{
+    // Steering nothing would leave the generator on a frequency from some
+    // earlier preset, which the TV cannot lock to while every scaler register
+    // still reads correct. The fallback is a guess, so the caller has to be
+    // able to see it: reset() reports what it steered to and hz() still reports
+    // what the seed was worth, and the two disagreeing IS the signal.
+    Wire.reset();
+    g_setFreqHz = 0;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.driveWith(generator);
+    clock.hold(DisplayClock::ExternalSentinel);
+
+    CHECK(clock.reset() == DisplayClock::FallbackHz);
+    CHECK(g_setFreqHz == DisplayClock::FallbackHz);
+    CHECK(clock.hz() == 0u);
 }

@@ -14,7 +14,10 @@
 
 #include <Arduino.h>
 
+#include "Si5351Stubs.h"
+
 float getSourceFieldRate(boolean) { return 50.08f; }
 void tv5725Log(const char *) {}
+
 
 #endif  // TEST_SKETCH_SEAM_H_
