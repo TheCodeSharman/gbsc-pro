@@ -257,6 +257,18 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 - **`make -p | grep VAR`** to check what Make really assigned. A bare `#` starts a
   comment mid-assignment, which silently dropped a library commit pin and cost a
   build failure that looked like a library incompatibility.
+- **A renamed or deleted firmware source keeps compiling from the build cache.**
+  arduino-cli's `--build-path` copies the sketch into `build/output/sketch/` and
+  copies changed files in, but never removes one that vanished from the source.
+  The stale copy is still compiled, and **the error names the SOURCE path**,
+  where the file no longer exists -- so it reads as a ghost include or an editor
+  writing a deleted file back. `make -C build clean` after any rename, or list
+  what the cache has that the tree does not:
+
+  ```sh
+  comm -23 <(ls build/output/sketch/src/tv5725/*.cpp | sed 's|.*/||' | sort) \
+           <(ls "GBSC-Pro-Source code/gbs-control/src/tv5725/"*.cpp | sed 's|.*/||' | sort)
+  ```
 - **Nix copies the working tree into the store to evaluate the flake from a
   dirty git checkout, and it copies TRACKED FILES ONLY.** One copy per distinct
   tree state, so an editing session is several GB — this is what took `/nix/store`
