@@ -1608,3 +1608,45 @@ def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, sour
         f"a measurement of this source -- solveSampling() adopted whatever was "
         f"on the chip and nothing retried. 1856 is the literal "
         f"bypassModeSwitch_RGBHV() writes.")
+
+
+# HSOUT/VSOUT to the encoder. Active low: 0 drives the pins, 1 takes sync away.
+PAD_SYNC_OUT_ENZ = (0, 0x49, 2, 1)
+
+
+def test_a_mode_change_leaves_the_sync_output_driven(host, source, preset_load):
+    """After a mode change lands, HSOUT/VSOUT are being driven.
+
+    loop() takes sync away for ENCODER_RELOCK_MS when the engine reports a new
+    raster, because the encoder samples the analog output and does not always
+    notice the timing under it moved -- it carries on transmitting the mode it
+    locked to before, and the display reports that older rate and shows nothing.
+    docs/investigations/encoder-stale-timing.md
+
+    **What this guards is the restore, because that is the dangerous half.** A
+    drop whose restore depends on some later state leaves a unit with every
+    register correct and no HSOUT/VSOUT at all -- no picture ever, rather than a
+    stale one, and nothing in a register dump says so. That failure has been
+    produced on this bench by pairing the drop with the mode-change pending flag,
+    which never clears when the source is not detected.
+
+    The drop itself is not asserted here: it lasts a few hundred milliseconds and
+    catching it over HTTP would be a race. It is verified on the bench, by the
+    display re-locking without anyone toggling the register by hand.
+    """
+    try:
+        get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
+        assert wait_for(lambda: (read_field(host, 3, 0x01, 0, 12) or 0) > 1000,
+                        timeout=20.0), (
+            "no raster after the preset load, so the mode change never landed "
+            "and this says nothing about what happens when it does")
+        time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
+
+        enz = read_field(host, *PAD_SYNC_OUT_ENZ)
+        assert enz == 0, (
+            f"PAD_SYNC_OUT_ENZ reads {enz} after the geometry landed, so the "
+            "sync output was left disabled. The unit is driving no HSOUT/VSOUT: "
+            "every register reads correct and the display shows nothing. Clear "
+            "bit 2 of s0_49 to get the picture back.")
+    finally:
+        recover_lock(host)

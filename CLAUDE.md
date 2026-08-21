@@ -151,12 +151,22 @@ distinguish these:
    dark, it is the **input** sample that times out — a measurement-path fault at
    `DEBUG_IN_PIN`, not a video-path one. And because `runFrequency()` returns
    early, the Si5351 never gets adjusted at all.
-2. **The encoder has stopped.** Nothing can see or reset it; power cycle — mains
-   *and* USB, since USB backfeeds the rails. This is the likeliest cause after a
-   session with heavy mode switching: every bypass↔scaling transition retimes the
-   output and forces the MS9288A to re-lock, so the wedge looks dose-dependent
-   rather than random. A mode sweep is dozens of re-locks, and the bill arrives
-   later as a blank screen.
+2. **The encoder is transmitting the PREVIOUS timing.** It samples the analog
+   output and does not always notice the timing under it moved, so it carries on
+   with the mode it locked to before. **What identifies it is the rate the TV
+   reports** — a sink that rejected a mode reports no mode, a sink holding a
+   stale one names the *old* rate.
+
+   **Toggle `PAD_SYNC_OUT_ENZ` (s0_49 bit 2) before pulling the rails.** Set it
+   to 1, pause, set it back to 0: dropping HSOUT/VSOUT makes the encoder
+   re-acquire, and measured 2026-08-20 the picture comes back at once with no
+   power cycle. Entering RGBHV bypass does the same the long way round. The
+   firmware has this as `useHdmiSyncFix`, armed only where the input
+   classification swaps inside the SD 50/60 families — so a change between an SD
+   source and a VGA-class one never gets it. `docs/investigations/encoder-stale-timing.md`.
+
+   A power cycle — mains *and* USB, since USB backfeeds the rails — remains the
+   fallback for a state the toggle does not clear.
 3. **The TV timed out** and dropped the input.
 
 **`VDS_ENABLE == 0` is not evidence of no output.** In RGBHV bypass the video
