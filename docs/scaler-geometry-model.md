@@ -312,17 +312,21 @@ so **0.93 is `1 - duty`**, placing the retimed pulse on top of the incoming one.
 That is why it is the fallback when the duty cannot be measured: it is the width
 the retiming module is already configured for.
 
-### The tail: not derivable, and deliberately not clipped
+### The tail: an output-side artefact, and deliberately not clipped
 
-The green starting at 1126 is **not** the same pulse. It is ~120 units against
-the pulse's 91, it starts 151 units before the end of the line, and **no
-multi-bit field in segments 0, 1 or 5 holds 1126, 2252, 151 or 302** — it is not
-a setting.
+The green starting at 1126 is **not** the same pulse, and not the same kind of
+thing. It is ~120 units against the pulse's 91, and **no multi-bit field in
+segments 0, 1 or 5 holds 1126, 2252, 151 or 302** — it is not an input setting.
 
-Nothing clips it. **A test asserts the tail reaches the last capturable unit**,
-because clipping both ends by `syncUnits` excludes `1186..1276` — the clean porch
-*after* the green rather than the green itself — and costs 91 units of zoom-out
-reach for nothing.
+It is not captured content at all: `PB_CAP_OFFSET` positions it and 230 removes
+it. Unwritten frame buffer, green because unwritten 4:2:2 decodes to
+`RGB(0,135,0)`. [`investigations/tail-green.md`](investigations/tail-green.md).
+
+Nothing clips it, and nothing should. **A test asserts the tail reaches the last
+capturable unit**, because clipping both ends by `syncUnits` excludes
+`1186..1276` — the clean porch *after* the green rather than the green itself —
+and costs 91 units of zoom-out reach for nothing. Clipping the capture to hide an
+artefact the capture does not produce would crop picture for nothing.
 
 ### The last two units of the line are not capture stops
 
@@ -345,10 +349,12 @@ frozen state.
 ### What is left
 
 The clean capture region measures about `90 .. 1126`, which is 1036 units. The
-default capture is 1009 units centred on the IF line at `134 .. 1143`, so it is
-nearly the right *size* and 30 units off in *position*, and overhangs the tail
-green by 17. That sliver at the right of the resting picture is the remaining
-fault, and bounding it needs a number nobody can derive yet.
+default capture is 1009 units centred on the IF line, so it is nearly the right
+*size* and about 30 units off in *position*.
+
+The sliver at the right of the resting picture was read as the capture overhanging
+the tail green. With the tail green now removed by the playback offset, what
+remains of it — if anything — has not been re-measured.
 
 ## The sync processor counts in ADC samples
 
@@ -379,31 +385,26 @@ the experiment is two writes and is reversible.
 
 ## Still open
 
-- **Where the tail green comes from.** Measured again 2026-08-17 with the capture
-  stop crept one bracket at a time: the band starts at **IF 1125-1126** and its
-  width is `stop - 1125.5`, on a 1265-unit line at `PLLAD_MD` 2528. That is
-  source px 455.6, 25.6 px into AKF50's 44 px right border, and not a boundary in
-  the mode.
+- **Why the capture-side threshold in the tail green exists at all.** The band is
+  **not** captured content: `PB_CAP_OFFSET` positions it and 230 removes it
+  entirely, across the zoom range. It is unwritten frame buffer, and unwritten
+  4:2:2 decodes to `RGB(0,135,0)` because U and V are offset-binary, which is the
+  whole of why it is green.
 
-  **Capturing the hsync pulse produces green, and that much is now shown
-  directly**: a capture window written to start at IF 62, inside the pulse at
-  IF 0..88.9, puts a green band on the LEFT; start it at 114 and the left is
-  clean. The head never shows it because `InputLine::firstCapture()` returns
-  `syncUnits`.
+  What is unresolved is that a creep of the capture stop, at a held width and so a
+  constant `PB_FETCH_NUM`, put the band's start at a fixed **IF 1125-1126** with
+  its width tracking `stop - 1125.5`. A pure offset error does not obviously
+  predict a threshold in the capture position, and neither result is in doubt.
+  **The experiment is to re-run that creep at offset 230.** It has never been run
+  against a varying offset.
 
-  Three explanations are refuted on the bench. Not the source's blanking -- the
-  border renders black either side of the start. Not the ADC's black level -- the
-  border immediately before the band is black, so the reference is right there.
-  Not sync-on-green -- `ADC_SOGEN` was 1 against `SP_SOG_MODE` 0, and clearing it
-  changed nothing.
+  The separate head green *is* captured content -- the sync tip digitised as
+  video -- and is solved: `InputLine::firstCapture()` returns `syncUnits`.
 
-  **Still open: whether the start is absolute or relative to the line end.** This
-  reading and the earlier 1126 agree on an absolute position, but they were taken
-  at dividers 1% apart, which moves the line end by 12 units against a +-3 unit
-  uncertainty -- so they do not discriminate. The experiment is a large
-  `PLLAD_MD` change and a re-measure.
   [`investigations/tail-green.md`](investigations/tail-green.md) has the readings,
-  and records why clamping the capture window is the wrong repair.
+  why every source-side explanation was refuted, why the old absolute-versus-
+  relative question is retired as badly posed, and why clamping the capture window
+  is the wrong repair.
 - **The zigzag is not HSCALE-banded.** A manual sweep across the corrupted state
   found no value that cleared it. Cause unknown.
 - **Whether a badly latched black level skews colour measurements.** Auto-clamp is

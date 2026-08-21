@@ -344,3 +344,75 @@ def test_any_pad_press_puts_the_picture_back_to_full_size(monkeypatch):
     assert panel.final("VDS_HSCALE") == scale, "the scale must be recomputed"
     width = panel.final("VDS_DIS_HB_ST") - panel.final("VDS_DIS_HB_SP")
     assert full - gm.AXIS_H.margin - 1 <= width <= full
+
+
+# --- every register is reachable without searching for it ---------------------
+
+
+def section_fields():
+    return [name for _, fields in regpanel.GROUPS for name, *_ in fields]
+
+
+def test_every_register_appears_in_a_section():
+    """A register only reachable by typing its name is a register nobody finds.
+    PB_CAP_OFFSET was in that state while it was the subject of the
+    investigation."""
+    missing = sorted(set(regpanel.REGISTER_DOC) - set(section_fields()))
+
+    assert missing == [], (
+        f"{len(missing)} registers reachable only by search, e.g. {missing[:12]}")
+
+
+def test_no_gbs_control_pseudo_registers_are_offered():
+    """GBS_* are gbs-control's own option bits parked in chip scratch space, not
+    TV5725 registers, so they belong in neither the sections nor the search."""
+    assert [n for n in regpanel.REGISTER_DOC if n.startswith("GBS_")] == []
+    assert [n for n in section_fields() if n.startswith("GBS_")] == []
+
+
+def test_no_register_is_listed_in_two_sections():
+    names = section_fields()
+    duplicated = sorted({n for n in names if names.count(n) > 1})
+
+    assert duplicated == [], f"listed more than once: {duplicated}"
+
+
+def test_the_playback_offset_and_fetch_lead_the_default_view():
+    """They are one quantity in two registers and are read together or not at
+    all, so they open the panel side by side."""
+    _, first_fields = regpanel.GROUPS[0]
+    names = [name for name, *_ in first_fields]
+
+    assert names[:2] == ["PB_CAP_OFFSET", "PB_FETCH_NUM"]
+
+
+def a_full_device():
+    """Every segment the panel now touches, all registers readable."""
+    return {seg: [0] * 0x100 for seg in range(6)}
+
+
+def test_the_whole_panel_costs_one_round_trip_per_segment():
+    """Every register has a section now, so a refresh reads ~950 fields. Read a
+    field at a time that is ~950 TCP connections per refresh against a unit whose
+    websocket server caps at five clients — the starvation this file exists for."""
+    fetch = CountingFetch(a_full_device())
+    every = [f for _, fields in regpanel.GROUPS for f in fields]
+
+    regpanel.read_fields(fetch, every)
+
+    segments = {segment for segment, _, _ in fetch.calls}
+    assert len(fetch.calls) == len(segments), (
+        f"{len(fetch.calls)} round trips for {len(segments)} segments")
+
+
+def test_a_capture_window_reaching_the_line_end_is_reported():
+    """IF_HB_ST2 == IF_HSYNC_RST rolls the picture. The window must stay strictly
+    inside the line, not merely reach its last unit -- and the check that says so
+    passed on the state that rolled."""
+    fetch = CountingFetch(a_device())
+    values = regpanel.read_fields(fetch, regpanel.STATUS + regpanel.INVARIANTS)
+    values["IF_HB_ST2"] = values["IF_HSYNC_RST"]
+
+    failed = [c["label"] for c in regpanel.check_invariants(values) if not c["ok"]]
+
+    assert "capture window" in failed

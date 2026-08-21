@@ -960,3 +960,25 @@ frame buffer reads the last frame it holds. Picture frozen, unwritten raster
 green, all 608 config registers correct and `loop()` still running. Diff against
 `after-flash-2026-08-17.json` shows two fields.
 Fixed in b70cddfb3.
+
+## 2026-08-18 — the capture write limit
+
+Past **IF 1125**, 2250 ADC samples from the line start, the capture path stops
+writing video and writes `Y=U=V=0`, which decodes to green and destroys active
+picture that reaches it. The position is absolute: it does not move with the
+capture start, with the source's border and porch timings, or with `PLL_MS`
+swept 162 → 81 MHz. `docs/capture-limits.md` carries both bounds and the 28-mode
+AKF50 audit; `docs/investigations/tail-green.md` carries the explanations that
+were refuted on the way, including that the green is unwritten memory and that
+`PB_CAP_OFFSET` 230 removes it.
+
+Every state below carries its own `note`; these say which question each answers.
+
+| snapshot | what it shows |
+|---|---|
+| `green-bar-then-garbage` | the three artefacts stacked, before they were separated: green bar, then stale buffer, then the VDS line repeat |
+| `green-bar-only-no-repeat` | the fetch raised until the repeat is off screen, leaving the bar alone — so the bar is written by the capture, not by playback |
+| `display-blanking-clips-garbage` | both scalers 1:1, display window pulled in to the picture edges: the region past the picture is a window problem, not corruption |
+| `X-measured-1125` | `IF_HB_ST2` crept to the unit where the band exactly vanishes — X read off the register rather than estimated off the screen |
+| `CLEAN-horizontal-three-causes` | first green-free state, clean edge to edge, all three causes addressed at once at `PLLAD_MD` 2548 |
+| `pllad-2250-full-line` | the break-even divider: 1126 IF units, so the whole line is inside X. Rolling here, because the capture stops at `IF_HSYNC_RST` — the stop has to be strictly below it |

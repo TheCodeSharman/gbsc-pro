@@ -40,8 +40,19 @@ import write_origin           # for ordered_writes: never dip the headroom
 
 HOST = None
 
-# (label, segment, register, bit offset, width). Order is display order.
-GROUPS = [
+# (label, segment, register, bit offset, width, note). Order is display order.
+# These are the ones worth having to hand; build_groups() appends a section for
+# every remaining register so nothing is reachable by search alone.
+CURATED = [
+    ("Frame buffer — playback", [
+        ("PB_CAP_OFFSET", 4, 0x37, 0, 10, "line stride, in 64-bit memory words — shared by capture and playback"),
+        ("PB_FETCH_NUM", 4, 0x39, 0, 10, "words read per line"),
+        ("PB_ENABLE", 4, 0x2B, 7, 1, "playback on"),
+        ("CAPTURE_ENABLE", 4, 0x21, 0, 1, "capture on"),
+        ("CAP_ADR_ADD_2", 4, 0x21, 7, 1, "0 = one 32-bit word per pixel"),
+        ("PB_CAP_BUF_STA_ADDR_A", 4, 0x31, 0, 21, "capture buffer base, 32-bit word address"),
+        ("CAP_SAFE_GUARD_A", 4, 0x24, 0, 21, "top of the capture region"),
+    ]),
     ("Input — capture window", [
         ("IF_HB_SP2", 1, 0x1A, 0, 11, "left edge of captured video"),
         ("IF_HB_ST2", 1, 0x18, 0, 11, "right edge of captured video"),
@@ -92,6 +103,7 @@ GROUPS = [
     ]),
 ]
 
+
 STATUS = [
     ("VTOTAL", 0, 0x1B, 0, 11),
     ("HTOTAL", 0, 0x17, 0, 12),
@@ -118,19 +130,77 @@ MEASURED = [
 ]
 
 
-ALL_FIELDS = {}
-REGISTER_DOC = {}
-
-
 def load_register_doc():
     """The suite's own register map, addressing and descriptions both anchored
     to RD-5725-1.1 via datasheet_fields.json. Optional — the panel works without
     it, just without descriptions or the search list."""
     path = pathlib.Path(__file__).resolve().parent / "tv5725_registers.json"
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    # GBS_* are gbs-control's own option bits parked in chip scratch space, not
+    # TV5725 registers.
+    return {name: entry for name, entry in doc.items()
+            if not name.startswith("GBS_")}
+
+
+SUBSYSTEMS = [
+    (("PB_", "CAP_", "CAPTURE_"), "Frame buffer — capture and playback"),
+    (("WFF_",), "Frame buffer — write FIFO"),
+    (("RFF_",), "Frame buffer — read FIFO (deinterlacer)"),
+    (("MEM_", "SDRAM_"), "Memory bus and SDRAM"),
+    (("IF_",), "Input formatter"),
+    (("VDS_",), "Video display (VDS)"),
+    (("SP_",), "Sync processor"),
+    (("ADC_",), "ADC"),
+    (("PLLAD_", "PLL_", "PA_", "CKT_", "CLKOUT_"), "Clocks and PLLs"),
+    (("MADPT_", "MAPDT_", "DIAG_"), "Deinterlacer (MADPT)"),
+    (("MD_",), "Mode detect"),
+    (("STATUS_", "HPERIOD_", "VPERIOD_"), "Status (read-only)"),
+    (("OSD_",), "OSD"),
+    (("PIP_",), "PIP"),
+    (("DAC_", "DIGOUT_", "OUT_"), "Output and DACs"),
+    (("PAD_",), "Pads"),
+    (("INT_", "SFTRST_"), "Interrupts and reset"),
+    (("GPIO_",), "GPIO"),
+    (("HD_",), "HD path"),
+]
+OTHER = "Test, decode and unclassified"
+
+
+def _section_for(name):
+    for prefixes, label in SUBSYSTEMS:
+        if name.startswith(prefixes):
+            return label
+    return OTHER
+
+
+def build_groups(curated, doc):
+    """The curated sections, then one section per subsystem holding every
+    register the curated ones left out. A register reachable only by typing its
+    name is a register nobody finds."""
+    curated_fields = {name for _, fields in curated for name, *_ in fields}
+    curated_labels = {label for label, _ in curated}
+    buckets = {label: [] for _, label in SUBSYSTEMS}
+    buckets[OTHER] = []
+
+    for name in sorted(doc):
+        if name in curated_fields:
+            continue
+        entry = doc[name]
+        buckets[_section_for(name)].append(
+            (name, entry["seg"], entry["reg"], entry["off"], entry["width"], ""))
+
+    return list(curated) + [
+        (f"{label} — the rest" if label in curated_labels else label, fields)
+        for label, fields in buckets.items() if fields]
+
+
+REGISTER_DOC = load_register_doc()
+ALL_FIELDS = {n: (e["seg"], e["reg"], e["off"], e["width"])
+              for n, e in REGISTER_DOC.items()}
+GROUPS = build_groups(CURATED, REGISTER_DOC)
 
 
 def find_field(name):
@@ -297,8 +367,10 @@ def check_invariants(values):
         f"IF_HSYNC_RST = {rst}, wants PLLAD_MD/2 = {md // 2}")
     add(rt < md, "retime gate",
         f"SP_RT_HS_SP = {rt}, must stay under PLLAD_MD = {md} or the picture rolls")
-    add(0 <= sp2 < st2 <= rst, "capture window",
-        f"{sp2}..{st2} must sit inside 0..{rst}, SP2 below ST2")
+    # STRICTLY inside: IF_HB_ST2 == IF_HSYNC_RST rolls the picture.
+    add(0 <= sp2 < st2 < rst, "capture window",
+        f"{sp2}..{st2} must sit inside 0..{rst - 1}, SP2 below ST2 and ST2 "
+        f"below IF_HSYNC_RST = {rst}")
     return out
 
 
@@ -1118,15 +1190,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global HOST, ALL_FIELDS, REGISTER_DOC
+    global HOST
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", required=True, help="the unit, e.g. 192.168.88.108")
     ap.add_argument("--port", type=int, default=8752)
     args = ap.parse_args()
     HOST = args.host
-    REGISTER_DOC = load_register_doc()
-    ALL_FIELDS = {n: (e["seg"], e["reg"], e["off"], e["width"])
-                  for n, e in REGISTER_DOC.items()}
     print(f"registers {len(REGISTER_DOC)} known"
           f" ({sum(1 for e in REGISTER_DOC.values() if e.get('desc'))} documented)")
 
