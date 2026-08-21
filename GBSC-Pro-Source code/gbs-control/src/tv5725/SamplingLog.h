@@ -30,7 +30,7 @@ public:
     SamplingLog();
 
     // Log every `intervalMs` for `durationMs`, touching nothing.
-    void monitor(uint16_t intervalMs, uint32_t durationMs);
+    void monitor(uint32_t nowMs, uint16_t intervalMs, uint32_t durationMs);
 
     // Walk the divider, logging `dwellMs` at each step from the latch onward so
     // the settling is in the record. The divider held on entry goes back at the
@@ -40,19 +40,19 @@ public:
     // which is the point: it is measured against the chip's own 27 MHz and does
     // not move with PLLAD_MD, so a sweep of PLLAD_MD cannot corrupt the one
     // input it needs. docs/tv5725-chip.md
-    void sweep(uint16_t low, uint16_t high, uint16_t step, uint16_t dwellMs,
-               uint8_t oversample);
+    void sweep(uint32_t nowMs, uint16_t low, uint16_t high, uint16_t step,
+               uint16_t dwellMs, uint8_t oversample);
 
     // 27 MHz / ((HPERIOD_IF + 1) * 4), measured across ten modes to a mean 29 ns.
     static uint32_t lineRateFromHPeriod(uint16_t hperiod);
 
     bool active() const;
-    void poll();
+    void poll(uint32_t nowMs);
 
 private:
-    void applyStep();
-    void emit();
-    void finish();
+    void applyStep(uint32_t nowMs);
+    void emit(uint32_t nowMs);
+    void finish(uint32_t nowMs);
 
     enum Mode : uint8_t { Idle, Monitoring, Sweeping };
 

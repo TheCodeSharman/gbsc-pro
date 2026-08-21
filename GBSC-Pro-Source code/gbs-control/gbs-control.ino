@@ -7328,7 +7328,7 @@ void loop()
     // At the top of loop() and nowhere else. Inside web_service()'s timed block
     // the samples came 300 ms apart with a 5 ms interval asked for, which is
     // coarser than the HTTP polling this exists to beat.
-    samplingLog.poll();
+    samplingLog.poll(millis());
 
     // Hand the boot backlog to the first console that attaches, so the web
     // console opens on the whole boot rather than starting mid-sentence.
@@ -8499,11 +8499,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
-            samplingLog.monitor(pendingSamplingA, pendingSamplingD);
+            samplingLog.monitor(millis(), pendingSamplingA, pendingSamplingD);
         }
         if (pendingSamplingSweep) {
             pendingSamplingSweep = false;
-            samplingLog.sweep(pendingSamplingA, pendingSamplingB,
+            samplingLog.sweep(millis(), pendingSamplingA, pendingSamplingB,
                               pendingSamplingC, (uint16_t)pendingSamplingD,
                               rto->osr);
         }

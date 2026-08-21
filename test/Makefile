@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
+.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -37,7 +37,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SamplingLog|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -344,6 +344,17 @@ adc:
 	  "$(HERE)/test_adc.cpp" src/tv5725/Adc.cpp
 	@"$(OUT)/test_adc"
 
+## sampling-log: host unit tests for Tv5725::SamplingLog
+#
+# It drives PLLAD_MD itself, so what matters is the ceiling and the restore --
+# 3008 took the unit off the network and only a power cycle brought it back.
+sampling-log:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sampling_log" \
+	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp src/tv5725/Adc.cpp
+	@"$(OUT)/test_sampling_log"
+
 ## geometry: the registers each Tv5725::Geometry entry point writes
 #
 # Each case drives Geometry at the top and reads the chip back through the
@@ -370,7 +381,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

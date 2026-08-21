@@ -1,6 +1,7 @@
 #include "SamplingLog.h"
 
 #include <Arduino.h>
+#include <stdio.h>
 
 #include "../../gbs_types.h"
 #include "Adc.h"
@@ -49,12 +50,13 @@ SamplingLog::SamplingLog()
 
 bool SamplingLog::active() const { return mode_ != Idle; }
 
-void SamplingLog::monitor(uint16_t intervalMs, uint32_t durationMs)
+void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
+                          uint32_t durationMs)
 {
     mode_ = Monitoring;
     interval_ = intervalMs < 1 ? 1 : intervalMs;
     dwellMs_ = 0;
-    startedMs_ = millis();
+    startedMs_ = nowMs;
     stepStartedMs_ = startedMs_;
     lastSampleMs_ = startedMs_ - interval_;
     durationMs_ = durationMs;
@@ -67,8 +69,8 @@ uint32_t SamplingLog::lineRateFromHPeriod(uint16_t hperiod)
     return 27000000u / (((uint32_t)hperiod + 1u) * 4u);
 }
 
-void SamplingLog::sweep(uint16_t low, uint16_t high, uint16_t step,
-                        uint16_t dwellMs, uint8_t oversample)
+void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
+                        uint16_t step, uint16_t dwellMs, uint8_t oversample)
 {
     if (step == 0)
         step = 1;
@@ -89,64 +91,64 @@ void SamplingLog::sweep(uint16_t low, uint16_t high, uint16_t step,
     divider_ = low;
     tv5725Log("smp,header,ms_since_latch,divider,pllad_lock,sp_vtotal,"
               "sp_htotal,hperiod_if,vperiod_if,hsact,ifbits");
-    applyStep();
+    applyStep(nowMs);
 }
 
-void SamplingLog::applyStep()
+void SamplingLog::applyStep(uint32_t nowMs)
 {
     // Through Adc, so the write and the latch stay inseparable here as
     // everywhere else. A divider written without a rising edge on PLLAD_LAT
     // leaves the PLL on the old value with every register reading correct.
     Adc::applySampleRate(divider_, lineRateHz_, oversample_);
-    stepStartedMs_ = millis();
+    stepStartedMs_ = nowMs;
     lastSampleMs_ = stepStartedMs_ - interval_;
 }
 
-void SamplingLog::emit()
+void SamplingLog::emit(uint32_t nowMs)
 {
-    lastSampleMs_ = millis();
+    lastSampleMs_ = nowMs;
     emitLine(lastSampleMs_ - stepStartedMs_,
              mode_ == Sweeping ? divider_ : (uint16_t)GBS::PLLAD_MD::read());
 }
 
-void SamplingLog::finish()
+void SamplingLog::finish(uint32_t nowMs)
 {
     if (mode_ == Sweeping) {
         divider_ = restoreDivider_;
-        applyStep();
+        applyStep(nowMs);
     }
     mode_ = Idle;
     tv5725Log("smp,done");
 }
 
-void SamplingLog::poll()
+void SamplingLog::poll(uint32_t nowMs)
 {
     if (mode_ == Idle)
         return;
 
-    const uint32_t now = millis();
+    const uint32_t now = nowMs;
     if ((uint32_t)(now - lastSampleMs_) < interval_)
         return;
 
     if (mode_ == Monitoring) {
         if ((uint32_t)(now - startedMs_) >= durationMs_) {
-            finish();
+            finish(now);
             return;
         }
-        emit();
+        emit(now);
         return;
     }
 
     if ((uint32_t)(now - stepStartedMs_) >= dwellMs_) {
         if (divider_ >= high_) {
-            finish();
+            finish(now);
             return;
         }
         divider_ = (uint16_t)(divider_ + step_ > high_ ? high_ : divider_ + step_);
-        applyStep();
+        applyStep(now);
         return;
     }
-    emit();
+    emit(now);
 }
 
 }  // namespace Tv5725
