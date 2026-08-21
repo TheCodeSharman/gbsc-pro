@@ -77,6 +77,7 @@ Full 6-segment dumps, diffable with
 | `CLEAN-riscpc-320x256-50-2026-08-15.json` | 08-15 | **certified glitch-free**, 608 config + 48 status, restorable |
 | `CLEAN-full-1536-riscpc-320x256-50-2026-08-15.json` | 08-15 | the same state, all 1536, for `snapdiff.py` |
 | `CLEAN-neyron-320x256-50-2026-08-19.json` | 08-19 | Nevryon, frame time lock **holding** for the first time: 1901 x 1125 raster, clock steered to 107942912 Hz against a 50.475 Hz source. 656 registers, restorable |
+| `hperiod-railed-latched-2026-08-20.json` | 08-20 | `HPERIOD_IF` railed and **latched** with the picture perfect, on a parked 320x256@50 source. Survives ten `/sc?~` passes and a full ESP reset; a cold boot clears it. All 1536, for `snapdiff.py`. `docs/investigations/hperiod-if-railing.md` |
 | `CLEAN-full-1536-neyron-2026-08-19.json` | 08-19 | the same moment, all 1536, for `snapdiff.py` |
 | `SHEARED-preset-clobber-2026-08-19.json` | 08-19 | the shear **happening**, untouched by hand. Diff against the pair above |
 | `BYPASS-800x600-trapped-2026-08-20.json` | 08-20 | RGBHV 800x600 forced to bypass by the >535-line override, `GBS_OPTION_SCALING_RGBHV` cleared to 0 with the preference set |

@@ -110,7 +110,7 @@ hypotheses have now been tested and refuted:
 |---|---|---|
 | HD bypass takes the IF out of the path | watched the transition | recovered *before* the preset loaded |
 | high line rates defeat the IF | frozen sweep to 37.9 kHz | 0/620 railed |
-| changing `PLLAD_MD` rails it | wrote 2269 → 2500, frozen | never flinched |
+| changing `PLLAD_MD` rails it | 20-point frozen walk, `PLLAD_MD` 1000..2900, 4201 samples logged from `loop()` | 0 railed. See below -- the earlier version of this row wrote 2269 → 2500, both high, and overstated what it had shown |
 | `getVideoMode()`'s `random(-2,2)` dither corrupts the Mode Detect thresholds | read s1 `0x66`-`0x75` in the broken state | **byte-identical** to the healthy snapshot |
 | the test bus disturbs the IF measurement | froze a healthy unit, replayed all 9 steady-state test-bus writes one at a time | `HPERIOD_IF` never moved off 431 |
 | coasting is disabled, so the counter sees vblank equalisation pulses | same method, all 10 sync-processor writes (`SP_DLT_REG`, `SP_H_PULSE_IGNOR`, `SP_PRE_COAST`, `SP_POST_COAST`, `SP_NO_COAST_REG`) | `HPERIOD_IF` never moved off 431 |
@@ -127,6 +127,90 @@ remaining candidates are a *combination* of writes, their ordering or timing, or
 something off the TV5725 bus entirely — the Si5351 is the obvious one, since it
 appears in no register trace and `/freeze` does not gate FrameSync steering it.
 
+
+## It does not depend on the divider, over the whole reachable range
+
+The earlier form of this claim rested on one write from 2269 to 2500 -- both
+high, both well inside the healthy region -- and was quoted more widely than it
+could carry.
+
+Walked properly, on a source parked at 320x256@50 with the mode-cycling script
+stopped, firmware frozen, `Tv5725::SamplingLog` sweeping the divider and logging
+from the top of `loop()`:
+
+```
+PLLAD_MD 1000..2900 step 100, 1000 ms dwell, 4201 samples
+HPERIOD_IF: 431 x 3925, 430 x 276.   Rails (0 or 511): 0.
+```
+
+- Not one railed sample, at any divider, over 15.6..45.2 MHz of CKO.
+- Including the dividers where the **ADC PLL does not lock at all** -- 1300..1800
+  and 2600..2900, both measured at 0% lock in the same walk.
+- Settled within 4 ms of the latch at nearly every step, so there is no slow
+  recovery hiding inside the dwell either.
+
+`STATUS_SYNC_PROC_VTOTAL` held 311 for all 4201 samples and the IF status byte
+never moved, so the source was not doing anything during the walk. **Three
+hypotheses die here**: that the reliability depends on the divider, that it
+depends on the divider only outside the range previously tried, and that it
+rails on every transition with only the recovery time differing.
+
+## The latched state survives every software reset
+
+Reached once, on a parked source, and observable for as long as it took to
+characterise: `HPERIOD_IF` returning a different wrong answer on almost every
+read -- 511, 255, 262, 6 -- while `STATUS_SYNC_PROC_VTOTAL` read a perfect 311,
+`STATUS_SYNC_PROC_HTOTAL` echoed the divider, the ADC PLL reported lock, and
+`IF_HSYNC_RST` was exactly `PLLAD_MD / 2`. **The picture was perfect throughout**,
+which is the part that matters: this is a measurement fault with no video-path
+consequence, and nothing in the picture would ever lead anyone to it.
+
+Every ADC, PLL and sync-processor field matched
+`snapshots/CLEAN-riscpc-320x256-50-2026-08-15.json` apart from the ones that
+legitimately follow the divider. The state is saved whole as
+`snapshots/hperiod-railed-latched-2026-08-20.json`.
+
+| tried | cleared it |
+|---|---|
+| ten `/sc?~` detection passes | no |
+| `SFTRST_MODE_RSTZ`, `SFTRST_SYNC_RSTZ`, `SFTRST_DEC_RSTZ`, `SFTRST_IF_RSTZ` pulsed | no -- **but see the caveat below** |
+| `IF_HBIN_ST` 32 <-> 0 | no -- same caveat |
+| ESP reset: firmware reboot, full chip re-initialisation over I2C | no |
+| cold boot, mains and USB | **yes** -- 91/91 samples back at 431 |
+
+So the state lives somewhere no register write reaches. A full re-initialisation
+rewrote the chip and did not move it; removing the rails cleared it at once.
+
+**The caveat, and it is load-bearing.** The two rows marked above were taken with
+a script that ignored `Probe.write_field()`'s return value, and that function
+returns `False` and writes nothing if any register behind the field fails to
+read. A dropped write is indistinguishable from a reset that did not help, so
+those two nulls are not safe. Redo them with the return checked when the state
+is next reachable. The rows either side do not depend on the write path: the
+detection passes and the cold boot involved no register writes at all.
+
+**Untried, and the best remaining candidates**, because they drop analog bias
+rather than digital configuration -- which is the domain the fault is in and the
+domain a power cycle clears: `PLLAD_VCORST`, `PLLAD_PDZ`, `ADC_POWDZ`, and all
+twelve `SFTRST_*_RSTZ` held low together rather than pulsed one at a time. If one
+of them clears it, the firmware gains a recovery for a state that currently needs
+someone to pull the plug.
+
+## `STATUS_IF_HT_BAD` says when not to believe the value
+
+It reads a constant 0 across a survey of six healthy states, which is what got it
+recorded as carrying no information. Against the latched state it separates
+cleanly:
+
+| state | `STATUS_IF_HT_BAD` set |
+|---|---|
+| railed, over ten detection passes | 129 / 191 samples |
+| healthy, after the cold boot | **0 / 91** |
+
+Not a per-sample detector -- a third of the railed samples read 0 -- but it never
+once set on a healthy reading. **Set anywhere in a sampling window is a reliable
+"do not trust `HPERIOD_IF`" gate**, and it costs nothing: it is in segment 0, so
+one `read_segment()` gets it alongside the value it judges.
 
 ## "Railing" is two different faults under one name
 
