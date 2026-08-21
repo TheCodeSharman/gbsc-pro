@@ -217,9 +217,11 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 
     SUBCASE("the picture gives up exactly the write offset and nothing more") {
+        // Once, not twice: the offset is paid before the first write and there
+        // is nothing after the last one.
         CHECK_NEAR(fit.produced(),
                    AxisHorizontal.maxDisplayWindow(1445)
-                       - 2.0f * AxisHorizontal.startPerMag() * Scale::Unity
+                       - AxisHorizontal.startPerMag() * Scale::Unity
                              / fit.scale().reg(),
                    2.0);
     }
@@ -782,16 +784,16 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
 
 // --- the active window, 2026-08-12 -------------------------------------------
 
-TEST_CASE("the active window narrows the room at both ends")
+TEST_CASE("the active window narrows the room before the picture")
 {
     // The picture belongs in the raster's active window, not on the whole
-    // raster. Symmetric blanking -- the back porch reserved at BOTH ends --
-    // guarantees a front porch rather than assuming the encoder tolerates none,
-    // and lands within 30 px of the 110..2189 state confirmed on the bench.
+    // raster. Charged ONCE, before the picture: a back porch is something the
+    // line needs before active video, and there is no write floor after the last
+    // pixel to mirror it onto.
     const uint16_t Raster = 1918;
     CHECK(AxisHorizontal.maxDisplayWindow(Raster, 140)
           < AxisHorizontal.maxDisplayWindow(Raster));
-    CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 140), (Raster - 2) - 2 * 140, 0.01);
+    CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 140), (Raster - 2) - 140, 0.01);
 
     SUBCASE("an active start below the write floor changes nothing") {
         // The write floor is physical and a back porch cannot argue with it, so
@@ -803,10 +805,107 @@ TEST_CASE("the active window narrows the room at both ends")
     }
 
     SUBCASE("the vertical floor is not truncated to zero") {
-        // AxisVertical's startConst is 0.2. An integer blankingEachEnd would round it
+        // AxisVertical's startConst is 0.2. An integer blankingBeforePicture would round it
         // away and move every vertical solve.
-        CHECK(AxisVertical.blankingEachEnd(0) > 0.0f);
-        CHECK_NEAR(AxisVertical.blankingEachEnd(0), 0.2, 0.001);
+        CHECK(AxisVertical.blankingBeforePicture(0) > 0.0f);
+        CHECK_NEAR(AxisVertical.blankingBeforePicture(0), 0.2, 0.001);
+    }
+}
+
+// Only the near end has anything physical behind it: windowStopMin is the
+// measured left-edge corruption floor and startConst is pipeline run-up before
+// the first write. Nothing is written after the last pixel, so the far end owes
+// neither. Charging either at the far end leaves a black bar down the right of
+// every picture that no zoom closes, the scale being refitted on every solve.
+TEST_CASE("only the near end pays the write floor")
+{
+    const uint16_t Raster = 1901;   // the bench raster at 108 MHz, 1125 lines
+    const uint16_t Capture = 1055;
+    const float FarEdge = Raster - 2;
+
+    SUBCASE("the room gives up the floor once, not twice") {
+        CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster),
+                   FarEdge - (AxisHorizontal.windowStopMin()
+                              + AxisHorizontal.startConst()), 0.01);
+    }
+
+    SUBCASE("the picture reaches the end of the line") {
+        RasterFit fit = AxisHorizontal.fitToRaster(Capture, Raster);
+        PictureOrigin placed = AxisHorizontal.placePicture(
+            fit.produced(), Raster, fit.scale().magnification());
+        float end = placed.corner() + fit.produced();
+        CHECK(end <= FarEdge);
+        CHECK(end > FarEdge - 8);
+    }
+
+    SUBCASE("the near edge still sits on the write floor") {
+        // The left edge is already as far over as physics allows, and must not
+        // move: below windowStopMin the picture corrupts.
+        RasterFit fit = AxisHorizontal.fitToRaster(Capture, Raster);
+        PictureOrigin placed = AxisHorizontal.placePicture(
+            fit.produced(), Raster, fit.scale().magnification());
+        CHECK(placed.windowStop() >= AxisHorizontal.windowStopMin());
+        CHECK(placed.windowStop() <= AxisHorizontal.windowStopMin() + 2);
+    }
+
+    SUBCASE("a capture too small to fill the raster is still bounded") {
+        RasterFit tiny = AxisHorizontal.fitToRaster(60, Raster);
+        CHECK(tiny.scale().reg() == AxisHorizontal.scaleMin());
+        CHECK(tiny.produced() < AxisHorizontal.maxDisplayWindow(Raster));
+    }
+}
+
+TEST_CASE("the solution carries the front porch to both axes")
+{
+    const uint16_t Raster = 1916, Frame = 1126;
+    const uint16_t StopH = 1852, StopV = 1121;
+
+    RegisterSolution solved(1008, 532, Raster, Frame, StopH, StopV);
+    CHECK(solved.h().displayStart() <= (int32_t)StopH);
+    CHECK(solved.v().displayStart() <= (int32_t)StopV);
+
+    SUBCASE("and without one the raster edge still bounds it") {
+        RegisterSolution plain(1008, 532, Raster, Frame);
+        CHECK(plain.h().displayStart() > (int32_t)StopH);
+    }
+}
+
+// The raster's edge is the wrong far bound: a display window taken up to
+// VDS_HSYNC_RST leaves too little front porch and the colours come out wrong.
+// Measured on the bench, RiscPC 320x256@50 into a 1916 px raster, the window is
+// good at 1900 and bad at 1910 -- a floor of about 16 px, which CEA-861's minimum
+// front porch clears at 64. OutputRaster::activeStop is where it comes from.
+TEST_CASE("the picture stops at the front porch, not at the raster edge")
+{
+    const uint16_t Raster = 1916;
+    const uint16_t ActiveStop = 1852;   // 1916 less a 64 px front porch
+    const uint16_t Capture = 1008;
+
+    SUBCASE("the room gives up the front porch as well as the write floor") {
+        CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 0, ActiveStop),
+                   ActiveStop - (AxisHorizontal.windowStopMin()
+                                 + AxisHorizontal.startConst()), 0.01);
+    }
+
+    SUBCASE("and the picture ends inside the front porch, not past it") {
+        RasterFit fit = AxisHorizontal.fitToRaster(Capture, Raster, 0, ActiveStop);
+        PictureOrigin placed = AxisHorizontal.placePicture(
+            fit.produced(), Raster, fit.scale().magnification());
+        float end = placed.corner() + fit.produced();
+        CHECK(end <= (float)ActiveStop);
+        CHECK(end > (float)ActiveStop - 8.0f);
+    }
+
+    SUBCASE("the display window closes by the front porch too") {
+        AxisSolution solved = AxisHorizontal.solve(
+            Capture, AxisHorizontal.fitToRaster(Capture, Raster, 0, ActiveStop).scale(),
+            Raster, 0, ActiveStop);
+        CHECK(solved.displayStart() <= (int32_t)ActiveStop);
+    }
+
+    SUBCASE("an activeStop of 0 keeps the raster edge, so nothing else moves") {
+        CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 0, 0),
+                   AxisHorizontal.maxDisplayWindow(Raster), 0.01);
     }
 }
 

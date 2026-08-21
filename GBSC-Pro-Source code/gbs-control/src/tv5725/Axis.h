@@ -58,33 +58,40 @@ public:
 
     float originOffset(float magnification) const;
 
-    // What must stay blank at BOTH ends, in output units: whichever of the write
-    // floor and the raster's own back porch is larger. The write floor is
-    // physical -- nothing can be written before windowStopMin + startConst. The
-    // back porch (OutputRaster.h) is reserved at the FAR end too, which
-    // guarantees a front porch rather than assuming the encoder tolerates none.
-    // activeStart 0 asks for the write floor alone.
+    // What must stay blank BEFORE the picture, in output units: whichever of the
+    // write floor and the raster's own back porch is larger. Nothing can be
+    // written before windowStopMin + startConst, which is physical.
     //
-    // Float, matching geometry_math.blanking_each_end: startConst_ is 0.2 on the
-    // vertical axis and truncating it to 0 would move every vertical solve.
-    float blankingEachEnd(uint16_t activeStart) const;
+    // The FAR end owes nothing. Charging it the same reserve leaves a black bar
+    // down the right of every picture that no zoom closes, because the scale is
+    // refitted on every solve. activeStart 0 asks for the write floor alone.
+    //
+    // Float: startConst_ is 0.2 on the vertical axis and truncating it to 0 would
+    // move every vertical solve.
+    float blankingBeforePicture(uint16_t activeStart) const;
 
-    // The biggest picture this raster can hold. Bounded at BOTH ends, because the
-    // picture is centred and equal margins are the only kind of overscan a user
-    // can reason about.
-    float maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart = 0) const;
+    // One past the last pixel the picture may occupy: RasterSolution::activeStop,
+    // the raster total less the minimum front porch. 0 asks for the raster's own
+    // edge, which is what a bypass or a custom preset gets -- there is no solved
+    // raster to take a porch from.
+    uint16_t farBound(uint16_t rasterTotal, uint16_t activeStop) const;
+
+    // The biggest picture this raster can hold, bounded at the NEAR end by the
+    // write floor and at the FAR end by the front porch.
+    float maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart = 0,
+                           uint16_t activeStop = 0) const;
 
     // The scale making the picture as big as this raster allows.
     //
     // The write offset grows with the magnification that depends on the size
     // being solved for, so it is solved rather than iterated:
     //
-    //     produced = room - 2 x startPerMag x produced / capture
-    //              = room x capture / (capture + 2 x startPerMag)
+    //     produced = room - startPerMag x produced / capture
+    //              = room x capture / (capture + startPerMag)
     //
     // A capture too small to fill the raster is bounded by the register at x4.
     RasterFit fitToRaster(uint16_t capture, uint16_t rasterTotal,
-                    uint16_t activeStart = 0) const;
+                    uint16_t activeStart = 0, uint16_t activeStop = 0) const;
 
     // Centre the picture on the raster. A picture too big to centre starts at
     // the write floor and overscans off the far end.
@@ -93,8 +100,8 @@ public:
 
     // This axis's four output registers. `capture` is IF units horizontally and
     // HALF-LINES vertically -- reading IF_VB as whole lines doubles the picture.
-    AxisSolution solve(uint16_t capture, Scale scale,
-                       uint16_t rasterTotal, uint16_t activeStart = 0) const;
+    AxisSolution solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
+                       uint16_t activeStart = 0, uint16_t activeStop = 0) const;
 
 private:
     // The earliest a picture may START, at this magnification: past the write

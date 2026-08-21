@@ -209,6 +209,12 @@ private:
     bool solvePending_;      // a solve refused because the source was settling
     bool framingRequested_;  // the user asked; loop() drains it, freeze does not
     const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
+
+    // Where the front porch starts, from the raster this engine solved. Held
+    // rather than re-derived because apply() reads the raster back off the chip
+    // and the registers carry no porch. 0 until a raster is solved, which is what
+    // a bypass and a custom preset both stay on.
+    uint16_t activeStop_, activeLinesStop_;
 };
 
 }  // namespace Tv5725

@@ -84,13 +84,56 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     }
 }
 
+// A minimum RESERVE, not the standard's actual front porch. CEA absorbs the field
+// rate difference in the front porch -- 1080p50 runs 528 px against 1080p60's 88 --
+// so the standard's own value is not a target, and what is left above the minimum
+// stays leftover for the picture. 1080p60's 88 px at 148.5 MHz is the shortest
+// front porch in the standard, so it is the floor: 592.6 ns.
+//
+// The board's own requirement is a floor of about 16 px, which the standard's
+// 64 px at 108 MHz clears. docs/scaler-geometry-model.md "The output front
+// porch"
+TEST_CASE("the front porch reserves CEA-861's minimum at our own clock")
+{
+    RasterSolution at108 = Mode1080p.solve(50.0f, 108000000u);
+    CHECK(at108.horizontalTotal == 1920);
+    CHECK(at108.activeStop == 1920 - 64);
+
+    RasterSolution at1296 = Mode1080p.solve(50.0f, 129600000u);
+    CHECK(at1296.horizontalTotal == 2304);
+    CHECK(at1296.activeStop == 2304 - 77);
+
+    SUBCASE("which is the same TIME at both clocks, not the same pixel count") {
+        // A fixed pixel count would fail one of these two.
+        double lo = (at108.horizontalTotal - at108.activeStop) * 1e9
+                    / at108.demandedHz();
+        double hi = (at1296.horizontalTotal - at1296.activeStop) * 1e9
+                    / at1296.demandedHz();
+        CHECK(lo > 580.0);
+        CHECK(lo < 605.0);
+        CHECK(hi > 580.0);
+        CHECK(hi < 605.0);
+    }
+
+    SUBCASE("and the active window is what lies between the two porches") {
+        CHECK(at108.activeWidth() == at108.activeStop - at108.activeStart);
+    }
+
+    SUBCASE("vertically the porch is the standard's lines, needing no conversion") {
+        // 1080p CEA-861 is 1080 active + 4 front + 5 sync + 36 back = 1125, so the
+        // active window is 41..1121 -- which is the encoder window measured on the
+        // bench, 1121 - 41 = 1080 exactly.
+        CHECK(at108.activeLinesStart == 41);
+        CHECK(at108.activeLinesStop == 1121);
+    }
+}
+
 TEST_CASE("the default ceiling is the highest clock the bench demonstrated")
 {
-    // Swept 2026-08-11 on the RiscPC at 320x256@50: 108 and 129.6 MHz both
-    // sharp, 162 MHz flickers then goes black. A FLOOR on the true limit rather
-    // than the limit -- nothing between 129.6 and 162 has been tried. Not the
-    // datasheet's 108 MHz CLKOUT figure, which rates a pad PAD_CKOUT_ENZ
-    // disables.
+    // 108 and 129.6 MHz are both sharp and 162 MHz flickers then goes black,
+    // so this is a FLOOR on the true limit rather than the limit -- nothing
+    // between 129.6 and 162 has been tried. Not the datasheet's 108 MHz CLKOUT
+    // figure, which rates a pad PAD_CKOUT_ENZ disables.
     CHECK(OutputRaster::WorkingCeilingHz == 129600000u);
 
     RasterSolution best = Mode1080p.solve(50.0f);

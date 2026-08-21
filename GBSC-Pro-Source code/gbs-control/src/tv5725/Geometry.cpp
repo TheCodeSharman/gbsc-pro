@@ -77,7 +77,8 @@ void Capture::setWindows(const CaptureWindow &h, const CaptureWindow &v)
 
 Geometry::Geometry()
     : rasterPending_(false), samplingPending_(false), solvePending_(false),
-      framingRequested_(false), rasterMode_(0) {}
+      framingRequested_(false), rasterMode_(0), activeStop_(0),
+      activeLinesStop_(0) {}
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
@@ -94,7 +95,8 @@ bool Geometry::apply()
         return false;
 
     RegisterSolution solved(capture.captureH(), capture.captureV(),
-                              capture.linePx(), capture.frameLines());
+                              capture.linePx(), capture.frameLines(),
+                              activeStop_, activeLinesStop_);
     if (!solved.usable())
         return fail();
 
@@ -183,6 +185,11 @@ bool Geometry::solveRaster()
     // steers the Si5351 from it. loop() then stashes it and parks the 0x75
     // external sentinel here, which is why writing a real divider is safe.
     GBS::PLL648_CONTROL_01::write(raster.divider);
+
+    // The porch is not a register, so the next apply() cannot read it back.
+    activeStop_ = raster.activeStop;
+    activeLinesStop_ = raster.activeLinesStop;
+
     rasterPending_ = false;
     return true;
 }
@@ -192,6 +199,11 @@ void Geometry::enterBypass()
     rasterMode_ = 0;
     rasterPending_ = false;
     samplingPending_ = false;
+
+    // Bypass has no solved raster, so it has no porch either -- and a porch left
+    // from the last scaled mode would size the next one's picture.
+    activeStop_ = 0;
+    activeLinesStop_ = 0;
 }
 
 bool Geometry::rasterPending() const { return rasterPending_; }

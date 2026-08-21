@@ -34,6 +34,13 @@ public:
     // what the geometry engine should bound the picture by, not the raster total.
     uint16_t activeStart, activeLinesStart;
 
+    // One past the last active pixel and line: the total less the front porch. The
+    // picture must end here, not at the raster's edge -- a display window taken
+    // right up to VDS_HSYNC_RST leaves too little blanking and the colours come
+    // out wrong. Vertically 41..1121 for 1080p, which is the encoder window
+    // measured on the bench.
+    uint16_t activeStop, activeLinesStop;
+
     float fieldRate;
 
     // False when anything upstream was unmeasurable. **CHECK THIS BEFORE
@@ -132,7 +139,7 @@ public:
     // VDS_VSYNC_RST as "vertical total value minus 1" and upstream wrote the
     // standard's total, so all six modes ran a line long.
     OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
-               uint16_t vsyncLines, uint16_t vBackPorchLines,
+               float frontPorchNs, uint16_t vsyncLines, uint16_t vBackPorchLines,
                uint16_t vFrontPorchLines);
 
     uint16_t activeLines() const;
@@ -146,7 +153,7 @@ public:
 
 private:
     uint16_t activeLines_;
-    float syncNs_, backPorchNs_;
+    float syncNs_, backPorchNs_, frontPorchNs_;
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };
 

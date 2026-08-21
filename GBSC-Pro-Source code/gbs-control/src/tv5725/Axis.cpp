@@ -52,7 +52,7 @@ float Axis::originOffset(float magnification) const
     return startConst_ + startPerMag_ * magnification;
 }
 
-float Axis::blankingEachEnd(uint16_t activeStart) const
+float Axis::blankingBeforePicture(uint16_t activeStart) const
 {
     float floor = windowStopMin_ + startConst_;
     return (float)activeStart > floor ? (float)activeStart : floor;
@@ -64,19 +64,28 @@ float Axis::placementFloor(float offset, uint16_t activeStart) const
     return (float)activeStart > floor ? (float)activeStart : floor;
 }
 
-float Axis::maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart) const
+uint16_t Axis::farBound(uint16_t rasterTotal, uint16_t activeStop) const
 {
-    return (rasterTotal - 2) - 2.0f * blankingEachEnd(activeStart);
+    // rasterTotal - 2, not - 1: VDS_DIS_?B_ST must stay strictly below the total
+    // register, which is itself one below rasterTotal.
+    uint16_t edge = rasterTotal > 2 ? (uint16_t)(rasterTotal - 2) : 0;
+    return activeStop > 0 && activeStop < edge ? activeStop : edge;
+}
+
+float Axis::maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart,
+                             uint16_t activeStop) const
+{
+    return farBound(rasterTotal, activeStop) - blankingBeforePicture(activeStart);
 }
 
 RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal,
-                      uint16_t activeStart) const
+                      uint16_t activeStart, uint16_t activeStop) const
 {
-    float room = maxDisplayWindow(rasterTotal, activeStart);
+    float room = maxDisplayWindow(rasterTotal, activeStart, activeStop);
     if (capture == 0 || room <= 0.0f)
         return RasterFit(Scale(Scale::Max), 0.0f);
 
-    float produced = room * capture / (capture + 2.0f * startPerMag_);
+    float produced = room * capture / (capture + startPerMag_);
     long scale = lrintf(Scale::Unity * capture / produced);
     if (scale < (long)scaleMin_)
         scale = scaleMin_;
@@ -84,13 +93,14 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal,
         scale = Scale::Max;
     produced = capture * (float)Scale::Unity / scale;
 
-    // Rounding the scale down makes the picture a shade larger than solved
-    // for, which can push the near edge below the write floor. A pixel of
-    // unused raster costs nothing; an overflow shows scratch.
+    // Rounding the scale down makes the picture a shade larger than solved for,
+    // which would run it off the END of the line. Bounded where placePicture PINS
+    // the picture rather than where it centres it: a picture too big to centre
+    // lands on the write floor, and that is the placement that can overrun.
     while (scale < Scale::Max
-           && lrintf((rasterTotal - produced) / 2.0f)
-                  < placementFloor(originOffset((float)Scale::Unity / scale),
-                                   activeStart)) {
+           && placementFloor(originOffset((float)Scale::Unity / scale), activeStart)
+                      + produced
+                  > (float)farBound(rasterTotal, activeStop)) {
         ++scale;
         produced = capture * (float)Scale::Unity / scale;
     }
@@ -123,8 +133,8 @@ PictureOrigin Axis::placePicture(float produced, uint16_t rasterTotal,
     return PictureOrigin(corner, windowStop);
 }
 
-AxisSolution Axis::solve(uint16_t capture, Scale scale,
-                         uint16_t rasterTotal, uint16_t activeStart) const
+AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
+                         uint16_t activeStart, uint16_t activeStop) const
 {
     AxisSolution solved;
     solved.produced_ = scale.produced(capture);
@@ -136,11 +146,9 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale,
     solved.origin_ = placed.corner();
     solved.windowStop_ = placed.windowStop();
 
-    // ST registers must stay STRICTLY below the raster's total register,
-    // and they wrap rather than clamp -- a wrapped VDS_VB_ST rolls the
-    // frame. The total register is one below rasterTotal, so the last
-    // usable is two below.
-    int32_t lastUsable = (int32_t)rasterTotal - 2;
+    // The front porch, or the raster's edge where no porch is known. ST registers
+    // wrap rather than clamp, and a wrapped VDS_VB_ST rolls the frame.
+    int32_t lastUsable = (int32_t)farBound(rasterTotal, activeStop);
 
     // Floor, never round: VDS_DIS_?B_ST is where blanking STARTS, so
     // rounding up exposes unwritten memory as a band of scratch.
