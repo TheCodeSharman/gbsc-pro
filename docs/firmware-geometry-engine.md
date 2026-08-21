@@ -37,20 +37,36 @@ lines doubles the picture. That is the likeliest bug in this code.
 Two pads, both acting on the **capture window only**:
 
 - **pan** — `/sc?+` `/sc?-` horizontally, `/sc?*` `/sc?/` vertically.
-- **zoom** — `/sc?z` `/sc?h` both axes, `/sc?4` `/sc?5` vertical only.
+- **zoom** — `/sc?z` `/sc?h` both axes, `/sc?I` `/sc?O` horizontal only,
+  `/sc?5` `/sc?4` vertical only.
+
+Two more that move no framing: `/sc?U` re-derives every register from what the
+engine holds, and `/sc?B` returns the framing to default and re-solves from the
+source. **`/sc?@` is not free** — `'@'` is the value parked in `serialCommand`
+to mean "nothing pending", and the switch is guarded on it.
 
 The OSD and IR remote do not call these directly: they write into the
 `serialCommand` / `userCommand` globals and `web_service()` picks them up on the
 next 300 ms tick. So fixing the character handlers fixes web, OSD and remote at
 once.
 
-Step sizes are `GEOMETRY_PAN_STEP` and `GEOMETRY_ZOOM_STEP`, in **input units**.
-Not a proportion of the current capture — proportional steps are not reversible,
-because out and back use different widths and the window walks.
+A press carries a magnitude in **output pixels**: `/sc?<pad>=<n>`, or the pad's
+own `ControlSteps` value when none is given. `Axis::stepUnits()` converts it to
+capture units against the scale the last solve produced and never returns less
+than one granule, so `/sc?<pad>=1` is the smallest move the hardware acts on
+whatever the magnification happens to be. Not a proportion of the current
+capture — proportional steps are not reversible, because out and back use
+different widths and the window walks.
+
+**There is no route that sets the framing outright.** `/geometry` reads it; it
+moves through the pads alone, so nothing — instrument, panel or test — can
+arrange a state the person at the OSD cannot reach. `gbs_unit.framing_to()`
+walks one field to a value that way and reports where it landed, because a solve
+clamps the framing it is given and not every value is reachable.
 
 ## What the sketch may call
 
-`Geometry` has six entry points, and nothing else is reachable from outside it:
+`Geometry` has seven entry points, and nothing else is reachable from outside it:
 
 | | |
 |---|---|
@@ -58,8 +74,10 @@ because out and back use different widths and the window walks.
 | `poll()` | drives whatever is outstanding, on every pass of `loop()` |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
 | `rasterWidthChanged(horizontalTotal)` | the total was retimed outside the engine |
-| `framing()` / `requestFraming(wanted)` | the framing the user asked for |
+| `framing()` | the framing the user has reached, read only |
 | `pan(dx, dy)` / `zoom(dh, dv)` | one press, in OUTPUT PIXELS |
+| `resolve()` | re-derive every register from what is held, without moving the framing |
+| `reset()` | back to the default framing |
 
 The sequence a mode change runs — sampling, raster, clock, windows — is private,
 because running one step alone skips the rest of it and each depends on the one

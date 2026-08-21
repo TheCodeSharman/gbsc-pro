@@ -27,7 +27,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import field_from, get, get_json, read_segment
+from gbs_unit import field_from, framing_to, get_json, read_segment
 import creep_window
 
 # What lastCapture() clamps against, mirrored from InputLine.h so a mark says
@@ -99,7 +99,11 @@ def stop_of(host):
 
 
 def set_pan(host, wanted):
-    get(host, f"/geometry?ph={wanted}")
+    """Walk the pan to `wanted` through the pads, and report where it landed:
+    not every value is reachable, and the clamp is part of what is being crept
+    up on."""
+    landed = framing_to(host, "ph", wanted)
+    return wanted if landed is None else landed["ph"]
 
 
 def show(state):
@@ -176,8 +180,7 @@ def main():
             continue
 
         was = stop_of(args.host)
-        pan += steps[reply]
-        set_pan(args.host, pan)
+        pan = set_pan(args.host, pan + steps[reply])
         stop = settled(lambda: stop_of(args.host), was=was)
         if stop == was:
             print(f"  stop unchanged at {stop} -- against the clamp, "

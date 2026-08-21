@@ -32,6 +32,7 @@ class FakeUnit:
     def apply(self, value):
         self.zoom = value
         self.applied.append(value)
+        return self.snapshot(), self.zoom
 
     def snapshot(self):
         width = 843 + (self.origin - self.zoom)

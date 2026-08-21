@@ -16,6 +16,7 @@ import json
 import math
 import urllib.parse
 
+import gbs_unit
 import regpanel
 
 
@@ -196,19 +197,34 @@ class RecordingEngine:
     def __init__(self, monkeypatch, held):
         self.held = dict(held)
         self.asked = []
+        self.presses = []
         monkeypatch.setattr(regpanel, "_get", self._get)
+        monkeypatch.setattr(regpanel.gbs_unit, "get_json", self._get_json)
+        monkeypatch.setattr(regpanel.gbs_unit, "get", self._press)
+        monkeypatch.setattr(regpanel.gbs_unit, "wait_for",
+                            lambda predicate, **kw: predicate())
         monkeypatch.setattr(regpanel.time, "sleep", lambda _: None)
 
     def _get(self, path, timeout=5):
         if path == "/geometry":
             return json.dumps(self.held)
-        if path.startswith("/geometry?"):
-            wanted = {name: int(value) for name, value in
-                      urllib.parse.parse_qsl(path.split("?", 1)[1])}
-            self.asked.append(wanted)
-            self.held.update(wanted)
-            return json.dumps(self.held)
         raise AssertionError(f"unexpected request {path}")
+
+    def _get_json(self, host, path, timeout=5):
+        assert path == "/geometry", path
+        return 200, dict(self.held)
+
+    def _press(self, host, path, timeout=5):
+        """One press of a pad, moving the held framing by one unit. The panel
+        walks to a target, so what it asked for is where it ended up."""
+        pad, _, pixels = path[len("/sc?"):].partition("=")
+        for field, (up, down) in gbs_unit.FRAMING_PADS.items():
+            if pad in (up, down):
+                self.held[field] += 1 if pad == up else -1
+                self.presses.append((field, pad))
+                self.asked = [dict(self.held)]
+                return 200, ""
+        raise AssertionError(f"unexpected press {path}")
 
 
 def test_a_pan_press_asks_the_engine_rather_than_writing_registers(monkeypatch):

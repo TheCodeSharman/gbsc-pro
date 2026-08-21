@@ -282,7 +282,13 @@ WATCH = {"z": ("IF_HB_ST2", 1, 0x18, 0, 11),
          "7": ("IF_HB_SP2", 1, 0x1A, 0, 11)}
 
 
-def press(host, probe, command, timeout=6.0):
+# The smallest capture move the hardware acts on, per axis. Horizontally the low
+# bit of IF_HB_SP2 does nothing, so a one-unit move leaves the picture where it
+# was; Axis::stepUnits() never returns less than one of these.
+GRANULE = {"horizontal": 2, "vertical": 1}
+
+
+def press(host, probe, command, pixels=None, timeout=6.0):
     """Issue a pad press and wait for it to land.
 
     /sc only sets `serialCommand`; web_service() consumes it from loop() on its
@@ -290,13 +296,17 @@ def press(host, probe, command, timeout=6.0):
     that global -- a second press before the first is consumed is a press thrown
     away, which would make a repeated-press test quietly measure fewer presses
     than it made.
+
+    `pixels` is the press magnitude in OUTPUT pixels; None asks for the pad's own
+    step.
     """
     spec = WATCH[command]
     before = probe.read_field(spec)
-    status, _ = get(host, f"/sc?{command}")
-    assert status == 200, f"/sc?{command} returned {status}"
+    path = f"/sc?{command}" if pixels is None else f"/sc?{command}={pixels}"
+    status, _ = get(host, path)
+    assert status == 200, f"{path} returned {status}"
     landed = wait_for(lambda: probe.read_field(spec) != before, timeout=timeout)
-    assert landed, (f"/sc?{command} did not move {spec[0]} from {before} "
+    assert landed, (f"{path} did not move {spec[0]} from {before} "
                     f"within {timeout}s -- was the press absorbed?")
 
 
@@ -427,6 +437,33 @@ def test_the_reset_control_returns_the_framing_to_default(host, probe, scaling):
         f"returning it to {DEFAULT_FRAMING}")
 
     reset_the_framing(host)
+
+
+@pytest.mark.pan
+def test_a_press_moves_by_the_pixels_it_is_given(host, probe, framed):
+    """A press carries its own magnitude, and one output pixel is the finest move.
+
+    Without it the smallest step reachable from outside is the pad's own, which
+    is magnification-scaled -- so an instrument creeping a boundary one unit at a
+    time cannot do it through the controls, and reaches for a setter the user
+    does not have.
+
+    Axis::stepUnits() floors at one capture granule, so a press of one pixel is
+    the smallest move the hardware acts on whatever the scale happens to be.
+    """
+    before = framing(host)["ph"]
+    press(host, probe, "+", pixels=1)
+    fine = framing(host)["ph"] - before
+    assert fine == GRANULE["horizontal"], (
+        f"a one-pixel pan moved {fine} units, not one granule "
+        f"({GRANULE['horizontal']}): the magnitude did not reach the control")
+
+    at = framing(host)["ph"]
+    press(host, probe, "+")
+    default = framing(host)["ph"] - at
+    assert default > fine, (
+        f"the pad's own step moved {default} units against the fine press's "
+        f"{fine}, so a press with no magnitude is no longer the coarse one")
 
 
 def test_a_zoom_press_leaves_the_windows_following_the_capture(host, probe, framed):

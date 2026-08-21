@@ -36,9 +36,9 @@ import argparse
 import json
 import sys
 import time
-import urllib.parse
 import urllib.request
 
+import gbs_unit
 import output_raster as our
 
 # Read back after every apply. VDS_HB_SP and PB_FETCH_NUM are the tells that the
@@ -182,14 +182,11 @@ def framing(host):
 def resolve(host):
     """Force the engine to re-derive every window against the raster as it stands.
 
-    /geometry sets `changed` whenever a parameter is PRESENT, so re-requesting the
-    current framing still queues a full solve. It is drained from loop() and works
-    while frozen, which is exactly the seam this needs -- the raster registers are
-    written here, and the engine recomputes the eight blanking registers from them.
+    Honoured while frozen, which is what this needs: the raster registers are
+    written here and the engine recomputes the eight blanking registers from
+    them.
     """
-    current = framing(host)
-    query = urllib.parse.urlencode(current)
-    return json.loads(_get(host, f"/geometry?{query}"))
+    return gbs_unit.resolve(host)
 
 
 def snapshot(host):

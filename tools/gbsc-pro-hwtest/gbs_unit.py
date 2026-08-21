@@ -166,6 +166,60 @@ def locked_steadily(host, samples=LOCK_SAMPLES, interval=0.4):
     return True
 
 
+# The pad each framing field moves on, as (increase, decrease). One press moves
+# at least one capture granule, so a press of one output pixel is the smallest
+# move the hardware acts on whatever the scale happens to be.
+FRAMING_PADS = {"zh": ("I", "O"), "zv": ("5", "4"),
+                "ph": ("+", "-"), "pv": ("/", "*")}
+
+
+def press(host, pad, pixels=None):
+    """One pad press, of `pixels` output pixels or the pad's own step."""
+    path = f"/sc?{pad}" if pixels is None else f"/sc?{pad}={pixels}"
+    return get(host, path)[0] == 200
+
+
+def framing_to(host, field, wanted, attempts=64):
+    """Walk one framing field to `wanted` through the pads, and report where it
+    landed. A solve clamps the framing it is given, so not every value is
+    reachable and the caller must read the answer rather than assume it."""
+    up, down = FRAMING_PADS[field]
+    pixels = 1
+    for _ in range(attempts):
+        at = get_json(host, "/geometry")[1]
+        if at is None:
+            return None
+        remaining = wanted - at[field]
+        if remaining == 0:
+            return at
+        press(host, up if remaining > 0 else down, pixels)
+        # /sc queues into a global loop() reads on its next tick, so a 200 is
+        # not a press that has landed.
+        moved = wait_for(
+            lambda: (lambda now: now if now and now[field] != at[field] else None)(
+                get_json(host, "/geometry")[1]),
+            timeout=6.0)
+        if moved is None:
+            return at         # clamped, or the press was absorbed
+        # Output pixels per unit, learned rather than assumed: the scale is the
+        # engine's and moves with every solve.
+        per_pixel = abs(moved[field] - at[field]) / float(pixels)
+        pixels = max(1, int(abs(wanted - moved[field]) / per_pixel))
+    return get_json(host, "/geometry")[1]
+
+
+def framing_by(host, field, units):
+    """Move one framing field by `units`, and report where it landed."""
+    at = get_json(host, "/geometry")[1]
+    return framing_to(host, field, at[field] + units) if at else None
+
+
+def resolve(host):
+    """Re-derive every register from the framing held and the source as it reads
+    now, without moving the framing."""
+    return get(host, "/sc?U")[0] == 200
+
+
 def reset_framing(host, timeout=20.0):
     """Put the engine's framing back to default. True once it has landed.
 

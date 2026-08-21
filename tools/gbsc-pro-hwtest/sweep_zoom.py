@@ -168,7 +168,9 @@ class Sweep:
             # The baseline for "did the unit accept the press", taken once.
             self._previous = self._snapshot()
         self.zoom += units
-        self._apply(self.zoom)
+        # The engine clamps, so the zoom is where it LANDED rather than where it
+        # was sent -- otherwise the sweep walks a counter the unit is not on.
+        _, self.zoom = self._apply(self.zoom)
         return self._measure()
 
     def _measure(self):
@@ -192,8 +194,7 @@ class Sweep:
 
     def restore(self):
         """Back to the framing the sweep started from."""
-        self._apply(self._origin)
-        self.zoom = self._origin
+        _, self.zoom = self._apply(self._origin)
 
 
 # --- the unit ---------------------------------------------------------------
@@ -230,12 +231,15 @@ def snapshotter(host, regs, fields=characterise.FIELDS):
 
 
 def applier(host, axis, snapshot, settle=8.0, interval=0.4):
-    """Set the framing, then wait for the geometry to stop moving."""
-    from gbs_unit import get_json
+    """Walk the zoom to a value through the pads, then wait for the geometry to
+    stop moving. Returns the settled state and where the zoom actually landed --
+    the engine clamps, so a swept value is not always reachable."""
+    from gbs_unit import framing_to
 
     def apply(value):
-        get_json(host, f"/geometry?z{axis}={value}")
-        return wait_until_settled(snapshot, timeout=settle, interval=interval)
+        landed = framing_to(host, f"z{axis}", value)
+        state = wait_until_settled(snapshot, timeout=settle, interval=interval)
+        return state, value if landed is None else landed[f"z{axis}"]
 
     return apply
 
@@ -406,8 +410,8 @@ def main(argv=None):
 
     start = zoom if args.start is None else args.start
     if start != zoom:
-        print(f"  jumping zoom {args.axis} {zoom} -> {start}")
-        apply_zoom(start)
+        print(f"  walking zoom {args.axis} {zoom} -> {start}")
+        _, start = apply_zoom(start)
 
     sweep = Sweep(apply_zoom, snapshot,
                   lambda row: characterise.append(args.index, row),

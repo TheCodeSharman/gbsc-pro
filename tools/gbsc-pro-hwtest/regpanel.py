@@ -36,6 +36,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import gbs_unit
+
 HOST = None
 
 # (label, segment, register, bit offset, width, note). Order is display order.
@@ -517,8 +519,15 @@ def framing():
 
 
 def set_framing(**wanted):
-    body = _get("/geometry?" + urllib.parse.urlencode(wanted))
-    return json.loads(body) if body else None
+    """Walk each named field to its value through the pads, and report where the
+    framing landed. There is no route that sets it outright: a panel must reach
+    what the person at the OSD can reach."""
+    landed = None
+    for field, value in wanted.items():
+        landed = gbs_unit.framing_to(HOST, field, value)
+        if landed is None:
+            return None
+    return landed
 
 
 def pan(dx, dy):
