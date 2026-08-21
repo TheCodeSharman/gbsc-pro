@@ -22,9 +22,9 @@ static uint8_t atLeastOne(uint8_t oversample)
     return oversample == 0 ? 1 : oversample;
 }
 
-uint16_t SourceMeasurement::ifLineFor(uint16_t divider)
+uint16_t SourceMeasurement::ifLineFor(uint16_t divider, bool lineDoubled)
 {
-    return (uint16_t)(divider / 2);
+    return lineDoubled ? (uint16_t)(divider / 2) : divider;
 }
 
 // Integer, because the ESP8266 has no FPU and this runs on every solve. The
@@ -70,18 +70,28 @@ uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz
         || sourceLines > CaptureWindow::SourceVerticalTotalMax)
         return 0;
 
-    // Which rate the line count makes plausible, then agreement within 2%.
-    // CaptureWindow::PalVerticalTotalMin is the same split the firmware's mode detect uses.
-    float nominal = sourceLines > CaptureWindow::PalVerticalTotalMin ? 50.0f : 60.0f;
-    float error = fieldRateHz > nominal ? fieldRateHz / nominal
-                                        : nominal / fieldRateHz;
-    if (!(fieldRateHz > 0.0f) || !(error < 1.02f))
+    if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
         return 0;
 
     return (uint32_t)(fieldRateHz * (float)sourceLines);
 }
 
-uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t oversample)
+bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
+                                         uint16_t heldLines, uint32_t heldLineRateHz)
+{
+    if (heldLineRateHz == 0 || lineRateHz == 0)
+        return true;
+    if (lines != heldLines)
+        return true;
+
+    uint32_t larger = lineRateHz > heldLineRateHz ? lineRateHz : heldLineRateHz;
+    uint32_t smaller = lineRateHz > heldLineRateHz ? heldLineRateHz : lineRateHz;
+
+    return (larger - smaller) * 1000u <= (uint32_t)HeldRateTolerancePerMille * smaller;
+}
+
+uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
+                                               bool lineDoubled)
 {
     uint16_t ceiling = maxDivider(lineRateHz, oversample);
     if (ceiling == 0)
@@ -92,7 +102,9 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
     // The second ceiling: a line the capture path cannot write to the end of.
     // InputLine::WriteLimitUnits is in IF units and ifLineFor() halves, so the
     // divider that puts the line end exactly on the limit is twice it.
-    const uint16_t forWriteLimit = (uint16_t)(InputLine::WriteLimitUnits * 2);
+    const uint16_t forWriteLimit = lineDoubled
+        ? (uint16_t)(InputLine::WriteLimitUnits * 2)
+        : InputLine::WriteLimitUnits;
     if (backed > forWriteLimit)
         backed = forWriteLimit;
 
@@ -109,7 +121,9 @@ const uint8_t SourceMeasurement::RateAgreementAttempts;
 
 SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
-      agreedRateHz_(0.0f), steadyLines_(0), steadyRun_(0), rateAttempts_(0)
+      agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
+      rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
+      rateAttempts_(0)
 {
 }
 
@@ -168,19 +182,27 @@ bool SourceMeasurement::rateSettled()
 // source is still settling after a preset load passes one comfortably -- 57.9
 // Hz against a real 50.08 -- and the divider comes out proportionally wrong:
 // PLLAD_MD 2204 where 2548 is due, on a source locked at 311 lines / 50.08 Hz.
-// lineRateFrom() cross-checks the rate against the line count.
-//
-// **THE CROSS-CHECK IS NECESSARY AND NOT SUFFICIENT, so both inputs are
-// logged.** It catches a rate that disagrees with the line count; it cannot
-// catch a line count that is simply wrong, because any count above
-// CaptureWindow::PalVerticalTotalMin makes 50 Hz plausible, and nothing
-// downstream can report which of the two was at fault.
-// docs/firmware-geometry-engine.md
+// rateFollowsCount() rejects it: the count did not move, so the rate did not
+// either. Both inputs are logged, because neither alone says which was at
+// fault. docs/firmware-geometry-engine.md
 bool SourceMeasurement::measureLineRate()
 {
     sourceLines_ = measureSourceLines();
     fieldRateHz_ = getSourceFieldRate(0);
     lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
+
+    // Against the last reading that was GOOD, not the last one taken: a refusal
+    // that cleared the held rate would disarm this for the pass after it.
+    if (!rateFollowsCount(sourceLines_, lineRateHz_, goodLines_, goodLineRateHz_)
+        && ++rateRejections_ < HeldRateRejectionLimit) {
+        lineRateHz_ = 0;
+    }
+
+    if (lineRateHz_ != 0) {
+        goodLines_ = sourceLines_;
+        goodLineRateHz_ = lineRateHz_;
+        rateRejections_ = 0;
+    }
 
     char line[72];
     snprintf(line, sizeof(line), "sampling: %u lines x %u.%02u Hz -> line rate %u",
@@ -193,7 +215,7 @@ bool SourceMeasurement::measureLineRate()
 
 bool SourceMeasurement::solve(uint32_t lineRateHz, uint8_t oversample)
 {
-    uint16_t chosen = recommendedDivider(lineRateHz, oversample);
+    uint16_t chosen = recommendedDivider(lineRateHz, oversample, lineDoubled_);
     if (chosen == 0)
         return false;
     divider_ = chosen;
@@ -215,7 +237,11 @@ uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
-uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_); }
+uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoubled_); }
+
+void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }
+
+bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
 
 uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
 

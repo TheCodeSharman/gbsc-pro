@@ -131,19 +131,24 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
     }
 }
 
-TEST_CASE("a field rate disagreeing with the line count is waited out too")
+TEST_CASE("a field rate that moves without the line count is waited out too")
 {
     Bench bench;
 
-    // 311 lines says PAL, so ~50 Hz; a 60 Hz reading is the transient this guard
-    // exists for, and it passes a plain bounds check comfortably. A raster
-    // solved at the wrong rate is out by the ratio of the rates.
+    g_fieldRate = 50.08f;
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    REQUIRE(pollUntilSolved(bench.engine));
+    REQUIRE(horizontalTotalWritten() == 1916);
+
+    // The same 311-line source now reading 60 Hz is the transient this guard
+    // exists for. A raster solved at the wrong rate is out by the ratio of the
+    // rates, so the previous answer has to stand.
     g_fieldRate = 60.0f;
     bench.engine.modeChanged(&Mode1080p, false, 4);
     CHECK_FALSE(pollUntilSolved(bench.engine));
-    CHECK(Wire.field(3, 0x01, 0, 12) == horizontalTotalUnwritten());
+    CHECK(horizontalTotalWritten() == 1916);
 
-    SUBCASE("and the poll after the two agree lands it") {
+    SUBCASE("and the poll after the rate returns lands it") {
         g_fieldRate = 50.08f;
         REQUIRE(pollUntilSolved(bench.engine));
         CHECK(horizontalTotalWritten() == 1916);

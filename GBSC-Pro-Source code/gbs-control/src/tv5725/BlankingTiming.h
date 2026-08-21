@@ -6,7 +6,6 @@
 #include <stdint.h>
 
 namespace Tv5725 {
-// IF units horizontally, HALF-LINES vertically.
 class BlankingTiming {
 public:
     BlankingTiming();

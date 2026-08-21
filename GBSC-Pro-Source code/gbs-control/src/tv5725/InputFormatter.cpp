@@ -72,4 +72,14 @@ void InputFormatter::writeLineCounter(uint16_t units)
     IF_HSYNC_RST::write(units);
 }
 
+void InputFormatter::applyScanMode(ScanMode mode)
+{
+    const bool progressive = mode == Progressive;
+
+    IF_HS_DEC_FACTOR::write(progressive ? 0 : 1);
+    IF_LD_SEL_PROV::write(progressive ? 1 : 0);
+    IF_PRGRSV_CNTRL::write(progressive ? 1 : 0);
+    IF_LD_RAM_BYPS::write(progressive ? 1 : 0);
+}
+
 }  // namespace Tv5725

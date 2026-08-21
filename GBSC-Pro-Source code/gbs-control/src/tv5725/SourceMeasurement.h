@@ -49,14 +49,11 @@ public:
     // an unlock is reproduced at 98%, this is the one constant to move.
     static const uint16_t RecommendedPercent = 98;
 
-    // The source's line rate in Hz, or 0 when the measurement is not SETTLED.
-    //
-    // A divider solved at the wrong rate is out by the ratio of the rates, and
-    // a field rate read while the source is still settling after a preset load
-    // is wrong by tens of percent. The sync processor's LINE COUNT is reliable
-    // where the period measurement is not, so the count says which rate is
-    // plausible and the measurement need only agree within 2%. Returning 0
-    // rather than a guess lets solve() decline.
+    // The source's line rate in Hz, or 0 when neither the count nor the rate is
+    // something video runs at. Both bounds are gross-error nets: 50 and 60 are
+    // not special and a rate is whatever the source sends. What rejects a
+    // reading taken mid-settle is rateFollowsCount(). Returning 0 rather than a
+    // guess lets solve() decline.
     static uint32_t lineRateFrom(uint16_t sourceLines, float fieldRateHz);
 
     // How far along the line the sync processor stops retiming hsync, in
@@ -71,9 +68,11 @@ public:
     // The ceiling recommendedDivider() does apply is the capture write limit,
     // which bounds the LINE rather than the tearing. docs/capture-limits.md
 
-    // The IF counts the ADC line after decimation by two. Measured: PLLAD_MD
-    // 2553 against IF_HSYNC_RST 1276.
-    static uint16_t ifLineFor(uint16_t divider);
+    // ADC samples to IF units. The input formatter's horizontal decimation is
+    // what relates them, and only the line-doubled scan mode applies it:
+    // PLLAD_MD 2553 against IF_HSYNC_RST 1276 line-doubled, 2553 against 2553 not.
+    // A counter wrapping at half the samples arriving repeats the picture.
+    static uint16_t ifLineFor(uint16_t divider, bool lineDoubled);
 
     // The same quantity in a THIRD register: SP_RT_HS_SP counts in ADC samples,
     // so a divider that moves without it leaves the sync processor retiming a
@@ -101,7 +100,8 @@ public:
     // Returns 0 for an unmeasurable line rate rather than a default. A divider
     // written from a measurement that did not happen takes the sync processor
     // with it, leaving no picture to diagnose from.
-    static uint16_t recommendedDivider(uint32_t lineRateHz, uint8_t oversample);
+    static uint16_t recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
+                                       bool lineDoubled);
 
     // Nothing chosen yet. A caller must be able to SEE that rather than get a
     // zero it would go on to write.
@@ -130,6 +130,32 @@ public:
     void resetSteadiness();
 
     bool measureLineRate();
+
+    // A gross sanity net on the measured field rate, not a classification: the
+    // rate is whatever the source runs at, and 50 and 60 are not special.
+    // Outside this nothing being fed to the part is video.
+    static constexpr float FieldRateMinHz = 15.0f;
+    static constexpr float FieldRateMaxHz = 150.0f;
+
+    // How far a line rate may move while the source line count does not, in
+    // parts per thousand. A gross-error net: the bench transient is 15.6% out
+    // (57.9 Hz against a real 50.08) and a settled source drifts by tenths of
+    // one, so anything between separates them. rateSettled() is what holds the
+    // fine tolerance.
+    static const uint16_t HeldRateTolerancePerMille = 50;
+
+    // How many consecutive readings may be refused before one is taken as it
+    // stands. A source that genuinely changes rate without changing its line
+    // count would otherwise hold the mode change open for ever, and the capture
+    // stays frozen for as long as it is open. Each refusal costs a measurement,
+    // so this is seconds rather than milliseconds.
+    static const uint8_t HeldRateRejectionLimit = 60;
+
+    // Whether a new measurement is consistent with the one already held. False
+    // means the rate moved without the count, which is a reading taken while
+    // the source was still settling rather than a new mode.
+    static bool rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
+                                 uint16_t heldLines, uint32_t heldLineRateHz);
 
     // How far two field-rate readings may differ and still be the same rate, in
     // parts per thousand. One reading of one field period at the ESP's clock,
@@ -176,6 +202,14 @@ public:
     uint16_t sourceLines() const;
     float fieldRateHz() const;
     uint16_t ifLine() const;
+
+    // Whether the line doubler is in the capture path, which the scan mode
+    // decides. It runs the IF's line counter at twice the source line rate, so
+    // it is the one fact behind both the horizontal decimation and the vertical
+    // half-lines. Held rather than read back: InputFormatter::applyScanMode()
+    // owns the registers and this owns the arithmetic that has to match them.
+    void holdLineDoubling(bool lineDoubled);
+    bool lineDoubled() const;
     uint16_t retimeStop() const;
 
     // All three registers, from the one held value.
@@ -188,6 +222,11 @@ private:
     uint16_t sourceLines_;
     float fieldRateHz_;
     float agreedRateHz_;
+    uint16_t goodLines_;
+    uint32_t goodLineRateHz_;
+    uint8_t rateRejections_;
+    bool lineDoubled_;
+
     uint16_t steadyLines_;
     uint8_t steadyRun_;
     uint8_t rateAttempts_;

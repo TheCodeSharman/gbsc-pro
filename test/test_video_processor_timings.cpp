@@ -30,7 +30,7 @@ using namespace Tv5725;
 
 TEST_CASE("nothing is inherited from the registers")
 {
-    // The bench state: 798 IF units captured on a 1126-unit line, 513 half-lines
+    // The bench state: 798 IF units captured on a 1126-unit line, 513 units
     // of a 312-line frame, onto a 1445 x 1126 output raster.
     VideoProcessorTimings s(798, 513, 1445, 1126);
 
@@ -49,8 +49,8 @@ TEST_CASE("nothing is inherited from the registers")
         CHECK(((s.memory().vertical().start() < 1125) && (s.display().vertical().start() < 1125)));
     }
 
-    SUBCASE("the vertical picture is not doubled by reading half lines as lines") {
-        // ~2200 would mean IF_VB was read as whole lines.
+    SUBCASE("the vertical picture is not doubled") {
+        // ~2200 would mean the capture had been doubled on the way through.
         CHECK(((s.producedVertical() > 900) && (s.producedVertical() < 1130)));
     }
 

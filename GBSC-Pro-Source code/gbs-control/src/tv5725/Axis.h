@@ -113,8 +113,8 @@ public:
     PictureOrigin placePicture(float produced, uint16_t rasterTotal,
                            float magnification, uint16_t activeStart = 0) const;
 
-    // This axis's four output registers. `capture` is IF units horizontally and
-    // HALF-LINES vertically -- reading IF_VB as whole lines doubles the picture.
+    // This axis's four output registers, from a capture in whatever units the
+    // input formatter counted it in.
     AxisSolution solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
                        uint16_t activeStart = 0, uint16_t activeStop = 0) const;
 

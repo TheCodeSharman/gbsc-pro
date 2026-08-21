@@ -245,6 +245,15 @@ public:
     // The line counter, in IF units. SourceMeasurement decides the value off
     // the ADC divider; this block is where the register lives.
     static void writeLineCounter(uint16_t units);
+
+    // Whether the line doubler is in the capture path.
+    enum ScanMode {
+        LineDoubled,   // 15 kHz source, doubled to the output line rate
+        Progressive,   // already at line rate, doubler bypassed
+    };
+
+    // Put every register that decides the scan mode into one of the two states.
+    static void applyScanMode(ScanMode mode);
 };
 
 }  // namespace Tv5725

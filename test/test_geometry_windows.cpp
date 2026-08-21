@@ -98,8 +98,8 @@ TEST_CASE("the capture window is a window, not a leftover")
     CHECK(Wire.field(3, 0x14, 4, 11) < Wire.field(3, 0x13, 0, 11));  // display V
 
     // And inside the raster it is placed on, which is the other half of being a
-    // window: the vertical capture counts HALF-lines, so it wraps at twice the
-    // source frame.
+    // window. The doubler is in the path on this source, so the vertical capture
+    // counts half-lines and wraps at twice the source frame.
     CHECK(Wire.field(1, 0x18, 0, 11) <= 1277);
     CHECK(Wire.field(1, 0x1C, 0, 11) <= 2 * 312u);
     CHECK(Wire.field(3, 0x13, 0, 11) <= 1126);
@@ -178,11 +178,11 @@ TEST_CASE("a load that is not a custom preset computes the divider it uses")
     bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
     REQUIRE(pollUntilSolved(bench.engine));
 
-    const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4);
+    const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4, true);
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
 
     CHECK(Wire.field(5, 0x12, 0, 12) == wanted);
-    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted, true));
     CHECK(Wire.field(5, 0x4B, 0, 12) == SourceMeasurement::retimeStopFor(wanted));
 
     SUBCASE("and the solve that follows uses it") {
@@ -190,7 +190,7 @@ TEST_CASE("a load that is not a custom preset computes the divider it uses")
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
         REQUIRE(bench.engine.resolve());
-        CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted));
+        CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted, true));
     }
 }
 
@@ -206,7 +206,7 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     g_fieldRate = 0.0f;
     bench.engine.modeChanged(&Tv5725::Mode1080p, false, 4);
     CHECK_FALSE(pollUntilSolved(bench.engine));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited, true));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
         g_fieldRate = 50.08f;
@@ -231,10 +231,12 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
 // vertical window sized for a frame the source is not sending -- and, having
 // succeeded, never revisits it.
 //
-// solveRaster() already refuses this: it takes the line count as the reliable
-// figure, picks the nominal rate from it, and requires the measured field rate
-// to agree within 2%. The capture solve owes the same test.
-TEST_CASE("a vertical total that disagrees with the field rate defers the solve")
+// What still refuses one is the 200..1300 bound and SourceMeasurement's
+// steadiness run. **A transient count inside the bounds that holds still long
+// enough is no longer caught**, because telling it from a real source at those
+// timings needs an assumed field rate, and that assumption is what refused
+// 640x480@75 outright. docs/firmware-geometry-engine.md
+TEST_CASE("a vertical total outside what any source runs defers the solve")
 {
     Wire.reset();
     Wire.poison(Poison);
@@ -245,9 +247,8 @@ TEST_CASE("a vertical total that disagrees with the field rate defers the solve"
     seed(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
     seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD
 
-    // 251 lines at the source's own 50 Hz is a 12.6 kHz line rate against the
-    // 15.6 kHz it is really sending: in range, and wrong by a fifth.
-    seed(0, 0x1B, 0, 11, 251);    // STATUS_SYNC_PROC_VTOTAL, mid-settle
+    // The 97 a preset load leaves behind, below SourceVerticalTotalMin.
+    seed(0, 0x1B, 0, 11, 97);     // STATUS_SYNC_PROC_VTOTAL, mid-load
     g_fieldRate = 50.08f;
 
     DisplayClock clock;

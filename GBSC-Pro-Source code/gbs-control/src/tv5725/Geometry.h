@@ -50,6 +50,12 @@ public:
     // now. Measures, so it must run from loop().
     bool resolve();
 
+    // Which scan mode the input formatter was put in, because both the capture
+    // width and the frame the vertical window sits on are computed from the
+    // line doubling it applies. InputFormatter::applyScanMode() owns the
+    // registers; this owns the arithmetic that has to agree with them.
+    void scanModeChanged(bool lineDoubled);
+
     // The source field rate the last solve ran at. Held, not measured here, so
     // a network callback may ask.
     float sourceFieldRateHz() const;

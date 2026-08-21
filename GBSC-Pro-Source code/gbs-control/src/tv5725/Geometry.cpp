@@ -23,6 +23,8 @@ Geometry::Geometry(DisplayClock &displayClock)
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
+void Geometry::scanModeChanged(bool lineDoubled) { sampling_.holdLineDoubling(lineDoubled); }
+
 float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
 bool Geometry::resolve()

@@ -28,11 +28,6 @@ public:
     static const uint16_t SourceVerticalTotalMin = 200;
     static const uint16_t SourceVerticalTotalMax = 1300;
 
-    // Above this the source is a 50 Hz standard -- PAL-like ~312 lines, NTSC-like
-    // ~262. Sanity-checks a measured field rate, which is transient during a
-    // preset load where the line count is not.
-    static const uint16_t PalVerticalTotalMin = 290;
-
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 

@@ -3286,11 +3286,6 @@ void doPostPresetLoadSteps()
         }
 
         if (!rto->isCustomPreset) {
-            if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 ||
-                rto->videoStandardInput == 8 || rto->videoStandardInput == 9) {
-                GBS::IF_LD_RAM_BYPS::write(1);
-            }
-
             GBS::IF_INI_ST::write(0);
 
             GBS::IF_HS_INT_LPF_BYPS::write(0);
@@ -3331,6 +3326,9 @@ void doPostPresetLoadSteps()
                 GBS::ADC_FLTR::write(3);
                 GBS::PLLAD_KS::write(2);
                 setOverSampleRatio(4, true);
+                Tv5725::InputFormatter::applyScanMode(
+                    Tv5725::InputFormatter::LineDoubled);
+                geometry.scanModeChanged(true);
                 GBS::IF_SEL_WEN::write(0);
                 if (rto->inputIsYpBpR) {
                     GBS::IF_HS_TAP11_BYPS::write(0);
@@ -3344,9 +3342,6 @@ void doPostPresetLoadSteps()
                     setCsVsStop(0);
                     GBS::IF_VS_SEL::write(1);
                     GBS::IF_VS_FLIP::write(0);
-                    GBS::IF_LD_RAM_BYPS::write(0);
-                    GBS::IF_HS_DEC_FACTOR::write(1);
-                    GBS::IF_LD_SEL_PROV::write(0);
                     GBS::IF_HB_ST::write(2);
                     GBS::MADPT_Y_VSCALE_BYPS::write(0);
                     GBS::MADPT_UV_VSCALE_BYPS::write(0);
@@ -3376,9 +3371,9 @@ void doPostPresetLoadSteps()
                     GBS::IF_HB_SP::write(0);
                 }
                 setOverSampleRatio(2, true);
-                GBS::IF_HS_DEC_FACTOR::write(0);
-                GBS::IF_LD_SEL_PROV::write(1);
-                GBS::IF_PRGRSV_CNTRL::write(1);
+                Tv5725::InputFormatter::applyScanMode(
+                    Tv5725::InputFormatter::Progressive);
+                geometry.scanModeChanged(false);
                 GBS::IF_SEL_WEN::write(1);
                 GBS::IF_HS_SEL_LPF::write(0);
                 GBS::IF_HS_TAP11_BYPS::write(0);

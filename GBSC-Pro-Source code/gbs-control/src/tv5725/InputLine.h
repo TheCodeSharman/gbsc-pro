@@ -8,8 +8,9 @@
 
 namespace Tv5725 {
 
-// The line the framing is applied to -- IF units horizontally, HALF-LINES
-// vertically -- together with the part of it the capture window may not take.
+// The line the framing is applied to, together with the part of it the capture
+// window may not take. What a unit is belongs to whoever counted them --
+// CaptureWindow decides it per axis, from the scan mode.
 // PanAndZoom::capture() and PanAndZoom::clampToLine() clamp against this and
 // must agree exactly: one unit of disagreement is a dead zone where every press
 // back produces an identical window. docs/firmware-geometry-engine.md
@@ -27,7 +28,7 @@ public:
 
     InputLine(uint16_t units, uint16_t syncUnits);
 
-    // Where the window rolls over: IF_HSYNC_RST + 1, or 2 x (VTOTAL + 1).
+    // Where the window rolls over.
     uint16_t units() const;
 
     // How much of the line the hsync pulse takes at the HEAD.

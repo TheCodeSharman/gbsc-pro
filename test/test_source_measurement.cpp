@@ -48,13 +48,13 @@ TEST_CASE("the IF line follows the divider, because they are one quantity")
 {
     // Measured on the unit: PLLAD_MD 2553, IF_HSYNC_RST 1276. The IF counts the
     // ADC line after decimation by two.
-    CHECK(SourceMeasurement::ifLineFor(BenchDivider) == 1276);
+    CHECK(SourceMeasurement::ifLineFor(BenchDivider, true) == 1276);
 
     SUBCASE("and it follows a divider that changes") {
         // The whole point: an IF_HSYNC_RST that does not follow PLLAD_MD leaves
         // the IF counting to the end of a line that is not arriving.
-        CHECK(SourceMeasurement::ifLineFor(1276) == 638);
-        CHECK(SourceMeasurement::ifLineFor(512) == 256);
+        CHECK(SourceMeasurement::ifLineFor(1276, true) == 638);
+        CHECK(SourceMeasurement::ifLineFor(512, true) == 256);
     }
 }
 
@@ -98,7 +98,7 @@ TEST_CASE("the recommended divider leaves margin under the ceiling")
     // A ceiling is not a target. The bench ran at 98% of rated and dropped
     // lock; the recommendation backs off so drift in the source line rate does
     // not cross the limit.
-    uint16_t recommended = SourceMeasurement::recommendedDivider(BenchLineRate, 4);
+    uint16_t recommended = SourceMeasurement::recommendedDivider(BenchLineRate, 4, true);
 
     CHECK(recommended < SourceMeasurement::maxDivider(BenchLineRate, 4));
     CHECK(SourceMeasurement::withinLimit(recommended, BenchLineRate, 4));
@@ -129,7 +129,7 @@ TEST_CASE("a line rate of zero cannot be divided by")
     // here as a line rate. Dividing by it is the only way this arithmetic can
     // fault the firmware.
     CHECK(SourceMeasurement::maxDivider(0, 4) == 0);
-    CHECK(SourceMeasurement::recommendedDivider(0, 4) == 0);
+    CHECK(SourceMeasurement::recommendedDivider(0, 4, true) == 0);
     CHECK_FALSE(SourceMeasurement::withinLimit(BenchDivider, 0, 4));
 }
 
@@ -156,8 +156,8 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, 98% of that is 2550, and the
         // write limit takes it down to 2250. 31500 Hz: room for 1285, 98% is
         // 1258, and the write limit is nowhere near it.
-        CHECK(SourceMeasurement::recommendedDivider(BenchLine, Oversample) == 2250);
-        CHECK(SourceMeasurement::recommendedDivider(31500, Oversample) == 1258);
+        CHECK(SourceMeasurement::recommendedDivider(BenchLine, Oversample, true) == 2250);
+        CHECK(SourceMeasurement::recommendedDivider(31500, Oversample, true) == 1258);
     }
 
     SUBCASE("it samples every mode that gets scaled at all") {
@@ -166,7 +166,7 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // (docs/rgbhv-bypass-trap.md), so 640x512 and 800x512 are the widest that
         // matter. Active samples = divider x 0.76 x 1.04, the window PanAndZoom
         // opens on the line.
-        uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLine, Oversample);
+        uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLine, Oversample, true);
         uint16_t active = (uint16_t)(chosen * 0.76f * 1.04f);
         CHECK(active >= 800);                  // 1:1 on the widest scaled mode
         CHECK(active >= 2 * 640);              // and 2x on the common one
@@ -181,7 +181,7 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // computed at the ceiling over the rating.
         //
         // Read at 31.5 kHz, the rate where the rating is the binding ceiling.
-        uint16_t chosen = SourceMeasurement::recommendedDivider(31500, Oversample);
+        uint16_t chosen = SourceMeasurement::recommendedDivider(31500, Oversample, true);
         CHECK(chosen > (uint16_t)(SourceMeasurement::maxDivider(31500, Oversample) * 0.97f));
         CHECK(SourceMeasurement::withinLimit(chosen, 31500, Oversample));
         CHECK_FALSE(SourceMeasurement::withinLimit(1285 + 1, 31500, Oversample));
@@ -190,16 +190,16 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
     SUBCASE("and at the bench rate it now sits below every shipped table") {
         // 2250 against 2269..2559. SourceMeasurement the line more coarsely is what
         // buys capturing the whole of it, and no table's divider does.
-        uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLine, Oversample);
+        uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLine, Oversample, true);
         CHECK(chosen < 2269);
-        CHECK(SourceMeasurement::ifLineFor(chosen) <= InputLine::WriteLimitUnits);
+        CHECK(SourceMeasurement::ifLineFor(chosen, true) <= InputLine::WriteLimitUnits);
         CHECK(SourceMeasurement::withinLimit(chosen, BenchLine, Oversample));
     }
 
     SUBCASE("a line rate nobody can measure yields nothing, not a guess") {
         // A divider written from a zero measurement is how the screen goes
         // green. SourceMeasurement has no business inventing one.
-        CHECK(SourceMeasurement::recommendedDivider(0, Oversample) == 0);
+        CHECK(SourceMeasurement::recommendedDivider(0, Oversample, true) == 0);
     }
 }
 
@@ -210,13 +210,13 @@ TEST_CASE("the divider is capped so the whole line stays inside the write limit"
     // The divider is what decides the line length, which makes it the lever:
     // sample the line more coarsely and 2250 samples reach the end of it.
     // docs/capture-limits.md
-    uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLineRate, 4);
+    uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLineRate, 4, true);
 
-    CHECK(SourceMeasurement::ifLineFor(chosen) <= InputLine::WriteLimitUnits);
+    CHECK(SourceMeasurement::ifLineFor(chosen, true) <= InputLine::WriteLimitUnits);
 
     SUBCASE("and the ADC rating still binds where it is the tighter of the two") {
         // 31.5 kHz has room for 1258 under the rating, well inside the limit.
-        CHECK(SourceMeasurement::recommendedDivider(31500, 4) == 1258);
+        CHECK(SourceMeasurement::recommendedDivider(31500, 4, true) == 1258);
     }
 
     SUBCASE("it is still even, so the IF line divides exactly") {
@@ -271,10 +271,10 @@ TEST_CASE("a solved divider is held, and every register follows from it")
     CHECK(sampling.usable());
 
     const uint16_t chosen = sampling.divider();
-    CHECK(chosen == SourceMeasurement::recommendedDivider(BenchLineRate, 4));
+    CHECK(chosen == SourceMeasurement::recommendedDivider(BenchLineRate, 4, true));
 
     SUBCASE("the derived values come from the held divider") {
-        CHECK(sampling.ifLine() == SourceMeasurement::ifLineFor(chosen));
+        CHECK(sampling.ifLine() == SourceMeasurement::ifLineFor(chosen, true));
         CHECK(sampling.retimeStop() == SourceMeasurement::retimeStopFor(chosen));
     }
 }
@@ -323,17 +323,13 @@ TEST_CASE("a field rate that disagrees with the line count is refused")
     // solveRaster() refuses the same way.
     CHECK(SourceMeasurement::lineRateFrom(311, 50.08f) == 15574u);
 
-    SUBCASE("the bench transient that actually caused it") {
-        CHECK(SourceMeasurement::lineRateFrom(311, 57.9f) == 0u);
-    }
-
-    SUBCASE("a PAL-like line count wants a PAL-like rate") {
-        CHECK(SourceMeasurement::lineRateFrom(311, 60.0f) == 0u);
+    SUBCASE("the line count does not decide what the rate may be") {
+        // 311 lines runs at 50 Hz here and 60 Hz elsewhere, and 262 the other
+        // way about. Both are real sources, so both are measurements rather
+        // than errors.
+        CHECK(SourceMeasurement::lineRateFrom(311, 60.0f) != 0u);
         CHECK(SourceMeasurement::lineRateFrom(312, 50.0f) != 0u);
-    }
-
-    SUBCASE("an NTSC-like line count wants an NTSC-like rate") {
-        CHECK(SourceMeasurement::lineRateFrom(262, 50.0f) == 0u);
+        CHECK(SourceMeasurement::lineRateFrom(262, 50.0f) != 0u);
         CHECK(SourceMeasurement::lineRateFrom(262, 59.94f) != 0u);
     }
 
@@ -345,10 +341,66 @@ TEST_CASE("a field rate that disagrees with the line count is refused")
         CHECK(SourceMeasurement::lineRateFrom(98, 50.0f) == 0u);
     }
 
-    SUBCASE("2% either side is accepted, beyond it is not") {
-        CHECK(SourceMeasurement::lineRateFrom(311, 50.9f) != 0u);
-        CHECK(SourceMeasurement::lineRateFrom(311, 51.5f) == 0u);
+    SUBCASE("a field rate that is neither 50 nor 60 is still a field rate") {
+        // 640x480@75 on the VGA input: 499 lines, measured 75.088 Hz. Rejecting
+        // it leaves the previous mode's raster and clock in place, so the output
+        // runs at a rate no display locks to and the screen goes blank.
+        CHECK(SourceMeasurement::lineRateFrom(499, 75.088f) != 0u);
     }
+
+    SUBCASE("a rate no video source runs at is still refused") {
+        CHECK(SourceMeasurement::lineRateFrom(311, 4.0f) == 0u);
+        CHECK(SourceMeasurement::lineRateFrom(311, 400.0f) == 0u);
+    }
+}
+
+TEST_CASE("a rate that moves while the line count does not is a settling reading")
+{
+    // The bench transient: locked at 311 lines / 50.08 Hz, a solve run across a
+    // preset load reads 57.9 Hz and sizes PLLAD_MD 2204 where 2548 is due. The
+    // count is the reliable half, so a rate that moves alone is refused.
+    const uint32_t held = SourceMeasurement::lineRateFrom(311, 50.08f);
+
+    CHECK_FALSE(SourceMeasurement::rateFollowsCount(
+        311, SourceMeasurement::lineRateFrom(311, 57.9f), 311, held));
+
+    SUBCASE("a real mode change moves the count, so any rate is accepted") {
+        CHECK(SourceMeasurement::rateFollowsCount(
+            499, SourceMeasurement::lineRateFrom(499, 75.088f), 311, held));
+    }
+
+    SUBCASE("the same source drifting is not a change") {
+        CHECK(SourceMeasurement::rateFollowsCount(
+            311, SourceMeasurement::lineRateFrom(311, 50.5f), 311, held));
+    }
+
+    SUBCASE("nothing held yet cannot contradict anything") {
+        CHECK(SourceMeasurement::rateFollowsCount(311, held, 0, 0));
+    }
+}
+
+// --- ADC samples to IF units, which is not always a halving ------------------
+
+TEST_CASE("the IF line follows the decimation the scan mode applies")
+{
+    // IF_HS_DEC_FACTOR is the input formatter's horizontal decimation. The
+    // line-doubled path halves, the progressive path does not -- and an IF
+    // counter wrapping at half the samples the ADC delivers shows the picture
+    // twice across the screen, the second copy colour-shifted.
+    CHECK(SourceMeasurement::ifLineFor(2120, true) == 1060u);
+    CHECK(SourceMeasurement::ifLineFor(2120, false) == 2120u);
+}
+
+TEST_CASE("the divider ceiling follows the decimation too")
+{
+    // The write limit is in IF units, so the divider that lands the line end on
+    // it is twice the limit when halving and equal to it when not. A ceiling
+    // computed for the wrong one captures past where the part stops writing.
+    const uint16_t doubled = SourceMeasurement::recommendedDivider(15574u, 4, true);
+    const uint16_t progressive = SourceMeasurement::recommendedDivider(37469u, 4, false);
+
+    CHECK(SourceMeasurement::ifLineFor(doubled, true) <= InputLine::WriteLimitUnits);
+    CHECK(SourceMeasurement::ifLineFor(progressive, false) <= InputLine::WriteLimitUnits);
 }
 
 // --- the line rate, measured off the chip ------------------------------------
@@ -375,15 +427,19 @@ TEST_CASE("the line rate is measured rather than handed in")
     }
 }
 
-TEST_CASE("a rate that disagrees with the line count is refused, and says so")
+TEST_CASE("a rate that moves without the line count is refused, and says so")
 {
     // A field rate measured while the source is still settling passes a plain
     // bounds check comfortably -- 57.9 Hz against a real 50.08 -- and the
-    // divider comes out proportionally wrong.
+    // divider comes out proportionally wrong. It is the line count holding
+    // still that gives it away, so a good reading has to be held first.
     seedSourceLines(311);
-    g_fieldRate = 57.9f;
+    g_fieldRate = 50.08f;
 
     SourceMeasurement measurement;
+    REQUIRE(measurement.measureLineRate());
+
+    g_fieldRate = 57.9f;
     CHECK_FALSE(measurement.measureLineRate());
     CHECK(measurement.lineRateHz() == 0u);
 

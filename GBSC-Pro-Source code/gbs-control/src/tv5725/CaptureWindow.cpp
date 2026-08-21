@@ -7,7 +7,6 @@ namespace Tv5725 {
 
 const uint16_t CaptureWindow::SourceVerticalTotalMin;
 const uint16_t CaptureWindow::SourceVerticalTotalMax;
-const uint16_t CaptureWindow::PalVerticalTotalMin;
 const uint16_t CaptureWindow::ProgressiveStart;
 
 CaptureWindow::CaptureWindow()
@@ -23,21 +22,24 @@ bool CaptureWindow::readRasters(const SourceMeasurement &sampling, float fieldRa
 
     // **A MEASUREMENT IN RANGE IS NOT A MEASUREMENT THAT SETTLED**, and the
     // vertical axis is the one it fools: the horizontal line comes from the held
-    // divider, while this is entirely 2 x (VTOTAL + 1). Sampled through a preset
-    // load the count passes through 506, 251, 269, 259 and 511 -- all inside the
+    // divider, while this is entirely the source's line count. Sampled through
+    // a preset load the count passes 506, 251, 269, 259 and 511 -- all inside the
     // bounds a range check applies, and a solve that lands on one sizes the
     // vertical window for a frame the source is not sending. Having SUCCEEDED it
     // is never revisited.
     //
-    // lineRateFrom() is the one owner of the settling rule already: the line
-    // count picks the nominal rate, and the measured rate has to agree with it.
+    // lineRateFrom() is the one owner of the bounds already, on both the count
+    // and the rate.
     if (SourceMeasurement::lineRateFrom(sourceLines, fieldRateHz) == 0)
         return false;
 
     horizontalLine_ = InputLine::measured(horizontalWrap, hsyncLow, sampling.divider());
 
-    // IF_VB counts half-lines, so it rolls at twice the source frame.
-    verticalLine_ = InputLine(2 * (sourceLines + 1));
+    // The IF's line counter runs at twice the source line rate only while the
+    // line doubler is in the path, so what it counts is half-lines there and
+    // whole source lines otherwise. docs/scaler-geometry-model.md
+    verticalLine_ = InputLine(sampling.lineDoubled() ? 2 * (sourceLines + 1)
+                                                     : sourceLines + 1);
     return true;
 }
 

@@ -315,9 +315,9 @@ TEST_CASE("the solver places every output register")
         CHECK(tall.display().start() <= tall.display().stop() + tall.produced());
     }
 
-    SUBCASE("a vertical solve treats IF_VB as half lines") {
-        // Reading them as whole lines doubles the picture -- the likeliest bug
-        // here. 513 half-lines at VSCALE 660 is 795.9 output lines, not 1591.
+    SUBCASE("a vertical solve does not double the capture it is given") {
+        // Doubling it is the likeliest bug here: 513 units at VSCALE 660 is
+        // 795.9 output lines, not 1591.
         AxisSolution half = AxisVertical.solve(513, Scale(660), 1125);
         CHECK(((half.produced() > 795) && (half.produced() < 797)));
         CHECK(half.memory().start() < 1125);

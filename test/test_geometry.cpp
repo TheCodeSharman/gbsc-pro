@@ -116,8 +116,8 @@ static void checkBenchGeometry()
     CHECK(Adc::PLLAD_FS::read() == 1);
     CHECK(Adc::PLLAD_BPS::read() == 1);
 
-    // The capture window, measured on the unit. The vertical counts HALF-lines,
-    // and reading them as whole lines doubles the picture.
+    // The capture window, measured on the unit. The doubler is in the path on
+    // this source, so the vertical counts half-lines.
     CHECK(InputFormatter::IF_HB_SP2::read() == 118);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1008);
     CHECK(InputFormatter::IF_VB_SP::read() == 46);
@@ -479,7 +479,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     Wire.poison(Poison);
     REQUIRE(engine.resolve());
 
-    // The capture narrows 300 units horizontally and 120 half-lines vertically,
+    // The capture narrows 300 units horizontally and 120 vertically,
     // then moves 40 right and 15 up.
     CHECK(InputFormatter::IF_HB_SP2::read() == 308);
     CHECK(InputFormatter::IF_HB_ST2::read() == 898);
@@ -514,4 +514,38 @@ TEST_CASE("a framed picture holds every window against the framing")
 
     // The raster did not change, so its registers are not rewritten.
     CHECK(registersWritten() == 32);
+}
+
+// --- the IF line counter follows the scan mode -------------------------------
+
+TEST_CASE("a progressive source's vertical capture fits the counter it is on")
+{
+    // Measured 2026-08-20 at 640x480@75, VTOTAL 499, doubler bypassed: every
+    // IF_VB_ST from 999 down to 500 left the picture untouched because the
+    // counter never reaches them, and 494 produced one. So the IF counts the
+    // source's own lines when the doubler is out and half-lines when it is in,
+    // the same halving IF_HSYNC_RST follows.
+    Wire.reset();
+    Wire.poison(Poison);
+    seedField(3, 0x01, 0, 12, 1278);   // VDS_HSYNC_RST, output line - 1
+    seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
+    seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
+    seedField(0, 0x19, 0, 12, 84);     // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(5, 0x12, 0, 12, 1124);   // PLLAD_MD
+    seedField(0, 0x1B, 0, 11, 499);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
+    g_fieldRate = 75.0f;
+
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.scanModeChanged(false);
+    engine.modeChanged(benchMode(), false, 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    // 494 of the frame's 500 lines, magnified 2.26x to fill the 1125-line
+    // raster. Doubling the frame put the stop at 994, which the counter never
+    // reaches, and left the scale sized for a capture twice the arriving one.
+    CHECK(InputFormatter::IF_VB_SP::read() == 3);
+    CHECK(InputFormatter::IF_VB_ST::read() == 497);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 453);
 }

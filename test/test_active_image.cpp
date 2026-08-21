@@ -90,10 +90,10 @@ TEST_CASE("the framing is held as state and the window is derived")
     }
 
     SUBCASE("zooming out never puts the capture stop on the wrap point") {
-        // IF_VB_ST rolls at 2 x (VTOTAL + 1) and does not clamp, so a window
-        // written onto that value rolls the frame -- which reads as the picture
-        // jumping rather than as a capture fault. Three steps of zoom-out reach
-        // it: 0..624 of a 624 half-line frame.
+        // IF_VB_ST rolls at the frame it is counted on and does not clamp, so
+        // a window written onto that value rolls the frame -- which reads as the
+        // picture jumping rather than as a capture fault. Three steps of
+        // zoom-out reach it: 0..624 of a 624-unit frame.
         for (int16_t units : {-1, -20, -60, -100, -500, -5000}) {
             BlankingTiming w = ActiveImage(PanAndZoom(0, units, 0, 0)).capture(InputLine(624), 50.0f, AxisVertical, 0);
             CHECK(w.start() <= 623);
@@ -129,7 +129,7 @@ TEST_CASE("the framing is held as state and the window is derived")
         CHECK(huge.stop() <= huge.start());
     }
 
-    SUBCASE("the vertical axis derives from half-lines the same way") {
+    SUBCASE("the vertical axis derives from its own frame the same way") {
         BlankingTiming v = ActiveImage(PanAndZoom(0, 0, 0, 0)).capture(InputLine(624), 50.0f, AxisVertical, 0);
         CHECK(v.start() - v.stop() == ActiveImage::defaultWidth(InputLine(624), 50.0f, AxisVertical));
         CHECK_NEAR((int)v.stop(), 624 - (int)v.start(), 1.0);

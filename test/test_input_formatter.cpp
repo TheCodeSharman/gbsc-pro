@@ -87,3 +87,31 @@ TEST_CASE("the input formatter writes the addresses it owns and no others")
         CHECK(Wire.touched[1][r] == expected[r]);
     }
 }
+
+// --- the scan mode, which is four registers deciding one thing ----------------
+
+TEST_CASE("a line-doubled source undoes every progressive setting")
+{
+    Bench bench;
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 1);  // IF_HS_DEC_FACTOR
+    CHECK(Wire.field(1, 0x0B, 7, 1) == 0);  // IF_LD_SEL_PROV
+    CHECK(Wire.field(1, 0x0C, 0, 1) == 0);  // IF_LD_RAM_BYPS
+    CHECK(Wire.field(1, 0x00, 6, 1) == 0);  // IF_PRGRSV_CNTRL
+}
+
+TEST_CASE("a progressive source undoes every line-doubled setting")
+{
+    Bench bench;
+
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 0);  // IF_HS_DEC_FACTOR
+    CHECK(Wire.field(1, 0x0B, 7, 1) == 1);  // IF_LD_SEL_PROV
+    CHECK(Wire.field(1, 0x0C, 0, 1) == 1);  // IF_LD_RAM_BYPS
+    CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
+}
