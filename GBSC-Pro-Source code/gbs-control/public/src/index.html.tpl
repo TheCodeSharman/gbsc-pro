@@ -809,26 +809,6 @@
               </tr>
               <tr>
                 <td>
-                  Full Height
-                  <!-- prettier-ignore -->
-                  <ul class="gbs-help">
-                    <li>Some presets default to not using the entire vertical output resolution, leaving some lines black.</li>
-                    <li>With Full Height enabled, these presets will instead scale to fill more of the screen height.</li>
-                    <li>(This currently only affects 1920 x 1080)</li>
-                  </ul>
-                </td>
-                <td
-                  gbs-message="v"
-                  gbs-message-type="user"
-                  gbs-click="normal"
-                  class="gbs-icon"
-                  gbs-toggle-switch="fullHeight"
-                >
-                  toggle_off
-                </td>
-              </tr>
-              <tr>
-                <td>
                   Low Res: Use Upscaling
                   <!-- prettier-ignore -->
                   <ul class="gbs-help">

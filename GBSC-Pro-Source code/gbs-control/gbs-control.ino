@@ -272,8 +272,6 @@ void handle_k(void);
 void handle_l(void);
 void handle_m(void);
 void handle_n(void);
-void handle_o(void);
-void handle_p(void);
 void handle_q(void);
 void handle_r(void);
 void handle_s(void);
@@ -338,8 +336,6 @@ static const MenuEntry menuTable[] = {
     {'l', handle_l}, // ASCII 108
     {'m', handle_m}, // ASCII 109
     {'n', handle_n}, // ASCII 110
-    {'o', handle_o}, // ASCII 111
-    {'p', handle_p}, // ASCII 112
     {'q', handle_q}, // ASCII 113
     {'r', handle_r}, // ASCII 114
     {'s', handle_s}, // ASCII 115
@@ -7075,7 +7071,6 @@ void loadDefaultUserOptions()
     uopt->PalForce60 = 0;
     uopt->matchPresetSource = 1; 
     uopt->wantStepResponse = 1;
-    uopt->wantFullHeight = 1;
     uopt->enableCalibrationADC = 1;
     uopt->scanlineStrength = 0x30;
     uopt->disableExternalClockGenerator = 0;
@@ -7268,9 +7263,6 @@ void updateWebSocketData()
             }
             if (uopt->wantStepResponse) {
                 toSend[4] |= (1 << 4);
-            }
-            if (uopt->wantFullHeight) {
-                toSend[4] |= (1 << 5);
             }
 
             if (uopt->enableCalibrationADC) {
@@ -7625,9 +7617,7 @@ void setup()
             if (uopt->wantStepResponse > 1)
                 uopt->wantStepResponse = 1;
 
-            uopt->wantFullHeight = (uint8_t)(f.read() - '0');
-            if (uopt->wantFullHeight > 1)
-                uopt->wantFullHeight = 1;
+            f.read();  // byte 15, reserved -- see saveUserPrefs()
 
             uopt->enableCalibrationADC = (uint8_t)(f.read() - '0');
             if (uopt->enableCalibrationADC > 1)
@@ -9353,16 +9343,6 @@ void handleType2Command(char argument)
             delay(30);
             ESP.reset();
             break;
-        case 'v': {
-            uopt->wantFullHeight = !uopt->wantFullHeight;
-            saveUserPrefs();
-            uint8_t vidMode = getVideoMode();
-            if (uopt->presetPreference == 5) {
-                if (GBS::GBS_PRESET_ID::read() == 0x05 || GBS::GBS_PRESET_ID::read() == 0x15) {
-                    applyPresets(vidMode);
-                }
-            }
-        } break;
         case 'w':
             uopt->enableCalibrationADC = !uopt->enableCalibrationADC;
             saveUserPrefs();
@@ -10726,7 +10706,11 @@ void saveUserPrefs()
     f.write(uopt->PalForce60 + '0');
     f.write(uopt->matchPresetSource + '0');
     f.write(uopt->wantStepResponse + '0');
-    f.write(uopt->wantFullHeight + '0');
+    // Byte 15 held wantFullHeight. The file is positional and unversioned, and
+    // the load path admits any file of at least PREFS_BYTES, so dropping the
+    // byte shifts volume, input selection and the BCSH values by one on every
+    // file already on flash. It stays, written as a constant and discarded.
+    f.write('0');
     f.write(uopt->enableCalibrationADC + '0');
     f.write(uopt->scanlineStrength + '0');
     f.write(uopt->disableExternalClockGenerator + '0');
@@ -11574,11 +11558,6 @@ void OSD_selectOption()
                     COl_L = 1;
                     OSD_menu_F('6');
                     oled_menuItem = 75;
-                    break;
-                case IRKeyDown:
-                    oled_menuItem = 95;
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('o');
                     break;
                 case IRKeyOk:
                     oled_menuItem = 80;
@@ -12637,77 +12616,6 @@ void OSD_selectOption()
                     break;
                 // case IRKeyLeft:
                 //   serialCommand = 'Z';
-                //   break;
-                case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
-                    break;
-            }
-            irrecv.resume();
-        }
-    }
-
-    else if (oled_menuItem == 95) {
-
-        if (OLED_clear_flag)
-            display.clear();
-        OLED_clear_flag = ~0;
-        display.setColor(OLEDDISPLAY_COLOR::WHITE);
-        display.setTextAlignment(TEXT_ALIGN_LEFT);
-        display.setFont(ArialMT_Plain_16);
-        display.drawString(1, 0, "Menu->Screen");
-        display.drawString(1, 22, "Full height");
-        if (uopt->wantFullHeight) {
-            display.drawString(1, 44, "ON");
-        } else {
-            display.drawString(1, 44, "OFF");
-        }
-        display.display();
-
-        if (results.value == IRKeyDown || results.value == IRKeyUp) {
-            OSD_c1(icon4, P0, yellow);
-            OSD_c3(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_menu_F('o');
-        }
-        OSD_menu_F('p');
-
-        if (irrecv.decode(&results)) {
-            decode_flag = 1;
-            switch (results.value) {
-                case IRKeyMenu:
-                    OSD_menu_F(OSD_CROSS_BOTTOM);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_ScreenSettings;
-                    break;
-                case IRKeyUp:
-                    COl_L = 2;
-                    oled_menuItem = 76;
-                    OSD_menu_F(OSD_CROSS_BOTTOM);
-                    OSD_menu_F('6');
-                    break;
-                // case IRKeyDown:
-                //     COl_L = 3;
-                //     OSD_menu_F('i'); //
-                //     oled_menuItem = 96;
-                //     break;
-                case IRKeyOk: {
-                    uopt->wantFullHeight = !uopt->wantFullHeight;
-                    saveUserPrefs();
-                    uint8_t vidMode = getVideoMode();
-                    if (uopt->presetPreference == 5) {
-                        if (GBS::GBS_PRESET_ID::read() == 0x05 || GBS::GBS_PRESET_ID::read() == 0x15) {
-                            applyPresets(vidMode);
-                        }
-                    }
-                    UpDisplay();
-                } break;
-                // case IRKeyRight:
-                //   userCommand = 'v';
-                //   break;
-                // case IRKeyLeft:
-                //   userCommand = 'v';
                 //   break;
                 case IRKeyExit:
                     OSD_menu_F(OSD_CROSS_TOP);
@@ -14213,12 +14121,6 @@ void OSD_selectOption()
                     OSD_menu_F('2');
                     oled_menuItem = OSD_SystemSettings;
                     break;
-                // case IRKeyUp:
-                //     COl_L = 2;
-                //     OSD_menu_F(OSD_CROSS_MID);
-                //     OSD_menu_F('o');
-                //     oled_menuItem = 94;
-                //     break;
                 case IRKeyDown:
                     COl_L = 2;
                     OSD_menu_F('i');
@@ -18277,63 +18179,6 @@ void handle_j(void)
             OSD_c3(O, P23, main0);
             OSD_c3(N, P24, main0);
             OSD_c3(F, P25, blue_fill);
-        }
-    };
-    void handle_o(void)
-    {
-        if (COl_L == 1) {
-            A1_yellow = yellowT;
-            A2_main0 = main0;
-            A3_main0 = main0;
-        } else if (COl_L == 2) {
-            A1_yellow = main0;
-            A2_main0 = yellowT;
-            A3_main0 = main0;
-        } else if (COl_L == 3) {
-            A1_yellow = main0;
-            A2_main0 = main0;
-            A3_main0 = yellowT;
-        }
-
-        colour1 = blue;
-        number_stroca = stroca1;
-        __(icon5, _27);
-        number_stroca = stroca2;
-        __('2', _27);
-        // number_stroca = stroca3;
-        // __(icon6, _27);
-
-        colour1 = A1_yellow;
-        number_stroca = stroca1;
-        Osd_Display(1, "Full height");
-
-        // colour1 = A2_main0;
-        // number_stroca = stroca2;
-        // __(M, _1), __(a, _2), __(t, _3), __(c, _4), __(h, _5), __(e, _6), __(d, _7), __(p, _9), __(r, _10), __(e, _11), __(s, _12), __(e, _13), __(t, _14), __(s, _15);
-    };
-    void handle_p(void)
-    {
-        OSD_c1(0x3E, P12, main0);
-        OSD_c1(0x3E, P13, main0);
-        OSD_c1(0x3E, P14, main0);
-        OSD_c1(0x3E, P15, main0);
-        OSD_c1(0x3E, P16, main0);
-        OSD_c1(0x3E, P17, main0);
-        OSD_c1(0x3E, P18, main0);
-        OSD_c1(0x3E, P19, main0);
-        OSD_c1(0x3E, P20, main0);
-        OSD_c1(0x3E, P21, main0);
-        OSD_c1(0x3E, P22, main0);
-        // OSD_c3(0x3E, P22, main0);
-
-        if (uopt->wantFullHeight) {
-            OSD_c1(O, P23, main0);
-            OSD_c1(N, P24, main0);
-            OSD_c1(F, P25, blue_fill);
-        } else {
-            OSD_c1(O, P23, main0);
-            OSD_c1(F, P24, main0);
-            OSD_c1(F, P25, main0);
         }
     };
     void handle_q(void)

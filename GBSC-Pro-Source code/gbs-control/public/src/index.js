@@ -276,9 +276,6 @@ const createWebSocket = () => {
                         case "step":
                             toggleMethod(button, (optionByte1 & 0x10) == 0x10);
                             break;
-                        case "fullHeight":
-                            toggleMethod(button, (optionByte1 & 0x20) == 0x20);
-                            break;
                         /** 2 */
                         case "enableCalibrationADC":
                             toggleMethod(button, (optionByte2 & 0x01) == 0x01);
