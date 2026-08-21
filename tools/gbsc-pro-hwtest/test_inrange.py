@@ -11,6 +11,8 @@ import inrange
 # output frame, 624 half-line input frame, 2553 ADC samples per line.
 BENCH = {
     "IF_HSYNC_RST": 1276, "STATUS_SYNC_PROC_VTOTAL": 311,
+    "IF_PRGRSV_CNTRL": 0, "IF_LD_RAM_BYPS": 0,
+    "IF_LD_SEL_PROV": 0, "IF_HS_DEC_FACTOR": 1,
     "VDS_HSYNC_RST": 1444, "VDS_VSYNC_RST": 1125, "PLLAD_MD": 2553,
     "IF_HB_ST": 258, "IF_HB_SP": 72, "IF_HB_ST1": 1088, "IF_HB_SP1": 72,
     "IF_HB_ST2": 1143, "IF_HB_SP2": 134,
@@ -89,10 +91,30 @@ def test_a_fault_does_not_have_to_be_visible_to_be_there():
 
 def test_each_axis_is_measured_against_its_own_raster():
     """A vertical register must not be judged against the horizontal line, which
-    is the mistake that makes a checker like this useless: IF_VB counts
-    HALF-LINES, so its limit is 2 x (VTOTAL + 1) = 624, not 1277."""
+    is the mistake that makes a checker like this useless. The doubler is in the
+    path on this source, so IF_VB counts half-lines and its limit is
+    2 x (VTOTAL + 1) = 624, not 1277."""
     assert names(check(IF_VB_ST=700)) == ["IF_VB_ST"]
     assert check(IF_VB_ST=623) == []
+
+
+def test_the_vertical_limit_follows_the_scan_mode():
+    """With the doubler bypassed the counter runs at the source's own line rate,
+    so the same 578 that is healthy on a doubled 312-line source is past the end
+    of a 500-line one. Measured at 640x480@75: everything from 500 up is
+    unreachable, and a window written there never has its write enable fall."""
+    progressive = dict(IF_PRGRSV_CNTRL=1, IF_LD_RAM_BYPS=1,
+                       IF_LD_SEL_PROV=1, IF_HS_DEC_FACTOR=0,
+                       STATUS_SYNC_PROC_VTOTAL=499)
+    assert names(check(IF_VB_ST=578, **progressive)) == ["IF_VB_ST"]
+    assert check(IF_VB_ST=497, **progressive) == []
+
+
+def test_a_half_applied_scan_mode_is_not_judged_at_all():
+    """The four registers are written from one argument, so a disagreement is a
+    change caught in flight. Bounding against either guess would report a healthy
+    register as broken, or miss a broken one."""
+    assert check(IF_VB_ST=700, IF_PRGRSV_CNTRL=1) == []
 
 
 def test_the_sync_processor_is_measured_in_adc_samples():

@@ -32,6 +32,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import geometry_math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -449,6 +451,10 @@ GEOMETRY_FIELDS = [
     ("VDS_DIS_HB_SP", 3, 0x11, 4, 12), ("VDS_DIS_HB_ST", 3, 0x10, 0, 12),
     ("VDS_DIS_VB_SP", 3, 0x14, 4, 11), ("VDS_DIS_VB_ST", 3, 0x13, 0, 11),
     ("VTOTAL", 0, 0x1B, 0, 11),
+    # The four the scan mode is applied as one, because what a vertical capture
+    # unit IS depends on them.
+    ("IF_PRGRSV_CNTRL", 1, 0x00, 6, 1), ("IF_LD_RAM_BYPS", 1, 0x0C, 0, 1),
+    ("IF_LD_SEL_PROV", 1, 0x0B, 7, 1), ("IF_HS_DEC_FACTOR", 1, 0x0B, 4, 2),
 ]
 
 GEOMETRY_SPECS = {name: (seg, reg, off, width)
@@ -458,11 +464,17 @@ GEOMETRY_SPECS = {name: (seg, reg, off, width)
 def capture_wraps_at(state):
     """Where each capture window rolls over rather than clamping.
 
-    Horizontally that is the input line; vertically it is twice the source's
-    frame, because IF_VB counts HALF-LINES -- 624 for a 312-line frame. Crossing
-    either makes the picture jump, which has been misread as losing the capture.
+    Horizontally that is the input line. Vertically it depends on the scan mode,
+    because the doubler runs the IF's line counter at twice the source rate --
+    see geometry_math.if_vertical_wrap. Crossing either makes the picture jump,
+    which has been misread as losing the capture. The vertical is None when the
+    scan mode registers disagree, because a guessed wrap is worse than no bound.
     """
-    return (state["IF_HSYNC_RST"] + 1, 2 * (state["VTOTAL"] + 1))
+    doubled = geometry_math.line_doubled(
+        state["IF_PRGRSV_CNTRL"], state["IF_LD_RAM_BYPS"],
+        state["IF_LD_SEL_PROV"], state["IF_HS_DEC_FACTOR"])
+    return (state["IF_HSYNC_RST"] + 1,
+            geometry_math.if_vertical_wrap(state["VTOTAL"], doubled))
 
 
 def geometry_now():

@@ -19,13 +19,10 @@ import json
 import time
 import urllib.request
 
-# The arithmetic and the headroom constants live in geometry_math, so that this
-# tool and the code that *chooses* registers cannot come to different conclusions
-# about the same hardware. Why HEADROOM_WARN_PX is a warn floor rather than a
-# measured boundary is documented there.
+# The read-back arithmetic lives in geometry_math, so this tool and anything else
+# reading a register set cannot come to different conclusions about the same
+# hardware.
 import geometry_math as gm
-
-HEADROOM_WARN_PX = gm.HEADROOM_WARN_PX
 
 
 def burst(host, segment, first, last):
@@ -83,6 +80,10 @@ def read_all(host, hperiod_reads=8):
         # input side
         "PLLAD_MD": field(s5, 0x12, 0, 12),
         "IF_HSYNC_RST": field(s1, 0x0E, 0, 11),
+        "IF_PRGRSV_CNTRL": field(s1, 0x00, 6, 1),
+        "IF_LD_RAM_BYPS": field(s1, 0x0C, 0, 1),
+        "IF_LD_SEL_PROV": field(s1, 0x0B, 7, 1),
+        "IF_HS_DEC_FACTOR": field(s1, 0x0B, 4, 2),
         "IF_HB_SP2": field(s1, 0x1A, 0, 11),
         "IF_HB_ST2": field(s1, 0x18, 0, 11),
         "SP_RT_HS_SP": field(s5, 0x4B, 0, 12),
@@ -149,9 +150,18 @@ def report(r, label=None):
     if wrapped:
         capture += line
     add("\n  INPUT SIDE (IF units)")
+    doubled = gm.line_doubled(r.get("IF_PRGRSV_CNTRL"), r.get("IF_LD_RAM_BYPS"),
+                              r.get("IF_LD_SEL_PROV"), r.get("IF_HS_DEC_FACTOR"))
+    wanted = gm.if_line_units(r["PLLAD_MD"], doubled)
+    if doubled is None:
+        note = "   [scan mode half-applied: the four registers disagree]"
+    elif r["IF_HSYNC_RST"] != wanted:
+        note = f"   [invariant: wants {wanted}]"
+    else:
+        note = ""
+    scan = {True: "line-doubled", False: "progressive", None: "INCONSISTENT"}[doubled]
     add(f"    PLLAD_MD {r['PLLAD_MD']}   IF_HSYNC_RST {r['IF_HSYNC_RST']} "
-        f"(line = {line} units){'   [invariant: wants PLLAD_MD/2 = %d]' % (r['PLLAD_MD'] // 2)
-           if r['IF_HSYNC_RST'] != r['PLLAD_MD'] // 2 else ''}")
+        f"(line = {line} units)   {scan}{note}")
     add(f"    capture {sp2} .. {st2}{'  (wrapped)' if wrapped else ''}   = {capture} units")
     add(f"    SP_RT_HS_SP {r['SP_RT_HS_SP']}   (must stay under PLLAD_MD)")
 
@@ -195,8 +205,6 @@ def report(r, label=None):
     # capture width, so whether the line finishes is decided by the burst size
     # rather than by spare window. See Memory.h.
     #
-    # gm.headroom_px and gm.is_safe remain for characterise.py, which analyses
-    # states captured from firmware that does not do this.
     if memory < produced:
         add(f"    !! OVERFLOW: the product exceeds the memory window by "
             f"{produced - memory:.2f} px per line, which shows as scratch.")

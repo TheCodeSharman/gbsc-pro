@@ -19,7 +19,7 @@ have to be visible to be there.
 like this gets wrong and thereby becomes useless:
 
     IF_ horizontal    IF_HSYNC_RST + 1        IF units
-    IF_ vertical      2 x (VTOTAL + 1)        HALF-LINES, not lines
+    IF_ vertical      the scan mode decides   half-lines doubled, source lines not
     VDS_ horizontal   VDS_HSYNC_RST + 1       real output pixels
     VDS_ vertical     VDS_VSYNC_RST + 1       real output lines
     SP_               PLLAD_MD                ADC samples, NOT IF units
@@ -36,6 +36,8 @@ clamp, it rolls.
 import argparse
 import collections
 import json
+
+import geometry_math
 import os
 import sys
 
@@ -47,21 +49,32 @@ Finding = collections.namedtuple("Finding", "name value limit because")
 # position within the raster, and checking it as one reports a fault that does
 # not exist.
 #
-# Each group: the register holding the total, how to turn it into a limit, and
-# the positions measured against it.
+def _if_vertical_wrap(total, read):
+    """The IF vertical wrap, which the scan mode decides -- see
+    geometry_math.if_vertical_wrap. None when the four scan mode registers
+    disagree, because a bound from a guessed wrap is worse than no bound."""
+    return geometry_math.if_vertical_wrap(total, geometry_math.line_doubled(
+        read("IF_PRGRSV_CNTRL"), read("IF_LD_RAM_BYPS"),
+        read("IF_LD_SEL_PROV"), read("IF_HS_DEC_FACTOR")))
+
+
+# Each group: the register holding the total, how to turn it into a limit given a
+# reader for anything else the limit depends on, and the positions measured
+# against it. A limit of None means "cannot be computed", and the group is
+# skipped rather than judged.
 GROUPS = [
-    ("IF_HSYNC_RST", lambda t: t + 1, "IF_HSYNC_RST + 1", [
+    ("IF_HSYNC_RST", lambda t, read: t + 1, "IF_HSYNC_RST + 1", [
         "IF_HB_ST", "IF_HB_SP", "IF_HB_ST1", "IF_HB_SP1", "IF_HB_ST2", "IF_HB_SP2",
         "IF_LINE_ST", "IF_HBIN_ST", "IF_HBIN_SP"]),
-    ("STATUS_SYNC_PROC_VTOTAL", lambda t: 2 * (t + 1), "2 x (VTOTAL + 1)", [
+    ("STATUS_SYNC_PROC_VTOTAL", _if_vertical_wrap, "the IF vertical wrap", [
         "IF_VB_ST", "IF_VB_SP", "IF_INI_ST"]),
-    ("VDS_HSYNC_RST", lambda t: t + 1, "VDS_HSYNC_RST + 1", [
+    ("VDS_HSYNC_RST", lambda t, read: t + 1, "VDS_HSYNC_RST + 1", [
         "VDS_HB_ST", "VDS_HB_SP", "VDS_DIS_HB_ST", "VDS_DIS_HB_SP",
         "VDS_HS_ST", "VDS_HS_SP"]),
-    ("VDS_VSYNC_RST", lambda t: t + 1, "VDS_VSYNC_RST + 1", [
+    ("VDS_VSYNC_RST", lambda t, read: t + 1, "VDS_VSYNC_RST + 1", [
         "VDS_VB_ST", "VDS_VB_SP", "VDS_DIS_VB_ST", "VDS_DIS_VB_SP",
         "VDS_VS_ST", "VDS_VS_SP"]),
-    ("PLLAD_MD", lambda t: t, "PLLAD_MD", [
+    ("PLLAD_MD", lambda t, read: t, "PLLAD_MD", [
         "SP_RT_HS_ST", "SP_RT_HS_SP", "SP_CS_CLP_ST", "SP_CS_CLP_SP",
         "SP_H_CST_ST", "SP_H_CST_SP", "SP_CS_HS_ST", "SP_CS_HS_SP"]),
 ]
@@ -85,7 +98,9 @@ def check(read):
         total = read(total_name)
         if total is None or total < RASTER_MIN:
             continue
-        limit = to_limit(total)
+        limit = to_limit(total, read)
+        if limit is None:
+            continue
         for name in positions:
             value = read(name)
             if value is not None and value >= limit:

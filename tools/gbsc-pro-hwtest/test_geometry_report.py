@@ -19,6 +19,11 @@ BENCH = {
     "HLOW_LEN": 181,
     "PLLAD_MD": 2553,
     "IF_HSYNC_RST": 1276,
+    # Line-doubled, as the 15 kHz bench source is: PLLAD_MD 2553 -> 1276.
+    "IF_PRGRSV_CNTRL": 0,
+    "IF_LD_RAM_BYPS": 0,
+    "IF_LD_SEL_PROV": 0,
+    "IF_HS_DEC_FACTOR": 1,
     "IF_HB_SP2": 144,
     "IF_HB_ST2": 1074,
     "SP_RT_HS_SP": 2374,

@@ -36,7 +36,9 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
+import curve_fit
 import geometry_math
+import scaler_model
 
 # (capture, scale) per axis. Chosen so every product fits inside the raster from
 # the measured corner, and so each axis spans at least four magnifications --
@@ -58,7 +60,7 @@ FIELDS = {
               win_sp=("VDS_HB_SP", 3, 0x05, 4, 12),
               win_st=("VDS_HB_ST", 3, 0x04, 0, 12),
               rst=("VDS_HSYNC_RST", 3, 0x01, 0, 12),
-              axis=geometry_math.AXIS_H, base=264, unit="px"),
+              axis=scaler_model.AXIS_H, base=264, unit="px"),
     "v": dict(cap_sp=("IF_VB_SP", 1, 0x1E, 0, 11),
               cap_st=("IF_VB_ST", 1, 0x1C, 0, 11),
               scale=("VDS_VSCALE", 3, 0x17, 4, 10),
@@ -67,7 +69,7 @@ FIELDS = {
               win_sp=("VDS_VB_SP", 3, 0x08, 4, 11),
               win_st=("VDS_VB_ST", 3, 0x07, 0, 11),
               rst=("VDS_VSYNC_RST", 3, 0x02, 4, 11),
-              axis=geometry_math.AXIS_V, base=30, unit="lines"),
+              axis=scaler_model.AXIS_V, base=30, unit="lines"),
 }
 
 HOST = None
@@ -162,7 +164,7 @@ def measure(probe, axis_key, capture, scale):
     # from a fixed value is what made `produced` look like it had a loss term.
     magnification = geometry_math.magnification(scale)
     predicted = geometry_math.produced_px(capture, scale)
-    corner, window_sp = geometry_math.place_picture(
+    corner, window_sp = scaler_model.place_picture(
         predicted, raster, magnification, axis["axis"])
     probe.write_field(axis["dis_sp"], corner)
     probe.write_field(axis["win_sp"], window_sp)
@@ -213,8 +215,8 @@ def main():
         print("\nfewer than three points — not enough to disconfirm anything")
         return 1
 
-    c, k = geometry_math.fit_loss(points)
-    residuals = geometry_math.loss_residuals(points, c, k)
+    c, k = curve_fit.fit_loss(points)
+    residuals = curve_fit.loss_residuals(points, c, k)
     unit = FIELDS[args.axis]["unit"]
     print(f"\n  produced = (capture - {c:.2f}) x 1024 / scale - {k:.2f}\n")
     print(f"  {'capture':>8}{'scale':>7}{'produced':>10}{'fitted':>9}{'resid':>8}")

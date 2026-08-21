@@ -54,7 +54,9 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
+import curve_fit
 import geometry_math
+import scaler_model
 
 # (win_sp, scale). Capture is held fixed so the only thing moving is the thing
 # being asked about. The shared point is deliberate: it ties the two fits
@@ -79,7 +81,7 @@ FIELDS = {
               win_st=("VDS_HB_ST", 3, 0x04, 0, 12),
               rst=("VDS_HSYNC_RST", 3, 0x01, 0, 12),
               visible=geometry_math.PANEL_VISIBLE_LEFT,
-              axis=geometry_math.AXIS_H,
+              axis=scaler_model.AXIS_H,
               base=264, unit="px", edge="left"),
     "v": dict(cap_sp=("IF_VB_SP", 1, 0x1E, 0, 11),
               cap_st=("IF_VB_ST", 1, 0x1C, 0, 11),
@@ -90,7 +92,7 @@ FIELDS = {
               win_st=("VDS_VB_ST", 3, 0x07, 0, 11),
               rst=("VDS_VSYNC_RST", 3, 0x02, 4, 11),
               visible=geometry_math.PANEL_VISIBLE_TOP,
-              axis=geometry_math.AXIS_V,
+              axis=scaler_model.AXIS_V,
               base=30, unit="lines", edge="top"),
 }
 
@@ -204,11 +206,11 @@ def report(question, heading, xs_label, xs, points, unit):
         return None
     starts = [p["write_start"] for p in points]
     try:
-        slope, intercept = geometry_math.fit_line(xs, starts)
+        slope, intercept = curve_fit.fit_line(xs, starts)
     except ValueError as refusal:
         print(f"    {refusal}")
         return None
-    residuals = geometry_math.line_residuals(xs, starts, slope, intercept)
+    residuals = curve_fit.line_residuals(xs, starts, slope, intercept)
     print(f"    write_start = {slope:.3f} x {xs_label} + {intercept:.2f}")
     print(f"    {xs_label:>12}{'start':>8}{'fitted':>9}{'resid':>8}")
     for x, point, residual in zip(xs, points, residuals):
