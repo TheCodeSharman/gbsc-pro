@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the two bounds on what arrives intact — the horizontal write limit and the vertical bypass threshold — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/` |
+| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the two bounds on what arrives intact — the horizontal write limit and the vertical bypass threshold — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 | [gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos) | **a separate repo** — the 67 bench photographs, 146 MB. Mirrors this repo's paths, so its tree drops into a checkout and lands ignored. *What each one shows stays here*, in `docs/photos/*/README.md` and `snapshots/LOG.md` |
 | `gbsc-pro-bench-tools` | **a separate repo**, a sibling checkout — tooling for the bench *instruments*: a DSO Nano and a Rigol DS1000Z. **The dividing line: anything talking to the RetroScaler belongs here, anything driving one person's test gear belongs there.** |
@@ -22,8 +22,8 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 nix develop                       # tools: arduino-cli, make, esptool, python3+pytest
 make -C build setup               # once: esp8266 core + libs (~440M into build/)
 make -C build                     # compile -> build/output/gbs-control.ino.bin
+make -C build flash-ota HOST=…    # upload over WiFi — arms the unit itself
 make -C build flash               # upload over USB serial (PORT=/dev/ttyUSB0)
-make -C build flash-ota HOST=…    # upload over WiFi — only after arming, see below
 
 pytest tools/gbsc-pro-hwtest/ --host=192.168.88.108 -v
 pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests run
@@ -35,7 +35,28 @@ tests that write flash. Without `--host` everything hardware skips, so a bare
 
 ### Flashing
 
-**USB is the reliable path, and usually the only one available.**
+**OTA is the everyday path and works.**
+
+```sh
+make -C build flash-ota HOST=192.168.88.108     # arms the unit itself
+python3 tools/gbsc-pro-hwtest/ota_probe.py --host <ip>   # when an upload hangs
+```
+
+**What blocks OTA is the HOST firewall, not the unit.** espota opens a TCP
+listener on this machine and the unit **connects back** to it, so the image
+arrives over an unsolicited inbound connection that a default-drop firewall
+discards — espota then sits at `Uploading` exactly as it would against a dead
+unit. nix-config's `modules/nixos/electronics.nix` opens the one port
+`build/Makefile` pins for it. `docs/ota-flashing.md`.
+
+**Port 8266 on the unit is UDP.** A TCP probe finds nothing whether OTA is
+running or not, so a TCP port scan is silent about the thing it appears to
+test. That reading is what supported the earlier conclusion that OTA had never
+worked; probed with UDP, an armed unit replies `OK`.
+
+USB stays the recovery path, and is required when the change touches early boot
+or WiFi setup, and when the unit has stopped answering HTTP — which is when it
+cannot be armed at all:
 
 ```sh
 ls /dev/ttyUSB*                          # CH340 on this board; enumerate before flashing
@@ -43,21 +64,10 @@ make -C build flash                      # PORT=/dev/ttyUSB0 by default
 make -C build flash PORT=/dev/ttyUSB1
 ```
 
-**OTA has never worked on this unit. Do not try it.** Measured 2026-08-05:
-`curl 'http://<ip>/sc?c'` returns **200**
-and port **8266 never opens**, so `make -C build flash-ota` has nothing to talk
-to. The mechanism is all there in the source — `rto->allowUpdatesOTA` defaults to
-false (`gbs-control.ino:7630`), `/sc?c` sets it and calls `initUpdateOTA()`,
-`ArduinoOTA.handle()` runs only when true — which makes it look like an arming
-problem you can solve. It is not; it has never once produced a working upload.
-
-USB is the only route. The `build/Makefile` comment claiming "no cable needed" is
-wrong, and the `flash-ota` target is kept only because removing it would invite
-the next session to reinvent it.
-
-**A 200 from `/sc?c` is not evidence of anything**, which is the trap: see the
-async-server note below for why HTTP answers even when the firmware loop is not
-running.
+**A 200 from `/sc?c` is not evidence that the unit armed**, which is the trap:
+the route only queues the command, and `loop()` has to run to read it. See the
+async-server note below for why HTTP answers even when the loop does not run.
+`ota_probe.py` is what distinguishes the two.
 
 Two things that bite regardless of route, both detailed under the traps below:
 **opening the serial port resets the board** (`stty -F /dev/ttyUSB0 115200 -hupcl

@@ -144,7 +144,7 @@ chip state must not:
 
 ```sh
 python3 tools/gbsc-pro-hwtest/dump_registers.py --host <ip> --out snapshots/before.json
-make -C build flash
+make -C build flash-ota HOST=<ip>
 python3 tools/gbsc-pro-hwtest/snapdiff.py --diff snapshots/before.json snapshots/after.json
 ```
 

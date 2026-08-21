@@ -12,6 +12,11 @@ OUT    := $(HERE)/output
 ARDUINO_CLI ?= arduino-cli
 CLI          = $(ARDUINO_CLI) --config-file "$(CFG)"
 
+# Used by `setup` to install the core and by `flash-ota` to find espota.py
+# inside it. One place, so an upgrade cannot leave the OTA path pointing at a
+# version that is no longer installed.
+CORE_VERSION := 2.6.3
+
 # GBS_DEBUG compiles in the debug surface -- traces, dumps and the register
 # endpoints. On for the lab build; pass GBS_DEBUG=0 for a release-shaped one.
 GBS_DEBUG ?= 1
@@ -49,6 +54,13 @@ ASYNC_WEB := https://github.com/me-no-dev/ESPAsyncWebServer.git\#2ab974a5b5d65fb
 # Both are overridable: `make -C build flash PORT=/dev/ttyUSB1`.
 PORT ?= /dev/ttyUSB0
 HOST ?= 192.168.88.108
+
+# OTA. The unit listens on UDP OTA_DEVICE_PORT, and espota listens on TCP
+# OTA_HOST_PORT *here* for the unit to connect back -- so OTA_HOST_PORT is the
+# one a host firewall has to allow inbound. docs/ota-flashing.md.
+OTA_DEVICE_PORT ?= 8266
+OTA_HOST_PORT   ?= 8266
+ESPOTA := $(HERE)/data/packages/esp8266/hardware/esp8266/$(CORE_VERSION)/tools/espota.py
 
 .PHONY: build setup all clean help check-cli flash flash-ota webui webui-check test \
         test-geometry
@@ -109,33 +121,34 @@ flash: build
 	  --input-dir "$(OUT)" \
 	  "$(SKETCH)"
 
-## flash-ota: build, then upload over WiFi (HOST=<ip>) -- ARM IT FIRST
+## flash-ota: build, arm the unit, then upload over WiFi (HOST=<ip>)
 #
-# ArduinoOTA (hostname "GBS OTA") is compiled in but dormant. allowUpdatesOTA
-# defaults to false and ArduinoOTA.handle() only runs when it is true, so this
-# target fails against a freshly booted unit. Arm it first, every time:
+# Arms the unit itself: allowUpdatesOTA defaults to false and a reboot disarms
+# it again, so it was a manual step and forgetting it looked like a dead unit.
 #
-#     curl 'http://<ip>/sc?c'
+# Calls espota directly rather than `arduino-cli upload --protocol network`,
+# which lets espota pick a random host port in 10000-60000. The unit connects
+# BACK to that port, so pinning it means the host firewall opens one port
+# instead of fifty thousand. When an upload hangs, ota_probe.py says which half
+# of the handshake failed. docs/ota-flashing.md.
 #
-# A reboot disarms it again, and a unit that has stopped answering HTTP cannot be
-# armed at all -- which is exactly when you want to reflash. Prefer `flash` when
-# the change touches early boot or WiFi setup, and keep a cable to hand.
-#
-# Worth closing the web UI first, but because the console sheds clients when free
-# heap drops under 20 KB, not because only one is permitted --
-# WEBSOCKETS_SERVER_CLIENT_MAX is 5. See CLAUDE.md.
+# A unit that has stopped answering HTTP cannot be armed, which is exactly when
+# you want to reflash -- so keep a cable to hand, and prefer `flash` when the
+# change touches early boot or WiFi setup.
 flash-ota: build
-	$(CLI) upload \
-	  --fqbn '$(FQBN)' \
-	  --port '$(HOST)' \
-	  --protocol network \
-	  --input-dir "$(OUT)" \
-	  "$(SKETCH)"
+	curl -fsS -o /dev/null 'http://$(HOST)/sc?c'
+	sleep 1
+	$(PYTHON) "$(ESPOTA)" \
+	  --ip '$(HOST)' \
+	  --port $(OTA_DEVICE_PORT) \
+	  --host_port $(OTA_HOST_PORT) \
+	  --file "$(OUT)/gbs-control.ino.bin" \
+	  --progress
 
 ## setup: one-time (idempotent) install of the esp8266 core + external libs
 setup: check-cli
 	$(CLI) core update-index
-	$(CLI) core install 'esp8266:esp8266@2.6.3'
+	$(CLI) core install 'esp8266:esp8266@$(CORE_VERSION)'
 	$(CLI) lib install \
 	  'ESP8266 and ESP32 OLED driver for SSD1306 displays@4.6.2' \
 	  'IRremoteESP8266@2.9.0' \
