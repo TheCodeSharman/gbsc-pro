@@ -23,6 +23,8 @@ Geometry::Geometry(DisplayClock &displayClock)
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
+float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
+
 bool Geometry::resolve()
 {
     // The entry points outside a poll pass -- a pad press, a retimed total --
@@ -113,12 +115,12 @@ bool Geometry::solveRaster()
     GBS::VDS_VS_ST::write(raster.vsyncStart);
     GBS::VDS_VS_SP::write(raster.vsyncStop);
 
-    // The seed, last of the raster group and first of the clock's. Held as well
-    // as written: loop() stashes the divider and parks
-    // DisplayClock::ExternalSentinel here, so the register stops answering what
-    // this raster asked for and only the engine still knows.
-    GBS::PLL648_CONTROL_01::write(raster.divider);
+    // The seed, last of the raster group and first of the clock's. It names the
+    // frequency to run at, not the byte to write: select() puts the part on
+    // PCLKIN when a generator can serve that frequency, and on the seed's own
+    // internal divider when none can.
     displayClock_.hold(raster.divider);
+    displayClock_.select();
 
     // The porch is not a register, so the next solve cannot read it back.
     activeStop_ = raster.activeStop;

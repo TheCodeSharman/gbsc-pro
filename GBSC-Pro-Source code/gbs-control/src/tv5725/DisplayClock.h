@@ -43,9 +43,10 @@ public:
     // except 162, so the MS9288A is always resampling. That is the architecture.
     static const uint32_t CeilingHz = 108000000;
 
-    // PLL648_CONTROL_01 is parked here while the Si5351 drives the display, and
-    // the real divider is stashed in rto->presetDisplayClock. See options.h.
-    static const uint8_t ExternalSentinel = 0x75;
+    // PLL_VS4 = 11, PLL_2XV = 1: take the display clock from pin 40, which is
+    // the Si5351. Every other mapped byte selects the internal PLL648 instead,
+    // at a rate nothing can slew. docs/tv5725-chip.md
+    static const uint8_t ExternalPclkIn = 0x75;
 
     // What the firmware falls back to when no byte names a clock. A GUESS, kept
     // because it is what shipped: a lost divider costs 25% of the line here
@@ -59,7 +60,7 @@ public:
     static const uint8_t SeedCount = 7;
     static const uint8_t Seeds[SeedCount];
 
-    // This divider byte's pixel clock, or 0 when the byte does not name one.
+    // This divider byte's display clock, or 0 when the byte does not name one.
     // 0 rather than a default: the sentinel is a byte the firmware writes itself,
     // and answering FallbackHz for it is how externalClockGenResetClock() lost
     // the divider and ran the display 25% slow.
@@ -82,14 +83,25 @@ public:
     // internal PLL is driving the display and there is nothing to steer.
     void driveWith(Clock::ClockGen &generator);
 
-    // The seed the raster solve chose. HELD, because PLL648_CONTROL_01 stops
-    // answering what the raster asked for: loop() stashes the divider and parks
-    // ExternalSentinel there, which maps to no frequency at all.
+    // The seed the raster solve chose. A TARGET FREQUENCY, not a byte to write:
+    // select() puts ExternalPclkIn in the register instead whenever a generator
+    // is driving, so the register stops answering what the raster asked for.
     void hold(uint8_t seed);
 
     // For the paths that solve no raster -- bypass, and the serial toggle --
     // where the register is the only source there is.
     void adopt();
+    // Whether a generator is attached to steer, which is what select() keys on
+    // and what makes frame time lock possible at all.
+    bool driving() const;
+
+    // Point the part at the clock source that can serve the held seed: PCLKIN
+    // when a generator is driving, the seed's own internal divider when none is.
+    //
+    // Writing the seed with a generator present runs the display off the
+    // internal PLL, which frame time lock cannot steer -- the output then drifts
+    // against the source with every register reading correct.
+    void select();
 
     // Whether a seed has been held or adopted at all. 0x00 is a MAPPED seed --
     // hzFor() answers 81 MHz for it -- so an unset one would otherwise report

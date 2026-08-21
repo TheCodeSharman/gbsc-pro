@@ -135,7 +135,11 @@ private:
 
     static const uint8_t debugInPin = Attrs::debugInPin;
     static const int16_t syncCorrection = Attrs::syncCorrection;
-    static const int32_t syncTargetPhase = Attrs::syncTargetPhase;
+    // Where in the frame the read pointer is aimed to cross the write pointer,
+    // in degrees of one INPUT frame. Settable because the only instrument that
+    // can judge it is the picture: the crossover shows as a stationary tear at
+    // targetPhase/360 down the screen, and it belongs in vertical blanking.
+    static int32_t syncTargetPhase;
 
     static bool syncLockReady;
     static uint8_t delayLock;
@@ -144,6 +148,30 @@ private:
     /// Set to -1 if uninitialized.
     /// Reset with syncLastCorrection.
     static float maybeFreqExt_per_videoFps;
+
+    // Which signal DEBUG_IN_PIN is carrying, for as long as this object lives.
+    //
+    // The pin is shared: the sync watcher and auto gain select their own bus and
+    // put back what they found, so a sampler that does not select its own reads
+    // whatever ran last. Restoring in a destructor covers every early return.
+    class TestBus
+    {
+    public:
+        static const uint8_t InputVsync = 0x0;
+        static const uint8_t OutputVsync = 0x2;   // VDS, t3t50t4
+
+        explicit TestBus(uint8_t signal) : restore_(GBS::TEST_BUS_SEL::read())
+        {
+            GBS::TEST_BUS_SEL::write(signal);
+        }
+
+        ~TestBus() { GBS::TEST_BUS_SEL::write(restore_); }
+
+        void select(uint8_t signal) { GBS::TEST_BUS_SEL::write(signal); }
+
+    private:
+        uint8_t restore_;
+    };
 
 
 #if GBS_DEBUG
@@ -213,12 +241,10 @@ private:
     // difference in microseconds
     static bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput, int32_t *phase)
     {
-        fsDebugPrintf("vsyncPeriodAndPhase(), TEST_BUS_SEL=%d\n", GBS::TEST_BUS_SEL::read());
+        TestBus bus(TestBus::InputVsync);
 
         uint32_t inStart, inStop, outStart, outStop;
         uint32_t inPeriod, outPeriod, diff;
-
-        // calling code needs to ensure debug bus is ready to sample vperiod
 
         if (!sampleVsyncPeriod(&inStart, &inStop))
         {
@@ -229,7 +255,7 @@ private:
             return false;
         }
 
-        GBS::TEST_BUS_SEL::write(0x2); // 0x2 = VDS (t3t50t4) // measure VDS vblank (VB ST/SP)
+        bus.select(TestBus::OutputVsync);   // measure VDS vblank (VB ST/SP)
         inPeriod = (inStop - inStart); //>> 1;
         if (!sampleVsyncPeriod(&outStart, &outStop))
         {
@@ -462,6 +488,9 @@ public:
         return (uint16_t)bestHTotal;
     }
 
+    // Measures whatever DEBUG_IN_PIN is already carrying: the CALLER selects the
+    // bus. getOutputFrameRate() selects the VDS bus before calling this, so
+    // choosing one here would answer with the input rate under an output name.
     static uint32_t getPulseTicks()
     {
         uint32_t inStart, inStop;
@@ -475,6 +504,13 @@ public:
     static bool ready(void)
     {
         return syncLockReady;
+    }
+
+    static int32_t targetPhase() { return syncTargetPhase; }
+
+    static void setTargetPhase(int32_t degrees)
+    {
+        syncTargetPhase = ((degrees % 360) + 360) % 360;
     }
 
     static int16_t getSyncLastCorrection()
@@ -620,8 +656,8 @@ public:
     {
         if (maybeFreqExt_per_videoFps < 0)
         {
-            ; // SerialM.printf(
-              //  "Error: trying to tune external clock frequency while clock frequency uninitialized!\n");
+            fsDebugPrintf(
+                "Skipping FrameSyncManager::runFrequency(), no output/input rate ratio yet\n");
             return true;
         }
 
@@ -642,10 +678,13 @@ public:
                 "Skipping FrameSyncManager::runFrequency(), rto->outModeHdBypass\n");
             return true;
         }
-        if (GBS::PLL648_CONTROL_01::read() != 0x75)
+        // Not a sentinel: PLL_VS4 = 11 is what takes the display clock from
+        // PCLKIN. Any other mapped byte is the internal PLL, which cannot be
+        // steered. docs/tv5725-chip.md
+        if (GBS::PLL648_CONTROL_01::read() != Tv5725::DisplayClock::ExternalPclkIn)
         {
-            ; //SerialM.printf(\
-                "Error: trying to tune external clock frequency while set to internal clock, PLL648_CONTROL_01=%d!\n",\
+            fsDebugPrintf(
+                "Skipping FrameSyncManager::runFrequency(), display clock is internal (s0_41=0x%02x)\n",
                 GBS::PLL648_CONTROL_01::read());
             return true;
         }
@@ -679,8 +718,6 @@ public:
         {
             // Measure input period and output latency.
             bool ret = vsyncPeriodAndPhase(&periodInput, nullptr, &phase);
-            // TODO make vsyncPeriodAndPhase() restore TEST_BUS_SEL, not the caller?
-            GBS::TEST_BUS_SEL::write(0x0);
             if (!ret)
             {
                 fsDebugPrintf("runFrequency(): attempt %d: vsyncPeriodAndPhase failed\n", attempt);
@@ -694,11 +731,11 @@ public:
                 continue;
             }
 
-            // Measure input period again. vsyncPeriodAndPhase()/getPulseTicks()
-            // -> sampleVsyncPeriod() depend on GBS::TEST_BUS_SEL = 0, but
-            // vsyncPeriodAndPhase() sets it to 2.
-            GBS::TEST_BUS_SEL::write(0x0);
-            uint32_t periodInput2 = getPulseTicks();
+            uint32_t periodInput2;
+            {
+                TestBus bus(TestBus::InputVsync);
+                periodInput2 = getPulseTicks();
+            }
             if (periodInput2 == 0)
             {
                 fsDebugPrintf("runFrequency(): attempt %d: getPulseTicks failed\n", attempt);
@@ -810,4 +847,7 @@ uint8_t FrameSyncManager<GBS, Attrs>::delayLock;
 
 template <class GBS, class Attrs>
 bool FrameSyncManager<GBS, Attrs>::syncLockReady;
+
+template <class GBS, class Attrs>
+int32_t FrameSyncManager<GBS, Attrs>::syncTargetPhase = Attrs::syncTargetPhase;
 #endif

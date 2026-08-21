@@ -955,7 +955,7 @@ void externalClockGenResetClock()
 
     // The engine steers. It chose the seed when it solved the raster and holds
     // it, because loop() stashes the divider and parks
-    // DisplayClock::ExternalSentinel in PLL648_CONTROL_01 -- so the register
+    // DisplayClock::ExternalPclkIn in PLL648_CONTROL_01 -- so the register
     // stops answering what the raster asked for. The paths that solve no raster
     // adopt it through Geometry::enterBypass().
     Tv5725::DisplayClock &displayClock = rto->displayClock;
@@ -3504,7 +3504,7 @@ void doPostPresetLoadSteps()
             }
 
             // Put the real divider back before the engine adopts it, or the
-            // 0x75 sentinel reaches the lookup and matches nothing.
+            // PCLKIN selection reaches the lookup and matches nothing.
             if (GBS::PLL648_CONTROL_01::read() == 0x75 && rto->presetDisplayClock != 0) {
                 GBS::PLL648_CONTROL_01::write(rto->presetDisplayClock);
             }
@@ -7406,11 +7406,6 @@ void loop()
         uint16_t pllad = GBS::PLLAD_MD::read();
 
         if (((htotal > (pllad - 3)) && (htotal < (pllad + 3)))) {
-            uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
-            if (debug_backup != 0x0) {
-                GBS::TEST_BUS_SEL::write(0x0);
-            }
-
             fsDebugPrintf("running frame sync, clock gen enabled = %d\n", rto->extClockGenDetected);
 
             bool success = rto->extClockGenDetected ? FrameSync::runFrequency() : FrameSync::runVsync(uopt->frameTimeLockMethod);
@@ -7422,10 +7417,6 @@ void loop()
             }
             else if (rto->syncLockFailIgnore > 0) {
                 rto->syncLockFailIgnore = 16;
-            }
-
-            if (debug_backup != 0x0) {
-                GBS::TEST_BUS_SEL::write(debug_backup);
             }
         }
 
@@ -7453,7 +7444,12 @@ void loop()
     // it owns the measurements that decide it. Cheap on every pass, and
     // expensive only while a change is outstanding.
     if (geometry.poll()) {
+        // Rate steer last, after raster, clock and windows. The solve moved the
+        // raster, so the ratio the frequency lock steers by is stale -- and
+        // re-establishing it here is the only thing that does: the
+        // applyPresetDoneStage block fires once and cannot see a later solve.
         FrameSync::clearFrequency();
+        externalClockGenSyncInOutRate();
     }
 
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
@@ -8325,7 +8321,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                 } break;
                 case '_': {
+                    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
+                    GBS::TEST_BUS_SEL::write(0x0);
                     uint32_t ticks = FrameSync::getPulseTicks();
+                    GBS::TEST_BUS_SEL::write(testBusSelBackup);
                     Serial.println(ticks);
                 } break;
                 case '~':
@@ -9320,6 +9319,30 @@ void startWebserver()
             PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d}"),
             geometry.framing().horizontalZoom(), geometry.framing().verticalZoom(),
             geometry.framing().horizontalPan(), geometry.framing().verticalPan());
+        request->send(200, "application/json", body);
+    });
+
+    // Frame time lock, from held state only -- this runs in a network callback,
+    // so it must not touch the bus. Whether the part AGREED to take PCLKIN is a
+    // register read, and belongs on the queued /getreg path instead.
+    server.on("/framesync", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // The phase target is the one thing here that is settable, because the
+        // only instrument that can judge it is the picture.
+        if (request->hasArg("phase")) {
+            FrameSync::setTargetPhase(request->arg("phase").toInt());
+        }
+        char body[208];
+        snprintf_P(body, sizeof(body),
+            PSTR("{\"ready\":%s,\"driving\":%s,\"seed\":%u,"
+                 "\"targetHz\":%lu,\"nowHz\":%lu,\"fieldRateHz\":%.3f,"
+                 "\"targetPhase\":%ld}"),
+            FrameSync::ready() ? "true" : "false",
+            rto->displayClock.driving() ? "true" : "false",
+            rto->displayClock.seed(),
+            (unsigned long)rto->displayClock.hz(),
+            (unsigned long)rto->displayClock.hzNow(),
+            geometry.sourceFieldRateHz(),
+            (long)FrameSync::targetPhase());
         request->send(200, "application/json", body);
     });
 

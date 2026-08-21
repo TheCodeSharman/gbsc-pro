@@ -50,6 +50,10 @@ public:
     // now. Measures, so it must run from loop().
     bool resolve();
 
+    // The source field rate the last solve ran at. Held, not measured here, so
+    // a network callback may ask.
+    float sourceFieldRateHz() const;
+
 private:
 
     // Every window and both scales, from the framing and the source as the last

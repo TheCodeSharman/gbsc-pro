@@ -6,7 +6,7 @@
 namespace Tv5725 {
 
 const uint32_t DisplayClock::CeilingHz;
-const uint8_t DisplayClock::ExternalSentinel;
+const uint8_t DisplayClock::ExternalPclkIn;
 const uint32_t DisplayClock::FallbackHz;
 const uint8_t DisplayClock::SeedCount;
 
@@ -72,8 +72,23 @@ void DisplayClock::hold(uint8_t seed)
 
 void DisplayClock::adopt()
 {
-    seed_ = GBS::PLL648_CONTROL_01::read();
+    uint8_t selected = GBS::PLL648_CONTROL_01::read();
+
+    // PCLKIN names no frequency -- hzFor() answers 0 -- so adopting it would
+    // send reset() to FallbackHz. What the part is running on is the
+    // generator's rate, and the held seed is still the target it steers to.
+    if (selected == ExternalPclkIn)
+        return;
+
+    seed_ = selected;
     known_ = true;
+}
+
+bool DisplayClock::driving() const { return generator_ != 0; }
+
+void DisplayClock::select()
+{
+    GBS::PLL648_CONTROL_01::write(generator_ == 0 ? seed_ : ExternalPclkIn);
 }
 
 uint8_t DisplayClock::seed() const { return seed_; }

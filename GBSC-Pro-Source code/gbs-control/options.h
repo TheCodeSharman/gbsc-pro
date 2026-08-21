@@ -117,8 +117,8 @@ struct runTimeOptions
     // here because both reach it; Tv5725::Geometry is handed a reference.
     Tv5725::DisplayClock displayClock;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
-    // PLL648_CONTROL_01 is parked at the 0x75 sentinel while the external clock
-    // generator drives the display, so the real divider is stashed here. It
+    // PLL648_CONTROL_01 selects PCLKIN while the external clock generator
+    // drives the display, so the real divider is stashed here. It
     // cannot live in GBS_PRESET_DISPLAY_CLOCK (s1_2D): that sits inside the
     // range every preset array overwrites, and all but the two downscale presets
     // write 0 there. RAM puts it out of their reach.

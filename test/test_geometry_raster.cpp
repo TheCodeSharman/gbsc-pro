@@ -17,6 +17,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -200,4 +201,36 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
         CHECK(Wire.field(1, 0x0E, 0, 11) == 1125);   // IF_HSYNC_RST, divider / 2
         CHECK(Wire.field(5, 0x4B, 0, 12) == 2092);   // SP_RT_HS_SP, 93% of it
     }
+}
+
+TEST_CASE("a solve points the part at the clock source that can serve the raster")
+{
+    // s0_41 is a source selection. The seed names a target FREQUENCY; writing it
+    // to the register puts the display on the internal PLL, which frame time
+    // lock cannot steer, so the output drifts against the source while every
+    // register reads correct. docs/tv5725-chip.md
+    Bench bench;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    bench.clock.driveWith(generator);
+
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    REQUIRE(pollUntilSolved(bench.engine));
+
+    CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
+
+    SUBCASE("and the seed it holds is still the frequency to steer to") {
+        CHECK(bench.clock.hz() == 108000000u);
+    }
+}
+
+TEST_CASE("a board with no generator gets the seed's own internal divider")
+{
+    Bench bench;
+
+    bench.engine.modeChanged(&Mode1080p, false, 4);
+    REQUIRE(pollUntilSolved(bench.engine));
+
+    CHECK(Wire.bank[0][0x41] == 0x85);
 }

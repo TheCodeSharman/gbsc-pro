@@ -1,7 +1,7 @@
 // Host-compiled unit tests for src/tv5725/DisplayClock.h -- `make -C test
 // display-clock`.
 //
-// The raster decides what pixel clock the part is being asked for:
+// The raster decides what display clock the part is being asked for:
 //
 //     required clock = rasterHorizontalTotal x frameLines x sourceFieldRate
 //
@@ -34,7 +34,7 @@ void Si5351mcu::disable(uint8_t) { g_enabled = false; }
 
 using namespace Tv5725;
 
-TEST_CASE("the divider byte names a pixel clock")
+TEST_CASE("the divider byte names a display clock")
 {
     // Every one of these is 648 MHz over an integer, which is where the
     // register's name comes from: 648/16, /12, /10, /8, /6, /5, /4. The
@@ -56,13 +56,12 @@ TEST_CASE("the divider byte names a pixel clock")
     }
 }
 
-TEST_CASE("the external-clock sentinel names no clock at all")
+TEST_CASE("the PCLKIN selection names no clock at all")
 {
-    // PLL648_CONTROL_01 is parked at 0x75 while the Si5351 drives the display,
-    // with the real divider stashed in rto->presetDisplayClock. Answering 81 MHz
-    // for the sentinel is a silent guess that loses the divider, so 0 means
-    // "this byte does not name a clock; ask the stash".
-    CHECK(DisplayClock::hzFor(DisplayClock::ExternalSentinel) == 0u);
+    // 0x75 selects pin 40 as the display clock source, so the frequency is the
+    // generator's and no divider names it. Answering 81 MHz here would be a
+    // guess that silently replaces the rate the raster solved for.
+    CHECK(DisplayClock::hzFor(DisplayClock::ExternalPclkIn) == 0u);
 
     SUBCASE("and neither does any other unmapped byte") {
         CHECK(DisplayClock::hzFor(0x15) == 0u);
@@ -158,8 +157,8 @@ TEST_CASE("108 MHz is the highest display clock with evidence behind it")
 
 TEST_CASE("the clock holds the seed the raster asked for")
 {
-    // PLL648_CONTROL_01 stops answering what the raster chose: loop() stashes
-    // the divider and parks the 0x75 external sentinel there, so a read-back
+    // PLL648_CONTROL_01 stops answering what the raster chose: select() puts
+    // the PCLKIN selection there whenever a generator drives, so a read-back
     // finds a value that maps to nothing and the caller falls back to a guess.
     DisplayClock clock;
     clock.hold(0x85);
@@ -177,8 +176,8 @@ TEST_CASE("the clock holds the seed the raster asked for")
         CHECK(fresh.hz() == 0u);
     }
 
-    SUBCASE("the sentinel maps to nothing, which is why it must not be read back") {
-        clock.hold(DisplayClock::ExternalSentinel);
+    SUBCASE("PCLKIN maps to nothing, which is why it must not be read back") {
+        clock.hold(DisplayClock::ExternalPclkIn);
         CHECK(clock.hz() == 0u);
     }
 }
@@ -252,9 +251,66 @@ TEST_CASE("an unmapped seed falls back, and says that it did")
     Clock::ClockGen generator(part);
     DisplayClock clock;
     clock.driveWith(generator);
-    clock.hold(DisplayClock::ExternalSentinel);
+    clock.hold(DisplayClock::ExternalPclkIn);
 
     CHECK(clock.reset() == DisplayClock::FallbackHz);
     CHECK(g_setFreqHz == DisplayClock::FallbackHz);
     CHECK(clock.hz() == 0u);
+}
+
+// --- which source the part is told to take its display clock from -------------
+
+TEST_CASE("with a generator driving, the part is told to take PCLKIN")
+{
+    // s0_41 is a source SELECTION, not a divider. PLL_VS4 = 11 takes the display
+    // clock from PCLKIN (pin 40, the Si5351); every other mapped byte takes it
+    // from the internal PLL648 at a fixed rate. Writing the seed there runs the
+    // display off a clock nothing can slew, so frame time lock has nothing to
+    // steer and the output drifts against the source. docs/tv5725-chip.md
+    Wire.reset();
+    g_setFreqHz = 0;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.driveWith(generator);
+    clock.hold(0x85);
+
+    clock.select();
+
+    CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
+
+    SUBCASE("and the seed stays the target frequency the raster solved for") {
+        CHECK(clock.hz() == 108000000u);
+    }
+}
+
+TEST_CASE("with no generator, the part takes the internal divider the seed names")
+{
+    Wire.reset();
+
+    DisplayClock clock;
+    clock.hold(0x85);
+
+    clock.select();
+
+    CHECK(Wire.bank[0][0x41] == 0x85);
+}
+
+TEST_CASE("adopting does not lose the target when the part is already on PCLKIN")
+{
+    // s0_41 reads back the SELECTION the engine wrote, and PCLKIN names no
+    // frequency at all -- hzFor() answers 0 for it. Taking it as a seed makes
+    // hz() 0, and reset() then falls back to 81 MHz against a raster wanting
+    // 108: a quarter of the horizontal resolution, with every register still
+    // reading correct.
+    Wire.reset();
+    Wire.bank[0][0x41] = DisplayClock::ExternalPclkIn;
+
+    DisplayClock clock;
+    clock.hold(0x85);
+    clock.adopt();
+
+    CHECK(clock.seed() == 0x85);
+    CHECK(clock.hz() == 108000000u);
 }
