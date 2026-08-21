@@ -134,6 +134,47 @@ Two bounds: the line wrap going out, and a minimum capture going in — a contro
 that can crop the capture to nothing is one keypress from a dead picture with no
 way back.
 
+### The horizontal capture moves in twos
+
+Measured 2026-08-17, driving `/geometry` and watching the picture. With the
+window held 1000 units wide:
+
+```
+capture start 162 <-> 163    five toggles    picture still
+capture start 162 <-> 164    five toggles    picture moves
+```
+
+So **a one-unit shift of the horizontal capture window does nothing**, and the
+smallest change the hardware acts on is 2 IF units. Consistent with the low bit
+of `IF_HB_SP2` being ignored, which is the reading the rest of the model
+supports: a global halving of the register would have shown up as a factor of 2
+in `produced = capture x 1024 / scale`, and that fit needs none.
+
+`Tv5725::Axis::captureGranularity()` is the number — 2 horizontally, **1
+vertically**, where every unit counts. `Axis::stepUnits()` quantises a press to
+it, so a request never rounds below one granule.
+
+**Rounded once, in output pixels.** Quantising to units and then to granules
+biases every request upwards: 8 output pixels is 4.73 units at x1.69, which
+becomes 5 and then 6, where 4 is the nearer of the two reachable values.
+
+Two things this costs, and neither is avoidable from here. One unit of pan is no
+longer one output pixel horizontally — it cannot be, when the hardware's finest
+move is 2 units and one unit is already 1.69 pixels. And **no diagnostic on the
+board can see a step that is too fine**: the register changes, the IR frame
+decodes and dispatches, the dump stays self-consistent, and only the picture
+disagrees. An odd step reads as a dead remote.
+
+The capture *start* is not forced onto a granule boundary. Which parity latches
+is unmeasured, and it does not affect whether a press moves the picture — only
+whether the effective position sits one unit off what the register reads.
+
+Zoom is quantised the same way. It moves both edges, so it moves the start, and
+an odd zoom step would shift it by a sub-granule amount for the same reason —
+but that is inference from the position measurement, not a separate reading.
+Zoom was confirmed working through the OSD afterwards; it was not toggled
+one unit at a time the way pan was.
+
 ## What one display shows
 
 Measured 2026-08-06, creeping each display edge with the picture deliberately

@@ -66,17 +66,29 @@ PAN_STEP_PX = 8
 ZOOM_STEP_PX = 8
 
 
-def units_for(pixels, scale_reg):
-    """Output pixels -> input units: what Geometry::Controls::unitsFor computes.
+# The smallest change of capture POSITION each axis's hardware acts on. Mirrors
+# Tv5725::Axis::captureGranularity. Horizontally 2: the low bit of IF_HB_SP2 does
+# nothing, measured 2026-08-17 by toggling the capture start and watching the
+# picture -- 162 <-> 163 does not move it, 162 <-> 164 does.
+HORIZONTAL_GRANULE = 2
+VERTICAL_GRANULE = 1
 
-    magnification = 1024 / VDS_?SCALE, and ONE INPUT UNIT IS THE FLOOR -- at
-    x1.315 a single unit is already 1.315 output pixels, and no rounding gets
-    under it. Reading the scale off the chip rather than assuming one keeps this
-    honest at any magnification.
+
+def units_for(pixels, scale_reg, granularity=HORIZONTAL_GRANULE):
+    """Output pixels -> input units: what Tv5725::Axis::stepUnits computes.
+
+    magnification = 1024 / VDS_?SCALE, and ONE GRANULE IS THE FLOOR -- a request
+    that rounds below it would be a press the hardware ignores. Rounded ONCE, in
+    output pixels: rounding to units first and to granules after biases every
+    request upwards. Reading the scale off the chip rather than assuming one
+    keeps this honest at any magnification.
     """
     if scale_reg == 0:              # a dropped read, not a setting
-        return pixels
-    units = max(1, round(abs(pixels) * scale_reg / 1024))
+        wanted = abs(pixels)
+    else:
+        wanted = abs(pixels) * scale_reg / 1024
+    granules = max(1, round(wanted / granularity))
+    units = granules * granularity
     return -units if pixels < 0 else units
 
 SOLVED_REGISTERS = ("VDS_HB_SP", "VDS_HB_ST", "VDS_DIS_HB_SP", "VDS_DIS_HB_ST",
@@ -344,6 +356,31 @@ def test_a_pan_press_moves_the_capture_without_resizing_it(host, probe, framed):
         == before["IF_HB_ST2"] - before["IF_HB_SP2"]
 
 
+def test_every_horizontal_pan_press_moves_the_picture(host, probe, framed):
+    """A press must move the capture by something the hardware acts on.
+
+    The low bit of IF_HB_SP2 does nothing, so a press worth an odd number of
+    units leaves the picture where it was. That reads as a dead remote: at the
+    OSD's one-pixel step it took two presses to see anything move, while the
+    register changed on every one and nothing in a dump looked wrong.
+
+    Three presses rather than one, because a single even step could be even by
+    luck at this magnification.
+    """
+    before = framed
+    starts = [before["IF_HB_SP2"]]
+    for _ in range(3):
+        press(host, probe, "+")
+        starts.append(settled_geometry(host)["IF_HB_SP2"])
+
+    steps = [b - a for a, b in zip(starts, starts[1:])]
+    assert all(s != 0 for s in steps), (
+        f"a press did not move the capture at all: IF_HB_SP2 went {starts}")
+    assert all(s % HORIZONTAL_GRANULE == 0 for s in steps), (
+        f"IF_HB_SP2 went {starts}, stepping {steps}. A step that is not a "
+        f"multiple of {HORIZONTAL_GRANULE} is a press the hardware ignores")
+
+
 # The playback burst, which is not geometry and is owned by the engine anyway.
 #
 # Segment 4 is not in GEOMETRY_FIELDS and deliberately stays out of it: these
@@ -563,17 +600,22 @@ def test_a_zoomed_out_capture_never_takes_the_hsync_pulse(host, probe, framed):
 @pytest.mark.zoom
 def test_a_zoomed_out_capture_still_takes_the_whole_tail(host, probe, framed):
     """The other half of the same decision, and the one a future guard would
-    quietly break. Nothing derivable bounds the tail, so zoom-out must still
-    reach the last unit before the wrap -- that is the reach which recovers
-    active video the 0.76 default active fraction crops."""
+    quietly break. Nothing derivable bounds the tail beyond the line reset
+    itself, so zoom-out must still reach it -- that is the reach which recovers
+    active video the 0.76 default active fraction crops.
+
+    The bound is units - 2, not units - 1: a stop ON the reset value stops the
+    input formatter producing pixels and freezes the picture, so InputLine
+    stands off by one more. See InputLine::lastCapture()."""
     units = framed["IF_HSYNC_RST"] + 1
+    reach = units - 2
 
     set_framing(host, -5000, 0, 0, 0)
     after = settled_geometry(host)
 
-    assert after["IF_HB_ST2"] == units - 1, (
+    assert after["IF_HB_ST2"] == reach, (
         f"the capture stops at {after['IF_HB_ST2']} of a {units} unit line, "
-        f"short of the {units - 1} the wrap allows: something is guarding the "
+        f"not the {reach} the wrap allows: something is guarding the "
         "tail, and no measurement supports a bound there")
 
 
