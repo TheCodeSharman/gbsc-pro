@@ -38,42 +38,22 @@ public:
     // both scales are fitted to the total this names.
     bool rasterWidthChanged(uint16_t horizontalTotal);
 
-    // The source is about to change mode. Everything the solve will need that
-    // cannot be re-derived once it has rides along: videoStandardInput is
-    // rewritten by PresetLoad::videoStandardInputAfterLoad(), so the mode the
-    // choice was made from is gone by the time the raster is solved.
-    //
-    // Nothing is solved here. The measurements a solve needs -- field rate,
-    // line count, hsync width -- lag the mode change by seconds, and read early
-    // they do not fail, they return plausible garbage: 54.47, 55.12 and 66.79 Hz
-    // on a source that runs 50.08, for rasters of 1761, 1740 and 1436 against
-    // the 1918 due.
+    // Notify the engine that the source is about to change mode. The registers are
+    // not written until the source has settled. 
     void modeChanged(const OutputMode *mode, bool customPreset,
                      uint8_t oversample);
 
-    // Drive whatever is outstanding: a pending mode change once the source has
-    // settled into it, and any framing the user asked for. Cheap when there is
-    // nothing to do and cheap while the source is still moving, so it can be
-    // called on every pass.
-    //
-    // True on the pass that COMPLETES a mode change, which is when the display
-    // clock has moved and the first frame is worth showing.
+    // Called by the sketch main loop - allows the engine to determine when the
+    // source has settled and apply any pending mode changes. True on the pass
+    // that completes a mode change.
     bool poll();
 
-    // Back to the default framing, with everything the engine owns re-solved
-    // from the source as it reads now. The way out of a framing the user has
-    // zoomed into a corner, and the only one short of a reboot.
     void reset();
 
-    // The output has gone into bypass: video routes around the VDS, so an
-    // outstanding solve is void, and dropping it stops a later poll writing a
-    // scaled raster over the bypass setup.
+    // Notify the engine that the output has gone into bypass: so video routes around the VDS.
     void enterBypass();
 
-    // OUTPUT PIXELS, sized from the scale the last solve produced.
     bool pan(int16_t dxPixels, int16_t dyPixels);
-
-    // OUTPUT PIXELS. Positive crops in; the scale follows.
     bool zoom(int16_t dhPixels, int16_t dvPixels);
 
 private:
