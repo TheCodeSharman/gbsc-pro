@@ -272,7 +272,7 @@ always passed 0, so the picture is placed against the write floor rather than
 against the back porch. Horizontally the two nearly coincide, 106 against CEA's
 140. Vertically they do not: the picture starts at line 3 where the encoder
 transmits from 41, so **39 lines are discarded off the top**. Feeding
-`RasterSolution::activeLinesStart` in recovers them exactly.
+`OutputTimings::activeLinesStart` in recovers them exactly.
 
 [`investigations/output-front-porch.md`](investigations/output-front-porch.md) has
 the three models that fitted the readings and were wrong, and why this is not the

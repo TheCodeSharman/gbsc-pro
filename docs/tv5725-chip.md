@@ -260,7 +260,7 @@ rather than nets, so this repo cannot read it.
 **The clock is no longer a preset table's to choose.** The twelve tables split
 it six/six between `111` (129.6 MHz) and `010` (FBCLK), following nothing —
 `ntsc_240p` took the fast internal clock while `pal_1280x1024` took the pin.
-`Tv5725::MemoryBus` derives one value instead, and `Tv5725::SdramTiming` is the
+`Tv5725::MemoryBus` derives one value instead, and `Tv5725::SdramTimings` is the
 derivation: fastest code that keeps the EM638325TS-6's tCK, tRCD and tRP, which
 is **`011` = 162 MHz**. Measured clean on the bench 2026-08-13 at 1920x1080, as
 were 129.6 MHz and FBCLK. `docs/EM638325-Industrial_Rev-3.2.pdf`.
@@ -310,6 +310,15 @@ Where the firmware **is** fragile: three sites test `!= 0x35 && != 0x75` to mean
 "this must be a preset's own display clock, save it"
 (`gbs-control.ino:6737`, `:6842`, `:8306`). That is a heuristic on two magic
 values, and a preset legitimately wanting either would be misclassified.
+
+Because it is a selection, **whatever writes it last decides whether frame time
+lock can work at all**. `Geometry::solveRaster()` computes a display clock seed
+and used to write it here, which put the display on the internal PLL — a clock
+nothing can slew — so `runFrequency()` returned at its `!= 0x75` guard on every
+pass and the output drifted against the source with every register reading
+correct. The seed is a target *frequency*, and `DisplayClock::select()` is what
+turns it into a source: PCLKIN when a generator is attached, the seed's own
+internal divider when none is.
 
 Do not use `0x41` as a health check. A **healthy** 800x600 capture
 (`HPERIOD_IF` 176) reads `0x35`, and so does a broken one — see

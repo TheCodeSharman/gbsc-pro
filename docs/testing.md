@@ -47,7 +47,7 @@ and a test is not a build artefact.
 
 Two kinds:
 
-**Pure arithmetic** — `MemoryMap`, `SdramTiming`, `OutputRaster`, `Sampling`,
+**Pure arithmetic** — `MemoryMap`, `SdramTimings`, `OutputRaster`, `Sampling`,
 `DisplayClock`, `PresetLoad`. No chip, no Arduino. This is where most logic
 should live, and the pure/register split in `src/tv5725/` exists largely to put
 it there.
@@ -71,7 +71,7 @@ in the firmware**.
 ```make
 cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
   -o "$(OUT)/test_memory_bus" \
-  "$(HERE)/test_memory_bus.cpp" src/tv5725/MemoryBus.cpp src/tv5725/SdramTiming.cpp
+  "$(HERE)/test_memory_bus.cpp" src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp
 ```
 
 `-I test/fake` makes `#include <Wire.h>` inside `tw.h` resolve to the fake;
