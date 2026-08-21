@@ -308,7 +308,7 @@ The set `Tv5725::DisplayClock::hzFor()` maps — `0x25 0x35 0x45 0x55 0x65 0x85
 
 Where the firmware **is** fragile: three sites test `!= 0x35 && != 0x75` to mean
 "this must be a preset's own display clock, save it"
-(`gbs-control.ino:6737`, `:6842`, `:8306`). That is a heuristic on two magic
+(all in `gbs-control.ino`). That is a heuristic on two magic
 values, and a preset legitimately wanting either would be misclassified.
 
 Because it is a selection, **whatever writes it last decides whether frame time
@@ -542,7 +542,7 @@ Why is hypothesised but not established. See
 
 ## Mode Detect classifies, it does not measure
 
-`presetMdSection.h` sets `s1_62`–`s1_7F`, and every one is of the form *"if the
+`Tv5725::ModeDetect::init()` sets `s1_62`–`s1_7F`, and every one is of the form *"if the
 horizontal period number is equal to the defined value, it's XGA 75 Hz"* — VGA,
 SVGA, XGA and SXGA at 60/70/75/85 Hz, plus one HD1250P slot. It is a VESA lookup
 table. There is no entry for a 15 kHz 50 Hz mode, and the two custom-mode slots

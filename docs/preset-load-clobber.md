@@ -29,7 +29,7 @@ curl 'http://<ip>/setreg?s=0&r=0x45&v=0x11'     # restores blue immediately
 ## Why it happens
 
 `DAC_RGBS_B0ENZ` is **never written to 0 anywhere in the firmware.** The only
-explicit writes are `write(1)`, at `gbs-control.ino:5360` and `:5686`. But a UART
+explicit writes are `write(1)`, both in `gbs-control.ino`. But a UART
 write trace of one live session shows 254 writes to `s0 0x45`:
 
 | value | `B0ENZ` | count |
@@ -40,7 +40,7 @@ write trace of one live session shows 254 writes to `s0 0x45`:
 So the disabling writes come from **bulk table loads**, not from any line of code
 that means to turn blue off. Normally a load is followed by the explicit
 re-enable and nobody notices. Whichever write lands last wins, so a load that
-does not reach `:5360`/`:5686` leaves the DAC off.
+does not reach / leaves the DAC off.
 
 ## The general shape
 
@@ -67,7 +67,7 @@ Two consequences worth carrying:
 lives in ESP RAM — `rto->videoStandardInput` and friends — and no register write
 touches it. Restoring a bypass snapshot onto a running unit produced a state the
 firmware could not re-detect its way out of: it sat in `PresetBypassRGBHV` through
-every sub-535-line mode, where branch `:6642` would normally have escaped it,
+every sub-535-line mode, where branch  would normally have escaped it,
 because the RAM state matched no branch.
 
 **Reboot after restoring**, or accept that the two halves of the state machine

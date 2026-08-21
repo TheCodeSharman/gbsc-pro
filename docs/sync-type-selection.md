@@ -1,10 +1,15 @@
-# The sync-type decision is circular, and lands on csync
+# The sync type is probed, because reading it back is circular
 
 `rto->syncTypeCsync` chooses between composite-sync separation and separate H/V.
-Two of the three places that set it decide by reading `STATUS_SYNC_PROC_VSACT`
-directly — **but that bit reports the sync path already configured, not a
-property of the source**, so the reading confirms whatever the unit is already
-doing. Once a unit lands on csync it stays there.
+
+**It must never be decided by reading `STATUS_SYNC_PROC_VSACT`.** That bit
+reports the sync path already configured, not a property of the source, so the
+reading only confirms whatever the unit is already doing — and a unit that lands
+on csync stays there for the session. `applyPresets()` used to decide that way,
+which is what this page exists to stop anyone reinstating.
+
+The decision is made by `sourceHasOwnVsync()`, which breaks the circularity by
+*changing* the path before reading the bit.
 
 ## The evidence
 
@@ -34,27 +39,28 @@ occur with a perfect picture, which is exactly why nothing may gate on it.
 
 | site | how |
 |---|---|
-| `inputAndSyncDetect()` `gbs-control.ino:2340` | field-rate probes **and** `sourceHasOwnVsync()` |
-| `applyPresets()` `:4431` (mode 14) | bare `VSACT == 0 → csync` |
-| `applyPresets()` `:4469` (mode 0) | bare `VSACT == 0 → csync` |
-| `applyPresets()` `:4479` (YPbPr fallback) | unconditional `csync = 1` |
+| `inputAndSyncDetect()` | field-rate probes **and** `sourceHasOwnVsync()` |
+| `applyPresets()`, the mode-14 arm | `syncTypeCsync = !sourceHasOwnVsync()`, behind `syncTypeIsSet` |
+| `applyPresets()`, the no-mode arm | `syncTypeCsync = !sourceHasOwnVsync()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
+| `applyPresets()`, the YPbPr fallback | unconditional `csync = 1` |
 
-`sourceHasOwnVsync()` (`:2170`) is the probe written to answer this properly: it
-clears `SP_EXT_SYNC_SEL`, waits 240 ms for the sync processor to reacquire V,
-polls for up to 250 ms, re-confirms after 10 ms, then restores the register. It
-breaks the circularity by *changing* the path before reading the bit.
+`sourceHasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits 240 ms for the sync
+processor to reacquire V, polls for up to 250 ms, re-confirms after 10 ms, then
+restores the register.
 
-It is called at `:2340` and `:6257`. **It is not called at `:4431` or `:4469`**,
-which are the sites that actually run on this bench.
+**It costs ~500 ms, so it runs once per SOURCE, not once per mode change.**
+`rto->syncTypeIsSet` is the gate, and it is cleared wherever
+`coastPositionIsSet` and `clampPositionIsSet` are — every path meaning the
+source may have changed. A mode change pays nothing.
 
-The comment already at `:2337` records half of this — the field-rate probe alone
-"can never conclude separate sync, and a working RGBHV source gets configured for
-csync". The bare `VSACT` read has the same defect and no such guard.
+**It cannot be left to `inputAndSyncDetect()` alone.** That probe sits behind
+`SyncSearch::searchFor(...) == VsyncPresent`, so on a source with no separate
+vsync — the csync case, the one that matters — the block is skipped and
+`syncTypeCsync` keeps its initial false. Circular in the same way, one level up.
 
-Separately, the PAL/NTSC-SD paths write sync-separation parameters **without
-consulting `syncTypeCsync` at all** — `videoStandardInputIsPalNtscSd()` sets
-`IGNOR 0x6b` at `:1883`, and `updateSpDynamic()` sets coast 7/3 at `:4984`.
-Whatever the sync type resolves to, those two do not ask.
+**Two paths do not consult `syncTypeCsync` at all.**
+`videoStandardInputIsPalNtscSd()` writes `SP_H_PULSE_IGNOR` 0x6b and
+`updateSpDynamic()` writes coast 7/3, whatever the sync type resolved to.
 
 ## The flip is reproducible, and so is the recovery
 
@@ -95,18 +101,12 @@ power cycle.
 - **Whether the three-line deficit costs anything is untested.** It is a wrong
   number in a counter. No artefact has been traced to it.
 
-## Fixing it
+## What is still open
 
-Call `sourceHasOwnVsync()` at `:4431` and `:4469` instead of reading `VSACT`
-bare. The probe already exists, already restores what it touches, and is already
-trusted at two other sites.
-
-The cost is real and is why this has not just been done: it adds up to ~500 ms
-to `applyPresets()`, which runs on every mode change, and it writes
-`SP_EXT_SYNC_SEL` mid-preset-load. Measure the added latency against a mode
-sweep before committing to it — and remember that every bypass↔scaling
-transition already forces an MS9288A re-lock (see CLAUDE.md, *"No HDMI" with
-every register perfect*), so a slower `applyPresets()` is not free.
+The YPbPr fallback sets `csync = 1` unconditionally rather than probing, and the
+two SD paths above write sync-separation parameters without asking. Neither has
+been shown to cost anything on this bench; both are places where the sync type
+is decided by something other than a measurement.
 
 ## See also
 

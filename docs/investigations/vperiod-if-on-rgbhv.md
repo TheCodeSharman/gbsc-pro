@@ -12,15 +12,15 @@ experiment that would settle it has not been run. What the firmware does about i
 generation, 1: normal mode timing generation"*, and it reads 0 here.
 
 
-- `gbs-control.ino:4433` writes 0 for *every* preset whose ID is not `0x06`/`0x16`
-  (`:4049` writes 1 for those two), so it does not discriminate RGBHV from the SD
+- `gbs-control.ino` writes 0 for *every* preset whose ID is not `0x06`/`0x16`
+  ( writes 1 for those two), so it does not discriminate RGBHV from the SD
   modes where the measurement works. This unit runs `GBS_PRESET_ID` `0x01`.
 - Setting it to 1 changes nothing. Frozen, written and **read back as `0x22` to
   confirm the write landed**, then sampled for 3 s: `VPERIOD_IF` stayed 129,
   `VT_OK` 0, `VT_BAD` 1. Adding a Mode Detect reset on top gave 0, exactly as it
   does with the bit at its normal value.
 
-`IF_SEL_ADC_SYNC` (s1 `0x28` bit 2) is likewise written once at `:1542` for all
+`IF_SEL_ADC_SYNC` (s1 `0x28` bit 2) is likewise written once at  for all
 presets and reads 1, so it does not discriminate either.
 
 **VSync does reach the chip**, so the obvious explanation is wrong. Measured at

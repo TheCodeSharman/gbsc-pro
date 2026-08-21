@@ -49,7 +49,7 @@ the class CLAUDE.md's "compute the geometry, never inherit it" rule exists for.
 The firmware does know the two playback registers are related:
 
 ```c
-// gbs-control.ino:4136
+// gbs-control.ino
 if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4) {
     GBS::PB_CAP_OFFSET::write(GBS::PB_FETCH_NUM::read() + 4);
 }
@@ -680,7 +680,7 @@ MADPT_UV_DELAY  bits 7-4   UV data delay pipes, value + 1, range 1..16
 Both currently **0**, i.e. one pipe each. These are plain pipeline delays, not
 motion-adaptive functions, which is why they are live while the rest of the
 block is not — and the firmware writes this byte in the *progressive* branch
-(`MADPT_Y_DELAY_UV_DELAY = 1`, `gbs-control.ino:3878`), so it is in the path
+(`MADPT_Y_DELAY_UV_DELAY = 1`, `gbs-control.ino`), so it is in the path
 for this source by design.
 
 **This is the mechanism, not a symptom of it.** A delay line is a horizontal
@@ -841,7 +841,7 @@ IF_LD_ST         5   line double WRITE reset generation start position
 
 against `STATUS_IF_INP_INT` = 0, progressive. Those three have read 0/0/0 in
 **every one of the 519 rows**, torn and clean alike. The firmware only writes
-the honest values (`gbs-control.ino:3800-3801`) for `videoStandardInput`
+the honest values (`gbs-control.ino`) for `videoStandardInput`
 3/4/8/9 and only when `!isCustomPreset`; Mode Detect currently reports nothing
 at all (`STATUS_00` = 0x02 fails the `& 0x07 == 0x07` gate), so they were left
 at the preset table's.

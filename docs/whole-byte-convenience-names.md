@@ -35,8 +35,15 @@ zero call sites; it is deleted.
 
 ## The inventory
 
-25 names, 109 call sites, all in `gbs-control.ino` except three
-(`PLL648_CONTROL_01` in `framesync.h` ×2 and `Geometry.cpp` ×1).
+25 names, almost all used from `gbs-control.ino` alone -- the exceptions are
+`PLL648_CONTROL_01` in `framesync.h` and in `Geometry.cpp`.
+
+The per-name `uses` column below is a snapshot and drifts with every commit
+touching the sketch. Recount rather than trusting it:
+
+```sh
+grep -c 'GBS::PLL648_CONTROL_01::' "GBSC-Pro-Source code/gbs-control/gbs-control.ino"
+```
 
 | name | addr | uses | every bit datasheet-named? |
 |---|---|---|---|
@@ -84,7 +91,7 @@ The 13 fully-covered bytes have no such gap, which is why they go first.
 
 ### 2. Save-and-restore genuinely wants the byte
 
-By idiom, over the 109 sites:
+By idiom, at the time the inventory was taken:
 
 | | count |
 |---|---|
@@ -126,7 +133,7 @@ bits mean *because the code would not say*.
    One commit per byte or per small group — `PLL648_CONTROL_01` alone is 24
    sites and deserves its own.
 2. **`PLL648_CONTROL_01` needs thought beyond mechanics.** `0x75` is a *sentinel*
-   the firmware tests for (`framesync.h:652`, `gbs-control.ino:1094`), not just a
+   the firmware tests for (`framesync.h`, `gbs-control.ino`), not just a
    value it writes, and `Geometry.cpp` writes a computed `raster.divider` into
    it. Decomposing the writes without deciding what the sentinel becomes will
    break the tests-for-0x75. See CLAUDE.md on why `PLL648_CONTROL_01 == 0x75` is

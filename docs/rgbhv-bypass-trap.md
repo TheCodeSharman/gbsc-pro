@@ -11,13 +11,13 @@ leave a hole:
 
 | `gbs-control.ino` | condition | action |
 |---|---|---|
-| `:6642` | `sourceLines <= 535 && videoStandardInput == 15` | → enter **scaling** |
-| `:6774` | `sourceLines <= 535 && videoStandardInput == 14` | → scaling setup |
-| `:6883` | `sourceLines > 535 && videoStandardInput == 14` | → set mode **15**, apply **bypass** |
+|  | `sourceLines <= 535 && videoStandardInput == 15` | → enter **scaling** |
+|  | `sourceLines <= 535 && videoStandardInput == 14` | → scaling setup |
+|  | `sourceLines > 535 && videoStandardInput == 14` | → set mode **15**, apply **bypass** |
 
 There is no branch for `sourceLines > 535 && videoStandardInput == 15`. So a
-source above 535 lines takes `:6883` once, lands in mode 15, and from then on
-`:6642` rejects it for being over 535 lines while `:6883` rejects it for already
+source above 535 lines takes  once, lands in mode 15, and from then on
+ rejects it for being over 535 lines while  rejects it for already
 being mode 15. Nothing moves it back.
 
 The bench RISC PC at 800x600 is **VTOTAL 627**, so it traps on every boot. It is
@@ -40,7 +40,7 @@ HPERIOD_IF           garbage       <- expected: the IF is out of the path
 SP_VTOTAL            627           <- sync processor locked and correct
 ```
 
-Escape is a source mode change to 535 lines or fewer — `:6642` then fires. On the
+Escape is a source mode change to 535 lines or fewer —  then fires. On the
 bench that is any of the `modesweep.bas` modes below the gate; 320x256 (VTOTAL
 311) recovers a stable `HPERIOD_IF` of 431 immediately.
 

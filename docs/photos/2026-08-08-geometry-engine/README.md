@@ -1,7 +1,6 @@
 # 2026-08-08 — the geometry engine on the bench
 
-Photographs from the session that flashed `src/tv5725/driver.h` / `geometry_regs.h` to the
-unit for the first time. Source is the RISC PC at **320x256@50, VTOTAL 311**
+Photographs from the first time the geometry engine was flashed to the unit. Source is the RISC PC at **320x256@50, VTOTAL 311**
 (the 800x600 desktop mode is over 535 lines and trapped in RGBHV bypass, where
 the VDS is out of the video path and there is no geometry to solve).
 

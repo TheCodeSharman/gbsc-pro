@@ -13,7 +13,7 @@ is about the code.
 |---|---|
 | `…/gbs-control/src/tv5725/` | the driver. One class per file; every caller includes the classes it names, and there is no umbrella header |
 | `…/src/tv5725/Geometry.cpp`, `Controls.cpp` | the only two that touch registers or Arduino — everything else is pure arithmetic and host-compiles |
-| `test/test_axis.cpp`, `test_scale.cpp`, `test_input_line.cpp`, `test_active_image.cpp`, `test_register_solution.cpp` | host-compiled unit tests, one per class, `make -C test` |
+| `test/test_axis.cpp`, `test_scale.cpp`, `test_input_line.cpp`, `test_active_image.cpp` | host-compiled unit tests, one per class, `make -C test` |
 | `test/test_geometry*.cpp` | what `Tv5725::Geometry` writes, asserted field by field, `make -C test geometry` |
 
 `geometry_math.py` is the reference implementation and stays that way. It holds
@@ -165,7 +165,7 @@ to a question already answered, and the two did not agree: across three boots of
 identical firmware the engine computed 1918 every time while the search settled
 at 1915, 1436 and 1740.
 
-That is why `OutputRaster::EngineCeilingHz` is 108 MHz and not the 129.6 MHz the
+That is why `OutputMode::EngineCeilingHz` is 108 MHz and not the 129.6 MHz the
 part demonstrably runs at — a usability limit, since both were judged "works,
 sharp" on the bench.
 
@@ -259,7 +259,7 @@ solid green screen with every register self-consistent:
 |---|---|---|
 | rate read while the source settles | 311 lines / 50.08 Hz solved as ~57.9 Hz → `PLLAD_MD` 2204 | `lineRateFrom()` cross-checks rate against the line count within 2%, else returns 0 |
 | refused, then a fallback adopted | `271 lines x 49.22 Hz -> line rate 0`, `PLLAD_MD` 1856 every cold boot — the literal `bypassModeSwitch_RGBHV()` writes | `poll()` retries the whole sequence until the source settles, and `Adc` latches the divider it writes |
-| divider correct, `SP_RT_HS_SP` stale | written once by `doPostPresetLoadSteps()`, which the deferred retry never re-enters | one quantity, one owner — `Sampling` writes all three |
+| divider correct, `SP_RT_HS_SP` stale | written once by `doPostPresetLoadSteps()`, which the deferred retry never re-enters | one quantity, one owner — `SourceMeasurement` writes all three |
 
 The cross-check is necessary and not sufficient: it catches a rate disagreeing
 with the line count, never a line count that is simply wrong. `enterBypass()`

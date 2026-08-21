@@ -128,9 +128,9 @@ registers were; `applyPresets()` calls `loadComputedPreset()` and a null
 programArray is the normal case. With one memory map for both standards (below)
 there is no per-standard branch left at all.
 
-Not yet blob-free: `presetDeinterlacerSection` and `presetMdSection` are still
-PROGMEM arrays, moved into `loadStaticSections()` rather than replaced. No preset
-writes segment 2 at all, so they were never table data.
+Blob-free since 2026-08-21: `Tv5725::HdBypass`, `Tv5725::ModeDetect` and
+`Tv5725::Deinterlacer` own what the three PROGMEM arrays used to write. No preset
+writes segment 2 at all, so none of the three was ever table data.
 
 ## A writer inside a branch is not an owner either
 

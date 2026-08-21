@@ -223,7 +223,7 @@ separate-sync source at 60 Hz answers yes, because **any** source above 40 Hz
 answers yes. There is no discrimination in the test, so a working RGBHV source
 is classified as composite and configured accordingly.
 
-`SP_EXT_SYNC_SEL` is also written to 1 at `gbs-control.ino:4113`, again gated on
+`SP_EXT_SYNC_SEL` is also written to 1 at `gbs-control.ino`, again gated on
 `rto->syncTypeCsync`.
 
 ## The fix

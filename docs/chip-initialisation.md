@@ -90,7 +90,7 @@ Rules that come with it:
 
 ### Ordering
 
-`Init` runs subsystems in **address order**, and `Chip` goes first because it
+`BringUp::init()` runs subsystems in **address order**, and `Chip` goes first because it
 holds the `SFTRST_*_RSTZ` fields: releasing a block's reset after configuring it
 discards the configuration.
 
@@ -111,25 +111,23 @@ carry a derivation or an explicit note that they have none. Generated code is
 the anti-pattern this campaign exists to remove, so there is no emitter and no
 blob — the code is the source of truth about what the chip is told.
 
-## The omission hazard, and why it decides the order of work
+## The omission hazard
 
-**A preset table still loads first, and the bring-up writes over the top.**
+A field the bring-up forgets is not a wrong value, it is a **missing** one — and
+a missing value is far harder to see, because whatever the register already held
+stays there and the picture usually looks perfect.
 
-So the dangerous failure is not a wrong value — it is a **missing** one. A field
-the engine forgets to write is silently supplied by the blob, and the picture
-looks perfect. That error is invisible on hardware, and it stays invisible right
-up until the tables are deleted, at which point it appears across nine
-subsystems at once.
+The twelve scaling tables used to supply those forgotten fields, which made the
+error invisible on hardware right up until the tables were deleted. They are
+gone, and `writeProgramArrayNew(0, ...)` is the normal path, so an omission now
+shows on the bench at once. One route still supplies a table — a custom preset,
+which is a register dump replayed from flash — so a field only that path writes
+can still hide.
 
-Two things follow:
-
-- **Reviewing the code before the blobs are gone reviews something whose
-  correctness has not been tested.** This is why the code review is scheduled
-  for after preset removal, not before.
-- **The host tests are what make it visible early.** Poison every bank, run
-  `init()`, and ask the fake which registers were actually touched — a
-  millisecond, no board, and an omission fails an assertion instead of hiding.
-  `docs/testing.md`.
+**The host tests are what make an omission visible without a board.** Poison
+every bank, run `init()`, and ask the fake which registers were actually
+touched: a millisecond, no hardware, and the omission fails an assertion rather
+than waiting for someone to notice a tint. `docs/testing.md`.
 
 ## Where it stands
 
@@ -157,56 +155,6 @@ table, which is also the certified glitch-free bench state.
 Treat a change to any of them as a bench change. `PB_FETCH_NUM` is the same
 family of quantity and tore the picture across 80 of 493 framings.
 
-## What actually blocks deleting the tables
-
-Closing the gap was necessary and is not sufficient. Found on 2026-08-15 when
-the deletion was attempted: **the output resolution is still inherited from the
-table**, in two separate ways, and neither is in the original plan.
-
-**1. The engine reads its own input back off the chip.** `Geometry::solveRaster()`
-opens with
-
-```cpp
-const OutputMode *mode = OutputRaster::modeFor(GBS::VDS_VSYNC_RST::read() + 1);
-```
-
-and its comment is candid about why that works — *"the only thing taken from
-what is already programmed. A preset load has just put it there."* Delete the
-table and nothing puts it there: the field holds whatever the previous mode
-left, or the chip's reset default on a cold boot, and `modeFor()` returns 0 so
-the raster is never solved at all.
-
-This is the anti-pattern this document already warns about two sections up — *a
-subsystem does not read its own inputs back off the chip* — sitting in the one
-place where it decides what the user sees. `presetPreference` is the real input
-and has to be passed in.
-
-**2. Four of the six output resolutions have no engine mode.** Measured from
-the archive against `OutputRaster.cpp`:
-
-| `presetPreference` | frame lines (NTSC / PAL) | `OutputMode`? |
-|---|---|---|
-| 5 `Output1080P` | 1126 / 1126 | **yes**, `Mode1080p` |
-| 3 `Output720P` | 751 / 751 | **yes**, `Mode720p` |
-| 0 `Output960P` | 1001 / 1001 | no |
-| 4 `Output1024P` | 1067 / 1067 | no |
-| 1 `Output480P` | 526 / **626** | no |
-| 6 `OutputDownscale` | 264 / **314** | no |
-
-So deleting the tables today would leave four of six resolutions with no raster
-and two depending on a seed nothing writes. Each missing mode needs real
-timings — sync and back porch in ns, vsync and vertical back porch in lines —
-derived the way `Mode1080p` and `Mode720p` were.
-
-Note the last two rows also **refute `OutputRaster.h`'s claim** that "frameLines
-is a property of the output mode alone" and that each mode's PAL and NTSC pair
-agree exactly. It holds for the top four and not for 480p/576p or downscale,
-which are genuinely different output modes sharing one preference value.
-
-Then, and only then, `writePresetTable()` and the twelve tables are deleted.
-After that, and not before, the competing runtime write sites get
-rationalised.
-
 ## The transient guard can be defeated by its own cross-check
 
 `Geometry::solveRaster()` refuses a field rate that disagrees with the source's
@@ -230,12 +178,6 @@ have read somewhere in 200..290 at the same instant — NTSC-like — making
 
 The raster stayed at 1602 for the 30 s it was watched and did not self-correct.
 `/sc?~` cleared it.
-
-This is **not** caused by the mode becoming an input: `modeForPreference(5)` and
-`modeFor(VDS_VSYNC_RST + 1)` both resolve to `Mode1080p` while a table still
-loads, so the change cannot alter which branch runs. It was not reproduced
-against the previous build, so "pre-existing" is inference from that identity
-rather than an A/B.
 
 The fix is not obvious and is not attempted here. Requiring the line count to
 be *settled* — two agreeing reads, or a minimum age since the load — would do
@@ -265,7 +207,7 @@ and by a lot.** Three of the largest contested writers cannot execute here:
   seven geometry writes are gone rather than merely unreachable. The engine
   computes the horizontal total in `solveRaster()`.
 - `FrameSync::runVsync()` is the only caller of the `VDS_VSYNC_RST` /
-  `VDS_VS_ST` writes in `framesync.h`, and `gbs-control.ino:8143` reads
+  `VDS_VS_ST` writes in `framesync.h`, and `gbs-control.ino` reads
   `rto->extClockGenDetected ? runFrequency() : runVsync(...)`. With the clock
   generator present only `runFrequency()` runs, and it steers the Si5351
   instead.
@@ -283,10 +225,6 @@ solves, so it overwrites all 41. That is now asserted rather than assumed by
 the registers after a preset load against the engine re-solving the same
 framing alone, so the sketch winning any of them would show as a difference.
 
-Note the test that `Geometry.h` cited for this,
-`test_a_preset_load_recomputes_every_register_from_scratch`, **never existed**.
-The invariant the whole ordering rests on was asserted by nobody until now.
-
 So the genuinely live conflicts are the user-action paths — `moveHS()`,
 `moveVS()`, `OSD_selectOption()`, `OSD_IR()`, `web_service()` — and the 81 raw
 `writeOneByte()`/`writeBytes()` sites, which carry no field name and are
@@ -296,14 +234,30 @@ therefore invisible to any check that compares names.
 
 1. ~~Own the 7 gap fields.~~ Done 2026-08-15.
 2. ~~Archive the tables so the audit tooling outlives them.~~ Done 2026-08-15.
-3. **Pass the output mode in** rather than reading `VDS_VSYNC_RST` back.
-4. **Add the four missing `OutputMode`s**, with derived timings.
-5. Delete `writePresetTable()`'s twelve callers and the tables. Safety net: dump
-   1536 registers before, reflash, dump again, `snapdiff.py` — every omission
-   comes back named, offline. The reference dump is
-   `snapshots/BEFORE-preset-deletion-1536-2026-08-15.json`, taken with the
-   picture confirmed good.
-6. Graduate the eight remaining generated classes.
+3. ~~Pass the output mode in rather than reading `VDS_VSYNC_RST` back.~~ Done.
+   `Geometry::solveRaster()` takes `const OutputMode *`. The one surviving
+   read-back sits behind `if (rto->outputMode != 0)` and is the custom-preset and
+   bypass tail, which dies at step 7.
+4. ~~Add the four missing `OutputMode`s, with derived timings.~~ Done. All six
+   exist in `OutputMode.cpp`: 1080p, 1024p, 960p, 720p, 576p, 480p.
+5. ~~Delete `writePresetTable()`'s twelve callers and the tables.~~ Done. The
+   twelve scaling tables are gone, `writeProgramArrayNew(0, ...)` is the normal
+   path, and the three static blobs that outlived them have `Tv5725::` owners:
+   `HdBypass` (s1 0x30..0x55), `ModeDetect` (s1 0x60..0x83) and `Deinterlacer`
+   (the whole of segment 2). What is left of the step is dissolving
+   `loadStaticSections()` into `BringUp::init()` and redirecting
+   `setResetParameters()`, after which `writeProgramArrayNew()` and
+   `writePresetTable()` serve only the custom preset and die with it at step 7.
+
+   The safety net is a 1536-register diff across the reflash, and it works:
+   moving all three blobs changed exactly five config bytes, every one a bit
+   RD-5725-1.1 marks RESERVED that the deinterlacer table set to 1 by copying
+   whole banks. `snapshots/static-blobs-rehomed-1536-2026-08-21.json`.
+6. **Give the remaining register declarations an owner.** No generated class is
+   left, so what this step means now is the 210 `UReg` typedefs still sitting in
+   `Tv5725::Tv5725` with no owning subsystem (2026-08-21): 167 in segment 0, 20
+   in segment 3, 15 in segment 5 and 8 in segment 1. `Tv5725::Tv5725` empties
+   as they move, and `gbs_types.h`'s base list is the progress bar.
 6a. **Bypass becomes a mode the engine understands**, not a branch that skips
    it. `bypassModeSwitch_RGBHV()` is ~130 hand-written register writes in the
    sketch and `setOutModeHdBypass()` is another; both `return` before
@@ -322,4 +276,5 @@ therefore invisible to any check that compares names.
    custom presets alone and dies here.
 
 Step 5 is the milestone that triggers a review pass over `dev`, a
-simplification, and resequencing into logical commits for main.
+simplification, and resequencing into logical commits for main. It is now due:
+only the `loadStaticSections()` dissolve is outstanding.

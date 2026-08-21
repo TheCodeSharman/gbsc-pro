@@ -259,7 +259,7 @@ gives an active window of **41..1121**, which is the encoder window measured
 independently in *What one display shows* above — 1080 lines to the pixel, from the
 standard rather than from the measurement.
 
-`OutputRaster::activeStop` and `activeLinesStop` carry it, `Axis::farBound` applies
+`OutputTimings::activeStop` and `activeLinesStop` carry it, `Axis::farBound` applies
 it, and `Geometry` holds it between solves because `apply()` reads the raster back
 off the chip and no register records a porch. At the bench framing the picture goes
 from ending 6 px short of the raster to 65, with `VDS_HSCALE` 572 against 592.

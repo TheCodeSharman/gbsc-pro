@@ -879,8 +879,9 @@ Widening the picture before widening the window that holds it is the one move
 that reliably wrecks a good state. Measured: at `VDS_VB` 37..845 the window is
 808 lines against 795.9 produced, and every lower `VSCALE` from there is
 negative — 600 gives -67, 500 gives -243. **Window up first, then scale down.**
-This is the vertical case of the constraint `write_origin.py`'s `ordered_writes`
-now enforces for the horizontal pair; nothing enforces it here.
+This is the vertical case of the constraint the horizontal pair has an
+ordering rule for -- window up first, then scale down. Nothing enforces it on
+the vertical axis.
 
 ### Engaging the scaler shifts the picture one pixel right
 

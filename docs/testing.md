@@ -47,13 +47,14 @@ and a test is not a build artefact.
 
 Two kinds:
 
-**Pure arithmetic** — `MemoryMap`, `SdramTimings`, `OutputRaster`, `Sampling`,
+**Pure arithmetic** — `MemoryMap`, `SdramTimings`, `OutputMode`, `SourceMeasurement`,
 `DisplayClock`, `PresetLoad`. No chip, no Arduino. This is where most logic
 should live, and the pure/register split in `src/tv5725/` exists largely to put
 it there.
 
 **Register bring-up, against a fake Wire** — `test_memory_bus.cpp`,
-`test_frame_buffer.cpp`, `test_input_formatter.cpp`, `test_segment_select.cpp`.
+`test_frame_buffer.cpp`, `test_input_formatter.cpp`, `test_hd_bypass.cpp`,
+`test_mode_detect.cpp`, `test_deinterlacer.cpp`, `test_segment_select.cpp`.
 See below.
 
 ### The fake Wire seam

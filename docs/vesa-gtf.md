@@ -99,7 +99,7 @@ below: **there is no curve. Select between two standards.**
   committee decisions, so a fitted curve models the difference between two
   standards bodies. Select; do not interpolate.
 - **This restores an existing distinction.** The firmware already carries
-  `preset_pal`/`preset_ntsc`, and `gbs-control.ino:10647` picks `pal_240p` vs
+  `preset_pal`/`preset_ntsc`, and `gbs-control.ino` picks `pal_240p` vs
   `ntsc_240p` on video mode.
 
 **The trade, stated honestly.** This drops the "contains all active video" guarantee
