@@ -13,19 +13,19 @@ class RegisterSolution {
 public:
     // activeStopH and activeStopV are RasterSolution's, and 0 means the raster's
     // own edge -- see Axis::farBound.
-    RegisterSolution(uint16_t captureH, uint16_t captureV, uint16_t linePx,
+    RegisterSolution(uint16_t horizontalCapture, uint16_t verticalCapture, uint16_t linePx,
              uint16_t frameLines, uint16_t activeStopH = 0,
              uint16_t activeStopV = 0);
 
-    const AxisSolution &h() const;
-    const AxisSolution &v() const;
+    const AxisSolution &horizontal() const;
+    const AxisSolution &vertical() const;
     Scale horizontalScale() const;
     Scale verticalScale() const;
 
     bool usable() const;
 
 private:
-    AxisSolution h_, v_;
+    AxisSolution horizontal_, vertical_;
     Scale horizontalScale_, verticalScale_;
 };
 

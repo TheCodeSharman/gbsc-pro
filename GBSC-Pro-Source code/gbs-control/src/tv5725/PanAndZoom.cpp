@@ -14,37 +14,37 @@ const float OverCapture = 1.04f;
 
 const uint16_t MinimumCapture = 16;
 
-PanAndZoom::PanAndZoom() : zoomH_(0), zoomV_(0), panH_(0), panV_(0) {}
+PanAndZoom::PanAndZoom() : horizontalZoom_(0), verticalZoom_(0), horizontalPan_(0), verticalPan_(0) {}
 
-PanAndZoom::PanAndZoom(int16_t zoomH, int16_t zoomV, int16_t panH, int16_t panV)
-    : zoomH_(zoomH), zoomV_(zoomV), panH_(panH), panV_(panV) {}
+PanAndZoom::PanAndZoom(int16_t horizontalZoom, int16_t verticalZoom, int16_t horizontalPan, int16_t verticalPan)
+    : horizontalZoom_(horizontalZoom), verticalZoom_(verticalZoom), horizontalPan_(horizontalPan), verticalPan_(verticalPan) {}
 
-int16_t PanAndZoom::zoomH() const { return zoomH_; }
+int16_t PanAndZoom::horizontalZoom() const { return horizontalZoom_; }
 
-int16_t PanAndZoom::zoomV() const { return zoomV_; }
+int16_t PanAndZoom::verticalZoom() const { return verticalZoom_; }
 
-int16_t PanAndZoom::panH() const { return panH_; }
+int16_t PanAndZoom::horizontalPan() const { return horizontalPan_; }
 
-int16_t PanAndZoom::panV() const { return panV_; }
+int16_t PanAndZoom::verticalPan() const { return verticalPan_; }
 
-void PanAndZoom::setZoomH(int16_t units) { zoomH_ = units; }
+void PanAndZoom::setHorizontalZoom(int16_t units) { horizontalZoom_ = units; }
 
-void PanAndZoom::setZoomV(int16_t units) { zoomV_ = units; }
+void PanAndZoom::setVerticalZoom(int16_t units) { verticalZoom_ = units; }
 
-void PanAndZoom::setPanH(int16_t units) { panH_ = units; }
+void PanAndZoom::setHorizontalPan(int16_t units) { horizontalPan_ = units; }
 
-void PanAndZoom::setPanV(int16_t units) { panV_ = units; }
+void PanAndZoom::setVerticalPan(int16_t units) { verticalPan_ = units; }
 
-void PanAndZoom::zoomBy(int16_t dh, int16_t dv) { zoomH_ += dh; zoomV_ += dv; }
+void PanAndZoom::zoomBy(int16_t dh, int16_t dv) { horizontalZoom_ += dh; verticalZoom_ += dv; }
 
-void PanAndZoom::panBy(int16_t dx, int16_t dy) { panH_ += dx; panV_ += dy; }
+void PanAndZoom::panBy(int16_t dx, int16_t dy) { horizontalPan_ += dx; verticalPan_ += dy; }
 
-void PanAndZoom::reset() { zoomH_ = zoomV_ = panH_ = panV_ = 0; }
+void PanAndZoom::reset() { horizontalZoom_ = verticalZoom_ = horizontalPan_ = verticalPan_ = 0; }
 
 bool PanAndZoom::operator==(const PanAndZoom &other) const
 {
-    return zoomH_ == other.zoomH_ && zoomV_ == other.zoomV_
-        && panH_ == other.panH_ && panV_ == other.panV_;
+    return horizontalZoom_ == other.horizontalZoom_ && verticalZoom_ == other.verticalZoom_
+        && horizontalPan_ == other.horizontalPan_ && verticalPan_ == other.verticalPan_;
 }
 
 bool PanAndZoom::operator!=(const PanAndZoom &other) const
@@ -66,14 +66,11 @@ uint16_t PanAndZoom::defaultWidth(const InputLine &line, float fieldRateHz,
         vertical ? AxisVertical : AxisHorizontal);
 }
 
-CaptureWindow PanAndZoom::capture(const InputLine &line, float fieldRateHz,
-                        bool vertical, uint16_t rasterTotal) const
+PanAndZoom::Placement PanAndZoom::place(const InputLine &line, float fieldRateHz,
+                                       bool vertical, uint16_t rasterTotal) const
 {
-    if (line.units() == 0)
-        return CaptureWindow();
-
-    int16_t zoomUnits = vertical ? zoomV_ : zoomH_;
-    int16_t pan = vertical ? panV_ : panH_;
+    int16_t zoomUnits = vertical ? verticalZoom_ : horizontalZoom_;
+    int16_t pan = vertical ? verticalPan_ : horizontalPan_;
 
     long width = clampWidth(
         (long)defaultWidth(line, fieldRateHz, vertical) - zoomUnits, line,
@@ -84,7 +81,20 @@ CaptureWindow PanAndZoom::capture(const InputLine &line, float fieldRateHz,
         start = line.firstCapture();
     if (start > (long)line.lastCapture() - width)
         start = (long)line.lastCapture() - width;
-    return CaptureWindow((uint16_t)start, (uint16_t)(start + width));
+
+    Placement placed = {width, start};
+    return placed;
+}
+
+BlankingTiming PanAndZoom::capture(const InputLine &line, float fieldRateHz,
+                        bool vertical, uint16_t rasterTotal) const
+{
+    if (line.units() == 0)
+        return BlankingTiming();
+
+    Placement placed = place(line, fieldRateHz, vertical, rasterTotal);
+    return BlankingTiming((uint16_t)placed.start,
+                         (uint16_t)(placed.start + placed.width));
 }
 
 void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vertical,
@@ -93,24 +103,14 @@ void PanAndZoom::clampToLine(const InputLine &line, float fieldRateHz, bool vert
     if (line.units() == 0)
         return;
 
-    // Deliberately the same arithmetic as capture(), in the same order: this
-    // has to agree with it exactly, or the framing is clamped to a window the
-    // solver does not produce and the dead zone comes back one unit wide.
-    int16_t &zoomUnits = vertical ? zoomV_ : zoomH_;
-    int16_t &pan = vertical ? panV_ : panH_;
+    Placement placed = place(line, fieldRateHz, vertical, rasterTotal);
 
-    long full = defaultWidth(line, fieldRateHz, vertical);
-    long width = clampWidth(full - zoomUnits, line, rasterTotal,
-                            vertical ? AxisVertical : AxisHorizontal);
-    zoomUnits = (int16_t)(full - width);
+    int16_t &zoomUnits = vertical ? verticalZoom_ : horizontalZoom_;
+    int16_t &pan = vertical ? verticalPan_ : horizontalPan_;
 
-    long centre = (long)(line.units() - width) / 2;
-    long start = centre + pan;
-    if (start < (long)line.firstCapture())
-        start = line.firstCapture();
-    if (start > (long)line.lastCapture() - width)
-        start = (long)line.lastCapture() - width;
-    pan = (int16_t)(start - centre);
+    zoomUnits = (int16_t)((long)defaultWidth(line, fieldRateHz, vertical)
+                          - placed.width);
+    pan = (int16_t)(placed.start - (long)(line.units() - placed.width) / 2);
 }
 
 long PanAndZoom::clampWidth(long width, const InputLine &line, uint16_t rasterTotal,

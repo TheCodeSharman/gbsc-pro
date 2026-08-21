@@ -26,10 +26,10 @@ help:
 # The definitions live in src/tv5725/*.cpp, so they have to be compiled in or
 # the test links with every method undefined. GLOB the list, never write it out.
 #
-# Geometry.cpp, Controls.cpp and Sampling.cpp are excluded: they address real
-# registers, so they build for the ESP8266 only. test_geometry does not use
-# Sampling at all; the class is covered by `make -C test sampling`, which does
-# link the fake bus.
+# Geometry.cpp and Controls.cpp are excluded because they reach for the whole
+# sketch, not because they touch registers -- this target links the fake bus,
+# so a class that reads the chip is testable here rather than exiled to the
+# ESP8266. docs/testing.md.
 #
 # The `cd` is load-bearing. The sketch directory is "GBSC-Pro-Source code" --
 # with a space -- so an absolute glob comes back as a word-split list that no
@@ -37,11 +37,12 @@ help:
 # root, every path is space-free.
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$')
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Sampling|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$')
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SyncProcessor|VideoProcessor|BringUp)\.cpp$$')
 
 geometry:
 	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_geometry" \
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_geometry" \
 	  "$(HERE)/test_geometry.cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/test_geometry"
 

@@ -8301,25 +8301,25 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // The four pads. Every press recomputes every window from the
                 // capture and the raster. docs/firmware-geometry-engine.md
                 case '+':
-                    geometryControls.panH(+Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(+Tv5725::ControlSteps::Pan);
                     break;
                 case '-':
-                    geometryControls.panH(-Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(-Tv5725::ControlSteps::Pan);
                     break;
                 case '*':
-                    geometryControls.panV(-Tv5725::ControlSteps::Pan);
+                    geometryControls.verticalPan(-Tv5725::ControlSteps::Pan);
                     break;
                 case '/':
-                    geometryControls.panV(+Tv5725::ControlSteps::Pan);
+                    geometryControls.verticalPan(+Tv5725::ControlSteps::Pan);
                     break;
                 // Zoom in is a negative delta: it crops, and the scale follows.
                 case 'z':
-                    geometryControls.zoomH(+Tv5725::ControlSteps::Zoom);
-                    geometryControls.zoomV(+Tv5725::ControlSteps::Zoom);
+                    geometryControls.horizontalZoom(+Tv5725::ControlSteps::Zoom);
+                    geometryControls.verticalZoom(+Tv5725::ControlSteps::Zoom);
                     break;
                 case 'h':
-                    geometryControls.zoomH(-Tv5725::ControlSteps::Zoom);
-                    geometryControls.zoomV(-Tv5725::ControlSteps::Zoom);
+                    geometryControls.horizontalZoom(-Tv5725::ControlSteps::Zoom);
+                    geometryControls.verticalZoom(-Tv5725::ControlSteps::Zoom);
                     break;
                 case 'q':
                     resetDigital();
@@ -8509,8 +8509,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         // Both ends of this window come from the engine's own
                         // start, rather than a second copy of the number or a
                         // read of the chip.
-                        GBS::IF_LINE_ST::write(Tv5725::Capture::ProgressiveStart);
-                        GBS::IF_LINE_SP::write(Tv5725::Capture::ProgressiveStart
+                        GBS::IF_LINE_ST::write(Tv5725::CaptureWindow::ProgressiveStart);
+                        GBS::IF_LINE_SP::write(Tv5725::CaptureWindow::ProgressiveStart
                             + ((pll_divider / 2) + 1));
                         updateClampPosition();
                         updateCoastPosition(0);
@@ -8678,18 +8678,18 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // Vertical zoom. The scale is computed, not set, so there is
                 // nothing to clamp.
                 case '4':
-                    geometryControls.zoomV(-Tv5725::ControlSteps::Zoom);
+                    geometryControls.verticalZoom(-Tv5725::ControlSteps::Zoom);
                     break;
                 case '5':
-                    geometryControls.zoomV(+Tv5725::ControlSteps::Zoom);
+                    geometryControls.verticalZoom(+Tv5725::ControlSteps::Zoom);
                     break;
                 // Move: one path for every source, the same geometryPan
                 // the pads use. docs/firmware-geometry-engine.md
                 case '6':
-                    geometryControls.panH(-Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(-Tv5725::ControlSteps::Pan);
                     break;
                 case '7':
-                    geometryControls.panH(+Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(+Tv5725::ControlSteps::Pan);
                     break;
                 case '8':
 
@@ -9890,19 +9890,19 @@ void startWebserver()
         Tv5725::PanAndZoom wanted = geometry.framing();
         bool changed = false;
         if (request->hasParam("zh")) {
-            wanted.setZoomH((int16_t)request->getParam("zh")->value().toInt());
+            wanted.setHorizontalZoom((int16_t)request->getParam("zh")->value().toInt());
             changed = true;
         }
         if (request->hasParam("zv")) {
-            wanted.setZoomV((int16_t)request->getParam("zv")->value().toInt());
+            wanted.setVerticalZoom((int16_t)request->getParam("zv")->value().toInt());
             changed = true;
         }
         if (request->hasParam("ph")) {
-            wanted.setPanH((int16_t)request->getParam("ph")->value().toInt());
+            wanted.setHorizontalPan((int16_t)request->getParam("ph")->value().toInt());
             changed = true;
         }
         if (request->hasParam("pv")) {
-            wanted.setPanV((int16_t)request->getParam("pv")->value().toInt());
+            wanted.setVerticalPan((int16_t)request->getParam("pv")->value().toInt());
             changed = true;
         }
         // Requested, never applied here. This runs in a network-stack callback,
@@ -9913,8 +9913,8 @@ void startWebserver()
         char body[96];
         snprintf_P(body, sizeof(body),
             PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d}"),
-            geometry.framing().zoomH(), geometry.framing().zoomV(),
-            geometry.framing().panH(), geometry.framing().panV());
+            geometry.framing().horizontalZoom(), geometry.framing().verticalZoom(),
+            geometry.framing().horizontalPan(), geometry.framing().verticalPan());
         request->send(200, "application/json", body);
     });
 
@@ -11622,7 +11622,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    geometryControls.panH(-Tv5725::ControlSteps::Fine
+                    geometryControls.horizontalPan(-Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::IF_HBIN_SP::read() >= 10) {
                     } else {
@@ -11648,7 +11648,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    geometryControls.panH(+Tv5725::ControlSteps::Fine
+                    geometryControls.horizontalPan(+Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::IF_HBIN_SP::read() < 0x150) {
                     } else {
@@ -11677,12 +11677,12 @@ void OSD_selectOption()
                 // by hand and re-solved nothing.
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    geometryControls.panV(+Tv5725::ControlSteps::Fine
+                    geometryControls.verticalPan(+Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    geometryControls.panV(-Tv5725::ControlSteps::Fine
+                    geometryControls.verticalPan(-Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyExit:
@@ -11731,7 +11731,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    geometryControls.zoomH(+Tv5725::ControlSteps::Fine
+                    geometryControls.horizontalZoom(+Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_HSCALE::read() == 1023) {
                         for (int p = 0; p <= 400; p++) {
@@ -11748,7 +11748,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    geometryControls.zoomH(-Tv5725::ControlSteps::Fine
+                    geometryControls.horizontalZoom(-Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_HSCALE::read() <= 256) {
                         for (int p = 0; p <= 400; p++) {
@@ -11765,7 +11765,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    geometryControls.zoomV(+Tv5725::ControlSteps::Fine
+                    geometryControls.verticalZoom(+Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_VSCALE::read() == 1023) {
                         for (int p = 0; p <= 400; p++) {
@@ -11782,7 +11782,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    geometryControls.zoomV(-Tv5725::ControlSteps::Fine
+                    geometryControls.verticalZoom(-Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()));
                     if (GBS::VDS_VSCALE::read() <= 256) {
                         for (int p = 0; p <= 400; p++) {

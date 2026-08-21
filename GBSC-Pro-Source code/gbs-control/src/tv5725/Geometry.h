@@ -12,8 +12,9 @@
 #include <stdint.h>
 
 #include "../../gbs_types.h"
-#include "CaptureWindow.h"
+#include "BlankingTiming.h"
 #include "InputLine.h"
+#include "CaptureWindow.h"
 #include "OutputRaster.h"
 #include "PanAndZoom.h"
 #include "RegisterSolution.h"
@@ -28,69 +29,6 @@ namespace Tv5725 {
 // Defined in OutputRaster.h, deliberately not included: only a pointer is held,
 // and including it would pull the raster arithmetic into every user.
 class OutputMode;
-
-// The capture window and the two rasters it has to fit, read from the chip in
-// one place so nothing downstream reads a register to decide what to write.
-class Capture {
-public:
-    Capture();
-
-    uint16_t horizontalStop() const;
-    uint16_t horizontalStart() const;
-    uint16_t verticalStop() const;
-    uint16_t verticalStart() const;
-    uint16_t linePx() const;
-    uint16_t frameLines() const;
-
-    // The horizontal line knows what the hsync pulse takes off each end; the
-    // vertical does not, because nothing has measured the vsync equivalent and
-    // a guess there would crop picture rather than blanking.
-    InputLine lineH() const;
-    InputLine lineV() const;
-
-    uint16_t captureH() const;
-    uint16_t captureV() const;
-
-    // In RGBHV bypass the VDS is out of the video path and there is nothing to
-    // solve; both rasters read back as nearly zero.
-    bool scaling() const;
-
-    bool usable() const;
-
-    // A 97/98 reading mid-preset-change is a measurement in progress, not a
-    // mode: the smallest real ones the VDS scales are 262 and 312.
-    static const uint16_t SourceVerticalTotalMin = 200;
-    static const uint16_t SourceVerticalTotalMax = 1300;
-
-    // Above this the source is a 50 Hz standard -- PAL-like ~312 lines, NTSC-like
-    // ~262. Sanity-checks a measured field rate, which is transient during a
-    // preset load where the line count is not.
-    static const uint16_t PalVerticalTotalMin = 290;
-
-    // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
-    static const uint16_t ProgressiveStart = 64;
-
-    // Read the rasters and where each capture window rolls over. False when the
-    // source has not settled far enough to derive a window from.
-    //
-    // The sampling is an ARGUMENT, not a read. PLLAD_LAT is what loads the
-    // divider into the ADC PLL, so between a write and the latch the register
-    // reports a value the chip is not using. Everything read here is a raster
-    // or a live measurement; the divider is a choice, and belongs to whoever
-    // made it.
-    bool readRasters(const Sampling &sampling);
-
-    void setWindows(const CaptureWindow &h, const CaptureWindow &v);
-
-private:
-    uint16_t horizontalStop_, horizontalStart_;      // IF_HB_SP2 / ST2, IF units
-    uint16_t verticalStop_, verticalStart_;      // IF_VB_SP / ST, HALF-LINES
-    uint16_t linePx_;         // output raster total, horizontal
-    uint16_t frameLines_;     // output raster total, vertical
-    uint16_t wrapH_, wrapV_;  // where each capture window rolls over
-    uint16_t hlowLen_;        // hsync low, ADC samples
-    uint16_t adcLine_;        // the whole line in the same samples
-};
 
 // The geometry engine: the user's framing, and every TV5725 register that is an
 // output of it.
@@ -190,13 +128,13 @@ private:
 
     bool fail();
 
-    bool readCapture(Capture &capture);
+    bool readCapture(CaptureWindow &capture);
 
     // Ordered so the headroom never dips: the solver always takes the whole
     // memory window, so the only edge that can narrow it is VDS_?B_SP moving up.
     // docs/firmware-geometry-engine.md "Write ordering".
     static void write(const RegisterSolution &solved,
-                      const Capture &capture);
+                      const CaptureWindow &capture);
 
     // A press that cannot move the window must not move the state either, or the
     // control goes dead for as many presses as it was pushed past its limit.

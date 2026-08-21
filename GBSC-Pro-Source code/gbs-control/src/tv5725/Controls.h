@@ -19,10 +19,10 @@ class Controls {
 public:
     Controls(Geometry &engine, Print &console);
 
-    bool panH(int16_t pixels);
-    bool panV(int16_t pixels);
-    bool zoomH(int16_t pixels);
-    bool zoomV(int16_t pixels);
+    bool horizontalPan(int16_t pixels);
+    bool verticalPan(int16_t pixels);
+    bool horizontalZoom(int16_t pixels);
+    bool verticalZoom(int16_t pixels);
 
     Geometry &engine() const;
 

@@ -133,12 +133,12 @@ bool osdMoveX(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        osdManager.geometry().panH(+Tv5725::ControlSteps::Pan);
+        osdManager.geometry().horizontalPan(+Tv5725::ControlSteps::Pan);
         config.barActiveLength = 2;
     }
     else
     {
-        osdManager.geometry().panH(-Tv5725::ControlSteps::Pan);
+        osdManager.geometry().horizontalPan(-Tv5725::ControlSteps::Pan);
         config.barActiveLength = 0;
     }
     return false;
@@ -154,12 +154,12 @@ bool osdMoveY(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        osdManager.geometry().panV(+Tv5725::ControlSteps::Pan);
+        osdManager.geometry().verticalPan(+Tv5725::ControlSteps::Pan);
         config.barActiveLength = 2;
     }
     else
     {
-        osdManager.geometry().panV(-Tv5725::ControlSteps::Pan);
+        osdManager.geometry().verticalPan(-Tv5725::ControlSteps::Pan);
         config.barActiveLength = 0;
     }
     return false;
@@ -175,12 +175,12 @@ bool osdScaleY(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        osdManager.geometry().zoomV(+Tv5725::ControlSteps::Zoom);
+        osdManager.geometry().verticalZoom(+Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 2;
     }
     else
     {
-        osdManager.geometry().zoomV(-Tv5725::ControlSteps::Zoom);
+        osdManager.geometry().verticalZoom(-Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 0;
     }
     return false;
@@ -196,12 +196,12 @@ bool osdScaleX(OSDMenuConfig &config)
     }
     if (config.inc)
     {
-        osdManager.geometry().zoomH(+Tv5725::ControlSteps::Zoom);
+        osdManager.geometry().horizontalZoom(+Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 2;
     }
     else
     {
-        osdManager.geometry().zoomH(-Tv5725::ControlSteps::Zoom);
+        osdManager.geometry().horizontalZoom(-Tv5725::ControlSteps::Zoom);
         config.barActiveLength = 0;
     }
     return false;

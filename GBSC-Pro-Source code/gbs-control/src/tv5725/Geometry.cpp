@@ -1,77 +1,11 @@
 #include "Geometry.h"
 
+#include "CaptureWindow.h"
 #include "Memory.h"
 #include "MemoryMap.h"
 #include "OutputRaster.h"
 
 namespace Tv5725 {
-
-// --- Capture ---------------------------------------------------------
-
-Capture::Capture()
-    : horizontalStop_(0), horizontalStart_(0), verticalStop_(0), verticalStart_(0), linePx_(0), frameLines_(0),
-      wrapH_(0), wrapV_(0), hlowLen_(0), adcLine_(0) {}
-
-uint16_t Capture::horizontalStop() const { return horizontalStop_; }
-
-uint16_t Capture::horizontalStart() const { return horizontalStart_; }
-
-uint16_t Capture::verticalStop() const { return verticalStop_; }
-
-uint16_t Capture::verticalStart() const { return verticalStart_; }
-
-uint16_t Capture::linePx() const { return linePx_; }
-
-uint16_t Capture::frameLines() const { return frameLines_; }
-
-InputLine Capture::lineH() const
-{
-    return InputLine::measured(wrapH_, hlowLen_, adcLine_);
-}
-
-InputLine Capture::lineV() const { return InputLine(wrapV_); }
-
-uint16_t Capture::captureH() const { return horizontalStart_ - horizontalStop_; }
-
-uint16_t Capture::captureV() const { return verticalStart_ - verticalStop_; }
-
-bool Capture::scaling() const
-{
-    return linePx_ >= 64 && frameLines_ >= 64;
-}
-
-bool Capture::usable() const { return horizontalStart_ > horizontalStop_ && verticalStart_ > verticalStop_; }
-
-bool Capture::readRasters(const Sampling &sampling)
-{
-    linePx_ = GBS::VDS_HSYNC_RST::read() + 1;
-    frameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
-    wrapH_ = sampling.ifLine() + 1;
-
-    // How much of the line the hsync pulse takes is a property of the source, so
-    // it is measured. Both are in ADC samples, the one space they share -- the
-    // denominator is the divider, not STATUS_SYNC_PROC_HTOTAL, which only echoes
-    // PLLAD_MD back.
-    hlowLen_ = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-    adcLine_ = sampling.divider();
-
-    uint16_t sourceVerticalTotal = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    if (wrapH_ < 64 || sourceVerticalTotal < SourceVerticalTotalMin
-        || sourceVerticalTotal > SourceVerticalTotalMax)
-        return false;
-
-    // IF_VB counts half-lines, so it rolls at twice the source frame.
-    wrapV_ = 2 * (sourceVerticalTotal + 1);
-    return true;
-}
-
-void Capture::setWindows(const CaptureWindow &h, const CaptureWindow &v)
-{
-    horizontalStop_ = h.sp();
-    horizontalStart_ = h.st();
-    verticalStop_ = v.sp();
-    verticalStart_ = v.st();
-}
 
 // --- Geometry ----------------------------------------------------------
 
@@ -90,11 +24,11 @@ void Geometry::requestFraming(const PanAndZoom &wanted)
 
 bool Geometry::apply()
 {
-    Capture capture;
+    CaptureWindow capture;
     if (!readCapture(capture))
         return false;
 
-    RegisterSolution solved(capture.captureH(), capture.captureV(),
+    RegisterSolution solved(capture.horizontal().width(), capture.vertical().width(),
                               capture.linePx(), capture.frameLines(),
                               activeStop_, activeLinesStop_);
     if (!solved.usable())
@@ -137,7 +71,7 @@ bool Geometry::solveRaster()
     // docs/firmware-geometry-engine.md
     float fieldRate = getSourceFieldRate(0);
     uint16_t sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    if (sourceLines < Capture::SourceVerticalTotalMin || sourceLines > Capture::SourceVerticalTotalMax) {
+    if (sourceLines < CaptureWindow::SourceVerticalTotalMin || sourceLines > CaptureWindow::SourceVerticalTotalMax) {
         // Deferred, not abandoned: the sync processor reads 97 or 98 for a
         // moment after a preset load and this is called in exactly that moment.
         // Giving up leaves the previous raster standing for the session,
@@ -147,7 +81,7 @@ bool Geometry::solveRaster()
         return false;
     }
 
-    float nominal = sourceLines > Capture::PalVerticalTotalMin ? 50.0f : 60.0f;
+    float nominal = sourceLines > CaptureWindow::PalVerticalTotalMin ? 50.0f : 60.0f;
     float error = fieldRate > nominal ? fieldRate / nominal : nominal / fieldRate;
     if (!(error < 1.02f)) {
         // Deferred for the same reason: the source settles a second or two
@@ -279,7 +213,7 @@ bool Geometry::fail()
     return false;
 }
 
-bool Geometry::readCapture(Capture &capture)
+bool Geometry::readCapture(CaptureWindow &capture)
 {
     if (!capture.readRasters(sampling_)) {
         // Bypass is not a failure to retry: there is nothing to solve.
@@ -294,93 +228,68 @@ bool Geometry::readCapture(Capture &capture)
         return false;
     }
 
-    float fieldRate = sourceFieldRateOr50Hz();
-
-    // Store only a framing this source can realise. A press big enough to
-    // overshoot an edge still moves the window a unit or two, so step() accepts
-    // it and the framing keeps the overshoot; every smaller press back then
-    // produces an identical window and step() reverts it, leaving the control
-    // dead in that direction. Only the hold ramp presses that far -- measured
-    // pv -51 against a limit of -46, ph -144 against -134.
-    InputLine h = capture.lineH();
-    InputLine v = capture.lineV();
-    framing_.clampToLine(h, fieldRate, false, capture.linePx());
-    framing_.clampToLine(v, fieldRate, true, capture.frameLines());
-
-    CaptureWindow windowH = framing_.capture(h, fieldRate, false, capture.linePx());
-    CaptureWindow windowV = framing_.capture(v, fieldRate, true, capture.frameLines());
-
-    // A pixel costs one 32-bit word and the capture buffer holds 1,703,936 of
-    // them; capture width is in ADC samples and PLLAD_MD is 12 bits, so a line
-    // wide enough to overrun is reachable. The chip's answer to an overrun is to
-    // wrap, putting a wrong address on screen and reporting nothing. Narrowed
-    // rather than refused, for the reason clampToLine() clamps: a dead picture
-    // with no way back is the worse failure.
-    const uint16_t fits = MemoryMap::clampWidth(windowH.width(), windowV.width());
-    if (fits < windowH.width())
-        windowH = CaptureWindow(windowH.sp(), windowH.sp() + fits);
-
-    capture.setWindows(windowH, windowV);
+    capture.setFraming(framing_, sourceFieldRateOr50Hz());
+    framing_ = capture.framing();
     return capture.usable() ? true : fail();
 }
 
-void Geometry::write(const RegisterSolution &solved, const Capture &capture)
+void Geometry::write(const RegisterSolution &solved, const CaptureWindow &capture)
 {
     // 1. Far edges OUTWARD only, which can only add headroom. The memory window
     // hugs the picture, so it moves in as well as out; narrowing it here would
     // leave the old, wider display window showing unwritten memory at the far
     // edge for the length of a write. Inward moves wait for step 5b.
-    if (solved.h().windowStart() > GBS::VDS_HB_ST::read())
-        GBS::VDS_HB_ST::write(solved.h().windowStart());
-    if (solved.v().windowStart() > GBS::VDS_VB_ST::read())
-        GBS::VDS_VB_ST::write(solved.v().windowStart());
+    if (solved.horizontal().windowStart() > GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.horizontal().windowStart());
+    if (solved.vertical().windowStart() > GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.vertical().windowStart());
 
     // 2. Near edges down, if down is where they are going.
-    if (solved.h().windowStop() < GBS::VDS_HB_SP::read())
-        GBS::VDS_HB_SP::write(solved.h().windowStop());
-    if (solved.v().windowStop() < GBS::VDS_VB_SP::read())
-        GBS::VDS_VB_SP::write(solved.v().windowStop());
+    if (solved.horizontal().windowStop() < GBS::VDS_HB_SP::read())
+        GBS::VDS_HB_SP::write(solved.horizontal().windowStop());
+    if (solved.vertical().windowStop() < GBS::VDS_VB_SP::read())
+        GBS::VDS_VB_SP::write(solved.vertical().windowStop());
 
     // 3. The picture. BYPS cleared because an explicit scale was computed.
     //
     // The line double's progressive window spans one whole line, so it is
     // recomputed on every solve. Its start is written rather than read, or a
     // clobbered preset byte would propagate into the stop.
-    GBS::IF_LINE_ST::write(Capture::ProgressiveStart);
-    GBS::IF_LINE_SP::write(capture.lineH().progressiveStop(Capture::ProgressiveStart));
-    GBS::IF_HB_SP2::write(capture.horizontalStop());
-    GBS::IF_HB_ST2::write(capture.horizontalStart());
-    GBS::IF_VB_SP::write(capture.verticalStop());
-    GBS::IF_VB_ST::write(capture.verticalStart());
+    GBS::IF_LINE_ST::write(CaptureWindow::ProgressiveStart);
+    GBS::IF_LINE_SP::write(capture.horizontalLine().progressiveStop(CaptureWindow::ProgressiveStart));
+    GBS::IF_HB_SP2::write(capture.horizontal().stop());
+    GBS::IF_HB_ST2::write(capture.horizontal().start());
+    GBS::IF_VB_SP::write(capture.vertical().stop());
+    GBS::IF_VB_ST::write(capture.vertical().start());
     GBS::VDS_HSCALE_BYPS::write(0);
     GBS::VDS_VSCALE_BYPS::write(0);
     GBS::VDS_HSCALE::write(solved.horizontalScale().reg());
     GBS::VDS_VSCALE::write(solved.verticalScale().reg());
 
     // 4. Near edges up, now that the picture they bound is the new one.
-    GBS::VDS_HB_SP::write(solved.h().windowStop());
-    GBS::VDS_VB_SP::write(solved.v().windowStop());
+    GBS::VDS_HB_SP::write(solved.horizontal().windowStop());
+    GBS::VDS_VB_SP::write(solved.vertical().windowStop());
 
     // 5. The aperture, which must hug the picture.
-    GBS::VDS_DIS_HB_SP::write(solved.h().displayStop());
-    GBS::VDS_DIS_HB_ST::write(solved.h().displayStart());
-    GBS::VDS_DIS_VB_SP::write(solved.v().displayStop());
-    GBS::VDS_DIS_VB_ST::write(solved.v().displayStart());
+    GBS::VDS_DIS_HB_SP::write(solved.horizontal().displayStop());
+    GBS::VDS_DIS_HB_ST::write(solved.horizontal().displayStart());
+    GBS::VDS_DIS_VB_SP::write(solved.vertical().displayStop());
+    GBS::VDS_DIS_VB_ST::write(solved.vertical().displayStart());
 
     // 5b. Far edges INWARD, now that the aperture they bound has closed. The
     // mirror of step 2: a window edge may only cross the display window's in
     // the direction that keeps the picture covered.
-    if (solved.h().windowStart() < GBS::VDS_HB_ST::read())
-        GBS::VDS_HB_ST::write(solved.h().windowStart());
-    if (solved.v().windowStart() < GBS::VDS_VB_ST::read())
-        GBS::VDS_VB_ST::write(solved.v().windowStart());
+    if (solved.horizontal().windowStart() < GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.horizontal().windowStart());
+    if (solved.vertical().windowStart() < GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.vertical().windowStart());
 
     // 6. The playback burst, only if it is not already right. Rewriting
     // PB_FETCH_NUM reprograms the playback FIFO while the picture is being read
     // out of it, which flickers even when the value written is identical.
     // docs/investigations/hscale-tearing-characterisation.md
-    uint16_t fetch = Memory::fetchFor(capture.linePx(), capture.captureH());
-    uint16_t offset = Memory::offsetFor(capture.lineH().units());
+    uint16_t fetch = Memory::fetchFor(capture.linePx(), capture.horizontal().width());
+    uint16_t offset = Memory::offsetFor(capture.horizontalLine().units());
     if (GBS::PB_FETCH_NUM::read() != fetch)
         GBS::PB_FETCH_NUM::write(fetch);
     if (GBS::PB_CAP_OFFSET::read() != offset)

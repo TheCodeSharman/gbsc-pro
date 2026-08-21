@@ -8,7 +8,7 @@
 
 #include "Axis.h"
 #include "InputLine.h"
-#include "CaptureWindow.h"
+#include "BlankingTiming.h"
 
 namespace Tv5725 {
 
@@ -37,17 +37,17 @@ extern const uint16_t MinimumCapture;
 class PanAndZoom {
 public:
     PanAndZoom();
-    PanAndZoom(int16_t zoomH, int16_t zoomV, int16_t panH, int16_t panV);
+    PanAndZoom(int16_t horizontalZoom, int16_t verticalZoom, int16_t horizontalPan, int16_t verticalPan);
 
-    int16_t zoomH() const;
-    int16_t zoomV() const;
-    int16_t panH() const;
-    int16_t panV() const;
+    int16_t horizontalZoom() const;
+    int16_t verticalZoom() const;
+    int16_t horizontalPan() const;
+    int16_t verticalPan() const;
 
-    void setZoomH(int16_t units);
-    void setZoomV(int16_t units);
-    void setPanH(int16_t units);
-    void setPanV(int16_t units);
+    void setHorizontalZoom(int16_t units);
+    void setVerticalZoom(int16_t units);
+    void setHorizontalPan(int16_t units);
+    void setVerticalPan(int16_t units);
 
     // Zoom in is POSITIVE: it crops, and the scale follows.
     void zoomBy(int16_t dh, int16_t dv);
@@ -69,7 +69,7 @@ public:
     // The capture window this framing means, on `line`. Derived from the
     // framing and the line alone -- nothing is read back. At rest this IS the
     // default window, so there is no second definition of it.
-    CaptureWindow capture(const InputLine &line, float fieldRateHz, bool vertical,
+    BlankingTiming capture(const InputLine &line, float fieldRateHz, bool vertical,
                    uint16_t rasterTotal) const;
 
     // Bring this framing back to what the line can actually realise. capture()
@@ -87,10 +87,17 @@ public:
                            const Axis &axis);
 
 private:
-    int16_t zoomH_;   // input units cropped off the default width; negative widens
-    int16_t zoomV_;
-    int16_t panH_;    // input units from the centre of the line
-    int16_t panV_;
+    // The width and start this framing lands on, before either becomes a
+    // register. capture() and clampToLine() both take it from here, so they
+    // cannot disagree: one unit apart is a dead zone one press wide.
+    struct Placement { long width, start; };
+    Placement place(const InputLine &line, float fieldRateHz, bool vertical,
+                    uint16_t rasterTotal) const;
+
+    int16_t horizontalZoom_;   // input units cropped off the default width; negative widens
+    int16_t verticalZoom_;
+    int16_t horizontalPan_;    // input units from the centre of the line
+    int16_t verticalPan_;
 };
 
 }  // namespace Tv5725

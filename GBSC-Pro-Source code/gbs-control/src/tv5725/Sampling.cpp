@@ -1,6 +1,6 @@
 #include "Sampling.h"
 
-#include "Geometry.h"    // Capture's settling bounds, so there is one owner of them
+#include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
 #include "InputLine.h"   // the capture write limit, likewise
 
 #include "../../gbs_types.h"
@@ -64,13 +64,13 @@ uint16_t Sampling::maxDivider(uint32_t lineRateHz, uint8_t oversample)
 
 uint32_t Sampling::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
 {
-    if (sourceLines < Capture::SourceVerticalTotalMin
-        || sourceLines > Capture::SourceVerticalTotalMax)
+    if (sourceLines < CaptureWindow::SourceVerticalTotalMin
+        || sourceLines > CaptureWindow::SourceVerticalTotalMax)
         return 0;
 
     // Which rate the line count makes plausible, then agreement within 2%.
-    // Capture::PalVerticalTotalMin is the same split the firmware's mode detect uses.
-    float nominal = sourceLines > Capture::PalVerticalTotalMin ? 50.0f : 60.0f;
+    // CaptureWindow::PalVerticalTotalMin is the same split the firmware's mode detect uses.
+    float nominal = sourceLines > CaptureWindow::PalVerticalTotalMin ? 50.0f : 60.0f;
     float error = fieldRateHz > nominal ? fieldRateHz / nominal
                                         : nominal / fieldRateHz;
     if (!(fieldRateHz > 0.0f) || !(error < 1.02f))
