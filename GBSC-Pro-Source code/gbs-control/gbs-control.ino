@@ -70,6 +70,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
 #include "src/input/InputSource.h"
+#include "src/tv5725/SamplingLog.h"
 #include "src/input/SyncSearch.h"
 
 struct MenuAttrs
@@ -115,6 +116,17 @@ char userCommand;
 // doing any of that in the handler touches the bus from the wrong context. The
 // route parses and queues; loop() selects.
 volatile uint8_t pendingInputSelection = InputSource::None;
+
+Tv5725::SamplingLog samplingLog;
+
+// What /samplinglog queued, for loop() to start. Two words rather than a call:
+// the route answers from a network callback, which must not touch the bus.
+volatile bool pendingSamplingMonitor = false;
+volatile bool pendingSamplingSweep = false;
+volatile uint16_t pendingSamplingA = 0;
+volatile uint16_t pendingSamplingB = 0;
+volatile uint16_t pendingSamplingC = 0;
+volatile uint32_t pendingSamplingD = 0;
 
 // How many output pixels the pending press asked for, or 0 for the pad's own
 // step. Cleared as the command is consumed, so a press from the OSD or the
@@ -7313,6 +7325,11 @@ void loop()
     serviceRegisterQueue();
 #endif
 
+    // At the top of loop() and nowhere else. Inside web_service()'s timed block
+    // the samples came 300 ms apart with a 5 ms interval asked for, which is
+    // coarser than the HTTP polling this exists to beat.
+    samplingLog.poll();
+
     // Hand the boot backlog to the first console that attaches, so the web
     // console opens on the whole boot rather than starting mid-sentence.
     //
@@ -8480,6 +8497,16 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             }
         }
 
+        if (pendingSamplingMonitor) {
+            pendingSamplingMonitor = false;
+            samplingLog.monitor(pendingSamplingA, pendingSamplingD);
+        }
+        if (pendingSamplingSweep) {
+            pendingSamplingSweep = false;
+            samplingLog.sweep(pendingSamplingA, pendingSamplingB,
+                              pendingSamplingC, (uint16_t)pendingSamplingD,
+                              rto->osr);
+        }
         if (pendingInputSelection != InputSource::None) {
             // Cleared before acting, not after: every handler below blocks for
             // seconds while detection runs, and a second request landing in that
@@ -9371,6 +9398,40 @@ void startWebserver()
     // Until this existed the OLED was the ONLY way to choose an input: the six
     // handlers had two callers between them, the menu and one IR key. A unit
     // that came up on the wrong one needed someone standing at it.
+    // Log the source measurements from loop(), where HTTP polling cannot reach:
+    // at tens of hertz a host cannot tell a value that dithers from one read
+    // torn across two states, nor see how long a reading takes to settle after a
+    // latch -- which is the number that says how long a mode change must wait.
+    //
+    //   /samplinglog?ms=5&for=60000              follow a source that changes
+    //   /samplinglog?low=1600&high=2900&step=100&dwell=400   walk the divider
+    //
+    // Queued, like /input: this answers from a network callback and must not
+    // touch the bus.
+    server.on("/samplinglog", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (samplingLog.active()) {
+            request->send(409, "application/json", "{\"error\":\"already running\"}");
+            return;
+        }
+        auto number = [request](const char *name, uint32_t fallback) -> uint32_t {
+            return request->hasParam(name)
+                ? (uint32_t)request->getParam(name)->value().toInt() : fallback;
+        };
+
+        if (request->hasParam("low")) {
+            pendingSamplingA = (uint16_t)number("low", 1600);
+            pendingSamplingB = (uint16_t)number("high", 2900);
+            pendingSamplingC = (uint16_t)number("step", 100);
+            pendingSamplingD = number("dwell", 400);
+            pendingSamplingSweep = true;
+        } else {
+            pendingSamplingA = (uint16_t)number("ms", 5);
+            pendingSamplingD = number("for", 60000);
+            pendingSamplingMonitor = true;
+        }
+        request->send(200, "application/json", "{\"queued\":\"samplinglog\"}");
+    });
+
     server.on("/input", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!request->hasParam("src")) {
             request->send(400, "application/json",
