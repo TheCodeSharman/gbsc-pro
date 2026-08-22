@@ -980,6 +980,27 @@ void externalClockGenResetClock()
     FrameSync::clearFrequency();
 }
 
+float sourceFieldRateOffIfBus() { return getSourceFieldRate(0); }
+
+// A rate two consecutive measurements agree on, or 0 when they never do. Each
+// measurement spins for up to a vsync period, so the attempts are few.
+float agreedRate(float (*measure)())
+{
+    const uint8_t Attempts = 3;
+    float previous = 0.0f;
+    for (uint8_t attempt = 0; attempt < Attempts; ++attempt) {
+        float rate = measure();
+        if (rate < 47.0f || rate > 86.0f) {
+            previous = 0.0f;
+            continue;
+        }
+        if (previous != 0.0f && Clock::RateAgreement::agree(previous, rate))
+            return rate;
+        previous = rate;
+    }
+    return 0.0f;
+}
+
 void externalClockGenSyncInOutRate()
 {
     fsDebugPrintf("externalClockGenSyncInOutRate()\n");
@@ -997,13 +1018,19 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
-    float sfr = getSourceFieldRate(0);
-    if (sfr < 47.0f || sfr > 86.0f) {
+    // Both rates twice, because one sample is wrong by percent often enough to
+    // matter and the clock is set to their ratio. Steering on a disputed pair
+    // leaves the output a whole hertz off the source, which FrameSync then
+    // walks back over tens of seconds of dropped frames -- and the encoder locks
+    // to the wrong rate on the way. Not steering at all is the better of the
+    // two: the next pass measures again.
+    float sfr = agreedRate(sourceFieldRateOffIfBus);
+    if (sfr == 0.0f) {
         return;
     }
 
-    float ofr = getOutputFrameRate();
-    if (ofr < 47.0f || ofr > 86.0f) {
+    float ofr = agreedRate(getOutputFrameRate);
+    if (ofr == 0.0f) {
         return;
     }
 

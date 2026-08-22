@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc clean help
+.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -165,6 +165,17 @@ clock-ramp:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_clock_ramp" \
 	  "$(HERE)/test_clock_ramp.cpp" src/clock/ClockRamp.cpp
 	@"$(OUT)/test_clock_ramp"
+
+## rate-agreement: host unit tests for when two rate measurements are believed
+#
+# One timing sample off the debug pin jitters by percent, and both the clock
+# generator's seed and FrameSync steer on it. The rule is pure; the measuring
+# stays in the sketch.
+rate-agreement:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_rate_agreement" \
+	  "$(HERE)/test_rate_agreement.cpp" src/clock/RateAgreement.cpp
+	@"$(OUT)/test_rate_agreement"
 
 ## input-source: host unit tests for the six inputs the OLED offers
 #
@@ -427,7 +438,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc sampling-log
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

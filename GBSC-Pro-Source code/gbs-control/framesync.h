@@ -21,6 +21,7 @@
 // Clock::ClockRamp in setExternalClockGenFrequencySmooth, and depending on the
 // sketch to include it first works only while the ordering happens to hold.
 #include "src/clock/ClockGen.h"
+#include "src/clock/RateAgreement.h"
 #include "src/tv5725/DisplayClock.h"
 
 // FS_DEBUG:      full verbose debug over serial
@@ -748,10 +749,7 @@ public:
                 continue;
             }
 
-            // Check that the two FPS measurements are sufficiently close.
-            float diff = fabs(fpsInput2 - fpsInput);
-            float relDiff = diff / std::min(fpsInput, fpsInput2);
-            if (relDiff != relDiff || diff > 0.5f || relDiff > 0.00833f)
+            if (!Clock::RateAgreement::agree(fpsInput, fpsInput2))
             {
                 fsDebugPrintf("runFrequency(): attempt %d: inconsistent FPS %f vs %f\n", attempt, fpsInput, fpsInput2);
                 continue;
