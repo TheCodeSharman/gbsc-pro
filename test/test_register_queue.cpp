@@ -14,6 +14,7 @@
 #include <doctest/doctest.h>
 
 #include "../GBSC-Pro-Source code/gbs-control/src/net/RegisterQueue.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/net/FieldRequest.h"
 
 // Stand-ins for AsyncWebServerRequest*. The queue never dereferences a token --
 // that is the point of it being opaque -- so any distinct addresses will do.
@@ -191,4 +192,72 @@ TEST_CASE("a range job carries both ends")
 
     CHECK(taken.first == 0x00);
     CHECK(taken.last == 0xFF);
+}
+
+// --- many fields in one job --------------------------------------------------
+
+static FieldRequest twoFields()
+{
+    FieldRequest request;
+    REQUIRE(request.parse("5.18.0.12,0.27.0.11"));
+    return request;
+}
+
+TEST_CASE("a field request is claimed like any other job, and carries its list")
+{
+    // The list cannot live in Job: a 48-field buffer in each of four slots is
+    // memory this part does not have. It lives here instead, which is also what
+    // makes "one outstanding" enforceable rather than a rule the route can
+    // forget.
+    RegisterQueue queue;
+    RegisterQueue::Job taken;
+
+    CHECK(queue.submitFields(twoFields(), TokenA));
+    REQUIRE(queue.claim(taken));
+
+    CHECK(taken.kind == RegisterQueue::ReadFields);
+    CHECK(taken.token == TokenA);
+    REQUIRE(queue.fields().count() == 2);
+    CHECK(queue.fields().at(0).segment == 5);
+    // The spec is decimal throughout, so this is PLLAD_MD at s5_0x12.
+    CHECK(queue.fields().at(0).reg == 18);
+    CHECK(queue.fields().at(1).width == 11);
+}
+
+TEST_CASE("a second field request is refused while the first is outstanding")
+{
+    // One buffer, so a second would overwrite the list the first is still
+    // waiting on and answer it with somebody else's fields.
+    RegisterQueue queue;
+
+    CHECK(queue.submitFields(twoFields(), TokenA));
+    CHECK_FALSE(queue.submitFields(twoFields(), TokenB));
+
+    SUBCASE("and still refused once it is in flight") {
+        RegisterQueue::Job taken;
+        REQUIRE(queue.claim(taken));
+        CHECK_FALSE(queue.submitFields(twoFields(), TokenB));
+    }
+
+    SUBCASE("completing it lets the next one in") {
+        RegisterQueue::Job taken;
+        REQUIRE(queue.claim(taken));
+        queue.complete();
+        CHECK(queue.submitFields(twoFields(), TokenB));
+    }
+}
+
+TEST_CASE("cancelling a waiting field request frees the buffer")
+{
+    // The client disconnected before loop() ever saw it, so nothing will
+    // complete() and the buffer would otherwise be held for good.
+    RegisterQueue queue;
+    RegisterQueue::Job taken;
+
+    CHECK(queue.submitFields(twoFields(), TokenA));
+    queue.cancel(TokenA);
+
+    CHECK(queue.submitFields(twoFields(), TokenB));
+    REQUIRE(queue.claim(taken));
+    CHECK(taken.token == TokenB);
 }

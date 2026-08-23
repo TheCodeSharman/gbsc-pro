@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "FieldRequest.h"
+
 // Register work handed from the web server's handlers to loop(), so the I2C bus
 // has one owner. docs/register-bus-ownership.md
 //
@@ -17,6 +19,7 @@ public:
         ReadOne,
         ReadRange,
         WriteOne,
+        ReadFields,
     };
 
     struct Job
@@ -40,6 +43,15 @@ public:
     // nobody ever answers.
     bool submit(const Job &job);
 
+    // A field list, which does not fit in Job: 48 fields in each of four slots
+    // is memory this part does not have. One list is held here and one request
+    // may be outstanding, so the rule is the queue's rather than the route's.
+    // False means full or already outstanding.
+    bool submitFields(const FieldRequest &request, void *token);
+
+    // The list the in-flight ReadFields job is for.
+    const FieldRequest &fields() const;
+
     // Called from loop(). Takes the oldest waiting job and holds it in flight;
     // false if there is nothing to do or one is already in flight.
     bool claim(Job &out);
@@ -58,12 +70,15 @@ public:
     uint8_t waiting() const;
 
 private:
+    FieldRequest fields_;
+    bool fieldsOutstanding_;
     Job jobs_[Capacity];
     volatile bool pending_[Capacity];
     volatile uint8_t head_;
     volatile uint8_t count_;
     volatile bool inFlight_;
     volatile bool inFlightCancelled_;
+    Kind inFlightKind_;
     void *inFlightToken_;
 };
 

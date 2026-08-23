@@ -8899,6 +8899,28 @@ static void serviceRegisterQueue()
             body += F("\"}");
             break;
         }
+        case RegisterQueue::ReadFields: {
+            const FieldRequest &request = registerQueue.fields();
+            // Ten digits and a comma is the widest a 32-bit field prints.
+            body.reserve(request.count() * 11 + 16);
+            body += F("{\"values\":[");
+            for (uint8_t i = 0; i < request.count(); i++) {
+                const FieldRequest::Field &field = request.at(i);
+                uint8_t bytes[FieldRequest::MaxRegisters] = {0, 0, 0, 0, 0};
+                for (uint8_t b = 0; b < FieldRequest::bytesFor(field); b++) {
+                    bytes[b] = GBS::read(field.segment, (uint8_t)(field.reg + b));
+                }
+                if (i) {
+                    body += ',';
+                }
+                body += FieldRequest::valueFrom(field, bytes);
+                if ((i & 0x07) == 0x07) {
+                    ESP.wdtFeed();
+                }
+            }
+            body += F("]}");
+            break;
+        }
         default:
             registerQueue.complete();
             return;
@@ -9012,6 +9034,34 @@ void startWebserver()
         job.first = (uint8_t)from;
         job.last = (uint8_t)to;
         submitRegisterJob(request, job);
+    });
+
+    // Many fields in ONE request, answered in the order asked. /getreg costs a
+    // round trip AND a loop pass each, so a whole-state read one field at a time
+    // starves the loop it is photographing. The wire form is addresses --
+    // `seg.reg.offset.width`, all decimal, comma separated -- because the
+    // firmware has no runtime name table; the host resolves names.
+    server.on("/getfields", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("f")) {
+            request->send(400, "application/json",
+                F("{\"error\":\"expected f=seg.reg.offset.width,...\"}"));
+            return;
+        }
+
+        // Parsed here rather than in loop(): a spec the firmware cannot read is
+        // the client's mistake and deserves an immediate answer, not a queue slot.
+        // On the stack, because submitFields() copies it.
+        FieldRequest parsed;
+        if (!parsed.parse(request->getParam("f")->value().c_str())) {
+            request->send(400, "application/json",
+                F("{\"error\":\"bad field spec\"}"));
+            return;
+        }
+
+        if (!registerQueue.submitFields(parsed, request)) {
+            request->send(503, "application/json",
+                F("{\"error\":\"register queue busy, retry\"}"));
+        }
     });
 
     server.on("/getreg", HTTP_GET, [](AsyncWebServerRequest *request) {

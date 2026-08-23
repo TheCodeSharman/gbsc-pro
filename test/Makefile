@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc clean help
+.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -330,6 +330,16 @@ mode-detect:
 	  "$(HERE)/test_mode_detect.cpp" src/tv5725/ModeDetect.cpp
 	@"$(OUT)/test_mode_detect"
 
+## field-request: host unit tests for FieldRequest
+#
+# The many-fields-in-one-request wire form. Every register read is queued into
+# loop(), so one request per field starves the loop it is measuring.
+field-request:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_field_request" \
+	  "$(HERE)/test_field_request.cpp" src/net/FieldRequest.cpp
+	@"$(OUT)/test_field_request"
+
 ## interrupts: host unit tests for Tv5725::Interrupts
 #
 # The latched "source disturbed" bits, which are the mode-change trigger. They
@@ -434,11 +444,11 @@ geometry:
 register-queue:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_register_queue" \
-	  "$(HERE)/test_register_queue.cpp" src/net/RegisterQueue.cpp
+	  "$(HERE)/test_register_queue.cpp" src/net/RegisterQueue.cpp src/net/FieldRequest.cpp
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc sampling-log
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

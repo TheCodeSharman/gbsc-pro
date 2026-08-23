@@ -1,8 +1,8 @@
 #include "RegisterQueue.h"
 
 RegisterQueue::RegisterQueue()
-    : head_(0), count_(0), inFlight_(false), inFlightCancelled_(false),
-      inFlightToken_(nullptr)
+    : fieldsOutstanding_(false), head_(0), count_(0), inFlight_(false),
+      inFlightCancelled_(false), inFlightKind_(None), inFlightToken_(nullptr)
 {
     for (uint8_t i = 0; i < Capacity; ++i) {
         pending_[i] = false;
@@ -20,6 +20,29 @@ bool RegisterQueue::submit(const Job &job)
     pending_[slot] = true;
     count_++;
     return true;
+}
+
+bool RegisterQueue::submitFields(const FieldRequest &request, void *token)
+{
+    if (fieldsOutstanding_) {
+        return false;
+    }
+
+    Job job;
+    job.kind = ReadFields;
+    job.token = token;
+    if (!submit(job)) {
+        return false;
+    }
+
+    fields_ = request;
+    fieldsOutstanding_ = true;
+    return true;
+}
+
+const FieldRequest &RegisterQueue::fields() const
+{
+    return fields_;
 }
 
 bool RegisterQueue::claim(Job &out)
@@ -43,6 +66,7 @@ bool RegisterQueue::claim(Job &out)
         pending_[slot] = false;
 
         out = jobs_[slot];
+        inFlightKind_ = jobs_[slot].kind;
         inFlight_ = true;
         inFlightCancelled_ = false;
         inFlightToken_ = jobs_[slot].token;
@@ -59,6 +83,9 @@ bool RegisterQueue::claimCancelled() const
 
 void RegisterQueue::complete()
 {
+    if (inFlight_ && inFlightKind_ == ReadFields) {
+        fieldsOutstanding_ = false;
+    }
     inFlight_ = false;
     inFlightCancelled_ = false;
     inFlightToken_ = nullptr;
@@ -74,6 +101,9 @@ void RegisterQueue::cancel(const void *token)
         uint8_t slot = (head_ + i) % Capacity;
         if (pending_[slot] && jobs_[slot].token == token) {
             pending_[slot] = false;
+            if (jobs_[slot].kind == ReadFields) {
+                fieldsOutstanding_ = false;
+            }
         }
     }
 }
