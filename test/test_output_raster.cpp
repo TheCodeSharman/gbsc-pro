@@ -15,6 +15,7 @@ FakeTwoWire Wire;
 #include <cstdio>
 #include <cstring>
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/DisplayClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 using namespace Tv5725;
@@ -44,7 +45,9 @@ TEST_CASE("the divider is the largest seed at or under the ceiling")
     // whatever the raster demands afterwards -- so take the most clock available.
     CHECK(OutputMode::clockDividerFor(1126, 50.0f, 129600000u) == 0x95);
     CHECK(OutputMode::clockDividerFor(1126, 50.0f, 108000000u) == 0x85);
-    CHECK(OutputMode::clockDividerFor(1126, 50.0f, 162000000u) == 0xA5);
+    // 162 MHz is not reachable however high the ceiling: a 1126-line frame at
+    // that clock wants a 2877-pixel line, past what the part can produce.
+    CHECK(OutputMode::clockDividerFor(1126, 50.0f, 162000000u) == 0x95);
 
     SUBCASE("and it skips seeds whose htotal would overflow the register") {
         // A short frame at a high clock cannot be expressed, so the seed below it
@@ -54,6 +57,22 @@ TEST_CASE("the divider is the largest seed at or under the ceiling")
 
     SUBCASE("an unmeasurable field rate yields nothing, not a guess") {
         CHECK(OutputMode::clockDividerFor(1126, 0.0f, 129600000u) == 0);
+    }
+}
+
+TEST_CASE("the divider keeps the line inside what the scaler can produce")
+{
+    // The part wraps the line past about 2240 produced pixels, and the raster
+    // bound follows from that and the active fraction. A short frame at the
+    // engine ceiling asks for far more -- 750 lines at 50 Hz wants 2880 -- so
+    // the seed below is the answer. docs/investigations/720p-edge-corruption.md
+    const uint16_t frames[] = { 625, 750, 1000, 1066, 1125 };
+    for (uint8_t i = 0; i < 5; ++i) {
+        uint8_t seed = OutputMode::clockDividerFor(frames[i], 50.0f,
+                                                   OutputMode::EngineCeilingHz);
+        CHECK(seed != 0);
+        CHECK(OutputMode::horizontalTotalFor(DisplayClock::hzFor(seed), frames[i], 50.0f)
+              <= OutputMode::MaxHorizontalTotal);
     }
 }
 
@@ -75,17 +94,18 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     CHECK(at1296.horizontalTotal == 2304);
     CHECK(at1296.hsyncStop == 38);
 
-    OutputTimings at162 = Mode1080p.solve(50.0f, 162000000u);
-    CHECK(at162.horizontalTotal == 2880);
-    CHECK(at162.hsyncStop == 48);
+    OutputTimings at648 = Mode1080p.solve(50.0f, 64800000u);
+    CHECK(at648.horizontalTotal == 1152);
 
     SUBCASE("all three are the same 296 ns, which is the point") {
         // If they were a fixed pixel count instead, this would fail at two of the
         // three clocks.
         CHECK_MESSAGE(at108.hsyncStop * 1000000000.0 / at108.demandedHz() > 280.0,
                       "108 MHz pulse too short");
-        CHECK_MESSAGE(at162.hsyncStop * 1000000000.0 / at162.demandedHz() < 320.0,
-                      "162 MHz pulse too long");
+        CHECK_MESSAGE(at1296.hsyncStop * 1000000000.0 / at1296.demandedHz() < 320.0,
+                      "129.6 MHz pulse too long");
+        CHECK_MESSAGE(at648.hsyncStop * 1000000000.0 / at648.demandedHz() > 280.0,
+                      "64.8 MHz pulse too short");
     }
 }
 

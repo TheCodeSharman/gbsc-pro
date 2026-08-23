@@ -56,6 +56,14 @@ public:
     // travel. A different question from WorkingCeilingHz, not a safer copy.
     static const uint32_t EngineCeilingHz = 108000000;
 
+    // The part wraps the line past about 2240 PRODUCED pixels: measured clean at
+    // 2225 and banded at 2250, with the window set to exactly what the scale
+    // produces so nothing is unfilled. This is the raster bound that follows,
+    // taking the smallest active fraction observed across the presets (0.892).
+    // A short frame at the engine ceiling asks for far more than this.
+    // docs/investigations/720p-edge-corruption.md
+    static const uint16_t MaxHorizontalTotal = 2450;
+
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits
 

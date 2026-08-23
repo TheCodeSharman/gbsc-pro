@@ -8,6 +8,7 @@ namespace Tv5725 {
 
 const uint32_t OutputMode::WorkingCeilingHz;
 const uint32_t OutputMode::EngineCeilingHz;
+const uint16_t OutputMode::MaxHorizontalTotal;
 const uint16_t OutputMode::HorizontalTotalMax;
 const uint16_t OutputMode::VerticalTotalMax;
 
@@ -45,7 +46,12 @@ uint8_t OutputMode::clockDividerFor(uint16_t frameLines, float fieldRateHz,
         uint32_t hz = DisplayClock::hzFor(seed);
         if (hz == 0 || hz > ceilingHz)
             continue;
-        if (horizontalTotalFor(hz, frameLines, fieldRateHz) == 0)
+        uint16_t total = horizontalTotalFor(hz, frameLines, fieldRateHz);
+        if (total == 0)
+            continue;
+        // A line the part cannot finish producing is worse than a narrower one:
+        // the excess wraps to the start of the line as repeated picture.
+        if (total > MaxHorizontalTotal)
             continue;
         if (hz >= bestHz) {
             bestHz = hz;
