@@ -232,6 +232,7 @@ typedef enum {
     OSD_Resolution_1024 = 69,
     OSD_Resolution_960 = 70,
     OSD_Resolution_720 = 71,
+    OSD_Resolution_480 = 72,
     OSD_Resolution_pass = 74,
     OSD_SystemSettings = 65,
 
@@ -10313,15 +10314,59 @@ void OSD_selectOption()
                     OSD_menu_F(OSD_CROSS_BOTTOM);
                     OSD_menu_F('3');
                     break;
-                // case IRKeyDown:
-                //   COl_L = 2;
-                //   OSD_menu_F('4');
-                //   oled_menuItem = OSD_Resolution_pass;
-
-                //   break;
+                case IRKeyDown:
+                    COl_L = 2;
+                    OSD_menu_F('4');
+                    oled_menuItem = OSD_Resolution_480;
+                    break;
                 case IRKeyOk:
                     // uopt->preferScalingRgbhv = true;
                     userCommand = 'g';
+                    break;
+                case IRKeyExit:
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
+                    break;
+            }
+            irrecv.resume();
+        }
+    }
+
+    else if (oled_menuItem == OSD_Resolution_480) {
+
+        if (OLED_clear_flag)
+            display.clear();
+        OLED_clear_flag = ~0;
+        display.setColor(OLEDDISPLAY_COLOR::WHITE);
+        display.setTextAlignment(TEXT_ALIGN_LEFT);
+        display.setFont(ArialMT_Plain_16);
+        display.drawString(1, 0, "Menu->Output");
+        display.drawString(1, 28, "720x480");
+        display.display();
+
+        if (results.value == IRKeyDown) {
+            OSD_c1(icon4, P0, blue_fill);
+            OSD_c2(icon4, P0, yellow);
+            OSD_c3(icon4, P0, blue_fill);
+            OSD_menu_F('4');
+        }
+
+        if (irrecv.decode(&results)) {
+            decode_flag = 1;
+            switch (results.value) {
+                case IRKeyMenu:
+                    OSD_menu_F(OSD_CROSS_MID);
+                    OSD_menu_F('1');
+                    oled_menuItem = 62;
+                    break;
+                case IRKeyUp:
+                    COl_L = 1;
+                    OSD_menu_F('4');
+                    oled_menuItem = OSD_Resolution_720;
+                    break;
+                case IRKeyOk:
+                    userCommand = 'h';
                     break;
                 case IRKeyExit:
                     oled_menuItem = 0;
@@ -14477,15 +14522,11 @@ void handle_4(void)
         A2_main0 = main0;
         A3_main0 = main0;
     }
-    // else if (COl_L == 2)
-    // {
-    //   A1_yellow = main0;
-    //   // if(Info == InfoVGA)
-    //     A2_main0 = yellowT;
-    //   // else
-    //   //   A2_main0 = 0x14;
-    //   A3_main0 = main0;
-    // }
+    else if (COl_L == 2) {
+        A1_yellow = main0;
+        A2_main0 = yellowT;
+        A3_main0 = main0;
+    }
     // else if (COl_L == 3)
     // {
     //     A1_yellow = main0;
@@ -14508,9 +14549,9 @@ void handle_4(void)
     number_stroca = stroca1;
     Osd_Display(1, "1280x720");
 
-    // colour1 = A2_main0;
-    // number_stroca = stroca2;
-    // Osd_Display(1, "Pass through");
+    colour1 = A2_main0;
+    number_stroca = stroca2;
+    Osd_Display(1, "720x480");
     // colour1 = A3_main0;
     // number_stroca = stroca3;
     // __(D, _1), __(o, _2), __(w, _3), __(n, _4), __(s, _5), __(c, _6), __(a, _7), __(l, _8), __(e, _9), __(n1, _11), __(n5, _12), __(K, _13), __(H, _14), __(z, _15);
