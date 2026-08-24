@@ -234,6 +234,7 @@ typedef enum {
     OSD_Resolution_960 = 70,
     OSD_Resolution_720 = 71,
     OSD_Resolution_480 = 72,
+    OSD_Resolution_576 = 73,
     OSD_Resolution_pass = 74,
     OSD_SystemSettings = 65,
 
@@ -2954,6 +2955,16 @@ static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
         } else if (!pal && preference == Output1024P && result != 8 &&
                    GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
             preference = Output960P;
+        }
+
+        // The SD pair, on the same terms. It used to be inside the preference
+        // itself, which made 480p unaskable on a 50 Hz source; here it is a
+        // convenience the user can turn off, and symmetric because it carries
+        // none of the history the pair above does.
+        if (pal && preference == Output480P) {
+            preference = Output576P;
+        } else if (!pal && preference == Output576P) {
+            preference = Output480P;
         }
     }
 
@@ -8335,6 +8346,7 @@ void handleType2Command(char argument)
         case 'f':
         case 'g':
         case 'h':
+        case 'j':
         case 'p':
         case 's':
         case 'L': {
@@ -8348,7 +8360,9 @@ void handleType2Command(char argument)
             if (argument == 'g')
                 uopt->presetPreference = Output720P; // 1280x720
             if (argument == 'h')
-                uopt->presetPreference = Output480P; // 720x480/768x576
+                uopt->presetPreference = Output480P; // 720x480
+            if (argument == 'j')
+                uopt->presetPreference = Output576P; // 768x576
             if (argument == 'p')
                 uopt->presetPreference = Output1024P; // 1280x1024
             if (argument == 's')
@@ -10337,8 +10351,58 @@ void OSD_selectOption()
                     OSD_menu_F('4');
                     oled_menuItem = OSD_Resolution_720;
                     break;
+                case IRKeyDown:
+                    COl_L = 3;
+                    OSD_menu_F('4');
+                    oled_menuItem = OSD_Resolution_576;
+                    break;
                 case IRKeyOk:
                     userCommand = 'h';
+                    break;
+                case IRKeyExit:
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
+                    break;
+            }
+            irrecv.resume();
+        }
+    }
+
+    else if (oled_menuItem == OSD_Resolution_576) {
+
+        if (OLED_clear_flag)
+            display.clear();
+        OLED_clear_flag = ~0;
+        display.setColor(OLEDDISPLAY_COLOR::WHITE);
+        display.setTextAlignment(TEXT_ALIGN_LEFT);
+        display.setFont(ArialMT_Plain_16);
+        display.drawString(1, 0, "Menu->Output");
+        display.drawString(1, 28, "768x576");
+        display.display();
+
+        if (results.value == IRKeyDown) {
+            OSD_c1(icon4, P0, blue_fill);
+            OSD_c2(icon4, P0, blue_fill);
+            OSD_c3(icon4, P0, yellow);
+            OSD_menu_F('4');
+        }
+
+        if (irrecv.decode(&results)) {
+            decode_flag = 1;
+            switch (results.value) {
+                case IRKeyMenu:
+                    OSD_menu_F(OSD_CROSS_MID);
+                    OSD_menu_F('1');
+                    oled_menuItem = 62;
+                    break;
+                case IRKeyUp:
+                    COl_L = 2;
+                    OSD_menu_F('4');
+                    oled_menuItem = OSD_Resolution_480;
+                    break;
+                case IRKeyOk:
+                    userCommand = 'j';
                     break;
                 case IRKeyExit:
                     oled_menuItem = 0;
@@ -14499,12 +14563,11 @@ void handle_4(void)
         A2_main0 = yellowT;
         A3_main0 = main0;
     }
-    // else if (COl_L == 3)
-    // {
-    //     A1_yellow = main0;
-    //     A2_main0 = main0;
-    //     A3_main0 = yellowT;
-    // }
+    else if (COl_L == 3) {
+        A1_yellow = main0;
+        A2_main0 = main0;
+        A3_main0 = yellowT;
+    }
 
     colour1 = blue;
 
@@ -14524,9 +14587,9 @@ void handle_4(void)
     colour1 = A2_main0;
     number_stroca = stroca2;
     Osd_Display(1, "720x480");
-    // colour1 = A3_main0;
-    // number_stroca = stroca3;
-    // __(D, _1), __(o, _2), __(w, _3), __(n, _4), __(s, _5), __(c, _6), __(a, _7), __(l, _8), __(e, _9), __(n1, _11), __(n5, _12), __(K, _13), __(H, _14), __(z, _15);
+    colour1 = A3_main0;
+    number_stroca = stroca3;
+    Osd_Display(1, "768x576");
 };
 void handle_5(void)
 {

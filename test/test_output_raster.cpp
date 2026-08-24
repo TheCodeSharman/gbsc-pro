@@ -283,12 +283,10 @@ TEST_CASE("the output mode comes from the user's preference, not from the chip")
     CHECK((OutputMode::forPreference(Output720P, 50.0f) == &Mode720p));
 }
 
-TEST_CASE("the four resolutions that are one height resolve to it at either rate")
+TEST_CASE("every preference is one height, whatever the rate")
 {
-    // 1080p, 1024p, 960p and 720p ship ONE frame height across their PAL and
-    // NTSC tables -- verified in test_output_raster.py against the archive --
-    // so the field rate cannot change which mode they select. Only the clock
-    // and horizontalTotal move with the rate, inside solve().
+    // A preference names a resolution and nothing else. Only the clock and
+    // horizontalTotal move with the field rate, inside solve().
     CHECK((OutputMode::forPreference(Output1080P, 50.0f)
            == OutputMode::forPreference(Output1080P, 59.94f)));
     CHECK((OutputMode::forPreference(Output1024P, 50.0f)
@@ -297,17 +295,23 @@ TEST_CASE("the four resolutions that are one height resolve to it at either rate
            == OutputMode::forPreference(Output960P, 59.94f)));
     CHECK((OutputMode::forPreference(Output720P, 50.0f)
            == OutputMode::forPreference(Output720P, 59.94f)));
+    CHECK((OutputMode::forPreference(Output576P, 50.0f)
+           == OutputMode::forPreference(Output576P, 59.94f)));
+    CHECK((OutputMode::forPreference(Output480P, 50.0f)
+           == OutputMode::forPreference(Output480P, 59.94f)));
 }
 
-TEST_CASE("the SD preference is two different resolutions, and the rate picks one")
+TEST_CASE("480p and 576p are separate preferences, each selectable at either rate")
 {
-    // Output480P is not one mode at two rates: 480p and 576p are different
-    // active line counts sharing a PresetPreference value, which is why their
-    // tables ship 526 and 626 where every other mode's pair agrees. So it is the
-    // one preference the field rate disambiguates, and it picks a RESOLUTION
-    // rather than adjusting a timing. docs/vesa-gtf.md settled the split.
+    // Output480P used to mean 480 active lines at 60 Hz and 576 at 50, so on a
+    // 50 Hz source there was no way to ask for 480p at all: the preference was
+    // itself the switch. They are two preferences now, and choosing between
+    // them by field rate is a policy applied on top -- the same shape as 960
+    // against 1024, and as escapable.
     CHECK((OutputMode::forPreference(Output480P, 59.94f) == &Mode480p));
-    CHECK((OutputMode::forPreference(Output480P, 50.0f) == &Mode576p));
+    CHECK((OutputMode::forPreference(Output480P, 50.0f) == &Mode480p));
+    CHECK((OutputMode::forPreference(Output576P, 50.0f) == &Mode576p));
+    CHECK((OutputMode::forPreference(Output576P, 59.94f) == &Mode576p));
 
     CHECK(Mode480p.activeLines() == 480);
     CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back

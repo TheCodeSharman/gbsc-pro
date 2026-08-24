@@ -15,6 +15,7 @@ using Tv5725::OutputCustomized;
 using Tv5725::Output720P;
 using Tv5725::Output1024P;
 using Tv5725::Output1080P;
+using Tv5725::Output576P;
 using Tv5725::OutputBypass;
 
 enum INPUT_PresetPreference : uint8_t {

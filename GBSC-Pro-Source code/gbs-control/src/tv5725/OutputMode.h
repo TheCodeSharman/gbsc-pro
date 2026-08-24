@@ -30,6 +30,8 @@ enum PresetPreference : uint8_t {
     Output720P = 3,
     Output1024P = 4,
     Output1080P = 5,
+    // 6 was OutputDownscale, which went with the preset tables.
+    Output576P = 7,
     OutputBypass = 10,
 };
 
