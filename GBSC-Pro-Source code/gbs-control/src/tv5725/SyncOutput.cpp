@@ -16,6 +16,11 @@ void SyncOutput::write(bool blanked, unsigned long nowMs)
     Chip::PAD_SYNC_OUT_ENZ::write(blanked ? 1 : 0);
 }
 
+void SyncOutput::blankNow(unsigned long nowMs)
+{
+    write(true, nowMs);
+}
+
 bool SyncOutput::poll(bool changing, unsigned long nowMs)
 {
     if (changing) {

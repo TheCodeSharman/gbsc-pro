@@ -61,6 +61,7 @@ const GBSControl = {
         2: "button1280x1024",
         3: "button1280x720",
         4: "button720x480",
+        7: "button768x576",
         5: "button1920x1080",
         6: "button15kHzScaleDown",
         8: "buttonSourcePassThrough",
@@ -451,8 +452,10 @@ const getSlotPresetName = (presetID) => {
         case 0x016:
             return "DOWNSCALE";
         case 0x04:
+        case 0x014:
             return "720x480";
-        case 0x14:
+        case 0x07:
+        case 0x017:
             return "768x576";
         case 0x21: // bypass 1
         case 0x22: // bypass 2

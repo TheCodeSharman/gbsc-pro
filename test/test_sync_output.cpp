@@ -71,3 +71,28 @@ TEST_CASE("a second change while blanked restarts the encoder's time")
     CHECK_FALSE(sync.poll(false, 2000 + SyncOutput::MinimumBlankMs - 1));
     CHECK(padBlanked());
 }
+
+TEST_CASE("a press can blank before the engine knows anything has changed")
+{
+    // A preset command writes output registers on its way to telling the
+    // engine, and the picture glitches if the blank waits for that.
+    Wire.reset();
+    SyncOutput sync;
+
+    sync.blankNow(1000);
+    CHECK(padBlanked());
+
+    SUBCASE("and it is held for the encoder's time even if no change follows") {
+        CHECK_FALSE(sync.poll(false, 1000 + SyncOutput::MinimumBlankMs - 1));
+        CHECK(padBlanked());
+        CHECK(sync.poll(false, 1000 + SyncOutput::MinimumBlankMs));
+        CHECK_FALSE(padBlanked());
+    }
+
+    SUBCASE("and the change that follows extends it rather than restarting it") {
+        REQUIRE(sync.poll(true, 1100));
+        CHECK(padBlanked());
+        CHECK_FALSE(sync.poll(false, 1100 + SyncOutput::MinimumBlankMs - 1));
+        CHECK(padBlanked());
+    }
+}

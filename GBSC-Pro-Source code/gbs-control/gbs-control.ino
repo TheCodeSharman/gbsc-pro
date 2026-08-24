@@ -1165,8 +1165,12 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
     code = 0x02;
   } else if (mode == &Tv5725::Mode720p) {
     code = 0x03;
-  } else if (mode == &Tv5725::Mode480p || mode == &Tv5725::Mode576p) {
+  } else if (mode == &Tv5725::Mode480p) {
     code = 0x04;
+  } else if (mode == &Tv5725::Mode576p) {
+    // Its own code, not 480p's with the PAL bit: that bit says what the SOURCE
+    // runs at, and either resolution is now selectable at either rate.
+    code = 0x07;
   } else if (mode == &Tv5725::Mode1080p) {
     code = 0x05;
   }
@@ -8350,6 +8354,10 @@ void handleType2Command(char argument)
         case 'p':
         case 's':
         case 'L': {
+            // Before anything writes an output register: the blank belongs to
+            // the whole change, and the press is the start of it.
+            syncOutput.blankNow(millis());
+
             // Loading presets via webui
             uint8_t videoMode = getVideoMode();
             if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read())
@@ -10303,7 +10311,7 @@ void OSD_selectOption()
                 case IRKeyDown:
                     COl_L = 2;
                     OSD_menu_F('4');
-                    oled_menuItem = OSD_Resolution_480;
+                    oled_menuItem = OSD_Resolution_576;
                     break;
                 case IRKeyOk:
                     // uopt->preferScalingRgbhv = true;
@@ -10333,8 +10341,8 @@ void OSD_selectOption()
 
         if (results.value == IRKeyDown) {
             OSD_c1(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, yellow);
-            OSD_c3(icon4, P0, blue_fill);
+            OSD_c2(icon4, P0, blue_fill);
+            OSD_c3(icon4, P0, yellow);
             OSD_menu_F('4');
         }
 
@@ -10347,12 +10355,7 @@ void OSD_selectOption()
                     oled_menuItem = 62;
                     break;
                 case IRKeyUp:
-                    COl_L = 1;
-                    OSD_menu_F('4');
-                    oled_menuItem = OSD_Resolution_720;
-                    break;
-                case IRKeyDown:
-                    COl_L = 3;
+                    COl_L = 2;
                     OSD_menu_F('4');
                     oled_menuItem = OSD_Resolution_576;
                     break;
@@ -10383,8 +10386,8 @@ void OSD_selectOption()
 
         if (results.value == IRKeyDown) {
             OSD_c1(icon4, P0, blue_fill);
-            OSD_c2(icon4, P0, blue_fill);
-            OSD_c3(icon4, P0, yellow);
+            OSD_c2(icon4, P0, yellow);
+            OSD_c3(icon4, P0, blue_fill);
             OSD_menu_F('4');
         }
 
@@ -10397,7 +10400,12 @@ void OSD_selectOption()
                     oled_menuItem = 62;
                     break;
                 case IRKeyUp:
-                    COl_L = 2;
+                    COl_L = 1;
+                    OSD_menu_F('4');
+                    oled_menuItem = OSD_Resolution_720;
+                    break;
+                case IRKeyDown:
+                    COl_L = 3;
                     OSD_menu_F('4');
                     oled_menuItem = OSD_Resolution_480;
                     break;
@@ -14586,10 +14594,10 @@ void handle_4(void)
 
     colour1 = A2_main0;
     number_stroca = stroca2;
-    Osd_Display(1, "720x480");
+    Osd_Display(1, "768x576");
     colour1 = A3_main0;
     number_stroca = stroca3;
-    Osd_Display(1, "768x576");
+    Osd_Display(1, "720x480");
 };
 void handle_5(void)
 {

@@ -37,6 +37,12 @@ public:
     // pass touched the bus rather than every pass writing it.
     bool poll(bool changing, unsigned long nowMs);
 
+    // Blank straight away, before the engine has been told anything moved. A
+    // preset command writes output registers on its way to telling it, and the
+    // picture glitches if the blank waits for that. poll() still decides when
+    // it ends, so this cannot leave the output dark.
+    void blankNow(unsigned long nowMs);
+
     bool blanked() const;
 
 private:

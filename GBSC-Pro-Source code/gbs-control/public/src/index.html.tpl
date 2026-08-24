@@ -168,13 +168,23 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
+                gbs-message="j"
+                gbs-message-type="user"
+                gbs-click="normal"
+                gbs-element-ref="button768x576"
+                gbs-role="preset"
+              >
+                768 <span>x576</span>
+              </button>
+              <button
+                class="gbs-button gbs-button__resolution"
                 gbs-message="h"
                 gbs-message-type="user"
                 gbs-click="normal"
                 gbs-element-ref="button720x480"
                 gbs-role="preset"
               >
-                480p 576p
+                720 <span>x480</span>
               </button>
               <button
                 gbs-message="L"
