@@ -111,6 +111,17 @@ memory:
 	  "$(HERE)/test_memory.cpp" src/tv5725/Memory.cpp
 	@"$(OUT)/test_memory"
 
+## sync-output: host unit tests for the encoder's blank across a mode change
+#
+# The encoder locks to the analog output and keeps the old timing unless sync
+# goes away, so the blank is derived from whether a change is outstanding.
+sync-output:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sync_output" \
+	  "$(HERE)/test_sync_output.cpp" src/tv5725/SyncOutput.cpp
+	@"$(OUT)/test_sync_output"
+
 ## hold-ramp: host unit tests for the IR hold-to-accelerate ramp
 hold-ramp:
 	@mkdir -p "$(OUT)"
@@ -448,7 +459,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
+test: axis scale sync-output input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

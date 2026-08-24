@@ -60,6 +60,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/net/RegisterQueue.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/Geometry.h"
+#include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/ControlSteps.h"
 #include "src/tv5725/PresetLoad.h"
@@ -633,7 +634,6 @@ static void LoadDefault()
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;                  
     rto->osr = 0;                                 
-    rto->useHdmiSyncFix = 0;                      
     rto->notRecognizedCounter = 0;                
 
     rto->videoStandardInput = 0;    
@@ -692,7 +692,6 @@ void UpDisplay(void)
     if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
         videoMode = rto->videoStandardInput;
     }
-    rto->useHdmiSyncFix = 1;
     if (scalingRgbhv()) {
         rto->videoStandardInput = 15;
     } else {
@@ -939,6 +938,7 @@ SerialMirror SerialM;
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
 Tv5725::Geometry geometry(rtos.displayClock);
+Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
 OSDManager osdManager(geometryControls);
 
@@ -1277,7 +1277,6 @@ void setResetParameters_re()
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
     rto->osr = 0;                  
-    rto->useHdmiSyncFix = 0;       
     rto->notRecognizedCounter = 0; 
 }
 
@@ -1307,7 +1306,6 @@ void setResetParameters()
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
     rto->osr = 0;                  
-    rto->useHdmiSyncFix = 0;       
     rto->notRecognizedCounter = 0; 
 
     adco->r_gain = 0;
@@ -3371,9 +3369,6 @@ void doPostPresetLoadSteps()
             resetInterruptSogBadBit();
             delay(10);
 
-            if (rto->useHdmiSyncFix && !uopt->wantOutputComponent) {
-                GBS::PAD_SYNC_OUT_ENZ::write(0); //
-            }
             delay(70);
 
             for (uint8_t i = 0; i < 4; i++) {
@@ -3406,17 +3401,11 @@ void doPostPresetLoadSteps()
 
             delay(10);
 
-            if (rto->useHdmiSyncFix && !uopt->wantOutputComponent) {
-                GBS::PAD_SYNC_OUT_ENZ::write(0); //
-            }
             delay(20);
             updateCoastPosition(0);
             updateClampPosition();
         }
 
-        if (rto->useHdmiSyncFix && !uopt->wantOutputComponent) {
-            GBS::PAD_SYNC_OUT_ENZ::write(0); //
-        }
 
 
         GBS::VDS_EXT_HB_ST::write(GBS::VDS_DIS_HB_ST::read());
@@ -3489,7 +3478,6 @@ void doPostPresetLoadSteps()
         GBS::DAC_RGBS_S0ENZ::write(0); //
         GBS::DAC_RGBS_S1EN::write(1);
 
-        rto->useHdmiSyncFix = 0; // 
 
         GBS::SP_H_PROTECT::write(0); // 
         if (rto->videoStandardInput >= 5) {
@@ -5454,9 +5442,7 @@ void runSyncWatcher() //
                 if (((rto->videoStandardInput == 1 || rto->videoStandardInput == 3) && (detectedVideoMode == 2 || detectedVideoMode == 4)) ||
                     rto->videoStandardInput == 0 ||
                     ((rto->videoStandardInput == 2 || rto->videoStandardInput == 4) && (detectedVideoMode == 1 || detectedVideoMode == 3))) {
-                    rto->useHdmiSyncFix = 1;
                 } else {
-                    rto->useHdmiSyncFix = 0; 
                 }
 
                 if (!wantPassThroughMode) {
@@ -6574,7 +6560,6 @@ void setup()
     rto->isValidForScalingRGBHV = false; 
     rto->medResLineCount = 0x33;
     rto->osr = 0;                  
-    rto->useHdmiSyncFix = 0;       
     rto->notRecognizedCounter = 0; 
 
     rto->inputIsYpBpR = false;   
@@ -7182,6 +7167,12 @@ void loop()
     // The engine decides when the source has settled into a new mode, because
     // it owns the measurements that decide it. Cheap on every pass, and
     // expensive only while a change is outstanding.
+    // Blanked while the engine has a change outstanding, so the measuring and
+    // solving happen behind it and absorb the encoder's relock time rather than
+    // being followed by it. src/tv5725/SyncOutput.h
+    if (!uopt->wantOutputComponent)
+        syncOutput.poll(geometry.changing(), millis());
+
     if (geometry.poll()) {
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
@@ -7190,23 +7181,6 @@ void loop()
         FrameSync::clearFrequency();
         externalClockGenSyncInOutRate();
 
-        // The encoder samples the analog output and does not always notice the
-        // timing under it moved: it carries on transmitting the mode it locked
-        // to before, and the display reports that older rate and shows nothing.
-        // Taking sync away is what makes it re-acquire.
-        // docs/investigations/encoder-stale-timing.md
-        //
-        // **DROP AND RESTORE TOGETHER, HERE, AND NOWHERE ELSE.** Bounding it to
-        // one block is what makes it safe: a drop whose restore is conditional
-        // on some later state leaves a unit with correct registers driving no
-        // HSOUT/VSOUT at all, which is a worse fault than the one being fixed.
-        // The solve above has just written the new raster, so this is also the
-        // moment the encoder has something new to lock to.
-        if (!uopt->wantOutputComponent) {
-            GBS::PAD_SYNC_OUT_ENZ::write(1);
-            delay(ENCODER_RELOCK_MS);
-            GBS::PAD_SYNC_OUT_ENZ::write(0);
-        }
     }
 
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
@@ -7332,7 +7306,6 @@ void loop()
                 if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
                     videoMode = rto->videoStandardInput;
                 }
-                rto->useHdmiSyncFix = 1;
                 if (scalingRgbhv()) {
                     rto->videoStandardInput = 15;
                 } else {
@@ -8382,7 +8355,6 @@ void handleType2Command(char argument)
                 uopt->presetPreference = Output1080P; // 1920x1080
             // if (argument == 'L')
 
-            rto->useHdmiSyncFix = 1; // 
             if (scalingRgbhv()) {
                 rto->videoStandardInput = 15;
             } else {

@@ -25,6 +25,8 @@ Geometry::Geometry(DisplayClock &displayClock)
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
+bool Geometry::changing() const { return modePending_ || solvePending_; }
+
 float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
 bool Geometry::sourceLowLineRate() const { return sampling_.lowLineRate(); }

@@ -174,7 +174,6 @@ struct runTimeOptions
     bool presetIsPalForce60;
     bool syncTypeCsync;
     bool isValidForScalingRGBHV;
-    bool useHdmiSyncFix;
     bool extClockGenDetected;
     bool HdmiHoldDetection;
 };

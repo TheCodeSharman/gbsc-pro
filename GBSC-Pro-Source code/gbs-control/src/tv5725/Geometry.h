@@ -38,6 +38,10 @@ public:
     // that completes a mode change.
     bool poll();
 
+    // Whether a mode change is still working through: told the source moved and
+    // not yet finished solving for it. What the sync output blanks against.
+    bool changing() const;
+
     // The source disturbed, as the chip latched it. Arms a re-measure, which
     // the line count alone cannot: a source returning at the same count and a
     // different field rate moves nothing sourceMoved() can see.

@@ -145,7 +145,6 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     if (item->tag != MT_BYPASS)
     {
         uopt->presetPreference = preset;
-        rto->useHdmiSyncFix = 1;           // 使用 HDMI 同步修复
         if (scalingRgbhv())
         {
             rto->videoStandardInput = 15;
@@ -546,7 +545,6 @@ static void LoadDefault()
     rto->isValidForScalingRGBHV = false;          // 有效缩放
     rto->medResLineCount = 0x33;                  //
     rto->osr = 0;                                 //
-    rto->useHdmiSyncFix = 0;                      //
     rto->notRecognizedCounter = 0;                //
 
     rto->videoStandardInput = 0;    // 视频标准输入
