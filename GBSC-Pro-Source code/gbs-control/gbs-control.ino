@@ -10171,9 +10171,9 @@ void OSD_selectOption()
                     userCommand = 's';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10221,9 +10221,9 @@ void OSD_selectOption()
                     userCommand = 'p';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10272,9 +10272,9 @@ void OSD_selectOption()
                     userCommand = 'f';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10324,9 +10324,9 @@ void OSD_selectOption()
                     userCommand = 'g';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10491,9 +10491,9 @@ void OSD_selectOption()
                     // Tim_Resolution_Start = millis();
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10552,9 +10552,9 @@ void OSD_selectOption()
                     oled_menuItem = OSD_Resolution_pass;
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10609,9 +10609,9 @@ void OSD_selectOption()
                     OSD_c1(0x13, P17, yellow);
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10666,9 +10666,9 @@ void OSD_selectOption()
                     OSD_c2(0x13, P17, yellow);
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10776,9 +10776,9 @@ void OSD_selectOption()
                             * geometryHold.multiplierFor(irKey, millis()));
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10888,9 +10888,9 @@ void OSD_selectOption()
                     __(0x0d, _25);
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -10953,9 +10953,9 @@ void OSD_selectOption()
                     serialCommand = 'T';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11016,9 +11016,9 @@ void OSD_selectOption()
                     userCommand = '7';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11076,9 +11076,9 @@ void OSD_selectOption()
                 //   userCommand = 'm';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11136,9 +11136,9 @@ void OSD_selectOption()
                 //   userCommand = 'W';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11195,9 +11195,9 @@ void OSD_selectOption()
                 //   serialCommand = 'f';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11255,9 +11255,9 @@ void OSD_selectOption()
                 //   serialCommand = 'V';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11325,9 +11325,9 @@ void OSD_selectOption()
                     // serialCommand = 'K';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11396,9 +11396,9 @@ void OSD_selectOption()
                     break;
 
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11467,9 +11467,9 @@ void OSD_selectOption()
                     saveUserPrefs();
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11526,9 +11526,9 @@ void OSD_selectOption()
                     GBS::VDS_Y_GAIN::write(cur);
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11595,9 +11595,9 @@ void OSD_selectOption()
                     // GBS::VDS_UCOS_GAIN::write(curU);
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11647,9 +11647,9 @@ void OSD_selectOption()
                     userCommand = 'U';
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11708,9 +11708,9 @@ void OSD_selectOption()
                 //   serialCommand = 'Z';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11770,9 +11770,9 @@ void OSD_selectOption()
                 //   userCommand = 'x';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11888,9 +11888,9 @@ void OSD_selectOption()
                 //   userCommand = '0';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -11947,9 +11947,9 @@ void OSD_selectOption()
                 //   userCommand = 'X';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12006,9 +12006,9 @@ void OSD_selectOption()
                 //   userCommand = 'w';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12065,9 +12065,9 @@ void OSD_selectOption()
                 //   userCommand = '5';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12125,9 +12125,9 @@ void OSD_selectOption()
                 //   userCommand = 'i';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12199,9 +12199,9 @@ void OSD_selectOption()
                 //   userCommand = 'r';
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12777,9 +12777,9 @@ void OSD_selectOption()
                     //     break;
 
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12839,9 +12839,9 @@ void OSD_selectOption()
                     //     break;
 
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12903,9 +12903,9 @@ void OSD_selectOption()
                     //     break;
 
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -12956,9 +12956,9 @@ void OSD_selectOption()
                     oled_menuItem = OSD_Input_SV;
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13059,9 +13059,9 @@ void OSD_selectOption()
                     SvModeOptionChanged = 1;
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13165,9 +13165,9 @@ void OSD_selectOption()
                     AvModeOptionChanged = 1;
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13218,9 +13218,9 @@ void OSD_selectOption()
                     break;
 
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13281,9 +13281,9 @@ void OSD_selectOption()
                 //   SettingLineOptionChanged = 1;
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13344,9 +13344,9 @@ void OSD_selectOption()
                 //   SettingSmoothOptionChanged = 1;
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13411,9 +13411,9 @@ void OSD_selectOption()
                     saveUserPrefs();
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13481,9 +13481,9 @@ void OSD_selectOption()
                     saveUserPrefs();
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13546,9 +13546,9 @@ void OSD_selectOption()
                     saveUserPrefs();
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13597,9 +13597,9 @@ void OSD_selectOption()
                     saveUserPrefs();
                     break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
@@ -13663,9 +13663,9 @@ void OSD_selectOption()
                 //   Send_Compatibility(RGB_Com);
                 //   break;
                 case IRKeyExit:
-                    OSD_menu_F(OSD_CROSS_TOP);
-                    OSD_menu_F('1');
-                    oled_menuItem = OSD_Input;
+                    oled_menuItem = 0;
+                    OSD_clear();
+                    OSD();
                     break;
             }
             irrecv.resume();
