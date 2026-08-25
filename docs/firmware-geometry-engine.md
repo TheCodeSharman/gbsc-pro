@@ -55,9 +55,18 @@ A press carries a magnitude in **output pixels**: `/sc?<pad>=<n>`, or the pad's
 own `ControlSteps` value when none is given. `Axis::stepUnits()` converts it to
 capture units against the scale the last solve produced and never returns less
 than one granule, so `/sc?<pad>=1` is the smallest move the hardware acts on
-whatever the magnification happens to be. Not a proportion of the current
-capture — proportional steps are not reversible, because out and back use
-different widths and the window walks.
+whatever the magnification happens to be.
+
+**The state is a proportion; the step is a unit.** `PanAndZoom` holds an origin
+and an extent per axis as fractions of the capturable region, which is what
+carries a framing across a mode change and what the framing table stores. A
+press still moves a whole input unit, because the proportion is kept on the
+current mode's grid — every value a control produces is an exact multiple of
+`1 / capturable` — so out and back returns the identical proportion rather than
+one that denormalises to the same unit by luck.
+[framing-presets.md](framing-presets.md) states that as a requirement, and it is
+what a proportional step off the *current* capture could not give: those are not
+reversible, because out and back use different widths and the window walks.
 
 **There is no route that sets the framing outright.** `/geometry` reads it; it
 moves through the pads alone, so nothing — instrument, panel or test — can
@@ -65,19 +74,35 @@ arrange a state the person at the OSD cannot reach. `gbs_unit.framing_to()`
 walks one field to a value that way and reports where it landed, because a solve
 clamps the framing it is given and not every value is reachable.
 
+`/geometry` reports the framing three ways, because the engine is the only thing
+holding the denominator to convert between them:
+
+| | |
+|---|---|
+| `oh` `eh` `ov` `ev` | the window in input units — what the instruments and the measurements in [scaler-geometry-model.md](scaler-geometry-model.md) speak |
+| `ch` `cv` | the capturable region those are taken against |
+| `poh` `peh` `pov` `pev` | the proportion itself, in ten-thousandths — the state |
+
+It is **behind `GBS_DEBUG`**: nothing on the product path reads it, only the
+bench instruments and the hardware suite. A build without it answers 404.
+
 ## What the sketch may call
 
-`Geometry` has six entry points, and nothing else is reachable from outside it:
+`Geometry`'s public surface is what the sketch may reach, and nothing else:
 
 | | |
 |---|---|
 | `modeChanged(mode, oversample)` | the source is about to change mode; nothing is solved here |
 | `poll()` | drives whatever is outstanding, on every pass of `loop()` |
+| `sourceInterrupted()` | the chip latched a disturbance; arms a re-measure |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
 | `framing()` | the framing the user has reached, read only |
+| `capturableOn(axis)` | the region the last solve ran against — the denominator |
+| `originUnitsOn(axis)` / `extentUnitsOn(axis)` | that framing in input units |
 | `pan(dx, dy)` / `zoom(dh, dv)` | one press, in OUTPUT PIXELS |
 | `resolve()` | re-derive every register from what is held, without moving the framing |
 | `reset()` | back to the default framing |
+| `sourceFieldRateHz()` / `sourceLineRateHz()` / `sourceLowLineRate()` | the source as the last solve measured it |
 
 The sequence a mode change runs — sampling, raster, clock, windows — is private,
 because running one step alone skips the rest of it and each depends on the one

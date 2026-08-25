@@ -1,11 +1,14 @@
 # Per-source framing presets
 
-**This specifies work that is not built yet.** Everything below is a requirement,
-not a description of current behaviour.
-
 The user tunes the framing for a source, it is remembered against that source,
 and changing the source mode and coming back restores it with nobody touching a
-control.
+control. It survives a reboot, and it survives changing the output resolution.
+
+**Built, except the VESA defaults.** What is here describes the code:
+`Tv5725::SourceKey` is the key, `Tv5725::FramingTable` the table,
+`Tv5725::FramingText` the file format, `Tv5725::Geometry` the behaviour, and
+`gbs-control.ino` the file itself. Seeding the table with VESA defaults for a
+recognised timing is the part still to come.
 
 ## What it unblocks
 
@@ -71,14 +74,32 @@ mode must not drift the window a unit at a time.
 ## Storage
 
 Because the live state is already mode-independent, storage is the same four
-proportions per source with no conversion:
+proportions per source with no conversion. `/framing.txt`, one source a line:
 
 ```
-originH  extentH  originV  extentV
+# framing, one source a line: <lines>@<fieldRateHz> = originH extentH originV extentV
+# in ten-thousandths of the capturable region
+311@50 = 364 8525 932 8167
 ```
+
+Ten-thousandths because the ESP's printf has no `%f`, and they are enough
+because one input unit is at least eight of them on any line this chip
+captures — so the **window** survives the round trip exactly even though the
+float does not. Swept across every capturable region from 200 to 1125:
+units → proportion → text → proportion → units is identity.
 
 The invariant is a property of any record by construction, so a stored framing
 cannot describe an invalid window whatever source it is restored into.
+
+**The table holds sixteen, and full means refused.** Dropping the oldest entry
+loses work the user did with nothing said; a refusal is visible and an entry can
+be cleared. Re-tuning a source already in the table replaces its entry, so a
+full table still takes a re-tune.
+
+**Only a framing the user touched takes a place.** Every solve seeds the framing
+from the placement it computed, so a table that stored whatever the framing held
+would fill its sixteen places with computed defaults and refuse the first real
+tuning.
 
 ## The key
 
@@ -160,10 +181,18 @@ against the writer. Requirements:
   before the windows are solved. `Geometry::poll()` owns the order — raster, clock,
   windows, rate steer — and the framing is an input to the window step.
 - **With no entry**, use the computed default exactly as now. A default framing
-  saved and restored unchanged must produce identical registers.
+  saved and restored unchanged produces identical registers.
 - **Saving is debounced, not per keypress.** A pad press must not write flash.
-- **The table is bounded**, with a stated eviction policy. Refusing when full is
-  acceptable; silently discarding the oldest tuning is not.
+  The in-memory table follows every press; only the file waits, for 15 seconds
+  of the framing holding still.
+- **A reset forgets the entry**, not just the framing. Without that the solve
+  that follows finds the entry and restores exactly what was discarded, and the
+  control does nothing.
+- **Changing the OUTPUT resolution keeps the framing.** The proportions are
+  taken against the capturable region, which is a property of the input line, so
+  an output change moves neither the denominator nor the user's intent. This is
+  why the key is the source alone: `Geometry` keeps the framing when the key has
+  not moved and looks it up when it has.
 
 ## Interaction with the HSCALE aliasing
 
