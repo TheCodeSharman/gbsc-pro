@@ -11,10 +11,11 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the two bounds on what arrives intact — the horizontal write limit and the vertical bypass threshold — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
+| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the two bounds on what arrives intact — the horizontal write limit and the vertical bypass threshold — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled, and which measurements bypass invalidates; `osd-menu.md` is the menu the remote drives — read it before touching anything called OSD, because three subsystems answer to that name and only the STV9426 reaches the television; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 | [gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos) | **a separate repo** — the 67 bench photographs, 146 MB. Mirrors this repo's paths, so its tree drops into a checkout and lands ignored. *What each one shows stays here*, in `docs/photos/*/README.md` and `snapshots/LOG.md` |
 | `gbsc-pro-bench-tools` | **a separate repo**, a sibling checkout — tooling for the bench *instruments*: a DSO Nano and a Rigol DS1000Z. **The dividing line: anything talking to the RetroScaler belongs here, anything driving one person's test gear belongs there.** |
+| `RiscPc` | **a separate repo**, a sibling checkout — the bench *source*. `tools/video-source/` is the RISC OS BASIC that drives it: `ModeServ` sets the screen mode over TCP 6502, `ModeSweep` cycles the AKF50 modes, `TestPat`/`PatLib` draw the cards. **The dividing line: this scaler is not RISC PC specific, so anything that only makes sense on the RISC PC belongs there.** Read its `README.md` before running one — the sources need tokenising on the RISC OS side, and no `SYS` in them is proven except on hardware. |
 
 ## Commands
 
@@ -28,6 +29,25 @@ make -C build flash               # upload over USB serial (PORT=/dev/ttyUSB0)
 pytest tools/gbsc-pro-hwtest/ --host=192.168.88.108 -v
 pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests run
 ```
+
+**Drive the SOURCE from here too.** ModeServ runs on the RISC PC, TCP 6502, one
+command per connection -- the close is the end of the reply. It lives in the
+`RiscPc` repo, `tools/video-source/`.
+
+```sh
+printf 'MODE X320 Y256 C256 F50\n' | nc 192.168.88.10 6502   # the bench mode
+printf 'PATTERN PM5544\n'          | nc 192.168.88.10 6502   # redraw, or pick the plainer CARD
+printf 'MODES\n'                   | nc 192.168.88.10 6502   # what this monitor definition allows
+printf 'PING\n'                    | nc 192.168.88.10 6502   # OK ModeServ 1
+```
+
+`MODE` replies with the mode read back from the hardware, never with the
+request, so a monitor definition that cannot do what was asked does not look
+like a fault in the scaler. **It repaints the card too**, because the default
+signal after a mode change is black with a flashing cursor, which reads from
+here as a scaler with no output and has been diagnosed as one. **A session can therefore change the source without
+anyone at the bench**, which is what makes the mode-change recovery below usable
+unattended.
 
 `--source` opts into tests needing a locked signal; `--preset-save` opts into
 tests that write flash. Without `--host` everything hardware skips, so a bare
@@ -170,6 +190,13 @@ distinguish these:
    fallback for a state the toggle does not clear.
 3. **The TV timed out** and dropped the input.
 
+**Bypass is NOT a way to get a picture out of an unknown source.** It passes the
+source's own timing to the encoder, so it only works where the DISPLAY can show
+that timing -- the bench 800x600 does, and a 15 kHz mode does not. Reaching for
+`/sc?k` to recover a source that would not scale gives no signal at all, which
+reads as the bypass having failed rather than as the TV refusing 15 kHz.
+`/sc?~` leaves bypass and re-detects.
+
 **`VDS_ENABLE == 0` is not evidence of no output.** In RGBHV bypass the video
 path does not go through the VDS at all, so an empty segment 2/3 is expected and
 the unit is still driving the encoder. Reading it as "nothing is being sent" is a
@@ -190,6 +217,36 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   cold-boot both ends first — it is one minute against an evening.
   Paired artefacts are in the archive: `CLEAN-*-2026-08-15` and
   `glitching-2026-08-14`.
+- **A preset load turns a 15 kHz RGBHV source PROGRESSIVE, and the picture
+  survives it.** Measured: one `/sc?)` on the bench RiscPC moves
+  `IF_PRGRSV_CNTRL` 0 -> 1, `IF_LD_RAM_BYPS` 0 -> 1, `IF_HS_DEC_FACTOR` 1 -> 0,
+  `PLLAD_MD` 2250 -> 1124, and `SP_VTOTAL` collapses from 311 to noise. The
+  chain: `preferScalingRgbhv` defaults to 1, `runSyncWatcher()` sets
+  `isValidForScalingRGBHV` for an RGBHV source of 535 lines or fewer, and
+  `PresetLoad::videoStandardInputAfterLoad()` then forces `videoStandardInput`
+  to `ScalingRgbhvStandard`, which is **3** -- and `doPostPresetLoadSteps()`
+  branches `3 || 4 || 8 || 9` straight into `applyScanMode(Progressive)`. So a
+  source that qualifies for scaling RGBHV and also needs the line doubler gets
+  the wrong one, because one number carries both facts. The divider that follows
+  is arithmetically right for the wrong premise, so every register reads
+  self-consistent. `pytest test_geometry_pads.py --source` reaches it in about
+  four and a half minutes and is the reproduction.
+- **THE TWO RECOVERIES ARE NOT INTERCHANGEABLE, and each fails at the other's
+  fault.** Measured, both directions:
+
+  | fault | cleared by | does NOT clear it |
+  |---|---|---|
+  | railed `HPERIOD_IF`, sync processor fine | a source mode change | `/sc?~`, every `SFTRST_*_RSTZ`, the analog bias resets, one cold boot |
+  | divider stuck on another mode's value | `/sc?~` | a mode-change round trip |
+
+  So reach for the one that matches. A stuck `PLLAD_MD` survived 311 -> 524 ->
+  311 unchanged at 1822 and the picture rolled; `/sc?~` restored 2250 at once.
+  **Judge the divider against the source**, not against whether it moved.
+- **Check `HPERIOD_IF` against the value the MODE should give**, which is
+  `27e6 / (4 x lineRateHz) - 1` -- 431 at 311 lines/50 Hz, 213 at 524/60, 214 at
+  448/70. Steady is not valid: a steady **50** was measured at 640x480@60 where
+  213 was due, and every check that tests stability alone passes it.
+  `docs/investigations/hperiod-if-railing.md` has the table.
 - **Check the preferences before diagnosing anything.** A short read of
   `/preferencesv2.txt` silently yields a full set of defaults, and one evening
   produced three separate investigations with this single cause: the custom
@@ -396,22 +453,26 @@ bits, so the header is right and the table is simply an error.
   tables. The preset writes 1s into reserved bits. Only `s5_5d` is genuinely
   absent from RD-5725-1.1, appearing zero times in it.
 
-## What a preset actually writes
+## What a preset load actually writes
 
-Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
-`writeProgramArrayNew()` call writes:
+**The scaling preset tables are gone, and `writeProgramArrayNew()` with them,
+and so is the last blob — `rgbhv.h` was unreferenced and is deleted.** Bypass is
+applied by `bypassModeSwitch_RGBHV()` writing registers. So a preset load is now
+`Tv5725::BringUp::init()` — the static registers, one call per subsystem — plus
+whatever the geometry engine solves, and nothing else.
 
-- **306 are identical in all twelve scaling tables** — static bring-up wearing a
-  preset's clothes — and 126 differ somewhere.
-- **No read-only register is written.** All 16 RO registers are `s0_00..s0_2e`
-  and the preset ranges start at `s0_40`. There is no overlap.
-- **73 registers are written `0x00` by every table** because the ranges overrun
-  the documented register set — the datasheet stops at `s4_5b`, `s5_63`, `s0_98`
-  and the preset writes past all three. Nobody chose those; they are padding.
-- Counting only datasheet-attested names, 188 of the 432 are fully named, 147
-  partly, 97 not at all. Counting gbs-control's own convenience typedefs too it
-  is 229/136/67 — **that is the number not to quote**, because a whole-byte view
-  like `STATUS_00` reads no better than a raw byte.
+Two consequences that have each cost time. **A small register diff across a
+preset load is expected, not evidence that no preset loaded**: `/sc?~` moves
+about thirty registers on a settled source, and reading that as "the preset path
+did not run" is a wrong inference drawn from the old 432-register figure.
+And **a preset can no longer clobber a field**, because there is no bulk byte
+range to overrun one — the mechanism behind `docs/preset-load-clobber.md` is
+closed by construction, though its individual findings still describe registers
+nothing owns.
+
+`docs/chip-initialisation.md` is the design and why the tables went.
+`docs/investigations/preset-abandonment-audit.md` has what was measured from the
+twelve tables while they existed, which is what `BringUp` was built from.
 
 ## Register facts that are not obvious
 
@@ -488,8 +549,16 @@ Measured 2026-08-15, from the twelve shipped tables. Of the 432 registers one
   and asks whether a V sync line actually arrives. It costs ~500 ms, so
   `rto->syncTypeIsSet` runs it once per SOURCE rather than once per mode change.
   `docs/sync-type-selection.md`.
-- **`HPERIOD_IF` going bad is three different faults.** A stable `0` means the IF is out of the path (RGBHV bypass —
-  expected, not a fault). Noisy multi-valued garbage is the second. The third is
+- **`HPERIOD_IF` going bad is three different faults, and BYPASS IS NOT ONE OF
+  THEM — establish the path first.** With the IF out of the path the register
+  measures nothing, and it does *not* only sit at a stable `0`: measured in
+  bypass it ran 255, 511, 511, 275, 258, 511 while the sync processor stayed
+  perfect beside it, which is indistinguishable from the railing fault and has
+  twice been diagnosed as one. `DAC_RGBS_ADC2DAC` and `OUT_SYNC_SEL` are 1 in
+  bypass and 0 on the scaling path; the scale registers are NOT the tell, since
+  bypass leaves `VDS_HSCALE`/`VDS_VSCALE` on the last scaled load's values.
+  `docs/rgbhv-bypass-trap.md`. On the scaling path, noisy multi-valued garbage
+  is the second fault. The third is
   the dangerous one: **a single stable value that is simply wrong** (192 where
   212 was due), which every health check ever written here scores as healthy
   because it is stable and nowhere near a rail. **Validate against the expected
