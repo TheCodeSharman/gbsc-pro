@@ -71,9 +71,45 @@ see**. Three rules, in order:
 2. **A file already on `main` is a correction to published work.** Read it, and
    fold any commit that RETRACTS an earlier one, so the wrong claim is never
    published. An addition is fine and may stay separate.
-3. **Unless the result is a massive commit** — then split it by intent or theme.
-   Rule 3 is what stops rule 1 fusing unrelated work, and it fires often enough
-   to need stating.
+3. **Unless the result is a massive commit** — then split it by theme, which is
+   defined below. Rule 3 is what stops rule 1 fusing unrelated work, and it
+   fires often enough to need stating.
+
+### A theme is one FEATURE
+
+**Group every change that implemented one feature, then split that group by
+kind.** Feature first, kind second — not one commit per file, not one per
+layer, not one per working session.
+
+A reviewer wants to read a feature once. Grouping by file makes the churn the
+unit instead of the change, and leaves them reconstructing the feature from
+five commits because it happened to touch five files. So a feature spanning
+firmware, its tests, its tooling and its docs becomes a short **adjacent run**:
+
+```
+[F] tv5725: a table of framings, keyed on the source they were tuned for
+[T] tools/hwtest: a tuning reaching flash, a published raster, and the envelope
+[D] docs: the framing is a proportion, and the framing table is built
+```
+
+That is one conceptual commit, split only as far as cherry-pickability demands.
+`test/` travels with the firmware, so a feature is at most four commits.
+
+Two mechanics decide what is reachable:
+
+- **Reordering across kinds is free.** The four kinds touch disjoint paths, so
+  any interleaving of them cherry-picks cleanly.
+- **Reordering within a kind is not.** Preserve chronological order there.
+  Pulling two commits together past a third that edits the same region
+  conflicts, and hand-resolving it means writing new code inside a rewrite,
+  which forfeits the byte-identical guarantee. When that happens, leave them
+  apart and say why.
+
+**Fewer commits is not automatically less effort.** Folding a theme's whole
+firmware into one can produce a diff harder to read than its parts. Give the
+line counts and let the size decide — and check whether a large one is mostly a
+generated artefact first, because `webui_html.h` is checked in and makes an
+80-line web UI change read as 6400.
 
 Evidence is not lost by squashing — it lives in the `docs/` page, not the commit
 sequence. `docs/investigations/hscale-tearing-characterisation.md` still carries
@@ -194,7 +230,7 @@ drives the rewrite. Anchor every range on the tag taken before starting.
 
 ### Split a group by kind, and split its MESSAGE with it
 
-A squash group becomes one commit per kind. Its subject and its `Folded, in
+A squash group is one feature, and it becomes one commit per kind. Its subject and its `Folded, in
 order` list describe the whole group, so copying them into every part makes each
 commit advertise its siblings' work as its own: folded lines naming files the
 commit does not hold, and a subject naming work that landed somewhere else. The
