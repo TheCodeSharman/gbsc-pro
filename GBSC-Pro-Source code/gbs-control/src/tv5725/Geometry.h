@@ -16,6 +16,7 @@
 #include "OutputTimings.h"
 #include "PanAndZoom.h"
 #include "VideoProcessorTimings.h"
+#include "FramingTable.h"
 #include "SourceKey.h"
 #include "SourceMeasurement.h"
 
@@ -28,6 +29,17 @@ public:
     explicit Geometry(DisplayClock &displayClock);
 
     const PanAndZoom &framing() const;
+
+    // What has been tuned, against the sources it was tuned for. The engine
+    // puts a framing in when the user leaves the source; whoever owns the file
+    // reads it back at boot and writes it out. docs/framing-presets.md
+    const FramingTable &framings() const;
+    bool rememberFraming(const SourceKey &key, const PanAndZoom &framing);
+
+    // Moves whenever the table does. A pad press must not write flash, so the
+    // sketch debounces -- and comparing this against what it last wrote is how
+    // it knows a write is owed at all rather than paying for one every tick.
+    uint16_t framingRevision() const;
 
     // The capturable region the last solve ran against, which is the
     // denominator the framing's proportions are taken against. A caller holding
@@ -180,6 +192,8 @@ private:
     bool scanModeApplied_;   // the registers have been written for this mode change
     uint16_t solvedLines_;   // the source line count the last solve ran against
     SourceKey framedKey_;    // the source the framing held was tuned against
+    FramingTable framings_;
+    uint16_t framingRevision_;
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
     bool solvePending_;

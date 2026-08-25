@@ -99,6 +99,14 @@ static void seedBenchSource()
     seedSourceMeasurement();
 }
 
+// Move the source to a different line count, leaving everything else as the
+// bench seeded it. A different count at the same field rate is a different
+// source as far as the key is concerned, which is what the table keys on.
+static void seedSourceLines(uint16_t lines)
+{
+    seedField(0, 0x1B, 0, 11, lines);   // STATUS_SYNC_PROC_VTOTAL
+}
+
 static const OutputMode *benchMode() { return OutputMode::forFrameHeight(1125); }
 
 // A stray write lands somewhere nothing below reads, so it moves this and
@@ -506,6 +514,185 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     REQUIRE(pollUntilSolved(engine));
 
     CHECK(engine.framing() == tuned);
+}
+
+TEST_CASE("a source comes back to the framing it was left at")
+{
+    // The point of the table: tune a source, go somewhere else, come back, and
+    // the picture is where it was left with nobody touching a control.
+    // docs/framing-presets.md
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    frameAt(engine, 300, 120, 40, -15);
+    const PanAndZoom tuned = engine.framing();
+
+    // Away to another source entirely, and back.
+    seedSourceLines(524);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.framing() != tuned);
+
+    seedSourceLines(311);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.framing() == tuned);
+}
+
+TEST_CASE("a source nobody has framed takes no place in the table")
+{
+    // The table holds sixteen. Every solve seeds the framing from the placement
+    // it computed, so a table that stored whatever the framing held on the way
+    // out would fill with computed defaults and refuse the first real tuning.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    for (uint16_t lines = 311; lines <= 315; ++lines) {
+        seedSourceLines(lines);
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+    }
+
+    CHECK(engine.framings().count() == 0);
+}
+
+TEST_CASE("a source nobody has framed gets the computed default")
+{
+    // With no entry, the default exactly as before: the table adds recall, it
+    // does not change what an untuned source looks like.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    const PanAndZoom untouched = engine.framing();
+
+    seedSourceLines(524);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    const PanAndZoom other = engine.framing();
+
+    // Never framed, so coming back gives the same default it gave the first
+    // time rather than the other source's framing.
+    seedSourceLines(311);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.framing() == untouched);
+    CHECK(engine.framing() != other);
+}
+
+TEST_CASE("a framing restored from the file is applied when its source arrives")
+{
+    // Boot: the file is read before anything has been measured, so the entry
+    // goes in against a key nothing has seen yet and has to be found when the
+    // source turns up.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
+    REQUIRE(engine.rememberFraming(SourceKey(311, 50.08f), stored));
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    // The WINDOW, not the float. A solve re-grids the proportions onto the
+    // capturable region it just measured, which is what carries a framing
+    // across a mode change at all -- so the stored float does not come back
+    // bit-identical and is not meant to. docs/framing-presets.md
+    for (int vertical = 0; vertical < 2; ++vertical) {
+        const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
+        const uint16_t usable = engine.capturableOn(axis);
+        CHECK(engine.originUnitsOn(axis)
+              == lrintf(stored.originOn(axis) * (float)usable));
+        CHECK(engine.extentUnitsOn(axis)
+              == lrintf(stored.extentOn(axis) * (float)usable));
+    }
+}
+
+TEST_CASE("a press stores the framing without leaving the source")
+{
+    // Storing only on the way out loses every tuning of a unit that is turned
+    // off where it is used -- which is all of them. The in-memory table is free
+    // to follow each press; it is the FLASH write that has to be debounced.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.framings().count() == 0);
+
+    frameAt(engine, 300, 120, 40, -15);
+
+    PanAndZoom stored;
+    REQUIRE(engine.framings().find(SourceKey(311, 50.08f), &stored));
+    CHECK(stored == engine.framing());
+}
+
+TEST_CASE("a reset forgets what the table stored for this source")
+{
+    // Otherwise the solve that follows the reset finds the entry and restores
+    // exactly what was just discarded, and the control does nothing at all.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    const PanAndZoom untouched = engine.framing();
+
+    frameAt(engine, 300, 120, 40, -15);
+    REQUIRE(engine.framings().count() == 1);
+
+    engine.reset();
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.framings().count() == 0);
+    CHECK(engine.framing() == untouched);
+}
+
+TEST_CASE("the table says when it has something new to write")
+{
+    // A pad press must not write flash, so the sketch debounces -- and it needs
+    // to know whether a write is owed at all, or every quiet tick costs one.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    const uint16_t settled = engine.framingRevision();
+
+    SUBCASE("a solve that stores nothing leaves it alone") {
+        REQUIRE(engine.resolve());
+        CHECK(engine.framingRevision() == settled);
+    }
+
+    SUBCASE("and a source change that stores a tuning moves it") {
+        frameAt(engine, 300, 120, 40, -15);
+        seedSourceLines(524);
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+
+        CHECK(engine.framingRevision() != settled);
+    }
+
+    SUBCASE("but a source change with nothing tuned does not") {
+        seedSourceLines(524);
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+
+        CHECK(engine.framingRevision() == settled);
+    }
 }
 
 // --- every window follows the framing ----------------------------------------

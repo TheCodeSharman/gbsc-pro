@@ -19,6 +19,7 @@ Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
       samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
+      framingRevision_(0),
       scanModeApplied_(false), solvedLines_(0),
       idleLines_(0), idleRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
@@ -27,6 +28,18 @@ Geometry::Geometry(DisplayClock &displayClock)
       activeLinesStop_(0) {}
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
+
+const FramingTable &Geometry::framings() const { return framings_; }
+
+bool Geometry::rememberFraming(const SourceKey &key, const PanAndZoom &framing)
+{
+    if (!framings_.remember(key, framing))
+        return false;
+    ++framingRevision_;
+    return true;
+}
+
+uint16_t Geometry::framingRevision() const { return framingRevision_; }
 
 bool Geometry::changing() const { return modePending_ || solvePending_; }
 
@@ -263,7 +276,13 @@ bool Geometry::poll()
 
 void Geometry::reset()
 {
+    // The entry goes with the framing. "Back to default" has to mean the table
+    // stops answering for this source, or the solve that follows restores
+    // exactly what was just discarded and the control does nothing.
+    if (framings_.forget(framedKey_))
+        ++framingRevision_;
     framedKey_ = SourceKey();
+
     // Re-arming the mode change already in force, rather than a second path
     // that would have to keep step with it: the whole sequence -- freeze, wait
     // for the source, measure, sampling, raster, clock, windows -- is what a
@@ -308,7 +327,12 @@ void Geometry::enterBypass()
 bool Geometry::solveForSource()
 {
     const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz());
-    if (arriving != framedKey_)
+    if (arriving == framedKey_)
+        return solveWindows();
+
+    // Leaving one source for another. Nothing is stored here: the table has
+    // followed every press already, so what this source was tuned to is in it.
+    if (!framings_.find(arriving, &framing_))
         framing_.reset();
     framedKey_ = arriving;
     return solveWindows();
@@ -576,8 +600,16 @@ bool Geometry::step(const PanAndZoom &wanted)
         return false;
     }
     if (GBS::IF_HB_SP2::read() == horizontalStop && GBS::IF_HB_ST2::read() == horizontalStart
-        && GBS::IF_VB_SP::read() == verticalStop && GBS::IF_VB_ST::read() == verticalStart)
+        && GBS::IF_VB_SP::read() == verticalStop && GBS::IF_VB_ST::read() == verticalStart) {
         framing_ = before;
+        return true;
+    }
+    // A press that moved a window is what makes this framing worth a place in
+    // the table, and it goes in NOW rather than when the source is left: a unit
+    // turned off where it is used would otherwise lose every tuning. Only the
+    // flash write is debounced. One that moved nothing stores nothing, which is
+    // also what keeps sixteen places from filling with computed defaults.
+    rememberFraming(framedKey_, framing_);
     return true;
 }
 

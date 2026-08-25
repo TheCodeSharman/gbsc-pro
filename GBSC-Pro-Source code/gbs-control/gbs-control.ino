@@ -59,6 +59,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "osd.h"
 #include "src/net/RegisterQueue.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
+#include "src/tv5725/FramingText.h"
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
@@ -939,6 +940,28 @@ SerialMirror SerialM;
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
 Tv5725::Geometry geometry(rtos.displayClock);
+
+// The framing table, in its own file. Separate from /preferencesv2.txt because
+// it is variable length and keyed, and mixing it with the scalar settings
+// recreates the fragility that file is known for. docs/framing-presets.md
+static const char FramingFilePath[] = "/framing.txt";
+
+// A press must not write flash, so a write waits for the framing to stop
+// moving. Long enough that walking a picture into place with the remote is one
+// write and not forty.
+static const uint32_t FramingSaveQuietMs = 15000;
+
+// What was last written, and when the table last moved. A revision the engine
+// hands out, so a quiet loop costs a comparison rather than a flash read.
+static uint16_t framingSavedRevision = 0;
+static uint16_t framingSeenRevision = 0;
+static uint32_t framingMovedAt = 0;
+
+// Whether this boot managed to read the file. The same guard preferences carry,
+// and for the same reason: a silent bad read followed by an ordinary save is
+// how a table gets replaced by an empty one.
+static bool framingIsSuspect = true;
+
 Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
 OSDManager osdManager(geometryControls);
@@ -6870,6 +6893,13 @@ void setup()
             (unsigned)uopt->presetPreference, (unsigned)uopt->enableFrameTimeLock,
             (unsigned)uopt->presetSlot, (unsigned)SeleInputSource,
             prefsAreSuspect ? 1 : 0, (unsigned long)millis());
+
+        // The framing table, from its own file. After the preferences, so its
+        // own read failure is distinguishable in the boot log from theirs.
+        loadFramingTable();
+        bootLogPrintf("FRAMING: %u stored, suspect=%d t=%lums\n",
+            (unsigned)geometry.framings().count(), framingIsSuspect ? 1 : 0,
+            (unsigned long)millis());
     }
 
     // ReadUserIRRemote();
@@ -7187,6 +7217,8 @@ void loop()
     // being followed by it. src/tv5725/SyncOutput.h
     if (!uopt->wantOutputComponent)
         syncOutput.poll(geometry.changing(), millis());
+
+    pollFramingSave(millis());
 
     if (geometry.poll()) {
         // Rate steer last, after raster, clock and windows. The solve moved the
@@ -9778,6 +9810,84 @@ void ReadUserIRRemote()
     f.close();
 }
 // = (uint8_t)(f.read() - '0');
+void loadFramingTable()
+{
+    framingIsSuspect = true;
+
+    if (!LittleFS.exists(FramingFilePath)) {
+        // Nothing stored yet is not a failed read. Every source takes its
+        // computed default and the first tuning is saveable.
+        framingIsSuspect = false;
+        framingSavedRevision = geometry.framingRevision();
+        return;
+    }
+
+    File f = LittleFS.open(FramingFilePath, "r");
+    if (!f)
+        return;
+
+    Tv5725::FramingTable read;
+    Tv5725::FramingText text(read);
+    char line[80];
+    while (f.available()) {
+        const String next = f.readStringUntil('\n');
+        strncpy(line, next.c_str(), sizeof(line) - 1);
+        line[sizeof(line) - 1] = '\0';
+        text.readLine(line);
+    }
+    f.close();
+
+    for (uint16_t i = 0; i < read.count(); ++i)
+        geometry.rememberFraming(read.keyAt(i), read.framingAt(i));
+
+    framingIsSuspect = false;
+    framingSavedRevision = geometry.framingRevision();
+}
+
+void saveFramingTable()
+{
+    if (framingIsSuspect) {
+        printf("not saving framings: this boot could not read them\n");
+        return;
+    }
+
+    File f = LittleFS.open(FramingFilePath, "w");
+    if (!f)
+        return;
+
+    f.print(F("# framing, one source a line: <lines>@<fieldRateHz> = "
+              "originH extentH originV extentV\n"
+              "# in ten-thousandths of the capturable region\n"));
+
+    const Tv5725::FramingTable &table = geometry.framings();
+    Tv5725::FramingText text(const_cast<Tv5725::FramingTable &>(table));
+    char line[80];
+    for (uint16_t i = 0; i < table.count(); ++i)
+        if (text.writeLine(i, line, sizeof(line))) {
+            f.print(line);
+            f.print('\n');
+        }
+    f.close();
+
+    framingSavedRevision = geometry.framingRevision();
+}
+
+// Called every loop. Nothing is written until the table has held still.
+void pollFramingSave(uint32_t now)
+{
+    const uint16_t revision = geometry.framingRevision();
+    if (revision != framingSeenRevision) {
+        framingSeenRevision = revision;
+        framingMovedAt = now;
+        return;
+    }
+    if (revision == framingSavedRevision || framingMovedAt == 0)
+        return;
+    if (now - framingMovedAt < FramingSaveQuietMs)
+        return;
+    saveFramingTable();
+}
+
 void saveUserPrefs()
 {
     // Refuse if this boot never managed to read the file. Otherwise the first
