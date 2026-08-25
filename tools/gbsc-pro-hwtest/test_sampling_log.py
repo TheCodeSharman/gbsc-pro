@@ -84,14 +84,17 @@ def stream(host, console):
 
 def test_the_log_line_carries_the_if_status_byte(stream):
     header, data = stream
-    assert header[-1] == "ifbits", (
-        f"last column is {header[-1]!r}, expected 'ifbits' — "
-        f"header was {header}")
+    # BY NAME, NOT BY POSITION. These indexed the last column, and a column
+    # appended after ifbits then read as ifbits -- the assertion still fired,
+    # naming the right registers against the wrong byte.
+    assert "ifbits" in header, f"no ifbits column; header was {header}"
+    assert "intstatus" in header, f"no intstatus column; header was {header}"
+    ifbits = header.index("ifbits")
     for row in data:
         assert len(row) == len(header), (
             f"row has {len(row)} fields against {len(header)} header columns: {row}")
-        assert 0 <= row[-1] < (1 << len(IF_STATUS_BITS)), (
-            f"ifbits {row[-1]} does not fit {len(IF_STATUS_BITS)} bits")
+        assert 0 <= row[ifbits] < (1 << len(IF_STATUS_BITS)), (
+            f"ifbits {row[ifbits]} does not fit {len(IF_STATUS_BITS)} bits")
 
 
 def test_the_if_status_byte_holds_the_registers_it_names(host, stream):
@@ -101,7 +104,7 @@ def test_the_if_status_byte_holds_the_registers_it_names(host, stream):
     same way the console timings are checked: these are live measurements, and a
     bit that moved between the log and the read proves nothing either way.
     """
-    _, data = stream
+    header, data = stream
 
     def read_bits():
         registers = read_segment(host, 0)
@@ -119,7 +122,7 @@ def test_the_if_status_byte_holds_the_registers_it_names(host, stream):
     steady = {n: before[n] for n in IF_STATUS_BITS if before[n] == after[n]}
     assert steady, f"every IF status bit moved while sampling: {before} then {after}"
 
-    logged = data[-1][-1]
+    logged = data[-1][header.index("ifbits")]
     disagreed = {
         name: (value, (logged >> IF_STATUS_BITS.index(name)) & 1)
         for name, value in steady.items()

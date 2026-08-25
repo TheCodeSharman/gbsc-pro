@@ -1650,3 +1650,75 @@ def test_a_mode_change_leaves_the_sync_output_driven(host, source, preset_load):
             "bit 2 of s0_49 to get the picture back.")
     finally:
         recover_lock(host)
+
+
+# The four registers InputFormatter::applyScanMode() puts into one of two
+# states. Line-doubled is 1/0/0/0, progressive is 0/1/1/1.
+SCAN_HS_DEC_FACTOR = (1, 0x0B, 4, 2)
+SCAN_LD_SEL_PROV = (1, 0x0B, 7, 1)
+SCAN_LD_RAM_BYPS = (1, 0x0C, 0, 1)
+SCAN_PRGRSV_CNTRL = (1, 0x00, 6, 1)
+
+# Below this many source lines the capture is line-doubled. Mirrors
+# SourceMeasurement::LineDoubleBelowLines.
+SCAN_LINE_DOUBLE_BELOW = 400
+
+
+def _scan_mode(host):
+    """('doubled'|'progressive'|'mixed', the four raw values)."""
+    values = tuple(read_field(host, *spec) for spec in
+                   (SCAN_HS_DEC_FACTOR, SCAN_LD_SEL_PROV,
+                    SCAN_LD_RAM_BYPS, SCAN_PRGRSV_CNTRL))
+    if values == (1, 0, 0, 0):
+        return "doubled", values
+    if values == (0, 1, 1, 1):
+        return "progressive", values
+    return "mixed", values
+
+
+def test_a_preset_load_leaves_the_scan_mode_the_source_calls_for(host, source):
+    """A preset load must not change how many lines the capture takes in.
+
+    A source that qualifies for scaling RGBHV is filed under
+    PresetLoad::ScalingRgbhvStandard, which is 3, and doPostPresetLoadSteps()
+    used to branch `3 || 4 || 8 || 9` straight into
+    applyScanMode(Progressive). So a 15 kHz RGBHV source of 311 lines -- which
+    both qualifies for scaling RGBHV and needs the line doubler -- came out
+    progressive, and every register downstream was then correct for a premise
+    the source contradicts:
+
+        PLLAD_MD 1124 where 2250 was due, IF_HSYNC_RST following it to 1124,
+        SP_VTOTAL collapsing from 311 to noise, HPERIOD_IF railing.
+
+    Nothing in a register dump looks wrong, because the divider IS right for
+    progressive. One number was carrying both the input format and the scan
+    mode.
+
+    The scan mode is the engine's now, derived from the line count it measures,
+    so a preset load cannot move it.
+    """
+    lines = read_field(host, *SAMPLING_SYNC_VTOTAL)
+    assert lines and lines >= SAMPLING_LOCKED_VTOTAL_MIN, (
+        f"source not locked ({lines} lines), so there is nothing to preserve")
+    wanted = "doubled" if lines < SCAN_LINE_DOUBLE_BELOW else "progressive"
+
+    before, raw_before = _scan_mode(host)
+    assert before == wanted, (
+        f"before the preset load a {lines}-line source is already {before} "
+        f"{raw_before}, wanting {wanted}")
+
+    try:
+        get(host, "/sc?%29")  # loadComputedPreset(Mode1080p, 0x15)
+        assert wait_for(lambda: (read_field(host, 3, 0x01, 0, 12) or 0) > 1000,
+                        timeout=20.0), "no raster after the preset load"
+        time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
+
+        after, raw_after = _scan_mode(host)
+        settled = _settled_sampling(host)
+        assert after == wanted, (
+            f"the preset load moved a {lines}-line source from {before} to "
+            f"{after} {raw_after}. The scan mode followed the enumerated "
+            f"standard rather than the source, and the divider went with it: "
+            f"PLLAD_MD is now {settled[0] if settled else 'unreadable'}.")
+    finally:
+        recover_lock(host)
