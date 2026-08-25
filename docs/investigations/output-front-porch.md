@@ -108,12 +108,15 @@ not overscanning, which places the sampling window at roughly 104..1817 of a
 consumes the scaler's analog blanking and generates HDMI blanking of its own, so
 the minimum the scaler must emit cannot depend on the display.
 
-The estimate has never been measured directly, and it is the number that decides
-whether a standards-conformant front porch costs any visible picture. **Creeping
-the display window down and watching for the black bar measures it**: the value
-where the bar first appears is where the encoder stops sampling. At the reserve
-now in the firmware the picture ends about 18 px past the estimate and the screen
-stays filled, so there is little margin in the figure.
+**A standards-conformant front porch does cost visible picture**, and the bypass
+photograph is what says so: bypass reaches 26 photo columns further right than the
+scaled path at 1080p, about 2.3% of the line, on one camera position and one crop
+so the two are comparable. Blanking inside the encoder's sampling window shows as
+black, so the reserve is not free and is now the measured floor rather than CEA's.
+
+The sampling window itself has still never been measured directly. **Creeping the
+display window down and watching for the black bar measures it**: the value where
+the bar first appears is where the encoder stops sampling.
 
 **The other test is other sets.**
 

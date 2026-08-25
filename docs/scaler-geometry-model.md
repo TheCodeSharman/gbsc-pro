@@ -247,12 +247,36 @@ together.
 stay strictly below the total register and wraps rather than clamps, which left a
 front porch of 6 px.
 
-**The reserve is CEA-861's own minimum front porch, taken as a TIME**, the same way
-`syncNs` and `backPorchNs` already are — 1080p60's 88 px at 148.5 MHz is 592.6 ns,
-which is 64 px at 108 MHz and 77 at 129.6. The 60 Hz figure is the standard's
-shortest because the front porch is the one CEA *varies* to absorb the field rate:
-1080p50 runs 528 px against 1080p60's 88. So it is a floor, and whatever is left
-above it stays the picture's.
+**The reserve is the measured floor and nothing more**, `OutputMode::FrontPorchMinPx`,
+16 px. CEA-861's own minimum front porch is an order of magnitude above it -- 64 px
+at 108 MHz, 77 at 129.6 -- and conforming to it at this end buys nothing, because
+the MS9288A generates its own HDMI blanking from what it samples and never sees
+ours.
+
+**What the reserve costs is picture, not blanking.** It bounds where the produced
+picture may END, so `fitToRaster` sizes the picture to stop there and the far
+margin is then blanked off the end of that. At 1080p on a 2300 px raster, taking
+the reserve from CEA's 77 px to the measured 16 moves the display window's close
+from 2135 to 2196 and `VDS_HSCALE` from 474 to 461 -- 61 px more picture, 2.7% of
+the line.
+
+The floor is measured in PIXELS at one clock, so whether it is really a time is
+untested. Sync and back porch remain times, because they place the pulse the
+encoder locks to.
+
+**Measured against bypass, which is the only reference for where the panel's
+active area ends.** An 800x600 source runs straight through and fills the screen;
+the scaled path is compared to it zoomed and panned so colour is against the edge,
+because at the default framing the last thing on screen is captured input blanking
+and not the output's own edge:
+
+| | right edge, photo column |
+|---|---|
+| bypass 800x600 | 1155 |
+| scaled 1080p, colour against the edge | 1156 |
+
+At CEA's reserve the scaled path stopped 26 columns short of bypass. At the
+board's floor it reaches it.
 
 Vertically it is the standard's lines and needs no conversion. For 1080p that
 gives an active window of **41..1121**, which is the encoder window measured
@@ -261,8 +285,9 @@ standard rather than from the measurement.
 
 `OutputTimings::activeStop` and `activeLinesStop` carry it, `Axis::farBound` applies
 it, and `Geometry` holds it between solves because `apply()` reads the raster back
-off the chip and no register records a porch. At the bench framing the picture goes
-from ending 6 px short of the raster to 65, with `VDS_HSCALE` 572 against 592.
+off the chip and no register records a porch. At the bench framing the picture ends
+at 2278 of the 2300 px raster, and the display window closes at 2196 -- the far
+margin blanking the pipeline's run-out off the end of it.
 
 An `activeStop` of 0 means the raster's own edge, which is what bypass gets —
 there is no solved raster to take a porch from.

@@ -6,17 +6,18 @@ control. It survives a reboot, and it survives changing the output resolution.
 
 **Built, except the VESA defaults.** What is here describes the code:
 `Tv5725::SourceKey` is the key, `Tv5725::FramingTable` the table,
-`Tv5725::FramingText` the file format, `Tv5725::Geometry` the behaviour, and
-`gbs-control.ino` the file itself. Seeding the table with VESA defaults for a
-recognised timing is the part still to come.
+`Tv5725::FramingLine` the record's grammar, `Tv5725::FramingText` the file,
+`Tv5725::SlotTable` and `Tv5725::SlotText` the numbered slots,
+`Tv5725::Geometry` the behaviour, and `gbs-control.ino` the two files
+themselves. Seeding the table with VESA defaults for a recognised timing is the
+part still to come.
 
 ## What it unblocks
 
-Three places in `gbs-control.ino` carry the same note — a branch that "goes when
-a slot records the INPUTS to the calculation". The slot routes and the web UI's
-slot grid already exist and deliberately refuse, because a slot used to be a
-register dump, and replaying registers into a calculating engine is what
-`docs/firmware-geometry-engine.md` forbids. **This feature is that recording.**
+A slot used to be a register dump, and replaying registers into a calculating
+engine is what `docs/firmware-geometry-engine.md` forbids, so the slot routes
+refused for as long as they had nothing else to record. **This feature is that
+recording**, and they no longer refuse — see "Slots" below.
 
 ## Two coordinate spaces
 
@@ -100,6 +101,48 @@ full table still takes a re-tune.
 from the placement it computed, so a table that stored whatever the framing held
 would fill its sixteen places with computed defaults and refuse the first real
 tuning.
+
+## Slots
+
+The table above is what the engine remembers on its own: the last framing per
+source, restored when that source comes back. A **slot** is the framing the user
+chose to keep and named, so there may be several for one source and none at all.
+
+`/slots.txt`, one record a line, the slot then the record `FramingLine` owns:
+
+```
+# slot framings: <slot> <lines>@<fieldRateHz> = originH extentH originV extentV
+# in ten-thousandths of the capturable region
+0 311@50 = 594 8324 611 9357
+```
+
+Keyed on **(slot, source)**, so one slot holds a framing per source — which is
+what the register dumps did before it, `/preset_ntsc.A` and eight more per slot,
+except that those were keyed by the `videoStandardInput` classification and this
+is keyed by what the chip measured.
+
+- **Bounded at sixteen records**, and refusing when full, for the reason the
+  per-source table gives: it lives in the ESP8266's globals, and dropping the
+  oldest loses work the user did with nothing said. The web UI offers 72 slots
+  and 72 names; sixteen of them may hold a framing.
+- **Written on an explicit save**, so there is nothing to debounce. It carries
+  the same read guard as the preferences and the framing table: a boot that
+  could not read the file refuses to save over it.
+- **Restored through the engine.** `Geometry::applyFraming()` re-solves every
+  register from the stored proportions, which is what lets a slot survive an
+  output resolution change and is what a register dump could not do.
+- **A slot carries no output resolution.** That is a preference of its own, and
+  the proportions are taken against the capturable region, which the output
+  raster does not touch.
+
+The routes: `/uc?4` saves the current framing into the current slot and `/uc?3`
+restores it, `/slot/save` stores one for the index the web UI's grid names, and
+`/slot/remove` forgets what a slot held.
+
+**`/slot/remove` shuffles the names in `/slots.bin` down by one and does not
+shuffle the framings with them.** It shuffles exactly one entry and stops, which
+is what it did with the register dumps too. A slot removed loses its framing; the
+slots after it keep theirs under the names that have moved.
 
 ## The key
 
@@ -232,7 +275,10 @@ belong in the host unit layer (`make -C test`):
 
 The end-to-end behaviour — change mode, come back, framing restored — is
 reachable over HTTP through `/geometry` and the pad commands, so it earns a
-hardware acceptance test as well.
+hardware acceptance test as well. `test_slot_framing.py` is the slots' one,
+behind `--source` and `--preset-save`: a tuned framing saved and restored after
+a reset, the record holding the proportions the engine reports against the
+source the chip is counting, and an empty slot leaving the picture alone.
 
 ## Related
 

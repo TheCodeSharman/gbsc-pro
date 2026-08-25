@@ -265,18 +265,23 @@ therefore invisible to any check that compares names.
    goal is the engine owning every TV5725 register. Note this is the mode the
    RiscPC desktop boots into at
    800x600, so it is not a corner case — it is the first thing the bench sees.
-7. **Give the slots back a meaning.** They record **the inputs to the
-   calculation** — capture, scale, pan, the framing choices — keyed by the
-   source's **(vsync, hsync)** rather than by the `videoStandardInput`
-   classification, in a new file rather than `/preset_*`.
+7. ~~**Give the slots back a meaning.**~~ Done. A slot records **the inputs to
+   the calculation** — the framing — keyed by the source's measured identity
+   rather than by the `videoStandardInput` classification, in `/slots.txt`
+   rather than the nine `/preset_*` files it used to take per slot.
+   `Tv5725::SlotTable` and `Tv5725::SlotText`; `/uc?3` and `/uc?4` restore and
+   save it, `/slot/save` stores one for the index the grid names, and a restore
+   goes through `Geometry::applyFraming()` so every register is solved afresh.
+   `docs/framing-presets.md`.
 
-   The register-dump half is already gone: no slot loads or saves registers,
-   `/uc?3` and `/uc?4` log a refusal, and `OutputCustomized` falls back to a
-   computed mode on read with its enum value left reserved so
-   `/preferencesv2.txt` keeps its layout. What survives is the whole surface
-   this re-points at — the web UI slot grid, `/slots.bin`, `SlotMeta`, and both
-   routes.
+   `OutputCustomized` keeps its enum value reserved so `/preferencesv2.txt`
+   keeps its layout, and nothing selects it: the output resolution is a
+   preference of its own and a slot carries none.
+
+   What is left is `/slot/remove`, which shuffles the names in `/slots.bin` down
+   by one — one entry, then it stops — without shuffling the framings with them.
+   It did that with the register dumps too.
 
 Step 5 is the milestone that triggers a review pass over `dev`, a
 simplification, and resequencing into logical commits for main. **It is done,
-and so is the register-dump half of step 7, so the review is due now.**
+and so is step 7, so the review is due now.**
