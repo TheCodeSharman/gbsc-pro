@@ -52,12 +52,30 @@ def pytest_addoption(parser):
         "until the next real mode change or a power cycle. Writes no flash.",
     )
     group.addoption(
+        "--preset-save",
+        action="store_true",
+        default=False,
+        help="run the tests that write flash -- the framing table, saved to "
+        "/framing.txt when a tuning settles. Opt-in because it spends flash "
+        "write cycles and leaves a file on the unit, not because it is risky: "
+        "the framing it stores is the one the user tuned.",
+    )
+    group.addoption(
         "--reboot",
         action="store_true",
         default=False,
         help="restart the unit, to prove the boot restore brings the saved input "
         "back. Costs a few seconds of black screen and a re-detection; writes no "
         "flash. Opt-in because it takes the unit away mid-run.",
+    )
+    group.addoption(
+        "--modeserv",
+        action="store",
+        default=os.environ.get("GBSC_MODESERV"),
+        help="the ModeServ host driving the SOURCE, e.g. 192.168.88.10. Tests "
+        "that need a particular source mode change it there and put it back; "
+        "without this they skip, because nothing else can put a VESA raster on "
+        "the input.",
     )
     group.addoption(
         "--pllad-hostile",
@@ -83,6 +101,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "reboot: restarts the unit while it runs; needs --reboot"
     )
+    config.addinivalue_line(
+        "markers", "source_mode: changes the SOURCE mode while it runs; needs --modeserv"
+    )
     # SELECTORS, not gates -- absent from the `gates` list below, so they never
     # skip anything. Assigned by which pad the test presses, because -k matches
     # words in the NAME: -k "pan" also catches a zoom test that "moves" the
@@ -106,6 +127,8 @@ def pytest_collection_modifyitems(config, items):
          "needs a build with /freeze support; pass --freeze to run it"),
         ("reboot", "--reboot",
          "restarts the unit while it runs; pass --reboot to run it"),
+        ("source_mode", "--modeserv",
+         "changes the source mode; pass --modeserv <host> to run it"),
     ]
     for keyword, option, reason in gates:
         if config.getoption(option):
@@ -210,6 +233,14 @@ def source(request):
     input does not report the no-sync fault it does not have."""
     if not request.config.getoption("--source"):
         pytest.skip("needs a connected source: pass --source")
+
+
+@pytest.fixture
+def preset_save(request):
+    """Opt-in for the tests that write flash. A run that is only checking the
+    picture should not spend write cycles."""
+    if not request.config.getoption("--preset-save"):
+        pytest.skip("writes flash: pass --preset-save")
 
 
 @pytest.fixture

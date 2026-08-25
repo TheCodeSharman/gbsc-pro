@@ -40,10 +40,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_of, get,
-                      get_json,
-                      read_field, read_reg, read_segment, recover_lock, reset_framing,
-                      wait_for, write_reg)
+from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_matches,
+                      framing_of, fs_read, get, get_json, read_field, read_reg,
+                      read_segment, recover_lock, reset_framing, wait_for,
+                      write_reg)
 
 GEOMETRY_FIELDS = [
     ("IF_HB_SP2", 1, 0x1A, 0, 11), ("IF_HB_ST2", 1, 0x18, 0, 11),
@@ -1200,6 +1200,73 @@ def _engine_outputs(host):
             for name, seg, reg, lo, width in ENGINE_OUTPUTS}
 
 
+# The file the framing table lives in, and how long the firmware waits for the
+# framing to stop moving before it writes one.
+FRAMING_FILE = "/framing.txt"
+FRAMING_SAVE_QUIET_S = 15
+
+
+def _framing_file_settled(host, interval=3.0):
+    """The file's contents, once two reads apart agree. Wrapped in a tuple so
+    an absent file -- a perfectly good settled state -- is not read as "not
+    settled yet"."""
+    first = fs_read(host, FRAMING_FILE)
+    time.sleep(interval)
+    return (first,) if fs_read(host, FRAMING_FILE) == first else None
+
+
+@pytest.mark.zoom
+def test_a_tuning_reaches_flash_only_after_it_settles(host, probe, source,
+                                                      preset_save):
+    """A pad press must not write flash, and a tuning must not be lost either.
+
+    Walking a picture into place with the remote is tens of presses; one write
+    each would spend the flash's life on a single adjustment. So the in-memory
+    table follows every press and the FILE waits for the framing to hold still.
+    docs/framing-presets.md
+    """
+    try:
+        reset_the_framing(host)
+
+        # Whatever ran before may have left a write pending, and it would land
+        # inside the window below and read as a press having cost one. Wait for
+        # the file to hold still first: the state this needs, set rather than
+        # inherited.
+        before = wait_for(lambda: _framing_file_settled(host),
+                          timeout=FRAMING_SAVE_QUIET_S + 25.0, interval=2.0)
+        assert before is not None, (
+            f"{FRAMING_FILE} never stopped changing, so nothing here can tell a "
+            "press that cost a write from one that did not")
+        before = before[0]
+
+        for _ in range(4):
+            press(host, probe, "5", pixels=40)
+        time.sleep(4)
+        tuned = framing(host)
+
+        # Still nothing written: the press alone must not have cost a write.
+        assert fs_read(host, FRAMING_FILE) == before, (
+            "the file changed within seconds of a press, so every press of a "
+            "hold-to-repeat costs a flash write")
+
+        settled = wait_for(
+            lambda: (fs_read(host, FRAMING_FILE) or "") != (before or "")
+                    or None,
+            timeout=FRAMING_SAVE_QUIET_S + 20.0, interval=2.0)
+        assert settled, (
+            f"nothing was written to {FRAMING_FILE} within "
+            f"{FRAMING_SAVE_QUIET_S + 20} s of the framing settling, so the "
+            "tuning is lost at the next power cut")
+
+        stored = fs_read(host, FRAMING_FILE)
+        assert f"{read_field(host, 0, 0x1B, 0, 11)}@" in stored, (
+            f"the source counted is not the one the record is keyed on:\n{stored}")
+        assert tuned == framing(host), (
+            "the framing moved while it was being written")
+    finally:
+        reset_the_framing(host)
+
+
 # The output preset commands, and the raster each puts on the chip. /uc? queues
 # one character for loop() to pick up.
 OUTPUT_480P = "/uc?h"
@@ -1245,9 +1312,12 @@ def test_changing_the_output_keeps_the_framing(host, probe, source, preset_load)
         time.sleep(8)
         back = framing(host)
 
-        assert at_1080p == tuned, (
+        # framing_matches, not equality: the units are taken against a live
+        # measurement and one of them moves a unit either way on its own.
+        # Losing the framing is a move of tens -- 441 -> 532 before the fix.
+        assert framing_matches(at_1080p, tuned), (
             f"the output change moved the framing from {tuned} to {at_1080p}")
-        assert back == tuned, (
+        assert framing_matches(back, tuned), (
             f"coming back moved it to {back} rather than the {tuned} it was "
             "tuned to")
     finally:
