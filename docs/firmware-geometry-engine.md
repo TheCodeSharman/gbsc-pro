@@ -241,6 +241,23 @@ bypass the video path does not go through the VDS at all, `VDS_?SYNC_RST` reads
 0, and there is no geometry to solve — writing one would write into a path
 nobody is using. See [rgbhv-bypass-trap.md](rgbhv-bypass-trap.md).
 
+**The engine measures only what it scales, so in bypass it can answer nothing
+about the source.** Neither bypass switch reaches `doPostPresetLoadSteps()`, so
+`Geometry::modeChanged()` never fires for a bypassed mode and no poll measures
+one; `enterBypass()` calls `SourceMeasurement::forgetSource()` so the last
+scaled mode's rate cannot be read as this one's. A reader on the bypass path
+asking `sourceLowLineRate()` therefore gets a truthful "nothing measured", not
+the source in front of it.
+
+What is left there is `rto->videoStandardInput`, and on that path it is honest:
+it carries the mode `getVideoMode()` detected immediately before the switch, and
+a scaled RGBHV source — the one whose number does not carry its line rate, since
+it is filed as 480p — cannot be in HD bypass at all, because taking that branch
+clears the pass-through preference. So the sync processor's SD settings do not
+all read the same place. On the scaling path they ask the measured rate; in
+bypass they ask the byte, and the sketch routes the question on
+`rto->outModeHdBypass`.
+
 ## The sampling divider
 
 `Tv5725::SourceMeasurement` owns `PLLAD_MD`, `IF_HSYNC_RST` (= `MD`/2) and `SP_RT_HS_SP`
