@@ -189,12 +189,148 @@ those two nulls are not safe. Redo them with the return checked when the state
 is next reachable. The rows either side do not depend on the write path: the
 detection passes and the cold boot involved no register writes at all.
 
-**Untried, and the best remaining candidates**, because they drop analog bias
-rather than digital configuration -- which is the domain the fault is in and the
-domain a power cycle clears: `PLLAD_VCORST`, `PLLAD_PDZ`, `ADC_POWDZ`, and all
-twelve `SFTRST_*_RSTZ` held low together rather than pulsed one at a time. If one
-of them clears it, the firmware gains a recovery for a state that currently needs
-someone to pull the plug.
+**Every remaining candidate is now tried, and none clears it.** These were the
+analog-bias ones, on the reasoning that they drop bias rather than digital
+configuration, which is the domain a power cycle clears. Run against a live
+instance of the fault, each write verified by reading the byte back, each
+register restored afterwards:
+
+| tried, writes verified | cleared it |
+|---|---|
+| `SFTRST_IF_RSTZ` pulsed | no |
+| `SFTRST_MODE_RSTZ` pulsed | no |
+| all twelve `SFTRST_*_RSTZ` held low together | no |
+| `PLLAD_VCORST` pulsed | no |
+| `PLLAD_PDZ` powered down and restored | no |
+| `ADC_POWDZ` powered down and restored | no |
+| ADC and PLLAD powered down together | no |
+
+This also redoes the two rows marked with the write-path caveat above, with the
+return checked. They stay negative, so the caveat is discharged rather than
+merely outstanding: those nulls are real.
+
+The consequence for `framesync.h` is the one worth carrying. The recovery that
+would justify deleting its workarounds -- a register write that clears a state
+otherwise needing the plug pulled -- does not exist among these.
+
+## A source mode change clears it, and is the cheapest known clearance
+
+The first section of this page establishes that the value follows the source.
+The stronger form: interrupting the source is also what *recovers* it. One round
+trip, sampled fifteen times per point:
+
+```
+                     VTOTAL    MD  HT_OK  HPERIOD_IF   expected for the mode
+railed                  311  2250      0  511/255/19/273, noisy      431
+at 640x480@60           524  1124      1  50, steady in 15 of 15     213
+back at 320x256@50      311  2250      1  431, steady in 15 of 15    431
+```
+
+**The middle row is the fault's third form, not a recovery.** 50 implies a line
+rate of 132 kHz through `27e6 / ((hperiod + 1) * 4)`, against the 31440 Hz that
+524 lines at 60 Hz actually is. A later sweep read that same VTOTAL 524 at a
+correct 213 in three separate modes, so 50 is a stable WRONG value and it is
+intermittent.
+
+So the round trip clears it, and the first leg alone does not: the fault goes
+noisy -> stable wrong -> correct. What that costs is the obvious shortcut --
+changing mode once and reading the new mode's value proves nothing, because the
+new mode has its own wrong answer available. **Return to the mode whose correct
+value is known, and check against that.**
+
+What the fault is in is the input formatter's lock to the incoming line, and
+what shifts it is a real interruption of that line -- which no register write
+supplies, and which the firmware cannot generate for itself.
+
+**What this does not settle is whether a cold boot clears it.** One cold boot,
+mains and USB pulled, left `HPERIOD_IF` railed, and the mode change above is what
+recovered it. But the power-off interval was not recorded, and a short one leaves
+the rails standing. So that reading is consistent both with a cold boot being
+ineffective and with that particular one being too short. The row in the table
+above stands unrefuted and untested against a timed power-off.
+
+## It survives a correct clock group, latched
+
+Alongside the divider sweep above, the whole sampling group has now been
+observed correct while the fault stands. Read in one pass on a railed unit,
+after a cold boot:
+
+```
+PLLAD_MD 2250   PLLAD_KS 2   PLLAD_CKOS 0   DEC1_BYPS 0   DEC2_BYPS 0
+ADC_CLK_ICLK1X 1   ADC_CLK_ICLK2X 1   IF_HSYNC_RST 1125
+```
+
+Every one of those is the value a healthy bench unit holds, and `PLLAD_LAT` was
+pulsed by hand afterwards, so this is not the register-reads-new-PLL-runs-old
+trap either. The clock group is not what holds the fault in place.
+
+**One clock combination remains untested**, and it is the one with no register
+signature at all: a `PLLAD_CKOS` tap that disagrees with the decimators.
+`Adc::applySampleRate()` writes all five together so that the pair cannot be
+represented, and every state examined here had them consistent. Whether an
+inconsistent pair rails `HPERIOD_IF` is not known. Inducing one is a picture
+experiment -- a mismatched tap gives a persistent green screen that a detection
+pass repairs -- so it needs the camera and a clip rather than a still.
+
+## Why the noisy form has no consequence, and the stable form would
+
+`HPERIOD_IF` is not read only around a mode change. `updateCoastPosition()` and
+`updateClampPosition()` both read it from `loop()`, continuously, and both use it
+to place a sync-processor window.
+
+What protects them is a stability guard, not a validity one. Each takes
+consecutive reads -- eight and sixteen respectively -- and returns without acting
+the moment two differ by 3 or more. The noisy railing returns a different answer
+on nearly every read, so every sample fails that window and both functions
+no-op. That, rather than nothing reading the register, is why the picture is
+perfect throughout.
+
+`updateClampPosition()` has a second protection: it reads `HPERIOD_IF` only on
+the csync path, and `STATUS_SYNC_PROC_HTOTAL` otherwise, which stays healthy
+through the fault.
+
+**The consequence is which form to fear.** A single stable wrong value passes
+both guards untouched and moves the coast and the clamp. These two functions are
+where that form bites, and neither compares the value against what the mode
+should give.
+
+## The expected value, per mode, measured
+
+`HPERIOD_IF` counts the source line at 27 MHz in units of four ticks, so the
+value a mode should give is `27e6 / (4 * lineRateHz) - 1`. That is the check
+`tv5725-chip.md` asks for and this is the table behind it, swept over the RISC
+PC and read once the mode had settled:
+
+| source line rate | VTOTAL | `HPERIOD_IF` | scan mode | `PLLAD_MD` |
+|---|---|---|---|---|
+| 15550 Hz | 311 | 431 | doubled | 2250 |
+| 15660 Hz | 261 | 430 | doubled | 2250 |
+| 21780 Hz | 363 | 308 | doubled | 2250 |
+| 26650 Hz | 533 | 251 | progressive | 1124 |
+| 31360 Hz | 448 | 214 | progressive | 1124 |
+| 31440 Hz | 524 | 213 | progressive | 1124 |
+| 37620 Hz | 627 | 178 | progressive | 1856, the bypass literal |
+
+Every settled reading matches the formula within one count. **So a reading can
+be checked, and stable-but-wrong is detectable** -- which is the only way to
+catch the third form. The 627-line row is the RGBHV bypass trap rather than a
+scaled mode; `docs/rgbhv-bypass-trap.md`.
+
+## A trigger, at last
+
+`pytest tools/gbsc-pro-hwtest/test_geometry_pads.py --host=<ip> --source`
+reaches the state, in about four and a half minutes, on a source that never
+changes mode. Three tests fail naming the divider, and the unit is left with the
+input formatter in the progressive scan mode while a 15 kHz source is attached:
+`IF_PRGRSV_CNTRL` 1, `IF_LD_RAM_BYPS` 1, `IF_HS_DEC_FACTOR` 0, `IF_LD_SEL_PROV`
+1, `STATUS_SYNC_PROC_VTOTAL` a correct 311, `HPERIOD_IF` railed.
+
+That the scan mode is wrong for the source is itself a defect, and it is the
+route in. Whether it is the ONLY route is not known -- the transitions in the
+tables above railed without it.
+
+The experiment this unlocks, in order: reproduce, pull mains and USB for a
+measured interval, read `HPERIOD_IF` before touching the source.
 
 ## What does not reproduce it
 
