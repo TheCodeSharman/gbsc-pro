@@ -246,6 +246,15 @@ public:
     // the ADC divider; this block is where the register lives.
     static void writeLineCounter(uint16_t units);
 
+    // The vertical blanking window a measurement of the source is taken
+    // through. The field rate is timed off this block's test bus and
+    // HPERIOD_IF is counted inside the same block, and a window whose start
+    // lies beyond the frame never fires -- so one solved for a taller mode
+    // leaves both dead, with the register that would replace it only written
+    // once the measurement it prevents has succeeded.
+    // docs/investigations/if-vertical-blank-strands-the-measurement.md
+    static void writeReferenceVerticalBlank();
+
     // Whether the line doubler is in the capture path.
     enum ScanMode {
         LineDoubled,   // 15 kHz source, doubled to the output line rate

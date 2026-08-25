@@ -72,6 +72,14 @@ void InputFormatter::writeLineCounter(uint16_t units)
     IF_HSYNC_RST::write(units);
 }
 
+// Inside every frame any source presents, so it cannot be the window that
+// stops the block measuring.
+void InputFormatter::writeReferenceVerticalBlank()
+{
+    IF_VB_ST::write(0);
+    IF_VB_SP::write(2);
+}
+
 void InputFormatter::applyScanMode(ScanMode mode)
 {
     const bool progressive = mode == Progressive;

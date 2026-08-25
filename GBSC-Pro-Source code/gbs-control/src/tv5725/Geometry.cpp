@@ -289,6 +289,13 @@ void Geometry::holdReferenceSampling()
     const uint16_t reference = SourceMeasurement::referenceDivider(sampling_.lineDoubled());
     const uint32_t estimate = sampling_.estimatedLineRateHz();
 
+    // Unconditional, ahead of the return below. The reference divider is a
+    // function of the scan mode alone, so a source that did not move asks for
+    // the one already in force -- and a window is not only stranded by a mode
+    // change. Nothing else writes these two until a solve succeeds, which is
+    // the thing they are stopping.
+    InputFormatter::writeReferenceVerticalBlank();
+
     // The estimate is half of it, not a detail: PLLAD_KS is an octave of CKO,
     // which is the divider TIMES the rate. A count caught mid-transition picks
     // the wrong octave, and the reference divider for a scan mode does not

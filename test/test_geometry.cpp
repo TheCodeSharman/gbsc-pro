@@ -41,11 +41,17 @@ static unsigned g_fieldRateCalls = 0;
 // divider's, so this is the state the measurement is taken through.
 static uint16_t g_dividerWhenSampled = 0;
 
+// The input formatter's vertical blank at that same moment. The rate is timed
+// off this block, and a window whose start lies beyond the frame never fires.
+static uint16_t g_blankStartWhenSampled = 0;
+
 float getSourceFieldRate(boolean)
 {
     ++g_fieldRateCalls;
     g_dividerWhenSampled = (uint16_t)(Wire.bank[5][0x12] |
                                       ((Wire.bank[5][0x13] & 0x0F) << 8));
+    g_blankStartWhenSampled = (uint16_t)(Wire.bank[1][0x1C] |
+                                         ((Wire.bank[1][0x1D] & 0x07) << 8));
     return g_fieldRate;
 }
 void tv5725Log(const char *) {}
@@ -237,7 +243,9 @@ TEST_CASE("a source still settling gets no geometry solved against it")
 {
     // The measurements lag the mode change and do not fail when read early --
     // they return plausible garbage. Refusing has to mean refusing rather than
-    // inheriting, so no window is written until they agree with each other.
+    // inheriting, so no window SOLVED from them is written until they agree
+    // with each other. The state they are taken THROUGH is a separate thing and
+    // is written at once: the divider below, and the vertical blank with it.
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
@@ -249,15 +257,19 @@ TEST_CASE("a source still settling gets no geometry solved against it")
         CHECK_FALSE(engine.poll());
 
     CHECK_FALSE(Wire.touched[1][0x18]);   // IF_HB_ST2, the capture window
-    CHECK_FALSE(Wire.touched[1][0x1C]);   // IF_VB_ST
     CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
     CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST, the raster
 
-    SUBCASE("but the divider IS adopted, or every window defers forever") {
+    SUBCASE("but the sampling state IS written, or every window defers forever") {
         // Without a divider the capture window has no unit to be measured in,
         // and the pending flag is what stops the fallback becoming permanent.
         CHECK(Wire.touched[5][0x12]);     // PLLAD_MD
         CHECK(Wire.touched[5][0x11]);     // PLLAD_LAT
+
+        // And without a vertical blank inside the frame the input formatter
+        // emits nothing to measure, so the refusal never ends.
+        CHECK(InputFormatter::IF_VB_ST::read() == 0);
+        CHECK(InputFormatter::IF_VB_SP::read() == 2);
     }
 
     SUBCASE("and it is solved by the poll after the source settles") {
@@ -735,6 +747,59 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         engine.modeChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled != 1124);
+    }
+}
+
+TEST_CASE("the source is measured through a known vertical blank, not the last mode's")
+{
+    // The field rate is timed off the input formatter's test bus and HPERIOD_IF
+    // is counted inside the same block, and neither produces anything while
+    // IF_VB_ST lies beyond the frame -- the window never fires, so there is no
+    // edge to time and no line period to read. A window solved for a taller mode
+    // therefore strands the measurement that would replace it, which is why the
+    // fault only appears when the frame SHRINKS.
+    //
+    // Measured on the bench: IF_VB_ST 578 against a 524-line source gives
+    // `524 lines x 0.00 Hz` and HPERIOD_IF 50 where 213 is due, and writing the
+    // window alone restores both.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    SUBCASE("a frame that shrank is not measured through the taller mode's window") {
+        seedField(0, 0x1B, 0, 11, 524);   // STATUS_SYNC_PROC_VTOTAL
+        g_fieldRate = 60.0f;
+        seedField(1, 0x1C, 0, 11, 578);   // IF_VB_ST, solved for 311 doubled
+
+        g_blankStartWhenSampled = 0xFFFF;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(g_blankStartWhenSampled < 524);
+    }
+
+    SUBCASE("the line-doubled frame is measured through a window inside it too") {
+        seedField(1, 0x1C, 0, 11, 700);   // beyond even the doubled 622
+
+        g_blankStartWhenSampled = 0xFFFF;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(g_blankStartWhenSampled < 2 * 311);
+    }
+
+    SUBCASE("a re-solve on an unchanged source parks it too") {
+        // The reference divider is a function of the scan mode alone, so a
+        // source that did not move asks for the one already in force. Keying
+        // the parking on the reference having CHANGED therefore never fires
+        // here -- and this is the case that matters, because a window is not
+        // only stranded by a mode change.
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+
+        seedField(1, 0x1C, 0, 11, 700);
+        g_blankStartWhenSampled = 0xFFFF;
+        engine.reset();
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(g_blankStartWhenSampled < 2 * 311);
     }
 }
 

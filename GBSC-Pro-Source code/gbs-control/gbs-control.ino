@@ -1297,8 +1297,7 @@ void setResetParameters()
     GBS::IF_VS_SEL::write(1);
     GBS::IF_VS_FLIP::write(1);
     GBS::IF_HSYNC_RST::write(0x3FF);
-    GBS::IF_VB_ST::write(0);
-    GBS::IF_VB_SP::write(2);
+    Tv5725::InputFormatter::writeReferenceVerticalBlank();
 
     FrameSync::cleanup();
 
