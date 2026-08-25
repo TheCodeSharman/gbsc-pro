@@ -184,17 +184,18 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
     SettledEngine settled;
 
     // A cold boot reads `271 lines x 49.22 Hz -> line rate 0` 3.6 s in, so
-    // lineRateFrom() refuses and the engine inherits what is on the chip: 1856,
-    // bypassModeSwitch_RGBHV()'s literal, 27% below the 2548 the source wants.
-    // Inheriting is right -- without a divider the capture window has no unit to
-    // be measured in -- so what matters is that it is not the last word.
+    // lineRateFrom() refuses. What the chip is left holding is the reference
+    // the measurement was taken through, not what happened to be there: 1856 is
+    // bypassModeSwitch_RGBHV()'s literal and 27% below the 2548 this source
+    // wants, and a pass that could not measure has no reason to keep it.
     Wire.bank[5][0x12] = 0x40;  // PLLAD_MD = 1856, as the bypass path leaves it
     Wire.bank[5][0x13] = 0x07;
     g_fieldRate = 0.0f;
 
     settled.engine.modeChanged(&Mode1080p, 4);
     REQUIRE_FALSE(pollUntilSolved(settled.engine));
-    CHECK(Wire.field(5, 0x12, 0, 12) == 1856);
+    CHECK(Wire.field(5, 0x12, 0, 12) ==
+          Tv5725::SourceMeasurement::referenceDivider(true));
 
     SUBCASE("and the poll that can measure it computes one") {
         g_fieldRate = 50.08f;

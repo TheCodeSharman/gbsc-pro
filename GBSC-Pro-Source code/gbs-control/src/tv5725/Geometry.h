@@ -38,6 +38,11 @@ public:
     // that completes a mode change.
     bool poll();
 
+    // The source disturbed, as the chip latched it. Arms a re-measure, which
+    // the line count alone cannot: a source returning at the same count and a
+    // different field rate moves nothing sourceMoved() can see.
+    void sourceInterrupted();
+
     void reset();
 
     // Notify the engine that the output has gone into bypass: so video routes around the VDS.
@@ -81,9 +86,6 @@ private:
     // silent read-back is the same inheritance unaccounted for.
     void adoptRaster();
 
-    // For the paths that compute no divider: a custom preset, and bypass.
-    void adoptSampling();
-
     // The oversampling must have settled first: the sample clock is the product
     // of the divider and it.
     bool solveSampling(uint8_t oversample);
@@ -107,6 +109,11 @@ private:
     float sourceFieldRateOr50Hz() const;
 
     bool fail();
+
+    // The known sampling state a measurement is taken from, before it is taken.
+    // Disturbing, so it belongs where the source has just changed and the
+    // picture is moving anyway -- never on a schedule.
+    void holdReferenceSampling();
 
     // The divider, the IF line counter and the retime stop, to their owners.
     void writeSampling();
@@ -144,6 +151,8 @@ private:
     PanAndZoom framing_;
     SourceMeasurement sampling_;      // the divider this engine solves against
     bool samplingPending_;   // solveSampling() adopted a fallback divider
+    bool sourceInterrupted_; // the chip latched a disturbance, and nothing has re-measured
+    uint32_t referenceRateHz_; // the estimate the reference sample rate was sized from
     bool scanModeApplied_;   // the registers have been written for this mode change
     uint16_t solvedLines_;   // the source line count the last solve ran against
     uint16_t idleLines_;     // the count seen while no mode change is outstanding

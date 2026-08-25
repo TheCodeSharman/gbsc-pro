@@ -89,11 +89,11 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
 
 TEST_CASE("the capture stops at the write limit, however long the line is")
 {
-    // SourceMeasurement caps the divider so the line arrives inside the limit, but
-    // adopt() takes whatever a custom preset or a bypass switch left in
-    // PLLAD_MD, so a longer line still reaches the engine. Past the limit
-    // nothing is written, and a window that reaches there loses the picture in
-    // it rather than showing it. docs/capture-limits.md
+    // SourceMeasurement caps the divider so the line arrives inside the limit,
+    // but a bypass switch writes PLLAD_MD itself, so a longer line still reaches
+    // the engine. Past the limit nothing is written, and a window that reaches
+    // there loses the picture in it rather than showing it.
+    // docs/capture-limits.md
     CHECK(InputLine(1277).lastCapture() == InputLine::WriteLimitUnits);
 
     SUBCASE("a line already inside it is bound by its own wrap") {

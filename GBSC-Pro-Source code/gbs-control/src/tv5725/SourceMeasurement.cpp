@@ -117,6 +117,7 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
 
 // --- the chosen divider, held ----------------------------------------------
 
+const uint8_t SourceMeasurement::NominalFieldRateHz;
 const uint8_t SourceMeasurement::SteadySamples;
 const uint16_t SourceMeasurement::RateAgreementPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
@@ -307,11 +308,6 @@ bool SourceMeasurement::solve(uint32_t lineRateHz, uint8_t oversample)
     return true;
 }
 
-void SourceMeasurement::adopt()
-{
-    divider_ = GBS::PLLAD_MD::read();
-}
-
 bool SourceMeasurement::usable() const { return divider_ != 0; }
 
 uint16_t SourceMeasurement::divider() const { return divider_; }
@@ -331,6 +327,26 @@ void SourceMeasurement::forgetSource()
     lineRateHz_ = 0;
     goodLineRateHz_ = 0;
     goodLines_ = 0;
+}
+
+uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
+{
+    const uint16_t limit = lineDoubled ? (uint16_t)(2 * InputLine::WriteLimitUnits)
+                                       : InputLine::WriteLimitUnits;
+    // Even, for the reason recommendedDivider() masks: an odd divider leaves
+    // the input formatter half a sample out from the line the ADC delivers, and
+    // the rate is timed off that block. WriteLimitUnits is odd, so only the
+    // progressive reference needs it.
+    return (uint16_t)(limit & ~1u);
+}
+
+void SourceMeasurement::holdDivider(uint16_t divider) { divider_ = divider; }
+
+uint32_t SourceMeasurement::estimatedLineRateHz() const
+{
+    if (steadyLines_ != 0)
+        return (uint32_t)steadyLines_ * NominalFieldRateHz;
+    return goodLineRateHz_;
 }
 
 uint32_t SourceMeasurement::heldLineRateHz() const { return goodLineRateHz_; }

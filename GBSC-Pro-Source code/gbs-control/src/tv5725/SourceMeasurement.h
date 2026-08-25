@@ -212,11 +212,6 @@ public:
     // the source settles.
     bool solve(uint32_t lineRateHz, uint8_t oversample);
 
-    // Take what is already in PLLAD_MD, for the two paths that compute none: a
-    // CUSTOM PRESET, whose saved bytes carry a divider nothing derived, and
-    // BYPASS. Both inherit by definition -- what changes is that they say so.
-    void adopt();
-
     // The source, as the sync processor counts it. These are the only reads of
     // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,
     // and every other quantity the engine needs it computed itself.
@@ -257,6 +252,26 @@ public:
     uint16_t sourceLines() const;
     float fieldRateHz() const;
     uint16_t ifLine() const;
+
+    // The field rate the ADC's crossover row is picked against before one has
+    // been measured. The top of the band getSourceFieldRate() accepts.
+    static const uint8_t NominalFieldRateHz = 60;
+
+    // The sampling state every measurement is taken from. The field rate is
+    // timed off the input formatter's test bus and the IF line counter is the
+    // divider's, so measuring through the previous mode's divider corrupts the
+    // reading that would correct it. This is the divider the capture write
+    // limit allows, which puts the line counter on WriteLimitUnits whatever the
+    // scan mode -- one state, every source.
+    static uint16_t referenceDivider(bool lineDoubled);
+
+    // Take a divider that was chosen rather than solved.
+    void holdDivider(uint16_t divider);
+
+    // A rate good enough to pick the ADC's crossover row on a pass that has
+    // measured none. From the line count, which the divider does not touch --
+    // never from the held rate, which is the previous mode's.
+    uint32_t estimatedLineRateHz() const;
 
     // The 15.7 kHz broadcast line, split from the 31.5 kHz VGA one clear of
     // both and of the ~21.8 kHz a programmable source reaches between them.

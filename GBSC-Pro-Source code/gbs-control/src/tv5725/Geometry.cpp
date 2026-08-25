@@ -15,10 +15,11 @@ namespace Tv5725 {
 
 Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
-      samplingPending_(false), solvePending_(false),
-      modePending_(false),
-      modeOversample_(4), scanModeApplied_(false), solvedLines_(0),
-      idleLines_(0), idleRun_(0), rasterMode_(0),
+      samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
+      scanModeApplied_(false), solvedLines_(0),
+      idleLines_(0), idleRun_(0),
+      solvePending_(false), modePending_(false), modeOversample_(4),
+      rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
@@ -183,17 +184,18 @@ bool Geometry::poll()
     if (!sampling_.sampleSteady())
         return recoverSampling();
 
+    // Measured from a state this pass chose, not from whatever the last mode
+    // left in PLLAD_MD. docs/investigations/field-rate-measured-downstream.md
+    holdReferenceSampling();
+
     // THE measurement of the source for this pass. Everything below derives
     // from it -- the divider, the raster, both windows -- so nothing can end up
     // solved against a rate something else was not.
     if (!sampling_.measureLineRate()) {
-        // Deferred, not settled for. Without a divider the capture window has
-        // no unit to be measured in, so one is inherited or every window defers
-        // forever; the flag is what stops the inheritance becoming permanent,
-        // at 1856 -- bypassModeSwitch_RGBHV()'s literal -- every boot.
+        // Deferred, not settled for. The reference above is already a divider
+        // the capture window can be measured in, so there is nothing to inherit
+        // and the flag is only a note to re-solve.
         samplingPending_ = true;
-        if (!sampling_.usable())
-            adoptSampling();
         return false;
     }
 
@@ -242,6 +244,11 @@ void Geometry::reset()
     modeChanged(rasterMode_, modeOversample_);
 }
 
+void Geometry::sourceInterrupted()
+{
+    sourceInterrupted_ = true;
+}
+
 void Geometry::enterBypass()
 {
     sampling_.forgetSource();
@@ -277,10 +284,28 @@ bool Geometry::solveFromScratch()
 
 
 
-void Geometry::adoptSampling()
+void Geometry::holdReferenceSampling()
 {
-    sampling_.adopt();
-    writeSampling();
+    const uint16_t reference = SourceMeasurement::referenceDivider(sampling_.lineDoubled());
+    const uint32_t estimate = sampling_.estimatedLineRateHz();
+
+    // The estimate is half of it, not a detail: PLLAD_KS is an octave of CKO,
+    // which is the divider TIMES the rate. A count caught mid-transition picks
+    // the wrong octave, and the reference divider for a scan mode does not
+    // change when the count settles -- so a return keyed on the divider alone
+    // leaves KS wrong with PLLAD_MD right, which is a state nothing can measure
+    // its way out of.
+    if (sampling_.divider() == reference && estimate == referenceRateHz_)
+        return;
+
+    referenceRateHz_ = estimate;
+    sampling_.holdDivider(reference);
+    // The oversampling stays as the mode asks for it: PLLAD_CKOS and the
+    // decimators describe one ratio between them, and the IF's units come off
+    // the decimated clock. Only the divider is being moved to a known value.
+    Adc::applySampleRate(reference, estimate, modeOversample_);
+    InputFormatter::writeLineCounter(sampling_.ifLine());
+    SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
 
 // One quantity in three registers, each written by the block that declares it.
@@ -325,8 +350,10 @@ bool Geometry::sourceMoved()
 {
     // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
     // change so a later poll cannot write one over the setup it just chose.
-    if (rasterMode_ == 0 || solvedLines_ == 0)
+    if (rasterMode_ == 0 || solvedLines_ == 0) {
+        sourceInterrupted_ = false;
         return false;
+    }
 
     const uint16_t lines = SourceMeasurement::measureSourceLines();
     if (!SourceMeasurement::countIsSource(lines) || lines != idleLines_) {
@@ -338,7 +365,16 @@ bool Geometry::sourceMoved()
         ++idleRun_;
         return false;
     }
-    if (lines == solvedLines_)
+
+    // The interrupt says the source moved where the count cannot: the same
+    // number of lines at a different field rate. It waits behind the SAME
+    // steadiness run rather than firing on arrival, because a source measured
+    // mid-transition yields a rate that passes every check and is tens of
+    // percent out -- measured at 18806 Hz against a real 31440, held, with
+    // every register self-consistent.
+    const bool interrupted = sourceInterrupted_;
+    sourceInterrupted_ = false;
+    if (!interrupted && lines == solvedLines_)
         return false;
 
     idleRun_ = 0;

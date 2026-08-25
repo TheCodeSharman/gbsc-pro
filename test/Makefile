@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer geometry-raster geometry-windows controls adc clean help
+.PHONY: all test sampling-log axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -319,6 +319,17 @@ mode-detect:
 	  "$(HERE)/test_mode_detect.cpp" src/tv5725/ModeDetect.cpp
 	@"$(OUT)/test_mode_detect"
 
+## interrupts: host unit tests for Tv5725::Interrupts
+#
+# The latched "source disturbed" bits, which are the mode-change trigger. They
+# do not persist, so reading them is the same act as claiming them.
+interrupts:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_interrupts" \
+	  "$(HERE)/test_interrupts.cpp" src/tv5725/Interrupts.cpp
+	@"$(OUT)/test_interrupts"
+
 ## deinterlacer: host unit tests for Tv5725::Deinterlacer
 #
 # The whole of segment 2, asserted as a byte image against the table it
@@ -416,7 +427,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer geometry-raster geometry-windows controls adc sampling-log
+test: axis scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

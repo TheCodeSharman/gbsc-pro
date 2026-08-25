@@ -299,25 +299,6 @@ TEST_CASE("an unmeasurable line rate leaves the previous choice alone")
     CHECK(sampling.usable());
 }
 
-TEST_CASE("adopt() is how a path that does not compute says so out loud")
-{
-    Wire.reset();
-    SourceMeasurement sampling;
-
-    // A custom preset is a register dump replayed off the filesystem and bypass
-    // routes around the VDS, so neither has a computed divider and both must
-    // INHERIT one. The point is that they name the act, where a silent read-back
-    // inside readRasters() would be the same inheritance unaccounted for.
-    Wire.bank[5][0x12] = 0xF9;   // 2553, as the bench table ships
-    Wire.bank[5][0x13] = 0x09;
-
-    sampling.adopt();
-    CHECK(sampling.usable());
-    CHECK(sampling.divider() == 2553);
-}
-
-// --- the line rate has to be SETTLED, not merely in range --------------------
-
 TEST_CASE("a field rate that disagrees with the line count is refused")
 {
     // A source locked at 311 lines / 50.08 Hz yields PLLAD_MD 2204 against the
@@ -681,7 +662,7 @@ static void seedSource(SourceMeasurement &sampling, uint16_t lines,
     Wire.bank[0][0x18] = (uint8_t)((lineSamples >> 8) & 0x0F);
     Wire.bank[5][0x12] = (uint8_t)(divider & 0xFF);
     Wire.bank[5][0x13] = (uint8_t)((divider >> 8) & 0x0F);
-    sampling.adopt();
+    sampling.holdDivider(divider);
 }
 
 // A count outside what any source runs never settles, so the run is what says
@@ -927,5 +908,25 @@ TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
         seedSourceLines(0);
         CHECK_FALSE(measurement.measureLineRate());
         CHECK(measurement.heldLineRateHz() == 15574u);
+    }
+}
+
+TEST_CASE("the reference divider is even, like every divider the solver picks")
+{
+    // recommendedDivider() masks the low bit because an odd divider leaves the
+    // input formatter half a sample out from the line the ADC delivers. The
+    // reference is a divider like any other and has to obey it: measured on the
+    // bench, an odd 1125 on a progressive source reads `524 lines x 0.00 Hz`
+    // for as long as it is left there, while 1124 measures at once.
+    //
+    // WriteLimitUnits is 1125 and only the line-doubled reference doubles it,
+    // so it is the progressive one that lands odd.
+    CHECK((SourceMeasurement::referenceDivider(false) & 1u) == 0);
+    CHECK((SourceMeasurement::referenceDivider(true) & 1u) == 0);
+
+    SUBCASE("and it is still the write limit, rounded down to reach it") {
+        CHECK(SourceMeasurement::referenceDivider(false) <= InputLine::WriteLimitUnits);
+        CHECK(SourceMeasurement::referenceDivider(true) <= 2 * InputLine::WriteLimitUnits);
+        CHECK(SourceMeasurement::referenceDivider(false) >= InputLine::WriteLimitUnits - 1);
     }
 }

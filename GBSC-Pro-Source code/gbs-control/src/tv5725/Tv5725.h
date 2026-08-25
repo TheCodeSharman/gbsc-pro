@@ -249,28 +249,20 @@ public:
     typedef UReg<0x00, 0x0F, 0, 8> STATUS_0F;                         // Interrupt status bit5, H-sync status When =1, means input
                                                                       // H-sync status is changed between stable and unstable
 
-    typedef UReg<0x00, 0x0F, 0, 1> STATUS_INT_SOG_BAD;                // Part of INT_STATUS_, which RD-5725-1.1 documents as one
                                                                       // 8-bit block at s0_0F rather than field by field.
 
-    typedef UReg<0x00, 0x0F, 1, 1> STATUS_INT_SOG_SW;                 // Part of INT_STATUS_, which RD-5725-1.1 documents as one
                                                                       // 8-bit block at s0_0F rather than field by field.
 
-    typedef UReg<0x00, 0x0F, 2, 1> STATUS_INT_SOG_OK;                 // When =1, means input SOG source is stable [datasheet:
                                                                       // INT_STATUS_[2]]
 
-    typedef UReg<0x00, 0x0F, 3, 1> STATUS_INT_INP_SW;                 // When =1, means input source switch the mode [datasheet:
                                                                       // INT_STATUS_[3]]
 
-    typedef UReg<0x00, 0x0F, 4, 1> STATUS_INT_INP_NO_SYNC;            // Part of INT_STATUS_, which RD-5725-1.1 documents as one
                                                                       // 8-bit block at s0_0F rather than field by field.
 
-    typedef UReg<0x00, 0x0F, 5, 1> STATUS_INT_INP_HSYNC;              // When =1, means input H-sync status is changed between
                                                                       // stable and unstable [datasheet: INT_STATUS_[5]]
 
-    typedef UReg<0x00, 0x0F, 6, 1> STATUS_INT_INP_VSYNC;              // When =1, means input V-sync status is changed between
                                                                       // stable and unstable [datasheet: INT_STATUS_[6]]
 
-    typedef UReg<0x00, 0x0F, 7, 1> STATUS_INT_INP_CSYNC;              // When =1, means input H-sync status is changed between
                                                                       // stable and unstable [datasheet: INT_STATUS_[7]]
 
 
@@ -376,34 +368,7 @@ public:
 // INPUT FORMATTER REGISTERS
 
 
-
     typedef UReg<0x01, 0x02, 0, 8> INPUT_FORMATTER_02;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     typedef UReg<0x01, 0x2B, 0, 7> GBS_PRESET_ID;
@@ -470,7 +435,6 @@ public:
     typedef UReg<0x00, 0x43, 5, 1> PLL_VCORST;                        // VCORST VCO control voltage reset bit
 
 
-
     typedef UReg<0x00, 0x45, 6, 2> CKT_FF_CNTRL;                      // CKT used to control FIFO
 
 
@@ -478,10 +442,6 @@ public:
 
 
     typedef UReg<0x00, 0x47, 0, 8> RESET_CONTROL_0x47;
-
-
-
-
 
 
     typedef UReg<0x00, 0x4D, 0, 5> TEST_BUS_SEL;                      // Test bus selection Test bus enable
@@ -534,9 +494,6 @@ public:
                                                                       // DFF
 
 
-
-
-
     typedef UReg<0x00, 0x57, 7, 1> INVT_RING_EN;                      // When = 0, disable invert ring When = 1, enable invert
                                                                       // ring for processing test
 
@@ -549,67 +506,10 @@ public:
 // MEMORY REGISTERS
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // CAPTURE & PLAYBACK REGISTERS
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // WRITE & READ FIFO REGISTERS
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // PIP REGISTERS
@@ -787,26 +687,6 @@ public:
 // ADC REGISTERS
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     typedef UReg<0x05, 0x1E, 7, 1> DEC_WEN_MODE;                      // Write enable mode enable. When this bit is 1, then
                                                                       // decimator will drop data by write enable signal generated
                                                                       // by horizontal sync, else write enable is not used
@@ -824,43 +704,6 @@ typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;                   // Color space
     typedef UReg<0x05, 0x1F, 7, 1> DEC_IDREG_EN;
 
 // SYNC_PROC REGISTERS
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     typedef UReg<0x05, 0x60, 0, 8> ADC_UNUSED_60;
@@ -888,22 +731,6 @@ typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;                   // Color space
 
 
     typedef UReg<0x05, 0x69, 0, 8> ADC_UNUSED_69;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     static const uint8_t OSD_ZOOM_1X = 0;

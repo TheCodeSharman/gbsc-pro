@@ -35,7 +35,19 @@ static float g_fieldRate = 50.08f;
 // FrameSync, up to 250 ms a pulse, and the whole reason poll() has a cheap gate
 // in front of it is that loop() cannot afford it on every pass.
 static unsigned g_fieldRateCalls = 0;
-float getSourceFieldRate(boolean) { ++g_fieldRateCalls; return g_fieldRate; }
+
+// The divider actually in force at the moment the rate is sampled. The rate is
+// timed off the input formatter's test bus and the IF's line counter is the
+// divider's, so this is the state the measurement is taken through.
+static uint16_t g_dividerWhenSampled = 0;
+
+float getSourceFieldRate(boolean)
+{
+    ++g_fieldRateCalls;
+    g_dividerWhenSampled = (uint16_t)(Wire.bank[5][0x12] |
+                                      ((Wire.bank[5][0x13] & 0x0F) << 8));
+    return g_fieldRate;
+}
 void tv5725Log(const char *) {}
 
 // Neither a preset table's value nor the firmware's, so a read-back
@@ -681,4 +693,119 @@ TEST_CASE("bypass measures nothing, so it reports no line rate")
     engine.enterBypass();
     CHECK(engine.sourceLineRateHz() == 0);
     CHECK_FALSE(engine.sourceLowLineRate());
+}
+
+TEST_CASE("the source is measured through a known divider, not the last mode's")
+{
+    // The field rate is timed at DEBUG_IN_PIN off the input formatter's test
+    // bus, and IF_HSYNC_RST comes from the divider -- so a divider left over
+    // from the previous mode corrupts the reading that would correct it, and
+    // the state is self-latching. Measured on the bench at 640x480: 171.53 and
+    // 184.60 Hz against a real 60, every reading refused, no divider chosen.
+    // docs/investigations/field-rate-measured-downstream.md
+    //
+    // The reference is the divider the capture write limit allows, which puts
+    // the IF line counter on WriteLimitUnits whatever the scan mode -- one
+    // state, every source.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    SUBCASE("a line-doubled source is sampled at twice the write limit") {
+        g_dividerWhenSampled = 0;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(true));
+    }
+
+    SUBCASE("a progressive source is sampled at the write limit itself") {
+        seedField(0, 0x1B, 0, 11, 524);   // STATUS_SYNC_PROC_VTOTAL
+        g_fieldRate = 60.0f;
+        g_dividerWhenSampled = 0;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(false));
+    }
+
+    SUBCASE("the divider the previous mode left is not what it is sampled through") {
+        // 1124 is what a 524-line source solves to, and it is the value the
+        // bench sticks on when a return to 311 lines cannot measure.
+        seedField(5, 0x12, 0, 12, 1124);
+        g_dividerWhenSampled = 0;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+        CHECK(g_dividerWhenSampled != 1124);
+    }
+}
+
+TEST_CASE("an interrupt re-measures a source whose line count did not move")
+{
+    // The line count is the only change sourceMoved() can see, so a source that
+    // returns at the same count and a different field rate is invisible to it.
+    // The chip latches the disturbance instead, and measuring is now an act that
+    // moves the sampling clock, so it needs an event rather than a schedule.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    SUBCASE("a quiet source is left alone") {
+        g_fieldRateCalls = 0;
+        for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+            CHECK_FALSE(engine.poll());
+        CHECK(g_fieldRateCalls == 0);
+    }
+
+    SUBCASE("an interrupted one is measured again") {
+        engine.sourceInterrupted();
+        g_fieldRateCalls = 0;
+        CHECK(pollUntilSolved(engine));
+        CHECK(g_fieldRateCalls > 0);
+    }
+
+    SUBCASE("bypass has no raster to re-solve, so it stays put") {
+        engine.enterBypass();
+        engine.sourceInterrupted();
+        g_fieldRateCalls = 0;
+        for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+            CHECK_FALSE(engine.poll());
+        CHECK(g_fieldRateCalls == 0);
+    }
+}
+
+TEST_CASE("the reference is re-applied when the count it was sized from moves")
+{
+    // holdReferenceSampling() picks PLLAD_KS from the line count, because the
+    // ADC's crossover row is a function of CKO and CKO is the divider times the
+    // line rate. A count caught mid-transition picks the wrong octave, and the
+    // divider alone cannot say so: the reference for a scan mode does not
+    // change, so an early return keyed on it leaves KS an octave out with
+    // PLLAD_MD correct. Measured on the bench as KS 1 where 2 was due, and the
+    // input formatter's test output stops -- `524 lines x 0.00 Hz`.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    // A count high enough to put CKO over the 40 MHz crossover at the
+    // progressive reference, then the settled one, which is under it.
+    // The rate stays unmeasurable throughout, which is the state this has to
+    // hold in: on the bench the wrong KS is WHY nothing can be measured, so a
+    // later solve is not there to put it right.
+    g_fieldRate = 0.0f;
+
+    seedField(0, 0x1B, 0, 11, 700);
+    engine.modeChanged(benchMode(), 4);
+    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    seedField(0, 0x1B, 0, 11, 524);
+    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    // PLLAD_KS, s5_16[5:4], against what the settled count asks for.
+    const uint8_t ks = (uint8_t)((Wire.bank[5][0x16] >> 4) & 0x03);
+    CHECK(ks == Adc::postDividerFor(
+                    (uint32_t)Wire.field(5, 0x12, 0, 12) * 524u * 60u));
 }

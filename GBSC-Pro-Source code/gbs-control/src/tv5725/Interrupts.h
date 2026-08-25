@@ -20,6 +20,24 @@ namespace Tv5725 {
 // check passing -- ask in bits, not in names.
 class Interrupts {
 public:
+// INT_STATUS_, the byte the block latches into. RD-5725-1.1 documents it as one
+// block at s0_0F rather than field by field.
+    typedef UReg<0x00, 0x0F, 0, 1> STATUS_INT_SOG_BAD;                // Part of INT_STATUS_, which RD-5725-1.1 documents as one
+
+    typedef UReg<0x00, 0x0F, 1, 1> STATUS_INT_SOG_SW;                 // Part of INT_STATUS_, which RD-5725-1.1 documents as one
+
+    typedef UReg<0x00, 0x0F, 2, 1> STATUS_INT_SOG_OK;                 // When =1, means input SOG source is stable [datasheet:
+
+    typedef UReg<0x00, 0x0F, 3, 1> STATUS_INT_INP_SW;                 // When =1, means input source switch the mode [datasheet:
+
+    typedef UReg<0x00, 0x0F, 4, 1> STATUS_INT_INP_NO_SYNC;            // Part of INT_STATUS_, which RD-5725-1.1 documents as one
+
+    typedef UReg<0x00, 0x0F, 5, 1> STATUS_INT_INP_HSYNC;              // When =1, means input H-sync status is changed between
+
+    typedef UReg<0x00, 0x0F, 6, 1> STATUS_INT_INP_VSYNC;              // When =1, means input V-sync status is changed between
+
+    typedef UReg<0x00, 0x0F, 7, 1> STATUS_INT_INP_CSYNC;              // When =1, means input H-sync status is changed between
+
     typedef UReg<0x00, 0x58, 0, 1> INT_CONTROL_RST_SOGBAD;            // Interrupt bit0 reset control When = 1, interrupt bit0
                                                                       // status will be reset to zero
 
@@ -67,6 +85,18 @@ public:
 
     typedef UReg<0x00, 0x59, 7, 1> INT_ENABLE7;                       // Interrupt bit7 enable When = 1, enable interrupt bit7
                                                                       // generator GISTERS
+
+    // Whether the source has disturbed since this was last asked, and claim it.
+    //
+    // Bits 0 and 1, SOG bad and SOG switch. Measured across a source mode
+    // change sampled from loop() at 30 ms, they fire together at ~0.9-1.1 s in
+    // BOTH directions; bit 3, the one the datasheet calls "input source switch
+    // the mode", fired on one direction only and 3.4 s in.
+    //
+    // Reading is claiming: the bits are latched, so one left unacknowledged
+    // reports the same disturbance on every later poll, and they do not persist
+    // either -- nothing polling them at loop rate sees them at all.
+    static bool takeSourceDisturbed();
 
     // Every static register of this subsystem, in address order.
     static void init();

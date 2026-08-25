@@ -2,6 +2,20 @@
 
 namespace Tv5725 {
 
+bool Interrupts::takeSourceDisturbed()
+{
+    const bool disturbed = STATUS_INT_SOG_BAD::read() == 1 ||
+                           STATUS_INT_SOG_SW::read() == 1;
+    if (!disturbed)
+        return false;
+
+    INT_CONTROL_RST_SOGBAD::write(1);
+    INT_CONTROL_RST_SOGSWITCH::write(1);
+    INT_CONTROL_RST_SOGBAD::write(0);
+    INT_CONTROL_RST_SOGSWITCH::write(0);
+    return true;
+}
+
 void Interrupts::init()
 {
     INT_RST_2::write(0x0);                       // s0_58[2:2]
