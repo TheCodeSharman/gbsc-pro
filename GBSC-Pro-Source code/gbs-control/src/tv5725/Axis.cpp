@@ -5,10 +5,10 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity,
+           uint16_t scaleMin, uint16_t captureGranularity,
            float activeStart, float activeExtent, bool vertical)
     : startConst_(startConst), startPerMag_(startPerMag),
-      windowStopMin_(windowStopMin), margin_(margin), scaleMin_(scaleMin),
+      windowStopMin_(windowStopMin), scaleMin_(scaleMin),
       captureGranularity_(captureGranularity),
       activeStart_(activeStart), activeExtent_(activeExtent),
       vertical_(vertical) {}
@@ -24,8 +24,6 @@ float Axis::startConst() const { return startConst_; }
 float Axis::startPerMag() const { return startPerMag_; }
 
 uint16_t Axis::windowStopMin() const { return windowStopMin_; }
-
-uint16_t Axis::margin() const { return margin_; }
 
 uint16_t Axis::scaleMin() const { return scaleMin_; }
 
@@ -171,7 +169,7 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
 
     // Floor, never round: VDS_DIS_?B_ST is where blanking STARTS, so
     // rounding up exposes unwritten memory as a band of scratch.
-    int32_t displayStart = placed.corner() + (int32_t)solved.produced_ - margin_;
+    int32_t displayStart = placed.corner() + (int32_t)solved.produced_;
     if (displayStart > lastUsable)
         displayStart = lastUsable;
     solved.display_ = BlankingTiming(placed.corner(), displayStart);
@@ -184,8 +182,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min, 2, 0.117f, 0.864f, false);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, Scale::Min, 2, 0.117f, 0.864f, false);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min, 1, 0.061f, 0.933f, true);
+const Axis AxisVertical(0.2f, 0.8f, 0, Scale::Min, 1, 0.061f, 0.933f, true);
 
 }  // namespace Tv5725

@@ -9,6 +9,7 @@ namespace Tv5725 {
 const uint32_t OutputMode::WorkingCeilingHz;
 const uint32_t OutputMode::EngineCeilingHz;
 const uint16_t OutputMode::MaxHorizontalTotal;
+const uint16_t OutputMode::FrontPorchMinPx;
 const uint16_t OutputMode::HorizontalTotalMax;
 const uint16_t OutputMode::VerticalTotalMax;
 
@@ -105,11 +106,11 @@ const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
 }
 
 OutputMode::OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
-                       float frontPorchNs, uint16_t vsyncLines,
-                       uint16_t vBackPorchLines, uint16_t vFrontPorchLines)
+                       uint16_t vsyncLines, uint16_t vBackPorchLines,
+                       uint16_t vFrontPorchLines)
     : activeLines_(activeLines), syncNs_(syncNs), backPorchNs_(backPorchNs),
-      frontPorchNs_(frontPorchNs), vsyncLines_(vsyncLines),
-      vBackPorchLines_(vBackPorchLines), vFrontPorchLines_(vFrontPorchLines) {}
+      vsyncLines_(vsyncLines), vBackPorchLines_(vBackPorchLines),
+      vFrontPorchLines_(vFrontPorchLines) {}
 
 uint16_t OutputMode::activeLines() const { return activeLines_; }
 
@@ -149,19 +150,11 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     if (porch < 0)
         porch = 0;
 
-    // The pulse starts at 0. The front porch is a MINIMUM rather than a target --
-    // CEA absorbs the field-rate difference there, so 1080p50 and 1080p60 share
-    // sync and back porch and differ only in front porch -- and whatever is left
-    // above the minimum is the picture's.
-    long front = lrintf(frontPorchNs_ * clockHz / 1e9f);
-    if (front < 1)
-        front = 1;
-
     solved.hsyncStart = 0;
     solved.hsyncStop = (uint16_t)width;
     solved.activeStart = (uint16_t)(width + porch);
-    solved.activeStop = front < (long)horizontalTotal
-                            ? (uint16_t)(horizontalTotal - front)
+    solved.activeStop = FrontPorchMinPx < horizontalTotal
+                            ? (uint16_t)(horizontalTotal - FrontPorchMinPx)
                             : solved.activeStart;
 
     solved.vsyncStart = 0;
@@ -172,15 +165,16 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     return solved;
 }
 
-// CEA-861 sync, back porch and front porch as TIMES, so they port to a raster that
-// is not the standard's:
+// CEA-861 sync and back porch as TIMES, so they port to a raster that is not the
+// standard's:
 //
-//   1080p  44 px, 148 px, 88 px at 148.5 MHz   ->  296.30, 996.63, 592.59 ns
-//   720p   40 px, 220 px, 110 px at 74.25 MHz  ->  538.72, 2962.96, 1481.48 ns
+//   1080p  44 px, 148 px at 148.5 MHz   ->  296.30, 996.63 ns
+//   720p   40 px, 220 px at 74.25 MHz   ->  538.72, 2962.96 ns
 //
-// The front porch is the one the standard varies to absorb the field rate --
-// 1080p50 runs 528 px against 1080p60's 88 -- so the 60 Hz figure is taken, being
-// the standard's shortest, and used as a FLOOR rather than a target.
+// The front porch is not among them. It is the one the standard varies to absorb
+// the field rate -- 1080p50 runs 528 px against 1080p60's 88 -- and the encoder
+// generates its own HDMI blanking from what it samples, so what the far end of
+// the line needs is the board's own floor, FrontPorchMinPx.
 //
 // Vertical is in lines, which need no conversion, and is the STANDARD's in full
 // -- active, front porch, sync, back porch:
@@ -194,18 +188,17 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // 1024p and 960p are VESA DMT rather than CEA-861, converted the same way at
 // their own 108 MHz pixel clock:
 //
-//   1024p  112 px, 248 px, 48 px         ->  1037.04, 2296.30,  444.44 ns
-//    960p  112 px, 312 px, 96 px         ->  1037.04, 2888.89,  888.89 ns
-//    576p   64 px,  68 px, 12 px at 27   ->  2370.37, 2518.52,  444.44 ns
-//    480p   62 px,  60 px, 16 px at 27   ->  2296.30, 2222.22,  592.59 ns
+//   1024p  112 px, 248 px         ->  1037.04, 2296.30 ns
+//    960p  112 px, 312 px         ->  1037.04, 2888.89 ns
+//    576p   64 px,  68 px at 27   ->  2370.37, 2518.52 ns
+//    480p   62 px,  60 px at 27   ->  2296.30, 2222.22 ns
 //
-// Arguments are (activeLines, syncNs, backPorchNs, frontPorchNs, vsync, vBackPorch,
-// vFrontPorch).
-const OutputMode Mode1080p(1080, 296.2963f, 996.6330f, 592.5926f, 5, 36, 4);    // 1125
-const OutputMode Mode1024p(1024, 1037.0370f, 2296.2963f, 444.4444f, 3, 38, 1);  // 1066
-const OutputMode Mode960p(960, 1037.0370f, 2888.8889f, 888.8889f, 3, 36, 1);    // 1000
-const OutputMode Mode720p(720, 538.7205f, 2962.9630f, 1481.4815f, 5, 20, 5);    //  750
-const OutputMode Mode576p(576, 2370.3704f, 2518.5185f, 444.4444f, 5, 39, 5);    //  625
-const OutputMode Mode480p(480, 2296.2963f, 2222.2222f, 592.5926f, 6, 30, 9);    //  525
+// Arguments are (activeLines, syncNs, backPorchNs, vsync, vBackPorch, vFrontPorch).
+const OutputMode Mode1080p(1080, 296.2963f, 996.6330f, 5, 36, 4);    // 1125
+const OutputMode Mode1024p(1024, 1037.0370f, 2296.2963f, 3, 38, 1);  // 1066
+const OutputMode Mode960p(960, 1037.0370f, 2888.8889f, 3, 36, 1);    // 1000
+const OutputMode Mode720p(720, 538.7205f, 2962.9630f, 5, 20, 5);     //  750
+const OutputMode Mode576p(576, 2370.3704f, 2518.5185f, 5, 39, 5);    //  625
+const OutputMode Mode480p(480, 2296.2963f, 2222.2222f, 6, 30, 9);    //  525
 
 }  // namespace Tv5725

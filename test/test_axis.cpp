@@ -119,18 +119,22 @@ static double recordedFarEdge(const Reading &r, const Axis &axis, int winSp,
     return writeStart + r.capture * m - assumedCorner;
 }
 
+// Two units, which is a tolerance the readings can fail: the worst residual is
+// 1.0 px horizontally and 1.6 lines vertically.
+static const double ReadingTolerance = 2.0;
+
 TEST_CASE("every measured reading is reproduced")
 {
     SUBCASE("a pure multiply reproduces every horizontal reading") {
         for (const Reading &r : MeasuredH)
             CHECK_NEAR(recordedFarEdge(r, AxisHorizontal, 35, 129), r.recorded,
-                       AxisHorizontal.margin());
+                       ReadingTolerance);
     }
 
     SUBCASE("a pure multiply reproduces every vertical reading") {
         for (const Reading &r : MeasuredV)
             CHECK_NEAR(recordedFarEdge(r, AxisVertical, 37, 63), r.recorded,
-                       AxisVertical.margin());
+                       ReadingTolerance);
     }
 }
 
@@ -227,6 +231,29 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 }
 
+TEST_CASE("the display window opens after the picture starts, not on it")
+{
+    // Where the first written pixel lands is MODELLED, and the model
+    // under-estimates: measured at 1080p on a 2300 px raster, the engine opened
+    // the window at 113 and the data did not arrive until about 145, so the gap
+    // showed Y=U=V=0 -- a green band down the left, reachable by zooming out and
+    // panning hard left. The far edge already gives back Axis::margin for the
+    // same reason; the near edge gave back nothing.
+    // docs/investigations/display-window-opens-early.md
+    const uint16_t Raster = 2300, Capture = 1043;
+    const AxisSolution solved = AxisHorizontal.solve(Capture, Scale(474), Raster);
+    const PictureOrigin placed = AxisHorizontal.placePicture(
+        Scale(474).produced(Capture), Raster, Scale(474).magnification());
+
+    CHECK(solved.display().stop() == placed.corner());
+
+    SUBCASE("the memory window still opens where the write does") {
+        // It is the DISPLAY that must not show the gap. Opening the memory
+        // window late moves the picture instead, which widens the band.
+        CHECK(solved.memory().stop() == placed.windowStop());
+    }
+}
+
 TEST_CASE("the capture is bounded by what the raster can actually show")
 {
     // VDS_?SCALE divides 1024 and the register tops out at 1023, so the least
@@ -298,6 +325,9 @@ TEST_CASE("the solver places every output register")
     AxisSolution solved = AxisHorizontal.solve(798, Scale(650), 1445);
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
+        // The MEMORY window opens where the write does; the display window
+        // opens a near margin later, because the write origin is modelled and
+        // the model runs short.
         CHECK(solved.display().stop() == 102);
         CHECK(solved.memory().stop() == AxisHorizontal.windowStopMin());
     }
@@ -313,9 +343,11 @@ TEST_CASE("the solver places every output register")
 
     SUBCASE("the display window hugs the picture") {
         // A window sized for a different picture blanks where tearing shows,
-        // so a headroom measurement taken through one is worthless.
+        // so a headroom measurement taken through one is worthless. It gives
+        // back a margin at each end -- the model's residual at the far edge,
+        // and the write origin's at the near one.
         CHECK(solved.display().start()
-              == solved.display().stop() + (int32_t)solved.produced() - AxisHorizontal.margin());
+              == solved.display().stop() + (int32_t)solved.produced());
     }
 
     SUBCASE("the solver corrects the thirteen pixel offset seen on the bench") {
@@ -532,6 +564,24 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
     CHECK((int32_t)raster - solved.display().start() > 100);
 }
 
+// Measured on the bench at both ends. The NEAR end crept onto the picture's own
+// corner at every clock the engine can select shows nothing; the FAR end,
+// recovered as `far - produced` across six magnifications from 1.14 to 2.05,
+// lands on the modelled write origin to 0.35 px. Nothing needs hiding at either.
+// docs/investigations/display-window-opens-early.md
+TEST_CASE("the display window is the picture, at both ends")
+{
+    const uint16_t Raster = 1916, Capture = 973;
+    const Scale scale(557);
+    const AxisSolution solved = AxisHorizontal.solve(Capture, scale, Raster);
+    const PictureOrigin placed = AxisHorizontal.placePicture(
+        scale.produced(Capture), Raster, scale.magnification());
+
+    CHECK(solved.display().stop() == placed.corner());
+    CHECK(solved.display().start()
+          == placed.corner() + (int32_t)solved.produced());
+}
+
 // The capture stop is what the pan walks toward the end of the line, and past
 // InputLine::lastCapture() the input formatter is writing blanking rather than
 // video. The control has to stop before that rather than the output hiding it
@@ -594,3 +644,4 @@ int main(int argc, char **argv)
     }
     return doctest::Context(argc, argv).run();
 }
+

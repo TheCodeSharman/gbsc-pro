@@ -409,7 +409,7 @@ TEST_CASE("a capture the output cannot show is bounded, not cropped")
     const long produced = capture * Scale::Unity / Wire.field(3, 0x17, 4, 10);
 
     REQUIRE(window > 0);
-    CHECK(produced <= window + AxisVertical.margin());
+    CHECK(produced <= window + 3);
 
     SUBCASE("and the control has somewhere to go in both directions") {
         const long before = solved.engine.extentUnitsOn(AxisVertical);

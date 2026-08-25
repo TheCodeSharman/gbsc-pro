@@ -165,7 +165,7 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1190);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 572);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 557);
     CHECK(VideoProcessor::VDS_VSCALE::read() == 533);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
@@ -190,14 +190,14 @@ static void checkBenchGeometry()
     // playback never walks past the written picture.
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1847);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1895 + 2);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1121);
 
     // VDS_HB_SP is on its floor of 8 -- below that the left of the picture
     // corrupts -- so the display window carries the placement instead.
     CHECK(VideoProcessor::VDS_HB_SP::read() == 8);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 1);
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 108);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 109);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 3);
 
     // The playback burst, sized from the capture width so the fetch rate does

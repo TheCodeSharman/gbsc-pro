@@ -79,8 +79,13 @@ TEST_CASE("the solution carries the front porch to both axes")
     CHECK(solved.display().vertical().start() <= (int32_t)StopV);
 
     SUBCASE("and without one the raster edge still bounds it") {
+        // Compared against the solution that HAS a porch rather than against
+        // the porch itself: the window gives back Axis::margin at the far edge,
+        // so it sits inside either bound and the porch is the tighter one.
         VideoProcessorTimings plain(1008, 532, Raster, Frame);
-        CHECK(plain.display().horizontal().start() > (int32_t)StopH);
+        CHECK(plain.display().horizontal().start()
+              > solved.display().horizontal().start());
+        CHECK(plain.display().horizontal().start() < (int32_t)Raster);
     }
 }
 

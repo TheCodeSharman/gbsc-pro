@@ -115,8 +115,8 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
         // Giving up instead leaves the previous raster standing for the
         // session, invisibly -- the picture is fine and FrameSync steers the
         // Si5351 to whatever raster it finds. Measured 2026-08-15: stuck at the
-        // table's 1445 x 1126 where the engine wanted 1915, with the Si5351 on
-        // 81.48 MHz to match the wrong one.
+        // table's 1445 x 1126 where the engine wants its own, with the Si5351
+        // on 81.48 MHz to match the wrong one.
         setSourceLines(311);
         REQUIRE(pollUntilSolved(settled.engine));
         CHECK(horizontalTotalWritten() == 1916);
@@ -227,7 +227,7 @@ TEST_CASE("a solve points the part at the clock source that can serve the raster
     CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
 
     SUBCASE("and the seed it holds is still the frequency to steer to") {
-        CHECK(settled.clock.hz() == 108000000u);
+        CHECK(settled.clock.hz() == OutputMode::EngineCeilingHz);
     }
 }
 

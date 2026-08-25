@@ -109,36 +109,23 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     }
 }
 
-// A minimum RESERVE, not the standard's actual front porch. CEA absorbs the field
-// rate difference in the front porch -- 1080p50 runs 528 px against 1080p60's 88 --
-// so the standard's own value is not a target, and what is left above the minimum
-// stays leftover for the picture. 1080p60's 88 px at 148.5 MHz is the shortest
-// front porch in the standard, so it is the floor: 592.6 ns.
+// The far end of the line reserves what the BOARD needs, which is a property of
+// this part and not of any standard. CEA's own minimum front porch is an order of
+// magnitude above it -- 64 px at 108 MHz, 77 at 129.6 -- and the difference is
+// picture, because the reserve bounds where the produced picture may end.
 //
-// The board's own requirement is a floor of about 16 px, which the standard's
-// 64 px at 108 MHz clears. docs/scaler-geometry-model.md "The output front
-// porch"
-TEST_CASE("the front porch reserves CEA-861's minimum at our own clock")
+// The encoder generates its own HDMI blanking from what it samples and never sees
+// ours, so conforming to CEA at this end buys nothing.
+// docs/scaler-geometry-model.md "The output front porch"
+TEST_CASE("the far-end reserve is the board's floor, not the standard's porch")
 {
     OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.activeStop == 1920 - 64);
+    CHECK(at108.activeStop == 1920 - 16);
 
     OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.activeStop == 2304 - 77);
-
-    SUBCASE("which is the same TIME at both clocks, not the same pixel count") {
-        // A fixed pixel count would fail one of these two.
-        double lo = (at108.horizontalTotal - at108.activeStop) * 1e9
-                    / at108.demandedHz();
-        double hi = (at1296.horizontalTotal - at1296.activeStop) * 1e9
-                    / at1296.demandedHz();
-        CHECK(lo > 580.0);
-        CHECK(lo < 605.0);
-        CHECK(hi > 580.0);
-        CHECK(hi < 605.0);
-    }
+    CHECK(at1296.activeStop == 2304 - 16);
 
     SUBCASE("and the active window is what lies between the two porches") {
         CHECK(at108.activeWidth() == at108.activeStop - at108.activeStart);
@@ -186,12 +173,12 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
     // travel, because the zoom floor is raster / maxMagnification while the
     // default capture depends on the INPUT line alone.
     //
-    // **RAISING IT IS AN UNTRIED BENCH EXPERIMENT.** The argument for 108 over
-    // 129.6 rests on a fixed scale floor of 500 putting the zoom floor on the
-    // default framing, and Axis::scaleMin() is derived -- so the argument does
-    // not stand on its own terms. 129.6 MHz has been swept by hand and never run
-    // through the engine, which is what would settle it.
-    CHECK(OutputMode::EngineCeilingHz == 108000000u);
+    // It sits BELOW WorkingCeilingHz: the part runs 129.6 MHz clean and sharp,
+    // but the wider raster it buys puts the pipeline's run-up on picture at
+    // 1080p, and no framing avoids it because the run-up cannot be blanked
+    // without clipping image nor moved without costing the right edge.
+    // docs/investigations/display-window-opens-early.md
+    CHECK(OutputMode::EngineCeilingHz < OutputMode::WorkingCeilingHz);
 
     OutputTimings solved = Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz);
     CHECK(solved.horizontalTotal == 1920);

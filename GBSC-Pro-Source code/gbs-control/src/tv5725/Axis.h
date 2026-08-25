@@ -13,7 +13,7 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity,
+         uint16_t scaleMin, uint16_t captureGranularity,
          float activeStart, float activeExtent, bool vertical);
 
     // Which axis this is. The one place that knows: callers pass the axis and
@@ -40,10 +40,6 @@ public:
     // measured at ONE output hsync setting. Vertically 0 is an ASSUMPTION --
     // nobody has crept it.
     uint16_t windowStopMin() const;
-
-    // Given back off the display window's far edge: the model's own worst
-    // residual. A window short by 2 is invisible; long by 2 shows scratch.
-    uint16_t margin() const;
 
     // How far this axis is willing to magnify, as a VDS_?SCALE floor. DERIVED as
     // Scale::Unity / max magnification -- 4.0x on both axes -- and it must stay
@@ -121,7 +117,10 @@ public:
                            float magnification, uint16_t activeStart = 0) const;
 
     // This axis's four output registers, from a capture in whatever units the
-    // input formatter counted it in.
+    // input formatter counted it in. The display window IS the picture at both
+    // ends: nothing is given back to hide the pipeline's run-up, because at
+    // every clock OutputMode::EngineCeilingHz allows there is none to hide.
+    // docs/investigations/display-window-opens-early.md
     AxisSolution solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
                        uint16_t activeStart = 0, uint16_t activeStop = 0) const;
 
@@ -132,7 +131,7 @@ private:
     float placementFloor(float offset, uint16_t activeStart) const;
 
     float startConst_, startPerMag_;
-    uint16_t windowStopMin_, margin_, scaleMin_, captureGranularity_;
+    uint16_t windowStopMin_, scaleMin_, captureGranularity_;
     float activeStart_, activeExtent_;
     bool vertical_;
 };

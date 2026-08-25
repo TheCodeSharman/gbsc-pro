@@ -43,7 +43,7 @@ enum PresetPreference : uint8_t {
 class OutputMode {
 public:
     OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
-               float frontPorchNs, uint16_t vsyncLines, uint16_t vBackPorchLines,
+               uint16_t vsyncLines, uint16_t vBackPorchLines,
                uint16_t vFrontPorchLines);
 
     // Swept on the bench 2026-08-11, RiscPC 320x256@50, judged on the TV:
@@ -54,8 +54,36 @@ public:
     //     161.98 MHz   2877 x 1126   FLICKERS THEN GOES BLACK
     static const uint32_t WorkingCeilingHz = 129600000;
 
-    // A usability limit, not an electrical one: a wider raster costs zoom
-    // travel. A different question from WorkingCeilingHz, not a safer copy.
+    // What the ENGINE may ask for. Below WorkingCeilingHz on purpose, and the
+    // gap is not caution: 129.6 MHz runs clean and sharp, and is still wrong.
+    //
+    // A clock buys raster width, and raster width COSTS MAGNIFICATION, because
+    // the capture is a property of the source and the solve magnifies whatever
+    // it captured to fill whatever raster it was given. Above a magnification
+    // this part will not state, the playback pipeline has no valid data for the
+    // first stretch of each line, and what shows there is zeros decoding to
+    // green and then stale memory as a grey comb.
+    //
+    // Measured on the bench, RiscPC 320x256@50, capture 973 units:
+    //
+    //     108   MHz   raster 1920   magnification 1.84   clean
+    //     129.6 MHz   raster 2304   magnification 2.22   run-up on picture
+    //
+    // **It cannot be blanked and it cannot be moved.** Blanking it means opening
+    // the display window later, and with the picture panned so content reaches
+    // the left edge the run-up lies ON that content, so the blanking clips
+    // image. Moving it means putting the output hsync pulse later, and because
+    // the encoder holds its sampling window fixed relative to that pulse the
+    // whole picture slides by the same amount and the right-hand edge, which
+    // only just reaches the panel, retreats by exactly what the left gained.
+    //
+    // Nor is it escapable by framing: at a 2304 px raster even capturing the
+    // entire capturable region magnifies past the onset.
+    //
+    // **Do not raise this to WorkingCeilingHz.** That was tried, for the black
+    // bar in docs/investigations/the-encoder-reframes-the-output.md, and it does
+    // not move the bar -- the encoder decides that, not the raster.
+    // docs/investigations/display-window-opens-early.md has the measurements.
     static const uint32_t EngineCeilingHz = 108000000;
 
     // The part wraps the line past about 2240 PRODUCED pixels: measured clean at
@@ -65,6 +93,14 @@ public:
     // A short frame at the engine ceiling asks for far more than this.
     // docs/investigations/720p-edge-corruption.md
     static const uint16_t MaxHorizontalTotal = 2450;
+
+    // What must stay blank at the far end of the line, in pixels. A property of
+    // this part rather than of any standard: the encoder generates its own HDMI
+    // blanking and never sees ours. Measured on a 1916 px raster by creeping the
+    // display window -- good at 1900, wrong at 1910. Measured in pixels at one
+    // clock only, so whether it is really a time is untested.
+    // docs/scaler-geometry-model.md "The output front porch"
+    static const uint16_t FrontPorchMinPx = 16;
 
     static const uint16_t HorizontalTotalMax = 4096;  // VDS_HSYNC_RST is 12 bits
     static const uint16_t VerticalTotalMax = 2048;  // VDS_VSYNC_RST is 11 bits
@@ -101,7 +137,7 @@ public:
 
 private:
     uint16_t activeLines_;
-    float syncNs_, backPorchNs_, frontPorchNs_;
+    float syncNs_, backPorchNs_;
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };
 
