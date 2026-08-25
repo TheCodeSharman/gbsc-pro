@@ -74,16 +74,82 @@ accurate, as against GTF's curve, which that page rejects.
 **Recommended: the DMT table**, because the envelope cannot deliver "full screen"
 by construction.
 
+## What was built
+
+**Both halves landed.** The envelope is the fallback and the table is consulted
+first, so a standard mode comes up full screen and unclipped and everything else
+comes up whole with black at the edges.
+
+`Axis` carries the envelope as a start and an extent per axis — 11.7% to 98.1%
+of the line, 6.1% to 99.4% of the frame — so a source matching no published
+raster is placed rather than centred, and `ActiveImage` asks the same two
+questions of either source. The vertical fraction no longer splits on field
+rate: an envelope containing a 50 Hz and a 60 Hz source alike makes the split a
+choice about which of the two to crop.
+
+Against stock AKF50's 15 kHz modes, whose picture sits between 15.4% and 90.4%
+of the line and 7.1% and 99.4% of the frame, the centred default cropped 0.9% of
+the line off 768x288 and 0.9 to 7.0% of the frame off every one of them. The
+envelope crops none of them. It costs picture size on a source whose blanking is
+narrower than the envelope: the bench card fills 72% of the screen width against
+79%, and 88% of its height against 96%, the rest being black the user trims and
+the framing table then remembers.
+
+`Tv5725::SourceTiming` is that table, thirteen DMT and CEA-861 rasters keyed on
+the frame, the field-rate bucket and the hsync duty. `ActiveImage` places an
+untuned axis from the standard's own active window when one matches, and from
+the assumption when none does. Both axes, because the raster states both.
+
+Measured on the bench at 640x480@60: capture moved from `131..1020` to
+`203..1103` of a 1125-unit line, 18.04% and 98.04% against the standard's 18.00%
+and 98.00%, and the vertical window landed on `35..515`, the raster's 480 active
+lines exactly. A 311-line source matches nothing and is placed as it was.
+
+**The duty is what separates two standards on one key.** A 525-line 60 Hz frame
+is both 640x480 DMT, 96 pixels of sync in 800, and 720x480p, 62 in 858, and they
+put active video 2.2% of the line apart. A source matching no row keeps the
+assumption rather than the nearest row, because placing a source from a raster
+it is not emitting crops picture.
+
+**`STATUS_SYNC_PROC_VTOTAL` counts from zero**, so the match is against one more
+line than it reports: the bench reads 524 on the 525-line mode, and 311 on
+AKF50's 312-line 320x256.
+
+## The remaining Acorn modes are VESA-rastered but not VESA-blanked
+
+Stock AKF50 states each mode as `sync, back porch, left border, display, right
+border, front porch`, and its VESA-rate modes keep the standard's total and a
+near-standard sync while spending the back porch on **border** instead. The file
+says so itself: the 72 Hz and 75 Hz entries carry the VESA timings they replaced
+as a comment.
+
+| mode | AKF50 h_timings | picture starts | DMT window starts | picture cropped |
+|---|---|---|---|---|
+| 640x480@60 | 94,22,22,640,22,0 | 138/800 | 144/800 | 6 px left |
+| 640x480@72 | 48,84,30,640,30,0 | 162/832 | 168/832 | 6 px left |
+| 640x480@75 | 64,76,30,640,30,0 | 170/840 | 184/840 | 14 px left |
+| 800x600@56 | 72,84,34,800,34,0 | 190/1024 | 200/1024 | 10 px left |
+| 800x600@60 | 128,48,40,800,40,0 | 216/1056 | 216/1056 | none |
+
+Nothing is cropped on the right on any of them, which is the 6.7 to 8.6% the
+centred default lost. What remains is up to 14 px off the left — 2.2% of picture
+width — on a source that borders differently from the standard it otherwise
+follows.
+
+**That is left to the user rather than padded away.** A pad wide enough to
+contain these is derived from one machine's mode file, which `docs/vesa-gtf.md`
+rejects as a basis for defaults, and it puts a black edge on a true DMT source.
+One pan press covers it and `docs/framing-presets.md` remembers it against that
+source.
+
 ## What this does not answer
 
-- **The vertical axis.** `place()` centres both, and the card is cut top and
-  bottom at 640x480@60 as well. Vertical blanking is asymmetric too. Not
-  investigated.
 - **The capture write origin.** `docs/vesa-gtf.md` warns that translating a
   percentage of the line into `IF_HB_ST2`/`IF_HB_SP2` needs an origin that has
   never been measured, and is assumed to be `VDS_HB_SP`. The bench now gives an
   empirical anchor for one mode, which is not the same as measuring it.
-- Whether the remaining Acorn modes are VESA-timed. Only 640x480@60 was checked.
+- **Interlaced sources.** The table is progressive only: a field arrives rather
+  than a frame, and what its line count reads as has not been measured.
 
 ## One thing it helps
 

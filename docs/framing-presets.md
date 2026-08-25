@@ -189,10 +189,15 @@ against the writer. Requirements:
   that follows finds the entry and restores exactly what was discarded, and the
   control does nothing.
 - **Changing the OUTPUT resolution keeps the framing.** The proportions are
-  taken against the capturable region, which is a property of the input line, so
-  an output change moves neither the denominator nor the user's intent. This is
-  why the key is the source alone: `Geometry` keeps the framing when the key has
-  not moved and looks it up when it has.
+  taken against the capturable region, so an output change keeps the user's
+  intent. This is why the key is the source alone: `Geometry` keeps the framing
+  when the key has not moved and looks it up when it has.
+
+  **Within a unit, not bit-exact.** An output too short to show a doubled frame
+  takes the line doubler out, which halves what the IF counts, so an output
+  change *can* move the denominator and the proportion is re-gridded onto the
+  new capture. That re-grid is the same one a source mode change does, and is
+  lossy by design.
 
 ## Interaction with the HSCALE aliasing
 

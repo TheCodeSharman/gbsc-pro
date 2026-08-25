@@ -77,6 +77,23 @@ to line rate — which is why a mode-file lookup beats a curve, and why the vert
 side already needs the measured `DEFAULT_V_ACTIVE_FRACTION_50HZ = 0.82`
 (`AKF50` gives 256/312 = 82.1 %).
 
+## What the firmware does now, and what this page is still for
+
+Two answers, and neither is a curve. Where the frame, the field rate and the
+hsync duty match a raster the standards state, `Tv5725::SourceTiming` takes that
+raster's own active window, both axes. Where nothing matches, `Axis` places the
+window across the **envelope** of what real sources put on a line — 11.7% to
+98.1% horizontally, 6.1% to 99.4% vertically — so nothing is cropped and what is
+captured beyond the picture is black.
+[investigations/vesa-modes-are-clipped-by-default.md](investigations/vesa-modes-are-clipped-by-default.md)
+carries both, with the measurements.
+
+**Every fraction quoted below as "today's default" is therefore gone**, along
+with the centring, the over-capture factor and the 50/60 vertical split. What
+this page is still for is the evidence: why no formula supplies the border, why
+GTF emits no valid raster at 15 kHz, and the per-standard blanking figures the
+envelope was taken from.
+
 ## The decision: select PAL or NTSC on field rate
 
 The conclusion of this investigation, superseding every "which curve" question

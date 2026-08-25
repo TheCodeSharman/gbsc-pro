@@ -216,6 +216,37 @@ from the source: `ceil(units x HLOW_LEN / PLLAD_MD)`, excluded at the **head**
 only, because `SP_RT_HS_ST` is 0 and the input formatter counts from the sync's
 leading edge.
 
+**The part cannot minify, and both ends of the capture are bounded by that.**
+`VDS_?SCALE` divides 1024 and tops out at `Scale::Max`, so the least
+magnification it can express is 1.001. `Axis::minimumCapture()` stops a zoom
+cropping past what the magnification can put back; `Axis::maximumCapture()` stops
+a framing taking more than the output can show, because a capture past it
+produces a picture past the room and the far end is simply not drawn. Without the
+ceiling the control reads as dead in BOTH directions -- zoom-out is at the bound
+of the capturable region, and zoom-in only trims capture that is already
+off-screen.
+
+The same bound decides the line doubler. Doubling turns a 311-line source into
+622 units, which 720p and 1080p hold and 480p and 576p do not, so
+`SourceMeasurement::lineDoublingFor()` takes what the output can show as well as
+what the source sends. It is asked of the mode requested rather than the raster
+last solved, because the scan mode is settled before `solveRaster()` runs.
+
+**An untuned axis is placed, not guessed twice.** Where active video sits inside
+the line cannot be measured — a border is black active video, electrically
+identical to back porch — so `ActiveImage` places the first window itself and
+`clampToLine()` seeds the framing from what it placed, which is why a default
+framing saved and restored produces identical registers.
+
+Two sources for that placement. `Tv5725::SourceTiming` matches the frame, the
+field-rate bucket and the hsync duty against thirteen DMT and CEA-861 rasters,
+and a source running one is placed on the standard's own active window, both
+axes, with no over-capture added. A source matching none takes
+`Axis::activeFraction()` over-captured and centred in the line. A source that
+keeps a standard's raster while spending its back porch on border sits a few
+pixels left of where the standard says and is the user's to trim — see
+[investigations/vesa-modes-are-clipped-by-default.md](investigations/vesa-modes-are-clipped-by-default.md).
+
 `Tv5725::InputSignal` pairs the two lines into the rectangle the source
 presents, and `Tv5725::CaptureWindow` is the rectangle placed inside it: both
 axes together, holding the signal it must stay within, and clamping the framing
