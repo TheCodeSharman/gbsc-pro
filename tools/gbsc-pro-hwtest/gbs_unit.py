@@ -2,6 +2,7 @@
 WebSocket. See docs/gbs-control-debug-interface.md for the surface itself."""
 
 import json
+import os
 import re
 import threading
 import time
@@ -104,17 +105,32 @@ class Console:
 
 # --- the geometry engine ----------------------------------------------------
 
-# The framing a reset returns to, and the one every solve starts from.
-DEFAULT_FRAMING = {"zh": 0, "zv": 0, "ph": 0, "pv": 0}
+# /geometry is behind GBS_DEBUG, so a 404 is a build that gated the route out
+# rather than a unit that cannot answer. Nothing on the product path reads it.
+GEOMETRY_GATED = ("/geometry answered 404: this firmware was built GBS_DEBUG=0, "
+                  "which gates the route out")
+
+
+def geometry_gated(host):
+    """True when /geometry is absent because the build left it out."""
+    return get_json(host, "/geometry")[0] == 404
+
+
+# The framing, per axis: where the capture window starts and how far it runs,
+# in input units. /geometry reports the capturable region beside them as `ch`
+# and `cv`, and the proportion the engine actually holds as `poh`/`peh`/`pov`/
+# `pev` -- neither of which is framing, so neither is projected below.
+FRAMING_FIELDS = ("oh", "eh", "ov", "ev")
 
 
 def framing_of(payload):
-    """Just the framing, out of a /geometry body that also reports what the
-    engine measured of the source. Projected rather than compared whole: a field
-    added to the report is not a change of framing."""
+    """Just the framing, out of a /geometry body that also reports the
+    capturable region and what the engine measured of the source. Projected
+    rather than compared whole: a field added to the report is not a change of
+    framing."""
     if payload is None:
         return None
-    return {name: payload[name] for name in DEFAULT_FRAMING if name in payload}
+    return {name: payload[name] for name in FRAMING_FIELDS if name in payload}
 
 # The character /sc? carries to reach Geometry::reset().
 #
@@ -178,8 +194,11 @@ def locked_steadily(host, samples=LOCK_SAMPLES, interval=0.4):
 # The pad each framing field moves on, as (increase, decrease). One press moves
 # at least one capture granule, so a press of one output pixel is the smallest
 # move the hardware acts on whatever the scale happens to be.
-FRAMING_PADS = {"zh": ("I", "O"), "zv": ("5", "4"),
-                "ph": ("+", "-"), "pv": ("/", "*")}
+#
+# **The zoom pads read backwards here.** Zooming in CROPS, so the pad that
+# increases an extent is the zoom-out one.
+FRAMING_PADS = {"eh": ("O", "I"), "ev": ("4", "5"),
+                "oh": ("+", "-"), "ov": ("/", "*")}
 
 
 def press(host, pad, pixels=None):
@@ -229,18 +248,57 @@ def resolve(host):
     return get(host, "/sc?U")[0] == 200
 
 
-def reset_framing(host, timeout=20.0):
-    """Put the engine's framing back to default. True once it has landed.
+# **The units are taken against a live measurement.** The origin is reported
+# from where the hsync pulse ends, and that reading moves a unit either way
+# while the framing has not been touched -- so two reports of the SAME framing
+# are not always equal. A press moves tens of units, so a couple of units of
+# slack still catches a reset that did nothing.
+FRAMING_JITTER_UNITS = 2
+
+
+def framing_matches(at, wanted):
+    """Whether two reports describe the same framing, allowing for the
+    measurement the units are taken against moving under them."""
+    if at is None or wanted is None:
+        return False
+    return all(abs(at[name] - wanted[name]) <= FRAMING_JITTER_UNITS
+               for name in wanted)
+
+
+def framing_settled(host, interval=0.5):
+    """The framing, once two reads a solve apart agree, or None. A press and a
+    re-solve both move it, so one read is a value it may be on the way through."""
+    first = framing_of(get_json(host, "/geometry")[1])
+    if not first:
+        return None
+    time.sleep(interval)
+    return first if framing_matches(framing_of(get_json(host, "/geometry")[1]),
+                                    first) else None
+
+
+def reset_framing(host, expect=None, timeout=20.0):
+    """Put the engine's framing back to default. Reports where it landed, None
+    if it did not land at all.
 
     A 200 from /sc only means the command reached a global loop() has yet to
     read, so waiting for the framing itself is the only evidence the reset ran.
+
+    **The default is not a constant.** It is the placement the solve computes
+    for the source in force, so there is nothing to compare a first reset
+    against and this waits for the framing to hold still. Pass `expect` -- what
+    an earlier reset landed on -- and it waits for exactly that instead, which
+    is what catches a reset that answers 200 and does nothing.
     """
     status, _ = get(host, f"/sc?{RESET_COMMAND}")
     if status != 200:
-        return False
-    return bool(wait_for(
-        lambda: framing_of(get_json(host, "/geometry")[1]) == DEFAULT_FRAMING,
-        timeout=timeout))
+        return None
+    if expect is not None:
+        landed = wait_for(
+            lambda: framing_matches(framing_of(get_json(host, "/geometry")[1]),
+                                    expect) or None,
+            timeout=timeout)
+        return expect if landed else None
+    return wait_for(lambda: framing_settled(host), timeout=timeout)
 
 
 # --- registers --------------------------------------------------------------
@@ -306,6 +364,57 @@ def read_field(host, segment, register, offset, width):
             return None
         raw |= byte << (8 * index)
     return (raw >> offset) & ((1 << width) - 1)
+
+
+CATALOGUE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "tv5725_registers.json")
+_catalogue = None
+
+# The firmware's own cap: the buffer is static, so no allocation in a network
+# callback.
+FIELDS_PER_REQUEST = 48
+
+
+def catalogue():
+    """The register map, loaded once. The same map snapdiff.py and setfield.py
+    decode with."""
+    global _catalogue
+    if _catalogue is None:
+        with open(CATALOGUE_PATH) as handle:
+            _catalogue = json.load(handle)
+    return _catalogue
+
+
+def read_fields(host, names):
+    """Many fields by NAME in as few requests as the firmware allows.
+
+    NEVER hand-write a segment/register/offset/width: a wrong address does not
+    error, it returns a plausible number, and four invented ones once produced a
+    textbook no-lock signature against a perfect picture.
+
+    One request per 48 fields, each answered inside a single loop() pass, so the
+    values in one batch are simultaneous in the way read_segment()'s are. Returns
+    {name: value}, or None if any batch fails.
+    """
+    wanted = list(names)
+    unknown = [name for name in wanted if name not in catalogue()]
+    if unknown:
+        raise KeyError(f"not in tv5725_registers.json: {', '.join(unknown)}")
+
+    values = {}
+    for start in range(0, len(wanted), FIELDS_PER_REQUEST):
+        batch = wanted[start : start + FIELDS_PER_REQUEST]
+        spec = ",".join(
+            "{seg}.{reg}.{off}.{width}".format(**catalogue()[name]) for name in batch
+        )
+        status, payload = get_json(host, "/getfields?f=" + spec)
+        if status != 200 or not payload:
+            return None
+        got = payload.get("values")
+        if not isinstance(got, list) or len(got) != len(batch):
+            return None
+        values.update(zip(batch, got))
+    return values
 
 
 def read_segment(host, segment, first=0x00, last=0xFF):

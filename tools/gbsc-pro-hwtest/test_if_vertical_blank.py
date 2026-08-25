@@ -24,7 +24,8 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import get, get_json, read_field, read_reg, write_reg, wait_for
+from gbs_unit import (GEOMETRY_GATED, get, get_json, read_field, read_reg,
+                      write_reg, wait_for)
 
 CATALOGUE = json.load(open(
     os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -70,7 +71,10 @@ def test_a_vertical_blank_beyond_the_frame_does_not_strand_the_engine(host, sour
         f"IF_VB_ST {before} is already beyond the {frame}-line frame, so the "
         "unit is stranded before this test starts")
 
-    rate_before = get_json(host, "/geometry")[1]["lineRateHz"]
+    status, report = get_json(host, "/geometry")
+    if status == 404:
+        pytest.skip(GEOMETRY_GATED)
+    rate_before = report["lineRateHz"]
     assert rate_before, "no line rate measured, so there is nothing to lose"
 
     # Beyond the frame by enough that no rounding brings it back inside.

@@ -14,7 +14,7 @@ import json
 import sys
 import time
 
-from gbs_unit import get, read_reg
+from gbs_unit import get, read_reg, read_segment
 
 # Configuration registers worth capturing, as (segment, first, last).
 # The preset ranges from gbs-control.ino, widened on segment 1 to take in the
@@ -72,17 +72,27 @@ NAMES = {
 
 
 def read_ranges(host, ranges, label):
+    """One /getregs request per range, not one /getreg per register.
+
+    Register reads are deferred into loop(), so a per-register dump costs a round
+    trip AND a loop pass each: 608 of them take minutes and starve the loop being
+    photographed, which is how a transient becomes unobservable. Whole ranges also
+    make the values within one range simultaneous, which matters for segment 0.
+
+    Falls back to per-register reads against firmware with no /getregs.
+    """
     out = {}
-    total = sum(last - first + 1 for _, first, last in ranges)
-    done = 0
     for segment, first, last in ranges:
-        for reg in range(first, last + 1):
-            value = read_reg(host, segment, reg)
-            done += 1
-            if done % 40 == 0:
-                print(f"  {label}: {done}/{total}", file=sys.stderr)
-            if value is not None:
-                out[f"{segment}:{reg:02x}"] = value
+        print(f"  {label}: segment {segment} {first:#04x}..{last:#04x}", file=sys.stderr)
+        values = read_segment(host, segment, first, last)
+        if values is None:
+            for reg in range(first, last + 1):
+                value = read_reg(host, segment, reg)
+                if value is not None:
+                    out[f"{segment}:{reg:02x}"] = value
+            continue
+        for reg, value in values.items():
+            out[f"{segment}:{reg:02x}"] = value
     return out
 
 

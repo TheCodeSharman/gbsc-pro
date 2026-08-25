@@ -40,7 +40,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-from gbs_unit import (DEFAULT_FRAMING, RESET_COMMAND, field_from, framing_of, get,
+from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_of, get,
                       get_json,
                       read_field, read_reg, read_segment, recover_lock, reset_framing,
                       wait_for, write_reg)
@@ -123,9 +123,13 @@ OUTPUT_AXES = (AXIS_HORIZONTAL, AXIS_VERTICAL)
 
 
 def framing(host):
-    """The engine's framing: zoom steps and pan offsets, per axis. /geometry
-    also reports what it measured of the source, which is not framing."""
+    """The engine's framing: where the capture window starts and how far it
+    runs, per axis, in input units. /geometry also reports the capturable region
+    those are taken against and what it measured of the source, neither of which
+    is framing."""
     status, parsed = get_json(host, "/geometry")
+    if status == 404:
+        pytest.skip(GEOMETRY_GATED)
     return framing_of(parsed) if status == 200 else None
 
 
@@ -261,6 +265,14 @@ def framed(host, probe, scaling):
     return settled_geometry(host)
 
 
+# What a reset lands on, learned by doing one. It is the placement the solve
+# computes for the source in force, so it is not a constant that can be written
+# down -- and holding it is what lets every later reset be CHECKED. A source
+# mode change during a run invalidates it, and fails loudly rather than
+# silently, which is the right way round.
+_default_framing = None
+
+
 def reset_the_framing(host):
     """Put the framing back to default, and CHECK IT LANDED.
 
@@ -269,9 +281,13 @@ def reset_the_framing(host):
     silently does nothing leaves every test running from whatever framing the
     one before it left, which is the accumulation this fixture exists to stop.
     """
-    assert reset_framing(host), (
+    global _default_framing
+    landed = reset_framing(host, expect=_default_framing)
+    assert landed is not None, (
         f"/sc?{RESET_COMMAND} left the framing at {framing(host)} rather than "
-        f"{DEFAULT_FRAMING}: the reset control did not run.")
+        f"{_default_framing or 'the default for this source'}: "
+        "the reset control did not run.")
+    _default_framing = landed
 
 
 # What a press moves first, so there is something to wait on.
@@ -281,7 +297,10 @@ WATCH = {"z": ("IF_HB_ST2", 1, 0x18, 0, 11),
          "-": ("IF_HB_SP2", 1, 0x1A, 0, 11),
          # The OSD and IR 'move' keys, which reach the same handler.
          "6": ("IF_HB_SP2", 1, 0x1A, 0, 11),
-         "7": ("IF_HB_SP2", 1, 0x1A, 0, 11)}
+         "7": ("IF_HB_SP2", 1, 0x1A, 0, 11),
+         # The vertical zoom pads, which move the vertical capture instead.
+         "4": ("IF_VB_ST", 1, 0x1C, 0, 11),
+         "5": ("IF_VB_ST", 1, 0x1C, 0, 11)}
 
 
 # The smallest capture move the hardware acts on, per axis. Horizontally the low
@@ -432,13 +451,18 @@ def test_the_reset_control_returns_the_framing_to_default(host, probe, scaling):
     would go on passing against an inherited framing, which is exactly the
     accumulation the fixture was written to prevent.
     """
+    default = reset_framing(host)
+    assert default is not None, "the framing did not settle after a reset"
+
     press(host, probe, "z")
     moved = framing(host)
-    assert moved != DEFAULT_FRAMING, (
+    assert moved != default, (
         f"a zoom press left the framing at {moved}, so this cannot show a reset "
-        f"returning it to {DEFAULT_FRAMING}")
+        f"returning it to {default}")
 
-    reset_the_framing(host)
+    assert reset_framing(host, expect=default) is not None, (
+        f"the framing stayed at {framing(host)} rather than returning to "
+        f"{default}: the reset control did not run")
 
 
 @pytest.mark.pan
@@ -453,16 +477,16 @@ def test_a_press_moves_by_the_pixels_it_is_given(host, probe, framed):
     Axis::stepUnits() floors at one capture granule, so a press of one pixel is
     the smallest move the hardware acts on whatever the scale happens to be.
     """
-    before = framing(host)["ph"]
+    before = framing(host)["oh"]
     press(host, probe, "+", pixels=1)
-    fine = framing(host)["ph"] - before
+    fine = framing(host)["oh"] - before
     assert fine == GRANULE["horizontal"], (
         f"a one-pixel pan moved {fine} units, not one granule "
         f"({GRANULE['horizontal']}): the magnitude did not reach the control")
 
-    at = framing(host)["ph"]
+    at = framing(host)["oh"]
     press(host, probe, "+")
-    default = framing(host)["ph"] - at
+    default = framing(host)["oh"] - at
     assert default > fine, (
         f"the pad's own step moved {default} units against the fine press's "
         f"{fine}, so a press with no magnitude is no longer the coarse one")
@@ -1174,6 +1198,63 @@ ENGINE_OUTPUTS = [
 def _engine_outputs(host):
     return {name: read_field(host, seg, reg, lo, width)
             for name, seg, reg, lo, width in ENGINE_OUTPUTS}
+
+
+# The output preset commands, and the raster each puts on the chip. /uc? queues
+# one character for loop() to pick up.
+OUTPUT_480P = "/uc?h"
+OUTPUT_1080P = "/uc?s"
+
+
+@pytest.mark.zoom
+def test_changing_the_output_keeps_the_framing(host, probe, source, preset_load):
+    """A user who has framed a source and then picks a different output
+    resolution must not have to frame it again.
+
+    applyPresets() is the one caller of Geometry::modeChanged(), and it runs for
+    a source mode change and for this. Only the first invalidates a framing: the
+    proportions are taken against the capturable region, which is a property of
+    the input line, so the output raster moves neither the denominator nor the
+    user's intent.
+
+    Measured on the bench before the fix: cropped to a vertical extent of 441 of
+    622 at 480p, an output change came back at 532 -- the untuned default, not
+    even the new raster's clamp -- and switching back did not restore it.
+    """
+    try:
+        reset_the_framing(host)
+        for _ in range(6):
+            press(host, probe, "5", pixels=40)
+        time.sleep(4)
+
+        tuned = framing(host)
+        default_ev = _default_framing["ev"] if _default_framing else None
+        assert default_ev is None or tuned["ev"] < default_ev, (
+            f"the crop did not take: vertical extent {tuned['ev']} against a "
+            f"default of {default_ev}, so this cannot show a framing surviving")
+
+        get(host, OUTPUT_1080P)
+        assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) > 1000,
+                        timeout=25.0), "the 1080p raster never landed"
+        time.sleep(8)
+        at_1080p = framing(host)
+
+        get(host, OUTPUT_480P)
+        assert wait_for(lambda: 0 < (read_field(host, 3, 0x02, 4, 11) or 0) < 1000,
+                        timeout=25.0), "the 480p raster never came back"
+        time.sleep(8)
+        back = framing(host)
+
+        assert at_1080p == tuned, (
+            f"the output change moved the framing from {tuned} to {at_1080p}")
+        assert back == tuned, (
+            f"coming back moved it to {back} rather than the {tuned} it was "
+            "tuned to")
+    finally:
+        get(host, OUTPUT_480P)
+        time.sleep(8)
+        recover_lock(host)
+        reset_the_framing(host)
 
 
 def test_a_preset_load_leaves_the_engines_values_not_the_sketchs(host, source):

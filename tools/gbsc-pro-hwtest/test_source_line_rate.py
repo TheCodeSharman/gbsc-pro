@@ -22,7 +22,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import get_json, read_field
+from gbs_unit import GEOMETRY_GATED, get_json, read_field
 
 CATALOGUE = json.load(open(
     os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -42,6 +42,8 @@ def field(host, name):
 @pytest.fixture
 def geometry(host):
     status, body = get_json(host, "/geometry")
+    if status == 404:
+        pytest.skip(GEOMETRY_GATED)
     assert status == 200, f"/geometry answered {status}"
     if body is None or "lineRateHz" not in body:
         pytest.skip("this firmware's /geometry reports no source measurement")

@@ -185,6 +185,11 @@ class RecordingPanel:
         return regpanel.read_fields(self.fetch, regpanel.GEOMETRY_FIELDS)[name]
 
 
+# A framing the engine could actually be holding: the capture starting 100 units
+# into the line and running 800, on a source measuring wider than that.
+HELD = {"oh": 100, "eh": 800, "ov": 40, "ev": 400, "ch": 1033, "cv": 622}
+
+
 class RecordingEngine:
     """regpanel wired to a fake /geometry.
 
@@ -228,36 +233,37 @@ class RecordingEngine:
 
 
 def test_a_pan_press_asks_the_engine_rather_than_writing_registers(monkeypatch):
-    engine = RecordingEngine(monkeypatch, {"zh": 0, "zv": 0, "ph": 0, "pv": 0})
+    engine = RecordingEngine(monkeypatch, HELD)
 
     assert regpanel.pan(4, -2)["ok"]
 
-    assert engine.asked == [{"zh": 0, "zv": 0, "ph": 4, "pv": -2}]
+    assert engine.asked == [dict(HELD, oh=104, ov=38)]
 
 
-def test_a_zoom_press_is_negated_into_the_engines_sense(monkeypatch):
-    """**THE SIGN FLIPS.** These pads send a NEGATIVE delta to crop in, where the
-    engine's zoom is POSITIVE to crop in. Getting it backwards puts the zoom pads
+def test_a_zoom_press_crops_by_shortening_the_capture(monkeypatch):
+    """These pads send a NEGATIVE delta to crop in, and the extent is how far
+    the capture runs -- so cropping in IS the extent going down and the delta
+    passes through with its own sign. Getting it backwards puts the zoom pads
     the wrong way round, which the picture shows and nothing else would."""
-    engine = RecordingEngine(monkeypatch, {"zh": 0, "zv": 0, "ph": 0, "pv": 0})
+    engine = RecordingEngine(monkeypatch, HELD)
 
     assert regpanel.rescale(-6, 3)["ok"]
 
-    assert engine.asked == [{"zh": 6, "zv": -3, "ph": 0, "pv": 0}]
+    assert engine.asked == [dict(HELD, eh=794, ev=403)]
 
 
 def test_a_press_accumulates_on_the_framing_the_engine_holds(monkeypatch):
     """Read what the engine holds, add the delta, hand it back. The panel keeps
     no framing of its own -- one owner, and it is not this one."""
-    engine = RecordingEngine(monkeypatch, {"zh": 10, "zv": 0, "ph": 5, "pv": 0})
+    engine = RecordingEngine(monkeypatch, dict(HELD, oh=5))
 
     regpanel.pan(3, 0)
 
-    assert engine.asked[-1] == {"zh": 10, "zv": 0, "ph": 8, "pv": 0}
+    assert engine.asked[-1] == dict(HELD, oh=8)
 
 
 def test_a_press_that_asks_for_nothing_does_not_reach_the_engine(monkeypatch):
-    engine = RecordingEngine(monkeypatch, {"zh": 0, "zv": 0, "ph": 0, "pv": 0})
+    engine = RecordingEngine(monkeypatch, HELD)
 
     assert not regpanel.pan(0, 0)["ok"]
     assert not regpanel.rescale(0, 0)["ok"]

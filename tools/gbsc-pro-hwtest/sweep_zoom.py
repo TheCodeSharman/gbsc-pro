@@ -6,9 +6,9 @@
     ENTER  clear      t  torn      a  almost      b  back one step
     n      note       r  measure again      q  quit and restore the framing
 
-Each press moves the zoom by ONE INPUT UNIT, waits for the geometry to settle,
-records the thirty registers `characterise.py` records, and asks for the
-verdict.
+Each press moves the capture extent by ONE INPUT UNIT, waits for the geometry
+to settle, records the thirty registers `characterise.py` records, and asks for
+the verdict.
 
 `a` is the RESIDUAL, and it is its own category because the question it answers
 is whether a fix is COMPLETE. "Almost counts as clear" is right while the job is
@@ -16,8 +16,8 @@ finding the band edges of a gross fault; once most of the fault is gone, scoring
 a residual clean puts 66/66 clean in the log and erases what separates "fixed"
 from "much better".
 
-**The swept variable is the FRAMING, not VDS_HSCALE.** The engine takes a zoom
-in input units and solves every window from it; HSCALE is an output and does not
+**The swept variable is the FRAMING, not VDS_HSCALE.** The engine takes an
+extent in input units and solves every window from it; HSCALE is an output and does not
 move on every press -- `dense-01` widened the capture 842 -> 843 with HSCALE
 unchanged at 694. Sweeping HSCALE directly would be a different experiment, and
 one the firmware would undo at the next solve.
@@ -123,20 +123,21 @@ def next_number(rows, prefix):
 class Sweep:
     """One consecutive walk of the framing, a measurement and a verdict a step.
 
-    Takes the three things it does to the world as callables -- apply the zoom,
-    measure, record a row -- so the whole state machine runs without a unit.
+    Takes the three things it does to the world as callables -- apply the
+    extent, measure, record a row -- so the whole state machine runs without a
+    unit.
     """
 
-    def __init__(self, apply_zoom, snapshot, record, zoom, step,
+    def __init__(self, apply_extent, snapshot, record, extent, step,
                  prefix="dense", first=1, axis="h", restore_to=None):
-        self._apply = apply_zoom
+        self._apply = apply_extent
         self._snapshot = snapshot
         self._record = record
         # Where the sweep BEGINS and where the picture belongs are different
         # questions once --start exists: restoring to the start point would
         # leave the unit somewhere it had never been.
-        self._origin = zoom if restore_to is None else restore_to
-        self.zoom = zoom
+        self._origin = extent if restore_to is None else restore_to
+        self.extent = extent
         self.step_units = step
         self.prefix = prefix
         self.number = first
@@ -160,17 +161,17 @@ class Sweep:
         return self._move(-self.step_units)
 
     def remeasure(self):
-        """The same zoom, read again -- for a step judged while still settling."""
+        """The same extent, read again -- for a step judged while still settling."""
         return self._measure()
 
     def _move(self, units):
         if self._previous is None:
             # The baseline for "did the unit accept the press", taken once.
             self._previous = self._snapshot()
-        self.zoom += units
-        # The engine clamps, so the zoom is where it LANDED rather than where it
-        # was sent -- otherwise the sweep walks a counter the unit is not on.
-        _, self.zoom = self._apply(self.zoom)
+        self.extent += units
+        # The engine clamps, so the extent is where it LANDED rather than where
+        # it was sent -- otherwise the sweep walks a counter the unit is not on.
+        _, self.extent = self._apply(self.extent)
         return self._measure()
 
     def _measure(self):
@@ -178,7 +179,7 @@ class Sweep:
         self.moved = solved(registers) != solved(self._previous)
         self._previous = registers
         self.pending = characterise.observe(registers.get, "", "")
-        self.pending["framing"] = {"axis": self.axis, "zoom": self.zoom}
+        self.pending["framing"] = {"axis": self.axis, "extent": self.extent}
         return self.pending
 
     def keep(self, verdict, note=""):
@@ -194,7 +195,7 @@ class Sweep:
 
     def restore(self):
         """Back to the framing the sweep started from."""
-        _, self.zoom = self._apply(self._origin)
+        _, self.extent = self._apply(self._origin)
 
 
 # --- the unit ---------------------------------------------------------------
@@ -231,15 +232,16 @@ def snapshotter(host, regs, fields=characterise.FIELDS):
 
 
 def applier(host, axis, snapshot, settle=8.0, interval=0.4):
-    """Walk the zoom to a value through the pads, then wait for the geometry to
-    stop moving. Returns the settled state and where the zoom actually landed --
-    the engine clamps, so a swept value is not always reachable."""
+    """Walk the capture extent to a value through the pads, then wait for the
+    geometry to stop moving. Returns the settled state and where the extent
+    actually landed -- the engine clamps, so a swept value is not always
+    reachable."""
     from gbs_unit import framing_to
 
     def apply(value):
-        landed = framing_to(host, f"z{axis}", value)
+        landed = framing_to(host, f"e{axis}", value)
         state = wait_until_settled(snapshot, timeout=settle, interval=interval)
-        return state, value if landed is None else landed[f"z{axis}"]
+        return state, value if landed is None else landed[f"e{axis}"]
 
     return apply
 
@@ -319,7 +321,13 @@ def describe(row):
     scale = r.get(scale_field)
     width = None if None in (start, stop) else stop - start
     produced = "-" if not (width and scale) else f"{width * 1024.0 / scale:.2f}"
-    return (f"zoom {row['framing']['zoom']:>5}  {name} {scale}  "
+    # Rows recorded before the framing became an origin and an extent carry a
+    # `zoom` instead, and the tracked index is mostly those. Labelled, because
+    # the two count in opposite directions.
+    framing = row["framing"]
+    swept = (f"extent {framing['extent']:>5}" if "extent" in framing
+             else f"zoom {framing['zoom']:>5}")
+    return (f"{swept}  {name} {scale}  "
             f"capture {start}..{stop}  width {width}  produced {produced}")
 
 
@@ -376,15 +384,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--host", required=True)
     parser.add_argument("--axis", choices=("h", "v"), default="h",
-                        help="which zoom to step (default h)")
-    parser.add_argument("--step", type=int, default=-1,
-                        help="input units per press; negative widens the "
+                        help="which axis to step (default h)")
+    parser.add_argument("--step", type=int, default=1,
+                        help="input units per press; positive widens the "
                              "capture, which is the direction the last sweep "
-                             "ran (default -1)")
+                             "ran (default 1)")
     parser.add_argument("--prefix", default="dense",
                         help="label prefix; numbering continues past the index")
     parser.add_argument("--start", type=int,
-                        help="zoom to jump to before the first press. The "
+                        help="extent to jump to before the first press. The "
                              "sweep begins there; q still restores the framing "
                              "the unit was actually on")
     parser.add_argument("--index", default=characterise.DEFAULT_INDEX)
@@ -393,33 +401,36 @@ def main(argv=None):
                         help="leave the framing where the sweep ended")
     args = parser.parse_args(argv)
 
-    from gbs_unit import get_json
+    from gbs_unit import GEOMETRY_GATED, get_json
 
     with open(os.path.join(HERE, "tv5725_registers.json")) as f:
         regs = json.load(f)
 
     status, framing = get_json(args.host, "/geometry")
+    if status == 404:
+        print(GEOMETRY_GATED)
+        return 1
     if status != 200 or not framing:
         print(f"{args.host} did not answer /geometry (status {status})")
         return 1
-    zoom = framing[f"z{args.axis}"]
+    extent = framing[f"e{args.axis}"]
 
     snapshot = snapshotter(args.host, regs)
-    apply_zoom = applier(args.host, args.axis, snapshot, settle=args.settle)
+    apply_extent = applier(args.host, args.axis, snapshot, settle=args.settle)
     rows = characterise.load(args.index)
 
-    start = zoom if args.start is None else args.start
-    if start != zoom:
-        print(f"  walking zoom {args.axis} {zoom} -> {start}")
-        _, start = apply_zoom(start)
+    start = extent if args.start is None else args.start
+    if start != extent:
+        print(f"  walking extent {args.axis} {extent} -> {start}")
+        _, start = apply_extent(start)
 
-    sweep = Sweep(apply_zoom, snapshot,
+    sweep = Sweep(apply_extent, snapshot,
                   lambda row: characterise.append(args.index, row),
-                  zoom=start, step=args.step, axis=args.axis,
-                  prefix=args.prefix, restore_to=zoom,
+                  extent=start, step=args.step, axis=args.axis,
+                  prefix=args.prefix, restore_to=extent,
                   first=next_number(rows, args.prefix))
 
-    print(f"\n  {args.host}, zoom {args.axis} from {start}, {args.step:+d} a press"
+    print(f"\n  {args.host}, extent {args.axis} from {start}, {args.step:+d} a press"
           f"\n  labels {args.prefix}-{sweep.number:02d} onward, into {args.index}")
     print(HELP)
     try:
@@ -430,7 +441,7 @@ def main(argv=None):
     finally:
         if not args.no_restore:
             sweep.restore()
-            print(f"  framing restored to zoom {args.axis} {sweep.zoom}")
+            print(f"  framing restored to extent {args.axis} {sweep.extent}")
 
     print()
     print(characterise.table(transitions(characterise.load(args.index))))

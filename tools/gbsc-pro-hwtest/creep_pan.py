@@ -27,7 +27,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import field_from, framing_to, get_json, read_segment
+from gbs_unit import (GEOMETRY_GATED, field_from, framing_to, get_json,
+                      read_segment)
 import creep_window
 
 # What lastCapture() clamps against, mirrored from InputLine.h so a mark says
@@ -99,11 +100,11 @@ def stop_of(host):
 
 
 def set_pan(host, wanted):
-    """Walk the pan to `wanted` through the pads, and report where it landed:
-    not every value is reachable, and the clamp is part of what is being crept
-    up on."""
-    landed = framing_to(host, "ph", wanted)
-    return wanted if landed is None else landed["ph"]
+    """Walk the capture start to `wanted` through the pads, and report where it
+    landed: not every value is reachable, and the clamp is part of what is being
+    crept up on."""
+    landed = framing_to(host, "oh", wanted)
+    return wanted if landed is None else landed["oh"]
 
 
 def show(state):
@@ -138,10 +139,13 @@ def main():
         return 1
 
     status, framing = get_json(args.host, "/geometry")
+    if status == 404:
+        print(GEOMETRY_GATED)
+        return 1
     if status != 200 or not isinstance(framing, dict):
         print("could not read /geometry")
         return 1
-    pan = int(framing["ph"])
+    pan = int(framing["oh"])
 
     print(__doc__.split("\n\n")[0])
     print(HELP)

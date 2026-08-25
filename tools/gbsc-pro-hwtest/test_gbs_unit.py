@@ -11,20 +11,26 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import DEFAULT_FRAMING, framing_of
+from gbs_unit import framing_of
 
 
 def test_the_framing_is_projected_out_of_the_report():
-    body = {"zh": 3, "zv": -2, "ph": 13, "pv": 0,
+    body = {"oh": 217, "eh": 590, "ov": 91, "ev": 412,
+            "ch": 1033, "cv": 622,
+            "poh": 2101, "peh": 5711, "pov": 1463, "pev": 6624,
             "lineRateHz": 15575, "lowLineRate": True}
 
-    assert framing_of(body) == {"zh": 3, "zv": -2, "ph": 13, "pv": 0}
+    assert framing_of(body) == {"oh": 217, "eh": 590, "ov": 91, "ev": 412}
 
 
-def test_a_report_carrying_a_measurement_still_reads_as_the_default_framing():
-    body = dict(DEFAULT_FRAMING, lineRateHz=15575, lowLineRate=True)
+def test_the_capturable_region_is_not_part_of_the_framing():
+    """`ch` and `cv` are the denominator the units are taken against, so they
+    move with the source while the framing has not been touched. Projecting
+    them would read a mode change as the user having reframed."""
+    narrower = {"oh": 217, "eh": 590, "ov": 91, "ev": 412, "ch": 890, "cv": 500}
+    wider = dict(narrower, ch=1033, cv=622)
 
-    assert framing_of(body) == DEFAULT_FRAMING
+    assert framing_of(narrower) == framing_of(wider)
 
 
 def test_nothing_read_is_not_a_framing():

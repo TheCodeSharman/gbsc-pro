@@ -125,7 +125,8 @@ def leave_the_bench_usable(request):
     exception: it is the engine's own state, the pad tests move it by design,
     and nothing puts it back -- so a run ends with the picture panned and zoomed
     wherever the last test left it, and the bench looks broken when it is only
-    reframed. Measured after one run: zh 29, zv 14, ph -2, pv -4.
+    reframed. Measured after one run: cropped and panned off the default on
+    both axes.
 
     Registers written OUTSIDE the engine's ownership already restore themselves
     and should keep doing so at the test that writes them, not here: the

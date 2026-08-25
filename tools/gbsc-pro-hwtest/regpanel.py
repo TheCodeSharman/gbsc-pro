@@ -520,7 +520,9 @@ def geometry_now():
 
 
 def framing():
-    """The engine's own framing: zoom and pan per axis, in input units."""
+    """The engine's own framing: where the capture window starts and how far it
+    runs, per axis, in input units. None when the route is absent, which at
+    GBS_DEBUG=0 it is."""
     body = _get("/geometry")
     if not body:
         return None
@@ -550,15 +552,17 @@ def pan(dx, dy):
     the geometry itself and write the answer, which made it a second owner of
     the same registers and a second implementation to keep in step.
 
-    `ph` and `pv` are the engine's pan in input units -- the units this panel's
-    step box already counts in, so a delta passes straight through.
+    `oh` and `ov` are where the capture window starts, in input units -- the
+    units this panel's step box already counts in, so a delta passes straight
+    through.
     """
     held = framing()
     if held is None:
-        return {"ok": False, "why": "could not read /geometry"}
+        return {"ok": False, "why": gbs_unit.GEOMETRY_GATED
+                if gbs_unit.geometry_gated(HOST) else "could not read /geometry"}
     if not dx and not dy:
         return {"ok": False, "why": "no movement asked for"}
-    wanted = dict(held, ph=held["ph"] + dx, pv=held["pv"] + dy)
+    wanted = {"oh": held["oh"] + dx, "ov": held["ov"] + dy}
     if set_framing(**wanted) is None:
         return {"ok": False, "why": "the engine refused the framing"}
     time.sleep(0.2)
@@ -568,15 +572,17 @@ def pan(dx, dy):
 def rescale(dh, dv):
     """Zoom, by asking the engine. It crops; the picture keeps filling the raster.
 
-    **THE SIGN FLIPS HERE.** These pads send a NEGATIVE delta to crop in, where
-    the engine's zoom is positive to crop in, so it is negated on the way past.
+    These pads send a NEGATIVE delta to crop in, and `eh`/`ev` are how far the
+    capture window runs -- so cropping in is the extent going DOWN and the delta
+    passes through with its own sign.
     """
     held = framing()
     if held is None:
-        return {"ok": False, "why": "could not read /geometry"}
+        return {"ok": False, "why": gbs_unit.GEOMETRY_GATED
+                if gbs_unit.geometry_gated(HOST) else "could not read /geometry"}
     if not dh and not dv:
         return {"ok": False, "why": "no scale change asked for"}
-    wanted = dict(held, zh=held["zh"] - dh, zv=held["zv"] - dv)
+    wanted = {"eh": held["eh"] + dh, "ev": held["ev"] + dv}
     if set_framing(**wanted) is None:
         return {"ok": False, "why": "the engine refused the framing"}
     time.sleep(0.2)
@@ -803,8 +809,8 @@ async function geo(){
     '<div class="d" style="margin-top:4px">units per press</div></div>'+
     '<div style="display:inline-block;vertical-align:top">'+
     '<div class="d" style="margin-bottom:4px">engine framing</div>'+
-    (f? '<div class="ok" style="margin-top:6px">zoom '+f.zh+'/'+f.zv+
-        ' &nbsp;pan '+f.ph+'/'+f.pv+'</div>'
+    (f? '<div class="ok" style="margin-top:6px">capture h '+f.oh+'+'+f.eh+'/'+f.ch+
+        ' &nbsp;v '+f.ov+'+'+f.ev+'/'+f.cv+'</div>'
       : '<div class="warn" style="margin-top:6px">/geometry did not answer</div>')+
     '</div>'+
     '<p class="d">capture '+(s.IF_HB_ST2-s.IF_HB_SP2)+' IF units ['+
