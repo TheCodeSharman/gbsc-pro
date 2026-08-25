@@ -296,7 +296,12 @@ TEST_CASE("a line count outside what any source runs is never measured against")
 
     CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
     CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST
-    CHECK_FALSE(Wire.touched[5][0x12]);   // PLLAD_MD -- not even measured
+
+    // The divider IS written, and to the reference rather than to anything
+    // derived from 97: a count is only a measurement once the ADC is running at
+    // a divider this pass chose, so refusing to touch it leaves the refusal
+    // depending on the state that caused it.
+    CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
 }
 
 TEST_CASE("entering bypass leaves nothing to solve")
@@ -557,7 +562,7 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
 
 // --- a divider carried over from the previous mode ---------------------------
 
-TEST_CASE("a divider the source cannot lock to is corrected without help")
+TEST_CASE("a divider the source cannot lock to is replaced before it is believed")
 {
     // A divider carried from a faster line asks the ADC PLL for a frequency
     // under its lock range, and the PLL locks to every other hsync instead: the
@@ -589,23 +594,15 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
     // standard, so the engine is told the mode changed -- but the divider it is
     // holding is the one that made the count unmeasurable.
     seedField(0, 0x1B, 0, 11, 155);    // one line counted per two sent
-    seedField(0, 0x17, 0, 12, 2119);   // twice the samples, wobbling by one
-    seedField(0, 0x19, 0, 12, 181);
+    seedField(0, 0x17, 0, 12, 2247);   // and twice the samples per line, which
+    seedField(0, 0x19, 0, 12, 181);    // is the evidence of the multiple
     g_fieldRate = 50.08f;
     engine.modeChanged(benchMode(), 4);
 
-    // The correction costs a field rate measurement, so it waits for the count
-    // to prove it is not going to settle on its own. Neither register holds
-    // still while it does, so a gate wanting either to repeat never opens.
-    for (uint16_t i = 0; i < SourceMeasurement::UnmeasurableRunLimit - 1; ++i) {
-        seedField(0, 0x1B, 0, 11, 155 + (i % 2));
-        seedField(0, 0x17, 0, 12, 2247 + (i % 5));
-        CHECK_FALSE(engine.poll());
-    }
-    CHECK(Adc::PLLAD_MD::read() == 1124);
-
-    // A divider correction is not a solve: the mode change has not landed, so
-    // the capture stays frozen and poll() still says no.
+    // Nothing to wait for. The reference is written before the count is read,
+    // so the divider that made the count unmeasurable is gone on the first
+    // pass -- and replacing it is not a solve, so the capture stays frozen and
+    // poll() still says no.
     CHECK_FALSE(engine.poll());
     CHECK(Adc::PLLAD_MD::read() == 2250);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1125);
@@ -801,6 +798,30 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 2 * 311);
     }
+}
+
+TEST_CASE("a divider from another mode does not stop the source being counted")
+{
+    // The line count is a MEASUREMENT, taken by the sync processor in ADC
+    // clocks, so it is only meaningful once the ADC is running at a divider
+    // this pass chose. Left on the previous mode's, the PLL sits outside its
+    // lock range and the count that comes back is not the source's -- and the
+    // gate that count feeds is what stands between here and the reference being
+    // applied. Measured on the bench: a 311-line source read 155 with the
+    // divider left at 1124, held indefinitely, and writing the reference by
+    // hand moved it to 311 with the PLL locking at once.
+    seedBenchSource();
+    seedField(5, 0x12, 0, 12, 1124);   // PLLAD_MD, a progressive mode's
+    seedField(0, 0x1B, 0, 11, 155);    // the count that divider produces
+
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+
+    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
 }
 
 TEST_CASE("an interrupt re-measures a source whose line count did not move")

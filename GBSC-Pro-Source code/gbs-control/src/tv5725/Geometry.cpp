@@ -179,14 +179,20 @@ bool Geometry::poll()
     // makes the line count usable here and nothing else.
     solveScanMode();
 
-    // The cheap gate. Everything below this line measures, and the field rate
-    // costs up to 250 ms a vsync pulse.
-    if (!sampling_.sampleSteady())
-        return recoverSampling();
-
-    // Measured from a state this pass chose, not from whatever the last mode
-    // left in PLLAD_MD. docs/investigations/field-rate-measured-downstream.md
+    // **BEFORE THE LINE COUNT, because the line count is a measurement too.**
+    // The sync processor counts in ADC clocks, so on the previous mode's
+    // divider the PLL sits outside its lock range and the count that comes back
+    // is not the source's -- and that count is what the gate below is reading.
+    // Applying the reference afterwards puts the fix on the far side of the
+    // gate its absence holds shut.
+    // docs/investigations/field-rate-measured-downstream.md
     holdReferenceSampling();
+
+    // The cheap gate. Everything below this line measures, and the field rate
+    // costs up to 250 ms a vsync pulse. The reference above is what opens it:
+    // a count taken through the previous mode's divider is not the source's.
+    if (!sampling_.sampleSteady())
+        return false;
 
     // THE measurement of the source for this pass. Everything below derives
     // from it -- the divider, the raster, both windows -- so nothing can end up
@@ -329,30 +335,9 @@ void Geometry::writeSampling()
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
 
-// The gate above refuses a count outside what any source runs, and one cause of
-// such a count is the divider itself: held over from a mode whose line rate was
-// higher, it asks the ADC PLL for a frequency under its lock range and the PLL
-// locks to every other hsync. The refusal is then self-latching -- the count
-// never becomes measurable, so nothing recomputes the divider that made it
-// unmeasurable. docs/investigations/divider-latched-measurement.md
-bool Geometry::recoverSampling()
-{
-    if (!sampling_.recoverDivider(modeOversample_))
-        return false;
-
-    solveScanMode();
-    writeSampling();
-    samplingPending_ = true;
-    return false;
-}
-
-// **THIS MUST NOT USE sampling_.sampleSteady().** That call carries the
-// unmeasurable run recoverDivider() gates on, and letting it fill while the
-// engine is idle makes the recovery fire on the first poll of the next mode
-// change -- inferring a divider from a count that was never a measurement.
-// Measured: it wrote IF_HSYNC_RST 202 and left PLLAD_MD on the previous mode's
-// value, with the solve then unable to complete through a line counter wrapping
-// at 202.
+// **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
+// steadiness run, and filling it while the engine is idle leaves the next mode
+// change's first poll believing a count from the mode before it.
 bool Geometry::sourceMoved()
 {
     // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
@@ -390,7 +375,8 @@ bool Geometry::sourceMoved()
 
 void Geometry::solveScanMode()
 {
-    const uint16_t lines = SourceMeasurement::measureSourceLines();
+    const uint16_t lines =
+        SourceMeasurement::measureSourceLinesCorrected(sampling_.divider());
     if (!SourceMeasurement::countIsSource(lines))
         return;
 

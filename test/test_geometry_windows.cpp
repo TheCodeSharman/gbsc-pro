@@ -253,8 +253,12 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
 
     engine.modeChanged(&Tv5725::Mode1080p, 4);
     CHECK_FALSE(pollUntilSolved(engine));
-    CHECK_FALSE(Wire.touched[1][0x1C]);   // IF_VB_ST
-    CHECK_FALSE(Wire.touched[1][0x1E]);   // IF_VB_SP
+
+    // The window is parked at the reference, not solved for 97 lines: the
+    // input formatter emits nothing to measure while its vertical blank lies
+    // outside the frame, so leaving it alone would defer for ever.
+    CHECK(Tv5725::InputFormatter::IF_VB_ST::read() == 0);
+    CHECK(Tv5725::InputFormatter::IF_VB_SP::read() == 2);
 
     g_fieldRate = 50.08f;
 }

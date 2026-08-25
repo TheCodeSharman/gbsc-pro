@@ -48,14 +48,14 @@ TEST_CASE("the bring-up state holds the block in reset and programs nothing")
     }
 }
 
-TEST_CASE("disabling holds the reset and is what the bring-up state is")
+TEST_CASE("holding the reset is what the bring-up state is")
 {
     Wire.reset();
     Wire.poison(Poison);
     HdBypass::enable();
     CHECK(HdBypass::enabled());
 
-    HdBypass::disable();
+    HdBypass::hold();
 
     CHECK(Wire.field(0, 0x47, 3, 1) == 0);
     CHECK_FALSE(HdBypass::enabled());
@@ -69,7 +69,7 @@ TEST_CASE("enabled() reports the block, not what anyone remembers writing")
     Wire.reset();
     Wire.poison(Poison);
 
-    HdBypass::disable();
+    HdBypass::hold();
     CHECK_FALSE(HdBypass::enabled());
 
     HdBypass::enable();
@@ -189,4 +189,27 @@ TEST_CASE("the block writes the addresses it owns and no others")
         CAPTURE(r);
         CHECK(Wire.touched[1][r] == (r >= 0x30 && r <= 0x55));
     }
+}
+
+TEST_CASE("the reset can be cycled without reloading the configuration")
+{
+    // resetDigital() holds every block's reset and puts back the ones it found
+    // released. The bypass switches program the raster, both sync windows and
+    // the RGB converter settings AFTER enable(), so a release that reloads the
+    // block discards them: HD_INI_ST goes back to 1046 and the output raster
+    // the encoder sees is no longer the one the switch built.
+    Wire.reset();
+    Wire.poison(Poison);
+    HdBypass::enable();
+    HdBypass::HD_INI_ST::write(0);
+    HdBypass::HD_MATRIX_BYPS::write(1);
+    HdBypass::HD_DYN_BYPS::write(1);
+
+    HdBypass::hold();
+    HdBypass::release();
+
+    CHECK(HdBypass::enabled());
+    CHECK(Wire.field(1, 0x39, 0, 11) == 0);
+    CHECK(Wire.field(1, 0x30, 1, 1) == 1);
+    CHECK(Wire.field(1, 0x30, 2, 1) == 1);
 }

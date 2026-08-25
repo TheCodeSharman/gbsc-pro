@@ -1358,7 +1358,7 @@ void setResetParameters()
     GBS::SFTRST_DEC_RSTZ::write(1);
     GBS::SFTRST_MODE_RSTZ::write(1);
     GBS::SFTRST_SYNC_RSTZ::write(1);
-    Tv5725::HdBypass::disable();
+    Tv5725::HdBypass::hold();
     GBS::SFTRST_INT_RSTZ::write(1);
     GBS::INTERRUPT_CONTROL_01::write(0xff);
     GBS::INTERRUPT_CONTROL_00::write(0xff);
@@ -2431,7 +2431,7 @@ void resetDigital()
     GBS::SFTRST_DEC_RSTZ::write(1);
     GBS::SFTRST_MODE_RSTZ::write(1);
     GBS::SFTRST_SYNC_RSTZ::write(1);
-    Tv5725::HdBypass::disable();
+    Tv5725::HdBypass::hold();
     GBS::SFTRST_INT_RSTZ::write(1);
     if (rto->outModeHdBypass) {
         GBS::SFTRST_IF_RSTZ::write(0);
@@ -2441,7 +2441,7 @@ void resetDigital()
         GBS::SFTRST_FIFO_RSTZ::write(0);
         GBS::SFTRST_OSD_RSTZ::write(0);
         GBS::SFTRST_VDS_RSTZ::write(0);
-        Tv5725::HdBypass::enable();
+        Tv5725::HdBypass::release();
         return;
     }
     GBS::SFTRST_IF_RSTZ::write(1);
@@ -2452,7 +2452,7 @@ void resetDigital()
     GBS::SFTRST_OSD_RSTZ::write(0);
     GBS::SFTRST_VDS_RSTZ::write(1);
     if (keepBypassActive) {
-        Tv5725::HdBypass::enable();
+        Tv5725::HdBypass::release();
     }
     GBS::SFTRST_IF_RSTZ::write(1);
     GBS::SFTRST_DEINT_RSTZ::write(1);
@@ -5125,6 +5125,18 @@ void runSyncWatcher() //
             }
         }
     }
+
+    // A source that returns at the SAME line count and a different field rate is
+    // invisible to Geometry::sourceMoved(), which has only the count to go on, so
+    // the engine holds a rate the source no longer runs at and nothing re-arms it.
+    // The chip latches the disturbance instead. Measured: a wrong rate solved
+    // against a correct count survives indefinitely and takes /sc?~ to clear.
+    //
+    // Separate-sync only. Bit 1 is claimed inside the csync branch below, and the
+    // engine waits behind its own steadiness run before measuring -- arming on
+    // arrival reads the source mid-transition.
+    if (!rto->syncTypeCsync && Tv5725::Interrupts::takeSourceDisturbed())
+        geometry.sourceInterrupted();
 
     static unsigned long preemptiveSogWindowStart = millis();
     static const uint16_t sogWindowLen = 3000;

@@ -47,7 +47,7 @@ void BringUp::holdAllBlocks()
     Chip::SFTRST_MODE_RSTZ::write(0);
     Chip::SFTRST_SYNC_RSTZ::write(0);
     Chip::SFTRST_INT_RSTZ::write(0);
-    HdBypass::disable();
+    HdBypass::hold();
 }
 
 }  // namespace Tv5725

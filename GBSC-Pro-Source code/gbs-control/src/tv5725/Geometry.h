@@ -120,7 +120,6 @@ private:
 
     // A divider the source cannot lock to, moved off. Always false: correcting
     // a divider is not a solve, and the mode change has not landed.
-    bool recoverSampling();
 
     // Output pixels -> input units. A press of nothing has to be skipped
     // outright: stepUnits() floors at one granule, so an axis the press did not

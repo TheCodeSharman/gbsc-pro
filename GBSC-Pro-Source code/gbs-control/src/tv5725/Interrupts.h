@@ -88,14 +88,17 @@ public:
 
     // Whether the source has disturbed since this was last asked, and claim it.
     //
-    // Bits 0 and 1, SOG bad and SOG switch. Measured across a source mode
-    // change sampled from loop() at 30 ms, they fire together at ~0.9-1.1 s in
-    // BOTH directions; bit 3, the one the datasheet calls "input source switch
-    // the mode", fired on one direction only and 3.4 s in.
+    // Bit 1, SOG switch. Measured across a source mode change sampled from
+    // loop() at 30 ms, bits 0 and 1 fire together at ~0.9-1.1 s in BOTH
+    // directions, so bit 1 alone is signal enough; bit 3, the one the datasheet
+    // calls "input source switch the mode", fired on one direction only and
+    // 3.4 s in.
     //
-    // Reading is claiming: the bits are latched, so one left unacknowledged
-    // reports the same disturbance on every later poll, and they do not persist
-    // either -- nothing polling them at loop rate sees them at all.
+    // **Bit 0 is deliberately not read.** Reading is claiming -- the bits are
+    // latched, so one left unacknowledged reports the same disturbance on every
+    // later poll -- and bit 0 already has an owner on every sync path, which
+    // counts consecutive sets to decide a separate-sync source should move to
+    // csync. Two claimants and the count never reaches its threshold.
     static bool takeSourceDisturbed();
 
     // Every static register of this subsystem, in address order.

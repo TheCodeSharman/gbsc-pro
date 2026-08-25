@@ -117,6 +117,18 @@ public:
     // gross-error nets rather than a classification.
     static bool countIsSource(uint16_t lines);
 
+    // The source's line count, corrected for a divider the ADC PLL cannot lock
+    // to. The sync processor counts in ADC clocks, so on too small a divider the
+    // PLL locks to every Nth hsync: it reports a count N times too low and N
+    // times the samples per line. STATUS_SYNC_PROC_HTOTAL against the divider
+    // gives N.
+    //
+    // **It needs no field rate**, which is the point -- the scan mode, and the
+    // reference divider that follows it, are needed BEFORE anything can be
+    // measured, and an uncorrected count leaves both stuck on the value that
+    // corrupted them.
+    static uint16_t measureSourceLinesCorrected(uint16_t divider);
+
     // Take ONE line-count sample and say whether enough consecutive ones have
     // agreed. A single register read, so a caller can ask on every pass;
     // measureLineRate() spins for up to 250 ms a vsync pulse and cannot be
@@ -126,31 +138,12 @@ public:
     // settling source is lineRateFrom()'s cross-check of the rate against the
     // count, so letting one through early costs a measurement, not a wrong
     // answer. A count outside what any source runs never settles, because the
-    // 97 a preset load leaves behind is perfectly steady -- and it also counts
-    // the unmeasurable run behind it, which is what recoverDivider() goes on.
+    // 97 a preset load leaves behind is perfectly steady.
     bool sampleSteady();
 
     // The count the steadiness gate has settled on. Meaningful only when
     // sampleSteady() has returned true; before that it is whatever arrived last.
     uint16_t steadyLines() const;
-
-    // How many consecutive UNMEASURABLE samples make a divider correction worth
-    // a field rate measurement. Consecutive unmeasurable, not consecutive
-    // identical: the trapped count wobbles by a line and holds no single value
-    // for long, so a gate wanting one to repeat never opens.
-    static const uint16_t UnmeasurableRunLimit = 200;
-
-    // How many corrections may be attempted before the source is taken as one
-    // nothing here can fix. Cleared by a measurement that works, and by a mode
-    // change.
-    static const uint8_t RecoveryAttempts = 3;
-
-    // Move the divider off one the ADC PLL cannot lock to, using the multiple
-    // between the sample count and the divider as the evidence. Writes no
-    // register: the caller owns the three the divider lives in, and the order
-    // the latch requires. False, with nothing moved, for every reading that is
-    // ambiguous.
-    bool recoverDivider(uint8_t oversample);
 
     // A mode change is about to move the count and the rate, so the run so far
     // and the rate agreed on mean nothing.
@@ -331,10 +324,7 @@ private:
 
     uint16_t steadyLines_;
     uint8_t steadyRun_;
-    uint16_t unmeasurableRun_;
-    uint16_t unmeasurableLines_;
     uint8_t rateAttempts_;
-    uint8_t recoveries_;
 };
 
 }  // namespace Tv5725

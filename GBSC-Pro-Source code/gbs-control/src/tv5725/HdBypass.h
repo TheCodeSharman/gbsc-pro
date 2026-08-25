@@ -9,13 +9,13 @@ namespace Tv5725 {
 // carrying its own raster generator and its own blanking straight to the DAC.
 //
 // The block's reset lives here rather than with the rest of s0_46/s0_47, so one
-// class owns the whole subsystem: init() is the off state and holds it, enable()
-// releases it and programs it. Scaling never goes through the block, so the
+// class owns the whole subsystem. Scaling never goes through the block, so the
 // bring-up leaves it off.
 //
+// The reset and the configuration are two axes, and only enable() moves both.
 // The bypass switches overwrite the raster and both sync windows for the mode
-// they are entering, so what enable() establishes alone is the dynamic range,
-// the DVI-mode blanking and the programmed blank level.
+// they are entering, so a caller that cycles the reset and reloads the block
+// discards what the switch programmed.
 //
 // s1_56..s1_5f carry no datasheet field and have no writer here.
 class HdBypass {
@@ -142,7 +142,11 @@ public:
 
     // Hold the reset. Nothing is programmed behind it, because a block in reset
     // is not configurable.
-    static void disable();
+    static void hold();
+
+    // Release the reset and program nothing, for a caller putting back a reset
+    // it holds across an unrelated change.
+    static void release();
 
     // Whether the block is out of reset. Read from the chip because it is the
     // only thing that knows: a caller clearing the whole of s0_47 and putting

@@ -32,17 +32,19 @@ TEST_CASE("a quiet source has not disturbed")
     CHECK_FALSE(Interrupts::takeSourceDisturbed());
 }
 
-TEST_CASE("SOG bad and SOG switch both mean the source disturbed")
+TEST_CASE("SOG switch means the source disturbed; SOG bad belongs to someone else")
 {
     // Measured across a source mode change, sampled from loop() at 30 ms:
-    // bits 0 and 1 fire together at ~0.9-1.1 s, in BOTH directions. Bit 3, the
-    // one the datasheet calls "input source switch the mode", fired on one
-    // direction only and 3.4 s in, so it is not the trigger.
-    SUBCASE("bit 0 alone") {
-        seedStatus(0x01);
-        CHECK(Interrupts::takeSourceDisturbed());
-    }
-
+    // bits 0 and 1 fire together at ~0.9-1.1 s, in BOTH directions, so bit 1
+    // alone is signal enough. Bit 3, the one the datasheet calls "input source
+    // switch the mode", fired on one direction only and 3.4 s in.
+    //
+    // **Bit 0 is NOT read here, and that is the point.** Reading a latched bit
+    // claims it, and bit 0 already has an owner on every sync path: the sketch
+    // acknowledges it unconditionally every 900 ms and counts consecutive sets
+    // to decide a separate-sync source should switch to csync. A second reader
+    // wins that race at loop rate and the counter never reaches its threshold,
+    // so the recovery disappears with nothing to show for it.
     SUBCASE("bit 1 alone") {
         seedStatus(0x02);
         CHECK(Interrupts::takeSourceDisturbed());
@@ -53,10 +55,28 @@ TEST_CASE("SOG bad and SOG switch both mean the source disturbed")
         CHECK(Interrupts::takeSourceDisturbed());
     }
 
+    SUBCASE("bit 0 alone belongs to the sync-type heuristic") {
+        seedStatus(0x01);
+        CHECK_FALSE(Interrupts::takeSourceDisturbed());
+        CHECK_FALSE(Wire.touched[0][IntReset]);
+    }
+
     SUBCASE("a bit that means something else does not") {
         seedStatus(0x80);   // STATUS_INT_INP_CSYNC
         CHECK_FALSE(Interrupts::takeSourceDisturbed());
     }
+}
+
+TEST_CASE("acknowledging SOG switch leaves SOG bad's acknowledge alone")
+{
+    // Both resets share s0_58, so a byte-wide write would carry bit 0 with it
+    // and acknowledge a condition this has no business claiming.
+    seedStatus(0x02);
+    Wire.bank[0][IntReset] = 0x01;
+
+    REQUIRE(Interrupts::takeSourceDisturbed());
+
+    CHECK((Wire.bank[0][IntReset] & 0x01) == 0x01);
 }
 
 TEST_CASE("taking the disturbance acknowledges it")

@@ -4,14 +4,10 @@ namespace Tv5725 {
 
 bool Interrupts::takeSourceDisturbed()
 {
-    const bool disturbed = STATUS_INT_SOG_BAD::read() == 1 ||
-                           STATUS_INT_SOG_SW::read() == 1;
-    if (!disturbed)
+    if (STATUS_INT_SOG_SW::read() != 1)
         return false;
 
-    INT_CONTROL_RST_SOGBAD::write(1);
     INT_CONTROL_RST_SOGSWITCH::write(1);
-    INT_CONTROL_RST_SOGBAD::write(0);
     INT_CONTROL_RST_SOGSWITCH::write(0);
     return true;
 }
