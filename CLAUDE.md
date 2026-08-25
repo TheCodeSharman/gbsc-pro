@@ -134,8 +134,15 @@ diagnosing "the unit" while able to observe roughly a third of it.
   `sendSavedInputToAvModule()`, which transmits the frame.
   **The hole left is `SeleInputSource == 0`** — nothing meaningful saved, which
   is also what a short preferences read produces — where the `default:` case
-  sends nothing and the two can still come up disagreeing. Picking the input on
-  the OLED repairs that, and saves the preference so the next boot sends it.
+  sends nothing and the two can still come up disagreeing. Picking the input
+  repairs that, and saves the preference so the next boot sends it.
+  **`/input?src=…` does it without a bench trip** — `rgbs rgsb vga ypbpr sv av`,
+  queued for `loop()`, so a 200 means understood rather than selected. A unit
+  that comes back from a flash showing no picture, with `STATUS_SYNC_PROC_VTOTAL`
+  and `HTOTAL` at 0 and `DAC_RGBS_PWDNZ` 0, is usually this and not a fault worth
+  diagnosing. **The bench RiscPC is on `vga`**, which is the only input raising
+  `asw_01`; guessing `rgbs` because the source has composite sync wastes a
+  detection sweep per guess.
   `applySavedInputSource()` records what it did as the boot log's `INPUT:` line,
   **which the default build does not keep**: `BOOTLOG_BYTES=0`, so rebuild with
   `BOOTLOG_BYTES=2048` before trying to tell "no frame sent" from "frame sent and
@@ -668,7 +675,7 @@ twelve tables while they existed, which is what `BringUp` was built from.
   screen.
   And **a wider raster costs zoom range, because the zoom floor is
   `raster / maxMagnification` while the default capture is a property of the
-  INPUT line alone** — `1126 x 0.76 x 1.04 = 890` here — so the two do not
+  INPUT line alone** — `1126 x 0.864 = 973` here — so the two do not
   track and widening the output silently eats the travel. That is the mechanism;
   the numbers below are what it cost, twice.
 
@@ -917,11 +924,44 @@ one the same way; the rules below are each a wasted session.
   whatever the playback stage fetches, which looks like a fault and is only
   absence of data. Establish that there IS picture under the window before
   reading anything as a floor — force the magnification if need be.
+- **A MAPPING FROM PHOTO COLUMNS TO OUTPUT PIXELS DOES NOT SURVIVE AN OUTPUT MODE
+  CHANGE.** Measured 57 columns adrift — a fifth of the picture — after a
+  1080p/960p/1080p round trip with the raster registers identical either side:
+  the encoder re-acquires and where it puts the picture on the panel is its
+  choice. Calibrate by differencing a frame at one `VDS_DIS_?B_ST` against
+  frames at others, so the difference IS the strip the register blanked, and
+  **re-calibrate after anything that re-locks the encoder**. Read against a stale
+  mapping, a correct far edge reads as 110 px of overshoot and the line's repeat
+  reads as the picture.
 - **Separate what the board must emit from what one display happens to show.**
   The MS9288A consumes the scaler's analog blanking and generates HDMI blanking
   of its own, so the minimum the scaler must emit is a board property, measured
   once, portable. Where a set stops painting is that set's overscan. Sizing a
   constant from the second reads as a fix and ships one panel's number.
+- **BYPASS IS THE ONLY REFERENCE FOR WHERE THE PANEL'S PICTURE ENDS.** Nothing on
+  the scaling path can supply it, because whatever the scaler blanks reads as
+  bezel from the far end. An 800x600 source is over the 535-line threshold, so it
+  is forced into RGBHV bypass and passes straight through filling the screen, and
+  its extent IS the panel's painted area:
+  `printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502`. Take it at the
+  same camera position as the frame being judged and compare the two.
+- **PUT COLOUR AGAINST THE EDGE BEFORE MEASURING ONE.** At a default framing the
+  last thing on screen is captured INPUT blanking, so "where the picture ends"
+  measures the source's border and not the output's edge — a comparison against
+  bypass is out by the whole border. Zoom in and pan until content is hard against
+  the edge under test. Panning `-` moves the capture left and puts the image
+  against the RIGHT edge; `+` exposes the source's blanking there instead.
+- **A FIXED BAND OF A PHOTOGRAPH IS COMPARABLE ONLY WHILE THE PICTURE STAYS PUT.**
+  The sync pulse, the playback fetch and the scale all move the picture, and a
+  count inside a fixed band then reports the movement rather than the artefact —
+  in both directions, so a starved fetch scores *cleaner* than a clean edge. It
+  is the same error as measuring a fixed span from a moving origin. Anchor the
+  band to a feature of the picture, and print that feature's position with every
+  frame so a shift is visible in the results rather than hidden in them.
+- **An artefact that leaves the screen is hidden, not cured**, and which one it
+  is decides whether it travels. Move the thing that generates it back onto the
+  panel and re-measure before concluding anything: shift the picture back by the
+  same amount the change moved it, then compare like with like.
 
 ## Conventions
 
@@ -1057,6 +1097,16 @@ firmware C++.
   instead of the writer. A test that fails for the stated reason first is what
   stops that. Write the test at the cheapest layer that really exercises the
   behaviour, watch it fail, then make it pass.
+- **Load the `troubleshooting` skill before diagnosing a fault**, and before
+  reaching for a fix that "should" work. The expensive mistake here is a
+  hypothesis formed before the instruments are read, and this file is a list of
+  them: which vsync sample failed, inferred twice and wrong both times; a dead
+  source diagnosed from four invented register addresses while the picture on
+  the screen was perfect; four geometry models proposed in one evening and three
+  refuted. The instruments are cheap and answer first — the serial console,
+  `/geometry`, fields read by NAME, a `tv-snap` photograph, a register diff
+  against a known-good. Read them, carry two or three candidates, and pick the
+  one experiment that separates them.
 - Firmware changes ship as a bounded commit plus a commit adding a runtime
   acceptance test. No source-parsing tests — test behaviour, not implementation.
   No tests for removals.
@@ -1071,10 +1121,14 @@ firmware C++.
   so a bare `pytest --host=…` stays safe to run on a working unit.
   **`--source` leaves the picture wrong, and a cold boot is the fix** — say so
   before running it if someone is watching the screen. Measured 2026-08-15: the
-  pad tests left the framing at `zh 176 / ph 8` and an oversampling test left
-  `PLLAD_MD` 4012 against the 2548 the source wants, so the picture is zoomed
-  and softer. Neither is persisted, so an ESP reset re-detects and re-solves
-  both — `nix develop -c esptool --port /dev/ttyUSB0 --after hard_reset
-  --no-stub flash_id`, then check `/geometry` reads `0,0,0,0`.
+  pad tests left the framing cropped and panned well off the default, and an
+  oversampling test left `PLLAD_MD` 4012 against the 2548 the source wants, so
+  the picture is zoomed and softer. Neither is persisted, so an ESP reset
+  re-detects and re-solves both — `nix develop -c esptool --port /dev/ttyUSB0
+  --after hard_reset --no-stub flash_id`. **There is no framing constant to
+  check it against**: `/geometry` reports where the capture window starts and
+  how far it runs, and the default is the placement the solve computes for the
+  source, not four zeroes. Reset once, note what it lands on, and compare with
+  that. The route is behind `GBS_DEBUG`, so a 404 is a build without it.
 - The Makefile never shells out to nix; entering the dev shell is the caller's
   job, so the rules work outside NixOS.
