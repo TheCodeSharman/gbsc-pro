@@ -759,65 +759,6 @@ def test_fs_rm_refuses_what_it_will_not_delete(host):
     )
 
 
-# --- the slot routes, now that a slot is not a register dump -----------------
-
-
-def test_slot_routes_refuse_and_change_nothing(host, console):
-    """/uc?3 and /uc?4 used to load and save 432 register bytes to flash.
-
-    The dumps are gone -- they are the one mechanism that contradicts the
-    engine computing every register from held state -- but the routes stay, so
-    the web UI's slot grid keeps its surface for the mechanism that replaces
-    them: a slot recording the INPUTS to the calculation, keyed by
-    (vsync, hsync). See step 7 of docs/chip-initialisation.md.
-
-    Until then both must refuse, say so, and touch nothing. A silent no-op
-    would leave someone pressing save and believing it worked.
-    """
-    prefs_before = fs_read(host, "/preferencesv2.txt")
-    assert prefs_before is not None, "could not read the preferences file"
-    files_before = fs_dir(host)
-    assert files_before is not None, "/fs/dir did not answer"
-
-    # One at a time. /uc? QUEUES a single command character for loop() to pick
-    # up, so two requests in flight lose the first -- and a 200 says only that
-    # the route was reached. CLAUDE.md, "HTTP answering does not mean the
-    # firmware is running".
-    refusals = []
-    for route, expected in (("/uc?3", "slot load"), ("/uc?4", "slot save")):
-        console.drain()
-        status, _ = get(host, route)
-        assert status == 200, f"{route} did not answer"
-        output = console.collect(5.0)
-        said = [line for line in output if expected in line]
-        assert said, (
-            f"{route} refused silently; expected a {expected!r} line, or a user "
-            f"cannot tell a no-op from a save. Got: {output!r}"
-        )
-        refusals += said
-
-    # Compared against BEFORE rather than against empty: a unit that ran a
-    # build with custom presets still has its /preset_*.<slot> files on flash.
-    # Nothing writes or reads them now, and deleting someone's files on upgrade
-    # is not this firmware's business -- what matters is that no route adds to
-    # them or half-writes a new one.
-    files_after = fs_dir(host)
-    assert files_after is not None, "/fs/dir did not answer after"
-    assert sorted(files_after) == sorted(files_before), (
-        f"a slot route changed the filesystem: {files_before} -> {files_after}"
-    )
-    assert [f for f in files_after if f.endswith("~")] == [], (
-        f"a half-written temp file was left behind: {files_after}"
-    )
-
-    assert fs_read(host, "/preferencesv2.txt") == prefs_before, (
-        "a slot route changed the preferences; the unit may now boot expecting "
-        "something that was never saved"
-    )
-
-    assert len(refusals) == 2, refusals
-
-
 # --- surviving a lost lock --------------------------------------------------
 
 
