@@ -9183,17 +9183,35 @@ void startWebserver()
     // The framing: the engine's only state, and the one thing writing registers
     // back cannot restore. READ ONLY -- it moves through the pads, so nothing
     // can arrange a framing the user cannot reach.
+    //
+    // Diagnostics: no product path reads it, only the bench instruments and the
+    // hardware suite, so it goes with the rest of them at GBS_DEBUG=0. A build
+    // without it answers 404 rather than reporting an empty framing.
+#if GBS_DEBUG
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[160];
+        char body[288];
         snprintf_P(body, sizeof(body),
-            PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d,"
+            PSTR("{\"oh\":%u,\"eh\":%u,\"ov\":%u,\"ev\":%u,"
+                 "\"ch\":%u,\"cv\":%u,"
+                 "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s}"),
-            geometry.framing().horizontalZoom(), geometry.framing().verticalZoom(),
-            geometry.framing().horizontalPan(), geometry.framing().verticalPan(),
+            geometry.originUnitsOn(Tv5725::AxisHorizontal),
+            geometry.extentUnitsOn(Tv5725::AxisHorizontal),
+            geometry.originUnitsOn(Tv5725::AxisVertical),
+            geometry.extentUnitsOn(Tv5725::AxisVertical),
+            geometry.capturableOn(Tv5725::AxisHorizontal),
+            geometry.capturableOn(Tv5725::AxisVertical),
+            // The proportion itself, in ten-thousandths: the ESP's printf has
+            // no %f, and this is the state the framing table stores.
+            (int)lrintf(geometry.framing().originOn(Tv5725::AxisHorizontal) * 10000.0f),
+            (int)lrintf(geometry.framing().extentOn(Tv5725::AxisHorizontal) * 10000.0f),
+            (int)lrintf(geometry.framing().originOn(Tv5725::AxisVertical) * 10000.0f),
+            (int)lrintf(geometry.framing().extentOn(Tv5725::AxisVertical) * 10000.0f),
             (unsigned long)geometry.sourceLineRateHz(),
             geometry.sourceLowLineRate() ? "true" : "false");
         request->send(200, "application/json", body);
     });
+#endif
 
     // Frame time lock, from held state only -- this runs in a network callback,
     // so it must not touch the bus. Whether the part AGREED to take PCLKIN is a

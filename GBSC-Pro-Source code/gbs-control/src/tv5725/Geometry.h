@@ -16,6 +16,7 @@
 #include "OutputTimings.h"
 #include "PanAndZoom.h"
 #include "VideoProcessorTimings.h"
+#include "SourceKey.h"
 #include "SourceMeasurement.h"
 
 namespace Tv5725 {
@@ -27,6 +28,18 @@ public:
     explicit Geometry(DisplayClock &displayClock);
 
     const PanAndZoom &framing() const;
+
+    // The capturable region the last solve ran against, which is the
+    // denominator the framing's proportions are taken against. A caller holding
+    // a proportion needs it to say what that is in input units.
+    uint16_t capturableOn(const Axis &axis) const;
+
+    // The framing on this axis in input units, against that region. The
+    // proportion is the state; this is the same window in the units the
+    // console, the bench instruments and docs/scaler-geometry-model.md speak,
+    // and the engine is the only thing holding the denominator to convert with.
+    uint16_t originUnitsOn(const Axis &axis) const;
+    uint16_t extentUnitsOn(const Axis &axis) const;
 
     // Notify the engine that the source has changed mode. The registers are
     // not written until the source has settled.
@@ -73,8 +86,13 @@ private:
     // measurement found it. The raster is the held one, never a read-back.
     bool solveWindows();
 
-    // A mode change has no framing worth keeping, only the previous mode's.
-    bool solveFromScratch();
+    // A solve that keeps the framing when the SOURCE is the one it was tuned
+    // against, and drops it when it is not. applyPresets() calls modeChanged()
+    // for a source mode change and for the user picking a different output
+    // resolution, and only the first of those invalidates a framing: the
+    // proportions are taken against the capturable region, which the output
+    // raster does not touch. docs/framing-presets.md
+    bool solveForSource();
 
     // Order: raster, clock, windows, rate steer LAST. Steering early corrects
     // a new clock against the old raster -- 31 Hz frame, black screen.
@@ -152,12 +170,16 @@ private:
 
     DisplayClock &displayClock_;
     PanAndZoom framing_;
+    // The capturable region the last solve ran against, per axis: the
+    // denominator a press converts its units into a proportion with.
+    uint16_t usableHorizontal_, usableVertical_;
     SourceMeasurement sampling_;      // the divider this engine solves against
     bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool sourceInterrupted_; // the chip latched a disturbance, and nothing has re-measured
     uint32_t referenceRateHz_; // the estimate the reference sample rate was sized from
     bool scanModeApplied_;   // the registers have been written for this mode change
     uint16_t solvedLines_;   // the source line count the last solve ran against
+    SourceKey framedKey_;    // the source the framing held was tuned against
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
     bool solvePending_;

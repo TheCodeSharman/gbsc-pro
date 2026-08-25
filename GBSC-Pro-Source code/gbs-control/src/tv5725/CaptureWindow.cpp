@@ -86,6 +86,11 @@ const BlankingTiming &CaptureWindow::vertical() const { return vertical_; }
 
 const InputLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
 
+uint16_t CaptureWindow::capturableOn(const Axis &axis) const
+{
+    return axis.vertical() ? verticalLine_.capturable() : horizontalLine_.capturable();
+}
+
 uint16_t CaptureWindow::linePx() const { return linePx_; }
 
 uint16_t CaptureWindow::frameLines() const { return frameLines_; }

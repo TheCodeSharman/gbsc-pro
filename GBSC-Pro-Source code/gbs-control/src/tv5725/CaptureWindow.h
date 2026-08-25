@@ -63,6 +63,10 @@ public:
     // a guess there would crop picture rather than blanking.
     const InputLine &horizontalLine() const;
 
+    // The capturable region this axis offers, which is the denominator the
+    // framing's proportions are taken against.
+    uint16_t capturableOn(const Axis &axis) const;
+
     uint16_t linePx() const;
     uint16_t frameLines() const;
 

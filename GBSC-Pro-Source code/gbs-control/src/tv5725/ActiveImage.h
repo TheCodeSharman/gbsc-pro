@@ -31,15 +31,14 @@ public:
     const PanAndZoom &framing() const;
     void setFraming(const PanAndZoom &framing);
 
-    // Placed by panning and zooming: the user has no other way to say where the
-    // picture is, because nothing can measure it.
-    void panBy(int16_t dx, int16_t dy);
-    void zoomBy(int16_t dh, int16_t dv);
-
-    int16_t horizontalZoom() const;
-    int16_t verticalZoom() const;
-    int16_t horizontalPan() const;
-    int16_t verticalPan() const;
+    // Move the framing by whole input units on `line`. An axis nobody has
+    // framed yet is seeded from the default first, so a press always lands on
+    // this mode's grid -- which is what makes one press one unit, and a press
+    // with its inverse return the same framing.
+    void panBy(const InputLine &line, float fieldRateHz, const Axis &axis,
+               int16_t units, uint16_t rasterTotal);
+    void zoomBy(const InputLine &line, float fieldRateHz, const Axis &axis,
+                int16_t units, uint16_t rasterTotal);
 
     bool operator==(const ActiveImage &other) const;
     bool operator!=(const ActiveImage &other) const;

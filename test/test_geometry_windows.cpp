@@ -263,6 +263,26 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     g_fieldRate = 50.08f;
 }
 
+// The framing is held as a proportion, but every bench instrument, the console
+// line and docs/scaler-geometry-model.md speak input units. The engine holds the
+// denominator, so it is the only thing that can convert -- and what it reports
+// has to be the window it wrote, or the report is a second model of the picture.
+TEST_CASE("the framing reported in units is the capture window on the chip")
+{
+    SolvedEngine solved;
+
+    CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
+          == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11));
+    CHECK(solved.engine.extentUnitsOn(AxisVertical)
+          == Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11));
+
+    SUBCASE("and it follows a press") {
+        REQUIRE(solved.engine.zoom(400, 0));
+        CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
+              == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11));
+    }
+}
+
 // One press step is one pixel of the output screen, so the engine sizes a press
 // from the scale its own solve produced. Reading VDS_?SCALE back to size it
 // instead makes a register an input to the calculation.
@@ -278,8 +298,9 @@ TEST_CASE("a press is asked for in output pixels, not input units")
     REQUIRE(wanted != 16);
 
     SUBCASE("zooming") {
+        const long before = solved.engine.extentUnitsOn(AxisHorizontal);
         REQUIRE(solved.engine.zoom(16, 0));
-        CHECK(solved.engine.framing().horizontalZoom() == wanted);
+        CHECK(before - solved.engine.extentUnitsOn(AxisHorizontal) == wanted);
     }
 
     SUBCASE("and panning, once a zoom has left room to pan into") {
@@ -289,9 +310,9 @@ TEST_CASE("a press is asked for in output pixels, not input units")
         // press is converted at the magnification in force when it is made.
         const float zoomed = Scale(Wire.field(3, 0x16, 0, 10)).magnification();
         const int16_t step = AxisHorizontal.stepUnits(16, zoomed);
-        const int16_t before = solved.engine.framing().horizontalPan();
+        const long before = solved.engine.originUnitsOn(AxisHorizontal);
         REQUIRE(solved.engine.pan(16, 0));
-        CHECK(solved.engine.framing().horizontalPan() - before == step);
+        CHECK(solved.engine.originUnitsOn(AxisHorizontal) - before == step);
     }
 }
 
@@ -300,10 +321,10 @@ TEST_CASE("a press on one axis leaves the other where it was")
     // stepUnits() floors at one granule, so an axis the press did not name
     // drifts a unit per press unless a press of nothing is skipped outright.
     SolvedEngine solved;
-    const int16_t verticalZoom = solved.engine.framing().verticalZoom();
+    const long verticalExtent = solved.engine.extentUnitsOn(AxisVertical);
 
     REQUIRE(solved.engine.zoom(16, 0));
-    CHECK(solved.engine.framing().verticalZoom() == verticalZoom);
+    CHECK(solved.engine.extentUnitsOn(AxisVertical) == verticalExtent);
 }
 
 // The output raster is one the engine SOLVED, so it is held rather than read

@@ -12,17 +12,21 @@ const PanAndZoom &ActiveImage::framing() const { return framing_; }
 
 void ActiveImage::setFraming(const PanAndZoom &framing) { framing_ = framing; }
 
-void ActiveImage::panBy(int16_t dx, int16_t dy) { framing_.panBy(dx, dy); }
+void ActiveImage::panBy(const InputLine &line, float fieldRateHz, const Axis &axis,
+                        int16_t units, uint16_t rasterTotal)
+{
+    if (!framing_.tunedOn(axis))
+        clampToLine(line, fieldRateHz, axis, rasterTotal);
+    framing_.panBy(axis, units, line.capturable());
+}
 
-void ActiveImage::zoomBy(int16_t dh, int16_t dv) { framing_.zoomBy(dh, dv); }
-
-int16_t ActiveImage::horizontalZoom() const { return framing_.horizontalZoom(); }
-
-int16_t ActiveImage::verticalZoom() const { return framing_.verticalZoom(); }
-
-int16_t ActiveImage::horizontalPan() const { return framing_.horizontalPan(); }
-
-int16_t ActiveImage::verticalPan() const { return framing_.verticalPan(); }
+void ActiveImage::zoomBy(const InputLine &line, float fieldRateHz, const Axis &axis,
+                         int16_t units, uint16_t rasterTotal)
+{
+    if (!framing_.tunedOn(axis))
+        clampToLine(line, fieldRateHz, axis, rasterTotal);
+    framing_.zoomBy(axis, units, line.capturable());
+}
 
 bool ActiveImage::operator==(const ActiveImage &other) const
 {
@@ -48,14 +52,22 @@ uint16_t ActiveImage::defaultWidth(const InputLine &line, float fieldRateHz,
 ActiveImage::Placement ActiveImage::place(const InputLine &line, float fieldRateHz,
                                        const Axis &axis, uint16_t rasterTotal) const
 {
-    int16_t zoomUnits = framing_.zoomOn(axis);
-    int16_t pan = framing_.panOn(axis);
+    uint16_t usable = line.capturable();
+    long width, start;
 
-    long width = clampWidth(
-        (long)defaultWidth(line, fieldRateHz, axis) - zoomUnits, line,
-        rasterTotal, axis);
+    if (framing_.tunedOn(axis) && usable > 0) {
+        width = clampWidth(lrintf(framing_.extentOn(axis) * (float)usable), line,
+                           rasterTotal, axis);
+        start = (long)line.firstCapture()
+              + lrintf(framing_.originOn(axis) * (float)usable);
+    } else {
+        // Nothing has framed this axis yet, so the computed default stands in
+        // until the first solve seeds it. clampToLine() is where that happens.
+        width = clampWidth((long)defaultWidth(line, fieldRateHz, axis), line,
+                           rasterTotal, axis);
+        start = (long)(line.units() - width) / 2;
+    }
 
-    long start = (long)(line.units() - width) / 2 + pan;
     if (start < (long)line.firstCapture())
         start = line.firstCapture();
     if (start > (long)line.lastCapture() - width)
@@ -82,14 +94,17 @@ void ActiveImage::clampToLine(const InputLine &line, float fieldRateHz, const Ax
     if (line.units() == 0)
         return;
 
+    uint16_t usable = line.capturable();
+    if (usable == 0)
+        return;
+
+    // Seeds an axis nobody has framed yet from the default it just placed, and
+    // brings a framed one back to what this line can realise. Both are the same
+    // write, because the placement is the answer either way.
     Placement placed = place(line, fieldRateHz, axis, rasterTotal);
-
-    int16_t zoomUnits = (int16_t)((long)defaultWidth(line, fieldRateHz, axis)
-                                  - placed.width);
-    int16_t pan = (int16_t)(placed.start - (long)(line.units() - placed.width) / 2);
-
-    framing_.setZoomOn(axis, zoomUnits);
-    framing_.setPanOn(axis, pan);
+    framing_.seedOn(axis,
+                    (float)(placed.start - (long)line.firstCapture()) / (float)usable,
+                    (float)placed.width / (float)usable);
 }
 
 long ActiveImage::clampWidth(long width, const InputLine &line, uint16_t rasterTotal,

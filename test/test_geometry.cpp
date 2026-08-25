@@ -75,6 +75,16 @@ static void seedField(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
+// The two registers the engine is allowed to read, so a poison wipes the source
+// itself: a case that poisons mid-test and expects the same source has to put
+// them back.
+static void seedSourceMeasurement()
+{
+    seedField(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL
+    g_fieldRate = 50.08f;
+}
+
 // The bench RiscPC at 320x256@50 into the engine's own 1916 x 1126 raster.
 // Every value is an INPUT: a raster already solved, and three measurements.
 static void seedBenchSource()
@@ -84,11 +94,9 @@ static void seedBenchSource()
     seedField(3, 0x01, 0, 12, 1915);   // VDS_HSYNC_RST, output line - 1
     seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
     seedField(1, 0x0E, 0, 11, 1125);   // IF_HSYNC_RST, capture wrap - 1
-    seedField(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
     seedField(5, 0x12, 0, 12, 2250);   // PLLAD_MD
-    seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL
     seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
-    g_fieldRate = 50.08f;
+    seedSourceMeasurement();
 }
 
 static const OutputMode *benchMode() { return OutputMode::forFrameHeight(1125); }
@@ -392,8 +400,10 @@ TEST_CASE("a reset puts the framing back and re-solves everything from it")
     REQUIRE(pollUntilSolved(engine));
 
     REQUIRE(engine.zoom(400, 120));
-    REQUIRE(engine.framing().horizontalZoom() != 0);
-    REQUIRE(engine.framing().verticalZoom() != 0);
+    // The framing is a proportion now and carries no unit to compare, so the
+    // zoom is witnessed by the window it moved off the default.
+    REQUIRE(InputFormatter::IF_HB_SP2::read() != 118);
+    REQUIRE(InputFormatter::IF_VB_SP::read() != 46);
 
     // Re-seeded rather than merely wiped: the source measurements are INPUTS
     // the chip keeps supplying, and poisoning those would test the engine
@@ -402,10 +412,10 @@ TEST_CASE("a reset puts the framing back and re-solves everything from it")
     engine.reset();
     REQUIRE(pollUntilSolved(engine));
 
-    CHECK(engine.framing().horizontalZoom() == 0);
-    CHECK(engine.framing().verticalZoom() == 0);
-    CHECK(engine.framing().horizontalPan() == 0);
-    CHECK(engine.framing().verticalPan() == 0);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 118);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1008);
+    CHECK(InputFormatter::IF_VB_SP::read() == 46);
+    CHECK(InputFormatter::IF_VB_ST::read() == 578);
 
     // Not just the framing: the divider, the raster, the clock and both windows
     // land where a fresh mode change would put them.
@@ -473,6 +483,31 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     }
 }
 
+// --- the framing belongs to the source ---------------------------------------
+
+TEST_CASE("changing the output keeps the framing the user tuned")
+{
+    // applyPresets() is the one caller of modeChanged(), and it runs for a
+    // SOURCE mode change and for a user picking a different output resolution.
+    // The framing is a proportion of the capturable region, which is a property
+    // of the input line -- so an output change moves neither the denominator nor
+    // the user's intent, and dropping it makes every output change a re-tune.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    frameAt(engine, 300, 120, 40, -15);
+    const PanAndZoom tuned = engine.framing();
+
+    engine.modeChanged(OutputMode::forFrameHeight(525), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.framing() == tuned);
+}
+
 // --- every window follows the framing ----------------------------------------
 
 TEST_CASE("a framed picture holds every window against the framing")
@@ -489,20 +524,21 @@ TEST_CASE("a framed picture holds every window against the framing")
     frameAt(engine, 300, 120, 40, -15);
     Wire.reset();
     Wire.poison(Poison);
+    seedSourceMeasurement();
     REQUIRE(engine.resolve());
 
     // The capture narrows 300 units horizontally and 120 vertically,
     // then moves 40 right and 15 up.
     CHECK(InputFormatter::IF_HB_SP2::read() == 308);
     CHECK(InputFormatter::IF_HB_ST2::read() == 898);
-    CHECK(InputFormatter::IF_VB_SP::read() == 120);
-    CHECK(InputFormatter::IF_VB_ST::read() == 1125);
+    CHECK(InputFormatter::IF_VB_SP::read() == 91);
+    CHECK(InputFormatter::IF_VB_ST::read() == 503);
     CHECK(InputFormatter::IF_LINE_ST::read() == 64);
     CHECK(InputFormatter::IF_LINE_SP::read() == 1190);
 
     // Both scales rise to magnify the smaller capture onto the same raster.
     CHECK(VideoProcessor::VDS_HSCALE::read() == 353);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 919);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 378);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -515,11 +551,11 @@ TEST_CASE("a framed picture holds every window against the framing")
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
     CHECK(VideoProcessor::VDS_HB_ST::read() == 1845);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1119);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1117);
     CHECK(VideoProcessor::VDS_HB_SP::read() == 8);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 2);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 136);
-    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 3);
+    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 4);
 
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
     CHECK(FrameBuffer::PB_FETCH_NUM::read() == 150);

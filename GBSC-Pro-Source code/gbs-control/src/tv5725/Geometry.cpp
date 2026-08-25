@@ -1,5 +1,7 @@
 #include "Geometry.h"
 
+#include <math.h>
+
 #include "Adc.h"
 #include "CaptureWindow.h"
 #include "FrameBuffer.h"
@@ -15,6 +17,7 @@ namespace Tv5725 {
 
 Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
+      usableHorizontal_(0), usableVertical_(0),
       samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
       scanModeApplied_(false), solvedLines_(0),
       idleLines_(0), idleRun_(0),
@@ -26,6 +29,21 @@ Geometry::Geometry(DisplayClock &displayClock)
 const PanAndZoom &Geometry::framing() const { return framing_; }
 
 bool Geometry::changing() const { return modePending_ || solvePending_; }
+
+uint16_t Geometry::capturableOn(const Axis &axis) const
+{
+    return axis.vertical() ? usableVertical_ : usableHorizontal_;
+}
+
+uint16_t Geometry::originUnitsOn(const Axis &axis) const
+{
+    return (uint16_t)lrintf(framing_.originOn(axis) * (float)capturableOn(axis));
+}
+
+uint16_t Geometry::extentUnitsOn(const Axis &axis) const
+{
+    return (uint16_t)lrintf(framing_.extentOn(axis) * (float)capturableOn(axis));
+}
 
 float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
@@ -232,7 +250,7 @@ bool Geometry::poll()
     // raster -> clock -> windows. The clock reads the seed the raster just
     // chose, and every window is sized against the raster it lands on.
     displayClock_.reset();
-    solveFromScratch();
+    solveForSource();
 
     // What this solve ran against, so a source that later differs from it arms
     // the engine without anyone having to say so.
@@ -245,10 +263,13 @@ bool Geometry::poll()
 
 void Geometry::reset()
 {
+    framedKey_ = SourceKey();
     // Re-arming the mode change already in force, rather than a second path
     // that would have to keep step with it: the whole sequence -- freeze, wait
     // for the source, measure, sampling, raster, clock, windows -- is what a
-    // reset wants, and solveFromScratch() drops the framing on the way through.
+    // reset wants. The framing goes with it, which is what makes this a reset
+    // rather than a re-solve: solveForSource() would keep it, the source not
+    // having moved.
     modeChanged(rasterMode_, modeOversample_);
 }
 
@@ -284,9 +305,12 @@ void Geometry::enterBypass()
     activeLinesStop_ = 0;
 }
 
-bool Geometry::solveFromScratch()
+bool Geometry::solveForSource()
 {
-    framing_.reset();
+    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz());
+    if (arriving != framedKey_)
+        framing_.reset();
+    framedKey_ = arriving;
     return solveWindows();
 }
 
@@ -411,16 +435,20 @@ int16_t Geometry::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)
 bool Geometry::pan(int16_t dxPixels, int16_t dyPixels)
 {
     PanAndZoom wanted = framing_;
-    wanted.panBy(unitsFor(dxPixels, horizontalScale_, AxisHorizontal),
-                 unitsFor(dyPixels, verticalScale_, AxisVertical));
+    wanted.panBy(AxisHorizontal, unitsFor(dxPixels, horizontalScale_, AxisHorizontal),
+                 usableHorizontal_);
+    wanted.panBy(AxisVertical, unitsFor(dyPixels, verticalScale_, AxisVertical),
+                 usableVertical_);
     return step(wanted);
 }
 
 bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
 {
     PanAndZoom wanted = framing_;
-    wanted.zoomBy(unitsFor(dhPixels, horizontalScale_, AxisHorizontal),
-                  unitsFor(dvPixels, verticalScale_, AxisVertical));
+    wanted.zoomBy(AxisHorizontal, unitsFor(dhPixels, horizontalScale_, AxisHorizontal),
+                  usableHorizontal_);
+    wanted.zoomBy(AxisVertical, unitsFor(dvPixels, verticalScale_, AxisVertical),
+                  usableVertical_);
     return step(wanted);
 }
 
@@ -458,6 +486,8 @@ bool Geometry::calculateInputFormatterRegisters(CaptureWindow &capture)
 {
     capture.setFraming(framing_, sourceFieldRateOr50Hz());
     framing_ = capture.framing();
+    usableHorizontal_ = capture.capturableOn(AxisHorizontal);
+    usableVertical_ = capture.capturableOn(AxisVertical);
     return capture.usable() ? true : fail();
 }
 
