@@ -227,6 +227,33 @@ TEST_CASE("the picture is made as big as the raster allows")
     }
 }
 
+TEST_CASE("the capture is bounded by what the raster can actually show")
+{
+    // VDS_?SCALE divides 1024 and the register tops out at 1023, so the least
+    // magnification the chip can express is 1.001: it cannot MINIFY. A capture
+    // bigger than the room therefore produces a picture bigger than the room,
+    // and the far end is cropped rather than shrunk -- with no register saying
+    // so, because the scale is simply clamped.
+    const uint16_t Raster = 525;      // a 480p frame
+    const uint16_t ActiveStop = 516;  // less CEA's nine-line front porch
+    const float room = AxisVertical.maxDisplayWindow(Raster, 0, ActiveStop);
+
+    const uint16_t most = AxisVertical.maximumCapture(Raster, ActiveStop);
+    CHECK(AxisVertical.fitToRaster(most, Raster, 0, ActiveStop).produced() <= room);
+
+    SUBCASE("and the capture it bounds does not fit") {
+        // 622 half-lines: what the line doubler offers on a 311-line source,
+        // and what a framing free to take the whole capturable region asks for.
+        CHECK(AxisVertical.fitToRaster(622, Raster, 0, ActiveStop).produced() > room);
+    }
+
+    SUBCASE("a raster with room for everything bounds nothing the input can hold") {
+        // 1080p against the same source: the doubled frame fits with 1.8x to
+        // spare, so the ceiling is above anything the input line can offer.
+        CHECK(AxisVertical.maximumCapture(1126, 1117) > 622);
+    }
+}
+
 TEST_CASE("the scale floor is derived from the magnification, on both axes")
 {
     // Nothing in the part settles the floor -- RD-5725-1.1 states no minimum for

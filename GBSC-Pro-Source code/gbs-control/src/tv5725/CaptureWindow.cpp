@@ -10,7 +10,7 @@ const uint16_t CaptureWindow::SourceVerticalTotalMax;
 const uint16_t CaptureWindow::ProgressiveStart;
 
 CaptureWindow::CaptureWindow()
-    : horizontalLine_(0), verticalLine_(0), linePx_(0), frameLines_(0) {}
+    : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
 bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncLow)
 {
@@ -40,18 +40,25 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncL
     // whole source lines otherwise. docs/scaler-geometry-model.md
     verticalLine_ = InputLine(source.lineDoubled() ? 2 * (sourceLines + 1)
                                                    : sourceLines + 1);
+
+    timing_ = SourceTiming::matching(sourceLines, source.fieldRateHz(),
+                                     (float)hsyncLow / (float)source.divider());
     return true;
 }
 
-void CaptureWindow::setRasters(uint16_t linePx, uint16_t frameLines)
+void CaptureWindow::setRasters(uint16_t linePx, uint16_t frameLines,
+                               uint16_t activeStop, uint16_t activeLinesStop)
 {
-    linePx_ = linePx;
-    frameLines_ = frameLines;
+    line_ = OutputRaster(linePx, activeStop);
+    frame_ = OutputRaster(frameLines, activeLinesStop);
 }
 
-bool CaptureWindow::scaling() const { return linePx_ >= 64 && frameLines_ >= 64; }
+bool CaptureWindow::scaling() const
+{
+    return line_.total() >= 64 && frame_.total() >= 64;
+}
 
-void CaptureWindow::setFraming(const PanAndZoom &wanted, float fieldRateHz)
+void CaptureWindow::setFraming(const PanAndZoom &wanted)
 {
     image_.setFraming(wanted);
 
@@ -61,11 +68,11 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted, float fieldRateHz)
     // smaller press back then produces an identical window and is reverted,
     // leaving the control dead in that direction. Only the hold ramp presses
     // that far -- measured pv -51 against a limit of -46, ph -144 against -134.
-    image_.clampToLine(horizontalLine_, fieldRateHz, AxisHorizontal, linePx_);
-    image_.clampToLine(verticalLine_, fieldRateHz, AxisVertical, frameLines_);
+    image_.clampToLine(horizontalLine_, timing_, AxisHorizontal, line_);
+    image_.clampToLine(verticalLine_, timing_, AxisVertical, frame_);
 
-    horizontal_ = image_.capture(horizontalLine_, fieldRateHz, AxisHorizontal, linePx_);
-    vertical_ = image_.capture(verticalLine_, fieldRateHz, AxisVertical, frameLines_);
+    horizontal_ = image_.capture(horizontalLine_, timing_, AxisHorizontal, line_);
+    vertical_ = image_.capture(verticalLine_, timing_, AxisVertical, frame_);
 
     // A pixel costs one 32-bit word, and a line wide enough to overrun the
     // capture buffer is reachable because the width is in ADC samples and
@@ -91,9 +98,9 @@ uint16_t CaptureWindow::capturableOn(const Axis &axis) const
     return axis.vertical() ? verticalLine_.capturable() : horizontalLine_.capturable();
 }
 
-uint16_t CaptureWindow::linePx() const { return linePx_; }
+uint16_t CaptureWindow::linePx() const { return line_.total(); }
 
-uint16_t CaptureWindow::frameLines() const { return frameLines_; }
+uint16_t CaptureWindow::frameLines() const { return frame_.total(); }
 
 bool CaptureWindow::usable() const
 {

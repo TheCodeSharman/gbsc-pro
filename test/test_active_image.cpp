@@ -25,6 +25,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PanAndZoom.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
 
 using namespace Tv5725;
 
@@ -85,9 +86,12 @@ TEST_CASE("the framing is held as state and the window is derived")
     }
 
     SUBCASE("panning moves the window and keeps its width") {
-        BlankingTiming moved = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, +40, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
-        CHECK(moved.stop() == centred.stop() + 40);
-        CHECK(moved.start() - moved.stop() == centred.start() - centred.stop());
+        // Zoomed first, because the default window is wide enough that a pan of
+        // 40 units runs into the end of the line and is clamped there.
+        BlankingTiming cropped = framed(InputLine(1126), 50.0f, AxisHorizontal, 200, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming moved = framed(InputLine(1126), 50.0f, AxisHorizontal, 200, +40, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        CHECK(moved.stop() == cropped.stop() + 40);
+        CHECK(moved.start() - moved.stop() == cropped.start() - cropped.stop());
     }
 
     SUBCASE("a pan is clamped to the line rather than crossing it") {
@@ -147,7 +151,7 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("the vertical axis derives from its own frame the same way") {
         BlankingTiming v = framed(InputLine(624), 50.0f, AxisVertical, 0, 0, 0).capture(InputLine(624), 50.0f, AxisVertical, 0);
         CHECK(v.start() - v.stop() == ActiveImage::defaultWidth(InputLine(624), 50.0f, AxisVertical));
-        CHECK_NEAR((int)v.stop(), 624 - (int)v.start(), 1.0);
+        CHECK_NEAR((int)v.stop(), AxisVertical.activeStart() * 624.0f, 1.0);
     }
 }
 
@@ -159,6 +163,47 @@ TEST_CASE("the framing is held as state and the window is derived")
 // On the bench line: 1126 units, default width 890, so the centred start is 118
 // and the largest the line allows is 1124 - 890 = 234, giving a largest
 // achievable horizontalPan of 116.
+TEST_CASE("a source running a published raster is captured where that raster puts picture")
+{
+    // 640x480@60 spends 18.0% of the line reaching picture and 80.0% of it on
+    // picture, and nothing on this chip can measure that -- so a source running
+    // a raster the standards state is placed from the standard rather than from
+    // the assumption an unrecognised one takes.
+    const InputLine line(1126);
+    const SourceTiming dmt = SourceTiming::matching(524, 59.94f, 96.0f / 800.0f);
+
+    BlankingTiming got = ActiveImage().capture(line, dmt, AxisHorizontal, 0);
+
+    CHECK_NEAR(got.stop(), 0.180f * 1126.0f, 1.0f);
+    CHECK_NEAR(got.width(), 0.800f * 1126.0f, 1.0f);
+}
+
+TEST_CASE("a source matching no published raster is captured across the envelope")
+{
+    // Nothing can measure where a border ends and back porch begins, so a
+    // source running no raster the standards state is captured across the
+    // widest active region any real source puts on a line: black edges are
+    // visible and one press trims them, where a cropped edge looks like a
+    // fault. Measured against stock AKF50, whose 15 kHz modes put picture
+    // between 15.4% and 90.4% of the line and 7.1% and 99.4% of the frame.
+    const InputLine line(1126);
+
+    BlankingTiming got = ActiveImage().capture(line, 50.0f, AxisHorizontal, 0);
+    CHECK_NEAR(got.stop(), 0.117f * 1126.0f, 1.0f);
+    CHECK_NEAR(got.start(), 0.981f * 1126.0f, 1.0f);
+
+    SUBCASE("and the vertical envelope does not split on field rate") {
+        BlankingTiming fifty = ActiveImage().capture(InputLine(624), 50.0f,
+                                                     AxisVertical, 0);
+        BlankingTiming sixty = ActiveImage().capture(InputLine(624), 60.0f,
+                                                     AxisVertical, 0);
+        CHECK(fifty.stop() == sixty.stop());
+        CHECK(fifty.start() == sixty.start());
+        CHECK_NEAR(fifty.stop(), 0.061f * 624.0f, 1.0f);
+        CHECK_NEAR(fifty.start(), 0.994f * 624.0f, 1.0f);
+    }
+}
+
 TEST_CASE("a press that overshoots the edge leaves no dead zone")
 {
     const uint16_t Units = 1126;
@@ -343,9 +388,13 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
     // than decoding one.
     BlankingTiming w = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
 
-    SUBCASE("a default capture is centred on the line") {
+    SUBCASE("a default capture is placed on the line, not centred in it") {
+        // Active video is never centred: sync plus back porch runs far longer
+        // than the front porch, so a centred window is offset left of the
+        // picture and crops its far edge.
         CHECK(w.start() > w.stop());
-        CHECK_NEAR((int)w.stop(), 1126 - (int)w.start(), 1.0);
+        CHECK_NEAR((int)w.stop(), AxisHorizontal.activeStart() * 1126.0f, 1.0);
+        CHECK((int)w.start() > 1126 - (int)w.stop());
     }
 
     SUBCASE("a default capture over-captures rather than cropping") {
@@ -362,11 +411,11 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
         }
     }
 
-    SUBCASE("the vertical default splits on field rate") {
-        // A 50 Hz source carries the same active height in a longer frame, so
-        // the fraction is not the same. Horizontal barely moves, does not split.
+    SUBCASE("the default is one envelope, whatever the field rate") {
+        // The envelope contains what every real source puts on a line, so
+        // splitting it by field rate would only make one of the two crop.
         CHECK(ActiveImage::defaultWidth(InputLine(624), 60.0f, AxisVertical)
-              > ActiveImage::defaultWidth(InputLine(624), 50.0f, AxisVertical));
+              == ActiveImage::defaultWidth(InputLine(624), 50.0f, AxisVertical));
         CHECK(ActiveImage::defaultWidth(InputLine(1126), 50.0f, AxisHorizontal)
               == ActiveImage::defaultWidth(InputLine(1126), 60.0f, AxisHorizontal));
     }

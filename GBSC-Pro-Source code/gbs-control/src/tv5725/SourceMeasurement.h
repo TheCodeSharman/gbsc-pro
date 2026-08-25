@@ -300,7 +300,12 @@ public:
     //
     // An unmeasured count comes back true: that is what a low-line-count source
     // needs, and it is the one a wrong guess leaves short.
-    static bool lineDoublingFor(uint16_t sourceLines);
+    // Whether to put the line doubler in the path. A short source needs the
+    // lines; an output with no room for the doubled frame cannot show them,
+    // because the part cannot minify -- so `showableUnits`, what the output can
+    // display, refuses a doubling that would only be cropped. Zero asks the
+    // source alone, which is bypass and every caller with no raster yet.
+    static bool lineDoublingFor(uint16_t sourceLines, uint16_t showableUnits = 0);
 
     // Whether the line doubler is in the capture path, which the scan mode
     // decides. It runs the IF's line counter at twice the source line rate, so

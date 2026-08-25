@@ -66,21 +66,27 @@ struct SolvedEngine {
     Tv5725::DisplayClock clock;
     Tv5725::Geometry engine;
 
-    SolvedEngine() : engine(clock)
+    SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
+                 uint16_t hsyncLow = 181,
+                 const Tv5725::OutputMode *mode = &Tv5725::Mode1080p)
+        : engine(clock)
     {
         Wire.reset();
         Wire.poison(Poison);
+        g_fieldRate = fieldRateHz;
 
-        seed(3, 0x01, 0, 12, 1915);   // VDS_HSYNC_RST, output line - 1
-        seed(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
-        seed(1, 0x0E, 0, 11, 1276);   // IF_HSYNC_RST, capture wrap - 1
-        seed(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN, hsync low
-        seed(5, 0x12, 0, 12, 2553);   // PLLAD_MD, the line in ADC samples
-        seed(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL, source lines
+        seed(3, 0x01, 0, 12, 1915);          // VDS_HSYNC_RST, output line - 1
+        seed(3, 0x02, 4, 11, 1124);          // VDS_VSYNC_RST, output frame - 1
+        seed(1, 0x0E, 0, 11, 1276);          // IF_HSYNC_RST, capture wrap - 1
+        seed(0, 0x19, 0, 12, hsyncLow);      // STATUS_SYNC_PROC_HLOW_LEN
+        seed(5, 0x12, 0, 12, 2553);          // PLLAD_MD, the line in ADC samples
+        seed(0, 0x1B, 0, 11, sourceLines);   // STATUS_SYNC_PROC_VTOTAL
 
-        engine.modeChanged(&Tv5725::Mode1080p, 4);
+        engine.modeChanged(mode, 4);
         REQUIRE(pollUntilSolved(engine));
     }
+
+    ~SolvedEngine() { g_fieldRate = 50.08f; }
 };
 
 #endif  // TEST_SOLVED_ENGINE_H_

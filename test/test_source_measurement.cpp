@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 
 using namespace Tv5725;
@@ -706,6 +707,36 @@ TEST_CASE("line doubling is decided by the source line count")
     // No measurement yet. The default is the one a low-line-count source needs,
     // because that is the source a wrong guess leaves without enough lines.
     CHECK(SourceMeasurement::lineDoublingFor(0) == true);
+}
+
+// What an output frame of this many lines can display, which is the question
+// the doubling asks: the part cannot minify, so this is the ceiling.
+static uint16_t showableIn(uint16_t frameLines)
+{
+    return Tv5725::AxisVertical.maximumCapture(frameLines, 0);
+}
+
+TEST_CASE("a source is not doubled into an output that cannot show the result")
+{
+    // Doubling turns a 311-line source into 624 units, and the part cannot
+    // minify: an output with less room than that shows the top of the doubled
+    // frame and nothing else, with the control dead in both directions. So the
+    // question is not only how many lines arrive, but how many can be shown.
+    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(1125)) == true);  // 1080p
+    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(750)) == true);   // 720p
+    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(525)) == false);  // 480p
+    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(625)) == false);  // 576p
+
+    SUBCASE("a shorter source still doubles into the same output") {
+        // 288 lines doubled is 578, which a 625-line frame holds.
+        CHECK(SourceMeasurement::lineDoublingFor(288, showableIn(625)) == true);
+    }
+
+    SUBCASE("no output raster asks the source alone") {
+        // Bypass, and every caller that has not solved a raster yet.
+        CHECK(SourceMeasurement::lineDoublingFor(311, 0) == true);
+        CHECK(SourceMeasurement::lineDoublingFor(524, 0) == false);
+    }
 }
 
 TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")

@@ -139,9 +139,6 @@ private:
 
     void solveScanMode();
 
-    // Only the 50/60 split is taken from it.
-    float sourceFieldRateOr50Hz() const;
-
     bool fail();
 
     // The known sampling state a measurement is taken from, before it is taken.

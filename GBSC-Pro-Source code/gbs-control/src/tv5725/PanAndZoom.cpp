@@ -7,12 +7,6 @@
 
 namespace Tv5725 {
 
-const float DefaultHActiveFraction = 0.76f;
-const float DefaultVActiveFraction60Hz = 0.95f;
-const float DefaultVActiveFraction50Hz = 0.82f;
-
-const float OverCapture = 1.04f;
-
 const uint16_t MinimumCapture = 16;
 
 PanAndZoom::PanAndZoom()

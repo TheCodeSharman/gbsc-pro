@@ -13,6 +13,7 @@
 // docs/chip-initialisation.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "CheckNear.h"
 #include "SolvedEngine.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
@@ -369,4 +370,52 @@ TEST_CASE("the engine writes the scan mode its own measurement implies")
     CHECK(Wire.field(5, Tv5725::Adc::PLLAD_MD::byteOffset,
                      Tv5725::Adc::PLLAD_MD::bitOffset,
                      Tv5725::Adc::PLLAD_MD::bitWidth) == 2250);
+}
+
+// Nothing on the chip can measure where active video starts, so an unrecognised
+// source is placed from an assumption. A source running a raster the standards
+// state is placed from the standard instead.
+// docs/investigations/vesa-modes-are-clipped-by-default.md
+TEST_CASE("a VESA source is captured where its published raster puts picture")
+{
+    // 640x480@60: 96 of its 800 pixels on sync, and a 525-line frame the sync
+    // processor counts from zero and reports as 524 -- which is what the bench
+    // reads on a source running this mode.
+    const uint16_t Divider = 1124;
+    SolvedEngine solved(524, 59.94f, (uint16_t)(Divider * 96 / 800));
+
+    const long line = Wire.field(1, 0x0E, 0, 11) + 1;
+    const long stop = Wire.field(1, 0x1A, 0, 11);
+    const long start = Wire.field(1, 0x18, 0, 11);
+
+    CHECK_NEAR(stop, 0.180 * line, 2);
+    CHECK_NEAR(start - stop, 0.800 * line, 2);
+}
+
+
+// The part cannot minify: VDS_?SCALE divides 1024 and tops out at Scale::Max,
+// so a capture bigger than the room produces a picture bigger than the room and
+// its far end is never drawn. Nothing in a register dump says so -- the scale is
+// simply clamped -- and the control reads as dead in both directions, because
+// zoom-out is at its bound and zoom-in only trims what was already off-screen.
+TEST_CASE("a capture the output cannot show is bounded, not cropped")
+{
+    // The bench source into a 480p raster: the line doubler makes the vertical
+    // axis count 622 half-lines against a frame with room for about 515.
+    SolvedEngine solved(311, 50.08f, 181, &Mode480p);
+
+    const long capture = Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11);
+    const long window = Wire.field(3, 0x13, 0, 11) - Wire.field(3, 0x14, 4, 11);
+    const long produced = capture * Scale::Unity / Wire.field(3, 0x17, 4, 10);
+
+    REQUIRE(window > 0);
+    CHECK(produced <= window + AxisVertical.margin());
+
+    SUBCASE("and the control has somewhere to go in both directions") {
+        const long before = solved.engine.extentUnitsOn(AxisVertical);
+        REQUIRE(solved.engine.zoom(0, 16));
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) < before);
+        REQUIRE(solved.engine.zoom(0, -16));
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) > 0);
+    }
 }

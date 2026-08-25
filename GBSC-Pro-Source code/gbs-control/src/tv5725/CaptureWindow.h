@@ -5,8 +5,10 @@
 #include <stdint.h>
 
 #include "InputLine.h"
+#include "OutputRaster.h"
 #include "ActiveImage.h"
 #include "SourceMeasurement.h"
+#include "SourceTiming.h"
 #include "BlankingTiming.h"
 
 namespace Tv5725 {
@@ -31,9 +33,12 @@ public:
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 
-    // The output raster this capture is for. Zero on both means bypass, where
-    // there is no scaled raster and nothing to solve.
-    void setRasters(uint16_t linePx, uint16_t frameLines);
+    // The output raster this capture is for, with the porch each axis may not
+    // run past: the capture is bounded by what the room can SHOW, and the part
+    // cannot minify. Zero on both totals means bypass, where there is no scaled
+    // raster and nothing to solve.
+    void setRasters(uint16_t linePx, uint16_t frameLines,
+                    uint16_t activeStop = 0, uint16_t activeLinesStop = 0);
 
     // Read the output rasters and the bounds the window sits in. False when the
     // source has not settled far enough to derive a window from.
@@ -46,13 +51,16 @@ public:
     // line count and the field rate do come off the measurement, which is what
     // keeps the two being cross-checked against each other rather than against
     // a value some caller chose. docs/firmware-geometry-engine.md
+    //
+    // The three together are also what identifies a published raster, so this
+    // is where the timing an untuned window is placed from is resolved.
     bool readRasters(const SourceMeasurement &source, uint16_t hsyncLow);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.
     bool scaling() const;
 
-    void setFraming(const PanAndZoom &wanted, float fieldRateHz);
+    void setFraming(const PanAndZoom &wanted);
     const PanAndZoom &framing() const;
 
     const BlankingTiming &horizontal() const;
@@ -74,8 +82,9 @@ public:
 
 private:
     InputLine horizontalLine_, verticalLine_;
-    uint16_t linePx_;         // output raster total, horizontal
-    uint16_t frameLines_;     // output raster total, vertical
+    SourceTiming timing_;
+    OutputRaster line_;       // output raster, horizontal
+    OutputRaster frame_;      // output raster, vertical
     ActiveImage image_;
     BlankingTiming horizontal_, vertical_;
 };

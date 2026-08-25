@@ -19,7 +19,9 @@
 #include "Axis.h"
 #include "BlankingTiming.h"
 #include "InputLine.h"
+#include "OutputRaster.h"
 #include "PanAndZoom.h"
+#include "SourceTiming.h"
 
 namespace Tv5725 {
 
@@ -35,10 +37,10 @@ public:
     // framed yet is seeded from the default first, so a press always lands on
     // this mode's grid -- which is what makes one press one unit, and a press
     // with its inverse return the same framing.
-    void panBy(const InputLine &line, float fieldRateHz, const Axis &axis,
-               int16_t units, uint16_t rasterTotal);
-    void zoomBy(const InputLine &line, float fieldRateHz, const Axis &axis,
-                int16_t units, uint16_t rasterTotal);
+    void panBy(const InputLine &line, const SourceTiming &timing,
+               const Axis &axis, int16_t units, const OutputRaster &raster);
+    void zoomBy(const InputLine &line, const SourceTiming &timing,
+                const Axis &axis, int16_t units, const OutputRaster &raster);
 
     bool operator==(const ActiveImage &other) const;
     bool operator!=(const ActiveImage &other) const;
@@ -46,8 +48,10 @@ public:
     // How much of the line an untuned source is assumed to fill. COMPUTED from
     // the line alone -- nothing is read from the chip. The fraction is of the
     // WHOLE line, because that is what the VESA and CEA modes it came from
-    // measure; what the line can actually hold then bounds it.
-    static uint16_t defaultWidth(const InputLine &line, float fieldRateHz,
+    // measure; what the line can actually hold then bounds it. A source running
+    // a published raster is not assumed at all: the standard states its active
+    // window and it is taken exactly, with no over-capture to add.
+    static uint16_t defaultWidth(const InputLine &line, const SourceTiming &timing,
                                  const Axis &axis);
 
     // A width wider than the line can hold wraps; one narrower than the minimum
@@ -55,28 +59,32 @@ public:
     // not crop past, and what the SCALE can still magnify to fill the raster --
     // without the second, zooming past the magnification ceiling keeps cropping
     // and the picture letterboxes instead of the control stopping.
-    static long clampWidth(long width, const InputLine &line, uint16_t rasterTotal,
+    //
+    // The ceiling is the raster's, because the part cannot minify: a capture
+    // past Axis::maximumCapture() produces a picture past the room and the far
+    // end is cropped, with the control appearing dead in both directions.
+    static long clampWidth(long width, const InputLine &line, const OutputRaster &raster,
                            const Axis &axis);
 
     // Where this lands on `line`. Derived from the framing and the line alone --
     // nothing is read back. At rest this IS the default window, so there is no
     // second definition of it.
-    BlankingTiming capture(const InputLine &line, float fieldRateHz, const Axis &axis,
-                           uint16_t rasterTotal) const;
+    BlankingTiming capture(const InputLine &line, const SourceTiming &timing,
+                           const Axis &axis, const OutputRaster &raster) const;
 
     // Bring the framing back to what the line can actually realise. capture()
     // clamps the WINDOW, and a framing left beyond anything reachable kills the
     // control in that direction -- see Geometry::readCapture().
-    void clampToLine(const InputLine &line, float fieldRateHz, const Axis &axis,
-                     uint16_t rasterTotal);
+    void clampToLine(const InputLine &line, const SourceTiming &timing,
+                     const Axis &axis, const OutputRaster &raster);
 
 private:
     // The width and start this lands on, before either becomes a register.
     // capture() and clampToLine() both take it from here, so they cannot
     // disagree: one unit apart is a dead zone one press wide.
     struct Placement { long width, start; };
-    Placement place(const InputLine &line, float fieldRateHz, const Axis &axis,
-                    uint16_t rasterTotal) const;
+    Placement place(const InputLine &line, const SourceTiming &timing,
+                    const Axis &axis, const OutputRaster &raster) const;
 
     PanAndZoom framing_;
 };

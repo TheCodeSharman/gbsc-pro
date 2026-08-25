@@ -278,9 +278,19 @@ bool SourceMeasurement::lowLineRate() const
     return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
 }
 
-bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines)
+bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines,
+                                       uint16_t showableUnits)
 {
-    return sourceLines == 0 || sourceLines < LineDoubleBelowLines;
+    if (sourceLines == 0)
+        return true;
+    if (sourceLines >= LineDoubleBelowLines)
+        return false;
+    if (showableUnits == 0)
+        return true;
+
+    // The IF counts half-lines with the doubler in, so the doubled frame asks
+    // for twice the source's own count.
+    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits;
 }
 
 void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }

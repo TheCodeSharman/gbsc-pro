@@ -430,7 +430,14 @@ void Geometry::solveScanMode()
     if (!SourceMeasurement::countIsSource(lines))
         return;
 
-    const bool doubled = SourceMeasurement::lineDoublingFor(lines);
+    // Against the mode ASKED FOR rather than the raster last solved: this runs
+    // before solveRaster(), so the held raster is the previous output's, and a
+    // mode change would decide the scan mode from the resolution it is leaving.
+    // The porch is not known this early either, so the bound is the raster's own
+    // edge and a doubling that only just fits is caught by the capture clamp.
+    const uint16_t showable =
+        rasterMode_ ? AxisVertical.maximumCapture(rasterMode_->frameLines(), 0) : 0;
+    const bool doubled = SourceMeasurement::lineDoublingFor(lines, showable);
     if (scanModeApplied_ && doubled == sampling_.lineDoubled())
         return;
 
@@ -476,12 +483,6 @@ bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
     return step(wanted);
 }
 
-float Geometry::sourceFieldRateOr50Hz() const
-{
-    float rate = sampling_.fieldRateHz();
-    return (rate > 40.0f && rate < 100.0f) ? rate : 50.0f;
-}
-
 bool Geometry::fail()
 {
     solvePending_ = true;
@@ -490,7 +491,8 @@ bool Geometry::fail()
 
 bool Geometry::measureSourceTimings(CaptureWindow &capture)
 {
-    capture.setRasters(rasterLinePx_, rasterFrameLines_);
+    capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
+                       activeLinesStop_);
     if (!capture.readRasters(sampling_, SourceMeasurement::measureHsyncLow())) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
@@ -508,7 +510,7 @@ bool Geometry::measureSourceTimings(CaptureWindow &capture)
 
 bool Geometry::calculateInputFormatterRegisters(CaptureWindow &capture)
 {
-    capture.setFraming(framing_, sourceFieldRateOr50Hz());
+    capture.setFraming(framing_);
     framing_ = capture.framing();
     usableHorizontal_ = capture.capturableOn(AxisHorizontal);
     usableVertical_ = capture.capturableOn(AxisVertical);

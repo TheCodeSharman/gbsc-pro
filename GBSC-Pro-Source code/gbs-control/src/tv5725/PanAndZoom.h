@@ -18,18 +18,6 @@
 
 namespace Tv5725 {
 
-// Active area as a fraction of the total. Horizontal barely moves across VESA,
-// CEA and the NES; vertical splits hard on field rate, because a 50 Hz source
-// carries the same active height in a longer frame. A starting point for an
-// untuned source, not a derivation.
-extern const float DefaultHActiveFraction;
-extern const float DefaultVActiveFraction60Hz;
-extern const float DefaultVActiveFraction50Hz;
-
-// Err toward capturing blanking rather than cropping picture: black edges are
-// visible and adjustable, a cropped edge looks like a tuning fault.
-extern const float OverCapture;
-
 // A control that can crop the capture to nothing is one keypress from a dead
 // picture with no way back.
 extern const uint16_t MinimumCapture;

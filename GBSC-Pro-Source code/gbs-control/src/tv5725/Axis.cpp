@@ -6,19 +6,18 @@ namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
            uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity,
-           float activeFraction50Hz, float activeFraction60Hz, bool vertical)
+           float activeStart, float activeExtent, bool vertical)
     : startConst_(startConst), startPerMag_(startPerMag),
       windowStopMin_(windowStopMin), margin_(margin), scaleMin_(scaleMin),
       captureGranularity_(captureGranularity),
-      activeFraction50Hz_(activeFraction50Hz),
-      activeFraction60Hz_(activeFraction60Hz), vertical_(vertical) {}
+      activeStart_(activeStart), activeExtent_(activeExtent),
+      vertical_(vertical) {}
 
 bool Axis::vertical() const { return vertical_; }
 
-float Axis::activeFraction(float fieldRateHz) const
-{
-    return fieldRateHz < 55.0f ? activeFraction50Hz_ : activeFraction60Hz_;
-}
+float Axis::activeStart() const { return activeStart_; }
+
+float Axis::activeExtent() const { return activeExtent_; }
 
 float Axis::startConst() const { return startConst_; }
 
@@ -55,6 +54,19 @@ uint16_t Axis::minimumCapture(uint16_t rasterTotal) const
     uint32_t smallest = ((uint32_t)rasterTotal * scaleMin_ + Scale::Unity - 1)
                         / Scale::Unity;
     return (uint16_t)smallest;
+}
+
+uint16_t Axis::maximumCapture(uint16_t rasterTotal, uint16_t activeStop) const
+{
+    // fitToRaster solves produced = room x capture / (capture + startPerMag),
+    // so the scale it asks for is Unity x (capture + startPerMag) / room. The
+    // capture the room still holds is the largest that keeps that at or under
+    // Scale::Max, and the write offset is charged because it comes out of the
+    // same room.
+    const float room = maxDisplayWindow(rasterTotal, 0, activeStop);
+    const float largest = room * (float)Scale::Max / (float)Scale::Unity
+                        - startPerMag_;
+    return largest <= 0.0f ? 0 : (uint16_t)largest;
 }
 
 float Axis::originOffset(float magnification) const
@@ -172,8 +184,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min, 2, 0.76f, 0.76f, false);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, Scale::Min, 2, 0.117f, 0.864f, false);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min, 1, 0.82f, 0.95f, true);
+const Axis AxisVertical(0.2f, 0.8f, 0, 3, Scale::Min, 1, 0.061f, 0.933f, true);
 
 }  // namespace Tv5725

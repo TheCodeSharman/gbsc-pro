@@ -14,21 +14,21 @@ class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
          uint16_t margin, uint16_t scaleMin, uint16_t captureGranularity,
-         float activeFraction50Hz, float activeFraction60Hz, bool vertical);
+         float activeStart, float activeExtent, bool vertical);
 
     // Which axis this is. The one place that knows: callers pass the axis and
     // the arithmetic reads what it needs off it, rather than each call taking a
     // flag and re-deriving the same per-axis data from it.
     bool vertical() const;
 
-    // How much of the line an untuned source is assumed to fill. Horizontal
-    // barely moves across VESA, CEA and the NES; vertical splits hard on field
-    // rate, because a 50 Hz source carries the same active height in a longer
-    // frame. A starting point, not a derivation.
-    //
-    // This is what the horizontal/vertical flag used to select. It is data on
-    // the axis now, so the arithmetic never asks which axis it is on.
-    float activeFraction(float fieldRateHz) const;
+    // Where active video starts and how far it runs on a source running no
+    // raster the standards state, as a fraction of the whole line or frame.
+    // The ENVELOPE of what real sources put on a line, so nothing is cropped
+    // and what is captured beyond the picture is black -- which is visible and
+    // one press away, where a cropped edge looks like a fault.
+    // docs/investigations/vesa-modes-are-clipped-by-default.md
+    float activeStart() const;
+    float activeExtent() const;
 
     // write start = VDS_?B_SP + startConst + startPerMag x magnification.
     // Pipeline latency before the first write: ~25 input samples of run-up for
@@ -70,6 +70,13 @@ public:
     // magnification. Below it cropping cannot be compensated, so the picture
     // shrinks on screen and the display window closes in around it.
     uint16_t minimumCapture(uint16_t rasterTotal) const;
+
+    // The largest capture this raster can SHOW. VDS_?SCALE divides 1024 and
+    // tops out at Scale::Max, so the least magnification the part can express
+    // is barely over 1:1 and it cannot minify at all: a capture past this
+    // produces a picture past the room, and the far end is cropped rather than
+    // shrunk, with the clamped scale the only trace.
+    uint16_t maximumCapture(uint16_t rasterTotal, uint16_t activeStop) const;
 
     float originOffset(float magnification) const;
 
@@ -126,7 +133,7 @@ private:
 
     float startConst_, startPerMag_;
     uint16_t windowStopMin_, margin_, scaleMin_, captureGranularity_;
-    float activeFraction50Hz_, activeFraction60Hz_;
+    float activeStart_, activeExtent_;
     bool vertical_;
 };
 

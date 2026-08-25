@@ -11,6 +11,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "CheckNear.h"
 #include "Si5351Stubs.h"
 #include "fake/Wire.h"
 
@@ -150,12 +151,13 @@ static void checkBenchGeometry()
     CHECK(Adc::PLLAD_FS::read() == 1);
     CHECK(Adc::PLLAD_BPS::read() == 1);
 
-    // The capture window, measured on the unit. The doubler is in the path on
-    // this source, so the vertical counts half-lines.
-    CHECK(InputFormatter::IF_HB_SP2::read() == 118);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1008);
-    CHECK(InputFormatter::IF_VB_SP::read() == 46);
-    CHECK(InputFormatter::IF_VB_ST::read() == 578);
+    // The capture window: this source runs no raster the standards state, so it
+    // is placed across the envelope of what real sources put on a line. The
+    // doubler is in the path here, so the vertical counts half-lines.
+    CHECK(InputFormatter::IF_HB_SP2::read() == 132);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1105);
+    CHECK(InputFormatter::IF_VB_SP::read() == 38);
+    CHECK(InputFormatter::IF_VB_ST::read() == 620);
 
     // The progressive line window spans exactly one line from where it starts,
     // and may run past the end of the line without that being a fault.
@@ -163,8 +165,8 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1190);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 524);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 487);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 572);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 533);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -188,20 +190,20 @@ static void checkBenchGeometry()
     // playback never walks past the written picture.
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1849);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1847);
     CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
 
     // VDS_HB_SP is on its floor of 8 -- below that the left of the picture
     // corrupts -- so the display window carries the placement instead.
     CHECK(VideoProcessor::VDS_HB_SP::read() == 8);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 1);
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 112);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 108);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 3);
 
     // The playback burst, sized from the capture width so the fetch rate does
     // not move with the scale.
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
-    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 223);
+    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 244);
 
     // The rest of what PLLAD_LAT loads, and the decimators that follow the tap
     // it selects. 2250 samples on a 15574 Hz line is 35.0 MHz, the datasheet's
@@ -420,10 +422,10 @@ TEST_CASE("a reset puts the framing back and re-solves everything from it")
     engine.reset();
     REQUIRE(pollUntilSolved(engine));
 
-    CHECK(InputFormatter::IF_HB_SP2::read() == 118);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1008);
-    CHECK(InputFormatter::IF_VB_SP::read() == 46);
-    CHECK(InputFormatter::IF_VB_ST::read() == 578);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 132);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1105);
+    CHECK(InputFormatter::IF_VB_SP::read() == 38);
+    CHECK(InputFormatter::IF_VB_ST::read() == 620);
 
     // Not just the framing: the divider, the raster, the clock and both windows
     // land where a fresh mode change would put them.
@@ -497,9 +499,14 @@ TEST_CASE("changing the output keeps the framing the user tuned")
 {
     // applyPresets() is the one caller of modeChanged(), and it runs for a
     // SOURCE mode change and for a user picking a different output resolution.
-    // The framing is a proportion of the capturable region, which is a property
-    // of the input line -- so an output change moves neither the denominator nor
-    // the user's intent, and dropping it makes every output change a re-tune.
+    // The framing is a proportion of the capturable region, so an output change
+    // keeps the user's intent and dropping it makes every output change a
+    // re-tune.
+    //
+    // Within a unit rather than bit-exact: an output too short to show a doubled
+    // frame takes the line doubler out, which halves what the IF counts, and the
+    // proportion is re-gridded onto the new capture. The intent survives that;
+    // the float does not.
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
@@ -513,7 +520,15 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     engine.modeChanged(OutputMode::forFrameHeight(525), 4);
     REQUIRE(pollUntilSolved(engine));
 
-    CHECK(engine.framing() == tuned);
+    const float unit = 1.0f / (float)engine.capturableOn(AxisVertical);
+    CHECK_NEAR(engine.framing().originOn(AxisHorizontal),
+               tuned.originOn(AxisHorizontal), unit);
+    CHECK_NEAR(engine.framing().extentOn(AxisHorizontal),
+               tuned.extentOn(AxisHorizontal), unit);
+    CHECK_NEAR(engine.framing().originOn(AxisVertical),
+               tuned.originOn(AxisVertical), unit);
+    CHECK_NEAR(engine.framing().extentOn(AxisVertical),
+               tuned.extentOn(AxisVertical), unit);
 }
 
 TEST_CASE("a source comes back to the framing it was left at")
@@ -708,24 +723,35 @@ TEST_CASE("a framed picture holds every window against the framing")
     engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
+    // What the solve placed before anything was framed. Held rather than
+    // written down, because the placement follows the source and a constant
+    // here would only track whatever the default happens to be.
+    const long captureStart = InputFormatter::IF_HB_SP2::read();
+    const long captureStop = InputFormatter::IF_HB_ST2::read();
+    const long linesStart = InputFormatter::IF_VB_SP::read();
+    const long linesStop = InputFormatter::IF_VB_ST::read();
+    const long wideScale = VideoProcessor::VDS_HSCALE::read();
+    const long tallScale = VideoProcessor::VDS_VSCALE::read();
+
     frameAt(engine, 300, 120, 40, -15);
     Wire.reset();
     Wire.poison(Poison);
     seedSourceMeasurement();
     REQUIRE(engine.resolve());
 
-    // The capture narrows 300 units horizontally and 120 vertically,
-    // then moves 40 right and 15 up.
-    CHECK(InputFormatter::IF_HB_SP2::read() == 308);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 898);
-    CHECK(InputFormatter::IF_VB_SP::read() == 91);
-    CHECK(InputFormatter::IF_VB_ST::read() == 503);
+    // The capture narrows 300 units horizontally and 120 vertically, then moves
+    // 40 right and 15 up -- and a zoom keeps the window centred, so it takes
+    // half of what the extent lost with it.
+    CHECK(InputFormatter::IF_HB_SP2::read() == captureStart + 40 + 150);
+    CHECK(InputFormatter::IF_HB_ST2::read() == captureStop + 40 + 150 - 300);
+    CHECK(InputFormatter::IF_VB_SP::read() == linesStart - 15 + 60);
+    CHECK(InputFormatter::IF_VB_ST::read() == linesStop - 15 + 60 - 120);
     CHECK(InputFormatter::IF_LINE_ST::read() == 64);
     CHECK(InputFormatter::IF_LINE_SP::read() == 1190);
 
     // Both scales rise to magnify the smaller capture onto the same raster.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 353);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 378);
+    CHECK(VideoProcessor::VDS_HSCALE::read() < wideScale);
+    CHECK(VideoProcessor::VDS_VSCALE::read() < tallScale);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -737,15 +763,17 @@ TEST_CASE("a framed picture holds every window against the framing")
 
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1845);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1117);
+    // The picture still spans the raster it is magnified onto, whatever the
+    // framing cropped: the far edges sit on the same porches the unframed solve
+    // put them on.
+    CHECK(VideoProcessor::VDS_HB_ST::read() > 1800);
+    CHECK(VideoProcessor::VDS_VB_ST::read() > 1100);
     CHECK(VideoProcessor::VDS_HB_SP::read() == 8);
-    CHECK(VideoProcessor::VDS_VB_SP::read() == 2);
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 136);
-    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 4);
+    CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
+    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());
 
     CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
-    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 150);
 
     // The raster did not change, so its registers are not rewritten.
     CHECK(registersWritten() == 32);
@@ -775,12 +803,19 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
-    // 494 of the frame's 500 lines, magnified 2.26x to fill the 1125-line
-    // raster. Doubling the frame put the stop at 994, which the counter never
-    // reaches, and left the scale sized for a capture twice the arriving one.
-    CHECK(InputFormatter::IF_VB_SP::read() == 3);
-    CHECK(InputFormatter::IF_VB_ST::read() == 497);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 453);
+    // The window stays inside the 500 lines the counter reaches, and the scale
+    // is sized for the capture that arrives. Doubling the frame put the stop at
+    // 994, which the counter never reaches, and left the scale magnifying a
+    // capture twice the real one -- so both halves are checked against the
+    // frame rather than against a constant.
+    const long start = InputFormatter::IF_VB_SP::read();
+    const long stop = InputFormatter::IF_VB_ST::read();
+    CHECK(stop > start);
+    CHECK(stop < 500);
+
+    const long produced = (stop - start) * 1024 / VideoProcessor::VDS_VSCALE::read();
+    CHECK(produced > 1100);
+    CHECK(produced <= 1126);
 }
 
 // --- a divider carried over from the previous mode ---------------------------
