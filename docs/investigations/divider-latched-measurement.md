@@ -207,14 +207,36 @@ from measurements the divider colours, which is what makes the trap
 self-latching; a latched flag from a different block does not depend on the
 divider at all.
 
-Two things to establish before building on it. Whether bit 3 actually fires for a
-source mode change on this board -- it reads 0 now, but a `SFTRST_MODE_RSTZ`
-pulse preceded that reading and would have cleared it. And that anything using it
-must acknowledge it: `INT_RST_3` exists and nothing writes it, so once latched it
-stays latched and reads as a permanent "a mode change happened".
+**The bits do not persist, so the argument above needs correcting.** Measured
+with the source driven over ModeServ and NOTHING polled during the change --
+`INT_RST_*` all pulsed to clear, the mode changed, then a single read 25 s
+later:
 
-`mode_detect_watch.py` samples s0_0F in the same burst as the period registers,
-so one source change answers this and the `VPERIOD_IF` question together.
+```
+before  s0_0F = 0x00      -> 640x480@60, +25 s   s0_0F = 0x00   VTOT 524, MD 1124
+before  s0_0F = 0x00      -> 320x256@50, +25 s   s0_0F = 0x00   VTOT 311, MD 2250
+```
+
+Both changes solved correctly, so this is not a broken transition. Nothing
+acknowledges bit 3, and it still reads 0 afterwards. So it is not latched in the
+sense assumed, or it self-clears when the condition ends -- and **a slow poll
+CAN miss the edge**, which is the property the whole argument rested on.
+
+The bits are visible only while the change is happening. Polling s0_0F four
+times a second from the host does catch them -- bit 4 at +0.92 s on one
+transition, bits 1, 3 and 7 at +0.96 s on another -- but that poll rate is not
+usable: register reads are deferred to `loop()`, and it starved the loop badly
+enough to wedge the mode change it was watching, leaving `PLLAD_MD` on the
+previous mode's value with `IF_HSYNC_RST` 202.
+
+**So the host cannot settle this, and firmware can.** `loop()` reads s0_0F far
+faster than any HTTP poll and pays one I2C read for it. The sampling log carries
+the byte as its last column for exactly that reason; `mode_detect_watch.py`
+samples it too, but from outside, which is the side that cannot see it.
+
+What that costs the design: the interrupt is still the cheapest possible
+trigger, but it can only be consumed in `loop()`, and it cannot be used as a
+flag that survives until someone gets round to it.
 
 ## See also
 
