@@ -95,6 +95,82 @@ across a sweep produces garbage readings at almost every change that resolve on
 their own, and scoring those as failures gave 15 false positives in a single run.
 
 
+## One mechanism is split off and closed: the vertical blank
+
+A window whose start lies beyond the frame stops the input formatter emitting
+anything, `HPERIOD_IF` included, and `IF_VB_ST` is solved for the mode. So a
+mode change into a SHORTER frame strands it, and the register that would put it
+right is only written once the measurement it prevents has succeeded. That is
+established by single-register experiments both ways and is fixed;
+[`if-vertical-blank-strands-the-measurement.md`](if-vertical-blank-strands-the-measurement.md)
+has it.
+
+**Check `IF_VB_ST` against the frame before treating a reading as this page's
+fault.** The frame is the source line count, doubled when the line doubler is in
+the path. In range, the fault here is still open and none of the below changes.
+
+Two things follow for what is on this page. **The frozen results are consistent
+with that mechanism and cannot have exercised it**: `/freeze?on=1` stops anything
+writing `IF_VB_ST`, so a window left inside the smallest frame in the sweep stays
+inside every larger one, and the divider walk never touched it either. That does
+not refute the frozen-sweep conclusion, it narrows what those runs could have
+shown. And **the state saved here is NOT that mechanism**:
+`snapshots/hperiod-railed-latched-2026-08-20.json` has `IF_VB_ST` 578 against a
+line-doubled 311-line source, a 622-line frame, so the window is in range.
+
+A settled 524-line source still reads a steady `HPERIOD_IF` of 50 with the window
+correct at 522, the field rate measuring and the picture healthy — so a stable
+wrong value survives the fix, and this page has lost nothing.
+
+## The test bus disagrees with the counter, on the same block at the same instant
+
+The field rate timed at `DEBUG_IN_PIN` and `HPERIOD_IF` both come out of the
+input formatter. At a mode the counter fails on, they give different answers:
+
+```
+at 640x480@60   test pin  60.00 Hz x 524 lines -> 31440 Hz, and the engine solves on it
+                HPERIOD_IF  steady 50 in 15 of 15, where 213 is due
+```
+
+So this is the **counter**, not the block. Whatever the input formatter needs in
+order to time a vertical edge, it has, and it is delivering it correctly while
+the horizontal period register is wrong by a factor of four. Anything proposing a
+cause that would stop the block measuring has to explain why the other
+measurement out of it is unaffected.
+
+It also settles what the fault costs, which is not obvious from the register:
+**nothing on the video path**. The geometry solved against the test pin is
+correct at both ends of the round trip, the framing returns to 0,0,0,0 and the
+picture is clean.
+
+The practical consequence is for anyone tempted to read the line rate here
+rather than time it. `HPERIOD_IF` is divider-independent, needs no vsync and
+costs one register read instead of up to 250 ms a pulse, so it is an attractive
+replacement -- but at 524 lines it is confidently wrong AND perfectly steady,
+which no stability check separates from a good reading. Taken at face value it
+implies 132 kHz over 524 lines, a 252 Hz field rate, which `lineRateFrom()`
+rejects as outside the band -- so the engine would refuse for ever rather than
+solve wrongly. 640x480@60 would simply never come up. **It is not usable as the
+measurement until this page is closed.**
+
+## Reproduced from a cold boot, current firmware
+
+The table below is re-run with the vertical-blank stranding fixed, so it is the
+railing alone. The source is not touched between the first two rows.
+
+```
+                     VTOTAL    MD  HT_OK  HPERIOD_IF
+as cold booted          311  2250      0  0/6/255/260/511, garbage
+at 640x480@60           524  1124      1  50, steady in 15 of 15
+back at 320x256@50      311  2250      1  430/431, correct
+```
+
+`IF_VB_ST` is 578 against a 622-line frame throughout the first row -- in range,
+so the cold-boot garbage is not the stranding fault. `STATUS_IF_HT_OK` does
+separate the first row from the others, and is the one place it carries
+information; it reads 1 for the steady wrong 50, so it is still not a validity
+signal.
+
 ## Hypotheses tested and refuted
 
 An earlier version of this section concluded that it "works on 15 kHz sources and
