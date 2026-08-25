@@ -60,6 +60,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/net/RegisterQueue.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/FramingText.h"
+#include "src/tv5725/SlotText.h"
 #include "src/tv5725/Geometry.h"
 #include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
@@ -961,6 +962,16 @@ static uint32_t framingMovedAt = 0;
 // and for the same reason: a silent bad read followed by an ordinary save is
 // how a table gets replaced by an empty one.
 static bool framingIsSuspect = true;
+
+// The framing a numbered slot holds, in its own file again. A slot is what the
+// user chose to keep and named, where the table above is what the engine
+// remembers on its own. docs/framing-presets.md
+Tv5725::SlotTable slotFramings;
+static const char SlotFramingFilePath[] = "/slots.txt";
+
+// A slot is written on an explicit save rather than on every press, so there is
+// nothing to debounce -- only the same read guard.
+static bool slotFramingIsSuspect = true;
 
 Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
@@ -2933,12 +2944,9 @@ uint32_t getPllRate()
 // The user's preference answers it for every resolution the interfaces offer;
 // reading the raster registers back instead inherits from whatever loaded last.
 //
-// Two cases still inherit, deliberately and visibly:
-//
-//   - OutputCustomized: the saved preset's bytes ARE the mode, so the read-back
-//     is correct there. It goes when a slot records the inputs to the
-//     calculation rather than a register dump.
-//   - OutputBypass: no scaled raster to solve, and OutputMode::forFrameHeight() finds none.
+// One case still inherits, deliberately and visibly: OutputBypass, which has no
+// scaled raster to solve and which OutputMode::forFrameHeight() finds no mode
+// for.
 //
 // THE FIELD RATE IS MEASURED HERE, NOT INSIDE THE ENGINE. It disambiguates one
 // preference -- Output480P is 480 active lines at 60 Hz and 576 at 50, two
@@ -2952,9 +2960,7 @@ static const Tv5725::OutputMode *outputModeForThisLoad()
     if (rto->outputMode != 0)
         return rto->outputMode;
 
-    // The last thing that inherits: a custom preset, whose saved bytes ARE the
-    // mode, and bypass, which has no scaled raster. Goes when a slot records the
-    // inputs to the calculation rather than a register dump.
+    // Bypass, which has no scaled raster.
     return Tv5725::OutputMode::forFrameHeight(GBS::VDS_VSYNC_RST::read() + 1);
 }
 
@@ -3312,18 +3318,12 @@ void doPostPresetLoadSteps()
         //
         // AFTER setOverSampleRatio() has settled rto->osr, because the sample
         // clock is the product of the divider and the oversampling.
-        //
-        // **BOTH BRANCHES MUST RUN**, or the engine has no divider and every
-        // solve defers forever. A custom preset is a register dump replayed off
-        // the filesystem, so its saved PLLAD_MD is a value the user has a
-        // picture from and adopting it keeps that; computing over it would not.
-        // The branch goes when a slot records the INPUTS to the calculation.
 
         // The source is about to change mode, and nothing measurable about it
         // is true yet. Everything the solve needs that cannot be re-derived
         // later goes with the message; loop() drives the rest once the source
         // has settled into the new mode. AFTER the block above, which settles
-        // rto->osr for a custom preset.
+        // rto->osr.
         geometry.modeChanged(outputModeForThisLoad(), rto->osr);
 
         if (rto->presetIsPalForce60) {
@@ -6755,9 +6755,10 @@ void setup()
             // standard. There are no register dumps any more, and a unit
             // upgraded from a build that had them boots with 2 stored. Say so
             // rather than silently landing on a different resolution than the
-            // one the display has been showing. The VALUE stays reserved --
-            // docs/chip-initialisation.md step 7 re-points a slot at the inputs
-            // to the calculation, and the preferences layout must not shift.
+            // one the display has been showing. The VALUE stays reserved
+            // because the preferences layout is positional; nothing selects it,
+            // because a slot now holds a framing and the output resolution is a
+            // preference of its own. docs/framing-presets.md
             if (uopt->presetPreference == OutputCustomized) {
                 bootLogPrintf("PREFS: preset 2 was a saved register dump; using 1080p\n");
                 uopt->presetPreference = Output1080P;
@@ -6899,6 +6900,11 @@ void setup()
         loadFramingTable();
         bootLogPrintf("FRAMING: %u stored, suspect=%d t=%lums\n",
             (unsigned)geometry.framings().count(), framingIsSuspect ? 1 : 0,
+            (unsigned long)millis());
+
+        loadSlotFramings();
+        bootLogPrintf("SLOTS: %u stored, suspect=%d t=%lums\n",
+            (unsigned)slotFramings.count(), slotFramingIsSuspect ? 1 : 0,
             (unsigned long)millis());
     }
 
@@ -8280,15 +8286,21 @@ void handleType2Command(char argument)
         case '2':
             //
             break;
-        // A slot used to be a register dump written to and replayed from flash.
-        // Both routes stay so the web UI's slot grid keeps its surface, and both
-        // refuse until a slot records the INPUTS to the calculation instead --
-        // step 7 of docs/chip-initialisation.md.
+        // A slot holds the framing the user tuned, against the source it was
+        // tuned for -- the inputs to the calculation, never the registers it
+        // produced. docs/framing-presets.md
+        //
+        // Both say what they did: a silent no-op leaves someone pressing save
+        // and believing it worked.
         case '3': // load custom preset
-            SerialM.println(F("slot load: no register dumps any more, ignoring"));
+            SerialM.println(recallSlotFraming(currentSlotIndex())
+                ? F("slot load: framing restored")
+                : F("slot load: nothing stored for this source"));
             break;
         case '4': // save custom preset
-            SerialM.println(F("slot save: no register dumps any more, ignoring"));
+            SerialM.println(storeSlotFraming(currentSlotIndex())
+                ? F("slot save: framing stored")
+                : F("slot save: no source measured, or the table is full"));
             break;
         case '5':
             // 
@@ -9414,6 +9426,11 @@ void startWebserver()
         slotsBinaryOutputFile.write((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryOutputFile.close();
 
+        // The grid's save button is what a user reaches for, so the framing
+        // goes in here as well as on /uc?4. Held state only -- the framing and
+        // the key the engine already has -- so this stays off the bus.
+        storeSlotFraming((int16_t)slotIndex);
+
         result = true;
       }
     }
@@ -9487,6 +9504,10 @@ fail:
         File slotsBinaryFileWrite = LittleFS.open(SLOTS_FILE, "w");
         slotsBinaryFileWrite.write((byte *)&slotsObject, sizeof(slotsObject));
         slotsBinaryFileWrite.close();
+
+        // Or the next slot named here inherits a framing nobody stored for it.
+        if (slotFramings.forget((uint8_t)currentSlot))
+            saveSlotFramings();
         result = true;
       }
     }
@@ -9870,6 +9891,87 @@ void saveFramingTable()
     f.close();
 
     framingSavedRevision = geometry.framingRevision();
+}
+
+// Which slot the user has selected, as an index into slotFramings, or -1 when
+// the preference names none.
+int16_t currentSlotIndex()
+{
+    return (int16_t)slotIndexMap.indexOf((char)uopt->presetSlot);
+}
+
+void loadSlotFramings()
+{
+    slotFramingIsSuspect = true;
+
+    if (!LittleFS.exists(SlotFramingFilePath)) {
+        slotFramingIsSuspect = false;
+        return;
+    }
+
+    File f = LittleFS.open(SlotFramingFilePath, "r");
+    if (!f)
+        return;
+
+    Tv5725::SlotText text(slotFramings);
+    char line[80];
+    while (f.available()) {
+        const String next = f.readStringUntil('\n');
+        strncpy(line, next.c_str(), sizeof(line) - 1);
+        line[sizeof(line) - 1] = '\0';
+        text.readLine(line);
+    }
+    f.close();
+
+    slotFramingIsSuspect = false;
+}
+
+void saveSlotFramings()
+{
+    if (slotFramingIsSuspect) {
+        printf("not saving slot framings: this boot could not read them\n");
+        return;
+    }
+
+    File f = LittleFS.open(SlotFramingFilePath, "w");
+    if (!f)
+        return;
+
+    f.print(F("# slot framings: <slot> <lines>@<fieldRateHz> = "
+              "originH extentH originV extentV\n"
+              "# in ten-thousandths of the capturable region\n"));
+
+    Tv5725::SlotText text(slotFramings);
+    char line[80];
+    for (uint16_t i = 0; i < slotFramings.count(); ++i)
+        if (text.writeLine(i, line, sizeof(line))) {
+            f.print(line);
+            f.print('\n');
+        }
+    f.close();
+}
+
+// The current framing into the current slot, against the source it is framed
+// for. The INPUTS to the calculation, never the registers it produced.
+// docs/framing-presets.md
+bool storeSlotFraming(int16_t slot)
+{
+    if (slot < 0)
+        return false;
+    if (!slotFramings.remember((uint8_t)slot, geometry.framedKey(),
+                               geometry.framing()))
+        return false;
+    saveSlotFramings();
+    return true;
+}
+
+// Restored through the engine, which re-solves every register from it.
+bool recallSlotFraming(int16_t slot)
+{
+    Tv5725::PanAndZoom framing;
+    if (slot < 0 || !slotFramings.find((uint8_t)slot, geometry.framedKey(), &framing))
+        return false;
+    return geometry.applyFraming(framing);
 }
 
 // Called every loop. Nothing is written until the table has held still.

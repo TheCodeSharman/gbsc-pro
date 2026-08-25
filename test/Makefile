@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc clean help
+.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -110,6 +110,23 @@ framing-table:
 	  src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_framing_table"
 
+## slot-table: host unit tests for Tv5725::SlotTable
+#
+# The framing a user stored in a numbered slot, against the source it was stored
+# for. Pure, so every rule about the table rather than about flash is checked
+# here. docs/framing-presets.md.
+slot-table:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_slot_table" \
+	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
+	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
+	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
+	  src/tv5725/PictureOrigin.cpp
+	@"$(OUT)/test_slot_table"
+
 ## framing-text: host unit tests for Tv5725::FramingText
 #
 # The framing table as lines of text, and what a partial or hand-edited file
@@ -119,12 +136,30 @@ framing-text:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_framing_text" \
 	  "$(HERE)/test_framing_text.cpp" src/tv5725/FramingText.cpp \
+	  src/tv5725/FramingLine.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/SourceKey.cpp \
 	  src/tv5725/SourceMeasurement.cpp src/tv5725/InputLine.cpp \
 	  src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/AxisSolution.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_framing_text"
+
+## slot-text: host unit tests for Tv5725::SlotText
+#
+# The slot table as lines of text, and what a partial or hand-edited file does.
+# docs/framing-presets.md.
+slot-text:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_slot_text" \
+	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
+	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
+	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
+	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
+	  src/tv5725/PictureOrigin.cpp
+	@"$(OUT)/test_slot_text"
 
 ## input-line: host unit tests for Tv5725::InputLine
 #
@@ -522,7 +557,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text scale sync-output input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
+test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

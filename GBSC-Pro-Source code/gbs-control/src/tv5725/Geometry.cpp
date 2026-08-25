@@ -39,6 +39,8 @@ bool Geometry::rememberFraming(const SourceKey &key, const PanAndZoom &framing)
     return true;
 }
 
+const SourceKey &Geometry::framedKey() const { return framedKey_; }
+
 uint16_t Geometry::framingRevision() const { return framingRevision_; }
 
 bool Geometry::changing() const { return modePending_ || solvePending_; }
@@ -481,6 +483,11 @@ bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
     wanted.zoomBy(AxisVertical, unitsFor(dvPixels, verticalScale_, AxisVertical),
                   usableVertical_);
     return step(wanted);
+}
+
+bool Geometry::applyFraming(const PanAndZoom &framing)
+{
+    return step(framing);
 }
 
 bool Geometry::fail()

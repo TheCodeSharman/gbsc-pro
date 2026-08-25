@@ -1153,3 +1153,50 @@ TEST_CASE("the reference is re-applied when the count it was sized from moves")
     CHECK(ks == Adc::postDividerFor(
                     (uint32_t)Wire.field(5, 0x12, 0, 12) * 524u * 60u));
 }
+
+TEST_CASE("a framing applied whole lands as the window it describes")
+{
+    // What loading a slot does: the stored proportions become the live framing
+    // and every register is re-solved from them, rather than a saved framing
+    // being replayed as registers. docs/framing-presets.md
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
+    REQUIRE(engine.applyFraming(stored));
+
+    for (int vertical = 0; vertical < 2; ++vertical) {
+        const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
+        const uint16_t usable = engine.capturableOn(axis);
+        CAPTURE(vertical);
+        CHECK(engine.originUnitsOn(axis)
+              == lrintf(stored.originOn(axis) * (float)usable));
+        CHECK(engine.extentUnitsOn(axis)
+              == lrintf(stored.extentOn(axis) * (float)usable));
+    }
+
+    SUBCASE("and the source is left framed that way for next time") {
+        PanAndZoom remembered;
+        REQUIRE(engine.framings().find(SourceKey(311, 50.08f), &remembered));
+        CHECK(remembered == engine.framing());
+    }
+}
+
+TEST_CASE("the engine says which source the framing it holds is against")
+{
+    // What a slot records alongside the framing, so restoring one into a
+    // different source can be refused. docs/framing-presets.md
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    CHECK_FALSE(engine.framedKey().valid());
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.framedKey() == SourceKey(311, 50.08f));
+}

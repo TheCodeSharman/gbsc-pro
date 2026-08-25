@@ -36,6 +36,10 @@ public:
     const FramingTable &framings() const;
     bool rememberFraming(const SourceKey &key, const PanAndZoom &framing);
 
+    // The source the framing held is against. Invalid until one has been
+    // measured, so a caller storing a framing against it has to ask first.
+    const SourceKey &framedKey() const;
+
     // Moves whenever the table does. A pad press must not write flash, so the
     // sketch debounces -- and comparing this against what it last wrote is how
     // it knows a write is owed at all rather than paying for one every tick.
@@ -79,6 +83,12 @@ public:
 
     bool pan(int16_t dxPixels, int16_t dyPixels);
     bool zoom(int16_t dhPixels, int16_t dvPixels);
+
+    // A whole framing at once, for whoever restores one a user stored: the
+    // proportions become the live framing and every register is re-solved from
+    // them. The engine calculates -- a stored framing is never replayed as
+    // registers. docs/framing-presets.md
+    bool applyFraming(const PanAndZoom &framing);
 
     // Re-solve every register from the framing held and the source as it reads
     // now. Measures, so it must run from loop().
