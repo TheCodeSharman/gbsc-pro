@@ -1068,6 +1068,12 @@ firmware C++.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
+- **Group by FEATURE first, then split that group by kind.** A theme is one
+  feature — every change that implemented it — not one file, one layer, or one
+  working session. A reviewer reads a feature once; grouping by file makes the
+  churn the unit and leaves them rebuilding the feature out of five commits
+  because it touched five files. `docs/patch-workflow.md` has the mechanics,
+  including which regroupings conflict and why.
 - **A commit holds ONE of these four, never a mixture.** The firmware is a fork
   and its commits have to be cherry-pickable upstream on their own; a commit that
   also edits our Python or our conventions cannot be taken without them.
@@ -1080,8 +1086,10 @@ firmware C++.
   | design notes | `docs/**` | `docs:` |
 
   `test/` travels with the firmware — it is the host-compiled C++ that proves it.
-  When one change needs two kinds, land the firmware first and the rest straight
-  after; the pair is still one push. Check before committing:
+  So one feature is at most four commits, landing as an **adjacent run**:
+  firmware first, then its tooling and its docs. The run is still one push, and
+  it is one conceptual commit split only as far as cherry-pickability demands.
+  Check before committing:
 
   ```sh
   git show --name-only --format= HEAD | \
