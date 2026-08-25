@@ -107,6 +107,15 @@ class Console:
 # The framing a reset returns to, and the one every solve starts from.
 DEFAULT_FRAMING = {"zh": 0, "zv": 0, "ph": 0, "pv": 0}
 
+
+def framing_of(payload):
+    """Just the framing, out of a /geometry body that also reports what the
+    engine measured of the source. Projected rather than compared whole: a field
+    added to the report is not a change of framing."""
+    if payload is None:
+        return None
+    return {name: payload[name] for name in DEFAULT_FRAMING if name in payload}
+
 # The character /sc? carries to reach Geometry::reset().
 #
 # **NOT '@'.** web_service() parks that in serialCommand to mean "nothing
@@ -230,7 +239,8 @@ def reset_framing(host, timeout=20.0):
     if status != 200:
         return False
     return bool(wait_for(
-        lambda: get_json(host, "/geometry")[1] == DEFAULT_FRAMING, timeout=timeout))
+        lambda: framing_of(get_json(host, "/geometry")[1]) == DEFAULT_FRAMING,
+        timeout=timeout))
 
 
 # --- registers --------------------------------------------------------------

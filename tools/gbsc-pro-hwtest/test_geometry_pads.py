@@ -40,7 +40,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-from gbs_unit import (DEFAULT_FRAMING, RESET_COMMAND, field_from, get, get_json,
+from gbs_unit import (DEFAULT_FRAMING, RESET_COMMAND, field_from, framing_of, get,
+                      get_json,
                       read_field, read_reg, read_segment, recover_lock, reset_framing,
                       wait_for, write_reg)
 
@@ -122,9 +123,10 @@ OUTPUT_AXES = (AXIS_HORIZONTAL, AXIS_VERTICAL)
 
 
 def framing(host):
-    """The engine's framing: zoom steps and pan offsets, per axis."""
+    """The engine's framing: zoom steps and pan offsets, per axis. /geometry
+    also reports what it measured of the source, which is not framing."""
     status, parsed = get_json(host, "/geometry")
-    return parsed if status == 200 else None
+    return framing_of(parsed) if status == 200 else None
 
 
 def moved_off(value, poison):

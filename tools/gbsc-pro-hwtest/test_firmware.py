@@ -1564,6 +1564,66 @@ def test_bypass_does_not_leave_the_scaling_flag_set(host, source):
             "test after this one runs against a unit with no lock")
 
 
+# What bypassModeSwitch_RGBHV() programs into the HD bypass block for an RGB
+# source, after Tv5725::HdBypass::enable() has laid down the block's defaults.
+# OUT_SYNC_SEL is 1 in bypass, so HD_INI_ST is the raster the encoder locks to.
+HD_BYPASS_RGB = {
+    "HD_INI_ST":       ((1, 0x39, 0, 11), 0),
+    "HD_MATRIX_BYPS":  ((1, 0x30, 1, 1), 1),
+    "HD_DYN_BYPS":     ((1, 0x30, 2, 1), 1),
+}
+
+
+def test_bypass_keeps_the_block_it_programmed(host, source):
+    """RGBHV bypass leaves the HD bypass block holding the RGB settings.
+
+    Measured on the bench 2026-08-22, on the 800x600 desktop the >535-line
+    override sends to bypass: HD_INI_ST read 1046 and both converter bypasses
+    read 0, which are Tv5725::HdBypass::enable()'s defaults rather than the
+    values bypassModeSwitch_RGBHV() writes after it. The TV reported no signal
+    with every other register matching a known-good bypass state byte for byte,
+    and writing HD_INI_ST back to 0 by hand restored the picture at once.
+
+    resetDigital() runs at the end of the bypass switch and re-releases the
+    block's reset. Releasing it through enable() reloads all 24 configuration
+    registers with it, so the switch's own writes are discarded every time.
+
+    Frozen for the same reason as the test above: /sc?k forces bypass onto a
+    source detection would rather scale, and the re-detection that follows is
+    the other party to the race.
+    """
+    # Poisoned first, so a pass means the bypass switch put these there rather
+    # than that they were already right.
+    write_reg(host, 1, 0x30, read_reg(host, 1, 0x30) & ~0x06)
+    write_reg(host, 1, 0x39, 0x07)
+    write_reg(host, 1, 0x3A, read_reg(host, 1, 0x3A) & ~0x07)
+    for name, ((seg, reg, off, width), wanted) in HD_BYPASS_RGB.items():
+        assert read_field(host, seg, reg, off, width) != wanted, (
+            f"could not move {name} off {wanted}, so the test cannot show the "
+            "bypass switch writing it")
+
+    try:
+        get(host, "/freeze?on=1")
+        get(host, "/sc?k")  # bypassModeSwitch_RGBHV()
+
+        assert wait_for(lambda: read_field(host, 1, 0x2B, 0, 7) == 0x22,
+                        timeout=15.0), (
+            "GBS_PRESET_ID never became PresetBypassRGBHV: bypass did not run, "
+            "so the block says nothing either way")
+
+        for name, ((seg, reg, off, width), wanted) in HD_BYPASS_RGB.items():
+            got = read_field(host, seg, reg, off, width)
+            assert got == wanted, (
+                f"{name} is {got} in RGBHV bypass, not the {wanted} the bypass "
+                "switch writes: something reloaded the block's defaults over it, "
+                "and HD_INI_ST decides the raster the encoder locks to")
+    finally:
+        get(host, "/freeze?on=0")
+        assert recover_lock(host), (
+            "the source never came back after the bypass round trip, so every "
+            "test after this one runs against a unit with no lock")
+
+
 # The four registers that decide whether the line doubler is in the capture path.
 # They are one setting, and a mixed set shears the picture per scanline.
 SCAN_MODE_FIELDS = {
