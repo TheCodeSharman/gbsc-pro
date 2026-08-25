@@ -130,6 +130,10 @@ public:
     // the unmeasurable run behind it, which is what recoverDivider() goes on.
     bool sampleSteady();
 
+    // The count the steadiness gate has settled on. Meaningful only when
+    // sampleSteady() has returned true; before that it is whatever arrived last.
+    uint16_t steadyLines() const;
+
     // How many consecutive UNMEASURABLE samples make a divider correction worth
     // a field rate measurement. Consecutive unmeasurable, not consecutive
     // identical: the trapped count wobbles by a line and holds no single value
@@ -253,6 +257,24 @@ public:
     uint16_t sourceLines() const;
     float fieldRateHz() const;
     uint16_t ifLine() const;
+
+    // Below this many total source lines the capture is line-doubled, so the
+    // rest of the chain has enough lines to reach the output resolution.
+    // Measured rather than derived: 363 lines are doubled and 448 are not, and
+    // no hardware limit produces the boundary between them.
+    // docs/investigations/hperiod-if-railing.md has the sweep.
+    static const uint16_t LineDoubleBelowLines = 400;
+
+    // Whether a source of this many total lines is captured line-doubled.
+    //
+    // **Line doubling is not deinterlacing.** This asks whether enough lines
+    // arrive; whether they arrive as fields is a separate fact with its own
+    // register. An interlaced 625-line frame has lines to spare and wants
+    // deinterlacing, not doubling.
+    //
+    // An unmeasured count comes back true: that is what a low-line-count source
+    // needs, and it is the one a wrong guess leaves short.
+    static bool lineDoublingFor(uint16_t sourceLines);
 
     // Whether the line doubler is in the capture path, which the scan mode
     // decides. It runs the IF's line counter at twice the source line rate, so

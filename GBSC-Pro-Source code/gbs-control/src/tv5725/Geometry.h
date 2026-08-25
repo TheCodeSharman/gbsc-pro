@@ -50,12 +50,6 @@ public:
     // now. Measures, so it must run from loop().
     bool resolve();
 
-    // Which scan mode the input formatter was put in, because both the capture
-    // width and the frame the vertical window sits on are computed from the
-    // line doubling it applies. InputFormatter::applyScanMode() owns the
-    // registers; this owns the arithmetic that has to agree with them.
-    void scanModeChanged(bool lineDoubled);
-
     // The source field rate the last solve ran at. Held, not measured here, so
     // a network callback may ask.
     float sourceFieldRateHz() const;
@@ -89,6 +83,21 @@ private:
     // The oversampling must have settled first: the sample clock is the product
     // of the divider and it.
     bool solveSampling(uint8_t oversample);
+
+    // Which scan mode the measured source line count calls for, held and
+    // written. Both the capture width and the frame the vertical window sits on
+    // are computed from the line doubling it applies.
+    //
+    // **Before solveSampling(), because the divider derives from it**: the
+    // capture write limit doubles with the line doubler, so the two describe
+    // one decision and the wrong order sizes the divider for the previous
+    // source.
+    // Whether the source has settled on a line count the last solve did not run
+    // against. The engine's own measurement, so a mode change needs nobody to
+    // announce it.
+    bool sourceMoved();
+
+    void solveScanMode();
 
     // Only the 50/60 split is taken from it.
     float sourceFieldRateOr50Hz() const;
@@ -131,6 +140,10 @@ private:
     PanAndZoom framing_;
     SourceMeasurement sampling_;      // the divider this engine solves against
     bool samplingPending_;   // solveSampling() adopted a fallback divider
+    bool scanModeApplied_;   // the registers have been written for this mode change
+    uint16_t solvedLines_;   // the source line count the last solve ran against
+    uint16_t idleLines_;     // the count seen while no mode change is outstanding
+    uint8_t idleRun_;        // how many polls it has held it
     bool solvePending_;
     bool modePending_;
     uint8_t modeOversample_;      // a solve refused because the source was settling

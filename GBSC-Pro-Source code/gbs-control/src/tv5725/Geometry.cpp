@@ -17,13 +17,12 @@ Geometry::Geometry(DisplayClock &displayClock)
     : displayClock_(displayClock),
       samplingPending_(false), solvePending_(false),
       modePending_(false),
-      modeOversample_(4), rasterMode_(0),
+      modeOversample_(4), scanModeApplied_(false), solvedLines_(0),
+      idleLines_(0), idleRun_(0), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
 const PanAndZoom &Geometry::framing() const { return framing_; }
-
-void Geometry::scanModeChanged(bool lineDoubled) { sampling_.holdLineDoubling(lineDoubled); }
 
 float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
@@ -144,6 +143,7 @@ void Geometry::modeChanged(const OutputMode *mode,
 
     modePending_ = true;
     modeOversample_ = oversample;
+    scanModeApplied_ = false;
     rasterMode_ = mode;
 
     // The line count is about to move, so the steadiness run so far means
@@ -160,8 +160,19 @@ void Geometry::modeChanged(const OutputMode *mode,
 
 bool Geometry::poll()
 {
-    if (!modePending_)
-        return solvePending_ ? resolve() : false;
+    if (!modePending_) {
+        if (sourceMoved())
+            modeChanged(rasterMode_, modeOversample_);
+        return modePending_ ? false : (solvePending_ ? resolve() : false);
+    }
+
+    // **BEFORE THE GATES BELOW, AND THIS IS THE POINT OF IT.** The input
+    // formatter's own measurements are only meaningful once its scan mode
+    // matches the source, so a scan mode left wrong makes the gates fail and a
+    // scan mode derived after them is never reached. The sync processor counts
+    // the source directly and is indifferent to the scan mode, which is what
+    // makes the line count usable here and nothing else.
+    solveScanMode();
 
     // The cheap gate. Everything below this line measures, and the field rate
     // costs up to 250 ms a vsync pulse.
@@ -209,6 +220,9 @@ bool Geometry::poll()
     displayClock_.reset();
     solveFromScratch();
 
+    // What this solve ran against, so a source that later differs from it arms
+    // the engine without anyone having to say so.
+    solvedLines_ = sampling_.sourceLines();
     modePending_ = false;
     FrameBuffer::releaseCapture();
     return true;
@@ -241,6 +255,7 @@ void Geometry::enterBypass()
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
     samplingPending_ = false;
+    solvedLines_ = 0;
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
     // from the last scaled mode would size the next one's picture.
@@ -287,9 +302,57 @@ bool Geometry::recoverSampling()
     if (!sampling_.recoverDivider(modeOversample_))
         return false;
 
+    solveScanMode();
     writeSampling();
     samplingPending_ = true;
     return false;
+}
+
+// **THIS MUST NOT USE sampling_.sampleSteady().** That call carries the
+// unmeasurable run recoverDivider() gates on, and letting it fill while the
+// engine is idle makes the recovery fire on the first poll of the next mode
+// change -- inferring a divider from a count that was never a measurement.
+// Measured: it wrote IF_HSYNC_RST 202 and left PLLAD_MD on the previous mode's
+// value, with the solve then unable to complete through a line counter wrapping
+// at 202.
+bool Geometry::sourceMoved()
+{
+    // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
+    // change so a later poll cannot write one over the setup it just chose.
+    if (rasterMode_ == 0 || solvedLines_ == 0)
+        return false;
+
+    const uint16_t lines = SourceMeasurement::measureSourceLines();
+    if (!SourceMeasurement::countIsSource(lines) || lines != idleLines_) {
+        idleLines_ = lines;
+        idleRun_ = 0;
+        return false;
+    }
+    if (idleRun_ < SourceMeasurement::SteadySamples) {
+        ++idleRun_;
+        return false;
+    }
+    if (lines == solvedLines_)
+        return false;
+
+    idleRun_ = 0;
+    return true;
+}
+
+void Geometry::solveScanMode()
+{
+    const uint16_t lines = SourceMeasurement::measureSourceLines();
+    if (!SourceMeasurement::countIsSource(lines))
+        return;
+
+    const bool doubled = SourceMeasurement::lineDoublingFor(lines);
+    if (scanModeApplied_ && doubled == sampling_.lineDoubled())
+        return;
+
+    sampling_.holdLineDoubling(doubled);
+    InputFormatter::applyScanMode(doubled ? InputFormatter::LineDoubled
+                                          : InputFormatter::Progressive);
+    scanModeApplied_ = true;
 }
 
 bool Geometry::solveSampling(uint8_t oversample)

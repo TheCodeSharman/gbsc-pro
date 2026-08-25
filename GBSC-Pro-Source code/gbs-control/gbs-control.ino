@@ -3089,9 +3089,6 @@ void doPostPresetLoadSteps()
             GBS::ADC_FLTR::write(3);
             GBS::PLLAD_KS::write(2);
             setOverSampleRatio(4, true);
-            Tv5725::InputFormatter::applyScanMode(
-                Tv5725::InputFormatter::LineDoubled);
-            geometry.scanModeChanged(true);
             GBS::IF_SEL_WEN::write(0);
             if (rto->inputIsYpBpR) {
                 GBS::IF_HS_TAP11_BYPS::write(0);
@@ -3134,9 +3131,6 @@ void doPostPresetLoadSteps()
                 GBS::IF_HB_SP::write(0);
             }
             setOverSampleRatio(2, true);
-            Tv5725::InputFormatter::applyScanMode(
-                Tv5725::InputFormatter::Progressive);
-            geometry.scanModeChanged(false);
             GBS::IF_SEL_WEN::write(1);
             GBS::IF_HS_SEL_LPF::write(0);
             GBS::IF_HS_TAP11_BYPS::write(0);

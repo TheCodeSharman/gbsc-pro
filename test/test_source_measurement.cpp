@@ -856,3 +856,30 @@ TEST_CASE("the multiple tolerates the jitter of every line it counts")
         CHECK(SourceMeasurement::linesPerCount(2400, 2553) == 0);
     }
 }
+
+TEST_CASE("line doubling is decided by the source line count")
+{
+    // Line doubling exists so there are enough lines for the rest of the chain
+    // to reach the output resolution. That is a question about how many lines
+    // arrive, not how fast they arrive.
+    //
+    // Measured over the RISC PC's modes: 261, 311 and 363 total lines are
+    // captured doubled; 448, 524, 533 and 627 are not. The boundary sits in
+    // that gap. It is reproduced rather than derived, so that moving it is a
+    // deliberate change with its own acceptance test.
+    CHECK(SourceMeasurement::lineDoublingFor(261) == true);
+    CHECK(SourceMeasurement::lineDoublingFor(311) == true);
+    CHECK(SourceMeasurement::lineDoublingFor(363) == true);
+    CHECK(SourceMeasurement::lineDoublingFor(448) == false);
+    CHECK(SourceMeasurement::lineDoublingFor(524) == false);
+    CHECK(SourceMeasurement::lineDoublingFor(533) == false);
+    CHECK(SourceMeasurement::lineDoublingFor(627) == false);
+
+    // An interlaced PAL frame is 625 lines, which is plenty. What it needs is
+    // DEINTERLACING, which is a separate register and a separate decision.
+    CHECK(SourceMeasurement::lineDoublingFor(625) == false);
+
+    // No measurement yet. The default is the one a low-line-count source needs,
+    // because that is the source a wrong guess leaves without enough lines.
+    CHECK(SourceMeasurement::lineDoublingFor(0) == true);
+}

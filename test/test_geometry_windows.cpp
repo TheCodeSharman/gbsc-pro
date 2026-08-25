@@ -322,3 +322,26 @@ TEST_CASE("the solve uses the raster the engine holds, not the one on the chip")
 
     CHECK(Wire.field(3, 0x14, 4, 11) != stopBefore);
 }
+
+TEST_CASE("the engine writes the scan mode its own measurement implies")
+{
+    // The four bits are the input formatter's, and the sketch has been choosing
+    // them from rto->videoStandardInput and telling the engine afterwards. A
+    // source that qualifies for scaling RGBHV is filed under standard 3, whose
+    // branch bypasses the line doubler -- so a 15 kHz RGBHV source is captured
+    // progressive and the divider that follows is right for a wrong premise.
+    //
+    // The engine measures the line rate. Nothing else has to be asked, and no
+    // caller can disagree with it.
+    SolvedEngine solved;   // 311 lines at 50.08 Hz, so 15.6 kHz
+
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 1);  // IF_HS_DEC_FACTOR
+    CHECK(Wire.field(1, 0x0B, 7, 1) == 0);  // IF_LD_SEL_PROV
+    CHECK(Wire.field(1, 0x0C, 0, 1) == 0);  // IF_LD_RAM_BYPS
+    CHECK(Wire.field(1, 0x00, 6, 1) == 0);  // IF_PRGRSV_CNTRL
+
+    // And the divider that follows from it.
+    CHECK(Wire.field(5, Tv5725::Adc::PLLAD_MD::byteOffset,
+                     Tv5725::Adc::PLLAD_MD::bitOffset,
+                     Tv5725::Adc::PLLAD_MD::bitWidth) == 2250);
+}

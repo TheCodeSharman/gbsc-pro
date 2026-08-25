@@ -182,7 +182,7 @@ static void checkBenchGeometry()
     // Capture, released now the windows under it are the new mode's.
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
 
-    CHECK(registersWritten() == 57);
+    CHECK(registersWritten() == 60);
 }
 
 // poll() runs on every loop() pass, and the steadiness gate wants a few before
@@ -520,7 +520,6 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.scanModeChanged(false);
     engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
@@ -555,7 +554,6 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.scanModeChanged(false);
     engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
@@ -570,7 +568,6 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
     seedField(0, 0x17, 0, 12, 2119);   // twice the samples, wobbling by one
     seedField(0, 0x19, 0, 12, 181);
     g_fieldRate = 50.08f;
-    engine.scanModeChanged(true);
     engine.modeChanged(benchMode(), 4);
 
     // The correction costs a field rate measurement, so it waits for the count
@@ -599,4 +596,71 @@ TEST_CASE("a divider the source cannot lock to is corrected without help")
         REQUIRE(pollUntilSolved(engine));
         checkBenchGeometry();
     }
+}
+
+TEST_CASE("the scan mode is corrected even when the source cannot be measured")
+{
+    // The circularity this breaks: the input formatter's measurements are only
+    // meaningful once its scan mode matches the source, so a scan mode left
+    // wrong makes measureLineRate() fail, and a scan mode derived AFTER that
+    // gate is never reached. Measured on the bench -- a source returning from
+    // 524 lines to 311 reloaded its preset, armed the engine, and still held
+    // PLLAD_MD 1124 with the line doubler bypassed.
+    //
+    // STATUS_SYNC_PROC_VTOTAL is what breaks it. The sync processor counts the
+    // source directly and does not care what the input formatter is doing, so
+    // the line count is available while everything downstream of it is not.
+    Wire.reset();
+    Wire.poison(0xFF);
+
+    seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL, a 15 kHz source
+    seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
+    g_fieldRate = 0.0f;                // nothing measurable: every gate below fails
+
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    CHECK(InputFormatter::IF_HS_DEC_FACTOR::read() == 1);
+    CHECK(InputFormatter::IF_LD_SEL_PROV::read() == 0);
+    CHECK(InputFormatter::IF_LD_RAM_BYPS::read() == 0);
+    CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == 0);
+}
+
+TEST_CASE("the engine arms itself when the source line count changes")
+{
+    // A mode change IS a change in the source, and the sync processor's line
+    // count is the engine's own measurement of it. Waiting to be told makes the
+    // trigger a classification: the sketch reloads a preset when getVideoMode()
+    // reports a different STANDARD, and two RISC OS modes that are nothing alike
+    // can share one -- a 311-line and a 524-line RGBHV source are both filed
+    // under PresetLoad::ScalingRgbhvStandard.
+    //
+    // Measured on the bench: a 524 -> 311 return reloaded its preset,
+    // GBS_PRESET_ID 5 -> 21, and still held PLLAD_MD 1124 sixty seconds later
+    // with every other reading healthy. The solve had completed against the
+    // count taken while the source was still moving, and nothing re-armed when
+    // it settled.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(Adc::PLLAD_MD::read() == 2250);
+
+    // The source moves, and NOBODY tells the engine.
+    seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    g_fieldRate = 60.0f;
+
+    bool solved = false;
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
+        solved = engine.poll();
+
+    CHECK(solved);
+    CHECK(Adc::PLLAD_MD::read() == 1124);
+    CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == 1);
 }

@@ -15,6 +15,7 @@ const uint16_t SourceMeasurement::RecommendedPercent;
 const uint16_t SourceMeasurement::RetimeStopPercent;
 const uint16_t SourceMeasurement::LatchedSamplesTolerance;
 const uint8_t SourceMeasurement::LinesPerCountMax;
+const uint16_t SourceMeasurement::LineDoubleBelowLines;
 
 // A dropped read of ADC_CLK_ICLK1X/2X arrives as 0. Treating that as "no
 // oversampling" keeps the ceiling honest; treating it as a divisor would make
@@ -213,6 +214,13 @@ bool SourceMeasurement::recoverDivider(uint8_t oversample)
     if (lineRateHz == 0)
         return false;
 
+    // The count just inferred is a measurement of the source, so the scan mode
+    // follows it -- and it must, before the divider is sized: the capture write
+    // limit doubles with the line doubler, so a divider chosen against the
+    // PREVIOUS source's scan mode is half or twice what this one needs.
+    sourceLines_ = counted;
+    lineDoubled_ = lineDoublingFor(counted);
+
     uint16_t chosen = recommendedDivider(lineRateHz, oversample, lineDoubled_);
     if (chosen == 0 || chosen == divider_)
         return false;
@@ -312,9 +320,16 @@ uint32_t SourceMeasurement::lineRateHz() const { return lineRateHz_; }
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 
+uint16_t SourceMeasurement::steadyLines() const { return steadyLines_; }
+
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
 uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoubled_); }
+
+bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines)
+{
+    return sourceLines == 0 || sourceLines < LineDoubleBelowLines;
+}
 
 void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }
 
