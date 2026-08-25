@@ -25,6 +25,7 @@ extern uint8_t RGB_Com;
 #define RGBs_Sync 2
 #define Ypbpr_Sync 3
 
+extern bool scalingRgbhv();
 extern void applyPresets(uint8_t videoMode);
 extern void setOutModeHdBypass(bool bypass);
 extern void saveUserPrefs();
@@ -145,7 +146,7 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     {
         uopt->presetPreference = preset;
         rto->useHdmiSyncFix = 1;           // 使用 HDMI 同步修复
-        if (rto->videoStandardInput == 14) // 视频标准输入
+        if (scalingRgbhv())
         {
             rto->videoStandardInput = 15;
         }

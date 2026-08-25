@@ -102,3 +102,33 @@ TEST_CASE("the sentinel normalisation survives to the end of the load")
 
     CHECK(load.videoStandardInputAfterLoad() == 0);
 }
+
+TEST_CASE("a scaled RGBHV source changes preset when its line count changes bucket")
+{
+    // The preset a scaled RGBHV source runs is chosen by its line count, and it
+    // is reloaded when the count crosses 280 or 380 away from the count the
+    // loaded preset was chosen for. 0 means keep the one already loaded.
+    SUBCASE("no crossing keeps the loaded preset") {
+        CHECK(PresetLoad::rgbhvPresetStandard(311, 311) == 0);
+        CHECK(PresetLoad::rgbhvPresetStandard(300, 311) == 0);
+        CHECK(PresetLoad::rgbhvPresetStandard(525, 525) == 0);
+    }
+
+    SUBCASE("down past 280") {
+        CHECK(PresetLoad::rgbhvPresetStandard(262, 311) == 1);
+    }
+
+    SUBCASE("down past 380 but not past 280") {
+        CHECK(PresetLoad::rgbhvPresetStandard(312, 525) == 2);
+    }
+
+    SUBCASE("up past 380") {
+        CHECK(PresetLoad::rgbhvPresetStandard(525, 311) == 3);
+    }
+
+    SUBCASE("nothing loaded yet is not a crossing") {
+        // activePresetLineCount starts at 0, so every comparison against it
+        // reads as "the loaded preset was for fewer lines".
+        CHECK(PresetLoad::rgbhvPresetStandard(311, 0) == 0);
+    }
+}

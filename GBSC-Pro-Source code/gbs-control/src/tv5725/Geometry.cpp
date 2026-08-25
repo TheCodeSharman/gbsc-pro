@@ -26,6 +26,10 @@ const PanAndZoom &Geometry::framing() const { return framing_; }
 
 float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
+bool Geometry::sourceLowLineRate() const { return sampling_.lowLineRate(); }
+
+uint32_t Geometry::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
+
 bool Geometry::resolve()
 {
     // The entry points outside a poll pass -- a pad press, a retimed total --
@@ -240,6 +244,8 @@ void Geometry::reset()
 
 void Geometry::enterBypass()
 {
+    sampling_.forgetSource();
+
     // No raster is solved here, so the register is the only source of the seed
     // the encoder is already running on.
     displayClock_.adopt();

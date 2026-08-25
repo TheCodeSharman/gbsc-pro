@@ -326,6 +326,20 @@ float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
 uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoubled_); }
 
+void SourceMeasurement::forgetSource()
+{
+    lineRateHz_ = 0;
+    goodLineRateHz_ = 0;
+    goodLines_ = 0;
+}
+
+uint32_t SourceMeasurement::heldLineRateHz() const { return goodLineRateHz_; }
+
+bool SourceMeasurement::lowLineRate() const
+{
+    return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
+}
+
 bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines)
 {
     return sourceLines == 0 || sourceLines < LineDoubleBelowLines;

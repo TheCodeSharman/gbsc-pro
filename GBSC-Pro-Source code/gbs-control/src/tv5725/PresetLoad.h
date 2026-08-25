@@ -37,6 +37,11 @@ public:
 
     bool enableScalingRgbhv() const;
 
+    // Which standard's preset a scaled RGBHV source of this many lines wants,
+    // against the count the loaded preset was chosen for. 0 keeps that preset.
+    // The buckets are measured, not derived: 280 and 380 lines.
+    static uint8_t rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLines);
+
     // The sentinel writeProgramArrayNew() clears on every load.
     static const uint8_t NoValidMode = 15;
 

@@ -883,3 +883,49 @@ TEST_CASE("line doubling is decided by the source line count")
     // because that is the source a wrong guess leaves without enough lines.
     CHECK(SourceMeasurement::lineDoublingFor(0) == true);
 }
+
+TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
+{
+    // SP_H_PULSE_IGNOR and the coast window both key on a line whose vertical
+    // interval carries equalisation and serration pulses. That is a property of
+    // the rate, and a source is filed under a standard whose number does not
+    // carry it: a scaled RGBHV source runs a 15 kHz line and is filed as 480p,
+    // because that is the branch it borrows.
+    SourceMeasurement measurement;
+
+    SUBCASE("nothing measured yet is not a low line rate") {
+        CHECK_FALSE(measurement.lowLineRate());
+    }
+
+    SUBCASE("a 15.6 kHz line is one") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        CHECK(measurement.lowLineRate());
+    }
+
+    SUBCASE("576p at twice the rate is not") {
+        seedSourceLines(625);
+        g_fieldRate = 50.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(measurement.lowLineRate());
+    }
+
+    SUBCASE("it survives a sync loss, because that is when its readers run") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        seedSourceLines(0);
+        CHECK_FALSE(measurement.measureLineRate());
+        CHECK(measurement.lowLineRate());
+    }
+
+    SUBCASE("the rate it answers from is the one reported, across that loss") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        seedSourceLines(0);
+        CHECK_FALSE(measurement.measureLineRate());
+        CHECK(measurement.heldLineRateHz() == 15574u);
+    }
+}

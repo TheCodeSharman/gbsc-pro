@@ -692,7 +692,7 @@ void UpDisplay(void)
         videoMode = rto->videoStandardInput;
     }
     rto->useHdmiSyncFix = 1;
-    if (rto->videoStandardInput == 14) {
+    if (scalingRgbhv()) {
         rto->videoStandardInput = 15;
     } else {
         applyPresets(videoMode);
@@ -1068,13 +1068,32 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
         GBS::write(lastSegment, slaveRegister, values, numValues);
 }
 
-boolean videoStandardInputIsPalNtscSd()
-{
-    if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
-        return true;
-    }
+// 14 and 15 are not standards. The byte has no room for "no standard was
+// recognised", so an RGBHV source borrows the top of its range: scaled when the
+// line count qualifies, bypassed when it does not. docs/rgbhv-bypass-trap.md
+bool sourceIsRgbhv() { return rto->videoStandardInput >= 14; }
+bool scalingRgbhv() { return rto->videoStandardInput == 14; }
+bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 
-    return false;
+// Whether the source runs a 15 kHz line. The engine measures only what it
+// scales, so in bypass it holds no measurement and the standard byte is what is
+// left -- honest there, because it carries the mode detected immediately before
+// the switch. docs/firmware-geometry-engine.md
+static boolean sourceLowLineRate()
+{
+    if (rto->outModeHdBypass)
+        return rto->videoStandardInput == 1 || rto->videoStandardInput == 2;
+
+    return geometry.sourceLowLineRate();
+}
+
+// A 15 kHz line whose vertical interval carries equalisation and serration
+// pulses. The rate alone does not say so, and the coast settings below break the
+// horizontal count on a source that has none.
+// docs/investigations/serrated-sync-is-not-line-rate.md
+static boolean sourceHasSerratedSync()
+{
+    return sourceLowLineRate() && rto->syncTypeCsync;
 }
 
 void zeroAll()
@@ -1594,7 +1613,7 @@ void prepareSyncProcessor()
     else
         GBS::SP_DLT_REG::write(0x70);
 
-    if (videoStandardInputIsPalNtscSd()) {
+    if (sourceHasSerratedSync()) {
         GBS::SP_H_PULSE_IGNOR::write(0x6b);
     } else {
         GBS::SP_H_PULSE_IGNOR::write(0x02);
@@ -1620,7 +1639,7 @@ void prepareSyncProcessor()
     writeOneByte(0x53, 0x00);
     writeOneByte(0x54, 0x00);
 
-    if (rto->videoStandardInput != 15 && (GBS::GBS_OPTION_SCALING_RGBHV::read() != 1)) {
+    if (!rgbhvBypass() && (GBS::GBS_OPTION_SCALING_RGBHV::read() != 1)) {
         GBS::SP_CLAMP_MANUAL::write(0);
         GBS::SP_CLP_SRC_SEL::write(0);
         GBS::SP_NO_CLAMP_REG::write(1);
@@ -1796,7 +1815,7 @@ void optimizeSogLevel() // Optimize SOG levels
         rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
         return;
     }
-    if (rto->videoStandardInput == 15 || GBS::SP_SOG_MODE::read() != 1 || rto->syncTypeCsync == false) {
+    if (rgbhvBypass() || GBS::SP_SOG_MODE::read() != 1 || rto->syncTypeCsync == false) {
         rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
         return;
     }
@@ -2467,7 +2486,7 @@ void moveHS(uint16_t amountToAdd, bool subtracting)
         uint16_t SP_CS_HS_SP = GBS::SP_CS_HS_SP::read();
         uint16_t htotal = GBS::HD_HSYNC_RST::read();
 
-        if (videoStandardInputIsPalNtscSd()) {
+        if (sourceLowLineRate()) {
             htotal -= 8;
             htotal *= 2;
         }
@@ -2953,7 +2972,7 @@ void doPostPresetLoadSteps()
         GBS::PAD_CKIN_ENZ::write(0);
 
         prepareSyncProcessor();
-        if (rto->videoStandardInput == 14) {
+        if (scalingRgbhv()) {
 
             if (rto->syncTypeCsync == false) {
                 GBS::SP_SOG_SRC_SEL::write(0);  
@@ -3518,7 +3537,7 @@ void doPostPresetLoadSteps()
 
         // OutputComponentOrVGA();
 
-        if (uopt->presetPreference == 10 && rto->videoStandardInput != 15) {
+        if (uopt->presetPreference == 10 && !rgbhvBypass()) {
             rto->autoBestHtotalEnabled = 0;
             if (rto->applyPresetDoneStage == 11) {
 
@@ -3588,7 +3607,7 @@ void applyPresets(uint8_t result)
     }
 
     boolean waitExtra = 0;
-    if (rto->outModeHdBypass || rto->videoStandardInput == 15 || rto->videoStandardInput == 0) {
+    if (rto->outModeHdBypass || rgbhvBypass() || rto->videoStandardInput == 0) {
         waitExtra = 1;
         if (result <= 4 || result == 14 || result == 8 || result == 9) {
             GBS::SFTRST_IF_RSTZ::write(1);
@@ -3697,7 +3716,7 @@ uint8_t getVideoMode()
 {
     uint8_t detectedMode = 0;
 
-    if (rto->videoStandardInput >= 14) {
+    if (sourceIsRgbhv()) {
         detectedMode = GBS::STATUS_16::read();
         if ((detectedMode & 0x0a) > 0) {
             return rto->videoStandardInput;
@@ -3870,7 +3889,7 @@ boolean getStatus16SpHsStable()
 {
 
     // printf("rto->videoStandardInput = %d \n",rto->videoStandardInput);
-    if (rto->videoStandardInput == 15) {
+    if (rgbhvBypass()) {
         if (GBS::STATUS_INT_INP_NO_SYNC::read() == 0) {
             // printf("\n stable from \n");
             return true;
@@ -4162,7 +4181,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
 void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 {
-    if (((rto->videoStandardInput == 0) || (rto->videoStandardInput > 14)) ||
+    if (((rto->videoStandardInput == 0) || rgbhvBypass()) ||
         !rto->boardHasPower || rto->sourceDisconnected) {
         return;
     }
@@ -4291,7 +4310,7 @@ void updateClampPosition() // Update Clamp Position
         start = 1 + (accInHlength * multiSt);
 
         if (rto->outModeHdBypass) {
-            if (videoStandardInputIsPalNtscSd()) {
+            if (sourceLowLineRate()) {
                 start += 0x60;
                 stop += 0x60;
             }
@@ -5065,7 +5084,7 @@ void runSyncWatcher() //
     boolean status16SpHsStable = getStatus16SpHsStable();
 
     if (rto->outModeHdBypass && status16SpHsStable) {
-        if (videoStandardInputIsPalNtscSd()) {
+        if (sourceLowLineRate()) {
             if (millis() - lastLineCountMeasure > 765) {
                 thisStableLineCount = GBS::STATUS_SYNC_PROC_VTOTAL::read();
                 for (uint8_t i = 0; i < 3; i++) {
@@ -5176,7 +5195,7 @@ void runSyncWatcher() //
         }
     }
 
-    if ((detectedVideoMode == 0 || !status16SpHsStable) && rto->videoStandardInput != 15) {
+    if ((detectedVideoMode == 0 || !status16SpHsStable) && !rgbhvBypass()) {
         rto->noSyncCounter++;            // 
         rto->continousStableCounter = 0; // 
         lastVsyncLock = millis();
@@ -5205,7 +5224,7 @@ void runSyncWatcher() //
                     }
                 }
 
-                if (rto->currentLevelSOG <= 1 && videoStandardInputIsPalNtscSd()) {
+                if (rto->currentLevelSOG <= 1 && sourceHasSerratedSync()) {
                     rto->currentLevelSOG += 1;
                     setAndUpdateSogLevel(rto->currentLevelSOG);
                     delay(30);
@@ -5218,7 +5237,7 @@ void runSyncWatcher() //
             GBS::SP_H_CST_ST::write(0x10);
             GBS::SP_H_CST_SP::write(0x100);
 
-            if (videoStandardInputIsPalNtscSd()) {
+            if (sourceHasSerratedSync()) {
 
                 GBS::SP_PRE_COAST::write(9);
                 GBS::SP_POST_COAST::write(9);
@@ -5349,7 +5368,7 @@ void runSyncWatcher() //
 
     if (((detectedVideoMode != 0 && detectedVideoMode != rto->videoStandardInput) ||
          (detectedVideoMode != 0 && rto->videoStandardInput == 0)) &&
-        rto->videoStandardInput != 15) {
+        !rgbhvBypass()) {
 
         if (newVideoModeCounter < 255) {
             newVideoModeCounter++;
@@ -5425,7 +5444,7 @@ void runSyncWatcher() //
                 }
             }
         }
-    } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && rto->videoStandardInput != 15 && (rto->videoStandardInput == detectedVideoMode)) {
+    } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && !rgbhvBypass() && (rto->videoStandardInput == detectedVideoMode)) {
 
         if (rto->continousStableCounter < 255) {
             rto->continousStableCounter++;
@@ -5593,7 +5612,7 @@ void runSyncWatcher() //
         }
     }
 
-    if (rto->videoStandardInput >= 14) {
+    if (sourceIsRgbhv()) {
         static uint16_t RGBHVNoSyncCounter = 0;
 
         if (uopt->preferScalingRgbhv && rto->continousStableCounter >= 2) {
@@ -5601,7 +5620,7 @@ void runSyncWatcher() //
             static uint16_t activePresetLineCount = 0;
 
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-            if ((sourceLines <= 535 && sourceLines != 0) && rto->videoStandardInput == 15) {
+            if ((sourceLines <= 535 && sourceLines != 0) && rgbhvBypass()) {
                 uint16_t firstDetectedSourceLines = sourceLines;
                 boolean moveOn = 1;
                 for (int i = 0; i < 30; i++) {
@@ -5711,18 +5730,13 @@ void runSyncWatcher() //
                 }
             }
 
-            else if ((sourceLines <= 535 && sourceLines != 0) && rto->videoStandardInput == 14) {
+            else if ((sourceLines <= 535 && sourceLines != 0) && scalingRgbhv()) {
 
-                if (sourceLines < 280 && activePresetLineCount > 280) {
-                    rto->videoStandardInput = 1;
-                } else if (sourceLines < 380 && activePresetLineCount > 380) {
-                    rto->videoStandardInput = 2;
-                } else if (sourceLines > 380 && activePresetLineCount < 380) {
-                    rto->videoStandardInput = 3;
-                    needPostAdjust = 1;
-                }
+                const uint8_t wantedStandard =
+                    Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines, activePresetLineCount);
+                needPostAdjust = wantedStandard == 3;
 
-                if (rto->videoStandardInput != 14) {
+                if (wantedStandard != 0) {
 
                     uint16_t firstDetectedSourceLines = sourceLines;
                     boolean moveOn = 1;
@@ -5736,16 +5750,12 @@ void runSyncWatcher() //
                     }
 
                     if (moveOn) {
-
-                        if (rto->videoStandardInput <= 2) {
-                            ;
-                        }
-
                         if (uopt->presetPreference == 10) {
                             uopt->presetPreference = Output720P;
                         }
 
                         activePresetLineCount = sourceLines;
+                        rto->videoStandardInput = wantedStandard;
                         applyPresets(rto->videoStandardInput);
 
                         GBS::GBS_OPTION_SCALING_RGBHV::write(1);
@@ -5796,14 +5806,11 @@ void runSyncWatcher() //
                         if (needPostAdjust) {
                             GBS::IF_HBIN_SP::write(0x50);
                         }
-                    } else {
-
-                        rto->videoStandardInput = 14;
                     }
                 }
             }
 
-            else if ((sourceLines > 535) && rto->videoStandardInput == 14) {
+            else if ((sourceLines > 535) && scalingRgbhv()) {
                 uint16_t firstDetectedSourceLines = sourceLines;
                 boolean moveOn = 1;
                 for (int i = 0; i < 30; i++) {
@@ -5828,7 +5835,7 @@ void runSyncWatcher() //
             }
         }
 
-        if (!uopt->preferScalingRgbhv && rto->videoStandardInput == 14) {
+        if (!uopt->preferScalingRgbhv && scalingRgbhv()) {
             rto->videoStandardInput = 15;
             rto->isValidForScalingRGBHV = false; 
             applyPresets(rto->videoStandardInput);
@@ -5908,7 +5915,7 @@ void runSyncWatcher() //
 
         static unsigned long lastTimeSogAndPllRateCheck = millis();
         if ((millis() - lastTimeSogAndPllRateCheck) > 900) {
-            if (rto->videoStandardInput == 15) {
+            if (rgbhvBypass()) {
                 updateHVSyncEdge();
                 delay(100);
             }
@@ -5972,7 +5979,7 @@ void runSyncWatcher() //
                 }
             }
 
-            if (rto->videoStandardInput == 15) {
+            if (rgbhvBypass()) {
                 if (oldHPLLState != rto->HPLLState) {
                     if (rto->HPLLState == 1) {
                         GBS::PLLAD_KS::write(2);
@@ -6001,12 +6008,12 @@ void runSyncWatcher() //
                     setOverSampleRatio(4, false);
                     delay(100);
                 }
-            } else if (rto->videoStandardInput == 14) {
+            } else if (scalingRgbhv()) {
                 if (oldHPLLState != rto->HPLLState) {
                 }
             }
 
-            if (rto->videoStandardInput == 14) {
+            if (scalingRgbhv()) {
 
                 if (uopt->wantScanlines) {
                     if (!rto->scanlinesEnabled && !rto->motionAdaptiveDeinterlaceActive) {
@@ -7201,13 +7208,13 @@ void loop()
         }
     }
 
-    if ((rto->videoStandardInput <= 14 && rto->videoStandardInput != 0) &&
+    if ((!rgbhvBypass() && rto->videoStandardInput != 0) &&
         rto->syncWatcherEnabled && !rto->coastPositionIsSet) {
         if (rto->continousStableCounter >= 7) {
             if ((getStatus16SpHsStable() == 1) && (getVideoMode() == rto->videoStandardInput)) {
                 updateCoastPosition(0);
                 if (rto->coastPositionIsSet) {
-                    if (videoStandardInputIsPalNtscSd()) 
+                    if (sourceHasSerratedSync()) 
                     {
 
                         GBS::SP_DIS_SUB_COAST::write(0);
@@ -7243,7 +7250,7 @@ void loop()
                 GBS::SP_NO_CLAMP_REG::write(0);
             }
 
-            if (rto->extClockGenDetected && rto->videoStandardInput != 14) {
+            if (rto->extClockGenDetected && !scalingRgbhv()) {
                 if (!rto->outModeHdBypass) {
                     if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
                         rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
@@ -7287,7 +7294,7 @@ void loop()
                     videoMode = rto->videoStandardInput;
                 }
                 rto->useHdmiSyncFix = 1;
-                if (rto->videoStandardInput == 14) {
+                if (scalingRgbhv()) {
                     rto->videoStandardInput = 15;
                 } else {
                     applyPresets(videoMode);
@@ -8337,7 +8344,7 @@ void handleType2Command(char argument)
             // if (argument == 'L')
 
             rto->useHdmiSyncFix = 1; // 
-            if (rto->videoStandardInput == 14) {
+            if (scalingRgbhv()) {
                 rto->videoStandardInput = 15;
             } else {
                 // normal path
@@ -9094,11 +9101,14 @@ void startWebserver()
     // back cannot restore. READ ONLY -- it moves through the pads, so nothing
     // can arrange a framing the user cannot reach.
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[96];
+        char body[160];
         snprintf_P(body, sizeof(body),
-            PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d}"),
+            PSTR("{\"zh\":%d,\"zv\":%d,\"ph\":%d,\"pv\":%d,"
+                 "\"lineRateHz\":%lu,\"lowLineRate\":%s}"),
             geometry.framing().horizontalZoom(), geometry.framing().verticalZoom(),
-            geometry.framing().horizontalPan(), geometry.framing().verticalPan());
+            geometry.framing().horizontalPan(), geometry.framing().verticalPan(),
+            (unsigned long)geometry.sourceLineRateHz(),
+            geometry.sourceLowLineRate() ? "true" : "false");
         request->send(200, "application/json", body);
     });
 

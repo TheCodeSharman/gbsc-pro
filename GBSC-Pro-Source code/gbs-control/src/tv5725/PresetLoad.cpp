@@ -30,4 +30,15 @@ bool PresetLoad::enableScalingRgbhv() const
     return enableScalingRgbhv_;
 }
 
+uint8_t PresetLoad::rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLines)
+{
+    if (sourceLines < 280 && loadedLines > 280)
+        return 1;
+    if (sourceLines < 380 && loadedLines > 380)
+        return 2;
+    if (sourceLines > 380 && loadedLines < 380)
+        return 3;
+    return 0;
+}
+
 } // namespace Tv5725

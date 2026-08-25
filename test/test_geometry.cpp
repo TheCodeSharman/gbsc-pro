@@ -664,3 +664,21 @@ TEST_CASE("the engine arms itself when the source line count changes")
     CHECK(Adc::PLLAD_MD::read() == 1124);
     CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == 1);
 }
+
+TEST_CASE("bypass measures nothing, so it reports no line rate")
+{
+    // The held rate outlives the mode that produced it, and bypass never
+    // measures: the sync processor's readers would then be configured for a
+    // source that has been gone since the excursion started.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.sourceLowLineRate());
+
+    engine.enterBypass();
+    CHECK(engine.sourceLineRateHz() == 0);
+    CHECK_FALSE(engine.sourceLowLineRate());
+}

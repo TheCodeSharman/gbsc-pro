@@ -258,6 +258,24 @@ public:
     float fieldRateHz() const;
     uint16_t ifLine() const;
 
+    // The 15.7 kHz broadcast line, split from the 31.5 kHz VGA one clear of
+    // both and of the ~21.8 kHz a programmable source reaches between them.
+    static const uint32_t LowLineRateBelowHz = 20000;
+
+    // Forget the source: bypass measures nothing, and the held rate would
+    // otherwise outlive the mode that produced it.
+    void forgetSource();
+
+    // The last rate that passed the cross-check against the line count.
+    // lineRateHz() is the last one MEASURED and a refusal clears it, so a
+    // reader that has to survive a sync loss asks this one.
+    uint32_t heldLineRateHz() const;
+
+    // Whether the source runs that line. Not on its own whether the vertical
+    // interval is serrated -- a separate-sync source of the same rate is not.
+    // docs/investigations/serrated-sync-is-not-line-rate.md
+    bool lowLineRate() const;
+
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
     // Measured rather than derived: 363 lines are doubled and 448 are not, and
