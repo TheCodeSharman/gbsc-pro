@@ -142,8 +142,10 @@ python3 tools/gbsc-pro-hwtest/analyse_sweep.py out.jsonl            # per-transi
 python3 tools/gbsc-pro-hwtest/precursor.py sweeps/*.jsonl.gz        # what actually correlates
 ```
 
-Run `modesweep.bas` on the RISC PC to drive the source through the AKF50 modes
-while any of them sample.
+Run `ModeSweep` on the RISC PC to drive the source through the AKF50 modes
+while any of them sample, or `ModeServ` to pick one destination and stay there.
+Both live in the **RiscPc repo**, `tools/video-source/` -- the source side is a
+property of the RISC PC, not of this scaler.
 
 `sweeps/` holds the two runs the `docs/tv5725-chip.md` failure tables were
 derived from, gzipped. They are committed because those tables replaced an

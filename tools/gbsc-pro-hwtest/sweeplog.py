@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Log the sync processor's measurements across a whole modesweep run, with
+"""Log the sync processor's measurements across a whole ModeSweep run, with
 trace-alignable markers.
 
 Unlike capture2.py this does not stop at the first break -- the point of a long

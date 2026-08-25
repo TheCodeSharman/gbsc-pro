@@ -4,9 +4,10 @@
     python3 tools/gbsc-pro-hwtest/hperiod_sweep.py --host 192.168.88.108
     python3 tools/gbsc-pro-hwtest/hperiod_sweep.py --host <ip> --mdf <path-to-AKF50>
 
-Run `modesweep.bas` on the RISC PC at the same time. That cycles the source
-through the stock AKF50 modes, 15.6-37.9 kHz; this samples the scaler and
-reports, per mode, whether HPERIOD_IF is usable.
+Run `ModeSweep` on the RISC PC at the same time -- RiscPc repo,
+`tools/video-source/`. That cycles the source through the stock AKF50 modes,
+15.6-37.9 kHz; this samples the scaler and reports, per mode, whether
+HPERIOD_IF is usable.
 
 Pass --mdf a **stock Acorn mode file** (AKF50 and friends, under
 !Boot.Resources.Configure.Monitors.Acorn). A hand-authored file predicts only the
@@ -21,7 +22,7 @@ the chip responding to the source. The freeze is released on the way out,
 including on Ctrl-C.
 
 Modes are identified by STATUS_SYNC_PROC_VTOTAL, not by agreement with the RISC
-PC. The mode list in modesweep.bas has a distinct VTOTAL per mode precisely so
+PC. The mode list in ModeSweep has a distinct VTOTAL per mode precisely so
 that works: no clock sync, no shared ordering, and a skipped mode on one side
 cannot silently mislabel samples on the other.
 
@@ -158,7 +159,7 @@ def main():
                   "Needs a build with /freeze support; pass --no-freeze to run "
                   "anyway, knowing preset loads will be in the data.", file=sys.stderr)
             return 2
-        print(f"frozen. Watching for {args.seconds:.0f}s -- start modesweep.bas now.")
+        print(f"frozen. Watching for {args.seconds:.0f}s -- start ModeSweep now.")
     else:
         print(f"NOT frozen. Watching for {args.seconds:.0f}s.")
 
