@@ -1,8 +1,9 @@
 # The audio path
 
 The board embeds analog stereo audio into the HDMI stream without any help from
-the ESP beyond volume. Nothing here is bench-verified: it is a trace of the
-schematic and the firmware, and no sound has been measured through it.
+the ESP beyond volume. **Confirmed on the bench 2026-08-23**: a line-level stereo
+source into the 3.5 mm jack arrives at the sink's speakers, both channels clean.
+**No external audio embedder is needed.**
 
 ## The chain
 
@@ -37,11 +38,17 @@ The quietest link in the chain is fixed. `Volume` 0 still asks for 12 dB of
 attenuation, and the divider costs 6 dB, so **the loudest the encoder can ever
 see is 18 dB below the source** — about 125 mVrms from a 1 Vrms line output.
 `MS9288A-Datasheet-Rev-B0.pdf` gives the audio ADC's resolution, channel count
-and supply current and no full-scale input level, so whether that is enough is unknown until it is heard. A source that
-turns out to be too quiet wants gain ahead of the jack; the PT2257 only
-attenuates.
+and supply current and no full-scale input level, so the margin cannot be
+calculated. It does not have to be: a line-level source is heard cleanly through
+the whole chain, so 18 dB down is enough for one. A quieter source than that
+wants gain ahead of the jack, because the PT2257 only attenuates.
 
-## Two ways to get silence
+## Where to look when it is silent
+
+**Check the source first.** This path is confirmed end to end, so silence is more
+likely to be the thing feeding the jack than anything on this board.
+
+The two firmware causes:
 
 - **`setup()` leaves the part at −70 dB**, 9 dB above the PT2257's floor. Only
   the 400 ms write in `loop()` moves it, so a firmware stalled below the loop

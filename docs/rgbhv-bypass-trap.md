@@ -62,6 +62,36 @@ consequences follow:
 it. `uopt->preferScalingRgbhv` being set is silently ignored: the option says
 "scale RGBHV", the source is over the gate, and the trap wins.
 
+## What bypass makes unreadable
+
+Bypass takes the IF and the VDS out of the path, so every measurement derived
+from either stops meaning anything. None of them announce it, and three read as
+faults in their own right.
+
+**`HPERIOD_IF` is noisy in bypass, not a stable zero.** Measured on an 800x600
+source in bypass: 255, 511, 511, 275, 258, 511 across six reads, while the sync
+processor stayed perfect beside it (`STATUS_SYNC_PROC_VTOTAL` 627 rock steady,
+`HTOTAL` tracking `PLLAD_MD`, PLL locked). That is the exact signature of the
+railing fault, and prescribing the railing recovery for it is wasted work — the
+IF simply is not in the path. Establish whether you are in bypass *before*
+reading anything into `HPERIOD_IF`.
+
+**`/geometry` reports `lineRateHz: 0`** for the same reason, so the engine has
+no field rate and the framing values it reports are not a solve.
+
+**`VDS_HSCALE` and `VDS_VSCALE` keep whatever the last scaled load left**, and
+bypass never clears them. They will show plausible scaling values — 636 and 475
+on a unit that was unambiguously in bypass — so **non-unity scale registers are
+not evidence that the VDS is in the path**. Read `DAC_RGBS_ADC2DAC` and
+`OUT_SYNC_SEL` instead: both are 1 in bypass and 0 on the scaling path.
+
+**The Info screen's frame rate is wrong in bypass.** `getOutputFrameRate()`
+selects the VDS test bus (`TEST_BUS_SEL = 2`) and times the vsync pulse on
+`DEBUG_IN_PIN`. In bypass the VDS is not generating the output timing, so it
+measures an idle bus: 39 Hz against a real 60. It checks the result against a
+47..86 Hz plausibility band, retries once, and **returns the out-of-band value
+anyway**, so a number it has already judged impossible is displayed as fact.
+
 ## Not to be confused with
 
 A **corrupt scaling preset** looks different and is a distinct failure:
