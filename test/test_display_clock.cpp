@@ -314,3 +314,41 @@ TEST_CASE("adopting does not lose the target when the part is already on PCLKIN"
     CHECK(clock.seed() == 0x85);
     CHECK(clock.hz() == 108000000u);
 }
+
+TEST_CASE("selecting the clock releases the display PLL's VCO")
+{
+    // setResetParameters() and runSyncWatcher() both ASSERT PLL_VCORST, and on
+    // the scaling path nothing put it back except a whole-chip bring-up running
+    // inside the preset load. Held, the display PLL has no output clock and the
+    // picture tears into vertically offset copies while every register reads
+    // correct. Choosing the clock is the moment that has to be undone.
+    Wire.reset();
+    Wire.poison(0xFF);
+
+    DisplayClock clock;
+    clock.hold(0x85);
+
+    clock.select();
+
+    CHECK(Wire.field(0, 0x43, 5, 1) == 0);   // PLL_VCORST, released
+    CHECK(Wire.field(0, 0x40, 2, 1) == 1);   // PLL_IS, ICLK off the PLL
+}
+
+TEST_CASE("the VCO is released with a generator driving too")
+{
+    // The generator feeds PCLKIN, but the same PLL block gates ICLK, so the
+    // release is not conditional on which source was chosen.
+    Wire.reset();
+    Wire.poison(0xFF);
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.driveWith(generator);
+    clock.hold(0x85);
+
+    clock.select();
+
+    CHECK(Wire.field(0, 0x43, 5, 1) == 0);
+    CHECK(Wire.field(0, 0x40, 2, 1) == 1);
+}

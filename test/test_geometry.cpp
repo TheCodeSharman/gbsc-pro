@@ -218,7 +218,13 @@ static void checkBenchGeometry()
     // Capture, released now the windows under it are the new mode's.
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
 
-    CHECK(registersWritten() == 60);
+    // The display PLL's VCO, released by choosing the clock. setResetParameters()
+    // and runSyncWatcher() both assert it; held, there is no output clock and
+    // the picture tears while every register reads correct.
+    CHECK(GBS::PLL_VCORST::read() == 0);
+    CHECK(GBS::PLL_IS::read() == 1);
+
+    CHECK(registersWritten() == 62);
 }
 
 // poll() runs on every loop() pass, and the steadiness gate wants a few before

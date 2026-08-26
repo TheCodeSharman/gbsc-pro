@@ -88,6 +88,12 @@ bool DisplayClock::driving() const { return generator_ != 0; }
 
 void DisplayClock::select()
 {
+    // setResetParameters() and runSyncWatcher() both assert PLL_VCORST, and
+    // choosing the clock is the moment it has to come back: held, there is no
+    // output clock and the picture tears while every register reads correct.
+    GBS::PLL_VCORST::write(0);
+    GBS::PLL_IS::write(1);
+
     GBS::PLL648_CONTROL_01::write(generator_ == 0 ? seed_ : ExternalPclkIn);
 }
 
