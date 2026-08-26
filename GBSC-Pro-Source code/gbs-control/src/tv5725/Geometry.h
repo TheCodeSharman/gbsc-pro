@@ -76,7 +76,7 @@ public:
     // different field rate moves nothing sourceMoved() can see.
     void sourceInterrupted();
 
-    void reset();
+    bool reset();
 
     // Notify the engine that the output has gone into bypass: so video routes around the VDS.
     void enterBypass();

@@ -66,11 +66,19 @@ bool Geometry::sourceLowLineRate() const { return sampling_.lowLineRate(); }
 
 uint32_t Geometry::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
 
+// Measure the source, then solve from it. For the two callers that need the
+// source read again: the deferred retry, whose previous solve was refused
+// against the measurement it already had, and the re-derive command, whose whole
+// contract is the source as it reads now. A caller that has only moved the
+// framing wants solveWindows(), which costs no vsync sample.
 bool Geometry::resolve()
 {
-    // The entry points outside a poll pass -- a pad press, a retimed total --
-    // have no measurement of their own, so this is where they take one. poll()
-    // has already measured and calls solveWindows() directly.
+    // The same reference the poll pass takes, and for the same reason: a window
+    // solved for a taller mode strands the block the rate is timed off, and a
+    // count taken through the previous mode's divider is not the source's.
+    // Neither caller here reaches the one in poll().
+    holdReferenceSampling();
+
     if (!sampling_.measureLineRate())
         return fail();
     return solveWindows();
@@ -276,22 +284,20 @@ bool Geometry::poll()
 }
 
 
-void Geometry::reset()
+bool Geometry::reset()
 {
     // The entry goes with the framing. "Back to default" has to mean the table
     // stops answering for this source, or the solve that follows restores
     // exactly what was just discarded and the control does nothing.
     if (framings_.forget(framedKey_))
         ++framingRevision_;
-    framedKey_ = SourceKey();
 
-    // Re-arming the mode change already in force, rather than a second path
-    // that would have to keep step with it: the whole sequence -- freeze, wait
-    // for the source, measure, sampling, raster, clock, windows -- is what a
-    // reset wants. The framing goes with it, which is what makes this a reset
-    // rather than a re-solve: solveForSource() would keep it, the source not
-    // having moved.
-    modeChanged(rasterMode_, modeOversample_);
+    // A framing change like any other. The source has not moved and no load has
+    // disturbed the ADC, so the divider, the raster and the clock all re-derive
+    // to what they already hold -- and re-arming would freeze capture for
+    // seconds to reach them.
+    framing_.reset();
+    return solveWindows();
 }
 
 void Geometry::sourceInterrupted()
@@ -604,7 +610,7 @@ bool Geometry::step(const PanAndZoom &wanted)
     uint16_t verticalStop = GBS::IF_VB_SP::read();
     uint16_t verticalStart = GBS::IF_VB_ST::read();
 
-    if (!resolve()) {
+    if (!solveWindows()) {
         framing_ = before;
         return false;
     }

@@ -389,16 +389,19 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     REQUIRE(pollUntilSolved(engine));
     CHECK(g_fieldRateCalls - before == 2);
 
-    SUBCASE("and once for a pad press") {
+    SUBCASE("and not at all for a pad press") {
+        // A press moves the framing, not the source. Every quantity the windows
+        // are solved from is already held, so paying for a vsync sample here
+        // buys nothing -- and a refusal would silently drop the press.
         const unsigned solved = g_fieldRateCalls;
         REQUIRE(engine.zoom(16, 0));
-        CHECK(g_fieldRateCalls - solved == 1);
+        CHECK(g_fieldRateCalls - solved == 0);
     }
 }
 
 // --- a reset -----------------------------------------------------------------
 
-TEST_CASE("a reset puts the framing back and re-solves everything from it")
+TEST_CASE("a reset puts the framing back without re-deriving the rest")
 {
     // Without one, a framing zoomed into a corner is only escapable by changing
     // mode or rebooting: the framing is the engine's own state and no register
@@ -415,20 +418,22 @@ TEST_CASE("a reset puts the framing back and re-solves everything from it")
     REQUIRE(InputFormatter::IF_HB_SP2::read() != 118);
     REQUIRE(InputFormatter::IF_VB_SP::read() != 46);
 
-    // Re-seeded rather than merely wiped: the source measurements are INPUTS
-    // the chip keeps supplying, and poisoning those would test the engine
-    // solving against garbage rather than resetting.
-    seedBenchSource();
-    engine.reset();
-    REQUIRE(pollUntilSolved(engine));
+    // A framing change like any other. The source has not moved and no load has
+    // disturbed the ADC, so it lands on the press itself -- no re-arm, no vsync
+    // sample, no seconds of frozen capture.
+    const unsigned before = g_fieldRateCalls;
+    REQUIRE(engine.reset());
+    CHECK(g_fieldRateCalls - before == 0);
+    CHECK_FALSE(engine.changing());
 
     CHECK(InputFormatter::IF_HB_SP2::read() == 132);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1105);
     CHECK(InputFormatter::IF_VB_SP::read() == 38);
     CHECK(InputFormatter::IF_VB_ST::read() == 620);
 
-    // Not just the framing: the divider, the raster, the clock and both windows
-    // land where a fresh mode change would put them.
+    // And leaves everything the framing does not own exactly as it was. The
+    // divider, the raster and the clock are still the ones the mode change
+    // solved, not a second answer to the same question.
     checkBenchGeometry();
 }
 
@@ -668,8 +673,7 @@ TEST_CASE("a reset forgets what the table stored for this source")
     frameAt(engine, 300, 120, 40, -15);
     REQUIRE(engine.framings().count() == 1);
 
-    engine.reset();
-    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.reset());
 
     CHECK(engine.framings().count() == 0);
     CHECK(engine.framing() == untouched);
@@ -1052,8 +1056,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
 
         seedField(1, 0x1C, 0, 11, 700);
         g_blankStartWhenSampled = 0xFFFF;
-        engine.reset();
-        REQUIRE(pollUntilSolved(engine));
+        REQUIRE(engine.resolve());
         CHECK(g_blankStartWhenSampled < 2 * 311);
     }
 }
