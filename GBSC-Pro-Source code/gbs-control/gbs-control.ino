@@ -75,6 +75,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
+#include "src/tv5725/Chip.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
 #include "src/clock/ClockGen.h"
@@ -3080,7 +3081,7 @@ void doPostPresetLoadSteps()
         }
 
         if (rto->outModeHdBypass) {
-            GBS::OUT_SYNC_SEL::write(1);
+            Tv5725::Chip::OUT_SYNC_SEL::write(1);
             rto->autoBestHtotalEnabled = false;
         } else {
             rto->autoBestHtotalEnabled = true;
@@ -4361,7 +4362,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     resetDebugPort();
 
     rto->autoBestHtotalEnabled = false;
-    GBS::OUT_SYNC_SEL::write(1);
+    Tv5725::Chip::OUT_SYNC_SEL::write(1);
 
     GBS::PLL_CKIS::write(0);
     GBS::PLL_DIVBY2Z::write(0);
@@ -4427,7 +4428,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
         GBS::MD_HS_FLIP::write(1);
         GBS::MD_VS_FLIP::write(1);
-        GBS::OUT_SYNC_SEL::write(2);
+        Tv5725::Chip::OUT_SYNC_SEL::write(2);
         GBS::SP_HS_LOOP_SEL::write(0);
         GBS::ADC_FLTR::write(3);
 
@@ -4648,7 +4649,7 @@ void bypassModeSwitch_RGBHV()
     GBS::PLL_LEN::write(1);
 
     GBS::DAC_RGBS_ADC2DAC::write(1);
-    GBS::OUT_SYNC_SEL::write(1);
+    Tv5725::Chip::OUT_SYNC_SEL::write(1);
 
     GBS::SFTRST_HDBYPS_RSTZ::write(1);
     GBS::HD_INI_ST::write(0);

@@ -4,6 +4,13 @@
 
 namespace Tv5725 {
 
+void Chip::routeToScaler()
+{
+    DAC_RGBS_BYPS2DAC::write(0x0);
+    DAC_RGBS_ADC2DAC::write(0x0);
+    OUT_SYNC_SEL::write(0x0);
+}
+
 void Chip::init()
 {
     // --- the display PLL's static half ------------------------------------
@@ -96,7 +103,7 @@ void Chip::init()
     GBS::OUT_CLK_PHASE_CNTRL::write(0x0);             // s0_4f[1:1]
     GBS::OUT_CLK_EN::write(0x3);                      // s0_4f[3:2]
     GBS::CLKOUT_EN::write(0x1);                       // s0_4f[4:4]
-    GBS::OUT_SYNC_SEL::write(0x0);                    // s0_4f[7:6]
+    OUT_SYNC_SEL::write(0x0);                    // s0_4f[7:6]
     GBS::OUT_BLANK_SEL_0::write(0x0);                 // s0_50[0:0]
     GBS::OUT_BLANK_SEL_1::write(0x0);                 // s0_50[1:1]
     GBS::IN_BLANK_SEL::write(0x0);                    // s0_50[4:4]

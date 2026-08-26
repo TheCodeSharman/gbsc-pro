@@ -163,12 +163,22 @@ public:
     typedef UReg<0x00, 0x4B, 2, 1> DAC_RGBS_ADC2DAC;                  // ADC to DAC control When = 0, disable ADC (with
                                                                       // decimation) to DAC
 
+    // Which block feeds the DACs and the sync outputs: 0 vds_proc, the
+    // scaler; 1 the HD bypass channel; 2 the sync processor, beside
+    // DAC_RGBS_ADC2DAC. Every writer but the scaling path is a bypass one.
+    typedef UReg<0x00, 0x4F, 6, 2> OUT_SYNC_SEL;
     typedef UReg<0x00, 0x4F, 0, 1> DAC_RGBS_V4CLK_INVT;               // V4CLK invert control When = 0, V4CLK to DAC directly
 
     // Every static segment-0 register, in address order. Called from the
     // bring-up before any other subsystem, and before the engine solves the
     // raster and the windows.
     static void init();
+
+    // Put the DACs and the sync outputs back on the scaler. Bypass moves all
+    // three and nothing on the scaling path claimed them, so leaving bypass
+    // reached the right conclusion without acting on it: a scaled raster solved
+    // underneath bypass routing, every register plausible, the bypass picture.
+    static void routeToScaler();
 };
 
 }  // namespace Tv5725

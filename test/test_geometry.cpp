@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
@@ -224,7 +225,15 @@ static void checkBenchGeometry()
     CHECK(GBS::PLL_VCORST::read() == 0);
     CHECK(GBS::PLL_IS::read() == 1);
 
-    CHECK(registersWritten() == 62);
+    // The DACs take the scaled video and sync comes from vds_proc. Every other
+    // writer of these three is a bypass path, so solving a raster is what has to
+    // claim them back -- otherwise leaving bypass reaches the right conclusion
+    // and does not act on it, with a scaled raster under bypass routing.
+    CHECK(Chip::OUT_SYNC_SEL::read() == 0);
+    CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
+    CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 0);
+
+    CHECK(registersWritten() == 64);   // the two DAC selects share s0_4b
 }
 
 // poll() runs on every loop() pass, and the steadiness gate wants a few before

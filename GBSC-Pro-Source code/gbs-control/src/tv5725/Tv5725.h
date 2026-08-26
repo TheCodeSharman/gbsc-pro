@@ -472,7 +472,6 @@ public:
     typedef UReg<0x00, 0x4F, 5, 1> OUT_SYNC_CNTRL;                    // H/V sync output enable When = 0, disable H/V sync output
                                                                       // to PAD
 
-    typedef UReg<0x00, 0x4F, 6, 2> OUT_SYNC_SEL;                      // When = 1, enable H/V sync output to PAD H/V sync output
                                                                       // selection control When = 00, H/V sync output are from
                                                                       // vds_proc When = 01, H/V sync output are from HD bypass
                                                                       // When = 10, H/V sync output are from sync processor When =

@@ -1,5 +1,7 @@
 #include "Geometry.h"
 
+#include "Chip.h"
+
 #include <math.h>
 
 #include "Adc.h"
@@ -166,6 +168,11 @@ bool Geometry::solveRaster()
     // internal divider when none can.
     displayClock_.hold(raster.divider);
     displayClock_.select();
+
+    // Solving a raster means the scaler is what the output carries, so the
+    // routing bypass moved is claimed back here rather than by a whole-chip
+    // bring-up running on the way past.
+    Chip::routeToScaler();
 
     // The porch is not a register, so the next solve cannot read it back.
     activeStop_ = raster.activeStop;
