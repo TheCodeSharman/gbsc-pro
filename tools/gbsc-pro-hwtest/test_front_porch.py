@@ -19,7 +19,8 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import LOCKED_VTOTAL_MIN, get_json, read_field
+from gbs_unit import (LOCKED_VTOTAL_MIN, get_json, locked_steadily, read_field,
+                      wait_for)
 
 FIELDS = [
     ("VDS_HSYNC_RST", 3, 0x01, 0, 12),
@@ -54,8 +55,20 @@ FIELD_RATE_MIN_HZ = 45.0
 FIELD_RATE_MAX_HZ = 90.0
 
 
+# A detection pass takes the source out for about five seconds, and a preceding
+# teardown returns as soon as it locks rather than when the pass ends.
+LOCK_WAIT_S = 40.0
+
+
 @pytest.fixture
 def raster(host, source):
+    # **WAIT FOR THE SOURCE, DO NOT SKIP ON IT.** These read the sync processor
+    # to derive the field rate, so a run that reaches them mid-detection skips --
+    # and a test that skips is not a test that passes. Measured: they skipped
+    # through the change to OutputMode::FrontPorchMinPx that they exist to guard,
+    # in every full run taken, because a neighbour had just re-detected.
+    wait_for(lambda: locked_steadily(host), timeout=LOCK_WAIT_S)
+
     state = {name: read_field(host, seg, reg, lo, width)
              for name, seg, reg, lo, width in FIELDS}
     if any(v is None for v in state.values()):
