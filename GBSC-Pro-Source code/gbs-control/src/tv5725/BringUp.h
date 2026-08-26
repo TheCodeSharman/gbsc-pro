@@ -36,10 +36,8 @@ public:
     // solves the raster and the windows.
     static void init();
 
-    // Every block reset asserted. Lives here rather than on Chip because one of
-    // the twelve belongs to Tv5725::HdBypass, and a cross-subsystem sequence is
-    // what this class is for. Arms the bring-up: a held block loses its
-    // configuration.
+    // Every block reset asserted, across two subsystems. Arms the bring-up: a
+    // held block loses its configuration.
     static void holdAllBlocks();
 
     // Say the chip needs bringing up. holdAllBlocks() does this because a held

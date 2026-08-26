@@ -1370,9 +1370,9 @@ void setResetParameters()
     GBS::SP_SOG_MODE::write(1);
 
     // The chosen input, not a literal. This runs from low power and the RGBHV
-    // watchdog as well as from boot, and a literal drops a component selection
-    // onto the RGB pins with nothing to put it back until the next reboot --
-    // which is what made selecting YPbPr look like it did nothing.
+    // watchdog as well as from boot, and only boot follows it with
+    // applySavedInputSource() -- so a literal drops a component selection onto
+    // the RGB pins with nothing to put it back until the next reboot.
     GBS::ADC_INPUT_SEL::write(selectedAdcInput());
     GBS::ADC_POWDZ::write(1);
     setAndUpdateSogLevel(rto->currentLevelSOG);
@@ -3102,10 +3102,9 @@ void doPostPresetLoadSteps()
 
         GBS::IF_INI_ST::write(0);
 
-        // Stays here rather than joining its neighbours in InputFormatter::init():
-        // a branch further down this same function writes 0 for one class of
-        // source, so a bring-up value would be left behind by whichever source
-        // ran last.
+        // Not in InputFormatter::init(): SourceStandard writes 0 for the
+        // progressive standards, so a bring-up value would be left behind by
+        // whichever source ran last.
         GBS::IF_HS_SEL_LPF::write(1);
 
         // The low band's gain is the same either way; only the high band's

@@ -18,10 +18,8 @@ void SyncProcessor::writeSdVsyncStop(uint16_t stop)
 
 void SyncProcessor::applyForSyncType(bool csync)
 {
-    // The two branches keep their own write order. Neither is derived from the
-    // other and no ordering constraint between these fields is established, so
-    // merging them into one sequence with ternaries would be a change nothing
-    // here can justify.
+    // No ordering constraint between these fields is established, so the two
+    // branches keep their own write order.
     if (csync) {
         SP_SOG_SRC_SEL::write(0);
         SP_EXT_SYNC_SEL::write(1);

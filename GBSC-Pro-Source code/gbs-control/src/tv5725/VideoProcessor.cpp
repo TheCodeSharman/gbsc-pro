@@ -30,10 +30,9 @@ void VideoProcessor::init()
     // source leaving one of them keeps theirs.
     VDS_V_DELAY::write(0x0);                     // s3_24[2:2]
 
-    // 2 in eleven tables. Nothing else writes 2 -- SourceStandard writes 3, for
-    // YPbPr and the progressive standards -- so on a 15 kHz RGB source the field
-    // held whatever the previous mode wanted. Those still override this: a
-    // standard is applied during the load, and a bring-up only at an arm.
+    // Nothing else writes 2: SourceStandard writes 3, for YPbPr and the
+    // progressive standards, and still overrides this -- a standard is applied
+    // during the load and a bring-up only at an arm.
     VDS_Y_DELAY::write(0x2);                     // s3_24[5:4]
     VDS_WEN_DELAY::write(0x2);                   // s3_24[7:6]
     VDS_D_SP::write(0x3);                        // s3_25[9:0]
@@ -75,9 +74,9 @@ void VideoProcessor::init()
     VDS_PK_VH_HL_SEL::write(0x1);                // s3_43[2:2]
     VDS_PK_VH_HH_SEL::write(0x1);                // s3_43[3:3]
     // The low band's shape, beside the high band's above. The GAINS are not
-    // here: VDS_PK_LB_GAIN and VDS_PK_LH_GAIN have seven writers between the
-    // scanlines and peaking controls, so a value written here would be
-    // whichever of those ran last, not this one.
+    // here: the scanlines and peaking controls write VDS_PK_LB_GAIN and
+    // VDS_PK_LH_GAIN too, so a value set here would be whichever of them ran
+    // last rather than this one.
     VDS_PK_VL_HL_SEL::write(0x0);                // s3_43[0:0]
     VDS_PK_VL_HH_SEL::write(0x0);                // s3_43[1:1]
     VDS_PK_LB_CORE::write(0x0);                  // s3_44[2:0]

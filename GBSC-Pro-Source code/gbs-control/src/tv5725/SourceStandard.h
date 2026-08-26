@@ -5,41 +5,23 @@
 
 namespace Tv5725 {
 
-// What Mode Detect's classification of the source implies, for the blocks a
-// mode change configures.
-//
-// A standard is not a measurement -- the geometry engine measures the line
-// count, the field rate and the line rate, and computes every register that
-// follows from them. What is left here is the handful of settings no
+// The settings Mode Detect's classification of the source implies and no
 // measurement supplies: the ADC's analog filter, the sampling density, and how
-// the input formatter and the video processor handle a line of this shape.
-//
-// The classification and the colour space are the whole input. Both are held,
-// neither is read back off the chip.
+// the input formatter and the video processor handle a line of that shape.
+// Everything derivable from the source belongs to the geometry engine instead.
 class SourceStandard {
 public:
     SourceStandard(uint8_t videoStandardInput, bool inputIsYpBpR);
 
-    // Every register the standard alone decides, in the order a mode change
-    // writes them. Returns the oversampling installed, which the geometry
-    // engine solves the sampling clock with and optimizePhaseSP() picks the ADC
-    // phase from.
-    //
-    // postDivider is the one already in force. It belongs to the caller because
-    // it is the PREVIOUS mode's, and a standard with a sampling density of its
+    // Returns the oversampling installed. postDivider is the one in force,
+    // which is the previous mode's: a standard with a sampling density of its
     // own replaces it rather than reading it back.
     uint8_t apply(uint8_t postDivider) const;
 
 private:
-    // 1 and 2 are Mode Detect's interlaced SD, NTSC and PAL.
-    bool isSd() const;
-
-    // 3, 4, 8 and 9 share the input formatter's line handling and a sampling
-    // density between interlaced SD's and the HD standards'.
-    bool isProgressive() const;
-
-    // 5, 6 and 7, which reach a load through the HD bypass switch.
-    bool isHd() const;
+    bool isSd() const;           // 1 and 2, interlaced SD
+    bool isProgressive() const;  // 3, 4, 8 and 9
+    bool isHd() const;           // 5, 6 and 7, reached through the HD bypass switch
 
     uint8_t applySd() const;
     uint8_t applyProgressive() const;
