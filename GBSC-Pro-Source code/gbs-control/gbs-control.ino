@@ -1279,24 +1279,6 @@ void activeFrameTimeLockInitialSteps()
     }
 }
 
-void resetInterruptSogSwitchBit()
-{
-    GBS::INT_CONTROL_RST_SOGSWITCH::write(1);
-    GBS::INT_CONTROL_RST_SOGSWITCH::write(0);
-}
-
-void resetInterruptSogBadBit()
-{
-    GBS::INT_CONTROL_RST_SOGBAD::write(1);
-    GBS::INT_CONTROL_RST_SOGBAD::write(0);
-}
-
-void resetInterruptNoHsyncBadBit()
-{
-    GBS::INT_CONTROL_RST_NOHSYNC::write(1);
-    GBS::INT_CONTROL_RST_NOHSYNC::write(0);
-}
-
 void setResetParameters_re() 
 {
     rto->videoStandardInput = 0;   
@@ -1588,7 +1570,7 @@ void updateHVSyncEdge()
     uint16_t temp = 0;
 
     if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-        resetInterruptSogBadBit();
+        Tv5725::Interrupts::acknowledgeSogBad();
         return;
     }
 
@@ -3310,30 +3292,13 @@ void doPostPresetLoadSteps()
         GBS::IF_AUTO_OFST_PRD::write(0);
         GBS::IF_AUTO_OFST_EN::write(0);
 
-        if (uopt->wantVdsLineFilter) {
-            GBS::VDS_D_RAM_BYPS::write(0);
-        } else {
-            GBS::VDS_D_RAM_BYPS::write(1);
-        }
-
-        if (uopt->wantPeaking) {
-            GBS::VDS_PK_Y_H_BYPS::write(0);
-        } else {
-            GBS::VDS_PK_Y_H_BYPS::write(1);
-        }
-
-        GBS::VDS_TAP6_BYPS::write(0);
-
-        if (uopt->wantStepResponse) {
-
-            if (rto->presetID != 0x05 && rto->presetID != 0x15) {
-                GBS::VDS_UV_STEP_BYPS::write(0);
-            } else {
-                GBS::VDS_UV_STEP_BYPS::write(1);
-            }
-        } else {
-            GBS::VDS_UV_STEP_BYPS::write(1);
-        }
+        // 0x05 and 0x15 are the 1024x768 preset ids, where the chroma step
+        // response is left bypassed whatever the preference says.
+        const bool stepResponse = uopt->wantStepResponse
+                                  && rto->presetID != 0x05
+                                  && rto->presetID != 0x15;
+        Tv5725::VideoProcessor::applyPictureOptions(
+            uopt->wantVdsLineFilter, uopt->wantPeaking, stepResponse);
 
         Menu::init();
         FrameSync::cleanup();
@@ -3348,8 +3313,8 @@ void doPostPresetLoadSteps()
 
             updateCoastPosition(0);
             delay(1);
-            resetInterruptNoHsyncBadBit();
-            resetInterruptSogBadBit();
+            Tv5725::Interrupts::acknowledgeNoHsync();
+            Tv5725::Interrupts::acknowledgeSogBad();
             delay(10);
 
             delay(70);
@@ -3357,7 +3322,7 @@ void doPostPresetLoadSteps()
             for (uint8_t i = 0; i < 4; i++) {
                 if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
                     optimizeSogLevel();
-                    resetInterruptSogBadBit();
+                    Tv5725::Interrupts::acknowledgeSogBad();
                     delay(40);
                 } else if (getStatus16SpHsStable() && getStatus16SpHsStable()) {
                     delay(1);
@@ -3883,7 +3848,7 @@ boolean getStatus16SpHsStable()
             // printf("\n stable from \n");
             return true;
         } else {
-            resetInterruptNoHsyncBadBit();
+            Tv5725::Interrupts::acknowledgeNoHsync();
             // printf("\n false from 1\n");
             return false;
         }
@@ -5119,7 +5084,7 @@ void runSyncWatcher() //
     if (rto->syncTypeCsync && !rto->inputIsYpBpR && (newVideoModeCounter == 0)) {
 
         if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_INT_SOG_SW::read() == 1) {
-            resetInterruptSogSwitchBit();
+            Tv5725::Interrupts::acknowledgeSogSwitch();
             if ((millis() - preemptiveSogWindowStart) > sogWindowLen) {
 
                 preemptiveSogWindowStart = millis();
@@ -5131,7 +5096,7 @@ void runSyncWatcher() //
         if ((millis() - preemptiveSogWindowStart) < sogWindowLen) {
             for (uint8_t i = 0; i < 16; i++) {
                 if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_SYNC_PROC_HSACT::read() == 0) {
-                    resetInterruptSogBadBit();
+                    Tv5725::Interrupts::acknowledgeSogBad();
                     uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
                     if (rto->videoStandardInput == 0)
                         hlowStart = 777;
@@ -5473,7 +5438,7 @@ void runSyncWatcher() //
         }
 
         if (rto->continousStableCounter == 160) {
-            resetInterruptSogBadBit();
+            Tv5725::Interrupts::acknowledgeSogBad();
         }
 
         if (rto->continousStableCounter == 45) {
@@ -5835,7 +5800,7 @@ void runSyncWatcher() //
                 resetModeDetect();
                 stable = 0;
                 delay(10);
-                resetInterruptSogBadBit();
+                Tv5725::Interrupts::acknowledgeSogBad();
             } else {
                 stable = 1;
                 VSHSStatus = GBS::STATUS_00::read();
@@ -5947,7 +5912,7 @@ void runSyncWatcher() //
                 }
             }
 
-            resetInterruptSogBadBit();
+            Tv5725::Interrupts::acknowledgeSogBad();
 
             oldHPLLState = rto->HPLLState;
             if (currentPllRate != 0) {

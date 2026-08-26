@@ -101,6 +101,12 @@ public:
     // csync. Two claimants and the count never reaches its threshold.
     static bool takeSourceDisturbed();
 
+    // Clear one latched interrupt. A pulse, not a level: the reset control left
+    // asserted stops the bit ever latching again.
+    static void acknowledgeSogBad();
+    static void acknowledgeSogSwitch();
+    static void acknowledgeNoHsync();
+
     // Every static register of this subsystem, in address order.
     static void init();
 };

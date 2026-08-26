@@ -103,3 +103,32 @@ TEST_CASE("nothing is acknowledged when nothing fired")
 
     CHECK_FALSE(Wire.touched[0][IntReset]);
 }
+
+TEST_CASE("acknowledging a latched interrupt pulses its reset and leaves it low")
+{
+    // The bit is level-triggered on a reset control that must not be left
+    // asserted: held at 1, the interrupt can never latch again. So the
+    // acknowledge is a pulse, and its shape is the contract.
+    Wire.reset();
+    Wire.bank[0][IntReset] = 0x00;
+
+    Interrupts::acknowledgeSogBad();
+    CHECK(Wire.field(0, IntReset, 0, 1) == 0);
+
+    Interrupts::acknowledgeSogSwitch();
+    CHECK(Wire.field(0, IntReset, 1, 1) == 0);
+
+    Interrupts::acknowledgeNoHsync();
+    CHECK(Wire.field(0, IntReset, 4, 1) == 0);
+}
+
+TEST_CASE("each acknowledge touches only its own bit")
+{
+    Wire.reset();
+    Wire.bank[0][IntReset] = 0x00;
+
+    Interrupts::acknowledgeSogBad();
+
+    // Bit 0 pulsed and returned; nothing else in the byte moved.
+    CHECK(Wire.bank[0][IntReset] == 0x00);
+}

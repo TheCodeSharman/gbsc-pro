@@ -2,13 +2,30 @@
 
 namespace Tv5725 {
 
+void Interrupts::acknowledgeSogBad()
+{
+    INT_CONTROL_RST_SOGBAD::write(1);
+    INT_CONTROL_RST_SOGBAD::write(0);
+}
+
+void Interrupts::acknowledgeSogSwitch()
+{
+    INT_CONTROL_RST_SOGSWITCH::write(1);
+    INT_CONTROL_RST_SOGSWITCH::write(0);
+}
+
+void Interrupts::acknowledgeNoHsync()
+{
+    INT_CONTROL_RST_NOHSYNC::write(1);
+    INT_CONTROL_RST_NOHSYNC::write(0);
+}
+
 bool Interrupts::takeSourceDisturbed()
 {
     if (STATUS_INT_SOG_SW::read() != 1)
         return false;
 
-    INT_CONTROL_RST_SOGSWITCH::write(1);
-    INT_CONTROL_RST_SOGSWITCH::write(0);
+    acknowledgeSogSwitch();
     return true;
 }
 

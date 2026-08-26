@@ -840,6 +840,12 @@ public:
 
     // Every static register of this subsystem, in address order.
     static void init();
+
+    // The three picture-quality preferences, applied together because they are
+    // read together. Each names what the user asked for, not the bypass bit that
+    // carries it: the registers are BYPS, so wanting a filter clears one.
+    static void applyPictureOptions(bool lineFilter, bool peaking,
+                                    bool stepResponse);
 };
 
 }  // namespace Tv5725

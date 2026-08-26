@@ -464,6 +464,17 @@ sync-processor:
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_processor"
 
+## video-processor: host unit tests for VideoProcessor::applyPictureOptions
+#
+# Every register is a BYPS bit, so each is the inverse of the preference naming
+# it, and an inverted one leaves a picture merely different rather than wrong.
+video-processor:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_video_processor" \
+	  "$(HERE)/test_video_processor.cpp" src/tv5725/VideoProcessor.cpp
+	@"$(OUT)/test_video_processor"
+
 interrupts:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
@@ -568,7 +579,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
+test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

@@ -2,6 +2,15 @@
 
 namespace Tv5725 {
 
+void VideoProcessor::applyPictureOptions(bool lineFilter, bool peaking,
+                                        bool stepResponse)
+{
+    VDS_D_RAM_BYPS::write(lineFilter ? 0 : 1);
+    VDS_PK_Y_H_BYPS::write(peaking ? 0 : 1);
+    VDS_TAP6_BYPS::write(0);
+    VDS_UV_STEP_BYPS::write(stepResponse ? 0 : 1);
+}
+
 void VideoProcessor::init()
 {
     VDS_FIELDAB_EN::write(0x1);                  // s3_00[1:1]
