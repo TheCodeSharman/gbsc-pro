@@ -453,6 +453,17 @@ field-request:
 #
 # The latched "source disturbed" bits, which are the mode-change trigger. They
 # do not persist, so reading them is the same act as claiming them.
+## sync-processor: host unit tests for SyncProcessor::applyForSyncType
+#
+# The two copies it replaced sat on different paths, so the check is per field
+# and includes the three csync never wrote.
+sync-processor:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sync_processor" \
+	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
+	@"$(OUT)/test_sync_processor"
+
 interrupts:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
@@ -557,7 +568,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
+test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

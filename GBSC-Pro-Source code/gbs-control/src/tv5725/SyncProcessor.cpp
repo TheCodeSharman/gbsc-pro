@@ -1,6 +1,42 @@
 #include "SyncProcessor.h"
 
+#include "Adc.h"
+
 namespace Tv5725 {
+
+void SyncProcessor::applyForSyncType(bool csync)
+{
+    // The two branches keep their own write order. Neither is derived from the
+    // other and no ordering constraint between these fields is established, so
+    // merging them into one sequence with ternaries would be a change nothing
+    // here can justify.
+    if (csync) {
+        SP_SOG_SRC_SEL::write(0);
+        SP_EXT_SYNC_SEL::write(1);
+        Adc::ADC_SOGEN::write(1);
+        SP_SOG_MODE::write(1);
+        SP_NO_COAST_REG::write(0);
+        SP_PRE_COAST::write(4);
+        SP_POST_COAST::write(7);
+        SP_SYNC_BYPS::write(0);
+        SP_HS_LOOP_SEL::write(1);
+        SP_H_PROTECT::write(1);
+    } else {
+        SP_SOG_SRC_SEL::write(0);
+        Adc::ADC_SOGEN::write(1);
+        SP_EXT_SYNC_SEL::write(0);
+        SP_SOG_MODE::write(0);
+        SP_NO_COAST_REG::write(1);
+        SP_PRE_COAST::write(0);
+        SP_POST_COAST::write(0);
+        SP_H_PULSE_IGNOR::write(0xff);
+        SP_SYNC_BYPS::write(0);
+        SP_HS_POL_ATO::write(1);
+        SP_VS_POL_ATO::write(1);
+        SP_HS_LOOP_SEL::write(1);
+        SP_H_PROTECT::write(0);
+    }
+}
 
 void SyncProcessor::init()
 {

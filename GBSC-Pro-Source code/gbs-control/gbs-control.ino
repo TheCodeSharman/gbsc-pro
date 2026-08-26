@@ -3042,39 +3042,12 @@ void doPostPresetLoadSteps()
 
         prepareSyncProcessor();
         if (scalingRgbhv()) {
-
-            if (rto->syncTypeCsync == false) {
-                GBS::SP_SOG_SRC_SEL::write(0);  
-                GBS::ADC_SOGEN::write(1);       
-                GBS::SP_EXT_SYNC_SEL::write(0); 
-                GBS::SP_SOG_MODE::write(0);     
-                GBS::SP_NO_COAST_REG::write(1);
-                GBS::SP_PRE_COAST::write(0);        
-                GBS::SP_POST_COAST::write(0);       
-                GBS::SP_H_PULSE_IGNOR::write(0xff); 
-                GBS::SP_SYNC_BYPS::write(0);        
-                GBS::SP_HS_POL_ATO::write(1);       
-                GBS::SP_VS_POL_ATO::write(1);       
-                GBS::SP_HS_LOOP_SEL::write(1);      
-                GBS::SP_H_PROTECT::write(0);        
-                rto->phaseADC = 16;
-                rto->phaseSP = 8;
-            } else {
-
-                GBS::SP_SOG_SRC_SEL::write(0);  
-                GBS::SP_EXT_SYNC_SEL::write(1); 
-                GBS::ADC_SOGEN::write(1);       
-                GBS::SP_SOG_MODE::write(1);     
-                GBS::SP_NO_COAST_REG::write(0);
-                GBS::SP_PRE_COAST::write(4);
-                GBS::SP_POST_COAST::write(7);
-                GBS::SP_SYNC_BYPS::write(0);   
-                GBS::SP_HS_LOOP_SEL::write(1); 
-                GBS::SP_H_PROTECT::write(1);
+            Tv5725::SyncProcessor::applyForSyncType(rto->syncTypeCsync);
+            if (rto->syncTypeCsync) {
                 rto->currentLevelSOG = 24;
-                rto->phaseADC = 16;
-                rto->phaseSP = 8;
             }
+            rto->phaseADC = 16;
+            rto->phaseSP = 8;
         }
 
         GBS::SP_H_PROTECT::write(0); 
@@ -4680,38 +4653,12 @@ void bypassModeSwitch_RGBHV()
     GBS::PAD_SYNC2_IN_ENZ::write(0);
 
     GBS::SP_SOG_P_ATO::write(1);
-    if (rto->syncTypeCsync == false) {
-        GBS::SP_SOG_SRC_SEL::write(0);  
-        GBS::ADC_SOGEN::write(1);       
-        GBS::SP_EXT_SYNC_SEL::write(0); 
-        GBS::SP_SOG_MODE::write(0);
-        GBS::SP_NO_COAST_REG::write(1);
-        GBS::SP_PRE_COAST::write(0);        
-        GBS::SP_POST_COAST::write(0);       
-        GBS::SP_H_PULSE_IGNOR::write(0xff); 
-        GBS::SP_SYNC_BYPS::write(0);        
-        GBS::SP_HS_POL_ATO::write(1);       
-        GBS::SP_VS_POL_ATO::write(1);       
-        GBS::SP_HS_LOOP_SEL::write(1);      
-        GBS::SP_H_PROTECT::write(0);        
-        rto->phaseADC = 16;
-        rto->phaseSP = 8;
-    } else {
-
-        GBS::SP_SOG_SRC_SEL::write(0); 
-        GBS::SP_EXT_SYNC_SEL::write(1);
-        GBS::ADC_SOGEN::write(1); 
-        GBS::SP_SOG_MODE::write(1);
-        GBS::SP_NO_COAST_REG::write(0);
-        GBS::SP_PRE_COAST::write(4);
-        GBS::SP_POST_COAST::write(7);
-        GBS::SP_SYNC_BYPS::write(0);   
-        GBS::SP_HS_LOOP_SEL::write(1); 
-        GBS::SP_H_PROTECT::write(1);
+    Tv5725::SyncProcessor::applyForSyncType(rto->syncTypeCsync);
+    if (rto->syncTypeCsync) {
         rto->currentLevelSOG = 24;
-        rto->phaseADC = 16;
-        rto->phaseSP = 8;
     }
+    rto->phaseADC = 16;
+    rto->phaseSP = 8;
     GBS::SP_CLAMP_MANUAL::write(1);  
     GBS::SP_COAST_INV_REG::write(0); 
 

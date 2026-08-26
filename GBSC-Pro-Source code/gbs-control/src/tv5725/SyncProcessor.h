@@ -192,6 +192,12 @@ public:
     // Every static register of this subsystem, in address order.
     static void init();
 
+    // The sync path the source arrives on. Everything here is a consequence of
+    // that one choice, and it is made by sourceHasOwnVsync() rather than read
+    // off the chip -- docs/sync-type-selection.md, because STATUS_SYNC_PROC_VSACT
+    // only reports correctly once the type is already right.
+    static void applyForSyncType(bool csync);
+
     // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
     // value off the divider; this block is where the register lives.
     static void writeRetimeStop(uint16_t samples);
