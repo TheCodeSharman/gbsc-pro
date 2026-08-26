@@ -1,6 +1,10 @@
 # The sync type is probed, because reading it back is circular
 
-`rto->syncTypeCsync` chooses between composite-sync separation and separate H/V.
+`Tv5725::SyncType` chooses between composite-sync separation and separate H/V.
+It holds two facts: what the type is (`isCsync()`) and whether that came from a
+measurement (`isSet()`). `set()` deliberately does not mark the type as probed --
+the YPbPr fallback and the temporary flips during detection assert a type without
+measuring one, and recording those as probed would suppress the real probe.
 
 **It must never be decided by reading `STATUS_SYNC_PROC_VSACT`.** That bit
 reports the sync path already configured, not a property of the source, so the
@@ -40,25 +44,44 @@ occur with a perfect picture, which is exactly why nothing may gate on it.
 | site | how |
 |---|---|
 | `inputAndSyncDetect()` | field-rate probes **and** `sourceHasOwnVsync()` |
-| `applyPresets()`, the mode-14 arm | `syncTypeCsync = !sourceHasOwnVsync()`, behind `syncTypeIsSet` |
-| `applyPresets()`, the no-mode arm | `syncTypeCsync = !sourceHasOwnVsync()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
-| `applyPresets()`, the YPbPr fallback | unconditional `csync = 1` |
+| `applyPresets()`, the mode-14 arm | `SyncType::probeOnce()`, so it measures only if nothing has for this source |
+| `applyPresets()`, the no-mode arm | `SyncType::probe()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
+| `applyPresets()`, the YPbPr fallback | unconditional `SyncType::set(true)` |
+
+**Only the mode-14 arm reaches `probeOnce()`**, so on a source that classifies as
+SD the gate below never runs at all and the type comes from
+`inputAndSyncDetect()`'s `set()` calls. That is why the gate cannot be exercised
+from a bench source at 320x256@50.
 
 `sourceHasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits 240 ms for the sync
 processor to reacquire V, polls for up to 250 ms, re-confirms after 10 ms, then
 restores the register.
 
 **It costs ~500 ms, so it runs once per SOURCE, not once per mode change.**
-`rto->syncTypeIsSet` is the gate, and it is cleared wherever
-`coastPositionIsSet` and `clampPositionIsSet` are — every path meaning the
-source may have changed. A mode change pays nothing.
+`SyncType::isSet()` is the gate and `SyncType::forget()` re-arms it.
+
+**What re-arms it is a change of SOURCE, not a cleared clamp.** `forget()` sits
+beside `coastPositionIsSet` and `clampPositionIsSet` at the five sites that mean a
+different source may now be attached — the two resets, the low-power entry, the
+RGBHV watchdog, and `LoadDefault()`, which every OLED input handler reaches
+through `resetSyncProcessor()`. **Six other sites clear those two flags and
+deliberately do not forget**, because they are mode changes on the source already
+attached: twice inside `applyPresets()` itself, twice in `runSyncWatcher()`'s
+scaling-RGBHV arm, and the serial clock-generator command. Reading the flags as
+the rule re-probes on every preset load and spends 500 ms doing it.
 
 **It cannot be left to `inputAndSyncDetect()` alone.** That probe sits behind
 `SyncSearch::searchFor(...) == VsyncPresent`, so on a source with no separate
-vsync — the csync case, the one that matters — the block is skipped and
-`syncTypeCsync` keeps its initial false. Circular in the same way, one level up.
+vsync — the csync case, the one that matters — the block is skipped and the type
+keeps its initial false. Circular in the same way, one level up.
 
-**Two paths do not consult `syncTypeCsync` at all.**
+**And an input change must forget.** `LoadDefault()` writes `set(false)`, which
+asserts separate sync without measuring it. Without a `forget()` beside it the
+previous input's `isSet()` survives, `probeOnce()` finds the answer already held
+and returns the false just written, and a csync source selected after a
+separate-sync one is never measured.
+
+**Two paths do not consult the sync type at all.**
 `videoStandardInputIsPalNtscSd()` writes `SP_H_PULSE_IGNOR` 0x6b and
 `updateSpDynamic()` writes coast 7/3, whatever the sync type resolved to.
 
