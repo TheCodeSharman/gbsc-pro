@@ -1667,10 +1667,8 @@ void prepareSyncProcessor()
 
     GBS::SP_H_TOTAL_EQ_THD::write(3);
 
-    GBS::SP_SDCS_VSST_REG_H::write(0);
-    GBS::SP_SDCS_VSSP_REG_H::write(0);
-    GBS::SP_SDCS_VSST_REG_L::write(4);
-    GBS::SP_SDCS_VSSP_REG_L::write(1);
+    Tv5725::SyncProcessor::writeSdVsyncStart(4);
+    Tv5725::SyncProcessor::writeSdVsyncStop(1);
 
     GBS::SP_CS_HS_ST::write(0x10);
     GBS::SP_CS_HS_SP::write(0x00);
@@ -2658,18 +2656,6 @@ uint16_t getCsVsStop()
     return (GBS::SP_SDCS_VSSP_REG_H::read() << 8) + GBS::SP_SDCS_VSSP_REG_L::read();
 }
 
-void setCsVsStart(uint16_t start)
-{
-    GBS::SP_SDCS_VSST_REG_H::write(start >> 8);
-    GBS::SP_SDCS_VSST_REG_L::write(start & 0xff);
-}
-
-void setCsVsStop(uint16_t stop)
-{
-    GBS::SP_SDCS_VSSP_REG_H::write(stop >> 8);
-    GBS::SP_SDCS_VSSP_REG_L::write(stop & 0xff);
-}
-
 // Dump the scaler's live display timings: on demand from the web UI (`/sc?,`)
 // or serial (`,`), and after every moveHS()/moveVS() nudge. printf_P gives one
 // WebSocket frame per line, with the format strings left in flash.
@@ -3037,12 +3023,6 @@ void doPostPresetLoadSteps()
         GBS::SP_NO_CLAMP_REG::write(1);
         GBS::OUT_SYNC_CNTRL::write(1); // 
 
-        GBS::ADC_AUTO_OFST_PRD::write(1);
-        GBS::ADC_AUTO_OFST_DELAY::write(0);
-        GBS::ADC_AUTO_OFST_STEP::write(0);
-        GBS::ADC_AUTO_OFST_TEST::write(1);
-        GBS::ADC_AUTO_OFST_RANGE_REG::write(0x00);
-
         if (rto->inputIsYpBpR == true) //&& Info_sate == 0 )//&& SeleInputSource == S_YUV)
         {
             applyYuvPatches();
@@ -3090,36 +3070,17 @@ void doPostPresetLoadSteps()
 
         GBS::IF_INI_ST::write(0);
 
-        GBS::IF_HS_INT_LPF_BYPS::write(0);
-
+        // Stays here rather than joining its neighbours in InputFormatter::init():
+        // a branch further down this same function writes 0 for one class of
+        // source, so a bring-up value would be left behind by whichever source
+        // ran last.
         GBS::IF_HS_SEL_LPF::write(1);
-        GBS::IF_HS_PSHIFT_BYPS::write(1);
 
-        GBS::IF_LD_WRST_SEL::write(1);
-
-        // SP_RT_HS_ST stays: the retime window STARTS at 0 whatever the
-        // divider is, in all twelve preset tables and in every runtime path,
-        // so it is a constant rather than part of the quantity below.
-        GBS::SP_RT_HS_ST::write(0);
-        // SP_RT_HS_SP is not written here. It is 93% of PLLAD_MD, one of
-        // the three registers Tv5725::SourceMeasurement owns off a single
-        // held divider, and splitting it from the other two is how it ends
-        // up describing a line the ADC is not sampling.
-
-        GBS::VDS_PK_LB_CORE::write(0);
-        GBS::VDS_PK_LH_CORE::write(0);
-        if (rto->presetID == 0x05 || rto->presetID == 0x15) {
-
-            GBS::VDS_PK_LB_GAIN::write(0x16);
-            GBS::VDS_PK_LH_GAIN::write(0x0A);
-        } else {
-            GBS::VDS_PK_LB_GAIN::write(0x16);
-            GBS::VDS_PK_LH_GAIN::write(0x18);
-        }
-        GBS::VDS_PK_VL_HL_SEL::write(0);
-        GBS::VDS_PK_VL_HH_SEL::write(0);
-
-        GBS::VDS_STEP_GAIN::write(1);
+        // The low band's gain is the same either way; only the high band's
+        // differs, and only at 1080p.
+        GBS::VDS_PK_LB_GAIN::write(0x16);
+        GBS::VDS_PK_LH_GAIN::write(
+            (rto->presetID == 0x05 || rto->presetID == 0x15) ? 0x0A : 0x18);
 
         setOverSampleRatio(2, true);
 
@@ -3142,8 +3103,8 @@ void doPostPresetLoadSteps()
             GBS::ADC_FLTR::write(3);
             GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
 
-            setCsVsStart(14);
-            setCsVsStop(11);
+            Tv5725::SyncProcessor::writeSdVsyncStart(14);
+            Tv5725::SyncProcessor::writeSdVsyncStop(11);
             GBS::IF_HB_SP::write(0);
             setOverSampleRatio(2, true);
             GBS::IF_SEL_WEN::write(1);
@@ -3171,8 +3132,8 @@ void doPostPresetLoadSteps()
             }
         }
         if (rto->videoStandardInput == 3) {
-            setCsVsStart(16);
-            setCsVsStop(13); //
+            Tv5725::SyncProcessor::writeSdVsyncStart(16);
+            Tv5725::SyncProcessor::writeSdVsyncStop(13); //
             GBS::IF_HB_ST::write(30);
             GBS::IF_HBIN_ST::write(0x20);
             GBS::IF_HBIN_SP::write(0x60);
@@ -4360,10 +4321,8 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     GBS::HD_SEL_BLK_IN::write(0);
 
-    GBS::SP_SDCS_VSST_REG_H::write(0);
-    GBS::SP_SDCS_VSSP_REG_H::write(0);
-    GBS::SP_SDCS_VSST_REG_L::write(0);
-    GBS::SP_SDCS_VSSP_REG_L::write(2);
+    Tv5725::SyncProcessor::writeSdVsyncStart(0);
+    Tv5725::SyncProcessor::writeSdVsyncStop(2);
 
     GBS::HD_HSYNC_RST::write(0x3ff);
     GBS::HD_INI_ST::write(0);
@@ -4390,16 +4349,16 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
         GBS::SP_CS_HS_SP::write(0x00);
 
         if (rto->videoStandardInput == 1) {
-            setCsVsStart(250);
-            setCsVsStop(1);
+            Tv5725::SyncProcessor::writeSdVsyncStart(250);
+            Tv5725::SyncProcessor::writeSdVsyncStop(1);
             GBS::HD_VB_ST::write(500);
             GBS::HD_VS_ST::write(3);
             GBS::HD_VS_SP::write(522);
             GBS::HD_VB_SP::write(16);
         }
         if (rto->videoStandardInput == 2) {
-            setCsVsStart(301);
-            setCsVsStop(5);
+            Tv5725::SyncProcessor::writeSdVsyncStart(301);
+            Tv5725::SyncProcessor::writeSdVsyncStop(5);
             GBS::HD_VB_ST::write(605);
             GBS::HD_VS_ST::write(1);
             GBS::HD_VS_SP::write(621);
@@ -4420,16 +4379,16 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
             GBS::HD_HS_SP::write(0x864);
             GBS::HD_VS_ST::write(0x06);
             GBS::HD_VS_SP::write(0x00);
-            setCsVsStart(525 - 5);
-            setCsVsStop(525 - 3);
+            Tv5725::SyncProcessor::writeSdVsyncStart(525 - 5);
+            Tv5725::SyncProcessor::writeSdVsyncStop(525 - 3);
         }
         if (rto->videoStandardInput == 4) {
             GBS::HD_HS_ST::write(0x10);
             GBS::HD_HS_SP::write(0x880);
             GBS::HD_VS_ST::write(0x06);
             GBS::HD_VS_SP::write(0x00);
-            setCsVsStart(48);
-            setCsVsStop(46);
+            Tv5725::SyncProcessor::writeSdVsyncStart(48);
+            Tv5725::SyncProcessor::writeSdVsyncStop(46);
         }
     } else if (rto->videoStandardInput <= 7 || rto->videoStandardInput == 13) {
 
@@ -4452,8 +4411,8 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
             GBS::HD_VB_SP::write(0x6c);
             GBS::HD_VS_ST::write(0x00);
             GBS::HD_VS_SP::write(0x05);
-            setCsVsStart(2);
-            setCsVsStop(0);
+            Tv5725::SyncProcessor::writeSdVsyncStart(2);
+            Tv5725::SyncProcessor::writeSdVsyncStop(0);
         }
         if (rto->videoStandardInput == 6) {
             GBS::HD_HSYNC_RST::write(0x710);
@@ -4469,8 +4428,8 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
             GBS::HD_VB_SP::write(0x1e);
             GBS::HD_VS_ST::write(0x04);
             GBS::HD_VS_SP::write(0x09);
-            setCsVsStart(8);
-            setCsVsStop(6);
+            Tv5725::SyncProcessor::writeSdVsyncStart(8);
+            Tv5725::SyncProcessor::writeSdVsyncStop(6);
         }
         if (rto->videoStandardInput == 7) {
             GBS::PLLAD_MD::write(2749);
@@ -5019,14 +4978,14 @@ void runSyncWatcher() //
                         activeStableLineCount = thisStableLineCount;
                         if (activeStableLineCount < 230 || activeStableLineCount > 340) {
 
-                            setCsVsStart(1);
+                            Tv5725::SyncProcessor::writeSdVsyncStart(1);
                             if (getCsVsStop() == 1) {
-                                setCsVsStop(2);
+                                Tv5725::SyncProcessor::writeSdVsyncStop(2);
                             }
 
                             nudgeMD();
                         } else {
-                            setCsVsStart(thisStableLineCount - 9);
+                            Tv5725::SyncProcessor::writeSdVsyncStart(thisStableLineCount - 9);
                         }
                         delay(150);
                     }
@@ -5608,8 +5567,8 @@ void runSyncWatcher() //
                     GBS::IF_INI_ST::write(16);
                     GBS::SP_SOG_P_ATO::write(1);
 
-                    GBS::SP_SDCS_VSST_REG_L::write(2);
-                    GBS::SP_SDCS_VSSP_REG_L::write(0);
+                    Tv5725::SyncProcessor::writeSdVsyncStart(2);
+                    Tv5725::SyncProcessor::writeSdVsyncStop(0);
 
                     rto->coastPositionIsSet = rto->clampPositionIsSet = 0; // Clamp position setting
                     rto->videoStandardInput = 14;
@@ -5689,8 +5648,8 @@ void runSyncWatcher() //
                         GBS::IF_INI_ST::write(16);
                         GBS::SP_SOG_P_ATO::write(1);
 
-                        GBS::SP_SDCS_VSST_REG_L::write(2);
-                        GBS::SP_SDCS_VSSP_REG_L::write(0);
+                        Tv5725::SyncProcessor::writeSdVsyncStart(2);
+                        Tv5725::SyncProcessor::writeSdVsyncStop(0);
 
                         rto->coastPositionIsSet = rto->clampPositionIsSet = 0; // Clamp position setting
                         rto->videoStandardInput = 14;
@@ -8001,9 +7960,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         } else if (what.equals("ifini")) {
                             GBS::IF_INI_ST::write(value);
                         } else if (what.equals("vsstc")) {
-                            setCsVsStart(value);
+                            Tv5725::SyncProcessor::writeSdVsyncStart(value);
                         } else if (what.equals("vsspc")) {
-                            setCsVsStop(value);
+                            Tv5725::SyncProcessor::writeSdVsyncStop(value);
                         }
                     } else {
                         ; // SerialMprintln("abort");

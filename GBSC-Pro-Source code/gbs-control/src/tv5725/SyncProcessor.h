@@ -198,6 +198,13 @@ public:
     // only reports correctly once the type is already right.
     static void applyForSyncType(bool csync);
 
+    // The SD vertical sync positions, each ONE value across two registers: a
+    // low byte and a three-bit high field in a different address. Written as
+    // halves they drift -- a path setting only the low byte leaves whatever a
+    // previous, larger value put in the high field.
+    static void writeSdVsyncStart(uint16_t start);
+    static void writeSdVsyncStop(uint16_t stop);
+
     // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
     // value off the divider; this block is where the register lives.
     static void writeRetimeStop(uint16_t samples);

@@ -97,3 +97,33 @@ TEST_CASE("sync-on-green is enabled on both paths")
     CHECK(applied<Adc::ADC_SOGEN>(false) == 1);
     CHECK(applied<Adc::ADC_SOGEN>(true) == 1);
 }
+
+TEST_CASE("the SD vertical sync positions are one value each, not two halves")
+{
+    // SP_SDCS_VSST and SP_SDCS_VSSP are 11 bits split across a low byte and a
+    // three-bit high field in a different register. Written as halves they
+    // drift: setOutModeHdBypass() sets a start of 301, so the high field holds
+    // 1, and a later path writing only the low byte with 2 leaves 258.
+    Wire.reset();
+    Wire.poison(0x00);
+
+    SyncProcessor::writeSdVsyncStart(301);
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 1);
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 45);
+
+    SUBCASE("a smaller value afterwards clears the high field") {
+        SyncProcessor::writeSdVsyncStart(2);
+        CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
+        CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 2);
+    }
+
+    SUBCASE("the stop position is the same shape") {
+        SyncProcessor::writeSdVsyncStop(520);
+        CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 2);
+        CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 8);
+
+        SyncProcessor::writeSdVsyncStop(0);
+        CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
+        CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 0);
+    }
+}

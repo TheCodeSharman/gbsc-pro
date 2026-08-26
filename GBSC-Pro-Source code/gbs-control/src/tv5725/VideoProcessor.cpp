@@ -70,6 +70,15 @@ void VideoProcessor::init()
     VDS_PK_RAM_BYPS::write(0x1);                 // s3_42[6:6]
     VDS_PK_VH_HL_SEL::write(0x1);                // s3_43[2:2]
     VDS_PK_VH_HH_SEL::write(0x1);                // s3_43[3:3]
+    // The low band's shape, beside the high band's above. The GAINS are not
+    // here: VDS_PK_LB_GAIN and VDS_PK_LH_GAIN have seven writers between the
+    // scanlines and peaking controls, so a value written here would be
+    // whichever of those ran last, not this one.
+    VDS_PK_VL_HL_SEL::write(0x0);                // s3_43[0:0]
+    VDS_PK_VL_HH_SEL::write(0x0);                // s3_43[1:1]
+    VDS_PK_LB_CORE::write(0x0);                  // s3_44[2:0]
+    VDS_PK_LH_CORE::write(0x0);                  // s3_46[2:0]
+    VDS_STEP_GAIN::write(0x1);                   // s3_2b[3:0]
     VDS_PK_LB_CMP::write(0x1F);                  // s3_44[7:3]
     VDS_PK_LH_CMP::write(0x1F);                  // s3_46[7:3]
     VDS_PK_HL_CORE::write(0x1);                  // s3_48[2:0]

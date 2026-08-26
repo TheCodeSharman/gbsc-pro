@@ -4,6 +4,18 @@
 
 namespace Tv5725 {
 
+void SyncProcessor::writeSdVsyncStart(uint16_t start)
+{
+    SP_SDCS_VSST_REG_H::write(start >> 8);
+    SP_SDCS_VSST_REG_L::write(start & 0xff);
+}
+
+void SyncProcessor::writeSdVsyncStop(uint16_t stop)
+{
+    SP_SDCS_VSSP_REG_H::write(stop >> 8);
+    SP_SDCS_VSSP_REG_L::write(stop & 0xff);
+}
+
 void SyncProcessor::applyForSyncType(bool csync)
 {
     // The two branches keep their own write order. Neither is derived from the
@@ -41,6 +53,10 @@ void SyncProcessor::applyForSyncType(bool csync)
 void SyncProcessor::init()
 {
     SP_SOG_P_INV::write(0x0);                    // s5_20[2:2]
+    // The retime window's START. Its partner SP_RT_HS_SP is 93% of PLLAD_MD and
+    // belongs to SourceMeasurement, which holds all three of that quantity's
+    // registers off one divider.
+    SP_RT_HS_ST::write(0x0);                     // s5_4a[11:0]
     SP_SYNC_TGL_THD::write(0x18);                // s5_21[7:0]
     SP_L_DLT_REG::write(0xF);                    // s5_22[7:0]
     SP_T_DLT_REG::write(0x40);                   // s5_24[11:0]

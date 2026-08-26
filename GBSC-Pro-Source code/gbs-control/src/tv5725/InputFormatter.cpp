@@ -21,9 +21,12 @@ void InputFormatter::init()
     // neither, so the table was the only writer. 0 and 3 are what all twelve
     // ship, bar IF_HS_Y_PDELAY 2 in ntsc_1920x1080, which the YPbPr branch still
     // asks for afterwards.
+    IF_HS_INT_LPF_BYPS::write(0x0);              // s1_02[0:0]
+    IF_HS_PSHIFT_BYPS::write(0x1);               // s1_02[3:3]
     IF_HS_TAP11_BYPS::write(0x0);                // s1_02[4:4]
     IF_HS_Y_PDELAY::write(0x3);                  // s1_02[6:5]
     IF_HS_UV_SIGN2UNSIGN::write(0x0);            // s1_02[7:7]
+    IF_LD_WRST_SEL::write(0x1);                  // s1_28[1:1]
     IF_HS_RATE_SEG0::write(0x0);                 // s1_03[7:0]
     IF_HS_RATE_SEG1::write(0x0);                 // s1_04[7:0]
     IF_HS_RATE_SEG2::write(0x0);                 // s1_05[7:0]

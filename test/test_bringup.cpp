@@ -30,7 +30,11 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
 // Neither a preset table's value nor the firmware's, so a register left at the
 // poison was never written rather than written with the value we hoped for.
@@ -72,6 +76,12 @@ static std::vector<Write> runBringUp()
 // whether or not anything wrote it, and `touched` cannot separate them either
 // because three other fields in the byte are written regardless.
 static const uint32_t NotWritten = 0xFFFFFFFFu;
+
+// The same question asked through the field's own typedef. A hand-written
+// address does not error, it returns a plausible number, so the only safe way
+// to name a field in a test is the name.
+#define WRITTEN(Field) \
+    written(Field::segment, Field::byteOffset, Field::bitOffset, Field::bitWidth)
 
 static uint32_t written(uint8_t segment, uint8_t reg, uint8_t offset,
                         uint8_t width)
@@ -377,4 +387,58 @@ TEST_CASE("arming is a verb the bypass switches can use")
 
     Tv5725::BringUp::arm();
     CHECK(Tv5725::BringUp::armed() == true);
+}
+
+TEST_CASE("the ADC's automatic offset correction is the bring-up's")
+{
+    // Five registers the preset load wrote on every pass, with no other writer
+    // anywhere -- constants being re-applied rather than a decision being made.
+    // ADC_AUTO_OFST_V_RANGE already lived here; the rest of the family now does.
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_PRD) == 1);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_DELAY) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_STEP) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_TEST) == 1);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_RANGE_REG) == 0);
+}
+
+TEST_CASE("the peaking filter's shape is the bring-up's, its gain is not")
+{
+    // The cores and the band selects are constants with one writer. The GAINS
+    // are excluded deliberately: VDS_PK_LB_GAIN and VDS_PK_LH_GAIN have seven
+    // writers each, because the scanlines and peaking controls drive them, so a
+    // bring-up value would be overwritten by whichever ran last.
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_PK_LB_CORE) == 0);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_PK_LH_CORE) == 0);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_PK_VL_HL_SEL) == 0);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_PK_VL_HH_SEL) == 0);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_STEP_GAIN) == 1);
+
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_PK_LB_GAIN) == NotWritten);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_PK_LH_GAIN) == NotWritten);
+}
+
+TEST_CASE("the input formatter's fixed horizontal filtering is the bring-up's")
+{
+    // Three constants with one writer each. Two of their neighbours in the same
+    // block are deliberately NOT here:
+    //
+    //   IF_HS_SEL_LPF has a second writer later in the same load, which sets 0
+    //   for one class of source. Written at bring-up instead, a source that
+    //   took that branch would leave 0 behind for the next one.
+    //
+    //   IF_INI_ST has four writers, two of which set 16 from the sync watcher.
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_INT_LPF_BYPS) == 0);
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_PSHIFT_BYPS) == 1);
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_LD_WRST_SEL) == 1);
+
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_SEL_LPF) == NotWritten);
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_INI_ST) == NotWritten);
+}
+
+TEST_CASE("the sync processor's retime window starts where it always starts")
+{
+    // SP_RT_HS_ST is 0 whatever the divider is, in every path. Its partner
+    // SP_RT_HS_SP is 93% of PLLAD_MD and belongs to SourceMeasurement, which is
+    // why only one of the pair is here.
+    CHECK(WRITTEN(Tv5725::SyncProcessor::SP_RT_HS_ST) == 0);
 }
