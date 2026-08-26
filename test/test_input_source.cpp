@@ -74,16 +74,19 @@ TEST_CASE("the ADC mux and its sync-on-green follow the input")
     }
 }
 
-TEST_CASE("YPbPr writes no ADC registers at all")
+TEST_CASE("every input points the ADC mux at itself")
 {
-    // Carried from the handler it replaces rather than corrected. It looks
-    // wrong beside the other five and may well be, but changing it is a
-    // behaviour change owed its own evidence -- and a refactor that quietly
-    // fixed it could not be proven behaviour-preserving.
-    CHECK_FALSE(InputSource::settingsFor(InputSource::Ypbpr).writesAdc);
+    // YPbPr wrote none of the three and reached its input only because
+    // detection swept the mux until something had sync. With the sweep
+    // answering to the user's choice instead, a selection that does not move
+    // the mux cannot arrive at all -- so selecting YPbPr left the ADC on the
+    // RGB pins and nothing locked.
+    //
+    // Its values were already here and already match S-Video and composite,
+    // which share the connector and write all three.
     for (InputSource::Id id : {InputSource::Rgbs, InputSource::RgsB,
-                               InputSource::Vga, InputSource::SVideo,
-                               InputSource::Composite})
+                               InputSource::Vga, InputSource::Ypbpr,
+                               InputSource::SVideo, InputSource::Composite})
         CHECK(InputSource::settingsFor(id).writesAdc);
 }
 

@@ -14,7 +14,7 @@ const Row Rows[] = {
     {InputSource::Rgbs,      "rgbs",  {0x40, 1, 0, true,  1, 1, 1, false}},
     {InputSource::RgsB,      "rgsb",  {0x50, 1, 0, true,  1, 1, 1, false}},
     {InputSource::Vga,       "vga",   {0x61, 2, 0, true,  1, 1, 0, false}},
-    {InputSource::Ypbpr,     "ypbpr", {0x70, 3, 1, false, 0, 0, 1, false}},
+    {InputSource::Ypbpr,     "ypbpr", {0x70, 3, 1, true,  0, 0, 1, false}},
     {InputSource::SVideo,    "sv",    {0x10, 3, 2, true,  0, 0, 1, true}},
     {InputSource::Composite, "av",    {0x20, 3, 2, true,  0, 0, 1, true}},
 };

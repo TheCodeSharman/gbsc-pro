@@ -668,9 +668,9 @@ void InputYUV(void)
     SeleInputSource = S_YUV;
     Info = InfoYUV;
     resetSyncProcessor();
-    // GBS::ADC_SOGEN::write(YUV0);
-    // GBS:: SP_EXT_SYNC_SEL::write(HV_Disable);
-    // GBS:: ADC_INPUT_SEL::write(YUV0);
+    GBS::ADC_SOGEN::write(YUV0);
+    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
+    GBS::ADC_INPUT_SEL::write(YUV0);
     BriorCon = 1;
     rto->sourceDisconnected = true;
     // loadDefaultUserOptions();

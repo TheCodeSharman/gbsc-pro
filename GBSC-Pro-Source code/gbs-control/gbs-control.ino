@@ -1304,6 +1304,16 @@ void setResetParameters_re()
     rto->notRecognizedCounter = 0; 
 }
 
+// The ADC input the user chose, or the RGB pins when nothing is chosen -- which
+// is where a sweep starts looking.
+static uint8_t selectedAdcInput()
+{
+    const InputSource::Id chosen = InputSource::fromStored(Info);
+    if (chosen == InputSource::None)
+        return 1;
+    return InputSource::settingsFor(chosen).adcInputSel;
+}
+
 void setResetParameters()
 {
     rto->videoStandardInput = 0;
@@ -1358,7 +1368,12 @@ void setResetParameters()
     GBS::ADC_CLK_PA::write(0);
     GBS::ADC_SOGEN::write(1); 
     GBS::SP_SOG_MODE::write(1);
-    GBS::ADC_INPUT_SEL::write(1);
+
+    // The chosen input, not a literal. This runs from low power and the RGBHV
+    // watchdog as well as from boot, and a literal drops a component selection
+    // onto the RGB pins with nothing to put it back until the next reboot --
+    // which is what made selecting YPbPr look like it did nothing.
+    GBS::ADC_INPUT_SEL::write(selectedAdcInput());
     GBS::ADC_POWDZ::write(1);
     setAndUpdateSogLevel(rto->currentLevelSOG);
     Tv5725::BringUp::holdAllBlocks();
@@ -1984,6 +1999,20 @@ boolean sourceHasOwnVsync()
 // **THE COMMENTED-OUT LINES BESIDE THE SeleInputSource LOAD ARE NOT USABLE.**
 // Each calls f.read() again, so restoring them consumes two bytes the
 // preferences file does not contain and shifts every field after it.
+// ADC_INPUT_SEL belongs to the user once an input has been chosen. Detection's
+// sweeps exist to find a source when nobody has said which one, and a unit with
+// something live on the other connector otherwise walks to it: the input in use
+// becomes whichever one happens to have sync rather than the one asked for.
+//
+// The connector needs no exception. RGBs, RGsB and VGA read one set of pins and
+// YPbPr, S-Video and composite the other, so searching the sync variants of a
+// chosen connector never moves this register -- only crossing to the other one
+// does, and that is what a choice refuses.
+static bool detectionMayChangeInput()
+{
+    return !InputSource::chosen(Info);
+}
+
 void applySavedInputSource()
 {
     const InputSource::Id saved = InputSource::fromStored(Info);
@@ -2236,8 +2265,10 @@ uint8_t detectAndSwitchToActiveInput()
             setAndUpdateSogLevel(rto->currentLevelSOG);
         }
 
-        GBS::ADC_INPUT_SEL::write(!currentInput);
-        delay(200);
+        if (detectionMayChangeInput()) {
+            GBS::ADC_INPUT_SEL::write(!currentInput);
+            delay(200);
+        }
 
         return 0;
     }
@@ -3434,7 +3465,8 @@ void applyPresets(uint8_t result)
     if (result == 0) {
 
         result = 3;
-        GBS::ADC_INPUT_SEL::write(1);
+        if (detectionMayChangeInput())
+            GBS::ADC_INPUT_SEL::write(1);
         delay(100);
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
             rto->inputIsYpBpR = 0;
@@ -3448,7 +3480,8 @@ void applyPresets(uint8_t result)
             rto->syncTypeCsync = !sourceHasOwnVsync();
             rto->syncTypeIsSet = 1;
         } else {
-            GBS::ADC_INPUT_SEL::write(0);
+            if (detectionMayChangeInput())
+                GBS::ADC_INPUT_SEL::write(0);
             delay(100);
             if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
                 rto->inputIsYpBpR = 1;
@@ -5056,7 +5089,7 @@ void runSyncWatcher() //
             delay(8);
         }
 
-        if (rto->noSyncCounter % 413 == 0) {
+        if (rto->noSyncCounter % 413 == 0 && detectionMayChangeInput()) {
             if (GBS::ADC_INPUT_SEL::read() == 1) {
                 GBS::ADC_INPUT_SEL::write(0);
             } else {
