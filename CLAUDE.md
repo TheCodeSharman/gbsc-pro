@@ -249,6 +249,20 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   So reach for the one that matches. A stuck `PLLAD_MD` survived 311 -> 524 ->
   311 unchanged at 1822 and the picture rolled; `/sc?~` restored 2250 at once.
   **Judge the divider against the source**, not against whether it moved.
+
+  **The first row is contradicted on both counts by a 2026-08-25 measurement, so
+  treat neither recovery as reliable for it.** After an OTA reflash `HPERIOD_IF`
+  read 14/255/271/274/508/510/511 against the 431 the mode was due, with
+  `SP_VTOTAL` a rock-steady 311 beside it. A source mode change -- 320x256@50 to
+  800x600@60 and back, the recovery that row names -- did **not** clear it. A
+  cold boot with mains and USB both pulled, which that row lists as not clearing
+  it, restored a steady 431 at once.
+
+  **And it does not necessarily reach the picture.** Throughout the noisy state
+  the panel showed a correct full-screen picture, and all 1536 config registers
+  were byte-identical to a known-good reference. Nothing in a register dump
+  distinguishes the two, so `HPERIOD_IF` disagreeing with the mode is a reason to
+  look, not a fault to chase on its own -- the geometry engine does not read it.
 - **Check `HPERIOD_IF` against the value the MODE should give**, which is
   `27e6 / (4 x lineRateHz) - 1` -- 431 at 311 lines/50 Hz, 213 at 524/60, 214 at
   448/70. Steady is not valid: a steady **50** was measured at 640x480@60 where
