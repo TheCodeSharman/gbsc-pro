@@ -129,6 +129,15 @@ struct adcOptions *adco = &adcopts;
 String slotIndexMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~()!*:,";
 
 char serialCommand;
+
+#if GBS_TRACE_WRITES
+// A forced standard waiting for loop(). The register write trace is the oracle
+// for branches no bench source can reach, and this is how they are reached.
+// Compiled only into a trace build, so it cannot ship.
+static volatile int8_t traceStandard = -1;
+static volatile uint8_t traceIsYuv = 0;
+static volatile uint8_t tracePal60 = 0;
+#endif
 char userCommand;
 
 // An input selection asked for over HTTP, waiting for loop() to act on it.
@@ -7179,6 +7188,29 @@ static int16_t pressStep(int16_t asked, int16_t step)
 void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCurrent, uint8_t readout, uint8_t inputToogleBit)
 {
 
+#if GBS_TRACE_WRITES
+    if (traceStandard >= 0) {
+        const uint8_t forced = (uint8_t)traceStandard;
+        traceStandard = -1;
+        rto->videoStandardInput = forced;
+        rto->inputIsYpBpR = traceIsYuv;
+        rto->presetIsPalForce60 = tracePal60;
+
+        // Delimiters, not timestamps: the parser must not have to guess where a
+        // load starts, and the helpers that read live measurements make the
+        // timing vary run to run.
+        Serial.print(F("=== TRACE BEGIN std="));
+        Serial.print(forced);
+        Serial.print(F(" yuv="));
+        Serial.print(traceIsYuv);
+        Serial.print(F(" pal60="));
+        Serial.print(tracePal60);
+        Serial.println(F(" ==="));
+        doPostPresetLoadSteps();
+        Serial.println(F("=== TRACE END ==="));
+    }
+#endif
+
     if ((millis() - Tim_web) >= 300) {
         if (Serial.available()) {
             serialCommand = Serial.read();
@@ -8937,6 +8969,22 @@ void startWebserver()
     // caller that disturbs the framing and walks away persists it as that
     // source's remembered framing. `?on=1` suppresses that for the session;
     // lifting it adopts whatever is live rather than writing it.
+#if GBS_TRACE_WRITES
+    // Force a standard and run the load, so the write trace can be captured for
+    // a branch this bench has no source for. Queued for loop(): the load touches
+    // the bus and this is a network callback.
+    server.on("/trace/standard", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!request->hasArg("std")) {
+            request->send(400, "application/json", "{\"error\":\"std required\"}");
+            return;
+        }
+        traceIsYuv = request->hasArg("yuv") ? request->arg("yuv").toInt() != 0 : 0;
+        tracePal60 = request->hasArg("pal60") ? request->arg("pal60").toInt() != 0 : 0;
+        traceStandard = (int8_t)request->arg("std").toInt();
+        request->send(200, "application/json", "{\"queued\":true}");
+    });
+#endif
+
     server.on("/framing/autosave", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (request->hasArg("on"))
             framingSaves.inhibit(request->arg("on").toInt() == 0);
