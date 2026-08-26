@@ -6959,6 +6959,10 @@ void setup()
         // gets a look.
         applySavedInputSource();
 
+        // After the last setResetParameters(), which holds six blocks in reset:
+        // a bring-up that ran before it would be discarded.
+        Tv5725::BringUp::init();
+
         delay(4);
         handleWiFi(1);
         delay(4);
