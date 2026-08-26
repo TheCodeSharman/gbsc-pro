@@ -464,6 +464,18 @@ sync-processor:
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_processor"
 
+## colour-space: host unit tests for Tv5725::ColourSpace
+#
+# No component source here, so the expectations were cross-checked against the
+# GBS_TRACE_WRITES fixtures in tools/gbsc-pro-hwtest/traces/.
+colour-space:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_colour_space" \
+	  "$(HERE)/test_colour_space.cpp" src/tv5725/ColourSpace.cpp \
+	  src/tv5725/Adc.cpp src/tv5725/InputFormatter.cpp src/tv5725/VideoProcessor.cpp
+	@"$(OUT)/test_colour_space"
+
 ## framing-save-timer: host unit tests for Tv5725::FramingSaveTimer
 #
 # The framing table saves itself once the framing holds still. The inhibit is

@@ -74,6 +74,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/SourceStandard.h"
+#include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
@@ -1508,24 +1509,7 @@ void toggleIfAutoOffset()
 
 void applyYuvPatches()
 {
-    GBS::ADC_RYSEL_R::write(1);
-    GBS::ADC_RYSEL_G::write(0);
-    GBS::ADC_RYSEL_B::write(1);
-    GBS::DEC_MATRIX_BYPS::write(1);   //YUV 转RGB
-    GBS::IF_MATRIX_BYPS::write(1);   // 1 旁路 0执行 rgb2yuv
-
-
-    GBS::VDS_Y_GAIN::write(128);
-    GBS::VDS_UCOS_GAIN::write(28);
-    GBS::VDS_VCOS_GAIN::write(41);
-    
-    GBS::ADC_RGCTRL::write(0x33);
-    GBS::ADC_GGCTRL::write(0x33);
-    GBS::ADC_BGCTRL::write(0x33);
-
-    GBS::VDS_Y_OFST::write(0x0E);//0x0a
-    GBS::VDS_U_OFST::write(0x03);//0x05
-    GBS::VDS_V_OFST::write(0x04);//0x06
+    Tv5725::ColourSpace::applyYuv();
 
     if (uopt->wantOutputComponent) 
     {
@@ -1539,18 +1523,7 @@ void applyYuvPatches()
 
 void applyRGBPatches()
 {
-    GBS::ADC_RYSEL_R::write(0);
-    GBS::ADC_RYSEL_G::write(0);
-    GBS::ADC_RYSEL_B::write(0);
-    GBS::DEC_MATRIX_BYPS::write(0);   //0: 跳过 CSC，信号直接通过
-    GBS::IF_MATRIX_BYPS::write(1);
-
-    GBS::VDS_Y_GAIN::write(0x80);
-    GBS::VDS_UCOS_GAIN::write(0x1c);
-    GBS::VDS_VCOS_GAIN::write(0x29);
-    GBS::VDS_Y_OFST::write(0x00);
-    GBS::VDS_U_OFST::write(0x00);
-    GBS::VDS_V_OFST::write(0x00);
+    Tv5725::ColourSpace::applyRgb();
 
     if (uopt->wantOutputComponent) {
         applyComponentColorMixing();
@@ -4183,12 +4156,12 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
     {
-        GBS::DEC_MATRIX_BYPS::write(1); 
+        Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
         GBS::HD_MATRIX_BYPS::write(0);
         GBS::HD_DYN_BYPS::write(0);
     } else if (rto->inputIsYpBpR == false) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs))
     {
-        GBS::DEC_MATRIX_BYPS::write(1); 
+        Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
         GBS::HD_MATRIX_BYPS::write(1);
         GBS::HD_DYN_BYPS::write(1);
     }
@@ -4328,7 +4301,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
         if (rto->videoStandardInput == 13) {
             applyRGBPatches();
             rto->syncTypeCsync = true;
-            GBS::DEC_MATRIX_BYPS::write(1); 
+            Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
             GBS::SP_PRE_COAST::write(4);
             GBS::SP_POST_COAST::write(4);
             GBS::SP_DLT_REG::write(0x70);
@@ -4460,7 +4433,7 @@ void bypassModeSwitch_RGBHV()
     GBS::SP_VS_PROC_INV_REG::write(0); 
     GBS::PLLAD_KS::write(1);           
     rto->osr = Tv5725::Adc::applyOversample(1, 2);
-    GBS::DEC_MATRIX_BYPS::write(1); 
+    Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
     GBS::ADC_FLTR::write(0);        
     GBS::PLLAD_ICP::write(4);       
     GBS::PLLAD_FS::write(0);        
@@ -5862,7 +5835,7 @@ void calibrateAdcOffset()
     GBS::PAD_BOUT_EN::write(0);
     GBS::PLL648_CONTROL_01::write(0xA5);
     GBS::ADC_INPUT_SEL::write(2);
-    GBS::DEC_MATRIX_BYPS::write(1); 
+    Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
     GBS::DEC_TEST_ENABLE::write(1);
     GBS::ADC_5_03::write(0x31);
     GBS::ADC_TEST_04::write(0x00);

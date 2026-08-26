@@ -688,7 +688,6 @@ public:
 
     typedef UReg<0x05, 0x1F, 0, 8> DEC_5_1F;
 
-typedef UReg<0x05, 0x1F, 2, 1> DEC_MATRIX_BYPS;                   // Color space convert bypass enable When set to 1, color
                                                                       // space convert module bypass
 
     typedef UReg<0x05, 0x1F, 3, 4> DEC_TEST_SEL;
