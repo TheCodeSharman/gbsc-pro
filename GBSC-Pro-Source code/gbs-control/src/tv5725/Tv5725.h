@@ -371,21 +371,16 @@ public:
     typedef UReg<0x01, 0x02, 0, 8> INPUT_FORMATTER_02;
 
 
-    typedef UReg<0x01, 0x2B, 0, 7> GBS_PRESET_ID;
 
-    typedef UReg<0x01, 0x2B, 7, 1> GBS_PRESET_CUSTOM;
 
 
     typedef UReg<0x01, 0x2C, 0, 1> GBS_OPTION_SCANLINES_ENABLED;
 
     typedef UReg<0x01, 0x2C, 1, 1> GBS_OPTION_SCALING_RGBHV;
 
-    typedef UReg<0x01, 0x2C, 2, 1> GBS_OPTION_PALFORCED60_ENABLED;
-
-    typedef UReg<0x01, 0x2C, 4, 1> GBS_RUNTIME_FTL_ADJUSTED;
 
 
-    typedef UReg<0x01, 0x2D, 0, 8> GBS_PRESET_DISPLAY_CLOCK;
+
 
 
 // MISCELLANEOUS REGISTERS

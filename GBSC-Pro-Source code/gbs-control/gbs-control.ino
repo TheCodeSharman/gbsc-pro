@@ -1190,10 +1190,8 @@ void zeroAll()
 //     960p 0x01/0x11   1024p 0x02/0x12   720p 0x03/0x13
 //     480p 0x04/0x14   1080p 0x05/0x15        (NTSC/PAL)
 //
-// **NOTHING ELSE WRITES THIS FOR A SCALING LOAD.** bypassModeSwitch_RGBHV()
-// writes GBS_PRESET_ID, so the field looks owned, but not on this path -- and
-// doPostPresetLoadSteps() branches on rto->presetID in a dozen places, so a
-// stale id left by an earlier bypass sends a scaling load down bypass paths.
+// Every path that decides an id sets rto->presetID, so a stale one left by an
+// earlier bypass cannot send a scaling load down a bypass branch.
 //
 // It stays a table-shaped number. Whether presetID should survive at all is a
 // separate question from where it comes from.
@@ -1229,17 +1227,14 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
 void loadComputedPreset(const Tv5725::OutputMode *mode, uint8_t presetId)
 {
   rto->outputMode = mode;
-  GBS::GBS_PRESET_ID::write(presetId);
+  rto->presetID = presetId;
 
   // Nothing reads this any more. It is cleared because a unit upgraded from a
   // firmware that had custom presets can have it set on the chip, and a
   // register dump showing "custom" with no such thing in the build reads as a
   // fault.
-  GBS::GBS_PRESET_CUSTOM::write(0);
   GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
   GBS::GBS_OPTION_SCALING_RGBHV::write(0);
-  GBS::GBS_OPTION_PALFORCED60_ENABLED::write(0);
-  GBS::GBS_RUNTIME_FTL_ADJUSTED::write(0);
 
   FrameSync::cleanup();
 
@@ -1344,9 +1339,8 @@ void setResetParameters()
     GBS::ADC_UNUSED_65::write(0);
     GBS::ADC_UNUSED_66::write(0);
     GBS::ADC_UNUSED_67::write(0);
-    GBS::GBS_PRESET_ID::write(0);
+    rto->presetID = 0;
     GBS::GBS_OPTION_SCALING_RGBHV::write(0);
-    GBS::GBS_OPTION_PALFORCED60_ENABLED::write(0);
 
     GBS::IF_VS_SEL::write(1);
     GBS::IF_VS_FLIP::write(1);
@@ -1430,7 +1424,6 @@ void setResetParameters()
 // void OutputComponentOrVGA()
 // {
 
-//   boolean isCustomPreset = GBS::GBS_PRESET_CUSTOM::read();
 //   if (uopt->wantOutputComponent)
 //   {
 //     GBS::VDS_SYNC_LEV::write(0x80);
@@ -3019,8 +3012,6 @@ void doPostPresetLoadSteps()
             }
         }
 
-        rto->presetID = GBS::GBS_PRESET_ID::read();
-
         GBS::ADC_UNUSED_64::write(0);
         GBS::ADC_UNUSED_65::write(0);
         GBS::ADC_UNUSED_66::write(0);
@@ -3252,16 +3243,6 @@ void doPostPresetLoadSteps()
         // has settled into the new mode. AFTER the block above, which settles
         // rto->osr.
         geometry.modeChanged(outputModeForThisLoad(), rto->osr);
-
-        if (rto->presetIsPalForce60) {
-            if (GBS::GBS_OPTION_PALFORCED60_ENABLED::read() != 1) {
-                // The 56-line IF_VB shift that was here is gone with the rest:
-                // the vertical capture window is derived from the source line
-                // count, which is what a PAL source forced to 60 changes. The
-                // flag stays -- it is state, and other code reads it.
-                GBS::GBS_OPTION_PALFORCED60_ENABLED::write(1);
-            }
-        }
 
         GBS::ADC_TEST_04::write(0x02); // 1:0 REF test resistance selection 4:2REF test current selection
         GBS::ADC_TEST_0C::write(0x12);
@@ -4320,7 +4301,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
 
-    GBS::GBS_PRESET_ID::write(PresetHdBypass);
+    rto->presetID = PresetHdBypass;
 
     if (!regsInitialized) {
     }
@@ -4689,7 +4670,6 @@ void bypassModeSwitch_RGBHV()
     }
 
     rto->presetID = PresetBypassRGBHV;
-    GBS::GBS_PRESET_ID::write(PresetBypassRGBHV);
 
     // Beside the preset id, because they are one fact: which mode the chip is
     // in. The >535-line branch that sends a source here clears
@@ -5522,7 +5502,6 @@ void runSyncWatcher() //
                         if (rto->motionAdaptiveDeinterlaceActive) {
                             disableMotionAdaptDeinterlace();
                             FrameSync::reset(uopt->frameTimeLockMethod);
-                            GBS::GBS_RUNTIME_FTL_ADJUSTED::write(1);
                             lastVsyncLock = millis();
                         }
                         if (uopt->wantScanlines && !rto->scanlinesEnabled) {
@@ -5538,7 +5517,6 @@ void runSyncWatcher() //
                             if (timingAdjustDelay == 0) {
                                 if (uopt->enableFrameTimeLock) {
                                     FrameSync::reset(uopt->frameTimeLockMethod);
-                                    GBS::GBS_RUNTIME_FTL_ADJUSTED::write(1);
                                     delay(10);
                                     lastVsyncLock = millis();
                                 }
@@ -7734,9 +7712,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     uopt->matchPresetSource = !uopt->matchPresetSource;
                     saveUserPrefs();
                     uint8_t vidMode = getVideoMode();
-                    if (uopt->presetPreference == 0 && GBS::GBS_PRESET_ID::read() == 0x11) {
+                    if (uopt->presetPreference == 0 && rto->presetID == 0x11) {
                         applyPresets(vidMode);
-                    } else if (uopt->presetPreference == 4 && GBS::GBS_PRESET_ID::read() == 0x02) {
+                    } else if (uopt->presetPreference == 4 && rto->presetID == 0x02) {
                         applyPresets(vidMode);
                     }
                 } break;
@@ -9302,7 +9280,6 @@ void startWebserver()
 
         slotsObject.slot[slotIndex].slot = slotIndex;
         slotName.toCharArray(slotsObject.slot[slotIndex].name, sizeof(slotsObject.slot[slotIndex].name));
-        slotsObject.slot[slotIndex].presetID = rto->presetID;
         slotsObject.slot[slotIndex].scanlines = uopt->wantScanlines;
         slotsObject.slot[slotIndex].scanlinesStrength = uopt->scanlineStrength;
         slotsObject.slot[slotIndex].wantVdsLineFilter = uopt->wantVdsLineFilter;
@@ -13969,7 +13946,6 @@ void OSD_selectOption()
         boolean hsyncActive = 0;
         float ofr = getOutputFrameRate();
         uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
-        rto->presetID = GBS::GBS_PRESET_ID::read();
 
         colour1 = yellow;
         number_stroca = stroca1;
