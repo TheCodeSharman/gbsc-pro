@@ -978,6 +978,176 @@ MEMORY_MAP = [
 ]
 
 
+# The SDRAM bus, owned by Tv5725::MemoryBus. The clock the bus runs at and the
+# nanosecond trims that compensate this board's traces -- none of them a property
+# of the output mode, all four measured:
+#   - The three delays were swept to both ends of their range at 129.6MHz with
+#     the picture unchanged at every step, under the heaviest playback load the
+#     unit has. A positive control -- MEM_RD_LAT_PIP forced to 0 -- visibly
+#     corrupted the picture, so the path was live throughout and the clean sweep
+#     is evidence rather than an artefact.
+#   - 162MHz is the fastest of the eight PLL_MS codes that stays in spec for the
+#     EM638325TS-6: tCK3 6ns against 6.17 actual, and tRCD/tRP 18ns against the
+#     18.5ns three clocks give. 185MHz and 216MHz break all three.
+#     docs/EM638325-Industrial_Rev-3.2.pdf
+#
+# **PLL_MS IS DELIBERATELY NOT HERE, AND IT IS THE ONE FIELD THAT FAILS.**
+# MemoryBus::init() writes SdramTimings::fastestInSpec(), which is 3 -- 162MHz.
+# Three sketch functions write 2, which is not a frequency at all but the pad
+# FEEDBACK clock: setResetParameters() and both bypass switches. Coming back from
+# bypass the bring-up writes 3 and one of those writes 2 after it, so the frame
+# buffer runs on FBCLK while the scaler is using it. Measured 2 of 3 runs.
+# Asserting it here would make this test intermittently red for a defect that
+# belongs to the bypass work, so it is recorded instead.
+# docs/investigations/pll-ms-has-four-writers.md
+MEMORY_BUS = [
+    ("MEM_FK_RD_DLY", 4, 0x04, 0, 3, 2),
+    ("MEM_DATA_DLY_REG", 4, 0x18, 0, 3, 0),
+    ("MEM_CLK_DLY_REG", 4, 0x1B, 4, 3, 4),
+    ("MEM_ACT_CYCLE", 4, 0x05, 0, 2, 1),
+    ("MEM_PCHG_CYCLE", 4, 0x05, 4, 2, 1),
+]
+
+
+# The FIFO request watermarks and the line-double reset position, owned by
+# Tv5725::FrameBuffer and Tv5725::InputFormatter.
+WATERMARKS = [
+    ("PB_MAST_FLAG_REG", 4, 0x2C, 0, 6, 24),
+    ("PB_GENERAL_FLAG_REG", 4, 0x2D, 0, 6, 61),
+    ("RFF_MASTER_FLAG", 4, 0x4E, 0, 6, 36),
+    ("RFF_GENERAL_FLAG", 4, 0x4F, 0, 6, 60),
+    ("WFF_LINE_FLIP", 4, 0x4A, 4, 1, 1),
+    ("IF_LD_ST", 1, 0x0C, 1, 4, 5),
+    ("WFF_FF_HALF_REQ", 4, 0x42, 1, 1, 0),
+]
+
+
+BROUGHT_UP = [
+    ("the memory map, Tv5725::FrameBuffer", MEMORY_MAP),
+    ("the bus timing, Tv5725::MemoryBus", MEMORY_BUS),
+    ("the FIFO watermarks, Tv5725::FrameBuffer and Tv5725::InputFormatter",
+     WATERMARKS),
+]
+
+
+# Single-byte poisons, chosen so no value is one the firmware writes.
+#
+# The three memory-map entries are whole BYTES because those fields are 21 bits
+# across three registers, and changing one byte is enough to make the field
+# differ. The rest sit inside one byte each and are poisoned as fields.
+MAP_BYTE_POISON = {0x21: 0x43, 0x33: 0x0A, 0x26: 0x15}
+FIELD_POISON = {
+    (4, 0x04, 0, 3): 5,
+    (4, 0x18, 0, 3): 3, (4, 0x1B, 4, 3): 6,
+    (4, 0x2C, 0, 6): 7, (4, 0x2D, 0, 6): 9,
+    (4, 0x4E, 0, 6): 11, (4, 0x4F, 0, 6): 13,
+    (4, 0x4A, 4, 1): 0, (4, 0x42, 1, 1): 1,
+    (1, 0x0C, 1, 4): 9,
+}
+
+# PB_CAP_BUF_STA_ADDR_A's high byte, which the poison sets to 0x0A and only a
+# bring-up sets back to 0x06. The witness that BringUp::init() ran at all, as
+# opposed to the assertions below, which are about what it wrote.
+BRING_UP_WITNESS = (4, 0x33, 0x06)
+
+# HSOUT/VSOUT. Dropping them and bringing them back makes the encoder re-acquire.
+PAD_SYNC_OUT_ENZ = (0, 0x49, 2, 1)
+
+
+def _poison_within_a_byte(host, spec, value):
+    """A field that sits inside one register, read-modify-written so the
+    neighbours sharing that byte survive."""
+    segment, register, offset, width = spec
+    raw = read_reg(host, segment, register)
+    assert raw is not None, f"could not read s{segment}_{register:02x} to poison it"
+    mask = ((1 << width) - 1) << offset
+    write_reg(host, segment, register, (raw & ~mask) | (value << offset))
+
+
+def _make_the_encoder_reacquire(host):
+    """Drop HSOUT/VSOUT and bring them back.
+
+    **A BYPASS EXCURSION LEAVES THIS BENCH WITHOUT A PICTURE WITHOUT IT.** The
+    MS9288A samples the analog output and does not always notice the timing under
+    it moved, so it carries on transmitting the mode it locked to before and the
+    television reports no signal while every register reads correct. The firmware
+    has this as useHdmiSyncFix, armed only where the input classification swaps
+    inside the SD 50/60 families -- returning from bypass is not one of those, so
+    the recovery has to be made here. docs/investigations/encoder-stale-timing.md
+    """
+    segment, register, offset, _ = PAD_SYNC_OUT_ENZ
+    for level in (1, 0):
+        raw = read_reg(host, segment, register)
+        if raw is None:
+            return
+        write_reg(host, segment, register,
+                  (raw & ~(1 << offset)) | (level << offset))
+        time.sleep(2)
+
+
+def test_arming_the_chip_brings_the_subsystems_back(host, source):
+    """A chip that has been ARMED gets its subsystem registers back.
+
+    **THE TRIGGER IS AN ARM, NOT A PRESET LOAD, AND THAT IS THE WHOLE POINT.**
+    The bring-up runs when the chip is armed -- at boot, and from either bypass
+    switch, which reconfigure it away from the scaling setup. An ordinary mode
+    change does not repeat it. Measured: poisoned and then given a preset load,
+    PB_CAP_BUF_STA_ADDR_A's high byte stays at the poison; poisoned and then
+    given a bypass excursion, all three groups come back.
+
+    **POISONED FIRST, AND THAT IS THE REST OF THE POINT.** The TV5725 keeps its
+    registers across an ESP reboot and a reflash, so reading the right value
+    proves nothing on its own -- it may be what was already there. With the preset
+    tables gone the poison is the only reference there is, and every field below
+    discriminates because of it.
+
+    It is also a two-owner guard, which no host test can be. FrameBuffer::apply()
+    wrote nine registers and eight landed, because a second uncommented
+    CAP_SAFE_GUARD_EN write further down the same function won by running later.
+    Only reading the chip after a real arm catches that -- and it caught one:
+    PLL_MS, which is left out of MEMORY_BUS above with the reason.
+    """
+    for register, value in MAP_BYTE_POISON.items():
+        write_reg(host, 4, register, value)
+    for spec, value in FIELD_POISON.items():
+        _poison_within_a_byte(host, spec, value)
+
+    landed = {f"s4_{r:02x}": read_reg(host, 4, r) for r in MAP_BYTE_POISON}
+    assert landed == {f"s4_{r:02x}": v for r, v in MAP_BYTE_POISON.items()}, (
+        f"could not poison the memory map, got {landed} -- without this the test "
+        "cannot tell a fresh write from a leftover")
+    unpoisoned = {spec: read_field(host, *spec) for spec, value in FIELD_POISON.items()
+                  if read_field(host, *spec) != value}
+    assert not unpoisoned, (
+        f"these fields did not take the poison: {unpoisoned} -- without it the "
+        "test cannot tell a fresh write from a leftover")
+
+    try:
+        get(host, "/sc?k")          # RGBHV bypass, which arms the bring-up
+        time.sleep(6)
+        get(host, "/sc?~")          # and back, where the armed bring-up runs
+
+        segment, register, want = BRING_UP_WITNESS
+        assert wait_for(lambda: read_reg(host, segment, register) == want,
+                        timeout=30.0), (
+            f"s{segment}_{register:02x} never came back to 0x{want:02X} after the "
+            "chip was armed: BringUp::init() did not run, or something overwrote "
+            "what it wrote")
+
+        wrong = []
+        for label, group in BROUGHT_UP:
+            for name, seg, reg, lo, width, want in group:
+                got = read_field(host, seg, reg, lo, width)
+                if got != want:
+                    wrong.append(f"{label}: {name} (s{seg}_{reg:02x}) = 0x{got:X}, "
+                                 f"want 0x{want:X}")
+        assert not wrong, (
+            "the bring-up did not leave these registers to their owners:\n  "
+            + "\n  ".join(wrong))
+    finally:
+        recover_lock(host)
+        _make_the_encoder_reacquire(host)
+        reset_the_framing(host)
 
 
 
