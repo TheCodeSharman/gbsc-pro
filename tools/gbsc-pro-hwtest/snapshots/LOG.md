@@ -1006,4 +1006,25 @@ Every state below carries its own `note`; these say which question each answers.
 | `custom-presets-removed-1536-2026-08-21` | the whole of stage 2b: no register dumps on flash, no `isCustomPreset`, no `writeProgramArrayNew()`, and the legacy IR/TV-OSD profile menu gone. Against the row above, ONE configuration byte differs across all 1536 -- `s5_4f`, `SP_H_CST_SP`, which the sync processor recomputes. Removing the mechanism that replayed 432 saved bytes over the engine's output changed no register the engine writes, which is the whole claim |
 | `preset-dissolution-scaled-2026-08-25` | the reference the preset dissolution is checked against, on the scaling path: RiscPC 320x256@50, `SP_VTOTAL` 311, `PLLAD_MD` 2250 with `STATUS_SYNC_PROC_HTOTAL` reading it back so the divider is latched, `HPERIOD_IF` 431 against the 431 the mode is due, 960p out on a 2156x1000 raster, default framing. **Taken after a reflash and a fresh detect, and that is not a detail.** The first attempt was captured on a unit left running from an earlier session and carried its hand-tuned output hsync -- `VDS_HS_ST` 70 / `VDS_HS_SP` 30 where a fresh solve gives 0 / 112, plus `IF_HBIN_ST` 32, `IF_HB_SP2` 60 and `VDS_V_DELAY` 1 against 0, 80 and 0. Diffed against, that oracle reports five fields changed by a commit that changed none of them. `VDS_EXT_*` are run-variable even between two solves of the same build and must be ignored in any diff until they are deleted |
 | `preset-dissolution-bypass-2026-08-25` | the same reference in RGBHV bypass, reached by putting the source to 800x600@60 so its 627 lines cross the 535 threshold. **The two DAC sources are not the same one**: video is `DAC_RGBS_ADC2DAC` 1 with `DAC_RGBS_BYPS2DAC` 0 -- the ADC straight to the DAC, no matrix (`HD_MATRIX_BYPS`, `HD_DYN_BYPS`, `DEC_MATRIX_BYPS` all 1) -- while `OUT_SYNC_SEL` 1 takes sync from the HD block, which is out of reset serving no video. RD-5725-1.1 pairs ADC-to-DAC with `OUT_SYNC_SEL` 10, so the pairing here is not the documented one and works anyway. Reached from a scaled state, so the chip had already been brought up: this is NOT the cold-boot-into-bypass case, which never runs `BringUp::init()` at all |
+| `bringup-at-boot-scaled-1080p-2026-08-25` | the scaling path with `BringUp::init()` moved into `setup()`. Against the same unit on the previous build the 1536-register diff is EMPTY, and one field -- `SP_H_CST_SP`, which the sync processor recomputes -- after a cold boot into bypass and back. 1080p out on a 1916x1125 raster, capture framed to the active picture and restored from slot A |
+| `bringup-at-boot-coldboot-bypass-2026-08-25` | **the cold-boot-into-bypass case, which no earlier reference covers.** Mains and USB both pulled with the source already at 800x600@60, so the chip is configured by `BringUp::init()` in `setup()` and by nothing else -- no preset load and no scaled solve has ever run. The picture is clean at 800x600/60Hz with `DAC_RGBS_ADC2DAC` 1, `BYPS2DAC` 0, `OUT_SYNC_SEL` 1, `HD_MATRIX_BYPS` 1. Every VDS raster, scale and window field reads 0 because no raster has ever been solved, and none of it is in the path when video goes ADC to DAC -- so a zero VDS block here is the expected reading, not a fault |
 
+## 2026-08-25 — what a default framing looks like
+
+**A default framing is not a clean picture, and reading it as one costs a
+session.** The capture window a fresh solve computes spans the whole input line
+and the whole field, blanking included, so the panel shows the source's border
+and porch around the picture and the captured blanking at the line edge reads as
+a green bar. `preset-dissolution-scaled-2026-08-25` is that state, and its note
+saying "default framing" is accurate but has been read as "clean".
+
+The picture only fills the screen once the capture is framed onto the active
+region, which is the user's job through pan and scale — `docs/scaler-geometry-model.md`.
+So a photograph is evidence about the framing, not about the build, and a
+register diff against a reference taken at a different framing reports the
+framing rather than the change. Diff at the same framing or not at all.
+
+**A framing survives a flash.** `/uc?4` stores it against the source's measured
+identity in `/slots.txt`, proportionally, and detection restores it without being
+asked — so a like-for-like diff across a reflash needs the framing saved once
+beforehand, not re-walked afterwards.
