@@ -19,6 +19,19 @@ import re
 WRITE = re.compile(r"^(\d+) W ([0-9A-Fa-f]{2}):([0-9A-Fa-f]+)$")
 SEGMENT_SELECT = 0xF0
 
+# Registers that move between CAPTURE SESSIONS even when three runs inside one
+# session agree, so three runs cannot filter them and a whole-trace comparison
+# reports them as a regression. Both are measured, not assumed:
+#
+#   s5_19  PA_SP_S -- optimizePhaseSP()'s live 34-step sweep output.
+#   s0_49  PAD_SYNC_OUT_ENZ (bit 2) -- useHdmiSyncFix toggles it only when the
+#          classification swaps inside the SD 50/60 families, so whether it
+#          fires depends on the standard captured before this one.
+#
+# Excluded from compare() by default and REPORTED, never silently dropped: a
+# comparison that hides what it ignored reads as proving more than it did.
+SESSION_VARIABLE = {(5, 0x19), (0, 0x49)}
+
 
 def parse(lines):
     """Trace lines to an ordered list of (segment, register, value).
@@ -83,4 +96,28 @@ def oracle(runs):
         "stable": stable,
         "runLengths": [len(parse(r)) for r in runs],
         "variable": [len(parse(r)) - len(stable) for r in runs],
+    }
+
+
+def compare(before, after, registers=None, ignore=SESSION_VARIABLE):
+    """Two oracles, as an equivalence verdict.
+
+    `registers` scopes the comparison to the (segment, register) pairs a change
+    touches. Scoping is the honest move when a change is known to be local: an
+    unscoped comparison across sessions fails on writes nothing did on purpose.
+    """
+    def keep(seq):
+        return [w for w in seq
+                if (w[0], w[1]) not in ignore
+                and (registers is None or (w[0], w[1]) in registers)]
+
+    a, b = keep(before), keep(after)
+    ignored = sorted({(w[0], w[1]) for w in list(before) + list(after)
+                      if (w[0], w[1]) in ignore})
+    return {
+        "equivalent": a == b,
+        "compared": len(a),
+        "ignored": ignored,
+        "onlyBefore": [w for w in a if w not in b],
+        "onlyAfter": [w for w in b if w not in a],
     }

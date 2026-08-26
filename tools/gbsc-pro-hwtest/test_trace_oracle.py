@@ -68,3 +68,56 @@ def test_one_run_cannot_be_an_oracle():
     """Nothing distinguishes a stable write from a variable one in one run."""
     with pytest.raises(ValueError):
         oracle([["1 W F0:01", "2 W 65:BE"]])
+
+
+from trace_oracle import SESSION_VARIABLE, compare
+
+
+def test_two_identical_oracles_are_equivalent():
+    seq = [(1, 0x10, 0xAA), (3, 0x35, 0x80)]
+    assert compare(seq, seq)["equivalent"]
+
+
+def test_a_changed_write_is_not_equivalent():
+    a = [(3, 0x35, 0x80)]
+    b = [(3, 0x35, 0x64)]
+    result = compare(a, b)
+    assert not result["equivalent"]
+    assert result["onlyBefore"] == [(3, 0x35, 0x80)]
+    assert result["onlyAfter"] == [(3, 0x35, 0x64)]
+
+
+def test_the_session_variable_registers_do_not_fail_a_comparison():
+    """PA_SP_S and PAD_SYNC_OUT_ENZ move between capture sessions; three runs
+    inside one session cannot filter them."""
+    a = [(5, 0x19, 0x13), (3, 0x35, 0x80)]
+    b = [(5, 0x19, 0x19), (3, 0x35, 0x80)]
+    assert compare(a, b)["equivalent"]
+
+
+def test_what_was_ignored_is_reported_not_hidden():
+    a = [(5, 0x19, 0x13), (3, 0x35, 0x80)]
+    assert compare(a, a)["ignored"] == [(5, 0x19)]
+
+
+def test_scoping_to_a_change_ignores_writes_elsewhere():
+    a = [(3, 0x35, 0x80), (1, 0x99, 0x01)]
+    b = [(3, 0x35, 0x80), (1, 0x99, 0x02)]
+    assert not compare(a, b)["equivalent"]
+    assert compare(a, b, registers={(3, 0x35)})["equivalent"]
+
+
+def test_scoping_still_catches_a_change_inside_the_scope():
+    a = [(3, 0x35, 0x80)]
+    b = [(3, 0x35, 0x64)]
+    assert not compare(a, b, registers={(3, 0x35)})["equivalent"]
+
+
+def test_ordering_is_part_of_equivalence():
+    a = [(3, 0x35, 0x80), (3, 0x36, 0x1C)]
+    b = [(3, 0x36, 0x1C), (3, 0x35, 0x80)]
+    assert not compare(a, b)["equivalent"]
+
+
+def test_the_documented_session_variable_set_is_the_two_measured_registers():
+    assert SESSION_VARIABLE == {(5, 0x19), (0, 0x49)}
