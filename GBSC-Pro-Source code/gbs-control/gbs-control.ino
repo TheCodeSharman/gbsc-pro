@@ -3408,10 +3408,19 @@ void applyPresets(uint8_t result)
             //
             // sourceHasOwnVsync() answers it properly: it switches
             // SP_EXT_SYNC_SEL off and asks whether a V sync line actually
-            // arrives. It costs ~500 ms, so it runs ONCE PER SOURCE --
-            // SyncType::forget() runs wherever coastPositionIsSet and
-            // clampPositionIsSet are, which is every path meaning the source may
-            // have changed. A mode change pays nothing.
+            // arrives. It costs ~500 ms, so it runs ONCE PER SOURCE, and a mode
+            // change pays nothing.
+            //
+            // **WHAT RE-ARMS IT IS A CHANGE OF SOURCE, NOT A CLEARED CLAMP.**
+            // SyncType::forget() sits beside coastPositionIsSet and
+            // clampPositionIsSet at the five sites that mean a different source
+            // may now be attached -- the resets, the low-power entry, and
+            // LoadDefault() on the input handlers. Six OTHER sites clear those
+            // two flags and deliberately do NOT forget, because they are mode
+            // changes on the source already attached: twice in this function,
+            // twice in runSyncWatcher()'s scaling-RGBHV arm, and the serial
+            // clock-generator command. Reading the flags as the rule re-probes
+            // on every preset load and costs 500 ms a time.
             //
             // **IT CANNOT BE LEFT TO inputAndSyncDetect() ALONE.** Its probe
             // sits behind `SyncSearch::searchFor(...) == VsyncPresent`, so on a
@@ -3419,8 +3428,13 @@ void applyPresets(uint8_t result)
             // skipped and the sync type keeps its initial false. Circular in the
             // same way, one level up.
             {
+                // Whether it probed, not just what it holds: the message said
+                // "probed once" either way, so a probe suppressed by a stale
+                // answer read exactly like one that ran.
+                const bool measured = !Tv5725::SyncType::isSet();
                 Tv5725::SyncType::probeOnce(sourceHasOwnVsync);
-                debugPrintf("sync type: probed once for this source -> %s\n",
+                debugPrintf("sync type: %s for this source -> %s\n",
+                    measured ? "probed" : "already held",
                     Tv5725::SyncType::isCsync() ? "csync" : "separate H/V");
             }
         }

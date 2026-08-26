@@ -540,6 +540,14 @@ static void LoadDefault()
     rto->boardHasPower = true;                    // 板有电源
     rto->presetIsPalForce60 = false;              // 预设为 PalForce60
     Tv5725::SyncType::set(false);                   // 同步类型
+
+    // **AND FORGET THAT IT WAS EVER MEASURED.** set() deliberately does not mark
+    // the type as probed, so without this the previous input's answer survives a
+    // change of input: probeOnce() finds it already held and returns the false
+    // just written, and a csync source coming after a separate-sync one is never
+    // measured. LoadDefault() is reached only from the input handlers in this
+    // file, so this is the change-of-source edge. docs/sync-type-selection.md
+    Tv5725::SyncType::forget();
     rto->isValidForScalingRGBHV = false;          // 有效缩放
     rto->medResLineCount = 0x33;                  //
     rto->osr = 0;                                 //
