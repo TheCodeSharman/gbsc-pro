@@ -19,17 +19,24 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import (LOCKED_VTOTAL_MIN, get_json, locked_steadily, read_field,
-                      wait_for)
+from gbs_unit import (LOCKED_VTOTAL_MIN, field_from, get_json, locked_steadily,
+                      read_field, read_segment, wait_for)
 
-FIELDS = [
-    ("VDS_HSYNC_RST", 3, 0x01, 0, 12),
-    ("STATUS_SYNC_PROC_VTOTAL", 0, 0x1B, 0, 11),
-    ("VDS_VSYNC_RST", 3, 0x02, 4, 11),
-    ("VDS_DIS_HB_ST", 3, 0x10, 0, 12),
-    ("VDS_DIS_VB_ST", 3, 0x13, 0, 11),
-    ("VDS_HB_ST", 3, 0x04, 0, 12),
-    ("VDS_HSCALE_BYPS", 3, 0x00, 4, 1),
+# **ALL OF SEGMENT 3, READ IN ONE PASS.** Every figure the porch arithmetic uses
+# is an output of the same solve, and the engine re-solves whenever the measured
+# field rate moves -- so a window read in one request and a raster total read in
+# the next can come from two different solves and disagree by design. Measured:
+# VDS_DIS_HB_ST 1896 from a 1916 px raster paired with a VDS_HSYNC_RST from a
+# 1911 px one, reported as the picture overrunning the front porch by a pixel
+# when neither solve did. CLAUDE.md, "Read every register the arithmetic uses in
+# ONE pass".
+RASTER_FIELDS = [
+    ("VDS_HSYNC_RST", 0x01, 0, 12),
+    ("VDS_VSYNC_RST", 0x02, 4, 11),
+    ("VDS_DIS_HB_ST", 0x10, 0, 12),
+    ("VDS_DIS_VB_ST", 0x13, 0, 11),
+    ("VDS_HB_ST", 0x04, 0, 12),
+    ("VDS_HSCALE_BYPS", 0x00, 4, 1),
 ]
 
 # **A PIXEL COUNT, not a time**, and the one horizontal quantity that is.
@@ -69,8 +76,13 @@ def raster(host, source):
     # in every full run taken, because a neighbour had just re-detected.
     wait_for(lambda: locked_steadily(host), timeout=LOCK_WAIT_S)
 
-    state = {name: read_field(host, seg, reg, lo, width)
-             for name, seg, reg, lo, width in FIELDS}
+    registers = read_segment(host, 3, 0x00, 0x20)
+    if registers is None:
+        pytest.skip("no /getregs on this firmware, so the raster cannot be read "
+                    "in one pass and the figures cannot be compared")
+    state = {name: field_from(registers, reg, lo, width)
+             for name, reg, lo, width in RASTER_FIELDS}
+    state["STATUS_SYNC_PROC_VTOTAL"] = read_field(host, 0, 0x1B, 0, 11)
     if any(v is None for v in state.values()):
         pytest.skip("could not read the raster registers")
     if state["VDS_HSCALE_BYPS"] or not state["VDS_HSYNC_RST"]:
