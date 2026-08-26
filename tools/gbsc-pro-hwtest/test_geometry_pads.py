@@ -42,8 +42,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
 from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_matches,
                       framing_of, fs_read, get, get_json, read_field, read_reg,
-                      read_segment, recover_lock, reset_framing, wait_for,
-                      write_reg)
+                      read_segment, recover_lock, reset_framing, resolve,
+                      wait_for, write_reg)
 
 GEOMETRY_FIELDS = [
     ("IF_HB_SP2", 1, 0x1A, 0, 11), ("IF_HB_ST2", 1, 0x18, 0, 11),
@@ -989,6 +989,15 @@ ENGINE_OUTPUTS = [
 ]
 
 
+# One engine output, poisoned so that a re-solve arriving at the same answer is
+# still distinguishable from a re-solve that never ran. VDS_DIS_HB_ST is the far
+# edge of the display window: a low value hides a strip of picture for as long as
+# the poison stands and cannot take the lock, unlike the sync and sampling
+# registers. Bottom-aligned, which _write_field() requires.
+ENGINE_WITNESS = ("VDS_DIS_HB_ST", 3, 0x10, 0, 12)
+POISON_OFFSET = 40
+
+
 def _engine_outputs(host):
     return {name: read_field(host, seg, reg, lo, width)
             for name, seg, reg, lo, width in ENGINE_OUTPUTS}
@@ -1121,13 +1130,6 @@ def test_changing_the_output_keeps_the_framing(host, probe, source, preset_load)
         reset_the_framing(host)
 
 
-@pytest.mark.xfail(
-    reason="VDS_HB_ST and VDS_DIS_HB_ST come out 1899 from the preset load and "
-           "1897 from a re-solve of the same framing -- deterministic, the same "
-           "two registers, the same 2 units, on the bench source. Every other "
-           "register in the set agrees. docs/investigations/"
-           "hardware-suite-failures-2026-08-26.md",
-    strict=False)
 def test_a_preset_load_leaves_the_engines_values_not_the_sketchs(host, source):
     """After a preset load, every engine-owned register holds what the ENGINE
     computed -- not what doPostPresetLoadSteps() wrote on the way past.
@@ -1171,10 +1173,9 @@ def test_a_preset_load_leaves_the_engines_values_not_the_sketchs(host, source):
 def _compare_engine_outputs_across_a_preset_load(host):
     # **BOTH SIDES MUST BE THE SAME FRAMING, AND A PRESET LOAD DOES NOT SET ONE.**
     # A source with a remembered framing comes up on it and a preset load keeps
-    # it, while reset_the_framing() below sets the DEFAULT -- so without this the
-    # comparison spans two framings and every window and both scales differ.
-    # Measured: capture 747 against 973, VDS_HSCALE 431 against 557, on a unit
-    # whose stored framing for the source was not the default.
+    # it, so a comparison started from whatever the last test left spans two
+    # framings and every window and both scales differ -- measured at capture 747
+    # against 973, VDS_HSCALE 431 against 557.
     reset_the_framing(host)
     time.sleep(4)
 
@@ -1184,12 +1185,29 @@ def _compare_engine_outputs_across_a_preset_load(host):
     time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
     after_preset = _engine_outputs(host)
 
-    # The SAME framing, re-solved. A preset load leaves the framing at default
-    # and the reset control puts it there too, so nothing about the framing
-    # differs between the two states being compared -- only who computed the
-    # registers.
-    reset_the_framing(host)
-    time.sleep(4)  # loop() drains the request and re-solves
+    # **THE SECOND HALF RE-SOLVES THE FRAMING HELD; IT MUST NOT RESET IT.** A
+    # preset load carries the framing proportions forward and the reset control
+    # recomputes the default, and those two agree only while the capturable region
+    # has not moved underneath them -- which it does by one unit, on its own.
+    # docs/investigations/framing-is-anchored-to-a-measured-pulse.md
+    #
+    # **AND A 200 FROM /sc IS THE COMMAND QUEUED, NOT RUN.** A re-solve landing on
+    # the values already there leaves no witness that it ran, which is the PASSING
+    # case -- so without a poison this passes against firmware that ignored the
+    # request entirely.
+    poisoned = after_preset[ENGINE_WITNESS[0]]
+    assert poisoned, f"could not read {ENGINE_WITNESS[0]} to poison it"
+    poison = poisoned - POISON_OFFSET
+    _write_field(host, ENGINE_WITNESS[1:], poison)
+    assert read_field(host, *ENGINE_WITNESS[1:]) == poison, (
+        f"could not poison {ENGINE_WITNESS[0]}, so a re-solve that never ran "
+        "would be indistinguishable from one that agreed")
+
+    assert resolve(host), "/sc?U was refused, so nothing re-solved"
+    assert wait_for(lambda: read_field(host, *ENGINE_WITNESS[1:]) != poison,
+                    timeout=20.0), (
+        f"{ENGINE_WITNESS[0]} stayed at the poisoned {poison}: the engine never "
+        "re-solved, so there is nothing to compare the preset load against")
     after_resolve = _engine_outputs(host)
 
     disagree = {name: (after_preset[name], after_resolve[name])
