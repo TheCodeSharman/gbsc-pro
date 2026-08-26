@@ -227,12 +227,25 @@ def console(host):
 
 
 @pytest.fixture
-def source(request):
+def source(request, host):
     """Asserts the operator's promise that a source is plugged in and should be
     locking. Skips the sync tests without it, so a bench unit with nothing on its
-    input does not report the no-sync fault it does not have."""
+    input does not report the no-sync fault it does not have.
+
+    Suppresses the framing auto-save for the duration. The framing table writes
+    itself once the framing has held still, gated by neither --preset-save nor
+    anything else, so a test that pans the framing and ends leaves that framing
+    on flash as the source's remembered one."""
     if not request.config.getoption("--source"):
         pytest.skip("needs a connected source: pass --source")
+
+    # A build without GBS_DEBUG answers 404 and the tests still run; they just
+    # do not get the protection.
+    get(host, "/framing/autosave?on=0", timeout=8)
+    try:
+        yield
+    finally:
+        get(host, "/framing/autosave?on=1", timeout=8)
 
 
 @pytest.fixture
