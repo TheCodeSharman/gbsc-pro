@@ -783,6 +783,9 @@ public:
                                                                       // when input Y larger
 
 
+    // The four VDS_EXT_* windows drive the HBOUT/VBOUT pins, which PAD_BLK_OUT_ENZ
+    // disables, and VDS_SYNC_IN_SEL 0 leaves no internal consumer either. Nothing
+    // in the firmware writes or reads them. docs/firmware-geometry-engine.md
     typedef UReg<0x03, 0x6D, 0, 12> VDS_EXT_HB_ST;                    // External used horizontal blanking start position control
                                                                       // bit [7:0] This field is used to program horizontal
                                                                       // blanking start position, this blanking is for external

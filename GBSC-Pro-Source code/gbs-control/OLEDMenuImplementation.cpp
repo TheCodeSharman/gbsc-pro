@@ -369,10 +369,6 @@ bool currentSettingHandler(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav
         {
             display.drawString(0, 0, "1920x1080");
         }
-        else if (rto->presetID == 0x06 || rto->presetID == 0x16)
-        {
-            display.drawString(0, 0, "Downscale");
-        }
         else if (rto->presetID == 0x04)
         {
             display.drawString(0, 0, "720x480");

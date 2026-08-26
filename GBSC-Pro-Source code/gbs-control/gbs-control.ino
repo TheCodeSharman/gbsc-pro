@@ -3184,28 +3184,6 @@ void doPostPresetLoadSteps()
                 GBS::VDS_V_DELAY::write(0);
                 GBS::VDS_Y_DELAY::write(3);
             }
-
-            if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-                setCsVsStart(2);
-                setCsVsStop(0);
-                GBS::IF_VS_SEL::write(1);
-                GBS::IF_VS_FLIP::write(0);
-                GBS::IF_HB_ST::write(2);
-                GBS::MADPT_Y_VSCALE_BYPS::write(0);
-                GBS::MADPT_UV_VSCALE_BYPS::write(0);
-                GBS::MADPT_PD_RAM_BYPS::write(0);
-                GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
-                GBS::MADPT_SEL_PHASE_INI::write(0);
-                // IF_HB_ST2/SP2 dropped: the capture window is the engine's.
-                // IF_HB_SP and IF_HBIN_SP stay -- nothing computes those.
-                if (rto->videoStandardInput == 1) {
-                    GBS::IF_HB_SP::write(0x4A);
-                    GBS::IF_HBIN_SP::write(0xD0);
-                } else if (rto->videoStandardInput == 2) {
-                    GBS::IF_HB_SP::write(0x50);
-                    GBS::IF_HBIN_SP::write(0xD0);
-                }
-            }
         }
         if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 ||
             rto->videoStandardInput == 8 || rto->videoStandardInput == 9) {
@@ -3213,11 +3191,9 @@ void doPostPresetLoadSteps()
             GBS::ADC_FLTR::write(3);
             GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
 
-            if (rto->presetID != 0x06 && rto->presetID != 0x16) {
-                setCsVsStart(14);
-                setCsVsStop(11);
-                GBS::IF_HB_SP::write(0);
-            }
+            setCsVsStart(14);
+            setCsVsStop(11);
+            GBS::IF_HB_SP::write(0);
             setOverSampleRatio(2, true);
             GBS::IF_SEL_WEN::write(1);
             GBS::IF_HS_SEL_LPF::write(0);
@@ -3242,23 +3218,14 @@ void doPostPresetLoadSteps()
                     }
                 }
             }
-
-            if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-                GBS::MADPT_Y_VSCALE_BYPS::write(0);
-                GBS::MADPT_UV_VSCALE_BYPS::write(0);
-                GBS::MADPT_PD_RAM_BYPS::write(0);
-                GBS::MADPT_VSCALE_DEC_FACTOR::write(1);
-                GBS::MADPT_SEL_PHASE_INI::write(1);
-                GBS::MADPT_SEL_PHASE_INI::write(0);
-            }
         }
-        if (rto->videoStandardInput == 3 && rto->presetID != 0x06) {
+        if (rto->videoStandardInput == 3) {
             setCsVsStart(16);
             setCsVsStop(13); //
             GBS::IF_HB_ST::write(30);
             GBS::IF_HBIN_ST::write(0x20);
             GBS::IF_HBIN_SP::write(0x60);
-        } else if (rto->videoStandardInput == 4 && rto->presetID != 0x16) {
+        } else if (rto->videoStandardInput == 4) {
             GBS::IF_HBIN_SP::write(0x40);
             GBS::IF_HBIN_ST::write(0x20);
             GBS::IF_HB_ST::write(0x30);
@@ -3445,12 +3412,6 @@ void doPostPresetLoadSteps()
         }
 
 
-
-        GBS::VDS_EXT_HB_ST::write(GBS::VDS_DIS_HB_ST::read());
-        GBS::VDS_EXT_HB_SP::write(GBS::VDS_DIS_HB_SP::read());
-        GBS::VDS_EXT_VB_ST::write(GBS::VDS_DIS_VB_ST::read());
-        GBS::VDS_EXT_VB_SP::write(GBS::VDS_DIS_VB_SP::read());
-
         GBS::VDS_FRAME_RST::write(4);
 
         GBS::VDS_FRAME_NO::write(1);
@@ -3498,11 +3459,8 @@ void doPostPresetLoadSteps()
 
         setAndUpdateSogLevel(rto->currentLevelSOG);
 
-        if (rto->presetID != 0x06 && rto->presetID != 0x16) {
-
-            GBS::IF_VS_SEL::write(0);
-            GBS::IF_VS_FLIP::write(1);
-        }
+        GBS::IF_VS_SEL::write(0);
+        GBS::IF_VS_FLIP::write(1);
 
         GBS::SP_CLP_SRC_SEL::write(0);
         GBS::SP_CS_CLP_ST::write(32);
@@ -6402,10 +6360,6 @@ void updateWebSocketData()
                     case 0x05:
                     case 0x15:
                         toSend[1] = '5';
-                        break;
-                    case 0x06:
-                    case 0x16:
-                        toSend[1] = '6';
                         break;
                     case PresetHdBypass:
                     case PresetBypassRGBHV:
@@ -14135,17 +14089,6 @@ void OSD_selectOption()
             OSD_c1(n0, P12, main0);
             OSD_c1(n8, P13, main0);
             OSD_c1(n0, P14, main0);
-        } else if (rto->presetID == 0x06 || rto->presetID == 0x16) {
-            // OSD_writeString(6,1,"Downscale");
-            OSD_c1(D, P6, main0);
-            OSD_c1(o, P7, main0);
-            OSD_c1(w, P8, main0);
-            OSD_c1(n, P9, main0);
-            OSD_c1(s, P10, main0);
-            OSD_c1(c, P11, main0);
-            OSD_c1(a, P12, main0);
-            OSD_c1(l, P13, main0);
-            OSD_c1(e, P14, main0);
         } else if (rto->presetID == 0x04) {
             // OSD_writeString(6,1,"720x480  ");
             OSD_c1(n7, P6, main0);
