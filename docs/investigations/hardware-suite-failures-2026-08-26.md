@@ -72,12 +72,15 @@ The fix is the one that generalises: **set the state, do not assume it.** The
 comparison now resets the framing before the preset load, so both halves are
 default whatever the unit was doing beforehand.
 
-**What survives that fix is real and is 2 units wide.** `VDS_HB_ST` and
-`VDS_DIS_HB_ST` come out 1899 from the load and 1897 from a re-solve of the same
-framing -- deterministic, the same two registers, the same two units, across
-repeated runs, with every other register in the set agreeing and the measured
-line rate identical. The test is marked xfail against that, so the day it changes
-is reported either way.
+**What survives that fix is real, is 2 units wide, and is now diagnosed.**
+`VDS_HB_ST` and `VDS_DIS_HB_ST` come out 1899 from the load and 1897 from a
+re-solve. Both values are the engine's. The capture window differs by one input
+unit at its near end, because the framing is a proportion of a capturable region
+whose origin and denominator are both derived from a measured hsync pulse width
+that moves by one unit. A preset load re-expands the stored proportion; the reset
+control recomputes the default. `docs/investigations/framing-is-anchored-to-a-measured-pulse.md`
+has the arithmetic, and the photographs showing the two units do not reach the
+screen.
 
 ## Superseded: the engine is deterministic, and a preset load still leaves values it did not compute
 
@@ -168,6 +171,9 @@ produces them. Bisecting the full `--source` run for the test that leaves the
 unit in that state would name it; the isolated loads above already show it is
 not the load path on its own.
 
-The first-load-after-boot residual is two units and may not be worth chasing.
-What it says is that one measurement early in a boot is slightly off, and that
-the engine's solve is not re-run once it is not.
+The two-unit residual is diagnosed:
+`docs/investigations/framing-is-anchored-to-a-measured-pulse.md`. It is not a
+first-load effect and it is not a solve that failed to re-run -- it is the
+capturable region moving by one unit under the framing, which happens whenever
+the measured hsync pulse crosses a `ceil` boundary and is therefore reachable at
+any uptime.
