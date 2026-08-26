@@ -43,6 +43,14 @@ public:
     void sweep(uint32_t nowMs, uint16_t low, uint16_t high, uint16_t step,
                uint16_t dwellMs, uint8_t oversample);
 
+    // A decision, as it is taken. The sync watcher chooses between scaling and
+    // bypass on a line count, inside loop(), and the choice is over before any
+    // HTTP read can see it -- a dump afterwards shows where the firmware
+    // arrived, never why. Nothing is read from the chip here: the caller passes
+    // what it decided on, because that is the value the branch actually used.
+    static void event(uint32_t nowMs, const char *what, uint16_t lines,
+                      uint8_t videoStandardInput);
+
     // 27 MHz / ((HPERIOD_IF + 1) * 4), measured across ten modes to a mean 29 ns.
     static uint32_t lineRateFromHPeriod(uint16_t hperiod);
 

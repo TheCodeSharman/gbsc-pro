@@ -117,3 +117,25 @@ TEST_CASE("the sample carries the chip's interrupt status")
     CHECK(g_lastLine.rfind("smp,", 0) == 0);
     CHECK(g_lastLine.substr(g_lastLine.rfind(',')) == ",8");
 }
+
+TEST_CASE("an event names the branch a decision took, with the count it took it on")
+{
+    // The sync watcher's RGBHV decisions are taken on a line count against a
+    // threshold, inside loop(), and are over before any HTTP read can see
+    // them. A register dump afterwards shows the destination and not the
+    // choice, so the choice has to say so as it is made.
+    g_lastLine.clear();
+
+    SamplingLog::event(1234, "rgbhv-bypass", 627, 15);
+
+    CHECK(g_lastLine == "evt,1234,rgbhv-bypass,627,15");
+}
+
+TEST_CASE("an event is one line whatever the caller passes")
+{
+    g_lastLine.clear();
+
+    SamplingLog::event(0, "rgbhv-scale", 311, 14);
+
+    CHECK(g_lastLine == "evt,0,rgbhv-scale,311,14");
+}

@@ -83,6 +83,12 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/input/InputSource.h"
 #if GBS_SAMPLING_LOG
 #include "src/tv5725/SamplingLog.h"
+// The sync watcher's RGBHV choices, named as they are taken. A register dump
+// afterwards shows where the firmware arrived and never why.
+#define SYNC_EVENT(what, lines) \
+    Tv5725::SamplingLog::event(millis(), (what), (lines), rto->videoStandardInput)
+#else
+#define SYNC_EVENT(what, lines) ((void)0)
 #endif
 #include "src/input/SyncSearch.h"
 
@@ -4602,6 +4608,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
 void bypassModeSwitch_RGBHV() 
 {
+    SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
     if (!rto->boardHasPower) {
         return;
     }
@@ -5589,6 +5596,7 @@ void runSyncWatcher() //
 
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
             if ((sourceLines <= 535 && sourceLines != 0) && rgbhvBypass()) {
+                SYNC_EVENT("rgbhv-leave-bypass", sourceLines);
                 uint16_t firstDetectedSourceLines = sourceLines;
                 boolean moveOn = 1;
                 for (int i = 0; i < 30; i++) {
@@ -5699,6 +5707,7 @@ void runSyncWatcher() //
             }
 
             else if ((sourceLines <= 535 && sourceLines != 0) && scalingRgbhv()) {
+                SYNC_EVENT("rgbhv-keep-scaling", sourceLines);
 
                 const uint8_t wantedStandard =
                     Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines, activePresetLineCount);
@@ -5779,6 +5788,7 @@ void runSyncWatcher() //
             }
 
             else if ((sourceLines > 535) && scalingRgbhv()) {
+                SYNC_EVENT("rgbhv-to-bypass", sourceLines);
                 uint16_t firstDetectedSourceLines = sourceLines;
                 boolean moveOn = 1;
                 for (int i = 0; i < 30; i++) {

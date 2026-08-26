@@ -46,6 +46,15 @@ void emitLine(uint32_t sinceMs, uint16_t divider)
 
 }  // namespace
 
+void SamplingLog::event(uint32_t nowMs, const char *what, uint16_t lines,
+                        uint8_t videoStandardInput)
+{
+    char line[96];
+    snprintf(line, sizeof(line), "evt,%lu,%s,%u,%u", (unsigned long)nowMs, what,
+             (unsigned)lines, (unsigned)videoStandardInput);
+    tv5725Log(line);
+}
+
 SamplingLog::SamplingLog()
     : mode_(Idle), low_(0), high_(0), step_(0), dwellMs_(0), interval_(0),
       restoreDivider_(0), divider_(0), lineRateHz_(0), oversample_(1),
