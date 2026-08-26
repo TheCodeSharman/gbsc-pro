@@ -11,6 +11,7 @@
 #include "OSDManager.h"
 #include "src/tv5725/Adc.h"
 #include "src/tv5725/SyncProcessor.h"
+#include "src/tv5725/SyncType.h"
 #include <stdio.h>
 
 
@@ -538,7 +539,7 @@ static void LoadDefault()
     rto->scanlinesEnabled = false;                // 扫描线启用
     rto->boardHasPower = true;                    // 板有电源
     rto->presetIsPalForce60 = false;              // 预设为 PalForce60
-    rto->syncTypeCsync = false;                   // 同步类型
+    Tv5725::SyncType::set(false);                   // 同步类型
     rto->isValidForScalingRGBHV = false;          // 有效缩放
     rto->medResLineCount = 0x33;                  //
     rto->osr = 0;                                 //

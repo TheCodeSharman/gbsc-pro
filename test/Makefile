@@ -464,6 +464,17 @@ sync-processor:
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_processor"
 
+## sync-type: host unit tests for Tv5725::SyncType
+#
+# The probe costs ~500 ms and must run once per SOURCE. Reading the type back is
+# circular -- docs/sync-type-selection.md.
+sync-type:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sync_type" \
+	  "$(HERE)/test_sync_type.cpp" src/tv5725/SyncType.cpp
+	@"$(OUT)/test_sync_type"
+
 ## colour-space: host unit tests for Tv5725::ColourSpace
 #
 # No component source here, so the expectations were cross-checked against the

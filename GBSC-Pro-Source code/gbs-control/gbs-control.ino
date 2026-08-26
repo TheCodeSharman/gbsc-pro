@@ -75,6 +75,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/SourceStandard.h"
 #include "src/tv5725/ColourSpace.h"
+#include "src/tv5725/SyncType.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
@@ -652,7 +653,7 @@ static void LoadDefault()
     rto->scanlinesEnabled = false;                
     rto->boardHasPower = true;                    
     rto->presetIsPalForce60 = false;              
-    rto->syncTypeCsync = false;                   
+    Tv5725::SyncType::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;                  
     rto->osr = 0;                                 
@@ -667,7 +668,7 @@ static void LoadDefault()
     // rto->presetVlineShift = 0;    
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
-    rto->syncTypeIsSet = 0;
+    Tv5725::SyncType::forget();
     rto->continousStableCounter = 0; 
     rto->currentLevelSOG = 5;        
     rto->thisSourceMaxLevelSOG = 31; 
@@ -1173,7 +1174,7 @@ static boolean sourceLowLineRate()
 // docs/investigations/serrated-sync-is-not-line-rate.md
 static boolean sourceHasSerratedSync()
 {
-    return sourceLowLineRate() && rto->syncTypeCsync;
+    return sourceLowLineRate() && Tv5725::SyncType::isCsync();
 }
 
 void zeroAll()
@@ -1294,7 +1295,7 @@ void setResetParameters_re()
     rto->outModeHdBypass = 0;        
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
-    rto->syncTypeIsSet = 0;
+    Tv5725::SyncType::forget();
     rto->phaseIsSet = 0;             
     rto->continousStableCounter = 0; 
     rto->noSyncCounter = 0;          
@@ -1306,7 +1307,7 @@ void setResetParameters_re()
     rto->HPLLState = 0;
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->scanlinesEnabled = false;                
-    rto->syncTypeCsync = false;                   
+    Tv5725::SyncType::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
     rto->osr = 0;                  
@@ -1333,7 +1334,7 @@ void setResetParameters()
     rto->outModeHdBypass = 0;       
     rto->clampPositionIsSet = 0;    
     rto->coastPositionIsSet = 0;    
-    rto->syncTypeIsSet = 0;
+    Tv5725::SyncType::forget();
     rto->phaseIsSet = 0;
     rto->continousStableCounter = 0;
     rto->noSyncCounter = 0;         
@@ -1345,7 +1346,7 @@ void setResetParameters()
     rto->HPLLState = 0;
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->scanlinesEnabled = false;                
-    rto->syncTypeCsync = false;                   
+    Tv5725::SyncType::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
     rto->osr = 0;                  
@@ -1439,7 +1440,7 @@ void setResetParameters()
     GBS::PAD_SYNC_OUT_ENZ::write(0); 
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
-    rto->syncTypeIsSet = 0;
+    Tv5725::SyncType::forget();
     rto->phaseIsSet = 0;
     rto->continousStableCounter = 0; 
     serialCommand = '@';
@@ -1565,7 +1566,7 @@ void updateHVSyncEdge()
     }
 
     uint8_t syncStatus = GBS::STATUS_16::read();
-    if (rto->syncTypeCsync) {
+    if (Tv5725::SyncType::isCsync()) {
         if ((syncStatus & 0x02) != 0x02)
             return;
     } else {
@@ -1596,7 +1597,7 @@ void updateHVSyncEdge()
             }
         }
 
-        if (rto->syncTypeCsync == false) {
+        if (Tv5725::SyncType::isCsync() == false) {
             if ((syncStatus & 0x08) != 0x08) {
                 Serial.println(F("VS can't detect sync edge"));
             } else {
@@ -1856,7 +1857,7 @@ void optimizeSogLevel() // Optimize SOG levels
         rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
         return;
     }
-    if (rgbhvBypass() || GBS::SP_SOG_MODE::read() != 1 || rto->syncTypeCsync == false) {
+    if (rgbhvBypass() || GBS::SP_SOG_MODE::read() != 1 || Tv5725::SyncType::isCsync() == false) {
         rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
         return;
     }
@@ -2102,9 +2103,9 @@ uint8_t detectAndSwitchToActiveInput()
                         short decodeSuccess = 0;
                         for (int i = 0; i < 3; i++) {
                             
-                            rto->syncTypeCsync = 1; // temporary for test
+                            Tv5725::SyncType::set(1); // temporary for test
                             float sfr = getSourceFieldRate(1);
-                            rto->syncTypeCsync = 0; // undo
+                            Tv5725::SyncType::set(0); // undo
                             if (sfr > 40.0f)
                                 decodeSuccess++; 
                         }
@@ -2119,14 +2120,14 @@ uint8_t detectAndSwitchToActiveInput()
                             // SerialMprintln(F(" (with CSync)"));
                             GBS::SP_PRE_COAST::write(0x10); 
                             delay(40);
-                            rto->syncTypeCsync = true;
+                            Tv5725::SyncType::set(true);
                         } else {
                             // SerialMprintln();
-                            rto->syncTypeCsync = false; 
+                            Tv5725::SyncType::set(false); 
                         }
                         debugPrintf("sync type: %d/3 field rate probes plausible, own V sync %s -> %s\n",
                             decodeSuccess, ownVsync ? "yes" : "no",
-                            rto->syncTypeCsync ? "csync" : "separate H/V");
+                            Tv5725::SyncType::isCsync() ? "csync" : "separate H/V");
 
                         for (uint8_t i = 0; i < 16; i++) {
 
@@ -2158,7 +2159,7 @@ uint8_t detectAndSwitchToActiveInput()
                 if (Info_sate == 0 &&
                     SyncSearch::searchFor(SeleInputSource, vsyncActive) == SyncSearch::VsyncAbsent) {
 
-                    rto->syncTypeCsync = true;
+                    Tv5725::SyncType::set(true);
                     GBS::MD_SEL_VGA60::write(0); 
                     uint16_t testCycle = 0;
                     timeOutStart = millis();
@@ -2800,7 +2801,7 @@ float getSourceFieldRate(boolean useSPBus)
         GBS::IF_TEST_SEL::write(3);
 
     if (useSPBus) {
-        if (rto->syncTypeCsync) {
+        if (Tv5725::SyncType::isCsync()) {
 
             if (testBusSelBackup != 0xa)
                 GBS::TEST_BUS_SEL::write(0xa);
@@ -2892,7 +2893,7 @@ uint32_t getPllRate()
     if (testBusSelBackup != 0xa) {
         GBS::TEST_BUS_SEL::write(0xa);
     }
-    if (rto->syncTypeCsync) {
+    if (Tv5725::SyncType::isCsync()) {
         if (spBusSelBackup != 0x6b)
             GBS::TEST_BUS_SP_SEL::write(0x6b);
     } else {
@@ -2997,7 +2998,7 @@ void doPostPresetLoadSteps()
 
     // Beside ModeDetect::init() inside that block and travelling with it: both
     // depend on runtime state rather than on any table.
-    Tv5725::ModeDetect::applySyncType(rto->syncTypeCsync
+    Tv5725::ModeDetect::applySyncType(Tv5725::SyncType::isCsync()
                                           ? Tv5725::ModeDetect::Csync
                                           : Tv5725::ModeDetect::SeparateSync);
     Tv5725::ModeDetect::applyMedResLineCount(rto->medResLineCount);
@@ -3019,8 +3020,8 @@ void doPostPresetLoadSteps()
 
         prepareSyncProcessor();
         if (scalingRgbhv()) {
-            Tv5725::SyncProcessor::applyForSyncType(rto->syncTypeCsync);
-            if (rto->syncTypeCsync) {
+            Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncType::isCsync());
+            if (Tv5725::SyncType::isCsync()) {
                 rto->currentLevelSOG = 24;
             }
             rto->phaseADC = 16;
@@ -3101,7 +3102,7 @@ void doPostPresetLoadSteps()
         resetDebugPort();
 
         boolean avoidAutoBest = 0;
-        if (rto->syncTypeCsync) {
+        if (Tv5725::SyncType::isCsync()) {
             if (GBS::TEST_BUS_2F::read() == 0) {
                 delay(4);
                 if (GBS::TEST_BUS_2F::read() == 0) {
@@ -3289,7 +3290,7 @@ void doPostPresetLoadSteps()
             GBS::SP_DIS_SUB_COAST::write(1); //
         }
 
-        if (rto->syncTypeCsync) {
+        if (Tv5725::SyncType::isCsync()) {
             GBS::SP_EXT_SYNC_SEL::write(1);
         }
 
@@ -3408,20 +3409,19 @@ void applyPresets(uint8_t result)
             // sourceHasOwnVsync() answers it properly: it switches
             // SP_EXT_SYNC_SEL off and asks whether a V sync line actually
             // arrives. It costs ~500 ms, so it runs ONCE PER SOURCE --
-            // rto->syncTypeIsSet is cleared wherever coastPositionIsSet and
+            // SyncType::forget() runs wherever coastPositionIsSet and
             // clampPositionIsSet are, which is every path meaning the source may
             // have changed. A mode change pays nothing.
             //
             // **IT CANNOT BE LEFT TO inputAndSyncDetect() ALONE.** Its probe
             // sits behind `SyncSearch::searchFor(...) == VsyncPresent`, so on a
             // source with no separate vsync -- the csync case -- the block is
-            // skipped and syncTypeCsync keeps its initial false. Circular in the
+            // skipped and the sync type keeps its initial false. Circular in the
             // same way, one level up.
-            if (!rto->syncTypeIsSet) {
-                rto->syncTypeCsync = !sourceHasOwnVsync();
-                rto->syncTypeIsSet = 1;
+            {
+                Tv5725::SyncType::probeOnce(sourceHasOwnVsync);
                 debugPrintf("sync type: probed once for this source -> %s\n",
-                    rto->syncTypeCsync ? "csync" : "separate H/V");
+                    Tv5725::SyncType::isCsync() ? "csync" : "separate H/V");
             }
         }
     }
@@ -3459,15 +3459,14 @@ void applyPresets(uint8_t result)
             // concluded was about a different input and there is nothing to
             // inherit. It runs only when getVideoMode() found nothing at all,
             // not on a mode change.
-            rto->syncTypeCsync = !sourceHasOwnVsync();
-            rto->syncTypeIsSet = 1;
+            Tv5725::SyncType::probe(sourceHasOwnVsync);
         } else {
             if (detectionMayChangeInput())
                 GBS::ADC_INPUT_SEL::write(0);
             delay(100);
             if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
                 rto->inputIsYpBpR = 1;
-                rto->syncTypeCsync = 1;
+                Tv5725::SyncType::set(1);
                 rto->syncWatcherEnabled = 1;
             } else // 
             {
@@ -3815,14 +3814,14 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         GBS::SP_H_CST_SP::write(0x100);
         GBS::SP_H_COAST::write(0);
         GBS::SP_H_TIMER_VAL::write(0x3a);
-        if (rto->syncTypeCsync) {
+        if (Tv5725::SyncType::isCsync()) {
             GBS::SP_COAST_INV_REG::write(1);
         }
         rto->coastPositionIsSet = false;
         return;
     }
 
-    if (rto->syncTypeCsync) {
+    if (Tv5725::SyncType::isCsync()) {
         GBS::SP_COAST_INV_REG::write(0);
     }
 
@@ -3833,7 +3832,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
             GBS::SP_DLT_REG::write(0xC0);
             GBS::SP_H_TIMER_VAL::write(0x28);
 
-            if (rto->syncTypeCsync) {
+            if (Tv5725::SyncType::isCsync()) {
                 uint16_t hPeriod = GBS::HPERIOD_IF::read();
                 for (int i = 0; i < 16; i++) {
                     if (hPeriod == 511 || hPeriod < 200) {
@@ -3907,7 +3906,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
             GBS::SP_H_PULSE_IGNOR::write(0x06);
         } else if (rto->videoStandardInput >= 13) {
-            if (rto->syncTypeCsync == false) {
+            if (Tv5725::SyncType::isCsync() == false) {
                 GBS::SP_PRE_COAST::write(0x00);
                 GBS::SP_POST_COAST::write(0x00);
                 GBS::SP_H_PULSE_IGNOR::write(0xff); 
@@ -3958,7 +3957,7 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
             if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= 322) {
                 accInHlength = 2000;
 
-                if (rto->syncTypeCsync && rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
+                if (Tv5725::SyncType::isCsync() && rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
                     if (GBS::PLLAD_ICP::read() >= 5 && GBS::PLLAD_FS::read() == 1) {
                         GBS::PLLAD_ICP::write(5);
                         GBS::PLLAD_FS::write(0); // FS、VCO Gain Selection
@@ -4009,12 +4008,12 @@ void updateClampPosition() // Update Clamp Position
     uint32_t accInHlength = 0;
     uint16_t prevInHlength = 0;
     uint16_t thisInHlength = 0;
-    if (rto->syncTypeCsync)
+    if (Tv5725::SyncType::isCsync())
         prevInHlength = GBS::HPERIOD_IF::read();
     else
         prevInHlength = GBS::STATUS_SYNC_PROC_HTOTAL::read();
     for (uint8_t i = 0; i < 16; i++) {
-        if (rto->syncTypeCsync)
+        if (Tv5725::SyncType::isCsync())
             thisInHlength = GBS::HPERIOD_IF::read();
         else
             thisInHlength = GBS::STATUS_SYNC_PROC_HTOTAL::read();
@@ -4040,8 +4039,8 @@ void updateClampPosition() // Update Clamp Position
 
     uint16_t oldClampST = GBS::SP_CS_CLP_ST::read();
     uint16_t oldClampSP = GBS::SP_CS_CLP_SP::read();
-    float multiSt = rto->syncTypeCsync == 1 ? 0.032f : 0.010f;
-    float multiSp = rto->syncTypeCsync == 1 ? 0.174f : 0.058f;
+    float multiSt = Tv5725::SyncType::isCsync() == 1 ? 0.032f : 0.010f;
+    float multiSp = Tv5725::SyncType::isCsync() == 1 ? 0.174f : 0.058f;
     uint16_t start = 1 + (accInHlength * multiSt);
     uint16_t stop = 2 + (accInHlength * multiSp);
 
@@ -4049,7 +4048,7 @@ void updateClampPosition() // Update Clamp Position
 
     {
 
-        multiSt = rto->syncTypeCsync == 1 ? 0.089f : 0.032f;
+        multiSt = Tv5725::SyncType::isCsync() == 1 ? 0.089f : 0.032f;
         start = 1 + (accInHlength * multiSt);
 
         if (rto->outModeHdBypass) {
@@ -4300,7 +4299,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
         }
         if (rto->videoStandardInput == 13) {
             applyRGBPatches();
-            rto->syncTypeCsync = true;
+            Tv5725::SyncType::set(true);
             Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
             GBS::SP_PRE_COAST::write(4);
             GBS::SP_POST_COAST::write(4);
@@ -4419,8 +4418,8 @@ void bypassModeSwitch_RGBHV()
     GBS::PAD_SYNC2_IN_ENZ::write(0);
 
     GBS::SP_SOG_P_ATO::write(1);
-    Tv5725::SyncProcessor::applyForSyncType(rto->syncTypeCsync);
-    if (rto->syncTypeCsync) {
+    Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncType::isCsync());
+    if (Tv5725::SyncType::isCsync()) {
         rto->currentLevelSOG = 24;
     }
     rto->phaseADC = 16;
@@ -4859,7 +4858,7 @@ void runSyncWatcher() //
     // Separate-sync only. Bit 1 is claimed inside the csync branch below, and the
     // engine waits behind its own steadiness run before measuring -- arming on
     // arrival reads the source mid-transition.
-    if (!rto->syncTypeCsync && Tv5725::Interrupts::takeSourceDisturbed())
+    if (!Tv5725::SyncType::isCsync() && Tv5725::Interrupts::takeSourceDisturbed())
         geometry.sourceInterrupted();
 
     static unsigned long preemptiveSogWindowStart = millis();
@@ -4867,7 +4866,7 @@ void runSyncWatcher() //
     static uint16_t badHsActive = 0;
     static boolean lastAdjustWasInActiveWindow = 0;
 
-    if (rto->syncTypeCsync && !rto->inputIsYpBpR && (newVideoModeCounter == 0)) {
+    if (Tv5725::SyncType::isCsync() && !rto->inputIsYpBpR && (newVideoModeCounter == 0)) {
 
         if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_INT_SOG_SW::read() == 1) {
             Tv5725::Interrupts::acknowledgeSogSwitch();
@@ -5008,7 +5007,7 @@ void runSyncWatcher() //
             nudgeMD();
         }
 
-        if (rto->syncTypeCsync) {
+        if (Tv5725::SyncType::isCsync()) {
             if (rto->noSyncCounter > 47) {
                 if (rto->noSyncCounter % 16 == 0) {
                     GBS::SP_H_PROTECT::write(!GBS::SP_H_PROTECT::read());
@@ -5022,11 +5021,11 @@ void runSyncWatcher() //
                 printInfo();
                 if (sourceHasOwnVsync()) {
                     // Correct the classification before the retry below hands
-                    // bypassModeSwitch_RGBHV a syncTypeCsync that blinds the sync
+                    // bypassModeSwitch_RGBHV a csync type that blinds the sync
                     // processor to the V sync that is right there.
-                    if (rto->syncTypeCsync) {
+                    if (Tv5725::SyncType::isCsync()) {
                         debugPrintf("sync type: own V sync found while configured for csync -> separate H/V\n");
-                        rto->syncTypeCsync = false;
+                        Tv5725::SyncType::set(false);
                     }
                     rto->noSyncCounter = 0x07fe;
                     printf("noSyncCounter max2 \n");
@@ -5141,9 +5140,9 @@ void runSyncWatcher() //
                 rto->videoIsFrozen = false; 
 
                 if (GBS::SP_SOG_MODE::read() == 1) {
-                    rto->syncTypeCsync = true;
+                    Tv5725::SyncType::set(true);
                 } else {
-                    rto->syncTypeCsync = false; 
+                    Tv5725::SyncType::set(false); 
                 }
                 boolean wantPassThroughMode = uopt->presetPreference == 10;
 
@@ -5369,7 +5368,7 @@ void runSyncWatcher() //
                     GBS::GBS_OPTION_SCALING_RGBHV::write(1);
                     rto->autoBestHtotalEnabled = 1;
 
-                    if (rto->syncTypeCsync == false) {
+                    if (Tv5725::SyncType::isCsync() == false) {
                         GBS::SP_SOG_MODE::write(0);
                         GBS::SP_NO_COAST_REG::write(1);
                         GBS::ADC_5_00::write(0x10);
@@ -5427,7 +5426,7 @@ void runSyncWatcher() //
                     }
 
                     updateSpDynamic(1);
-                    if (rto->syncTypeCsync == false) {
+                    if (Tv5725::SyncType::isCsync() == false) {
                         GBS::SP_SOG_MODE::write(0);
                         GBS::SP_CLAMP_MANUAL::write(1); 
                         GBS::SP_NO_COAST_REG::write(1);
@@ -5507,7 +5506,7 @@ void runSyncWatcher() //
                         }
 
                         updateSpDynamic(1);
-                        if (rto->syncTypeCsync == false) {
+                        if (Tv5725::SyncType::isCsync() == false) {
                             GBS::SP_SOG_MODE::write(0);
                             GBS::SP_CLAMP_MANUAL::write(1); 
                             GBS::SP_NO_COAST_REG::write(1);
@@ -5579,7 +5578,7 @@ void runSyncWatcher() //
         uint16_t limitNoSync = 0;
         uint8_t VSHSStatus = 0;
         boolean stable = 0;
-        if (rto->syncTypeCsync == true) {
+        if (Tv5725::SyncType::isCsync() == true) {
             if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
                 resetModeDetect();
                 stable = 0;
@@ -5656,7 +5655,7 @@ void runSyncWatcher() //
 
             static uint8_t runsWithSogBadStatus = 0; 
             static uint8_t oldHPLLState = 0;
-            if (rto->syncTypeCsync == false) {
+            if (Tv5725::SyncType::isCsync() == false) {
                 if (GBS::STATUS_INT_SOG_BAD::read()) 
                 {
                     runsWithSogBadStatus++;
@@ -5664,7 +5663,7 @@ void runSyncWatcher() //
                         // A second route to csync, and a suspect if a separate-sync
                         // source locks then loses it: SOG is not in use on RGBHV.
                         debugPrintf("sync type: SOG bad for %d runs -> csync\n", runsWithSogBadStatus);
-                        rto->syncTypeCsync = true;
+                        Tv5725::SyncType::set(true);
                         rto->HPLLState = runsWithSogBadStatus = RGBHVNoSyncCounter = 0;
                         rto->noSyncCounter = 0x07fe;
                         printf("noSyncCounter max \n");
@@ -6268,7 +6267,7 @@ void setup()
     rto->scanlinesEnabled = false;                
     rto->boardHasPower = true;                    
     rto->presetIsPalForce60 = false;
-    rto->syncTypeCsync = false;          
+    Tv5725::SyncType::set(false);          
     rto->isValidForScalingRGBHV = false; 
     rto->medResLineCount = 0x33;
     rto->osr = 0;                  
@@ -6287,7 +6286,7 @@ void setup()
     rto->presetVlineShift = 0;         
     rto->clampPositionIsSet = 0;       
     rto->coastPositionIsSet = 0;       
-    rto->syncTypeIsSet = 0;
+    Tv5725::SyncType::forget();
     rto->continousStableCounter = 0;   
     rto->currentLevelSOG = 5;          
     rto->thisSourceMaxLevelSOG = 31;   

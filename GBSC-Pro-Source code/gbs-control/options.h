@@ -152,7 +152,6 @@ struct runTimeOptions
     // is what stops a mode change paying for it again. Cleared wherever the
     // other two are, which is every path that means "the source may have
     // changed".
-    bool syncTypeIsSet;
     bool phaseIsSet;
     bool inputIsYpBpR;
     bool syncWatcherEnabled;
@@ -171,7 +170,6 @@ struct runTimeOptions
     bool scanlinesEnabled;
     bool boardHasPower;
     bool presetIsPalForce60;
-    bool syncTypeCsync;
     bool isValidForScalingRGBHV;
     bool extClockGenDetected;
     bool HdmiHoldDetection;
