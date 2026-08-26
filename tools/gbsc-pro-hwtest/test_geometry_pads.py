@@ -1243,6 +1243,11 @@ SAMPLING_LATCH_TOLERANCE = 4
 # Steady is not valid: ask whether SP_VTOTAL is counting.
 SAMPLING_LOCKED_VTOTAL_MIN = 200
 
+# How many times to try laying a poison down before calling it a fault. The
+# firmware rewrites these registers on its own schedule, so losing one race is
+# not evidence of anything.
+POISON_ATTEMPTS = 3
+
 
 def _settled_sampling(host, timeout=30.0):
     """The three sampling registers once they have stopped moving.
@@ -1299,6 +1304,18 @@ def poisoned_if_hsync_rst(host, source):
     the input formatter counting to the end of a line the ADC is not
     delivering, with every other register reading back correct.
     """
+    # **A POISON NEEDS A QUIET UNIT, AND THE TEST BEFORE THIS ONE DOES NOT LEAVE
+    # ONE.** recover_lock() fires /sc?~ and returns as soon as the source locks,
+    # while detection is still running -- and detection rewrites all three of
+    # these. Measured two seconds into one: PLLAD_MD read 1856 and then 1792
+    # against the 2250 it settles on, so the poison is computed from a divider the
+    # chip is not using, and the engine writes the settled IF_HSYNC_RST over it
+    # before it can be read back. The fixture then fails on its own poison and the
+    # test never runs.
+    assert _settled_sampling(host), (
+        "the sampling registers never stopped moving, so there is no settled "
+        "divider to size a poison against")
+
     divider = read_field(host, *SAMPLING_PLLAD_MD)
     assert divider, "could not read PLLAD_MD, so there is no divider to poison"
 
@@ -1316,12 +1333,22 @@ def poisoned_if_hsync_rst(host, source):
     # and stays there through the preset load and minutes after it, needing /sc?~
     # to re-detect. The neighbouring tests poison segment 4, the memory map,
     # where a wild value costs a frame and not the lock.
+    #
+    # Settling is not quite enough on its own -- a write can still land in front
+    # of one the firmware had already decided on -- so a poison that does not
+    # stick is re-settled and tried again rather than failing the run.
     poison = divider // 2 - 100
-    _write_field(host, SAMPLING_IF_HSYNC_RST, poison)
-    landed = read_field(host, *SAMPLING_IF_HSYNC_RST)
+    landed = None
+    for _ in range(POISON_ATTEMPTS):
+        _write_field(host, SAMPLING_IF_HSYNC_RST, poison)
+        landed = read_field(host, *SAMPLING_IF_HSYNC_RST)
+        if landed == poison:
+            break
+        _settled_sampling(host)
     assert landed == poison, (
-        f"could not poison IF_HSYNC_RST, got {landed} want {poison} -- "
-        f"without this the test cannot tell a fresh write from a leftover")
+        f"could not poison IF_HSYNC_RST in {POISON_ATTEMPTS} attempts, got "
+        f"{landed} want {poison} -- without this the test cannot tell a fresh "
+        f"write from a leftover")
 
     yield poison
 
