@@ -3,10 +3,9 @@
 The scaled picture must stop short of VDS_HSYNC_RST rather than running up to
 it. Measured on the bench, RiscPC 320x256@50 into a 1916 px raster: the display
 window is good at VDS_DIS_HB_ST 1900 and wrong at 1910 -- a black bar, wrong
-colours and a wrapping pixel down the left edge -- so the requirement is a floor
-of about 16 px. src/tv5725/OutputRaster.cpp reserves CEA-861's own minimum
-instead, which is 1080p60's 88 px at 148.5 MHz taken as a time: 592.6 ns, or
-64 px at 108 MHz.
+colours and a wrapping pixel down the left edge. OutputMode::FrontPorchMinPx
+reserves 16 px against that, in pixels rather than as a time, and this asserts
+the same number.
 
 Read-only: no pad presses and no register writes, so this leaves the picture
 alone. Needs a source the unit is SCALING -- in RGBHV bypass the VDS is out of
@@ -32,18 +31,16 @@ FIELDS = [
     ("VDS_HSCALE_BYPS", 3, 0x00, 4, 1),
 ]
 
-# **A TIME, not a pixel count.** The engine reserves the front porch as
-# `frontPorchNs x clock`, so the same porch is half the pixels at half the
-# clock: a 480p raster runs ~54 MHz against 1080p's ~108, and a fixed pixel
-# floor calibrated on one rejects the other while the engine is doing exactly
-# the right thing.
+# **A PIXEL COUNT, not a time**, and the one horizontal quantity that is.
+# OutputMode converts CEA-861's sync and back porch to times so they port to a
+# raster the standard does not have, and deliberately does not do that here: the
+# encoder generates its own HDMI blanking and never sees ours, so what the far
+# end of the line owes is the board's floor. OutputMode::FrontPorchMinPx, and
+# this is the same number.
 #
-# 444.4444 ns is the SHORTEST front porch OutputMode.cpp's table reserves
-# (576p and 1024p), so it is at or under what the engine reserved whatever mode
-# is in force, and still far above the ~16 px the bench measured as the
-# physical floor. The point is to catch a return to bounding the picture at the
-# raster's edge, which left 6 px.
-MIN_FRONT_PORCH_NS = 444.4444
+# The point is to catch a return to bounding the picture at the raster's edge,
+# which left 6 px. docs/scaler-geometry-model.md "The output front porch"
+MIN_FRONT_PORCH_PX = 16
 
 # CEA-861 1080p: 1080 active + 4 front + 5 sync + 36 back. Vertical is in lines
 # and needs no conversion, so the standard's own figure is the floor.
@@ -66,8 +63,10 @@ def raster(host, source):
     if state["VDS_HSCALE_BYPS"] or not state["VDS_HSYNC_RST"]:
         pytest.skip("the unit is not scaling; there is no raster to check")
 
-    # The clock the porch is reserved at, which needs the source's field rate:
-    # /geometry holds the line rate and the sync processor the count it is over.
+    # **NOT for the porch, which is a constant in pixels.** Deriving the field
+    # rate is how this establishes that the source is really being followed:
+    # /geometry holds the line rate and the sync processor the count it is over,
+    # and two readings from different moments give a rate no source runs.
     status, report = get_json(host, "/geometry")
     if status != 200 or not report or not report.get("lineRateHz"):
         pytest.skip("no source line rate held, so the output clock is unknown")
@@ -84,13 +83,8 @@ def raster(host, source):
 
 
 def minimum_porch_px(raster):
-    """The floor in pixels of THIS raster, from the clock it runs at. The output
-    frame is steered to the source's field rate, so the clock is the raster
-    times that rate."""
-    line = raster["VDS_HSYNC_RST"] + 1
-    frame = raster["VDS_VSYNC_RST"] + 1
-    clock_hz = line * frame * raster["fieldRateHz"]
-    return round(MIN_FRONT_PORCH_NS * clock_hz / 1e9)
+    """The floor the engine reserves, which is a constant in pixels."""
+    return MIN_FRONT_PORCH_PX
 
 
 def test_the_display_window_leaves_a_front_porch(raster):
