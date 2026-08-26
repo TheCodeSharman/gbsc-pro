@@ -41,9 +41,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
 from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_matches,
-                      framing_of, fs_read, get, get_json, read_field, read_reg,
-                      read_segment, recover_lock, reset_framing, resolve,
-                      wait_for, write_reg)
+                      framing_of, fs_read, get, get_json, locked_steadily,
+                      read_field, read_reg, read_segment, recover_lock,
+                      reset_framing, resolve, wait_for, write_reg)
 
 GEOMETRY_FIELDS = [
     ("IF_HB_SP2", 1, 0x1A, 0, 11), ("IF_HB_ST2", 1, 0x18, 0, 11),
@@ -223,6 +223,11 @@ def probe(host):
     return probe_for(host)
 
 
+# How long to give the source to come back before deciding the pads cannot be
+# tested. Covers a detection pass, which is two 6000 ms getVideoMode() spins.
+LOCK_WAIT_S = 40.0
+
+
 @pytest.fixture
 def scaling(host, source):
     """The geometry under test, or a skip saying why there is none.
@@ -232,6 +237,23 @@ def scaling(host, source):
     entirely. That is not a failure of the pads -- there is nothing for them to
     do. The bench 800x600 (VTOTAL 627) hits it every boot.
     """
+    # **A PAD PRESS MADE WHILE THE SOURCE IS OUT IS ACCEPTED AND MOVES NOTHING.**
+    # An unseeded framing is seeded from the placement the line can realise, and
+    # ActiveImage::clampToLine() seeds nothing when the line it is handed measures
+    # zero -- so the press applies to a framing of 0+0, which clamps back to 0+0.
+    # The firmware says so and is the only thing that does: the console prints
+    # `ADJ horizontalZoom +8px -> framing h 0+0/1044 ... IF_VB 2..0` against a
+    # working press's `h 54+969/1044 ... IF_VB 38..620`, with the same registers
+    # and the same /geometry reading either way.
+    #
+    # So a longer press budget does not help, and reading the framing back does
+    # not either. docs/investigations/a-press-into-an-unmeasured-source-is-swallowed.md
+    if not wait_for(lambda: locked_steadily(host), timeout=LOCK_WAIT_S):
+        pytest.skip(
+            f"the sync processor is not counting the source after {LOCK_WAIT_S}s, "
+            "so a pad press would be accepted and move nothing -- the state a "
+            "preceding detection pass leaves behind, not a fault in the pads")
+
     state = read_geometry(host)
     if state is None:
         pytest.skip("could not read the geometry registers")
