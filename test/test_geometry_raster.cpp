@@ -28,6 +28,7 @@ using namespace Tv5725;
 static float g_fieldRate = 50.08f;
 float getSourceFieldRate(boolean) { return g_fieldRate; }
 void tv5725Log(const char *) {}
+uint32_t getPllRate() { return 0; }
 
 // STATUS_SYNC_PROC_VTOTAL, s0_1B[10:0] -- the source's line count.
 static void setSourceLines(uint16_t lines)

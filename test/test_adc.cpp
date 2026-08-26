@@ -166,3 +166,67 @@ TEST_CASE("the latch is a pulse, not a level")
 
     CHECK(latchRisingEdge() >= 0);
 }
+
+// --- the tap and the decimators, without the divider --------------------------
+
+TEST_CASE("the oversampling tap is one step per doubling below the post divider")
+{
+    // PLLAD_CKOS picks which tap of the ADC clock feeds the pipeline and the
+    // decimators undo in the digital domain what that tap added, so the two
+    // describe one ratio between them. Set the tap against decimators for
+    // another ratio and the screen is solid green with every register healthy.
+    Wire.reset();
+
+    CHECK(Adc::applyOversample(2, 4) == 4);
+
+    CHECK(Wire.field(5, Adc::PLLAD_CKOS::byteOffset, Adc::PLLAD_CKOS::bitOffset,
+                     Adc::PLLAD_CKOS::bitWidth) == 0);
+    CHECK(Wire.field(5, Adc::ADC_CLK_ICLK1X::byteOffset,
+                     Adc::ADC_CLK_ICLK1X::bitOffset, 1) == 1);
+    CHECK(Wire.field(5, Adc::ADC_CLK_ICLK2X::byteOffset,
+                     Adc::ADC_CLK_ICLK2X::bitOffset, 1) == 1);
+    CHECK(Wire.field(5, Adc::DEC1_BYPS::byteOffset, Adc::DEC1_BYPS::bitOffset, 1) == 0);
+    CHECK(Wire.field(5, Adc::DEC2_BYPS::byteOffset, Adc::DEC2_BYPS::bitOffset, 1) == 0);
+}
+
+TEST_CASE("a ratio the post divider cannot carry is installed reduced")
+{
+    Wire.reset();
+
+    CHECK(Adc::applyOversample(0, 4) == 1);
+
+    CHECK(Wire.field(5, Adc::PLLAD_CKOS::byteOffset, Adc::PLLAD_CKOS::bitOffset,
+                     Adc::PLLAD_CKOS::bitWidth) == 0);
+    CHECK(Wire.field(5, Adc::ADC_CLK_ICLK1X::byteOffset,
+                     Adc::ADC_CLK_ICLK1X::bitOffset, 1) == 0);
+    CHECK(Wire.field(5, Adc::ADC_CLK_ICLK2X::byteOffset,
+                     Adc::ADC_CLK_ICLK2X::bitOffset, 1) == 0);
+    CHECK(Wire.field(5, Adc::DEC1_BYPS::byteOffset, Adc::DEC1_BYPS::bitOffset, 1) == 1);
+    CHECK(Wire.field(5, Adc::DEC2_BYPS::byteOffset, Adc::DEC2_BYPS::bitOffset, 1) == 1);
+}
+
+TEST_CASE("the post divider is the caller's, and is not written or read back")
+{
+    // The chip is not the place to keep it. Reading PLLAD_KS back to derive the
+    // tap asks the register what the firmware itself chose, and between a write
+    // and the latch that loads it the answer is the value the PLL is not on.
+    Wire.reset();
+    Wire.bank[5][Adc::PLLAD_KS::byteOffset] = 0xFF;
+
+    Adc::applyOversample(1, 2);
+
+    CHECK_FALSE(Wire.touched[5][Adc::PLLAD_MD::byteOffset]);
+    CHECK(Wire.field(5, Adc::PLLAD_KS::byteOffset, Adc::PLLAD_KS::bitOffset,
+                     Adc::PLLAD_KS::bitWidth) == 3);
+}
+
+TEST_CASE("the tap is written but not loaded, because the caller owns the edge")
+{
+    // PLLAD_LAT loads MD, ND, KS, CKOS and ICP together, so a caller still
+    // assembling that group must not have an edge fired underneath it.
+    Wire.reset();
+
+    Adc::applyOversample(2, 2);
+
+    CHECK(latchRisingEdge() == -1);
+}

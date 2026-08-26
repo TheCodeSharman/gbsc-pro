@@ -3,6 +3,11 @@
 
 #include "Tv5725.h"
 
+// Declared here and defined outside this layer, which can reach neither: the
+// ADC PLL's rate is counted off the debug pin through FrameSync at the ESP's
+// clock. It costs a bus-select save and restore plus 200 us a sample.
+uint32_t getPllRate();
+
 namespace Tv5725 {
 
 // The ADC and its PLL: power, trim, test paths and the auto-offset that is
@@ -213,6 +218,12 @@ public:
     // output tap one step faster, and there is none above the top, so a ratio
     // the clock cannot give comes back reduced.
     static uint8_t oversampleFor(uint8_t postDivider, uint8_t wanted);
+
+    // The clock tap and the decimators, against a post divider the caller
+    // holds. Returns the oversampling actually installed. The latch is not
+    // fired: PLLAD_LAT loads MD, ND, KS, CKOS and ICP together, so a caller
+    // still assembling that group owns the edge.
+    static uint8_t applyOversample(uint8_t postDivider, uint8_t oversample);
 
     // Everything PLLAD_LAT loads, and the decimators that follow the tap it
     // selects, from the rate the caller holds. Returns the oversampling

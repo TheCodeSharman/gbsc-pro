@@ -57,6 +57,7 @@ float getSourceFieldRate(boolean)
     return g_fieldRate;
 }
 void tv5725Log(const char *) {}
+uint32_t getPllRate() { return 0; }
 
 // Neither a preset table's value nor the firmware's, so a read-back
 // distinguishes a fresh write from a leftover.

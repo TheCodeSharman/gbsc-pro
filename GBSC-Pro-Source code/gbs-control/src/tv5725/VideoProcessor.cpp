@@ -26,10 +26,14 @@ void VideoProcessor::init()
     VDS_UV_FLIP::write(0x0);                     // s3_24[0:0]
     VDS_U_DELAY::write(0x0);                     // s3_24[1:1]
 
-    // 2 in eleven tables. Nothing else writes 2 -- doPostPresetLoadSteps() only
-    // writes 3, for YPbPr and standards 3 through 9 -- so on a 15 kHz RGB source
-    // the field held whatever the previous mode wanted. Those branches still
-    // override this, since BringUp::init() is that function's first statement.
+    // Only the progressive standards write this, so without a value here a
+    // source leaving one of them keeps theirs.
+    VDS_V_DELAY::write(0x0);                     // s3_24[2:2]
+
+    // 2 in eleven tables. Nothing else writes 2 -- SourceStandard writes 3, for
+    // YPbPr and the progressive standards -- so on a 15 kHz RGB source the field
+    // held whatever the previous mode wanted. Those still override this: a
+    // standard is applied during the load, and a bring-up only at an arm.
     VDS_Y_DELAY::write(0x2);                     // s3_24[5:4]
     VDS_WEN_DELAY::write(0x2);                   // s3_24[7:6]
     VDS_D_SP::write(0x3);                        // s3_25[9:0]

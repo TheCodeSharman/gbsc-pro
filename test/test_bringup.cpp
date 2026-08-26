@@ -340,6 +340,18 @@ TEST_CASE("the input formatter's horizontal path is owned on a 15 kHz RGB source
     CHECK(written(1, 0x26, 0, 12) == 272u);// IF_HBIN_SP
 }
 
+TEST_CASE("the two fields a standard change would otherwise inherit are owned")
+{
+    // IF_HBIN_ST and VDS_V_DELAY are written only for the progressive
+    // standards, so a source leaving standard 3 for interlaced SD keeps their
+    // values -- measured on the unit as 0x20 and 1 surviving a forced standard
+    // 3 and a re-detect. Every neighbour in the same two blocks has a bring-up
+    // value: IF_HB_ST, IF_HB_SP and IF_HBIN_SP in one, VDS_Y_DELAY in the
+    // other. These two are the gap in that set.
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HBIN_ST) == 0u);
+    CHECK(WRITTEN(Tv5725::VideoProcessor::VDS_V_DELAY) == 0u);
+}
+
 TEST_CASE("blanking set 1 is left alone, because it was measured inert")
 {
     // IF_HB_ST1/SP1, s1_14 and s1_16: blanking set 1, measured inert. Written to

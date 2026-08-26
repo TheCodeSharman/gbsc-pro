@@ -70,14 +70,15 @@ TEST_CASE("the input formatter writes the addresses it owns and no others")
     // The three blanking sets split three ways, and this list is where that is
     // stated. Set 2 at s1_18/s1_1a is the capture window and the ENGINE's, so it
     // is absent along with IF_LINE_SP. Set 0 at s1_10/s1_12 and the scale-down
-    // stop at s1_26 are constants with no scaling-path writer, so they are here.
-    // Set 1 at s1_14/s1_16 is measured inert and belongs to nobody, which
+    // pair at s1_24/s1_26 are constants with no scaling-path writer, so they are
+    // here. Set 1 at s1_14/s1_16 is measured inert and belongs to nobody, which
     // test_bringup.cpp asserts.
     FreshChip chip;
 
     const uint8_t owned[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                              0x08, 0x09, 0x0A, 0x0B, 0x0C,
-                             0x10, 0x11, 0x12, 0x13, 0x26, 0x27, 0x28};
+                             0x10, 0x11, 0x12, 0x13,
+                             0x24, 0x25, 0x26, 0x27, 0x28};
     bool expected[256] = {false};
     for (size_t i = 0; i < sizeof(owned) / sizeof(owned[0]); ++i)
         expected[owned[i]] = true;

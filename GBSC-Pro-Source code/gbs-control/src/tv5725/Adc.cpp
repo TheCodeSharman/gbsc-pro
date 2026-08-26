@@ -74,6 +74,22 @@ uint8_t Adc::stepsFor(uint8_t oversample)
     return steps;
 }
 
+uint8_t Adc::applyOversample(uint8_t postDivider, uint8_t oversample)
+{
+    const uint8_t ratio = oversampleFor(postDivider, oversample);
+
+    PLLAD_CKOS::write((uint8_t)(postDivider - stepsFor(ratio)));
+
+    // The decimators undo in the digital domain what the faster tap added, so
+    // they follow the ratio rather than the tap.
+    ADC_CLK_ICLK1X::write(ratio >= 2 ? 1 : 0);
+    ADC_CLK_ICLK2X::write(ratio >= 4 ? 1 : 0);
+    DEC1_BYPS::write(ratio >= 4 ? 0 : 1);
+    DEC2_BYPS::write(ratio >= 2 ? 0 : 1);
+
+    return ratio;
+}
+
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
                              uint8_t oversample)
 {
@@ -87,18 +103,10 @@ uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
     }
 
     uint8_t postDivider = postDividerFor((uint32_t)divider * lineRateHz);
-    uint8_t ratio = oversampleFor(postDivider, oversample);
 
     PLLAD_MD::write(divider);
     PLLAD_KS::write(postDivider);
-    PLLAD_CKOS::write((uint8_t)(postDivider - stepsFor(ratio)));
-
-    // The decimators undo in the digital domain what the faster tap added, so
-    // they follow the ratio rather than the tap.
-    ADC_CLK_ICLK1X::write(ratio >= 2 ? 1 : 0);
-    ADC_CLK_ICLK2X::write(ratio >= 4 ? 1 : 0);
-    DEC1_BYPS::write(ratio >= 4 ? 0 : 1);
-    DEC2_BYPS::write(ratio >= 2 ? 0 : 1);
+    uint8_t ratio = applyOversample(postDivider, oversample);
 
     latch();
     return ratio;

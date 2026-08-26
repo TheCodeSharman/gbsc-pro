@@ -67,6 +67,10 @@ void InputFormatter::init()
     // this is inherited rather than computed.
     IF_HBIN_SP::write(272);                      // s1_26[11:0]
 
+    // Its start, which only the progressive standards write, so without a value
+    // here a source leaving one of them keeps theirs.
+    IF_HBIN_ST::write(0);                        // s1_24[11:0]
+
     IF_SEL_ADC_SYNC::write(0x1);                 // s1_28[2:2]
 }
 

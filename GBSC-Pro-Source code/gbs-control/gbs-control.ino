@@ -72,6 +72,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/ModeDetect.h"
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SourceMeasurement.h"
+#include "src/tv5725/SourceStandard.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
@@ -3082,99 +3083,9 @@ void doPostPresetLoadSteps()
         GBS::VDS_PK_LH_GAIN::write(
             (rto->presetID == 0x05 || rto->presetID == 0x15) ? 0x0A : 0x18);
 
-        setOverSampleRatio(2, true);
-
-        if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
-
-            GBS::ADC_FLTR::write(3);
-            GBS::PLLAD_KS::write(2);
-            setOverSampleRatio(4, true);
-            GBS::IF_SEL_WEN::write(0);
-            if (rto->inputIsYpBpR) {
-                GBS::IF_HS_TAP11_BYPS::write(0);
-                GBS::IF_HS_Y_PDELAY::write(2);
-                GBS::VDS_V_DELAY::write(0);
-                GBS::VDS_Y_DELAY::write(3);
-            }
-        }
-        if (rto->videoStandardInput == 3 || rto->videoStandardInput == 4 ||
-            rto->videoStandardInput == 8 || rto->videoStandardInput == 9) {
-
-            GBS::ADC_FLTR::write(3);
-            GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
-
-            Tv5725::SyncProcessor::writeSdVsyncStart(14);
-            Tv5725::SyncProcessor::writeSdVsyncStop(11);
-            GBS::IF_HB_SP::write(0);
-            setOverSampleRatio(2, true);
-            GBS::IF_SEL_WEN::write(1);
-            GBS::IF_HS_SEL_LPF::write(0);
-            GBS::IF_HS_TAP11_BYPS::write(0);
-            GBS::IF_HS_Y_PDELAY::write(3);
-            GBS::VDS_V_DELAY::write(1);
-            GBS::MADPT_Y_DELAY_UV_DELAY::write(1);
-            GBS::VDS_Y_DELAY::write(3);
-            if (rto->videoStandardInput == 9) {
-                if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
-                    delay(20);
-                    if (GBS::STATUS_SYNC_PROC_VTOTAL::read() > 650) {
-                        GBS::PLLAD_KS::write(0);
-                        // VDS_VSCALE_BYPS::write(1) was here, and it is the
-                        // one deletion where the two owners DISAGREE rather
-                        // than repeat: this asked for vertical scaling off
-                        // on a tall source, and Geometry::write() clears the
-                        // bit unconditionally because it has computed an
-                        // explicit scale. The engine already won on
-                        // ordering, so removing this changes nothing --
-                        // test_geometry_windows.cpp asserts the bit is 0.
-                    }
-                }
-            }
-        }
-        if (rto->videoStandardInput == 3) {
-            Tv5725::SyncProcessor::writeSdVsyncStart(16);
-            Tv5725::SyncProcessor::writeSdVsyncStop(13); //
-            GBS::IF_HB_ST::write(30);
-            GBS::IF_HBIN_ST::write(0x20);
-            GBS::IF_HBIN_SP::write(0x60);
-        } else if (rto->videoStandardInput == 4) {
-            GBS::IF_HBIN_SP::write(0x40);
-            GBS::IF_HBIN_ST::write(0x20);
-            GBS::IF_HB_ST::write(0x30);
-        } else if (rto->videoStandardInput == 5) {
-            GBS::ADC_FLTR::write(1);
-            GBS::IF_PRGRSV_CNTRL::write(1);
-            GBS::IF_HS_DEC_FACTOR::write(0);
-            GBS::INPUT_FORMATTER_02::write(0x74);
-            GBS::VDS_Y_DELAY::write(3);
-        } else if (rto->videoStandardInput == 6 || rto->videoStandardInput == 7) {
-            GBS::ADC_FLTR::write(1);
-            GBS::PLLAD_KS::write(0);
-            GBS::IF_PRGRSV_CNTRL::write(1);
-            GBS::IF_HS_DEC_FACTOR::write(0);
-            GBS::INPUT_FORMATTER_02::write(0x74);
-            GBS::VDS_Y_DELAY::write(3);
-        } else if (rto->videoStandardInput == 8) {
-
-            uint32_t pllRate = 0;
-            for (int i = 0; i < 8; i++) {
-                pllRate += getPllRate();
-            }
-            pllRate /= 8;
-            if (pllRate > 200) {
-                if (pllRate < 1800) {
-                    GBS::PLLAD_FS::write(0); 
-                }
-            }
-            GBS::PLLAD_ICP::write(6);
-            GBS::ADC_FLTR::write(1);
-            GBS::IF_HB_ST::write(30);
-
-            GBS::IF_HBIN_SP::write(0x60);
-            // And a four-branch VDS_VSCALE ladder here: 410, 402, 546, 400
-            // per output resolution. Geometry::write() computes the scale from
-            // the capture and the raster it has to fill.
-        }
+        rto->osr = Tv5725::SourceStandard(rto->videoStandardInput,
+                                          rto->inputIsYpBpR)
+                       .apply(GBS::PLLAD_KS::read());
 
         resetDebugPort();
 
@@ -3195,8 +3106,8 @@ void doPostPresetLoadSteps()
         // single owner of all three. Tv5725::Adc writes the divider and latches
         // it, so the write-before-latch ordering is no longer this caller's.
         //
-        // AFTER setOverSampleRatio() has settled rto->osr, because the sample
-        // clock is the product of the divider and the oversampling.
+        // AFTER the oversampling above has settled rto->osr, because the
+        // sample clock is the product of the divider and the oversampling.
 
         // The source is about to change mode, and nothing measurable about it
         // is true yet. Everything the solve needs that cannot be re-derived
@@ -3813,85 +3724,6 @@ boolean getStatus16SpHsStable()
     return false;
 }
 
-void setOverSampleRatio(uint8_t newRatio, boolean prepareOnly)
-{
-    uint8_t ks = GBS::PLLAD_KS::read();
-
-    bool hi_res = rto->videoStandardInput == 8 || rto->videoStandardInput == 4 || rto->videoStandardInput == 3;
-    bool bypass = rto->presetID == PresetHdBypass;
-
-    switch (newRatio) {
-        case 1:
-            if (ks == 0)
-                GBS::PLLAD_CKOS::write(0);
-            if (ks == 1)
-                GBS::PLLAD_CKOS::write(1);
-            if (ks == 2)
-                GBS::PLLAD_CKOS::write(2);
-            if (ks == 3)
-                GBS::PLLAD_CKOS::write(3);
-            GBS::ADC_CLK_ICLK2X::write(0);
-            GBS::ADC_CLK_ICLK1X::write(0);
-            GBS::DEC1_BYPS::write(1);
-            GBS::DEC2_BYPS::write(1);
-
-            if (hi_res && !bypass) {
-                GBS::ADC_CLK_ICLK1X::write(1);
-            }
-
-            rto->osr = 1;
-            break;
-        case 2:
-            if (ks == 0) {
-                setOverSampleRatio(1, false);
-                return;
-            }
-            if (ks == 1)
-                GBS::PLLAD_CKOS::write(0);
-            if (ks == 2)
-                GBS::PLLAD_CKOS::write(1);
-            if (ks == 3)
-                GBS::PLLAD_CKOS::write(2);
-            GBS::ADC_CLK_ICLK2X::write(0);
-            GBS::ADC_CLK_ICLK1X::write(1);
-            GBS::DEC2_BYPS::write(0);
-            GBS::DEC1_BYPS::write(1);
-
-            if (hi_res && !bypass) {
-                GBS::PLLAD_CKOS::write(GBS::PLLAD_CKOS::read() + 1);
-            }
-            rto->osr = 2;
-
-            break;
-        case 4:
-            if (ks == 0) {
-                setOverSampleRatio(1, false);
-                return;
-            }
-            if (ks == 1) {
-                setOverSampleRatio(1, false);
-                return;
-            }
-            if (ks == 2)
-                GBS::PLLAD_CKOS::write(0);
-            if (ks == 3)
-                GBS::PLLAD_CKOS::write(1);
-            GBS::ADC_CLK_ICLK2X::write(1);
-            GBS::ADC_CLK_ICLK1X::write(1);
-            GBS::DEC1_BYPS::write(0);
-            GBS::DEC2_BYPS::write(0);
-
-            rto->osr = 4;
-
-            break;
-        default:
-            break;
-    }
-
-    if (!prepareOnly)
-        latchPLLAD();
-}
-
 void togglePhaseAdjustUnits()
 {
     GBS::PA_SP_BYPSZ::write(0);
@@ -4303,7 +4135,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::PB_BYPASS::write(1);
     GBS::PLLAD_MD::write(2345);
     GBS::PLLAD_KS::write(2);
-    setOverSampleRatio(2, true);
+    rto->osr = Tv5725::Adc::applyOversample(2, 2);
     GBS::PLLAD_ICP::write(5);
     GBS::PLLAD_FS::write(1);
 
@@ -4585,7 +4417,7 @@ void bypassModeSwitch_RGBHV()
     GBS::SP_HS_PROC_INV_REG::write(0); 
     GBS::SP_VS_PROC_INV_REG::write(0); 
     GBS::PLLAD_KS::write(1);           
-    setOverSampleRatio(2, true);
+    rto->osr = Tv5725::Adc::applyOversample(1, 2);
     GBS::DEC_MATRIX_BYPS::write(1); 
     GBS::ADC_FLTR::write(0);        
     GBS::PLLAD_ICP::write(4);       
@@ -5868,31 +5700,38 @@ void runSyncWatcher() //
 
             if (rgbhvBypass()) {
                 if (oldHPLLState != rto->HPLLState) {
+                    uint8_t postDivider = GBS::PLLAD_KS::read();
                     if (rto->HPLLState == 1) {
-                        GBS::PLLAD_KS::write(2);
+                        postDivider = 2;
+                        GBS::PLLAD_KS::write(postDivider);
                         GBS::PLLAD_FS::write(0); // FS, VCO Gain Selection
                         GBS::PLLAD_ICP::write(6);
                     } else if (rto->HPLLState == 2) {
-                        GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
+                        postDivider = 1;
+                        GBS::PLLAD_KS::write(postDivider); // VCO post crossover control, determined by CKO frequency
                         GBS::PLLAD_FS::write(0); // FS, VCO Gain Selection
                         GBS::PLLAD_ICP::write(6);
                     } else if (rto->HPLLState == 3) {
-                        GBS::PLLAD_KS::write(1); // VCO post crossover control, determined by CKO frequency
+                        postDivider = 1;
+                        GBS::PLLAD_KS::write(postDivider); // VCO post crossover control, determined by CKO frequency
                         GBS::PLLAD_FS::write(1);
                         GBS::PLLAD_ICP::write(6);
                     } else if (rto->HPLLState == 4) {
-                        GBS::PLLAD_KS::write(0);
+                        postDivider = 0;
+                        GBS::PLLAD_KS::write(postDivider);
                         GBS::PLLAD_FS::write(0); // FS、VCO Gain Selection
                         GBS::PLLAD_ICP::write(6);
                     } else if (rto->HPLLState == 5) {
-                        GBS::PLLAD_KS::write(0);
+                        postDivider = 0;
+                        GBS::PLLAD_KS::write(postDivider);
                         GBS::PLLAD_FS::write(1);
                         GBS::PLLAD_ICP::write(6);
                     }
 
                     latchPLLAD();
                     delay(2);
-                    setOverSampleRatio(4, false);
+                    rto->osr = Tv5725::Adc::applyOversample(postDivider, 4);
+                    latchPLLAD();
                     delay(100);
                 }
             } else if (scalingRgbhv()) {
@@ -7728,13 +7567,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     doPostPresetLoadSteps();
                     break;
                 case 'o': {
-                    if (rto->osr == 1) {
-                        setOverSampleRatio(2, false);
-                    } else if (rto->osr == 2) {
-                        setOverSampleRatio(4, false);
-                    } else if (rto->osr == 4) {
-                        setOverSampleRatio(1, false);
-                    }
+                    const uint8_t wanted = rto->osr == 1 ? 2 : (rto->osr == 2 ? 4 : 1);
+                    rto->osr = Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
+                    latchPLLAD();
                     delay(4);
                     optimizePhaseSP();
                     ; // SerialMprint("OSR ");

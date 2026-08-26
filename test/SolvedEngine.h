@@ -19,6 +19,7 @@ FakeTwoWire Wire;
 // that cannot be held still on a board is a constant here.
 static float g_fieldRate = 50.08f;
 float getSourceFieldRate(boolean) { return g_fieldRate; }
+uint32_t getPllRate() { return 0; }
 void tv5725Log(const char *) {}
 
 // Chosen field by field rather than for looking unlikely. The binding
