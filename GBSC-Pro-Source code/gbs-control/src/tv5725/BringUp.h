@@ -38,8 +38,22 @@ public:
 
     // Every block reset asserted. Lives here rather than on Chip because one of
     // the twelve belongs to Tv5725::HdBypass, and a cross-subsystem sequence is
-    // what this class is for.
+    // what this class is for. Arms the bring-up: a held block loses its
+    // configuration.
     static void holdAllBlocks();
+
+    // Say the chip needs bringing up. holdAllBlocks() does this because a held
+    // block loses its configuration; the bypass switches do it because they
+    // reconfigure the chip AWAY from the scaling setup, and every field they
+    // move is claimed back by nothing else on the scaling path.
+    static void arm();
+
+    // Whether the chip needs bringing up. Cleared by init(), and true before
+    // anything has run so a missed arm still brings up.
+    static bool armed();
+
+private:
+    static bool armed_;
 };
 
 }  // namespace Tv5725

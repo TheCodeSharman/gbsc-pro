@@ -342,3 +342,39 @@ TEST_CASE("blanking set 1 is left alone, because it was measured inert")
     CHECK(written(1, 0x14, 0, 11) == NotWritten);
     CHECK(written(1, 0x16, 0, 11) == NotWritten);
 }
+
+TEST_CASE("holding the blocks arms the bring-up, and running it disarms")
+{
+    // A held block loses its configuration, so whatever holds them is what says
+    // the chip needs bringing up again. Nothing else may decide that: a preset
+    // load no longer exists, and the mode-change path must not repeat a
+    // bring-up the boot already did.
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Tv5725::BringUp::init();
+    CHECK(Tv5725::BringUp::armed() == false);
+
+    Tv5725::BringUp::holdAllBlocks();
+    CHECK(Tv5725::BringUp::armed() == true);
+
+    Tv5725::BringUp::init();
+    CHECK(Tv5725::BringUp::armed() == false);
+}
+
+TEST_CASE("arming is a verb the bypass switches can use")
+{
+    // holdAllBlocks() arms because a held block loses its configuration. Bypass
+    // arms for a different reason and needs to say so without pretending to
+    // hold anything: it reconfigures the chip away from the scaling setup --
+    // the input pads, both PLLs, the memory pad clock, the HD bypass reset --
+    // and nothing on the scaling path claims those back.
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Tv5725::BringUp::init();
+    CHECK(Tv5725::BringUp::armed() == false);
+
+    Tv5725::BringUp::arm();
+    CHECK(Tv5725::BringUp::armed() == true);
+}

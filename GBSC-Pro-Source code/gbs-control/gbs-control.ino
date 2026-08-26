@@ -3014,14 +3014,12 @@ static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
 
 void doPostPresetLoadSteps()
 {
-    // Static chip bring-up, over the top of whatever a custom preset loaded.
-    // Every value it writes is one the scaling tables also wrote, identically
-    // across all twelve, so on a correct block nothing moves.
-    //
-    // **THE ORDERING IS TABLE, BRING-UP, RASTER, CLOCK, WINDOWS**, which is why
-    // this sits here rather than beside the writeProgramArrayNew() calls.
-    // docs/investigations/preset-abandonment-audit.md.
-    Tv5725::BringUp::init();
+    // Only where something held the blocks and so discarded their
+    // configuration -- low power and the RGBHV watchdog through
+    // setResetParameters(), and setOutModeHdBypass(). Boot brings the chip up,
+    // so a mode change does not repeat it.
+    if (Tv5725::BringUp::armed())
+        Tv5725::BringUp::init();
 
     // Beside ModeDetect::init() inside that block and travelling with it: both
     // depend on runtime state rather than on any table.
@@ -4327,6 +4325,10 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
         return;
     }
 
+    // Same reason as bypassModeSwitch_RGBHV(): what this writes has to be
+    // undone before the chip scales again.
+    Tv5725::BringUp::arm();
+
     rto->autoBestHtotalEnabled = false;
     rto->outModeHdBypass = 1;
 
@@ -4610,6 +4612,10 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 void bypassModeSwitch_RGBHV() 
 {
     SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
+
+    // Bypass reconfigures the chip away from the scaling setup, so the next
+    // scaled load has to re-establish it.
+    Tv5725::BringUp::arm();
     if (!rto->boardHasPower) {
         return;
     }

@@ -15,6 +15,18 @@
 
 namespace Tv5725 {
 
+bool BringUp::armed_ = true;
+
+void BringUp::arm()
+{
+    armed_ = true;
+}
+
+bool BringUp::armed()
+{
+    return armed_;
+}
+
 void BringUp::init()
 {
     // ADDRESS ORDER. Chip stays FIRST: it releases the six block resets that
@@ -32,6 +44,8 @@ void BringUp::init()
     FrameBuffer::init();     // s4  memory map, guards, both FIFOs
     Adc::init();             // s5  ADC trim and its PLL
     SyncProcessor::init();   // s5  thresholds and windows
+
+    armed_ = false;
 }
 
 void BringUp::holdAllBlocks()
@@ -48,6 +62,8 @@ void BringUp::holdAllBlocks()
     Chip::SFTRST_SYNC_RSTZ::write(0);
     Chip::SFTRST_INT_RSTZ::write(0);
     HdBypass::hold();
+
+    arm();
 }
 
 }  // namespace Tv5725
