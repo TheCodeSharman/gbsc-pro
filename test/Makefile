@@ -464,6 +464,17 @@ sync-processor:
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_processor"
 
+## framing-save-timer: host unit tests for Tv5725::FramingSaveTimer
+#
+# The framing table saves itself once the framing holds still. The inhibit is
+# what lets a test disturb the framing without persisting it.
+framing-save-timer:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_framing_save_timer" \
+	  "$(HERE)/test_framing_save_timer.cpp" src/tv5725/FramingSaveTimer.cpp
+	@"$(OUT)/test_framing_save_timer"
+
 ## video-processor: host unit tests for VideoProcessor::applyPictureOptions
 #
 # Every register is a BYPS bit, so each is the inverse of the preference naming

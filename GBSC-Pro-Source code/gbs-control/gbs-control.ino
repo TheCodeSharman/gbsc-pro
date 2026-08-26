@@ -62,6 +62,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/FramingText.h"
 #include "src/tv5725/SlotText.h"
 #include "src/tv5725/Geometry.h"
+#include "src/tv5725/FramingSaveTimer.h"
 #include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/ControlSteps.h"
@@ -962,9 +963,7 @@ static const uint32_t FramingSaveQuietMs = 15000;
 
 // What was last written, and when the table last moved. A revision the engine
 // hands out, so a quiet loop costs a comparison rather than a flash read.
-static uint16_t framingSavedRevision = 0;
-static uint16_t framingSeenRevision = 0;
-static uint32_t framingMovedAt = 0;
+static Tv5725::FramingSaveTimer framingSaves;
 
 // Whether this boot managed to read the file. The same guard preferences carry,
 // and for the same reason: a silent bad read followed by an ordinary save is
@@ -8933,6 +8932,19 @@ void startWebserver()
             geometry.sourceLowLineRate() ? "true" : "false");
         request->send(200, "application/json", body);
     });
+
+    // The framing table writes itself once the framing has held still, so a
+    // caller that disturbs the framing and walks away persists it as that
+    // source's remembered framing. `?on=1` suppresses that for the session;
+    // lifting it adopts whatever is live rather than writing it.
+    server.on("/framing/autosave", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasArg("on"))
+            framingSaves.inhibit(request->arg("on").toInt() == 0);
+        char body[40];
+        snprintf_P(body, sizeof(body), PSTR("{\"autosave\":%s}"),
+                   framingSaves.inhibited() ? "false" : "true");
+        request->send(200, "application/json", body);
+    });
 #endif
 
     // Frame time lock, from held state only -- this runs in a network callback,
@@ -9516,7 +9528,7 @@ void loadFramingTable()
         // Nothing stored yet is not a failed read. Every source takes its
         // computed default and the first tuning is saveable.
         framingIsSuspect = false;
-        framingSavedRevision = geometry.framingRevision();
+        framingSaves.markSaved(geometry.framingRevision());
         return;
     }
 
@@ -9539,7 +9551,7 @@ void loadFramingTable()
         geometry.rememberFraming(read.keyAt(i), read.framingAt(i));
 
     framingIsSuspect = false;
-    framingSavedRevision = geometry.framingRevision();
+    framingSaves.markSaved(geometry.framingRevision());
 }
 
 void saveFramingTable()
@@ -9567,7 +9579,7 @@ void saveFramingTable()
         }
     f.close();
 
-    framingSavedRevision = geometry.framingRevision();
+    framingSaves.markSaved(geometry.framingRevision());
 }
 
 // Which slot the user has selected, as an index into slotFramings, or -1 when
@@ -9654,17 +9666,8 @@ bool recallSlotFraming(int16_t slot)
 // Called every loop. Nothing is written until the table has held still.
 void pollFramingSave(uint32_t now)
 {
-    const uint16_t revision = geometry.framingRevision();
-    if (revision != framingSeenRevision) {
-        framingSeenRevision = revision;
-        framingMovedAt = now;
-        return;
-    }
-    if (revision == framingSavedRevision || framingMovedAt == 0)
-        return;
-    if (now - framingMovedAt < FramingSaveQuietMs)
-        return;
-    saveFramingTable();
+    if (framingSaves.due(geometry.framingRevision(), now, FramingSaveQuietMs))
+        saveFramingTable();
 }
 
 void saveUserPrefs()
