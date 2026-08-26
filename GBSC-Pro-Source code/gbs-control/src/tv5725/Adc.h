@@ -200,6 +200,12 @@ public:
     typedef UReg<0x05, 0x1F, 1, 1> DEC2_BYPS;                         // The 2x to 1x decimator bypass enable When 1, the 2x to 1x
                                                                       // decimator hypass
 
+    // The analog input mux, and whether sync-on-green is extracted. Separate
+    // because the mux is written LAST of the three registers an input choice
+    // decides: the sync path is configured before the input is connected to it.
+    static void selectInput(uint8_t inputSel);
+    static void enableSyncOnGreen(uint8_t enable);
+
     static void init();
 
     // A rising edge on PLLAD_LAT loads MD, ND, KS, CKOS and ICP together. The

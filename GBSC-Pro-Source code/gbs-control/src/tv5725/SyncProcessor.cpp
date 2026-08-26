@@ -48,6 +48,11 @@ void SyncProcessor::applyForSyncType(bool csync)
     }
 }
 
+void SyncProcessor::selectExternalSync(uint8_t sel)
+{
+    SP_EXT_SYNC_SEL::write(sel);
+}
+
 void SyncProcessor::init()
 {
     SP_SOG_P_INV::write(0x0);                    // s5_20[2:2]

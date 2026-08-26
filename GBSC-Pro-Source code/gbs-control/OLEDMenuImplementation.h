@@ -2,6 +2,7 @@
 #ifndef OLED_MENU_IMPLEMENTATION_H_
 #define OLED_MENU_IMPLEMENTATION_H_
 #include "OLEDMenuManager.h"
+#include "src/input/InputSource.h"
 
 
 #define RGB1 0x01
@@ -102,6 +103,16 @@ void Checksum_Sendmode(const unsigned char *buff, uint8_t mode);
 // The frame the OLED handlers send, from a restored preference instead of a
 // keypress. See the definition for why nothing did this at boot.
 void sendInputFrame(uint8_t frame);
+// The three registers an input choice decides, from its InputSource row. The
+// boot restore and the menu both apply the whole row through this, so the two
+// cannot come up having applied different amounts of it.
+void applyInputRegisters(const InputSource::Settings &settings);
+
+// A menu selection: the registers above plus the bookkeeping every handler
+// repeated -- the legacy source byte, the stored id, the brightness set, the
+// low-power clear and the preference save.
+void applyInputSelection(InputSource::Id id);
+
 void InputRGBs(void);
 void InputRGsB(void);
 void InputVGA(void);

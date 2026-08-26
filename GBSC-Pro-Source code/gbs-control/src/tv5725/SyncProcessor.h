@@ -207,6 +207,10 @@ public:
 
     // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
     // value off the divider; this block is where the register lives.
+    // Where H and V come from: 0 the dedicated pins, 1 composite or
+    // sync-on-green. It travels with the input choice, not with the sync type.
+    static void selectExternalSync(uint8_t sel);
+
     static void writeRetimeStop(uint16_t samples);
 };
 

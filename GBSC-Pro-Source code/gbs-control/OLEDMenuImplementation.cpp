@@ -9,6 +9,8 @@
 #include "src/WebSocketsServer.h"
 #include "fonts.h"
 #include "OSDManager.h"
+#include "src/tv5725/Adc.h"
+#include "src/tv5725/SyncProcessor.h"
 #include <stdio.h>
 
 
@@ -598,83 +600,55 @@ void SetReg(unsigned char reg, unsigned char val)
 //   sender.send(Adv_SIGNALIZED);
 // }
 
+void applyInputRegisters(const InputSource::Settings &settings)
+{
+    if (settings.writesAdc)
+        Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
+    Tv5725::SyncProcessor::selectExternalSync(settings.extSyncSel);
+    if (settings.writesAdc)
+        Tv5725::Adc::selectInput(settings.adcInputSel);
+}
+
+void applyInputSelection(InputSource::Id id)
+{
+    const InputSource::Settings settings = InputSource::settingsFor(id);
+
+    SeleInputSource = settings.legacySource;
+    Info = id;
+    resetSyncProcessor();
+    applyInputRegisters(settings);
+    BriorCon = settings.brightnessSet;
+    rto->sourceDisconnected = true;
+    if (settings.clearsLowPower)
+        rto->isInLowPowerMode = false;
+    saveUserPrefs();
+}
+
 void InputVGA_mode(uint8_t mode)
 {
-
     Checksum_Sendmode(VGA, !mode);
-    // InCurrent = S_VGA;
-    SeleInputSource = S_VGA;
-    Info = InfoVGA;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(RGB1);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Enable);
-    GBS::ADC_INPUT_SEL::write(RGB1);
-    BriorCon = 0;
-    // loadDefaultUserOptions();
-    rto->sourceDisconnected = true;
-    saveUserPrefs();
+    applyInputSelection(InputSource::Vga);
 }
 void InputRGsB_mode(uint8_t mode)
 {
-
     Checksum_Sendmode(RGsB, !mode);
-    // InCurrent = S_RGBs;
-    SeleInputSource = S_RGBs;
-    Info = InfoRGsB;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(RGB1);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(RGB1);
-    BriorCon = 0;
-    // loadDefaultUserOptions();
-    rto->sourceDisconnected = true;
-    saveUserPrefs();
+    applyInputSelection(InputSource::RgsB);
 }
 void InputRGBs_mode(uint8_t mode)
 {
     Checksum_Sendmode(RGBs, !mode);
-    // InCurrent = S_RGBs;
-    SeleInputSource = S_RGBs;
-    Info = InfoRGBs;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(RGB1);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(RGB1);
-    BriorCon = 0;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    saveUserPrefs();
+    applyInputSelection(InputSource::Rgbs);
 }
 
 void InputRGBs(void)
 {
     sender.send(RGBs);
-    // InCurrent = S_RGBs;
-    SeleInputSource = S_RGBs;
-    Info = InfoRGBs;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(RGB1);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(RGB1);
-    BriorCon = 0;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    saveUserPrefs();
+    applyInputSelection(InputSource::Rgbs);
 }
 void InputYUV(void)
 {
     sender.send(Ypbpr);
-    // InCurrent = S_YUV;
-    SeleInputSource = S_YUV;
-    Info = InfoYUV;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(YUV0);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(YUV0);
-    BriorCon = 1;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    saveUserPrefs();
+    applyInputSelection(InputSource::Ypbpr);
 }
 
 void InputNULL(void)
@@ -688,33 +662,12 @@ void InputNULL(void)
 void InputRGsB(void)
 {
     sender.send(RGsB);
-    // InCurrent = S_RGBs;
-    SeleInputSource = S_RGBs;
-    Info = InfoRGsB;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(RGB1);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(RGB1);
-    BriorCon = 0;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    saveUserPrefs();
+    applyInputSelection(InputSource::RgsB);
 }
 void InputVGA(void)
 {
-    // sender.send(VGA);
     Checksum_Sendmode(VGA, 1);
-    // InCurrent = S_VGA;
-    SeleInputSource = S_VGA;
-    Info = InfoVGA;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(RGB1);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Enable);
-    GBS::ADC_INPUT_SEL::write(RGB1);
-    BriorCon = 0;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    saveUserPrefs();
+    applyInputSelection(InputSource::Vga);
 }
 void InputINFO(void)
 {
@@ -722,85 +675,32 @@ void InputINFO(void)
     SeleInputSource = S_YUV;
     // Info = InfoSV;
     resetSyncProcessor();
-    GBS::ADC_SOGEN::write(YUV0);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(YUV0);
+    applyInputRegisters(InputSource::settingsFor(InputSource::Composite));
     BriorCon = 2;
     rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
     saveUserPrefs();
 }
 void InputSV(void)
 {
     sender.send(Adv_7391_SV);
-    // InCurrent = S_YUV;
-    SeleInputSource = S_YUV;
-    Info = InfoSV;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(YUV0);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(YUV0);
-    BriorCon = 2;
-    rto->sourceDisconnected = true;
-    // doPostPresetLoadSteps();
-    // loadDefaultUserOptions();
-    rto->isInLowPowerMode = false;
-    saveUserPrefs();
+    applyInputSelection(InputSource::SVideo);
 }
 
 void InputSV_mode(uint8_t mode)
 {
     Checksum_Sendmode(Adv_7391_SV, mode);
-    // InCurrent = S_YUV;
-    SeleInputSource = S_YUV;
-    Info = InfoSV;
-    resetSyncProcessor();
-    // rto->inputIsYpBpR = 1;
-    GBS::ADC_SOGEN::write(YUV0);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(YUV0);
-    BriorCon = 2;
-    rto->sourceDisconnected = true;
-    // doPostPresetLoadSteps()
-    // loadDefaultUserOptions();
-    // A commented-out table load was here; the tables went 2026-08-14.
-    // doPostPresetLoadSteps();
-    rto->isInLowPowerMode = false;
-    saveUserPrefs();
+    applyInputSelection(InputSource::SVideo);
 }
 void InputAV(void)
 {
     sender.send(Adv_7391_AV);
-    // InCurrent = S_YUV;
-    SeleInputSource = S_YUV;
-    Info = InfoAV;
-    // resetSyncProcessor_yuv();
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(YUV0);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(YUV0);
-    BriorCon = 2;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    rto->isInLowPowerMode = false;
-    saveUserPrefs();
+    applyInputSelection(InputSource::Composite);
 }
 
 void InputAV_mode(uint8_t mode)
 {
     Checksum_Sendmode(Adv_7391_AV, mode);
-    // InCurrent = S_YUV;
-    SeleInputSource = S_YUV;
-    Info = InfoAV;
-    resetSyncProcessor();
-    GBS::ADC_SOGEN::write(YUV0);
-    GBS::SP_EXT_SYNC_SEL::write(HV_Disable);
-    GBS::ADC_INPUT_SEL::write(YUV0);
-    BriorCon = 2;
-    rto->sourceDisconnected = true;
-    // loadDefaultUserOptions();
-    rto->isInLowPowerMode = false;
-    saveUserPrefs();
+    applyInputSelection(InputSource::Composite);
 }
 
 void Send_TvMode(uint8_t Mode)

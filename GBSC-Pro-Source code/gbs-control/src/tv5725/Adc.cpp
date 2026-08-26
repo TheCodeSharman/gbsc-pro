@@ -4,6 +4,16 @@
 
 namespace Tv5725 {
 
+void Adc::selectInput(uint8_t inputSel)
+{
+    ADC_INPUT_SEL::write(inputSel);
+}
+
+void Adc::enableSyncOnGreen(uint8_t enable)
+{
+    ADC_SOGEN::write(enable);
+}
+
 void Adc::init()
 {
     ADC_CLK_PA::write(0x0);                      // s5_00[1:0]

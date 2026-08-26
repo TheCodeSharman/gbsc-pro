@@ -230,3 +230,55 @@ TEST_CASE("the tap is written but not loaded, because the caller owns the edge")
 
     CHECK(latchRisingEdge() == -1);
 }
+
+// The analog input mux and the sync-on-green enable. Separate verbs because an
+// input choice writes the mux LAST, after the sync path is configured.
+
+static const uint8_t InputPoisons[2] = {0xA5, 0x5A};
+
+template <typename Field>
+static uint32_t afterCall(void (*control)(uint8_t), uint8_t value)
+{
+    Wire.reset();
+    Wire.poison(InputPoisons[0]);
+    control(value);
+    return Field::read();
+}
+
+template <typename Field>
+static bool callWrote(void (*control)(uint8_t), uint8_t value)
+{
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(InputPoisons[i]);
+        control(value);
+        under[i] = Field::read();
+    }
+    return under[0] == under[1];
+}
+
+TEST_CASE("selecting an input writes the mux")
+{
+    CHECK(afterCall<Adc::ADC_INPUT_SEL>(Adc::selectInput, 1) == 1);
+    CHECK(afterCall<Adc::ADC_INPUT_SEL>(Adc::selectInput, 0) == 0);
+}
+
+TEST_CASE("the sync-on-green enable is its own choice")
+{
+    CHECK(afterCall<Adc::ADC_SOGEN>(Adc::enableSyncOnGreen, 1) == 1);
+    CHECK(afterCall<Adc::ADC_SOGEN>(Adc::enableSyncOnGreen, 0) == 0);
+}
+
+TEST_CASE("neither touches the other, nor the ADC PLL")
+{
+    CHECK(callWrote<Adc::ADC_INPUT_SEL>(Adc::selectInput, 1));
+    CHECK_FALSE(callWrote<Adc::ADC_SOGEN>(Adc::selectInput, 1));
+
+    CHECK(callWrote<Adc::ADC_SOGEN>(Adc::enableSyncOnGreen, 1));
+    CHECK_FALSE(callWrote<Adc::ADC_INPUT_SEL>(Adc::enableSyncOnGreen, 1));
+
+    CHECK_FALSE(callWrote<Adc::PLLAD_MD>(Adc::selectInput, 1));
+    CHECK_FALSE(callWrote<Adc::PLLAD_KS>(Adc::selectInput, 1));
+    CHECK_FALSE(callWrote<Adc::PLLAD_CKOS>(Adc::selectInput, 1));
+}

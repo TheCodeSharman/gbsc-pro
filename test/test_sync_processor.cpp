@@ -127,3 +127,45 @@ TEST_CASE("the SD vertical sync positions are one value each, not two halves")
         CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 0);
     }
 }
+
+// SP_EXT_SYNC_SEL: 0 takes H and V from the dedicated pins, 1 leaves the sync
+// processor on composite or sync-on-green. It travels with the input choice, so
+// it is set from an InputSource row rather than from the sync type.
+
+template <typename Field>
+static uint32_t afterExternalSync(uint8_t sel)
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::selectExternalSync(sel);
+    return Field::read();
+}
+
+template <typename Field>
+static bool externalSyncWrote(uint8_t sel)
+{
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        SyncProcessor::selectExternalSync(sel);
+        under[i] = Field::read();
+    }
+    return under[0] == under[1];
+}
+
+TEST_CASE("the external sync select carries the input's choice")
+{
+    CHECK(afterExternalSync<SyncProcessor::SP_EXT_SYNC_SEL>(0) == 0);
+    CHECK(afterExternalSync<SyncProcessor::SP_EXT_SYNC_SEL>(1) == 1);
+}
+
+TEST_CASE("choosing the external sync touches nothing the sync type owns")
+{
+    CHECK(externalSyncWrote<SyncProcessor::SP_EXT_SYNC_SEL>(1));
+
+    CHECK_FALSE(externalSyncWrote<SyncProcessor::SP_SOG_MODE>(1));
+    CHECK_FALSE(externalSyncWrote<SyncProcessor::SP_PRE_COAST>(1));
+    CHECK_FALSE(externalSyncWrote<SyncProcessor::SP_POST_COAST>(1));
+    CHECK_FALSE(externalSyncWrote<SyncProcessor::SP_SOG_SRC_SEL>(1));
+}

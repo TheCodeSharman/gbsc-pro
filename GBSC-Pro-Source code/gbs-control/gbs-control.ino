@@ -1373,7 +1373,7 @@ void setResetParameters()
     // watchdog as well as from boot, and only boot follows it with
     // applySavedInputSource() -- so a literal drops a component selection onto
     // the RGB pins with nothing to put it back until the next reboot.
-    GBS::ADC_INPUT_SEL::write(selectedAdcInput());
+    Tv5725::Adc::selectInput(selectedAdcInput());
     GBS::ADC_POWDZ::write(1);
     setAndUpdateSogLevel(rto->currentLevelSOG);
     Tv5725::BringUp::holdAllBlocks();
@@ -2027,7 +2027,7 @@ void applySavedInputSource()
     }
 
     const InputSource::Settings settings = InputSource::settingsFor(saved);
-    GBS::ADC_INPUT_SEL::write(settings.adcInputSel);
+    applyInputRegisters(settings);
 
     // The other half of the path: the HC32's asw_01..04 decide what is actually
     // connected to the ADC input just selected, and appear in no register dump.
