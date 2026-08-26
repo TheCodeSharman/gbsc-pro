@@ -50,9 +50,35 @@ Two further measurements bound it:
   solve sometimes lands on the settled answer and sometimes does not.
 
 Together those say the geometry is solved once during the load, against whatever
-the source measurement holds at that moment, and never again. The disagreement is
-the difference between an unsettled measurement and a settled one, and the run-to-
-run variation is how unsettled it happened to be.
+the source measurement holds at that moment, and never again.
+
+**Isolated, the load's solve is almost always exact, and the exception is the
+FIRST load after a boot.** Eight loads in sequence from a hard reset, each
+compared against a re-solve of the same framing taken straight after:
+
+    uptime   registers differing   largest gap
+      8 s          3 / 26               2
+     22 s          0 / 26               0
+     36 s          0 / 26               0
+      ... five more, all 0 / 26
+
+So the small residual is a first-load effect, not a general one, and it is two
+units wide.
+
+**The large disagreements are a different condition and are not reproduced in
+isolation.** `VDS_HSCALE` 431 against 557 and nine registers apart were seen
+inside a full `pytest --source` run, after many tests that disturb the framing
+and the sync path. Five and then eight consecutive loads on an otherwise idle
+unit never reproduced them. Whatever produces them is in that preceding churn,
+and is not characterised here.
+
+**Averaging the field rate does not help, measured.** `getSourceFieldRate()`
+takes ONE reading of one field period, with a retry only when it returns zero,
+and sizing a permanent raster from that is fragile in principle. Replacing it
+with the median of nine readings was tried and A/B'd against the same code with
+the sample count set to 1: five trials each, identical results both ways --
+3/26 on the first trial and 0/26 on the remaining four. The change was reverted.
+Do not reinstate it without evidence that names what it fixes.
 
 ## Two tests require headroom the engine deliberately does not allocate
 
@@ -82,6 +108,11 @@ by a test and no longer produced — but that has not been confirmed.
 
 ## What to measure next
 
-The preset-load finding is the one with a firmware behaviour behind it. The
-question it leaves is whether a mode change should re-solve once the source
-measurement settles, and what currently decides that it does not.
+The large disagreements are the open question, and they need the churn that
+produces them. Bisecting the full `--source` run for the test that leaves the
+unit in that state would name it; the isolated loads above already show it is
+not the load path on its own.
+
+The first-load-after-boot residual is two units and may not be worth chasing.
+What it says is that one measurement early in a boot is slightly off, and that
+the engine's solve is not re-run once it is not.
