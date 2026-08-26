@@ -1635,6 +1635,102 @@ def test_the_input_route_queues_a_selection(host, source):
     assert "vga" in body, f"the reply does not name what it queued: {body!r}"
 
 
+# How long a selection is watched before it counts as having stuck. Detection's
+# sweep gives up on an input after 450 ms and the no-sync toggle fires on a
+# counter, so a few seconds catches the first and a longer hold catches the
+# second.
+SELECTION_HOLD_SECONDS = 25.0
+
+# ADC_INPUT_SEL for each name: RGBs, RGsB and VGA read the RGB pins, YPbPr,
+# S-Video and composite the YUV ones. InputSource::settingsFor() is the source
+# of this and the host suite checks it field by field.
+SELECTED_ADC_INPUT = {"rgbs": 1, "rgsb": 1, "vga": 1, "ypbpr": 0, "sv": 0, "av": 0}
+
+# One name per connector, for a test that needs to cross to the other one. Which
+# of a connector's three sync variants is cabled is not knowable from here and
+# does not matter to what is asserted, since all three read the same ADC input.
+OTHER_CONNECTOR = {0: "vga", 1: "ypbpr"}
+
+# Selecting blocks loop() for seconds while detection runs, so the mux does not
+# move the instant the route answers.
+SELECTION_TIMEOUT = 20.0
+
+
+def test_a_chosen_input_is_not_swept_away(host, source):
+    """An explicit selection is a command, and detection must obey it.
+
+    Selects the connector that is NOT in use, which is the only way to see the
+    fault: choosing the input detection already prefers proves nothing.
+
+    **This is about ADC_INPUT_SEL only**, the physical ADC input. The sync
+    variants of one connector -- composite sync, sync-on-green, separate H/V --
+    read the same pins, so searching between them never moves this register.
+    Crossing to the other connector does, and that is what a selection forbids.
+
+    Without the guard, detectAndSwitchToActiveInput() writes the opposite input
+    when the chosen one is not stable within 450 ms, and runSyncWatcher()
+    toggles it again every 413 no-sync passes. The input the user picked then
+    becomes whichever one happens to have sync.
+
+    **The chosen input must hold with or without a signal on it**, so this
+    passes on a bench with one source. Needs --source because it moves the mux;
+    the original selection is restored at the end whatever the outcome.
+    """
+    prefs = fs_read(host, PREFS_PATH)
+    assert prefs and len(prefs) > PREFS_INFO_BYTE, (
+        f"could not read the preferences: {prefs!r}")
+    stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
+    assert stored in STORED_INPUT_IDS, (
+        f"no input is stored (Info={stored}), so nothing has been chosen and a "
+        "sweep is the correct behaviour -- select one first, over /input or at "
+        "the OLED")
+
+    restore = INPUT_NAMES[stored - 1]
+    wanted = OTHER_CONNECTOR[SELECTED_ADC_INPUT[restore]]
+    expected = SELECTED_ADC_INPUT[wanted]
+
+    try:
+        status, _ = get(host, f"/input?src={wanted}")
+        assert status == 200, f"{wanted} was refused: {status}"
+
+        settled = wait_for(
+            lambda: read_field(host, *ADC_INPUT_SEL) == expected,
+            timeout=SELECTION_TIMEOUT,
+        )
+        assert settled, (
+            f"{wanted} was selected and ADC_INPUT_SEL never reached {expected} "
+            f"within {SELECTION_TIMEOUT:.0f}s -- it reads "
+            f"{read_field(host, *ADC_INPUT_SEL)}")
+
+        seen = []
+        deadline = time.monotonic() + SELECTION_HOLD_SECONDS
+        while time.monotonic() < deadline:
+            seen.append(read_field(host, *ADC_INPUT_SEL))
+            time.sleep(0.5)
+
+        strayed = sorted({v for v in seen if v is not None and v != expected})
+        assert not strayed, (
+            f"{wanted} was selected, which puts ADC_INPUT_SEL at {expected}, and "
+            f"detection moved it to {strayed} within "
+            f"{SELECTION_HOLD_SECONDS:.0f}s. A chosen input is a command; only "
+            f"an unset choice may be swept. Samples: {seen}")
+    finally:
+        # Asserted, not best-effort. A silent restore is what let a selection
+        # that never moved the mux pass this test: whichever input happened to
+        # be stored decided which direction was covered.
+        get(host, f"/input?src={restore}")
+        back = wait_for(
+            lambda: read_field(host, *ADC_INPUT_SEL) == SELECTED_ADC_INPUT[restore],
+            timeout=SELECTION_TIMEOUT,
+        )
+        assert back, (
+            f"{restore} was selected and ADC_INPUT_SEL never returned to "
+            f"{SELECTED_ADC_INPUT[restore]} within {SELECTION_TIMEOUT:.0f}s -- "
+            f"it reads {read_field(host, *ADC_INPUT_SEL)}. Every input must "
+            f"point the mux at itself; one that does not can never be reached "
+            f"now that detection obeys the choice.")
+
+
 # The preferences file is positional and unversioned; this is the byte
 # applySavedInputSource() keys on. Six values against SeleInputSource's three,
 # which is what lets a restore tell RGsB from RGBs and VGA from either.
@@ -1688,7 +1784,7 @@ def test_the_saved_input_survives_a_restart(host, source):
 
     Reboots the unit, which is why it is behind --reboot.
     """
-    prefs = fs_read(host, "/preferencesv2.txt")
+    prefs = fs_read(host, PREFS_PATH)
     assert prefs and len(prefs) > PREFS_INFO_BYTE, (
         f"could not read the preferences: {prefs!r}")
     stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
