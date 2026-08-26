@@ -1,6 +1,7 @@
 #include "OSDManager.h"
 #include "options.h"
 #include "src/tv5725/ControlSteps.h"
+#include "src/tv5725/VideoProcessor.h"
 #include "stdio.h"
 
 extern userOptions *uopt;
@@ -109,7 +110,7 @@ bool osdLineFilter(OSDMenuConfig &config)
     if (config.onChange)
     {
         uopt->wantVdsLineFilter = config.inc ? 1 : 0;
-        GBS::VDS_D_RAM_BYPS::write(!uopt->wantVdsLineFilter);
+        Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
         saveUserPrefs();
     }
     if (uopt->wantVdsLineFilter == 1)

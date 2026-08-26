@@ -2,13 +2,24 @@
 
 namespace Tv5725 {
 
-void VideoProcessor::applyPictureOptions(bool lineFilter, bool peaking,
-                                        bool stepResponse)
+void VideoProcessor::setLineFilter(bool wanted)
 {
-    VDS_D_RAM_BYPS::write(lineFilter ? 0 : 1);
-    VDS_PK_Y_H_BYPS::write(peaking ? 0 : 1);
-    VDS_TAP6_BYPS::write(0);
-    VDS_UV_STEP_BYPS::write(stepResponse ? 0 : 1);
+    VDS_D_RAM_BYPS::write(wanted ? 0 : 1);
+}
+
+void VideoProcessor::setPeaking(bool wanted)
+{
+    VDS_PK_Y_H_BYPS::write(wanted ? 0 : 1);
+}
+
+void VideoProcessor::setStepResponse(bool wanted)
+{
+    VDS_UV_STEP_BYPS::write(wanted ? 0 : 1);
+}
+
+void VideoProcessor::setSixTapFilter(bool wanted)
+{
+    VDS_TAP6_BYPS::write(wanted ? 0 : 1);
 }
 
 void VideoProcessor::init()

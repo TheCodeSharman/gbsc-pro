@@ -3180,8 +3180,10 @@ void doPostPresetLoadSteps()
         const bool stepResponse = uopt->wantStepResponse
                                   && rto->presetID != 0x05
                                   && rto->presetID != 0x15;
-        Tv5725::VideoProcessor::applyPictureOptions(
-            uopt->wantVdsLineFilter, uopt->wantPeaking, stepResponse);
+        Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
+        Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
+        Tv5725::VideoProcessor::setSixTapFilter(true);
+        Tv5725::VideoProcessor::setStepResponse(stepResponse);
 
         Menu::init();
         FrameSync::cleanup();
@@ -7502,12 +7504,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'f':; // SerialMprint(F("peaking "));
                     if (uopt->wantPeaking == 0) {
                         uopt->wantPeaking = 1;
-                        GBS::VDS_PK_Y_H_BYPS::write(0);
-                    } else {
-                        if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
-                            uopt->wantPeaking = 0;
-                            GBS::VDS_PK_Y_H_BYPS::write(1);
-                        }
+                        Tv5725::VideoProcessor::setPeaking(true);
+                    } else if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
+                        uopt->wantPeaking = 0;
+                        Tv5725::VideoProcessor::setPeaking(false);
                     }
                     saveUserPrefs();
                     break;
@@ -7858,13 +7858,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'V': {
                     ; // SerialMprint(F("step response "));
                     uopt->wantStepResponse = !uopt->wantStepResponse;
-                    if (uopt->wantStepResponse) {
-                        GBS::VDS_UV_STEP_BYPS::write(0);
-                        ; // SerialMprintln("on");
-                    } else {
-                        GBS::VDS_UV_STEP_BYPS::write(1);
-                        ; // SerialMprintln("off");
-                    }
+                    Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse);
                     saveUserPrefs();
                 } break;
                 case ':':
@@ -8193,15 +8187,8 @@ void handleType2Command(char argument)
             }
             break;
         case 'm':; // SerialMprint(F("Line Filter: "));
-            if (uopt->wantVdsLineFilter) {
-                uopt->wantVdsLineFilter = 0;
-                GBS::VDS_D_RAM_BYPS::write(1);
-                ; // SerialMprintln("off");
-            } else {
-                uopt->wantVdsLineFilter = 1;
-                GBS::VDS_D_RAM_BYPS::write(0);
-                ; // SerialMprintln("on");
-            }
+            uopt->wantVdsLineFilter = !uopt->wantVdsLineFilter;
+            Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
             saveUserPrefs();
             break;
         case 'n':; // SerialMprint(F("ADC gain++ : "));
@@ -8239,12 +8226,12 @@ void handleType2Command(char argument)
             ; // SerialMprint(F("6-tap: "));
             if (uopt->wantTap6 == 0) {
                 uopt->wantTap6 = 1;
-                GBS::VDS_TAP6_BYPS::write(0);
+                Tv5725::VideoProcessor::setSixTapFilter(true);
                 GBS::MADPT_Y_DELAY_UV_DELAY::write(GBS::MADPT_Y_DELAY_UV_DELAY::read() - 1);
                 ; // SerialMprintln("on");
             } else {
                 uopt->wantTap6 = 0;
-                GBS::VDS_TAP6_BYPS::write(1);
+                Tv5725::VideoProcessor::setSixTapFilter(false);
                 GBS::MADPT_Y_DELAY_UV_DELAY::write(GBS::MADPT_Y_DELAY_UV_DELAY::read() + 1);
                 ; // SerialMprintln("off");
             }
@@ -8334,7 +8321,7 @@ void handleType2Command(char argument)
         case 'W':
             // Четкость
             if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
-                GBS::VDS_PK_Y_H_BYPS::write(0);
+                Tv5725::VideoProcessor::setPeaking(true);
                 GBS::VDS_PK_LB_GAIN::write(0x5f); // 3_45
                 GBS::VDS_PK_LH_GAIN::write(0x5f); // 3_47
                 ;                                 // SerialMprintln("Sharpness - Medium");
@@ -8343,7 +8330,7 @@ void handleType2Command(char argument)
                 ;                                 // SerialMprint(F("LH_GAIN :"));
                 ;                                 // SerialMprintln(GBS::VDS_PK_LH_GAIN::read(), HEX);
             } else {
-                GBS::VDS_PK_Y_H_BYPS::write(1);
+                Tv5725::VideoProcessor::setPeaking(false);
                 GBS::VDS_PK_LB_GAIN::write(0x16); // 3_45
                 GBS::VDS_PK_LH_GAIN::write(0x0A); // 3_47
                 ;                                 // SerialMprintln("Sharpness - Norm");

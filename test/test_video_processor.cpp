@@ -1,10 +1,13 @@
-// Host-compiled unit tests for VideoProcessor::applyPictureOptions() --
+// Host-compiled unit tests for the VideoProcessor picture controls --
 // `make -C test video-processor`.
 //
-// The registers are BYPS bits, so every one of them is the inverse of the
-// preference that names it. That inversion is the whole content of the
-// function, and getting it backwards leaves a picture that is merely a bit
-// different rather than obviously wrong.
+// Every register here is a BYPS bit, so each is the inverse of the preference
+// that names it. Getting the inversion backwards leaves a picture that is
+// merely a bit different rather than obviously wrong.
+//
+// "Not written" is proved by running under two COMPLEMENTARY poisons and
+// checking the two disagree. One poison cannot tell a field written 0 from a
+// field left at a poison whose bit is already 0.
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
@@ -17,52 +20,73 @@ FakeTwoWire Wire;
 
 using namespace Tv5725;
 
-static void apply(bool lineFilter, bool peaking, bool stepResponse)
+static const uint8_t Poisons[2] = {0xA5, 0x5A};
+
+template <typename Field>
+static uint32_t applied(void (*control)(bool), bool wanted)
 {
     Wire.reset();
-    Wire.poison(0xA5);
-    VideoProcessor::applyPictureOptions(lineFilter, peaking, stepResponse);
+    Wire.poison(Poisons[0]);
+    control(wanted);
+    return Field::read();
 }
 
-TEST_CASE("wanting an option clears the bypass that would defeat it")
+template <typename Field>
+static bool wasWritten(void (*control)(bool), bool wanted)
 {
-    apply(true, true, true);
-
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 0);
-    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 0);
-    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 0);
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        control(wanted);
+        under[i] = Field::read();
+    }
+    return under[0] == under[1];
 }
 
-TEST_CASE("declining an option sets its bypass")
+TEST_CASE("wanting the line filter clears the bypass that would defeat it")
 {
-    apply(false, false, false);
-
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 1);
-    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 1);
-    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
+    CHECK(applied<VideoProcessor::VDS_D_RAM_BYPS>(VideoProcessor::setLineFilter, true) == 0);
+    CHECK(applied<VideoProcessor::VDS_D_RAM_BYPS>(VideoProcessor::setLineFilter, false) == 1);
 }
 
-TEST_CASE("each preference reaches its own register and no other")
+TEST_CASE("wanting peaking clears the bypass that would defeat it")
 {
-    apply(true, false, false);
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 0);
-    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 1);
-    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
-
-    apply(false, true, false);
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 1);
-    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 0);
-    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 1);
-
-    apply(false, false, true);
-    CHECK(VideoProcessor::VDS_D_RAM_BYPS::read() == 1);
-    CHECK(VideoProcessor::VDS_PK_Y_H_BYPS::read() == 1);
-    CHECK(VideoProcessor::VDS_UV_STEP_BYPS::read() == 0);
+    CHECK(applied<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setPeaking, true) == 0);
+    CHECK(applied<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setPeaking, false) == 1);
 }
 
-TEST_CASE("the six-tap filter is not a preference and is never bypassed")
+TEST_CASE("wanting the chroma step response clears the bypass that would defeat it")
 {
-    apply(false, false, false);
+    CHECK(applied<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setStepResponse, true) == 0);
+    CHECK(applied<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setStepResponse, false) == 1);
+}
 
-    CHECK(VideoProcessor::VDS_TAP6_BYPS::read() == 0);
+TEST_CASE("wanting the six-tap filter clears the bypass that would defeat it")
+{
+    CHECK(applied<VideoProcessor::VDS_TAP6_BYPS>(VideoProcessor::setSixTapFilter, true) == 0);
+    CHECK(applied<VideoProcessor::VDS_TAP6_BYPS>(VideoProcessor::setSixTapFilter, false) == 1);
+}
+
+TEST_CASE("each control writes its own register and no other")
+{
+    CHECK(wasWritten<VideoProcessor::VDS_D_RAM_BYPS>(VideoProcessor::setLineFilter, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setLineFilter, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setLineFilter, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_TAP6_BYPS>(VideoProcessor::setLineFilter, true));
+
+    CHECK(wasWritten<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setPeaking, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_D_RAM_BYPS>(VideoProcessor::setPeaking, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setPeaking, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_TAP6_BYPS>(VideoProcessor::setPeaking, true));
+
+    CHECK(wasWritten<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setStepResponse, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_D_RAM_BYPS>(VideoProcessor::setStepResponse, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setStepResponse, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_TAP6_BYPS>(VideoProcessor::setStepResponse, true));
+
+    CHECK(wasWritten<VideoProcessor::VDS_TAP6_BYPS>(VideoProcessor::setSixTapFilter, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_D_RAM_BYPS>(VideoProcessor::setSixTapFilter, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setSixTapFilter, true));
+    CHECK_FALSE(wasWritten<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setSixTapFilter, true));
 }
