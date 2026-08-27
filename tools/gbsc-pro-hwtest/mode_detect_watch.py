@@ -38,7 +38,7 @@ import os
 import sys
 import time
 
-from gbs_unit import field_from, get_json, read_segment
+from gbs_unit import field_from, field_spec, get_json, read_segment
 
 STATUS_FIRST, STATUS_LAST = 0x00, 0x1F
 
@@ -61,14 +61,10 @@ STATUS_FIELDS = {
 }
 
 # Read only when something above moves, so the fast loop stays one request.
-CONTEXT_FIELDS = {
-    "PLLAD_MD": (5, 0x12, 0, 12),
-    "IF_HSYNC_RST": (1, 0x0E, 0, 11),
-    "IF_VB_SP": (1, 0x1E, 0, 11),
-    "IF_VB_ST": (1, 0x1C, 0, 11),
-    "IF_PRGRSV_CNTRL": (1, 0x00, 6, 1),
-    "IF_LD_RAM_BYPS": (1, 0x0C, 0, 1),
-}
+CONTEXT_FIELDS = {name: field_spec(name) for name in (
+    "PLLAD_MD", "IF_HSYNC_RST", "IF_VB_SP", "IF_VB_ST", "IF_PRGRSV_CNTRL",
+    "IF_LD_RAM_BYPS"
+)}
 
 ORDER = ["SP_VTOTAL", "VPERIOD_IF", "HPERIOD_IF", "SP_HTOTAL", "SP_HLOW_LEN",
          "STATUS_16", "INT_STATUS", "INT_MODE_SWITCH"]

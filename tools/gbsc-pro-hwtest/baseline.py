@@ -20,23 +20,11 @@ writes either.
 
 import argparse
 import json
+import os
 import sys
-import urllib.request
 
-
-def read_reg(host, segment, register):
-    with urllib.request.urlopen(
-        f"http://{host}/getreg?s={segment}&r={hex(register)}", timeout=5
-    ) as response:
-        return int(json.load(response)["value"], 16)
-
-
-def read_field(host, segment, register, offset, width):
-    span = (offset + width + 7) // 8
-    raw = 0
-    for index in range(span):
-        raw |= read_reg(host, segment, register + index) << (8 * index)
-    return (raw >> offset) & ((1 << width) - 1)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gbs_unit import read_named, read_reg
 
 
 # STATUS_16, from Tv5725.h rather than from memory:
@@ -74,15 +62,15 @@ PRESET_DEFAULT_FETCH = 256
 def gather(host):
     return {
         "STATUS_16": read_reg(host, 0, 0x16),
-        "source_vtotal": read_field(host, 0, 0x1B, 0, 11),
-        "hperiod_if": read_field(host, 0, 0x07, 0, 9),
-        "hscale_byps": read_field(host, 3, 0x00, 4, 1),
-        "vscale_byps": read_field(host, 3, 0x00, 5, 1),
-        "htotal": read_field(host, 3, 0x01, 0, 12) + 1,
-        "vtotal": read_field(host, 3, 0x02, 4, 11) + 1,
-        "adc_input_sel": read_field(host, 5, 0x02, 6, 2),
-        "pb_fetch_num": read_field(host, 4, 0x39, 0, 10),
-        "vds_hb_sp": read_field(host, 3, 0x05, 4, 12),
+        "source_vtotal": read_named(host, "STATUS_SYNC_PROC_VTOTAL"),
+        "hperiod_if": read_named(host, "HPERIOD_IF"),
+        "hscale_byps": read_named(host, "VDS_HSCALE_BYPS"),
+        "vscale_byps": read_named(host, "VDS_VSCALE_BYPS"),
+        "htotal": read_named(host, "VDS_HSYNC_RST") + 1,
+        "vtotal": read_named(host, "VDS_VSYNC_RST") + 1,
+        "adc_input_sel": read_named(host, "ADC_INPUT_SEL"),
+        "pb_fetch_num": read_named(host, "PB_FETCH_NUM"),
+        "vds_hb_sp": read_named(host, "VDS_HB_SP"),
         "display_clock_reg": read_reg(host, 0, 0x41),
     }
 

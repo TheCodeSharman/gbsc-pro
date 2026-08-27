@@ -37,15 +37,15 @@ import os
 import sys
 import time
 
-from gbs_unit import field_from, get, get_json, read_segment
+from gbs_unit import field_from, field_spec, get, get_json, read_segment
 
-VDS_HSCALE = (3, 0x16, 0, 10)
-VDS_HSYNC_RST = (3, 0x01, 0, 12)
-VDS_HB_ST = (3, 0x04, 0, 12)
-VDS_HB_SP = (3, 0x05, 4, 12)
-VDS_DIS_HB_ST = (3, 0x10, 0, 12)
-IF_HB_SP2 = (1, 0x1A, 0, 11)
-IF_HB_ST2 = (1, 0x18, 0, 11)
+VDS_HSCALE = field_spec("VDS_HSCALE")
+VDS_HSYNC_RST = field_spec("VDS_HSYNC_RST")
+VDS_HB_ST = field_spec("VDS_HB_ST")
+VDS_HB_SP = field_spec("VDS_HB_SP")
+VDS_DIS_HB_ST = field_spec("VDS_DIS_HB_ST")
+IF_HB_SP2 = field_spec("IF_HB_SP2")
+IF_HB_ST2 = field_spec("IF_HB_ST2")
 
 START_CONST = 55.0
 START_PER_MAG = 25.0
@@ -53,33 +53,15 @@ START_PER_MAG = 25.0
 # Everything the arithmetic behind a mark uses. A mark is a value and a note;
 # without these it cannot be read again, and the framing it was taken at cannot
 # be recovered afterwards -- a dump taken later is the framing at dump time.
-SESSION_FIELDS = {
-    "PLLAD_MD": (5, 0x12, 0, 12),
-    "IF_HSYNC_RST": (1, 0x0E, 0, 11),
-    "IF_HB_SP2": (1, 0x1A, 0, 11),
-    "IF_HB_ST2": (1, 0x18, 0, 11),
-    "IF_VB_SP": (1, 0x1E, 0, 11),
-    "IF_VB_ST": (1, 0x1C, 0, 11),
-    "VDS_HSCALE": (3, 0x16, 0, 10),
-    "VDS_VSCALE": (3, 0x17, 4, 10),
-    "VDS_HSCALE_BYPS": (3, 0x00, 4, 1),
-    "VDS_VSCALE_BYPS": (3, 0x00, 5, 1),
-    "VDS_HSYNC_RST": (3, 0x01, 0, 12),
-    "VDS_VSYNC_RST": (3, 0x02, 4, 11),
-    "VDS_HB_SP": (3, 0x05, 4, 12),
-    "VDS_HB_ST": (3, 0x04, 0, 12),
-    "VDS_VB_SP": (3, 0x08, 4, 11),
-    "VDS_VB_ST": (3, 0x07, 0, 11),
-    "VDS_DIS_HB_SP": (3, 0x11, 4, 12),
-    "VDS_DIS_HB_ST": (3, 0x10, 0, 12),
-    "VDS_DIS_VB_SP": (3, 0x14, 4, 11),
-    "VDS_DIS_VB_ST": (3, 0x13, 0, 11),
-    "PB_FETCH_NUM": (4, 0x39, 0, 10),
-    "PB_CAP_OFFSET": (4, 0x37, 0, 10),
-    "STATUS_SYNC_PROC_HTOTAL": (0, 0x17, 0, 12),
-    "STATUS_SYNC_PROC_HLOW_LEN": (0, 0x19, 0, 12),
-    "STATUS_SYNC_PROC_VTOTAL": (0, 0x1B, 0, 11),
-}
+SESSION_FIELDS = {name: field_spec(name) for name in (
+    "PLLAD_MD", "IF_HSYNC_RST", "IF_HB_SP2", "IF_HB_ST2", "IF_VB_SP",
+    "IF_VB_ST", "VDS_HSCALE", "VDS_VSCALE", "VDS_HSCALE_BYPS",
+    "VDS_VSCALE_BYPS", "VDS_HSYNC_RST", "VDS_VSYNC_RST", "VDS_HB_SP",
+    "VDS_HB_ST", "VDS_VB_SP", "VDS_VB_ST", "VDS_DIS_HB_SP",
+    "VDS_DIS_HB_ST", "VDS_DIS_VB_SP", "VDS_DIS_VB_ST", "PB_FETCH_NUM",
+    "PB_CAP_OFFSET", "STATUS_SYNC_PROC_HTOTAL",
+    "STATUS_SYNC_PROC_HLOW_LEN", "STATUS_SYNC_PROC_VTOTAL"
+)}
 
 
 def mark_note(reply):

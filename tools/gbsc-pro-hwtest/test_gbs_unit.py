@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gbs_unit
-from gbs_unit import framing_of, read_named
+from gbs_unit import (field_from_named, field_spec, framing_of, read_named)
 
 
 def test_the_framing_is_projected_out_of_the_report():
@@ -68,3 +68,28 @@ def test_a_name_that_is_not_a_field_raises(monkeypatch):
 def test_a_read_that_did_not_arrive_is_not_a_value(monkeypatch):
     monkeypatch.setattr(gbs_unit, "get_json", lambda *a, **k: (200, None))
     assert read_named("unit", "PLLAD_MD") is None
+
+
+def test_a_spec_comes_from_the_catalogue_rather_than_the_keyboard():
+    """For the scripts that keep a (seg, reg, off, width) interface of their
+    own -- bench_probe writes through one -- so the tuple is looked up rather
+    than typed."""
+    assert field_spec("PLLAD_MD") == (5, 0x12, 0, 12)
+    assert field_spec("STATUS_SYNC_PROC_VTOTAL") == (0, 0x1B, 0, 11)
+
+
+def test_a_spec_for_something_that_is_not_a_field_raises():
+    with pytest.raises(KeyError):
+        field_spec("PLLAD_MODULUS")
+
+
+def test_a_field_is_decoded_out_of_a_segment_dump_by_name():
+    """read_segment() gives one segment's bytes; this picks a field out of them
+    without the caller writing the slice. HPERIOD_IF is s0 0x06, and a hand
+    written 0x07 for it read VPERIOD_IF's bits instead."""
+    segment0 = {0x06: 0xAF, 0x07: 0x01}
+    assert field_from_named(segment0, "HPERIOD_IF") == 431
+
+
+def test_a_byte_missing_from_the_dump_is_not_a_value():
+    assert field_from_named({0x06: 0xAF}, "HPERIOD_IF") is None

@@ -16,7 +16,7 @@ script. Read-only — it never writes a register.
 import argparse
 import time
 
-from gbs_unit import field_from, read_reg, read_segment, read_word
+from gbs_unit import field_from_named, read_reg, read_segment, read_word
 
 # HPERIOD_IF .. VTOTAL. One /getregs request covers the whole of segment 0 that
 # matters here, so a logged disturbance has genuinely simultaneous context: an
@@ -40,8 +40,8 @@ def sample(host):
         vtotal = read_word(host, 0, 0x1B, 0x07FF)
         htotal = read_word(host, 0, 0x17, 0x0FFF)
     else:
-        vtotal = field_from(registers, 0x1B, 0, 11)
-        htotal = field_from(registers, 0x17, 0, 12)
+        vtotal = field_from_named(registers, "STATUS_SYNC_PROC_VTOTAL")
+        htotal = field_from_named(registers, "STATUS_SYNC_PROC_HTOTAL")
 
     if registers.get(0x16) is None:
         return None
@@ -49,7 +49,7 @@ def sample(host):
         "status16": registers[0x16],
         "vtotal": vtotal,
         "htotal": htotal,
-        "hperiod": field_from(registers, 0x06, 0, 9),
+        "hperiod": field_from_named(registers, "HPERIOD_IF"),
         "preset": read_reg(host, 1, 0x2B),
         "lock": bool((registers.get(0x09) or 0) & 0x80),
     }

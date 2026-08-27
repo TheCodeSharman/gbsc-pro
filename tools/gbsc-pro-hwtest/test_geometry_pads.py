@@ -40,9 +40,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_matches,
-                      framing_of, fs_read, get, get_json, locked_steadily,
-                      proportions_match, proportions_of, read_field, read_reg,
+from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, field_from_named,
+                      field_spec, framing_matches, framing_of, fs_read, get,
+                      get_json, locked_steadily, proportions_match,
+                      proportions_of, read_field, read_named, read_reg,
                       read_segment, recover_lock, reset_framing, resolve,
                       wait_for, write_reg)
 
@@ -1052,7 +1053,7 @@ FIELD_POISON = {
 BRING_UP_WITNESS = (4, 0x33, 0x06)
 
 # HSOUT/VSOUT. Dropping them and bringing them back makes the encoder re-acquire.
-PAD_SYNC_OUT_ENZ = (0, 0x49, 2, 1)
+PAD_SYNC_OUT_ENZ = field_spec("PAD_SYNC_OUT_ENZ")
 
 
 def _poison_within_a_byte(host, spec, value):
@@ -1187,7 +1188,7 @@ ENGINE_OUTPUTS = [
 # edge of the display window: a low value hides a strip of picture for as long as
 # the poison stands and cannot take the lock, unlike the sync and sampling
 # registers. Bottom-aligned, which _write_field() requires.
-ENGINE_WITNESS = ("VDS_DIS_HB_ST", 3, 0x10, 0, 12)
+ENGINE_WITNESS = "VDS_DIS_HB_ST"
 POISON_OFFSET = 40
 
 
@@ -1255,7 +1256,7 @@ def test_a_tuning_reaches_flash_only_after_it_settles(host, probe, source,
             "tuning is lost at the next power cut")
 
         stored = fs_read(host, FRAMING_FILE)
-        assert f"{read_field(host, 0, 0x1B, 0, 11)}@" in stored, (
+        assert f"{read_named(host, 'STATUS_SYNC_PROC_VTOTAL')}@" in stored, (
             f"the source counted is not the one the record is keyed on:\n{stored}")
         assert tuned == framing(host), (
             "the framing moved while it was being written")
@@ -1273,7 +1274,7 @@ OUTPUT_1080P = "/uc?s"
 def at_1080p(host):
     """Arrange: whatever the test before this left, start from 1080p."""
     get(host, OUTPUT_1080P)
-    assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) == 1124,
+    assert wait_for(lambda: (read_named(host, "VDS_VSYNC_RST") or 0) == 1124,
                     timeout=25.0), "the 1080p raster this test starts from never landed"
     time.sleep(6)
 
@@ -1309,13 +1310,13 @@ def test_changing_the_output_keeps_the_framing(host, probe, source, preset_load)
             f"default of {default_ev}, so this cannot show a framing surviving")
 
         get(host, OUTPUT_480P)
-        assert wait_for(lambda: 0 < (read_field(host, 3, 0x02, 4, 11) or 0) < 1000,
+        assert wait_for(lambda: 0 < (read_named(host, "VDS_VSYNC_RST") or 0) < 1000,
                         timeout=25.0), "the 480p raster never landed"
         time.sleep(8)
         at_480p = proportions_of(get_json(host, "/geometry")[1])
 
         get(host, OUTPUT_1080P)
-        assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) > 1000,
+        assert wait_for(lambda: (read_named(host, "VDS_VSYNC_RST") or 0) > 1000,
                         timeout=25.0), "the 1080p raster never came back"
         time.sleep(8)
         back = framing(host)
@@ -1360,16 +1361,16 @@ def test_changing_the_output_does_not_re_measure_the_source(host, probe, source,
     """
     try:
         at_1080p(host)
-        before = read_field(host, 5, 0x12, 0, 12)
+        before = read_named(host, "PLLAD_MD")
         assert before, "no divider to compare against"
 
         started = time.time()
         get(host, OUTPUT_720P)
-        assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) == 749,
+        assert wait_for(lambda: (read_named(host, "VDS_VSYNC_RST") or 0) == 749,
                         timeout=25.0), "the 720p raster never landed"
         took = time.time() - started
 
-        after = read_field(host, 5, 0x12, 0, 12)
+        after = read_named(host, "PLLAD_MD")
         assert after == before, (
             f"the output change moved PLLAD_MD from {before} to {after}, so the "
             "source was measured again for a change it never saw")
@@ -1433,7 +1434,7 @@ def _compare_engine_outputs_across_a_preset_load(host):
     time.sleep(4)
 
     get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
-    assert wait_for(lambda: (read_field(host, 3, 0x01, 0, 12) or 0) > 1000, timeout=20.0), (
+    assert wait_for(lambda: (read_named(host, "VDS_HSYNC_RST") or 0) > 1000, timeout=20.0), (
         "no raster after the preset load, so there is nothing to compare")
     time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
     after_preset = _engine_outputs(host)
@@ -1448,18 +1449,18 @@ def _compare_engine_outputs_across_a_preset_load(host):
     # the values already there leaves no witness that it ran, which is the PASSING
     # case -- so without a poison this passes against firmware that ignored the
     # request entirely.
-    poisoned = after_preset[ENGINE_WITNESS[0]]
-    assert poisoned, f"could not read {ENGINE_WITNESS[0]} to poison it"
+    poisoned = after_preset[ENGINE_WITNESS]
+    assert poisoned, f"could not read {ENGINE_WITNESS} to poison it"
     poison = poisoned - POISON_OFFSET
-    _write_field(host, ENGINE_WITNESS[1:], poison)
-    assert read_field(host, *ENGINE_WITNESS[1:]) == poison, (
-        f"could not poison {ENGINE_WITNESS[0]}, so a re-solve that never ran "
+    _write_field(host, field_spec(ENGINE_WITNESS), poison)
+    assert read_named(host, ENGINE_WITNESS) == poison, (
+        f"could not poison {ENGINE_WITNESS}, so a re-solve that never ran "
         "would be indistinguishable from one that agreed")
 
     assert resolve(host), "/sc?U was refused, so nothing re-solved"
-    assert wait_for(lambda: read_field(host, *ENGINE_WITNESS[1:]) != poison,
+    assert wait_for(lambda: read_named(host, ENGINE_WITNESS) != poison,
                     timeout=20.0), (
-        f"{ENGINE_WITNESS[0]} stayed at the poisoned {poison}: the engine never "
+        f"{ENGINE_WITNESS} stayed at the poisoned {poison}: the engine never "
         "re-solved, so there is nothing to compare the preset load against")
     after_resolve = _engine_outputs(host)
 
@@ -1476,11 +1477,11 @@ def _compare_engine_outputs_across_a_preset_load(host):
 
 # The ADC sampling divider, owned by Tv5725::SourceMeasurement. One quantity, three
 # registers, plus the one live counter that can witness whether it was LATCHED.
-SAMPLING_PLLAD_MD = (5, 0x12, 0, 12)
-SAMPLING_IF_HSYNC_RST = (1, 0x0E, 0, 11)
-SAMPLING_SP_RT_HS_SP = (5, 0x4B, 0, 12)
-SAMPLING_HTOTAL = (0, 0x17, 0, 12)  # STATUS_SYNC_PROC_HTOTAL
-SAMPLING_SYNC_VTOTAL = (0, 0x1B, 0, 11)  # STATUS_SYNC_PROC_VTOTAL
+SAMPLING_PLLAD_MD = field_spec("PLLAD_MD")
+SAMPLING_IF_HSYNC_RST = field_spec("IF_HSYNC_RST")
+SAMPLING_SP_RT_HS_SP = field_spec("SP_RT_HS_SP")
+SAMPLING_HTOTAL = field_spec("STATUS_SYNC_PROC_HTOTAL")  # STATUS_SYNC_PROC_HTOTAL
+SAMPLING_SYNC_VTOTAL = field_spec("STATUS_SYNC_PROC_VTOTAL")  # STATUS_SYNC_PROC_VTOTAL
 
 # STATUS_SYNC_PROC_HTOTAL counts real ADC clocks per line, so it reports the
 # divider the PLL is actually running. Measured on the bench, LOCKED, it reads
@@ -1569,7 +1570,7 @@ def poisoned_if_hsync_rst(host, source):
         "the sampling registers never stopped moving, so there is no settled "
         "divider to size a poison against")
 
-    divider = read_field(host, *SAMPLING_PLLAD_MD)
+    divider = read_named(host, "PLLAD_MD")
     assert divider, "could not read PLLAD_MD, so there is no divider to poison"
 
     # **ONLY IF_HSYNC_RST IS POISONED, AND SP_RT_HS_SP MUST NOT BE.** The point
@@ -1594,7 +1595,7 @@ def poisoned_if_hsync_rst(host, source):
     landed = None
     for _ in range(POISON_ATTEMPTS):
         _write_field(host, SAMPLING_IF_HSYNC_RST, poison)
-        landed = read_field(host, *SAMPLING_IF_HSYNC_RST)
+        landed = read_named(host, "IF_HSYNC_RST")
         if landed == poison:
             break
         _settled_sampling(host)
@@ -1605,7 +1606,7 @@ def poisoned_if_hsync_rst(host, source):
 
     yield poison
 
-    held = read_field(host, *SAMPLING_PLLAD_MD)
+    held = read_named(host, "PLLAD_MD")
     if held:
         _write_field(host, SAMPLING_IF_HSYNC_RST, held // 2)
 
@@ -1650,7 +1651,7 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
     get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
 
     assert wait_for(
-        lambda: read_field(host, *SAMPLING_IF_HSYNC_RST) != poison_if,
+        lambda: read_named(host, "IF_HSYNC_RST") != poison_if,
         timeout=20.0), (
         "IF_HSYNC_RST still holds the poison 20 s after a preset load, so "
         "nothing wrote the sampling divider at all")
@@ -1681,7 +1682,7 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
     # separately samples them many video lines apart and a disagreement between
     # them would prove nothing.
     locked = wait_for(
-        lambda: (read_field(host, *SAMPLING_SYNC_VTOTAL) or 0) >= SAMPLING_LOCKED_VTOTAL_MIN,
+        lambda: (read_named(host, "STATUS_SYNC_PROC_VTOTAL") or 0) >= SAMPLING_LOCKED_VTOTAL_MIN,
         timeout=25.0)
     if not locked:
         pytest.skip("the source is not locked after the preset load, and "
@@ -1689,8 +1690,8 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
 
     segment0 = read_segment(host, 0)
     assert segment0 is not None, "could not read segment 0 in one burst"
-    htotal = field_from(segment0, 0x17, 0, 12)
-    source_vtotal = field_from(segment0, 0x1B, 0, 11)
+    htotal = field_from_named(segment0, "STATUS_SYNC_PROC_HTOTAL")
+    source_vtotal = field_from_named(segment0, "STATUS_SYNC_PROC_VTOTAL")
     assert source_vtotal >= SAMPLING_LOCKED_VTOTAL_MIN, (
         f"the source stopped counting between the lock check and the read "
         f"(SP_VTOTAL {source_vtotal}), so HTOTAL is not a measurement")
@@ -1706,10 +1707,10 @@ def test_the_sampling_divider_is_one_quantity_in_three_registers(
 
 # updateSpDynamic()'s two branches for videoStandardInput >= 13, which is the
 # whole of what the sync-type choice does to the sync processor.
-SP_PRE_COAST = (5, 0x38, 0, 8)
-SP_POST_COAST = (5, 0x39, 0, 8)
-SP_DLT_REG = (5, 0x35, 0, 12)
-SP_H_PULSE_IGNOR = (5, 0x37, 0, 8)
+SP_PRE_COAST = field_spec("SP_PRE_COAST")
+SP_POST_COAST = field_spec("SP_POST_COAST")
+SP_DLT_REG = field_spec("SP_DLT_REG")
+SP_H_PULSE_IGNOR = field_spec("SP_H_PULSE_IGNOR")
 
 SYNC_CSYNC = {SP_PRE_COAST: 0x04, SP_POST_COAST: 0x07,
               SP_DLT_REG: 0x70, SP_H_PULSE_IGNOR: 0x02}
@@ -1791,8 +1792,8 @@ SAMPLING_MAX_RATE_HZ = 162000000
 SAMPLING_RECOMMENDED_PERCENT = 98
 SAMPLING_DIVIDER_MAX = 4095
 SAMPLING_PAL_VTOTAL_MIN = 290  # Capture::PalVtotalMin
-SAMPLING_DEC1_BYPS = (5, 0x1F, 0, 1)
-SAMPLING_DEC2_BYPS = (5, 0x1F, 1, 1)
+SAMPLING_DEC1_BYPS = field_spec("DEC1_BYPS")
+SAMPLING_DEC2_BYPS = field_spec("DEC2_BYPS")
 
 
 def _expected_divider(lines, oversample, field_rate):
@@ -1841,16 +1842,16 @@ def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, sour
     somewhere else is out by far more than that: 1856 against 2548 is 27%.
     """
     locked = wait_for(
-        lambda: (read_field(host, *SAMPLING_SYNC_VTOTAL) or 0) >= SAMPLING_LOCKED_VTOTAL_MIN,
+        lambda: (read_named(host, "STATUS_SYNC_PROC_VTOTAL") or 0) >= SAMPLING_LOCKED_VTOTAL_MIN,
         timeout=25.0)
     if not locked:
         pytest.skip("the source is not locked, so there is no line rate to "
                     "have solved the divider from")
 
-    lines = read_field(host, *SAMPLING_SYNC_VTOTAL)
-    divider = read_field(host, *SAMPLING_PLLAD_MD)
-    dec1 = read_field(host, *SAMPLING_DEC1_BYPS)
-    dec2 = read_field(host, *SAMPLING_DEC2_BYPS)
+    lines = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
+    divider = read_named(host, "PLLAD_MD")
+    dec1 = read_named(host, "DEC1_BYPS")
+    dec2 = read_named(host, "DEC2_BYPS")
     assert None not in (lines, divider, dec1, dec2), (
         "could not read the source line count, the divider and the decimators")
 
@@ -1872,7 +1873,7 @@ def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, sour
 
 
 # HSOUT/VSOUT to the encoder. Active low: 0 drives the pins, 1 takes sync away.
-PAD_SYNC_OUT_ENZ = (0, 0x49, 2, 1)
+PAD_SYNC_OUT_ENZ = field_spec("PAD_SYNC_OUT_ENZ")
 
 
 def test_a_mode_change_leaves_the_sync_output_driven(host, source, preset_load):
@@ -1897,13 +1898,13 @@ def test_a_mode_change_leaves_the_sync_output_driven(host, source, preset_load):
     """
     try:
         get(host, "/sc?%29")  # a real preset load: table, sketch, bring-up, engine
-        assert wait_for(lambda: (read_field(host, 3, 0x01, 0, 12) or 0) > 1000,
+        assert wait_for(lambda: (read_named(host, "VDS_HSYNC_RST") or 0) > 1000,
                         timeout=20.0), (
             "no raster after the preset load, so the mode change never landed "
             "and this says nothing about what happens when it does")
         time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
 
-        enz = read_field(host, *PAD_SYNC_OUT_ENZ)
+        enz = read_named(host, "PAD_SYNC_OUT_ENZ")
         assert enz == 0, (
             f"PAD_SYNC_OUT_ENZ reads {enz} after the geometry landed, so the "
             "sync output was left disabled. The unit is driving no HSOUT/VSOUT: "
@@ -1915,10 +1916,10 @@ def test_a_mode_change_leaves_the_sync_output_driven(host, source, preset_load):
 
 # The four registers InputFormatter::applyScanMode() puts into one of two
 # states. Line-doubled is 1/0/0/0, progressive is 0/1/1/1.
-SCAN_HS_DEC_FACTOR = (1, 0x0B, 4, 2)
-SCAN_LD_SEL_PROV = (1, 0x0B, 7, 1)
-SCAN_LD_RAM_BYPS = (1, 0x0C, 0, 1)
-SCAN_PRGRSV_CNTRL = (1, 0x00, 6, 1)
+SCAN_HS_DEC_FACTOR = field_spec("IF_HS_DEC_FACTOR")
+SCAN_LD_SEL_PROV = field_spec("IF_LD_SEL_PROV")
+SCAN_LD_RAM_BYPS = field_spec("IF_LD_RAM_BYPS")
+SCAN_PRGRSV_CNTRL = field_spec("IF_PRGRSV_CNTRL")
 
 # Below this many source lines the capture is line-doubled. Mirrors
 # SourceMeasurement::LineDoubleBelowLines.
@@ -1958,7 +1959,7 @@ def test_a_preset_load_leaves_the_scan_mode_the_source_calls_for(host, source):
     The scan mode is the engine's now, derived from the line count it measures,
     so a preset load cannot move it.
     """
-    lines = read_field(host, *SAMPLING_SYNC_VTOTAL)
+    lines = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     assert lines and lines >= SAMPLING_LOCKED_VTOTAL_MIN, (
         f"source not locked ({lines} lines), so there is nothing to preserve")
     wanted = "doubled" if lines < SCAN_LINE_DOUBLE_BELOW else "progressive"
@@ -1970,7 +1971,7 @@ def test_a_preset_load_leaves_the_scan_mode_the_source_calls_for(host, source):
 
     try:
         get(host, "/sc?%29")  # loadComputedPreset(Mode1080p, 0x15)
-        assert wait_for(lambda: (read_field(host, 3, 0x01, 0, 12) or 0) > 1000,
+        assert wait_for(lambda: (read_named(host, "VDS_HSYNC_RST") or 0) > 1000,
                         timeout=20.0), "no raster after the preset load"
         time.sleep(8)  # detection settles; CLAUDE.md says discard ~6 s
 

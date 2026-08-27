@@ -31,13 +31,13 @@ import argparse
 import sys
 import time
 
-from gbs_unit import get, get_json
+from gbs_unit import field_spec, get, get_json
 
-PB_CAP_OFFSET = (4, 0x37, 0, 10)
-PB_FETCH_NUM = (4, 0x39, 0, 10)
-VDS_HSCALE = (3, 0x16, 0, 10)
-IF_HB_SP2 = (1, 0x1A, 0, 11)
-IF_HB_ST2 = (1, 0x18, 0, 11)
+PB_CAP_OFFSET = field_spec("PB_CAP_OFFSET")
+PB_FETCH_NUM = field_spec("PB_FETCH_NUM")
+VDS_HSCALE = field_spec("VDS_HSCALE")
+IF_HB_SP2 = field_spec("IF_HB_SP2")
+IF_HB_ST2 = field_spec("IF_HB_ST2")
 
 OFFSET_MAX = 1023
 

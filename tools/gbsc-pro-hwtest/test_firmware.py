@@ -20,11 +20,14 @@ import pytest
 
 from gbs_unit import (
     field_from,
+    field_from_named,
+    field_spec,
     get,
     get_json,
     parse_timings,
     read_reg,
     read_field,
+    read_named,
     read_segment,
     recover_lock,
     reset_framing,
@@ -385,8 +388,8 @@ def _sync_sample(host):
     return {
         "status16": registers.get(0x16) or 0,
         "pll_lock": bool((registers.get(0x09) or 0) & PLLAD_LOCK),
-        "htotal": field_from(registers, 0x17, 0, 12),
-        "vtotal": field_from(registers, 0x1B, 0, 11),
+        "htotal": field_from_named(registers, "STATUS_SYNC_PROC_HTOTAL"),
+        "vtotal": field_from_named(registers, "STATUS_SYNC_PROC_VTOTAL"),
     }
 
 
@@ -453,7 +456,7 @@ def test_the_sync_processor_holds_a_lock(host, source):
 
 # --- detection settles on an input instead of hunting between them -----------
 
-ADC_INPUT_SEL = (5, 0x02, 6, 2)  # which ADC input the sync processor is watching
+ADC_INPUT_SEL = field_spec("ADC_INPUT_SEL")  # which ADC input the sync processor is watching
 
 # The livelock alternated on a ~1 s beat, so ten seconds is eight or nine
 # flips — far more than enough to catch it, and short enough to leave in a
@@ -493,7 +496,7 @@ def test_detection_settles_on_one_input_instead_of_hunting(host, source):
     seen = []
     deadline = time.monotonic() + MUX_HOLD_SECONDS
     while time.monotonic() < deadline:
-        seen.append(read_field(host, *ADC_INPUT_SEL))
+        seen.append(read_named(host, "ADC_INPUT_SEL"))
         time.sleep(0.4)
 
     distinct = sorted({v for v in seen if v is not None})
@@ -552,9 +555,9 @@ CLKOUT_MIN_SPEND = 0.90
 # NTSC-like 262.
 SOURCE_VTOTAL_50HZ_MIN = 290
 
-SYNC_PROC_VTOTAL = (0, 0x1B, 0, 11)  # STATUS_SYNC_PROC_VTOTAL
-VDS_HSYNC_RST = (3, 0x01, 0, 12)
-VDS_VSYNC_RST = (3, 0x02, 4, 11)
+SYNC_PROC_VTOTAL = field_spec("STATUS_SYNC_PROC_VTOTAL")  # STATUS_SYNC_PROC_VTOTAL
+VDS_HSYNC_RST = field_spec("VDS_HSYNC_RST")
+VDS_VSYNC_RST = field_spec("VDS_VSYNC_RST")
 
 
 def test_the_output_raster_is_the_one_the_engine_computed(host, source):
@@ -578,12 +581,12 @@ def test_the_output_raster_is_the_one_the_engine_computed(host, source):
     from -- worth 3 px, or 0.16%. A steered raster is out by 8-25%. There is no
     overlap, and an absolute +-1 would fail on the correct value.
     """
-    source_vtotal = read_field(host, *SYNC_PROC_VTOTAL)
+    source_vtotal = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     assert source_vtotal, "no source VTOTAL: nothing is locked"
     field_rate = 50 if source_vtotal > SOURCE_VTOTAL_50HZ_MIN else 60
 
-    htotal_reg = read_field(host, *VDS_HSYNC_RST)
-    vtotal_reg = read_field(host, *VDS_VSYNC_RST)
+    htotal_reg = read_named(host, "VDS_HSYNC_RST")
+    vtotal_reg = read_named(host, "VDS_VSYNC_RST")
     assert htotal_reg and vtotal_reg, "could not read the output raster"
 
     frame_lines = vtotal_reg + 1
@@ -621,13 +624,13 @@ def test_the_output_raster_spends_its_pixel_clock_budget(host, source):
     has to answer the same question, so asking what fraction of the budget is
     spent is what catches the next one.
     """
-    source_vtotal = read_field(host, *SYNC_PROC_VTOTAL)
+    source_vtotal = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     assert source_vtotal, "no source VTOTAL: nothing is locked, so there is no field rate"
 
     field_rate = 50 if source_vtotal > SOURCE_VTOTAL_50HZ_MIN else 60
 
-    htotal_reg = read_field(host, *VDS_HSYNC_RST)
-    vtotal_reg = read_field(host, *VDS_VSYNC_RST)
+    htotal_reg = read_named(host, "VDS_HSYNC_RST")
+    vtotal_reg = read_named(host, "VDS_VSYNC_RST")
     assert htotal_reg and vtotal_reg, "could not read the output raster registers"
 
     if vtotal_reg + 1 < 1000:
@@ -928,7 +931,7 @@ def test_console_does_not_print_an_invalid_vperiod_as_a_number(host, console):
 # sampling ceiling sits elsewhere and they need recalculating. 4095 always
 # holds.
 PLLAD_HOSTILE = (2573, 2583, 4095)
-PLLAD_MD_FIELD = (5, 0x12, 0, 12)
+PLLAD_MD_FIELD = field_spec("PLLAD_MD")
 PLLAD_CONTROL = (5, 0x11)
 PLLAD_HAMMER_SECONDS = 8.0
 PLLAD_REQUEST_TIMEOUT = 2.0
@@ -984,7 +987,7 @@ def test_unit_survives_a_hostile_pllad(host, source):
     Restores the divider on the way out, including when the assertion fails, so
     a red test leaves a unit you can keep working with.
     """
-    baseline = read_field(host, *PLLAD_MD_FIELD)
+    baseline = read_named(host, "PLLAD_MD")
     assert baseline and 256 <= baseline <= 4095, (
         f"PLLAD_MD reads {baseline}; refusing to run without a sane baseline to "
         "put back"
@@ -995,7 +998,7 @@ def test_unit_survives_a_hostile_pllad(host, source):
         for value in PLLAD_HOSTILE:
             _pllad_write(host, value)
             time.sleep(0.5)
-            readback = read_field(host, *PLLAD_MD_FIELD)
+            readback = read_named(host, "PLLAD_MD")
             requests, failures, slowest = _hammer(host)
             results.append((value, readback, requests, failures, slowest))
             assert failures == 0, (
@@ -1016,7 +1019,7 @@ def test_unit_survives_a_hostile_pllad(host, source):
         print(f"\nPLLAD_MD {value} (read {readback}): {requests} requests, "
               f"{failures} failed, slowest {slowest:.2f}s")
 
-    restored = read_field(host, *PLLAD_MD_FIELD)
+    restored = read_named(host, "PLLAD_MD")
     assert restored == baseline, (
         f"PLLAD_MD did not go back: wanted {baseline}, reads {restored}"
     )
@@ -1166,7 +1169,7 @@ def test_preferences_survive_a_round_trip(host):
 # writes it, it is non-zero in every mode, and it survives HD bypass. VDS_HSYNC_RST
 # and VDS_HSCALE both read 0 on a bypassed source -- the VDS block is not driving
 # the output at all -- so they cannot tell "no preset load" from "bypass mode".
-PRESET_WITNESS = (5, 0x12, 0, 12)  # PLLAD_MD
+PRESET_WITNESS = field_spec("PLLAD_MD")  # PLLAD_MD
 
 
 def _freeze_state(host):
@@ -1219,7 +1222,7 @@ def test_frozen_firmware_does_not_load_presets(host, source):
 
     # Baseline BEFORE arming. Reading it afterwards cannot tell a unit that was
     # never configured from one this test froze before it finished detecting.
-    before = read_field(host, *PRESET_WITNESS)
+    before = read_named(host, "PLLAD_MD")
     assert before, (
         f"PLLAD_MD reads {before}; refusing to run without a configured unit to "
         "observe. Let the source lock first."
@@ -1231,7 +1234,7 @@ def test_frozen_firmware_does_not_load_presets(host, source):
         get(host, "/sc?#")
         time.sleep(2.0)
 
-        after = read_field(host, *PRESET_WITNESS)
+        after = read_named(host, "PLLAD_MD")
         assert after == before, (
             f"frozen, /sc?# still changed PLLAD_MD {before} -> {after}. "
             "applyPresets() ran when it should have been inert."
@@ -1246,11 +1249,11 @@ def test_frozen_firmware_does_not_load_presets(host, source):
 # IF_HB_SP2 -- the left edge of the captured line, and the register the framing
 # moves first. Reading the framing back is not enough: /geometry reports the
 # state it just stored whether or not anything reached the chip.
-CAPTURE_WITNESS = (1, 0x1A, 0, 11)  # IF_HB_SP2
+CAPTURE_WITNESS = field_spec("IF_HB_SP2")  # IF_HB_SP2
 
 
 def _capture_sp(host):
-    return read_field(host, *CAPTURE_WITNESS)
+    return read_named(host, "IF_HB_SP2")
 
 
 @pytest.mark.freeze
@@ -1297,8 +1300,8 @@ def test_an_explicit_framing_request_applies_while_frozen(host, source):
 # ADC_SOGCTRL, the sync-on-green slice level: s5_02 bits [5:1]. The
 # source-recovery poll steps it down one notch every 500 ms while the firmware
 # believes nothing is plugged in, sweeping for a level that finds sync.
-SOG_LEVEL = (5, 0x02, 1, 5)
-DAC_POWER = (0, 0x44, 0, 1)  # DAC_RGBS_PWDNZ, 0 in low power
+SOG_LEVEL = field_spec("ADC_SOGCTRL")
+DAC_POWER = field_spec("DAC_RGBS_PWDNZ")  # DAC_RGBS_PWDNZ, 0 in low power
 
 # Six poll intervals. The ratchet is one step per 500 ms, so a leaking firmware
 # has moved the level by about six by the time this elapses -- far enough that
@@ -1312,7 +1315,7 @@ SOG_WITNESS = 24
 
 
 def _sog_level(host):
-    return read_field(host, *SOG_LEVEL)
+    return read_named(host, "ADC_SOGCTRL")
 
 
 @pytest.mark.freeze
@@ -1354,7 +1357,7 @@ def test_frozen_firmware_does_not_ratchet_the_sog_level(host, source):
         # precondition would pass by construction.
         get(host, "/sc?~")
         went_dark = wait_for(
-            lambda: read_field(host, *DAC_POWER) == 0, timeout=10.0
+            lambda: read_named(host, "DAC_RGBS_PWDNZ") == 0, timeout=10.0
         )
         assert went_dark, (
             "DAC_RGBS_PWDNZ never reached 0 after /sc?~, so the unit did not "
@@ -1396,7 +1399,7 @@ def test_frozen_firmware_does_not_ratchet_the_sog_level(host, source):
         # Leave the bench with a picture: unfrozen, the recovery poll is
         # supposed to run, and it is the thing that finds the source again.
         wait_for(
-            lambda: read_field(host, *DAC_POWER) == 1, timeout=LOCK_TIMEOUT
+            lambda: read_named(host, "DAC_RGBS_PWDNZ") == 1, timeout=LOCK_TIMEOUT
         )
         recover_lock(host)
 
@@ -1442,12 +1445,10 @@ def test_the_console_delivers_anything_at_all(console):
 
 
 
-SCAN_MODE_FIELDS = {
-    "IF_HS_DEC_FACTOR": (1, 0x0B, 4, 2),
-    "IF_LD_SEL_PROV":   (1, 0x0B, 7, 1),
-    "IF_LD_RAM_BYPS":   (1, 0x0C, 0, 1),
-    "IF_PRGRSV_CNTRL":  (1, 0x00, 6, 1),
-}
+SCAN_MODE_FIELDS = {name: field_spec(name) for name in (
+    "IF_HS_DEC_FACTOR", "IF_LD_SEL_PROV", "IF_LD_RAM_BYPS",
+    "IF_PRGRSV_CNTRL"
+)}
 
 LINE_DOUBLED = {"IF_HS_DEC_FACTOR": 1, "IF_LD_SEL_PROV": 0,
                 "IF_LD_RAM_BYPS": 0, "IF_PRGRSV_CNTRL": 0}
@@ -1569,18 +1570,18 @@ def test_a_chosen_input_is_not_swept_away(host, source):
         assert status == 200, f"{wanted} was refused: {status}"
 
         settled = wait_for(
-            lambda: read_field(host, *ADC_INPUT_SEL) == expected,
+            lambda: read_named(host, "ADC_INPUT_SEL") == expected,
             timeout=SELECTION_TIMEOUT,
         )
         assert settled, (
             f"{wanted} was selected and ADC_INPUT_SEL never reached {expected} "
             f"within {SELECTION_TIMEOUT:.0f}s -- it reads "
-            f"{read_field(host, *ADC_INPUT_SEL)}")
+            f"{read_named(host, 'ADC_INPUT_SEL')}")
 
         seen = []
         deadline = time.monotonic() + SELECTION_HOLD_SECONDS
         while time.monotonic() < deadline:
-            seen.append(read_field(host, *ADC_INPUT_SEL))
+            seen.append(read_named(host, "ADC_INPUT_SEL"))
             time.sleep(0.5)
 
         strayed = sorted({v for v in seen if v is not None and v != expected})
@@ -1595,13 +1596,13 @@ def test_a_chosen_input_is_not_swept_away(host, source):
         # be stored decided which direction was covered.
         get(host, f"/input?src={restore}")
         back = wait_for(
-            lambda: read_field(host, *ADC_INPUT_SEL) == SELECTED_ADC_INPUT[restore],
+            lambda: read_named(host, "ADC_INPUT_SEL") == SELECTED_ADC_INPUT[restore],
             timeout=SELECTION_TIMEOUT,
         )
         assert back, (
             f"{restore} was selected and ADC_INPUT_SEL never returned to "
             f"{SELECTED_ADC_INPUT[restore]} within {SELECTION_TIMEOUT:.0f}s -- "
-            f"it reads {read_field(host, *ADC_INPUT_SEL)}. Every input must "
+            f"it reads {read_named(host, 'ADC_INPUT_SEL')}. Every input must "
             f"point the mux at itself; one that does not can never be reached "
             f"now that detection obeys the choice.")
 
@@ -1635,12 +1636,12 @@ def _settled_vtotal(host, samples=3, interval=0.3):
     after a restart is as likely to be a mode nobody selected as the real one --
     256 was measured mid-sweep on a source sending 311.
     """
-    first = read_field(host, *SYNC_PROC_VTOTAL)
+    first = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     if not first:
         return None
     for _ in range(samples - 1):
         time.sleep(interval)
-        if read_field(host, *SYNC_PROC_VTOTAL) != first:
+        if read_named(host, "STATUS_SYNC_PROC_VTOTAL") != first:
             return None
     return first
 

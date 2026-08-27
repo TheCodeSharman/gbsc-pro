@@ -150,7 +150,6 @@ RESET_COMMAND = "B"
 # STATUS_SYNC_PROC_VTOTAL, and the count below which the sync processor is not
 # following the source. Unlocked it settles on a steady low value -- 97 on this
 # bench -- so "steady" is no evidence of a lock and the count is what to ask.
-SYNC_PROC_VTOTAL = (0, 0x1B, 0, 11)
 LOCKED_VTOTAL_MIN = 200
 
 
@@ -188,12 +187,12 @@ LOCK_SAMPLES = 4
 def locked_steadily(host, samples=LOCK_SAMPLES, interval=0.4):
     """True when the sync processor counts the same plausible line total
     `samples` times running. One reading above the floor is not a lock."""
-    first = read_field(host, *SYNC_PROC_VTOTAL)
+    first = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     if not first or first <= LOCKED_VTOTAL_MIN:
         return False
     for _ in range(samples - 1):
         time.sleep(interval)
-        if read_field(host, *SYNC_PROC_VTOTAL) != first:
+        if read_named(host, "STATUS_SYNC_PROC_VTOTAL") != first:
             return False
     return True
 
@@ -447,6 +446,25 @@ def read_fields(host, names):
             return None
         values.update(zip(batch, got))
     return values
+
+
+def field_spec(name):
+    """(segment, register, offset, width) for a field, BY NAME.
+
+    For the scripts that keep a spec-taking interface of their own -- bench_probe
+    writes through one -- so the tuple is looked up rather than typed.
+    """
+    field = catalogue().get(name)
+    if field is None:
+        raise KeyError(f"not in tv5725_registers.json: {name}")
+    return (field["seg"], field["reg"], field["off"], field["width"])
+
+
+def field_from_named(registers, name):
+    """A field out of a read_segment() mapping, BY NAME. `registers` is that
+    field's own segment."""
+    seg, reg, off, width = field_spec(name)
+    return field_from(registers, reg, off, width)
 
 
 def read_named(host, name):

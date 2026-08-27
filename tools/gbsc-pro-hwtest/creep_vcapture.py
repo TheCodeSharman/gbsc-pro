@@ -23,36 +23,23 @@ import os
 import sys
 import time
 
-from gbs_unit import field_from, get, get_json, read_segment
+from gbs_unit import field_from, field_spec, get, get_json, read_segment
 
-IF_VB_ST = (1, 0x1C, 0, 11)
-IF_VB_SP = (1, 0x1E, 0, 11)
+IF_VB_ST = field_spec("IF_VB_ST")
+IF_VB_SP = field_spec("IF_VB_SP")
 
 # docs/scaler-geometry-model.md: the vertical write start is
 # VDS_VB_SP + 0.2 + 0.8 x magnification.
 START_CONST = 0.2
 START_PER_MAG = 0.8
 
-SESSION_FIELDS = {
-    "IF_VB_ST": IF_VB_ST,
-    "IF_VB_SP": IF_VB_SP,
-    "IF_HSYNC_RST": (1, 0x0E, 0, 11),
-    "IF_PRGRSV_CNTRL": (1, 0x00, 6, 1),
-    "IF_LD_RAM_BYPS": (1, 0x0C, 0, 1),
-    "IF_LD_SEL_PROV": (1, 0x0B, 7, 1),
-    "PLLAD_MD": (5, 0x12, 0, 12),
-    "VDS_VSCALE": (3, 0x17, 4, 10),
-    "VDS_VSCALE_BYPS": (3, 0x00, 5, 1),
-    "VDS_VSYNC_RST": (3, 0x02, 4, 11),
-    "VDS_VB_ST": (3, 0x07, 0, 11),
-    "VDS_VB_SP": (3, 0x08, 4, 11),
-    "VDS_DIS_VB_ST": (3, 0x13, 0, 11),
-    "VDS_DIS_VB_SP": (3, 0x14, 4, 11),
-    "PB_FETCH_NUM": (4, 0x39, 0, 10),
-    "PB_CAP_OFFSET": (4, 0x37, 0, 10),
-    "STATUS_SYNC_PROC_VTOTAL": (0, 0x1B, 0, 11),
-    "STATUS_SYNC_PROC_HTOTAL": (0, 0x17, 0, 12),
-}
+SESSION_FIELDS = {name: field_spec(name) for name in (
+    "IF_VB_ST", "IF_VB_SP", "IF_HSYNC_RST", "IF_PRGRSV_CNTRL",
+    "IF_LD_RAM_BYPS", "IF_LD_SEL_PROV", "PLLAD_MD", "VDS_VSCALE",
+    "VDS_VSCALE_BYPS", "VDS_VSYNC_RST", "VDS_VB_ST", "VDS_VB_SP",
+    "VDS_DIS_VB_ST", "VDS_DIS_VB_SP", "PB_FETCH_NUM", "PB_CAP_OFFSET",
+    "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL"
+)}
 
 HELP = """
   Enter / +   +1        -        -1          fine

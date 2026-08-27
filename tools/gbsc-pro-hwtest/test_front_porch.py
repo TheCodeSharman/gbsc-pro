@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import (LOCKED_VTOTAL_MIN, field_from, get_json, locked_steadily,
-                      read_field, read_segment, wait_for)
+                      read_named, read_segment, wait_for)
 
 # **ALL OF SEGMENT 3, READ IN ONE PASS.** Every figure the porch arithmetic uses
 # is an output of the same solve, and the engine re-solves whenever the measured
@@ -82,7 +82,7 @@ def raster(host, source):
                     "in one pass and the figures cannot be compared")
     state = {name: field_from(registers, reg, lo, width)
              for name, reg, lo, width in RASTER_FIELDS}
-    state["STATUS_SYNC_PROC_VTOTAL"] = read_field(host, 0, 0x1B, 0, 11)
+    state["STATUS_SYNC_PROC_VTOTAL"] = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
     if any(v is None for v in state.values()):
         pytest.skip("could not read the raster registers")
     if state["VDS_HSCALE_BYPS"] or not state["VDS_HSYNC_RST"]:
