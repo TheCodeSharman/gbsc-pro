@@ -382,7 +382,12 @@ def read_word(host, segment, low_register, mask):
 
 def read_field(host, segment, register, offset, width):
     """A field of any width starting at any bit, across as many registers as it
-    needs. Offsets and widths are as declared in Tv5725.h."""
+    needs. Offsets and widths are as declared in Tv5725.h.
+
+    **Prefer read_named() or read_fields().** Hand-written slices are how a
+    session reads a plausible number off an address that is not the field it
+    meant, and nothing errors. This form is for a slice that has no name.
+    """
     span = (offset + width + 7) // 8
     raw = 0
     for index in range(span):
@@ -442,6 +447,17 @@ def read_fields(host, names):
             return None
         values.update(zip(batch, got))
     return values
+
+
+def read_named(host, name):
+    """One field, BY NAME. The short form, so the correct thing is also the
+    least typing -- read_named(host, "PLLAD_MD").
+
+    A wrong segment/register/offset/width does not error, it returns a plausible
+    number; a wrong name raises before a request goes out.
+    """
+    values = read_fields(host, [name])
+    return None if values is None else values[name]
 
 
 def read_segment(host, segment, first=0x00, last=0xFF):

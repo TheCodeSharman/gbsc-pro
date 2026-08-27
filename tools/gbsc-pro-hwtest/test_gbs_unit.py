@@ -10,8 +10,11 @@ correctly at its default.
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import framing_of
+import gbs_unit
+from gbs_unit import framing_of, read_named
 
 
 def test_the_framing_is_projected_out_of_the_report():
@@ -35,3 +38,33 @@ def test_the_capturable_region_is_not_part_of_the_framing():
 
 def test_nothing_read_is_not_a_framing():
     assert framing_of(None) is None
+
+
+def test_a_field_is_read_by_name(monkeypatch):
+    """The whole point: a wrong segment/register/offset/width does not error, it
+    returns a plausible number. A wrong NAME cannot be read at all."""
+    seen = {}
+
+    def fake(host, path, timeout=5):
+        seen["path"] = path
+        return 200, {"values": [311]}
+
+    monkeypatch.setattr(gbs_unit, "get_json", fake)
+    assert read_named("unit", "STATUS_SYNC_PROC_VTOTAL") == 311
+
+    field = gbs_unit.catalogue()["STATUS_SYNC_PROC_VTOTAL"]
+    assert "{seg}.{reg}.{off}.{width}".format(**field) in seen["path"]
+
+
+def test_a_name_that_is_not_a_field_raises(monkeypatch):
+    """Loudly, and before any request goes out -- a typo must not read as a
+    value the way an invented address does."""
+    monkeypatch.setattr(gbs_unit, "get_json",
+                        lambda *a, **k: pytest.fail("should not have asked the unit"))
+    with pytest.raises(KeyError):
+        read_named("unit", "SP_VTOTAL")
+
+
+def test_a_read_that_did_not_arrive_is_not_a_value(monkeypatch):
+    monkeypatch.setattr(gbs_unit, "get_json", lambda *a, **k: (200, None))
+    assert read_named("unit", "PLLAD_MD") is None
