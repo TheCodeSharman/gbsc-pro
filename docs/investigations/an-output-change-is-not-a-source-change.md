@@ -75,15 +75,22 @@ run:** `IF_SEL_WEN`, `IF_HS_SEL_LPF`, `IF_INI_ST`, `IF_HB_SP`, `VDS_V_DELAY`,
 space, neither of which an output change moves, so not running it is the intent
 rather than an omission.
 
-**The oversampling group differs, and which value is right is not settled.**
+**The oversampling group differs, and the re-solve's values are the baseline.**
 `PLLAD_CKOS` 0 against 1, `ADC_CLK_ICLK2X` 1 against 0, `DEC1_BYPS` 0 against 1.
 `Adc::applySampleRate()` writes all five of that group together on both paths,
 so each state is internally consistent and neither is the mismatch that greens
 the screen — see CLAUDE.md, "a solid green screen has a SECOND cause". They
 differ because the load recomputes the oversample from `PLLAD_KS` as the
 previous resolution left it, while the re-solve keeps the one the source's last
-detection chose. **The picture is clean on both**, photographed at the same
-framing.
+detection chose.
+
+**The picture is clean on both, photographed at the same framing, and that
+settles it**: the oversample describes how densely the SOURCE is sampled, so the
+value derived from the source's own measurement is the right one and the load's
+is an artefact of which raster happened to be up before. The re-solve state is
+archived whole as `snapshots/output-change-resolve-1080p-2026-08-27`. Diff a
+re-solve against that, not against a load, or the group reads as three fields
+changed by a commit that did not touch them.
 
 The remainder are run-variable between any two solves: `VDS_HB_ST` and
 `VDS_DIS_HB_ST` by two units on the field-rate wobble, `IF_HB_SP2` by one,
