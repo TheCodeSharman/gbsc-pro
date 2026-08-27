@@ -1,4 +1,4 @@
-# PLL_MS has four writers, and coming back from bypass the wrong one wins
+# PLL_MS has four writers, and returning from bypass is not where it goes wrong
 
 `Tv5725::MemoryBus` derives the memory clock rather than inheriting it:
 `SdramTimings::fastestInSpec()` walks the eight `PLL_MS` codes, computes the
@@ -10,32 +10,46 @@ the pad FEEDBACK clock. `setResetParameters()`, `setOutModeHdBypass()` and
 `bypassModeSwitch_RGBHV()` each write it, and in bypass that is reasonable --
 the frame buffer is out of the path, so what clocks it does not matter.
 
-Coming back to the scaling path it does matter, and the write order does not
-hold. Measured with the memory-bus registers poisoned, armed by an RGBHV bypass
-excursion and read after the bring-up: **2 of 3 runs left `PLL_MS` at 2**, with
-every other register the bring-up owns correct -- so `MemoryBus::init()` ran,
-wrote 3, and something wrote 2 after it.
+## Coming back from bypass is fine, and that is measured
 
-The frame buffer is then clocked from the pad feedback clock while the scaler is
-using it, and the whole `SdramTimings` derivation is bypassed without anything
-saying so. The picture is unaffected on this bench.
+Driven from the SOURCE rather than over HTTP -- 800x600@60 crosses the 535-line
+threshold and forces RGBHV bypass, 320x256@50 comes back -- the clock is right at
+both ends, three excursions out of three:
 
-## Why it does not always reproduce
+| | `PLL_MS` | `DAC_RGBS_ADC2DAC` | `OUT_SYNC_SEL` |
+|---|---|---|---|
+| in bypass | 2 | 1 | 1 |
+| back on the scaled path | **3** | 0 | 0 |
 
-`bypassModeSwitch_RGBHV()` does not always take on a 311-line source. Sampled
-across an excursion with nothing poisoned, `PLL_MS` read 3 throughout, including
-while nominally in bypass -- the switch had not run. It is the runs where it does
-run that leave 2 behind, which is what makes this look intermittent from outside.
-`BringUp::arm()` is the first statement in that switch, so a run that repairs the
-poisoned memory map is a run where the switch definitely ran.
+So the ordering fault this page used to describe does not exist: `MemoryBus::init()`
+runs and nothing overwrites it. **The frame buffer is never clocked from the pad
+while the scaler is using it.**
+
+## Where 2 does survive, and why it reaches nothing
+
+`PLL_MS` at 2 on the scaling path is a **no-sync** state, not a scaled one. It
+comes from `setResetParameters()`, which the RGBHV no-sync watchdog and
+`goLowPowerWithInputDetection()` both call. That function arms the bring-up, and
+the bring-up runs on the next preset load -- which needs sync. No sync, no preset
+load, so 2 stays until the source comes back.
+
+**The witness is `PLLAD_MD` 1792.** `setResetParameters()` writes `0x700` and the
+literal appears nowhere else in the sketch, so a dump holding it names its writer
+with no ambiguity. Measured beside it: `STATUS_SYNC_PROC_VTOTAL` 0, `HTOTAL` 0,
+`DAC_RGBS_PWDNZ` 0 and `GBS_OPTION_SCALING_RGBHV` 0. Nothing is captured, nothing
+is played back and the DACs are down, so the memory clock reaches no video.
+
+An earlier reading of "2 of 3 runs left `PLL_MS` at 2" was this state, taken
+without the fields that distinguish it from a working scaled path.
 
 ## Where it belongs
 
-The bypass functions are Phase 7 of the preset-load work, where their register
-writes move onto `Tv5725::` classes. `PLL_MS` should end up owned by `MemoryBus`
-with bypass asking for the feedback clock explicitly, rather than three functions
-writing a literal and the last one winning.
+The move stands on its own terms and is Phase 7 of the preset-load work: three
+functions writing a literal is one field with no owner, and the last writer wins
+by position rather than by decision. `MemoryBus` should own it, with bypass
+asking for the feedback clock by name.
 
-`test_arming_the_chip_brings_the_subsystems_back` covers the other 21 fields the
-bring-up owns and deliberately leaves `PLL_MS` out, with the reason at the table.
-Putting it back is how the fix gets checked.
+What the move does **not** need to claim is a live defect. Asserting `PLL_MS` in
+`test_arming_the_chip_brings_the_subsystems_back` would be asserting a value the
+bring-up already writes correctly; what makes that test intermittent is the
+excursion it uses, not the clock. See the note there.
