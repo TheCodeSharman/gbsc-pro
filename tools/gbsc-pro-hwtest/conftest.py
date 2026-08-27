@@ -249,6 +249,20 @@ def source(request, host):
 
 
 @pytest.fixture
+def framing_autosave(host, source):
+    """The framing auto-save, put back on for the one test that measures it.
+
+    `source` suppresses it, because a test that pans the framing and ends would
+    otherwise leave that framing on flash as the source's remembered one. That is
+    the right default and the exact opposite of what a test of the auto-save
+    needs, so this asks for it back explicitly. `source`'s own teardown restores
+    it either way.
+    """
+    get(host, "/framing/autosave?on=1", timeout=8)
+    yield
+
+
+@pytest.fixture
 def preset_save(request):
     """Opt-in for the tests that write flash. A run that is only checking the
     picture should not spend write cycles."""

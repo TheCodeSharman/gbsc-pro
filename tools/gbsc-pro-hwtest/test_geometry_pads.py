@@ -1211,7 +1211,8 @@ def _framing_file_settled(host, interval=3.0):
 
 
 @pytest.mark.zoom
-def test_a_tuning_reaches_flash_only_after_it_settles(host, probe, source,
+def test_a_tuning_reaches_flash_only_after_it_settles(host, probe,
+                                                      framing_autosave,
                                                       preset_save):
     """A pad press must not write flash, and a tuning must not be lost either.
 
