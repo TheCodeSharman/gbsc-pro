@@ -93,6 +93,7 @@ bench instruments and the hardware suite. A build without it answers 404.
 | | |
 |---|---|
 | `modeChanged(choice, oversample)` | the source is about to change mode; nothing is solved here |
+| `outputChanged(choice)` | the user picked a different resolution; re-solves from what is held, measures nothing |
 | `poll()` | drives whatever is outstanding, on every pass of `loop()` |
 | `sourceInterrupted()` | the chip latched a disturbance; arms a re-measure |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
@@ -107,6 +108,15 @@ bench instruments and the hardware suite. A build without it answers 404.
 The sequence a mode change runs — sampling, raster, clock, windows — is private,
 because running one step alone skips the rest of it and each depends on the one
 before. `poll()` is where the order lives.
+
+**The two are different events and take different entry points.** A source mode
+change invalidates every measurement, so `modeChanged()` freezes capture and the
+poll that follows measures the new source. An output change invalidates none of
+them, so `outputChanged()` re-solves scan mode, sampling, raster, clock and
+windows from state already held. The scan mode is on that list because **the
+line doubler is a property of the output as much as of the source**: what
+decides it is whether the doubled frame fits the raster.
+docs/investigations/an-output-change-is-not-a-source-change.md
 
 **A `Tv5725::OutputChoice` is not yet a resolution.** It carries the user's
 preference and the three facts that qualify it — `matchPresetSource`, whether
