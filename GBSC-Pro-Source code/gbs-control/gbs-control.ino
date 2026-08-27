@@ -4347,6 +4347,36 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     optimizePhaseSP();
 }
 
+// Restart the blocks a bypass switch has just reconfigured, then load what it
+// chose.
+//
+// **THE LATCHES ARE LAST, AND THAT IS THE ORDERING CONSTRAINT.** latchPLLAD() is
+// what loads PLLAD_MD, ND, KS, CKOS and ICP into the ADC PLL, on a rising edge.
+// Everything choosing those has to run BEFORE this: written after, the registers
+// read the new divider while the PLL still clocks the old one, which is a solid
+// green screen with nothing self-inconsistent to diagnose from.
+// Tv5725::SourceMeasurement, and docs/tv5725-chip.md.
+//
+// The delays are settling times for the blocks either side of them, measured
+// rather than derived.
+static void restartAfterBypassSwitch()
+{
+    resetDigital();
+    resetSyncProcessor();
+    delay(2);
+    ResetSDRAM();
+    delay(2);
+    resetPLLAD();
+    togglePhaseAdjustUnits();
+    delay(20);
+    GBS::PLLAD_LEN::write(1);
+    Tv5725::Chip::outputUp();
+
+    setAndLatchPhaseSP();
+    setAndLatchPhaseADC();
+    latchPLLAD();
+}
+
 void bypassModeSwitch_RGBHV() 
 {
     SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
@@ -4414,20 +4444,7 @@ void bypassModeSwitch_RGBHV()
     GBS::DAC_RGBS_B0ENZ::write(1);    
     GBS::OUT_SYNC_CNTRL::write(1);    
 
-    resetDigital();
-    resetSyncProcessor();
-    delay(2);
-    ResetSDRAM();
-    delay(2);
-    resetPLLAD();
-    togglePhaseAdjustUnits();
-    delay(20);
-    GBS::PLLAD_LEN::write(1);
-    Tv5725::Chip::outputUp();
-
-    setAndLatchPhaseSP();
-    setAndLatchPhaseADC();
-    latchPLLAD();
+    restartAfterBypassSwitch();
 
     if (uopt->enableAutoGain == 1 && adco->r_gain == 0) {
         setAdcGain(AUTO_GAIN_INIT);
