@@ -13,13 +13,17 @@ heap. Nothing about it is reachable over the network.
 doPostPresetLoadSteps(), which is where the scaled standards do their work.
 `--via apply` runs applyPresets(), and it is the only one that reaches either
 bypass switch: standard 15 branches to bypassModeSwitch_RGBHV() and 5/6/7/13 to
-setOutModeHdBypass(), neither of which doPostPresetLoadSteps() calls. A trace
-taken through the wrong entry does not fail -- it silently contains none of the
-writes being asked about.
+setOutModeHdBypass(), neither of which doPostPresetLoadSteps() calls. `--via
+bypass` calls setOutModeHdBypass() itself, which is the only way to reach its SD
+and progressive arms -- applyPresets() hands it 5/6/7/13 and nothing else, while
+the pass-through preference hands it whatever the source is. A trace taken
+through the wrong entry does not fail -- it silently contains none of the writes
+being asked about.
 
     make -C build flash GBS_TRACE_WRITES=1 PORT=/dev/ttyUSB0
     python3 capture_traces.py --host <ip> --out traces/ --via post
     python3 capture_traces.py --host <ip> --out traces/ --via apply --standards 15,5,6,7,13
+    python3 capture_traces.py --host <ip> --out traces/ --via bypass --standards 1,2,3,4
 
 Opening the port resets the board, so the first load after connecting is given
 time to boot.
@@ -88,7 +92,7 @@ def main():
     ap.add_argument("--port", default="/dev/ttyUSB0")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--out", required=True, help="directory to write fixtures into")
-    ap.add_argument("--via", choices=("post", "apply"), default="post")
+    ap.add_argument("--via", choices=("post", "apply", "bypass"), default="post")
     ap.add_argument("--standards", default=None,
                     help="comma-separated; default is every one the route accepts")
     ap.add_argument("--yuv", default="0,1", help="comma-separated 0 and/or 1")
