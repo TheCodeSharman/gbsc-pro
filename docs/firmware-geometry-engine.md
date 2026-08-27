@@ -92,7 +92,7 @@ bench instruments and the hardware suite. A build without it answers 404.
 
 | | |
 |---|---|
-| `modeChanged(mode, oversample)` | the source is about to change mode; nothing is solved here |
+| `modeChanged(choice, oversample)` | the source is about to change mode; nothing is solved here |
 | `poll()` | drives whatever is outstanding, on every pass of `loop()` |
 | `sourceInterrupted()` | the chip latched a disturbance; arms a re-measure |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
@@ -107,6 +107,15 @@ bench instruments and the hardware suite. A build without it answers 404.
 The sequence a mode change runs — sampling, raster, clock, windows — is private,
 because running one step alone skips the rest of it and each depends on the one
 before. `poll()` is where the order lives.
+
+**A `Tv5725::OutputChoice` is not yet a resolution.** It carries the user's
+preference and the three facts that qualify it — `matchPresetSource`, whether
+the 1024p→960p downshift is open, and whether `PalForce60` is showing a 50 Hz
+source at 60 — and becomes an `OutputMode` only when a field rate is handed to
+`resolve()`. `solveRaster()` is where that happens, because it is the first
+point in a mode change at which the *new* source has been measured. Resolving
+where the choice is made instead keys the pair swaps on the rate of the source
+being left.
 
 **A mode change is covered by a capture freeze, and every way out of `poll()`
 releases it.** The windows land seconds after the load, once the source has

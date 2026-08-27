@@ -233,9 +233,10 @@ therefore invisible to any check that compares names.
 1. ~~Own the 7 gap fields.~~ Done 2026-08-15.
 2. ~~Archive the tables so the audit tooling outlives them.~~ Done 2026-08-15.
 3. ~~Pass the output mode in rather than reading `VDS_VSYNC_RST` back.~~ Done.
-   `Geometry::solveRaster()` takes `const OutputMode *`. The one surviving
-   read-back sits behind `if (rto->outputMode != 0)` and is the custom-preset and
-   bypass tail, which dies at step 7.
+   `Geometry::modeChanged()` takes a `Tv5725::OutputChoice` and `solveRaster()`
+   resolves it against the rate the engine measured. The read-back is gone with
+   it: a choice that names no resolution — a custom preset or bypass — leaves
+   the raster alone rather than reconstructing a mode from the registers.
 4. ~~Add the four missing `OutputMode`s, with derived timings.~~ Done. All six
    exist in `OutputMode.cpp`: 1080p, 1024p, 960p, 720p, 576p, 480p.
 5. ~~Delete `writePresetTable()`'s twelve callers and the tables.~~ Done. The

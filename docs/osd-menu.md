@@ -53,21 +53,25 @@ on the VDS test bus. See
 
 ## The output resolution preference is live, and it overrides itself
 
-`uopt->presetPreference` survives the deletion of the preset tables: it feeds
-`chooseOutputMode()`, which returns the `Tv5725::OutputMode` the load solves for.
-It chooses the output raster, not a register table.
+`uopt->presetPreference` survives the deletion of the preset tables: it becomes
+a `Tv5725::OutputChoice`, which the geometry engine resolves to the
+`Tv5725::OutputMode` it solves the raster from. It chooses the output raster,
+not a register table.
 
 **`matchPresetSource` silently rewrites the choice**, and nothing on screen says
-so:
+so. It swaps within two pairs, keyed on the field rate the engine measured:
 
 | source | preference asked for | preference used |
 |---|---|---|
 | 50 Hz | 960p | **1024p** |
 | 60 Hz | 1024p | **960p** (unless standard 8, or scaling RGBHV) |
+| 50 Hz | 480p | **576p** |
+| 60 Hz | 576p | **480p** |
 
 So selecting 960p against a 50 Hz source appears to do nothing, because the
 result is the 1024p that was already loaded. The asymmetry — the 50 Hz side
-having no guards while the 60 Hz side excludes two cases — is upstream's.
+having no guards while the 60 Hz side excludes two cases — is upstream's, and
+only the 960/1024 pair carries it.
 
 ## Reset settings wipes options and reboots
 
