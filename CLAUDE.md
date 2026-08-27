@@ -965,6 +965,18 @@ one the same way; the rules below are each a wasted session.
   bypass is out by the whole border. Zoom in and pan until content is hard against
   the edge under test. Panning `-` moves the capture left and puts the image
   against the RIGHT edge; `+` exposes the source's blanking there instead.
+- **THE ROOM IS IN THE PHOTOGRAPH, SO ABSOLUTE BRIGHTNESS IS NOT A MEASUREMENT.**
+  Held still, `tv-snap` is repeatable to a tenth of a grey level -- four shots over a
+  minute on an untouched unit gave mean 88.9, 88.9, 89.0, 89.0 -- and that
+  repeatability is exactly what makes the trap convincing. Opening a curtain
+  moves it further than anything the scaler does, and the auto-exposure that
+  follows lifts the mid-tones while leaving the blacks where they were, which
+  reads as a gamma change rather than as light. A picture "looking washed out"
+  across minutes is therefore not evidence about the unit, and a register diff
+  taken beside it will offer plenty of innocent differences to blame.
+  **What survives is a DIFFERENCE between states photographed close together,
+  with the same state shot twice as the control** -- the shape
+  `docs/investigations/framing-is-anchored-to-a-measured-pulse.md` uses.
 - **A FIXED BAND OF A PHOTOGRAPH IS COMPARABLE ONLY WHILE THE PICTURE STAYS PUT.**
   The sync pulse, the playback fetch and the scale all move the picture, and a
   count inside a fixed band then reports the movement rather than the artefact —
