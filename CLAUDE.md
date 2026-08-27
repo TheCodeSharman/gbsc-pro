@@ -887,27 +887,44 @@ config registers, `snapdiff.py` writes all 1536. Diff like against like.
 `geometry.py --host <ip>` prints the input side, output side, and where the three
 horizontal extents disagree — the fastest read on why a picture is wrong.
 
-**NEVER hand-write a field's segment/register/offset/width. Look it up by
-NAME.** `tools/gbsc-pro-hwtest/tv5725_registers.json` holds all 956 of them and
-is the same map `snapdiff.py` and `setfield.py` decode with:
+**NEVER hand-write a field's segment/register/offset/width. Read it by NAME,
+and the by-name call is the SHORTER one:**
 
 ```python
-import json, gbs_unit
-field = json.load(open("tools/gbsc-pro-hwtest/tv5725_registers.json"))["STATUS_SYNC_PROC_VTOTAL"]
-gbs_unit.read_field(host, field["seg"], field["reg"], field["off"], field["width"])
+from gbs_unit import read_named, read_fields
+read_named(host, "PLLAD_MD")                                  # one field
+read_fields(host, ["PLLAD_MD", "STATUS_SYNC_PROC_VTOTAL"])    # many, one request
 ```
 
-`setfield.py --set NAME=VALUE` writes by name, read-modify-write, so a field
-sharing a byte with its neighbour does not destroy it. `dump_registers.py` reads
-everything in one pass.
+`read_field(host, 5, 0x12, 0, 12)` is the same read with four numbers nobody can
+check, and it is reserved for a slice that genuinely has no name.
 
-**A wrong address does not error, it returns a plausible number**, which is what
-makes this expensive rather than merely tedious: four invented addresses read as
-`SP_VTOTAL` 71 steady, `HTOTAL` 2723 against a 2250 divider and an 88% sync
-duty — every one a textbook no-lock signature, diagnosed as a dead source, while
-the picture on the screen was perfect. Read by name and the same registers give
-311, 2250 and 7.1%. **If a status read disagrees with what the screen is doing,
-check the addresses before believing the registers.**
+**This rule is broken every session, and the reason is ambient rather than
+ignorance.** `tools/gbsc-pro-hwtest/` is full of literal `read_field(host, 3,
+0x02, 4, 11)` calls, so the wrong shape is what surrounding code models — and
+this section used to demonstrate the rule with a three-line recipe that ended in
+`read_field()` with the numbers pre-extracted, which is *more* typing than
+inventing them. **Do not copy the slice style out of the tests.**
+
+A wrong NAME raises before a request goes out. **A wrong ADDRESS does not error,
+it returns a plausible number**, which is what makes this expensive rather than
+merely tedious. Two ways it has cost real time:
+
+- four invented addresses read as `SP_VTOTAL` 71 steady, `HTOTAL` 2723 against a
+  2250 divider and an 88% sync duty — a textbook no-lock signature, diagnosed as
+  a dead source, while the picture on the screen was perfect. By name the same
+  registers give 311, 2250 and 7.1%.
+- checking RGBHV bypass by hand-written slice gave `DAC_RGBS_ADC2DAC` 0 and
+  `OUT_SYNC_SEL` 0 on a unit correctly *in* bypass with a full-screen picture,
+  which reads exactly like the "no raster at all" failure. By name: 1 and 1.
+
+**If a status read disagrees with what the screen is doing, check how you
+addressed it before believing the registers.**
+
+`tools/gbsc-pro-hwtest/tv5725_registers.json` is the map behind all of these, and
+the same one `snapdiff.py` and `setfield.py` decode with. `setfield.py --set
+NAME=VALUE` writes by name, read-modify-write, so a field sharing a byte with its
+neighbour does not destroy it. `dump_registers.py` reads everything in one pass.
 
 ### The shape of an eye-in-the-loop measurement
 
