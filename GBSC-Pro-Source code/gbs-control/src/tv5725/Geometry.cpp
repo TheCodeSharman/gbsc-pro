@@ -25,7 +25,7 @@ Geometry::Geometry(DisplayClock &displayClock)
       scanModeApplied_(false), solvedLines_(0),
       idleLines_(0), idleRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
-      rasterMode_(0),
+      choice_(), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
@@ -105,24 +105,20 @@ bool Geometry::solveWindows()
     return true;
 }
 
-bool Geometry::solveRaster(const OutputMode *mode)
-{
-    // Remembered so the deferred retry solves the mode the load asked for. It
-    // cannot re-derive one: by then the caller's preference is out of reach and
-    // the raster registers may hold a half-written attempt.
-    rasterMode_ = mode;
-    return solveRaster();
-}
-
 bool Geometry::solveRaster()
 {
-    // The mode is an input, not a read-back. Deriving it from VDS_VSYNC_RST
-    // would leave the preset table -- the thing this replaces -- its only
-    // writer. docs/chip-initialisation.md.
-    const OutputMode *mode = rasterMode_;
+    // The choice is an input, not a read-back. Deriving the mode from
+    // VDS_VSYNC_RST would leave the preset table -- the thing this replaces --
+    // its only writer. docs/chip-initialisation.md.
+    //
+    // Resolved HERE rather than where the choice was made, because
+    // matchPresetSource swaps within a pair on the source's field rate and this
+    // is the first point that rate has been measured.
+    const OutputMode *mode = choice_.resolve(sampling_.fieldRateHz());
+    rasterMode_ = mode;
     if (mode == 0) {
-        // Not a failure, and NOT a fall back to 1080p: the caller could not name
-        // a mode, and a raster nobody has swept keeps what it had.
+        // Not a failure, and NOT a fall back to 1080p: the choice names no
+        // resolution, and a raster nobody has swept keeps what it had.
         return false;
     }
 
@@ -188,8 +184,7 @@ void Geometry::adoptRaster()
     displayClock_.adopt();
 }
 
-void Geometry::modeChanged(const OutputMode *mode,
-                           uint8_t oversample)
+void Geometry::modeChanged(const OutputChoice &choice, uint8_t oversample)
 {
     // The windows land seconds from now, once the source has settled into the
     // mode; until then the previous mode's geometry is what the new source
@@ -199,7 +194,12 @@ void Geometry::modeChanged(const OutputMode *mode,
     modePending_ = true;
     modeOversample_ = oversample;
     scanModeApplied_ = false;
-    rasterMode_ = mode;
+    choice_ = choice;
+
+    // Provisional, because solveScanMode() runs before the rate is measured and
+    // needs a frame height to bound the line doubler with. solveRaster()
+    // resolves it again once there is a measurement to resolve it against.
+    rasterMode_ = choice.resolve(sampling_.fieldRateHz());
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
@@ -217,7 +217,7 @@ bool Geometry::poll()
 {
     if (!modePending_) {
         if (sourceMoved())
-            modeChanged(rasterMode_, modeOversample_);
+            modeChanged(choice_, modeOversample_);
         return modePending_ ? false : (solvePending_ ? resolve() : false);
     }
 
@@ -269,7 +269,7 @@ bool Geometry::poll()
     // Whatever raster is on the chip, taken before the solve that replaces it,
     // so a solve that still refuses leaves the windows sized for something.
     adoptRaster();
-    if (!solveRaster(rasterMode_)) {
+    if (!solveRaster()) {
         // solveRaster() never defers: both its refusals are final, so a retry
         // would pay for a field rate measurement to reach the same answer.
         modePending_ = false;
@@ -327,6 +327,7 @@ void Geometry::enterBypass()
     modePending_ = false;
     FrameBuffer::releaseCapture();
 
+    choice_ = OutputChoice();
     rasterMode_ = 0;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;

@@ -69,7 +69,8 @@ struct SolvedEngine {
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
-                 const Tv5725::OutputMode *mode = &Tv5725::Mode1080p)
+                 Tv5725::OutputChoice choice =
+                     Tv5725::OutputChoice(Tv5725::Output1080P))
         : engine(clock)
     {
         Wire.reset();
@@ -83,7 +84,7 @@ struct SolvedEngine {
         seed(5, 0x12, 0, 12, 2553);          // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, sourceLines);   // STATUS_SYNC_PROC_VTOTAL
 
-        engine.modeChanged(mode, 4);
+        engine.modeChanged(choice, 4);
         REQUIRE(pollUntilSolved(engine));
     }
 

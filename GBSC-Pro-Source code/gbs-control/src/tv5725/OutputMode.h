@@ -121,11 +121,11 @@ public:
     // Returns the best mode for a frame height, or NULL if none.
     static const OutputMode *forFrameHeight(uint16_t frameLines);
 
-    // Returns the output mode set in the users preferences, takes the frame rate so that 
-    // it can correctly choose between 480p and 576p. Returns NULL for bypass, or 
-    // a custom preset.
-    static const OutputMode *forPreference(PresetPreference presetPreference,
-                                           float fieldRateHz);
+    // The mode a preference names. NULL for bypass and for a custom preset,
+    // neither of which is a resolution. A preference is one height whatever the
+    // source runs at; matchPresetSource swaps between two of them, and that is
+    // OutputChoice's, because it needs a measured rate.
+    static const OutputMode *forPreference(PresetPreference presetPreference);
 
     // The threshold that determines when a mode is considered PAL or NTSC.
     static const uint16_t PalNtscSplitHz = 55;

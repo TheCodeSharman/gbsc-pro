@@ -12,6 +12,7 @@
 #include "DisplayClock.h"
 #include "InputLine.h"
 #include "CaptureWindow.h"
+#include "OutputChoice.h"
 #include "OutputMode.h"
 #include "OutputTimings.h"
 #include "PanAndZoom.h"
@@ -58,9 +59,9 @@ public:
     uint16_t extentUnitsOn(const Axis &axis) const;
 
     // Notify the engine that the source has changed mode. The registers are
-    // not written until the source has settled.
-    void modeChanged(const OutputMode *mode,
-                     uint8_t oversample);
+    // not written until the source has settled, and the choice does not become
+    // a resolution until the field rate behind it has been measured.
+    void modeChanged(const OutputChoice &choice, uint8_t oversample);
 
     // Called by the sketch main loop - allows the engine to determine when the
     // source has settled and apply any pending mode changes. True on the pass
@@ -118,10 +119,8 @@ private:
 
     // Order: raster, clock, windows, rate steer LAST. Steering early corrects
     // a new clock against the old raster -- 31 Hz frame, black screen.
-    // A null mode writes nothing and is refused rather than deferred.
-    bool solveRaster(const OutputMode *mode);
-
-    // The deferred retry, against the mode the last call named.
+    // A choice that names no resolution writes nothing and is refused rather
+    // than deferred.
     bool solveRaster();
 
     // Take the output raster off the chip, for the one case that does not solve
@@ -206,7 +205,8 @@ private:
     bool solvePending_;
     bool modePending_;
     uint8_t modeOversample_;      // a solve refused because the source was settling
-    const OutputMode *rasterMode_;  // the mode the last solveRaster() was given
+    OutputChoice choice_;           // the resolution asked for, before a rate resolves it
+    const OutputMode *rasterMode_;  // what that choice came to at the rate measured
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.
     // Zero means there is none, which is what bypass looks like.

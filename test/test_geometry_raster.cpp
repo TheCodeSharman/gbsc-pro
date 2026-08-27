@@ -85,7 +85,7 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
 {
     SettledEngine settled;
 
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     REQUIRE(pollUntilSolved(settled.engine));
 
     CHECK(horizontalTotalWritten() == 1916);
@@ -105,7 +105,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
     // comment and CLAUDE.md -- and it is perfectly steady, so steadiness alone
     // would call it settled.
     setSourceLines(97);
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     CHECK_FALSE(pollUntilSolved(settled.engine));
 
     // A half-written raster is worse than none: the totals go in before the
@@ -137,7 +137,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     SettledEngine settled;
 
     g_fieldRate = 50.08f;
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     REQUIRE(pollUntilSolved(settled.engine));
     REQUIRE(horizontalTotalWritten() == 1916);
 
@@ -145,7 +145,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     // exists for. A raster solved at the wrong rate is out by the ratio of the
     // rates, so the previous answer has to stand.
     g_fieldRate = 60.0f;
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     CHECK_FALSE(pollUntilSolved(settled.engine));
     CHECK(horizontalTotalWritten() == 1916);
 
@@ -163,7 +163,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     // Outstanding from the previous mode, which is the common state now that an
     // unsettled source waits rather than giving up.
     setSourceLines(97);
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     REQUIRE_FALSE(pollUntilSolved(settled.engine));
 
     // Past 535 lines the unit drops to RGBHV bypass, where video routes around
@@ -193,7 +193,7 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
     Wire.bank[5][0x13] = 0x07;
     g_fieldRate = 0.0f;
 
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     REQUIRE_FALSE(pollUntilSolved(settled.engine));
     CHECK(Wire.field(5, 0x12, 0, 12) ==
           Tv5725::SourceMeasurement::referenceDivider(true));
@@ -222,7 +222,7 @@ TEST_CASE("a solve points the part at the clock source that can serve the raster
     Clock::ClockGen generator(part);
     settled.clock.driveWith(generator);
 
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     REQUIRE(pollUntilSolved(settled.engine));
 
     CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
@@ -236,8 +236,37 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 {
     SettledEngine settled;
 
-    settled.engine.modeChanged(&Mode1080p, 4);
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
     REQUIRE(pollUntilSolved(settled.engine));
 
     CHECK(Wire.bank[0][0x41] == 0x85);
+}
+
+// VDS_VSYNC_RST, s3_02[14:4] -- the output frame the engine writes.
+static uint16_t frameLinesWritten() { return Wire.field(3, 0x02, 4, 11) + 1; }
+
+static bool pollUntilResolved(Geometry &engine)
+{
+    for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
+        if (engine.poll())
+            return true;
+    return false;
+}
+
+TEST_CASE("a source that changes rate re-resolves the pair matchPresetSource swaps")
+{
+    // Nothing re-states the choice across a source mode change: the engine
+    // notices the source moved and resolves what it is holding against the rate
+    // it has just measured. Resolving where the choice was made instead keys
+    // the swap on the rate of the source being left.
+    SettledEngine settled;
+
+    settled.engine.modeChanged(OutputChoice(Output480P, true, true, false), 4);
+    REQUIRE(pollUntilSolved(settled.engine));
+    CHECK(frameLinesWritten() == 625);
+
+    setSourceLines(524);
+    g_fieldRate = 59.94f;
+    REQUIRE(pollUntilResolved(settled.engine));
+    CHECK(frameLinesWritten() == 525);
 }

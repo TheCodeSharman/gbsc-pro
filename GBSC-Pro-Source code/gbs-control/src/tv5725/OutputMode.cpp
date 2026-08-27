@@ -64,8 +64,7 @@ uint8_t OutputMode::clockDividerFor(uint16_t frameLines, float fieldRateHz,
 
 const uint16_t OutputMode::PalNtscSplitHz;
 
-const OutputMode *OutputMode::forPreference(PresetPreference presetPreference,
-                                                  float fieldRateHz)
+const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
 {
     if (presetPreference == Output1080P)
         return &Mode1080p;

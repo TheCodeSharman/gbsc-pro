@@ -90,16 +90,13 @@ struct userOptions
 };
 
 
-// Declared in src/tv5725/OutputMode.h, forward-declared here so runTimeOptions
-// can hold one without this header pulling the raster arithmetic in.
-namespace Tv5725 { class OutputMode; }
-
+#include "src/tv5725/OutputChoice.h"
 #include "src/tv5725/DisplayClock.h"
 
 // runTimeOptions holds system variables
 struct runTimeOptions
 {
-    // The output resolution THIS preset load is for, chosen in applyPresets()
+    // The output resolution THIS preset load asks for, chosen in applyPresets()
     // where the detection result is still in scope and read back in
     // doPostPresetLoadSteps().
     //
@@ -108,10 +105,9 @@ struct runTimeOptions
     // whenever scaling RGBHV is on -- so by the time the raster is solved the
     // value the choice was made from is gone.
     //
-    // NULL means "no mode named": a custom preset, whose saved bytes are the
-    // mode, or bypass. The raster is then read back rather than computed, which
-    // is the last place anything inherits.
-    const Tv5725::OutputMode *outputMode;
+    // A choice naming no resolution -- a custom preset, whose saved bytes are
+    // the mode, or bypass -- leaves the raster alone.
+    Tv5725::OutputChoice outputChoice;
 
     // The display clock, which the engine steers from the raster it solved and
     // the frame time lock walks away from that on every correction. It lives

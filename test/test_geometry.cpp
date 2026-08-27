@@ -110,7 +110,7 @@ static void seedSourceLines(uint16_t lines)
     seedField(0, 0x1B, 0, 11, lines);   // STATUS_SYNC_PROC_VTOTAL
 }
 
-static const OutputMode *benchMode() { return OutputMode::forFrameHeight(1125); }
+static OutputChoice benchMode() { return OutputChoice(Output1080P); }
 
 // A stray write lands somewhere nothing below reads, so it moves this and
 // nothing else. Reading every field but counting none would miss it.
@@ -370,7 +370,7 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(0, 4);
+    engine.modeChanged(OutputChoice(), 4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(engine.poll());
 
@@ -501,7 +501,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     Geometry engine(clock);
 
     SUBCASE("a mode with no timings") {
-        engine.modeChanged(0, 4);
+        engine.modeChanged(OutputChoice(), 4);
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(engine.poll());
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
@@ -538,7 +538,7 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     frameAt(engine, 300, 120, 40, -15);
     const PanAndZoom tuned = engine.framing();
 
-    engine.modeChanged(OutputMode::forFrameHeight(525), 4);
+    engine.modeChanged(OutputChoice(Output480P), 4);
     REQUIRE(pollUntilSolved(engine));
 
     const float unit = 1.0f / (float)engine.capturableOn(AxisVertical);

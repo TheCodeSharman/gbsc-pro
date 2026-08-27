@@ -264,41 +264,21 @@ TEST_CASE("the output mode comes from the user's preference, not from the chip")
 {
     // The mode arrives explicitly rather than being read back from
     // GBS::VDS_VSYNC_RST, whose only writer is the preset table it replaces.
-    CHECK((OutputMode::forPreference(Output1080P, 50.0f) == &Mode1080p));
-    CHECK((OutputMode::forPreference(Output1024P, 50.0f) == &Mode1024p));
-    CHECK((OutputMode::forPreference(Output960P, 50.0f) == &Mode960p));
-    CHECK((OutputMode::forPreference(Output720P, 50.0f) == &Mode720p));
+    CHECK((OutputMode::forPreference(Output1080P) == &Mode1080p));
+    CHECK((OutputMode::forPreference(Output1024P) == &Mode1024p));
+    CHECK((OutputMode::forPreference(Output960P) == &Mode960p));
+    CHECK((OutputMode::forPreference(Output720P) == &Mode720p));
 }
 
-TEST_CASE("every preference is one height, whatever the rate")
-{
-    // A preference names a resolution and nothing else. Only the clock and
-    // horizontalTotal move with the field rate, inside solve().
-    CHECK((OutputMode::forPreference(Output1080P, 50.0f)
-           == OutputMode::forPreference(Output1080P, 59.94f)));
-    CHECK((OutputMode::forPreference(Output1024P, 50.0f)
-           == OutputMode::forPreference(Output1024P, 59.94f)));
-    CHECK((OutputMode::forPreference(Output960P, 50.0f)
-           == OutputMode::forPreference(Output960P, 59.94f)));
-    CHECK((OutputMode::forPreference(Output720P, 50.0f)
-           == OutputMode::forPreference(Output720P, 59.94f)));
-    CHECK((OutputMode::forPreference(Output576P, 50.0f)
-           == OutputMode::forPreference(Output576P, 59.94f)));
-    CHECK((OutputMode::forPreference(Output480P, 50.0f)
-           == OutputMode::forPreference(Output480P, 59.94f)));
-}
-
-TEST_CASE("480p and 576p are separate preferences, each selectable at either rate")
+TEST_CASE("480p and 576p are separate preferences, neither of them a rate")
 {
     // Output480P used to mean 480 active lines at 60 Hz and 576 at 50, so on a
     // 50 Hz source there was no way to ask for 480p at all: the preference was
     // itself the switch. They are two preferences now, and choosing between
-    // them by field rate is a policy applied on top -- the same shape as 960
+    // them by field rate is Tv5725::OutputChoice's -- the same shape as 960
     // against 1024, and as escapable.
-    CHECK((OutputMode::forPreference(Output480P, 59.94f) == &Mode480p));
-    CHECK((OutputMode::forPreference(Output480P, 50.0f) == &Mode480p));
-    CHECK((OutputMode::forPreference(Output576P, 50.0f) == &Mode576p));
-    CHECK((OutputMode::forPreference(Output576P, 59.94f) == &Mode576p));
+    CHECK((OutputMode::forPreference(Output480P) == &Mode480p));
+    CHECK((OutputMode::forPreference(Output576P) == &Mode576p));
 
     CHECK(Mode480p.activeLines() == 480);
     CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back
@@ -311,8 +291,8 @@ TEST_CASE("a preference that is not a resolution resolves to no mode")
     // 0 leaves the caller to fall back rather than silently solving the wrong
     // raster. 6 is cast rather than named because the enumerator no longer
     // exists: OutputDownscale went with the preset tables.
-    CHECK((OutputMode::forPreference((PresetPreference)6, 50.0f) == 0));
-    CHECK((OutputMode::forPreference(OutputBypass, 50.0f) == 0));
+    CHECK((OutputMode::forPreference((PresetPreference)6) == 0));
+    CHECK((OutputMode::forPreference(OutputBypass) == 0));
 }
 
 TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
@@ -321,7 +301,7 @@ TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")
     // and that file's own frame height is the answer. The caller reads it back,
     // which is the last place that inherits on purpose; it goes when a saved
     // slot records the inputs to the calculation instead of a register dump.
-    CHECK((OutputMode::forPreference(OutputCustomized, 50.0f) == 0));
+    CHECK((OutputMode::forPreference(OutputCustomized) == 0));
 }
 
 int main(int argc, char **argv)

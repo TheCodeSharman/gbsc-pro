@@ -173,7 +173,7 @@ TEST_CASE("a preset load computes the divider it uses")
 
     // 311 lines at 50 Hz, which is what the seeds above describe.
     g_fieldRate = 50.08f;
-    solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+    solved.engine.modeChanged(Tv5725::OutputChoice(Tv5725::Output1080P), 4);
     REQUIRE(pollUntilSolved(solved.engine));
 
     const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4, true);
@@ -202,18 +202,18 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     const uint32_t inherited = Wire.field(5, 0x12, 0, 12);
 
     g_fieldRate = 0.0f;
-    solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+    solved.engine.modeChanged(Tv5725::OutputChoice(Tv5725::Output1080P), 4);
     CHECK_FALSE(pollUntilSolved(solved.engine));
     CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited, true));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
         g_fieldRate = 50.08f;
-        solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+        solved.engine.modeChanged(Tv5725::OutputChoice(Tv5725::Output1080P), 4);
         REQUIRE(pollUntilSolved(solved.engine));
         const uint32_t heldDivider = Wire.field(5, 0x12, 0, 12);
 
         g_fieldRate = 0.0f;
-        solved.engine.modeChanged(&Tv5725::Mode1080p, 4);
+        solved.engine.modeChanged(Tv5725::OutputChoice(Tv5725::Output1080P), 4);
         CHECK_FALSE(pollUntilSolved(solved.engine));
         CHECK(Wire.field(5, 0x12, 0, 12) == heldDivider);
     }
@@ -252,7 +252,7 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(&Tv5725::Mode1080p, 4);
+    engine.modeChanged(Tv5725::OutputChoice(Tv5725::Output1080P), 4);
     CHECK_FALSE(pollUntilSolved(engine));
 
     // The window is parked at the reference, not solved for 97 lines: the
@@ -402,7 +402,7 @@ TEST_CASE("a capture the output cannot show is bounded, not cropped")
 {
     // The bench source into a 480p raster: the line doubler makes the vertical
     // axis count 622 half-lines against a frame with room for about 515.
-    SolvedEngine solved(311, 50.08f, 181, &Mode480p);
+    SolvedEngine solved(311, 50.08f, 181, OutputChoice(Output480P));
 
     const long capture = Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11);
     const long window = Wire.field(3, 0x13, 0, 11) - Wire.field(3, 0x14, 4, 11);

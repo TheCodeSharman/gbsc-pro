@@ -1228,16 +1228,16 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
 }
 
 // A preset load: the mode state a load decides, and nothing else. Every
-// register is computed afterwards, from `mode` -- the output resolution this
-// load is for, remembered for doPostPresetLoadSteps(), which solves the raster
-// from it.
+// register is computed afterwards, from `choice` -- the output resolution this
+// load asks for, remembered for doPostPresetLoadSteps(), which hands it to the
+// engine to resolve and solve the raster from.
 //
 // s1_2B and s1_2C are cleared here because nothing else clears them and they
 // latch across loads. PALFORCED60 in particular is set by
 // doPostPresetLoadSteps() and has no other writer.
-void loadComputedPreset(const Tv5725::OutputMode *mode, uint8_t presetId)
+void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 {
-  rto->outputMode = mode;
+  rto->outputChoice = choice;
   rto->presetID = presetId;
 
   // Nothing reads this any more. It is cleared because a unit upgraded from a
@@ -2922,71 +2922,6 @@ uint32_t getPllRate()
 
 #define AUTO_GAIN_INIT 0x48
 
-// The output mode this preset load is for, as an INPUT to the raster solver.
-// The user's preference answers it for every resolution the interfaces offer;
-// reading the raster registers back instead inherits from whatever loaded last.
-//
-// One case still inherits, deliberately and visibly: OutputBypass, which has no
-// scaled raster to solve and which OutputMode::forFrameHeight() finds no mode
-// for.
-//
-// THE FIELD RATE IS MEASURED HERE, NOT INSIDE THE ENGINE. It disambiguates one
-// preference -- Output480P is 480 active lines at 60 Hz and 576 at 50, two
-// resolutions sharing an enum value. getSourceFieldRate() spins, so it must not
-// be called from a network callback; this runs from doPostPresetLoadSteps(),
-// which is loop() context, and only when the preference actually needs it.
-static const Tv5725::OutputMode *outputModeForThisLoad()
-{
-    // Chosen in applyPresets() and carried on rto, because the inputs to the
-    // choice are gone by the time this runs -- see runTimeOptions::outputMode.
-    if (rto->outputMode != 0)
-        return rto->outputMode;
-
-    // Bypass, which has no scaled raster.
-    return Tv5725::OutputMode::forFrameHeight(GBS::VDS_VSYNC_RST::read() + 1);
-}
-
-// The output resolution a load is for, from the user's preference and the source
-// standard the detection just reported.
-//
-// **THE STANDARD COMES FROM `result`, NOT FROM A MEASUREMENT.** The table ladder
-// this replaces picked a pal_* or ntsc_* table on exactly this test, so taking
-// it from the detection result keeps getSourceFieldRate() -- which spins --
-// off the preset-load path entirely.
-static const Tv5725::OutputMode *chooseOutputMode(uint8_t result)
-{
-    PresetPreference preference = uopt->presetPreference;
-
-    const bool pal = (result == 2 || result == 4);
-
-    // matchPresetSource, the web UI's "default to 1280x960 for NTSC 60 and
-    // 1280x1024 for PAL 50". The tables expressed it by swapping which one a
-    // preference loaded, and it is ported here verbatim -- including the
-    // asymmetry, which is upstream's and not a design: the PAL side has no
-    // guards while the NTSC side excludes standard 8 and scaling RGBHV.
-    if (uopt->matchPresetSource) {
-        if (pal && preference == Output960P) {
-            preference = Output1024P;
-        } else if (!pal && preference == Output1024P && result != 8 &&
-                   GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
-            preference = Output960P;
-        }
-
-        // The SD pair, on the same terms. It used to be inside the preference
-        // itself, which made 480p unaskable on a 50 Hz source; here it is a
-        // convenience the user can turn off, and symmetric because it carries
-        // none of the history the pair above does.
-        if (pal && preference == Output480P) {
-            preference = Output576P;
-        } else if (!pal && preference == Output576P) {
-            preference = Output480P;
-        }
-    }
-
-    return Tv5725::OutputMode::forPreference(preference,
-                                                   pal ? 50.0f : 60.0f);
-}
-
 void doPostPresetLoadSteps()
 {
     // Only where something held the blocks and so discarded their
@@ -3126,7 +3061,7 @@ void doPostPresetLoadSteps()
         // later goes with the message; loop() drives the rest once the source
         // has settled into the new mode. AFTER the block above, which settles
         // rto->osr.
-        geometry.modeChanged(outputModeForThisLoad(), rto->osr);
+        geometry.modeChanged(rto->outputChoice, rto->osr);
 
         GBS::ADC_TEST_04::write(0x02); // 1:0 REF test resistance selection 4:2REF test current selection
         GBS::ADC_TEST_0C::write(0x12);
@@ -3513,12 +3448,21 @@ void applyPresets(uint8_t result)
         // **TWO BRANCHES AND TWELVE TABLE LOADS WERE HERE, AND THEY DIFFERED IN
         // NOTHING BUT WHICH TABLE.** One branch per source standard, each a
         // ladder on presetPreference picking a pal_* or ntsc_* blob. The
-        // standard and the preference now select an OutputMode instead --
-        // chooseOutputMode() -- and every register is computed from it, so the
-        // two branches are one and the ladder is gone.
+        // preference is the resolution now, and every register is computed from
+        // it, so the two branches are one and the ladder is gone.
+        //
+        // GBS_OPTION_SCALING_RGBHV is read here rather than inside the choice
+        // because loadComputedPreset() clears it.
         const bool pal = (result == 2 || result == 4);
-        const Tv5725::OutputMode *mode = chooseOutputMode(result);
-        loadComputedPreset(mode, presetIdFor(mode, pal));
+        const Tv5725::OutputChoice choice(
+            uopt->presetPreference, uopt->matchPresetSource != 0,
+            result != 8 && GBS::GBS_OPTION_SCALING_RGBHV::read() == 0,
+            rto->presetIsPalForce60);
+
+        // The id keys on the detection result, as it always has. The raster
+        // keys on the rate the engine measures, which is what changed.
+        loadComputedPreset(choice,
+                           presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal));
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
 
         rto->videoStandardInput = result;
@@ -7336,11 +7280,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     delay(200);
                     break;
                 case 'Y':
-                    loadComputedPreset(&Tv5725::Mode720p, 0x03);
+                    loadComputedPreset(Tv5725::OutputChoice(Output720P), 0x03);
                     doPostPresetLoadSteps();
                     break;
                 case 'y':
-                    loadComputedPreset(&Tv5725::Mode720p, 0x13);
+                    loadComputedPreset(Tv5725::OutputChoice(Output720P), 0x13);
                     doPostPresetLoadSteps();
                     break;
                 case 'P':; // SerialMprint(F("auto deinterlace: "));
@@ -7384,11 +7328,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     saveUserPrefs();
                     break;
                 case 'e':
-                    loadComputedPreset(&Tv5725::Mode960p, 0x01);
+                    loadComputedPreset(Tv5725::OutputChoice(Output960P), 0x01);
                     doPostPresetLoadSteps();
                     break;
                 case 'r':
-                    loadComputedPreset(&Tv5725::Mode960p, 0x11);
+                    loadComputedPreset(Tv5725::OutputChoice(Output960P), 0x11);
                     doPostPresetLoadSteps();
                     break;
                 case '!':
@@ -7569,11 +7513,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     uopt->enableFrameTimeLock = !uopt->enableFrameTimeLock;
                     break;
                 case 'E':
-                    loadComputedPreset(&Tv5725::Mode1024p, 0x02);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1024P), 0x02);
                     doPostPresetLoadSteps();
                     break;
                 case 'R':
-                    loadComputedPreset(&Tv5725::Mode1024p, 0x12);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1024P), 0x12);
                     doPostPresetLoadSteps();
                     break;
                 case '0':
@@ -7583,7 +7527,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     moveHS(4, false);
                     break;
                 case '2':
-                    loadComputedPreset(&Tv5725::Mode576p, 0x14);
+                    loadComputedPreset(Tv5725::OutputChoice(Output576P), 0x14);
                     doPostPresetLoadSteps();
                     break;
                 case '3':
@@ -7612,7 +7556,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     break;
                 case '9':
-                    loadComputedPreset(&Tv5725::Mode480p, 0x04);
+                    loadComputedPreset(Tv5725::OutputChoice(Output480P), 0x04);
                     doPostPresetLoadSteps();
                     break;
                 case 'o': {
@@ -7865,11 +7809,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprintln((if_hblank_scale_stop - 1), HEX);
                 } break;
                 case '(': {
-                    loadComputedPreset(&Tv5725::Mode1080p, 0x05);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1080P), 0x05);
                     doPostPresetLoadSteps();
                 } break;
                 case ')': {
-                    loadComputedPreset(&Tv5725::Mode1080p, 0x15);
+                    loadComputedPreset(Tv5725::OutputChoice(Output1080P), 0x15);
                     doPostPresetLoadSteps();
                 } break;
                 case 'V': {
@@ -14191,7 +14135,7 @@ void OSD_IR()
 
                 /////////new
                 // loadDefaultUserOptions();
-                loadComputedPreset(&Tv5725::Mode480p, 0x04); 
+                loadComputedPreset(Tv5725::OutputChoice(Output480P), 0x04); 
                 doPostPresetLoadSteps();
                 GBS::VDS_DIS_HB_ST::write(0x00);
                 GBS::VDS_DIS_HB_SP::write(0xffff);

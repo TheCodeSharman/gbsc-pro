@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
+.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -263,6 +263,19 @@ output-raster:
 	  src/tv5725/OutputTimings.cpp src/tv5725/DisplayClock.cpp \
 	  $(CLOCK_SRC)
 	@"$(OUT)/test_output_raster"
+
+## output-choice: host unit tests for Tv5725::OutputChoice
+#
+# The preference, matchPresetSource and the two facts that qualify it, resolved
+# against a measured field rate. The eight-cell bench oracle lives in the test.
+output-choice:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_output_choice" \
+	  "$(HERE)/test_output_choice.cpp" src/tv5725/OutputChoice.cpp \
+	  src/tv5725/OutputMode.cpp src/tv5725/OutputTimings.cpp \
+	  src/tv5725/DisplayClock.cpp $(CLOCK_SRC)
+	@"$(OUT)/test_output_choice"
 
 ## clock-ramp: host unit tests for how the external clock is allowed to move
 #
@@ -626,7 +639,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
+test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
 all: test
 
 ## clean: remove the compiled test binaries
