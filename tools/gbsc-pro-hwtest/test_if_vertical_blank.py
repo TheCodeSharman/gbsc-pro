@@ -64,6 +64,12 @@ def if_frame_lines(host):
     return lines * (2 if lines < LINE_DOUBLE_BELOW_LINES else 1)
 
 
+def _seed_beyond_the_frame(host, frame):
+    """Put IF_VB_ST outside the frame, and say whether it stayed there."""
+    write_field(host, "IF_VB_ST", frame + 50)
+    return field(host, "IF_VB_ST") == frame + 50 or None
+
+
 def test_a_vertical_blank_beyond_the_frame_does_not_strand_the_engine(host, source):
     frame = if_frame_lines(host)
     before = field(host, "IF_VB_ST")
@@ -78,8 +84,17 @@ def test_a_vertical_blank_beyond_the_frame_does_not_strand_the_engine(host, sour
     assert rate_before, "no line rate measured, so there is nothing to lose"
 
     # Beyond the frame by enough that no rounding brings it back inside.
-    write_field(host, "IF_VB_ST", frame + 50)
-    assert field(host, "IF_VB_ST") == frame + 50
+    #
+    # Retried, because the engine owns this register and re-solves on its own
+    # schedule: a single write can be overwritten between the write and the
+    # read-back, which reads as the write having failed. Measured -- a run came
+    # back with 620, an ordinary solved value, inside the same second.
+    seeded = wait_for(lambda: _seed_beyond_the_frame(host, frame),
+                      timeout=15.0, interval=1.0)
+    assert seeded, (
+        f"could not get IF_VB_ST past the {frame}-line frame: the engine "
+        "rewrote it every time, so the fault this proves recovery from was "
+        "never seeded")
 
     status, _ = get(host, "/sc?B")
     assert status == 200, f"/sc?B answered {status}"
