@@ -7,9 +7,8 @@ for deciding what a series of eyeball readings says. Kept apart from the model i
 is used to test so that it survives the model.
 """
 
-import math
-
 from geometry_math import HSCALE_UNITY
+
 
 def fit_line(xs, ys):
     """Least squares. Returns (slope, intercept) for y = slope x + intercept.

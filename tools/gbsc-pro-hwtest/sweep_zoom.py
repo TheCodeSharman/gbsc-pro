@@ -434,9 +434,8 @@ def main(argv=None):
           f"\n  labels {args.prefix}-{sweep.number:02d} onward, into {args.index}")
     print(HELP)
     try:
-        recorded = run(sweep)
+        run(sweep)
     except KeyboardInterrupt:
-        recorded = None
         print("\n  interrupted")
     finally:
         if not args.no_restore:

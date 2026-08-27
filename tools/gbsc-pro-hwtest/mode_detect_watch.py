@@ -38,7 +38,7 @@ import os
 import sys
 import time
 
-from gbs_unit import field_from, field_spec, get_json, read_segment
+from gbs_unit import field_from, field_spec, read_segment
 
 STATUS_FIRST, STATUS_LAST = 0x00, 0x1F
 
@@ -111,9 +111,9 @@ def verdict(samples):
                 "this run says nothing about the latch")
 
     switched = any(s["status"]["INT_MODE_SWITCH"] for s in seen)
-    interrupt = (f"INT_STATUS bit 3 (mode switch) DID latch"
+    interrupt = ("INT_STATUS bit 3 (mode switch) DID latch"
                  if switched else
-                 f"INT_STATUS bit 3 (mode switch) never latched")
+                 "INT_STATUS bit 3 (mode switch) never latched")
 
     moved = len(set(periods)) > 1
     if not moved:

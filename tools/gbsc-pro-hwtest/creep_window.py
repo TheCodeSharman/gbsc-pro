@@ -289,7 +289,6 @@ def main():
                 state = read_state(lambda seg: read_segment(args.host, seg, 0x00, 0x5F))
                 session.mark(value, total - value, note, state)
                 marks.append((value, total - value, note))
-                framing = derive(state)
                 print(f"  marked {value}, reserve {total - value}  "
                       f"capture {state['IF_HB_SP2']}..{state['IF_HB_ST2']}  "
                       f"HSCALE {state['VDS_HSCALE']} VSCALE {state['VDS_VSCALE']}  "

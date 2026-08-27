@@ -15,7 +15,6 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
-import geometry_math
 import measure_produced
 
 from test_bench_probe import FakeUnit

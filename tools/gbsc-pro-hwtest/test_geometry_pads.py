@@ -31,8 +31,6 @@ moving rather than one caught mid-write.
 import collections
 import math
 import os
-import re
-import subprocess
 import sys
 import time
 
@@ -672,7 +670,7 @@ def test_a_zoom_press_leaves_the_playback_burst_at_the_measured_value(
     fetch, offset = expected_burst(line_units, capture)
     assert probe.read_field(PB_FETCH_NUM) == fetch, (
         f"the playback burst does not cover a capture of {capture} on a "
-        f"{line_px} px output line -- the line cannot finish and repeats")
+        f"{line_units}-unit input line -- the line cannot finish and repeats")
     assert probe.read_field(PB_CAP_OFFSET) == offset
 
 

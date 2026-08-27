@@ -14,12 +14,10 @@ run with no hardware attached.
 
 import re
 import time
-from pathlib import Path
 
 import pytest
 
 from gbs_unit import (
-    field_from,
     field_from_named,
     field_spec,
     get,

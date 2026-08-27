@@ -13,8 +13,6 @@ about which URL was built.
 """
 
 import json
-import math
-import urllib.parse
 
 import gbs_unit
 import regpanel

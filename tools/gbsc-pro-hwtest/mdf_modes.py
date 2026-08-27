@@ -51,7 +51,6 @@ sync_pol is a bitfield: bit 0 inverts HSync, bit 1 inverts VSync.
 """
 
 import argparse
-import re
 import sys
 
 
@@ -141,7 +140,7 @@ def main():
     if not shown:
         print("(nothing matched)")
     else:
-        print(f"\nVTOTAL is in lines — compare it directly against mode_watch.py.")
+        print("\nVTOTAL is in lines — compare it directly against mode_watch.py.")
     return 0
 
 
