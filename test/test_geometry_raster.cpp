@@ -270,3 +270,70 @@ TEST_CASE("a source that changes rate re-resolves the pair matchPresetSource swa
     REQUIRE(pollUntilResolved(settled.engine));
     CHECK(frameLinesWritten() == 525);
 }
+
+static void forgetWrites()
+{
+    for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s)
+        for (int r = 0; r < 256; ++r)
+            Wire.touched[s][r] = false;
+    Wire.trace.clear();
+}
+
+TEST_CASE("an output change re-solves the raster without re-measuring the source")
+{
+    // Picking a different resolution is not a source event. The rate and the
+    // line count the last solve measured still describe the source, so the
+    // engine re-solves raster, clock and windows from what it holds and nothing
+    // is frozen, reset or measured again.
+    //
+    // 720p keeps the line doubler, which 480p does not -- see below.
+    SettledEngine settled;
+
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
+    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(frameLinesWritten() == 1125);
+
+    forgetWrites();
+    REQUIRE(settled.engine.outputChanged(OutputChoice(Output720P)));
+
+    CHECK(frameLinesWritten() == 750);
+    CHECK(Wire.touched[3][0x16]);          // VDS_HSCALE -- the windows followed
+
+    // PLLAD_MD. The divider is the source's, and rewriting it where the scan
+    // mode has not moved costs an ADC PLL relock for nothing.
+    CHECK_FALSE(Wire.touched[5][0x12]);
+}
+
+TEST_CASE("an output too short for the doubled frame turns the line doubler off")
+{
+    // The doubler is a property of the OUTPUT as much as of the source: 311
+    // lines doubled is 624, which fits a 1125-line frame and does not fit a
+    // 525-line one. So an output change can move the scan mode, and the divider
+    // with it, because the capture write limit doubles with the doubler.
+    SettledEngine settled;
+
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
+    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(Wire.field(5, 0x12, 0, 12) == 2250);
+
+    REQUIRE(settled.engine.outputChanged(OutputChoice(Output480P)));
+
+    CHECK(frameLinesWritten() == 525);
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1124);
+}
+
+TEST_CASE("an output change while a mode change is in flight waits for it")
+{
+    // The pending change has not measured the new source yet, so solving a
+    // raster here would size it from the rate of the source being left. The
+    // choice is kept and the poll that lands resolves it.
+    SettledEngine settled;
+
+    setSourceLines(97);                    // unsettled: no poll can complete
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
+    CHECK_FALSE(settled.engine.outputChanged(OutputChoice(Output480P)));
+
+    setSourceLines(311);
+    REQUIRE(pollUntilSolved(settled.engine));
+    CHECK(frameLinesWritten() == 525);
+}

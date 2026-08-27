@@ -1227,6 +1227,34 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
   return code | (pal ? 0x10 : 0x00);
 }
 
+// The output resolution asked for, against the standard the detection reported.
+//
+// GBS_OPTION_SCALING_RGBHV is read here rather than inside the choice because
+// loadComputedPreset() clears it, so a load has to build the choice before it
+// runs. It gates the 1024p -> 960p downshift alone, with standard 8, and that
+// asymmetry is upstream's rather than a design.
+static Tv5725::OutputChoice outputChoiceFor(uint8_t standard)
+{
+  return Tv5725::OutputChoice(uopt->presetPreference,
+                              uopt->matchPresetSource != 0,
+                              standard != 8 &&
+                                  GBS::GBS_OPTION_SCALING_RGBHV::read() == 0,
+                              rto->presetIsPalForce60);
+}
+
+// What the OUTPUT resolution decides, and all it decides. Everything else
+// doPostPresetLoadSteps() writes is about the source, the ADC or the sync
+// processor, none of which an output change touches.
+static void applyOutputResolutionSettings()
+{
+  const bool at1080p = (rto->presetID == 0x05 || rto->presetID == 0x15);
+
+  // The low band's gain is the same either way; only the high band's differs.
+  GBS::VDS_PK_LB_GAIN::write(0x16);
+  GBS::VDS_PK_LH_GAIN::write(at1080p ? 0x0A : 0x18);
+  Tv5725::VideoProcessor::setStepResponse(uopt->wantStepResponse && !at1080p);
+}
+
 // A preset load: the mode state a load decides, and nothing else. Every
 // register is computed afterwards, from `choice` -- the output resolution this
 // load asks for, remembered for doPostPresetLoadSteps(), which hands it to the
@@ -2922,6 +2950,35 @@ uint32_t getPllRate()
 
 #define AUTO_GAIN_INIT 0x48
 
+// The user picked a different output resolution. Not a source event: the rate
+// and the divider the last solve measured still describe the source, so the
+// engine re-solves raster, clock and windows from what it holds and nothing is
+// re-detected, reset or measured.
+//
+// Falls back to a whole load only where the engine cannot re-solve -- nothing
+// solved yet, bypass, or a mode change already in flight. The blank is the
+// caller's, taken before this runs.
+static void changeOutputResolution(uint8_t standard)
+{
+    const bool pal = (standard == 2 || standard == 4);
+    const Tv5725::OutputChoice choice = outputChoiceFor(standard);
+
+    rto->outputChoice = choice;
+    rto->presetID = presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal);
+
+    if (!geometry.outputChanged(choice)) {
+        applyPresets(standard);
+        return;
+    }
+
+    applyOutputResolutionSettings();
+
+    // The raster moved, so the ratio the frequency lock steers by is stale.
+    FrameSync::cleanup();
+    FrameSync::clearFrequency();
+    externalClockGenSyncInOutRate();
+}
+
 void doPostPresetLoadSteps()
 {
     // Only where something held the blocks and so discarded their
@@ -3024,12 +3081,6 @@ void doPostPresetLoadSteps()
         // whichever source ran last.
         GBS::IF_HS_SEL_LPF::write(1);
 
-        // The low band's gain is the same either way; only the high band's
-        // differs, and only at 1080p.
-        GBS::VDS_PK_LB_GAIN::write(0x16);
-        GBS::VDS_PK_LH_GAIN::write(
-            (rto->presetID == 0x05 || rto->presetID == 0x15) ? 0x0A : 0x18);
-
         rto->osr = Tv5725::SourceStandard(rto->videoStandardInput,
                                           rto->inputIsYpBpR)
                        .apply(GBS::PLLAD_KS::read());
@@ -3092,15 +3143,10 @@ void doPostPresetLoadSteps()
         GBS::IF_AUTO_OFST_PRD::write(0);
         GBS::IF_AUTO_OFST_EN::write(0);
 
-        // 0x05 and 0x15 are the 1024x768 preset ids, where the chroma step
-        // response is left bypassed whatever the preference says.
-        const bool stepResponse = uopt->wantStepResponse
-                                  && rto->presetID != 0x05
-                                  && rto->presetID != 0x15;
         Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
         Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
         Tv5725::VideoProcessor::setSixTapFilter(true);
-        Tv5725::VideoProcessor::setStepResponse(stepResponse);
+        applyOutputResolutionSettings();
 
         Menu::init();
         FrameSync::cleanup();
@@ -3451,16 +3497,10 @@ void applyPresets(uint8_t result)
         // preference is the resolution now, and every register is computed from
         // it, so the two branches are one and the ladder is gone.
         //
-        // GBS_OPTION_SCALING_RGBHV is read here rather than inside the choice
-        // because loadComputedPreset() clears it.
-        const bool pal = (result == 2 || result == 4);
-        const Tv5725::OutputChoice choice(
-            uopt->presetPreference, uopt->matchPresetSource != 0,
-            result != 8 && GBS::GBS_OPTION_SCALING_RGBHV::read() == 0,
-            rto->presetIsPalForce60);
-
         // The id keys on the detection result, as it always has. The raster
         // keys on the rate the engine measures, which is what changed.
+        const bool pal = (result == 2 || result == 4);
+        const Tv5725::OutputChoice choice = outputChoiceFor(result);
         loadComputedPreset(choice,
                            presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal));
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
@@ -8070,8 +8110,7 @@ void handleType2Command(char argument)
             if (scalingRgbhv()) {
                 rto->videoStandardInput = 15;
             } else {
-                // normal path
-                applyPresets(videoMode);
+                changeOutputResolution(videoMode);
             }
             saveUserPrefs();
         } break;

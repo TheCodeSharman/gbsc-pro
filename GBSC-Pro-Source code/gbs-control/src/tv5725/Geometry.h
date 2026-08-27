@@ -63,6 +63,13 @@ public:
     // a resolution until the field rate behind it has been measured.
     void modeChanged(const OutputChoice &choice, uint8_t oversample);
 
+    // The user picked a different output resolution. Not a source event: the
+    // rate and the divider the last solve measured still describe the source,
+    // so this re-solves raster, clock and windows from what is held and
+    // measures nothing. False where a mode change is still in flight, which
+    // will resolve the choice against its own measurement when it lands.
+    bool outputChanged(const OutputChoice &choice);
+
     // Called by the sketch main loop - allows the engine to determine when the
     // source has settled and apply any pending mode changes. True on the pass
     // that completes a mode change.

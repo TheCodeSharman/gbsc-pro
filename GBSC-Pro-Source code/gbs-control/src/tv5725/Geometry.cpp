@@ -213,6 +213,37 @@ void Geometry::modeChanged(const OutputChoice &choice, uint8_t oversample)
     writeSampling();
 }
 
+bool Geometry::outputChanged(const OutputChoice &choice)
+{
+    choice_ = choice;
+    if (modePending_)
+        return false;
+
+    // The frame height the scan mode is judged against, before it is judged.
+    // **THE LINE DOUBLER IS A PROPERTY OF THE OUTPUT AS MUCH AS OF THE SOURCE**:
+    // what decides it is whether the doubled frame fits the raster, so a shorter
+    // raster strands a doubling that fitted the taller one.
+    rasterMode_ = choice.resolve(sampling_.fieldRateHz());
+
+    const bool wasDoubled = sampling_.lineDoubled();
+    solveScanMode();
+
+    // Only where the doubling moved. The divider derives from it and from the
+    // line rate already held -- so it is re-DERIVED, never re-measured -- and
+    // writing it re-latches the ADC PLL, which is a relock nothing asked for.
+    if (sampling_.lineDoubled() != wasDoubled
+        && !solveSampling(modeOversample_))
+        return false;
+
+    if (!solveRaster())
+        return false;
+
+    // raster -> clock -> windows, the same order poll() runs and for the same
+    // reason: the clock reads the seed the raster just chose.
+    displayClock_.reset();
+    return solveWindows();
+}
+
 bool Geometry::poll()
 {
     if (!modePending_) {
