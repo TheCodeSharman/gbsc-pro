@@ -122,6 +122,13 @@ def geometry_gated(host):
 # `pev` -- neither of which is framing, so neither is projected below.
 FRAMING_FIELDS = ("oh", "eh", "ov", "ev")
 
+# The same framing as the engine HOLDS it: a proportion of the capturable
+# region, in ten-thousandths. The units above are that proportion times a
+# denominator the engine re-measures, and the vertical denominator halves when
+# an output change strands the line doubler -- so units are the wrong thing to
+# compare a framing against across a change of output resolution.
+PROPORTION_FIELDS = ("poh", "peh", "pov", "pev")
+
 
 def framing_of(payload):
     """Just the framing, out of a /geometry body that also reports the
@@ -254,6 +261,26 @@ def resolve(host):
 # are not always equal. A press moves tens of units, so a couple of units of
 # slack still catches a reset that did nothing.
 FRAMING_JITTER_UNITS = 2
+
+
+def proportions_of(payload):
+    """Just the proportions, out of a /geometry body."""
+    if payload is None:
+        return None
+    return {name: payload[name] for name in PROPORTION_FIELDS if name in payload}
+
+
+# Ten-thousandths. A unit of jitter against a denominator of a thousand or so is
+# ten of these, and both ends of an extent can move.
+PROPORTION_JITTER = 40
+
+
+def proportions_match(at, wanted):
+    """Whether two reports describe the same framing, as the engine holds it."""
+    if at is None or wanted is None:
+        return False
+    return all(abs(at[name] - wanted[name]) <= PROPORTION_JITTER
+               for name in wanted)
 
 
 def framing_matches(at, wanted):

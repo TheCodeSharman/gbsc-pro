@@ -42,8 +42,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_probe
 from gbs_unit import (GEOMETRY_GATED, RESET_COMMAND, field_from, framing_matches,
                       framing_of, fs_read, get, get_json, locked_steadily,
-                      read_field, read_reg, read_segment, recover_lock,
-                      reset_framing, resolve, wait_for, write_reg)
+                      proportions_match, proportions_of, read_field, read_reg,
+                      read_segment, recover_lock, reset_framing, resolve,
+                      wait_for, write_reg)
 
 GEOMETRY_FIELDS = [
     ("IF_HB_SP2", 1, 0x1A, 0, 11), ("IF_HB_ST2", 1, 0x18, 0, 11),
@@ -1265,7 +1266,16 @@ def test_a_tuning_reaches_flash_only_after_it_settles(host, probe, source,
 # The output preset commands, and the raster each puts on the chip. /uc? queues
 # one character for loop() to pick up.
 OUTPUT_480P = "/uc?h"
+OUTPUT_720P = "/uc?g"
 OUTPUT_1080P = "/uc?s"
+
+
+def at_1080p(host):
+    """Arrange: whatever the test before this left, start from 1080p."""
+    get(host, OUTPUT_1080P)
+    assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) == 1124,
+                    timeout=25.0), "the 1080p raster this test starts from never landed"
+    time.sleep(6)
 
 
 @pytest.mark.zoom
@@ -1273,50 +1283,101 @@ def test_changing_the_output_keeps_the_framing(host, probe, source, preset_load)
     """A user who has framed a source and then picks a different output
     resolution must not have to frame it again.
 
-    applyPresets() is the one caller of Geometry::modeChanged(), and it runs for
-    a source mode change and for this. Only the first invalidates a framing: the
-    proportions are taken against the capturable region, which is a property of
-    the input line, so the output raster moves neither the denominator nor the
-    user's intent.
+    **THE FRAMING IS A PROPORTION, AND ONLY THE PROPORTION SURVIVES.** The units
+    /geometry reports are that proportion times the capturable region, and the
+    vertical region halves when an output change strands the line doubler: 311
+    lines doubled is 624, which fits a 1125-line frame and does not fit a
+    525-line one. So a unit comparison across 1080p and 480p reports the
+    denominator moving and calls a framing lost that the picture still shows.
 
     Measured on the bench before the fix: cropped to a vertical extent of 441 of
     622 at 480p, an output change came back at 532 -- the untuned default, not
     even the new raster's clamp -- and switching back did not restore it.
     """
     try:
+        at_1080p(host)
         reset_the_framing(host)
         for _ in range(6):
             press(host, probe, "5", pixels=40)
         time.sleep(4)
 
         tuned = framing(host)
+        tuned_share = proportions_of(get_json(host, "/geometry")[1])
         default_ev = _default_framing["ev"] if _default_framing else None
         assert default_ev is None or tuned["ev"] < default_ev, (
             f"the crop did not take: vertical extent {tuned['ev']} against a "
             f"default of {default_ev}, so this cannot show a framing surviving")
 
-        get(host, OUTPUT_1080P)
-        assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) > 1000,
-                        timeout=25.0), "the 1080p raster never landed"
-        time.sleep(8)
-        at_1080p = framing(host)
-
         get(host, OUTPUT_480P)
         assert wait_for(lambda: 0 < (read_field(host, 3, 0x02, 4, 11) or 0) < 1000,
-                        timeout=25.0), "the 480p raster never came back"
+                        timeout=25.0), "the 480p raster never landed"
+        time.sleep(8)
+        at_480p = proportions_of(get_json(host, "/geometry")[1])
+
+        get(host, OUTPUT_1080P)
+        assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) > 1000,
+                        timeout=25.0), "the 1080p raster never came back"
         time.sleep(8)
         back = framing(host)
 
-        # framing_matches, not equality: the units are taken against a live
-        # measurement and one of them moves a unit either way on its own.
-        # Losing the framing is a move of tens -- 441 -> 532 before the fix.
-        assert framing_matches(at_1080p, tuned), (
-            f"the output change moved the framing from {tuned} to {at_1080p}")
+        assert proportions_match(at_480p, tuned_share), (
+            f"the output change moved the framing from {tuned_share} to {at_480p}")
+
+        # Units here, because this is back on the raster it was tuned at, so the
+        # denominator is the one the proportions were taken against.
+        # framing_matches, not equality: the units come off a live measurement
+        # and one of them moves a unit either way on its own.
         assert framing_matches(back, tuned), (
             f"coming back moved it to {back} rather than the {tuned} it was "
             "tuned to")
     finally:
-        get(host, OUTPUT_480P)
+        get(host, OUTPUT_1080P)
+        time.sleep(8)
+        recover_lock(host)
+        reset_the_framing(host)
+
+
+@pytest.mark.zoom
+def test_changing_the_output_does_not_re_measure_the_source(host, probe, source,
+                                                            preset_load):
+    """Picking a different output resolution is not a source event.
+
+    PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are one quantity in three registers
+    and all three describe the SOURCE. Writing them re-latches the ADC PLL, so
+    an output change that leaves the scan mode alone must leave them alone --
+    a relock costs seconds behind a blanked output and is where HPERIOD_IF
+    rails, docs/investigations/hperiod-if-railing.md.
+
+    720p rather than 480p because the line doubler IS a property of the output:
+    311 lines doubled is 624, which fits a 750-line frame and does not fit a
+    525-line one, and the divider follows the doubling. That case is covered
+    host-side, in test_geometry_raster.cpp.
+
+    **This passes on the whole-load path it replaces too**, measured: that path
+    re-derives the same divider and lands the raster in about the same time on a
+    settled source. It is a regression guard rather than a discriminator, and
+    what separates the two paths is host-side.
+    """
+    try:
+        at_1080p(host)
+        before = read_field(host, 5, 0x12, 0, 12)
+        assert before, "no divider to compare against"
+
+        started = time.time()
+        get(host, OUTPUT_720P)
+        assert wait_for(lambda: (read_field(host, 3, 0x02, 4, 11) or 0) == 749,
+                        timeout=25.0), "the 720p raster never landed"
+        took = time.time() - started
+
+        after = read_field(host, 5, 0x12, 0, 12)
+        assert after == before, (
+            f"the output change moved PLLAD_MD from {before} to {after}, so the "
+            "source was measured again for a change it never saw")
+        assert took < 8.0, (
+            f"the 720p raster took {took:.1f} s to land, which is a source "
+            "detection rather than a re-solve")
+    finally:
+        get(host, OUTPUT_1080P)
         time.sleep(8)
         recover_lock(host)
         reset_the_framing(host)
