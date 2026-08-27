@@ -107,13 +107,32 @@ TEST_CASE("without matchPresetSource a preference is the resolution, at either r
     }
 }
 
+TEST_CASE("bypass is an output mode, not the absence of one")
+{
+    // A resolution choice whose resolution is the source's. It resolves to a
+    // mode like any other, so "what is the output doing" has one answer and
+    // nothing has to read a null pointer as an answer.
+    CHECK((OutputChoice(OutputBypass).resolve(50.0f) == &ModeBypass));
+    CHECK((OutputChoice(OutputBypass).resolve(60.0f) == &ModeBypass));
+    CHECK(ModeBypass.isBypass());
+}
+
+TEST_CASE("no real resolution is bypass")
+{
+    const OutputMode *real[] = { &Mode1080p, &Mode1024p, &Mode960p,
+                                 &Mode720p, &Mode576p, &Mode480p };
+    for (unsigned i = 0; i < sizeof(real) / sizeof(real[0]); ++i)
+        CHECK_FALSE(real[i]->isBypass());
+}
+
 TEST_CASE("a choice that names no resolution resolves to no mode")
 {
-    // Bypass and a custom preset both keep whatever raster they had. A
-    // default-constructed choice is the same answer for a caller that has none.
+    // Distinct from bypass, which names one. A custom preset's saved bytes are
+    // the mode, and a default-constructed choice is what a caller with none
+    // hands over -- neither is a resolution this can name.
     CHECK((OutputChoice().resolve(50.0f) == 0));
-    CHECK((OutputChoice(OutputBypass).resolve(50.0f) == 0));
     CHECK((OutputChoice(OutputCustomized).resolve(50.0f) == 0));
+    CHECK((OutputChoice((PresetPreference)6).resolve(50.0f) == 0));
 }
 
 TEST_CASE("a choice of one resolution matches nothing and is that resolution")

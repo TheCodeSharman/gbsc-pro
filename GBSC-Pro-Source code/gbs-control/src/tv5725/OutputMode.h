@@ -118,7 +118,13 @@ public:
     // The number of lines in a frame including porch and sync.
     uint16_t frameLines() const;
 
-    // Returns the best mode for a frame height, or NULL if none.
+    // Whether this is the sentinel for "the output is the source's own timing".
+    // A resolution choice like any other from the user's side, and the one mode
+    // with no raster to solve -- solve() returns timings that fail usable().
+    bool isBypass() const;
+
+    // Returns the best mode for a frame height, or NULL if none. Never answers
+    // ModeBypass: it resolves a raster that is on the chip, and bypass has none.
     static const OutputMode *forFrameHeight(uint16_t frameLines);
 
     // The mode a preference names. NULL for bypass and for a custom preset,
@@ -144,6 +150,11 @@ private:
 // Defined in OutputRaster.cpp, from the STANDARDS rather than from the tables --
 // CEA-861 for 1080p/720p/480p/576p, VESA DMT for 1024p/960p. The tables' own
 // heights were one line longer than every one of these; see the constructor.
+// The output is whatever the source is doing. It has no raster, which is what
+// activeLines() == 0 marks, so it is a mode the geometry cannot solve rather
+// than one it solves to zero. docs/rgbhv-bypass-trap.md
+extern const OutputMode ModeBypass;
+
 extern const OutputMode Mode1080p;
 extern const OutputMode Mode1024p;
 extern const OutputMode Mode960p;

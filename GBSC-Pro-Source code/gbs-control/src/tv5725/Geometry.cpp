@@ -105,6 +105,8 @@ bool Geometry::solveWindows()
     return true;
 }
 
+const OutputMode *Geometry::outputMode() const { return rasterMode_; }
+
 bool Geometry::solveRaster()
 {
     // The choice is an input, not a read-back. Deriving the mode from
@@ -119,6 +121,12 @@ bool Geometry::solveRaster()
     if (mode == 0) {
         // Not a failure, and NOT a fall back to 1080p: the choice names no
         // resolution, and a raster nobody has swept keeps what it had.
+        return false;
+    }
+    if (mode->isBypass()) {
+        // Named rather than left to usable(): the output is the source's own
+        // timing, so there is no raster to compute and solving one would write
+        // zeros that every other register agrees with.
         return false;
     }
 
@@ -358,8 +366,8 @@ void Geometry::enterBypass()
     modePending_ = false;
     FrameBuffer::releaseCapture();
 
-    choice_ = OutputChoice();
-    rasterMode_ = 0;
+    choice_ = OutputChoice(OutputBypass);
+    rasterMode_ = &ModeBypass;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
     samplingPending_ = false;
@@ -439,7 +447,7 @@ bool Geometry::sourceMoved()
 {
     // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
     // change so a later poll cannot write one over the setup it just chose.
-    if (rasterMode_ == 0 || solvedLines_ == 0) {
+    if (rasterMode_ == 0 || rasterMode_->isBypass() || solvedLines_ == 0) {
         sourceInterrupted_ = false;
         return false;
     }
@@ -483,7 +491,8 @@ void Geometry::solveScanMode()
     // The porch is not known this early either, so the bound is the raster's own
     // edge and a doubling that only just fits is caught by the capture clamp.
     const uint16_t showable =
-        rasterMode_ ? AxisVertical.maximumCapture(rasterMode_->frameLines(), 0) : 0;
+        rasterMode_ && !rasterMode_->isBypass()
+            ? AxisVertical.maximumCapture(rasterMode_->frameLines(), 0) : 0;
     const bool doubled = SourceMeasurement::lineDoublingFor(lines, showable);
     if (scanModeApplied_ && doubled == sampling_.lineDoubled())
         return;

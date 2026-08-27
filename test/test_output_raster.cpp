@@ -286,13 +286,34 @@ TEST_CASE("480p and 576p are separate preferences, neither of them a rate")
     CHECK(Mode576p.frameLines() == 625);    // 576 + 5 front + 5 sync + 39 back
 }
 
+TEST_CASE("bypass has no raster to solve, and says so twice")
+{
+    // The hazard: OutputMode is a raster-geometry value, so solving one for a
+    // mode with no raster would write zeros with every register self-consistent.
+    // isBypass() is what callers ask; solve() failing usable() is what catches
+    // a caller that did not.
+    CHECK(ModeBypass.isBypass());
+    CHECK(ModeBypass.activeLines() == 0);
+    CHECK_FALSE(ModeBypass.solve(50.0f).usable());
+    CHECK_FALSE(ModeBypass.solve(59.94f).usable());
+}
+
+TEST_CASE("forFrameHeight never answers bypass")
+{
+    // It resolves a raster that is ON the chip, and bypass has none. Answering
+    // ModeBypass for a frame height of zero would make a chip with no raster
+    // indistinguishable from one deliberately in bypass.
+    CHECK((OutputMode::forFrameHeight(0) == 0));
+}
+
 TEST_CASE("a preference that is not a resolution resolves to no mode")
 {
     // 0 leaves the caller to fall back rather than silently solving the wrong
     // raster. 6 is cast rather than named because the enumerator no longer
-    // exists: OutputDownscale went with the preset tables.
+    // exists: OutputDownscale went with the preset tables. Bypass is NOT one of
+    // these -- it names a mode, and having its own is the point.
     CHECK((OutputMode::forPreference((PresetPreference)6) == 0));
-    CHECK((OutputMode::forPreference(OutputBypass) == 0));
+    CHECK((OutputMode::forPreference(OutputBypass) == &ModeBypass));
 }
 
 TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")

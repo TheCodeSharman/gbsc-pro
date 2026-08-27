@@ -337,3 +337,46 @@ TEST_CASE("an output change while a mode change is in flight waits for it")
     REQUIRE(pollUntilSolved(settled.engine));
     CHECK(frameLinesWritten() == 525);
 }
+
+TEST_CASE("the engine always holds what the output is doing")
+{
+    // rasterMode_ == 0 used to mean two things -- in bypass, or nothing solved
+    // yet -- so no caller could ask "is the output bypassed" without also
+    // catching a chip that had never solved.
+    SettledEngine settled;
+
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
+    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE((settled.engine.outputMode() == &Mode1080p));
+    CHECK_FALSE(settled.engine.outputMode()->isBypass());
+
+    settled.engine.enterBypass();
+    REQUIRE((settled.engine.outputMode() != 0));
+    CHECK(settled.engine.outputMode()->isBypass());
+}
+
+TEST_CASE("nothing solved yet is not bypass")
+{
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    CHECK((engine.outputMode() == 0));
+}
+
+TEST_CASE("a raster is never solved for bypass")
+{
+    // OutputMode is a raster-geometry value and ModeBypass has no raster, so a
+    // solve here would write zeros with every register self-consistent.
+    SettledEngine settled;
+
+    settled.engine.modeChanged(OutputChoice(Output1080P), 4);
+    REQUIRE(pollUntilSolved(settled.engine));
+    const uint16_t solved = frameLinesWritten();
+
+    forgetWrites();
+    CHECK_FALSE(settled.engine.outputChanged(OutputChoice(OutputBypass)));
+
+    CHECK_FALSE(Wire.touched[3][0x02]);      // VDS_VSYNC_RST, the frame total
+    CHECK_FALSE(Wire.touched[3][0x01]);      // VDS_HSYNC_RST, the line total
+    CHECK(frameLinesWritten() == solved);
+}

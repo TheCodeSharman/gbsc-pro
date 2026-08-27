@@ -84,11 +84,18 @@ const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
     if (presetPreference == Output576P)
         return &Mode576p;
 
+    // A resolution choice whose resolution is the source's, so it names a mode
+    // like any other rather than reading as "nothing chosen".
+    if (presetPreference == OutputBypass)
+        return &ModeBypass;
+
     return 0;
 }
 
 const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
 {
+    if (frameLines == 0)
+        return 0;
     if (frameLines == Mode1080p.frameLines())
         return &Mode1080p;
     if (frameLines == Mode1024p.frameLines())
@@ -112,6 +119,8 @@ OutputMode::OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
       vFrontPorchLines_(vFrontPorchLines) {}
 
 uint16_t OutputMode::activeLines() const { return activeLines_; }
+
+bool OutputMode::isBypass() const { return this == &ModeBypass; }
 
 uint16_t OutputMode::frameLines() const
 {
@@ -193,6 +202,11 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 //    480p   62 px,  60 px at 27   ->  2296.30, 2222.22 ns
 //
 // Arguments are (activeLines, syncNs, backPorchNs, vsync, vBackPorch, vFrontPorch).
+// No active lines and no porches, so frameLines() is 0 and clockDividerFor()
+// finds no divider -- which is what makes solve() fail usable() rather than
+// return a plausible zero raster.
+const OutputMode ModeBypass(0, 0.0f, 0.0f, 0, 0, 0);
+
 const OutputMode Mode1080p(1080, 296.2963f, 996.6330f, 5, 36, 4);    // 1125
 const OutputMode Mode1024p(1024, 1037.0370f, 2296.2963f, 3, 38, 1);  // 1066
 const OutputMode Mode960p(960, 1037.0370f, 2888.8889f, 3, 36, 1);    // 1000

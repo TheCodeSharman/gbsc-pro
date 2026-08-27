@@ -102,6 +102,11 @@ public:
     // now. Measures, so it must run from loop().
     bool resolve();
 
+    // What the output is doing, as one question. Null only before anything has
+    // been solved; ModeBypass -- isBypass() -- while video routes around the
+    // VDS. Held rather than read back off VDS_?SYNC_RST.
+    const OutputMode *outputMode() const;
+
     // The source field rate the last solve ran at. Held, not measured here, so
     // a network callback may ask.
     float sourceFieldRateHz() const;
