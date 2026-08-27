@@ -100,6 +100,18 @@ uint8_t Adc::applyOversample(uint8_t postDivider, uint8_t oversample)
     return ratio;
 }
 
+void Adc::applyForBypassRgbhv()
+{
+    ADC_FLTR::write(0);
+    PLLAD_ICP::write(4);
+    PLLAD_FS::write(0);
+    PLLAD_MD::write(1856);
+
+    ADC_TA_05_CTRL::write(0x02);
+    ADC_TEST_04::write(0x02);
+    ADC_TEST_0C::write(0x12);
+}
+
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
                              uint8_t oversample)
 {

@@ -4405,17 +4405,10 @@ void bypassModeSwitch_RGBHV()
     GBS::SP_DIS_SUB_COAST::write(1);   
     GBS::SP_HS_PROC_INV_REG::write(0); 
     GBS::SP_VS_PROC_INV_REG::write(0); 
-    GBS::PLLAD_KS::write(1);           
+    Tv5725::Adc::PLLAD_KS::write(1);
     rto->osr = Tv5725::Adc::applyOversample(1, 2);
-    Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
-    GBS::ADC_FLTR::write(0);        
-    GBS::PLLAD_ICP::write(4);       
-    GBS::PLLAD_FS::write(0);        
-    GBS::PLLAD_MD::write(1856);     
-
-    GBS::ADC_TA_05_CTRL::write(0x02); 
-    GBS::ADC_TEST_04::write(0x02);    
-    GBS::ADC_TEST_0C::write(0x12);    
+    Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1);
+    Tv5725::Adc::applyForBypassRgbhv();
     GBS::DAC_RGBS_R0ENZ::write(1);    
     GBS::DAC_RGBS_G0ENZ::write(1);    
     GBS::DAC_RGBS_B0ENZ::write(1);    

@@ -282,3 +282,44 @@ TEST_CASE("neither touches the other, nor the ADC PLL")
     CHECK_FALSE(callWrote<Adc::PLLAD_KS>(Adc::selectInput, 1));
     CHECK_FALSE(callWrote<Adc::PLLAD_CKOS>(Adc::selectInput, 1));
 }
+
+
+// --- the ADC as RGBHV bypass sets it up --------------------------------------
+
+TEST_CASE("bypass writes the divider before anything can latch it")
+{
+    // The whole reason this lives in a class with a trace behind it. PLLAD_LAT
+    // loads MD on a rising edge, so a divider written after that edge leaves
+    // the PLL clocking the old one while the register reads the new -- a solid
+    // green screen with nothing self-inconsistent to diagnose from.
+    Wire.reset();
+    Adc::applyForBypassRgbhv();
+    Adc::latch();
+
+    const int md = lastWriteOf<Adc::PLLAD_MD>();
+    const int edge = latchRisingEdge();
+    CHECK(md >= 0);
+    CHECK(edge >= 0);
+    CHECK(md < edge);
+}
+
+TEST_CASE("bypass asks the ADC for the whole line, not a capture window")
+{
+    // 1856 is the bypassed line, and it is the value the sync processor is then
+    // expected to count back -- STATUS_SYNC_PROC_HTOTAL echoes a LATCHED
+    // divider, which is what makes it the one witness that the latch happened.
+    Wire.reset();
+    Adc::applyForBypassRgbhv();
+
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1856);
+}
+
+TEST_CASE("bypass takes the ADC's internal filter out of the path")
+{
+    // Bypass hands the ADC straight to the DACs, so anything shaping the
+    // samples on the way is shaping the picture.
+    Wire.reset();
+    Adc::applyForBypassRgbhv();
+
+    CHECK(Wire.field(5, 0x03, 4, 2) == 0);
+}

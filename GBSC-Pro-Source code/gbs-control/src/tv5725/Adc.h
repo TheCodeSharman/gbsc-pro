@@ -242,9 +242,21 @@ public:
     static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
                                    uint8_t oversample);
 
+    // The ADC as RGBHV bypass wants it: no internal filtering, the PLL's charge
+    // pump and VCO gain, and a divider sized for the bypassed line rather than
+    // for a capture window.
+    //
+    // The divider written here is LOADED BY A LATER RISING EDGE ON PLLAD_LAT,
+    // not by this write. Anything moving this call must keep it before the
+    // latch that follows it, or the register reads the new divider while the
+    // PLL still clocks at the old one -- a solid green screen with every
+    // register self-consistent. SourceMeasurement.h
+    static void applyForBypassRgbhv();
+
 private:
     // How many taps above the post divider a ratio asks for: one per doubling.
     static uint8_t stepsFor(uint8_t oversample);
+
 };
 
 }  // namespace Tv5725
