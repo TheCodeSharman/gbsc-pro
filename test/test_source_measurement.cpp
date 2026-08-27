@@ -20,6 +20,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 
 using namespace Tv5725;
 
@@ -803,4 +804,63 @@ TEST_CASE("the reference divider is even, like every divider the solver picks")
         CHECK(SourceMeasurement::referenceDivider(true) <= 2 * InputLine::WriteLimitUnits);
         CHECK(SourceMeasurement::referenceDivider(false) >= InputLine::WriteLimitUnits - 1);
     }
+}
+
+// --- the own-V-sync probe ---------------------------------------------------
+//
+// A clock the test owns, advancing the way the probe's delay(2) does, and
+// raising VSACT once it reaches the arrival time. The bit has to change WHILE
+// the probe is polling, which a static fake register cannot express.
+
+static const uint8_t VSACT_BIT = 0x08;      // s0_16[3]
+static const uint8_t EXT_SYNC_SEL_BIT = 0x08;   // s5_20[3]
+
+static uint32_t g_nowMs = 0;
+static uint32_t g_vsyncArrivesAtMs = 0;
+
+static uint32_t testClock()
+{
+    g_nowMs += 2;
+    if (g_nowMs >= g_vsyncArrivesAtMs) {
+        Wire.bank[0][0x16] |= VSACT_BIT;
+    }
+    return g_nowMs;
+}
+
+static void vsyncArrivesAt(uint32_t ms)
+{
+    Wire.reset();
+    g_nowMs = 0;
+    g_vsyncArrivesAtMs = ms;
+}
+
+// Larger than any arrival, so the bit never comes up.
+static const uint32_t Never = 0xFFFFFFFFu;
+
+TEST_CASE("a V sync that arrives late is still the source's own")
+{
+    // The tail of the reacquisition time reaches 242 ms where the typical case
+    // is 2-3. A probe that stops looking inside that tail calls a separate-sync
+    // source composite, which latches: SP_VTOTAL collapses to 97 and the picture
+    // goes. docs/investigations/own-vsync-probe-window.md
+    vsyncArrivesAt(400);
+    CHECK(SourceMeasurement::sourceHasOwnVsync(testClock) == true);
+}
+
+TEST_CASE("a source with no V sync of its own is not given one")
+{
+    // The other half, and what stops the window above from becoming "always
+    // yes": on composite sync the timeout IS the correct answer.
+    vsyncArrivesAt(Never);
+    CHECK(SourceMeasurement::sourceHasOwnVsync(testClock) == false);
+}
+
+TEST_CASE("the sync path the probe borrowed goes back")
+{
+    // The probe answers by MOVING SP_EXT_SYNC_SEL, so a source already on
+    // composite separation is left off it if this does not restore.
+    vsyncArrivesAt(10);
+    Wire.bank[5][0x20] |= EXT_SYNC_SEL_BIT;
+    SourceMeasurement::sourceHasOwnVsync(testClock);
+    CHECK((Wire.bank[5][0x20] & EXT_SYNC_SEL_BIT) == EXT_SYNC_SEL_BIT);
 }

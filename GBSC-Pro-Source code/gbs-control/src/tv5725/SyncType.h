@@ -9,9 +9,10 @@ namespace Tv5725 {
 // configured, not a property of the source, so anything deciding from it
 // confirms whatever the unit is already doing. docs/sync-type-selection.md
 //
-// The probe that breaks that costs ~500 ms, so it runs once per SOURCE. The
-// probe itself belongs to the sketch -- it is a 240 ms settle and a 250 ms poll
-// -- and arrives here as a function to call.
+// The probe that breaks that is SourceMeasurement::sourceHasOwnVsync(), which
+// moves the sync path and watches for V. It costs over a second, so it runs once
+// per SOURCE, and it arrives here as a function to call rather than as a
+// dependency on the class that owns it.
 class SyncType {
 public:
     static bool isCsync();

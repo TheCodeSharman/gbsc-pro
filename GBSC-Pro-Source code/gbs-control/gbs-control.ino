@@ -1971,28 +1971,11 @@ void optimizeSogLevel() // Optimize SOG levels
     }
 }
 
-// With SP_EXT_SYNC_SEL clear the sync processor takes V from the VS input, so an
-// active VSACT proves a real V sync — meaning the source is not composite.
-// Restores SP_EXT_SYNC_SEL. docs/investigations/riscpc-no-sync.md
+static uint32_t millisNow() { return (uint32_t)millis(); }
+
 boolean sourceHasOwnVsync()
 {
-    uint8_t extSyncBackup = GBS::SP_EXT_SYNC_SEL::read();
-    GBS::SP_EXT_SYNC_SEL::write(0);
-    delay(240); // the sync processor needs time to reacquire V after the switch
-
-    boolean active = false;
-    unsigned long timeOutStart = millis();
-    while (!active && ((millis() - timeOutStart) < 250)) {
-        active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
-        delay(2);
-    }
-    if (active) { // confirm it: the bit flickers while the processor settles
-        delay(10);
-        active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
-    }
-
-    GBS::SP_EXT_SYNC_SEL::write(extSyncBackup);
-    return active;
+    return Tv5725::SourceMeasurement::sourceHasOwnVsync(millisNow);
 }
 
 // Point both halves of the input path at the input the user last chose, so
