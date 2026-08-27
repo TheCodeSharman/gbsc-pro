@@ -28,7 +28,16 @@ make -C build flash               # upload over USB serial (PORT=/dev/ttyUSB0)
 
 pytest tools/gbsc-pro-hwtest/ --host=192.168.88.108 -v
 pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests run
+
+ruff check tools                  # BEFORE any hardware run
 ```
+
+**`ruff check tools` before every hardware run.** A pytest module referencing a
+name it never imported imports fine and fails five minutes in, against a live
+unit and a source that has to be put back afterwards; two of those cost two runs
+before the linter was in the dev shell, and it found a third the moment it
+arrived. `ruff.toml` scopes it to faults rather than style, so a clean run means
+something.
 
 **Drive the SOURCE from here too.** ModeServ runs on the RISC PC, TCP 6502, one
 command per connection -- the close is the end of the reply. It lives in the
