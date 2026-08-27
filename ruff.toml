@@ -1,0 +1,7 @@
+# Faults, not style. The class this exists for is an undefined name in a pytest
+# module: it imports fine and fails five minutes into a hardware run, which is
+# what two of them cost. F is pyflakes -- undefined names, unused imports and
+# locals; E9 is syntax and IO errors. Everything else ruff offers here is taste,
+# and this tree has its own.
+[lint]
+select = ["F", "E9"]

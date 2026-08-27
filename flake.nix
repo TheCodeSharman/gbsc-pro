@@ -58,12 +58,20 @@
               # The host C++ unit tests. Header-only, so this only has to put
               # doctest/doctest.h on the include path.
               pkgs.doctest
+
+              # Undefined names in tools/ that only a hardware run would find. A
+              # pytest module that references a name it never imported imports
+              # fine and fails five minutes in, against a live unit. `ruff check`
+              # answers in milliseconds; ruff.toml scopes it to that class of
+              # fault rather than to style.
+              pkgs.ruff
             ];
             shellHook = ''
-              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest), esptool, arduino-cli + make, node/tsc (web UI)"
+              echo "gbsc-pro dev shell — python3 (pyserial, ymodem, websocket-client, pytest), esptool, arduino-cli + make, node/tsc (web UI), ruff"
               echo "  firmware: make -C build setup   (once)   then   make -C build"
               echo "  web UI:   cd 'GBSC-Pro-Source code/gbs-control/public' && npm run build"
               echo "  hardware: pytest --host=gbscontrol.local   (needs a running unit)"
+              echo "  lint:     ruff check tools   (before any hardware run)"
             '';
           };
         });
