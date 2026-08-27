@@ -53,12 +53,24 @@ SD the gate below never runs at all and the type comes from
 `inputAndSyncDetect()`'s `set()` calls. That is why the gate cannot be exercised
 from a bench source at 320x256@50.
 
-`sourceHasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits 240 ms for the sync
-processor to reacquire V, polls for up to 250 ms, re-confirms after 10 ms, then
-restores the register.
+`SourceMeasurement::sourceHasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits
+`OwnVsyncSettleMs` for the sync processor to reacquire V, polls for up to
+`OwnVsyncWindowMs`, re-confirms after 10 ms, then restores the register. It logs
+`own V sync: yes after 3ms` each time, which is the only report of how long the
+reacquisition took.
 
-**It costs ~500 ms, so it runs once per SOURCE, not once per mode change.**
-`SyncType::isSet()` is the gate and `SyncType::forget()` re-arms it.
+**The window is sized well past the measured tail, deliberately.** Reacquisition
+is 2-3 ms most of the time and runs past 242 ms, and the error is
+one-directional: a timeout on a source that HAS its own V sync latches composite
+separation onto it and takes the picture with it, while no wait can invent a V
+sync that is not there. Sizing it to the measured maximum leaves the tail
+crossing it. `docs/investigations/own-vsync-probe-window.md` has the
+distribution and what a timeout costs.
+
+**It costs over a second, so it runs once per SOURCE, not once per mode change**,
+and the wait is only ever spent in full on a genuinely composite source, where
+the timeout is the right answer. `SyncType::isSet()` is the gate and
+`SyncType::forget()` re-arms it.
 
 **What re-arms it is a change of SOURCE, not a cleared clamp.** `forget()` sits
 beside `coastPositionIsSet` and `clampPositionIsSet` at the five sites that mean a
@@ -68,7 +80,7 @@ through `resetSyncProcessor()`. **Six other sites clear those two flags and
 deliberately do not forget**, because they are mode changes on the source already
 attached: twice inside `applyPresets()` itself, twice in `runSyncWatcher()`'s
 scaling-RGBHV arm, and the serial clock-generator command. Reading the flags as
-the rule re-probes on every preset load and spends 500 ms doing it.
+the rule re-probes on every preset load and spends that second doing it.
 
 **It cannot be left to `inputAndSyncDetect()` alone.** That probe sits behind
 `SyncSearch::searchFor(...) == VsyncPresent`, so on a source with no separate
