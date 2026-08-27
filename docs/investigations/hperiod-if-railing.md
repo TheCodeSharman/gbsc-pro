@@ -392,6 +392,29 @@ be checked, and stable-but-wrong is detectable** -- which is the only way to
 catch the third form. The 627-line row is the RGBHV bypass trap rather than a
 scaled mode; `docs/rgbhv-bypass-trap.md`.
 
+## An OTA reflash is a second trigger, and it needs no test to run
+
+Paired readings across one upload, bench RiscPC at 320x256@50, source untouched
+throughout and `STATUS_SYNC_PROC_VTOTAL` a steady 311 on both sides:
+
+| | `HPERIOD_IF` | expected |
+|---|---|---|
+| settled unit, before the upload | **430** | 431 |
+| immediately after `make -C build flash-ota` and a fresh detect | **255** | 431 |
+| after the full `--source` suite and an `esptool --after hard_reset` | 254..511 over 12 reads | 431 |
+
+So the state was already reached before any of the `--source` tests ran, on a
+source that never changed mode -- the section below names those tests as a route
+in, and this says they are not the only one. **The reflash alone is enough.**
+
+The third row confirms the "ESP reset: no" row above by a second route: a reset
+that re-initialises the whole chip over I2C leaves it railed, and the recovery
+remains a cold boot with mains and USB both pulled.
+
+**The picture was clean and correct throughout**, photographed either side of the
+suite, at 1080p on a 1916 x 1125 raster with the framing restored from its slot.
+Nothing on screen distinguishes a railed unit from a healthy one.
+
 ## A trigger, at last
 
 `pytest tools/gbsc-pro-hwtest/test_geometry_pads.py --host=<ip> --source`
