@@ -1626,6 +1626,14 @@ def _answering(host):
     return status == 200
 
 
+# What the engine will believe is a source, from CaptureWindow. A steady count
+# outside this is a measurement in progress rather than a mode -- 97 and 98 are
+# what a preset change reads mid-flight, and the smallest rasters the VDS
+# actually scales are 262 and 312.
+SOURCE_VTOTAL_MIN = 200
+SOURCE_VTOTAL_MAX = 1300
+
+
 def _settled_vtotal(host, samples=3, interval=0.3):
     """The source's vertical total once it holds still, or None while it does not.
 
@@ -1633,9 +1641,14 @@ def _settled_vtotal(host, samples=3, interval=0.3):
     the sync processor counts whatever it finds on the way, so the first reading
     after a restart is as likely to be a mode nobody selected as the real one --
     256 was measured mid-sweep on a source sending 311.
+
+    **STEADY IS NOT VALID.** 97 holds perfectly still and is not a mode, so a
+    baseline taken on it demands that a restart reproduce a fault; measured, a
+    run captured 97 before the restart, came back correct at 311 and scored that
+    as the boot restore having failed.
     """
     first = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
-    if not first:
+    if not first or not (SOURCE_VTOTAL_MIN <= first <= SOURCE_VTOTAL_MAX):
         return None
     for _ in range(samples - 1):
         time.sleep(interval)
