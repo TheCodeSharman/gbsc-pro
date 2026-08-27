@@ -143,8 +143,11 @@ static volatile uint8_t tracePal60 = 0;
 // Which entry to trace through. doPostPresetLoadSteps() alone does not reach
 // either bypass switch -- applyPresets() is what branches to them on standards
 // 15 and 5/6/7/13 -- so an oracle taken through it says nothing about the code
-// those standards actually run.
-static volatile uint8_t traceViaApply = 0;
+// those standards actually run. And applyPresets() reaches setOutModeHdBypass()
+// on those four standards ONLY, so the switch's SD and progressive arms, which
+// the pass-through preference reaches, need an entry of their own.
+enum TraceEntry { TraceViaPost = 0, TraceViaApply = 1, TraceViaBypass = 2 };
+static volatile uint8_t traceVia = TraceViaPost;
 #endif
 char userCommand;
 
@@ -7155,7 +7158,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         // Delimiters, not timestamps: the parser must not have to guess where a
         // load starts, and the helpers that read live measurements make the
         // timing vary run to run.
-        const bool viaApply = traceViaApply != 0;
+        const uint8_t via = traceVia;
+        static const char *const viaNames[] = {"post", "apply", "bypass"};
         Serial.print(F("=== TRACE BEGIN std="));
         Serial.print(forced);
         Serial.print(F(" yuv="));
@@ -7163,10 +7167,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         Serial.print(F(" pal60="));
         Serial.print(tracePal60);
         Serial.print(F(" via="));
-        Serial.print(viaApply ? F("apply") : F("post"));
+        Serial.print(viaNames[via]);
         Serial.println(F(" ==="));
-        if (viaApply) {
+        if (via == TraceViaApply) {
             applyPresets(forced);
+        } else if (via == TraceViaBypass) {
+            setOutModeHdBypass(false);
         } else {
             doPostPresetLoadSteps();
         }
@@ -8942,7 +8948,10 @@ void startWebserver()
         }
         traceIsYuv = request->hasArg("yuv") ? request->arg("yuv").toInt() != 0 : 0;
         tracePal60 = request->hasArg("pal60") ? request->arg("pal60").toInt() != 0 : 0;
-        traceViaApply = request->hasArg("via") && request->arg("via") == "apply";
+        const String via = request->hasArg("via") ? request->arg("via") : String("post");
+        traceVia = via == "apply" ? TraceViaApply
+                 : via == "bypass" ? TraceViaBypass
+                 : TraceViaPost;
         traceStandard = (int8_t)request->arg("std").toInt();
         request->send(200, "application/json", "{\"queued\":true}");
     });
