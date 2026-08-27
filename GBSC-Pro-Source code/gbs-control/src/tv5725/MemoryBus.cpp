@@ -5,6 +5,12 @@
 
 namespace Tv5725 {
 
+void MemoryBus::useFeedbackClock()
+{
+    GBS::PLL_MS::write(SdramTimings::FbclkCode);
+    MEM_PAD_CLK_INVERT::write(0);
+}
+
 void MemoryBus::init()
 {
     // Nothing is read back off the chip here: a subsystem taking its own inputs

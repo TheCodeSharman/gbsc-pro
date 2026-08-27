@@ -299,6 +299,15 @@ public:
     // Bring up the SDRAM bus: the clock, the part's mode register, its timing,
     // the address mapping, the arbitration and the board's delay trim.
     static void init();
+
+    // Run the bus off the FBCLK pin instead of the derived clock. Bypass takes
+    // the frame buffer out of the video path, so what clocks it stops mattering
+    // and the pad's own return path is what the bypass switches ask for.
+    //
+    // The scaling path does not have to undo this: init() picks the clock from
+    // SdramTimings again, and BringUp::arm() is the first statement in either
+    // switch. docs/investigations/pll-ms-has-four-writers.md
+    static void useFeedbackClock();
 };
 
 }  // namespace Tv5725

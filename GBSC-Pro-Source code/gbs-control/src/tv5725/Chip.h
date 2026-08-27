@@ -179,6 +179,18 @@ public:
     // reached the right conclusion without acting on it: a scaled raster solved
     // underneath bypass routing, every register plausible, the bypass picture.
     static void routeToScaler();
+
+    // The DACs and the sync outputs, off and back on around a mode switch. The
+    // encoder samples the analog output, so dropping it is what stops it seeing
+    // half-written timing.
+    static void outputDown();
+    static void outputUp();
+
+    // Segment 0 as RGBHV bypass wants it: the display PLL off its scaled
+    // settings, the pads that carry a bypassed source, and the ADC put straight
+    // on the DACs. The memory clock travels with it and belongs to
+    // Tv5725::MemoryBus, which is why this calls rather than writes it.
+    static void enterBypassRgbhv();
 };
 
 }  // namespace Tv5725

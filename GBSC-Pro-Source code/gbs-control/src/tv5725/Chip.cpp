@@ -1,8 +1,37 @@
 #include "Chip.h"
 
+#include "MemoryBus.h"
+
 #include "../../gbs_types.h"
 
 namespace Tv5725 {
+
+void Chip::outputDown()
+{
+    DAC_RGBS_PWDNZ::write(0);
+    PAD_SYNC_OUT_ENZ::write(1);
+}
+
+void Chip::outputUp()
+{
+    DAC_RGBS_PWDNZ::write(1);
+    PAD_SYNC_OUT_ENZ::write(0);
+}
+
+void Chip::enterBypassRgbhv()
+{
+    GBS::PLL_CKIS::write(0);
+    GBS::PLL_DIVBY2Z::write(0);
+    GBS::PLL_ADS::write(0);
+    MemoryBus::useFeedbackClock();
+    PAD_TRI_ENZ::write(1);
+    GBS::PLL648_CONTROL_01::write(0x35);
+    GBS::PLL648_CONTROL_03::write(0x00);
+    GBS::PLL_LEN::write(1);
+
+    DAC_RGBS_ADC2DAC::write(1);
+    OUT_SYNC_SEL::write(1);
+}
 
 void Chip::routeToScaler()
 {

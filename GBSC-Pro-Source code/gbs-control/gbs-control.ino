@@ -4358,8 +4358,7 @@ void bypassModeSwitch_RGBHV()
         return;
     }
 
-    GBS::DAC_RGBS_PWDNZ::write(0);
-    GBS::PAD_SYNC_OUT_ENZ::write(1);
+    Tv5725::Chip::outputDown();
 
     // No scaled raster in bypass: video routes around the VDS entirely. A solve
     // deferred by the previous mode would otherwise be retried by
@@ -4382,18 +4381,7 @@ void bypassModeSwitch_RGBHV()
     rto->clampPositionIsSet = false;
     rto->HPLLState = 0;
 
-    GBS::PLL_CKIS::write(0);
-    GBS::PLL_DIVBY2Z::write(0);
-    GBS::PLL_ADS::write(0);
-    GBS::PLL_MS::write(2);
-    GBS::PAD_TRI_ENZ::write(1);
-    GBS::MEM_PAD_CLK_INVERT::write(0);
-    GBS::PLL648_CONTROL_01::write(0x35);
-    GBS::PLL648_CONTROL_03::write(0x00);
-    GBS::PLL_LEN::write(1);
-
-    GBS::DAC_RGBS_ADC2DAC::write(1);
-    Tv5725::Chip::OUT_SYNC_SEL::write(1);
+    Tv5725::Chip::enterBypassRgbhv();
 
     GBS::SFTRST_HDBYPS_RSTZ::write(1);
     GBS::HD_INI_ST::write(0);
@@ -4441,9 +4429,8 @@ void bypassModeSwitch_RGBHV()
     resetPLLAD();
     togglePhaseAdjustUnits();
     delay(20);
-    GBS::PLLAD_LEN::write(1);        
-    GBS::DAC_RGBS_PWDNZ::write(1);   
-    GBS::PAD_SYNC_OUT_ENZ::write(0); 
+    GBS::PLLAD_LEN::write(1);
+    Tv5725::Chip::outputUp();
 
     setAndLatchPhaseSP();
     setAndLatchPhaseADC();
