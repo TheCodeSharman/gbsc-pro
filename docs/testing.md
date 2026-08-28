@@ -109,6 +109,19 @@ things change, and both matter:
 **A sourceless pair cannot be compared against the committed fixtures**, which
 were captured with the bench source locked. Compare it against its own before.
 
+- **How many times the retry loop runs varies between captures**, so a branch can
+  come back longer or shorter on the same build. It shows as `equivalent=False`
+  with EMPTY `onlyBefore`/`onlyAfter` -- extra repetitions of the five writes
+  `updateSpDynamic()` makes, and nothing else -- which reads like an ordering
+  change and is not one. Re-capture the branch on the same build before
+  believing it: measured at 713, 738 and 713 writes across three captures of one
+  branch, two of them the same binary.
+- **A short capture is not comparable to the same branch inside a full run.**
+  Every load starts from what the previous standard left, and the writes are
+  read-modify-write, so standard 2 after standard 1 and standard 2 after a boot
+  disagree on real bytes. Re-capture the whole set, or compare only branches
+  whose predecessor is the same.
+
 ## Host unit tests
 
 `test/*.cpp`, doctest, one binary per subject, each a target in `test/Makefile`.
