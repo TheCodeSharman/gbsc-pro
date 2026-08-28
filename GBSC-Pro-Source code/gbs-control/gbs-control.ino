@@ -555,9 +555,15 @@ static void bootLogPrintf(const char *fmt, ...)
 // only some fields are digit-encoded -- presetSlot and the BCSH values are
 // written raw -- so byte 0 is the one position that can be asserted on, and
 // "not all bytes identical" rules out erased flash and zero fill.
+//
+// **BYTE 0 IS A VALUE, NOT A DIGIT.** saveUserPrefs() writes
+// `presetPreference + '0'` and OutputBypass is 10, so the bypass switch puts
+// ':' there. A digits-only bound rejects a file this firmware wrote, on every
+// boot after it, and a rejected file is what stops saveUserPrefs() writing --
+// including the save behind "restore defaults", so nothing in the UI repairs it.
 static bool prefsLookPlausible(const uint8_t *buf)
 {
-    if (buf[0] < '0' || buf[0] > '9') {
+    if (buf[0] < '0' || buf[0] > (uint8_t)('0' + OutputBypass)) {
         return false;
     }
     for (uint8_t i = 1; i < PREFS_BYTES; i++) {
