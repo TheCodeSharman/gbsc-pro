@@ -15,6 +15,7 @@ behaviour** — never drop to a slower one to dodge wiring up the fast one.
 | **host unit** | `make -C test` | g++ + doctest | ~1 s, all of it |
 | **host tooling** | `pytest tools/gbsc-pro-hwtest/` | nothing | ~11 s |
 | **hardware acceptance** | `pytest tools/gbsc-pro-hwtest/ --host=<ip>` | a running unit | ~1 min |
+| **write trace** | `capture_traces.py` | a unit, USB, a trace build | ~1 min a branch |
 | **bench** | by hand, one register at a time | a unit and eyes | slow, and the only judge of a picture |
 
 ```sh
@@ -38,6 +39,58 @@ Tests that would disturb a working picture or write flash are behind flags in
 | `--no-sync` | tests that drop sync deliberately |
 | `--freeze` | the `/freeze` acceptance test |
 | `--pllad-hostile` | tests that move the ADC divider |
+
+## The write trace
+
+The equivalence oracle for a branch no bench source can reach. A
+`GBS_TRACE_WRITES` build prints every register write to hardware Serial;
+`/trace/standard` forces a standard and runs a load; `capture_traces.py` collects
+the runs and `trace_oracle.py` turns them into the ordered subsequence common to
+all of them, recording what differed as variable rather than asserting it.
+
+**IT HAS TO BE USB.** The trace never reaches SerialM, because `broadcastTXT()`
+allocates per frame and the build runs on ~21 KB of free heap.
+
+### Which entry is traced decides what the oracle contains
+
+| `--via` | runs | reaches |
+|---|---|---|
+| `post` | `doPostPresetLoadSteps()` | the scaled standards |
+| `apply` | `applyPresets()` | both bypass switches, on 15 and on 5/6/7/13 |
+| `bypass` | `setOutModeHdBypass()` | that switch's SD and progressive arms |
+
+`applyPresets()` hands the HD switch 5, 6, 7 and 13 and nothing else, so its
+1/2 and 3/4 arms are reachable only by calling it directly — the pass-through
+preference is what does that at runtime.
+
+**AN ORACLE THAT DOES NOT REACH THE CODE DOES NOT FAIL — IT PASSES.** A trace
+taken through the wrong entry silently contains none of the writes being asked
+about, and the diff comes back empty. Check that the fixture carries a
+fingerprint of the code under test before believing an empty diff.
+
+### Comparing two oracles
+
+**Check the run lengths agree first.** A noisy capture drops writes from its
+longest-common-subsequence, and those then read as "only after" in the diff. A
+baseline with 139 stable writes against an after with 161 produced 20 spurious
+differences that were nothing of the kind.
+
+`compare()` reports `equivalent=False` with EMPTY `onlyBefore`/`onlyAfter` when
+only the ORDER changed. Read the two sequences side by side, not the summary.
+
+**Bracket the code under test.** Where the change is a move, the decidable
+comparison is not the whole trace but the slice between the write that precedes
+the moved code and the one that follows it. That slice is the same length and
+the same values in both, or the move is not faithful; everything outside it is
+the settle loops and the live measurements, which vary by capture.
+
+**Capture in short sessions.** Eight standards in one run drifts: a branch that
+is a steady 1046 writes in a four-standard run came back 1217/1205/1049 in an
+eight-standard one, which is a fixture with no oracle worth having.
+
+**When two captures of the SAME build disagree, that is the answer.** Before
+concluding a change moved something, re-capture the after and diff it against
+itself.
 
 ## Host unit tests
 
