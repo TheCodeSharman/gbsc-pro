@@ -11,7 +11,7 @@ RISC OS RiscPC at 320x256@50 (VTOTAL 311).
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the two bounds on what arrives intact — the horizontal write limit and the vertical bypass threshold — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` explains why a >535-line RGBHV source is never scaled, and which measurements bypass invalidates; `osd-menu.md` is the menu the remote drives — read it before touching anything called OSD, because three subsystems answer to that name and only the STV9426 reaches the television; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
+| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the one bound on what arrives intact — the horizontal write limit — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` is what decides whether an RGBHV source is scaled or bypassed, and which measurements bypass invalidates; `osd-menu.md` is the menu the remote drives — read it before touching anything called OSD, because three subsystems answer to that name and only the STV9426 reaches the television; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 | [gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos) | **a separate repo** — the 67 bench photographs, 146 MB. Mirrors this repo's paths, so its tree drops into a checkout and lands ignored. *What each one shows stays here*, in `docs/photos/*/README.md` and `snapshots/LOG.md` |
 | `gbsc-pro-bench-tools` | **a separate repo**, a sibling checkout — tooling for the bench *instruments*: a DSO Nano and a Rigol DS1000Z. **The dividing line: anything talking to the RetroScaler belongs here, anything driving one person's test gear belongs there.** |
@@ -238,7 +238,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   `IF_PRGRSV_CNTRL` 0 -> 1, `IF_LD_RAM_BYPS` 0 -> 1, `IF_HS_DEC_FACTOR` 1 -> 0,
   `PLLAD_MD` 2250 -> 1124, and `SP_VTOTAL` collapses from 311 to noise. The
   chain: `preferScalingRgbhv` defaults to 1, `runSyncWatcher()` sets
-  `isValidForScalingRGBHV` for an RGBHV source of 535 lines or fewer, and
+  `isValidForScalingRGBHV` for any RGBHV source, and
   `PresetLoad::videoStandardInputAfterLoad()` then forces `videoStandardInput`
   to `ScalingRgbhvStandard`, which is **3** -- and `doPostPresetLoadSteps()`
   branches `3 || 4 || 8 || 9` straight into `applyScanMode(Progressive)`. So a
@@ -632,9 +632,14 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `resetModeDetect()` (`SFTRST_MODE_RSTZ`, s0 `0x47` bit 1), reachable via
   `/setreg` — but it does **not** recover a bypassed IF, and nothing in the
   firmware resets Mode Detect while sync is present.
-- **An RGBHV source over 535 lines is trapped in bypass** and is never scaled —
-  deterministic, re-armed on every boot. The bench 800x600 (VTOTAL 627) hits it.
-  It still gives a picture; the cost is scaling. `docs/rgbhv-bypass-trap.md`.
+- **THE 535-LINE GATE IS GONE, and it was never a property of the part.** An
+  RGBHV source used to enter bypass above 535 lines with no branch to leave by,
+  so it stayed there for the life of the boot. Removed once the bench measured
+  what it was costing: 800x600 at VTOTAL 627 scales sharp and full screen, with
+  `PLLAD_MD` 1124 latched against the bypass switch's hardcoded 1856 and
+  `HPERIOD_IF` at the 176 that mode is due. **`preferScalingRgbhv` decides now**,
+  both ways, and bypass is still reachable by turning it off (`/uc?x`).
+  `docs/rgbhv-bypass-trap.md`.
 - **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
   loss term at either end. It did not look like one because the deficit against
   it *changes sign* with magnification, so four models were proposed in one
@@ -980,11 +985,12 @@ one the same way; the rules below are each a wasted session.
   constant from the second reads as a fix and ships one panel's number.
 - **BYPASS IS THE ONLY REFERENCE FOR WHERE THE PANEL'S PICTURE ENDS.** Nothing on
   the scaling path can supply it, because whatever the scaler blanks reads as
-  bezel from the far end. An 800x600 source is over the 535-line threshold, so it
-  is forced into RGBHV bypass and passes straight through filling the screen, and
-  its extent IS the panel's painted area:
-  `printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502`. Take it at the
-  same camera position as the frame being judged and compare the two.
+  bezel from the far end. An 800x600 source in bypass passes straight through
+  filling the screen, and its extent IS the panel's painted area:
+  `printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502`, then `/uc?x` to
+  turn `preferScalingRgbhv` off — **the line count no longer puts it there, so
+  the reference has to be asked for**. Take it at the same camera position as
+  the frame being judged, compare the two, and `/uc?x` back afterwards.
 - **PUT COLOUR AGAINST THE EDGE BEFORE MEASURING ONE.** At a default framing the
   last thing on screen is captured INPUT blanking, so "where the picture ends"
   measures the source's border and not the output's edge — a comparison against
