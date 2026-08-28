@@ -153,6 +153,25 @@ public:
     // back what it found cannot get this from rto->outModeHdBypass, which is
     // the sketch's intent rather than the block's state.
     static bool enabled();
+
+    // What the source's standard implies for the block: the raster it plays
+    // out, both blanking windows, the polarities the sync processor needs
+    // behind them, and the ADC's sampling. Runs AFTER enable(), whose resting
+    // timing it overwrites.
+    //
+    // An RGBHV source additionally gets the RGB patches, which are the sketch's
+    // because they need the user options and its own R/G/B round trip.
+    static void applyForStandard(uint8_t standard, void (*applyRgbPatches)());
+
+private:
+    static void applySd(uint8_t standard);
+    static void applyProgressive(uint8_t standard);
+    static void applyHd(uint8_t standard, void (*applyRgbPatches)());
+
+    // The ADC PLL's crossover row and VCO gain for an RGBHV source, which is
+    // the one thing here that no standard can carry: it follows the source's
+    // line count, and only a measurement has that.
+    static void applyRgbhvPll(uint16_t sourceLines);
 };
 
 }  // namespace Tv5725

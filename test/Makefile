@@ -37,7 +37,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|Interrupts|Adc|SamplingLog|SourceStandard|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|HdBypass|Interrupts|Adc|SamplingLog|SourceStandard|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -430,14 +430,18 @@ input-formatter:
 
 ## hd-bypass: host unit tests for Tv5725::HdBypass
 #
-# The HD bypass block's resting state -- what the two bypass switches overwrite
-# per mode, and the gains, offsets and DVI-mode blanking they never touch. Same
-# fake-Wire seam as input-formatter.
+# The HD bypass block's resting state, and what each standard overwrites it
+# with. The per-standard values reach across to the ADC, the sync processor and
+# Mode Detect, so those link in. Same fake-Wire seam as input-formatter.
 hd-bypass:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
-	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp
+	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp src/tv5725/Adc.cpp \
+	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
+	  src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/SyncProcessor.cpp src/tv5725/SyncType.cpp
 	@"$(OUT)/test_hd_bypass"
 
 ## mode-detect: host unit tests for Tv5725::ModeDetect
