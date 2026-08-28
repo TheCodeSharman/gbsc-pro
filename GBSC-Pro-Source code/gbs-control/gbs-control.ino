@@ -1165,6 +1165,12 @@ bool sourceIsRgbhv() { return rto->videoStandardInput >= 14; }
 bool scalingRgbhv() { return rto->videoStandardInput == 14; }
 bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 
+// Whether the loop may steer this source between scaling RGBHV and RGBHV
+// bypass. 14 and 15 name the OUTPUT as much as the source, so an RGBHV source
+// switched to HD bypass reads as one of them and the steering pulls it straight
+// back out. docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
+bool steerableRgbhv() { return sourceIsRgbhv() && !rto->outModeHdBypass; }
+
 // Whether the source runs a 15 kHz line. The engine measures only what it
 // scales, so in bypass it holds no measurement and the standard byte is what is
 // left -- honest there, because it carries the mode detected immediately before
@@ -5122,7 +5128,7 @@ void runSyncWatcher() //
         }
     }
 
-    if (sourceIsRgbhv()) {
+    if (steerableRgbhv()) {
         static uint16_t RGBHVNoSyncCounter = 0;
 
         if (uopt->preferScalingRgbhv && rto->continousStableCounter >= 2) {
@@ -6784,10 +6790,15 @@ void loop()
                 if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
                     videoMode = rto->videoStandardInput;
                 }
-                if (scalingRgbhv()) {
-                    rto->videoStandardInput = 15;
-                } else {
-                    applyPresets(videoMode);
+                // Every branch here re-decides the output mode, and none of
+                // them is about HD bypass. A source that changes mode under it
+                // is the detection block's, which asks presetPreference.
+                if (!rto->outModeHdBypass) {
+                    if (scalingRgbhv()) {
+                        rto->videoStandardInput = 15;
+                    } else {
+                        applyPresets(videoMode);
+                    }
                 }
             }
 
