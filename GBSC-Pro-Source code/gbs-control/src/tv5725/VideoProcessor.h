@@ -848,6 +848,17 @@ public:
     static void setPeaking(bool wanted);
     static void setStepResponse(bool wanted);
     static void setSixTapFilter(bool wanted);
+
+    // Output timing that ignores the input vertical sync. RD-5725-1.1 gives the
+    // two bits as one table: VDS_FLOCK_EN with VDS_SYNC_EN, 0/0 free run.
+    static void applyFreeRunTiming();
+
+    // How the output frames follow the input frames: the lock period, the
+    // repeat number, and which vertical size each frame takes.
+    static void applyFrameSequencing();
+
+    // Input data taken on the falling edge of the clock.
+    static void clockInputOnFallingEdge();
 };
 
 }  // namespace Tv5725

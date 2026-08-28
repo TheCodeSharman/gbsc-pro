@@ -3126,8 +3126,7 @@ void doPostPresetLoadSteps()
         FrameSync::cleanup();
         rto->syncLockFailIgnore = 16;
 
-        GBS::VDS_SYNC_EN::write(0);
-        GBS::VDS_FLOCK_EN::write(0);
+        Tv5725::VideoProcessor::applyFreeRunTiming();
 
         if (!rto->outModeHdBypass && rto->autoBestHtotalEnabled &&
             GBS::GBS_OPTION_SCALING_RGBHV::read() == 0 && !avoidAutoBest &&
@@ -3177,17 +3176,14 @@ void doPostPresetLoadSteps()
         }
 
 
-        GBS::VDS_FRAME_RST::write(4);
-
-        GBS::VDS_FRAME_NO::write(1);
-        GBS::VDS_FR_SELECT::write(1);
+        Tv5725::VideoProcessor::applyFrameSequencing();
 
         resetDigital();
 
         resetPLLAD();
         GBS::PLLAD_LEN::write(1); //
 
-        GBS::VDS_IN_DREG_BYPS::write(0);
+        Tv5725::VideoProcessor::clockInputOnFallingEdge();
         GBS::PLLAD_R::write(3);
         GBS::PLLAD_S::write(3);
         GBS::PLL_R::write(1);

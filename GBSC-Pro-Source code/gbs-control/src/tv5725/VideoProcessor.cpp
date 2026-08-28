@@ -164,4 +164,22 @@ void VideoProcessor::init()
     VDS_BLUE_Y_LEV::write(0x0);                  // s3_74[7:4]
 }
 
+void VideoProcessor::applyFreeRunTiming()
+{
+    VDS_SYNC_EN::write(0);
+    VDS_FLOCK_EN::write(0);
+}
+
+void VideoProcessor::applyFrameSequencing()
+{
+    VDS_FRAME_RST::write(4);
+    VDS_FRAME_NO::write(1);
+    VDS_FR_SELECT::write(1);
+}
+
+void VideoProcessor::clockInputOnFallingEdge()
+{
+    VDS_IN_DREG_BYPS::write(0);
+}
+
 }  // namespace Tv5725
