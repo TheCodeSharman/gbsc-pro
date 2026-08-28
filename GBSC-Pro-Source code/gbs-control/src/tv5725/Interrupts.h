@@ -107,8 +107,25 @@ public:
     static void acknowledgeSogSwitch();
     static void acknowledgeNoHsync();
 
+    // Every source unmasked.
+    static void enableEverySource();
+
+    // Clear every latched condition at once, the same pulse the per-source
+    // acknowledgements make.
+    static void acknowledgeAll();
+
+    // All but SOG bad, whose latch the sync paths count consecutive sets of.
+    static void acknowledgeAllButSogBad();
+
     // Every static register of this subsystem, in address order.
     static void init();
+
+private:
+    // The two bytes whole, because each sequence above is one bus write per
+    // byte and eight field writes would be eight. Private, so this class stays
+    // the only owner of bits its own fields already name.
+    typedef UReg<0x00, 0x58, 0, 8> INTERRUPT_CONTROL_00;
+    typedef UReg<0x00, 0x59, 0, 8> INTERRUPT_CONTROL_01;
 };
 
 }  // namespace Tv5725

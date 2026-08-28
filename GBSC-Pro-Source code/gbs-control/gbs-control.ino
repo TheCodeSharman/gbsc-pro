@@ -1470,9 +1470,8 @@ void setResetParameters()
     GBS::SFTRST_SYNC_RSTZ::write(1);
     Tv5725::HdBypass::hold();
     GBS::SFTRST_INT_RSTZ::write(1);
-    GBS::INTERRUPT_CONTROL_01::write(0xff);
-    GBS::INTERRUPT_CONTROL_00::write(0xff);
-    GBS::INTERRUPT_CONTROL_00::write(0x00);
+    Tv5725::Interrupts::enableEverySource();
+    Tv5725::Interrupts::acknowledgeAll();
     GBS::PAD_SYNC_OUT_ENZ::write(0); 
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
@@ -1739,8 +1738,7 @@ void setAndUpdateSogLevel(uint8_t level)
     setAndLatchPhaseSP();
     setAndLatchPhaseADC();
     latchPLLAD();
-    GBS::INTERRUPT_CONTROL_00::write(0xff);
-    GBS::INTERRUPT_CONTROL_00::write(0x00);
+    Tv5725::Interrupts::acknowledgeAll();
 }
 void goLowPowerWithInputDetection_re() 
 {
@@ -3261,9 +3259,8 @@ void doPostPresetLoadSteps()
         rto->clampPositionIsSet = false;
 
         if (rto->outModeHdBypass) {
-            GBS::INTERRUPT_CONTROL_01::write(0xff);
-            GBS::INTERRUPT_CONTROL_00::write(0xff);
-            GBS::INTERRUPT_CONTROL_00::write(0x00);
+            Tv5725::Interrupts::enableEverySource();
+            Tv5725::Interrupts::acknowledgeAll();
 
             // Video routes around the VDS here, so the mode change armed above
             // has no solve coming and the freeze it took would never be
@@ -3315,9 +3312,8 @@ void doPostPresetLoadSteps()
 
         setAndUpdateSogLevel(rto->currentLevelSOG);
 
-        GBS::INTERRUPT_CONTROL_01::write(0xff);
-        GBS::INTERRUPT_CONTROL_00::write(0xff);
-        GBS::INTERRUPT_CONTROL_00::write(0x00);
+        Tv5725::Interrupts::enableEverySource();
+        Tv5725::Interrupts::acknowledgeAll();
 
         // OutputComponentOrVGA();
 
@@ -4508,8 +4504,7 @@ void printInfo()
         clearIrqCounter++;
         if (clearIrqCounter >= 50) {
             clearIrqCounter = 0;
-            GBS::INTERRUPT_CONTROL_00::write(0xff);
-            GBS::INTERRUPT_CONTROL_00::write(0x00);
+            Tv5725::Interrupts::acknowledgeAll();
         }
     }
 
@@ -6646,8 +6641,7 @@ void loop()
           
     if (rto->syncWatcherEnabled && rto->boardHasPower) {
         if ((millis() - lastTimeInterruptClear) > 3000) {
-            GBS::INTERRUPT_CONTROL_00::write(0xfe);
-            GBS::INTERRUPT_CONTROL_00::write(0x00);
+            Tv5725::Interrupts::acknowledgeAllButSogBad();
             lastTimeInterruptClear = millis();
         }
     }

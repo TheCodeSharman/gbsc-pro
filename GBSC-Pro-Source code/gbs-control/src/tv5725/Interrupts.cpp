@@ -20,6 +20,23 @@ void Interrupts::acknowledgeNoHsync()
     INT_CONTROL_RST_NOHSYNC::write(0);
 }
 
+void Interrupts::enableEverySource()
+{
+    INTERRUPT_CONTROL_01::write(0xff);
+}
+
+void Interrupts::acknowledgeAll()
+{
+    INTERRUPT_CONTROL_00::write(0xff);
+    INTERRUPT_CONTROL_00::write(0x00);
+}
+
+void Interrupts::acknowledgeAllButSogBad()
+{
+    INTERRUPT_CONTROL_00::write(0xfe);
+    INTERRUPT_CONTROL_00::write(0x00);
+}
+
 bool Interrupts::takeSourceDisturbed()
 {
     if (STATUS_INT_SOG_SW::read() != 1)

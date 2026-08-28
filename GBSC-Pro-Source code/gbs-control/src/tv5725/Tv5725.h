@@ -492,11 +492,6 @@ public:
                                                                       // ring for processing test
 
 
-    typedef UReg<0x00, 0x58, 0, 8> INTERRUPT_CONTROL_00;
-
-
-    typedef UReg<0x00, 0x59, 0, 8> INTERRUPT_CONTROL_01;
-
 // MEMORY REGISTERS
 
 
