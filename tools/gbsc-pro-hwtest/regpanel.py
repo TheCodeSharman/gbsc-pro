@@ -1086,6 +1086,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", required=True, help="the unit, e.g. 192.168.88.108")
     ap.add_argument("--port", type=int, default=8752)
+    ap.add_argument("--bind", default="127.0.0.1",
+                    help="interface to serve on. 0.0.0.0 reaches it from "
+                         "another machine on the LAN, which also exposes "
+                         "register writes to it")
     args = ap.parse_args()
     HOST = args.host
     print(f"registers {len(REGISTER_DOC)} known"
@@ -1100,7 +1104,7 @@ def main():
     # Threaded: /api/measure makes ~120 round trips to the unit, and a
     # single-threaded server would block the status poll for its whole
     # duration, which looks exactly like the page having crashed.
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    ThreadingHTTPServer((args.bind, args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
