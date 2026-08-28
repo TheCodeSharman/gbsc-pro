@@ -1445,7 +1445,7 @@ void setResetParameters()
     GBS::SP_NO_COAST_REG::write(0); 
     Tv5725::SyncProcessor::applyDefaultClampWindow();
     GBS::SP_SOG_SRC_SEL::write(0);  
-    GBS::SP_EXT_SYNC_SEL::write(0); 
+    Tv5725::SyncProcessor::selectExternalSync(0);
     Tv5725::SyncProcessor::holdClamp();
     GBS::PLLAD_ICP::write(0);       
     GBS::PLLAD_FS::write(0);        
@@ -1708,13 +1708,13 @@ void prepareSyncProcessor()
 
     if (!rgbhvBypass() && (GBS::GBS_OPTION_SCALING_RGBHV::read() != 1)) {
         GBS::SP_CLAMP_MANUAL::write(0);
-        GBS::SP_CLP_SRC_SEL::write(0);
+        Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::holdClamp();
         GBS::SP_SOG_MODE::write(1);
         GBS::SP_H_CST_ST::write(0x10);
         GBS::SP_H_CST_SP::write(0x100);
-        GBS::SP_DIS_SUB_COAST::write(0);
-        GBS::SP_H_PROTECT::write(1);
+        Tv5725::SyncProcessor::setSubCoast(true);
+        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
         GBS::SP_HCST_AUTO_EN::write(0);
         GBS::SP_NO_COAST_REG::write(0);
     }
@@ -2104,7 +2104,7 @@ uint8_t detectAndSwitchToActiveInput()
 
                     if (hsyncActive) {
                         ; // SerialMprint(F("HSync: present"));
-                        GBS::SP_H_PROTECT::write(1);
+                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
                         delay(120);
 
                         short decodeSuccess = 0;
@@ -3015,8 +3015,8 @@ void doPostPresetLoadSteps()
             rto->phaseSP = 8;
         }
 
-        GBS::SP_H_PROTECT::write(0); 
-        GBS::SP_COAST_INV_REG::write(0);
+        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
+        Tv5725::SyncProcessor::setCoastInvert(false);
         if (!rto->outModeHdBypass && GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
             updateSpDynamic(0);
         }
@@ -3223,7 +3223,7 @@ void doPostPresetLoadSteps()
         Tv5725::InputFormatter::applyVerticalTiming(
             Tv5725::InputFormatter::VcrTiming);
 
-        GBS::SP_CLP_SRC_SEL::write(0);
+        Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
 
         if (!uopt->wantOutputComponent) {
@@ -3235,13 +3235,13 @@ void doPostPresetLoadSteps()
         GBS::DAC_RGBS_S1EN::write(1);
 
 
-        GBS::SP_H_PROTECT::write(0); // 
+        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         if (rto->videoStandardInput >= 5) {
-            GBS::SP_DIS_SUB_COAST::write(1); //
+            Tv5725::SyncProcessor::setSubCoast(false);
         }
 
         if (Tv5725::SyncType::isCsync()) {
-            GBS::SP_EXT_SYNC_SEL::write(1);
+            Tv5725::SyncProcessor::selectExternalSync(1);
         }
 
         rto->coastPositionIsSet = false;
@@ -3780,14 +3780,14 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         GBS::SP_H_COAST::write(0);
         GBS::SP_H_TIMER_VAL::write(0x3a);
         if (Tv5725::SyncType::isCsync()) {
-            GBS::SP_COAST_INV_REG::write(1);
+            Tv5725::SyncProcessor::setCoastInvert(true);
         }
         rto->coastPositionIsSet = false;
         return;
     }
 
     if (Tv5725::SyncType::isCsync()) {
-        GBS::SP_COAST_INV_REG::write(0);
+        Tv5725::SyncProcessor::setCoastInvert(false);
     }
 
     if (rto->videoStandardInput != 0) {
@@ -4061,7 +4061,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     }
 
     GBS::SP_NO_COAST_REG::write(0);
-    GBS::SP_COAST_INV_REG::write(0);
+    Tv5725::SyncProcessor::setCoastInvert(false);
 
     FrameSync::cleanup();
     GBS::ADC_UNUSED_62::write(0x00);
@@ -4241,9 +4241,9 @@ void bypassModeSwitch_RGBHV()
     rto->phaseADC = 16;
     rto->phaseSP = 8;
     GBS::SP_CLAMP_MANUAL::write(1);  
-    GBS::SP_COAST_INV_REG::write(0); 
+    Tv5725::SyncProcessor::setCoastInvert(false);
 
-    GBS::SP_DIS_SUB_COAST::write(1);   
+    Tv5725::SyncProcessor::setSubCoast(false);
     GBS::SP_HS_PROC_INV_REG::write(0); 
     GBS::SP_VS_PROC_INV_REG::write(0); 
     Tv5725::Adc::PLLAD_KS::write(1);
@@ -4794,7 +4794,8 @@ void runSyncWatcher() //
         if (Tv5725::SyncType::isCsync()) {
             if (rto->noSyncCounter > 47) {
                 if (rto->noSyncCounter % 16 == 0) {
-                    GBS::SP_H_PROTECT::write(!GBS::SP_H_PROTECT::read());
+                    Tv5725::SyncProcessor::setHsyncOverflowProtect(
+                        !Tv5725::SyncProcessor::hsyncOverflowProtect());
                 }
             }
         }
@@ -4816,7 +4817,7 @@ void runSyncWatcher() //
                 }
             }
             GBS::SP_H_COAST::write(0);
-            GBS::SP_H_PROTECT::write(0); 
+            Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
             GBS::SP_H_CST_ST::write(0x10);
             GBS::SP_H_CST_SP::write(0x100);
             Tv5725::SyncProcessor::applyDefaultClampWindow();
@@ -5162,7 +5163,7 @@ void runSyncWatcher() //
                         GBS::SP_SOG_MODE::write(1);
                         GBS::SP_H_CST_ST::write(0x10);
                         GBS::SP_H_CST_SP::write(0x80);
-                        GBS::SP_H_PROTECT::write(1);
+                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
                     }
                     delay(4);
 
@@ -5217,7 +5218,7 @@ void runSyncWatcher() //
                         GBS::SP_SOG_MODE::write(1);
                         GBS::SP_H_CST_ST::write(0x10);
                         GBS::SP_H_CST_SP::write(0x80);
-                        GBS::SP_H_PROTECT::write(1);
+                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
                     }
                     delay(300);
 
@@ -5297,7 +5298,7 @@ void runSyncWatcher() //
                             GBS::SP_SOG_MODE::write(1);
                             GBS::SP_H_CST_ST::write(0x10);
                             GBS::SP_H_CST_SP::write(0x80);
-                            GBS::SP_H_PROTECT::write(1);
+                            Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
                         }
                         delay(300);
 
@@ -6711,8 +6712,8 @@ void loop()
                     if (sourceHasSerratedSync()) 
                     {
 
-                        GBS::SP_DIS_SUB_COAST::write(0);
-                        GBS::SP_H_PROTECT::write(0); 
+                        Tv5725::SyncProcessor::setSubCoast(true);
+                        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
                     }
                 }
             }

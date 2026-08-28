@@ -69,6 +69,31 @@ void SyncProcessor::applyForSyncType(bool csync)
     }
 }
 
+void SyncProcessor::clampFromReferenceClock()
+{
+    SP_CLP_SRC_SEL::write(0);
+}
+
+void SyncProcessor::setHsyncOverflowProtect(bool wanted)
+{
+    SP_H_PROTECT::write(wanted ? 1 : 0);
+}
+
+bool SyncProcessor::hsyncOverflowProtect()
+{
+    return SP_H_PROTECT::read() == 1;
+}
+
+void SyncProcessor::setCoastInvert(bool wanted)
+{
+    SP_COAST_INV_REG::write(wanted ? 1 : 0);
+}
+
+void SyncProcessor::setSubCoast(bool wanted)
+{
+    SP_DIS_SUB_COAST::write(wanted ? 0 : 1);
+}
+
 void SyncProcessor::selectExternalSync(uint8_t sel)
 {
     SP_EXT_SYNC_SEL::write(sel);

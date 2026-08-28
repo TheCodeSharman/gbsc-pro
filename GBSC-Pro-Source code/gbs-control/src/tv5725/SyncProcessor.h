@@ -216,13 +216,27 @@ public:
     static void writeSdVsyncStart(uint16_t start);
     static void writeSdVsyncStop(uint16_t stop);
 
-    // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
-    // value off the divider; this block is where the register lives.
     // Where H and V come from: 0 the dedicated pins, 1 composite or
     // sync-on-green. It travels with the input choice, not with the sync type.
     static void selectExternalSync(uint8_t sel);
 
+    // Where hsync retiming stops, in ADC samples. SourceMeasurement decides the
+    // value off the divider; this block is where the register lives.
     static void writeRetimeStop(uint16_t samples);
+
+    // What times the clamp: the 27 MHz reference rather than the pixel clock,
+    // which is what every path here asks for.
+    static void clampFromReferenceClock();
+
+    // The H counter's overflow protection.
+    static void setHsyncOverflowProtect(bool wanted);
+    static bool hsyncOverflowProtect();
+
+    // Whether coast is inverted, and whether the sub coast runs. Each names
+    // what is wanted rather than the register, which for the second is a
+    // disable.
+    static void setCoastInvert(bool wanted);
+    static void setSubCoast(bool wanted);
 };
 
 }  // namespace Tv5725
