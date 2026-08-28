@@ -553,3 +553,24 @@ def fs_read(host, path, timeout=15):
     """Fetch a file off the unit as text, or None."""
     status, body = get(host, f"/fs/download?f={path}", timeout=timeout)
     return body if status == 200 else None
+
+
+# Byte 0 of /preferencesv2.txt is presetPreference written as `value + '0'`, and
+# each value has a /uc command that selects it. OutputCustomized and
+# OutputBypass have none, so a caller that put one of those there has to say so
+# rather than silently leave a different resolution behind.
+PREFERENCE_COMMAND = {"0": "f", "1": "h", "3": "g", "4": "p", "5": "s", "7": "j"}
+
+
+def restore_preset_preference(host, byte0):
+    """Put presetPreference back to what byte 0 of the preferences held.
+
+    Reports rather than replaces a value no /uc command selects, so a run that
+    started from one does not silently leave a different resolution behind.
+    """
+    command = PREFERENCE_COMMAND.get(byte0)
+    if command is None:
+        print(f"presetPreference was {byte0!r}, which no /uc command selects; "
+              "it is left where this run put it")
+        return
+    get(host, f"/uc?{command}")
