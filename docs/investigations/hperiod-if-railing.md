@@ -633,3 +633,29 @@ state above it read **185** against a source of 311/312 lines, while
 `STATUS_SYNC_PROC_VTOTAL` read 311 correctly. The firmware's fallback from one to
 the other is load-bearing, not defensive.
 
+
+## The railing has a consumer: the coast stop
+
+`updateCoastPosition()` averages eight `HPERIOD_IF` reads into `accInHlength`
+and writes `SP_H_CST_SP = accInHlength x 0.968`. It runs once per source —
+`rto->coastPositionIsSet` latches it — so a railed reading is written once and
+kept.
+
+Measured on the bench RiscPC at 800x600@60 over VGA, scaling RGBHV, from a clean
+restart with no bypass excursion:
+
+```
+HPERIOD_IF   511      the rail; 176 is what the mode is due
+accInHlength 2044     -> >= 2040, so clamped to 1716
+SP_H_CST_SP  1661     against a PLLAD_MD of 1124
+```
+
+The coast window therefore stops 537 ADC samples past the end of the line, and
+`test_register_bounds.py` reports it. **The picture is correct throughout**, so
+this is a reason to look rather than a fault to chase on its own — but it is the
+one place a railed `HPERIOD_IF` reaches a register that stays written.
+
+**A full-suite run masks it.** `SP_H_CST_SP` is judged against `PLLAD_MD`, and
+tests that move the divider upward leave it temporarily in bounds; the same test
+run on its own, on a settled unit, fails. Run it against a unit at its solved
+divider or the pass means nothing.
