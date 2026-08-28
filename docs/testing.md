@@ -92,6 +92,23 @@ eight-standard one, which is a fixture with no oracle worth having.
 concluding a change moved something, re-capture the after and diff it against
 itself.
 
+### Tracing with no source attached
+
+The forcing route calls the load directly, so it runs whether or not a signal is
+present, and a before/after pair taken without one is still like-for-like. Two
+things change, and both matter:
+
+- **The traces get longer** — about 700 writes on a scaled standard against 220
+  with a source — because the no-sync retry paths run inside the load.
+- **`ADC_SOGCTRL` (s5_02) becomes session-variable.** `loop()` ratchets the
+  sync-on-green slicer down every 500 ms while the source is disconnected, so
+  its value depends on how long the unit has been up. It is stable with a source
+  and is NOT in `SESSION_VARIABLE`, because ignoring that address blanket would
+  hide `ADC_INPUT_SEL` in the same byte.
+
+**A sourceless pair cannot be compared against the committed fixtures**, which
+were captured with the bench source locked. Compare it against its own before.
+
 ## Host unit tests
 
 `test/*.cpp`, doctest, one binary per subject, each a target in `test/Makefile`.
