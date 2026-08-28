@@ -1402,7 +1402,7 @@ def test_frozen_firmware_does_not_ratchet_the_sog_level(host, source):
         recover_lock(host)
 
 
-def test_the_console_delivers_anything_at_all(console):
+def test_the_console_delivers_anything_at_all(host, console):
     """The web console must actually broadcast, not merely accept a connection.
 
     SerialMirror only calls broadcastTXT above a free-heap threshold, and this
@@ -1420,13 +1420,21 @@ def test_the_console_delivers_anything_at_all(console):
     test once SerialMirror has dropped it, which looks exactly like this failure.
     Fixed in conftest.py.
 
+    IT PROVOKES A LINE RATHER THAN WAITING FOR ONE. Waiting assumed FrameSync
+    prints every cycle, which is only true while a source is locked -- with the
+    source disconnected the firmware is legitimately silent on the websocket AND
+    on hardware serial, and this failed for that reason with the gate wide open
+    and 17864 bytes free. `/sc?i` toggles the info printing and prints a line on
+    the way past; twice leaves the flag as it was found.
+
     It retries rather than skipping: a genuinely shut gate stays shut, so no
     number of retries makes this pass, and only the settling case recovers.
-    Three attempts over ~30 s.
     """
     received = []
     for attempt in range(ATTEMPTS := 3):
         console.drain()
+        get(host, "/sc?i")
+        get(host, "/sc?i")
         received = console.collect(seconds=6)
         if received:
             break
@@ -1435,9 +1443,9 @@ def test_the_console_delivers_anything_at_all(console):
 
     assert received, (
         f"the console connected but delivered 0 bytes in 6 s, on {ATTEMPTS} "
-        "separate attempts. On a GBS_DEBUG=1 build FrameSync prints "
-        "every cycle, so this is the heap gate in SerialMirror refusing to "
-        "broadcast, not a quiet firmware. Check /bootlog for 'free heap'."
+        "separate attempts, each one having just asked the firmware to print. "
+        "That is the heap gate in SerialMirror refusing to broadcast, not a "
+        "quiet firmware. Check /bootlog for 'free heap'."
     )
 
 
