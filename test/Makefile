@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
+.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -428,6 +428,21 @@ input-formatter:
 	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp
 	@"$(OUT)/test_input_formatter"
 
+## chip: host unit tests for Tv5725::Chip
+#
+# The three DAC routes are alternatives, and nothing outside the class clears
+# any of them -- so each one has to clear the others.
+chip:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_chip" \
+	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
+	  src/tv5725/Adc.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
+	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp \
+	  src/tv5725/SyncType.cpp
+	@"$(OUT)/test_chip"
+
 ## hd-bypass: host unit tests for Tv5725::HdBypass
 #
 # The HD bypass block's resting state, and what each standard overwrites it
@@ -643,7 +658,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
+test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

@@ -174,6 +174,11 @@ public:
     // raster and the windows.
     static void init();
 
+    // The three DAC routes are ALTERNATIVES, and nothing outside this class
+    // clears any of them, so each one clears the others. Two set at once sums
+    // the paths at the DACs: the black level lifts and the colours desaturate
+    // while every register but s0_4b reads correct.
+    //
     // Put the DACs and the sync outputs back on the scaler. Bypass moves all
     // three and nothing on the scaling path claimed them, so leaving bypass
     // reached the right conclusion without acting on it: a scaled raster solved
@@ -185,6 +190,11 @@ public:
     // half-written timing.
     static void outputDown();
     static void outputUp();
+
+    // The DACs on the HD bypass channel. It leaves OUT_SYNC_SEL alone: the
+    // switch writes it 1 and then 2 for interlaced SD, so the standard has the
+    // last word on it and this would undo that.
+    static void routeToHdBypass();
 
     // Segment 0 as RGBHV bypass wants it: the display PLL off its scaled
     // settings, the pads that carry a bypassed source, and the ADC put straight

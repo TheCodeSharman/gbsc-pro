@@ -4130,7 +4130,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::SFTRST_INT_RSTZ::write(1);
     Tv5725::HdBypass::enable();
 
-    GBS::DAC_RGBS_BYPS2DAC::write(1);
+    Tv5725::Chip::routeToHdBypass();
     GBS::SP_HS_LOOP_SEL::write(1);     
     GBS::SP_HS_PROC_INV_REG::write(0); 
     GBS::SP_CS_P_SWAP::write(0);
