@@ -4305,7 +4305,7 @@ void bypassModeSwitch_RGBHV()
     rto->presetID = PresetBypassRGBHV;
 
     // Beside the preset id, because they are one fact: which mode the chip is
-    // in. The >535-line branch that sends a source here clears
+    // in. The branch that sends a source here clears
     // rto->isValidForScalingRGBHV in RAM only, and outside the low-power path
     // nothing else clears the register -- so without this the bit says the
     // opposite of the truth. Several sites read it back to decide things,
@@ -5178,7 +5178,7 @@ void runSyncWatcher() //
             static uint16_t activePresetLineCount = 0;
 
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-            if ((sourceLines <= 535 && sourceLines != 0) && rgbhvBypass()) {
+            if (sourceLines != 0 && rgbhvBypass()) {
                 SYNC_EVENT("rgbhv-leave-bypass", sourceLines);
                 uint16_t firstDetectedSourceLines = sourceLines;
                 boolean moveOn = 1;
@@ -5289,7 +5289,7 @@ void runSyncWatcher() //
                 }
             }
 
-            else if ((sourceLines <= 535 && sourceLines != 0) && scalingRgbhv()) {
+            else if (sourceLines != 0 && scalingRgbhv()) {
                 SYNC_EVENT("rgbhv-keep-scaling", sourceLines);
 
                 const uint8_t wantedStandard =
@@ -5370,30 +5370,6 @@ void runSyncWatcher() //
                 }
             }
 
-            else if ((sourceLines > 535) && scalingRgbhv()) {
-                SYNC_EVENT("rgbhv-to-bypass", sourceLines);
-                uint16_t firstDetectedSourceLines = sourceLines;
-                boolean moveOn = 1;
-                for (int i = 0; i < 30; i++) {
-                    sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-
-                    if ((sourceLines < firstDetectedSourceLines - 3) || (sourceLines > firstDetectedSourceLines + 3)) {
-                        moveOn = 0;
-                        break;
-                    }
-                    delay(10);
-                }
-                if (moveOn) {
-                    ;
-                    rto->videoStandardInput = 15;
-                    rto->isValidForScalingRGBHV = false; 
-
-                    activePresetLineCount = 0;
-                    applyPresets(rto->videoStandardInput);
-
-                    delay(300);
-                }
-            }
         }
 
         if (!uopt->preferScalingRgbhv && scalingRgbhv()) {
