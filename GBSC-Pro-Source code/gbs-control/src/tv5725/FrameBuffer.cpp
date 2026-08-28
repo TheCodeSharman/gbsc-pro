@@ -103,6 +103,20 @@ void FrameBuffer::init()
     WFF_FF_STA_INV::write(1);
 }
 
+void FrameBuffer::applyRequestModes()
+{
+    PB_CUT_REFRESH::write(1);
+    RFF_LREQ_CUT::write(0);
+    CAP_REQ_OVER::write(0);
+    CAP_STATUS_SEL::write(1);
+    PB_REQ_SEL::write(3);
+}
+
+void FrameBuffer::writeFifoLineOffset(uint16_t offset)
+{
+    RFF_WFF_OFFSET::write(offset);
+}
+
 void FrameBuffer::freezeCapture() { CAPTURE_ENABLE::write(0); }
 
 void FrameBuffer::releaseCapture() { CAPTURE_ENABLE::write(1); }

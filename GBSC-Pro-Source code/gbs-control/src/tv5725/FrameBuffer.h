@@ -271,6 +271,15 @@ public:
     // seconds after the load.
     static void freezeCapture();
     static void releaseCapture();
+
+    // How the capture, playback and read FIFOs ask for the memory bus: when a
+    // request is raised, which of the two playback requests carries it, and
+    // whether the refresh generator runs.
+    static void applyRequestModes();
+
+    // The line stride the read and write FIFOs advance by. The deinterlacer
+    // sets its own while it is running.
+    static void writeFifoLineOffset(uint16_t offset);
 };
 
 }  // namespace Tv5725

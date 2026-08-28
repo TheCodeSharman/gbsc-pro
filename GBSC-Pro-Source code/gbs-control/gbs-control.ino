@@ -3201,13 +3201,9 @@ void doPostPresetLoadSteps()
         // the top of the address space with the engine clamping the capture
         // below it, so nothing but a real overrun reaches it.
 
-        GBS::PB_CUT_REFRESH::write(1);
-        GBS::RFF_LREQ_CUT::write(0);
-        GBS::CAP_REQ_OVER::write(0);
-        GBS::CAP_STATUS_SEL::write(1);
-        GBS::PB_REQ_SEL::write(3);
+        Tv5725::FrameBuffer::applyRequestModes();
 
-        GBS::RFF_WFF_OFFSET::write(0x0);
+        Tv5725::FrameBuffer::writeFifoLineOffset(0);
         // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
         // Both halves of that pair are Tv5725::Memory's: the offset is
         // Memory::offsetFor(the output line) and the fetch is computed
@@ -4394,7 +4390,7 @@ void enableMotionAdaptDeinterlace() //
     GBS::RFF_REQ_SEL::write(3);
 
     GBS::RFF_FETCH_NUM::write(0x80);
-    GBS::RFF_WFF_OFFSET::write(0x100);
+    Tv5725::FrameBuffer::writeFifoLineOffset(0x100);
     GBS::RFF_YUV_DEINTERLACE::write(0);
     GBS::WFF_FF_STA_INV::write(0);
 
@@ -4413,7 +4409,7 @@ void disableMotionAdaptDeinterlace() //
     GBS::DEINT_00::write(0xff);
 
     GBS::RFF_FETCH_NUM::write(0x1);
-    GBS::RFF_WFF_OFFSET::write(0x1);
+    Tv5725::FrameBuffer::writeFifoLineOffset(1);
     delay(2);
     GBS::WFF_ENABLE::write(0);
     GBS::RFF_ENABLE::write(0);
