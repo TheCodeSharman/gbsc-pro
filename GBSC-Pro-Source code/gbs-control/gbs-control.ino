@@ -4075,12 +4075,8 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     rto->autoBestHtotalEnabled = false;
     rto->outModeHdBypass = 1;
 
-    // No scaled raster in bypass: video routes around the VDS entirely. A solve
-    // deferred by the previous mode would otherwise be retried by
-    // runSyncWatcher() once sync stabilised and write a scaled raster over this
-    // setup -- neither bypass path reaches doPostPresetLoadSteps(), so nothing
-    // else clears it. See Geometry::enterBypass(), which is also where the
-    // bypass register writes below belong once the engine owns them.
+    // Video routes around the VDS here, so no solve is coming. The bypass
+    // register writes below belong to the engine too, once it owns them.
     geometry.enterBypass();
 
     externalClockGenResetClock();
@@ -4234,12 +4230,8 @@ void bypassModeSwitch_RGBHV()
 
     Tv5725::Chip::outputDown();
 
-    // No scaled raster in bypass: video routes around the VDS entirely. A solve
-    // deferred by the previous mode would otherwise be retried by
-    // runSyncWatcher() once sync stabilised and write a scaled raster over this
-    // setup -- neither bypass path reaches doPostPresetLoadSteps(), so nothing
-    // else clears it. See Geometry::enterBypass(), which is also where the
-    // bypass register writes below belong once the engine owns them.
+    // Video routes around the VDS here, so no solve is coming. The bypass
+    // register writes below belong to the engine too, once it owns them.
     geometry.enterBypass();
 
     Tv5725::HdBypass::enable();

@@ -359,10 +359,6 @@ void Geometry::enterBypass()
     // the encoder is already running on.
     displayClock_.adopt();
 
-    // The mode change goes with them: neither bypass switch reaches
-    // doPostPresetLoadSteps(), so nothing else would clear it, and a poll
-    // landing afterwards writes a scaled raster and a recomputed divider over
-    // the setup bypass just chose.
     modePending_ = false;
     FrameBuffer::releaseCapture();
 

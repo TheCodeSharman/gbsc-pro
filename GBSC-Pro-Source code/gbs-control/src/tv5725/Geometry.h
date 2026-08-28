@@ -86,7 +86,14 @@ public:
 
     bool reset();
 
-    // Notify the engine that the output has gone into bypass: so video routes around the VDS.
+    // Notify the engine that the output has gone into bypass: video routes
+    // around the VDS, so no solve is coming.
+    //
+    // EVERY PATH INTO BYPASS HAS TO SAY SO. A mode change is cleared only by a
+    // solve that completes, and bypass never solves -- so an armed one is
+    // retried once sync stabilises and writes a scaled raster and a recomputed
+    // divider over the setup bypass just chose, and the capture freeze it took
+    // is never released.
     void enterBypass();
 
     bool pan(int16_t dxPixels, int16_t dyPixels);
