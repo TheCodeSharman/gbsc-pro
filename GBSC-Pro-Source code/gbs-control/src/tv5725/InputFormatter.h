@@ -255,6 +255,29 @@ public:
     // docs/investigations/if-vertical-blank-strands-the-measurement.md
     static void writeReferenceVerticalBlank();
 
+    // Where the line counter starts, as a pixel shift from the horizontal sync.
+    static void writeLineCounterStart(uint16_t pixels);
+
+    // The horizontal scaling-down path every load starts from. Not in init():
+    // SourceStandard selects the interpolator beside it for the progressive
+    // standards, so a value written only at bring-up would be left behind by
+    // whichever source ran last.
+    static void applyDefaultHorizontalScalePath();
+
+    // The auto offset adjuster off and its detection range zeroed: what the ADC
+    // subtracts comes from the stored calibration instead.
+    static void disableAutoOffset();
+
+    // Which vertical timing the block runs on -- the source's own sync, or the
+    // periodic timing the block generates. RD-5725-1.1 calls them VCR mode and
+    // normal mode.
+    enum VerticalTiming {
+        VcrTiming,
+        NormalTiming,
+    };
+
+    static void applyVerticalTiming(VerticalTiming timing);
+
     // Whether the line doubler is in the capture path.
     enum ScanMode {
         LineDoubled,   // 15 kHz source, doubled to the output line rate

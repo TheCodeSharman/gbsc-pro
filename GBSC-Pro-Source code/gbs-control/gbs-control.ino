@@ -1400,8 +1400,8 @@ void setResetParameters()
     rto->presetID = 0;
     GBS::GBS_OPTION_SCALING_RGBHV::write(0);
 
-    GBS::IF_VS_SEL::write(1);
-    GBS::IF_VS_FLIP::write(1);
+    Tv5725::InputFormatter::applyVerticalTiming(
+        Tv5725::InputFormatter::NormalTiming);
     GBS::IF_HSYNC_RST::write(0x3FF);
     Tv5725::InputFormatter::writeReferenceVerticalBlank();
 
@@ -3069,12 +3069,8 @@ void doPostPresetLoadSteps()
         rto->sourceDisconnected = false;
         rto->boardHasPower = true;
 
-        GBS::IF_INI_ST::write(0);
-
-        // Not in InputFormatter::init(): SourceStandard writes 0 for the
-        // progressive standards, so a bring-up value would be left behind by
-        // whichever source ran last.
-        GBS::IF_HS_SEL_LPF::write(1);
+        Tv5725::InputFormatter::writeLineCounterStart(0);
+        Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
 
         rto->osr = Tv5725::SourceStandard(rto->videoStandardInput,
                                           rto->inputIsYpBpR)
@@ -3119,10 +3115,7 @@ void doPostPresetLoadSteps()
             Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
         }
 
-        GBS::IF_AUTO_OFST_U_RANGE::write(0);
-        GBS::IF_AUTO_OFST_V_RANGE::write(0);
-        GBS::IF_AUTO_OFST_PRD::write(0);
-        GBS::IF_AUTO_OFST_EN::write(0);
+        Tv5725::InputFormatter::disableAutoOffset();
 
         Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
         Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
@@ -3231,8 +3224,8 @@ void doPostPresetLoadSteps()
 
         setAndUpdateSogLevel(rto->currentLevelSOG);
 
-        GBS::IF_VS_SEL::write(0);
-        GBS::IF_VS_FLIP::write(1);
+        Tv5725::InputFormatter::applyVerticalTiming(
+            Tv5725::InputFormatter::VcrTiming);
 
         GBS::SP_CLP_SRC_SEL::write(0);
         Tv5725::SyncProcessor::applyDefaultClampWindow();
@@ -5204,7 +5197,7 @@ void runSyncWatcher() //
                     applyPresets(rto->videoStandardInput);
 
                     GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                    GBS::IF_INI_ST::write(16);
+                    Tv5725::InputFormatter::writeLineCounterStart(16);
                     GBS::SP_SOG_P_ATO::write(1);
 
                     Tv5725::SyncProcessor::writeSdVsyncStart(2);
@@ -5285,7 +5278,7 @@ void runSyncWatcher() //
                         applyPresets(rto->videoStandardInput);
 
                         GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                        GBS::IF_INI_ST::write(16);
+                        Tv5725::InputFormatter::writeLineCounterStart(16);
                         GBS::SP_SOG_P_ATO::write(1);
 
                         Tv5725::SyncProcessor::writeSdVsyncStart(2);
@@ -7600,7 +7593,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         if (what.equals("sog")) {
                             setAndUpdateSogLevel(value);
                         } else if (what.equals("ifini")) {
-                            GBS::IF_INI_ST::write(value);
+                            Tv5725::InputFormatter::writeLineCounterStart(value);
                         } else if (what.equals("vsstc")) {
                             Tv5725::SyncProcessor::writeSdVsyncStart(value);
                         } else if (what.equals("vsspc")) {

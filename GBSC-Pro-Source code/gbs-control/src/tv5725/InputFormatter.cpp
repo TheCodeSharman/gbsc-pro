@@ -87,6 +87,30 @@ void InputFormatter::writeReferenceVerticalBlank()
     IF_VB_SP::write(2);
 }
 
+void InputFormatter::writeLineCounterStart(uint16_t pixels)
+{
+    IF_INI_ST::write(pixels);
+}
+
+void InputFormatter::applyDefaultHorizontalScalePath()
+{
+    IF_HS_SEL_LPF::write(1);
+}
+
+void InputFormatter::disableAutoOffset()
+{
+    IF_AUTO_OFST_U_RANGE::write(0);
+    IF_AUTO_OFST_V_RANGE::write(0);
+    IF_AUTO_OFST_PRD::write(0);
+    IF_AUTO_OFST_EN::write(0);
+}
+
+void InputFormatter::applyVerticalTiming(VerticalTiming timing)
+{
+    IF_VS_SEL::write(timing == NormalTiming ? 1 : 0);
+    IF_VS_FLIP::write(1);
+}
+
 void InputFormatter::applyScanMode(ScanMode mode)
 {
     const bool progressive = mode == Progressive;

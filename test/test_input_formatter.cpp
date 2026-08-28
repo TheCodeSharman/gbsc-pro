@@ -116,3 +116,41 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
     CHECK(Wire.field(1, 0x0C, 0, 1) == 1);  // IF_LD_RAM_BYPS
     CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
 }
+
+// --- the per-load state, which shares bytes with owners that are not here -----
+
+TEST_CASE("the vertical timing leaves the scan mode alone")
+{
+    // IF_VS_SEL is bit 5 of s1_00 and IF_PRGRSV_CNTRL is bit 6 of the same byte,
+    // written by applyScanMode() from a different caller at a different time.
+    FreshChip chip;
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyVerticalTiming(InputFormatter::VcrTiming);
+
+    CHECK(Wire.field(1, 0x00, 5, 1) == 0);  // IF_VS_SEL
+    CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
+}
+
+TEST_CASE("normal vertical timing is the other value of the same field")
+{
+    FreshChip chip;
+
+    InputFormatter::applyVerticalTiming(InputFormatter::VcrTiming);
+    InputFormatter::applyVerticalTiming(InputFormatter::NormalTiming);
+
+    CHECK(Wire.field(1, 0x00, 5, 1) == 1);  // IF_VS_SEL
+    CHECK(Wire.field(1, 0x01, 0, 1) == 1);  // IF_VS_FLIP
+}
+
+TEST_CASE("disabling the auto offset leaves the rest of its bytes alone")
+{
+    FreshChip chip;
+
+    InputFormatter::disableAutoOffset();
+
+    CHECK(Wire.field(1, 0x29, 0, 1) == 0);  // IF_AUTO_OFST_EN
+    CHECK(Wire.field(1, 0x29, 1, 1) == 0);  // IF_AUTO_OFST_PRD
+    CHECK(Wire.field(1, 0x2A, 0, 8) == 0);  // both detection ranges
+    CHECK(Wire.field(1, 0x29, 2, 6) == ((Poison >> 2) & 0x3F));
+}
