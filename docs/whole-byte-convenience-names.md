@@ -33,10 +33,19 @@ is *more* informative and stays:
 That is the whole of the exception. `ADC_TEST_0C_BIT1` was the third and had
 zero call sites; it is deleted.
 
+**Two are private to their subsystem now**, which settles the ownership half
+without settling the byte half. `INTERRUPT_CONTROL_00` and `_01` are declared
+inside `Tv5725::Interrupts` and named only by its own three sequences -- unmask
+every source, clear every latched condition, clear all but SOG bad -- so the bits
+`INT_RST_*` and `INT_ENABLE*` already name have no second writer. The byte write
+itself stays: each sequence is one bus write per byte where the decomposition is
+eight, and the write trace is the equivalence oracle for the load they run in.
+
 ## The inventory
 
 25 names, almost all used from `gbs-control.ino` alone -- the exceptions are
-`PLL648_CONTROL_01` in `framesync.h` and in `Geometry.cpp`.
+`PLL648_CONTROL_01` in `framesync.h` and in `Geometry.cpp`, and the two interrupt
+bytes, which no longer have a call site outside `Interrupts.cpp`.
 
 The per-name `uses` column below is a snapshot and drifts with every commit
 touching the sketch. Recount rather than trusting it:
@@ -49,12 +58,12 @@ grep -c 'GBS::PLL648_CONTROL_01::' "GBSC-Pro-Source code/gbs-control/gbs-control
 |---|---|---|---|
 | `PLL648_CONTROL_01` | s0_41 | 24 | yes |
 | `TEST_BUS_SP_SEL` | s5_63 | 17 | no — bit 7 |
-| `INTERRUPT_CONTROL_00` | s0_58 | 12 | yes |
+| `INTERRUPT_CONTROL_00` | s0_58 | 4 | yes |
 | `RESET_CONTROL_0x47` | s0_47 | 9 | no — bits 5,6,7 |
 | `RESET_CONTROL_0x46` | s0_46 | 8 | no — bit 7 |
 | `MADPT_Y_DELAY_UV_DELAY` | s2_17 | 6 | yes |
 | `ADC_TEST_04` | s5_04 | 4 | no — bits 5,6,7 |
-| `INTERRUPT_CONTROL_01` | s0_59 | 3 | yes |
+| `INTERRUPT_CONTROL_01` | s0_59 | 1 | yes |
 | `ADC_TEST_0C` | s5_0c | 3 | no — bits 5,6,7 |
 | `ADC_TA_05_CTRL` | s5_05 | 3 | no — bits 5,6,7 |
 | `PLL648_CONTROL_03` | s0_43 | 2 | no — bits 6,7 |
