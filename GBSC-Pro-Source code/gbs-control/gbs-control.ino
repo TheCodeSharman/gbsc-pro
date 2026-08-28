@@ -4186,8 +4186,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
         delay(1);
     }
 
-    GBS::DAC_RGBS_PWDNZ::write(1);   
-    GBS::PAD_SYNC_OUT_ENZ::write(0); 
+    Tv5725::Chip::outputUp();
     delay(200);
     optimizePhaseSP();
 }
