@@ -29,6 +29,7 @@ from gbs_unit import (
     read_segment,
     recover_lock,
     reset_framing,
+    restore_preset_preference,
     fs_dir,
     fs_read,
     wait_for,
@@ -1707,3 +1708,76 @@ def test_the_saved_input_survives_a_restart(host, source):
         "that did not change: the boot restore sent the AV module a frame that "
         "does not connect the saved input. 0 is the input left unconnected; any "
         "other number is a different input connected instead")
+
+
+# presetPreference written as a digit. OutputBypass is 10, so the byte is ':'.
+PREFS_BYPASS_BYTE = ":"
+
+# A save is one pass of loop() plus a LittleFS write. The margin is for the
+# detection this boot is in the middle of: getVideoMode() searches for six
+# seconds at a time, a restart lands in a run of them, and the queued command
+# waits for the lot. Two minutes, because a run of the whole suite reaches here
+# with the unit slower than a standalone run does.
+SAVE_TIMEOUT = 120.0
+
+
+@pytest.mark.reboot
+def test_the_bypass_preference_is_readable_after_a_restart(host, preset_save):
+    """A preferences file this firmware wrote must still load on the next boot.
+
+    Byte 0 is `presetPreference + '0'`, and OutputBypass is 10 -- so the HD
+    bypass switch writes ':'. The boot's readability check has to accept every
+    value the save path can put there: a file it rejects is treated as an
+    unreadable one, and the unit then runs on defaults, sends the AV module no
+    input, and refuses every save from then on. That last part is what makes it
+    unrecoverable from the UI, because "restore defaults" saves too.
+
+    Restarts the unit and writes flash, so it needs both flags.
+    """
+    original = fs_read(host, PREFS_PATH)
+    assert original and len(original) == PREFS_BYTES, (
+        f"{PREFS_PATH} is {len(original) if original else 0} bytes, expected "
+        f"{PREFS_BYTES}")
+
+    try:
+        status, _ = get(host, "/sc?K")
+        assert status == 200, f"/sc?K answered {status}"
+        assert wait_for(
+            lambda: (fs_read(host, PREFS_PATH) or " ")[:1] == PREFS_BYPASS_BYTE,
+            timeout=LOCK_TIMEOUT), (
+            "/sc?K did not persist OutputBypass, so this test never wrote the "
+            "byte it is about")
+
+        status, _ = get(host, "/uc?a")
+        assert status == 200, f"the restart command was refused: {status}"
+        assert wait_for(lambda: not _answering(host), timeout=RESTART_TIMEOUT), (
+            "the unit never went away, so it did not restart")
+        assert wait_for(lambda: _answering(host), timeout=RESTART_TIMEOUT), (
+            f"{host} did not come back within {RESTART_TIMEOUT} s")
+
+        # HTTP answers from the network callback, so the server is back before
+        # the loop that takes a queued command is. A register read is deferred
+        # to loop(), so answering one is the signal that a save can happen at
+        # all -- and unlike a source lock it does not depend on the boot having
+        # restored the right input, which is the other thing this bug breaks.
+        assert wait_for(lambda: read_reg(host, *STATUS_16) is not None,
+                        timeout=RESTART_TIMEOUT), (
+            f"{host} answers HTTP but no register read completes, so loop() is "
+            "not running and the save below would prove nothing")
+
+        # Whether the file loaded, asked the only way it shows from here: a boot
+        # that rejected it refuses every save afterwards.
+        before = fs_read(host, PREFS_PATH)
+        get(host, "/uc?5")
+        flipped = wait_for(
+            lambda: (fs_read(host, PREFS_PATH) or before)[1] != before[1],
+            timeout=SAVE_TIMEOUT)
+        assert flipped, (
+            "no save takes effect after restarting with OutputBypass stored, so "
+            "the boot declared the file unreadable and left the unit on defaults. "
+            "Nothing in the UI repairs that -- delete /preferencesv2.txt over "
+            "/fs/rm and restart")
+        get(host, "/uc?5")
+    finally:
+        get(host, "/sc?~")
+        restore_preset_preference(host, original[:1])
