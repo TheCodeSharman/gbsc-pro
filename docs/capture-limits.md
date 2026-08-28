@@ -1,17 +1,18 @@
 # What the board can capture
 
-Two independent bounds decide whether a source arrives intact. Both are hard,
-and a source that violates the vertical one loses picture silently — nothing
-enforces it.
+**One bound decides whether a source arrives intact**, and it is horizontal:
+capture must end before **IF 1125**. Past it the capture path stops writing video
+and writes `Y=U=V=0`, which decodes to a green band, and active picture there is
+destroyed. Nothing enforces it, so the loss is silent.
 
-| bound | limit | what happens past it |
-|---|---|---|
-| horizontal | capture must end before **IF 1125** | the capture path stops writing video and writes `Y=U=V=0`, which decodes to a green band. Active picture there is destroyed |
-| vertical | source of more than **535 lines** | RGBHV bypass, entered once and never left. The VDS is out of the path, so nothing is scaled |
+It is measured in `docs/investigations/tail-green.md`, which also records the
+explanations that turned out to be wrong.
 
-The vertical bound is `docs/rgbhv-bypass-trap.md`. The horizontal one is measured
-in `docs/investigations/tail-green.md`, which also records the explanations that
-turned out to be wrong.
+**There is no vertical bound.** This page carried one — a source of more than 535
+lines — and it was a firmware gate, not a property of the part. An RGBHV source
+of 627 lines scales cleanly and full screen with a measured divider and a healthy
+`HPERIOD_IF`; what put it in bypass was a line-count test the sync watcher no
+longer makes. `docs/rgbhv-bypass-trap.md` has what was measured.
 
 ## The horizontal bound is a position, not a width
 
@@ -30,10 +31,9 @@ IF units per source pixel = 1125 / htotal
 So **htotal 1125 is the ceiling** for one sample per source pixel, and 562 for
 two.
 
-## Stock AKF50, both bounds applied
+## Stock AKF50, the bound applied
 
-28 modes. Four are bypassed on line count. Five of the remaining 24 are scaled but
-cannot be captured whole:
+28 modes. Five cannot be captured whole:
 
 | mode | htotal | VTOTAL | IF units per px | usable |
 |---|---|---|---|---|
@@ -43,11 +43,10 @@ cannot be captured whole:
 | 1280x480 | 1664 | 520 | 0.68 | 67% |
 | 1280x480 | 1680 | 500 | 0.67 | 66% |
 
-**1280x480 is the highest horizontal resolution that is scaled at all** — 1600x600
-is bypassed on VTOTAL 625. And there is no setting that delivers it intact: at one
-sample per pixel the line runs past IF 1125 and the right third is destroyed, and
-at a divider low enough to fit, every pixel gets two thirds of a sample and the
-whole line aliases.
+**There is no setting that delivers 1280x480 intact**: at one sample per pixel the
+line runs past IF 1125 and the right third is destroyed, and at a divider low
+enough to fit, every pixel gets two thirds of a sample and the whole line
+aliases.
 
 **Every mode the bound costs is an outlier**, and declining to support them is a
 defensible position rather than a gap. 1056-wide and 1280x480 are unusual
@@ -61,9 +60,10 @@ So the bound is real and worth stating, but it is not currently costing a mode
 anyone wants. What makes it worth writing down is that the margin on the
 commonest modes is 9% rather than a factor.
 
-**800x600 at htotal 1024 would capture perfectly well** — 1.10 IF units per pixel.
-It is excluded only by the vertical bypass threshold, which is the bound more
-likely to matter in practice.
+**800x600 at htotal 1024 captures perfectly well** — 1.10 IF units per pixel, and
+measured on the bench at VTOTAL 627 it scales sharp and full screen. It used to
+be excluded by the line-count gate, which is the entry this page carried as the
+vertical bound.
 
 ## The divider is a trade, and it has two floors
 
@@ -121,6 +121,6 @@ unrelated limit.
 
 - [`investigations/tail-green.md`](investigations/tail-green.md) — how X was
   measured and what it is not
-- [`rgbhv-bypass-trap.md`](rgbhv-bypass-trap.md) — the vertical bound
+- [`rgbhv-bypass-trap.md`](rgbhv-bypass-trap.md) — the line-count gate that was one, and what replaced it
 - [`scaler-geometry-model.md`](scaler-geometry-model.md) — the arithmetic from
   capture window to output registers
