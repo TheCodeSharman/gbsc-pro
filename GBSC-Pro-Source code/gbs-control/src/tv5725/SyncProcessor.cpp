@@ -16,6 +16,27 @@ void SyncProcessor::writeSdVsyncStop(uint16_t stop)
     SP_SDCS_VSSP_REG_L::write(stop & 0xff);
 }
 
+void SyncProcessor::holdClamp()
+{
+    SP_NO_CLAMP_REG::write(1);
+}
+
+void SyncProcessor::releaseClamp()
+{
+    SP_NO_CLAMP_REG::write(0);
+}
+
+bool SyncProcessor::clampHeld()
+{
+    return SP_NO_CLAMP_REG::read() == 1;
+}
+
+void SyncProcessor::applyDefaultClampWindow()
+{
+    SP_CS_CLP_ST::write(32);
+    SP_CS_CLP_SP::write(48);
+}
+
 void SyncProcessor::applyForSyncType(bool csync)
 {
     // No ordering constraint between these fields is established, so the two

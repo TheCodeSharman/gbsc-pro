@@ -198,6 +198,17 @@ public:
     // only reports correctly once the type is already right.
     static void applyForSyncType(bool csync);
 
+    // The clamp is held off across a load and released once
+    // updateClampPosition() has found the back porch: a clamp whose window has
+    // not been placed clamps to picture. The read exists because the release is
+    // guarded -- writing it unconditionally costs a bus write per pass.
+    static void holdClamp();
+    static void releaseClamp();
+    static bool clampHeld();
+
+    // Where the clamp sits before anything has measured the back porch.
+    static void applyDefaultClampWindow();
+
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as
     // halves they drift -- a path setting only the low byte leaves whatever a

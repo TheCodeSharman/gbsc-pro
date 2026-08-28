@@ -1443,11 +1443,10 @@ void setResetParameters()
     GBS::SP_PRE_COAST::write(9);
     GBS::SP_POST_COAST::write(18);  
     GBS::SP_NO_COAST_REG::write(0); 
-    GBS::SP_CS_CLP_ST::write(32);   
-    GBS::SP_CS_CLP_SP::write(48);   
+    Tv5725::SyncProcessor::applyDefaultClampWindow();
     GBS::SP_SOG_SRC_SEL::write(0);  
     GBS::SP_EXT_SYNC_SEL::write(0); 
-    GBS::SP_NO_CLAMP_REG::write(1); 
+    Tv5725::SyncProcessor::holdClamp();
     GBS::PLLAD_ICP::write(0);       
     GBS::PLLAD_FS::write(0);        
     GBS::PLLAD_5_16::write(0x1f);
@@ -1711,7 +1710,7 @@ void prepareSyncProcessor()
     if (!rgbhvBypass() && (GBS::GBS_OPTION_SCALING_RGBHV::read() != 1)) {
         GBS::SP_CLAMP_MANUAL::write(0);
         GBS::SP_CLP_SRC_SEL::write(0);
-        GBS::SP_NO_CLAMP_REG::write(1);
+        Tv5725::SyncProcessor::holdClamp();
         GBS::SP_SOG_MODE::write(1);
         GBS::SP_H_CST_ST::write(0x10);
         GBS::SP_H_CST_SP::write(0x100);
@@ -3024,7 +3023,7 @@ void doPostPresetLoadSteps()
             updateSpDynamic(0);
         }
 
-        GBS::SP_NO_CLAMP_REG::write(1);
+        Tv5725::SyncProcessor::holdClamp();
         GBS::OUT_SYNC_CNTRL::write(1); // 
 
         if (rto->inputIsYpBpR == true) //&& Info_sate == 0 )//&& SeleInputSource == S_YUV)
@@ -3238,8 +3237,7 @@ void doPostPresetLoadSteps()
         GBS::IF_VS_FLIP::write(1);
 
         GBS::SP_CLP_SRC_SEL::write(0);
-        GBS::SP_CS_CLP_ST::write(32);
-        GBS::SP_CS_CLP_SP::write(48);
+        Tv5725::SyncProcessor::applyDefaultClampWindow();
 
         if (!uopt->wantOutputComponent) {
             GBS::PAD_SYNC_OUT_ENZ::write(0); 
@@ -3304,15 +3302,15 @@ void doPostPresetLoadSteps()
 
         updateClampPosition();
         if (rto->clampPositionIsSet) {
-            if (GBS::SP_NO_CLAMP_REG::read() == 1) {
-                GBS::SP_NO_CLAMP_REG::write(0);
+            if (Tv5725::SyncProcessor::clampHeld()) {
+                Tv5725::SyncProcessor::releaseClamp();
             }
         }
 
         updateSpDynamic(0);
 
         if (!rto->syncWatcherEnabled) {
-            GBS::SP_NO_CLAMP_REG::write(0);
+            Tv5725::SyncProcessor::releaseClamp();
         }
 
         setAndUpdateSogLevel(rto->currentLevelSOG);
@@ -4801,7 +4799,7 @@ void runSyncWatcher() //
 
         if (rto->inputIsYpBpR && (rto->noSyncCounter == 34) && Info_sate == 0) //&& SeleInputSource == S_YUV )
         {
-            GBS::SP_NO_CLAMP_REG::write(1);
+            Tv5725::SyncProcessor::holdClamp();
             rto->clampPositionIsSet = false;
         }
 
@@ -4837,8 +4835,7 @@ void runSyncWatcher() //
             GBS::SP_H_PROTECT::write(0); 
             GBS::SP_H_CST_ST::write(0x10);
             GBS::SP_H_CST_SP::write(0x100);
-            GBS::SP_CS_CLP_ST::write(32);
-            GBS::SP_CS_CLP_SP::write(48); //
+            Tv5725::SyncProcessor::applyDefaultClampWindow();
             updateSpDynamic(1);           
             nudgeMD();
             delay(80);
@@ -6743,8 +6740,8 @@ void loop()
         !rto->clampPositionIsSet && rto->syncWatcherEnabled) {
         updateClampPosition();
         if (rto->clampPositionIsSet) {
-            if (GBS::SP_NO_CLAMP_REG::read() == 1) {
-                GBS::SP_NO_CLAMP_REG::write(0);
+            if (Tv5725::SyncProcessor::clampHeld()) {
+                Tv5725::SyncProcessor::releaseClamp();
             }
         }
     }
@@ -6761,7 +6758,7 @@ void loop()
             }
             if (!rto->syncWatcherEnabled) {
                 updateClampPosition();
-                GBS::SP_NO_CLAMP_REG::write(0);
+                Tv5725::SyncProcessor::releaseClamp();
             }
 
             if (rto->extClockGenDetected && !scalingRgbhv()) {
