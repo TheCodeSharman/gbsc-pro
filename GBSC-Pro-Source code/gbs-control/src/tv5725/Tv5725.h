@@ -690,10 +690,6 @@ public:
 
                                                                       // space convert module bypass
 
-    typedef UReg<0x05, 0x1F, 3, 4> DEC_TEST_SEL;
-
-    typedef UReg<0x05, 0x1F, 3, 1> DEC_TEST_ENABLE;
-
     typedef UReg<0x05, 0x1F, 7, 1> DEC_IDREG_EN;
 
 // SYNC_PROC REGISTERS

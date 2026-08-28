@@ -1527,17 +1527,13 @@ void toggleIfAutoOffset()
 {
     if (GBS::IF_AUTO_OFST_EN::read() == 0) {
 
-        GBS::ADC_ROFCTRL::write(0x40);
-        GBS::ADC_GOFCTRL::write(0x42);
-        GBS::ADC_BOFCTRL::write(0x40);
+        Tv5725::Adc::applyOffset(0x40, 0x42, 0x40);
 
         GBS::IF_AUTO_OFST_EN::write(1);
         GBS::IF_AUTO_OFST_PRD::write(0);
     } else {
         if (adco->r_off != 0 && adco->g_off != 0 && adco->b_off != 0) {
-            GBS::ADC_ROFCTRL::write(adco->r_off);
-            GBS::ADC_GOFCTRL::write(adco->g_off);
-            GBS::ADC_BOFCTRL::write(adco->b_off);
+            Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
         }
 
         GBS::IF_AUTO_OFST_EN::write(0);
@@ -1574,9 +1570,7 @@ void applyRGBPatches()
 
 void setAdcGain(uint8_t gain)
 {
-    GBS::ADC_RGCTRL::write(gain);
-    GBS::ADC_GGCTRL::write(gain);
-    GBS::ADC_BGCTRL::write(gain);
+    Tv5725::Adc::applyGain(gain, gain, gain);
     adco->r_gain = gain;
     adco->g_gain = gain;
     adco->b_gain = gain;
@@ -1584,12 +1578,8 @@ void setAdcGain(uint8_t gain)
 
 void setAdcParametersGainAndOffset()
 {
-    GBS::ADC_ROFCTRL::write(0x40);
-    GBS::ADC_GOFCTRL::write(0x40);
-    GBS::ADC_BOFCTRL::write(0x40);
-    GBS::ADC_RGCTRL::write(0x7B);
-    GBS::ADC_GGCTRL::write(0x7B);
-    GBS::ADC_BGCTRL::write(0x7B);
+    Tv5725::Adc::applyOffset(0x40, 0x40, 0x40);
+    Tv5725::Adc::applyGain(0x7B, 0x7B, 0x7B);
 }
 
 void updateHVSyncEdge()
@@ -2971,6 +2961,22 @@ static void changeOutputResolution(uint8_t standard)
     externalClockGenSyncInOutRate();
 }
 
+// Put the stored analog gain back, or start the auto-gain loop from its initial
+// value. Spelled out at two sites in two different shapes.
+void applyStoredAdcGain()
+{
+    if (uopt->enableAutoGain != 1) {
+        Tv5725::Adc::enableGainMeasurement(false);
+        return;
+    }
+    if (adco->r_gain == 0) {
+        setAdcGain(AUTO_GAIN_INIT);
+    } else {
+        Tv5725::Adc::applyGain(adco->r_gain, adco->g_gain, adco->b_gain);
+    }
+    Tv5725::Adc::enableGainMeasurement(true);
+}
+
 void doPostPresetLoadSteps()
 {
     // Only where something held the blocks and so discarded their
@@ -3110,24 +3116,10 @@ void doPostPresetLoadSteps()
         GBS::ADC_TEST_0C::write(0x12);
         GBS::ADC_TA_05_CTRL::write(0x02); // ADC test enable BIT0    ADC test bus control bit   BIT4:1
 
-        if (uopt->enableAutoGain == 1) {
-            if (adco->r_gain == 0) {
-                setAdcGain(AUTO_GAIN_INIT);
-                GBS::DEC_TEST_ENABLE::write(1);
-            } else {
-                GBS::ADC_RGCTRL::write(adco->r_gain); 
-                GBS::ADC_GGCTRL::write(adco->g_gain); 
-                GBS::ADC_BGCTRL::write(adco->b_gain); 
-                GBS::DEC_TEST_ENABLE::write(1);
-            }
-        } else {
-            GBS::DEC_TEST_ENABLE::write(0);
-        }
+        applyStoredAdcGain();
 
         if (adco->r_off != 0 && adco->g_off != 0 && adco->b_off != 0) {
-            GBS::ADC_ROFCTRL::write(adco->r_off);
-            GBS::ADC_GOFCTRL::write(adco->g_off);
-            GBS::ADC_BOFCTRL::write(adco->b_off);
+            Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
         }
 
         GBS::IF_AUTO_OFST_U_RANGE::write(0);
@@ -4282,17 +4274,7 @@ void bypassModeSwitch_RGBHV()
 
     restartAfterBypassSwitch();
 
-    if (uopt->enableAutoGain == 1 && adco->r_gain == 0) {
-        setAdcGain(AUTO_GAIN_INIT);
-        GBS::DEC_TEST_ENABLE::write(1);
-    } else if (uopt->enableAutoGain == 1 && adco->r_gain != 0) {
-        GBS::ADC_RGCTRL::write(adco->r_gain); 
-        GBS::ADC_GGCTRL::write(adco->g_gain); 
-        GBS::ADC_BGCTRL::write(adco->b_gain); 
-        GBS::DEC_TEST_ENABLE::write(1);       
-    } else {
-        GBS::DEC_TEST_ENABLE::write(0); 
-    }
+    applyStoredAdcGain();
 
     rto->presetID = PresetBypassRGBHV;
 
@@ -5631,7 +5613,7 @@ void calibrateAdcOffset()
     GBS::PLL648_CONTROL_01::write(0xA5);
     GBS::ADC_INPUT_SEL::write(2);
     Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
-    GBS::DEC_TEST_ENABLE::write(1);
+    Tv5725::Adc::enableGainMeasurement(true);
     GBS::ADC_5_03::write(0x31);
     GBS::ADC_TEST_04::write(0x00);
     GBS::SP_CS_CLP_ST::write(0x00);
@@ -5648,14 +5630,9 @@ void calibrateAdcOffset()
     uint8_t missTargetCounter = 0;
     uint8_t readout = 0;
 
-    GBS::ADC_RGCTRL::write(0x7F);
-    GBS::ADC_GGCTRL::write(0x7F);
-    GBS::ADC_BGCTRL::write(0x7F);
-
-    GBS::ADC_ROFCTRL::write(0x7F);
-    GBS::ADC_GOFCTRL::write(0x3D);
-    GBS::ADC_BOFCTRL::write(0x7F);
-    GBS::DEC_TEST_SEL::write(1);
+    Tv5725::Adc::applyGain(0x7F, 0x7F, 0x7F);
+    Tv5725::Adc::applyOffset(0x7F, 0x3D, 0x7F);
+    Tv5725::Adc::DEC_TEST_SEL::write(1);
 
     unsigned long startTimer = 0;
     for (uint8_t i = 0; i < 3; i++) {
@@ -5701,13 +5678,13 @@ void calibrateAdcOffset()
             adco->g_off = GBS::ADC_GOFCTRL::read();
             GBS::ADC_GOFCTRL::write(0x7F);
             GBS::ADC_ROFCTRL::write(0x3D);
-            GBS::DEC_TEST_SEL::write(2);
+            Tv5725::Adc::DEC_TEST_SEL::write(2);
         }
         if (i == 1) {
             adco->r_off = GBS::ADC_ROFCTRL::read();
             GBS::ADC_ROFCTRL::write(0x7F);
             GBS::ADC_BOFCTRL::write(0x3D);
-            GBS::DEC_TEST_SEL::write(3);
+            Tv5725::Adc::DEC_TEST_SEL::write(3);
         }
         if (i == 2) {
             adco->b_off = GBS::ADC_BOFCTRL::read();
@@ -5718,9 +5695,7 @@ void calibrateAdcOffset()
         adco->r_off = adco->g_off = adco->b_off = 0x40;
     }
 
-    GBS::ADC_GOFCTRL::write(adco->g_off);
-    GBS::ADC_ROFCTRL::write(adco->r_off);
-    GBS::ADC_BOFCTRL::write(adco->b_off);
+    Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
 }
 
 void loadDefaultUserOptions()
@@ -6721,7 +6696,7 @@ void loop()
                 debugPinBackup = GBS::PAD_BOUT_EN::read();
                 debugRegBackup = GBS::TEST_BUS_SEL::read();
                 GBS::PAD_BOUT_EN::write(0);
-                GBS::DEC_TEST_SEL::write(1);
+                Tv5725::Adc::DEC_TEST_SEL::write(1);
                 GBS::TEST_BUS_SEL::write(0xb);
                 if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
                     runAutoGain();
@@ -7166,11 +7141,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     if (uopt->enableAutoGain == 0) {
                         uopt->enableAutoGain = 1;
                         setAdcGain(AUTO_GAIN_INIT);
-                        GBS::DEC_TEST_ENABLE::write(1);
+                        Tv5725::Adc::enableGainMeasurement(true);
                         ; // SerialMprintln("on");
                     } else {
                         uopt->enableAutoGain = 0;
-                        GBS::DEC_TEST_ENABLE::write(0);
+                        Tv5725::Adc::enableGainMeasurement(false);
                         ; // SerialMprintln("off");
                     }
                     saveUserPrefs();
@@ -8281,9 +8256,7 @@ void handleType2Command(char argument)
                 GBS::VDS_U_OFST::write(0);
                 GBS::VDS_V_OFST::write(0);
 
-                GBS::ADC_ROFCTRL::write(adco->r_off);
-                GBS::ADC_GOFCTRL::write(adco->g_off);
-                GBS::ADC_BOFCTRL::write(adco->b_off);
+                Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
                 ; // SerialMprintln("RGB:defauit");
             } 
             else //（YUV）RGB0 channel
@@ -8297,9 +8270,7 @@ void handleType2Command(char argument)
                 GBS::VDS_U_OFST::write(0x03); 
                 GBS::VDS_V_OFST::write(0x04);
 
-                GBS::ADC_ROFCTRL::write(adco->r_off);
-                GBS::ADC_GOFCTRL::write(adco->g_off);
-                GBS::ADC_BOFCTRL::write(adco->b_off);
+                Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
 
             }
             R_VAL = ((GBS::VDS_Y_OFST::read() + (float)(1.402 * (GBS::VDS_V_OFST::read())))) + 128;

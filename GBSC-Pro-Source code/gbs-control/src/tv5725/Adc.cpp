@@ -100,6 +100,25 @@ uint8_t Adc::applyOversample(uint8_t postDivider, uint8_t oversample)
     return ratio;
 }
 
+void Adc::applyGain(uint8_t r, uint8_t g, uint8_t b)
+{
+    ADC_RGCTRL::write(r);
+    ADC_GGCTRL::write(g);
+    ADC_BGCTRL::write(b);
+}
+
+void Adc::applyOffset(uint8_t r, uint8_t g, uint8_t b)
+{
+    ADC_ROFCTRL::write(r);
+    ADC_GOFCTRL::write(g);
+    ADC_BOFCTRL::write(b);
+}
+
+void Adc::enableGainMeasurement(bool on)
+{
+    DEC_TEST_ENABLE::write(on ? 1 : 0);
+}
+
 void Adc::applyForBypassRgbhv()
 {
     ADC_FLTR::write(0);

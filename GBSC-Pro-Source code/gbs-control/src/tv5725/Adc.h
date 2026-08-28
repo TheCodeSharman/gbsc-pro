@@ -78,6 +78,12 @@ public:
 
     typedef UReg<0x05, 0x05, 1, 4> ADC_TA_CTRL;                       // When = 1, ADC is in test mode ADC test bus control bit
 
+    // The decimator's test path, which is the only instrument the analog gain
+    // and offset have: the auto-gain loop reads a channel back through it.
+    // ENABLE is SEL's low bit, so clearing one clears part of the other.
+    typedef UReg<0x05, 0x1F, 3, 4> DEC_TEST_SEL;
+    typedef UReg<0x05, 0x1F, 3, 1> DEC_TEST_ENABLE;
+
     typedef UReg<0x05, 0x06, 0, 7> ADC_ROFCTRL;                       // Offset control for R channel of ADC
 
     typedef UReg<0x05, 0x07, 0, 7> ADC_GOFCTRL;                       // Offset control for G channel of ADC
@@ -252,6 +258,15 @@ public:
     // PLL still clocks at the old one -- a solid green screen with every
     // register self-consistent. SourceMeasurement.h
     static void applyForBypassRgbhv();
+
+    // The analog gain and offset, a triple at a time. Six registers that no
+    // class owned: every caller wrote them one by one, and "put the stored
+    // calibration back" was spelled out at five sites.
+    static void applyGain(uint8_t r, uint8_t g, uint8_t b);
+    static void applyOffset(uint8_t r, uint8_t g, uint8_t b);
+
+    // Arm the path the gain is measured through.
+    static void enableGainMeasurement(bool on);
 
 private:
     // How many taps above the post divider a ratio asks for: one per doubling.
