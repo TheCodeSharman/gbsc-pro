@@ -1,23 +1,26 @@
 # The on-screen menu
 
-The menu the remote drives, what each screen reports, and the three places the
+The menu the remote drives, what each screen reports, and the two places the
 word "OSD" points at in this tree.
 
-## Three OSD subsystems, one of them live
+## Two OSD subsystems, one of them on the television
 
-Searching for "OSD" finds three unrelated things. Only the first draws the menu
+Searching for "OSD" finds two unrelated things. Only the first draws the menu
 on the television.
 
 | | what | where | live? |
 |---|---|---|---|
 | **STV9426** | character OSD chip on the ESP's I²C bus at `0x5D`. Draws the menu, the volume bar and the Info screen | `OSD_TV/OSD_stv9426.h`, `OSD_menu_F()`, `OSD_c1()`..`OSD_c3()`, driven by the state machine in `OSD_selectOption()` | **yes** |
-| **TV5725 internal OSD** | the chip's own icon-and-bar OSD, registers `s0_90`..`s0_98` | `OSDManager.{h,cpp}`, `osd.h`'s `MenuManager` | **no** — its only entry point is a commented-out `registerItem` in `initOLEDMenu()` |
 | **OLED menu** | the 128x64 SSD1306 on the unit itself | `OLEDMenuManager`, `OLEDMenuImplementation.cpp` | yes, but it is a separate tree and holds no Move/Scale |
 
-The TV5725 block is the trap: it has plausible-looking initialisation
-(`Menu::init()` inside `doPostPresetLoadSteps()`, colours, position, zoom) and
-none of it reaches the screen. Analysing it explains nothing about what the
-remote does.
+The TV5725 has an icon-and-bar OSD of its own at `s0_90`..`s0_98`. **Nothing
+drives it**: the firmware writes none of those registers, and the menu on the
+television comes from the STV9426. The names are still in the register
+catalogue, so a search for "OSD" finds them — with no owner and no writer.
+
+**Do not reinstate it.** Its initialisation read as live enough to be worth
+analysing — colours, position and zoom all set up — from an entry point nothing
+called, and analysing it explains nothing about what the remote does.
 
 ## The state machine
 
