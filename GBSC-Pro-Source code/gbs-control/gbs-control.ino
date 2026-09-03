@@ -5145,7 +5145,6 @@ void runSyncWatcher() //
         static uint16_t RGBHVNoSyncCounter = 0;
 
         if (uopt->preferScalingRgbhv && rto->continousStableCounter >= 2) {
-            boolean needPostAdjust = 0;
             static uint16_t activePresetLineCount = 0;
 
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
@@ -5195,11 +5194,9 @@ void runSyncWatcher() //
                     } else if (sourceRate > 44.0f && sourceRate < 53.8f) {
 
                         rto->videoStandardInput = 4;
-                        needPostAdjust = 1;
                     } else {
 
                         rto->videoStandardInput = 3;
-                        needPostAdjust = 1;
                     }
                 
                     if (uopt->presetPreference == 10)
@@ -5253,10 +5250,6 @@ void runSyncWatcher() //
 
                         externalClockGenSyncInOutRate();
                     }
-
-                    if (needPostAdjust) {
-                        GBS::IF_HBIN_SP::write(0x50);
-                    }
                 }
             }
 
@@ -5265,7 +5258,6 @@ void runSyncWatcher() //
 
                 const uint8_t wantedStandard =
                     Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines, activePresetLineCount);
-                needPostAdjust = wantedStandard == 3;
 
                 if (wantedStandard != 0) {
 
@@ -5332,10 +5324,6 @@ void runSyncWatcher() //
                             }
 
                             externalClockGenSyncInOutRate();
-                        }
-
-                        if (needPostAdjust) {
-                            GBS::IF_HBIN_SP::write(0x50);
                         }
                     }
                 }

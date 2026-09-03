@@ -138,7 +138,6 @@ uint8_t SourceStandard::applyProgressive() const
 
     SyncProcessor::writeSdVsyncStart(14);
     SyncProcessor::writeSdVsyncStop(11);
-    InputFormatter::IF_HB_SP::write(0);
 
     const uint8_t oversample =
         Adc::applyOversample(ProgressivePostDivider, ProgressiveOversample);
@@ -159,21 +158,12 @@ uint8_t SourceStandard::applyProgressive() const
     if (standard_ == 3) {
         SyncProcessor::writeSdVsyncStart(16);
         SyncProcessor::writeSdVsyncStop(13);
-        InputFormatter::IF_HB_ST::write(30);
-        InputFormatter::IF_HBIN_ST::write(0x20);
-        InputFormatter::IF_HBIN_SP::write(0x60);
-    } else if (standard_ == 4) {
-        InputFormatter::IF_HBIN_SP::write(0x40);
-        InputFormatter::IF_HBIN_ST::write(0x20);
-        InputFormatter::IF_HB_ST::write(0x30);
     } else if (standard_ == 8) {
         if (pllWantsLowGain())
             Adc::PLLAD_FS::write(0);
 
         Adc::PLLAD_ICP::write(6);
         Adc::ADC_FLTR::write(AnalogFilter110MHz);
-        InputFormatter::IF_HB_ST::write(30);
-        InputFormatter::IF_HBIN_SP::write(0x60);
     }
 
     return oversample;

@@ -153,7 +153,6 @@ TEST_CASE("a progressive standard puts the input formatter on write enable")
 {
     CHECK(WRITTEN(4, false, InputFormatter::IF_SEL_WEN) == 1);
     CHECK(WRITTEN(4, false, InputFormatter::IF_HS_SEL_LPF) == 0);
-    CHECK(WRITTEN(4, false, InputFormatter::IF_HB_SP) == 0);
     CHECK(WRITTEN(4, false, Adc::ADC_FLTR) == 3);
 }
 
@@ -174,17 +173,6 @@ TEST_CASE("standard 3 opens the SD vsync window later than its neighbours")
 
     CHECK(WRITTEN(3, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 16);
     CHECK(WRITTEN(3, false, SyncProcessor::SP_SDCS_VSSP_REG_L) == 13);
-}
-
-TEST_CASE("standards 3 and 4 each blank their own input line")
-{
-    CHECK(WRITTEN(3, false, InputFormatter::IF_HB_ST) == 30);
-    CHECK(WRITTEN(3, false, InputFormatter::IF_HBIN_ST) == 0x20);
-    CHECK(WRITTEN(3, false, InputFormatter::IF_HBIN_SP) == 0x60);
-
-    CHECK(WRITTEN(4, false, InputFormatter::IF_HB_ST) == 0x30);
-    CHECK(WRITTEN(4, false, InputFormatter::IF_HBIN_ST) == 0x20);
-    CHECK(WRITTEN(4, false, InputFormatter::IF_HBIN_SP) == 0x40);
 }
 
 TEST_CASE("standard 9 takes a taller source down an octave")
@@ -241,8 +229,6 @@ TEST_CASE("standard 8 opens the filter its progressive neighbours narrowed")
     // It is in the progressive group as well, so applyProgressive() runs first
     // and this overrides the parts it disagrees with.
     CHECK(WRITTEN(8, false, Adc::ADC_FLTR) == 1);
-    CHECK(WRITTEN(8, false, InputFormatter::IF_HB_ST) == 30);
-    CHECK(WRITTEN(8, false, InputFormatter::IF_HBIN_SP) == 0x60);
     CHECK(WRITTEN(8, false, Adc::PLLAD_ICP) == 6);
 
     // and keeps what it does not disagree with
@@ -265,4 +251,21 @@ TEST_CASE("outside that band standard 8 leaves the VCO gain alone")
     pllRateHz = 2000;
     CHECK(WRITTEN(8, false, Adc::PLLAD_FS) == NotWritten);
     pllRateHz = 0;
+}
+
+// --- the input line's horizontal blanking -------------------------------------
+
+TEST_CASE("no standard writes the input line's horizontal blanking")
+{
+    // One capture-window quantity, one owner. A standard writing it is a
+    // second owner, and the SD arm writes none of the four, so a progressive
+    // standard's values survive into the next mode.
+    // docs/investigations/if-hbin-second-capture-window.md
+    for (uint8_t standard : {1, 2, 3, 4, 8, 9, 14}) {
+        CAPTURE(standard);
+        CHECK(WRITTEN(standard, false, InputFormatter::IF_HB_ST) == NotWritten);
+        CHECK(WRITTEN(standard, false, InputFormatter::IF_HB_SP) == NotWritten);
+        CHECK(WRITTEN(standard, false, InputFormatter::IF_HBIN_ST) == NotWritten);
+        CHECK(WRITTEN(standard, false, InputFormatter::IF_HBIN_SP) == NotWritten);
+    }
 }
