@@ -4632,6 +4632,89 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
     hdBypassLastMeasure = millis();
 }
 
+// The SOG slicer level is tuned against the source rather than solved, because
+// nothing measures the sync amplitude: a run of bad-hsync samples inside a
+// window is the only evidence, and the response is to step the level down and
+// watch again. csync only -- there is no sync on green to slice otherwise.
+//
+// Its window and its bad-sample count are held across passes, so a mode change
+// has to say they are stale: forgetPreemptiveSogWindow().
+static const uint16_t sogWindowLen = 3000;
+static unsigned long preemptiveSogWindowStart = millis();
+static uint16_t badHsActive = 0;
+static boolean lastAdjustWasInActiveWindow = 0;
+
+static void forgetPreemptiveSogWindow()
+{
+    badHsActive = 0;
+    preemptiveSogWindowStart = millis();
+}
+
+static void tuneSogLevelPreemptively(boolean sourceDisturbed, boolean modeChangePending)
+{
+    if (!Tv5725::SyncType::isCsync() || rto->inputIsYpBpR || modeChangePending)
+        return;
+
+    if (sourceDisturbed || GBS::STATUS_INT_SOG_BAD::read() == 1) {
+        if ((millis() - preemptiveSogWindowStart) > sogWindowLen) {
+
+            preemptiveSogWindowStart = millis();
+            badHsActive = 0;
+        }
+        lastVsyncLock = millis();
+    }
+
+    if ((millis() - preemptiveSogWindowStart) < sogWindowLen) {
+        for (uint8_t i = 0; i < 16; i++) {
+            if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_SYNC_PROC_HSACT::read() == 0) {
+                Tv5725::Interrupts::acknowledgeSogBad();
+                uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+                if (rto->videoStandardInput == 0)
+                    hlowStart = 777;
+                for (int a = 0; a < 20; a++) {
+                    if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
+
+                        badHsActive++;
+                        lastVsyncLock = millis();
+                        break;
+                    }
+                }
+            }
+            if ((i % 3) == 0) {
+                delay(1);
+            } else {
+                delay(0);
+            }
+        }
+
+        if (badHsActive >= 17) {
+            if (rto->currentLevelSOG >= 2) {
+                rto->currentLevelSOG -= 1;
+                setAndUpdateSogLevel(rto->currentLevelSOG);
+                delay(30);
+                updateSpDynamic(0);
+                badHsActive = 0;
+                lastAdjustWasInActiveWindow = 1;
+            } else if (badHsActive > 40) {
+                optimizeSogLevel();
+                badHsActive = 0;
+                lastAdjustWasInActiveWindow = 1;
+            }
+            preemptiveSogWindowStart = millis();
+        }
+    } else if (lastAdjustWasInActiveWindow) {
+        lastAdjustWasInActiveWindow = 0;
+        if (rto->currentLevelSOG >= 8) {
+            rto->currentLevelSOG -= 1;
+            setAndUpdateSogLevel(rto->currentLevelSOG);
+            delay(30);
+            updateSpDynamic(0);
+            badHsActive = 0;
+            rto->phaseIsSet = 0;
+        }
+    }
+}
+
 void runSyncWatcher() // 
 {
     // Frozen: docs/gbs-control-debug-interface.md
@@ -4674,72 +4757,7 @@ void runSyncWatcher() //
     if (sourceDisturbed)
         geometry.sourceInterrupted();
 
-    static unsigned long preemptiveSogWindowStart = millis();
-    static const uint16_t sogWindowLen = 3000;
-    static uint16_t badHsActive = 0;
-    static boolean lastAdjustWasInActiveWindow = 0;
-
-    if (Tv5725::SyncType::isCsync() && !rto->inputIsYpBpR && (newVideoModeCounter == 0)) {
-
-        if (sourceDisturbed || GBS::STATUS_INT_SOG_BAD::read() == 1) {
-            if ((millis() - preemptiveSogWindowStart) > sogWindowLen) {
-
-                preemptiveSogWindowStart = millis();
-                badHsActive = 0;
-            }
-            lastVsyncLock = millis();
-        }
-
-        if ((millis() - preemptiveSogWindowStart) < sogWindowLen) {
-            for (uint8_t i = 0; i < 16; i++) {
-                if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_SYNC_PROC_HSACT::read() == 0) {
-                    Tv5725::Interrupts::acknowledgeSogBad();
-                    uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-                    if (rto->videoStandardInput == 0)
-                        hlowStart = 777;
-                    for (int a = 0; a < 20; a++) {
-                        if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
-
-                            badHsActive++;
-                            lastVsyncLock = millis();
-                            break;
-                        }
-                    }
-                }
-                if ((i % 3) == 0) {
-                    delay(1);
-                } else {
-                    delay(0);
-                }
-            }
-
-            if (badHsActive >= 17) {
-                if (rto->currentLevelSOG >= 2) {
-                    rto->currentLevelSOG -= 1;
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
-                    delay(30);
-                    updateSpDynamic(0);
-                    badHsActive = 0;
-                    lastAdjustWasInActiveWindow = 1;
-                } else if (badHsActive > 40) {
-                    optimizeSogLevel();
-                    badHsActive = 0;
-                    lastAdjustWasInActiveWindow = 1;
-                }
-                preemptiveSogWindowStart = millis();
-            }
-        } else if (lastAdjustWasInActiveWindow) {
-            lastAdjustWasInActiveWindow = 0;
-            if (rto->currentLevelSOG >= 8) {
-                rto->currentLevelSOG -= 1;
-                setAndUpdateSogLevel(rto->currentLevelSOG);
-                delay(30);
-                updateSpDynamic(0);
-                badHsActive = 0;
-                rto->phaseIsSet = 0;
-            }
-        }
-    }
+    tuneSogLevelPreemptively(sourceDisturbed, newVideoModeCounter != 0);
 
     if ((detectedVideoMode == 0 || !status16SpHsStable) && !rgbhvBypass()) {
         rto->noSyncCounter++;            // 
@@ -4977,8 +4995,7 @@ void runSyncWatcher() //
                 newVideoModeCounter = 0;
                 forgetHdBypassLineCount();
                 delay(20);
-                badHsActive = 0;
-                preemptiveSogWindowStart = millis();
+                forgetPreemptiveSogWindow();
             } else {
                 unfreezeVideo();
                 printInfo();
