@@ -4585,6 +4585,53 @@ void fastSogAdjust() //
     }
 }
 
+// Bypass solves no raster, so the sync processor's vertical window is steered
+// from the source's own line count. 15 kHz only -- above that the window the
+// bypass switch wrote already fits -- and rate limited, because each adjustment
+// costs 150 ms with the picture live.
+//
+// The count is held between passes rather than re-derived, so a mode change has
+// to say it is stale: forgetHdBypassLineCount().
+static uint16_t hdBypassLineCount = 0;
+static unsigned long hdBypassLastMeasure = millis();
+
+static void forgetHdBypassLineCount() { hdBypassLineCount = 0; }
+
+static void steerHdBypassVsyncWindow(boolean syncStable)
+{
+    if (!rto->outModeHdBypass || !syncStable || !sourceLowLineRate())
+        return;
+    if (millis() - hdBypassLastMeasure <= 765)
+        return;
+
+    uint16_t lines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
+    for (uint8_t i = 0; i < 3; i++) {
+        delay(2);
+        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() < (lines - 3) ||
+            GBS::STATUS_SYNC_PROC_VTOTAL::read() > (lines + 3)) {
+            lines = 0;
+            break;
+        }
+    }
+
+    if (lines != 0) {
+        if (lines < (hdBypassLineCount - 3) || lines > (hdBypassLineCount + 3)) {
+            hdBypassLineCount = lines;
+            if (hdBypassLineCount < 230 || hdBypassLineCount > 340) {
+                Tv5725::SyncProcessor::writeSdVsyncStart(1);
+                if (getCsVsStop() == 1) {
+                    Tv5725::SyncProcessor::writeSdVsyncStop(2);
+                }
+                nudgeMD();
+            } else {
+                Tv5725::SyncProcessor::writeSdVsyncStart(lines - 9);
+            }
+            delay(150);
+        }
+    }
+    hdBypassLastMeasure = millis();
+}
+
 void runSyncWatcher() // 
 {
     // Frozen: docs/gbs-control-debug-interface.md
@@ -4596,49 +4643,11 @@ void runSyncWatcher() //
     }
 
     static uint8_t newVideoModeCounter = 0;
-    static uint16_t activeStableLineCount = 0;
     static unsigned long lastSyncDrop = millis();
-    static unsigned long lastLineCountMeasure = millis();
-
-    uint16_t thisStableLineCount = 0;
     uint8_t detectedVideoMode = getVideoMode();
     boolean status16SpHsStable = getStatus16SpHsStable();
 
-    if (rto->outModeHdBypass && status16SpHsStable) {
-        if (sourceLowLineRate()) {
-            if (millis() - lastLineCountMeasure > 765) {
-                thisStableLineCount = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-                for (uint8_t i = 0; i < 3; i++) {
-                    delay(2);
-                    if (GBS::STATUS_SYNC_PROC_VTOTAL::read() < (thisStableLineCount - 3) ||
-                        GBS::STATUS_SYNC_PROC_VTOTAL::read() > (thisStableLineCount + 3)) {
-                        thisStableLineCount = 0;
-                        break;
-                    }
-                }
-
-                if (thisStableLineCount != 0) {
-                    if (thisStableLineCount < (activeStableLineCount - 3) ||
-                        thisStableLineCount > (activeStableLineCount + 3)) {
-                        activeStableLineCount = thisStableLineCount;
-                        if (activeStableLineCount < 230 || activeStableLineCount > 340) {
-
-                            Tv5725::SyncProcessor::writeSdVsyncStart(1);
-                            if (getCsVsStop() == 1) {
-                                Tv5725::SyncProcessor::writeSdVsyncStop(2);
-                            }
-
-                            nudgeMD();
-                        } else {
-                            Tv5725::SyncProcessor::writeSdVsyncStart(thisStableLineCount - 9);
-                        }
-                        delay(150);
-                    }
-                }
-                lastLineCountMeasure = millis();
-            }
-        }
-    }
+    steerHdBypassVsyncWindow(status16SpHsStable);
 
     if (rto->videoStandardInput == 13) {
         if (detectedVideoMode == 0) {
@@ -4966,7 +4975,7 @@ void runSyncWatcher() //
                 rto->noSyncCounter = 0;          
                 rto->continousStableCounter = 0; 
                 newVideoModeCounter = 0;
-                activeStableLineCount = 0;
+                forgetHdBypassLineCount();
                 delay(20);
                 badHsActive = 0;
                 preemptiveSogWindowStart = millis();
