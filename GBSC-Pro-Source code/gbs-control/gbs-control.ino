@@ -1196,6 +1196,16 @@ static boolean sourceLowLineRate()
     return geometry.sourceLowLineRate();
 }
 
+// Bypass hands the source's OWN timing to the encoder, so it only works where
+// the display can show that timing. A 15 kHz source bypassed produces no signal
+// at all, which reads as the scaler having failed rather than as the television
+// refusing the mode -- so the request is refused here instead.
+// docs/rgbhv-bypass-trap.md
+static boolean bypassCanBeDisplayed()
+{
+    return !sourceLowLineRate();
+}
+
 // A 15 kHz line whose vertical interval carries equalisation and serration
 // pulses. The rate alone does not say so, and the coast settings below break the
 // horizontal count on a source that has none.
@@ -1491,7 +1501,6 @@ void setResetParameters()
     GBS::SFTRST_INT_RSTZ::write(1);
     Tv5725::Interrupts::enableEverySource();
     Tv5725::Interrupts::acknowledgeAll();
-    GBS::PAD_SYNC_OUT_ENZ::write(0); 
     rto->clampPositionIsSet = 0;     
     rto->coastPositionIsSet = 0;     
     Tv5725::SyncType::forget();
@@ -3241,9 +3250,6 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
 
-        if (!uopt->wantOutputComponent) {
-            GBS::PAD_SYNC_OUT_ENZ::write(0); 
-        }
         GBS::DAC_RGBS_PWDNZ::write(1); 
         GBS::DAC_RGBS_SPD::write(0);
         GBS::DAC_RGBS_S0ENZ::write(0); //
@@ -6770,9 +6776,6 @@ void loop()
         if (rto->applyPresetDoneStage == 1) {
 
             GBS::DAC_RGBS_PWDNZ::write(1); 
-            if (!uopt->wantOutputComponent) {
-                GBS::PAD_SYNC_OUT_ENZ::write(0); 
-            }
             if (!rto->syncWatcherEnabled) {
                 updateClampPosition();
                 Tv5725::SyncProcessor::releaseClamp();
@@ -6796,10 +6799,6 @@ void loop()
     else if (rto->applyPresetDoneStage == 1 && (rto->continousStableCounter > 35)) {
 
         GBS::DAC_RGBS_PWDNZ::write(1);  // 
-        if (!uopt->wantOutputComponent) // 
-        {
-            GBS::PAD_SYNC_OUT_ENZ::write(0); //
-        }
 
         externalClockGenSyncInOutRate();
         rto->applyPresetDoneStage = 0;
@@ -7151,6 +7150,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     bypassModeSwitch_RGBHV();
                     break;
                 case 'K':
+                    if (!bypassCanBeDisplayed()) {
+                        printf("pass refused: source line rate too low to bypass\n");
+                        break;
+                    }
                     setOutModeHdBypass(false);
                     uopt->presetPreference = OutputBypass;
                     saveUserPrefs();
@@ -8053,6 +8056,10 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'x':
+            if (uopt->preferScalingRgbhv && !bypassCanBeDisplayed()) {
+                printf("scaling stays on: source line rate too low to bypass\n");
+                break;
+            }
             uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
             ; // SerialMprint(F("preferScalingRgbhv: "));
             if (uopt->preferScalingRgbhv) {
