@@ -4654,10 +4654,15 @@ void runSyncWatcher() //
     // The chip latches the disturbance instead. Measured: a wrong rate solved
     // against a correct count survives indefinitely and takes /sc?~ to clear.
     //
-    // Separate-sync only. Bit 1 is claimed inside the csync branch below, and the
-    // engine waits behind its own steadiness run before measuring -- arming on
-    // arrival reads the source mid-transition.
-    if (!Tv5725::SyncType::isCsync() && Tv5725::Interrupts::takeSourceDisturbed())
+    // ONE CLAIMANT PER LATCHED BIT. Reading STATUS_INT_SOG_SW claims it, and the
+    // pre-emptive SOG adjustment below wants the same event, so it is sampled
+    // here and nowhere else and both are handed the answer. That is what gives
+    // every sync path the re-measure, and there is no cheaper signal to give
+    // them: getSourceFieldRate() blocks spinning for vsync edges, and
+    // HPERIOD_IF rails. The engine waits behind its own steadiness run before
+    // measuring, so arming on arrival does not read the source mid-transition.
+    const bool sourceDisturbed = Tv5725::Interrupts::takeSourceDisturbed();
+    if (sourceDisturbed)
         geometry.sourceInterrupted();
 
     static unsigned long preemptiveSogWindowStart = millis();
@@ -4667,8 +4672,7 @@ void runSyncWatcher() //
 
     if (Tv5725::SyncType::isCsync() && !rto->inputIsYpBpR && (newVideoModeCounter == 0)) {
 
-        if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_INT_SOG_SW::read() == 1) {
-            Tv5725::Interrupts::acknowledgeSogSwitch();
+        if (sourceDisturbed || GBS::STATUS_INT_SOG_BAD::read() == 1) {
             if ((millis() - preemptiveSogWindowStart) > sogWindowLen) {
 
                 preemptiveSogWindowStart = millis();
