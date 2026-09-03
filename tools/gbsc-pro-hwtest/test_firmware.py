@@ -1781,3 +1781,17 @@ def test_the_bypass_preference_is_readable_after_a_restart(host, preset_save):
     finally:
         get(host, "/sc?~")
         restore_preset_preference(host, original[:1])
+
+
+def test_the_unit_reports_the_commit_it_was_built_from(host):
+    """A unit that cannot name its build cannot be bisected against.
+
+    Not behind GBS_DEBUG: a release image has to answer this too, or the one
+    build whose identity matters most is the one that stays anonymous.
+    """
+    status, body = get_json(host, "/version")
+    assert status == 200, f"/version answered {status}"
+    rev = body.get("rev", "")
+    assert re.fullmatch(r"[0-9a-f]{7,40}(-dirty)?", rev), (
+        f"/version rev is not a git hash: {rev!r}"
+    )
