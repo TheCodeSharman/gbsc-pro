@@ -864,3 +864,47 @@ TEST_CASE("the sync path the probe borrowed goes back")
     SourceMeasurement::sourceHasOwnVsync(testClock);
     CHECK((Wire.bank[5][0x20] & EXT_SYNC_SEL_BIT) == EXT_SYNC_SEL_BIT);
 }
+
+// HPERIOD_IF is counted against the chip's own 27 MHz, so it reads the source's
+// line rate directly and needs no vsync spin. It also rails, intermittently and
+// without any flag saying so -- STATUS_IF_HT_OK reads 1 either way. What
+// separates the two is that a settled reading repeats to within a count while a
+// railed one does not, and that a value can imply a field rate no source runs
+// at. docs/investigations/hperiod-if-railing.md
+TEST_CASE("a run of agreeing HPERIOD_IF readings gives the source's line rate")
+{
+    const uint16_t settled[] = {431, 431, 430};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311) == 15625u);
+
+    const uint16_t progressive[] = {165, 165, 165};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(progressive, 3, 679) == 40662u);
+
+    const uint16_t seventy[] = {308, 307, 308};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(seventy, 3, 311) == 21844u);
+}
+
+TEST_CASE("readings that disagree are refused, which is what railing looks like")
+{
+    const uint16_t railed[] = {511, 255, 16, 509};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(railed, 4, 311) == 0u);
+
+    const uint16_t noisy[] = {511, 510, 429, 436};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(noisy, 4, 311) == 0u);
+}
+
+TEST_CASE("a steady reading implying a field rate no source runs at is refused")
+{
+    // 50 against a 524-line source is 132 kHz, a 252 Hz field rate. Perfectly
+    // steady, so agreement alone cannot reject it.
+    const uint16_t stableWrong[] = {50, 50, 50, 50};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(stableWrong, 4, 524) == 0u);
+}
+
+TEST_CASE("one reading is not a run, and a line count that is not a source is refused")
+{
+    const uint16_t one[] = {431};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(one, 1, 311) == 0u);
+
+    const uint16_t settled[] = {431, 431, 431};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 0) == 0u);
+}

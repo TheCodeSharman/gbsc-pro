@@ -629,7 +629,8 @@ sampling-log:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sampling_log" \
-	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp src/tv5725/Adc.cpp
+	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp src/tv5725/Adc.cpp \
+	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sampling_log"
 
 ## geometry: the registers each Tv5725::Geometry entry point writes

@@ -18,11 +18,16 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingLog.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/gbs_types.h"
 
 // The emitted line is the instrument, so one test reads it.
 static std::string g_lastLine;
 void tv5725Log(const char *line) { g_lastLine = line; }
+
+// SourceMeasurement links in for the HPERIOD_IF conversion; nothing here
+// spins for a field rate.
+float getSourceFieldRate(boolean) { return 0.0f; }
 
 using namespace Tv5725;
 
@@ -90,7 +95,7 @@ TEST_CASE("a monitor run stops once its duration is up")
 
 TEST_CASE("the line rate comes off HPERIOD_IF against the chip's own 27 MHz")
 {
-    CHECK(SamplingLog::lineRateFromHPeriod(431) == 15625u);
+    CHECK(SourceMeasurement::lineRateForHPeriod(431) == 15625u);
 }
 
 TEST_CASE("the sample carries the chip's interrupt status")

@@ -177,6 +177,25 @@ public:
     static bool rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
                                  uint16_t heldLines, uint32_t heldLineRateHz);
 
+    // The line rate one HPERIOD_IF reading states: 27 MHz / ((hperiod + 1) * 4),
+    // measured across ten modes to a mean 29 ns. Counted against the chip's own
+    // 27 MHz, so it does not move with PLLAD_MD.
+    static uint32_t lineRateForHPeriod(uint16_t hperiod);
+
+    // How far two HPERIOD_IF readings may differ and still be the same reading.
+    // A settled source moves by one count; a railed one by hundreds.
+    static const uint16_t HPeriodAgreement = 2;
+
+    // The line rate a RUN of HPERIOD_IF readings implies, or 0 when the run
+    // cannot be believed. One register read against getSourceFieldRate()'s
+    // vsync spin, but it rails with nothing to say so -- STATUS_IF_HT_OK reads
+    // 1 either way -- so the run and the line count are the judgement: readings
+    // that disagree are railing, and a steady one implying a field rate no
+    // source runs at is the railing's stable form.
+    // docs/investigations/hperiod-if-railing.md
+    static uint32_t lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
+                                        uint16_t lines);
+
     // How far two field-rate readings may differ and still be the same rate, in
     // parts per thousand. One reading of one field period at the ESP's clock,
     // so settled readings differ in the last place; 0.1% is ten times that and

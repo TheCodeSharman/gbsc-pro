@@ -1,5 +1,7 @@
 #include "SamplingLog.h"
 
+#include "SourceMeasurement.h"
+
 #include <Arduino.h>
 #include <stdio.h>
 
@@ -78,11 +80,6 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
               "hperiod_if,vperiod_if,hsact,ifbits,intstatus");
 }
 
-uint32_t SamplingLog::lineRateFromHPeriod(uint16_t hperiod)
-{
-    return 27000000u / (((uint32_t)hperiod + 1u) * 4u);
-}
-
 void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
                         uint16_t step, uint16_t dwellMs, uint8_t oversample)
 {
@@ -99,7 +96,7 @@ void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
     step_ = step;
     dwellMs_ = dwellMs;
     interval_ = 2;
-    lineRateHz_ = lineRateFromHPeriod(GBS::HPERIOD_IF::read());
+    lineRateHz_ = SourceMeasurement::lineRateForHPeriod(GBS::HPERIOD_IF::read());
     oversample_ = oversample < 1 ? 1 : oversample;
     restoreDivider_ = GBS::PLLAD_MD::read();
     divider_ = low;

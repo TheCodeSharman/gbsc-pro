@@ -51,9 +51,6 @@ public:
     static void event(uint32_t nowMs, const char *what, uint16_t lines,
                       uint8_t videoStandardInput);
 
-    // 27 MHz / ((HPERIOD_IF + 1) * 4), measured across ten modes to a mean 29 ns.
-    static uint32_t lineRateFromHPeriod(uint16_t hperiod);
-
     bool active() const;
     void poll(uint32_t nowMs);
 

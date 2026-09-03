@@ -95,6 +95,35 @@ bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
     return (larger - smaller) * 1000u <= (uint32_t)HeldRateTolerancePerMille * smaller;
 }
 
+uint32_t SourceMeasurement::lineRateForHPeriod(uint16_t hperiod)
+{
+    return 27000000u / (((uint32_t)hperiod + 1u) * 4u);
+}
+
+uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
+                                                uint16_t lines)
+{
+    if (samples == nullptr || count < 2 || !countIsSource(lines))
+        return 0;
+
+    uint16_t low = samples[0];
+    uint16_t high = samples[0];
+    for (uint8_t i = 1; i < count; ++i) {
+        if (samples[i] < low)
+            low = samples[i];
+        if (samples[i] > high)
+            high = samples[i];
+    }
+    if ((uint16_t)(high - low) > HPeriodAgreement)
+        return 0;
+
+    const uint32_t rate = lineRateForHPeriod(samples[0]);
+    const float fieldRateHz = (float)rate / (float)lines;
+    if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
+        return 0;
+    return rate;
+}
+
 uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
                                                bool lineDoubled)
 {
