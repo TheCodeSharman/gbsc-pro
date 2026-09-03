@@ -8,7 +8,6 @@
 #include "src/WebSockets.h"
 #include "src/WebSocketsServer.h"
 #include "fonts.h"
-#include "OSDManager.h"
 #include "src/tv5725/Adc.h"
 #include "src/tv5725/SyncProcessor.h"
 #include "src/tv5725/SyncType.h"
@@ -47,7 +46,6 @@ extern const char *ap_password;
 extern const char *device_hostname_full;
 extern WebSocketsServer webSocket;
 extern OLEDMenuManager oledMenu;
-extern OSDManager osdManager;
 unsigned long oledMenuFreezeStartTime;
 unsigned long oledMenuFreezeTimeoutInMS;
 
@@ -1057,80 +1055,6 @@ bool wifiMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, 
     }
     return true;
 }
-bool osdMenuHanlder(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav nav, bool isFirstTime)
-{
-    static unsigned long start;
-    static long left;
-    char buf[30];
-    auto display = manager->getDisplay();
-
-    if (isFirstTime)
-    {
-        left = OSD_TIMEOUT;
-        start = millis();
-        manager->freeze();
-        osdManager.tick(OSDNav::ENTER);
-    }
-    else
-    {
-        display->clear();
-        display->setColor(OLEDDISPLAY_COLOR::WHITE);
-        display->setFont(ArialMT_Plain_16);
-        display->setTextAlignment(OLEDDISPLAY_TEXT_ALIGNMENT::TEXT_ALIGN_CENTER);
-        display->drawStringf(OLED_MENU_WIDTH / 2, 16, buf, "OSD (%ds)", left / 1000 + 1);
-        display->display();
-        if (REVERSE_ROTARY_ENCODER_FOR_OLED_MENU)
-        {
-            // 倒退导航恢复正常
-            if (nav == OLEDMenuNav::DOWN)
-            {
-                nav = OLEDMenuNav::UP;
-            }
-            else if (nav == OLEDMenuNav::UP)
-            {
-                nav = OLEDMenuNav::DOWN;
-            }
-        }
-        switch (nav)
-        {
-        case OLEDMenuNav::ENTER:
-            osdManager.tick(OSDNav::ENTER);
-            start = millis();
-            break;
-        case OLEDMenuNav::DOWN:
-            if (REVERSE_ROTARY_ENCODER_FOR_OSD)
-            {
-                osdManager.tick(OSDNav::RIGHT);
-            }
-            else
-            {
-                osdManager.tick(OSDNav::LEFT);
-            }
-            start = millis();
-            break;
-        case OLEDMenuNav::UP:
-            if (REVERSE_ROTARY_ENCODER_FOR_OSD)
-            {
-                osdManager.tick(OSDNav::LEFT);
-            }
-            else
-            {
-                osdManager.tick(OSDNav::RIGHT);
-            }
-            start = millis();
-            break;
-        default:
-            break;
-        }
-        left = OSD_TIMEOUT - (millis() - start);
-        if (left <= 0)
-        {
-            manager->unfreeze();
-            osdManager.menuOff();
-        }
-    }
-    return true;
-}
 void initOLEDMenu()
 {
     OLEDMenuItem *root = oledMenu.rootItem;
@@ -1161,7 +1085,6 @@ void initOLEDMenu()
     }
 
     // OSD Menu     TEXT_NO_INPUT  OM_OSD  OM_ADV7391
-    // oledMenu.registerItem(root, MT_NULL, IMAGE_ITEM(OM_OSD), osdMenuHanlder);
 
     // Resolutions
     OLEDMenuItem *resMenu = oledMenu.registerItem(root, MT_NULL, IMAGE_ITEM(OM_RESOLUTION));

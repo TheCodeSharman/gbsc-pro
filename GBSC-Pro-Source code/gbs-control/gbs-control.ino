@@ -63,7 +63,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 
 #include "options.h"
 #include "slot.h"
-#include "osd.h"
 #include "src/net/RegisterQueue.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/FramingText.h"
@@ -103,18 +102,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #define SYNC_EVENT(what, lines) ((void)0)
 #endif
 #include "src/input/SyncSearch.h"
-
-struct MenuAttrs
-{
-    static const int8_t shiftDelta = 4;
-    static const int8_t scaleDelta = 4;
-    static const int16_t vertShiftRange = 300;
-    static const int16_t horizShiftRange = 400;
-    static const int16_t vertScaleRange = 100;
-    static const int16_t horizScaleRange = 130;
-    static const int16_t barLength = 100;
-};
-typedef MenuManager<GBS, MenuAttrs> Menu;
 
 enum PresetID : uint8_t {
     PresetHdBypass = 0x21,
@@ -450,7 +437,6 @@ OLED MENU
 #define USE_NEW_OLED_MENU 1
 #if USE_NEW_OLED_MENU
 #include "OLEDMenuImplementation.h" 
-#include "OSDManager.h"             
 OLEDMenuManager oledMenu(&display);
 // Hold a geometry key to go faster, tap it for one pixel. Shared by the Move and
 // Scale screens so ramping one and then the other starts fresh, which is what
@@ -1015,7 +1001,6 @@ static bool slotFramingIsSuspect = true;
 
 Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
-OSDManager osdManager(geometryControls);
 
 
 #include "framesync.h"
@@ -3150,7 +3135,6 @@ void doPostPresetLoadSteps()
         Tv5725::VideoProcessor::setSixTapFilter(true);
         applyOutputResolutionSettings();
 
-        Menu::init();
         FrameSync::cleanup();
         rto->syncLockFailIgnore = 16;
 
@@ -6005,7 +5989,6 @@ void setup()
     attachInterrupt(digitalPinToInterrupt(pin_b),   isrRotaryEncoderRotateForNewMenu, CHANGE);   //isrRotaryEncoderPushForNewMenu
     attachInterrupt(digitalPinToInterrupt(pin_switch), isrRotaryEncoderPushForNewMenu, FALLING);
     initOLEDMenu();
-    initOSD();
 #else
     attachInterrupt(digitalPinToInterrupt(pin_a), isrRotaryEncoder, RISING);
 #endif
