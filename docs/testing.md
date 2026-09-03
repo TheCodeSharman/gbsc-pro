@@ -225,6 +225,35 @@ bits equal to none of 24, 61, 36 or 60 — which `0xC2` satisfies. Write the
 constraint down in the test; the next person adding a field to the class has to
 re-check it.
 
+### Poison is an INPUT to anything the code measures
+
+The section above is about poison catching a write that never happened. The
+mirror case is poison being *read* as a measurement, and it fails the other way:
+silently, with a plausible answer.
+
+`SourceMeasurement::measureLineRate()` reads `HPERIOD_IF`. Poisoned, that
+register holds the poison byte, which converts to a line rate through
+`27e6 / ((h + 1) * 4)` -- and for both poisons in use here the result lands
+inside the band a real source occupies. `0xE2` is 226, which is 29735 Hz, a
+plausible 95 Hz over 311 lines. So a case injecting a field rate through the
+`getSourceFieldRate()` seam had that injection **ignored**, because the engine
+preferred a measurement it appeared to have.
+
+Three suites failed this way one at a time, each hidden behind the one before,
+and every failure read as a geometry error rather than as a seeding gap.
+
+So **a register the code measures from has to be seeded, not poisoned**, and the
+seeding belongs beside the poison rather than in each case. `poisonChip()` in
+`SolvedEngine.h` is that: it poisons and then blanks `HPERIOD_IF`, which means
+nothing measured, so the injected rate is used. A case that wants a measured
+rate seeds the register with the value the mode implies.
+
+The general rule, and it will bite again as more of the engine measures rather
+than assumes: **poison what the code WRITES, seed what the code READS.** Adding
+a measurement to a subsystem makes every test that seeds a source responsible
+for the new register, and nothing warns you -- the value is plausible, the test
+compiles, and the assertion that fails is somewhere downstream.
+
 ### Choose a trigger that can discriminate
 
 `test_the_memory_bus_subsystem_owns_its_timing` triggers with `/sc?y`
