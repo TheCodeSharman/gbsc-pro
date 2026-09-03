@@ -20,6 +20,13 @@ static unsigned long lastVsyncLock = millis();
 #define GBS_DEBUG 0
 #endif
 
+// GBS_BUILD_REV: the commit the image was built from, so a unit can name its
+// own firmware. "unknown" means a build that was not told, which is itself the
+// answer a bisect needs.
+#ifndef GBS_BUILD_REV
+#define GBS_BUILD_REV "unknown"
+#endif
+
 // GBS_SAMPLING_LOG: compile in /samplinglog. Off by default even at GBS_DEBUG=1,
 // because its sweep writes and latches PLLAD_MD outside the geometry engine.
 #ifndef GBS_SAMPLING_LOG
@@ -9102,6 +9109,14 @@ fail:
     request->send(200, "application/json", result ? "true" : "false"); });
 
     server.on("/fs/format", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(200, "application/json", LittleFS.format() ? "true" : "false"); });
+
+    // Outside GBS_DEBUG on purpose: the build whose identity matters most is a
+    // release one, and gating this would leave exactly that one anonymous.
+    server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request) {
+        char body[80];
+        snprintf_P(body, sizeof(body), PSTR("{\"rev\":\"%s\"}"), GBS_BUILD_REV);
+        request->send(200, "application/json", body);
+    });
 
     // The boot trace, from RAM. Read after a mains-only cold start with nothing
     // attached -- the boot that could not be watched over serial.
