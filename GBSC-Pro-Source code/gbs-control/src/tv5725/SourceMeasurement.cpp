@@ -228,8 +228,23 @@ bool SourceMeasurement::rateSettled()
 bool SourceMeasurement::measureLineRate()
 {
     sourceLines_ = measureSourceLines();
-    fieldRateHz_ = getSourceFieldRate(0);
-    lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
+
+    // HPERIOD_IF first: it states the line rate for the cost of a register read,
+    // where getSourceFieldRate() spins for vsync edges. It rails with nothing to
+    // say so, which is what lineRateFromHPeriod() judges; the field rate is what
+    // answers when the judgement refuses. Neither is trusted on its own -- the
+    // cross-check below reads the same either way.
+    uint16_t hperiod[HPeriodSamples];
+    for (uint8_t i = 0; i < HPeriodSamples; ++i)
+        hperiod[i] = GBS::HPERIOD_IF::read();
+
+    lineRateHz_ = lineRateFromHPeriod(hperiod, HPeriodSamples, sourceLines_);
+    if (lineRateHz_ != 0) {
+        fieldRateHz_ = (float)lineRateHz_ / (float)sourceLines_;
+    } else {
+        fieldRateHz_ = getSourceFieldRate(0);
+        lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
+    }
 
     // Against the last reading that was GOOD, not the last one taken: a refusal
     // that cleared the held rate would disarm this for the pass after it.

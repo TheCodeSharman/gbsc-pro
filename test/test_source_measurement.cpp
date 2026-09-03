@@ -908,3 +908,40 @@ TEST_CASE("one reading is not a run, and a line count that is not a source is re
     const uint16_t settled[] = {431, 431, 431};
     CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 0) == 0u);
 }
+
+// HPERIOD_IF is seeded the way the chip presents it: segment 0, register 0x06,
+// nine bits.
+static void seedHPeriod(uint16_t hperiod)
+{
+    Wire.bank[0][0x06] = (uint8_t)(hperiod & 0xFF);
+    Wire.bank[0][0x07] = (uint8_t)((hperiod >> 8) & 0x01);
+}
+
+TEST_CASE("a believable HPERIOD_IF run measures the line rate without a vsync spin")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRateCalls = 0;
+
+    REQUIRE(sampling.measureLineRate());
+    CHECK(sampling.lineRateHz() == 15625u);
+
+    // The cost is the point: nothing spun for a vsync edge.
+    CHECK(g_fieldRateCalls == 0);
+}
+
+TEST_CASE("a refused HPERIOD_IF run falls back to the field rate")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(524);
+    // 50 against 524 lines is 132 kHz, a 252 Hz field rate: the railing's
+    // stable form, which no amount of agreement can reject.
+    seedHPeriod(50);
+    g_fieldRate = 60.0f;
+    g_fieldRateCalls = 0;
+
+    REQUIRE(sampling.measureLineRate());
+    CHECK(g_fieldRateCalls > 0);
+    CHECK(sampling.lineRateHz() == 31440u);
+}

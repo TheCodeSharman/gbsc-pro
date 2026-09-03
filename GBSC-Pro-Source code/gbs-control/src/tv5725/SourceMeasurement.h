@@ -107,9 +107,10 @@ public:
     // zero it would go on to write.
     SourceMeasurement();
 
-    // Read the line rate off the chip -- field rate x source lines -- and hold
-    // both inputs, because the cross-check inside can say the two disagree but
-    // never which of them was wrong. False when it is unmeasurable.
+    // Read the line rate off the chip and hold both inputs, because the
+    // cross-check inside can say the two disagree but never which of them was
+    // wrong. False when it is unmeasurable. HPERIOD_IF answers when a run of it
+    // is believable, the field rate spin when it is not.
     // How many consecutive agreeing samples make the source worth measuring.
     static const uint8_t SteadySamples = 4;
 
@@ -195,6 +196,10 @@ public:
     // docs/investigations/hperiod-if-railing.md
     static uint32_t lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
                                         uint16_t lines);
+
+    // How many HPERIOD_IF readings make a run. Register reads, so the cost is
+    // nothing beside the vsync spin this is there to avoid.
+    static const uint8_t HPeriodSamples = 3;
 
     // How far two field-rate readings may differ and still be the same rate, in
     // parts per thousand. One reading of one field period at the ESP's clock,

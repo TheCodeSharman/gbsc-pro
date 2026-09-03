@@ -88,12 +88,21 @@ static void seedSourceMeasurement()
     g_fieldRate = 50.08f;
 }
 
+// Poisoned, HPERIOD_IF reads a value that implies a plausible line rate, and
+// measureLineRate() prefers it to the injected field rate. A case that wants the
+// rate it injects has to say nothing was measured.
+static void poisonChip()
+{
+    Wire.poison(Poison);
+    seedField(0, 0x06, 0, 9, 0);       // HPERIOD_IF
+}
+
 // The bench RiscPC at 320x256@50 into the engine's own 1916 x 1126 raster.
 // Every value is an INPUT: a raster already solved, and three measurements.
 static void seedBenchSource()
 {
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
     seedField(3, 0x01, 0, 12, 1915);   // VDS_HSYNC_RST, output line - 1
     seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
     seedField(1, 0x0E, 0, 11, 1125);   // IF_HSYNC_RST, capture wrap - 1
@@ -267,7 +276,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
 
     SUBCASE("and nothing is outstanding afterwards") {
         Wire.reset();
-        Wire.poison(Poison);
+        poisonChip();
         CHECK_FALSE(engine.poll());
         CHECK(registersWritten() == 0);
     }
@@ -350,7 +359,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     REQUIRE(pollUntilSolved(engine));
 
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
     engine.enterBypass();
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(engine.poll());
@@ -755,7 +764,7 @@ TEST_CASE("a framed picture holds every window against the framing")
 
     frameAt(engine, 300, 120, 40, -15);
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
     seedSourceMeasurement();
     REQUIRE(engine.resolve());
 
@@ -808,7 +817,7 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     // written past the count the counter reaches never fires.
     // docs/scaler-geometry-model.md "What the IF counter counts"
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
     seedField(3, 0x01, 0, 12, 1278);   // VDS_HSYNC_RST, output line - 1
     seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
     seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
@@ -850,7 +859,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     // measured -- which makes the refusal self-latching, because nothing
     // recomputes the divider that caused it.
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
     seedField(3, 0x01, 0, 12, 1278);   // VDS_HSYNC_RST, output line - 1
     seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
     seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
@@ -1219,3 +1228,4 @@ TEST_CASE("the engine says which source the framing it holds is against")
 
     CHECK(engine.framedKey() == SourceKey(311, 50.08f));
 }
+

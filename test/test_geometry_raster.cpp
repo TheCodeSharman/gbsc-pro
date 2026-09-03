@@ -43,6 +43,16 @@ static uint16_t horizontalTotalWritten() { return Wire.field(3, 0x01, 0, 12) + 1
 // Neither a preset table's value nor anything the engine writes.
 static const uint8_t Poison = 0xC2;
 
+// Poisoned, HPERIOD_IF reads a value that implies a plausible line rate, and
+// measureLineRate() prefers it to the injected field rate. A case that wants the
+// rate it injects has to say nothing was measured.
+static void poisonChip()
+{
+    Wire.poison(Poison);
+    Wire.bank[0][0x06] = 0;                       // HPERIOD_IF low eight
+    Wire.bank[0][0x07] &= 0xFE;                   // and its ninth bit
+}
+
 static uint32_t horizontalTotalUnwritten()
 {
     return (Poison | (Poison << 8)) & 0x0FFF;
@@ -75,7 +85,7 @@ struct SettledEngine {
     SettledEngine() : engine(clock)
     {
         Wire.reset();
-        Wire.poison(Poison);
+        poisonChip();
         g_fieldRate = 50.08f;
         setSourceLines(311);  // the bench RiscPC, settled: PAL-like
     }
@@ -173,7 +183,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     // divider straight over the bypass setup.
     settled.engine.enterBypass();
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
     setSourceLines(311);
 
     CHECK_FALSE(pollUntilSolved(settled.engine));

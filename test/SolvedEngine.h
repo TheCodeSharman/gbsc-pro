@@ -29,6 +29,16 @@ void tv5725Log(const char *) {}
 // a touched check. 0xE2 sets bits 4 and 5, the two the engine clears.
 static const uint8_t Poison = 0xE2;
 
+// Poisoned, HPERIOD_IF reads a value that implies a plausible line rate, and
+// measureLineRate() prefers it to the injected field rate. A case that wants the
+// rate it injects has to say nothing was measured.
+static void poisonChip()
+{
+    Wire.poison(Poison);
+    Wire.bank[0][0x06] = 0;                       // HPERIOD_IF low eight
+    Wire.bank[0][0x07] &= 0xFE;                   // and its ninth bit
+}
+
 // A field written straight into the fake's banks, bypassing the bus, so seeding
 // an INPUT does not read as the code under test having written it.
 // Read-modify-write because these fields share bytes -- VDS_HSYNC_RST and
@@ -74,7 +84,7 @@ struct SolvedEngine {
         : engine(clock)
     {
         Wire.reset();
-        Wire.poison(Poison);
+        poisonChip();
         g_fieldRate = fieldRateHz;
 
         seed(3, 0x01, 0, 12, 1915);          // VDS_HSYNC_RST, output line - 1

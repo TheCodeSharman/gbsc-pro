@@ -237,7 +237,7 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
 TEST_CASE("a vertical total outside what any source runs defers the solve")
 {
     Wire.reset();
-    Wire.poison(Poison);
+    poisonChip();
 
     seed(3, 0x01, 0, 12, 1914);   // VDS_HSYNC_RST
     seed(3, 0x02, 4, 11, 1125);   // VDS_VSYNC_RST
