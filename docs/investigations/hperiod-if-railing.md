@@ -76,12 +76,20 @@ python3 tools/gbsc-pro-hwtest/precursor.py \
 `hperiod_sweep.py` is the frozen counterpart) and `analyse_sweep.py` prints the
 per-transition verdicts behind the summary.
 
-The mechanism below is still the leading explanation, and it unifies this with
-[preset-load-clobber.md](../preset-load-clobber.md): a deep sync loss makes the
-firmware re-detect and **reload a preset**, and the reload leaves part of the
-chip inconsistent. Freezing prevents the reload, which is exactly why every
-frozen sweep and both register-replay bisections came up clean — they were
-exercising the steady-state write loop, which is the wrong code entirely.
+The mechanism below was the leading explanation and **its mechanism is gone**: a
+deep sync loss makes the firmware re-detect, and re-detection used to drag a
+preset table over the chip. The tables and `writeProgramArrayNew()` are deleted,
+so there is no bulk byte range left to leave part of the chip inconsistent.
+
+What survives on that path is `Tv5725::BringUp::init()` plus the engine's solve,
+and re-detection still precedes the fault: `/sc?~` on a settled 320x256@50 source
+was followed by a persistent railed state on 2026-09-03. So the shape of the
+explanation holds — something on the re-detect path does it — while the specific
+culprit it named no longer exists and cannot be tested for.
+
+Freezing still prevents that path, which is why every frozen sweep and both
+register-replay bisections came up clean: they exercise the steady-state write
+loop, which is the wrong code.
 
 Distinguishing a transient from the fault, since it decides whether a sample
 means anything:
@@ -153,6 +161,42 @@ rejects as outside the band -- so the engine would refuse for ever rather than
 solve wrongly. 640x480@60 would simply never come up. **It is not usable as the
 measurement until this page is closed.**
 
+## What it is worth when it works, against the source's own definition
+
+The cost of this page staying open is a number, and it had not been taken. The
+monitor definition derives every mode's pixel rate from a target field rate and
+both totals, so `pixel_rate / h_total` is the true line rate, known without
+asking the unit. Nine modes, five reads each, the divider left wherever the
+engine put it:
+
+```
+mode            true Hz   HPERIOD_IF        implied      err     engine     err
+320x256@50        15625   431 x5              15625   +0.00%      15575   -0.32%
+320x256@55        17160   392 x5              17176   +0.09%      17104   -0.33%
+320x256@60        18721   359 x5              18750   +0.16%      17104   -8.64%
+328x256@50        15625   431 x5              15625   +0.00%      17104   +9.47%
+336x256@50        15625   431 x4, 430         15632   +0.05%      17104   +9.47%
+344x256@50        15625   431 x4, 430         15632   +0.05%      15575   -0.32%
+640x352@60        23760   283, 282 x4         23835   +0.31%      23690   -0.30%
+640x200@60        15720   429, 428 x2, 429    15719   -0.00%      15626   -0.60%
+640x288@50        17000   395, 396 alternating 17029  +0.17%      16942   -0.34%
+```
+
+Healthy, it is accurate to **0.31% worst case** and exact on three of the nine.
+The engine's own value -- `measureSourceLines()` times `getSourceFieldRate()` --
+is wrong by up to 9.5% on three of the same nine, and those three are precisely
+the modes that share a line count with the one before them, so
+`Geometry::sourceMoved()` never re-solved. Two independent faults, and the
+register this page is about is the one that read correctly in all nine.
+
+It is still not usable as the measurement, for the reason the section above
+gives: nothing separates the two regimes. **The same mode read both ways twenty
+minutes apart** -- 431 steady in 5 of 5 during this sweep, then 511/255/265/271/
+16/11 garbage after a `/sc?~`, then 431 x1364 and 430 x113 after one source
+mode-change round trip, with the picture correct and `SP_VTOTAL` at 311
+throughout all three. The destination mode does not predict it, because the
+destination mode did not change.
+
 ## Reproduced from a cold boot, current firmware
 
 The table below is re-run with the vertical-blank stranding fixed, so it is the
@@ -166,10 +210,20 @@ back at 320x256@50      311  2250      1  430/431, correct
 ```
 
 `IF_VB_ST` is 578 against a 622-line frame throughout the first row -- in range,
-so the cold-boot garbage is not the stranding fault. `STATUS_IF_HT_OK` does
-separate the first row from the others, and is the one place it carries
-information; it reads 1 for the steady wrong 50, so it is still not a validity
-signal.
+so the cold-boot garbage is not the stranding fault. `STATUS_IF_HT_OK` separates
+the first row from the others here, which reads like the one place it carries
+information. **It does not carry any.** Sampled continuously through a persistent
+railed state on 2026-09-03, 5302 reads at 320x256@50 with `SP_VTOTAL` a steady
+311 throughout:
+
+```
+HT_OK = 1   146 reads   HPERIOD_IF 511 x66, 255 x31, 510 x7, 263, 257, 268, ...
+HT_OK = 0  5156 reads   HPERIOD_IF 511 x2329, 255 x926, 510 x201, 272, 254, ...
+                        0 of the 146 HT_OK=1 reads within 2% of the 431 due
+```
+
+The same distribution either side of the flag, so it selects nothing.
+`STATUS_MISC_PLLAD_LOCK` is not a gate either: it read 1 in 5242 of those 5302.
 
 ## Hypotheses tested and refuted
 
@@ -191,6 +245,15 @@ hypotheses have now been tested and refuted:
 | the test bus disturbs the IF measurement | froze a healthy unit, replayed all 9 steady-state test-bus writes one at a time | `HPERIOD_IF` never moved off 431 |
 | coasting is disabled, so the counter sees vblank equalisation pulses | same method, all 10 sync-processor writes (`SP_DLT_REG`, `SP_H_PULSE_IGNOR`, `SP_PRE_COAST`, `SP_POST_COAST`, `SP_NO_COAST_REG`) | `HPERIOD_IF` never moved off 431 |
 | the display clock (`PLL648_CONTROL_01` / `PLL_2XV`) changes the counter's reference | compared snapshots | `0x35` appears in a **healthy** 800x600 capture at `HPERIOD_IF` 176 |
+| a `PLLAD_LAT` rising edge clears it | drove the latch in the railed state, touching nothing else | 0/20 healthy before, 0/20 after |
+| the PLL programming must actually MOVE to clear it | stepped `PLLAD_MD` 2250 → 2100 → 2250, latching each write | 0/16 at all three points, `STATUS_MISC_PLLAD_LOCK` 1 and `SP_VTOTAL` 311 throughout |
+
+
+Those last two matter for where to look next. The divider was already known not
+to *cause* the railing, over a 20-point walk; it does not **clear** it either,
+latched or stepped. So the clock is ruled out in both directions, and what a
+source mode change does that a divider step does not is take HSync away and give
+it back.
 
 A real preset load did not do it either: `PLLAD_MD` was found at 2269 rather than
 the frozen sweep's 2345, so the firmware had detected the source and applied a
@@ -417,6 +480,12 @@ Nothing on screen distinguishes a railed unit from a healthy one.
 
 ## A trigger, at last
 
+**`/sc?~` on a settled source reaches it in about fifteen seconds**, and did so
+on the first attempt in each of three runs -- a re-detect at a divider that is
+already the reference, so `holdReferenceSampling()` returns early and re-latches
+nothing. That is the cheapest known provocation. It is not free: one run left
+`SP_VTOTAL` 0 with the DACs down until the input was reselected.
+
 `pytest tools/gbsc-pro-hwtest/test_geometry_pads.py --host=<ip> --source`
 reaches the state, in about four and a half minutes, on a source that never
 changes mode. Three tests fail naming the divider, and the unit is left with the
@@ -430,6 +499,58 @@ tables above railed without it.
 
 The experiment this unlocks, in order: reproduce, pull mains and USB for a
 measured interval, read `HPERIOD_IF` before touching the source.
+
+## An ADC input-select bounce clears it -- and can also cause it
+
+Every previously known clearance required the **source** to do something: a mode
+change, a cold boot. Taking the ADC's input away instead does it from this end.
+`ADC_INPUT_SEL` (s5_02 [7:6]) to 0 for 400 ms and back, which disconnects the
+front end and reconnects it, cleared a railed register twice, from railings
+reached two different ways:
+
+```
+provoked with /sc?~     before 0/16   511 x9, 255 x4, 15, 272
+                        after  16/16  431 x16
+arrived on its own      before 0/14   511 x7, 16 x2, 508, 12
+                        after  14/14  431 x14
+```
+
+`SP_VTOTAL` 311, `PLLAD_MD` 2250, DACs up and sync out enabled either side, and
+the picture correct afterwards.
+
+**It is not a way to make the register trustworthy, and must not be put in front
+of a measurement.** In a six-mode run where every mode read correctly *before*
+the bounce, the same bounce railed one of them:
+
+```
+320x256@50   before 431 x6 correct   after 431 throughout
+320x256@60   before 359 x6 correct   after 511/510/429/436/444 -- RAILED
+640x200@60   before 428 x6 correct   after correct
+640x256@70   before 308 x6 correct   after correct
+640x352@60   before 283 x6 correct   after correct
+800x600@60   before 165 x6 correct   after 165, unchanged
+```
+
+So the same action clears the fault and causes it. That is a fact about the
+fault, not a technique: a sync discontinuity restarts the counter, and the
+restart can land either way. Bouncing before every measurement would introduce
+the failure it is meant to avoid.
+
+## The expected value is the thing most likely to be wrong
+
+The advice on this page is to validate `HPERIOD_IF` against the value the mode is
+due. That is only as good as the mode being what it is thought to be, and it was
+not: `800x600@60` above reads a stable 165 against a 178 "due", which looks
+exactly like the stable-wrong form of the fault. `SP_VTOTAL` reads **679**. The
+monitor definition holds two 800x600@60 modes, 628 lines and 680, and the
+selector reaches only one of them -- so the mode is the 680-line one, 40800 Hz,
+and 164 is due. The register was right to 0.6% and the expectation was wrong.
+
+**Read `SP_VTOTAL` in the same pass and derive the expected value from it**,
+rather than from what the source was asked for. Across fifteen modes measured
+this way -- nine in one sweep and six in another -- `HPERIOD_IF` was accurate to
+0.31% worst case with no bounce anywhere, which is what makes the intermittent
+railing worth closing rather than working around.
 
 ## What does not reproduce it
 
