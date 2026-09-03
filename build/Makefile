@@ -46,6 +46,14 @@ GBS_TRACE_WRITES ?= 0
 #   make -C build flash-ota HOST=... GBS_SAMPLING_LOG=1
 GBS_SAMPLING_LOG ?= 0
 
+# The commit the image is built from, compiled in so a running unit can name its
+# own firmware. A dirty firmware tree is marked, because an image built from
+# uncommitted work is not the commit it names, and a bisect that trusts the name
+# lands on the wrong side.
+GIT_REV := $(shell git -C .. rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DIRTY := $(shell git -C .. diff --quiet HEAD -- 'GBSC-Pro-Source code' 2>/dev/null || echo -dirty)
+GBS_BUILD_REV ?= $(GIT_REV)$(GIT_DIRTY)
+
 
 FQBN := esp8266:esp8266:nodemcuv2:xtal=80,eesz=4M2M,ssl=all,exception=legacy,ip=lm2f,vt=flash,dbg=Disabled,lvl=None____,wipe=none
 
@@ -106,10 +114,10 @@ test test-geometry test-hold-ramp:
 build: check-cli webui-check
 	$(CLI) compile \
 	  --fqbn '$(FQBN)' \
-	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DGBS_TRACE_WRITES=$(GBS_TRACE_WRITES) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES) -DGBS_SAMPLING_LOG=$(GBS_SAMPLING_LOG)' \
+	  --build-property 'compiler.cpp.extra_flags=-DGBS_DEBUG=$(GBS_DEBUG) -DGBS_TRACE_WRITES=$(GBS_TRACE_WRITES) -DBOOTLOG_BYTES=$(BOOTLOG_BYTES) -DGBS_SAMPLING_LOG=$(GBS_SAMPLING_LOG) -DGBS_BUILD_REV="$(GBS_BUILD_REV)"' \
 	  --build-path "$(OUT)" \
 	  "$(SKETCH)"
-	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) GBS_TRACE_WRITES=$(GBS_TRACE_WRITES) BOOTLOG_BYTES=$(BOOTLOG_BYTES) GBS_SAMPLING_LOG=$(GBS_SAMPLING_LOG))"
+	@echo "Firmware: $(OUT)/gbs-control.ino.bin (GBS_DEBUG=$(GBS_DEBUG) GBS_TRACE_WRITES=$(GBS_TRACE_WRITES) BOOTLOG_BYTES=$(BOOTLOG_BYTES) GBS_SAMPLING_LOG=$(GBS_SAMPLING_LOG) GBS_BUILD_REV=$(GBS_BUILD_REV))"
 
 ## flash: build, then upload over USB serial (PORT=/dev/ttyUSB0)
 #
