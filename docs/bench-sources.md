@@ -59,6 +59,21 @@ VIDC20's external register, not a mode-file setting.
 **It cannot produce an interlaced mode through a monitor definition** -- the MDF
 format has ten keys and none is interlace. `*TV vert,interlace` with 0 meaning ON
 does it, or `VDU 23,0,8,&81` immediately, neither of which ModeServ exposes yet.
+Adding it needs a `MODE ... I1` and a readback through `OS_Byte 144`, which
+returns the old values while setting the new.
+
+**What that would buy, and why it is not the Wii.** An interlaced console is
+interlaced at one broadcast raster; the RISC PC would be interlaced at *arbitrary*
+rasters, on a direct analog path, scriptably, and without costing the component
+cable. The one thing only it can settle is separating two facts that are one
+boolean today: `InputFormatter::applyScanMode()` writes `IF_PRGRSV_CNTRL` from
+the line-doubling flag, while RD-5725-1.1 defines that bit as whether the SOURCE
+is interlaced -- so a non-interlaced 320x256@50 is currently declared interlaced.
+Telling them apart needs the same raster family interlaced and progressive back
+to back, which no other source can produce.
+
+Not needed for the standard-byte retirement, which the Wii serves. Worth having
+before `IF_PRGRSV_CNTRL` is given a real owner.
 
 ## The Wii
 
