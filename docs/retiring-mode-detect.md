@@ -315,6 +315,42 @@ over ModeServ covers arbitrary rasters, both sync types and progressive; a Wii o
 YPbPr covers sync on green, interlace and component colour, which is the SD arm
 this plan has to account for. The picture is photographable either way.
 
+## Where this is going: runSyncWatcher() belongs in the engine
+
+`runSyncWatcher()` is 889 lines keeping a **parallel model of the source**, and
+it calls into the engine exactly once (`geometry.sourceInterrupted()`). What it
+touches most is what the engine already computes:
+
+| it touches | times | the engine's version |
+|---|---|---|
+| `noSyncCounter` | 23 | `idleRun_`, a `SteadySamples` run |
+| `continousStableCounter` | 15 | the same run, read the other way |
+| `videoStandardInput` | 14 | being retired |
+| `currentLevelSOG` and the three SOG functions | 13 | nothing yet -- and it is a measurement |
+
+Two owners of one model, which is the register problem one level up.
+
+**The split is by responsibility, and it is the two-concept model again.**
+Anything that *measures the input* moves in: sync presence, the steadiness
+counters, the SOG slicer level, the coast and clamp positions. The engine already
+owns the sync type, the scan mode and the divider. What *acts* on the answers
+stays in the sketch: selecting an input, loading a preset, entering bypass,
+driving the OLED.
+
+Order, each landable on its own:
+
+1. `Geometry::sourceIsPresent()`, replacing the classification at the no-sync
+   gate.
+2. The steadiness counters -- 38 references become reads of engine state instead
+   of a parallel count.
+3. The SOG level, which is the slicer for the source's own sync and the last
+   piece of acquiring a source that the engine does not own.
+4. What remains is a thin policy loop.
+
+**A structural constraint on all of it:** `poll()`'s measuring branch runs only
+when `modePending_`. A sync watcher has to run always, so this work extends the
+idle branch, not the pending one.
+
 ## Not in scope
 
 - `recoverDivider()` and its gates. Measured working, and the trap they escape is
