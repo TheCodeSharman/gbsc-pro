@@ -1435,3 +1435,76 @@ TEST_CASE("a rate the field rate does not confirm leaves the source alone")
 
     CHECK(g_probeCalls == 1);
 }
+
+TEST_CASE("a source the sync processor is counting is present")
+{
+    // The sketch's classifier reports 0 on an RGBHV source whose two STATUS_16
+    // bits have gone quiet, and its no-sync handling then walks the ADC and the
+    // sync processor off a source the engine is solving against correctly --
+    // SP_H_PULSE_IGNOR 2 against the 255 applyForSyncType() writes, ADC_SOGCTRL
+    // ratcheted 12 to 5, and a black screen.
+    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(engine.sourceIsPresent());
+}
+
+TEST_CASE("a source that stops counting is not present")
+{
+    // The case the sketch's no-sync handling exists for, and the one it must
+    // still reach: a signal that has genuinely gone.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.sourceIsPresent());
+
+    seedSourceLines(0);
+    engine.poll();
+
+    CHECK_FALSE(engine.sourceIsPresent());
+}
+
+TEST_CASE("counts that never hold still are not a source")
+{
+    // The reverted attempt gated the sketch's recovery on the range check
+    // alone, and an unlocked sync processor sits inside that range: 216, 271,
+    // 276, 312, 305 measured over 80 s with the source genuinely gone, every
+    // one of them plausible and every one of them meaningless.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.sourceIsPresent());
+
+    static const uint16_t unlocked[] = { 216, 271, 276, 312, 305 };
+    for (uint8_t pass = 0; pass < 4; ++pass)
+        for (uint8_t i = 0; i < 5; ++i) {
+            seedSourceLines(unlocked[i]);
+            engine.poll();
+            CHECK_FALSE(engine.sourceIsPresent());
+        }
+}
+
+TEST_CASE("nothing has been solved, so no source is present")
+{
+    // Boot, and every state that has forgotten the source. The sketch's
+    // detection has to be free to run, so the engine must not claim a source it
+    // has never measured.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.poll();
+
+    CHECK_FALSE(engine.sourceIsPresent());
+}

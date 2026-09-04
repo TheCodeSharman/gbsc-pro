@@ -30,6 +30,7 @@ Geometry::Geometry(DisplayClock &displayClock)
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvedLines_(0), solvedLineRateHz_(0),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
+      sourcePresent_(false),
       candidateRateHz_(0), rateRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
       choice_(), rasterMode_(0),
@@ -53,6 +54,8 @@ const SourceKey &Geometry::framedKey() const { return framedKey_; }
 uint16_t Geometry::framingRevision() const { return framingRevision_; }
 
 bool Geometry::changing() const { return modePending_ || solvePending_; }
+
+bool Geometry::sourceIsPresent() const { return sourcePresent_; }
 
 uint16_t Geometry::capturableOn(const Axis &axis) const
 {
@@ -339,6 +342,7 @@ bool Geometry::poll()
     // the engine without anyone having to say so.
     solvedLines_ = sampling_.sourceLines();
     solvedLineRateHz_ = sampling_.lineRateHz();
+    holdSolvedSource();
     modePending_ = false;
     FrameBuffer::releaseCapture();
     return true;
@@ -473,6 +477,16 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
     tv5725Log(line);
 }
 
+// The solve gated on its own steadiness run over this count, longer than the
+// idle one, so the idle run starts satisfied rather than re-earning what has
+// just been measured and dipping sourceIsPresent() for the polls it takes.
+void Geometry::holdSolvedSource()
+{
+    idleLines_ = solvedLines_;
+    idleRun_ = SourceMeasurement::SteadySamples;
+    sourcePresent_ = true;
+}
+
 // Whether the count has held long enough to be the source's rather than a
 // reading taken through something still settling.
 bool Geometry::countHeld(uint16_t lines)
@@ -503,13 +517,20 @@ bool Geometry::sourceMoved()
 
     const uint16_t lines = SourceMeasurement::measureSourceLines();
 
+    // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
+    // caller double-advances it and the steadiness both readers depend on is
+    // no longer over consecutive polls.
+    const bool plausible = SourceMeasurement::countIsSource(lines);
+    const bool held = countHeld(lines);
+    sourcePresent_ = plausible && held;
+
     // A count no source runs is the wrong sync path's signature -- 97..137 on a
     // 311-line source, measured -- and a mode change is the only thing that
     // re-establishes the sync type, so the state that most needs a re-probe was
     // the one state that could never arm one. It arms ONCE: the count stays
     // wrong until the probe has moved the path.
-    if (!SourceMeasurement::countIsSource(lines)) {
-        if (!countHeld(lines) || unusableCountArmed_)
+    if (!plausible) {
+        if (!held || unusableCountArmed_)
             return false;
         unusableCountArmed_ = true;
         logSourceMoved("unusable count", lines, solvedLines_);
@@ -517,7 +538,7 @@ bool Geometry::sourceMoved()
     }
 
     unusableCountArmed_ = false;
-    if (!countHeld(lines))
+    if (!held)
         return false;
 
     // The rate and the interrupt each say the source moved where the count

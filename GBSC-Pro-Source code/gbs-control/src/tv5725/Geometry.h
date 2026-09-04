@@ -89,6 +89,16 @@ public:
     // not yet finished solving for it. What the sync output blanks against.
     bool changing() const;
 
+    // Whether the engine is measuring a source: a line count something video
+    // runs at, held across a steadiness run. Published by sourceMoved() rather
+    // than recomputed, because countHeld() advances the run it reads.
+    //
+    // A LIVE COUNT IS NOT THIS ANSWER. An unlocked sync processor produces
+    // counts inside the source bounds -- 216, 271, 276, 312, 305 measured on a
+    // source that was genuinely gone -- so whatever withholds the sketch's
+    // recovery has to see the count hold still first.
+    bool sourceIsPresent() const;
+
     // The source disturbed, as the chip latched it. Arms a re-measure, which
     // the line count alone cannot: a source returning at the same count and a
     // different field rate moves nothing sourceMoved() can see.
@@ -184,6 +194,9 @@ private:
     // Whether the count has held for a steadiness run.
     bool countHeld(uint16_t lines);
 
+    // Take the count the solve just ran against as a run already held.
+    void holdSolvedSource();
+
     void solveScanMode();
 
     bool fail();
@@ -245,6 +258,7 @@ private:
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
     bool unusableCountArmed_;  // a count no source runs has already armed a change
+    bool sourcePresent_;     // the idle path last saw a count a source runs, held
     uint32_t candidateRateHz_;  // a rate not yet corroborated across a run
     uint8_t rateRun_;           // how many polls have agreed on it
     bool solvePending_;
