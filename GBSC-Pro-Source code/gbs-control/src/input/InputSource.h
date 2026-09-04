@@ -74,6 +74,13 @@ public:
     // one selected is ordinary, and searching the variants of the CHOSEN port is
     // legitimate where searching another port's is not: that is where a
     // selection waits out timeouts for branches the ADC is not even reading.
+    // Whether the sync type has to be measured, or the connector settles it.
+    // Only VGA takes H and V on their own pins and so can present either;
+    // everything else is composite sync or sync-on-green by construction, where
+    // probing answers "own vsync" and puts the source on a path it cannot lock
+    // to. docs/sync-type-selection.md
+    static bool syncTypeMustBeMeasured(Id id);
+
     static uint8_t port(Id id);
     static bool sharesPort(Id a, Id b);
 

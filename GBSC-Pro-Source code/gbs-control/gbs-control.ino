@@ -1982,6 +1982,19 @@ void optimizeSogLevel() // Optimize SOG levels
 
 static uint32_t millisNow() { return (uint32_t)millis(); }
 
+// What the engine probes with. The connector settles the sync type on every
+// input but VGA, and measuring one that is already settled gets it wrong:
+// probing YPbPr answers "own vsync", which puts a sync-on-luma source on the
+// separate-sync path where it never locks. With nothing chosen there is no
+// connector to ask, so the measurement stands.
+boolean syncTypeHasOwnVsync()
+{
+    const InputSource::Id id = (InputSource::Id)Info;
+    if (InputSource::chosen(id) && !InputSource::syncTypeMustBeMeasured(id))
+        return false;
+    return sourceHasOwnVsync();
+}
+
 boolean sourceHasOwnVsync()
 {
     return Tv5725::SourceMeasurement::sourceHasOwnVsync(millisNow);
@@ -5965,7 +5978,7 @@ void setup()
     // The engine re-establishes the sync type on every mode change, which is
     // the only signal that a source may have changed it -- a RISC PC sets it
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
-    geometry.useSyncTypeProbe(sourceHasOwnVsync);
+    geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
     // delay(700);
     // ESP.wdtDisable();
 

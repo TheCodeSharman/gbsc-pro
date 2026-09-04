@@ -51,6 +51,11 @@ InputSource::Settings InputSource::settingsFor(Id id)
     return none;
 }
 
+bool InputSource::syncTypeMustBeMeasured(Id id)
+{
+    return chosen(id) && settingsFor(id).extSyncSel == 0;
+}
+
 uint8_t InputSource::port(Id id)
 {
     return settingsFor(id).adcInputSel;

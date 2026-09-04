@@ -186,3 +186,22 @@ TEST_CASE("the boot restore reconstructs the input from the Info byte")
         CHECK(InputSource::fromStored(255) == InputSource::None);
     }
 }
+
+// Only VGA can be either. Every other input arrives on composite sync or
+// sync-on-green -- extSyncSel 1 -- so the type is settled by the connector and
+// measuring it can only get it wrong. Measured: probing YPbPr answers "own
+// vsync", which puts a sync-on-luma source on the separate-sync path and it
+// never locks. docs/sync-type-selection.md
+TEST_CASE("only VGA leaves the sync type open to measurement")
+{
+    CHECK(InputSource::syncTypeMustBeMeasured(InputSource::Vga));
+
+    CHECK_FALSE(InputSource::syncTypeMustBeMeasured(InputSource::Ypbpr));
+    CHECK_FALSE(InputSource::syncTypeMustBeMeasured(InputSource::Rgbs));
+    CHECK_FALSE(InputSource::syncTypeMustBeMeasured(InputSource::RgsB));
+    CHECK_FALSE(InputSource::syncTypeMustBeMeasured(InputSource::SVideo));
+    CHECK_FALSE(InputSource::syncTypeMustBeMeasured(InputSource::Composite));
+
+    // Nothing chosen is not an invitation to probe.
+    CHECK_FALSE(InputSource::syncTypeMustBeMeasured(InputSource::None));
+}
