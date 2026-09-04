@@ -83,7 +83,7 @@ source take another standard's branch for its side effects.
 
 | shape | sites | answers instead |
 |---|---|---|
-| `== 0` / `> 0`, is there a signal | ~11 | `SourceMeasurement::countIsSource(measureSourceLines())` |
+| `== 0` / `> 0`, is there a signal | ~11 | a VALIDATED measurement -- see the warning below |
 | `== rto->videoStandardInput`, has it moved | 2 | `Geometry::sourceMoved()`, which holds the solved count and rate |
 | the held-standard fallback | 1, was 3 | `standardForPresetLoad()` |
 | selects a preset | 3 | `SourceKey` and `OutputChoice` |
@@ -95,6 +95,31 @@ sync-present test wearing a classifier's return type, and when those two bits go
 quiet under a source the sync processor is still counting, the sketch's no-sync
 handling walks a locked source off its settings.
 `docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`.
+
+## A range check is not a signal-present test
+
+`SourceMeasurement::countIsSource()` only asks whether a count falls in
+200..1300. **An unlocked sync processor produces garbage counts inside that
+range**, so it cannot stand in for "there is a signal" wherever the answer gates
+a recovery path.
+
+Measured: gating `runSyncWatcher()`'s no-sync branch on it suppressed the
+sketch's recovery for 80 s while the source was genuinely unlocked and the
+counts read 216, 271, 276, 312, 305 -- every one of them in range, every one of
+them meaningless. Reverted. The narrower use in `updateSpDynamic()` stands,
+because that gate only withholds a sweep of the sync processor's settings rather
+than the whole recovery.
+
+So each of the eleven sites needs its replacement chosen by what it gates:
+
+- **withholding a sweep or a tweak** -- a live count is enough, because being
+  wrong costs one pass
+- **withholding recovery** -- needs a count that is steady AND agrees with what
+  the engine last solved against, so a source that has genuinely gone is still
+  found
+
+That distinction is the whole difficulty of this stage. `getVideoMode()`
+returning 0 is at least *stable* when the source is absent; a raw count is not.
 
 ## The threshold dither is not carried forward
 
