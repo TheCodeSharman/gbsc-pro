@@ -84,17 +84,26 @@ sound in principle: a measured period sitting exactly on a threshold never
 latches, because the lock counters need consecutive agreeing frames, so moving
 the threshold a little each poll lets the period fall clearly to one side.
 
-It is not needed here, and the board is the reason. The branch is unreachable on
-an RGBHV source, so the only inputs that reach it are composite and S-Video --
-and those do not arrive as themselves. Schematic sheet `AVSV2YPBPR` decodes them
-through the ADV7280 and re-encodes them through the ADV7391, so they enter the
-scaler as **regenerated, standard-conformant YPbPr**. A source whose timings have
-just been reconstructed to broadcast standard does not sit on a threshold
-boundary. The AV module's switch table agrees: S-Video, composite and YPbPr all
-set the identical analog switch state, and only a register inside the ADV7280
-tells the first two apart.
+The branch is unreachable on an RGBHV source, which returns at the top of the
+function, so it is reached only from the other inputs -- and those do not all
+look alike.
 
-So the escape hatch guards a condition this board's own architecture removes.
+**The regeneration argument covers composite and S-Video only.** Schematic sheet
+`AVSV2YPBPR` decodes those through the ADV7280 and re-encodes them through the
+ADV7391, so they arrive as standard-conformant YPbPr and cannot sit on a
+threshold boundary. They are the only two inputs the AV module routes with
+`adv_sw` true.
+
+**YPbPr, RGBs and RGsB are direct analog paths** -- `adv_sw` false -- so nothing
+reconstructs their timings and the argument above does not reach them. A console
+on YPbPr can carry whatever it carries.
+
+The dither is deleted anyway, because a getter that writes twelve registers is a
+second owner of them against `ModeDetect::init()`, and because it leaves the
+threshold off-centre by up to two wherever a mode does latch. What it costs is
+**testable rather than theoretical**: a YPbPr source exercises the branch
+directly, and an interlaced one exercises the SD arm below it.
+
 
 ## Stages
 
