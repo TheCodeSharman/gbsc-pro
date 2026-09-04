@@ -17,8 +17,11 @@ needs from what it measures. `Tv5725::SourceKey` -- the measured line count and 
 bucketed field rate -- is what identifies a source, because it is what this chip
 can see: it locks to sync edges and cannot know the pixel clock.
 
-**A standard survives in exactly one place: choosing SD OUTPUT modes**, where the
-distinction is real. Input classification is not.
+**No standard survives anywhere.** The output is whatever output mode class the
+user selected, and `PresetPreference` already enumerates those -- `Output480P`,
+`Output960P`, `Output1080P` and the rest, with `OutputBypass` as pass-through.
+`Mode480p` and `Mode576p` are already output modes. SD output needs no input
+classification to reach it, so there is nothing for the byte to survive for.
 
 The chip's own Mode Detect block is not the answer either. `MD_HD720P_CNTRL`,
 `MD_SVGA_60HZ_CNTRL` and the rest are a fixed table of PC and broadcast
@@ -36,6 +39,7 @@ why one number reaching two subsystems means two owners.
 | scaling against bypass, the values 14 and 15 | the output mode, `OutputChoice` |
 | interlaced against progressive | the engine's scan mode solve, measured |
 | SD/HD/PAL/NTSC input branching | nothing -- one algorithm for every source |
+| an SD output mode | `PresetPreference`, chosen by the user, already |
 
 `sourceIsRgbhv()`, `scalingRgbhv()` and `rgbhvBypass()` read the byte for the
 third row, so they are questions about the output, not the source.
@@ -111,7 +115,10 @@ next mode change and infer a divider from a count that was never a measurement.
 `sourceMoved()` reports `interrupt` as well as `count` and `rate`. The line count
 stays the confirmation of what the mode changed to and when it settled.
 
-### 3. Retire `videoStandardInput` on the input side -- IN PROGRESS
+### 3. Retire `videoStandardInput` -- IN PROGRESS
+
+**Entirely, everywhere.** Not "on the input side": there is no second role it
+keeps.
 
 Every reference that feeds geometry is a classification standing where a
 measurement belongs. One group at a time, each becoming a derivation from
@@ -123,22 +130,17 @@ Landed so far:
   (`SyncSearch::shouldSweepSyncProcessor()`)
 - the three copies of the held-standard fallback are one
   (`standardForPresetLoad()`)
+- the Mode Detect threshold dither is deleted
 
-### 4. Keep the standard only for SD output
-
-Where the distinction is real -- an SD output mode is genuinely a different thing
-to drive -- the concept stays. Naming it for what it is stops it being reused as
-an input classification.
-
-### 5. Delete `SourceMeasurement::adopt()`
+### 4. Delete `SourceMeasurement::adopt()`
 
 The only place the engine reads `PLLAD_MD` as an input. Custom presets are gone
 and bypass *chooses* 1856 as a literal, so it becomes `hold(divider)` -- told,
 not read.
 
-### 6. Delete `getVideoMode()` and `videoStandardInput`
+### 5. Delete `getVideoMode()` and `videoStandardInput`
 
-Including the dither.
+The byte goes with the function. Nothing holds a standard afterwards.
 
 ## The bar for each step
 
