@@ -226,29 +226,22 @@ Landed so far:
 - the three copies of the held-standard fallback are one
   (`standardForPresetLoad()`)
 - the Mode Detect threshold dither is deleted
+- both of `updateSpDynamic()`'s hunt branches read one `searching` value, so
+  neither fires on a source the sync processor is counting
 
-**`Tv5725::SourceStandard` is next, and it has one caller.**
+**Next is `Geometry::sourceIsPresent()`**, replacing the classification at the
+no-sync gate as described above. It is the first step of moving
+`runSyncWatcher()` into the engine, which the last section sets out.
+
+**`Tv5725::SourceStandard` also has to go, and it has one caller.**
 `doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
-branches into an SD, progressive or HD arm. On the bench source none of that arm's
-writes is in force:
+branches into an SD, progressive or HD arm. `apply()` also reads `PLLAD_KS` back
+off the chip to pass as its own argument, which is the register-as-input
+anti-pattern in miniature.
 
-| field | live | `applyProgressive()` writes | also written by |
-|---|---|---|---|
-| `IF_SEL_WEN` | 0 | 1 | nothing else |
-| `VDS_V_DELAY` | 0 | 1 | `VideoProcessor` bring-up, 0 |
-| `VDS_Y_DELAY` | 2 | 3 | `VideoProcessor` bring-up, 2 |
-| `IF_HS_Y_PDELAY` | 3 | 3 | `InputFormatter` bring-up, 3 |
-
-Three of the four hold the bring-up value, so bring-up runs after `apply()` and
-wins. `IF_SEL_WEN` has no other writer and still does not hold what the arm
-writes. Either way the arm's effect on this path is not observable, which is the
-bar for deleting it.
-
-`apply()` also reads `PLLAD_KS` back off the chip to pass as its own argument,
-which is the register-as-input anti-pattern in miniature.
-
-**Its SD arm is live on YPbPr, so it is not dead code.** Measured on a Wii at
-576i against the RISC PC on the same build:
+**Its SD arm is live on YPbPr, so it is not dead code**, and its progressive arm
+is overwritten on RGBHV. Measured on a Wii at 576i against the RISC PC on the
+same build:
 
 | field | RISC PC | Wii | `applySd()` YPbPr branch writes |
 |---|---|---|---|
@@ -256,10 +249,10 @@ which is the register-as-input anti-pattern in miniature.
 | `VDS_Y_DELAY` | 2 | **3** | 3 |
 | `IF_HS_TAP11_BYPS` | -- | **0** | 0 |
 
-The RISC PC holds the bring-up values and the Wii holds the arm's. So the
-conclusion that its arms do not reach the bench source is true for RGBHV only:
-**deleting the class changes the component path**, and what it installs there has
-to be re-established from a measurement rather than dropped.
+The RISC PC holds the bring-up values and the Wii holds the arm's. On RGBHV the
+progressive arm's writes are not in force at all -- `IF_SEL_WEN` reads 0 where it
+writes 1, with no other writer -- so **it is dead on one path and live on the
+other**, and deleting the class changes the component picture.
 
 **And two more effects survive on every path.**
 
