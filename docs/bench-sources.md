@@ -8,7 +8,7 @@ judged against one input, one sync type and one scan mode.
 |---|---|---|---|---|
 | RISC PC | `vga` | DE-15, sheet `VGA_IN` | direct analog | arbitrary rasters, both sync types, progressive |
 | Wii | `ypbpr` | sheet `YPBPR_IN` | direct analog | sync on green, interlace, component colour |
-| RISC PC, composite | `av` | pin header, sheet `AVSV2YPBPR` | ADV7280 to ADV7391, re-encoded | the decoder chain, 625i |
+| Wii, composite | `av` | pin header, sheet `AVSV2YPBPR` | ADV7280 to ADV7391, re-encoded | the decoder chain, 625i |
 
 ## Direct analog against the ADV chain
 
@@ -75,24 +75,30 @@ On the YPbPr input, and the only source here for three things:
 
 It is a direct analog path, so its timings are its own.
 
-## Composite from the RISC PC
+## Composite, and why it is last
 
-ModeServ's published commands are `PING`, `MODE`, `MODES`, `PATTERN`, `SYNC` and
-`QUIT`. `SYNC 1` selects composite **sync**, not composite **video**, so reaching
-the `av` input is either a TV-class monitor definition selected through `MODE`
-and listed by `MODES`, or a ModeServ command that does not exist yet. Settle it
-with `MODES` before assuming either.
+Composite video comes from the **Wii**, on an RCA cable. **It replaces the
+component cable rather than joining it**, so reaching the `av` input costs the
+YPbPr source -- which is the only source for sync on green and interlace. Do
+composite last, after everything the component cable is needed for.
 
-This is the one path where a source arrives standard-conformant regardless of
-what the machine emits, because the ADV chain regenerates it.
+The RISC PC has no composite video output here. ModeServ's `SYNC 1` selects
+composite **sync** on the VGA connector -- one CMOS value re-applied to VIDC20's
+external register -- which is a different thing and stays on the `vga` input.
+
+Composite is the one path where a source arrives standard-conformant regardless
+of what the machine emits, because the ADV chain regenerates it.
 
 ## What nothing here covers
 
 - **RGBs and RGsB** have no source attached, so the SCART input and the
-  sync-on-green RGB path are untested. RGBs shares the SCART socket
-  (`CON_SCART_F`) with composite.
+  sync-on-green RGB path are untested. Sheet `RGBS_IN` carries both
+  `CON_SCART_F` and a CVBS net; where that net routes is not traced, so do not
+  assume the SCART socket reaches the `av` input.
 - **S-Video** shares everything with composite except one ADV7280 register, so
   testing composite tests all of it but that register.
+- **Composite and component at the same time.** One Wii, one cable, so the
+  interlaced-component and the decoder-chain cases cannot both be live.
 - **HD component**, the standards 5, 6 and 7 branch, has no source.
 
 ## Why this matters to a register argument
