@@ -134,9 +134,8 @@ already recorded for `sampleSteady()`: **publish the answer, do not recompute
 it.** `countHeld()` mutates `idleRun_`, so a second caller double-advances the
 run and corrupts the steadiness the first one depends on.
 
-```
-bool Geometry::sourceIsPresent() const;   // set by sourceMoved(), read by the sketch
-```
+`Geometry::sourceIsPresent()` is that method and it has landed. **It has no
+caller**, because the gate it is for cannot move yet -- see the ordering below.
 
 That gives the sketch three states where it has two:
 
@@ -228,10 +227,12 @@ Landed so far:
 - the Mode Detect threshold dither is deleted
 - both of `updateSpDynamic()`'s hunt branches read one `searching` value, so
   neither fires on a source the sync processor is counting
+- `Geometry::sourceIsPresent()`, the measurement that replaces the
+  classification at the no-sync gate -- the method, not yet the wiring
 
-**Next is `Geometry::sourceIsPresent()`**, replacing the classification at the
-no-sync gate as described above. It is the first step of moving
-`runSyncWatcher()` into the engine, which the last section sets out.
+**Next is the SOG level.** Wiring `sourceIsPresent()` into that gate is measured
+to fix the fault it is for and to leave the unit stuck behind a starved slicer,
+so the two have to land in that order -- the last section sets it out.
 
 **`Tv5725::SourceStandard` also has to go, and it has one caller.**
 `doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
@@ -332,13 +333,24 @@ driving the OLED.
 
 Order, each landable on its own:
 
-1. `Geometry::sourceIsPresent()`, replacing the classification at the no-sync
-   gate.
-2. The steadiness counters -- 38 references become reads of engine state instead
-   of a parallel count.
-3. The SOG level, which is the slicer for the source's own sync and the last
+1. The SOG level, which is the slicer for the source's own sync and the last
    piece of acquiring a source that the engine does not own.
+2. `Geometry::sourceIsPresent()` at the no-sync gate. The method is written; the
+   wiring is what waits.
+3. The steadiness counters -- 38 references become reads of engine state instead
+   of a parallel count.
 4. What remains is a thin policy loop.
+
+**THE SOG LEVEL COMES FIRST, AND IT IS MEASURED RATHER THAN PREFERRED.** The
+no-sync branch is the only thing that repairs a slicer the pre-emptive SOG
+tuning has walked below what the source needs -- `ADC_SOGCTRL` 12 to 5 in one
+step, after which the ADC PLL falls out of lock and the engine can no longer
+complete the solve it has armed, so capture stays frozen and the screen stays
+black. It is also the only path that puts a standard back once
+`getVideoMode()`'s RGBHV branch has latched at 0. A gate in front of that branch
+is a gate in front of both repairs, and the unit then has no way out of either.
+`docs/investigations/the-no-sync-branch-is-the-only-escape.md`, which also has
+what the gate buys and what it does not break.
 
 **A structural constraint on all of it:** `poll()`'s measuring branch runs only
 when `modePending_`. A sync watcher has to run always, so this work extends the
