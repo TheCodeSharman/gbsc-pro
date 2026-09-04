@@ -36,10 +36,12 @@ can see: it locks to sync edges and cannot know the pixel clock.
    whole group reads 0 with `STATUS_IF_VT_BAD` set.
    `docs/investigations/vperiod-if-on-rgbhv.md`.
 
-   So interlace is **not** a third fact the key can carry, and a design needing it
-   needs a source of truth that does not exist yet. What the bench does show is
-   that both sources are shown correctly under the same treatment, so the
-   pipeline has not needed the distinction.
+   So interlace is **not** a third fact the key can carry today. Whether that is
+   the chip's limit or an artefact of comparing two sources that differ in more
+   than interlace is undecided, and an interlaced RISC PC mode is what would
+   decide it -- see `docs/bench-sources.md`. What the bench does show is that both
+   sources are displayed correctly under the same treatment, so the pipeline has
+   not so far needed the distinction.
 
 2. **What output was chosen**, by the user: an output resolution, or pass-through.
    `PresetPreference` already enumerates these, `OutputBypass` being pass-through,

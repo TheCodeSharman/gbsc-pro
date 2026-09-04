@@ -62,12 +62,27 @@ does it, or `VDU 23,0,8,&81` immediately, neither of which ModeServ exposes yet.
 Adding it needs a `MODE ... I1` and a readback through `OS_Byte 144`, which
 returns the old values while setting the new.
 
-**What that would buy.** An interlaced console is interlaced at one broadcast
-raster; the RISC PC would be interlaced at *arbitrary* rasters, scriptably, and
-without costing the component cable.
+**What that would buy, and it is now the only way to get it.** No register on
+this board has been shown to establish interlace: the dedicated status bits call
+the RISC PC's 311-line progressive mode PAL interlace, bit-identical to the Wii's
+real 576i, and `VPERIOD_IF` counts half-lines so the two read 623 against 624.
+`docs/investigations/vperiod-if-on-rgbhv.md`.
+
+Two readings survive that, and **the two existing sources cannot separate them**,
+because the Wii and the RISC PC differ in interlace *and* in input and sync path
+at once:
+
+1. the chip cannot resolve interlace at 15 kHz and 50 Hz at all, or
+2. it can, and a 311-line progressive mode is genuinely ambiguous against 576i.
+
+An interlaced RISC PC mode is the discriminator -- same machine, same cable, same
+input, same sync arrangement, **only interlace changes**. If the status bits move,
+reading 2 is right and interlace is detectable with care. If they do not, reading
+1 is right and nothing downstream may key on interlace.
 
 It is **not** needed to separate `IF_PRGRSV_CNTRL`'s two meanings, which the two
-existing sources already do between them -- see below.
+existing sources already do between them -- see below. That was the earlier case
+for it and it is weaker than this one.
 
 ## The Wii
 
