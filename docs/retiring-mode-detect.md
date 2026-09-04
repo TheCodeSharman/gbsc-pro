@@ -320,11 +320,11 @@ replaces each of its fifteen values.
 
 Two things settled there decide what can happen here:
 
-- **The SOG slicer level comes first.** The no-sync branch is the only thing that
-  repairs a slicer the pre-emptive tuning has walked below what the source needs,
-  and the only path that puts a standard back once `getVideoMode()`'s RGBHV
-  branch has latched at 0. So a gate in front of that branch is a gate in front
-  of both repairs.
+- **The SOG slicer level comes first.** The no-sync branch is the only thing
+  that leaves the black state a sync-type round trip can produce, and the only
+  path that puts a standard back once `getVideoMode()`'s RGBHV branch has
+  latched at 0. So a gate in front of that branch is a gate in front of both
+  exits.
   `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 - **The byte is deleted late**, once the RGBHV block has moved and nothing reads
   it, rather than being unpicked reference by reference from inside a function

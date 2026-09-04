@@ -195,11 +195,19 @@ comes before any policy moves.
 
 **3. Acquire the slicer level.** `optimizeSogLevel()`, `fastSogAdjust()`,
 `tuneSogLevelPreemptively()` and every ratchet become one operation on the idle
-pass. This is the step the bench named as the constraint: the no-sync branch is
-currently the only thing that repairs a slicer the pre-emptive tuning has walked
-below what the source needs — `ADC_SOGCTRL` 12 to 5 in one step, after which the
-ADC PLL falls out of lock, the engine cannot finish the solve it has armed,
-capture stays frozen and the screen stays black.
+pass.
+
+**AND IT ASKS WHETHER SYNC ON GREEN IS THE SYNC SOURCE, WHICH TWO OF THE FOUR DO
+NOT.** The slicer only reaches the sync processor with `SP_SOG_MODE` 1, which
+follows the sync type, so on a separate-sync source the level is inert — and
+`fastSogAdjust()` and the every-150 recovery block walk it anyway. The engine
+holds that answer already, as `SyncType::isCsync()`, so the operation asks held
+state rather than reading the register back.
+
+This is the step that has to land before the gate: the recovery is the only
+thing that leaves the black state a round trip can produce, and until the
+acquisition it is doing badly has an owner, a gate in front of it is a gate in
+front of the only exit.
 `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 
 **4. The no-sync gate** becomes `Geometry::sourceIsPresent()`. Written and tested
