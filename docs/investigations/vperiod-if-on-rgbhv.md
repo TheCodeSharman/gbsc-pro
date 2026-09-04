@@ -1,7 +1,8 @@
 # Why `VPERIOD_IF` never completes a measurement on RGBHV
 
-**Status:** structural and reproducible; the cause is a hypothesis, and the
-experiment that would settle it has not been run. What the firmware does about it
+**Status:** structural and reproducible. **The board-level question is settled:
+`VPERIOD_IF` works here, and the fault is specific to the RGBHV path.** What
+remains open is whether the sync route or the video standard is the discriminator. What the firmware does about it
 — substitute `STATUS_SYNC_PROC_VTOTAL`, treat a non-zero value as debris — is in
 [`tv5725-chip.md`](../tv5725-chip.md).
 
@@ -64,9 +65,36 @@ carries sync embedded in the video. If the IF is fed from the separator, a
 separate-sync source leaves its vertical input with nothing to extract while the
 sync processor stays happy — which is exactly the asymmetry observed.
 
-## The experiment that would settle it
+## Measured: it works on component, and not on RGBHV
 
-Not yet run. Two options, and the first is much better than the second.
+A Wii at 576i on the YPbPr input against the RISC PC on VGA, same build, minutes
+apart:
+
+| | Wii 576i, YPbPr | RISC PC, RGBHV |
+|---|---|---|
+| `VPERIOD_IF` | **624** | **12**, debris |
+| `STATUS_IF_VT_OK` | **1** | 0 |
+| `STATUS_IF_VT_BAD` | **0** | 1 |
+| `STATUS_SYNC_PROC_VTOTAL` | 310 | 311 |
+| `SP_SOG_MODE` | 1, csync | 0, separate |
+
+624 is the 625-line PAL frame, so the measurement is not merely non-zero but
+correct. **`VPERIOD_IF` is therefore not broken on this board**, and the fallback
+experiment's question -- whether it ever works here -- is answered yes.
+
+This is a **better** data point than the fallback anticipated, because YPbPr is a
+direct analog path: the ADV7280 is not involved, so a decoded-and-re-encoded
+signal is not the explanation. What differs from RGBHV is the sync route --
+component carries sync on Y, so `ASW_01` is low and the separator is in the path
+-- and the video standard. That is much closer to the preferred experiment below
+than to the fallback.
+
+**It does not yet separate sync route from standard.** Both changed together. The
+RGBS experiment below still does that, and is still worth running.
+
+## The experiment that would isolate the cause
+
+Two options, and the first is much better than the second.
 
 **Preferred — RGBS through the dedicated Sync port.** The board has separate
 `R`/`G`/`B` and a `Sync` input, and the HC32 command set includes `0x4n` RGBs and
@@ -117,9 +145,16 @@ echo "VSACT=$(( (r16>>3)&1 ))  HSACT=$(( (r16>>1)&1 ))  presetID=$(printf 0x%02x
 Healthy would be `VPERIOD_IF` ≈ 311 (or ≈523 on NTSC composite), `VT_OK` 1,
 `VT_BAD` 0 — against today's 0 / 0 / 1.
 
-Note what is and is not measured here: everything above is recorded on the
-**invalid** side only. That `VPERIOD_IF` works in the SD and HD modes is
-*inferred* from the firmware keying exact equality on 522/524/526/622/624/626 for
-field parity, which could not work otherwise — it has never been observed on this
-bench, because this bench has only ever had an RGBHV source.
+**That `VPERIOD_IF` works in the SD modes is now observed rather than inferred.**
+The firmware keys exact equality on 522/524/526/622/624/626 for field parity, and
+the measured 624 is one of them.
+
+## What this costs the geometry engine
+
+`VPERIOD_IF` measures the FRAME while `STATUS_SYNC_PROC_VTOTAL` measures the
+FIELD, so the two disagreeing by a factor of two is what interlace looks like --
+and it is the only direct measurement of interlace available. Being dead on
+RGBHV means **interlace cannot be measured on that path**, so anything keying on
+it has to guard with `STATUS_IF_VT_OK` and treat an invalid reading as
+progressive rather than as a measurement. `docs/retiring-mode-detect.md`.
 
