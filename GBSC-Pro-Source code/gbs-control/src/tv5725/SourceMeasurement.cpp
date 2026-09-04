@@ -89,9 +89,13 @@ bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
     if (lines != heldLines)
         return true;
 
-    uint32_t larger = lineRateHz > heldLineRateHz ? lineRateHz : heldLineRateHz;
-    uint32_t smaller = lineRateHz > heldLineRateHz ? heldLineRateHz : lineRateHz;
+    return ratesAgree(lineRateHz, heldLineRateHz);
+}
 
+bool SourceMeasurement::ratesAgree(uint32_t a, uint32_t b)
+{
+    const uint32_t larger = a > b ? a : b;
+    const uint32_t smaller = a > b ? b : a;
     return (larger - smaller) * 1000u <= (uint32_t)HeldRateTolerancePerMille * smaller;
 }
 
@@ -234,11 +238,7 @@ bool SourceMeasurement::measureLineRate()
     // say so, which is what lineRateFromHPeriod() judges; the field rate is what
     // answers when the judgement refuses. Neither is trusted on its own -- the
     // cross-check below reads the same either way.
-    uint16_t hperiod[HPeriodSamples];
-    for (uint8_t i = 0; i < HPeriodSamples; ++i)
-        hperiod[i] = GBS::HPERIOD_IF::read();
-
-    lineRateHz_ = lineRateFromHPeriod(hperiod, HPeriodSamples, sourceLines_);
+    lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
     if (lineRateHz_ != 0) {
         fieldRateHz_ = (float)lineRateHz_ / (float)sourceLines_;
     } else {
@@ -349,6 +349,20 @@ uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_);
 uint16_t SourceMeasurement::measureSourceLines()
 {
     return GBS::STATUS_SYNC_PROC_VTOTAL::read();
+}
+
+uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
+{
+    uint16_t hperiod[HPeriodSamples];
+    for (uint8_t i = 0; i < HPeriodSamples; ++i)
+        hperiod[i] = GBS::HPERIOD_IF::read();
+    return lineRateFromHPeriod(hperiod, HPeriodSamples, lines);
+}
+
+void SourceMeasurement::forgetHeldRate()
+{
+    goodLines_ = 0;
+    goodLineRateHz_ = 0;
 }
 
 bool SourceMeasurement::sourceHasOwnVsync(uint32_t (*nowMs)())

@@ -175,6 +175,15 @@ private:
     // announce it.
     bool sourceMoved();
 
+    // Whether the source is running a rate the last solve did not run against.
+    // A refusal from HPERIOD_IF is no information rather than a change, and a
+    // rate that does not hold across a run is the register railing -- which
+    // passes the judgement inside lineRateFromHPeriod() on its own.
+    bool rateMoved();
+
+    // Whether the count has held for a steadiness run.
+    bool countHeld(uint16_t lines);
+
     void solveScanMode();
 
     bool fail();
@@ -229,11 +238,15 @@ private:
     bool syncTypeProbed_;
     bool (*syncProbe_)();   // the registers have been written for this mode change
     uint16_t solvedLines_;   // the source line count the last solve ran against
+    uint32_t solvedLineRateHz_;  // and the line rate, which the count cannot show
     SourceKey framedKey_;    // the source the framing held was tuned against
     FramingTable framings_;
     uint16_t framingRevision_;
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
+    bool unusableCountArmed_;  // a count no source runs has already armed a change
+    uint32_t candidateRateHz_;  // a rate not yet corroborated across a run
+    uint8_t rateRun_;           // how many polls have agreed on it
     bool solvePending_;
     bool modePending_;
     uint8_t modeOversample_;      // a solve refused because the source was settling

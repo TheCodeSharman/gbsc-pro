@@ -1299,3 +1299,139 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     REQUIRE(pollUntilSolved(engine));
     CHECK(g_probeCalls == 2);
 }
+
+// --- what a mode change looks like when the line count cannot show it ---------
+//
+// sourceMoved() is the only thing that arms a solve while the engine is idle,
+// and it had one input: the line count. Two sources move underneath it.
+
+TEST_CASE("a count no source runs re-establishes the sync type")
+{
+    // The wrong sync path counts 97..137 on a 311-line source, held for twenty
+    // seconds on the bench, and every one of those is outside the source
+    // bounds. So the state that most needs the sync type re-probed is exactly
+    // the state that used to guarantee it never would.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(g_probeCalls == 1);
+
+    seedSourceLines(97);
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    CHECK(g_probeCalls == 2);
+}
+
+TEST_CASE("a count no source runs arms the probe once, not once a poll")
+{
+    // The probe moves the sync path and costs a settle plus a window. A fault
+    // that persists is the normal case here -- the count stays wrong until the
+    // probe has fixed the path -- so arming per poll is a probe storm.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    seedSourceLines(97);
+    for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    CHECK(g_probeCalls == 2);
+}
+
+TEST_CASE("a field rate the line count cannot show re-solves the source")
+{
+    // 320x256 at 50, 55 and 60 all count 312 lines, so the count says the
+    // source did not move and the raster stays sized for the rate before it.
+    // HPERIOD_IF reads 431 / 392 / 359 across those three, correctly every
+    // time, and it costs one register read -- so the rate is affordable on the
+    // idle path that the field rate measurement never was.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);     // HPERIOD_IF, this source at 50 Hz
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(Adc::PLLAD_MD::read() == 2250);
+
+    // The same 311 lines at 60 Hz. Nothing the count can see has moved, and the
+    // divider is a function of the line rate: 162 MHz over 18750 x 4, backed
+    // off 2%, and under the write limit that clamped the 50 Hz solve.
+    seedField(0, 0x06, 0, 9, 359);
+    g_fieldRate = 60.29f;
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    CHECK(Adc::PLLAD_MD::read() == 2116);
+}
+
+TEST_CASE("a rate seen once does not re-solve the source")
+{
+    // HPERIOD_IF rails, and the run it rails through passes every check the
+    // rate judgement makes: three identical samples inside the agreement, and a
+    // field rate well inside the bounds. Measured on the bench source it reads
+    // 10 / 140 / 431 / 511 while the sync processor holds a perfect 311 -- so a
+    // rate taken once arms a solve, the solve records the rail as the rate it
+    // ran against, and the next rail differs again. Twenty-four probes in fifty
+    // seconds, on a source that never moved.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);     // HPERIOD_IF, this source at 50 Hz
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(g_probeCalls == 1);
+
+    // One poll's worth of a railed reading, then the source's own rate back.
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i) {
+        seedField(0, 0x06, 0, 9, i % 2 ? 255 : 431);
+        engine.poll();
+    }
+
+    CHECK(g_probeCalls == 1);
+}
+
+TEST_CASE("a rate the field rate does not confirm leaves the source alone")
+{
+    // HPERIOD_IF rails to a value that is WRONG AND STABLE, which is the one
+    // failure no run can reject: 511 on the bench source reads as 13183 Hz
+    // against a real 15625, holds across every poll, and passes the bounds and
+    // the agreement inside lineRateFromHPeriod(). The field rate is measured a
+    // different way, so it does not rail with it -- and it is affordable here
+    // because a corroborated disagreement is rare.
+    seedBenchSource();
+    seedField(0, 0x06, 0, 9, 431);     // HPERIOD_IF, this source at 50 Hz
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(g_probeCalls == 1);
+
+    // The register rails and stays railed. The source has not moved.
+    seedField(0, 0x06, 0, 9, 511);
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
+        engine.poll();
+
+    CHECK(g_probeCalls == 1);
+}

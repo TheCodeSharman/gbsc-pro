@@ -178,6 +178,11 @@ public:
     static bool rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
                                  uint16_t heldLines, uint32_t heldLineRateHz);
 
+    // Whether two line rates are the same measurement. HeldRateTolerancePerMille
+    // apart, which is what separates a source that moved from one being read
+    // through a settling PLL.
+    static bool ratesAgree(uint32_t a, uint32_t b);
+
     // The line rate one HPERIOD_IF reading states: 27 MHz / ((hperiod + 1) * 4),
     // measured across ten modes to a mean 29 ns. Counted against the chip's own
     // 27 MHz, so it does not move with PLLAD_MD.
@@ -234,6 +239,12 @@ public:
     // and every other quantity the engine needs it computed itself.
     static uint16_t measureSourceLines();
     static uint16_t measureHsyncLow();
+
+    // The line rate from HPERIOD_IF alone, or 0 where the run does not stand up
+    // to the line count. One register read, no vsync spin, so it is affordable
+    // on the idle path -- which is what lets a rate change at an unchanged
+    // count be seen at all.
+    static uint32_t measureLineRateFromHPeriod(uint16_t lines);
 
     // How long the sync processor is given to reacquire V after the path moves.
     static const uint16_t OwnVsyncSettleMs = 240;
@@ -324,6 +335,11 @@ public:
     // lineRateHz() is the last one MEASURED and a refusal clears it, so a
     // reader that has to survive a sync loss asks this one.
     uint32_t heldLineRateHz() const;
+
+    // Drops it, so measureLineRate() has nothing to reject the next rate
+    // against. rateFollowsCount() refuses a rate that moved at an unchanged
+    // count, which is exactly the source a re-solve was armed for.
+    void forgetHeldRate();
 
     // Whether the source runs that line. Not on its own whether the vertical
     // interval is serrated -- a separate-sync source of the same rate is not.

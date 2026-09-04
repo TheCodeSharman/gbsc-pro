@@ -198,6 +198,17 @@ public:
     // only reports correctly once the type is already right.
     static void applyForSyncType(bool csync);
 
+    // How long the sync processor counts nothing usable after its path moves.
+    // Measured: STATUS_SYNC_PROC_VTOTAL reads 305 / 330 / 425 the instant
+    // SP_EXT_SYNC_SEL is restored on a 311-line source, and is back to 311
+    // within 300 ms every time. A caller that measures underneath it reads a
+    // count that is WRONG AND STABLE -- four agreeing samples fit inside the
+    // window, so no steadiness run can tell the difference. It is the caller's
+    // to wait out, because a caller that is not about to measure must not
+    // block: applyForSyncType() also runs from the bypass switch.
+    // docs/investigations/sync-type-probe-poisons-its-own-measurement.md
+    static const uint16_t PathSettleMs = 500;
+
     // The clamp is held off across a load and released once
     // updateClampPosition() has found the back porch: a clamp whose window has
     // not been placed clamps to picture. The read exists because the release is

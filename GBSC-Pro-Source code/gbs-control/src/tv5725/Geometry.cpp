@@ -1,8 +1,11 @@
 #include "Geometry.h"
 
+#include <Arduino.h>
+
 #include "Chip.h"
 
 #include <math.h>
+#include <stdio.h>
 
 #include "Adc.h"
 #include "CaptureWindow.h"
@@ -25,8 +28,9 @@ Geometry::Geometry(DisplayClock &displayClock)
       samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
       framingRevision_(0),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
-      solvedLines_(0),
-      idleLines_(0), idleRun_(0),
+      solvedLines_(0), solvedLineRateHz_(0),
+      idleLines_(0), idleRun_(0), unusableCountArmed_(false),
+      candidateRateHz_(0), rateRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
       choice_(), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
@@ -334,6 +338,7 @@ bool Geometry::poll()
     // What this solve ran against, so a source that later differs from it arms
     // the engine without anyone having to say so.
     solvedLines_ = sampling_.sourceLines();
+    solvedLineRateHz_ = sampling_.lineRateHz();
     modePending_ = false;
     FrameBuffer::releaseCapture();
     return true;
@@ -412,6 +417,7 @@ void Geometry::establishSyncType()
     const bool csync = SyncType::probe(syncProbe_);
     SyncProcessor::applyForSyncType(csync);
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
+    delay(SyncProcessor::PathSettleMs);
 }
 
 void Geometry::holdReferenceSampling()
@@ -459,6 +465,30 @@ void Geometry::writeSampling()
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
 
+static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
+{
+    char line[72];
+    snprintf(line, sizeof(line), "source moved: %s (%u lines, solved %u)",
+             why, (unsigned)lines, (unsigned)solved);
+    tv5725Log(line);
+}
+
+// Whether the count has held long enough to be the source's rather than a
+// reading taken through something still settling.
+bool Geometry::countHeld(uint16_t lines)
+{
+    if (lines != idleLines_) {
+        idleLines_ = lines;
+        idleRun_ = 0;
+        return false;
+    }
+    if (idleRun_ < SourceMeasurement::SteadySamples) {
+        ++idleRun_;
+        return false;
+    }
+    return true;
+}
+
 // **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
 // steadiness run, and filling it while the engine is idle leaves the next mode
 // change's first poll believing a count from the mode before it.
@@ -472,28 +502,81 @@ bool Geometry::sourceMoved()
     }
 
     const uint16_t lines = SourceMeasurement::measureSourceLines();
-    if (!SourceMeasurement::countIsSource(lines) || lines != idleLines_) {
-        idleLines_ = lines;
-        idleRun_ = 0;
-        return false;
-    }
-    if (idleRun_ < SourceMeasurement::SteadySamples) {
-        ++idleRun_;
-        return false;
+
+    // A count no source runs is the wrong sync path's signature -- 97..137 on a
+    // 311-line source, measured -- and a mode change is the only thing that
+    // re-establishes the sync type, so the state that most needs a re-probe was
+    // the one state that could never arm one. It arms ONCE: the count stays
+    // wrong until the probe has moved the path.
+    if (!SourceMeasurement::countIsSource(lines)) {
+        if (!countHeld(lines) || unusableCountArmed_)
+            return false;
+        unusableCountArmed_ = true;
+        logSourceMoved("unusable count", lines, solvedLines_);
+        return true;
     }
 
-    // The interrupt says the source moved where the count cannot: the same
-    // number of lines at a different field rate. It waits behind the SAME
-    // steadiness run rather than firing on arrival, because a source measured
-    // mid-transition yields a rate that passes every check and is tens of
-    // percent out -- measured at 18806 Hz against a real 31440, held, with
-    // every register self-consistent.
+    unusableCountArmed_ = false;
+    if (!countHeld(lines))
+        return false;
+
+    // The rate and the interrupt each say the source moved where the count
+    // cannot: the same number of lines at a different field rate, which is what
+    // 320x256 at 50, 55 and 60 all are. Both wait behind the SAME steadiness run
+    // rather than firing on arrival, because a source measured mid-transition
+    // yields a rate that passes every check and is tens of percent out --
+    // measured at 18806 Hz against a real 31440, held, with every register
+    // self-consistent.
     const bool interrupted = sourceInterrupted_;
     sourceInterrupted_ = false;
-    if (!interrupted && lines == solvedLines_)
+    const bool countMoved = lines != solvedLines_;
+    if (!interrupted && !countMoved && !rateMoved())
         return false;
 
+    logSourceMoved(interrupted ? "interrupt" : countMoved ? "count" : "rate",
+                   lines, solvedLines_);
     idleRun_ = 0;
+    return true;
+}
+
+bool Geometry::rateMoved()
+{
+    const uint32_t rate = SourceMeasurement::measureLineRateFromHPeriod(solvedLines_);
+    if (rate == 0 || solvedLineRateHz_ == 0
+        || SourceMeasurement::ratesAgree(rate, solvedLineRateHz_)) {
+        candidateRateHz_ = 0;
+        rateRun_ = 0;
+        return false;
+    }
+
+    if (candidateRateHz_ == 0
+        || !SourceMeasurement::ratesAgree(rate, candidateRateHz_)) {
+        candidateRateHz_ = rate;
+        rateRun_ = 1;
+        return false;
+    }
+    if (rateRun_ < SourceMeasurement::SteadySamples) {
+        ++rateRun_;
+        return false;
+    }
+
+    candidateRateHz_ = 0;
+    rateRun_ = 0;
+
+    // HPERIOD_IF rails to a value that is WRONG AND STABLE, which no run can
+    // reject: 511 reads as 13183 Hz against a real 15625 and holds. The field
+    // rate is measured a different way and does not rail with it. It costs a
+    // vsync spin, which is what the cheap gate exists to avoid -- affordable
+    // only because a corroborated disagreement is rare.
+    const uint32_t confirmed = SourceMeasurement::lineRateFrom(
+        solvedLines_, getSourceFieldRate(0));
+    if (confirmed == 0 || !SourceMeasurement::ratesAgree(rate, confirmed))
+        return false;
+
+    // The held rate is what moved, and measureLineRate() rejects a rate that
+    // changed at an unchanged count -- so leaving it would refuse the very
+    // measurement this armed the solve for.
+    sampling_.forgetHeldRate();
     return true;
 }
 
