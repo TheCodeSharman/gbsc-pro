@@ -89,6 +89,28 @@ is what makes `getVideoMode()` report a mode again. A register restore does not,
 on its own: the sketch rewrites its no-sync configuration within 500 ms while
 its classifier still reports 0.
 
+## The gate on the sweep is only half of it
+
+`SyncSearch::shouldSweepSyncProcessor()` stops the second branch of
+`updateSpDynamic()` firing on a locked source, and a source sync-type round trip
+now self-recovers. **Two other consequences of `getVideoMode()` returning 0 are
+not addressed**, and repeated input switching reaches them:
+
+- **The first branch is ungated.** `vidModeReadout == 0` with
+  `rto->videoStandardInput == 0` toggles `SP_DLT_REG` between `0x30` and `0xC0`
+  and returns early, whatever the sync processor is counting. Observed at
+  `SP_DLT_REG` 192 with `SP_H_PULSE_IGNOR` correctly 255 -- the gated branch
+  held and this one did not.
+- **The SOG ratchet is a separate mechanism.** `ADC_SOGCTRL` walked 12 to 5
+  again under a source counting 311 lines, with `noSyncCounter` at 150. Nothing
+  in the sweep gate touches it.
+
+Signature after a run of input changes: every scaling register correct --
+`VTOTAL` 311, `HTOTAL` 2250, `PLLAD_MD` 2250, DACs up, capture enabled, windows
+and scales right -- with `ADC_SOGCTRL` 5, `m:0`, and the television reporting
+*no signal* rather than a black picture. An input reselect clears it and the
+unit then holds capture enabled in 140 of 140 samples over a minute.
+
 ## What the fix has to address
 
 Not the engine's solve, which is correct throughout, and not the capture freeze.
