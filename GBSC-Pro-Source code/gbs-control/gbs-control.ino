@@ -717,12 +717,21 @@ void printBinary(unsigned char num)
     }
     putchar('\n'); 
 }
+// The standard a preset load is for. The classification is not trusted on its
+// own: it reports nothing on a source whose H-sync is arriving, so the held
+// standard answers where it cannot. docs/retiring-mode-detect.md
+static uint8_t standardForPresetLoad()
+{
+    const uint8_t videoMode = getVideoMode();
+    if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
+        return rto->videoStandardInput;
+    }
+    return videoMode;
+}
+
 void UpDisplay(void)
 {
-    uint8_t videoMode = getVideoMode();
-    if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
-        videoMode = rto->videoStandardInput;
-    }
+    const uint8_t videoMode = standardForPresetLoad();
     if (scalingRgbhv()) {
         rto->videoStandardInput = 15;
     } else {
@@ -6821,10 +6830,7 @@ void loop()
         if ((millis() - lastTimeSourceCheck) >= 500) {
             // if (CheckInputFrequency() && rto->HdmiHoldDetection)
             if (CheckInputFrequency()) {
-                uint8_t videoMode = getVideoMode();
-                if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
-                    videoMode = rto->videoStandardInput;
-                }
+                const uint8_t videoMode = standardForPresetLoad();
                 // Every branch here re-decides the output mode, and none of
                 // them is about HD bypass. A source that changes mode under it
                 // is the detection block's, which asks presetPreference.
@@ -7899,9 +7905,7 @@ void handleType2Command(char argument)
             syncOutput.blankNow(millis());
 
             // Loading presets via webui
-            uint8_t videoMode = getVideoMode();
-            if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read())
-                videoMode = rto->videoStandardInput; // 
+            const uint8_t videoMode = standardForPresetLoad();
 
             if (argument == 'f')
                 uopt->presetPreference = Output960P; //Output960P; // 1280x960
