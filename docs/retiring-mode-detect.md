@@ -121,6 +121,35 @@ So each of the eleven sites needs its replacement chosen by what it gates:
 That distinction is the whole difficulty of this stage. `getVideoMode()`
 returning 0 is at least *stable* when the source is absent; a raw count is not.
 
+### The engine already computes the validated answer
+
+`Geometry::sourceMoved()` works out, on every idle poll, exactly what a
+signal-present test needs: a plausible count (`countIsSource`), held steady
+(`countHeld`, a `SteadySamples` run over `idleLines_`), and compared against
+`solvedLines_` -- what the last solve actually ran against. It also separates a
+count no source runs from no count at all, via `unusableCountArmed_`.
+
+So the replacement is an engine method, and the rule it must follow is the one
+already recorded for `sampleSteady()`: **publish the answer, do not recompute
+it.** `countHeld()` mutates `idleRun_`, so a second caller double-advances the
+run and corrupts the steadiness the first one depends on.
+
+```
+bool Geometry::sourceIsPresent() const;   // set by sourceMoved(), read by the sketch
+```
+
+That gives the sketch three states where it has two:
+
+| the engine sees | the sketch should |
+|---|---|
+| a steady count matching the last solve | never run recovery |
+| a count no source runs, 97..137 | re-probe the sync type, which it now does |
+| no count at all, 0 | run recovery |
+
+`sourceMoved()` only runs while the engine is idle, so the value is stale during
+a solve -- which is the right answer there anyway, since a solve in progress is a
+source being worked on.
+
 ## The threshold dither is not carried forward
 
 `getVideoMode()` writes twelve Mode Detect threshold registers dithered by
