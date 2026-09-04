@@ -28,18 +28,19 @@ can see: it locks to sync edges and cannot know the pixel clock.
    progressive 311 at the same 50 Hz -- one line apart, and `SourceKey` cannot
    tell them apart.
 
-   **`VPERIOD_IF` would separate them and cannot be the key.** It measures the
-   FRAME -- 624 on the Wii against 310 in the field counter -- so it distinguishes
-   576i from a 311-line progressive mode outright. But it is **dead on RGBHV**:
-   the RISC PC reads 12 with `STATUS_IF_VT_BAD` set, against the Wii's 624 with
-   `STATUS_IF_VT_OK` set. Keying on it would break the everyday source.
+   **Nothing measures interlace on this board.** `VPERIOD_IF` counts half-lines,
+   so a 311-line progressive source reads 623 against 576i's 624 -- one apart, at
+   the same line rate and field rate. The dedicated status bits agree with each
+   other and are wrong: `STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` both read
+   1 for the progressive RISC PC, exactly as for the Wii. On separate sync the
+   whole group reads 0 with `STATUS_IF_VT_BAD` set.
    `docs/investigations/vperiod-if-on-rgbhv.md`.
 
-   So **interlace is a third measured fact beside the pair, and it is guarded**:
-   where `STATUS_IF_VT_OK` is set, `VPERIOD_IF` against twice the field count says
-   whether the source is interlaced; where it is not set, no interlace measurement
-   exists on that path and progressive is the honest assumption. That guard is the
-   difference between a measurement and a reading, and this register offers both.
+   So interlace is **not** a third fact the key can carry, and a design needing it
+   needs a source of truth that does not exist yet. What the bench does show is
+   that both sources are shown correctly under the same treatment, so the
+   pipeline has not needed the distinction.
+
 2. **What output was chosen**, by the user: an output resolution, or pass-through.
    `PresetPreference` already enumerates these, `OutputBypass` being pass-through,
    and `OutputChoice` carries the selection.

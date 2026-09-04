@@ -149,12 +149,42 @@ Healthy would be `VPERIOD_IF` ≈ 311 (or ≈523 on NTSC composite), `VT_OK` 1,
 The firmware keys exact equality on 522/524/526/622/624/626 for field parity, and
 the measured 624 is one of them.
 
+## Interlace is not measurable here, by any register tried
+
+The chip has dedicated bits -- `STATUS_IF_INP_INT` and `STATUS_IF_INP_PRG` at
+s0_04[6] and [7], with `STATUS_IF_INP_NTSC_INT` and `STATUS_IF_INP_PAL_INT`
+naming the standard. They do not answer the question:
+
+| state | `INP_INT` | `INP_PRG` | `PAL_INT` | `VT_OK` | `VPERIOD_IF` |
+|---|---|---|---|---|---|
+| Wii 576i, genuinely interlaced | 1 | 0 | 1 | 1 | 624 |
+| RISC PC csync, genuinely **progressive** 311 | **1** | 0 | **1** | 1 | 623 |
+| RISC PC separate sync | 0 | 0 | 0 | 0 | 54, debris |
+
+**A 311-line progressive source is reported as PAL interlace**, bit-identical to
+a real 576i one, and on separate sync every bit reads 0.
+
+The cause is not a chip defect. `VPERIOD_IF` counts **half-lines**, and in half
+lines a 311-line progressive 50 Hz source is 623 while 576i is 624 -- the same
+signal to within one count, at the same line rate and the same field rate. What
+separates them is the half-line offset between alternate fields, which nothing
+reachable here resolves. Sampled 45 times on each, both are a single steady value
+with no alternation, so field parity is not visible either.
+
+**So interlace cannot be established from the registers on this board**, and
+anything keying on it is keying on a guess. Note that both sources produce a good
+picture under the same treatment, so this is a classification the pipeline has not
+so far needed.
+
+`INTERLACE_PROGRESSIVE_RECOGNIZE` at s0_04[7:6] is a second name for those same
+two bits, which the one-name-per-field rule forbids.
+
 ## What this costs the geometry engine
 
 `VPERIOD_IF` measures the FRAME while `STATUS_SYNC_PROC_VTOTAL` measures the
 FIELD, so the two disagreeing by a factor of two is what interlace looks like --
-and it is the only direct measurement of interlace available. Being dead on
-RGBHV means **interlace cannot be measured on that path**, so anything keying on
-it has to guard with `STATUS_IF_VT_OK` and treat an invalid reading as
-progressive rather than as a measurement. `docs/retiring-mode-detect.md`.
+but it counts half-lines and so does not distinguish interlace by magnitude.
+Being dead on separate sync means it supplies nothing at all there. Combined with
+the status bits above, **no register on this board establishes interlace**.
+`docs/retiring-mode-detect.md`.
 
