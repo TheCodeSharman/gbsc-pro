@@ -17,11 +17,20 @@ needs from what it measures. `Tv5725::SourceKey` -- the measured line count and 
 bucketed field rate -- is what identifies a source, because it is what this chip
 can see: it locks to sync edges and cannot know the pixel clock.
 
-**No standard survives anywhere.** The output is whatever output mode class the
-user selected, and `PresetPreference` already enumerates those -- `Output480P`,
-`Output960P`, `Output1080P` and the rest, with `OutputBypass` as pass-through.
-`Mode480p` and `Mode576p` are already output modes. SD output needs no input
-classification to reach it, so there is nothing for the byte to survive for.
+**A video standard is replaced by two concepts, and they do not meet.**
+
+1. **What the input is**, measured: sync type, line rate, frame rate, interlace.
+   `Tv5725::SourceKey` is the identity -- line count and bucketed field rate --
+   with `SyncType` and the engine's scan mode solve carrying the rest.
+2. **What output was chosen**, by the user: an output resolution, or pass-through.
+   `PresetPreference` already enumerates these, `OutputBypass` being pass-through,
+   and `OutputChoice` carries the selection.
+
+Nothing derives the second from the first. **PAL against NTSC survives only as an
+option**, where the user asks for the output frame rate to be matched to the
+source's -- `matchPresetSource` and `presetIsPalForce60` inside `OutputChoice`.
+Aside from that one option, the concept of a video standard is gone from the core
+logic, and no code branches on one.
 
 The chip's own Mode Detect block is not the answer either. `MD_HD720P_CNTRL`,
 `MD_SVGA_60HZ_CNTRL` and the rest are a fixed table of PC and broadcast
@@ -32,14 +41,16 @@ standards, and an arbitrary RISC OS raster matches none of them.
 Fifteen values carry five unrelated facts, which is why it has 134 references and
 why one number reaching two subsystems means two owners.
 
-| fact | replacement |
-|---|---|
-| which mode is on air | `SourceKey`, measured |
-| colour space, YPbPr against RGB | the input selection, which the user made |
-| scaling against bypass, the values 14 and 15 | the output mode, `OutputChoice` |
-| interlaced against progressive | the engine's scan mode solve, measured |
-| SD/HD/PAL/NTSC input branching | nothing -- one algorithm for every source |
-| an SD output mode | `PresetPreference`, chosen by the user, already |
+| fact | concept it belongs to | replacement |
+|---|---|---|
+| which mode is on air | input, measured | `SourceKey` |
+| line rate and frame rate | input, measured | `SourceMeasurement` |
+| interlaced against progressive | input, measured | the engine's scan mode solve |
+| colour space, YPbPr against RGB | input, selected | the input selection |
+| scaling against bypass, 14 and 15 | output, chosen | `OutputChoice`, `OutputBypass` |
+| an SD output resolution | output, chosen | `PresetPreference` |
+| SD/HD input branching | neither | nothing -- one algorithm for every source |
+| PAL against NTSC | output, chosen, optional | `matchPresetSource` rate matching |
 
 `sourceIsRgbhv()`, `scalingRgbhv()` and `rgbhvBypass()` read the byte for the
 third row, so they are questions about the output, not the source.
