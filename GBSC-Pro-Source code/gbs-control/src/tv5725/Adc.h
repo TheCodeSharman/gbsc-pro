@@ -42,7 +42,6 @@ public:
 
     typedef UReg<0x05, 0x02, 0, 1> ADC_SOGEN;                         // ADC SOG enable When = 0, ADC disable SOG mode
 
-    typedef UReg<0x05, 0x02, 1, 5> ADC_SOGCTRL;                       // When = 1, ADC enable SOG mode SOG control signal ADC
                                                                       // input selection When = 00, R0/G0/B0/SOG0 as input
 
     typedef UReg<0x05, 0x02, 6, 2> ADC_INPUT_SEL;                     // When = 01, R1/G1/B1/SOG1 as input When = 10, R2/G2/B2 as

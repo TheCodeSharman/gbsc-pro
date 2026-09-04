@@ -561,7 +561,7 @@ static void LoadDefault()
     rto->clampPositionIsSet = 0;     //
     rto->coastPositionIsSet = 0;     //
     rto->continousStableCounter = 0; //
-    rto->currentLevelSOG = 5;        //
+    Tv5725::SyncOnGreen::choose(5);  //
     rto->thisSourceMaxLevelSOG = 31; //
 }
 

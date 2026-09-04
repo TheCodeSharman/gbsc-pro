@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
+.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -50,6 +50,17 @@ define geometry_unit
 	  "$(HERE)/$(1).cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/$(1)"
 endef
+
+## sync-on-green: host unit tests for Tv5725::SyncOnGreen
+#
+# The slicer level for the source's own sync: held rather than read back, and
+# refused rather than truncated when a caller asks past the field.
+sync-on-green:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sync_on_green" \
+	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp
+	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis, and its --dump
 #
@@ -659,7 +670,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
+test: sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

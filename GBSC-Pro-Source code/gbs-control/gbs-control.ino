@@ -678,7 +678,7 @@ static void LoadDefault()
     rto->coastPositionIsSet = 0;     
     Tv5725::SyncType::forget();
     rto->continousStableCounter = 0; 
-    rto->currentLevelSOG = 5;        
+    Tv5725::SyncOnGreen::choose(5);        
     rto->thisSourceMaxLevelSOG = 31; 
 }
 
@@ -1361,7 +1361,7 @@ void setResetParameters_re()
     rto->noSyncCounter = 0;          
 
     rto->isInLowPowerMode = false;   
-    rto->currentLevelSOG = 5;        
+    Tv5725::SyncOnGreen::choose(5);        
     rto->thisSourceMaxLevelSOG = 31; 
     rto->failRetryAttempts = 0;      
     rto->HPLLState = 0;
@@ -1400,7 +1400,7 @@ void setResetParameters()
     rto->noSyncCounter = 0;         
 
     rto->isInLowPowerMode = false;  
-    rto->currentLevelSOG = 5;       
+    Tv5725::SyncOnGreen::choose(5);       
     rto->thisSourceMaxLevelSOG = 31;
     rto->failRetryAttempts = 0;     
     rto->HPLLState = 0;
@@ -1445,7 +1445,7 @@ void setResetParameters()
     // the RGB pins with nothing to put it back until the next reboot.
     Tv5725::Adc::selectInput(selectedAdcInput());
     GBS::ADC_POWDZ::write(1);
-    setAndUpdateSogLevel(rto->currentLevelSOG);
+    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
     Tv5725::BringUp::holdAllBlocks();
     GBS::GPIO_CONTROL_00::write(0x67);
     GBS::GPIO_CONTROL_01::write(0x00);
@@ -1755,8 +1755,7 @@ void prepareSyncProcessor()
 
 void setAndUpdateSogLevel(uint8_t level)
 {
-    rto->currentLevelSOG = level & 0x1f;
-    GBS::ADC_SOGCTRL::write(level);
+    Tv5725::SyncOnGreen::apply(level);
     setAndLatchPhaseSP();
     setAndLatchPhaseADC();
     latchPLLAD();
@@ -1808,7 +1807,7 @@ boolean optimizePhaseSP()
         return 0;
     }
 
-    if (rto->currentLevelSOG <= 2) {
+    if (Tv5725::SyncOnGreen::level() <= 2) {
 
         rto->phaseSP = 16;
         rto->phaseADC = 16;
@@ -1900,23 +1899,27 @@ boolean optimizePhaseSP()
 void optimizeSogLevel() // Optimize SOG levels
 {
     if (rto->boardHasPower == false) {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
+        rto->thisSourceMaxLevelSOG = 13;
+        Tv5725::SyncOnGreen::choose(13);
         return;
     }
     if (rgbhvBypass() || GBS::SP_SOG_MODE::read() != 1 || Tv5725::SyncType::isCsync() == false) {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
+        rto->thisSourceMaxLevelSOG = 13;
+        Tv5725::SyncOnGreen::choose(13);
         return;
     }
 
     if (rto->inputIsYpBpR && Info_sate == 0) //&& SeleInputSource == S_YUV )
     {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 14;
+        rto->thisSourceMaxLevelSOG = 14;
+        Tv5725::SyncOnGreen::choose(14);
     } else if (rto->inputIsYpBpR == false && Info_sate == 0) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
 
     {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
+        rto->thisSourceMaxLevelSOG = 13;
+        Tv5725::SyncOnGreen::choose(13);
     }
-    setAndUpdateSogLevel(rto->currentLevelSOG);
+    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
     uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
     uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
@@ -1964,19 +1967,19 @@ void optimizeSogLevel() // Optimize SOG levels
             }
         }
 
-        if (rto->currentLevelSOG >= 2) {
-            rto->currentLevelSOG -= 1;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
+        if (Tv5725::SyncOnGreen::level() >= 2) {
+            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
+            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
             delay(8);
         } else {
-            rto->currentLevelSOG = 13;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
+            Tv5725::SyncOnGreen::choose(13);
+            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
             delay(8);
             break;
         }
     }
 
-    rto->thisSourceMaxLevelSOG = rto->currentLevelSOG;
+    rto->thisSourceMaxLevelSOG = Tv5725::SyncOnGreen::level();
     if (rto->thisSourceMaxLevelSOG == 0) {
         rto->thisSourceMaxLevelSOG = 1;
     }
@@ -2112,8 +2115,8 @@ uint8_t detectAndSwitchToActiveInput()
             {                                                                                                     // RGBS or RGBHV
                 boolean vsyncActive = 0;
                 rto->inputIsYpBpR = false; // declare for MD
-                rto->currentLevelSOG = 13; //
-                setAndUpdateSogLevel(rto->currentLevelSOG);
+                Tv5725::SyncOnGreen::choose(13); //
+                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
                 unsigned long timeOutStart = millis();
                 // vsync test
@@ -2175,7 +2178,7 @@ uint8_t detectAndSwitchToActiveInput()
 
                             uint8_t innerVideoMode = getVideoMode();
                             if (innerVideoMode == 8) {
-                                setAndUpdateSogLevel(rto->currentLevelSOG);
+                                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                                 rto->medResLineCount = GBS::MD_HD1250P_CNTRL::read();
                                 // SerialMprintln(F("med res"));
 
@@ -2215,21 +2218,22 @@ uint8_t detectAndSwitchToActiveInput()
                         testCycle++;
                         
                         if ((testCycle % 150) == 0) {
-                            if (rto->currentLevelSOG == 1) {
-                                rto->currentLevelSOG = 2;
+                            if (Tv5725::SyncOnGreen::level() == 1) {
+                                Tv5725::SyncOnGreen::choose(2);
                             } else {
-                                rto->currentLevelSOG += 2;
+                                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 2);
                             }
-                            if (rto->currentLevelSOG >= 15) {
-                                rto->currentLevelSOG = 1;
+                            if (Tv5725::SyncOnGreen::level() >= 15) {
+                                Tv5725::SyncOnGreen::choose(1);
                             }
-                            setAndUpdateSogLevel(rto->currentLevelSOG);
+                            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                         }
 
                         
                         if (getVideoMode() == 8) {
-                            rto->currentLevelSOG = rto->thisSourceMaxLevelSOG = 13;
-                            setAndUpdateSogLevel(rto->currentLevelSOG);
+                            rto->thisSourceMaxLevelSOG = 13;
+                            Tv5725::SyncOnGreen::choose(13);
+                            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                             rto->medResLineCount = GBS::MD_HD1250P_CNTRL::read();
                             ; // SerialMprintln(F("med res"));
                             return 1;
@@ -2265,28 +2269,29 @@ uint8_t detectAndSwitchToActiveInput()
 
                     testCycle++;
                     if ((testCycle % 180) == 0) {
-                        if (rto->currentLevelSOG == 1) {
-                            rto->currentLevelSOG = 2;
+                        if (Tv5725::SyncOnGreen::level() == 1) {
+                            Tv5725::SyncOnGreen::choose(2);
                         } else {
-                            rto->currentLevelSOG += 2;
+                            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 2);
                         }
-                        if (rto->currentLevelSOG >= 16) {
-                            rto->currentLevelSOG = 1;
+                        if (Tv5725::SyncOnGreen::level() >= 16) {
+                            Tv5725::SyncOnGreen::choose(1);
                         }
-                        setAndUpdateSogLevel(rto->currentLevelSOG);
-                        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG;
+                        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                        rto->thisSourceMaxLevelSOG = Tv5725::SyncOnGreen::level();
                     }
                 }
 
-                rto->currentLevelSOG = rto->thisSourceMaxLevelSOG = 14;
-                setAndUpdateSogLevel(rto->currentLevelSOG);
+                rto->thisSourceMaxLevelSOG = 14;
+                Tv5725::SyncOnGreen::choose(14);
+                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
                 return 2;
             }
 
             ; // SerialMprintln(" lost..");
-            rto->currentLevelSOG = 2;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
+            Tv5725::SyncOnGreen::choose(2);
+            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
         }
 
         if (detectionMayChangeInput()) {
@@ -3044,7 +3049,7 @@ void doPostPresetLoadSteps()
         if (scalingRgbhv()) {
             Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncType::isCsync());
             if (Tv5725::SyncType::isCsync()) {
-                rto->currentLevelSOG = 24;
+                Tv5725::SyncOnGreen::choose(24);
             }
             rto->phaseADC = 16;
             rto->phaseSP = 8;
@@ -3079,13 +3084,15 @@ void doPostPresetLoadSteps()
 
         if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
         {
-            rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 14;
+            rto->thisSourceMaxLevelSOG = 14;
+            Tv5725::SyncOnGreen::choose(14);
         } else if (rto->inputIsYpBpR) // == false && Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
         {
-            rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
+            rto->thisSourceMaxLevelSOG = 13;
+            Tv5725::SyncOnGreen::choose(13);
         }
 
-        setAndUpdateSogLevel(rto->currentLevelSOG);
+        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
 
         setAdcParametersGainAndOffset();
@@ -3248,7 +3255,7 @@ void doPostPresetLoadSteps()
             ResetSDRAM();
         }
 
-        setAndUpdateSogLevel(rto->currentLevelSOG);
+        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
         Tv5725::InputFormatter::applyVerticalTiming(
             Tv5725::InputFormatter::VcrTiming);
@@ -3306,7 +3313,7 @@ void doPostPresetLoadSteps()
             if (timeout > 1000) {
             }
             if (timeout >= 1500) {
-                if (rto->currentLevelSOG >= 7) {
+                if (Tv5725::SyncOnGreen::level() >= 7) {
                     optimizeSogLevel();
                     delay(300);
                 }
@@ -3326,7 +3333,7 @@ void doPostPresetLoadSteps()
             Tv5725::SyncProcessor::releaseClamp();
         }
 
-        setAndUpdateSogLevel(rto->currentLevelSOG);
+        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
         Tv5725::Interrupts::enableEverySource();
         Tv5725::Interrupts::acknowledgeAll();
@@ -4134,7 +4141,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::DEC_WEN_MODE::write(1);
     rto->phaseSP = 8;
     rto->phaseADC = 24;
-    setAndUpdateSogLevel(rto->currentLevelSOG);
+    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
     rto->outModeHdBypass = 1;
 
@@ -4230,7 +4237,7 @@ void bypassModeSwitch_RGBHV()
     GBS::SP_SOG_P_ATO::write(1);
     Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncType::isCsync());
     if (Tv5725::SyncType::isCsync()) {
-        rto->currentLevelSOG = 24;
+        Tv5725::SyncOnGreen::choose(24);
     }
     rto->phaseADC = 16;
     rto->phaseSP = 8;
@@ -4480,7 +4487,7 @@ void printInfo()
             h, HSp, v, VSp, stat0FIrq, GBS::TEST_BUS::read(), getVideoMode(),
             GBS::STATUS_SYNC_PROC_HTOTAL::read(), GBS::STATUS_SYNC_PROC_VTOTAL::read() /*+ 1*/,
             GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), rto->noSyncCounter, rto->continousStableCounter,
-            rto->currentLevelSOG, wifi);
+            Tv5725::SyncOnGreen::level(), wifi);
         SerialM.print(print);
     }
     if (stat0FIrq != 0x00) {
@@ -4541,15 +4548,15 @@ void fastSogAdjust() //
 
         if ((GBS::TEST_BUS_2F::read() & 0x05) != 0x05) {
             while ((GBS::TEST_BUS_2F::read() & 0x05) != 0x05) {
-                if (rto->currentLevelSOG >= 4) {
-                    rto->currentLevelSOG -= 2;
+                if (Tv5725::SyncOnGreen::level() >= 4) {
+                    Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 2);
                 } else {
-                    rto->currentLevelSOG = 13;
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
+                    Tv5725::SyncOnGreen::choose(13);
+                    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                     delay(40);
                     break;
                 }
-                setAndUpdateSogLevel(rto->currentLevelSOG);
+                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                 delay(28);
             }
             delay(10);
@@ -4667,9 +4674,9 @@ static void tuneSogLevelPreemptively(boolean sourceDisturbed, boolean modeChange
         }
 
         if (badHsActive >= 17) {
-            if (rto->currentLevelSOG >= 2) {
-                rto->currentLevelSOG -= 1;
-                setAndUpdateSogLevel(rto->currentLevelSOG);
+            if (Tv5725::SyncOnGreen::level() >= 2) {
+                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
+                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                 delay(30);
                 updateSpDynamic(0);
                 badHsActive = 0;
@@ -4683,9 +4690,9 @@ static void tuneSogLevelPreemptively(boolean sourceDisturbed, boolean modeChange
         }
     } else if (lastAdjustWasInActiveWindow) {
         lastAdjustWasInActiveWindow = 0;
-        if (rto->currentLevelSOG >= 8) {
-            rto->currentLevelSOG -= 1;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
+        if (Tv5725::SyncOnGreen::level() >= 8) {
+            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
+            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
             delay(30);
             updateSpDynamic(0);
             badHsActive = 0;
@@ -4767,9 +4774,9 @@ void runSyncWatcher() //
                     }
                 }
 
-                if (rto->currentLevelSOG <= 1 && sourceHasSerratedSync()) {
-                    rto->currentLevelSOG += 1;
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
+                if (Tv5725::SyncOnGreen::level() <= 1 && sourceHasSerratedSync()) {
+                    Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 1);
+                    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                     delay(30);
                 }
                 lastSyncDrop = millis();
@@ -4859,16 +4866,16 @@ void runSyncWatcher() //
                 if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
 
                     if (rto->noSyncCounter % 450 == 0) {
-                        rto->currentLevelSOG = 0;
-                        setAndUpdateSogLevel(rto->currentLevelSOG);
+                        Tv5725::SyncOnGreen::choose(0);
+                        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                     } else {
                         optimizeSogLevel();
                     }
                     break;
                 } else if (a == 127) {
 
-                    rto->currentLevelSOG = 5; // Current level SOG
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
+                    Tv5725::SyncOnGreen::choose(5); // Current level SOG
+                    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                 }
                 delay(0);
             }
@@ -6057,7 +6064,7 @@ void setup()
     rto->coastPositionIsSet = 0;       
     Tv5725::SyncType::forget();
     rto->continousStableCounter = 0;   
-    rto->currentLevelSOG = 5;          
+    Tv5725::SyncOnGreen::choose(5);          
     rto->thisSourceMaxLevelSOG = 31;   
 
     adco->r_gain = 0;
@@ -6494,14 +6501,8 @@ void runSourceRecovery(unsigned long &lastTimeSourceCheck)
     }
     lastTimeSourceCheck = millis();
 
-    uint8_t currentSOG = GBS::ADC_SOGCTRL::read();
-    if (currentSOG >= 3) {
-        rto->currentLevelSOG = currentSOG - 1;
-        GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
-    } else {
-        rto->currentLevelSOG = 6;
-        GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
-    }
+    const uint8_t currentSOG = Tv5725::SyncOnGreen::level();
+    Tv5725::SyncOnGreen::apply(currentSOG >= 3 ? currentSOG - 1 : 6);
 }
 
 void loop()
@@ -8055,17 +8056,17 @@ void handleType2Command(char argument)
             break;
         case 'z':
             // sog slicer level
-            if (rto->currentLevelSOG > 0) {
-                rto->currentLevelSOG -= 1;
+            if (Tv5725::SyncOnGreen::level() > 0) {
+                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
             } else {
-                rto->currentLevelSOG = 16;
+                Tv5725::SyncOnGreen::choose(16);
             }
-            setAndUpdateSogLevel(rto->currentLevelSOG);
+            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
             optimizePhaseSP();
             ; // SerialMprint("Phase: ");
             ; // SerialMprint(rto->phaseSP);
             ; // SerialMprint(" SOG: ");
-            ; // SerialMprint(rto->currentLevelSOG);
+            ; // SerialMprint(Tv5725::SyncOnGreen::level());
             ; // SerialMprintln();
             break;
         case 'E':
