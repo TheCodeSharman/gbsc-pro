@@ -41,21 +41,48 @@ register cannot be made correct by improving either owner.
 
 ## The shape
 
+**It is not a relocation, it is a merge.** The watcher and the engine are two
+implementations of one idea — *notice that the sync changed, and configure the
+registers for what is there now*. That idea is sane and it is the engine's; what
+the watcher adds is the acquisition the engine does not do yet. So the watcher's
+logic is folded into the mode-change detection that already exists, and the
+ladder of counters and conditionals around it does not come with it.
+
+**The engine currently DEPENDS on the watcher, which is why it cannot simply be
+deleted.** What it relies on today:
+
+| the engine needs | the sketch supplies |
+|---|---|
+| to be told a preset load happened | `applyPresets()` calls `modeChanged()` |
+| the latched source disturbance | `runSyncWatcher()` calls `sourceInterrupted()` |
+| a sync type probe | `useSyncTypeProbe(sourceHasOwnVsync)` |
+| a source acquired well enough to measure | the SOG, coast and clamp routines |
+
+Each row is a step: the engine takes the job over and the sketch's copy goes.
+
 **ONE ENTRY POINT IS WHAT STOPS THEM CLOBBERING EACH OTHER.** Two callers in
 `loop()` have no relationship: the watcher writes `SP_H_PULSE_IGNOR` on its own
 20 ms tick with no knowledge that a solve is in flight, and a solve writes the
 divider with no knowledge that the watcher is about to walk the slicer. Inside
-one function the order is decided rather than raced — acquisition is withheld
-while a mode change is pending, and a solve is not begun while the slicer is
-being moved. That is the whole reason for the shape, and it is not available
-from two entry points however well each behaves.
+one function the order is decided rather than raced. That is not available from
+two entry points however well each behaves.
 
-**`poll()` determines the cadence.** It decides *when* each thing runs; each
-class decides *what* it writes. So the watcher's 20 ms tick, its 150-tick
-escalation and its 900 ms check stop being three private timers and become one
-schedule in one place. Nothing new lives in `Geometry` that belongs to `Adc`,
-`SyncProcessor`, `Deinterlacer` or `FrameBuffer` — those classes exist and own
-those registers already.
+**NAMED OPERATIONS, NOT A LADDER.** The watcher's structure is a counter and a
+run of conditionals against it — `% 27`, `% 32`, `== 38`, `% 150`, `% 413` — and
+that structure is not worth carrying anywhere. Each distinct thing it does
+becomes a method named for what it does, on the class that owns those registers,
+and `poll()` decides which to call. Nothing is moved as a block.
+
+**The cadence rides on the mode-change check.** `poll()`'s idle pass already
+reads the source's line count to ask whether it moved; the same reading answers
+whether the source is acquired, so both questions are asked once per pass off one
+measurement. That is also what keeps a steadiness run honest — two callers each
+advancing a run over the same count is the double-advance that
+`Geometry::sourceIsPresent()` had to be written around.
+
+**This is the lean, not a settled answer.** The watcher's own timers are 20 ms,
+150 ticks and 900 ms, and whether the escalation steps want a slower cadence than
+the detection check is something to try on the bench rather than to derive.
 
 **So `poll()` takes the clock.** A `millis()` reached for inside the engine is a
 hidden input the host tests cannot set, and every cadence above is a test case.
@@ -63,13 +90,52 @@ hidden input the host tests cannot set, and every cadence above is a test case.
 `SourceMeasurement::sourceHasOwnVsync(uint32_t (*nowMs)())` already takes.
 
 **`poll()`'s ordering contract is unchanged.** Raster, clock, windows, rate steer
-last, and the measuring branch still runs only while a mode change is pending.
-Acquisition is periodic work that runs always, so it extends the idle branch.
+last, and the solving branch still runs only while a mode change is pending.
+Acquisition runs always, so it extends the idle branch.
 
 **What acts outside the engine is injected, not called.** Loading a preset,
 selecting an input and driving the OLED live in the sketch and the engine cannot
 reach them. They arrive as function pointers, the way `useSyncTypeProbe()`
 already does.
+
+## The named operations
+
+What the ladder does, as operations. This is the decomposition to review before
+any of it moves — a step that cannot be stated as one of these rows is a step
+that has not been understood yet.
+
+**Detection**, once per idle pass, off one measurement:
+
+| operation | replaces |
+|---|---|
+| `sourceIsPresent()` | `getVideoMode() == 0`, `getStatus16SpHsStable()` |
+| the steadiness run | `noSyncCounter`, `continousStableCounter`, `RGBHVNoSyncCounter` |
+| `sourceMoved()` | the `newVideoModeCounter` debounce |
+| the latched disturbance | `takeSourceDisturbed()`, already one claimant |
+
+**Acquisition**, when detection says the source is not yet usable:
+
+| operation | replaces |
+|---|---|
+| acquire the sync type | `sourceHasOwnVsync()`, and the two places that guess |
+| acquire the slicer level | `optimizeSogLevel()`, `fastSogAdjust()`, `tuneSogLevelPreemptively()` and every ratchet |
+| acquire the coast window | `updateCoastPosition()`, minus its writes to the ADC PLL |
+| acquire the clamp window | `updateClampPosition()` |
+| acquire the sampling phase | `optimizePhaseSP()` |
+
+**Escalation**, when acquisition keeps failing. The counter ladder becomes an
+ordered list of named recoveries, each tried once before the next: widen the
+coast, reset the sync processor, reset mode detect, re-probe the sync type,
+toggle the ADC input. The magic moduli carry no information that a position in
+that list does not.
+
+**Maintenance**, while a source is acquired:
+
+| operation | replaces |
+|---|---|
+| steer the deinterlacer | the `VPERIOD_IF` motion-adaptive and scanline state machine |
+| steer the HD bypass vsync window | `steerHdBypassVsyncWindow()`, already extracted |
+| steer the ADC PLL | `HPLLState` and its `PLLAD_KS`/`FS`/`ICP` writes |
 
 ## What is in it, and who owns each piece
 
@@ -105,43 +171,66 @@ this whole plan is about is what the step introduces. That is the one thing to
 check in review, and it is checkable: after the step, exactly one place writes
 the field.
 
+**And a step is stated as one of the named operations above.** One that cannot
+be is a step that has not been understood yet, and moving it will carry the
+ladder's shape across with it.
+
 Each step is a bounded commit plus its host test, cherry-pickable on its own.
 
 ## The order
 
-**1. The SOG slicer level.** Measured as the constraint rather than chosen: the
-no-sync branch is the only thing that repairs a slicer the pre-emptive tuning
-has walked below what the source needs — `ADC_SOGCTRL` 12 to 5 in one step,
-after which the ADC PLL falls out of lock, the engine cannot finish the solve it
-has armed, capture stays frozen and the screen stays black. Nothing else can
-land in front of it.
+Each step extracts one named operation, merges it into the idle pass, and
+deletes the sketch's copy in the same commit.
+
+**1. One owner for the slicer level.** `Tv5725::SyncOnGreen` holds the level and
+owns `ADC_SOGCTRL`; `rto->currentLevelSOG` and `setAndUpdateSogLevel()` go. No
+policy moves. It separates the two facts that variable carried — the level
+*chosen* for a source the ADC has not been brought up for, and the level *in
+force* — which is why a straight substitution would have been wrong.
+
+**2. One steadiness run.** `noSyncCounter`, `continousStableCounter` and
+`RGBHVNoSyncCounter` become reads of the engine's own run, off the same
+measurement the mode-change check takes. Everything below is keyed on it, so it
+comes before any policy moves.
+
+**3. Acquire the slicer level.** `optimizeSogLevel()`, `fastSogAdjust()`,
+`tuneSogLevelPreemptively()` and every ratchet become one operation on the idle
+pass. This is the step the bench named as the constraint: the no-sync branch is
+currently the only thing that repairs a slicer the pre-emptive tuning has walked
+below what the source needs — `ADC_SOGCTRL` 12 to 5 in one step, after which the
+ADC PLL falls out of lock, the engine cannot finish the solve it has armed,
+capture stays frozen and the screen stays black.
 `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 
-**2. Freeze and unfreeze**, to `FrameBuffer`, which owns capture already.
+**4. The no-sync gate** becomes `Geometry::sourceIsPresent()`. Written and tested
+already; step 3 is what makes the wiring safe.
 
-**3. Coast and clamp**, to `SyncProcessor`, with `updateCoastPosition()`'s writes
-to the ADC PLL group deleted rather than moved — `Adc` owns that group.
+**5. Acquire the coast and clamp windows**, to `SyncProcessor`, with
+`updateCoastPosition()`'s writes to the ADC PLL group deleted rather than moved —
+`Adc` owns that group.
 
-**4. The steadiness runs.** `noSyncCounter`, `continousStableCounter` and
-`RGBHVNoSyncCounter` become reads of the engine's own run. This is what makes
-every ladder above keyed on engine state rather than on a parallel count.
+**6. Acquire the sampling phase**, to `Adc`.
 
-**5. The no-sync gate**, to `Geometry::sourceIsPresent()`. Written and tested
-already; it is the wiring that waits for step 1.
+**7. The escalation list** replaces the counter ladder: an ordered set of named
+recoveries tried in turn, in place of `% 27`, `% 32`, `== 38`, `% 150` and
+`% 413`.
 
-**6. Deinterlace and scanlines**, to `Deinterlacer`.
+**8. Freeze and unfreeze**, to `FrameBuffer`, which owns capture already.
 
-**7. The RGBHV block**, to `PresetLoad` and `OutputChoice`. The largest single
-piece, and the one that carries most of the standard byte.
+**9. Steer the deinterlacer**, to `Deinterlacer`.
 
-**8. The ADC PLL steering.** `HPLLState` and its `PLLAD_KS`/`FS`/`ICP` writes
+**10. The RGBHV block**, to `PresetLoad` and `OutputChoice`, with the preset load
+becoming an injected action. The largest single piece, and the one that carries
+most of the standard byte.
+
+**11. Steer the ADC PLL.** `HPLLState` and its `PLLAD_KS`/`FS`/`ICP` writes
 become `Adc`'s, so the group has one owner on every path.
 
-**9. Delete `getVideoMode()` and `videoStandardInput`**, which by then have no
+**12. Delete `getVideoMode()` and `videoStandardInput`**, which by then have no
 readers. `docs/retiring-mode-detect.md` has what each of their fifteen values
 carried and what replaced it.
 
-**10. Delete `runSyncWatcher()`**, and `loop()` calls `poll()` alone.
+**13. Delete `runSyncWatcher()`**, and `loop()` calls `poll(millis())` alone.
 
 ## The bar
 
