@@ -1,8 +1,18 @@
 # GBSC-Pro / RetroScaler
 
 Fork of gbs-control for the GBSC-Pro board: a TV5725 video scaler driven by an
-ESP8266, taking analog RGB/YPbPr/composite in and HDMI out. The bench source is a
-RISC OS RiscPC at 320x256@50 (VTOTAL 311).
+ESP8266, taking analog RGB/YPbPr/composite in and HDMI out. The everyday bench
+source is a RISC OS RiscPC at 320x256@50 (VTOTAL 311), on `vga`.
+
+**It is not the only source, and a change judged only against it is judged
+against one input, one sync type and one scan mode.** A **Wii on the YPbPr
+input** is the only source here for sync on green, for interlace, and for the
+component colour path -- and YPbPr is a *direct analog* path, so its timings are
+its own. Only composite and S-Video go through the ADV7280/ADV7391 chain, which
+regenerates them to broadcast standard, so any argument resting on a source being
+standard-conformant reaches those two and nothing else.
+**`docs/bench-sources.md` is what each source can prove; read it before
+concluding a branch is untestable.**
 
 ## Layout
 
