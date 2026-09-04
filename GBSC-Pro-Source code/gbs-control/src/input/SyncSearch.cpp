@@ -10,3 +10,9 @@ SyncSearch::Search SyncSearch::searchFor(uint8_t inputSource, bool vsyncActive)
     // S_RGBs -- left S_VGA with no search to run and detection livelocked.
     return vsyncActive ? VsyncPresent : VsyncAbsent;
 }
+
+bool SyncSearch::shouldSweepSyncProcessor(uint8_t modeReadout,
+                                          bool sourceIsCounted)
+{
+    return modeReadout == 0 && !sourceIsCounted;
+}

@@ -3783,7 +3783,11 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         return;
     }
 
-    if (vidModeReadout == 0 && withCurrentVideoModeCheck) {
+    const bool sourceIsCounted = Tv5725::SourceMeasurement::countIsSource(
+        Tv5725::SourceMeasurement::measureSourceLines());
+
+    if (withCurrentVideoModeCheck &&
+        SyncSearch::shouldSweepSyncProcessor(vidModeReadout, sourceIsCounted)) {
         if ((rto->noSyncCounter % 16) <= 8 && rto->noSyncCounter != 0) {
             GBS::SP_DLT_REG::write(0x30);
         } else if ((rto->noSyncCounter % 16) > 8 && rto->noSyncCounter != 0) {

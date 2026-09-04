@@ -40,6 +40,16 @@ public:
     };
 
     static Search searchFor(uint8_t inputSource, bool vsyncActive);
+
+    // Whether the sync processor's coast and delta settings should be swept
+    // looking for sync. Mode Detect naming no standard is not enough on its
+    // own: on an RGBHV source its readout is two STATUS_16 bits, and those go
+    // quiet while the sync processor counts the source's line count exactly.
+    // Sweeping then walks a locked source off its settings and the picture
+    // goes black with every other register correct.
+    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
+    static bool shouldSweepSyncProcessor(uint8_t modeReadout,
+                                         bool sourceIsCounted);
 };
 
 #endif  // INPUT_SYNC_SEARCH_H_
