@@ -1,18 +1,33 @@
 # Retiring the standard byte
 
-`getVideoMode()` and `rto->videoStandardInput` are the old detection: a
-classifier that names one of fifteen video standards from Mode Detect's status
-registers, and a byte that carries the answer. Both are being deleted.
+Goal: the geometry engine derives every input it solves against from what it
+measures, and the sketch stops being a second owner of that decision.
+`getVideoMode()` and `rto->videoStandardInput` are deleted, not fixed.
 
-Nothing downstream needs a standard. The engine identifies a source by
-`Tv5725::SourceKey` -- the measured line count and a bucketed field rate -- which
-is what this chip can actually see, and every geometry decision derives from
-that pair. There is no SD-versus-HD or PAL-versus-NTSC choice left to make.
+## Why the classification is the wrong shape, not just badly placed
+
+gbs-control was written for retro consoles, where the source is one of a short
+list of known standards, and `videoStandardInput` is that list. A machine that
+programs arbitrary modes -- a RISC PC does, over a monitor definition -- does not
+fit it, and the failures show up as a source filed under a standard whose branch
+then configures the chip for something else.
+
+So the direction is not to classify better. It is to derive each thing the engine
+needs from what it measures. `Tv5725::SourceKey` -- the measured line count and a
+bucketed field rate -- is what identifies a source, because it is what this chip
+can see: it locks to sync edges and cannot know the pixel clock.
+
+**A standard survives in exactly one place: choosing SD OUTPUT modes**, where the
+distinction is real. Input classification is not.
+
+The chip's own Mode Detect block is not the answer either. `MD_HD720P_CNTRL`,
+`MD_SVGA_60HZ_CNTRL` and the rest are a fixed table of PC and broadcast
+standards, and an arbitrary RISC OS raster matches none of them.
 
 ## What the byte conflates
 
-Fifteen values carry five unrelated facts, which is why it has 134 references
-and why a single number reaching two subsystems means two owners.
+Fifteen values carry five unrelated facts, which is why it has 134 references and
+why one number reaching two subsystems means two owners.
 
 | fact | replacement |
 |---|---|
@@ -20,19 +35,21 @@ and why a single number reaching two subsystems means two owners.
 | colour space, YPbPr against RGB | the input selection, which the user made |
 | scaling against bypass, the values 14 and 15 | the output mode, `OutputChoice` |
 | interlaced against progressive | the engine's scan mode solve, measured |
-| SD/HD/PAL/NTSC branching | nothing -- one algorithm for every source |
+| SD/HD/PAL/NTSC input branching | nothing -- one algorithm for every source |
 
 `sourceIsRgbhv()`, `scalingRgbhv()` and `rgbhvBypass()` read the byte for the
-third row, so they are questions about the output, not the source, and move with
-it.
+third row, so they are questions about the output, not the source.
+
+`PresetLoad::ScalingRgbhvStandard` is the sharpest case: it exists only to make a
+source take another standard's branch for its side effects.
 
 ## What the classifier is asked, and what answers instead
 
 | shape | sites | answers instead |
 |---|---|---|
 | `== 0` / `> 0`, is there a signal | ~11 | `SourceMeasurement::countIsSource(measureSourceLines())` |
-| `== rto->videoStandardInput`, has it moved | 2 | `Geometry::sourceMoved()`, which already holds the solved count and rate |
-| `videoMode == 0 && HSACT -> videoStandardInput` | 3 copies | a signal-present predicate; the idiom is already a workaround for the classifier being wrong |
+| `== rto->videoStandardInput`, has it moved | 2 | `Geometry::sourceMoved()`, which holds the solved count and rate |
+| the held-standard fallback | 1, was 3 | `standardForPresetLoad()` |
 | selects a preset | 3 | `SourceKey` and `OutputChoice` |
 | a label to print | 5 | the measured pair |
 
@@ -63,27 +80,76 @@ set the identical analog switch state, and only a register inside the ADV7280
 tells the first two apart.
 
 So the escape hatch guards a condition this board's own architecture removes.
-It goes with the function, and is recorded here rather than preserved in code.
 
-## Order
+## Stages
 
-Each step stands alone and leaves the tree working.
+Each is a bounded commit plus its test, cherry-pickable on its own.
 
-1. The signal-present shapes, one site at a time. **Done for
-   `updateSpDynamic()`'s sweep**, which is what the black-screen fix was.
-2. Collapse the three copies of the `&& HSACT` idiom into one predicate.
-3. The two "has it moved" sites, on to what the engine already holds.
-4. Delete the dither.
-5. Preset selection on to `SourceKey` and `OutputChoice`.
-6. `SourceStandard::apply()` -- the ADC filter and sampling density it installs
-   derive from the measured pair.
-7. The values 14 and 15 on to the output mode.
-8. Delete `getVideoMode()` and `videoStandardInput`.
+### 1. The engine owns the scan mode -- DONE
 
-## The constraint that makes this worth doing
+`SourceMeasurement::lineDoublingFor()` reads the line count the engine already
+measures; `Geometry::solveScanMode()` holds it and writes the four registers.
 
-One path per decision, owned by the engine. The standard byte is written by the
-sketch and read by the engine, and every field both of them touch has two
-owners -- which is the mechanism behind the black screen, the stale sync-type
-configuration, and the ratcheted SOG level. Deleting the byte removes the
-second owner rather than arbitrating between them.
+Derived **before** `poll()`'s measurement gates. The input formatter's own
+measurements are meaningful only once its scan mode matches the source, so a scan
+mode left wrong makes the gates fail and one derived after them is never reached.
+The sync processor counts the source directly and is indifferent to the scan mode.
+
+### 2. The engine owns the mode-change event -- DONE
+
+`Geometry::sourceMoved()` remembers the line count the last solve ran against and
+re-arms when a settled count differs, so a solve that completed against a
+mid-transition count is corrected rather than left.
+
+**It keeps its own steadiness count, and must.** Reusing
+`sampling_.sampleSteady()` also fills `unmeasurableRun_`, the gate holding
+`recoverDivider()` back, which makes the recovery fire on the first poll of the
+next mode change and infer a divider from a count that was never a measurement.
+
+### 2b. Trigger on the chip's own interrupt -- DONE
+
+`sourceMoved()` reports `interrupt` as well as `count` and `rate`. The line count
+stays the confirmation of what the mode changed to and when it settled.
+
+### 3. Retire `videoStandardInput` on the input side -- IN PROGRESS
+
+Every reference that feeds geometry is a classification standing where a
+measurement belongs. One group at a time, each becoming a derivation from
+something the engine measures, as the scan mode did.
+
+Landed so far:
+
+- the sync-processor sweep no longer fires on the classification alone
+  (`SyncSearch::shouldSweepSyncProcessor()`)
+- the three copies of the held-standard fallback are one
+  (`standardForPresetLoad()`)
+
+### 4. Keep the standard only for SD output
+
+Where the distinction is real -- an SD output mode is genuinely a different thing
+to drive -- the concept stays. Naming it for what it is stops it being reused as
+an input classification.
+
+### 5. Delete `SourceMeasurement::adopt()`
+
+The only place the engine reads `PLLAD_MD` as an input. Custom presets are gone
+and bypass *chooses* 1856 as a literal, so it becomes `hold(divider)` -- told,
+not read.
+
+### 6. Delete `getVideoMode()` and `videoStandardInput`
+
+Including the dither.
+
+## The bar for each step
+
+**Observable picture behaviour, on the paths the bench can exercise.** Not binary
+equivalence and not code equivalence -- code with no observable effect on the
+picture is deleted rather than preserved. The bench source is a RISC PC over
+ModeServ, so a mode change and a sync-type change are both scriptable, and the
+picture is photographable.
+
+## Not in scope
+
+- `recoverDivider()` and its gates. Measured working, and the trap they escape is
+  real. They come out only when a replacement is shown to clear the same trap.
+- The `HPERIOD_IF` railing state itself, which is a separate investigation.
