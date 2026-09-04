@@ -232,7 +232,8 @@ Landed so far:
 
 **Next is the SOG level.** Wiring `sourceIsPresent()` into that gate is measured
 to fix the fault it is for and to leave the unit stuck behind a starved slicer,
-so the two have to land in that order -- the last section sets it out.
+so the two have to land in that order.
+`docs/retiring-the-sync-watcher.md` is the step list.
 
 **`Tv5725::SourceStandard` also has to go, and it has one caller.**
 `doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
@@ -309,52 +310,25 @@ over ModeServ covers arbitrary rasters, both sync types and progressive; a Wii o
 YPbPr covers sync on green, interlace and component colour, which is the SD arm
 this plan has to account for. The picture is photographable either way.
 
-## Where this is going: runSyncWatcher() belongs in the engine
+## Where this is going: runSyncWatcher() is deleted
 
-`runSyncWatcher()` is 889 lines keeping a **parallel model of the source**, and
-it calls into the engine exactly once (`geometry.sourceInterrupted()`). What it
-touches most is what the engine already computes:
+The byte's remaining references are inside `runSyncWatcher()`, so retiring it and
+retiring the watcher are one job seen from two ends. **The order is owned by
+`docs/retiring-the-sync-watcher.md`**, which has the decomposition, the shape and
+the step list; this page stays the record of what the byte conflates and what
+replaces each of its fifteen values.
 
-| it touches | times | the engine's version |
-|---|---|---|
-| `noSyncCounter` | 23 | `idleRun_`, a `SteadySamples` run |
-| `continousStableCounter` | 15 | the same run, read the other way |
-| `videoStandardInput` | 14 | being retired |
-| `currentLevelSOG` and the three SOG functions | 13 | nothing yet -- and it is a measurement |
+Two things settled there decide what can happen here:
 
-Two owners of one model, which is the register problem one level up.
-
-**The split is by responsibility, and it is the two-concept model again.**
-Anything that *measures the input* moves in: sync presence, the steadiness
-counters, the SOG slicer level, the coast and clamp positions. The engine already
-owns the sync type, the scan mode and the divider. What *acts* on the answers
-stays in the sketch: selecting an input, loading a preset, entering bypass,
-driving the OLED.
-
-Order, each landable on its own:
-
-1. The SOG level, which is the slicer for the source's own sync and the last
-   piece of acquiring a source that the engine does not own.
-2. `Geometry::sourceIsPresent()` at the no-sync gate. The method is written; the
-   wiring is what waits.
-3. The steadiness counters -- 38 references become reads of engine state instead
-   of a parallel count.
-4. What remains is a thin policy loop.
-
-**THE SOG LEVEL COMES FIRST, AND IT IS MEASURED RATHER THAN PREFERRED.** The
-no-sync branch is the only thing that repairs a slicer the pre-emptive SOG
-tuning has walked below what the source needs -- `ADC_SOGCTRL` 12 to 5 in one
-step, after which the ADC PLL falls out of lock and the engine can no longer
-complete the solve it has armed, so capture stays frozen and the screen stays
-black. It is also the only path that puts a standard back once
-`getVideoMode()`'s RGBHV branch has latched at 0. A gate in front of that branch
-is a gate in front of both repairs, and the unit then has no way out of either.
-`docs/investigations/the-no-sync-branch-is-the-only-escape.md`, which also has
-what the gate buys and what it does not break.
-
-**A structural constraint on all of it:** `poll()`'s measuring branch runs only
-when `modePending_`. A sync watcher has to run always, so this work extends the
-idle branch, not the pending one.
+- **The SOG slicer level comes first.** The no-sync branch is the only thing that
+  repairs a slicer the pre-emptive tuning has walked below what the source needs,
+  and the only path that puts a standard back once `getVideoMode()`'s RGBHV
+  branch has latched at 0. So a gate in front of that branch is a gate in front
+  of both repairs.
+  `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
+- **The byte is deleted late**, once the RGBHV block has moved and nothing reads
+  it, rather than being unpicked reference by reference from inside a function
+  that is going anyway.
 
 ## Not in scope
 
