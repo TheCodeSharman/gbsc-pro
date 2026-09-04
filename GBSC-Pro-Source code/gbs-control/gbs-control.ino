@@ -3585,46 +3585,8 @@ uint8_t getVideoMode()
     {
         if (GBS::STATUS_00::read() == 0x07) // 
         {
-            if ((GBS::STATUS_03::read() & 0x02) == 0x02) // 
-            {
-                if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-
-                    return 13;
-                else if (rto->inputIsYpBpR == false) // && Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-
-                    return 15;
-            } else {
-                static uint8_t XGA_60HZ = GBS::MD_XGA_60HZ_CNTRL::read();
-                static uint8_t XGA_70HZ = GBS::MD_XGA_70HZ_CNTRL::read();
-                static uint8_t XGA_75HZ = GBS::MD_XGA_75HZ_CNTRL::read();
-                static uint8_t XGA_85HZ = GBS::MD_XGA_85HZ_CNTRL::read();
-
-                static uint8_t SXGA_60HZ = GBS::MD_SXGA_60HZ_CNTRL::read();
-                static uint8_t SXGA_75HZ = GBS::MD_SXGA_75HZ_CNTRL::read();
-                static uint8_t SXGA_85HZ = GBS::MD_SXGA_85HZ_CNTRL::read();
-
-                static uint8_t SVGA_60HZ = GBS::MD_SVGA_60HZ_CNTRL::read();
-                static uint8_t SVGA_75HZ = GBS::MD_SVGA_75HZ_CNTRL::read();
-                static uint8_t SVGA_85HZ = GBS::MD_SVGA_85HZ_CNTRL::read();
-
-                static uint8_t VGA_75HZ = GBS::MD_VGA_75HZ_CNTRL::read();
-                static uint8_t VGA_85HZ = GBS::MD_VGA_85HZ_CNTRL::read();
-
-                short hSkew = random(-2, 2); //-2, 2
-
-
-                GBS::MD_XGA_60HZ_CNTRL::write(XGA_60HZ + hSkew);
-                GBS::MD_XGA_70HZ_CNTRL::write(XGA_70HZ + hSkew);
-                GBS::MD_XGA_75HZ_CNTRL::write(XGA_75HZ + hSkew);
-                GBS::MD_XGA_85HZ_CNTRL::write(XGA_85HZ + hSkew);
-                GBS::MD_SXGA_60HZ_CNTRL::write(SXGA_60HZ + hSkew);
-                GBS::MD_SXGA_75HZ_CNTRL::write(SXGA_75HZ + hSkew);
-                GBS::MD_SXGA_85HZ_CNTRL::write(SXGA_85HZ + hSkew);
-                GBS::MD_SVGA_60HZ_CNTRL::write(SVGA_60HZ + hSkew);
-                GBS::MD_SVGA_75HZ_CNTRL::write(SVGA_75HZ + hSkew);
-                GBS::MD_SVGA_85HZ_CNTRL::write(SVGA_85HZ + hSkew);
-                GBS::MD_VGA_75HZ_CNTRL::write(VGA_75HZ + hSkew);
-                GBS::MD_VGA_85HZ_CNTRL::write(VGA_85HZ + hSkew);
+            if ((GBS::STATUS_03::read() & 0x02) == 0x02) {
+                return rto->inputIsYpBpR ? 13 : 15;
             }
         }
     }
