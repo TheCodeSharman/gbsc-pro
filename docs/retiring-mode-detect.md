@@ -132,6 +132,30 @@ Landed so far:
   (`standardForPresetLoad()`)
 - the Mode Detect threshold dither is deleted
 
+**`Tv5725::SourceStandard` is next, and it has one caller.**
+`doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
+branches into an SD, progressive or HD arm. On the bench source none of that arm's
+writes is in force:
+
+| field | live | `applyProgressive()` writes | also written by |
+|---|---|---|---|
+| `IF_SEL_WEN` | 0 | 1 | nothing else |
+| `VDS_V_DELAY` | 0 | 1 | `VideoProcessor` bring-up, 0 |
+| `VDS_Y_DELAY` | 2 | 3 | `VideoProcessor` bring-up, 2 |
+| `IF_HS_Y_PDELAY` | 3 | 3 | `InputFormatter` bring-up, 3 |
+
+Three of the four hold the bring-up value, so bring-up runs after `apply()` and
+wins. `IF_SEL_WEN` has no other writer and still does not hold what the arm
+writes. Either way the arm's effect on this path is not observable, which is the
+bar for deleting it.
+
+`apply()` also reads `PLLAD_KS` back off the chip to pass as its own argument,
+which is the register-as-input anti-pattern in miniature.
+
+The experiment that settles it: delete the class, flash, diff a full register
+dump against a known-good one taken first, and photograph. A difference names a
+register that needs a real owner; no difference means the arms were dead.
+
 ### 4. Delete `SourceMeasurement::adopt()`
 
 The only place the engine reads `PLLAD_MD` as an input. Custom presets are gone
