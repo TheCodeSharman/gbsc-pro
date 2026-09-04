@@ -58,6 +58,16 @@ public:
     uint16_t originUnitsOn(const Axis &axis) const;
     uint16_t extentUnitsOn(const Axis &axis) const;
 
+    // The sync type cannot be read back, so it is probed by moving the sync
+    // path and watching for V; this supplies the probe. Without one the engine
+    // leaves the sync path alone, which is what every caller did before.
+    //
+    // **Per mode change, not per input.** A source can change its sync type
+    // without the mux moving -- a RISC PC sets it from CMOS -- so a change is
+    // the only signal there is that it may have moved.
+    // docs/sync-type-selection.md
+    void useSyncTypeProbe(bool (*hasOwnVsync)());
+
     // Notify the engine that the source has changed mode. The registers are
     // not written until the source has settled, and the choice does not become
     // a resolution until the field rate behind it has been measured.
@@ -173,6 +183,7 @@ private:
     // Disturbing, so it belongs where the source has just changed and the
     // picture is moving anyway -- never on a schedule.
     void holdReferenceSampling();
+    void establishSyncType();
 
     // The divider, the IF line counter and the retime stop, to their owners.
     void writeSampling();
@@ -214,7 +225,9 @@ private:
     bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool sourceInterrupted_; // the chip latched a disturbance, and nothing has re-measured
     uint32_t referenceRateHz_; // the estimate the reference sample rate was sized from
-    bool scanModeApplied_;   // the registers have been written for this mode change
+    bool scanModeApplied_;
+    bool syncTypeProbed_;
+    bool (*syncProbe_)();   // the registers have been written for this mode change
     uint16_t solvedLines_;   // the source line count the last solve ran against
     SourceKey framedKey_;    // the source the framing held was tuned against
     FramingTable framings_;

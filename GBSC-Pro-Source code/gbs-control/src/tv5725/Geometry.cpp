@@ -11,7 +11,9 @@
 #include "Memory.h"
 #include "MemoryMap.h"
 #include "OutputMode.h"
+#include "ModeDetect.h"
 #include "SyncProcessor.h"
+#include "SyncType.h"
 
 namespace Tv5725 {
 
@@ -22,7 +24,8 @@ Geometry::Geometry(DisplayClock &displayClock)
       usableHorizontal_(0), usableVertical_(0),
       samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
       framingRevision_(0),
-      scanModeApplied_(false), solvedLines_(0),
+      scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
+      solvedLines_(0),
       idleLines_(0), idleRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
       choice_(), rasterMode_(0),
@@ -202,6 +205,7 @@ void Geometry::modeChanged(const OutputChoice &choice, uint8_t oversample)
     modePending_ = true;
     modeOversample_ = oversample;
     scanModeApplied_ = false;
+    syncTypeProbed_ = false;
     choice_ = choice;
 
     // Provisional, because solveScanMode() runs before the rate is measured and
@@ -259,6 +263,12 @@ bool Geometry::poll()
             modeChanged(choice_, modeOversample_);
         return modePending_ ? false : (solvePending_ ? resolve() : false);
     }
+
+    // **BEFORE EVERYTHING, INCLUDING THE SCAN MODE.** Every measurement below
+    // is counted through the sync path, so a path still set for the source
+    // before this one leaves the gates shut and nothing downstream can open
+    // them: a separate-sync source on the csync path counts 97 lines for ever.
+    establishSyncType();
 
     // **BEFORE THE GATES BELOW, AND THIS IS THE POINT OF IT.** The input
     // formatter's own measurements are only meaningful once its scan mode
@@ -390,6 +400,19 @@ bool Geometry::solveForSource()
 }
 
 
+
+void Geometry::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
+
+void Geometry::establishSyncType()
+{
+    if (syncTypeProbed_ || syncProbe_ == 0)
+        return;
+    syncTypeProbed_ = true;
+
+    const bool csync = SyncType::probe(syncProbe_);
+    SyncProcessor::applyForSyncType(csync);
+    ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
+}
 
 void Geometry::holdReferenceSampling()
 {

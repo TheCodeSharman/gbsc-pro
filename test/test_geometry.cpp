@@ -22,6 +22,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncType.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
@@ -1229,3 +1231,71 @@ TEST_CASE("the engine says which source the framing it holds is against")
     CHECK(engine.framedKey() == SourceKey(311, 50.08f));
 }
 
+
+// --- the sync type is a property of the SOURCE, re-established per change -----
+//
+// It cannot be read back, so it is probed by moving the sync path and watching
+// for V. The source can change it without changing the mux -- a RISC PC sets it
+// from CMOS, so any mode change may carry a new one -- which is why this runs on
+// every change rather than once per input. It costs a settle plus a window, and
+// that hides behind the blank a mode change already holds.
+
+static unsigned g_probeCalls = 0;
+static bool g_hasOwnVsync = true;
+static bool probeOwnVsync() { ++g_probeCalls; return g_hasOwnVsync; }
+
+TEST_CASE("a mode change establishes the sync type before it measures anything")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+    g_probeCalls = 0;
+
+    SUBCASE("a source with no vsync of its own is composite sync") {
+        g_hasOwnVsync = false;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+
+        CHECK(SyncType::isCsync());
+        CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
+        CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 1);
+        CHECK(ModeDetect::MD_SEL_VGA60::read() == 0);
+    }
+
+    SUBCASE("a source bringing its own vsync is separate H/V") {
+        g_hasOwnVsync = true;
+        engine.modeChanged(benchMode(), 4);
+        REQUIRE(pollUntilSolved(engine));
+
+        CHECK_FALSE(SyncType::isCsync());
+        CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
+        CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 0);
+        CHECK(ModeDetect::MD_SEL_VGA60::read() == 1);
+    }
+}
+
+TEST_CASE("the sync type is probed once per mode change, not once per poll")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    CHECK(g_probeCalls == 1);
+
+    // Settled, so nothing further asks: the probe moves the sync path and costs
+    // a settle plus a window, which is not something a poll may do.
+    for (uint8_t i = 0; i < 6; ++i)
+        engine.poll();
+    CHECK(g_probeCalls == 1);
+
+    // A second change is a second source as far as this is concerned.
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    CHECK(g_probeCalls == 2);
+}

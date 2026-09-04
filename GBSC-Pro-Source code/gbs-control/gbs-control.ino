@@ -5961,6 +5961,11 @@ void myLog(char const *type, char command)
 void setup()
 {
     system_update_cpu_freq(160);
+
+    // The engine re-establishes the sync type on every mode change, which is
+    // the only signal that a source may have changed it -- a RISC PC sets it
+    // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
+    geometry.useSyncTypeProbe(sourceHasOwnVsync);
     // delay(700);
     // ESP.wdtDisable();
 
