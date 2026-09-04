@@ -67,9 +67,22 @@ On the YPbPr input, and the only source here for three things:
 - **Sync on green.** Component carries sync on Y, so this is the real test of
   `SyncType` and the SOG slicer against a source that genuinely has it, rather
   than against the RISC PC's composite-sync setting.
-- **Interlace.** A 480i source is what `SourceStandard::isSd()` names, and the
+- **Interlace.** Interlaced SD is what `SourceStandard::isSd()` names, and the
   arm that asks for the higher oversample and the 40 MHz analog corner. Nothing
-  on the RISC PC reaches it.
+  on the RISC PC reaches it, because a monitor definition cannot ask for an
+  interlaced mode.
+
+  **Whether it is 480i or 576i does not need to be known in advance, and that is
+  the point.** It is a line count and a field rate -- around 525 at 60 Hz or 625
+  at 50 Hz -- so `STATUS_SYNC_PROC_VTOTAL` answers it on connection. The old code
+  calls those two standards 1 and 2 and branches on which, which is exactly the
+  branch this retirement deletes. A console whose region and video setting decide
+  the answer is a good demonstration of why the byte cannot be trusted to carry
+  it.
+
+  If the console is set to 60 Hz on component it can also output 480p, which
+  would add a **progressive component** case -- the one combination neither
+  other source provides.
 - **Component colour**, so the `inputIsYpBpR` branches -- the luma and chroma
   realignment delays -- have a source that needs them.
 
