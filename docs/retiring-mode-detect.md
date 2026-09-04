@@ -22,6 +22,13 @@ can see: it locks to sync edges and cannot know the pixel clock.
 1. **What the input is**, measured: sync type, line rate, frame rate, interlace.
    `Tv5725::SourceKey` is the identity -- line count and bucketed field rate --
    with `SyncType` and the engine's scan mode solve carrying the rest.
+
+   **The count alone does not separate two very different sources.** The sync
+   processor counts FIELDS, so a 576i console reads 310 against the RISC PC's
+   progressive 311 at the same 50 Hz -- one line apart, and `SourceKey` cannot
+   tell them apart. Interlace has to be carried alongside the pair, not derived
+   from it; `VPERIOD_IF` measures the frame where `STATUS_SYNC_PROC_VTOTAL`
+   measures the field, and the two disagreeing is what interlace looks like.
 2. **What output was chosen**, by the user: an output resolution, or pass-through.
    `PresetPreference` already enumerates these, `OutputBypass` being pass-through,
    and `OutputChoice` carries the selection.
@@ -172,7 +179,21 @@ bar for deleting it.
 `apply()` also reads `PLLAD_KS` back off the chip to pass as its own argument,
 which is the register-as-input anti-pattern in miniature.
 
-**But it is not a clean deletion, because two effects do survive.**
+**Its SD arm is live on YPbPr, so it is not dead code.** Measured on a Wii at
+576i against the RISC PC on the same build:
+
+| field | RISC PC | Wii | `applySd()` YPbPr branch writes |
+|---|---|---|---|
+| `IF_HS_Y_PDELAY` | 3 | **2** | 2 |
+| `VDS_Y_DELAY` | 2 | **3** | 3 |
+| `IF_HS_TAP11_BYPS` | -- | **0** | 0 |
+
+The RISC PC holds the bring-up values and the Wii holds the arm's. So the
+conclusion that its arms do not reach the bench source is true for RGBHV only:
+**deleting the class changes the component path**, and what it installs there has
+to be re-established from a measurement rather than dropped.
+
+**And two more effects survive on every path.**
 
 Everything else it writes has a later owner. `PLLAD_KS` is overwritten by
 `Adc::applySampleRate()`, which `Geometry::writeSampling()` calls on every mode
@@ -185,7 +206,8 @@ What is left:
 | effect | who needs it | note |
 |---|---|---|
 | `rto->osr`, the returned oversample | `geometry.modeChanged(choice, osr)` reads it | a real input to the engine |
-| `ADC_FLTR` | nothing else writes it on this path | the analog corner, 40 MHz here |
+| `ADC_FLTR` | nothing else writes it on this path | the analog corner, 40 MHz on both sources |
+| the YPbPr luma/chroma delays | the component picture | live, measured above |
 
 So deleting the class means giving those two an owner, and both are **policy
 questions with picture consequences rather than derivations**:

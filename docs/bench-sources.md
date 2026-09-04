@@ -62,18 +62,12 @@ does it, or `VDU 23,0,8,&81` immediately, neither of which ModeServ exposes yet.
 Adding it needs a `MODE ... I1` and a readback through `OS_Byte 144`, which
 returns the old values while setting the new.
 
-**What that would buy, and why it is not the Wii.** An interlaced console is
-interlaced at one broadcast raster; the RISC PC would be interlaced at *arbitrary*
-rasters, on a direct analog path, scriptably, and without costing the component
-cable. The one thing only it can settle is separating two facts that are one
-boolean today: `InputFormatter::applyScanMode()` writes `IF_PRGRSV_CNTRL` from
-the line-doubling flag, while RD-5725-1.1 defines that bit as whether the SOURCE
-is interlaced -- so a non-interlaced 320x256@50 is currently declared interlaced.
-Telling them apart needs the same raster family interlaced and progressive back
-to back, which no other source can produce.
+**What that would buy.** An interlaced console is interlaced at one broadcast
+raster; the RISC PC would be interlaced at *arbitrary* rasters, scriptably, and
+without costing the component cable.
 
-Not needed for the standard-byte retirement, which the Wii serves. Worth having
-before `IF_PRGRSV_CNTRL` is given a real owner.
+It is **not** needed to separate `IF_PRGRSV_CNTRL`'s two meanings, which the two
+existing sources already do between them -- see below.
 
 ## The Wii
 
@@ -88,8 +82,8 @@ On the YPbPr input, and the only source here for three things:
   interlaced mode.
 
   **Whether it is 480i or 576i does not need to be known in advance, and that is
-  the point.** It is a line count and a field rate -- around 525 at 60 Hz or 625
-  at 50 Hz -- so `STATUS_SYNC_PROC_VTOTAL` answers it on connection. The old code
+  the point.** It is a line count and a field rate, and `VPERIOD_IF` answers it
+  on connection -- `STATUS_SYNC_PROC_VTOTAL` does not, because it counts fields. The old code
   calls those two standards 1 and 2 and branches on which, which is exactly the
   branch this retirement deletes. A console whose region and video setting decide
   the answer is a good demonstration of why the byte cannot be trusted to carry
@@ -102,6 +96,26 @@ On the YPbPr input, and the only source here for three things:
   realignment delays -- have a source that needs them.
 
 It is a direct analog path, so its timings are its own.
+
+### Measured, on the component cable
+
+```
+STATUS_SYNC_PROC_VTOTAL   310      SP_SOG_MODE          1
+VPERIOD_IF                624      SP_H_PULSE_IGNOR    97
+HPERIOD_IF                431      PLLAD_KS             2
+line rate              15625 Hz    ADC_FLTR             3
+field rate            50.00 Hz     IF_PRGRSV_CNTRL      0
+```
+
+**576i.** `VPERIOD_IF` counts the frame at 624 and `STATUS_SYNC_PROC_VTOTAL`
+counts 310, which is the field -- so **the sync processor counts FIELDS on an
+interlaced source**, and a 625-line source reads as about 310.
+
+`SP_SOG_MODE` 1 with `SP_H_PULSE_IGNOR` 97 is the csync configuration, chosen by
+the probe without help: component carries sync on Y, and the probe finds it.
+
+**A console's region and video setting decide 480i against 576i**, and this one
+is PAL. Read `VPERIOD_IF` rather than assuming.
 
 ## Composite, and why it is last
 
@@ -128,6 +142,20 @@ of what the machine emits, because the ADV chain regenerates it.
 - **Composite and component at the same time.** One Wii, one cable, so the
   interlaced-component and the decoder-chain cases cannot both be live.
 - **HD component**, the standards 5, 6 and 7 branch, has no source.
+
+## `IF_PRGRSV_CNTRL` is separable with what is already here
+
+`InputFormatter::applyScanMode()` writes it from the line-doubling flag, while
+RD-5725-1.1 defines the bit as whether the SOURCE is interlaced. The two sources
+between them show those are different facts, on one build:
+
+| source | genuinely interlaced | line doubler | `IF_PRGRSV_CNTRL` |
+|---|---|---|---|
+| RISC PC 320x256@50 | no | on | 0 |
+| Wii 576i | yes | on | 0 |
+
+The bit reads 0 for both, and it is right about one of them. Nothing needs an
+interlaced RISC PC mode to establish that.
 
 ## Why this matters to a register argument
 
