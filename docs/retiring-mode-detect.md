@@ -217,9 +217,13 @@ The byte goes with the function. Nothing holds a standard afterwards.
 
 **Observable picture behaviour, on the paths the bench can exercise.** Not binary
 equivalence and not code equivalence -- code with no observable effect on the
-picture is deleted rather than preserved. The bench source is a RISC PC over
-ModeServ, so a mode change and a sync-type change are both scriptable, and the
-picture is photographable.
+picture is deleted rather than preserved.
+
+**Which branch a change is judged against is decided by which source is plugged
+in**, so check `docs/bench-sources.md` before calling one untestable. The RISC PC
+over ModeServ covers arbitrary rasters, both sync types and progressive; a Wii on
+YPbPr covers sync on green, interlace and component colour, which is the SD arm
+this plan has to account for. The picture is photographable either way.
 
 ## Not in scope
 
