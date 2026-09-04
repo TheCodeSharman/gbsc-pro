@@ -98,27 +98,20 @@ measured a different way and does not rail with it. The vsync spin is what the
 cheap gate exists to avoid, and it is affordable here only because a corroborated
 disagreement is rare.
 
-## Still open
+## Settled elsewhere
 
-A source sync-type round trip leaves the unit needing an input reselect. It is
-not caused by anything here: photographed on three builds at the same camera
-position, the unmodified firmware ends the round trip showing
-`Retro Scaler - No signal`, and both builds carrying these changes end it with
-the encoder still locked at 1920x1080/50Hz and a black picture.
+A source sync-type round trip leaves the unit needing an input reselect, with the
+encoder locked at 1920x1080/50Hz and a black picture. It is not caused by
+anything here, and it is not the capture freeze either: `CAPTURE_ENABLE` is
+enabled for 83% of the black state, sampled in a run. The cause is the sketch's
+`getVideoMode()` reporting 0 against a source the sync processor is counting at
+311 lines, after which its no-sync handling ratchets `ADC_SOGCTRL` down and
+`updateSpDynamic()` stamps a sync-search configuration over the one
+`SyncProcessor::applyForSyncType()` wrote.
+`docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`.
 
-**The lead is `CAPTURE_ENABLE`.** `Geometry::modeChanged()` calls
-`FrameBuffer::freezeCapture()`, and only a completed solve — or `solveRaster()`
-refusing outright — releases it. Every other refusal in `poll()` leaves the mode
-change outstanding and the capture frozen, so a source that keeps arming changes
-faster than they complete shows black with a locked encoder. Measured at
-`CAPTURE_ENABLE` 0 with `SP_VTOTAL` 311, `SP_HTOTAL` 2250, `PLLAD_MD` 2250 and
-the DACs up, and the picture came back by itself the moment it read 1 again.
-
-**A single reading of it proves nothing**, which is the trap: sampled once
-during the same fault it read 1, and that was taken as refuting the whole
-mechanism. Sample it in a run alongside the photograph.
-
-What arms the changes is the sketch's latched SOG interrupt
+What arms the mode changes is the sketch's latched SOG interrupt
 (`Interrupts::takeSourceDisturbed()`), every ~5 s after such a round trip, each
 one paying a sync type probe. `source moved:` in the console names which of the
-three inputs armed each one.
+three inputs armed each one, and it reports `interrupt` rather than `count` or
+`rate` -- neither the line count nor the line rate has moved.
