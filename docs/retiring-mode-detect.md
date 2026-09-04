@@ -163,9 +163,36 @@ bar for deleting it.
 `apply()` also reads `PLLAD_KS` back off the chip to pass as its own argument,
 which is the register-as-input anti-pattern in miniature.
 
-The experiment that settles it: delete the class, flash, diff a full register
-dump against a known-good one taken first, and photograph. A difference names a
-register that needs a real owner; no difference means the arms were dead.
+**But it is not a clean deletion, because two effects do survive.**
+
+Everything else it writes has a later owner. `PLLAD_KS` is overwritten by
+`Adc::applySampleRate()`, which `Geometry::writeSampling()` calls on every mode
+change and which derives the post divider from `divider x lineRate` -- the
+measurement, correctly. The IF and VDS delays are overwritten by bring-up. Both
+owners are the right ones, so those writes are already dead.
+
+What is left:
+
+| effect | who needs it | note |
+|---|---|---|
+| `rto->osr`, the returned oversample | `geometry.modeChanged(choice, osr)` reads it | a real input to the engine |
+| `ADC_FLTR` | nothing else writes it on this path | the analog corner, 40 MHz here |
+
+So deleting the class means giving those two an owner, and both are **policy
+questions with picture consequences rather than derivations**:
+
+- **The wanted oversample.** The arms ask for 4 on interlaced SD ("least
+  horizontal detail, so the most room to oversample"), 2 on progressive, 2 by
+  default. Keyed to the line rate instead, the bench source at 15.6 kHz would ask
+  for 4 where the standard-3 branch currently gives it 2. That changes sampling
+  density on the one path that can be judged.
+- **The analog filter corner.** 40 MHz is the narrowest the part offers and
+  110 MHz is what a line carrying HD detail needs. The corner properly follows
+  the sample clock, but where it should step is a sharpness judgement.
+
+Neither should be invented. `docs/capture-limits.md` covers the trade `PLLAD_MD`
+makes between sampling density and reaching the end of the line, and the picture
+is the instrument for both.
 
 ### 4. Delete `SourceMeasurement::adopt()`
 
