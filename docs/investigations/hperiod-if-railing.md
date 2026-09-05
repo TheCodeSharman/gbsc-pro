@@ -803,6 +803,36 @@ below 15 kHz -- no television generates one, and the railed family is 13.2 kHz.
 Measured with the fault live afterwards: `HPERIOD_IF` 0/16 correct,
 `VDS_HSYNC_RST` a correct 1915, the engine holding 15575 Hz.
 
+## `STATUS_IF_HT_BAD` is state-dependent, and the line-rate floor is what works
+
+The 129/191 recorded above, and a 15/20 measured against one live instance, do
+not generalise. Against a second instance -- railed by `/sc?~` on a 640x256@55
+source, `SP_VTOTAL` a steady 311 -- the flag never set at all:
+
+```
+40 samples   HPERIOD_IF  511x30  255x4  510x2  273  271  262
+             HT_BAD set   0/40
+             HT_OK  set  32/40      set ON the railed samples
+             below 15 kHz 32/40
+```
+
+So the flag is a useful one-sided gate when it fires and carries nothing when it
+does not, and **the 15 kHz line-rate floor is what actually rejected this
+state**. Fourteen consecutive `/sc?~` inductions on that source railed the
+counter every time and the engine held the source's own rate every time --
+17104 Hz against the 17105 the mode is due -- with the flag contributing
+nothing.
+
+`STATUS_IF_HT_OK` is worse than uninformative here: it was set on 32 of 40, the
+same count the floor rejects, so it tracks the fault rather than the health.
+
+**The floor is not airtight either.** Eight of those 40 samples clear it -- 255,
+262, 271 and 273 imply 24.6 to 26.4 kHz, all legitimate lines -- so a window
+landing on one is accepted, and with the 90 ms hold a back-to-back window is
+effectively a single draw. Roughly one solve in ten during this state could
+still take a rate 54% high. `rateFollowsCount()` is the backstop: a rate that
+moved while the count did not is refused.
+
 ## The railed register reads all-ones, and holds it for ~90 ms
 
 Two measurements that change what "noisy garbage" means.
