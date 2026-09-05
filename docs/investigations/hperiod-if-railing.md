@@ -1,9 +1,16 @@
 # Why `HPERIOD_IF` goes bad
 
-**Status:** open. The cause is not known. What to do about it — validate against
-the expected value for the mode, read it once just after the preset apply — is in
+**Status:** open. The cause is not known, and it is no longer harmless: the
+engine prefers `HPERIOD_IF` to the field rate, so a railed reading reaches the
+output raster and the board emits the wrong frame rate. What to do about it —
+validate against the expected value for the mode, refuse a window
+`STATUS_IF_HT_BAD` flagged, refuse a line rate below 15 kHz — is in
 [`tv5725-chip.md`](../tv5725-chip.md); this page is what has been ruled out, so
 the same ground is not covered again.
+
+**Do not reach for a wider sampling window.** The counter holds a value for up
+to 90 ms and the firmware's samples are back-to-back, so they agree whatever it
+is doing. The measurement is below.
 
 ## It follows the source, not the preset
 
@@ -146,10 +153,15 @@ the horizontal period register is wrong by a factor of four. Anything proposing 
 cause that would stop the block measuring has to explain why the other
 measurement out of it is unaffected.
 
-It also settles what the fault costs, which is not obvious from the register:
-**nothing on the video path**. The geometry solved against the test pin is
-correct at both ends of the round trip, the framing returns to 0,0,0,0 and the
-picture is clean.
+It also settles what the fault costs **on the path that reads the test pin**:
+nothing. The geometry solved against it is correct at both ends of the round
+trip, the framing returns to 0,0,0,0 and the picture is clean.
+
+That is no longer the general answer. `measureLineRate()` now prefers
+`HPERIOD_IF` and only falls back to the test pin when the reading is refused, so
+a railed value that gets through is solved against -- see *The second consumer is
+the output raster* below, where the raster came out 2264 wide against 1916 and
+the sink reported 42 Hz.
 
 The practical consequence is for anyone tempted to read the line rate here
 rather than time it. `HPERIOD_IF` is divider-independent, needs no vsync and
@@ -754,6 +766,103 @@ state above it read **185** against a source of 311/312 lines, while
 `STATUS_SYNC_PROC_VTOTAL` read 311 correctly. The firmware's fallback from one to
 the other is load-bearing, not defensive.
 
+
+## The second consumer is the output raster, and it reached the picture
+
+`SourceMeasurement::measureLineRate()` prefers `HPERIOD_IF` to
+`getSourceFieldRate()`, which is right -- it is the more accurate of the two and
+costs no vsync spin -- so a railed reading becomes the line rate the whole solve
+runs on. 511 on a 311-line source is 13183 Hz, a 42.38 Hz field rate against a
+real 50.08, and the raster is solved for it:
+
+```
+                 railed        healthy
+lineRateHz        13183          15625
+VDS_HSYNC_RST      2263           1909
+sink reports      42 Hz          50 Hz
+```
+
+The sink is not confused; the board really is emitting 42 Hz. `108e6 / (2264 x
+1126)` is 42.4.
+
+**And it latches.** Once accepted the bad rate becomes `goodLineRateHz_`, after
+which `rateFollowsCount()` sees an unchanged count with the rates 15% apart
+against a 5% tolerance and zeroes every correct reading. `HeldRateRejectionLimit`
+would eventually let one through, but `rateRejections_` resets each time the bad
+rate is accepted again, so it never counts up. The console shows both:
+
+```
+sampling: 311 lines x 50.08 Hz -> line rate 0       the truth, rejected
+sampling: 311 lines x 42.38 Hz -> line rate 13183   the rail, accepted
+```
+
+What let it in is that the only validity test was self-agreement, and
+**agreement prefers a stuck register to a live one**. The gate now refuses a
+window `STATUS_IF_HT_BAD` flagged, and refuses any reading implying a line rate
+below 15 kHz -- no television generates one, and the railed family is 13.2 kHz.
+Measured with the fault live afterwards: `HPERIOD_IF` 0/16 correct,
+`VDS_HSYNC_RST` a correct 1915, the engine holding 15575 Hz.
+
+## The railed register reads all-ones, and holds it for ~90 ms
+
+Two measurements that change what "noisy garbage" means.
+
+**The distribution is bimodal, not scattered.** Raw bytes on a live instance,
+24 reads:
+
+```
+s0_06 low byte   0xff x15   0xfe x4   0x08 x3   0x0f x1   0x00 x1
+s0_07 bit 0      1 in 17 of 24
+combined         511x9 255x6 264x3 510x3 271x1 256x1 254x1
+```
+
+Saturated or near zero, nothing near the 431 the mode is due and almost nothing
+between. A counter measuring the wrong period would cluster somewhere; this one
+is at its ceiling. 511 and 255 are the 9-bit and 8-bit all-ones values, so both
+are the low byte reading `0xff`.
+
+**It holds a value for up to 90 ms.** Sampled at 18 ms intervals, 60 reads, the
+runs of values agreeing within 2 counts were 5, 4, 4, 4, 2, 2, 2, 2, 2, 2, 1, 1.
+
+That kills the obvious defence. `measureLineRateFromHPeriod()` reads
+back-to-back over I2C, roughly 100 us apart, so **eight samples span 2 ms and
+fall inside a single hold** -- they agree whatever the counter is doing, and
+widening the window cannot separate a held wrong value from a settled right one.
+A window would have to span 200 ms to beat the hold, which costs what the vsync
+spin costs. Judge the value, not its repeatability.
+
+## The scan mode is not the mechanism
+
+Tempting, because `431 x 2 = 862` saturates to exactly 511 and the pad-test route
+leaves the input formatter progressive on a 15 kHz source. Measured across a
+`/sc?~` induction, healthy then railed, the group is identical either side:
+
+```
+IF_PRGRSV_CNTRL 0   IF_HS_DEC_FACTOR 1   IF_LD_RAM_BYPS 0   IF_LD_SEL_PROV 0
+IF_HSYNC_RST 1125   PLLAD_MD 2250        STATUS_SYNC_PROC_VTOTAL 311
+```
+
+`HPERIOD_IF` 16/16 correct before, 0/16 after, with every one of those unchanged.
+The line doubler is not in it.
+
+## The display and memory clocks do not clear it either
+
+The ADC side was already closed. The other domain is closed now, each pulsed
+against a live instance with every write read back and restored, 16 samples
+after each:
+
+| tried | cleared it |
+|---|---|
+| `PLL_VCORST` pulsed | no, 0/16 |
+| `SDRAM_RESET_SIGNAL` pulsed | no, 0/16 |
+| `PLL_LEN` off and restored | no, 0/16 |
+| `MEM_CLK_DLY_REG` 4 -> 0 -> 4 | no, 0/16 |
+
+The divider walk is also extended upward, since "a higher divider fixes it" is a
+recollection that keeps resurfacing: `PLLAD_MD` 2000, 2500 and 2800, each
+latched, 0/12 at every point with `STATUS_MISC_PLLAD_LOCK` 1 and `SP_VTOTAL` 311
+throughout. Re-latching at the value already in force is the control and is also
+0/12.
 
 ## The railing has a consumer: the coast stop
 
