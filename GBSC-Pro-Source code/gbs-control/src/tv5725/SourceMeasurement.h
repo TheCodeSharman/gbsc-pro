@@ -270,12 +270,16 @@ public:
     static bool counterWasFlagged();
 
     // The recovery for a flagged counter: takes the ADC's input away and gives
-    // it back so the input formatter re-acquires the line. Injected, like the
-    // sync-type probe, because it disturbs the picture.
+    // it back so the input formatter re-acquires the line. Tried once per source
+    // event, and only where STATUS_IF_HT_BAD flagged the counter.
     //
-    // Tried ONCE per source event. The bounce causes the fault about as readily
-    // as it clears it, so a retry loop would be a way of eventually railing a
-    // counter that was merely settling.
+    // **NOTHING INSTALLS ONE, AND THE REASON IS THE PICTURE.** Adc::bounceInput()
+    // is the only thing measured to clear a railed counter from this end, and
+    // taking the input away turns the whole screen green for as long as it is
+    // gone -- photographed at 400 ms, on the modes that rail, which is a visible
+    // flash rather than a repair. It buys accuracy and nothing else: a refused
+    // window already falls back to the field rate and the raster comes out
+    // right. Install one only with something better than a blind bounce.
     static void useCounterRecovery(void (*recover)());
 
     // How long the sync processor is given to reacquire V after the path moves.
