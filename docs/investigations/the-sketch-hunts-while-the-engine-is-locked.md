@@ -111,6 +111,51 @@ and scales right -- with `ADC_SOGCTRL` 5, `m:0`, and the television reporting
 *no signal* rather than a black picture. An input reselect clears it and the
 unit then holds capture enabled in 140 of 140 samples over a minute.
 
+## It is not only RGBHV: the same contention on YPbPr
+
+A Wii on `ypbpr` takes three to four minutes to reach a picture -- no signal at
+30, 60, 90, 120 and 180 s, full screen by 240 s -- and behaves the same on the
+tip and on two earlier builds, so it is not a regression in any of them.
+
+What cycles through the wait is the coast pair, with the divider and the count
+following it:
+
+```
+VTOTAL 319  PRE 9 POST 9  PLLAD_MD 2250
+VTOTAL  98  PRE 7 POST 3  PLLAD_MD 1124
+VTOTAL 310  PRE 4 POST 7  PLLAD_MD 2250
+VTOTAL  99  PRE 4 POST 7  PLLAD_MD 1124
+```
+
+Each value names its writer:
+
+| coast | writer |
+|---|---|
+| 4 / 7 | `SyncProcessor::applyForSyncType(csync)`, the engine |
+| 7 / 3 | `updateSpDynamic()` |
+| 9 / 9 | `runSyncWatcher()`'s no-sync branch, at `noSyncCounter == 8` |
+
+`SP_PRE_COAST` and `SP_POST_COAST` have eleven write sites across five owners in
+all. The sync type is NOT what moves -- `SP_SOG_MODE` and `SP_EXT_SYNC_SEL` hold
+1 and 1 throughout -- and `STATUS_SYNC_PROC_HSACT` stays 1, so the source is
+present and counted while three owners take turns configuring the processor
+counting it.
+
+**The engine wins this race, slowly**, against about fifteen seconds for a
+source nothing contends over. The cost is a wait rather than a failure, which is
+what makes it easy to misread: three separate runs that stopped at about 145 s
+each recorded a source that never locks.
+
+## Input selection never reaches the engine
+
+`applyInputSelection()` is the one path the OLED menu and `/input?src=` both
+take, which is right -- but what it does is set `SeleInputSource`, reset the
+sync processor, write the input registers, raise `rto->sourceDisconnected` and
+save the preferences. **It does not tell the engine anything.** The engine finds
+out that the source moved only when detection eventually runs and something
+calls `applyPresets()`, which is part of why acquiring a newly selected input
+costs minutes rather than one solve.
+
 ## What the fix has to address
 
 Not the engine's solve, which is correct throughout, and not the capture freeze.

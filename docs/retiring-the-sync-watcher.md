@@ -240,6 +240,24 @@ carried and what replaced it.
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls `poll(millis())` alone.
 
+## Input selection is the same collapse, one level up
+
+`applyInputSelection()` is already the single path the OLED menu and
+`/input?src=` share. What it is missing is the engine: it writes the input
+registers, resets the sync processor, raises `rto->sourceDisconnected` and
+returns, so the engine learns the source moved only when detection eventually
+runs and something calls `applyPresets()`.
+
+**Selecting an input is a source event, so it belongs to the same entry point as
+every other source event.** The engine is told, it re-acquires and it solves --
+rather than the sketch poking registers and leaving the engine to notice. That
+is what makes the code tractable to reason about: one path in, whether the
+request came from the menu, the remote or HTTP.
+
+It lands with step 10, where the preset load becomes an injected action: the
+same commit that stops `applyPresets()` being how the engine hears about a
+source is the one that gives input selection somewhere better to call.
+
 ## The bar
 
 **Observable picture behaviour, on the paths the bench can exercise** — not
