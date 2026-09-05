@@ -562,7 +562,6 @@ static void LoadDefault()
     rto->coastPositionIsSet = 0;     //
     rto->continousStableCounter = 0; //
     Tv5725::SyncOnGreen::choose(5);  //
-    rto->thisSourceMaxLevelSOG = 31; //
 }
 
 static void resetSyncProcessor_yuv()
