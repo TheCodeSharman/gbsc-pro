@@ -1,5 +1,7 @@
 #include "SyncOnGreen.h"
 
+#include "SyncType.h"
+
 namespace Tv5725 {
 
 uint8_t SyncOnGreen::level_ = 0;
@@ -21,5 +23,7 @@ void SyncOnGreen::apply(uint8_t level)
 void SyncOnGreen::apply() { ADC_SOGCTRL::write(level_); }
 
 uint8_t SyncOnGreen::level() { return level_; }
+
+bool SyncOnGreen::inSyncPath() { return SyncType::isCsync(); }
 
 }  // namespace Tv5725

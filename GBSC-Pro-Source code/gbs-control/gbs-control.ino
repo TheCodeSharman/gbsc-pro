@@ -1903,7 +1903,7 @@ void optimizeSogLevel() // Optimize SOG levels
         Tv5725::SyncOnGreen::choose(13);
         return;
     }
-    if (rgbhvBypass() || GBS::SP_SOG_MODE::read() != 1 || Tv5725::SyncType::isCsync() == false) {
+    if (rgbhvBypass() || !Tv5725::SyncOnGreen::inSyncPath()) {
         rto->thisSourceMaxLevelSOG = 13;
         Tv5725::SyncOnGreen::choose(13);
         return;
@@ -4536,6 +4536,9 @@ void startWire()
 
 void fastSogAdjust() // 
 {
+    if (!Tv5725::SyncOnGreen::inSyncPath())
+        return;
+
     if (rto->noSyncCounter <= 5) {
         uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
         uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
@@ -4638,7 +4641,7 @@ static void forgetPreemptiveSogWindow()
 
 static void tuneSogLevelPreemptively(boolean sourceDisturbed, boolean modeChangePending)
 {
-    if (!Tv5725::SyncType::isCsync() || rto->inputIsYpBpR || modeChangePending)
+    if (!Tv5725::SyncOnGreen::inSyncPath() || rto->inputIsYpBpR || modeChangePending)
         return;
 
     if (sourceDisturbed || GBS::STATUS_INT_SOG_BAD::read() == 1) {
@@ -4857,27 +4860,29 @@ void runSyncWatcher() //
             nudgeMD();
             delay(80);
 
-            uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-            if (GBS::PLLAD_VCORST::read() == 1) {
+            if (Tv5725::SyncOnGreen::inSyncPath()) {
+                uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+                if (GBS::PLLAD_VCORST::read() == 1) {
 
-                hlowStart = 777;
-            }
-            for (int a = 0; a < 128; a++) {
-                if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
-
-                    if (rto->noSyncCounter % 450 == 0) {
-                        Tv5725::SyncOnGreen::choose(0);
-                        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                    } else {
-                        optimizeSogLevel();
-                    }
-                    break;
-                } else if (a == 127) {
-
-                    Tv5725::SyncOnGreen::choose(5); // Current level SOG
-                    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                    hlowStart = 777;
                 }
-                delay(0);
+                for (int a = 0; a < 128; a++) {
+                    if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
+
+                        if (rto->noSyncCounter % 450 == 0) {
+                            Tv5725::SyncOnGreen::choose(0);
+                            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                        } else {
+                            optimizeSogLevel();
+                        }
+                        break;
+                    } else if (a == 127) {
+
+                        Tv5725::SyncOnGreen::choose(5);
+                        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                    }
+                    delay(0);
+                }
             }
 
             resetSyncProcessor();

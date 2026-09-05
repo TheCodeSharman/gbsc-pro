@@ -59,7 +59,8 @@ sync-on-green:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_on_green" \
-	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp
+	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp \
+	  src/tv5725/SyncType.cpp
 	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis, and its --dump

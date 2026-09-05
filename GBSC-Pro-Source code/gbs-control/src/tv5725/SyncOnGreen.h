@@ -19,6 +19,16 @@ public:
     // The widest slice the field carries.
     static const uint8_t LevelMax = 31;
 
+    // Whether the slicer reaches the sync processor at all. It does only with
+    // SP_SOG_MODE 1, which follows the sync type -- so on a separate-sync
+    // source every level is inert, and a recovery that walks it is moving a
+    // control nothing is reading.
+    //
+    // Held state, not SP_SOG_MODE read back: the register echoes what
+    // applyForSyncType() wrote, and the two disagree while a probe is moving
+    // the path.
+    static bool inSyncPath();
+
     // The level to run at, without touching the slicer. Several sites choose
     // one for a source the ADC has not been brought up for yet, and the
     // bring-up applies it.
