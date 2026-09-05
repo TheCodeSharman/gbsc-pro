@@ -10,6 +10,34 @@ judged against one input, one sync type and one scan mode.
 | Wii | `ypbpr` | sheet `YPBPR_IN` | direct analog | sync on green, interlace, component colour |
 | Wii, composite | `av` | pin header, sheet `AVSV2YPBPR` | ADV7280 to ADV7391, re-encoded | the decoder chain, 625i |
 
+## Switching between them
+
+Both are connected at once. `/input?src=vga` and `/input?src=ypbpr` move the
+analog routing and the ADC input together, so a change can be judged against
+both sync types from a session with nobody at the bench.
+
+The RISC PC settles in about 15 s. **The Wii does not settle quickly and its
+line count moves while it tries**, so a reading taken early is of the settle:
+310 with excursions to 97, 315, 607 and 634, `CAPTURE_ENABLE` flapping as each
+solve is armed and dropped.
+
+**THE WII DOES NOT CURRENTLY REACH A PICTURE.** Measured over about two minutes
+each on three builds -- the tip, the commit before it, and `eb5c43252` before
+any of that session's firmware work -- the behaviour is identical: the count
+never holds, capture never stays enabled, and the television reports no signal.
+`ADC_SOGCTRL` sits at 14 throughout, which is what `optimizeSogLevel()` chooses
+for YPbPr, so nothing is walking the slicer.
+
+Something IS arriving -- a 310-line field count is what 576i reads on this chip
+-- so the input routes and the sync processor sees it. Whether the console is
+showing a picture cannot be told from here; that needs eyes on the Wii.
+
+**So the sync-on-green path, interlace and the component colour path are
+currently unverifiable on this bench**, and every branch that only they reach --
+`SourceStandard`'s SD arm, the slicer level acquisition, the deinterlacer's
+motion-adaptive state machine -- has no source to judge it against until that is
+resolved.
+
 ## Direct analog against the ADV chain
 
 This distinction decides whether a source's timings are its own.
