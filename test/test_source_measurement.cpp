@@ -969,3 +969,18 @@ TEST_CASE("a flagged window is refused however good the readings look")
     const uint16_t settled[] = {431, 431, 430};
     CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311, true) == 0u);
 }
+
+TEST_CASE("a reading implying a line no television generates is refused")
+{
+    // The railed values sit below the floor: 511 is 13.2 kHz and 510 is 13.2,
+    // against 15625 for the 431 this source is due. Nothing legitimate is lost
+    // -- the slowest line here is 15.625 kHz.
+    const uint16_t slow[] = {511, 511, 511};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(slow, 3, 311, false) == 0u);
+
+    const uint16_t justUnder[] = {510, 510, 509};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(justUnder, 3, 311, false) == 0u);
+
+    const uint16_t bench[] = {431, 431, 430};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(bench, 3, 311, false) == 15625u);
+}

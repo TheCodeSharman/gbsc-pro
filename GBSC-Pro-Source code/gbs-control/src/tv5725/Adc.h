@@ -218,6 +218,21 @@ public:
     // over a 1 loads nothing.
     static void latch();
 
+    // Take the ADC's input away and give it back, so the input formatter
+    // re-acquires the line. The one action measured to clear a railed
+    // HPERIOD_IF without touching the source -- 0/16 correct before, 16/16 at
+    // the value the mode is due after, twice.
+    //
+    // **IT ALSO CAUSES THE FAULT**, railing a mode that had read correctly six
+    // times beforehand. It is a recovery for a counter already known bad, never
+    // something to run in front of a measurement.
+    // docs/investigations/hperiod-if-railing.md
+    static void bounceInput();
+
+    // How long the input stays away. Shorter has not been tried; 400 ms is what
+    // the clearance was measured at.
+    static const uint16_t BounceMs = 400;
+
     // The divider and the latch that loads it. Separating them leaves the PLL
     // running the old value with every register reading back correct.
     // The VCO post divider for a CKO frequency, off RD-5725-1.1's own crossover

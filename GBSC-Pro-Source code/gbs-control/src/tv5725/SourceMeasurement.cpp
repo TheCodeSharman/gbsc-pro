@@ -110,6 +110,8 @@ uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t
     if (samples == nullptr || count < 2 || !countIsSource(lines) || htBadSeen)
         return 0;
 
+
+
     uint16_t low = samples[0];
     uint16_t high = samples[0];
     for (uint8_t i = 1; i < count; ++i) {
@@ -122,6 +124,9 @@ uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t
         return 0;
 
     const uint32_t rate = lineRateForHPeriod(samples[0]);
+    if (rate < LineRateFloorHz)
+        return 0;
+
     const float fieldRateHz = (float)rate / (float)lines;
     if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
         return 0;
@@ -158,11 +163,14 @@ const uint8_t SourceMeasurement::SteadySamples;
 const uint16_t SourceMeasurement::RateAgreementPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 
+bool SourceMeasurement::counterFlagged_ = false;
+void (*SourceMeasurement::counterRecovery_)() = 0;
+
 SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
       rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
-      rateAttempts_(0)
+      rateAttempts_(0), recoveryTried_(false)
 {
 }
 
@@ -239,6 +247,17 @@ bool SourceMeasurement::measureLineRate()
     // answers when the judgement refuses. Neither is trusted on its own -- the
     // cross-check below reads the same either way.
     lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
+
+    // A flagged counter is not a settling source, and the bounce is the only
+    // thing measured to clear one without the source moving. Once per source
+    // event: it causes the fault about as readily as it clears it.
+    if (lineRateHz_ == 0 && counterWasFlagged() && counterRecovery_ != 0
+        && !recoveryTried_) {
+        recoveryTried_ = true;
+        counterRecovery_();
+        lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
+    }
+
     if (lineRateHz_ != 0) {
         fieldRateHz_ = (float)lineRateHz_ / (float)sourceLines_;
     } else {
@@ -360,13 +379,22 @@ uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
         if (GBS::STATUS_IF_HT_BAD::read() == 1)
             htBadSeen = true;
     }
+    counterFlagged_ = htBadSeen;
     return lineRateFromHPeriod(hperiod, HPeriodSamples, lines, htBadSeen);
+}
+
+bool SourceMeasurement::counterWasFlagged() { return counterFlagged_; }
+
+void SourceMeasurement::useCounterRecovery(void (*recover)())
+{
+    counterRecovery_ = recover;
 }
 
 void SourceMeasurement::forgetHeldRate()
 {
     goodLines_ = 0;
     goodLineRateHz_ = 0;
+    recoveryTried_ = false;
 }
 
 bool SourceMeasurement::sourceHasOwnVsync(uint32_t (*nowMs)())

@@ -57,6 +57,15 @@ void Adc::latch()
     PLLAD_LAT::write(1);
 }
 
+void Adc::bounceInput()
+{
+    const uint8_t selected = ADC_INPUT_SEL::read();
+
+    ADC_INPUT_SEL::write(0);
+    delay(BounceMs);
+    ADC_INPUT_SEL::write(selected);
+}
+
 uint8_t Adc::postDividerFor(uint32_t ckoHz)
 {
     if (ckoHz >= 80000000u)

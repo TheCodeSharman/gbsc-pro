@@ -323,3 +323,44 @@ TEST_CASE("bypass takes the ADC's internal filter out of the path")
 
     CHECK(Wire.field(5, 0x03, 4, 2) == 0);
 }
+
+// The one thing measured to clear a railed HPERIOD_IF from this end: take the
+// ADC's input away and give it back, so the input formatter re-acquires the
+// line. docs/investigations/hperiod-if-railing.md
+TEST_CASE("the input bounce takes the input away and puts the same one back")
+{
+    Wire.reset();
+    Adc::ADC_INPUT_SEL::write(1);          // VGA, the bench input
+    Wire.trace.clear();
+
+    Adc::bounceInput();
+
+    // Away and back, in that order, and back to the input it found rather than
+    // a hardcoded one -- the bounce must not become an input change.
+    REQUIRE(Wire.trace.size() >= 2);
+    CHECK(Adc::ADC_INPUT_SEL::read() == 1);
+
+    int away = -1, back = -1;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        if (Wire.trace[i].segment != 5 || Wire.trace[i].reg != 0x02)
+            continue;
+        uint8_t sel = (uint8_t)((Wire.trace[i].value >> 6) & 0x3);
+        if (sel == 0 && away < 0)
+            away = (int)i;
+        else if (sel == 1 && away >= 0)
+            back = (int)i;
+    }
+    CHECK(away >= 0);
+    CHECK(back > away);
+}
+
+TEST_CASE("the bounce leaves the rest of the byte alone")
+{
+    // ADC_INPUT_SEL shares s5_02 with the sync-on-green slicer level, so a byte
+    // write here would take the slicer with it.
+    Wire.reset();
+    Wire.bank[5][0x02] = 0x4C;             // level 12 under input 1
+    Adc::bounceInput();
+
+    CHECK(Wire.bank[5][0x02] == 0x4C);
+}

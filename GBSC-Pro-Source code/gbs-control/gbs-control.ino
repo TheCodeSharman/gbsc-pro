@@ -5886,6 +5886,12 @@ void setup()
     // the only signal that a source may have changed it -- a RISC PC sets it
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
+
+    // HPERIOD_IF rails, and the engine prefers it to the field rate because it
+    // is the more accurate of the two and costs no vsync spin. The bounce is
+    // what re-acquires the counter when the input formatter flags it.
+    // docs/investigations/hperiod-if-railing.md
+    Tv5725::SourceMeasurement::useCounterRecovery(Tv5725::Adc::bounceInput);
     // delay(700);
     // ESP.wdtDisable();
 

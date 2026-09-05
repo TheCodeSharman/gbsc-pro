@@ -192,6 +192,12 @@ public:
     // A settled source moves by one count; a railed one by hundreds.
     static const uint16_t HPeriodAgreement = 2;
 
+    // No television generates a line slower than this, so a reading implying
+    // one is the counter rather than the source. It is what rejects the railed
+    // form: HPERIOD_IF 511 implies 13.2 kHz, 510 implies 13.2, and the 431 this
+    // bench is due is 15625 with headroom to spare.
+    static const uint32_t LineRateFloorHz = 15000;
+
     // The line rate a RUN of HPERIOD_IF readings implies, or 0 when the run
     // cannot be believed. One register read against getSourceFieldRate()'s
     // vsync spin, but it rails with nothing to say so -- STATUS_IF_HT_OK reads
@@ -256,6 +262,21 @@ public:
     // on the idle path -- which is what lets a rate change at an unchanged
     // count be seen at all.
     static uint32_t measureLineRateFromHPeriod(uint16_t lines);
+
+    // Whether the last HPERIOD window was refused because the input formatter
+    // flagged the counter, rather than because the samples disagreed. A
+    // settling source disagrees and wants waiting out; a flagged counter wants
+    // the recovery below, and bouncing the first would manufacture the second.
+    static bool counterWasFlagged();
+
+    // The recovery for a flagged counter: takes the ADC's input away and gives
+    // it back so the input formatter re-acquires the line. Injected, like the
+    // sync-type probe, because it disturbs the picture.
+    //
+    // Tried ONCE per source event. The bounce causes the fault about as readily
+    // as it clears it, so a retry loop would be a way of eventually railing a
+    // counter that was merely settling.
+    static void useCounterRecovery(void (*recover)());
 
     // How long the sync processor is given to reacquire V after the path moves.
     static const uint16_t OwnVsyncSettleMs = 240;
@@ -403,6 +424,10 @@ private:
     uint16_t steadyLines_;
     uint8_t steadyRun_;
     uint8_t rateAttempts_;
+    bool recoveryTried_;   // the flagged-counter recovery, once per source event
+
+    static bool counterFlagged_;
+    static void (*counterRecovery_)();
 };
 
 }  // namespace Tv5725
