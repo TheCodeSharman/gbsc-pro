@@ -21,22 +21,20 @@ line count moves while it tries**, so a reading taken early is of the settle:
 310 with excursions to 97, 315, 607 and 634, `CAPTURE_ENABLE` flapping as each
 solve is armed and dropped.
 
-**THE WII DOES NOT CURRENTLY REACH A PICTURE.** Measured over about two minutes
-each on three builds -- the tip, the commit before it, and `eb5c43252` before
-any of that session's firmware work -- the behaviour is identical: the count
-never holds, capture never stays enabled, and the television reports no signal.
-`ADC_SOGCTRL` sits at 14 throughout, which is what `optimizeSogLevel()` chooses
-for YPbPr, so nothing is walking the slicer.
+**THE WII TAKES THREE TO FOUR MINUTES TO ACQUIRE, AND A TEST THAT STOPS SOONER
+REPORTS A FAULT THAT IS NOT THERE.** Measured from a settled unit: no signal at
+30, 60, 90, 120 and 180 s, full-screen picture by 240 s. Three separate runs
+that gave up at ~145 s all concluded it never locks.
 
-Something IS arriving -- a 310-line field count is what 576i reads on this chip
--- so the input routes and the sync processor sees it. Whether the console is
-showing a picture cannot be told from here; that needs eyes on the Wii.
+Throughout the wait the coast pair cycles between three values, each naming its
+writer -- 9/9 the sync watcher's no-sync branch, 7/3 `updateSpDynamic()`, 4/7
+`SyncProcessor::applyForSyncType()` -- with `CAPTURE_ENABLE` flapping and the
+line count moving 310 / 97 / 319 / 329 under them. The engine wins that race
+eventually, which is what the minutes are.
+`docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`.
 
-**So the sync-on-green path, interlace and the component colour path are
-currently unverifiable on this bench**, and every branch that only they reach --
-`SourceStandard`'s SD arm, the slicer level acquisition, the deinterlacer's
-motion-adaptive state machine -- has no source to judge it against until that is
-resolved.
+So the component path is testable, at about four minutes a switch. Budget for it
+rather than reading the wait as a failure.
 
 ## Direct analog against the ADV chain
 
