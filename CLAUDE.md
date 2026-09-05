@@ -11,8 +11,14 @@ component colour path -- and YPbPr is a *direct analog* path, so its timings are
 its own. Only composite and S-Video go through the ADV7280/ADV7391 chain, which
 regenerates them to broadcast standard, so any argument resting on a source being
 standard-conformant reaches those two and nothing else.
+**BOTH ARE CONNECTED AT ONCE AND SWITCHING NEEDS NO BENCH TRIP** --
+`/input?src=vga` and `/input?src=ypbpr`, so a session can judge a change against
+both sync types without anyone touching a cable. The Wii is slow to settle and
+re-solves several times getting there, so a reading or a photograph taken inside
+the first ~90 s is of the settle rather than of the change.
 **`docs/bench-sources.md` is what each source can prove; read it before
-concluding a branch is untestable.**
+concluding a branch is untestable**, and it carries what each one is currently
+known to do.
 
 ## Layout
 
