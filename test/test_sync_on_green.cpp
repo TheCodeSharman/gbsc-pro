@@ -82,3 +82,87 @@ TEST_CASE("the answer is held state, not SP_SOG_MODE read back")
 
     CHECK_FALSE(SyncOnGreen::inSyncPath());
 }
+
+// The walk counts a run of samples inside a window in milliseconds, so the two
+// are coupled: the run only completes where a register read is much faster
+// than a millisecond. A bus read is about 100 us on the unit, so the clock here
+// moves one millisecond every ten reads.
+static uint32_t g_reads = 0;
+static uint32_t testClock() { return g_reads++ / 10; }
+
+static unsigned g_inForce = 0;
+static uint8_t g_lastInForce = 0;
+
+// Putting a level in force also latches the sampling phases and the ADC PLL.
+static void putInForce()
+{
+    ++g_inForce;
+    g_lastInForce = SyncOnGreen::level();
+    SyncOnGreen::apply();
+}
+
+static void seedSlicer(uint8_t hsActive, uint8_t sliceBus)
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    Wire.bank[0][0x16] = hsActive ? 0x02 : 0x00;   // STATUS_SYNC_PROC_HSACT, bit 1
+    Wire.bank[0][0x2F] = sliceBus;                 // TEST_BUS_2F
+    g_reads = 0;
+    g_inForce = 0;
+}
+
+TEST_CASE("a slicer that is not in the sync path is left alone")
+{
+    seedSlicer(1, 0xFF);
+    SyncType::set(false);
+    SyncOnGreen::choose(7);
+
+    SyncOnGreen::acquire(testClock, putInForce);
+
+    CHECK(g_inForce == 0);
+    CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
+}
+
+TEST_CASE("a slicer already producing clean edges keeps the level chosen")
+{
+    // The whole cost of the walk is paid per step, so a source that is already
+    // good must not be walked off a level that works.
+    seedSlicer(1, 0x05);
+    SyncType::set(true);
+    SyncOnGreen::choose(11);
+
+    SyncOnGreen::acquire(testClock, putInForce);
+
+    CHECK(SyncOnGreen::level() == 11);
+}
+
+TEST_CASE("a slicer that never comes good walks to the floor and resets")
+{
+    // HSACT holds but the slicer's own output stays dead, which is the state
+    // the ratchet exists for. Reaching the floor without finding a level puts
+    // the default back rather than leaving the slicer wide open.
+    seedSlicer(1, 0x00);
+    SyncType::set(true);
+    SyncOnGreen::choose(13);
+
+    SyncOnGreen::acquire(testClock, putInForce);
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
+    CHECK(g_inForce > 1);
+}
+
+TEST_CASE("the level reaches the slicer through the injected action")
+{
+    // Writing ADC_SOGCTRL here instead would skip the phase and ADC PLL
+    // latches that putting a level in force carries, and a divider written
+    // without its latch leaves the PLL on the old value.
+    seedSlicer(1, 0x05);
+    SyncType::set(true);
+    SyncOnGreen::choose(9);
+
+    SyncOnGreen::acquire(testClock, putInForce);
+
+    CHECK(g_inForce >= 1);
+    CHECK(g_lastInForce == 9);
+    CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 9);
+}

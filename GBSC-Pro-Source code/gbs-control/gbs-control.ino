@@ -1893,94 +1893,30 @@ boolean optimizePhaseSP()
     return 1;
 }
 
-void optimizeSogLevel() // Optimize SOG levels
+static uint32_t millisNow() { return (uint32_t)millis(); }
+
+// Putting a level in force latches the sampling phases and the ADC PLL, which
+// the slicer does not own.
+static void putSogLevelInForce()
 {
-    if (rto->boardHasPower == false) {
-        Tv5725::SyncOnGreen::choose(13);
-        return;
-    }
-    if (rgbhvBypass() || !Tv5725::SyncOnGreen::inSyncPath()) {
-        Tv5725::SyncOnGreen::choose(13);
-        return;
-    }
-
-    if (rto->inputIsYpBpR && Info_sate == 0) //&& SeleInputSource == S_YUV )
-    {
-        Tv5725::SyncOnGreen::choose(14);
-    } else if (rto->inputIsYpBpR == false && Info_sate == 0) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-
-    {
-        Tv5725::SyncOnGreen::choose(13);
-    }
     setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-
-    uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
-    uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
-    if (debug_backup != 0xa) {
-        GBS::TEST_BUS_SEL::write(0xa);
-        delay(1);
-    }
-    if (debug_backup_SP != 0x0f) {
-        GBS::TEST_BUS_SP_SEL::write(0x0f);
-        delay(1);
-    }
-
-    GBS::TEST_BUS_EN::write(1);
-
-    delay(100);
-    while (1) {
-        uint16_t syncGoodCounter = 0;
-        unsigned long timeout = millis();
-        while ((millis() - timeout) < 60) {
-            if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-                syncGoodCounter++;
-                if (syncGoodCounter >= 60) {
-                    break;
-                }
-            } else if (syncGoodCounter >= 4) {
-                syncGoodCounter -= 3;
-            }
-        }
-
-        if (syncGoodCounter >= 60) {
-            syncGoodCounter = 0;
-
-            if (GBS::TEST_BUS_2F::read() > 0) {
-                delay(20);
-                for (int a = 0; a < 50; a++) {
-                    syncGoodCounter++;
-                    if (GBS::STATUS_SYNC_PROC_HSACT::read() == 0 || GBS::TEST_BUS_2F::read() == 0) {
-                        syncGoodCounter = 0;
-                        break;
-                    }
-                }
-                if (syncGoodCounter >= 49) {
-                    break;
-                }
-            }
-        }
-
-        if (Tv5725::SyncOnGreen::level() >= 2) {
-            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
-            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-            delay(8);
-        } else {
-            Tv5725::SyncOnGreen::choose(13);
-            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-            delay(8);
-            break;
-        }
-    }
-
-    if (debug_backup != 0xa) {
-        GBS::TEST_BUS_SEL::write(debug_backup);
-    }
-    if (debug_backup_SP != 0x0f) {
-        GBS::TEST_BUS_SP_SEL::write(debug_backup_SP);
-    }
 }
 
-static uint32_t millisNow() { return (uint32_t)millis(); }
+void optimizeSogLevel()
+{
+    if (rto->boardHasPower == false || rgbhvBypass()) {
+        Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::DefaultLevel);
+        return;
+    }
+
+    if (Info_sate == 0) {
+        Tv5725::SyncOnGreen::choose(rto->inputIsYpBpR
+                                        ? 14
+                                        : Tv5725::SyncOnGreen::DefaultLevel);
+    }
+
+    Tv5725::SyncOnGreen::acquire(millisNow, putSogLevelInForce);
+}
 
 // What the engine probes with. The connector settles the sync type on every
 // input but VGA, and measuring one that is already settled gets it wrong:

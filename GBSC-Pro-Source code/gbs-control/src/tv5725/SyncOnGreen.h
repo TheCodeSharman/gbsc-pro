@@ -19,6 +19,10 @@ public:
     // The widest slice the field carries.
     static const uint8_t LevelMax = 31;
 
+    // Where the walk starts a source it knows nothing about, and where it
+    // returns when it reaches the floor without finding a level that works.
+    static const uint8_t DefaultLevel = 13;
+
     // Whether the slicer reaches the sync processor at all. It does only with
     // SP_SOG_MODE 1, which follows the sync type -- so on a separate-sync
     // source every level is inert, and a recovery that walks it is moving a
@@ -45,6 +49,15 @@ public:
     static void apply();
 
     static uint8_t level();
+
+    // Walk the chosen level down until the sync processor holds clean edges
+    // over a run, and put DefaultLevel back if the floor is reached without
+    // finding one. Chooses DefaultLevel and touches nothing when the slicer is
+    // not in the sync path.
+    //
+    // Putting a level in force also latches the sampling phases and the ADC
+    // PLL, which are Adc's.
+    static void acquire(uint32_t (*nowMs)(), void (*putInForce)());
 
 private:
     static uint8_t level_;
