@@ -188,10 +188,13 @@ policy moves. It separates the two facts that variable carried — the level
 *chosen* for a source the ADC has not been brought up for, and the level *in
 force* — which is why a straight substitution would have been wrong.
 
-**2. One steadiness run.** `noSyncCounter`, `continousStableCounter` and
-`RGBHVNoSyncCounter` become reads of the engine's own run, off the same
-measurement the mode-change check takes. Everything below is keyed on it, so it
-comes before any policy moves.
+**2. The detection cadence.** `poll()` takes the clock and the idle detection
+pass runs on `Geometry::DetectionIntervalMs`. The steadiness run is counted in
+detection passes and `loop()` goes round far faster than the sync watcher's
+20 ms tick, so without this a run counted per pass is not the same length as one
+counted per tick and every threshold keyed on it means something different.
+Nothing else can read the engine's run until it counts in the units the sketch's
+counters did.
 
 **3. Acquire the slicer level.** `optimizeSogLevel()`, `fastSogAdjust()`,
 `tuneSogLevelPreemptively()` and every ratchet become one operation on the idle
@@ -202,7 +205,8 @@ NOT.** The slicer only reaches the sync processor with `SP_SOG_MODE` 1, which
 follows the sync type, so on a separate-sync source the level is inert — and
 `fastSogAdjust()` and the every-150 recovery block walk it anyway. The engine
 holds that answer already, as `SyncType::isCsync()`, so the operation asks held
-state rather than reading the register back.
+state rather than reading the register back. `SyncOnGreen::inSyncPath()` is that
+question, and every site that moves the level asks it.
 
 This is the step that has to land before the gate: the recovery is the only
 thing that leaves the black state a round trip can produce, and until the
@@ -210,8 +214,23 @@ acquisition it is doing badly has an owner, a gate in front of it is a gate in
 front of the only exit.
 `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 
-**4. The no-sync gate** becomes `Geometry::sourceIsPresent()`. Written and tested
-already; step 3 is what makes the wiring safe.
+**4. One steadiness run, WHICH IS THE NO-SYNC GATE.** `noSyncCounter`,
+`continousStableCounter` and `RGBHVNoSyncCounter` become reads of the engine's
+own run, and `Geometry::sourceIsPresent()` replaces the classification at the
+gate. Everything below is keyed on the run.
+
+**THESE ARE ONE CHANGE, NOT TWO, AND THAT IS WHY NEITHER CAN COME FIRST.** The
+run is over `sourceIsPresent()` — the same measurement the mode-change check
+takes — so a `noSyncCounter` that reads it never advances on a source the engine
+calls present, and the escalation ladder is withheld exactly as wiring the gate
+withholds it. Splitting them buys nothing: the sketch's counter would still be
+gated on the engine's answer, which is the whole risk. Step 3 is what makes
+either safe.
+
+The ladder's moduli are NOT the run. `noSyncCounter` also carries an escalation
+position and a control latch the sketch writes — `0x07fe`, `0x05ff`, `63`, `1` —
+and those stay a local index in the watcher until step 7 replaces them with the
+named recoveries. What moves here is the run.
 
 **5. Acquire the coast and clamp windows**, to `SyncProcessor`, with
 `updateCoastPosition()`'s writes to the ADC PLL group deleted rather than moved —
