@@ -199,12 +199,23 @@ public:
     // that disagree are railing, and a steady one implying a field rate no
     // source runs at is the railing's stable form.
     // docs/investigations/hperiod-if-railing.md
+    // htBadSeen is STATUS_IF_HT_BAD anywhere in the window. It is a ONE-SIDED
+    // gate: it never sets on a healthy reading, so set means refuse -- but
+    // clear does not mean good, and 5 of 20 samples on a live instance had it
+    // clear. STATUS_IF_HT_OK is not a gate in either direction: through 5302
+    // reads of a railed state it read 1 for 146 of them, none within 2% of the
+    // value the mode was due.
     static uint32_t lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
-                                        uint16_t lines);
+                                        uint16_t lines, bool htBadSeen);
 
     // How many HPERIOD_IF readings make a run. Register reads, so the cost is
     // nothing beside the vsync spin this is there to avoid.
-    static const uint8_t HPeriodSamples = 3;
+    //
+    // **WIDE ENOUGH THAT GARBAGE CANNOT LOOK LIKE AGREEMENT.** The railed form
+    // is noisy rather than stuck -- 511 in 6 of 20 samples, the rest scattered
+    // -- so a short window lands three consecutive 511s often enough to matter,
+    // and the run test then reads the fault as a settled source.
+    static const uint8_t HPeriodSamples = 8;
 
     // How far two field-rate readings may differ and still be the same rate, in
     // parts per thousand. One reading of one field period at the ESP's clock,

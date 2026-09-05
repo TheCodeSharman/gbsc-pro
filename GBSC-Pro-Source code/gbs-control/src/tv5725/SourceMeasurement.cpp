@@ -105,9 +105,9 @@ uint32_t SourceMeasurement::lineRateForHPeriod(uint16_t hperiod)
 }
 
 uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
-                                                uint16_t lines)
+                                                uint16_t lines, bool htBadSeen)
 {
-    if (samples == nullptr || count < 2 || !countIsSource(lines))
+    if (samples == nullptr || count < 2 || !countIsSource(lines) || htBadSeen)
         return 0;
 
     uint16_t low = samples[0];
@@ -354,9 +354,13 @@ uint16_t SourceMeasurement::measureSourceLines()
 uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
 {
     uint16_t hperiod[HPeriodSamples];
-    for (uint8_t i = 0; i < HPeriodSamples; ++i)
+    bool htBadSeen = false;
+    for (uint8_t i = 0; i < HPeriodSamples; ++i) {
         hperiod[i] = GBS::HPERIOD_IF::read();
-    return lineRateFromHPeriod(hperiod, HPeriodSamples, lines);
+        if (GBS::STATUS_IF_HT_BAD::read() == 1)
+            htBadSeen = true;
+    }
+    return lineRateFromHPeriod(hperiod, HPeriodSamples, lines, htBadSeen);
 }
 
 void SourceMeasurement::forgetHeldRate()

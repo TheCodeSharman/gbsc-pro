@@ -866,30 +866,31 @@ TEST_CASE("the sync path the probe borrowed goes back")
 }
 
 // HPERIOD_IF is counted against the chip's own 27 MHz, so it reads the source's
-// line rate directly and needs no vsync spin. It also rails, intermittently and
-// without any flag saying so -- STATUS_IF_HT_OK reads 1 either way. What
-// separates the two is that a settled reading repeats to within a count while a
-// railed one does not, and that a value can imply a field rate no source runs
-// at. docs/investigations/hperiod-if-railing.md
+// line rate directly and needs no vsync spin. It also rails. Three things
+// separate a good reading from a bad one: a settled reading repeats to within a
+// count, a value can imply a field rate no source runs at, and STATUS_IF_HT_BAD
+// sets somewhere in the window. The third is the only one that catches a STUCK
+// register, because the first two are passed by a value that never moves.
+// docs/investigations/hperiod-if-railing.md
 TEST_CASE("a run of agreeing HPERIOD_IF readings gives the source's line rate")
 {
     const uint16_t settled[] = {431, 431, 430};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311) == 15625u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311, false) == 15625u);
 
     const uint16_t progressive[] = {165, 165, 165};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(progressive, 3, 679) == 40662u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(progressive, 3, 679, false) == 40662u);
 
     const uint16_t seventy[] = {308, 307, 308};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(seventy, 3, 311) == 21844u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(seventy, 3, 311, false) == 21844u);
 }
 
 TEST_CASE("readings that disagree are refused, which is what railing looks like")
 {
     const uint16_t railed[] = {511, 255, 16, 509};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(railed, 4, 311) == 0u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(railed, 4, 311, false) == 0u);
 
     const uint16_t noisy[] = {511, 510, 429, 436};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(noisy, 4, 311) == 0u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(noisy, 4, 311, false) == 0u);
 }
 
 TEST_CASE("a steady reading implying a field rate no source runs at is refused")
@@ -897,16 +898,16 @@ TEST_CASE("a steady reading implying a field rate no source runs at is refused")
     // 50 against a 524-line source is 132 kHz, a 252 Hz field rate. Perfectly
     // steady, so agreement alone cannot reject it.
     const uint16_t stableWrong[] = {50, 50, 50, 50};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(stableWrong, 4, 524) == 0u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(stableWrong, 4, 524, false) == 0u);
 }
 
 TEST_CASE("one reading is not a run, and a line count that is not a source is refused")
 {
     const uint16_t one[] = {431};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(one, 1, 311) == 0u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(one, 1, 311, false) == 0u);
 
     const uint16_t settled[] = {431, 431, 431};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 0) == 0u);
+    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 0, false) == 0u);
 }
 
 // HPERIOD_IF is seeded the way the chip presents it: segment 0, register 0x06,
@@ -944,4 +945,27 @@ TEST_CASE("a refused HPERIOD_IF run falls back to the field rate")
     REQUIRE(sampling.measureLineRate());
     CHECK(g_fieldRateCalls > 0);
     CHECK(sampling.lineRateHz() == 31440u);
+}
+
+TEST_CASE("a stuck reading is refused even where it implies a plausible rate")
+{
+    // 511 on a 311-line source is 13183 Hz, a 42.38 Hz field rate -- inside any
+    // band that admits a 24 or 25 Hz source, so plausibility cannot reject it.
+    // Agreement cannot either: a STUCK register repeats perfectly while a live
+    // one varies, so the run test prefers the fault to the truth.
+    //
+    // What separates them is STATUS_IF_HT_BAD, measured 15 of 20 samples on a
+    // live instance and 0 of 20 once cleared. Left accepted, the raster is
+    // solved 2264 wide where 1916 is due and the sink reports 42 Hz.
+    const uint16_t stuck[] = {511, 511, 511};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(stuck, 3, 311, true) == 0u);
+}
+
+TEST_CASE("a flagged window is refused however good the readings look")
+{
+    // The flag is about the counter, not the number: it never set on a healthy
+    // reading across 91 recorded samples plus 20 measured, so a window carrying
+    // it is not a window to take a rate from.
+    const uint16_t settled[] = {431, 431, 430};
+    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311, true) == 0u);
 }
