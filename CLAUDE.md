@@ -268,26 +268,47 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 
   | fault | cleared by | does NOT clear it |
   |---|---|---|
-  | railed `HPERIOD_IF`, sync processor fine | a source mode change | `/sc?~`, every `SFTRST_*_RSTZ`, the analog bias resets, one cold boot |
+  | railed `HPERIOD_IF`, sync processor fine | a source mode change round trip, or an `ADC_INPUT_SEL` bounce | `/sc?~`, every `SFTRST_*_RSTZ`, the analog bias resets, every clock reset in BOTH domains, one cold boot |
   | divider stuck on another mode's value | `/sc?~` | a mode-change round trip |
 
   So reach for the one that matches. A stuck `PLLAD_MD` survived 311 -> 524 ->
   311 unchanged at 1822 and the picture rolled; `/sc?~` restored 2250 at once.
   **Judge the divider against the source**, not against whether it moved.
 
-  **The first row is contradicted on both counts by a 2026-08-25 measurement, so
-  treat neither recovery as reliable for it.** After an OTA reflash `HPERIOD_IF`
-  read 14/255/271/274/508/510/511 against the 431 the mode was due, with
-  `SP_VTOTAL` a rock-steady 311 beside it. A source mode change -- 320x256@50 to
-  800x600@60 and back, the recovery that row names -- did **not** clear it. A
-  cold boot with mains and USB both pulled, which that row lists as not clearing
-  it, restored a steady 431 at once.
+  **Neither clearance is certain, so try them in cost order.** A 2026-08-25
+  measurement has a mode round trip failing to clear it and a cold boot restoring
+  431 at once -- both columns of the first row the wrong way round. A 2026-09-06
+  measurement has the round trip clearing it completely: 431 steady in 5 of 5
+  samples over 24 s, the engine's held line rate back to 15625 from 13183, the
+  raster back to 1910 from 2264. The round trip is cheapest and needs no bench
+  trip; the bounce and a cold boot are what is left when it fails.
 
-  **And it does not necessarily reach the picture.** Throughout the noisy state
-  the panel showed a correct full-screen picture, and all 1536 config registers
-  were byte-identical to a known-good reference. Nothing in a register dump
-  distinguishes the two, so `HPERIOD_IF` disagreeing with the mode is a reason to
-  look, not a fault to chase on its own -- the geometry engine does not read it.
+  **`ADC_INPUT_SEL` to 0 for 400 ms and back clears it from this end**, with no
+  source change at all -- 0/16 correct before, 16/16 at 431 after,
+  `STATUS_IF_HT_OK` 0 -> 1. It also CAUSES it, railing a mode that read correctly
+  six times beforehand, so it is a recovery and never something to run in front
+  of a measurement.
+
+  **NO CLOCK RESET REACHES IT, IN EITHER DOMAIN.** The ADC side is closed by the
+  divider sweep over 1000..2900, the clock group verified correct while the fault
+  stands, `PLLAD_VCORST`, `PLLAD_PDZ` and `ADC_POWDZ`. The display and memory
+  side is closed by `PLL_VCORST`, `SDRAM_RESET_SIGNAL`, `PLL_LEN` and
+  `MEM_CLK_DLY_REG`, each pulsed against a live instance with every write read
+  back, each 0/16 correct afterwards.
+
+  **AND IT REACHES THE PICTURE, so it IS a fault to chase.** The engine reads
+  `HPERIOD_IF` and prefers it: `SourceMeasurement::measureLineRate()` takes
+  `measureLineRateFromHPeriod()` first and only measures the field rate when that
+  refuses. A railed 511 on a 311-line source gives 13183 Hz, which is 42.38 Hz
+  against a real 50.08, and the output raster is solved for it -- 2264 wide where
+  1916 is due, and the sink correctly reports 42 Hz. **The only validity test is
+  three back-to-back samples agreeing within 2, which a STUCK register passes
+  perfectly and a genuinely varying one fails, so the test selects for the
+  fault.** Once accepted the bad rate becomes the held good one, and
+  `rateFollowsCount()` rejects every correct reading against it, so it never
+  recovers on its own. A register dump still cannot distinguish the two states:
+  all 1536 config registers read byte-identical to a known-good reference while
+  the output is 42 Hz.
 - **Check `HPERIOD_IF` against the value the MODE should give**, which is
   `27e6 / (4 x lineRateHz) - 1` -- 431 at 311 lines/50 Hz, 213 at 524/60, 214 at
   448/70. Steady is not valid: a steady **50** was measured at 640x480@60 where
