@@ -248,12 +248,23 @@ static void checkBenchGeometry()
     CHECK(registersWritten() == 64);   // the two DAC selects share s0_4b
 }
 
+// The detection pass runs on a cadence, so a case that wants a run of them
+// wants a run of ticks. A case that wants poll() WITHOUT one calls
+// engine.poll(g_nowMs) and leaves the clock where it is.
+static uint32_t g_nowMs = 0;
+
+static bool pollOnce(Geometry &engine)
+{
+    g_nowMs += Geometry::DetectionIntervalMs;
+    return engine.poll(g_nowMs);
+}
+
 // poll() runs on every loop() pass, and the steadiness gate wants a few before
 // it will pay for a field rate measurement.
 static bool pollUntilSolved(Geometry &engine)
 {
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        if (engine.poll())
+        if (pollOnce(engine))
             return true;
     return false;
 }
@@ -279,7 +290,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     SUBCASE("and nothing is outstanding afterwards") {
         Wire.reset();
         poisonChip();
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
         CHECK(registersWritten() == 0);
     }
 }
@@ -299,7 +310,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     g_fieldRate = 0.0f;
 
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
 
     CHECK_FALSE(Wire.touched[1][0x18]);   // IF_HB_ST2, the capture window
     CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
@@ -337,7 +348,7 @@ TEST_CASE("a line count outside what any source runs is never measured against")
     engine.modeChanged(benchMode(), 4);
 
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
 
     CHECK_FALSE(Wire.touched[3][0x16]);   // VDS_HSCALE
     CHECK_FALSE(Wire.touched[3][0x01]);   // VDS_HSYNC_RST
@@ -364,7 +375,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     poisonChip();
     engine.enterBypass();
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
 
     // Capture, and nothing else: bypass has no solve coming, so releasing it is
     // the only thing left to do.
@@ -383,11 +394,11 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
 
     engine.modeChanged(OutputChoice(), 4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
 
     const unsigned settled = g_fieldRateCalls;
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
     CHECK(g_fieldRateCalls == settled);
 
     // The raster is left exactly as it was: a mode nobody could name is not a
@@ -492,7 +503,7 @@ TEST_CASE("capture stays frozen while the source is still settling")
     engine.modeChanged(benchMode(), 4);
     g_fieldRate = 0.0f;
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll());
+        CHECK_FALSE(pollOnce(engine));
 
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 0);
 
@@ -514,7 +525,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     SUBCASE("a mode with no timings") {
         engine.modeChanged(OutputChoice(), 4);
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-            CHECK_FALSE(engine.poll());
+            CHECK_FALSE(pollOnce(engine));
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
 
@@ -892,7 +903,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     // so the divider that made the count unmeasurable is gone on the first
     // pass -- and replacing it is not a solve, so the capture stays frozen and
     // poll() still says no.
-    CHECK_FALSE(engine.poll());
+    CHECK_FALSE(pollOnce(engine));
     CHECK(Adc::PLLAD_MD::read() == 2250);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 1125);
     CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2092);
@@ -931,7 +942,7 @@ TEST_CASE("the scan mode is corrected even when the source cannot be measured")
     Geometry engine(clock);
     engine.modeChanged(benchMode(), 4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     CHECK(InputFormatter::IF_HS_DEC_FACTOR::read() == 1);
     CHECK(InputFormatter::IF_LD_SEL_PROV::read() == 0);
@@ -968,11 +979,45 @@ TEST_CASE("the engine arms itself when the source line count changes")
 
     bool solved = false;
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
-        solved = engine.poll();
+        solved = pollOnce(engine);
 
     CHECK(solved);
     CHECK(Adc::PLLAD_MD::read() == 1124);
     CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == 1);
+}
+
+TEST_CASE("the source is counted on a cadence, not once a loop pass")
+{
+    // The steadiness run behind sourceIsPresent() is counted in detection
+    // passes, and loop() goes round far faster than the 20 ms the sketch's own
+    // counters advance on -- so a run counted per pass is a different length
+    // from one counted per tick, and every threshold keyed on it means
+    // something else. The measurement is what the run is over, so the
+    // measurement takes the cadence.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(Adc::PLLAD_MD::read() == 2250);
+
+    seedSourceLines(524);
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    g_fieldRate = 60.0f;
+
+    // The clock stands still, so however many times loop() comes round, no pass
+    // counts and the source has not been seen to move.
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
+        CHECK_FALSE(engine.poll(g_nowMs));
+    CHECK(Adc::PLLAD_MD::read() == 2250);
+
+    bool solved = false;
+    for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
+        solved = pollOnce(engine);
+
+    CHECK(solved);
+    CHECK(Adc::PLLAD_MD::read() == 1124);
 }
 
 TEST_CASE("bypass measures nothing, so it reports no line rate")
@@ -1107,7 +1152,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
     engine.modeChanged(benchMode(), 4);
 
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
 }
@@ -1128,7 +1173,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
     SUBCASE("a quiet source is left alone") {
         g_fieldRateCalls = 0;
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-            CHECK_FALSE(engine.poll());
+            CHECK_FALSE(pollOnce(engine));
         CHECK(g_fieldRateCalls == 0);
     }
 
@@ -1144,7 +1189,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         engine.sourceInterrupted();
         g_fieldRateCalls = 0;
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-            CHECK_FALSE(engine.poll());
+            CHECK_FALSE(pollOnce(engine));
         CHECK(g_fieldRateCalls == 0);
     }
 }
@@ -1172,11 +1217,11 @@ TEST_CASE("the reference is re-applied when the count it was sized from moves")
     seedField(0, 0x1B, 0, 11, 700);
     engine.modeChanged(benchMode(), 4);
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     seedField(0, 0x1B, 0, 11, 524);
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     // PLLAD_KS, s5_16[5:4], against what the settled count asks for.
     const uint8_t ks = (uint8_t)((Wire.bank[5][0x16] >> 4) & 0x03);
@@ -1291,7 +1336,7 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     // Settled, so nothing further asks: the probe moves the sync path and costs
     // a settle plus a window, which is not something a poll may do.
     for (uint8_t i = 0; i < 6; ++i)
-        engine.poll();
+        pollOnce(engine);
     CHECK(g_probeCalls == 1);
 
     // A second change is a second source as far as this is concerned.
@@ -1324,7 +1369,7 @@ TEST_CASE("a count no source runs re-establishes the sync type")
 
     seedSourceLines(97);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     CHECK(g_probeCalls == 2);
 }
@@ -1346,7 +1391,7 @@ TEST_CASE("a count no source runs arms the probe once, not once a poll")
 
     seedSourceLines(97);
     for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     CHECK(g_probeCalls == 2);
 }
@@ -1373,7 +1418,7 @@ TEST_CASE("a field rate the line count cannot show re-solves the source")
     seedField(0, 0x06, 0, 9, 359);
     g_fieldRate = 60.29f;
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     CHECK(Adc::PLLAD_MD::read() == 2116);
 }
@@ -1402,7 +1447,7 @@ TEST_CASE("a rate seen once does not re-solve the source")
     // One poll's worth of a railed reading, then the source's own rate back.
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i) {
         seedField(0, 0x06, 0, 9, i % 2 ? 255 : 431);
-        engine.poll();
+        pollOnce(engine);
     }
 
     CHECK(g_probeCalls == 1);
@@ -1431,7 +1476,7 @@ TEST_CASE("a rate the field rate does not confirm leaves the source alone")
     // The register rails and stays railed. The source has not moved.
     seedField(0, 0x06, 0, 9, 511);
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
-        engine.poll();
+        pollOnce(engine);
 
     CHECK(g_probeCalls == 1);
 }
@@ -1467,7 +1512,7 @@ TEST_CASE("a source that stops counting is not present")
     REQUIRE(engine.sourceIsPresent());
 
     seedSourceLines(0);
-    engine.poll();
+    pollOnce(engine);
 
     CHECK_FALSE(engine.sourceIsPresent());
 }
@@ -1490,7 +1535,7 @@ TEST_CASE("counts that never hold still are not a source")
     for (uint8_t pass = 0; pass < 4; ++pass)
         for (uint8_t i = 0; i < 5; ++i) {
             seedSourceLines(unlocked[i]);
-            engine.poll();
+            pollOnce(engine);
             CHECK_FALSE(engine.sourceIsPresent());
         }
 }
@@ -1504,7 +1549,7 @@ TEST_CASE("nothing has been solved, so no source is present")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.poll();
+    pollOnce(engine);
 
     CHECK_FALSE(engine.sourceIsPresent());
 }

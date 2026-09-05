@@ -68,12 +68,21 @@ static unsigned registersWritten()
     return written;
 }
 
+// The detection pass runs on a cadence, so a run of passes is a run of ticks.
+static uint32_t g_nowMs = 0;
+
+static bool pollOnce(Geometry &engine)
+{
+    g_nowMs += Geometry::DetectionIntervalMs;
+    return engine.poll(g_nowMs);
+}
+
 // poll() gates on a line count steady over several passes before it will pay for
 // a field rate measurement, so a solve takes more than one call.
 static bool pollUntilSolved(Geometry &engine)
 {
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        if (engine.poll())
+        if (pollOnce(engine))
             return true;
     return false;
 }
@@ -258,7 +267,7 @@ static uint16_t frameLinesWritten() { return Wire.field(3, 0x02, 4, 11) + 1; }
 static bool pollUntilResolved(Geometry &engine)
 {
     for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
-        if (engine.poll())
+        if (pollOnce(engine))
             return true;
     return false;
 }

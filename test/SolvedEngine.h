@@ -58,12 +58,21 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
+// The detection pass runs on a cadence, so a run of passes is a run of ticks.
+static uint32_t g_nowMs = 0;
+
+static bool pollOnce(Tv5725::Geometry &engine)
+{
+    g_nowMs += Tv5725::Geometry::DetectionIntervalMs;
+    return engine.poll(g_nowMs);
+}
+
 // poll() gates on a line count steady over several passes before it will pay
 // for a field rate measurement, so a solve takes more than one call.
 static bool pollUntilSolved(Tv5725::Geometry &engine)
 {
     for (uint8_t i = 0; i < 4 * Tv5725::SourceMeasurement::SteadySamples; ++i)
-        if (engine.poll())
+        if (pollOnce(engine))
             return true;
     return false;
 }

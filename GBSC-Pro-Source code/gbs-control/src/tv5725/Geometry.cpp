@@ -29,6 +29,7 @@ Geometry::Geometry(DisplayClock &displayClock)
       framingRevision_(0),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvedLines_(0), solvedLineRateHz_(0),
+      detectedMs_(0), detectedEver_(false),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
       sourcePresent_(false),
       candidateRateHz_(0), rateRun_(0),
@@ -263,10 +264,19 @@ bool Geometry::outputChanged(const OutputChoice &choice)
     return solveWindows();
 }
 
-bool Geometry::poll()
+bool Geometry::detectionDue(uint32_t nowMs)
+{
+    if (detectedEver_ && nowMs - detectedMs_ < DetectionIntervalMs)
+        return false;
+    detectedMs_ = nowMs;
+    detectedEver_ = true;
+    return true;
+}
+
+bool Geometry::poll(uint32_t nowMs)
 {
     if (!modePending_) {
-        if (sourceMoved())
+        if (detectionDue(nowMs) && sourceMoved())
             modeChanged(choice_, modeOversample_);
         return modePending_ ? false : (solvePending_ ? resolve() : false);
     }

@@ -6672,7 +6672,7 @@ void loop()
 
     pollFramingSave(millis());
 
-    if (geometry.poll()) {
+    if (geometry.poll(millis())) {
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
         // re-establishing it here is the only thing that does: the

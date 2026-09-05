@@ -83,7 +83,18 @@ public:
     // Called by the sketch main loop - allows the engine to determine when the
     // source has settled and apply any pending mode changes. True on the pass
     // that completes a mode change.
-    bool poll();
+    //
+    // **THE DETECTION PASS RUNS ON A CADENCE, NOT ONCE A LOOP.** The steadiness
+    // run behind sourceIsPresent() is counted in detection passes, and loop()
+    // goes round far faster than 20 ms -- so a run counted per pass is not the
+    // same length as one counted per tick, and every threshold keyed on it
+    // means something different. The clock is a parameter because a cadence
+    // reached for inside the engine is an input the host tests cannot set.
+    bool poll(uint32_t nowMs);
+
+    // How often the source is counted. The sync watcher's own tick, so a run of
+    // detection passes is a run of the same length the sketch's counters were.
+    static const uint32_t DetectionIntervalMs = 20;
 
     // Whether a mode change is still working through: told the source moved and
     // not yet finished solving for it. What the sync output blanks against.
@@ -194,6 +205,10 @@ private:
     // Whether the count has held for a steadiness run.
     bool countHeld(uint16_t lines);
 
+    // Whether this pass is a detection pass. Consumes the tick, so it is asked
+    // once.
+    bool detectionDue(uint32_t nowMs);
+
     // Take the count the solve just ran against as a run already held.
     void holdSolvedSource();
 
@@ -255,6 +270,8 @@ private:
     SourceKey framedKey_;    // the source the framing held was tuned against
     FramingTable framings_;
     uint16_t framingRevision_;
+    uint32_t detectedMs_;    // when the last detection pass ran
+    bool detectedEver_;      // and whether one has
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
     bool unusableCountArmed_;  // a count no source runs has already armed a change
