@@ -613,8 +613,16 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `VSACT` is self-latching: the bit only reports correctly once the sync type is
   already right, so a unit that lands on csync stays there. `applyPresets()`
   decides with `sourceHasOwnVsync()` instead, which switches `SP_EXT_SYNC_SEL`
-  and asks whether a V sync line actually arrives. It costs ~500 ms, so
-  `rto->syncTypeIsSet` runs it once per SOURCE rather than once per mode change.
+  and asks whether a V sync line actually arrives.
+
+  **IT RUNS PER SOURCE MODE CHANGE, not once per input**, because a source can
+  change its sync type without the mux moving -- a RISC PC sets it from CMOS --
+  so a mode change is the only signal there is that it may have moved.
+  `Geometry::useSyncTypeProbe()` is the engine's and does exactly that; the
+  sketch's `rto->syncTypeIsSet` gate is per source and is the older behaviour.
+  The cost does not argue for the cheaper cadence: reacquisition is **2-3 ms**
+  on a source with its own V sync, and the full window is spent only on a
+  genuinely composite source where the timeout is the right answer.
   `docs/sync-type-selection.md`.
 - **`HPERIOD_IF` going bad is three different faults, and BYPASS IS NOT ONE OF
   THEM — establish the path first.** With the IF out of the path the register
