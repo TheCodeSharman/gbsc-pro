@@ -59,6 +59,15 @@ public:
     // PLL, which are Adc's.
     static void acquire(uint32_t (*nowMs)(), void (*putInForce)());
 
+    // The same walk, two levels at a time and without the settling runs, for a
+    // source whose sync has only just gone: the windows acquire() waits out
+    // cost more than the attempt is worth there. Judges the slicer's output
+    // alone rather than pairing it with a run of HSACT.
+    //
+    // Leaves the level where it is when the slicer is not in the sync path,
+    // where acquire() puts the default back.
+    static void acquireCoarse(void (*putInForce)());
+
 private:
     static uint8_t level_;
 };

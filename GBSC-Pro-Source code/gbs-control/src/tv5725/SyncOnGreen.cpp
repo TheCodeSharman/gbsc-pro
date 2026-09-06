@@ -64,6 +64,10 @@ bool edgesHeld(uint32_t (*nowMs)())
     return run >= EdgeRun;
 }
 
+// Both bits, which is what the coarse pass judges on: it has no run of HSACT
+// beside it, so it asks more of the one reading it takes.
+const uint8_t SlicingCleanly = 0x05;
+
 bool sliceHolds(const SliceBus &bus)
 {
     if (bus.read() == 0)
@@ -123,6 +127,24 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
         choose(exhausted ? DefaultLevel : (uint8_t)(level_ - 1));
         putInForce();
         delay(8);
+
+        if (exhausted)
+            return;
+    }
+}
+
+void SyncOnGreen::acquireCoarse(void (*putInForce)())
+{
+    if (!inSyncPath())
+        return;
+
+    SliceBus bus;
+
+    while ((bus.read() & SlicingCleanly) != SlicingCleanly) {
+        const bool exhausted = level_ < 4;
+        choose(exhausted ? DefaultLevel : (uint8_t)(level_ - 2));
+        putInForce();
+        delay(exhausted ? 40 : 28);
 
         if (exhausted)
             return;

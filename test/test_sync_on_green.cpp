@@ -166,3 +166,44 @@ TEST_CASE("the level reaches the slicer through the injected action")
     CHECK(g_lastInForce == 9);
     CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 9);
 }
+
+// The coarse pass: two at a time, no settling runs. The sketch reaches for it
+// while sync has only just gone, where acquire()'s windows would cost more than
+// the attempt is worth.
+TEST_CASE("the coarse pass leaves a slicer that is already reporting clean edges")
+{
+    seedSlicer(1, 0x05);            // both bits the coarse test asks for
+    SyncType::set(true);
+    SyncOnGreen::choose(11);
+
+    SyncOnGreen::acquireCoarse(putInForce);
+
+    CHECK(SyncOnGreen::level() == 11);
+    CHECK(g_inForce == 0);
+}
+
+TEST_CASE("the coarse pass steps down by two and resets at the floor")
+{
+    // 13 -> 11 -> 9 -> 7 -> 5 -> 3, then below 4 it puts the default back
+    // rather than leaving the slicer near wide open.
+    seedSlicer(1, 0x00);
+    SyncType::set(true);
+    SyncOnGreen::choose(13);
+
+    SyncOnGreen::acquireCoarse(putInForce);
+
+    CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
+    CHECK(g_inForce > 1);
+}
+
+TEST_CASE("the coarse pass leaves a slicer out of the sync path alone")
+{
+    seedSlicer(1, 0x00);
+    SyncType::set(false);
+    SyncOnGreen::choose(7);
+
+    SyncOnGreen::acquireCoarse(putInForce);
+
+    CHECK(g_inForce == 0);
+    CHECK(SyncOnGreen::level() == 7);   // left where it was, not reset
+}

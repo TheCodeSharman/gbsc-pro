@@ -4453,44 +4453,12 @@ void startWire()
     // Wire.setClock(400000);
 }
 
-void fastSogAdjust() // 
+void fastSogAdjust()
 {
-    if (!Tv5725::SyncOnGreen::inSyncPath())
+    if (rto->noSyncCounter > 5)
         return;
 
-    if (rto->noSyncCounter <= 5) {
-        uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
-        uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
-        if (debug_backup != 0xa) {
-            GBS::TEST_BUS_SEL::write(0xa);
-        }
-        if (debug_backup_SP != 0x0f) {
-            GBS::TEST_BUS_SP_SEL::write(0x0f);
-        }
-
-        if ((GBS::TEST_BUS_2F::read() & 0x05) != 0x05) {
-            while ((GBS::TEST_BUS_2F::read() & 0x05) != 0x05) {
-                if (Tv5725::SyncOnGreen::level() >= 4) {
-                    Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 2);
-                } else {
-                    Tv5725::SyncOnGreen::choose(13);
-                    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                    delay(40);
-                    break;
-                }
-                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                delay(28);
-            }
-            delay(10);
-        }
-
-        if (debug_backup != 0xa) {
-            GBS::TEST_BUS_SEL::write(debug_backup);
-        }
-        if (debug_backup_SP != 0x0f) {
-            GBS::TEST_BUS_SP_SEL::write(debug_backup_SP);
-        }
-    }
+    Tv5725::SyncOnGreen::acquireCoarse(putSogLevelInForce);
 }
 
 // Bypass solves no raster, so the sync processor's vertical window is steered
