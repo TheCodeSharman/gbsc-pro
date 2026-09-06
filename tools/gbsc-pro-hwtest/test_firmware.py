@@ -13,6 +13,7 @@ run with no hardware attached.
 """
 
 import re
+import socket
 import time
 
 import pytest
@@ -25,6 +26,7 @@ from gbs_unit import (
     parse_timings,
     read_reg,
     read_field,
+    read_fields,
     read_named,
     read_segment,
     recover_lock,
@@ -1400,6 +1402,84 @@ def test_frozen_firmware_does_not_ratchet_the_sog_level(host, source):
         wait_for(
             lambda: read_named(host, "DAC_RGBS_PWDNZ") == 1, timeout=LOCK_TIMEOUT
         )
+        recover_lock(host)
+
+
+# The engine's own arming. It reads the source's line count itself and re-solves
+# when it moves, so nothing in the sketch has to run for it to write registers --
+# which is why the sketch's freeze guards never covered it.
+ENGINE_WITNESSES = ("PLLAD_MD", "VDS_HSYNC_RST")
+
+# A mode change the SYNC PROCESSOR can see, which is what makes the witness
+# honest: the bench's 311 lines become 679. A rate-only change does not qualify
+# -- 640x256@70 keeps 311 lines, so a count read after it cannot tell a working
+# gate from a source that stayed put.
+WITNESS_MODE = "MODE X800 Y600 C256 F60"
+BENCH_MODE_COMMAND = "MODE X320 Y256 C256 F50"
+SOURCE_SETTLE_SECONDS = 11.0
+
+
+def _mode_serv(where, command):
+    """One command per connection: the close is the end of the reply."""
+    with socket.create_connection((where, 6502), 10) as link:
+        link.sendall((command + "\n").encode())
+        return link.recv(200).decode(errors="replace").strip()
+
+
+@pytest.mark.freeze
+@pytest.mark.source_mode
+def test_frozen_firmware_does_not_re_solve_for_a_source_mode_change(host, request):
+    """Frozen, a source that changes mode must leave the geometry alone.
+
+    loop() calls Geometry::poll() DIRECTLY rather than through
+    runSyncWatcher(), so the freeze that the sketch's automation routines honour
+    never reached the engine. And the engine needs no help from the sketch to
+    act: its idle pass reads the source's line count itself and arms a solve
+    when it moves. A source mode change while frozen therefore re-solved the
+    divider, the raster and both windows underneath whatever the freeze was
+    protecting -- the same shape as loop()'s source-recovery block calling
+    inputAndSyncDetect() directly, one caller later.
+
+    The mode change is what makes this honest: without it the engine has nothing
+    to arm on, and a green test would only say the source held still.
+    """
+    assert _freeze_state(host) is not None, "unit has no /freeze support"
+    where = request.config.getoption("--modeserv")
+
+    before = read_fields(host, ENGINE_WITNESSES + ("STATUS_SYNC_PROC_VTOTAL",))
+    assert before and all(before.values()), (
+        f"{ENGINE_WITNESSES} read {before}; refusing to run without a solved "
+        "unit to observe. Let the source lock first."
+    )
+    counted_before = before.pop("STATUS_SYNC_PROC_VTOTAL")
+
+    get(host, "/freeze?on=1")
+    assert _freeze_state(host) is True, "could not arm the freeze"
+    try:
+        reply = _mode_serv(where, WITNESS_MODE)
+        if not reply.startswith("OK"):
+            pytest.skip(f"the source refused {WITNESS_MODE}: {reply}")
+        time.sleep(SOURCE_SETTLE_SECONDS)
+
+        # The source really moved, read off the chip rather than assumed. The
+        # sync processor keeps counting while the ESP is frozen, so this is the
+        # one witness that separates a working gate from a stationary source.
+        counted = read_named(host, "STATUS_SYNC_PROC_VTOTAL")
+        assert counted is not None and abs(counted - counted_before) > 8, (
+            f"the sync processor counts {counted} lines against the "
+            f"{counted_before} it counted before {WITNESS_MODE}. The source did "
+            "not change, so this run proves nothing about the freeze."
+        )
+
+        after = read_fields(host, ENGINE_WITNESSES)
+        assert after == before, (
+            f"frozen, a source mode change still re-solved the geometry: "
+            f"{before} -> {after}. Geometry::poll() ran behind the freeze."
+        )
+    finally:
+        _mode_serv(where, BENCH_MODE_COMMAND)
+        get(host, "/freeze?on=0")
+        time.sleep(SOURCE_SETTLE_SECONDS)
         recover_lock(host)
 
 
