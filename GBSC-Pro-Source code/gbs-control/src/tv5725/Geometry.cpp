@@ -495,12 +495,6 @@ void Geometry::holdSolvedSource()
     idleLines_ = solvedLines_;
     idleRun_ = SourceMeasurement::SteadySamples;
     sourcePresent_ = true;
-
-    // The disturbance asked for a re-measure and this solve is one: it read the
-    // source after the latch was set. Carrying it past here re-arms immediately,
-    // because the run above starts satisfied, so the count never has to hold
-    // first -- three solves and three sync-type probes for one mode change.
-    sourceInterrupted_ = false;
 }
 
 // Whether the count has held long enough to be the source's rather than a

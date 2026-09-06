@@ -1157,31 +1157,6 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
     CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
 }
 
-TEST_CASE("a disturbance the solve already measured through does not re-arm it")
-{
-    // The interrupt means re-measure, and a solve that has just completed IS a
-    // re-measure: it read the source after the disturbance was latched. Carrying
-    // the latch past it buys a second solve and a second sync-type probe on a
-    // source that has not moved.
-    //
-    // Traced on the bench: one mode change produced three solves, the second and
-    // third arming as "source moved: interrupt (679 lines, solved 679)" -- the
-    // count already equal to the count solved against. Each solve is ~10 ms and
-    // each re-arm re-runs the probe, which is most of a 2 s mode switch.
-    seedBenchSource();
-    DisplayClock clock;
-    Geometry engine(clock);
-
-    engine.modeChanged(benchMode(), 4);
-    engine.sourceInterrupted();          // latched while the solve is in flight
-    REQUIRE(pollUntilSolved(engine));
-
-    g_fieldRateCalls = 0;
-    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(pollOnce(engine));
-    CHECK(g_fieldRateCalls == 0);
-}
-
 TEST_CASE("an interrupt re-measures a source whose line count did not move")
 {
     // The line count is the only change sourceMoved() can see, so a source that
