@@ -923,6 +923,24 @@ static void seedHPeriod(uint16_t hperiod)
     Wire.bank[0][0x07] = (uint8_t)((hperiod >> 8) & 0x01);
 }
 
+TEST_CASE("the field rate is derived over the same frame the line rate assumed")
+{
+    // Both paths have to agree what the frame is. HPERIOD_IF gives the line
+    // rate and the field rate is derived back out of it, so dividing by the
+    // zero-based count where lineRateFrom() multiplies by count + 1 puts the two
+    // a line apart: 15625/311 is 50.24 against the 50.08 the source runs at.
+    // That number is what choice.resolve() picks the output mode with.
+    seedSourceLines(311);
+    seedHPeriod(431);
+
+    SourceMeasurement sampling;
+    REQUIRE(sampling.measureLineRate());
+
+    CHECK(sampling.lineRateHz() == 15625u);
+    CHECK(sampling.fieldRateHz() > 50.0f);
+    CHECK(sampling.fieldRateHz() < 50.1f);
+}
+
 TEST_CASE("a believable HPERIOD_IF run measures the line rate without a vsync spin")
 {
     SourceMeasurement sampling;

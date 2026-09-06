@@ -111,8 +111,6 @@ uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t
     if (samples == nullptr || count < 2 || !countIsSource(lines) || htBadSeen)
         return 0;
 
-
-
     uint16_t low = samples[0];
     uint16_t high = samples[0];
     for (uint8_t i = 1; i < count; ++i) {
@@ -128,7 +126,7 @@ uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t
     if (rate < LineRateFloorHz)
         return 0;
 
-    const float fieldRateHz = (float)rate / (float)lines;
+    const float fieldRateHz = (float)rate / (float)(lines + 1);
     if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
         return 0;
     return rate;
@@ -260,7 +258,9 @@ bool SourceMeasurement::measureLineRate()
     }
 
     if (lineRateHz_ != 0) {
-        fieldRateHz_ = (float)lineRateHz_ / (float)sourceLines_;
+        // Over the frame, not the count: VTOTAL is zero based, and this is the
+        // inverse of what lineRateFrom() does on the other path.
+        fieldRateHz_ = (float)lineRateHz_ / (float)(sourceLines_ + 1);
     } else {
         fieldRateHz_ = getSourceFieldRate(0);
         lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
