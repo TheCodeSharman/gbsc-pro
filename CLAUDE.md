@@ -120,6 +120,50 @@ raw -echo` first), and **USB backfeeds power**, so leaving the cable attached
 means later "power cycles" are not power cycles. Flashing preserves the filesystem
 (`wipe=none` in the FQBN), so stored timings and preferences survive.
 
+## READ THE CONSOLE FIRST. IT SAYS WHAT THE ENGINE IS DOING.
+
+**The status WebSocket is the cheapest instrument on the board and it answers
+before any register can.** A register dump is a snapshot of a machine that
+re-solves itself every few seconds; several faults here are a SEQUENCE rather
+than a state, and the console is the only place a sequence is visible. Reach for
+it first, ahead of `/getregs`, `/geometry` and a photograph.
+
+```sh
+nix develop -c python3 - <<'PY'
+import websocket, time
+ws = websocket.create_connection("ws://192.168.88.108:81", subprotocols=["arduino"], timeout=5)
+ws.settimeout(1); t0 = time.time()
+while time.time() - t0 < 90:
+    try: print(f"{time.time()-t0:7.2f}  {ws.recv().strip()}", flush=True)
+    except Exception: pass
+PY
+```
+
+**TIMESTAMP EVERY LINE, AND CAPTURE AT LEAST 60 SECONDS.** The cadence is the
+finding. Printed bare, a solve every five seconds that nothing asked for reads
+as a healthy engine reporting a correct measurement, over and over.
+
+| line | what it says |
+|---|---|
+| `sampling: 311 lines x 50.08 Hz -> line rate 15625` | **the engine's whole measurement of the source in one line** — the count, the field rate, and the line rate derived from them. `line rate 0` is a reading `rateFollowsCount()` rejected. A first sample of 60..160 Hz followed by a good one is `getSourceFieldRate()` settling, not a fault |
+| `source moved: interrupt \| count \| rate (N lines, solved M)` | why a solve was armed. `interrupt` with `N == M` means the source did not move at all and something else armed it |
+| `own V sync: yes\|no after Nms` | the sync type probe ran. **It writes `SP_EXT_SYNC_SEL`, and the chip latches that as a SOG switch**, so a probe arms the next `source moved: interrupt` by itself |
+| `no INPUT vsync` / `no OUTPUT vsync` | which FrameSync sample timed out. Do not infer which — it says |
+| `h:%4u … m:%hu … u:%3x s:%2x S:%2d` | `printInfo()`. `h:` is `HPERIOD_IF`, `m:` is `getVideoMode()`, **`u:` is `noSyncCounter` IN HEX**, `s:` is `continousStableCounter`, `S:` is the SOG level |
+
+**`m:0` with `s: 0` is a diagnosis on its own.** `getVideoMode()` returning 0
+puts `runSyncWatcher()` in its no-sync branch on every pass and
+`continousStableCounter` never leaves 0, so the stable branch — which is where
+scaling RGBHV re-arms itself — is unreachable. `u:` then pinned at `96` is that
+branch cycling its 150-pass recovery, roughly every five seconds, for ever.
+`docs/investigations/scaling-rgbhv-standard-latches-the-no-sync-branch.md`.
+
+**A quiet console is not a quiet firmware.** Silence with a live HTTP stack
+means the loop is not running, or the heap gate is shut — read `/bootlog`'s
+`free heap:` line before believing it. And the console DROPS BURSTS under
+FrameSync spam, so a missing line is not evidence the step did not run: judge by
+outcome, and by what the next line implies.
+
 ## The system has three control domains, and you can only see one
 
 This is the single most expensive thing to not know. An evening was spent
