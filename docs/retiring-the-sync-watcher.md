@@ -271,6 +271,16 @@ because every one holds the sync type constant. The round trip is the only
 reproduction that moves it, and it belongs in the acceptance criteria of
 anything touching how the engine re-arms.
 
+**AND THE WALK IS HANDED IN, NOT CALLED.** The handover, taken once the level
+is too low to step, runs `optimizeSogLevel()` -- which REFUSES to walk under
+`rgbhvBypass()` and parks the default instead. Calling `acquire()` from inside
+the class looks equivalent and is not: during a detection sweep the handover is
+reached faster than a source can lock, so an unconditional walk ratchets the
+level to 2 and pins it there, `SP_SOG_MODE` 1 and `SP_VTOTAL` 0, where the
+refusing version holds 12 and a clean picture on the same source state. No host
+test separates them and no ESP restart recovers it.
+`docs/investigations/refusing-to-walk-is-part-of-the-walk.md`
+
 **4. One steadiness run, WHICH IS THE NO-SYNC GATE.** `noSyncCounter`,
 `continousStableCounter` and `RGBHVNoSyncCounter` become reads of the engine's
 own run, and `Geometry::sourceIsPresent()` replaces the classification at the
