@@ -78,7 +78,8 @@ uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz
     if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
         return 0;
 
-    return (uint32_t)(fieldRateHz * (float)sourceLines);
+    // VTOTAL is zero based: the frame is one line longer than it counts.
+    return (uint32_t)(fieldRateHz * (float)(sourceLines + 1));
 }
 
 bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,

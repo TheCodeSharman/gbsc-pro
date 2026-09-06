@@ -308,7 +308,12 @@ TEST_CASE("a field rate that disagrees with the line count is refused")
     // which a bare 40..100 Hz check passes. The line count is reliable where the
     // period measurement is not, so it says which rate is plausible.
     // solveRaster() refuses the same way.
-    CHECK(SourceMeasurement::lineRateFrom(311, 50.08f) == 15574u);
+    // STATUS_SYNC_PROC_VTOTAL is zero based, so the frame is one line longer
+    // than it counts and the line rate is the field rate times VTOTAL + 1. Two
+    // instruments settle it: HPERIOD_IF reads this source at 15625 Hz, and
+    // 15625/312 is the 50.08 the field rate measures where 15625/311 is 50.24,
+    // which it does not.
+    CHECK(SourceMeasurement::lineRateFrom(311, 50.08f) == 15624u);
 
     SUBCASE("the line count does not decide what the rate may be") {
         // 311 lines runs at 50 Hz here and 60 Hz elsewhere, and 262 the other
@@ -402,7 +407,7 @@ TEST_CASE("the line rate is measured rather than handed in")
     SourceMeasurement measurement;
     CHECK(measurement.measureLineRate());
     CHECK(measurement.sourceLines() == 311);
-    CHECK(measurement.lineRateHz() == 15574u);
+    CHECK(measurement.lineRateHz() == 15624u);
 
     SUBCASE("and it holds both inputs, because nothing downstream can say which was wrong") {
         CHECK(measurement.fieldRateHz() > 50.0f);
@@ -410,7 +415,7 @@ TEST_CASE("the line rate is measured rather than handed in")
     }
 
     SUBCASE("the diagnostic names both inputs and the result") {
-        CHECK(g_log == "sampling: 311 lines x 50.08 Hz -> line rate 15574");
+        CHECK(g_log == "sampling: 311 lines x 50.08 Hz -> line rate 15624");
     }
 }
 
@@ -782,7 +787,7 @@ TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
         CHECK(measurement.measureLineRate());
         seedSourceLines(0);
         CHECK_FALSE(measurement.measureLineRate());
-        CHECK(measurement.heldLineRateHz() == 15574u);
+        CHECK(measurement.heldLineRateHz() == 15624u);
     }
 }
 
@@ -944,7 +949,9 @@ TEST_CASE("a refused HPERIOD_IF run falls back to the field rate")
 
     REQUIRE(sampling.measureLineRate());
     CHECK(g_fieldRateCalls > 0);
-    CHECK(sampling.lineRateHz() == 31440u);
+    // 525 x 60: VTOTAL is zero based and 640x480@60 is a 525-line frame, so
+    // the count of 524 is the standard's own number less one.
+    CHECK(sampling.lineRateHz() == 31500u);
 }
 
 TEST_CASE("a stuck reading is refused even where it implies a plausible rate")

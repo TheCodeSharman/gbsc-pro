@@ -54,6 +54,10 @@ public:
     // not special and a rate is whatever the source sends. What rejects a
     // reading taken mid-settle is rateFollowsCount(). Returning 0 rather than a
     // guess lets solve() decline.
+    // The field rate times the frame, where the frame is sourceLines + 1:
+    // STATUS_SYNC_PROC_VTOTAL is zero based. Reading it as the frame makes this
+    // 1/312 low on the bench source, which is the whole of the accuracy
+    // HPERIOD_IF has over it.
     static uint32_t lineRateFrom(uint16_t sourceLines, float fieldRateHz);
 
     // How far along the line the sync processor stops retiming hsync, in
