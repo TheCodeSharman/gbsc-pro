@@ -148,7 +148,7 @@ that list does not.
 
 | what it does | owner | exists |
 |---|---|---|
-| freeze and power gates | `poll()`'s own entry gate | — |
+| the freeze gate | `poll()`'s own entry gate | yes |
 | `getVideoMode()`, `getStatus16SpHsStable()` | `Geometry::sourceIsPresent()` | yes |
 | HD bypass vsync window steering | `HdBypass` | yes |
 | the source-disturbed interrupt | `Interrupts`, read by `poll()` | yes |
@@ -181,6 +181,17 @@ the field.
 **And a step is stated as one of the named operations above.** One that cannot
 be is a step that has not been understood yet, and moving it will carry the
 ladder's shape across with it.
+
+**THE ENTRY GATE IS THE FREEZE, AND NOT `rto->boardHasPower`.** The pairing
+reads natural and the second half is a trap: that flag is a latched failure
+rather than a live reading. `runSourceRecovery()` sets it false when
+`checkBoardPower()` fails and its success branch never sets it back, so it holds
+false for the whole recovery -- exactly when the engine has to solve. Gated on
+it, detection probes every seven seconds against an engine that can never
+answer, and the unit does not reacquire: sync processor counting 0, DAC down and
+`/geometry` all zeroes, where the same source recovers at once without it.
+A power fact the engine can trust would have to be measured, not read off that
+flag.
 
 **NOTHING STAYS IN THE SKETCH BECAUSE IT WAS AWKWARD TO MOVE.** A routine being
 extracted usually reaches into two or three other subsystems, and the honest
