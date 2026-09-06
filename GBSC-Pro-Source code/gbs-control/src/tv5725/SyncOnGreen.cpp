@@ -8,7 +8,7 @@ namespace Tv5725 {
 
 namespace {
 
-// How long the sync processor has to hold HSACT before the slicer's own output
+// How long the sync processor has to hold HSACT before the sync separator's own output
 // is worth reading, and how long that output then has to stay up. Both are runs
 // of consecutive samples inside a window in milliseconds, so the two are
 // coupled: the run only completes where a register read is much faster than a
@@ -17,14 +17,14 @@ const uint16_t EdgeRun = 60;
 const uint16_t HoldRun = 50;
 const uint16_t EdgeWindowMs = 60;
 
-// The sync processor's own test bus, which is where the slicer's output
+// The sync processor's own test bus, which is where the sync separator's output
 // appears. Selecting it is what makes it readable, and the previous selection
 // is put back: the console, the auto-gain routine and getSyncPresent() drive
 // the same two registers for other things.
-struct SliceBus {
+struct SeparatorBus {
     uint8_t sel, spSel;
 
-    SliceBus()
+    SeparatorBus()
         : sel(Tv5725::TEST_BUS_SEL::read()), spSel(Tv5725::TEST_BUS_SP_SEL::read())
     {
         if (sel != 0xa) {
@@ -38,7 +38,7 @@ struct SliceBus {
         Tv5725::TEST_BUS_EN::write(1);
     }
 
-    ~SliceBus()
+    ~SeparatorBus()
     {
         if (sel != 0xa)
             Tv5725::TEST_BUS_SEL::write(sel);
@@ -66,9 +66,9 @@ bool edgesHeld(uint32_t (*nowMs)())
 
 // Both bits, which is what the coarse pass judges on: it has no run of HSACT
 // beside it, so it asks more of the one reading it takes.
-const uint8_t SlicingCleanly = 0x05;
+const uint8_t SeparatingCleanly = 0x05;
 
-bool sliceHolds(const SliceBus &bus)
+bool separatorHolds(const SeparatorBus &bus)
 {
     if (bus.read() == 0)
         return false;
@@ -116,11 +116,11 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
 
     putInForce();
 
-    SliceBus bus;
+    SeparatorBus bus;
     delay(100);
 
     while (true) {
-        if (edgesHeld(nowMs) && sliceHolds(bus))
+        if (edgesHeld(nowMs) && separatorHolds(bus))
             return;
 
         const bool exhausted = level_ < 2;
@@ -138,9 +138,9 @@ void SyncOnGreen::acquireCoarse(void (*putInForce)())
     if (!inSyncPath())
         return;
 
-    SliceBus bus;
+    SeparatorBus bus;
 
-    while ((bus.read() & SlicingCleanly) != SlicingCleanly) {
+    while ((bus.read() & SeparatingCleanly) != SeparatingCleanly) {
         const bool exhausted = level_ < 4;
         choose(exhausted ? DefaultLevel : (uint8_t)(level_ - 2));
         putInForce();

@@ -356,8 +356,8 @@ TEST_CASE("the input bounce takes the input away and puts the same one back")
 
 TEST_CASE("the bounce leaves the rest of the byte alone")
 {
-    // ADC_INPUT_SEL shares s5_02 with the sync-on-green slicer level, so a byte
-    // write here would take the slicer with it.
+    // ADC_INPUT_SEL shares s5_02 with the sync-on-green sync separator level, so a byte
+    // write here would take the sync separator with it.
     Wire.reset();
     Wire.bank[5][0x02] = 0x4C;             // level 12 under input 1
     Adc::bounceInput();

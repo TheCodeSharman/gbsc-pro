@@ -1896,7 +1896,7 @@ boolean optimizePhaseSP()
 static uint32_t millisNow() { return (uint32_t)millis(); }
 
 // Putting a level in force latches the sampling phases and the ADC PLL, which
-// the slicer does not own.
+// the sync separator does not own.
 static void putSogLevelInForce()
 {
     setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
@@ -4508,7 +4508,7 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
     hdBypassLastMeasure = millis();
 }
 
-// The SOG slicer level is tuned against the source rather than solved, because
+// The SOG sync separator level is tuned against the source rather than solved, because
 // nothing measures the sync amplitude: a run of bad-hsync samples inside a
 // window is the only evidence, and the response is to step the level down and
 // watch again. csync only -- there is no sync on green to slice otherwise.
@@ -7947,7 +7947,7 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'z':
-            // sog slicer level
+            // sog sync separator level
             if (Tv5725::SyncOnGreen::level() > 0) {
                 Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
             } else {

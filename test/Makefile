@@ -53,8 +53,8 @@ endef
 
 ## sync-on-green: host unit tests for Tv5725::SyncOnGreen
 #
-# The slicer level for the source's own sync: held rather than read back, and
-# refused rather than truncated when a caller asks past the field.
+# The sync separator level for the source's own sync: held rather than read
+# back, and refused rather than truncated when a caller asks past the field.
 sync-on-green:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \

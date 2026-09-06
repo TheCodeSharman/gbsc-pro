@@ -5,8 +5,18 @@
 
 namespace Tv5725 {
 
-// The slicer that recovers sync from the green channel, and the one owner of
-// its level.
+// The sync separator -- the datasheet's name for it, DS-5725-3.2's "internal
+// sync separator to support SOG/SOY" -- and the one owner of its level,
+// ADC_SOGCTRL.
+//
+// Green and luma are the same pin -- the datasheet names it SOG/Y, "analog
+// SOG/Y input" -- and the encoding is what relabels them. So this covers RGsB
+// and YPbPr both, and there is one level rather than one per colour space.
+//
+// Nothing on the board measures the sync amplitude, so the level cannot be
+// calculated. Too high slices into dark picture and invents edges, too low
+// misses real pulses, and what is left is to step it and watch whether the sync
+// processor sees clean edges.
 //
 // **THE LEVEL IS HELD, NOT READ BACK.** Every ratchet that walks it takes the
 // level it last set as its starting point; deriving the next one from the
@@ -23,7 +33,7 @@ public:
     // returns when it reaches the floor without finding a level that works.
     static const uint8_t DefaultLevel = 13;
 
-    // Whether the slicer reaches the sync processor at all. It does only with
+    // Whether the sync separator reaches the sync processor at all. It does only with
     // SP_SOG_MODE 1, which follows the sync type -- so on a separate-sync
     // source every level is inert, and a recovery that walks it is moving a
     // control nothing is reading.
@@ -33,12 +43,12 @@ public:
     // the path.
     static bool inSyncPath();
 
-    // The level to run at, without touching the slicer. Several sites choose
+    // The level to run at, without touching the sync separator. Several sites choose
     // one for a source the ADC has not been brought up for yet, and the
     // bring-up applies it.
     //
     // A level past the field is refused rather than truncated: masking put 32
-    // in as 0, which is the slicer fully open and the one value no ratchet can
+    // in as 0, which is the sync separator fully open and the one value no ratchet can
     // climb back out of.
     static void choose(uint8_t level);
 
@@ -52,7 +62,7 @@ public:
 
     // Walk the chosen level down until the sync processor holds clean edges
     // over a run, and put DefaultLevel back if the floor is reached without
-    // finding one. Chooses DefaultLevel and touches nothing when the slicer is
+    // finding one. Chooses DefaultLevel and touches nothing when the sync separator is
     // not in the sync path.
     //
     // Putting a level in force also latches the sampling phases and the ADC
@@ -61,10 +71,10 @@ public:
 
     // The same walk, two levels at a time and without the settling runs, for a
     // source whose sync has only just gone: the windows acquire() waits out
-    // cost more than the attempt is worth there. Judges the slicer's output
+    // cost more than the attempt is worth there. Judges the sync separator's output
     // alone rather than pairing it with a run of HSACT.
     //
-    // Leaves the level where it is when the slicer is not in the sync path,
+    // Leaves the level where it is when the sync separator is not in the sync path,
     // where acquire() puts the default back.
     static void acquireCoarse(void (*putInForce)());
 

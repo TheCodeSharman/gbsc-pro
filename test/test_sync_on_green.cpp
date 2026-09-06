@@ -15,7 +15,7 @@ using namespace Tv5725;
 
 static const uint8_t Poison = 0xE2;
 
-TEST_CASE("the level asked for reaches the slicer")
+TEST_CASE("the level asked for reaches the sync separator")
 {
     Wire.reset();
     Wire.poison(Poison);
@@ -42,7 +42,7 @@ TEST_CASE("the level is what was held, not what the register reads")
 TEST_CASE("a level past the field is refused rather than truncated")
 {
     // Five bits. The old path masked with 0x1f, so 32 arrived as 0 -- the
-    // slicer fully open, which is the one value that cannot be recovered from
+    // sync separator fully open, which is the one value that cannot be recovered from
     // by ratcheting down.
     Wire.reset();
     Wire.poison(Poison);
@@ -54,9 +54,9 @@ TEST_CASE("a level past the field is refused rather than truncated")
     CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 12);
 }
 
-TEST_CASE("the slicer is in the sync path only on a csync source")
+TEST_CASE("the sync separator is in the sync path only on a csync source")
 {
-    // SP_SOG_MODE follows the sync type, and the slicer only reaches the sync
+    // SP_SOG_MODE follows the sync type, and the sync separator only reaches the sync
     // processor with it 1 -- so on a separate-sync source every level is inert
     // and a recovery that walks it is moving a control nothing is reading.
     // Measured on the bench VGA input: SP_SOG_MODE 0, ADC_SOGCTRL walked 12 to
@@ -111,7 +111,7 @@ static void seedSlicer(uint8_t hsActive, uint8_t sliceBus)
     g_inForce = 0;
 }
 
-TEST_CASE("a slicer that is not in the sync path is left alone")
+TEST_CASE("a sync separator that is not in the sync path is left alone")
 {
     seedSlicer(1, 0xFF);
     SyncType::set(false);
@@ -123,7 +123,7 @@ TEST_CASE("a slicer that is not in the sync path is left alone")
     CHECK(SyncOnGreen::level() == SyncOnGreen::DefaultLevel);
 }
 
-TEST_CASE("a slicer already producing clean edges keeps the level chosen")
+TEST_CASE("a sync separator already producing clean edges keeps the level chosen")
 {
     // The whole cost of the walk is paid per step, so a source that is already
     // good must not be walked off a level that works.
@@ -136,11 +136,11 @@ TEST_CASE("a slicer already producing clean edges keeps the level chosen")
     CHECK(SyncOnGreen::level() == 11);
 }
 
-TEST_CASE("a slicer that never comes good walks to the floor and resets")
+TEST_CASE("a sync separator that never comes good walks to the floor and resets")
 {
-    // HSACT holds but the slicer's own output stays dead, which is the state
+    // HSACT holds but the sync separator's own output stays dead, which is the state
     // the ratchet exists for. Reaching the floor without finding a level puts
-    // the default back rather than leaving the slicer wide open.
+    // the default back rather than leaving the sync separator wide open.
     seedSlicer(1, 0x00);
     SyncType::set(true);
     SyncOnGreen::choose(13);
@@ -151,7 +151,7 @@ TEST_CASE("a slicer that never comes good walks to the floor and resets")
     CHECK(g_inForce > 1);
 }
 
-TEST_CASE("the level reaches the slicer through the injected action")
+TEST_CASE("the level reaches the sync separator through the injected action")
 {
     // Writing ADC_SOGCTRL here instead would skip the phase and ADC PLL
     // latches that putting a level in force carries, and a divider written
@@ -170,7 +170,7 @@ TEST_CASE("the level reaches the slicer through the injected action")
 // The coarse pass: two at a time, no settling runs. The sketch reaches for it
 // while sync has only just gone, where acquire()'s windows would cost more than
 // the attempt is worth.
-TEST_CASE("the coarse pass leaves a slicer that is already reporting clean edges")
+TEST_CASE("the coarse pass leaves a sync separator that is already reporting clean edges")
 {
     seedSlicer(1, 0x05);            // both bits the coarse test asks for
     SyncType::set(true);
@@ -185,7 +185,7 @@ TEST_CASE("the coarse pass leaves a slicer that is already reporting clean edges
 TEST_CASE("the coarse pass steps down by two and resets at the floor")
 {
     // 13 -> 11 -> 9 -> 7 -> 5 -> 3, then below 4 it puts the default back
-    // rather than leaving the slicer near wide open.
+    // rather than leaving the sync separator near wide open.
     seedSlicer(1, 0x00);
     SyncType::set(true);
     SyncOnGreen::choose(13);
@@ -196,7 +196,7 @@ TEST_CASE("the coarse pass steps down by two and resets at the floor")
     CHECK(g_inForce > 1);
 }
 
-TEST_CASE("the coarse pass leaves a slicer out of the sync path alone")
+TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
 {
     seedSlicer(1, 0x00);
     SyncType::set(false);
