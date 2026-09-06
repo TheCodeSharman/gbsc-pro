@@ -410,6 +410,22 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   comm -23 <(ls build/output/sketch/src/tv5725/*.cpp | sed 's|.*/||' | sort) \
            <(ls "GBSC-Pro-Source code/gbs-control/src/tv5725/"*.cpp | sed 's|.*/||' | sort)
   ```
+- **ALWAYS ENTER THE DEV SHELL FROM THE REPO ROOT.** `NIX_LDFLAGS` carries
+  `-rpath $out/lib`, and `$out` is derived from the directory `nix develop` was
+  invoked in. Enter it from inside `GBSC-Pro-Source code/` and `$out` contains
+  the space, so the link line word-splits and g++ is handed a nonexistent
+  `-L code/gbs-control/outputs/out/lib`:
+
+  ```
+  ld.bfd: cannot find code/gbs-control/outputs/out/lib: No such file or directory
+  ```
+
+  **It reads as a source that vanished**, which is the trap: it looks exactly
+  like the stale-build-cache entry above, so a rename in flight gets the blame
+  and the next move is a pointless `make -C build clean`. Nothing is wrong with
+  the tree. `cd` back to the root and the same command passes. A `cd` in an
+  earlier compound command is enough to cause it, because the shell's working
+  directory persists between calls.
 - **Nix copies the working tree into the store to evaluate the flake from a
   dirty git checkout, and it copies TRACKED FILES ONLY.** One copy per distinct
   tree state, so an editing session is several GB — this is what took `/nix/store`
