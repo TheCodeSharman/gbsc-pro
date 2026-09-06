@@ -221,6 +221,28 @@ acquisition it is doing badly has an owner, a gate in front of it is a gate in
 front of the only exit.
 `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 
+**THE INTERRUPT RE-ARMS ARE A RETRY LOOP, NOT WASTE.** One source mode change
+produces three solves and three sync-type probes, and removing the repeats looks
+like free speed -- the switch halves. It is not free: the latched disturbance is
+what re-arms `establishSyncType()`, and the repeats are what let the probe
+converge. Traced on a `SYNC 1` -> `SYNC 0` round trip, the return leg recovers
+because `source moved: interrupt (281 lines, solved 308)` arms a re-probe 0.61 s
+in. Consume the latch on a completed solve and the unit sits on the csync path
+indefinitely -- measured at 74 s with `SP_VTOTAL` reading 97, which is a
+separate-sync source counted through the wrong path.
+
+**The waste is after convergence, and that is what to remove.** The same trace
+keeps arming at 6.40 s and 11.62 s with `interrupt (311 lines, solved 311)` and
+the rate measuring 50.08 both times -- the count equal to the solved count and
+nothing moved. So the check is whether anything actually differs before
+re-solving, not whether a solve has happened since the latch was set.
+
+**And no host test reaches this.** A test pinning an interrupt after a solve
+passes either way, and a mode soak of 36 changes across nine timings passes too,
+because every one holds the sync type constant. The round trip is the only
+reproduction that moves it, and it belongs in the acceptance criteria of
+anything touching how the engine re-arms.
+
 **4. One steadiness run, WHICH IS THE NO-SYNC GATE.** `noSyncCounter`,
 `continousStableCounter` and `RGBHVNoSyncCounter` become reads of the engine's
 own run, and `Geometry::sourceIsPresent()` replaces the classification at the
