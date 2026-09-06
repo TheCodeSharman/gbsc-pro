@@ -5775,6 +5775,15 @@ void myLog(char const *type, char command)
            type, command, uopt->presetPreference, uopt->presetSlot, rto->presetID);
 }
 
+// The engine's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
+// failure rather than a live reading, and it stays false through the whole
+// recovery -- exactly when the engine has to solve.
+// docs/retiring-the-sync-watcher.md
+static bool engineMayRun()
+{
+    return !AUTOMATION_FROZEN();
+}
+
 void setup()
 {
     system_update_cpu_freq(160);
@@ -5783,6 +5792,11 @@ void setup()
     // the only signal that a source may have changed it -- a RISC PC sets it
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
+
+    // The freeze, which loop() applies to everything it calls except the
+    // engine -- poll() is reached directly rather than through
+    // runSyncWatcher()'s gate. docs/gbs-control-debug-interface.md
+    geometry.useRunGate(engineMayRun);
 
     // delay(700);
     // ESP.wdtDisable();

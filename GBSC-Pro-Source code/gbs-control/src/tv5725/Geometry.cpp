@@ -28,6 +28,7 @@ Geometry::Geometry(DisplayClock &displayClock)
       samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
       framingRevision_(0),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
+      mayRun_(0),
       solvedLines_(0), solvedLineRateHz_(0),
       detectedMs_(0), detectedEver_(false),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
@@ -275,6 +276,9 @@ bool Geometry::detectionDue(uint32_t nowMs)
 
 bool Geometry::poll(uint32_t nowMs)
 {
+    if (mayRun_ != 0 && !mayRun_())
+        return false;
+
     if (!modePending_) {
         if (detectionDue(nowMs) && sourceMoved())
             modeChanged(choice_, modeOversample_);
@@ -421,6 +425,8 @@ bool Geometry::solveForSource()
 
 
 void Geometry::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
+
+void Geometry::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
 void Geometry::establishSyncType()
 {

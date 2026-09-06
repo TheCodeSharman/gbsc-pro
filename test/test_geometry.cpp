@@ -1553,3 +1553,60 @@ TEST_CASE("nothing has been solved, so no source is present")
 
     CHECK_FALSE(engine.sourceIsPresent());
 }
+
+// The run gate. loop() reaches poll() directly rather than through the sync
+// watcher, so the freeze five sketch functions honour never reached the engine
+// -- and a bench measurement that froze automation had the solver rewriting
+// the windows underneath it.
+static bool g_mayRun = true;
+static unsigned g_gateAsked = 0;
+static bool runGate()
+{
+    ++g_gateAsked;
+    return g_mayRun;
+}
+
+TEST_CASE("a shut gate stops the engine writing anything")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useRunGate(runGate);
+    g_mayRun = false;
+
+    engine.modeChanged(benchMode(), 4);
+    Wire.reset();
+    poisonChip();
+    CHECK_FALSE(pollUntilSolved(engine));
+
+    CHECK(registersWritten() == 0);
+}
+
+TEST_CASE("the gate is asked per poll, so what it stopped resumes")
+{
+    // A change outstanding when the gate shuts is still outstanding when it
+    // opens: the engine picks the mode change back up rather than losing it.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useRunGate(runGate);
+    g_mayRun = false;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE_FALSE(pollUntilSolved(engine));
+
+    g_mayRun = true;
+    REQUIRE(pollUntilSolved(engine));
+
+    checkBenchGeometry();
+}
+
+TEST_CASE("an engine with no gate runs, which is what every caller did before")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+
+    CHECK(pollUntilSolved(engine));
+}

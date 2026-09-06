@@ -68,6 +68,18 @@ public:
     // docs/sync-type-selection.md
     void useSyncTypeProbe(bool (*hasOwnVsync)());
 
+    // Whether the engine may act at all, asked at the top of every poll().
+    // Everything below it writes registers, so a bench measurement that has
+    // frozen automation and a board with no power both have to stop it -- and
+    // loop() reaches poll() DIRECTLY rather than through the sync watcher, so
+    // the watcher's own gate never covered it. Without one the engine always
+    // runs, which is what every caller did before.
+    //
+    // A change outstanding when the gate shuts stays outstanding, so the
+    // output stays blanked until it opens again: an engine stopped half way
+    // through a mode change has no settled timing to show the encoder.
+    void useRunGate(bool (*mayRun)());
+
     // Notify the engine that the source has changed mode. The registers are
     // not written until the source has settled, and the choice does not become
     // a resolution until the field rate behind it has been measured.
@@ -265,6 +277,7 @@ private:
     bool scanModeApplied_;
     bool syncTypeProbed_;
     bool (*syncProbe_)();   // the registers have been written for this mode change
+    bool (*mayRun_)();      // whether the engine may act at all, asked per poll
     uint16_t solvedLines_;   // the source line count the last solve ran against
     uint32_t solvedLineRateHz_;  // and the line rate, which the count cannot show
     SourceKey framedKey_;    // the source the framing held was tuned against
