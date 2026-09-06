@@ -2,6 +2,7 @@
 
 #include <Arduino.h>   // delay(), a hardware settling time
 
+#include "Interrupts.h"
 #include "SyncType.h"
 
 namespace Tv5725 {
@@ -68,6 +69,56 @@ bool edgesHeld(uint32_t (*nowMs)())
 // beside it, so it asks more of the one reading it takes.
 const uint8_t SeparatingCleanly = 0x05;
 
+// One tuning pass's worth of evidence, and how long each sample waits for the
+// measured line length to move before giving up on it.
+const uint8_t SamplesPerPass = 16;
+const uint8_t LineLengthReads = 20;
+
+// How long a new level takes to reach the sync separator, the level below which
+// there is no room to step, and the level below which the walk owns the margin
+// rather than a single trim.
+const uint16_t StepSettleMs = 30;
+const uint8_t LowestSteppable = 2;
+const uint8_t LowestTrimmable = 8;
+
+// Whether the sync processor is reporting trouble at all. Either the sync
+// separator raised its own interrupt or hsync stopped being active, and both
+// are worth a closer look at the line length.
+bool separatorReportsTrouble()
+{
+    return Interrupts::STATUS_INT_SOG_BAD::read() == 1
+        || Tv5725::STATUS_SYNC_PROC_HSACT::read() == 0;
+}
+
+// A line length that will not hold still is the sync processor retiming against
+// edges the sync separator is inventing or missing.
+bool lineLengthMoves()
+{
+    const uint16_t settled = Tv5725::STATUS_SYNC_PROC_HLOW_LEN::read();
+    for (uint8_t a = 0; a < LineLengthReads; ++a)
+        if (Tv5725::STATUS_SYNC_PROC_HLOW_LEN::read() != settled)
+            return true;
+    return false;
+}
+
+uint16_t countBadSamples(bool sourceClassified)
+{
+    uint16_t counted = 0;
+    for (uint8_t i = 0; i < SamplesPerPass; ++i) {
+        if (separatorReportsTrouble()) {
+            Interrupts::acknowledgeSogBad();
+
+            // With no standard detected there is no settled line length to
+            // compare against, so trouble counts on its own rather than waiting
+            // for evidence that cannot arrive.
+            if (!sourceClassified || lineLengthMoves())
+                ++counted;
+        }
+        delay((i % 3) == 0 ? 1 : 0);
+    }
+    return counted;
+}
+
 bool separatorHolds(const SeparatorBus &bus)
 {
     if (bus.read() == 0)
@@ -83,9 +134,15 @@ bool separatorHolds(const SeparatorBus &bus)
 }  // namespace
 
 uint8_t SyncOnGreen::level_ = 0;
+uint32_t SyncOnGreen::windowStart_ = 0;
+uint16_t SyncOnGreen::badSamples_ = 0;
+bool SyncOnGreen::steppedInWindow_ = false;
 
 const uint8_t SyncOnGreen::DefaultLevel;
 const uint8_t SyncOnGreen::LevelMax;
+const uint16_t SyncOnGreen::WindowMs;
+const uint16_t SyncOnGreen::StepThreshold;
+const uint16_t SyncOnGreen::HandoverThreshold;
 
 void SyncOnGreen::choose(uint8_t level)
 {
@@ -149,6 +206,92 @@ void SyncOnGreen::acquireCoarse(void (*putInForce)())
         if (exhausted)
             return;
     }
+}
+
+void SyncOnGreen::forgetWindow(uint32_t nowMs)
+{
+    badSamples_ = 0;
+    windowStart_ = nowMs;
+}
+
+// How long the level takes to reach the sync separator, and the lowest level
+// worth taking a further step off once a window closes -- below it the walk
+// owns the level, because only the walk can reach a floor and put the default
+// back.
+void SyncOnGreen::step(uint8_t to, void (*putInForce)())
+{
+    choose(to);
+    putInForce();
+    delay(StepSettleMs);
+    badSamples_ = 0;
+}
+
+// A step taken inside the window that has just closed was evidence the level
+// was too high for this source, so it gives up the margin that turned out to be
+// needed. Once, and only from a level the walk does not own.
+bool SyncOnGreen::trimEarnedMargin(void (*putInForce)())
+{
+    if (!steppedInWindow_)
+        return false;
+
+    steppedInWindow_ = false;
+    if (level_ < LowestTrimmable)
+        return false;
+
+    step(level_ - 1, putInForce);
+    return true;
+}
+
+// Enough bad samples inside one window to say the level is too high: one step
+// down while there is room, and the walk from the default once there is not.
+bool SyncOnGreen::stepOnEvidence(void (*putInForce)(), void (*escalate)())
+{
+    bool moved = false;
+    if (level_ >= LowestSteppable) {
+        step(level_ - 1, putInForce);
+        moved = true;
+    } else if (badSamples_ > HandoverThreshold) {
+        // Nowhere left to step, so the walk takes over -- and it is the
+        // caller's, because it knows when not to run at all.
+        escalate();
+        badSamples_ = 0;
+        moved = true;
+    }
+
+    if (moved)
+        steppedInWindow_ = true;
+    return moved;
+}
+
+SyncOnGreen::Tuning SyncOnGreen::tune(bool sourceDisturbed, bool sourceClassified,
+                                      uint32_t (*nowMs)(), void (*putInForce)(),
+                                      void (*escalate)())
+{
+    Tuning outcome = {false, false, false};
+
+    if (!inSyncPath())
+        return outcome;
+
+    if (sourceDisturbed || Interrupts::STATUS_INT_SOG_BAD::read() == 1) {
+        if (nowMs() - windowStart_ > WindowMs)
+            forgetWindow(nowMs());
+        outcome.sourceUnsettled = true;
+    }
+
+    if (nowMs() - windowStart_ >= WindowMs) {
+        outcome.levelMoved = outcome.phaseStale = trimEarnedMargin(putInForce);
+        return outcome;
+    }
+
+    const uint16_t counted = countBadSamples(sourceClassified);
+    badSamples_ += counted;
+    if (counted != 0)
+        outcome.sourceUnsettled = true;
+    if (badSamples_ >= StepThreshold) {
+        outcome.levelMoved = stepOnEvidence(putInForce, escalate);
+        windowStart_ = nowMs();
+    }
+    return outcome;
 }
 
 }  // namespace Tv5725

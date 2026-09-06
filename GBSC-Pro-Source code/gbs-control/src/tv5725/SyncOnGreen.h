@@ -78,8 +78,56 @@ public:
     // where acquire() puts the default back.
     static void acquireCoarse(void (*putInForce)());
 
+    // What a tuning pass leaves for someone else to do. Each belongs to
+    // another class and is claimed by a later step of
+    // docs/retiring-the-sync-watcher.md: the sync processor refresh at step 5,
+    // the vsync lock stamp at step 11, the sampling phase at step 6.
+    struct Tuning {
+        bool sourceUnsettled;
+        bool levelMoved;
+        bool phaseStale;
+    };
+
+    // Step the level down ahead of a sync loss, on a source that is acquired.
+    // Nothing measures the sync amplitude, so the evidence is a run of
+    // bad-hsync samples inside a window and the response is one step down.
+    //
+    // `sourceClassified` false counts every sample bad: with no standard
+    // detected there is nothing to compare a line length against, so the pass
+    // stops waiting for evidence it cannot get.
+    //
+    // The window and the bad-sample count are held across passes, so a mode
+    // change has to say they are stale: forgetWindow().
+    //
+    // `escalate` is the walk, run once the level is too low to step. It is the
+    // caller's because REFUSING to walk is part of it: during a detection sweep
+    // the walk is called faster than a source can lock, and it pins the level
+    // at the floor -- measured at 2, where a separate-sync source then never
+    // acquires at all and no restart recovers it.
+    static Tuning tune(bool sourceDisturbed, bool sourceClassified,
+                       uint32_t (*nowMs)(), void (*putInForce)(),
+                       void (*escalate)());
+
+    static void forgetWindow(uint32_t nowMs);
+
 private:
+    // How long evidence is gathered before the level is judged, and how many
+    // bad samples inside one window ask for a step.
+    static const uint16_t WindowMs = 3000;
+    static const uint16_t StepThreshold = 17;
+
+    // The count that hands over to the walk, once the level itself is too low
+    // to step any further.
+    static const uint16_t HandoverThreshold = 40;
+
+    static void step(uint8_t to, void (*putInForce)());
+    static bool trimEarnedMargin(void (*putInForce)());
+    static bool stepOnEvidence(void (*putInForce)(), void (*escalate)());
+
     static uint8_t level_;
+    static uint32_t windowStart_;
+    static uint16_t badSamples_;
+    static bool steppedInWindow_;
 };
 
 }  // namespace Tv5725

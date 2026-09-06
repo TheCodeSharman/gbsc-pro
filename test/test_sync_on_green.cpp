@@ -207,3 +207,177 @@ TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
     CHECK(g_inForce == 0);
     CHECK(SyncOnGreen::level() == 7);   // left where it was, not reset
 }
+
+// The tuning pass: run while a source is acquired, it steps the level down
+// ahead of a sync loss rather than waiting for one. Its window and its
+// bad-sample count are held across passes.
+static uint32_t g_now = 0;
+static uint32_t fixedClock() { return g_now; }
+
+// The walk from a chosen starting level, which the caller supplies: on a path
+// where the level may not be walked at all it parks the default instead.
+static unsigned g_escalations = 0;
+static void escalate()
+{
+    ++g_escalations;
+    SyncOnGreen::choose(SyncOnGreen::DefaultLevel);
+    SyncOnGreen::acquire(testClock, putInForce);
+}
+
+static void seedTuning(uint8_t level, bool sogBad)
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    Wire.bank[0][0x0F] = sogBad ? 0x01 : 0x00;   // STATUS_INT_SOG_BAD, bit 0
+    Wire.bank[0][0x16] = 0x02;                   // HSACT, bit 1, held
+    Wire.bank[0][0x19] = 0x10;                   // HLOW_LEN, 12 bits over 0x19..0x1A
+    Wire.bank[0][0x1A] = 0x00;
+    g_now = 0;
+    g_inForce = 0;
+    g_escalations = 0;
+    g_reads = 0;
+    SyncType::set(true);
+    SyncOnGreen::choose(level);
+    SyncOnGreen::forgetWindow(g_now);
+}
+
+TEST_CASE("one window of bad samples is not enough to move the level")
+{
+    // A pass counts at most sixteen, and the level only moves once a window has
+    // seen more than that -- so a single burst does not walk a working source
+    // off a level that holds.
+    seedTuning(11, true);
+
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 11);
+}
+
+TEST_CASE("bad samples past the threshold step the level down by one")
+{
+    seedTuning(11, true);
+
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 10);
+}
+
+TEST_CASE("a step reports that the level moved")
+{
+    // The sync processor's dynamic registers are refreshed after a step, and
+    // that refresh is the sketch's until step 5 of the retirement.
+    seedTuning(11, true);
+
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+    SyncOnGreen::Tuning outcome =
+        SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(outcome.levelMoved);
+}
+
+TEST_CASE("a step puts the new level in force through the injected action")
+{
+    seedTuning(11, true);
+
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(g_lastInForce == 10);
+    CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 10);
+}
+
+TEST_CASE("a clean source is left where it is")
+{
+    // No bad-hsync interrupt and HSACT held: there is no evidence to act on,
+    // and the level a source works at must survive a pass that finds nothing.
+    seedTuning(11, false);
+
+    SyncOnGreen::tune(false, true, fixedClock, putInForce, escalate);
+    SyncOnGreen::tune(false, true, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 11);
+    CHECK(g_inForce == 0);
+}
+
+TEST_CASE("a sync separator out of the sync path is left alone")
+{
+    // SP_SOG_MODE follows the sync type. On a separate-sync source the level
+    // is inert, and walking it moves a control nothing is reading.
+    seedTuning(11, true);
+    SyncType::set(false);
+
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 11);
+    CHECK(g_inForce == 0);
+}
+
+TEST_CASE("a source reporting bad hsync is reported unsettled")
+{
+    // The frame time lock walks away from a rate measured across a sync
+    // disturbance, so it is told to hold off. That stamp is the sketch's until
+    // step 11.
+    seedTuning(11, true);
+
+    SyncOnGreen::Tuning outcome =
+        SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(outcome.sourceUnsettled);
+}
+
+TEST_CASE("a level too low to step hands the walk to the caller")
+{
+    // Below two there is nowhere left to step. The walk is not run from here:
+    // whether the level may be walked at all depends on the path the source is
+    // on, and walking it during a detection sweep pins it at the floor.
+    seedTuning(1, true);
+
+    for (int pass = 0; pass < 4; ++pass)
+        SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(g_escalations == 1);
+}
+
+TEST_CASE("a window that closes after a step takes one more off the level")
+{
+    // The step inside the window was evidence the level was too high; closing
+    // the window without further trouble takes the margin the source turned
+    // out to need. Only from eight up -- below that the walk owns it.
+    seedTuning(11, true);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);   // steps to 10
+
+    Wire.bank[0][0x0F] = 0x00;                                 // trouble stops
+    g_now += 4000;                                             // the window closes
+    SyncOnGreen::Tuning outcome =
+        SyncOnGreen::tune(false, true, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 9);
+    CHECK(outcome.phaseStale);
+}
+
+TEST_CASE("a window that closes with no step leaves the level alone")
+{
+    seedTuning(11, false);
+
+    g_now += 4000;
+    SyncOnGreen::tune(false, true, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 11);
+    CHECK(g_inForce == 0);
+}
+
+TEST_CASE("forgetting the window discards the samples counted in it")
+{
+    // A mode change makes the evidence stale: it was gathered against the
+    // timing the source has just left.
+    seedTuning(11, true);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    SyncOnGreen::forgetWindow(g_now);
+    SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
+
+    CHECK(SyncOnGreen::level() == 11);
+}
