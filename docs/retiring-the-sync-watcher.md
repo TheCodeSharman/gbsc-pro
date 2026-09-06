@@ -251,6 +251,21 @@ thing that leaves the black state a round trip can produce, and until the
 acquisition it is doing badly has an owner, a gate in front of it is a gate in
 front of the only exit.
 
+**THE OWNERSHIP LANDS HERE; THE CALL SITES TRAVEL WITH STEP 4.** All four
+routines own their registers now, but moving the pre-emptive pass onto the idle
+pass needs a gate the engine does not yet have. In the sketch it runs behind
+`sourceDisconnected` and `syncWatcherEnabled`; on the idle pass the only
+equivalent is `sourceIsPresent()`, which is step 4. Moving it without one runs
+acquisition throughout a recovery, walking the level down on a source that
+cannot answer -- the failure this step already produced twice, once from an
+unconditional walk and once from a gate keyed on `rto->boardHasPower`.
+
+And the gate is not a formality to pick: the pass is PRE-EMPTIVE, so it earns
+its keep exactly as sync degrades, and `sourceIsPresent()` is a held steady
+count that goes false at that moment. Whether it should run while the run is
+broken is the question step 4 has to answer, not one to settle by whichever
+gate happens to be reachable.
+
 **What it leaves in the sketch, and where that goes.**
 `tuneSogLevelPreemptively()` is the one of the three that reaches outside the
 level: it calls `updateSpDynamic()`, stamps `lastVsyncLock` and clears
