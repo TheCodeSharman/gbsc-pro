@@ -113,6 +113,9 @@ public:
     // The source disturbed, as the chip latched it. Arms a re-measure, which
     // the line count alone cannot: a source returning at the same count and a
     // different field rate moves nothing sourceMoved() can see.
+    //
+    // A completed solve consumes it, because the solve measured the source
+    // after the latch was set. One arriving afterwards still fires.
     void sourceInterrupted();
 
     bool reset();
