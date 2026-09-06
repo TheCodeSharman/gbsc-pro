@@ -182,6 +182,26 @@ the field.
 be is a step that has not been understood yet, and moving it will carry the
 ladder's shape across with it.
 
+**NOTHING STAYS IN THE SKETCH BECAUSE IT WAS AWKWARD TO MOVE.** A routine being
+extracted usually reaches into two or three other subsystems, and the honest
+intermediate is to take what belongs to the class and leave the rest where it
+is. That is a step, not an end state: every side effect left behind has an owner
+of its own, and the plan names it rather than letting it settle in the sketch by
+default.
+
+| left in the sketch by an earlier step | its owner | lands at |
+|---|---|---|
+| `updateSpDynamic()` | `SyncProcessor` -- it writes `SP_*` and nothing else | step 5, with the coast window |
+| `lastVsyncLock` | FrameSync, which is the only thing that reads it | step 11, with the rate steer |
+| `rto->phaseIsSet` | `Adc` | step 6, with the sampling phase |
+| `rto->coastPositionIsSet`, `rto->clampPositionIsSet` | `SyncProcessor` | step 5 |
+
+`updateSpDynamic()` is not tidying. It is the second owner of
+`SP_H_PULSE_IGNOR`, writing 2 where `applyForSyncType()` wrote 255, and a black
+screen on a locked source is what that costs -- so it is one of the faults this
+plan exists for rather than a leftover to sweep up afterwards.
+`docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`
+
 Each step is a bounded commit plus its host test, cherry-pickable on its own.
 
 ## The order
@@ -219,6 +239,14 @@ This is the step that has to land before the gate: the recovery is the only
 thing that leaves the black state a round trip can produce, and until the
 acquisition it is doing badly has an owner, a gate in front of it is a gate in
 front of the only exit.
+
+**What it leaves in the sketch, and where that goes.**
+`tuneSogLevelPreemptively()` is the one of the three that reaches outside the
+level: it calls `updateSpDynamic()`, stamps `lastVsyncLock` and clears
+`rto->phaseIsSet`. The level's own window and ratchet come here; those three
+stay put for now and are claimed by `SyncProcessor`, FrameSync and `Adc` at
+steps 5, 11 and 6. Leaving them is the intermediate the table under *The rule
+for every step* describes, not a decision that they belong to the sketch.
 `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 
 **THE INTERRUPT RE-ARMS ARE A RETRY LOOP, NOT WASTE.** One source mode change
@@ -316,10 +344,32 @@ against is decided by which source is plugged in: `docs/bench-sources.md`.
 Two reproductions reach most of this and are scriptable from a session:
 
 - a sync-type round trip, `SYNC 1` then `SYNC 0` over ModeServ, which exercises
-  the sync-type probe, the coast and clamp windows and the SOG level
+  the sync-type probe, the coast and clamp windows and the sync separator level
 - `/input?src=rgbs` with nothing attached, which is the only "the signal really
   has gone" case reachable without a cable change, and is what a step that
   withholds recovery has to be checked against
+
+**WHICH ONE A STEP MUST RUN IS NOT THE AUTHOR'S CHOICE.**
+
+| a step that touches | must run |
+|---|---|
+| how the engine re-arms, or anything the sync type is derived from | the sync-type round trip |
+| a recovery, a gate in front of one, or the no-sync branch | `/input?src=rgbs` with nothing attached |
+| the sync separator level, coast, clamp or phase | the round trip, whose csync leg is the only thing here that uses them |
+| geometry, the raster, the windows | a mode change, and the picture judged against `docs/bench-sources.md` |
+
+**A MODE SOAK IS NOT A SUBSTITUTE FOR THE ROUND TRIP, and it looks like one.**
+Cycling every mode the source offers holds the sync type constant throughout, so
+36 changes across nine timings pass while the sync type is left on the wrong
+path indefinitely. That is a measured miss, not a hypothetical: it is how a
+change that consumed the latched disturbance reached the bench and sat on the
+csync path for 74 s with `SP_VTOTAL` reading 97.
+
+**And a host test that passes either way proves nothing about it.** The one
+covering that change pinned an interrupt arriving AFTER a solve, which fires
+whether the latch is consumed or not. Where a change alters WHEN something is
+re-tried rather than what it does, the host layer cannot see it and the bench
+reproduction is the whole of the evidence.
 
 ## Not in scope
 
