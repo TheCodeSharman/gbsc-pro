@@ -31,7 +31,7 @@ and the sketch's classifier reports no mode at all.
 
 `u:` is `noSyncCounter`, held at 150, and `S:` is `currentLevelSOG`. The first
 status line after the round trip prints `S:12` and every one after it prints
-`S: 5` -- the sync-on-green slicer ratcheting down under a signal that is
+`S: 5` -- the sync-on-green sync separator ratcheting down under a signal that is
 present.
 
 `updateSpDynamic()`'s `vidModeReadout == 0` branch stamps its sync-search
@@ -67,7 +67,7 @@ sampling: 311 lines x 50.08 Hz  -> line rate 15575 <- accepted
 Period ~5.4 s. `sourceMoved()` reports `interrupt`, not `count` or `rate`: the
 line count matches what was solved and so does the rate, so the only thing
 arming the change is the latched SOG interrupt -- which is itself a consequence
-of the slicer being walked down.
+of the sync separator being walked down.
 
 ## `CAPTURE_ENABLE` is not the mechanism
 

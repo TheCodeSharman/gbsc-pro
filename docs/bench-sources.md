@@ -115,7 +115,7 @@ for it and it is weaker than this one.
 On the YPbPr input, and the only source here for three things:
 
 - **Sync on green.** Component carries sync on Y, so this is the real test of
-  `SyncType` and the SOG slicer against a source that genuinely has it, rather
+  `SyncType` and the SOG sync separator against a source that genuinely has it, rather
   than against the RISC PC's composite-sync setting.
 - **Interlace.** Interlaced SD is what `SourceStandard::isSd()` names, and the
   arm that asks for the higher oversample and the 40 MHz analog corner. Nothing

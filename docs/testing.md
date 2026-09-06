@@ -101,7 +101,7 @@ things change, and both matter:
 - **The traces get longer** — about 700 writes on a scaled standard against 220
   with a source — because the no-sync retry paths run inside the load.
 - **`ADC_SOGCTRL` (s5_02) becomes session-variable.** `loop()` ratchets the
-  sync-on-green slicer down every 500 ms while the source is disconnected, so
+  sync-on-green sync separator down every 500 ms while the source is disconnected, so
   its value depends on how long the unit has been up. It is stable with a source
   and is NOT in `SESSION_VARIABLE`, because ignoring that address blanket would
   hide `ADC_INPUT_SEL` in the same byte.

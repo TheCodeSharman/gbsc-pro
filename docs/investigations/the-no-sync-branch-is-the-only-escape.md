@@ -55,7 +55,7 @@ stays frozen. **The no-sync branch is what used to clear it**, and with the gate
 wired nothing does. `/input?src=vga` clears it.
 
 **THE SLICER IS NOT THE MECHANISM, AND IT WAS THE FIRST THING BLAMED.** The
-slicer only reaches the sync processor when `SP_SOG_MODE` is 1, which follows
+sync separator only reaches the sync processor when `SP_SOG_MODE` is 1, which follows
 the sync type; the bench source is separate sync on the VGA input, where the
 schematic routes the dedicated HSync pin, and it reads `SP_SOG_MODE` 0,
 `SP_EXT_SYNC_SEL` 0. So `ADC_SOGCTRL` 5 is not in the sync path and cannot
@@ -65,18 +65,18 @@ Nor was it the pre-emptive tuning that moved it, which returns immediately
 unless the sync type is csync. What is left is the recovery's own two
 adjustments, and **they are the ungated ones**: `fastSogAdjust()` gates only on
 `noSyncCounter <= 5`, and the every-150 block sets the level to 0 or 5 and calls
-`optimizeSogLevel()` with no test of whether the slicer is in use at all.
+`optimizeSogLevel()` with no test of whether the sync separator is in use at all.
 
 So the walk is evidence that the recovery ran, not the reason the picture went.
 **What caused the black state is not established** -- `SP_SOG_MODE` was not
 sampled during it. What is established is that removing the escape leaves
 nothing to clear it.
 
-### The recovery adjusts a slicer that is not in the path
+### The recovery adjusts a sync separator that is not in the path
 
 That is a defect on its own terms, independent of the gate. Two of the four
 routines that move the level ask whether sync on green is the sync source and
-the other two do not, so a separate-sync source has its slicer walked during
+the other two do not, so a separate-sync source has its sync separator walked during
 every recovery for no effect that anything can name.
 
 ### The classifier's own latch at 0
@@ -117,7 +117,7 @@ alongside `PLLAD_ICP`, for a csync source under 322 lines.
 
 Not the gate. The escape it removes is real whatever the black state's cause
 turns out to be, so what has to come first is the acquisition the recovery is
-doing badly: one owner for the slicer level, and every adjustment of it asking
+doing badly: one owner for the sync separator level, and every adjustment of it asking
 whether sync on green is the sync source. Until then the sketch's recovery is
 the only thing that leaves the state, and a gate in front of it is a gate in
 front of the only exit.

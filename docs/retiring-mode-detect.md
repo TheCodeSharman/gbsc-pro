@@ -231,7 +231,7 @@ Landed so far:
   classification at the no-sync gate -- the method, not yet the wiring
 
 **Next is the SOG level.** Wiring `sourceIsPresent()` into that gate is measured
-to fix the fault it is for and to leave the unit stuck behind a starved slicer,
+to fix the fault it is for and to leave the unit stuck behind a starved sync separator,
 so the two have to land in that order.
 `docs/retiring-the-sync-watcher.md` is the step list.
 
@@ -320,7 +320,7 @@ replaces each of its fifteen values.
 
 Two things settled there decide what can happen here:
 
-- **The SOG slicer level comes first.** The no-sync branch is the only thing
+- **The SOG sync separator level comes first.** The no-sync branch is the only thing
   that leaves the black state a sync-type round trip can produce, and the only
   path that puts a standard back once `getVideoMode()`'s RGBHV branch has
   latched at 0. So a gate in front of that branch is a gate in front of both

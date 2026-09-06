@@ -63,7 +63,7 @@ Each row is a step: the engine takes the job over and the sketch's copy goes.
 **ONE ENTRY POINT IS WHAT STOPS THEM CLOBBERING EACH OTHER.** Two callers in
 `loop()` have no relationship: the watcher writes `SP_H_PULSE_IGNOR` on its own
 20 ms tick with no knowledge that a solve is in flight, and a solve writes the
-divider with no knowledge that the watcher is about to walk the slicer. Inside
+divider with no knowledge that the watcher is about to walk the sync separator. Inside
 one function the order is decided rather than raced. That is not available from
 two entry points however well each behaves.
 
@@ -118,7 +118,7 @@ that has not been understood yet.
 | operation | replaces |
 |---|---|
 | acquire the sync type, PER SOURCE MODE CHANGE | `sourceHasOwnVsync()`, and the two places that guess |
-| acquire the slicer level | `optimizeSogLevel()`, `fastSogAdjust()`, `tuneSogLevelPreemptively()` and every ratchet |
+| acquire the sync separator level | `optimizeSogLevel()`, `fastSogAdjust()`, `tuneSogLevelPreemptively()` and every ratchet |
 | acquire the coast window | `updateCoastPosition()`, minus its writes to the ADC PLL |
 | acquire the clamp window | `updateClampPosition()` |
 | acquire the sampling phase | `optimizePhaseSP()` |
@@ -152,7 +152,7 @@ that list does not.
 | `getVideoMode()`, `getStatus16SpHsStable()` | `Geometry::sourceIsPresent()` | yes |
 | HD bypass vsync window steering | `HdBypass` | yes |
 | the source-disturbed interrupt | `Interrupts`, read by `poll()` | yes |
-| the SOG slicer level, all three routines | `Adc` | class yes, method no |
+| the SOG sync separator level, all three routines | `Adc` | class yes, method no |
 | coast position and window | `SyncProcessor` | class yes, method no |
 | clamp position and window | `SyncProcessor` | class yes, method no |
 | the sync-search sweep | `SyncSearch` | yes |
@@ -189,7 +189,7 @@ Each step is a bounded commit plus its host test, cherry-pickable on its own.
 Each step extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
 
-**1. One owner for the slicer level.** `Tv5725::SyncOnGreen` holds the level and
+**1. One owner for the sync separator level.** `Tv5725::SyncOnGreen` holds the level and
 owns `ADC_SOGCTRL`; `rto->currentLevelSOG` and `setAndUpdateSogLevel()` go. No
 policy moves. It separates the two facts that variable carried — the level
 *chosen* for a source the ADC has not been brought up for, and the level *in
@@ -203,12 +203,12 @@ counted per tick and every threshold keyed on it means something different.
 Nothing else can read the engine's run until it counts in the units the sketch's
 counters did.
 
-**3. Acquire the slicer level.** `optimizeSogLevel()`, `fastSogAdjust()`,
+**3. Acquire the sync separator level.** `optimizeSogLevel()`, `fastSogAdjust()`,
 `tuneSogLevelPreemptively()` and every ratchet become one operation on the idle
 pass.
 
 **AND IT ASKS WHETHER SYNC ON GREEN IS THE SYNC SOURCE, WHICH TWO OF THE FOUR DO
-NOT.** The slicer only reaches the sync processor with `SP_SOG_MODE` 1, which
+NOT.** The sync separator only reaches the sync processor with `SP_SOG_MODE` 1, which
 follows the sync type, so on a separate-sync source the level is inert — and
 `fastSogAdjust()` and the every-150 recovery block walk it anyway. The engine
 holds that answer already, as `SyncType::isCsync()`, so the operation asks held
