@@ -67,10 +67,29 @@ sync that is not there. Sizing it to the measured maximum leaves the tail
 crossing it. `docs/investigations/own-vsync-probe-window.md` has the
 distribution and what a timeout costs.
 
-**It costs over a second, so it runs once per SOURCE, not once per mode change**,
-and the wait is only ever spent in full on a genuinely composite source, where
-the timeout is the right answer. `SyncType::isSet()` is the gate and
-`SyncType::forget()` re-arms it.
+**IT RUNS PER SOURCE MODE CHANGE, and that is a correctness requirement rather
+than a budget.** A source can change its sync type without the mux moving -- a
+RISC PC sets it from CMOS -- so a mode change is the only signal there is that it
+may have moved, and a probe skipped because the input did not change latches the
+previous source's answer onto the new mode.
+
+The cost does not argue against it. Reacquisition is 2-3 ms on a source with its
+own V sync, measured again from the console as `own V sync: yes after 2ms`, and
+the full window is only ever spent on a genuinely composite source, where the
+timeout is the right answer. An earlier form of this section said "it costs over
+a second, so it runs once per SOURCE" -- that is the sketch's `SyncType::isSet()`
+gate, and it contradicts the paragraph above it.
+
+`Geometry::useSyncTypeProbe()` is the engine's, per mode change.
+`SyncType::isSet()` and `SyncType::forget()` are the sketch's per-source gate,
+described below.
+
+**It currently runs about three times per mode change, not once.** Traced on
+the bench: a mode change lands, the engine solves in about 10 ms, and
+`source moved: interrupt` re-arms it twice more while the source settles -- each
+arm re-running the probe, with the count and the solved count already equal.
+That is the latched disturbance re-arming rather than the cadence being wrong,
+and it is most of what a 2 s mode switch is made of.
 
 **What re-arms it is a change of SOURCE, not a cleared clamp.** `forget()` sits
 beside `coastPositionIsSet` and `clampPositionIsSet` at the five sites that mean a

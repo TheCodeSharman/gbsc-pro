@@ -117,11 +117,18 @@ that has not been understood yet.
 
 | operation | replaces |
 |---|---|
-| acquire the sync type | `sourceHasOwnVsync()`, and the two places that guess |
+| acquire the sync type, PER SOURCE MODE CHANGE | `sourceHasOwnVsync()`, and the two places that guess |
 | acquire the slicer level | `optimizeSogLevel()`, `fastSogAdjust()`, `tuneSogLevelPreemptively()` and every ratchet |
 | acquire the coast window | `updateCoastPosition()`, minus its writes to the ADC PLL |
 | acquire the clamp window | `updateClampPosition()` |
 | acquire the sampling phase | `optimizePhaseSP()` |
+
+**The sync type is acquired per source MODE change, not per input.** A source
+can change its sync type without the mux moving -- a RISC PC sets it from CMOS
+-- so the mode change is the only signal there is. The cost does not argue
+otherwise: reacquisition is 2-3 ms on a source with its own V sync, and the full
+window is spent only on a genuinely composite source where the timeout is the
+right answer. `docs/sync-type-selection.md`.
 
 **Escalation**, when acquisition keeps failing. The counter ladder becomes an
 ordered list of named recoveries, each tried once before the next: widen the
