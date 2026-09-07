@@ -7420,7 +7420,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             pendingSamplingSweep = false;
             samplingLog.sweep(millis(), pendingSamplingA, pendingSamplingB,
                               pendingSamplingC, (uint16_t)pendingSamplingD,
-                              rto->osr);
+                              rto->osr, geometry.sourceLineRateHz());
         }
 #endif
         if (pendingInputSelection != InputSource::None) {

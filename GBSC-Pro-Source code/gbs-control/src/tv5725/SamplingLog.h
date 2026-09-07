@@ -36,12 +36,18 @@ public:
     // the settling is in the record. The divider held on entry goes back at the
     // end, however the walk ends.
     //
-    // The line rate the post divider is picked from comes from HPERIOD_IF,
-    // which is the point: it is measured against the chip's own 27 MHz and does
-    // not move with PLLAD_MD, so a sweep of PLLAD_MD cannot corrupt the one
-    // input it needs. docs/tv5725-chip.md
+    // `lineRateHz` is the caller's HELD measurement, which is what picks the
+    // post divider at each step. HPERIOD_IF cannot supply it: it rails on the
+    // scaling path with a perfect picture, and in the unlocked state this walk
+    // exists to interrogate it reads 10 -- a 613 kHz line, which puts the post
+    // divider at 0 and collapses the oversampling, so the walk would move the
+    // whole clock group instead of PLLAD_MD alone.
+    // docs/investigations/hperiod-if-railing.md
+    //
+    // A rate of 0 means nothing is held, and each step then writes the divider
+    // and latches, touching nothing else.
     void sweep(uint32_t nowMs, uint16_t low, uint16_t high, uint16_t step,
-               uint16_t dwellMs, uint8_t oversample);
+               uint16_t dwellMs, uint8_t oversample, uint32_t lineRateHz);
 
     // A decision, as it is taken. The sync watcher chooses between scaling and
     // bypass on a line count, inside loop(), and the choice is over before any

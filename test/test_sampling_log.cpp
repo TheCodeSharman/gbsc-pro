@@ -25,13 +25,16 @@ FakeTwoWire Wire;
 static std::string g_lastLine;
 void tv5725Log(const char *line) { g_lastLine = line; }
 
-// SourceMeasurement links in for the HPERIOD_IF conversion; nothing here
-// spins for a field rate.
+// SourceMeasurement.h declares the two the sketch supplies; nothing here spins
+// for a field rate.
 float getSourceFieldRate(boolean) { return 0.0f; }
 
 using namespace Tv5725;
 
-// A settled 320x256@50 source, so the line rate the sweep derives is a real one.
+// A settled 320x256@50 source. HeldLineRateHz is what the engine measured for
+// it, which is what the walk is handed.
+static const uint32_t HeldLineRateHz = 15625;
+
 static void sourceOnTheBus(uint16_t divider)
 {
     Wire.reset();
@@ -59,7 +62,7 @@ TEST_CASE("the walk never asks for a divider above the ceiling")
     sourceOnTheBus(2250);
     SamplingLog log;
 
-    log.sweep(0, 2800, 4000, 100, 10, 1);
+    log.sweep(0, 2800, 4000, 100, 10, 1, HeldLineRateHz);
     const uint16_t highest = driveToEnd(log, 5);
     const uint16_t ceiling = SamplingLog::DividerCeiling;
 
@@ -71,7 +74,7 @@ TEST_CASE("the divider held on entry goes back when the walk ends")
     sourceOnTheBus(2250);
     SamplingLog log;
 
-    log.sweep(0, 1000, 1400, 100, 10, 1);
+    log.sweep(0, 1000, 1400, 100, 10, 1, HeldLineRateHz);
     driveToEnd(log, 5);
 
     CHECK(GBS::PLLAD_MD::read() == 2250);
@@ -91,11 +94,6 @@ TEST_CASE("a monitor run stops once its duration is up")
 
     CHECK_FALSE(log.active());
     CHECK(now <= 200);
-}
-
-TEST_CASE("the line rate comes off HPERIOD_IF against the chip's own 27 MHz")
-{
-    CHECK(SourceMeasurement::lineRateForHPeriod(431) == 15625u);
 }
 
 TEST_CASE("the sample carries the chip's interrupt status")
@@ -143,4 +141,21 @@ TEST_CASE("an event is one line whatever the caller passes")
     SamplingLog::event(0, "rgbhv-scale", 311, 14);
 
     CHECK(g_lastLine == "evt,0,rgbhv-scale,311,14");
+}
+
+TEST_CASE("the walk clocks the ADC from the rate it is handed, not from HPERIOD_IF")
+{
+    // HPERIOD_IF rails on the scaling path with a perfect picture, and reads 10
+    // in the unlocked state the walk exists to interrogate. Converted, that is a
+    // 613 kHz line: the post divider comes out 0 and the oversampling collapses
+    // to 1, so the walk would move the whole clock group and answer a different
+    // question from the one asked of PLLAD_MD.
+    Wire.reset();
+    GBS::HPERIOD_IF::write(10);
+    GBS::PLLAD_MD::write(2250);
+
+    SamplingLog log;
+    log.sweep(0, 2250, 2250, 100, 10, 4, HeldLineRateHz);
+
+    CHECK(GBS::PLLAD_KS::read() == 2);
 }

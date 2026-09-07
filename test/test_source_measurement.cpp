@@ -1009,3 +1009,8 @@ TEST_CASE("a reading implying a line no television generates is refused")
     const uint16_t bench[] = {431, 431, 430};
     CHECK(SourceMeasurement::lineRateFromHPeriod(bench, 3, 311, false) == 15625u);
 }
+
+TEST_CASE("the line rate comes off HPERIOD_IF against the chip's own 27 MHz")
+{
+    CHECK(SourceMeasurement::lineRateForHPeriod(431) == 15625u);
+}
