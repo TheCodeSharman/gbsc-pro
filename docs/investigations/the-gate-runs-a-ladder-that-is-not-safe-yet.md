@@ -85,6 +85,27 @@ Neither ladder advances at all. The good numbers are the absence of both, not
 the presence of maintenance, and shipping it would record an accident as a
 design.
 
+## A fourth wiring, on a better answer, and why it also fails
+
+`Geometry::sourceState()` answers in three states rather than two: the count
+steadiness run is only the VERTICAL half, and a source holds a correct steady
+count while the ADC samples a line it is not locked to. The horizontal half is
+`SourceMeasurement::dividerLatched()`, and `sourceIsPresent()` also excludes a
+mode change in flight, because the state is published by the idle pass and a
+change in flight leaves the verdict taken BEFORE the source moved standing.
+
+Both branches keyed on that one answer: three of three round trips still settle
+near 3250. **The answer is not the problem -- it reports the state correctly,
+`unlocked` with `present` false, so the escalation does run.** The escalation
+then cannot recover it, and every ADC clock register reads byte-identical to the
+good state.
+`docs/investigations/an-unlocked-adc-pll-is-invisible-in-the-registers.md`.
+
+**So the gate does not fail on the classification any more. It fails because
+withholding the escalation causes a fault the escalation cannot repair**, and
+what the escalation was doing to prevent it is unknown -- a `PLLAD_LAT` pulse
+and the phase sweep are both ruled out.
+
 ## The blocker is the disagreement itself
 
 **No single predicate over the two answers is right, because they disagree and
