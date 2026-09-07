@@ -3771,17 +3771,8 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
             GBS::SP_H_PULSE_IGNOR::write(0x06);
         } else if (rto->videoStandardInput >= 13) {
-            if (Tv5725::SyncType::isCsync() == false) {
-                GBS::SP_PRE_COAST::write(0x00);
-                GBS::SP_POST_COAST::write(0x00);
-                GBS::SP_H_PULSE_IGNOR::write(0xff); 
-                GBS::SP_DLT_REG::write(0x00);
-            } else {
-                GBS::SP_PRE_COAST::write(0x04);
-                GBS::SP_POST_COAST::write(0x07);
-                GBS::SP_DLT_REG::write(0x70);
-                GBS::SP_H_PULSE_IGNOR::write(0x02);
-            }
+            Tv5725::SyncProcessor::applySeparationThresholds(
+                Tv5725::SyncType::isCsync());
         }
     }
 }

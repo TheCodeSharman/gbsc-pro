@@ -253,6 +253,21 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
     return true;
 }
 
+void SyncProcessor::applySeparationThresholds(bool csync)
+{
+    if (csync) {
+        SP_PRE_COAST::write(0x04);
+        SP_POST_COAST::write(0x07);
+        SP_DLT_REG::write(0x70);
+        SP_H_PULSE_IGNOR::write(0x02);
+    } else {
+        SP_PRE_COAST::write(0x00);
+        SP_POST_COAST::write(0x00);
+        SP_H_PULSE_IGNOR::write(0xff);
+        SP_DLT_REG::write(0x00);
+    }
+}
+
 void SyncProcessor::clampFromReferenceClock()
 {
     SP_CLP_SRC_SEL::write(0);

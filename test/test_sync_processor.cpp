@@ -444,3 +444,29 @@ TEST_CASE("a line length that will not hold still leaves the clamp alone")
     CHECK_FALSE(Wire.touched[0x05][0x41]);
     CHECK_FALSE(Wire.touched[0x05][0x43]);
 }
+
+// The sync separation thresholds a source with no broadcast vertical interval
+// wants: how different a pulse must be to read as vertical, and how short one
+// must be to be ignored.
+
+TEST_CASE("a source with its own H and V is coasted over nothing and ignores nothing")
+{
+    Wire.reset();
+    SyncProcessor::applySeparationThresholds(false);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0x00);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 0x00);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0x00);
+}
+
+TEST_CASE("a composite source is coasted over its vertical interval")
+{
+    Wire.reset();
+    SyncProcessor::applySeparationThresholds(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0x04);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 0x07);
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x02);
+}

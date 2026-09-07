@@ -256,6 +256,17 @@ public:
     // across a source that moved mid-run is placed on two different lines.
     static bool acquireCoastWindow(bool autoCoast, bool (*stable)());
 
+    // How the separator decides a pulse is vertical, for a source whose sync
+    // carries no broadcast vertical interval: the coast lengths either side of
+    // it, the pulse-width difference that reads as vertical, and the width
+    // below which a pulse is ignored.
+    //
+    // The coast lengths are the same pair applyForSyncType() writes, and that
+    // is deliberate rather than a duplicate to fold away: this refreshes on a
+    // schedule, so a register something else moved comes back, and there is a
+    // test pinning that applyForSyncType() does NOT write the other two.
+    static void applySeparationThresholds(bool csync);
+
     // How many readings the clamp window agrees over. More than the coast
     // window's, because a clamp landing in active video clamps to picture.
     static const uint8_t ClampSamples = 16;
