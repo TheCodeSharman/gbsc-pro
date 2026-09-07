@@ -350,16 +350,27 @@ What the ladder does, rung by rung, and which rungs have an owner:
 
 | trigger | what it does | owner |
 |---|---|---|
-| `== 1` | one pass of grace, returns | — |
+| `== 1` | one pass of grace, returns | no registers |
 | `== 2` | lift the sync separator level off the floor, on a serrated source | `SyncOnGreen::liftOffFloor()` |
-| `== 8` | put the coast window back, then widen it on a serrated source | `SyncProcessor::applyDefaultCoastWindow()` and `widenCoastForSerration()` |
-| `% 27` | `updateSpDynamic(1)` | — |
-| `% 32` | unfreeze if HSACT | — |
+| `== 8` | put the coast window back, then widen it on a serrated source | `SyncProcessor::applyDefaultCoastWindow()`, `widenCoastForSerration()` |
+| `% 27` | `updateSpDynamic(1)` | **step 5's**, with the coast window |
+| `% 32` | unfreeze if HSACT | **step 8's**, with `FrameBuffer` |
 | `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
-| `== 38` | `nudgeMD()` | `ModeDetect` |
-| `> 47, % 16` | csync only: toggle hsync overflow protect | `SyncProcessor` |
-| `% 150` | reacquire the sync type, reset the coast and clamp windows, `updateSpDynamic(1)`, `nudgeMD()`, re-acquire the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()`, the two window defaults, `SyncOnGreen::reacquire()`; the two resets — |
-| `% 413` | toggle `ADC_INPUT_SEL` | `Adc::bounceInput()` exists, nothing calls it |
+| `== 38` | make mode detect re-latch | `ModeDetect::nudge()` |
+| `> 47, % 16` | csync only: try the other overflow-protect setting | `SyncProcessor::toggleHsyncOverflowProtect()` |
+| `% 150` | reacquire the sync type, put the coast and clamp windows back, `updateSpDynamic(1)`, nudge, re-acquire the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()`, the two window defaults, `ModeDetect::nudge()`, `SyncOnGreen::reacquire()`, `SyncProcessor::reset()`, `ModeDetect::reset()`; `SP_H_COAST` and `updateSpDynamic()` are step 5's |
+| `% 413` | try the other ADC input, put it back if nothing locks | `Adc::selectOtherInput()` and `selectInput()`; the wait stays with the counter |
+
+**Every rung now names an operation.** What is still written raw inside the
+ladder belongs to steps 5 and 8 and travels with them: `SP_H_COAST`,
+`updateSpDynamic()` and the `STATUS_SYNC_PROC_HSACT` read in front of the
+unfreeze.
+
+**`Adc::bounceInput()` is NOT what `% 413` became**, and the two must not be
+merged. The bounce takes the input away and puts the SAME one back, to clear a
+railed `HPERIOD_IF`; the rung moves to the OTHER input and keeps it if the
+source locks there. Nothing calls the bounce, and wiring it as an automatic
+recovery puts a green screen on every solve that lands on a flagged counter.
 
 **`% 150` is the compound one and it is where the harm was.** Its sync-type
 correction used to be one-directional: it could move a held csync to separate
@@ -368,6 +379,14 @@ source counted through the wrong path with the held type already right had no
 route out. `Geometry::reacquireSyncType()` is that rung — it applies the probe's
 answer to the chip whatever the held value says — and it also stops the recovery
 probing an input whose connector settles the sync type.
+
+**THE OLED MENU KEEPS ITS OWN COPIES OF TWO OF THESE.**
+`OLEDMenuImplementation.cpp` has private `resetSyncProcessor()`,
+`resetModeDetect()` and `resetSyncProcessor_yuv()` pulsing the same
+`SFTRST_*_RSTZ` bits, the last two of them never called. They are a second
+writer and they go with step 10, where the menu stops writing registers at all.
+The live one bundles `LoadDefault()`, so it is not the same operation and cannot
+be substituted blind.
 
 **A rung that reads a register to judge a measurement needs a bus that can
 move.** `SyncOnGreen::reacquire()` decides between walking the level and parking
