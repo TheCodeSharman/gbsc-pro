@@ -358,7 +358,7 @@ What the ladder does, rung by rung, and which rungs have an owner:
 | `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
 | `== 38` | `nudgeMD()` | `ModeDetect` |
 | `> 47, % 16` | csync only: toggle hsync overflow protect | `SyncProcessor` |
-| `% 150` | reacquire the sync type, reset the coast and clamp windows, `updateSpDynamic(1)`, `nudgeMD()`, walk the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()` and the two window defaults; the rest — |
+| `% 150` | reacquire the sync type, reset the coast and clamp windows, `updateSpDynamic(1)`, `nudgeMD()`, re-acquire the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()`, the two window defaults, `SyncOnGreen::reacquire()`; the two resets — |
 | `% 413` | toggle `ADC_INPUT_SEL` | `Adc::bounceInput()` exists, nothing calls it |
 
 **`% 150` is the compound one and it is where the harm was.** Its sync-type
@@ -368,6 +368,13 @@ source counted through the wrong path with the held type already right had no
 route out. `Geometry::reacquireSyncType()` is that rung — it applies the probe's
 answer to the chip whatever the held value says — and it also stops the recovery
 probing an input whose connector settles the sync type.
+
+**A rung that reads a register to judge a measurement needs a bus that can
+move.** `SyncOnGreen::reacquire()` decides between walking the level and parking
+it on whether `STATUS_SYNC_PROC_HLOW_LEN` changes across a run of reads, and a
+fake register holding one value can only reach the frozen branch. `FakeTwoWire`
+has `drift()` for that, and any rung judged on movement rather than on a value
+will want it.
 
 **`Adc::bounceInput()` is what `% 413` becomes, and nothing installs it**: it
 turns the whole screen green for as long as the input is away, so wiring it as
