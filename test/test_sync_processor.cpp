@@ -200,3 +200,43 @@ TEST_CASE("the default coast window leaves the coast lengths alone")
     CHECK(SyncProcessor::SP_PRE_COAST::read() == pre);
     CHECK(SyncProcessor::SP_POST_COAST::read() == post);
 }
+
+// Widening the coast, the escalation a source whose sync has gone reaches
+// before anything is reset. Serrated sync puts equalisation pulses either side
+// of the vertical interval, so the coast has to cover more lines and the
+// separator has to ignore fewer short pulses to find the real ones.
+
+TEST_CASE("widening the coast covers more lines either side of the interval")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(true);
+
+    SyncProcessor::widenCoastForSerration();
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 9);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
+}
+
+TEST_CASE("a pulse-ignore wide enough to hide a real pulse is halved")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::SP_H_PULSE_IGNOR::write(0x6b);
+
+    SyncProcessor::widenCoastForSerration();
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b / 2);
+}
+
+TEST_CASE("a pulse-ignore already narrow is left where it is")
+{
+    // Halving it again reaches a width that lets ringing through as sync.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::SP_H_PULSE_IGNOR::write(0x32);
+
+    SyncProcessor::widenCoastForSerration();
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x32);
+}

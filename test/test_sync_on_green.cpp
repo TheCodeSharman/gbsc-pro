@@ -208,6 +208,46 @@ TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
     CHECK(SyncOnGreen::level() == 7);   // left where it was, not reset
 }
 
+// Lifting the level off the floor, the first thing tried when sync has only
+// just gone. The walk leaves the level at the floor when nothing it tried
+// worked, and a separator that far open slices noise as sync.
+
+TEST_CASE("a level at the floor is lifted one step")
+{
+    seedSlicer(1, 0x05);
+    SyncType::set(true);
+    SyncOnGreen::choose(1);
+
+    SyncOnGreen::liftOffFloor(putInForce);
+
+    CHECK(SyncOnGreen::level() == 2);
+    CHECK(g_inForce == 1);
+}
+
+TEST_CASE("a level with room to step is left where it is")
+{
+    seedSlicer(1, 0x05);
+    SyncType::set(true);
+    SyncOnGreen::choose(2);
+
+    SyncOnGreen::liftOffFloor(putInForce);
+
+    CHECK(SyncOnGreen::level() == 2);
+    CHECK(g_inForce == 0);
+}
+
+TEST_CASE("a sync separator out of the sync path is not lifted")
+{
+    seedSlicer(1, 0x05);
+    SyncType::set(false);
+    SyncOnGreen::choose(1);
+
+    SyncOnGreen::liftOffFloor(putInForce);
+
+    CHECK(SyncOnGreen::level() == 1);
+    CHECK(g_inForce == 0);
+}
+
 // Re-acquiring the level, the escalation ladder's rung. Judged on whether the
 // sync separator's own output moves at all: a measured line length that never
 // changes across a run of reads is a separator slicing nothing, and no walk can

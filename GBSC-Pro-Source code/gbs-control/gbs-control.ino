@@ -4517,7 +4517,6 @@ void runSyncWatcher() //
     }
 
     static uint8_t newVideoModeCounter = 0;
-    static unsigned long lastSyncDrop = millis();
     uint8_t detectedVideoMode = getVideoMode();
     boolean status16SpHsStable = getStatus16SpHsStable();
 
@@ -4573,47 +4572,14 @@ void runSyncWatcher() //
 
         rto->phaseIsSet = 0;
 
-        if (rto->noSyncCounter <= 3 || GBS::STATUS_SYNC_PROC_HSACT::read() == 0) {
-            // freezeVideo(); 
-        }
-
-        if (newVideoModeCounter == 0) {
-
-            if (rto->noSyncCounter == 2) {
-
-                if ((millis() - lastSyncDrop) > 1500) {
-                    if (rto->printInfos == false) {
-                        ;
-                    }
-                } else {
-                    if (rto->printInfos == false) {
-                        ;
-                    }
-                }
-
-                if (Tv5725::SyncOnGreen::level() <= 1 && sourceHasSerratedSync()) {
-                    Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 1);
-                    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                    delay(30);
-                }
-                lastSyncDrop = millis();
-            }
-        }
+        if (newVideoModeCounter == 0 && rto->noSyncCounter == 2 && sourceHasSerratedSync())
+            Tv5725::SyncOnGreen::liftOffFloor(putSogLevelInForce);
 
         if (rto->noSyncCounter == 8) {
             Tv5725::SyncProcessor::applyDefaultCoastWindow();
-
-            if (sourceHasSerratedSync()) {
-
-                GBS::SP_PRE_COAST::write(9);
-                GBS::SP_POST_COAST::write(9);
-
-                uint8_t ignore = GBS::SP_H_PULSE_IGNOR::read();
-                if (ignore >= 0x33) {
-                    GBS::SP_H_PULSE_IGNOR::write(ignore / 2);
-                }
-            }
-            rto->coastPositionIsSet = 0; // coast position setting
+            if (sourceHasSerratedSync())
+                Tv5725::SyncProcessor::widenCoastForSerration();
+            rto->coastPositionIsSet = 0;
         }
 
         if (rto->noSyncCounter % 27 == 0) {

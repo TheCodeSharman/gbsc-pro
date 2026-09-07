@@ -199,6 +199,16 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
     }
 }
 
+void SyncOnGreen::liftOffFloor(void (*putInForce)())
+{
+    if (!inSyncPath() || level_ >= LowestSteppable)
+        return;
+
+    choose((uint8_t)(level_ + 1));
+    putInForce();
+    delay(StepSettleMs);
+}
+
 void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)(), bool reopen)
 {
     if (!inSyncPath())

@@ -83,6 +83,12 @@ public:
     // where acquire() puts the default back.
     static void acquireCoarse(void (*putInForce)());
 
+    // Lift the level one step where it has no room left to step down. The walk
+    // leaves it at the floor when nothing it tried worked, and a separator that
+    // far open slices noise as sync, so a source whose sync has only just gone
+    // gets one step back before anything heavier is tried.
+    static void liftOffFloor(void (*putInForce)());
+
     // Re-acquire the level for a source that will not lock. The separator's own
     // output is what decides how: a measured line length that never moves
     // across a run of reads is a separator slicing nothing, where the walk has

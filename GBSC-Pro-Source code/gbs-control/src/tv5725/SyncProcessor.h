@@ -220,6 +220,12 @@ public:
     // Where the clamp sits before anything has measured the back porch.
     static void applyDefaultClampWindow();
 
+    // Coast further, and ignore fewer short pulses, for a serrated source whose
+    // sync has gone. Equalisation pulses sit either side of the vertical
+    // interval, so the coast has to cover more lines than the sync type asked
+    // for and a pulse-ignore wide enough to hide a real pulse has to come down.
+    static void widenCoastForSerration();
+
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.

@@ -4,6 +4,16 @@
 
 namespace Tv5725 {
 
+namespace {
+
+// How many lines either side of the vertical interval a serrated source is
+// coasted over, and the pulse-ignore width at or above which a real sync pulse
+// can be hiding behind it.
+const uint8_t SerratedCoastLines = 9;
+const uint8_t WidestUsefulPulseIgnore = 0x33;
+
+}  // namespace
+
 void SyncProcessor::writeSdVsyncStart(uint16_t start)
 {
     SP_SDCS_VSST_REG_H::write(start >> 8);
@@ -35,6 +45,16 @@ void SyncProcessor::applyDefaultClampWindow()
 {
     SP_CS_CLP_ST::write(32);
     SP_CS_CLP_SP::write(48);
+}
+
+void SyncProcessor::widenCoastForSerration()
+{
+    SP_PRE_COAST::write(SerratedCoastLines);
+    SP_POST_COAST::write(SerratedCoastLines);
+
+    const uint8_t ignore = (uint8_t)SP_H_PULSE_IGNOR::read();
+    if (ignore >= WidestUsefulPulseIgnore)
+        SP_H_PULSE_IGNOR::write(ignore / 2);
 }
 
 void SyncProcessor::applyDefaultCoastWindow()
