@@ -96,14 +96,48 @@ bench or any unit with an input selected: it is gated on
 `detectionMayChangeInput()`, which is `!InputSource::chosen(Info)`. Measured over
 a 125 s hunt with `ADC_INPUT_SEL` read 35 times, it never moved.
 
-**What survives is that the PLL may be LOCKED, to a divider of ~3250 that the
-register does not report.** `PLLAD_MD` reads 2250 while the chip produces 3250
-samples per line, which is the shape of the documented write-after-latch trap:
-a divider written after `latchPLLAD()` leaves the register reading the new value
-while the PLL runs the old one. What argues against it is that a latch pulsed by
-hand does not load 2250 either. What would settle it is watching `PLLAD_MD` and
-`STATUS_SYNC_PROC_HTOTAL` across one solve, from the console rather than from a
-poll.
+**AND IT IS NOT THE PLL FAILING TO LOCK EITHER.**
+`docs/investigations/adc-pll-lock-range.md` swept the VCO from 100 to 180 MHz
+across two `PLLAD_KS` bands and records that `STATUS_SYNC_PROC_HTOTAL` echoes
+the divider **at every point in both, locked or not**. This configuration --
+`PLLAD_MD` 2250 at 15625 Hz, so CKO 35.2 MHz, `KS` 2, VCO 140.6 MHz -- sits at
+the row measured at 98% lock. So the echo does not depend on lock, and losing it
+is a different fault from anything that sweep produced.
+
+**The write-after-latch trap is ruled out by reading the code.**
+`Adc::applySampleRate()` writes `PLLAD_MD`, then `PLLAD_KS`, then the
+oversampling, and calls `latch()` last. The order is right on the engine's path.
+
+**One thing is untried and would separate the two remaining shapes**: sweep the
+divider with `/samplinglog?low=..&high=..` while the fault is standing. If
+`HTOTAL` tracks the sweep, the echo works and 2250 is simply not what is in
+force; if it stays near 3250 whatever is written, whatever clocks that counter
+is not the ADC PLL.
+
+## What does NOT correlate with it, across nine runs
+
+Every run with the gate wired, anchored on each file's own `SYNC 0` so the
+windows match. Seven failed, two did not.
+
+| run | outcome | interrupts | solves | probes |
+|---|---|---|---|---|
+| gate build x3 | FAILED | 1 | 1..3 | 2..5 |
+| three-state build x3 | FAILED | 9..11 | 9..12 | 23..27 |
+| console trace only | FAILED | 10 | 10 | 27 |
+| sampling log running | ok | 1 | 1 | 2 |
+| fast HTTP poll | ok | 0 | 1 | 3 |
+
+**A run that failed with one interrupt, one solve and two probes is
+indistinguishable from a run that passed with one interrupt, one solve and two
+probes.** So the re-solve churn does not drive it, and neither does the probe
+count -- both were leading candidates, and both are dead.
+
+**Two instruments appear to suppress it and neither is understood.** Reading
+`STATUS_0F` in the sampling log does NOT consume the source-disturbed latch --
+`Interrupts::takeSourceDisturbed()` acknowledges explicitly, and a latch cleared
+within one 20 ms watcher pass is missed by a 25 ms sampler anyway, which is why
+the log reads 0 in all 3139 samples. With seven failures in nine runs, two
+passes is not yet evidence of suppression rather than of chance.
 
 ## The instrument, because the obvious one does not work
 
