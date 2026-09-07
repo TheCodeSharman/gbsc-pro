@@ -312,6 +312,16 @@ test separates them and no ESP restart recovers it.
 own run, and `Geometry::sourceIsPresent()` replaces the classification at the
 gate. Everything below is keyed on the run.
 
+**AND STEP 7 HAS TO COME FIRST, WHICH THE ORDER ABOVE GETS WRONG.** The gate
+itself is right -- measured, the engine calls the bench source present while
+`getVideoMode()` calls it absent, and the engine is correct. What wiring it does
+is let the no-sync branch ADVANCE where `noSyncCounter` used to sit pinned at
+150, so it reaches recoveries that were never running. On the bench that ends
+with `SP_SOG_MODE` 1 against a held sync type of separate, `SP_VTOTAL` 97, and
+no way back. Until the ladder is a named list rather than a run of moduli,
+opening the gate in front of it is what the step cannot do.
+`docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md`
+
 **THESE ARE ONE CHANGE, NOT TWO, AND THAT IS WHY NEITHER CAN COME FIRST.** The
 run is over `sourceIsPresent()` — the same measurement the mode-change check
 takes — so a `noSyncCounter` that reads it never advances on a source the engine
