@@ -33,6 +33,11 @@ public:
     // returns when it reaches the floor without finding a level that works.
     static const uint8_t DefaultLevel = 13;
 
+    // Where a separator whose output does not move at all is parked. The walk
+    // needs a reading that changes to work from, so there is nothing to search
+    // and a mid level is the whole of the answer.
+    static const uint8_t FrozenLevel = 5;
+
     // Whether the sync separator reaches the sync processor at all. It does only with
     // SP_SOG_MODE 1, which follows the sync type -- so on a separate-sync
     // source every level is inert, and a recovery that walks it is moving a
@@ -77,6 +82,21 @@ public:
     // Leaves the level where it is when the sync separator is not in the sync path,
     // where acquire() puts the default back.
     static void acquireCoarse(void (*putInForce)());
+
+    // Re-acquire the level for a source that will not lock. The separator's own
+    // output is what decides how: a measured line length that never moves
+    // across a run of reads is a separator slicing nothing, where the walk has
+    // no evidence to search with and FrozenLevel is the only move left. One
+    // that moves is a separator finding edges at the wrong threshold, which is
+    // what the walk is for.
+    //
+    // The walk is handed in for the reason acquire()'s is: refusing to walk is
+    // part of it.
+    // docs/investigations/refusing-to-walk-is-part-of-the-walk.md
+    //
+    // `reopen` takes the walk's place with the separator fully open, for a
+    // caller that has already run out of walks.
+    static void reacquire(void (*walk)(), void (*putInForce)(), bool reopen);
 
     // What a tuning pass leaves for someone else to do. Each belongs to
     // another class and is claimed by a later step of

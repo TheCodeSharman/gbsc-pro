@@ -208,6 +208,89 @@ TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
     CHECK(SyncOnGreen::level() == 7);   // left where it was, not reset
 }
 
+// Re-acquiring the level, the escalation ladder's rung. Judged on whether the
+// sync separator's own output moves at all: a measured line length that never
+// changes across a run of reads is a separator slicing nothing, and no walk can
+// find a threshold from evidence that is not there.
+
+static unsigned g_walks = 0;
+static void countWalk() { ++g_walks; }
+
+static void seedLineLength(uint8_t hsActive, bool moving, bool pllInReset)
+{
+    seedSlicer(hsActive, 0x05);
+    Wire.bank[0][0x19] = 0x40;                      // STATUS_SYNC_PROC_HLOW_LEN
+    Wire.bank[0][0x1A] = 0x00;
+    if (moving)
+        Wire.drift(0, 0x19);
+    Wire.bank[5][0x11] = pllInReset ? 0x01 : 0x00;  // PLLAD_VCORST
+    g_walks = 0;
+}
+
+TEST_CASE("a sync separator out of the sync path is not re-acquired")
+{
+    seedLineLength(1, true, false);
+    SyncType::set(false);
+    SyncOnGreen::choose(7);
+
+    SyncOnGreen::reacquire(countWalk, putInForce, false);
+
+    CHECK(g_walks == 0);
+    CHECK(SyncOnGreen::level() == 7);
+}
+
+TEST_CASE("a sync separator whose output moves is handed to the walk")
+{
+    seedLineLength(1, true, false);
+    SyncType::set(true);
+    SyncOnGreen::choose(11);
+
+    SyncOnGreen::reacquire(countWalk, putInForce, false);
+
+    CHECK(g_walks == 1);
+    CHECK(SyncOnGreen::level() == 11);
+}
+
+TEST_CASE("a sync separator whose output is frozen is parked rather than walked")
+{
+    seedLineLength(1, false, false);
+    SyncType::set(true);
+    SyncOnGreen::choose(11);
+
+    SyncOnGreen::reacquire(countWalk, putInForce, false);
+
+    CHECK(g_walks == 0);
+    CHECK(SyncOnGreen::level() == SyncOnGreen::FrozenLevel);
+}
+
+TEST_CASE("an ADC PLL held in reset is not evidence the output is frozen")
+{
+    // Nothing the separator reports means anything while the PLL that clocks
+    // the measurement is in reset, so a reading that does not move there says
+    // nothing about the level.
+    seedLineLength(1, false, true);
+    SyncType::set(true);
+    SyncOnGreen::choose(11);
+
+    SyncOnGreen::reacquire(countWalk, putInForce, false);
+
+    CHECK(g_walks == 1);
+    CHECK(SyncOnGreen::level() == 11);
+}
+
+TEST_CASE("re-opening the sync separator takes the walk's place, not its result")
+{
+    seedLineLength(1, true, false);
+    SyncType::set(true);
+    SyncOnGreen::choose(11);
+
+    SyncOnGreen::reacquire(countWalk, putInForce, true);
+
+    CHECK(g_walks == 0);
+    CHECK(SyncOnGreen::level() == 0);
+    CHECK(SyncOnGreen::ADC_SOGCTRL::read() == 0);
+}
+
 // The tuning pass: run while a source is acquired, it steps the level down
 // ahead of a sync loss rather than waiting for one. Its window and its
 // bad-sample count are held across passes.

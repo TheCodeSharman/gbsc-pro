@@ -4668,30 +4668,8 @@ void runSyncWatcher() //
             nudgeMD();
             delay(80);
 
-            if (Tv5725::SyncOnGreen::inSyncPath()) {
-                uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-                if (GBS::PLLAD_VCORST::read() == 1) {
-
-                    hlowStart = 777;
-                }
-                for (int a = 0; a < 128; a++) {
-                    if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
-
-                        if (rto->noSyncCounter % 450 == 0) {
-                            Tv5725::SyncOnGreen::choose(0);
-                            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                        } else {
-                            optimizeSogLevel();
-                        }
-                        break;
-                    } else if (a == 127) {
-
-                        Tv5725::SyncOnGreen::choose(5);
-                        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                    }
-                    delay(0);
-                }
-            }
+            Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce,
+                                           rto->noSyncCounter % 450 == 0);
 
             resetSyncProcessor();
             delay(8);

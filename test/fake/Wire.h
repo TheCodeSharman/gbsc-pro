@@ -30,6 +30,11 @@ public:
     // supplied by the blob and looks fine.
     bool touched[Segments][256];
 
+    // A register whose value moves under the reader, for code that judges a
+    // measurement by whether it changes rather than by what it reads. Set with
+    // drift(); the stored byte advances by one on every read.
+    bool drifting[Segments][256];
+
     // The slave's own pointer. Nothing outside the bus may cache this and
     // expect it to stay true -- that assumption is the defect under test.
     uint8_t segment;
@@ -55,6 +60,7 @@ public:
             for (int r = 0; r < 256; ++r) {
                 bank[s][r] = 0;
                 touched[s][r] = false;
+                drifting[s][r] = false;
             }
         segment = 0;
         trace.clear();
@@ -75,6 +81,8 @@ public:
                 touched[s][r] = false;
             }
     }
+
+    void drift(uint8_t seg, uint8_t reg) { drifting[seg][reg] = true; }
 
     // A field, decoded the way the chip lays one out: little-endian across
     // consecutive registers, then shifted and masked.
@@ -135,6 +143,8 @@ public:
         for (uint8_t i = 0; i < size; ++i) {
             uint8_t reg = static_cast<uint8_t>(readOffset_ + i);
             rx_.push_back(reg == SegmentRegister ? segment : bank[segment][reg]);
+            if (reg != SegmentRegister && drifting[segment][reg])
+                ++bank[segment][reg];
         }
         return size;
     }

@@ -2,6 +2,7 @@
 
 #include <Arduino.h>   // delay(), a hardware settling time
 
+#include "Adc.h"
 #include "Interrupts.h"
 #include "SyncType.h"
 
@@ -74,6 +75,13 @@ const uint8_t SeparatingCleanly = 0x05;
 const uint8_t SamplesPerPass = 16;
 const uint8_t LineLengthReads = 20;
 
+// How many reads the separator's output gets to move in before it is called
+// frozen, and a reading no measured line length matches -- which is how a
+// separator behind an ADC PLL still in reset is called live without being
+// judged, nothing it reports meaning anything there.
+const uint8_t LivenessReads = 128;
+const uint16_t PllInResetReading = 777;
+
 // How long a new level takes to reach the sync separator, the level below which
 // there is no room to step, and the level below which the walk owns the margin
 // rather than a single trim.
@@ -139,6 +147,7 @@ uint16_t SyncOnGreen::badSamples_ = 0;
 bool SyncOnGreen::steppedInWindow_ = false;
 
 const uint8_t SyncOnGreen::DefaultLevel;
+const uint8_t SyncOnGreen::FrozenLevel;
 const uint8_t SyncOnGreen::LevelMax;
 const uint16_t SyncOnGreen::WindowMs;
 const uint16_t SyncOnGreen::StepThreshold;
@@ -188,6 +197,32 @@ void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
         if (exhausted)
             return;
     }
+}
+
+void SyncOnGreen::reacquire(void (*walk)(), void (*putInForce)(), bool reopen)
+{
+    if (!inSyncPath())
+        return;
+
+    const uint16_t first = Adc::PLLAD_VCORST::read() == 1
+                               ? PllInResetReading
+                               : (uint16_t)Tv5725::STATUS_SYNC_PROC_HLOW_LEN::read();
+
+    for (uint8_t read = 0; read < LivenessReads; ++read) {
+        if (Tv5725::STATUS_SYNC_PROC_HLOW_LEN::read() != first) {
+            if (reopen) {
+                choose(0);
+                putInForce();
+            } else {
+                walk();
+            }
+            return;
+        }
+        delay(0);
+    }
+
+    choose(FrozenLevel);
+    putInForce();
 }
 
 void SyncOnGreen::acquireCoarse(void (*putInForce)())
