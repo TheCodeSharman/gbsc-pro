@@ -351,8 +351,8 @@ What the ladder does, rung by rung, and which rungs have an owner:
 | trigger | what it does | owner |
 |---|---|---|
 | `== 1` | one pass of grace, returns | — |
-| `== 2` | raise the sync separator level by one if it is <= 1 and the sync is serrated | — |
-| `== 8` | widen the coast; halve `SP_H_PULSE_IGNOR` if serrated | `SyncProcessor::applyDefaultCoastWindow()`, in part |
+| `== 2` | lift the sync separator level off the floor, on a serrated source | `SyncOnGreen::liftOffFloor()` |
+| `== 8` | put the coast window back, then widen it on a serrated source | `SyncProcessor::applyDefaultCoastWindow()` and `widenCoastForSerration()` |
 | `% 27` | `updateSpDynamic(1)` | — |
 | `% 32` | unfreeze if HSACT | — |
 | `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
