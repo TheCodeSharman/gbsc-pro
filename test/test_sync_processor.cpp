@@ -372,3 +372,75 @@ TEST_CASE("a collapsed line under a countable source is treated as a long one")
     CHECK(SyncProcessor::acquireCoastWindow(false, stableStub));
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 1936);
 }
+
+// The clamp window: where in the line the black level is sampled. It has to
+// land in the back porch -- after the sync pulse, before active video -- and
+// the two sync paths measure the line in different units to find it.
+
+TEST_CASE("the clamp sits in the back porch of a separate-sync line")
+{
+    // Separate sync counts in ADC samples, so STATUS_SYNC_PROC_HTOTAL is the
+    // line and the fractions are of that.
+    steadyLine(431);
+    GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
+
+    CHECK(SyncProcessor::acquireClampWindow(false, false, 0, stableStub));
+    CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 23);
+    CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 132);
+}
+
+TEST_CASE("a composite source is measured in its own units")
+{
+    // HPERIOD_IF counts against the chip's 27 MHz rather than the ADC clock, so
+    // the same window is a different fraction of a different number.
+    steadyLine(431);
+
+    CHECK(SyncProcessor::acquireClampWindow(true, false, 0, stableStub));
+    CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 14);
+    CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 76);
+}
+
+TEST_CASE("a component source clamps later, and stops where the others do")
+{
+    steadyLine(431);
+    GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
+
+    CHECK(SyncProcessor::acquireClampWindow(false, true, 0, stableStub));
+    CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 73);
+    CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 132);
+}
+
+TEST_CASE("an offset moves the whole window later")
+{
+    steadyLine(431);
+    GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
+
+    CHECK(SyncProcessor::acquireClampWindow(false, true, 0x60, stableStub));
+    CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 73 + 0x60);
+    CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 132 + 0x60);
+}
+
+TEST_CASE("a window already within a unit of where it belongs is not rewritten")
+{
+    // One bus write per pass, for a window that has not moved, on a function
+    // the watcher calls on a schedule.
+    steadyLine(431);
+    GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
+    SyncProcessor::SP_CS_CLP_ST::write(24);
+    SyncProcessor::SP_CS_CLP_SP::write(133);
+
+    CHECK(SyncProcessor::acquireClampWindow(false, false, 0, stableStub));
+    CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 24);
+    CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 133);
+}
+
+TEST_CASE("a line length that will not hold still leaves the clamp alone")
+{
+    steadyLine(431);
+    GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
+    Wire.drift(0x00, 0x18);
+
+    CHECK_FALSE(SyncProcessor::acquireClampWindow(false, false, 0, stableStub));
+    CHECK_FALSE(Wire.touched[0x05][0x41]);
+    CHECK_FALSE(Wire.touched[0x05][0x43]);
+}

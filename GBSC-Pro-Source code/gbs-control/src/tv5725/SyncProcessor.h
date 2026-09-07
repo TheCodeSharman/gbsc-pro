@@ -14,9 +14,8 @@ namespace Tv5725 {
 // 7.03%, where the IF reading gives twice the mode's sync width.
 //
 // What is not here is everything that moves per source: updateSpDynamic() owns
-// the coast and delta quadruple, updateClampPosition() the clamp, and
-// Tv5725::SourceMeasurement SP_RT_HS_SP. A static write of any of those would
-// fight a per-source decision.
+// the coast and delta quadruple and Tv5725::SourceMeasurement SP_RT_HS_SP. A
+// static write of either would fight a per-source decision.
 //
 // DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. Set 1110 against a 2553-sample
 // line, and again at only 100 low, SP_VTOTAL fell to a steady 97/98 through the
@@ -256,6 +255,29 @@ public:
     // cannot reach. It is asked after every reading, because a window placed
     // across a source that moved mid-run is placed on two different lines.
     static bool acquireCoastWindow(bool autoCoast, bool (*stable)());
+
+    // How many readings the clamp window agrees over. More than the coast
+    // window's, because a clamp landing in active video clamps to picture.
+    static const uint8_t ClampSamples = 16;
+
+    // Where in the line to sample the black level: after the sync pulse and
+    // inside the back porch, as a fraction of the line the source is sending.
+    //
+    // `csync` picks the measurement as well as the fractions -- the two paths
+    // count in different units, HPERIOD_IF against the chip's 27 MHz on a
+    // composite source and STATUS_SYNC_PROC_HTOTAL in ADC samples on a separate
+    // one -- so the fractions are not comparable between them.
+    //
+    // `component` starts the window later, where a YPbPr sync tip ends.
+    // `offset` moves the whole window later, which HD bypass needs on a low
+    // line rate; the decision is the caller's because it is not this block's
+    // to know.
+    //
+    // A window already within a unit of where it belongs is left alone: this
+    // runs on a schedule, and the write would cost the bus a pass for nothing.
+    // False means nothing was written.
+    static bool acquireClampWindow(bool csync, bool component, uint16_t offset,
+                                   bool (*stable)());
 
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as

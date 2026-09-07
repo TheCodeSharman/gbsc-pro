@@ -3808,76 +3808,23 @@ void updateClampPosition() // Update Clamp Position
         return;
     }
 
-    if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-    {
-        GBS::SP_CLAMP_MANUAL::write(0);
-    } else if (rto->inputIsYpBpR == false) // && Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-    {
-        GBS::SP_CLAMP_MANUAL::write(1); 
+    GBS::SP_CLAMP_MANUAL::write(rto->inputIsYpBpR ? 0 : 1);
+
+    uint16_t offset = 0;
+    if (rto->inputIsYpBpR && rto->outModeHdBypass && sourceLowLineRate()) {
+        offset = 0x60;
     }
 
-    uint32_t accInHlength = 0;
-    uint16_t prevInHlength = 0;
-    uint16_t thisInHlength = 0;
-    if (Tv5725::SyncType::isCsync())
-        prevInHlength = GBS::HPERIOD_IF::read();
-    else
-        prevInHlength = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-    for (uint8_t i = 0; i < 16; i++) {
-        if (Tv5725::SyncType::isCsync())
-            thisInHlength = GBS::HPERIOD_IF::read();
-        else
-            thisInHlength = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-        if ((thisInHlength > (prevInHlength - 3)) && (thisInHlength < (prevInHlength + 3))) {
-            accInHlength += thisInHlength;
-        } else {
-
-            return;
-        }
-        if (!getStatus16SpHsStable()) {
-            return;
-        }
-
-        prevInHlength = thisInHlength;
-        ESP.wdtFeed();
-        delayMicroseconds(100);
-    }
-    accInHlength = accInHlength / 16;
-
-    if (accInHlength > 4095) {
+    if (!Tv5725::SyncProcessor::acquireClampWindow(Tv5725::SyncType::isCsync(),
+                                                   rto->inputIsYpBpR, offset,
+                                                   getStatus16SpHsStable)) {
         return;
     }
 
-    uint16_t oldClampST = GBS::SP_CS_CLP_ST::read();
-    uint16_t oldClampSP = GBS::SP_CS_CLP_SP::read();
-    float multiSt = Tv5725::SyncType::isCsync() == 1 ? 0.032f : 0.010f;
-    float multiSp = Tv5725::SyncType::isCsync() == 1 ? 0.174f : 0.058f;
-    uint16_t start = 1 + (accInHlength * multiSt);
-    uint16_t stop = 2 + (accInHlength * multiSp);
-
-    if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-
-    {
-
-        multiSt = Tv5725::SyncType::isCsync() == 1 ? 0.089f : 0.032f;
-        start = 1 + (accInHlength * multiSt);
-
-        if (rto->outModeHdBypass) {
-            if (sourceLowLineRate()) {
-                start += 0x60;
-                stop += 0x60;
-            }
-
-            GBS::HD_BLK_GY_DATA::write(0x05);
-            GBS::HD_BLK_BU_DATA::write(0x00);
-            GBS::HD_BLK_RV_DATA::write(0x00);
-        }
-    }
-
-    if ((start < (oldClampST - 1) || start > (oldClampST + 1)) ||
-        (stop < (oldClampSP - 1) || stop > (oldClampSP + 1))) {
-        GBS::SP_CS_CLP_ST::write(start);
-        GBS::SP_CS_CLP_SP::write(stop);
+    if (rto->inputIsYpBpR && rto->outModeHdBypass) {
+        GBS::HD_BLK_GY_DATA::write(0x05);
+        GBS::HD_BLK_BU_DATA::write(0x00);
+        GBS::HD_BLK_RV_DATA::write(0x00);
     }
 
     rto->clampPositionIsSet = true;

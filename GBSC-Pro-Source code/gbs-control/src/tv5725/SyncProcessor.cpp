@@ -148,6 +148,80 @@ const uint16_t PlausibleVerticalCount = 322;
 
 }  // namespace
 
+namespace {
+
+// The line the clamp is placed on, or 0 when the readings will not agree.
+// Unlike the coast window's this is a mean of the samples as read, because the
+// fractions below were fitted to each path's own units.
+uint32_t clampLineLength(bool csync, bool (*stable)())
+{
+    uint32_t accumulated = 0;
+    uint16_t previous = csync ? GBS::HPERIOD_IF::read()
+                              : GBS::STATUS_SYNC_PROC_HTOTAL::read();
+    for (uint8_t i = 0; i < SyncProcessor::ClampSamples; ++i) {
+        const uint16_t sample = csync ? GBS::HPERIOD_IF::read()
+                                      : GBS::STATUS_SYNC_PROC_HTOTAL::read();
+        if (sample <= previous - SyncProcessor::CoastAgreement
+            || sample >= previous + SyncProcessor::CoastAgreement)
+            return 0;
+        if (stable != nullptr && !stable())
+            return 0;
+        accumulated += sample;
+        previous = sample;
+        delayMicroseconds(100);
+    }
+    return accumulated / SyncProcessor::ClampSamples;
+}
+
+bool withinOneOf(uint16_t wanted, uint16_t inForce)
+{
+    return wanted >= inForce - 1 && wanted <= inForce + 1;
+}
+
+// The window as a fraction of the line, per path. The starts differ because the
+// sync tip they clear differs; the stop is the same fraction whatever is being
+// clamped.
+const float ClampStartCsync = 0.032f;
+const float ClampStartSeparate = 0.010f;
+const float ClampStartCsyncComponent = 0.089f;
+const float ClampStartSeparateComponent = 0.032f;
+const float ClampStopCsync = 0.174f;
+const float ClampStopSeparate = 0.058f;
+
+// Above this the reading is not a line length the twelve-bit window can hold.
+const uint32_t ClampLineCeiling = 4095;
+
+}  // namespace
+
+bool SyncProcessor::acquireClampWindow(bool csync, bool component,
+                                       uint16_t offset, bool (*stable)())
+{
+    const uint32_t lineLength = clampLineLength(csync, stable);
+    if (lineLength == 0 || lineLength > ClampLineCeiling)
+        return false;
+
+    float startFraction;
+    if (component)
+        startFraction = csync ? ClampStartCsyncComponent
+                              : ClampStartSeparateComponent;
+    else
+        startFraction = csync ? ClampStartCsync : ClampStartSeparate;
+
+    const uint16_t start =
+        (uint16_t)(1 + lineLength * startFraction) + offset;
+    const uint16_t stop =
+        (uint16_t)(2 + lineLength * (csync ? ClampStopCsync : ClampStopSeparate))
+        + offset;
+
+    if (withinOneOf(start, SP_CS_CLP_ST::read())
+        && withinOneOf(stop, SP_CS_CLP_SP::read()))
+        return true;
+
+    SP_CS_CLP_ST::write(start);
+    SP_CS_CLP_SP::write(stop);
+    return true;
+}
+
 bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
 {
     uint32_t lineLength = measuredLineLength(stable);
