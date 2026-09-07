@@ -497,6 +497,19 @@ void Geometry::writeSampling()
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
 
+static void logSourceState(SourceState state, uint16_t lines, uint16_t samples,
+                           uint16_t divider)
+{
+    char line[88];
+    snprintf(line, sizeof(line),
+             "source %s: %u lines, %u samples against divider %u",
+             state == SourceAcquired   ? "acquired"
+             : state == SourceUnlocked ? "UNLOCKED"
+                                       : "absent",
+             (unsigned)lines, (unsigned)samples, (unsigned)divider);
+    tv5725Log(line);
+}
+
 static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
 {
     char line[72];
@@ -569,9 +582,19 @@ bool Geometry::sourceMoved()
     // The horizontal half, and it is not a second steadiness run: the divider
     // is held state the engine chose, so one reading of what the sync processor
     // counts against it is the whole test.
-    sourceState_ = !(plausible && held)
-                       ? SourceAbsent
-                       : sampling_.dividerLatched() ? SourceAcquired : SourceUnlocked;
+    const uint16_t lineSamples = SourceMeasurement::measureLineSamples();
+    const SourceState was = sourceState_;
+    sourceState_ = !(plausible && held) ? SourceAbsent
+                   : SourceMeasurement::dividerLatched(lineSamples,
+                                                       sampling_.divider())
+                       ? SourceAcquired
+                       : SourceUnlocked;
+
+    // The state changing is worth a line because the fault it exists to name is
+    // INTERMITTENT and a poll fast enough to catch it changes what the unit
+    // does. This costs no bus traffic the answer did not already need.
+    if (sourceState_ != was)
+        logSourceState(sourceState_, lines, lineSamples, sampling_.divider());
 
     // A count no source runs is the wrong sync path's signature -- 97..137 on a
     // 311-line source, measured -- and a mode change is the only thing that
