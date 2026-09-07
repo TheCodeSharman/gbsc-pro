@@ -3793,52 +3793,7 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
         return;
     }
 
-    uint32_t accInHlength = 0;
-    uint16_t prevInHlength = GBS::HPERIOD_IF::read();
-    for (uint8_t i = 0; i < 8; i++) {
-
-        uint16_t thisInHlength = GBS::HPERIOD_IF::read();
-        if ((thisInHlength > (prevInHlength - 3)) && (thisInHlength < (prevInHlength + 3))) {
-            accInHlength += thisInHlength;
-        } else {
-            return;
-        }
-        if (!getStatus16SpHsStable()) {
-            return;
-        }
-
-        prevInHlength = thisInHlength;
-    }
-    accInHlength = (accInHlength * 4) / 8;
-
-    if (accInHlength >= 2040) {
-        accInHlength = 1716;
-    }
-
-    if (accInHlength <= 240) {
-
-        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= 322) {
-            delay(4);
-            if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= 322) {
-                accInHlength = 2000;
-            }
-        }
-    }
-
-    if (accInHlength > 32) {
-        if (autoCoast) {
-
-            GBS::SP_H_CST_ST::write((uint16_t)(accInHlength * 0.0562f));
-            GBS::SP_H_CST_SP::write((uint16_t)(accInHlength * 0.1550f));
-            GBS::SP_HCST_AUTO_EN::write(1);
-        } else {
-
-            GBS::SP_H_CST_ST::write(0x10);
-
-            GBS::SP_H_CST_SP::write((uint16_t)(accInHlength * 0.968f));
-
-            GBS::SP_HCST_AUTO_EN::write(0);
-        }
+    if (Tv5725::SyncProcessor::acquireCoastWindow(autoCoast, getStatus16SpHsStable)) {
         rto->coastPositionIsSet = 1;
     }
 }

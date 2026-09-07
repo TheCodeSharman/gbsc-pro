@@ -18,6 +18,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/gbs_types.h"
 
 using namespace Tv5725;
 
@@ -285,4 +286,89 @@ TEST_CASE("toggling the H counter's overflow protection flips it and flips back"
 
     SyncProcessor::toggleHsyncOverflowProtect();
     CHECK(SyncProcessor::SP_H_PROTECT::read() == 0);
+}
+
+// The coast window: where in the line the sync processor stops counting, taken
+// from the source's own line length. HPERIOD_IF counts against the chip's 27 MHz
+// and the window is placed as a fraction of it.
+
+static bool g_stable = true;
+static unsigned g_stableCalls = 0;
+static bool stableStub() { ++g_stableCalls; return g_stable; }
+
+// A source holding a 15625 Hz line still. HPERIOD_IF 431 is what that mode reads
+// when the register is behaving.
+static void steadyLine(uint16_t hperiod)
+{
+    Wire.reset();
+    g_stable = true;
+    g_stableCalls = 0;
+    GBS::HPERIOD_IF::write(hperiod);
+}
+
+TEST_CASE("the coast window is placed as a fraction of the source's own line")
+{
+    steadyLine(431);
+
+    CHECK(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 1668);
+    CHECK(SyncProcessor::SP_HCST_AUTO_EN::read() == 0);
+}
+
+TEST_CASE("the automatic window brackets the sync rather than spanning the line")
+{
+    steadyLine(431);
+
+    CHECK(SyncProcessor::acquireCoastWindow(true, stableStub));
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 96);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 267);
+    CHECK(SyncProcessor::SP_HCST_AUTO_EN::read() == 1);
+}
+
+TEST_CASE("a line length that will not hold still leaves the window alone")
+{
+    // HPERIOD_IF's high byte moving under the reader is the railing register:
+    // every sample lands a long way from the last, and a window placed on the
+    // mean of those is a window placed on nothing.
+    steadyLine(431);
+    Wire.drift(0x00, 0x07);
+
+    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK_FALSE(Wire.touched[0x05][0x4D]);
+    CHECK_FALSE(Wire.touched[0x05][0x4F]);
+}
+
+TEST_CASE("an unstable sync processor leaves the window alone")
+{
+    steadyLine(431);
+    g_stable = false;
+
+    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK_FALSE(Wire.touched[0x05][0x4D]);
+    CHECK_FALSE(Wire.touched[0x05][0x4F]);
+}
+
+TEST_CASE("a line too short to place a window in writes nothing")
+{
+    // A collapsed horizontal measurement with no plausible vertical count
+    // beside it. A window at a fraction of nothing is worse than the one
+    // already in force.
+    steadyLine(4);
+    GBS::STATUS_SYNC_PROC_VTOTAL::write(400);
+
+    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK_FALSE(Wire.touched[0x05][0x4D]);
+}
+
+TEST_CASE("a collapsed line under a countable source is treated as a long one")
+{
+    // The horizontal measurement has gone while the vertical is still counting,
+    // so the source is there and it is HPERIOD_IF that failed. A long window is
+    // a better guess than one placed on the collapsed reading.
+    steadyLine(4);
+    GBS::STATUS_SYNC_PROC_VTOTAL::write(311);
+
+    CHECK(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 1936);
 }

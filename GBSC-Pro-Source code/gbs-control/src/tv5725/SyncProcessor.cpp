@@ -5,6 +5,8 @@
 #include "Adc.h"
 #include "Chip.h"
 
+#include "../../gbs_types.h"
+
 namespace Tv5725 {
 
 namespace {
@@ -107,6 +109,74 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_HS_LOOP_SEL::write(1);
         SP_H_PROTECT::write(0);
     }
+}
+
+namespace {
+
+// The line length HPERIOD_IF reports, in 27 MHz counts, or 0 when the readings
+// will not agree. The register holds a quarter of the count less one, so the
+// mean is scaled back up rather than the samples.
+uint32_t measuredLineLength(bool (*stable)())
+{
+    uint32_t accumulated = 0;
+    uint16_t previous = GBS::HPERIOD_IF::read();
+    for (uint8_t i = 0; i < SyncProcessor::CoastSamples; ++i) {
+        const uint16_t sample = GBS::HPERIOD_IF::read();
+        if (sample <= previous - SyncProcessor::CoastAgreement
+            || sample >= previous + SyncProcessor::CoastAgreement)
+            return 0;
+        if (stable != nullptr && !stable())
+            return 0;
+        accumulated += sample;
+        previous = sample;
+    }
+    return (accumulated * 4) / SyncProcessor::CoastSamples;
+}
+
+// A line long enough to be a line. Above the first the reading is the NTSC one
+// whatever it says; below the second there is no window to place.
+const uint32_t LineLengthCeiling = 2040;
+const uint32_t NtscLineLength = 1716;
+const uint32_t LineLengthFloor = 32;
+
+// A line this short with a plausible vertical count is the horizontal
+// measurement having collapsed rather than a short line, and a long window is a
+// better guess than a window at a fraction of nothing.
+const uint32_t CollapsedLineLength = 240;
+const uint16_t CollapsedStandsIn = 2000;
+const uint16_t PlausibleVerticalCount = 322;
+
+}  // namespace
+
+bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
+{
+    uint32_t lineLength = measuredLineLength(stable);
+    if (lineLength == 0)
+        return false;
+
+    if (lineLength >= LineLengthCeiling)
+        lineLength = NtscLineLength;
+
+    if (lineLength <= CollapsedLineLength
+        && GBS::STATUS_SYNC_PROC_VTOTAL::read() <= PlausibleVerticalCount) {
+        delay(4);
+        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= PlausibleVerticalCount)
+            lineLength = CollapsedStandsIn;
+    }
+
+    if (lineLength <= LineLengthFloor)
+        return false;
+
+    if (autoCoast) {
+        SP_H_CST_ST::write((uint16_t)(lineLength * 0.0562f));
+        SP_H_CST_SP::write((uint16_t)(lineLength * 0.1550f));
+        SP_HCST_AUTO_EN::write(1);
+    } else {
+        SP_H_CST_ST::write(0x10);
+        SP_H_CST_SP::write((uint16_t)(lineLength * 0.968f));
+        SP_HCST_AUTO_EN::write(0);
+    }
+    return true;
 }
 
 void SyncProcessor::clampFromReferenceClock()

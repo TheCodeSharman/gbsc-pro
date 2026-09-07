@@ -14,9 +14,9 @@ namespace Tv5725 {
 // 7.03%, where the IF reading gives twice the mode's sync width.
 //
 // What is not here is everything that moves per source: updateSpDynamic() owns
-// the coast and delta quadruple, updateCoastPosition() SP_H_CST_ST/SP,
-// updateClampPosition() the clamp, and Tv5725::SourceMeasurement SP_RT_HS_SP. A static
-// write of any of those would fight a per-source decision.
+// the coast and delta quadruple, updateClampPosition() the clamp, and
+// Tv5725::SourceMeasurement SP_RT_HS_SP. A static write of any of those would
+// fight a per-source decision.
 //
 // DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. Set 1110 against a 2553-sample
 // line, and again at only 100 low, SP_VTOTAL fell to a steady 97/98 through the
@@ -235,6 +235,27 @@ public:
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.
     static void applyDefaultCoastWindow();
+
+    // How many readings of the line length must agree before the window is
+    // placed on them, and how far apart two readings may be and still count as
+    // agreeing.
+    static const uint8_t CoastSamples = 8;
+    static const uint16_t CoastAgreement = 3;
+
+    // Place that window on the line the source is actually sending, measured
+    // from HPERIOD_IF against the chip's own 27 MHz. `autoCoast` brackets the
+    // sync tip instead of spanning the line, which is what a source with its
+    // own vertical sync wants.
+    //
+    // False means NOTHING was written, and that is the common case rather than
+    // an error: the readings have to hold still across the run, and HPERIOD_IF
+    // rails on the scaling path with a perfect picture.
+    // docs/investigations/hperiod-if-railing.md
+    //
+    // `stable` is the sketch's sync-processor stability check, which this block
+    // cannot reach. It is asked after every reading, because a window placed
+    // across a source that moved mid-run is placed on two different lines.
+    static bool acquireCoastWindow(bool autoCoast, bool (*stable)());
 
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as
