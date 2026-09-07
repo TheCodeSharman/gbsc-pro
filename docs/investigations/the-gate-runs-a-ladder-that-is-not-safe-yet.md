@@ -38,16 +38,25 @@ SyncType::isCsync()  false       (the HELD type says separate)
 ```
 
 **The register and the held sync type disagree, and nothing reconciles them.**
-The sketch's correction is gated on `SyncType::isCsync()`, which is false, so it
-never fires: the message "own V sync found while configured for csync ->
-separate H/V" is absent throughout. The probe runs, answers "yes" every time,
-and the register stays at 1.
+The correction was gated on `SyncType::isCsync()`, which is false, so it never
+fired: the message "own V sync found while configured for csync -> separate H/V"
+is absent throughout. The probe runs, answers "yes" every time, and the register
+stays at 1.
 
-`prepareSyncProcessor()` writes `SP_SOG_MODE::write(1)` bare, without going
-through `SyncProcessor::applyForSyncType()` and without `SyncType::forget()` --
-unlike `setResetParameters()`, which does forget. That is the shape of the
-divergence and it is the leading candidate. **It is not proven**: the sequence
-that leaves the register at 1 was not traced, only its result.
+**That half now has an owner.** `Geometry::reacquireSyncType()` is the `% 150`
+rung: it probes and applies the answer to `SyncProcessor` and `ModeDetect`
+whatever the held value said, so a register on the wrong path is reconciled
+rather than left. Measured on the bench recovering exactly that state unaided --
+`SP_SOG_MODE` 1 -> 0 with `STATUS_SYNC_PROC_VTOTAL` 0 -> 311 and a clean picture
+held afterwards.
+
+**`prepareSyncProcessor()` writing `SP_SOG_MODE::write(1)` bare is REFUTED as
+the cause.** It was the leading candidate, being the one write that skips
+`SyncProcessor::applyForSyncType()` and `SyncType::forget()`. Tested directly:
+`SP_SOG_MODE=1` written by hand on a healthy locked source is undone within
+10 s, so the register is actively maintained there. Whatever maintains it is not
+running in the recovery path, and which writer wins in that state is still
+unknown.
 
 ## What has to happen first
 
@@ -77,3 +86,12 @@ present it must stay 0: the fault drops it for the length of each re-solve, so
 the encoder is shown a dropout every few seconds and the television stays dark
 with every register reading correct. Measured before the gate, 8 drops in 1262
 reads over 25 s.
+
+**THE DARK TELEVISION IS NOT THE GATE'S DOING, and reading it as such attributes
+a standing fault to whatever change is in flight.** The same round trip on a
+build with the gate absent leaves the television dark too, twice out of two,
+with `SP_SOG_MODE` 0, `STATUS_SYNC_PROC_VTOTAL` 311 and the sink's own display
+naming the mode it is locked to. The re-solve churn behind it -- `source moved:
+interrupt` re-arming every few seconds with the count equal to the solved count
+-- is there without the gate as well. What the gate changes is how far the
+ladder advances, not whether the encoder is shown dropouts.

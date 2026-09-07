@@ -343,7 +343,36 @@ named recoveries. What moves here is the run.
 
 **7. The escalation list** replaces the counter ladder: an ordered set of named
 recoveries tried in turn, in place of `% 27`, `% 32`, `== 38`, `% 150` and
-`% 413`.
+`% 413`. **Step 4 waits on this**, because wiring the gate is what lets the
+branch advance far enough to reach these.
+
+What the ladder does, rung by rung, and which rungs have an owner:
+
+| trigger | what it does | owner |
+|---|---|---|
+| `== 1` | one pass of grace, returns | — |
+| `== 2` | raise the sync separator level by one if it is <= 1 and the sync is serrated | — |
+| `== 8` | widen the coast; halve `SP_H_PULSE_IGNOR` if serrated | `SyncProcessor::applyDefaultCoastWindow()`, in part |
+| `% 27` | `updateSpDynamic(1)` | — |
+| `% 32` | unfreeze if HSACT | — |
+| `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
+| `== 38` | `nudgeMD()` | `ModeDetect` |
+| `> 47, % 16` | csync only: toggle hsync overflow protect | `SyncProcessor` |
+| `% 150` | reacquire the sync type, reset the coast and clamp windows, `updateSpDynamic(1)`, `nudgeMD()`, walk the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()` and the two window defaults; the rest — |
+| `% 413` | toggle `ADC_INPUT_SEL` | `Adc::bounceInput()` exists, nothing calls it |
+
+**`% 150` is the compound one and it is where the harm was.** Its sync-type
+correction used to be one-directional: it could move a held csync to separate
+and never back, and it never reconciled the register with the held value, so a
+source counted through the wrong path with the held type already right had no
+route out. `Geometry::reacquireSyncType()` is that rung — it applies the probe's
+answer to the chip whatever the held value says — and it also stops the recovery
+probing an input whose connector settles the sync type.
+
+**`Adc::bounceInput()` is what `% 413` becomes, and nothing installs it**: it
+turns the whole screen green for as long as the input is away, so wiring it as
+an automatic recovery puts a visible flash on every solve that lands on a
+flagged counter.
 
 **8. Freeze and unfreeze**, to `FrameBuffer`, which owns capture already.
 
