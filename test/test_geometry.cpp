@@ -1345,6 +1345,67 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     CHECK(g_probeCalls == 2);
 }
 
+// --- reacquiring the sync type, the escalation ladder's rung -----------------
+//
+// The recovery a source that will not lock eventually reaches. A held value
+// that already agrees is the state that costs a standoff: SP_SOG_MODE 1 against
+// a held type of separate, with no route back, because a correction asking the
+// held value never fires.
+// docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md
+
+TEST_CASE("reacquiring the sync type puts the registers on the answered path")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE_FALSE(SyncType::isCsync());
+
+    SyncProcessor::SP_SOG_MODE::write(1);
+
+    engine.reacquireSyncType();
+
+    CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
+}
+
+TEST_CASE("reacquiring the sync type asks the probe again")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    g_probeCalls = 0;
+
+    engine.reacquireSyncType();
+
+    CHECK(g_probeCalls == 1);
+}
+
+TEST_CASE("reacquiring the sync type reports what the source carries")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK_FALSE(engine.reacquireSyncType());
+
+    g_hasOwnVsync = false;
+    CHECK(engine.reacquireSyncType());
+}
+
 // --- what a mode change looks like when the line count cannot show it ---------
 //
 // sourceMoved() is the only thing that arms a solve while the engine is idle,

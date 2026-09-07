@@ -127,6 +127,17 @@ public:
     // different field rate moves nothing sourceMoved() can see.
     void sourceInterrupted();
 
+    // Probe the sync type again and put the chip on the answer, for the
+    // escalation a source that will not lock reaches. Returns whether the
+    // source carries composite sync.
+    //
+    // IT WRITES THE PATH WHATEVER THE HELD VALUE SAYS, which is the whole
+    // difference from the once-per-mode-change probe: a correction gated on the
+    // held value cannot reach a source whose registers are on the wrong path
+    // and whose held value is already right, and nothing else reconciles them.
+    // docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md
+    bool reacquireSyncType();
+
     bool reset();
 
     // Notify the engine that the output has gone into bypass: video routes

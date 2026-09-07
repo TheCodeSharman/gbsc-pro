@@ -428,6 +428,13 @@ void Geometry::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsyn
 
 void Geometry::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
+bool Geometry::reacquireSyncType()
+{
+    syncTypeProbed_ = false;
+    establishSyncType();
+    return SyncType::isCsync();
+}
+
 void Geometry::establishSyncType()
 {
     if (syncTypeProbed_ || syncProbe_ == 0)

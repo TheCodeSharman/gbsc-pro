@@ -4652,14 +4652,10 @@ void runSyncWatcher() //
             if (rto->noSyncCounter == 150 || rto->noSyncCounter % 900 == 0) {
 
                 printInfo();
-                if (sourceHasOwnVsync()) {
-                    // Correct the classification before the retry below hands
-                    // bypassModeSwitch_RGBHV a csync type that blinds the sync
-                    // processor to the V sync that is right there.
-                    if (Tv5725::SyncType::isCsync()) {
-                        debugPrintf("sync type: own V sync found while configured for csync -> separate H/V\n");
-                        Tv5725::SyncType::set(false);
-                    }
+
+                // A V sync arriving is proof of a source, so the escalation
+                // stops here rather than reaching the input toggle below.
+                if (!geometry.reacquireSyncType()) {
                     rto->noSyncCounter = 0x07fe;
                     printf("noSyncCounter max2 \n");
                 }
