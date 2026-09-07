@@ -132,3 +132,35 @@ TEST_CASE("a scaled RGBHV source changes preset when its line count changes buck
         CHECK(PresetLoad::rgbhvPresetStandard(311, 0) == 0);
     }
 }
+
+// Which preset a newly measured scaling-RGBHV source wants. The buckets are
+// upstream's, and they are a MEASUREMENT -- a line count and a field rate --
+// wearing a standard byte's clothes.
+
+TEST_CASE("a source under 280 lines takes the first preset")
+{
+    CHECK(PresetLoad::rgbhvStandardFor(262, 60.0f) == 1);
+    CHECK(PresetLoad::rgbhvStandardFor(279, 50.0f) == 1);
+}
+
+TEST_CASE("a source under 380 lines takes the second, whatever its rate")
+{
+    // The bench RISC PC at 320x256 is 311 lines, and lands here at 50 Hz and
+    // at 60 Hz alike -- the rate is not consulted below 380.
+    CHECK(PresetLoad::rgbhvStandardFor(311, 50.08f) == 2);
+    CHECK(PresetLoad::rgbhvStandardFor(311, 60.0f) == 2);
+}
+
+TEST_CASE("a tall source at a 50 Hz-ish rate takes the fourth")
+{
+    CHECK(PresetLoad::rgbhvStandardFor(627, 50.0f) == 4);
+    CHECK(PresetLoad::rgbhvStandardFor(627, 44.1f) == 4);
+    CHECK(PresetLoad::rgbhvStandardFor(627, 53.7f) == 4);
+}
+
+TEST_CASE("a tall source outside that rate window takes the third")
+{
+    CHECK(PresetLoad::rgbhvStandardFor(627, 60.0f) == 3);
+    CHECK(PresetLoad::rgbhvStandardFor(627, 44.0f) == 3);
+    CHECK(PresetLoad::rgbhvStandardFor(627, 53.8f) == 3);
+}

@@ -41,4 +41,15 @@ uint8_t PresetLoad::rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLin
     return 0;
 }
 
+uint8_t PresetLoad::rgbhvStandardFor(uint16_t sourceLines, float fieldRateHz)
+{
+    if (sourceLines < ShortSourceLines)
+        return 1;
+    if (sourceLines < TallSourceLines)
+        return 2;
+    if (fieldRateHz > 44.0f && fieldRateHz < 53.8f)
+        return 4;
+    return 3;
+}
+
 } // namespace Tv5725

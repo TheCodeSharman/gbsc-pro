@@ -42,6 +42,21 @@ public:
     // The buckets are measured, not derived: 280 and 380 lines.
     static uint8_t rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLines);
 
+    // The same question for a source nothing has been loaded for yet, which is
+    // the one place the field rate is consulted -- and only above 380 lines.
+    //
+    // **THIS IS A MEASUREMENT, NOT A CLASSIFICATION.** It answers off a line
+    // count and a field rate, and the standard byte is only how the answer
+    // reaches applyPresets(). The caller sets the byte to what this returns,
+    // loads, and sets it straight back to 14, which is why one number carrying
+    // both the source and the output is the thing step 10 removes.
+    // docs/investigations/scaling-rgbhv-flag-is-not-the-standard.md
+    static uint8_t rgbhvStandardFor(uint16_t sourceLines, float fieldRateHz);
+
+    // The field-rate window the fourth preset claims, above 380 lines.
+    static const uint16_t TallSourceLines = 380;
+    static const uint16_t ShortSourceLines = 280;
+
     // The sentinel writeProgramArrayNew() clears on every load.
     static const uint8_t NoValidMode = 15;
 

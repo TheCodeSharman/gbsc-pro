@@ -4722,19 +4722,8 @@ void runSyncWatcher() //
                     Serial.printf("sourceRate: ");
                     Serial.println(sourceRate);
 
-                    if (sourceLines < 280) {
-
-                        rto->videoStandardInput = 1;
-                    } else if (sourceLines < 380) {
-
-                        rto->videoStandardInput = 2;
-                    } else if (sourceRate > 44.0f && sourceRate < 53.8f) {
-
-                        rto->videoStandardInput = 4;
-                    } else {
-
-                        rto->videoStandardInput = 3;
-                    }
+                    rto->videoStandardInput =
+                        Tv5725::PresetLoad::rgbhvStandardFor(sourceLines, sourceRate);
                 
                     if (uopt->presetPreference == 10)
                         uopt->presetPreference = Output1080P;
