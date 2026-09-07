@@ -5253,25 +5253,19 @@ void runSyncWatcher() //
                 delay(100);
             }
 
-            static uint8_t runsWithSogBadStatus = 0; 
             static uint8_t oldHPLLState = 0;
-            if (Tv5725::SyncType::isCsync() == false) {
-                if (GBS::STATUS_INT_SOG_BAD::read()) 
-                {
-                    runsWithSogBadStatus++;
-                    if (runsWithSogBadStatus >= 4) {
-                        // A second route to csync, and a suspect if a separate-sync
-                        // source locks then loses it: SOG is not in use on RGBHV.
-                        debugPrintf("sync type: SOG bad for %d runs -> csync\n", runsWithSogBadStatus);
-                        Tv5725::SyncType::set(true);
-                        rto->HPLLState = runsWithSogBadStatus = RGBHVNoSyncCounter = 0;
-                        rto->noSyncCounter = 0x07fe;
-                        printf("noSyncCounter max \n");
-                    }
-                } else {
-                    runsWithSogBadStatus = 0;
-                }
-            }
+
+            // **THE SYNC TYPE HAS ONE OWNER, AND STATUS_INT_SOG_BAD IS NOT
+            // EVIDENCE ABOUT IT.** A second route to csync used to sit here,
+            // flipping the type after four 900 ms runs with that bit set. It
+            // only ever ran with the type ALREADY separate -- where the sync
+            // separator is out of the sync path and the bit reports a
+            // comparator with nothing to slice, so it is set permanently.
+            // Against the probe, which switches SP_EXT_SYNC_SEL and asks
+            // whether a V sync line arrives, it produced a standoff every 16 s
+            // on the bench RiscPC: "own V sync found while configured for csync
+            // -> separate H/V" answered by "SOG bad for 4 runs -> csync", with
+            // no picture between them. docs/sync-type-selection.md
 
             uint32_t currentPllRate = 0;
             static uint32_t oldPllRate = 10;
@@ -8524,12 +8518,13 @@ void startWebserver()
     // without it answers 404 rather than reporting an empty framing.
 #if GBS_DEBUG
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[288];
+        char body[320];
         snprintf_P(body, sizeof(body),
             PSTR("{\"oh\":%u,\"eh\":%u,\"ov\":%u,\"ev\":%u,"
                  "\"ch\":%u,\"cv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
-                 "\"lineRateHz\":%lu,\"lowLineRate\":%s}"),
+                 "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
+                 "\"present\":%s}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
             geometry.originUnitsOn(Tv5725::AxisVertical),
@@ -8543,7 +8538,12 @@ void startWebserver()
             (int)lrintf(geometry.framing().originOn(Tv5725::AxisVertical) * 10000.0f),
             (int)lrintf(geometry.framing().extentOn(Tv5725::AxisVertical) * 10000.0f),
             (unsigned long)geometry.sourceLineRateHz(),
-            geometry.sourceLowLineRate() ? "true" : "false");
+            geometry.sourceLowLineRate() ? "true" : "false",
+            // The engine's own answer to "is a source there": a steadiness run
+            // over the line count, not a live reading. Published because it and
+            // the sketch's getVideoMode() classification disagree, and only
+            // seeing both at once says which. docs/retiring-the-sync-watcher.md
+            geometry.sourceIsPresent() ? "true" : "false");
         request->send(200, "application/json", body);
     });
 
