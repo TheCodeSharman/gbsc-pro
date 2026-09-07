@@ -4126,51 +4126,22 @@ void disableScanlines() //
 
 void enableMotionAdaptDeinterlace() //
 {
-    // freezeVideo();
-    GBS::DEINT_00::write(0x19);
-    GBS::MADPT_Y_MI_OFFSET::write(0x00);
-
-    GBS::MADPT_Y_MI_DET_BYPS::write(0);
-
+    // The coefficient upstream ships for the two SD standards and for nothing
+    // else. It goes with the standard byte at step 12 of
+    // docs/retiring-the-sync-watcher.md, once a measurement can name the source.
+    uint8_t verticalTap = Tv5725::Deinterlacer::KeepVerticalTap;
     if (rto->videoStandardInput == 1)
-        GBS::MADPT_VTAP2_COEFF::write(6);
-    if (rto->videoStandardInput == 2)
-        GBS::MADPT_VTAP2_COEFF::write(4);
+        verticalTap = 6;
+    else if (rto->videoStandardInput == 2)
+        verticalTap = 4;
 
-    GBS::RFF_ADR_ADD_2::write(1);
-    GBS::RFF_REQ_SEL::write(3);
-
-    GBS::RFF_FETCH_NUM::write(0x80);
-    Tv5725::FrameBuffer::writeFifoLineOffset(0x100);
-    GBS::RFF_YUV_DEINTERLACE::write(0);
-    GBS::WFF_FF_STA_INV::write(0);
-
-    GBS::WFF_ENABLE::write(1);
-    GBS::RFF_ENABLE::write(1);
-
-    unfreezeVideo();
-    delay(60);
-    GBS::MAPDT_VT_SEL_PRGV::write(0);
+    Tv5725::Deinterlacer::enableMotionAdapt(verticalTap, unfreezeVideo);
     rto->motionAdaptiveDeinterlaceActive = true;
 }
 
 void disableMotionAdaptDeinterlace() // 
 {
-    GBS::MAPDT_VT_SEL_PRGV::write(1);
-    GBS::DEINT_00::write(0xff);
-
-    GBS::RFF_FETCH_NUM::write(0x1);
-    Tv5725::FrameBuffer::writeFifoLineOffset(1);
-    delay(2);
-    GBS::WFF_ENABLE::write(0);
-    GBS::RFF_ENABLE::write(0);
-
-    GBS::WFF_FF_STA_INV::write(1);
-
-    GBS::MADPT_Y_MI_OFFSET::write(0x7f);
-
-    GBS::MADPT_Y_MI_DET_BYPS::write(1);
-
+    Tv5725::Deinterlacer::disableMotionAdapt();
     rto->motionAdaptiveDeinterlaceActive = false; 
 }
 

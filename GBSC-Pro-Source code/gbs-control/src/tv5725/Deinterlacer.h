@@ -490,6 +490,28 @@ public:
     // with it.
     static void enableScanlines(uint8_t strength);
     static void disableScanlines();
+
+    // How long the buffer is given to fill before the deinterlacer is pointed
+    // at it.
+    static const uint8_t SettleMs = 60;
+
+    // No vertical tap to write. MADPT_VTAP2_COEFF is four bits, so this is
+    // outside the field and cannot be mistaken for one.
+    static const uint8_t KeepVerticalTap = 0xff;
+
+    // The motion-adaptive path: two fields in flight, so the frame buffer
+    // fetches a line ahead and the write side is told not to invert its start.
+    //
+    // `releaseCapture` is the caller's unfreeze, injected because the ORDER is
+    // the constraint: the buffer has to be filling before MAPDT_VT_SEL_PRGV is
+    // cleared, or the deinterlacer is shown a buffer nothing is writing.
+    //
+    // `verticalTap` is the motion index's vertical filter coefficient, which
+    // upstream sets for two source standards and for nothing else. A caller
+    // that cannot name one passes KeepVerticalTap rather than having a default
+    // chosen for it.
+    static void enableMotionAdapt(uint8_t verticalTap, void (*releaseCapture)());
+    static void disableMotionAdapt();
 };
 
 }  // namespace Tv5725

@@ -1,5 +1,7 @@
 #include "Deinterlacer.h"
 
+#include <Arduino.h>
+
 #include "FrameBuffer.h"
 #include "VideoProcessor.h"
 
@@ -171,6 +173,48 @@ void Deinterlacer::disableScanlines()
     MADPT_VIIR_BYPS::write(1);
     MADPT_PD_RAM_BYPS::write(1);
     FrameBuffer::RFF_LINE_FLIP::write(0);
+}
+
+
+void Deinterlacer::enableMotionAdapt(uint8_t verticalTap,
+                                     void (*releaseCapture)())
+{
+    DEINT_00::write(0x19);
+    MADPT_Y_MI_OFFSET::write(0x00);
+    MADPT_Y_MI_DET_BYPS::write(0);
+
+    if (verticalTap != KeepVerticalTap)
+        MADPT_VTAP2_COEFF::write(verticalTap);
+
+    FrameBuffer::RFF_ADR_ADD_2::write(1);
+    FrameBuffer::RFF_REQ_SEL::write(3);
+    FrameBuffer::RFF_FETCH_NUM::write(0x80);
+    FrameBuffer::RFF_WFF_OFFSET::write(0x100);
+    FrameBuffer::RFF_YUV_DEINTERLACE::write(0);
+    FrameBuffer::WFF_FF_STA_INV::write(0);
+    FrameBuffer::WFF_ENABLE::write(1);
+    FrameBuffer::RFF_ENABLE::write(1);
+
+    if (releaseCapture != nullptr)
+        releaseCapture();
+    delay(SettleMs);
+    MAPDT_VT_SEL_PRGV::write(0);
+}
+
+void Deinterlacer::disableMotionAdapt()
+{
+    MAPDT_VT_SEL_PRGV::write(1);
+    DEINT_00::write(0xff);
+
+    FrameBuffer::RFF_FETCH_NUM::write(0x1);
+    FrameBuffer::RFF_WFF_OFFSET::write(1);
+    delay(2);
+    FrameBuffer::WFF_ENABLE::write(0);
+    FrameBuffer::RFF_ENABLE::write(0);
+    FrameBuffer::WFF_FF_STA_INV::write(1);
+
+    MADPT_Y_MI_OFFSET::write(0x7f);
+    MADPT_Y_MI_DET_BYPS::write(1);
 }
 
 }  // namespace Tv5725

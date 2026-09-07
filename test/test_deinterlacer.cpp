@@ -190,3 +190,81 @@ TEST_CASE("turning scanlines off leaves the chroma deinterlace where it was")
 
     CHECK(FrameBuffer::RFF_YUV_DEINTERLACE::read() == 1);
 }
+
+// The motion-adaptive deinterlacer: two fields in flight, so the frame buffer
+// fetches ahead and the write side is told not to invert its start.
+
+static unsigned g_released = 0;
+static uint8_t g_progressiveAtRelease = 0xff;
+static void releaseStub()
+{
+    ++g_released;
+    g_progressiveAtRelease = (uint8_t)Deinterlacer::MAPDT_VT_SEL_PRGV::read();
+}
+
+TEST_CASE("the motion-adaptive path puts two fields in flight")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    g_released = 0;
+
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+
+    CHECK(FrameBuffer::WFF_ENABLE::read() == 1);
+    CHECK(FrameBuffer::RFF_ENABLE::read() == 1);
+    CHECK(FrameBuffer::RFF_FETCH_NUM::read() == 0x80);
+    CHECK(FrameBuffer::WFF_FF_STA_INV::read() == 0);
+}
+
+TEST_CASE("the capture is released before the progressive select is cleared")
+{
+    // Clearing it first shows the deinterlacer a buffer nothing is filling.
+    Wire.reset();
+    Wire.poison(Poison);
+    g_released = 0;
+    g_progressiveAtRelease = 0xff;
+
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+
+    CHECK(g_released == 1);
+    CHECK(g_progressiveAtRelease == 1);
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 0);
+}
+
+TEST_CASE("the vertical tap is written when the caller has one")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::enableMotionAdapt(6, releaseStub);
+
+    CHECK(Deinterlacer::MADPT_VTAP2_COEFF::read() == 6);
+}
+
+TEST_CASE("a caller with no vertical tap leaves the one in force")
+{
+    // Upstream writes the coefficient for two source standards and for nothing
+    // else, so a caller that cannot name one must not have a default chosen
+    // for it.
+    Wire.reset();
+    Deinterlacer::MADPT_VTAP2_COEFF::write(3);
+
+    Deinterlacer::enableMotionAdapt(Deinterlacer::KeepVerticalTap, releaseStub);
+
+    CHECK(Deinterlacer::MADPT_VTAP2_COEFF::read() == 3);
+}
+
+TEST_CASE("turning the motion-adaptive path off stops both fifos")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::disableMotionAdapt();
+
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 1);
+    CHECK(FrameBuffer::WFF_ENABLE::read() == 0);
+    CHECK(FrameBuffer::RFF_ENABLE::read() == 0);
+    CHECK(FrameBuffer::RFF_FETCH_NUM::read() == 1);
+    CHECK(FrameBuffer::WFF_FF_STA_INV::read() == 1);
+    CHECK(Deinterlacer::MADPT_Y_MI_DET_BYPS::read() == 1);
+}
