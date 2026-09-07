@@ -281,6 +281,17 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 
 ## Things that will cost you an hour if you don't know them
 
+- **`/sc?~` IS THE RECOVERY FOR A UNIT THAT COMES BACK FROM A FLASH WITH NO
+  PICTURE, and reflashing is not.** The signature is `SP_SOG_MODE` 1 on a
+  separate-sync source with `SP_VTOTAL` 0 or 97, `ADC_SOGCTRL` walked to 1 or 2,
+  `DAC_RGBS_PWDNZ` 0, `/geometry` all zeroes, and the console printing
+  `own V sync: yes` every ~7 s while nothing changes. The chip keeps its
+  registers across an ESP reset, so detection restarts against a sync path left
+  from before and settles on csync. `/sc?~` runs
+  `goLowPowerWithInputDetection()`, which forgets the sync type, and the source
+  is back in under a minute -- measured four times. **Flashing a different image
+  appears to fix it and is only the reset**, which costs four minutes and reads
+  as evidence about the build.
 - **Power-cycle the SOURCE too, before spending a session on the scaler.** The
   intermittent shear glitch — a few scanlines high, content compressed and
   diagonally sheared, ~3% of frames — cost several sessions on this board and
