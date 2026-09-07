@@ -3821,15 +3821,6 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
             delay(4);
             if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= 322) {
                 accInHlength = 2000;
-
-                if (Tv5725::SyncType::isCsync() && rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
-                    if (GBS::PLLAD_ICP::read() >= 5 && GBS::PLLAD_FS::read() == 1) {
-                        GBS::PLLAD_ICP::write(5);
-                        GBS::PLLAD_FS::write(0); // FS、VCO Gain Selection
-                        latchPLLAD();
-                        rto->phaseIsSet = 0;
-                    }
-                }
             }
         }
     }
