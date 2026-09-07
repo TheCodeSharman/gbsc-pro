@@ -224,6 +224,26 @@ public:
     // over a 1 loads nothing.
     static void latch();
 
+    // The widest phase the five-bit field carries.
+    static const uint8_t PhaseMax = 31;
+
+    // Where in the ADC clock the sample is taken, in 32 steps. Two adjusters,
+    // and they are not interchangeable: PA_ADC moves the sample, PA_SP moves
+    // what the sync processor retimes against.
+    //
+    // Each is LATCHED, so the value only reaches the adjuster on a rising edge
+    // of its own latch bit -- the same trap PLLAD_MD has, and the reason these
+    // are one operation rather than a write the caller follows with a latch.
+    //
+    // A phase past the field is refused rather than truncated: masking 32 in
+    // puts 0 there, which is a phase nobody chose.
+    static void applyPhaseSyncProcessor(uint8_t phase);
+    static void applyPhaseAdc(uint8_t phase);
+
+    // Take both adjusters through their bypass and back, which is what makes a
+    // newly latched phase take effect.
+    static void restartPhaseAdjusters();
+
     // Take the ADC's input away and give it back, so the input formatter
     // re-acquires the line. The one action measured to clear a railed
     // HPERIOD_IF without touching the source -- 0/16 correct before, 16/16 at

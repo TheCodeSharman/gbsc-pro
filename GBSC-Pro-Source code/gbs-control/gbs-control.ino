@@ -3594,15 +3594,6 @@ boolean getStatus16SpHsStable()
     return false;
 }
 
-void togglePhaseAdjustUnits()
-{
-    GBS::PA_SP_BYPSZ::write(0);
-    GBS::PA_SP_BYPSZ::write(1);
-    delay(2);
-    GBS::PA_ADC_BYPSZ::write(0);
-    GBS::PA_ADC_BYPSZ::write(1);
-    delay(2);
-}
 
 void advancePhase()
 {
@@ -3619,16 +3610,12 @@ void movePhaseThroughRange()
 
 void setAndLatchPhaseSP()
 {
-    GBS::PA_SP_LAT::write(0);
-    GBS::PA_SP_S::write(rto->phaseSP);
-    GBS::PA_SP_LAT::write(1);
+    Tv5725::Adc::applyPhaseSyncProcessor(rto->phaseSP);
 }
 
 void setAndLatchPhaseADC()
 {
-    GBS::PA_ADC_LAT::write(0);
-    GBS::PA_ADC_S::write(rto->phaseADC);
-    GBS::PA_ADC_LAT::write(1);
+    Tv5725::Adc::applyPhaseAdc(rto->phaseADC);
 }
 
 
@@ -3956,7 +3943,7 @@ static void restartAfterBypassSwitch()
     ResetSDRAM();
     delay(2);
     resetPLLAD();
-    togglePhaseAdjustUnits();
+    Tv5725::Adc::restartPhaseAdjusters();
     delay(20);
     GBS::PLLAD_LEN::write(1);
     Tv5725::Chip::outputUp();
@@ -6585,7 +6572,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     delay(2);
                     ResetSDRAM();
                     delay(2);
-                    togglePhaseAdjustUnits();
+                    Tv5725::Adc::restartPhaseAdjusters();
                     break;
                 case 'D':; // SerialMprint(F("debug view: "));
                     if (GBS::ADC_UNUSED_62::read() == 0x00) {

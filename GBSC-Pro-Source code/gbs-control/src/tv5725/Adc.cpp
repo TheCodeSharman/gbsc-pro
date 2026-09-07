@@ -57,6 +57,34 @@ void Adc::latch()
     PLLAD_LAT::write(1);
 }
 
+void Adc::applyPhaseSyncProcessor(uint8_t phase)
+{
+    if (phase > PhaseMax)
+        return;
+    PA_SP_LAT::write(0);
+    PA_SP_S::write(phase);
+    PA_SP_LAT::write(1);
+}
+
+void Adc::applyPhaseAdc(uint8_t phase)
+{
+    if (phase > PhaseMax)
+        return;
+    PA_ADC_LAT::write(0);
+    PA_ADC_S::write(phase);
+    PA_ADC_LAT::write(1);
+}
+
+void Adc::restartPhaseAdjusters()
+{
+    PA_SP_BYPSZ::write(0);
+    PA_SP_BYPSZ::write(1);
+    delay(2);
+    PA_ADC_BYPSZ::write(0);
+    PA_ADC_BYPSZ::write(1);
+    delay(2);
+}
+
 uint8_t Adc::selectOtherInput()
 {
     const uint8_t selected = ADC_INPUT_SEL::read();

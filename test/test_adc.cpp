@@ -402,3 +402,51 @@ TEST_CASE("trying the other input leaves the sync separator level alone")
 
     CHECK(((Wire.bank[5][0x02] >> 1) & 0x1f) == 12);
 }
+
+// The sampling phase: where in the ADC clock the sample is taken. Two
+// adjusters, the sync processor's and the ADC's, each latched by its own bit.
+
+TEST_CASE("a sampling phase is latched, not merely written")
+{
+    // The value only reaches the adjuster on a rising edge of its latch bit, so
+    // a write without one leaves the phase where it was with the register
+    // reading the new value -- the same trap PLLAD_MD has.
+    Wire.reset();
+
+    Adc::applyPhaseAdc(9);
+
+    CHECK(Adc::PA_ADC_S::read() == 9);
+    CHECK(Adc::PA_ADC_LAT::read() == 1);
+}
+
+TEST_CASE("the sync processor's phase is a different adjuster from the ADC's")
+{
+    Wire.reset();
+
+    Adc::applyPhaseSyncProcessor(5);
+
+    CHECK(Adc::PA_SP_S::read() == 5);
+    CHECK(Adc::PA_SP_LAT::read() == 1);
+    CHECK(Adc::PA_ADC_S::read() == 0);
+}
+
+TEST_CASE("a phase past the field is refused rather than truncated")
+{
+    // Five bits. Masking 32 in puts 0 there, which is a phase nobody chose.
+    Wire.reset();
+    Adc::applyPhaseAdc(9);
+
+    Adc::applyPhaseAdc(Adc::PhaseMax + 1);
+
+    CHECK(Adc::PA_ADC_S::read() == 9);
+}
+
+TEST_CASE("restarting the adjusters leaves both out of bypass")
+{
+    Wire.reset();
+
+    Adc::restartPhaseAdjusters();
+
+    CHECK(Adc::PA_SP_BYPSZ::read() == 1);
+    CHECK(Adc::PA_ADC_BYPSZ::read() == 1);
+}
