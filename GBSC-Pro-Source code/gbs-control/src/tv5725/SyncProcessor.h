@@ -220,6 +220,11 @@ public:
     // Where the clamp sits before anything has measured the back porch.
     static void applyDefaultClampWindow();
 
+    // Where in the line to coast, back at the value every path starts over
+    // from. It says WHERE, not how long: the coast lengths around the vertical
+    // interval follow the sync type and are applyForSyncType()'s.
+    static void applyDefaultCoastWindow();
+
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as
     // halves they drift -- a path setting only the low byte leaves whatever a

@@ -169,3 +169,34 @@ TEST_CASE("choosing the external sync touches nothing the sync type owns")
     CHECK_FALSE(externalSyncWrote<SyncProcessor::SP_POST_COAST>(1));
     CHECK_FALSE(externalSyncWrote<SyncProcessor::SP_SOG_SRC_SEL>(1));
 }
+
+// The coast window the sketch reaches for whenever it is starting over: on a
+// preset load, on a new mode, and twice inside the no-sync escalation. It was
+// written out by hand at every one of those, which is five copies of one fact.
+TEST_CASE("the default coast window is one operation, not a pair of literals")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    SyncProcessor::applyDefaultCoastWindow();
+
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x100);
+}
+
+TEST_CASE("the default coast window leaves the coast lengths alone")
+{
+    // It says where in the line to coast, not how long around the vertical
+    // interval to do it -- those follow the sync type, and a caller starting
+    // the window over must not silently undo them.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(true);
+    const uint32_t pre = SyncProcessor::SP_PRE_COAST::read();
+    const uint32_t post = SyncProcessor::SP_POST_COAST::read();
+
+    SyncProcessor::applyDefaultCoastWindow();
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == pre);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == post);
+}

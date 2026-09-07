@@ -37,6 +37,12 @@ void SyncProcessor::applyDefaultClampWindow()
     SP_CS_CLP_SP::write(48);
 }
 
+void SyncProcessor::applyDefaultCoastWindow()
+{
+    SP_H_CST_ST::write(0x10);
+    SP_H_CST_SP::write(0x100);
+}
+
 void SyncProcessor::applyForSyncType(bool csync)
 {
     // No ordering constraint between these fields is established, so the two

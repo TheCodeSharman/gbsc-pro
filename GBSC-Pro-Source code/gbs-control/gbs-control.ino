@@ -1730,8 +1730,7 @@ void prepareSyncProcessor()
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::holdClamp();
         GBS::SP_SOG_MODE::write(1);
-        GBS::SP_H_CST_ST::write(0x10);
-        GBS::SP_H_CST_SP::write(0x100);
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
         Tv5725::SyncProcessor::setSubCoast(true);
         Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
         GBS::SP_HCST_AUTO_EN::write(0);
@@ -3695,8 +3694,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         }
         GBS::SP_H_PULSE_IGNOR::write(0x02);
 
-        GBS::SP_H_CST_ST::write(0x10);
-        GBS::SP_H_CST_SP::write(0x100);
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
         GBS::SP_H_COAST::write(0);
         GBS::SP_H_TIMER_VAL::write(0x3a);
         if (Tv5725::SyncType::isCsync()) {
@@ -4603,8 +4601,7 @@ void runSyncWatcher() //
         }
 
         if (rto->noSyncCounter == 8) {
-            GBS::SP_H_CST_ST::write(0x10);
-            GBS::SP_H_CST_SP::write(0x100);
+            Tv5725::SyncProcessor::applyDefaultCoastWindow();
 
             if (sourceHasSerratedSync()) {
 
@@ -4669,8 +4666,7 @@ void runSyncWatcher() //
             }
             GBS::SP_H_COAST::write(0);
             Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-            GBS::SP_H_CST_ST::write(0x10);
-            GBS::SP_H_CST_SP::write(0x100);
+            Tv5725::SyncProcessor::applyDefaultCoastWindow();
             Tv5725::SyncProcessor::applyDefaultClampWindow();
             updateSpDynamic(1);           
             nudgeMD();
@@ -4751,8 +4747,7 @@ void runSyncWatcher() //
             }
             if (newVideoModeCounter == 3) {
                 // freezeVideo();
-                GBS::SP_H_CST_ST::write(0x10);
-                GBS::SP_H_CST_SP::write(0x100);
+                Tv5725::SyncProcessor::applyDefaultCoastWindow();
                 rto->coastPositionIsSet = 0; // coast position setting
                 delay(10);
                 if (getVideoMode() == 0) {
