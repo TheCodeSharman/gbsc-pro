@@ -1345,6 +1345,112 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     CHECK(g_probeCalls == 2);
 }
 
+// --- what the engine can say about the source, which is three answers --------
+//
+// A steadiness run over the line count answers the VERTICAL question alone. A
+// source can hold a correct, steady count while the ADC samples a line it is
+// not locked to, and there the sketch's escalation is exactly what is needed --
+// so a recovery withheld on the count alone leaves the source stuck. Measured:
+// after a sync-type round trip, STATUS_SYNC_PROC_VTOTAL 311 held for a minute
+// while STATUS_SYNC_PROC_HTOTAL read near 3250 against a divider of 2250, the
+// ADC PLL out of lock and the picture scrambled with every config register
+// correct.
+
+static void seedLineSamples(uint16_t samples)
+{
+    seedField(0, 0x17, 0, 12, samples);   // STATUS_SYNC_PROC_HTOTAL
+}
+
+TEST_CASE("a source counted steadily and sampled at the chosen divider is acquired")
+{
+    seedBenchSource();
+    seedLineSamples(2250);                // the divider seedBenchSource writes
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        pollOnce(engine);
+
+    CHECK(engine.sourceState() == Tv5725::SourceAcquired);
+    CHECK(engine.sourceIsPresent());
+}
+
+TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlocked")
+{
+    seedBenchSource();
+    seedLineSamples(3250);                // what the bench measured, against 2250
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        pollOnce(engine);
+
+    CHECK(engine.sourceState() == Tv5725::SourceUnlocked);
+}
+
+TEST_CASE("unlocked is not absent, because the two want opposite things")
+{
+    // Absent withholds maintenance and runs recovery; acquired does the
+    // reverse. Unlocked wants recovery too, and reporting it as absent would be
+    // right by accident -- but a caller that wants to tell a source that is
+    // gone from one that is there and wrong cannot, and the sync-type re-probe
+    // is only worth running on the second.
+    seedBenchSource();
+    seedLineSamples(3250);
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        pollOnce(engine);
+
+    CHECK(engine.sourceState() != Tv5725::SourceAbsent);
+    CHECK_FALSE(engine.sourceIsPresent());
+}
+
+TEST_CASE("a source is not present while a mode change is still working through")
+{
+    // sourceMoved() runs only on the idle pass, so a change in flight leaves
+    // the last idle verdict standing -- and that verdict is `acquired`, taken
+    // before the source moved. A gate reading it then withholds recovery for
+    // exactly as long as the engine is failing to settle. Measured on the
+    // bench: SP_VTOTAL 97 with the state still reading acquired.
+    seedBenchSource();
+    seedLineSamples(2250);
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        pollOnce(engine);
+    REQUIRE(engine.sourceIsPresent());
+
+    engine.modeChanged(benchMode(), 4);
+
+    CHECK(engine.changing());
+    CHECK_FALSE(engine.sourceIsPresent());
+}
+
+TEST_CASE("a count no source runs is absent whatever the sampling says")
+{
+    seedBenchSource();
+    seedLineSamples(2250);
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    seedField(0, 0x1B, 0, 11, 97);        // the wrong sync path's count
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        pollOnce(engine);
+
+    CHECK(engine.sourceState() == Tv5725::SourceAbsent);
+}
+
 // --- reacquiring the sync type, the escalation ladder's rung -----------------
 //
 // The recovery a source that will not lock eventually reaches. A held value

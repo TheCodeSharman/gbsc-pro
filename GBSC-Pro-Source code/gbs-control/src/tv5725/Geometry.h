@@ -23,6 +23,23 @@
 
 namespace Tv5725 {
 
+// What the engine can say about the source, which is three answers and not two.
+//
+// A steadiness run over the line count answers the VERTICAL question alone, and
+// a source can hold a correct, steady count while the ADC samples a line it is
+// not locked to. Measured after a sync-type round trip: STATUS_SYNC_PROC_VTOTAL
+// 311 held for a minute against STATUS_SYNC_PROC_HTOTAL near 3250 for a divider
+// of 2250, the ADC PLL out of lock, the picture scrambled and every config
+// register reading correct. Absent and Unlocked both want recovery run and
+// Acquired wants none, so collapsing the first two loses nothing there -- but
+// only Unlocked is worth re-probing the sync type on, and a caller that cannot
+// tell a source that is GONE from one that is THERE AND WRONG has to guess.
+enum SourceState {
+    SourceAbsent,     // no line count anything video runs at, held
+    SourceUnlocked,   // counting, and the ADC is not sampling the line chosen for it
+    SourceAcquired,   // counting steadily at the solved count, and sampling it
+};
+
 class OutputMode;
 
 class Geometry {
@@ -112,14 +129,22 @@ public:
     // not yet finished solving for it. What the sync output blanks against.
     bool changing() const;
 
-    // Whether the engine is measuring a source: a line count something video
-    // runs at, held across a steadiness run. Published by sourceMoved() rather
-    // than recomputed, because countHeld() advances the run it reads.
+    // What the engine can say about the source. Published by sourceMoved()
+    // rather than recomputed, because countHeld() advances the run it reads.
     //
     // A LIVE COUNT IS NOT THIS ANSWER. An unlocked sync processor produces
     // counts inside the source bounds -- 216, 271, 276, 312, 305 measured on a
-    // source that was genuinely gone -- so whatever withholds the sketch's
-    // recovery has to see the count hold still first.
+    // source that was genuinely gone -- so whatever withholds a recovery has to
+    // see the count hold still first.
+    SourceState sourceState() const;
+
+    // Whether the source is acquired AND the engine has nothing outstanding
+    // against it, which is the one state that wants no recovery run.
+    //
+    // THE SECOND HALF IS NOT BELT AND BRACES. sourceState() is published by the
+    // idle pass, so a mode change in flight leaves the verdict taken BEFORE the
+    // source moved standing -- acquired -- and a gate reading the state alone
+    // withholds recovery for as long as the engine goes on failing to settle.
     bool sourceIsPresent() const;
 
     // The source disturbed, as the chip latched it. Arms a re-measure, which
@@ -300,7 +325,7 @@ private:
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
     bool unusableCountArmed_;  // a count no source runs has already armed a change
-    bool sourcePresent_;     // the idle path last saw a count a source runs, held
+    SourceState sourceState_;  // what the idle path last concluded about the source
     uint32_t candidateRateHz_;  // a rate not yet corroborated across a run
     uint8_t rateRun_;           // how many polls have agreed on it
     bool solvePending_;

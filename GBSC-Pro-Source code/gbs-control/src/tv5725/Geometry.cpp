@@ -32,7 +32,7 @@ Geometry::Geometry(DisplayClock &displayClock)
       solvedLines_(0), solvedLineRateHz_(0),
       detectedMs_(0), detectedEver_(false),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
-      sourcePresent_(false),
+      sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
       choice_(), rasterMode_(0),
@@ -57,7 +57,12 @@ uint16_t Geometry::framingRevision() const { return framingRevision_; }
 
 bool Geometry::changing() const { return modePending_ || solvePending_; }
 
-bool Geometry::sourceIsPresent() const { return sourcePresent_; }
+SourceState Geometry::sourceState() const { return sourceState_; }
+
+bool Geometry::sourceIsPresent() const
+{
+    return sourceState_ == SourceAcquired && !changing();
+}
 
 uint16_t Geometry::capturableOn(const Axis &axis) const
 {
@@ -507,7 +512,7 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
 // to know the source is not usable.
 bool Geometry::noSourceToSolve()
 {
-    sourcePresent_ = false;
+    sourceState_ = SourceAbsent;
     return false;
 }
 
@@ -518,7 +523,11 @@ void Geometry::holdSolvedSource()
 {
     idleLines_ = solvedLines_;
     idleRun_ = SourceMeasurement::SteadySamples;
-    sourcePresent_ = true;
+
+    // A solve that has just written the divider has not had a line counted
+    // through it yet, so the sampling half is asked on the next idle pass
+    // rather than assumed here.
+    sourceState_ = SourceAcquired;
 }
 
 // Whether the count has held long enough to be the source's rather than a
@@ -556,7 +565,13 @@ bool Geometry::sourceMoved()
     // no longer over consecutive polls.
     const bool plausible = SourceMeasurement::countIsSource(lines);
     const bool held = countHeld(lines);
-    sourcePresent_ = plausible && held;
+
+    // The horizontal half, and it is not a second steadiness run: the divider
+    // is held state the engine chose, so one reading of what the sync processor
+    // counts against it is the whole test.
+    sourceState_ = !(plausible && held)
+                       ? SourceAbsent
+                       : sampling_.dividerLatched() ? SourceAcquired : SourceUnlocked;
 
     // A count no source runs is the wrong sync path's signature -- 97..137 on a
     // 311-line source, measured -- and a mode change is the only thing that

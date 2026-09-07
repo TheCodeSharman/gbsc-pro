@@ -8428,7 +8428,7 @@ void startWebserver()
                  "\"ch\":%u,\"cv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
-                 "\"present\":%s}"),
+                 "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
             geometry.originUnitsOn(Tv5725::AxisVertical),
@@ -8444,10 +8444,17 @@ void startWebserver()
             (unsigned long)geometry.sourceLineRateHz(),
             geometry.sourceLowLineRate() ? "true" : "false",
             // The engine's own answer to "is a source there": a steadiness run
-            // over the line count, not a live reading. Published because it and
-            // the sketch's getVideoMode() classification disagree, and only
-            // seeing both at once says which. docs/retiring-the-sync-watcher.md
-            geometry.sourceIsPresent() ? "true" : "false");
+            // over the line count paired with one reading of what the sync
+            // processor counts against the divider, not a live reading of
+            // either. Published because it and the sketch's getVideoMode()
+            // classification disagree, and only seeing both at once says which.
+            // The state names which of the three, because absent and unlocked
+            // want the same recovery and only one is worth re-probing the sync
+            // type on. docs/retiring-the-sync-watcher.md
+            geometry.sourceIsPresent() ? "true" : "false",
+            geometry.sourceState() == Tv5725::SourceAcquired   ? "acquired"
+            : geometry.sourceState() == Tv5725::SourceUnlocked ? "unlocked"
+                                                               : "absent");
         request->send(200, "application/json", body);
     });
 
