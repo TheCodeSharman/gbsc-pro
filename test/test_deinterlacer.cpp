@@ -14,8 +14,12 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Deinterlacer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
 using Tv5725::Deinterlacer;
+using Tv5725::FrameBuffer;
+using Tv5725::VideoProcessor;
 
 static const uint8_t Poison = 0xA5;
 
@@ -111,4 +115,78 @@ TEST_CASE("the motion index fixed value is owned, despite sharing a datasheet na
 
     CHECK(Wire.field(2, 0x0D, 0, 7) == 4);    // MADPT_MI_THRESHOLD
     CHECK(Wire.field(2, 0x0E, 0, 7) == 127);  // MADPT_MI_FIXED_VALUE
+}
+
+// Scanlines: the chroma and luma deinterlace stages made to drop alternate
+// lines, plus the two registers outside this block that the effect needs.
+
+TEST_CASE("scanlines drop alternate lines at the strength asked for")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::enableScanlines(0x30);
+
+    CHECK(Deinterlacer::MADPT_UV_MI_OFFSET::read() == 0x30);
+    CHECK(Deinterlacer::MADPT_Y_MI_OFFSET::read() == 0x30);
+    CHECK(Deinterlacer::MADPT_EN_UV_DEINT::read() == 1);
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 0);
+}
+
+TEST_CASE("scanlines take the deinterlacer RAM out of bypass")
+{
+    // Left in bypass the effect has no field to drop from. The three bypass
+    // bits go together, and leaving one behind fills the screen with random
+    // colour while every register still reads correct.
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::enableScanlines(0x30);
+
+    CHECK(Deinterlacer::DIAG_BOB_PLDY_RAM_BYPS::read() == 0);
+    CHECK(Deinterlacer::MADPT_PD_RAM_BYPS::read() == 0);
+    CHECK(Deinterlacer::MADPT_VIIR_BYPS::read() == 0);
+}
+
+TEST_CASE("scanlines reach the two registers outside this block")
+{
+    // The frame buffer has to flip the line it reads back, and the video
+    // processor's white level expansion carries the brightening.
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::enableScanlines(0x30);
+
+    CHECK(FrameBuffer::RFF_LINE_FLIP::read() == 1);
+    CHECK(FrameBuffer::RFF_YUV_DEINTERLACE::read() == 1);
+    CHECK(VideoProcessor::VDS_W_LEV_BYPS::read() == 0);
+    CHECK(VideoProcessor::VDS_WLEV_GAIN::read() == 0x08);
+}
+
+TEST_CASE("turning scanlines off puts every bypass back")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::disableScanlines();
+
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 1);
+    CHECK(Deinterlacer::DIAG_BOB_PLDY_RAM_BYPS::read() == 1);
+    CHECK(Deinterlacer::MADPT_PD_RAM_BYPS::read() == 1);
+    CHECK(Deinterlacer::MADPT_VIIR_BYPS::read() == 1);
+    CHECK(VideoProcessor::VDS_W_LEV_BYPS::read() == 1);
+    CHECK(FrameBuffer::RFF_LINE_FLIP::read() == 0);
+}
+
+TEST_CASE("turning scanlines off leaves the chroma deinterlace where it was")
+{
+    // RFF_YUV_DEINTERLACE is written on the way in and NOT on the way out --
+    // the motion-adaptive path owns its value, and clearing it here would take
+    // that path's setting with it.
+    Wire.reset();
+    FrameBuffer::RFF_YUV_DEINTERLACE::write(1);
+
+    Deinterlacer::disableScanlines();
+
+    CHECK(FrameBuffer::RFF_YUV_DEINTERLACE::read() == 1);
 }

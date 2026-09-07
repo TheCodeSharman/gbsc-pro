@@ -1,5 +1,8 @@
 #include "Deinterlacer.h"
 
+#include "FrameBuffer.h"
+#include "VideoProcessor.h"
+
 namespace Tv5725 {
 
 void Deinterlacer::init()
@@ -124,6 +127,50 @@ void Deinterlacer::init()
     MADPT_UV_MI_OFFSET::write(4);                     // s2_3b[6:0]
     MADPT_UV_MI_GAIN::write(15);                      // s2_3c[3:0]
     MADPT_MI_DELAY::write(0);                         // s2_3c[6:4]
+}
+
+
+void Deinterlacer::enableScanlines(uint8_t strength)
+{
+    MADPT_UVDLY_PD_SP::write(0);
+    MADPT_UVDLY_PD_ST::write(0);
+    MADPT_EN_UV_DEINT::write(1);
+    MADPT_UV_MI_DET_BYPS::write(1);
+    MADPT_UV_MI_OFFSET::write(strength);
+    MADPT_MO_ADP_UV_EN::write(1);
+
+    DIAG_BOB_PLDY_RAM_BYPS::write(0);
+    MADPT_PD_RAM_BYPS::write(0);
+    FrameBuffer::RFF_YUV_DEINTERLACE::write(1);
+    MADPT_Y_MI_DET_BYPS::write(1);
+    VideoProcessor::VDS_WLEV_GAIN::write(0x08);
+    VideoProcessor::VDS_W_LEV_BYPS::write(0);
+    MADPT_VIIR_COEF::write(0x08);
+    MADPT_Y_MI_OFFSET::write(strength);
+    MADPT_VIIR_BYPS::write(0);
+    FrameBuffer::RFF_LINE_FLIP::write(1);
+
+    MAPDT_VT_SEL_PRGV::write(0);
+}
+
+void Deinterlacer::disableScanlines()
+{
+    MAPDT_VT_SEL_PRGV::write(1);
+
+    MADPT_UVDLY_PD_SP::write(4);
+    MADPT_UVDLY_PD_ST::write(4);
+    MADPT_EN_UV_DEINT::write(0);
+    MADPT_UV_MI_DET_BYPS::write(0);
+    MADPT_UV_MI_OFFSET::write(4);
+    MADPT_MO_ADP_UV_EN::write(0);
+
+    DIAG_BOB_PLDY_RAM_BYPS::write(1);
+    VideoProcessor::VDS_W_LEV_BYPS::write(1);
+
+    MADPT_Y_MI_OFFSET::write(0xff);
+    MADPT_VIIR_BYPS::write(1);
+    MADPT_PD_RAM_BYPS::write(1);
+    FrameBuffer::RFF_LINE_FLIP::write(0);
 }
 
 }  // namespace Tv5725

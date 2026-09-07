@@ -476,6 +476,20 @@ public:
 
     // Every static register of this subsystem, in address order.
     static void init();
+
+    // Scanlines: the chroma and luma motion-interpolation stages made to drop
+    // alternate lines instead of filling them, at `strength`.
+    //
+    // It needs the deinterlacer RAM out of bypass to have a field to drop from,
+    // and two registers outside this block -- the frame buffer's line flip and
+    // the video processor's white level expansion, reached through their own
+    // typedefs so the addresses stay with their owners.
+    //
+    // Turning it off does NOT clear RFF_YUV_DEINTERLACE. The motion-adaptive
+    // path owns that value and clearing it here would take that path's setting
+    // with it.
+    static void enableScanlines(uint8_t strength);
+    static void disableScanlines();
 };
 
 }  // namespace Tv5725

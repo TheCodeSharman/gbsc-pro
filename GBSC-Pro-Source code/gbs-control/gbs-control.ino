@@ -4108,29 +4108,8 @@ void runAutoGain() //
 
 void enableScanlines() 
 {
-    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 0) 
-    {
-
-        GBS::MADPT_UVDLY_PD_SP::write(0);                       
-        GBS::MADPT_UVDLY_PD_ST::write(0);                       
-        GBS::MADPT_EN_UV_DEINT::write(1);                       
-        GBS::MADPT_UV_MI_DET_BYPS::write(1);                    
-        GBS::MADPT_UV_MI_OFFSET::write(uopt->scanlineStrength); 
-
-        GBS::MADPT_MO_ADP_UV_EN::write(1); 
-
-        GBS::DIAG_BOB_PLDY_RAM_BYPS::write(0);
-        GBS::MADPT_PD_RAM_BYPS::write(0);
-        GBS::RFF_YUV_DEINTERLACE::write(1);
-        GBS::MADPT_Y_MI_DET_BYPS::write(1);
-        GBS::VDS_WLEV_GAIN::write(0x08);
-        GBS::VDS_W_LEV_BYPS::write(0);
-        GBS::MADPT_VIIR_COEF::write(0x08);                     
-        GBS::MADPT_Y_MI_OFFSET::write(uopt->scanlineStrength); 
-        GBS::MADPT_VIIR_BYPS::write(0);
-        GBS::RFF_LINE_FLIP::write(1);
-
-        GBS::MAPDT_VT_SEL_PRGV::write(0);
+    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 0) {
+        Tv5725::Deinterlacer::enableScanlines(uopt->scanlineStrength);
         GBS::GBS_OPTION_SCANLINES_ENABLED::write(1);
     }
     rto->scanlinesEnabled = 1;
@@ -4139,23 +4118,7 @@ void enableScanlines()
 void disableScanlines() //
 {
     if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-        GBS::MAPDT_VT_SEL_PRGV::write(1);
-
-        GBS::MADPT_UVDLY_PD_SP::write(4);
-        GBS::MADPT_UVDLY_PD_ST::write(4);
-        GBS::MADPT_EN_UV_DEINT::write(0);
-        GBS::MADPT_UV_MI_DET_BYPS::write(0);
-        GBS::MADPT_UV_MI_OFFSET::write(4);
-        GBS::MADPT_MO_ADP_UV_EN::write(0);
-
-        GBS::DIAG_BOB_PLDY_RAM_BYPS::write(1);
-        GBS::VDS_W_LEV_BYPS::write(1);
-
-        GBS::MADPT_Y_MI_OFFSET::write(0xff);
-        GBS::MADPT_VIIR_BYPS::write(1);
-        GBS::MADPT_PD_RAM_BYPS::write(1);
-        GBS::RFF_LINE_FLIP::write(0);
-
+        Tv5725::Deinterlacer::disableScanlines();
         GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
     }
     rto->scanlinesEnabled = 0;
