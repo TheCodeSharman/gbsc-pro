@@ -1540,6 +1540,36 @@ TEST_CASE("counts that never hold still are not a source")
         }
 }
 
+TEST_CASE("a source that cannot be measured is not present while a change is pending")
+{
+    // While a mode change is outstanding poll() takes the solving branch and
+    // never reaches sourceMoved(), so presence kept its last idle answer for as
+    // long as the solve went on failing -- and a solve that cannot measure is
+    // exactly when the sketch's recovery has to run. Measured on the bench with
+    // the answer wired to that gate: counts thrashing 236, 308, 438, 511 at
+    // 0.00 Hz, the engine still reporting a source, and the output blanked
+    // permanently because nothing was left to unstick it.
+    seedBenchSource();
+    DisplayClock clock;
+    Geometry engine(clock);
+
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+    REQUIRE(engine.sourceIsPresent());
+
+    // A count that holds still -- so the cheap gate passes -- with no field
+    // rate behind it, which is what an unlocked sync processor produces.
+    engine.modeChanged(benchMode(), 4);
+    g_fieldRate = 0.0f;
+    seedSourceLines(283);
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        pollOnce(engine);
+
+    CHECK_FALSE(engine.sourceIsPresent());
+
+    g_fieldRate = 50.08f;
+}
+
 TEST_CASE("nothing has been solved, so no source is present")
 {
     // Boot, and every state that has forgotten the source. The sketch's

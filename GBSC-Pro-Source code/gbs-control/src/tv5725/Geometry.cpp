@@ -312,7 +312,7 @@ bool Geometry::poll(uint32_t nowMs)
     // costs up to 250 ms a vsync pulse. The reference above is what opens it:
     // a count taken through the previous mode's divider is not the source's.
     if (!sampling_.sampleSteady())
-        return false;
+        return noSourceToSolve();
 
     // THE measurement of the source for this pass. Everything below derives
     // from it -- the divider, the raster, both windows -- so nothing can end up
@@ -322,7 +322,7 @@ bool Geometry::poll(uint32_t nowMs)
         // the capture window can be measured in, so there is nothing to inherit
         // and the flag is only a note to re-solve.
         samplingPending_ = true;
-        return false;
+        return noSourceToSolve();
     }
 
     // A rate is worth sizing a raster from once it has REPEATED. The cross-check
@@ -491,6 +491,17 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
     snprintf(line, sizeof(line), "source moved: %s (%u lines, solved %u)",
              why, (unsigned)lines, (unsigned)solved);
     tv5725Log(line);
+}
+
+// A solving pass that could not measure the source. sourceMoved() is the only
+// other writer of this and the solving branch never reaches it, so without this
+// the answer holds whatever the last idle pass concluded -- true -- for as long
+// as the solve goes on failing. That is precisely when whoever reads it needs
+// to know the source is not usable.
+bool Geometry::noSourceToSolve()
+{
+    sourcePresent_ = false;
+    return false;
 }
 
 // The solve gated on its own steadiness run over this count, longer than the

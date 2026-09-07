@@ -222,6 +222,7 @@ private:
     bool detectionDue(uint32_t nowMs);
 
     // Take the count the solve just ran against as a run already held.
+    bool noSourceToSolve();
     void holdSolvedSource();
 
     void solveScanMode();
