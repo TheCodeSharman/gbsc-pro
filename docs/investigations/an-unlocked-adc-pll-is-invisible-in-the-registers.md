@@ -1,8 +1,9 @@
 # The ADC PLL comes out of lock with every config register unchanged
 
 The state the no-sync gate lands in when the sketch's escalation stops running
-against a source the engine can measure. It is not a wrong register value, and
-no register dump distinguishes it from a healthy unit.
+against a source the engine can measure. The ADC PLL's loop is open and its VCO
+free-runs, so the sample clock is unrelated to `PLLAD_MD` while every register
+that configures it reads back correct.
 
 ## The measurement
 
@@ -12,7 +13,8 @@ field read by name, bad state and good state, the good one reached with `/sc?~`:
 
 | | bad | good |
 |---|---|---|
-| `PLLAD_MD` / `KS` / `FS` / `ICP` / `CKOS` | 2250 / 2 / 1 / 5 / 0 | **identical** |
+| `PLLAD_MD` / `KS` / `ICP` / `CKOS` | 2250 / 2 / 5 / 0 | **identical** |
+| `PLLAD_FS` | 1 here, 0 in a later instance | 1 -- see below |
 | `PLLAD_VCORST` / `PDZ` / `LEN` | 0 / 1 / 1 | **identical** |
 | `ADC_CLK_ICLK1X` / `ICLK2X` / `DEC1_BYPS` / `DEC2_BYPS` | 1 / 1 / 0 / 0 | **identical** |
 | `ADC_POWDZ` | 1 | **identical** |
@@ -27,9 +29,11 @@ The picture is scrambled -- torn horizontal noise across the whole raster.
 rather than the ones the firmware writes.** So the fault is a sequence, not a
 state, and a snapshot diff against a known-good dump reports nothing.
 
-## The ADC clock is running 1.44x too fast, and that is the whole of it
+## Both sync-processor measurements scale by ONE factor
 
-Read against the live bad state, four samples:
+Read against the live bad state, four samples. The factor here is 1.444; a later
+instance settles at 1.058, and `PLLAD_FS` is what separates them -- see below,
+and do not read either number as the signature:
 
 ```
 ht=3248  hlow=230  ratio=1.444  vt=311  md=2250  sog=0 ext=0 loop=1 rths=2092 hsact=1
@@ -63,6 +67,8 @@ either side.
   left the ratio at 1.416, 1.439, 1.433 over the following sixteen seconds.
 - **Not `HPERIOD_IF` railing**, which is its own fault and reads 511 in the
   *good* state here, with a clean full-screen picture.
+- **Not `PLLAD_FS`**, which differs between the states and only sets where the
+  free-running VCO sits. FS=0 on a locked unit does not open the loop.
 - **Not the sync-type probe.** Probe durations are drawn from the same
   distribution in passing and failing runs -- 2 ms, 3 ms, and a 1000 ms timeout
   on the csync leg, in both.
@@ -108,11 +114,96 @@ is a different fault from anything that sweep produced.
 `Adc::applySampleRate()` writes `PLLAD_MD`, then `PLLAD_KS`, then the
 oversampling, and calls `latch()` last. The order is right on the engine's path.
 
-**One thing is untried and would separate the two remaining shapes**: sweep the
-divider with `/samplinglog?low=..&high=..` while the fault is standing. If
-`HTOTAL` tracks the sweep, the echo works and 2250 is simply not what is in
-force; if it stays near 3250 whatever is written, whatever clocks that counter
-is not the ADC PLL.
+## The ADC PLL is free-running: the divider does not reach it
+
+Measured with the fault standing, `/samplinglog?low=1800&high=2900&step=200&dwell=500`
+walking `PLLAD_MD` through `Adc::applySampleRate()` so every step latches, with
+the same walk on a healthy unit as the control. The settled median of
+`STATUS_SYNC_PROC_HTOTAL` at each step:
+
+| divider | faulted `HTOTAL` | ratio | healthy `HTOTAL` | ratio |
+|---|---|---|---|---|
+| 1800 | 2379 | 1.322 | 1800 | 1.000 |
+| 2000 | 2379 | 1.190 | 2000 | 1.000 |
+| 2200 | 2380 | 1.082 | 2200 | 1.000 |
+| 2400 | 2380 | 0.992 | 2400 | 1.000 |
+| 2800 | noise | -- | 2800 | 1.000 |
+| 2900 | noise | -- | 2900 | 1.000 |
+
+**Faulted, the counter does not move at all across a 33% span of the divider.**
+It sits on the value it held at 2250 before the walk started, and the ratio
+column only changes because the denominator does -- at 2400 it passes through
+1.000 while nothing about the state has changed. Above 2400 it goes to noise
+spanning 15..4095, which is the walk driving the VCO out of range rather than
+anything tracking.
+
+Healthy it is 1.000 at every step, **including 2800 and 2900 where
+`STATUS_MISC_PLLAD_LOCK` reads 0** -- which is `docs/investigations/adc-pll-lock-range.md`'s
+finding reproduced here, and what makes the faulted column mean something: the
+echo does not need the lock bit, so losing the echo is not the lock bit going
+out.
+
+So the ADC PLL is not running on a wrong divider. It is not running on the
+divider at all: the loop is open and the VCO free-runs. `PLLAD_MD` reaches the
+register, `PLLAD_LAT` latches it, and the clock the sync processor counts is
+indifferent to both. The walk restores the entry divider at the end, and the
+fault stands through the whole of it unchanged.
+
+## `PLLAD_FS` sets where it free-runs, and is not the cause
+
+`PLLAD_FS` -- the VCO gain selection -- is **1 in the healthy state and 0 in the
+faulted one**, which is the one configuration difference between them. It does
+not survive as a cause, and what it explains instead is the fault's magnitude.
+
+Written to 1 and latched against the live fault, with a latch pulse alone first
+as the control:
+
+```
+before                FS=0  ht=2379  hlow=168  vt=311  lock=0  ratio=1.0573
+latch alone +3s       FS=0  ht= 404  hlow=265  vt=311  lock=0
+latch alone +8s       FS=0  ht=2379  hlow=168  vt=311  lock=0  ratio=1.0573
+FS=1 + latch          FS=1  ht=3251  hlow=213  vt=311  lock=0  ratio=1.4449
+FS=1 + latch  +10s    FS=1  ht=3244  hlow=232  vt=311  lock=0  ratio=1.4418
+```
+
+**Putting the healthy value in makes the number worse, not better**, and the
+lock bit never comes back. A free-running VCO's frequency is set by its gain
+band and not by the feedback divider, so this is the same fault at two settings
+of that band -- 1.058 at FS 0 and 1.444 at FS 1.
+
+**So the magnitude is not a signature and must not be read as one.** Two
+reproductions on separate runs both settle on exactly 2380 against 2250 at FS 0,
+and the earlier records at ~3250 are the same state at FS 1. What identifies the
+fault is that both sync-processor measurements scale by one factor and the
+divider does not move it.
+
+The healthy control closes FS as a cause outright:
+
+```
+healthy, FS=1         ht=2250  hlow=159  vt=311  lock=1  ratio=1.0000
+healthy + FS=0 +2s    ht=2250  hlow=159  vt=311  lock=0  ratio=1.0000
+healthy + FS=0 +20s   ht=2250  hlow=159  vt=311  lock=0  ratio=1.0000
+healthy + FS=1 back   ht=2250  hlow=159  vt=311  lock=1  ratio=1.0000
+```
+
+**FS=0 on a locked unit does not open the loop.** The lock bit follows FS and
+the echo does not, which is one more reason not to judge the state on that bit.
+
+`setResetParameters()` is the one writer on the scaling path that puts FS to 0,
+alongside `PLLAD_ICP` 0 and `PLLAD_MD` 0x700; the faulted state has ICP back at
+5 and MD back at 2250 with FS still 0, so whatever restores the group after a
+reset does not restore FS. The remaining writers are out of the path -- the
+`updateCoastPosition()` pair is gated on a csync source under 322 lines, and the
+`HPLLState` ladder on `rgbhvBypass()`.
+
+## What the walk needs to be a walk
+
+`SamplingLog::sweep()` picked the ADC post divider from `HPERIOD_IF`, which
+reads 10 in the faulted state and 511 in the healthy one on this bench. Derived
+from 10 that is a 613 kHz line, which puts `PLLAD_KS` at 0 and collapses the
+oversampling from 4 to 1, so every step would have rewritten the whole clock
+group and the walk could not have answered a question about `PLLAD_MD`. It takes
+the engine's held line rate instead.
 
 ## What does NOT correlate with it, across nine runs
 

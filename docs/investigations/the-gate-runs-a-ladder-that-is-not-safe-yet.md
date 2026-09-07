@@ -103,8 +103,10 @@ good state.
 
 **So the gate does not fail on the classification any more. It fails because
 withholding the escalation causes a fault the escalation cannot repair**, and
-what the escalation was doing to prevent it is unknown -- a `PLLAD_LAT` pulse
-and the phase sweep are both ruled out.
+what the escalation was doing to prevent it is unknown -- a `PLLAD_LAT` pulse,
+the phase sweep and `PLLAD_FS` are all ruled out. What the fault IS is settled:
+the ADC PLL's loop is open and its VCO free-runs, measured by walking the
+divider underneath it and watching `STATUS_SYNC_PROC_HTOTAL` refuse to follow.
 
 ## The blocker is the disagreement itself
 
