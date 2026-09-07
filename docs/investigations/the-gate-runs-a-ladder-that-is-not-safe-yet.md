@@ -58,12 +58,53 @@ the cause.** It was the leading candidate, being the one write that skips
 running in the recovery path, and which writer wins in that state is still
 unknown.
 
+## Three ways to wire it, all measured, none of them right
+
+The ladder now has named owners for every rung, so the gate was tried again.
+Three predicates, each on the bench, sync-type round trip and
+`/input?src=rgbs` with nothing attached. The number that separates them is
+`STATUS_SYNC_PROC_HTOTAL` against `PLLAD_MD`: locked they are equal, and every
+build with the ladder untouched settles at 2250 against 2250.
+
+| predicate on the escalation branch | round trip | `/input?src=vga` after `rgbs` |
+|---|---|---|
+| the engine alone, `!sourceIsPresent()` | **3 of 4 settle at `HTOTAL` ~3250 against a 2250 divider, `STATUS_MISC_PLLAD_LOCK` 0** -- a scrambled picture with every config register correct | not reached |
+| unchanged, with only the maintenance branch keyed on the engine | 3 of 3 at 2250, 1-3 sync-out drops in 41 | recovers |
+| both must agree the source is gone | 3 of 3 at 2250, 1-2 drops in 41, and `HPERIOD_IF` at its correct 431 | **does not recover** -- `SP_SOG_MODE` 1 and `SP_VTOTAL` 97 on a separate-sync source, the level walking, for minutes. `/sc?~` clears it |
+
+**The engine alone withholds recoveries the sync-type transition needs**, and
+what it costs is the ADC PLL: the escalation stops running on a source the
+engine calls present, and the sync processor is left counting a line the ADC is
+not sampling.
+
+**The middle row looks best and is the one to distrust.** Both branches run on
+the same pass there -- the escalation still keyed on the classification, the
+maintenance on the engine -- and each zeroes the other's counter, so
+`noSyncCounter` never reaches 8 and `continousStableCounter` never reaches 2.
+Neither ladder advances at all. The good numbers are the absence of both, not
+the presence of maintenance, and shipping it would record an accident as a
+design.
+
+## The blocker is the disagreement itself
+
+**No single predicate over the two answers is right, because they disagree and
+each ladder needs a different one.** The escalation needs an answer that goes
+false while a transition is still settling, which the engine's steadiness run
+does not; the maintenance branch needs an answer that is true on a source the
+engine can measure, which `getVideoMode()` is not. Wiring either to the other's
+predicate breaks the ladder that was working.
+
+So step 4 does not wait on step 7 any more -- that is done. It waits on
+`getVideoMode()` no longer mis-classifying a scaling-RGBHV source, which is
+`docs/retiring-mode-detect.md` and step 12, and on the standard byte that forces
+`videoStandardInput` to 3 carrying two facts at once.
+
 ## What has to happen first
 
-The gate is not the risk. The ladder behind it is, and it has no owner yet:
-step 7 replaces `% 27`, `% 32`, `== 38`, `% 150` and `% 413` with named
-recoveries. Until then, letting the branch advance further than it used to runs
-recoveries that have never been examined, on a source that cannot answer.
+Step 7 is done: every rung named, every register under the class that owns it.
+It was not sufficient. What the measurements above add is that the ladder was
+never the whole risk -- the classification the gate replaces is load-bearing for
+the escalation in a way the engine's answer cannot substitute for.
 
 Two things found while getting here are fixed and shipped, and both stand on
 their own:
