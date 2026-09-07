@@ -209,6 +209,12 @@ public:
     // because the mux is written LAST of the three registers an input choice
     // decides: the sync path is configured before the input is connected to it.
     static void selectInput(uint8_t inputSel);
+
+    // Move to the other of the two RGB inputs and report the one that was in
+    // force, so a caller that does not lock on the new one can put it back. The
+    // escalation a source that will not lock reaches last, where the guess left
+    // is that it is arriving on the other pins.
+    static uint8_t selectOtherInput();
     static void enableSyncOnGreen(uint8_t enable);
 
     static void init();

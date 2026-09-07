@@ -16,6 +16,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 
 using namespace Tv5725;
@@ -239,4 +240,49 @@ TEST_CASE("a pulse-ignore already narrow is left where it is")
     SyncProcessor::widenCoastForSerration();
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x32);
+}
+
+// Resetting the sync processor. A pulse, so the final state proves nothing and
+// the fake's write trace is the assertion: a block never taken low was never
+// reset.
+
+static bool wasPulsedLow(uint8_t seg, uint8_t reg, uint8_t bit)
+{
+    bool wentLow = false;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &t = Wire.trace[i];
+        if (t.segment != seg || t.reg != reg)
+            continue;
+        if ((t.value & (1u << bit)) == 0)
+            wentLow = true;
+        else if (wentLow)
+            return true;
+    }
+    return false;
+}
+
+TEST_CASE("resetting the sync processor takes the block low and brings it back")
+{
+    Wire.reset();
+    Chip::SFTRST_SYNC_RSTZ::write(1);
+    Wire.trace.clear();
+
+    SyncProcessor::reset();
+
+    CHECK(wasPulsedLow(0x00, 0x47, 2));
+    CHECK(Chip::SFTRST_SYNC_RSTZ::read() == 1);
+}
+
+TEST_CASE("toggling the H counter's overflow protection flips it and flips back")
+{
+    // The ladder has nothing to measure it against, so it tries the other
+    // setting periodically. That only works if the toggle is a toggle.
+    Wire.reset();
+    SyncProcessor::SP_H_PROTECT::write(0);
+
+    SyncProcessor::toggleHsyncOverflowProtect();
+    CHECK(SyncProcessor::SP_H_PROTECT::read() == 1);
+
+    SyncProcessor::toggleHsyncOverflowProtect();
+    CHECK(SyncProcessor::SP_H_PROTECT::read() == 0);
 }

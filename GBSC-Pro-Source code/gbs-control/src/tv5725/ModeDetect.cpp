@@ -1,5 +1,9 @@
 #include "ModeDetect.h"
 
+#include <Arduino.h>   // delay(), a hardware settling time
+
+#include "Chip.h"
+
 namespace Tv5725 {
 
 void ModeDetect::init()
@@ -65,6 +69,19 @@ void ModeDetect::applySyncType(SyncType type)
 void ModeDetect::applyMedResLineCount(uint8_t lines)
 {
     MD_HD1250P_CNTRL::write(lines);
+}
+
+void ModeDetect::reset()
+{
+    Chip::SFTRST_MODE_RSTZ::write(0);
+    delay(1);
+    Chip::SFTRST_MODE_RSTZ::write(1);
+}
+
+void ModeDetect::nudge()
+{
+    MD_VS_FLIP::write(!MD_VS_FLIP::read());
+    MD_VS_FLIP::write(!MD_VS_FLIP::read());
 }
 
 }  // namespace Tv5725

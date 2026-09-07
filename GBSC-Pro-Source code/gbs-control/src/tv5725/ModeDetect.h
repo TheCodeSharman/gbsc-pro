@@ -259,6 +259,16 @@ public:
 
     // The line count the medium-resolution threshold is set from.
     static void applyMedResLineCount(uint8_t lines);
+
+    // Take the block through its soft reset, so it re-measures the source from
+    // nothing. The bit lives in the chip's reset register; the operation is
+    // this block's.
+    static void reset();
+
+    // Make the block re-latch without resetting it, by inverting the input
+    // vertical sync and putting it straight back. Cheaper than a reset and it
+    // is what most of the ladder reaches for.
+    static void nudge();
 };
 
 }  // namespace Tv5725

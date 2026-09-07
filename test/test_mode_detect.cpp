@@ -11,6 +11,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 
 using Tv5725::ModeDetect;
@@ -160,4 +161,65 @@ TEST_CASE("the top bit of a seven-bit threshold is left alone")
         CHECK(Wire.field(1, sevenBit[i], 7, 1) == ((Poison >> 7) & 1));
     }
     CHECK(Wire.field(1, 0x83, 6, 2) == ((Poison >> 6) & 0x3));
+}
+
+// The two operations the escalation ladder reaches for. Both are pulses, so
+// the final state proves nothing and the fake's write trace is the assertion:
+// a block that was never taken low was never reset.
+
+static bool wasPulsedLow(uint8_t seg, uint8_t reg, uint8_t bit)
+{
+    bool wentLow = false;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &t = Wire.trace[i];
+        if (t.segment != seg || t.reg != reg)
+            continue;
+        if ((t.value & (1u << bit)) == 0)
+            wentLow = true;
+        else if (wentLow)
+            return true;
+    }
+    return false;
+}
+
+TEST_CASE("resetting mode detect takes the block low and brings it back")
+{
+    Wire.reset();
+    Tv5725::Chip::SFTRST_MODE_RSTZ::write(1);
+    Wire.trace.clear();
+
+    ModeDetect::reset();
+
+    CHECK(wasPulsedLow(0x00, 0x47, 1));
+    CHECK(Tv5725::Chip::SFTRST_MODE_RSTZ::read() == 1);
+}
+
+TEST_CASE("nudging mode detect leaves the flip where it found it")
+{
+    // It exists to make the block re-latch, not to change the polarity, so a
+    // nudge that ends anywhere but where it started has inverted the input
+    // vertical sync as a side effect.
+    Wire.reset();
+    ModeDetect::MD_VS_FLIP::write(0);
+
+    ModeDetect::nudge();
+
+    CHECK(ModeDetect::MD_VS_FLIP::read() == 0);
+
+    ModeDetect::MD_VS_FLIP::write(1);
+    ModeDetect::nudge();
+    CHECK(ModeDetect::MD_VS_FLIP::read() == 1);
+}
+
+TEST_CASE("nudging mode detect actually moves the flip")
+{
+    // Both halves of the toggle reaching the bus is the whole of it: writing
+    // the value it already holds re-latches nothing.
+    Wire.reset();
+    ModeDetect::MD_VS_FLIP::write(0);
+    Wire.trace.clear();
+
+    ModeDetect::nudge();
+
+    CHECK(Wire.trace.size() == 2);
 }

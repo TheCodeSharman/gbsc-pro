@@ -359,8 +359,46 @@ TEST_CASE("the bounce leaves the rest of the byte alone")
     // ADC_INPUT_SEL shares s5_02 with the sync-on-green sync separator level, so a byte
     // write here would take the sync separator with it.
     Wire.reset();
-    Wire.bank[5][0x02] = 0x4C;             // level 12 under input 1
+    Wire.bank[5][0x02] = 0x58;             // level 12 under input 1
     Adc::bounceInput();
 
-    CHECK(Wire.bank[5][0x02] == 0x4C);
+    CHECK(Wire.bank[5][0x02] == 0x58);
+}
+
+// Trying the other input, the escalation the ladder reaches last. The ADC has
+// two RGB inputs and a source that will not lock on one is worth trying on the
+// other; the caller that does not lock puts back what this reports.
+
+TEST_CASE("trying the other input moves off the one in force and says which it was")
+{
+    Wire.reset();
+    Adc::ADC_INPUT_SEL::write(1);
+
+    const uint8_t previous = Adc::selectOtherInput();
+
+    CHECK(previous == 1);
+    CHECK(Adc::ADC_INPUT_SEL::read() == 0);
+}
+
+TEST_CASE("trying the other input from anywhere but one lands on one")
+{
+    Wire.reset();
+    Adc::ADC_INPUT_SEL::write(2);
+
+    const uint8_t previous = Adc::selectOtherInput();
+
+    CHECK(previous == 2);
+    CHECK(Adc::ADC_INPUT_SEL::read() == 1);
+}
+
+TEST_CASE("trying the other input leaves the sync separator level alone")
+{
+    // ADC_INPUT_SEL shares s5_02 with the level, so a byte write here would
+    // take the sync separator with it.
+    Wire.reset();
+    Wire.bank[5][0x02] = 0x58;             // level 12 under input 1
+
+    Adc::selectOtherInput();
+
+    CHECK(((Wire.bank[5][0x02] >> 1) & 0x1f) == 12);
 }

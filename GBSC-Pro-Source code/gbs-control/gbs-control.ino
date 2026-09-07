@@ -2172,8 +2172,8 @@ uint8_t detectAndSwitchToActiveInput()
                 }
 
                 GBS::SP_SOG_MODE::write(1);
-                resetSyncProcessor();
-                resetModeDetect();
+                Tv5725::SyncProcessor::reset();
+                Tv5725::ModeDetect::reset();
                 delay(40);
             } else if (currentInput == 0 && Info_sate == 0) //&& SeleInputSource == S_YUV ) // 20240919
             {
@@ -2489,20 +2489,7 @@ void resetDigital()
     GBS::SFTRST_VDS_RSTZ::write(1);
 }
 
-void resetSyncProcessor()
-{
-    GBS::SFTRST_SYNC_RSTZ::write(0);
-    ESP.wdtFeed();
-    delayMicroseconds(10);
-    GBS::SFTRST_SYNC_RSTZ::write(1);
-}
 
-void resetModeDetect()
-{
-    GBS::SFTRST_MODE_RSTZ::write(0);
-    delay(1);
-    GBS::SFTRST_MODE_RSTZ::write(1);
-}
 
 void moveHS(uint16_t amountToAdd, bool subtracting)
 {
@@ -3654,11 +3641,6 @@ void setAndLatchPhaseADC()
     GBS::PA_ADC_LAT::write(1);
 }
 
-void nudgeMD()
-{
-    GBS::MD_VS_FLIP::write(!GBS::MD_VS_FLIP::read()); 
-    GBS::MD_VS_FLIP::write(!GBS::MD_VS_FLIP::read());
-}
 
 void updateSpDynamic(boolean withCurrentVideoModeCheck)
 {
@@ -4095,7 +4077,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 static void restartAfterBypassSwitch()
 {
     resetDigital();
-    resetSyncProcessor();
+    Tv5725::SyncProcessor::reset();
     delay(2);
     ResetSDRAM();
     delay(2);
@@ -4496,7 +4478,7 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
                 if (getCsVsStop() == 1) {
                     Tv5725::SyncProcessor::writeSdVsyncStop(2);
                 }
-                nudgeMD();
+                Tv5725::ModeDetect::nudge();
             } else {
                 Tv5725::SyncProcessor::writeSdVsyncStart(lines - 9);
             }
@@ -4602,17 +4584,12 @@ void runSyncWatcher() //
         }
 
         if (rto->noSyncCounter == 38) {
-            nudgeMD();
+            Tv5725::ModeDetect::nudge();
         }
 
-        if (Tv5725::SyncType::isCsync()) {
-            if (rto->noSyncCounter > 47) {
-                if (rto->noSyncCounter % 16 == 0) {
-                    Tv5725::SyncProcessor::setHsyncOverflowProtect(
-                        !Tv5725::SyncProcessor::hsyncOverflowProtect());
-                }
-            }
-        }
+        if (Tv5725::SyncType::isCsync() && rto->noSyncCounter > 47 &&
+            rto->noSyncCounter % 16 == 0)
+            Tv5725::SyncProcessor::toggleHsyncOverflowProtect();
 
         if (rto->noSyncCounter % 150 == 0) {
             if (rto->noSyncCounter == 150 || rto->noSyncCounter % 900 == 0) {
@@ -4631,25 +4608,22 @@ void runSyncWatcher() //
             Tv5725::SyncProcessor::applyDefaultCoastWindow();
             Tv5725::SyncProcessor::applyDefaultClampWindow();
             updateSpDynamic(1);           
-            nudgeMD();
+            Tv5725::ModeDetect::nudge();
             delay(80);
 
             Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce,
                                            rto->noSyncCounter % 450 == 0);
 
-            resetSyncProcessor();
+            Tv5725::SyncProcessor::reset();
             delay(8);
-            resetModeDetect();
+            Tv5725::ModeDetect::reset();
             delay(8);
         }
 
         if (rto->noSyncCounter % 413 == 0 && detectionMayChangeInput()) {
-            if (GBS::ADC_INPUT_SEL::read() == 1) {
-                GBS::ADC_INPUT_SEL::write(0);
-            } else {
-                GBS::ADC_INPUT_SEL::write(1);
-            }
+            const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
             delay(40);
+
             unsigned long timeout = millis();
             while (millis() - timeout <= 210) {
                 if (getStatus16SpHsStable()) {
@@ -4661,13 +4635,8 @@ void runSyncWatcher() //
                 delay(1);
             }
 
-            if (millis() - timeout > 210) {
-                if (GBS::ADC_INPUT_SEL::read() == 1) {
-                    GBS::ADC_INPUT_SEL::write(0);
-                } else {
-                    GBS::ADC_INPUT_SEL::write(1);
-                }
-            }
+            if (millis() - timeout > 210)
+                Tv5725::Adc::selectInput(previousInput);
         }
 
         newVideoModeCounter = 0;
@@ -5115,7 +5084,7 @@ void runSyncWatcher() //
         boolean stable = 0;
         if (Tv5725::SyncType::isCsync() == true) {
             if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-                resetModeDetect();
+                Tv5725::ModeDetect::reset();
                 stable = 0;
                 delay(10);
                 Tv5725::Interrupts::acknowledgeSogBad();
@@ -5163,7 +5132,7 @@ void runSyncWatcher() //
             if (!rto->HdmiHoldDetection) {
                 setResetParameters();   
                 prepareSyncProcessor(); 
-                resetSyncProcessor();   
+                Tv5725::SyncProcessor::reset();   
             }
             rto->noSyncCounter = 0; 
             Serial.println("RGBHV limit no sync");
@@ -5175,7 +5144,7 @@ void runSyncWatcher() //
         //   RGBHVNoSyncCounter = 0;
         //   setResetParameters();
         //   prepareSyncProcessor();
-        //   resetSyncProcessor();
+        //   Tv5725::SyncProcessor::reset();
 
         //   rto->noSyncCounter = 0;
         //   Serial.println("RGBHV limit no sync");
@@ -7080,8 +7049,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     // applyPresets(videoMode);
                     // uopt->presetPreference = backup;
                 } break;
-                case 'l':; // SerialMprintln(F("resetSyncProcessor"));
-                    resetSyncProcessor();
+                case 'l':;
+                    Tv5725::SyncProcessor::reset();
                     break;
                 case 'Z': {
                     uopt->matchPresetSource = !uopt->matchPresetSource;

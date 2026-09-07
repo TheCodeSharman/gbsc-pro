@@ -1,6 +1,9 @@
 #include "SyncProcessor.h"
 
+#include <Arduino.h>   // delayMicroseconds(), a hardware settling time
+
 #include "Adc.h"
+#include "Chip.h"
 
 namespace Tv5725 {
 
@@ -9,6 +12,10 @@ namespace {
 // How many lines either side of the vertical interval a serrated source is
 // coasted over, and the pulse-ignore width at or above which a real sync pulse
 // can be hiding behind it.
+// How long the soft reset is held. 10 us is 270 cycles of the 27 MHz
+// reference, which is what the block sees the reset for.
+const unsigned int ResetHoldUs = 10;
+
 const uint8_t SerratedCoastLines = 9;
 const uint8_t WidestUsefulPulseIgnore = 0x33;
 
@@ -45,6 +52,13 @@ void SyncProcessor::applyDefaultClampWindow()
 {
     SP_CS_CLP_ST::write(32);
     SP_CS_CLP_SP::write(48);
+}
+
+void SyncProcessor::reset()
+{
+    Chip::SFTRST_SYNC_RSTZ::write(0);
+    delayMicroseconds(ResetHoldUs);
+    Chip::SFTRST_SYNC_RSTZ::write(1);
 }
 
 void SyncProcessor::widenCoastForSerration()
@@ -105,9 +119,9 @@ void SyncProcessor::setHsyncOverflowProtect(bool wanted)
     SP_H_PROTECT::write(wanted ? 1 : 0);
 }
 
-bool SyncProcessor::hsyncOverflowProtect()
+void SyncProcessor::toggleHsyncOverflowProtect()
 {
-    return SP_H_PROTECT::read() == 1;
+    SP_H_PROTECT::write(SP_H_PROTECT::read() ? 0 : 1);
 }
 
 void SyncProcessor::setCoastInvert(bool wanted)

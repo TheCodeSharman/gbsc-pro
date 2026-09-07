@@ -220,6 +220,11 @@ public:
     // Where the clamp sits before anything has measured the back porch.
     static void applyDefaultClampWindow();
 
+    // Take the block through its soft reset, so it re-acquires the source from
+    // nothing. The bit lives in the chip's reset register; the operation is
+    // this block's.
+    static void reset();
+
     // Coast further, and ignore fewer short pulses, for a serrated source whose
     // sync has gone. Equalisation pulses sit either side of the vertical
     // interval, so the coast has to cover more lines than the sync type asked
@@ -250,9 +255,11 @@ public:
     // which is what every path here asks for.
     static void clampFromReferenceClock();
 
-    // The H counter's overflow protection.
+    // The H counter's overflow protection. Nothing on the board measures
+    // whether it is helping, so the ladder tries the other setting
+    // periodically -- which is the toggle rather than a read and a write.
     static void setHsyncOverflowProtect(bool wanted);
-    static bool hsyncOverflowProtect();
+    static void toggleHsyncOverflowProtect();
 
     // Whether coast is inverted, and whether the sub coast runs. Each names
     // what is wanted rather than the register, which for the second is a
