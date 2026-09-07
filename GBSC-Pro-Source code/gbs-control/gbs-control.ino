@@ -3427,16 +3427,6 @@ void applyPresets(uint8_t result)
     doPostPresetLoadSteps();
 }
 
-void unfreezeVideo()
-{
-    GBS::CAPTURE_ENABLE::write(1);
-}
-
-void freezeVideo()
-{
-    GBS::CAPTURE_ENABLE::write(0);
-}
-
 uint8_t getVideoMode()
 {
     uint8_t detectedMode = 0;
@@ -4135,7 +4125,8 @@ void enableMotionAdaptDeinterlace() //
     else if (rto->videoStandardInput == 2)
         verticalTap = 4;
 
-    Tv5725::Deinterlacer::enableMotionAdapt(verticalTap, unfreezeVideo);
+    Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
+                                            Tv5725::FrameBuffer::releaseCapture);
     rto->motionAdaptiveDeinterlaceActive = true;
 }
 
@@ -4389,7 +4380,7 @@ void runSyncWatcher() //
 
         if (rto->noSyncCounter % 32 == 0) {
             if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-                unfreezeVideo();
+                Tv5725::FrameBuffer::releaseCapture();
             } else {
                 // freezeVideo();
             }
@@ -4526,7 +4517,7 @@ void runSyncWatcher() //
                 delay(20);
                 Tv5725::SyncOnGreen::forgetWindow(millisNow());
             } else {
-                unfreezeVideo();
+                Tv5725::FrameBuffer::releaseCapture();
                 printInfo();
                 newVideoModeCounter = 0;
                 if (rto->videoStandardInput == 0) {
@@ -4554,7 +4545,7 @@ void runSyncWatcher() //
 
         if (rto->continousStableCounter == 1 && !doFullRestore) {
             rto->videoIsFrozen = true;
-            unfreezeVideo();
+            Tv5725::FrameBuffer::releaseCapture();
         }
 
         if (rto->continousStableCounter == 2) {
@@ -4565,7 +4556,7 @@ void runSyncWatcher() //
                 doFullRestore = 0;
             }
             rto->videoIsFrozen = true;
-            unfreezeVideo();
+            Tv5725::FrameBuffer::releaseCapture();
         }
 
         if (rto->continousStableCounter == 4) {
@@ -6803,7 +6794,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     if (rto->syncWatcherEnabled == true) {
                         rto->syncWatcherEnabled = false;
                         if (rto->videoIsFrozen) {
-                            unfreezeVideo();
+                            Tv5725::FrameBuffer::releaseCapture();
                         }; // SerialMprintln("off");
                     } else {
                         rto->syncWatcherEnabled = true;
@@ -13532,7 +13523,7 @@ void OSD_IR()
                 doPostPresetLoadSteps();
                 GBS::VDS_DIS_HB_ST::write(0x00);
                 GBS::VDS_DIS_HB_SP::write(0xffff);
-                freezeVideo();                  
+                Tv5725::FrameBuffer::freezeCapture();                  
                 GBS::SP_CLAMP_MANUAL::write(1); 
                                                 // GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() + 100);
             } else {
