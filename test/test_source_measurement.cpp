@@ -1111,3 +1111,45 @@ TEST_CASE("a field count goes steady with the witness live")
 
     CHECK(measurement.sampleSteady());
 }
+
+TEST_CASE("the reason a serration count was refused is available to the caller")
+{
+    // The engine cannot tell "not settled yet" from "settled on the wrong
+    // count" by the return value alone, and only the second is worth acting on.
+    seedSourceLines(607);
+    seedSourceHalfLines(624);
+    SourceMeasurement measurement;
+
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+
+    CHECK(measurement.countWasSerrations());
+}
+
+TEST_CASE("a count still gathering samples is not reported as serrations")
+{
+    seedSourceLines(310);
+    seedSourceHalfLines(624);
+    SourceMeasurement measurement;
+
+    measurement.sampleSteady();
+
+    CHECK_FALSE(measurement.countWasSerrations());
+}
+
+TEST_CASE("a good count clears a serration verdict")
+{
+    seedSourceLines(607);
+    seedSourceHalfLines(624);
+    SourceMeasurement measurement;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+    REQUIRE(measurement.countWasSerrations());
+
+    seedSourceLines(310);
+    seedSourceHalfLines(624);
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+
+    CHECK_FALSE(measurement.countWasSerrations());
+}

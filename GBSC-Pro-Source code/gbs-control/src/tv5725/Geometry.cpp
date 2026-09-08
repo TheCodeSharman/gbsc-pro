@@ -316,8 +316,16 @@ bool Geometry::poll(uint32_t nowMs)
     // The cheap gate. Everything below this line measures, and the field rate
     // costs up to 250 ms a vsync pulse. The reference above is what opens it:
     // a count taken through the previous mode's divider is not the source's.
-    if (!sampling_.sampleSteady())
+    if (!sampling_.sampleSteady()) {
+        // The count settled on the serrations, so the pair in force is not
+        // covering them. Margin over the default rather than a search for the
+        // lowest pair that works: which pairs measure a source is not
+        // reproducible between runs.
+        // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+        if (sampling_.countWasSerrations())
+            SyncProcessor::widenCoast();
         return noSourceToSolve();
+    }
 
     // THE measurement of the source for this pass. Everything below derives
     // from it -- the divider, the raster, both windows -- so nothing can end up

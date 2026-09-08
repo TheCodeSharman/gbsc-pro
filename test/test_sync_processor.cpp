@@ -538,3 +538,22 @@ TEST_CASE("the separate-sync arm leaves the coast window where it was")
     CHECK_FALSE(Wire.touched[0x05][0x4D]);
     CHECK_FALSE(Wire.touched[0x05][0x4F]);
 }
+
+TEST_CASE("coasting further for a serrated source leaves the pulse-ignore alone")
+{
+    // SP_H_PULSE_IGNOR has writers of its own. Widening the coast because a
+    // source's serrations are being counted must not become another one.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(true);
+    SyncProcessor::SP_H_PULSE_IGNOR::write(107);
+
+    SyncProcessor::widenCoast();
+
+    const uint32_t pre = SyncProcessor::SerratedPreCoastLines;
+    const uint32_t post = SyncProcessor::SerratedPostCoastLines;
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() > pre);
+    CHECK(SyncProcessor::SP_POST_COAST::read() > post);
+}

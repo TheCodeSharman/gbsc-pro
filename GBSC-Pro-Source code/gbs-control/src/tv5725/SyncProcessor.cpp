@@ -63,10 +63,15 @@ void SyncProcessor::reset()
     Chip::SFTRST_SYNC_RSTZ::write(1);
 }
 
-void SyncProcessor::widenCoastForSerration()
+void SyncProcessor::widenCoast()
 {
     SP_PRE_COAST::write(SerratedCoastLines);
     SP_POST_COAST::write(SerratedCoastLines);
+}
+
+void SyncProcessor::widenCoastForSerration()
+{
+    widenCoast();
 
     const uint8_t ignore = (uint8_t)SP_H_PULSE_IGNOR::read();
     if (ignore >= WidestUsefulPulseIgnore)

@@ -245,6 +245,13 @@ public:
     // for and a pulse-ignore wide enough to hide a real pulse has to come down.
     static void widenCoastForSerration();
 
+    // Coast further either side of the vertical interval, and nothing else.
+    // Margin over the default rather than a searched minimum: the pair that
+    // measures a source is not reproducible between runs, so a value that
+    // measured clean once is not safe to settle on.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    static void widenCoast();
+
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.

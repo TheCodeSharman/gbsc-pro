@@ -134,6 +134,13 @@ public:
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
     static bool countIsSerrations(uint16_t lines, uint16_t halfLines);
 
+    // Whether the last steadiness run ended on a count that reads as the
+    // serrations rather than the source. The return of sampleSteady() cannot
+    // say this: a run still gathering samples and a run that gathered them and
+    // rejected the result both read false, and only the second is a fault to
+    // act on.
+    bool countWasSerrations() const;
+
     // The source's line count, corrected for a divider the ADC PLL cannot lock
     // to. The sync processor counts in ADC clocks, so on too small a divider the
     // PLL locks to every Nth hsync: it reports a count N times too low and N
@@ -463,6 +470,7 @@ private:
     uint8_t steadyRun_;
     uint8_t rateAttempts_;
     bool recoveryTried_;   // the flagged-counter recovery, once per source event
+    bool serrationsSeen_;  // the last completed steadiness run read the serrations
 
     static bool counterFlagged_;
     static void (*counterRecovery_)();

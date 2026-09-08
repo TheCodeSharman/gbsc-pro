@@ -80,7 +80,7 @@ static void seedField(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
-// The two registers the engine is allowed to read, so a poison wipes the source
+// The registers the engine is allowed to read, so a poison wipes the source
 // itself: a case that poisons mid-test and expects the same source has to put
 // them back.
 static void seedSourceMeasurement()
@@ -119,6 +119,15 @@ static void seedBenchSource()
 static void seedSourceLines(uint16_t lines)
 {
     seedField(0, 0x1B, 0, 11, lines);   // STATUS_SYNC_PROC_VTOTAL
+}
+
+// The input formatter's measurement of the frame in half-lines, and the bit
+// that says it completed. Unseeded it reads nothing, which is the separate-sync
+// case and makes no claim about the count either way.
+static void seedSourceHalfLines(uint16_t halfLines)
+{
+    seedField(0, 0x07, 1, 11, halfLines);   // VPERIOD_IF
+    seedField(0, 0x00, 0, 1, 1);            // STATUS_IF_VT_OK
 }
 
 static OutputChoice benchMode() { return OutputChoice(Output1080P); }
@@ -1806,4 +1815,40 @@ TEST_CASE("an engine with no gate runs, which is what every caller did before")
     engine.modeChanged(benchMode(), 4);
 
     CHECK(pollUntilSolved(engine));
+}
+
+
+TEST_CASE("a source whose serrations are counted as lines is coasted further")
+{
+    // Refusing to solve is not enough on its own. Nothing would change, so a
+    // source whose vertical interval the default pair does not cover would
+    // never come up at all.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    seedBenchSource();
+    seedSourceLines(607);
+    seedSourceHalfLines(624);
+    SyncProcessor::applyForSyncType(true);
+    const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
+
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    pollUntilSolved(engine);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() > before);
+}
+
+TEST_CASE("a source that measures its own lines is left on the pair it has")
+{
+    seedBenchSource();
+    seedSourceHalfLines(624);
+    SyncProcessor::applyForSyncType(true);
+    const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
+
+    DisplayClock clock;
+    Geometry engine(clock);
+    engine.modeChanged(benchMode(), 4);
+    REQUIRE(pollUntilSolved(engine));
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == before);
 }

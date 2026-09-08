@@ -169,7 +169,7 @@ SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
       rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
-      rateAttempts_(0), recoveryTried_(false)
+      rateAttempts_(0), recoveryTried_(false), serrationsSeen_(false)
 {
 }
 
@@ -177,6 +177,11 @@ bool SourceMeasurement::countIsSource(uint16_t lines)
 {
     return lines >= CaptureWindow::SourceVerticalTotalMin
         && lines <= CaptureWindow::SourceVerticalTotalMax;
+}
+
+bool SourceMeasurement::countWasSerrations() const
+{
+    return serrationsSeen_;
 }
 
 bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines)
@@ -214,9 +219,11 @@ bool SourceMeasurement::sampleSteady()
         return false;
 
     if (countIsSerrations(lines, measureSourceHalfLines())) {
+        serrationsSeen_ = true;
         steadyRun_ = 0;
         return false;
     }
+    serrationsSeen_ = false;
     return true;
 }
 
