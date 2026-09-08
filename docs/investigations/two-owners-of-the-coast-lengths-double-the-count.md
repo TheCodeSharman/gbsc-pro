@@ -102,6 +102,40 @@ dither.
 touched: the first sample after the good pair goes back is already 310, and
 320 of 320 follow it.
 
+### The coast surface is not reproducible, so no rule can be fitted to it
+
+Bad-rate per pair, each from a full sampling-log run of ~300 samples at 35 Hz
+with the engine frozen, so the pair holds and the divider does not chase:
+
+| pair | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| 7/3 | 0.0% | — | 0.0%, three times |
+| 7/7 | 0.0% | — | — |
+| 12/8 | 0.0% | — | — |
+| 5/3 | — | **0.0% then 32.4%** | 0.0%, three times |
+| 4/3 | **32.2%** | — | **0.0%** |
+| 4/7 | **24.5%** | — | — |
+
+**The same pair gives 0% and 32% in one run**, and the pair that failed a third
+of the time in run 1 is clean throughout run 3. So the serration count is not a
+function of the coast value, and a threshold, a boundary or an axis cannot be
+read off it. Run 1 alone reads as *pre-coast is the axis, with the boundary
+between 4 and 7*; run 3 refutes it.
+
+What survives every run is narrower. **7/3 has never produced a serration
+count** -- 0 in roughly 1500 samples across every run and window taken -- and
+neither has 7/7 or 12/8. Bad states are real when they occur and reach a quarter
+to a third of samples. Nothing predicts which.
+
+**That is the case for checking at runtime rather than tuning a constant.** A
+static pair cannot cover a fault that is not a function of the configuration,
+whereas `SourceMeasurement::countIsSerrations()` identifies it whenever it
+occurs, from a witness that cannot make the same error.
+
+An escalation that searches for the lowest working pre-coast is **not** supported
+by this data and should not be written from it: a search would settle on a value
+that measured clean in one run and fails in the next.
+
 ### Why the freeze is required
 
 With automation running, a hand-written pair is overwritten inside 1.5 s --
