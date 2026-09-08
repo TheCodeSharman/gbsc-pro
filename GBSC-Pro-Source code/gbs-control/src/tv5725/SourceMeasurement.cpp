@@ -366,6 +366,18 @@ bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
 
 uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
 
+uint16_t SourceMeasurement::countHeldStill(uint16_t lines)
+{
+    uint16_t sample = lines;
+    for (uint8_t i = 0; i < HoldSamples; ++i) {
+        sample = measureSourceLines();
+        if (sample < lines - HoldAgreement || sample > lines + HoldAgreement)
+            return 0;
+        delay(HoldIntervalMs);
+    }
+    return sample;
+}
+
 uint16_t SourceMeasurement::measureSourceLines()
 {
     return GBS::STATUS_SYNC_PROC_VTOTAL::read();

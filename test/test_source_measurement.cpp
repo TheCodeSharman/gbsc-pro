@@ -1014,3 +1014,38 @@ TEST_CASE("the line rate comes off HPERIOD_IF against the chip's own 27 MHz")
 {
     CHECK(SourceMeasurement::lineRateForHPeriod(431) == 15625u);
 }
+
+// The wait in front of a preset load. A load is expensive and a source
+// mid-change gives a count that is wrong and steady for a few samples, so the
+// run is long rather than the four SteadySamples an idle pass uses.
+
+TEST_CASE("a count that holds across the run comes back")
+{
+    seedSourceLines(627);
+
+    CHECK(SourceMeasurement::countHeldStill(627) == 627);
+}
+
+TEST_CASE("a count that moves during the run refuses")
+{
+    // 0 rather than a flag: no count is a count no source runs at, so the
+    // caller cannot use it by accident.
+    seedSourceLines(627);
+    Wire.drift(0x00, 0x1C);
+
+    CHECK(SourceMeasurement::countHeldStill(627) == 0);
+}
+
+TEST_CASE("a count within the agreement window still holds")
+{
+    seedSourceLines(629);
+
+    CHECK(SourceMeasurement::countHeldStill(627) == 629);
+}
+
+TEST_CASE("a count outside the agreement window does not")
+{
+    seedSourceLines(631);
+
+    CHECK(SourceMeasurement::countHeldStill(627) == 0);
+}

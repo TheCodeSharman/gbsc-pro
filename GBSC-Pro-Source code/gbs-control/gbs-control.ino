@@ -4687,18 +4687,10 @@ void runSyncWatcher() //
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
             if (sourceLines != 0 && rgbhvBypass()) {
                 SYNC_EVENT("rgbhv-leave-bypass", sourceLines);
-                uint16_t firstDetectedSourceLines = sourceLines;
-                boolean moveOn = 1;
-                for (int i = 0; i < 30; i++) {
-                    sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-
-                    if ((sourceLines < firstDetectedSourceLines - 3) || (sourceLines > firstDetectedSourceLines + 3)) {
-                        moveOn = 0;
-                        break;
-                    }
-                    delay(10);
-                }
-                if (moveOn) {
+                const uint16_t heldLines =
+                    Tv5725::SourceMeasurement::countHeldStill(sourceLines);
+                if (heldLines != 0) {
+                    sourceLines = heldLines;
                     rto->isValidForScalingRGBHV = true;
                     GBS::GBS_OPTION_SCALING_RGBHV::write(1);
                     rto->autoBestHtotalEnabled = 1;
@@ -4779,18 +4771,10 @@ void runSyncWatcher() //
 
                 if (wantedStandard != 0) {
 
-                    uint16_t firstDetectedSourceLines = sourceLines;
-                    boolean moveOn = 1;
-                    for (int i = 0; i < 30; i++) {
-                        sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-                        if ((sourceLines < firstDetectedSourceLines - 3) || (sourceLines > firstDetectedSourceLines + 3)) {
-                            moveOn = 0;
-                            break;
-                        }
-                        delay(10);
-                    }
-
-                    if (moveOn) {
+                    const uint16_t heldLines =
+                        Tv5725::SourceMeasurement::countHeldStill(sourceLines);
+                    if (heldLines != 0) {
+                        sourceLines = heldLines;
                         if (uopt->presetPreference == 10) {
                             uopt->presetPreference = Output720P;
                         }

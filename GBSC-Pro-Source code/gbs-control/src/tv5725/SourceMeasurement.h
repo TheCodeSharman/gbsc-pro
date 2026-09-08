@@ -259,6 +259,19 @@ public:
     // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,
     // and every other quantity the engine needs it computed itself.
     static uint16_t measureSourceLines();
+
+    // How long the count must hold before a preset load, and how far two
+    // readings may differ and still count as holding. Much longer than the
+    // idle pass's SteadySamples: a load is expensive and a source mid-change
+    // gives a count that is wrong AND steady for a few samples.
+    static const uint8_t HoldSamples = 30;
+    static const uint16_t HoldAgreement = 3;
+    static const uint8_t HoldIntervalMs = 10;
+
+    // The count as it reads after that run, or 0 if it moved. Zero rather than
+    // a flag because no count is a count no source runs at, so a caller cannot
+    // use the answer by accident.
+    static uint16_t countHeldStill(uint16_t lines);
     static uint16_t measureHsyncLow();
 
     // The line rate from HPERIOD_IF alone, or 0 where the run does not stand up
