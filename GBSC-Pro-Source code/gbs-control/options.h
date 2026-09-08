@@ -132,8 +132,6 @@ struct runTimeOptions
     uint8_t osr;
     uint8_t notRecognizedCounter;
     bool isInLowPowerMode;
-    bool clampPositionIsSet;
-    bool coastPositionIsSet;
 
     // Whether the composite-vs-separate sync choice has been made for THIS
     // source. Same shape as the two above, and for the same reason: it is

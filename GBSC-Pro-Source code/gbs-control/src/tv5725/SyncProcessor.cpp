@@ -20,6 +20,8 @@ const unsigned int ResetHoldUs = 10;
 
 const uint8_t SerratedCoastLines = 9;
 const uint16_t PulseWidthDifference = 0xC0;
+bool coastPlaced_ = false;
+bool clampPlaced_ = false;
 const uint8_t OwnVsyncPulseIgnore = 0xff;
 const uint8_t SerratedPulseIgnore = 0x6b;
 const uint8_t UnserratedPulseIgnore = 0x02;
@@ -65,6 +67,21 @@ void SyncProcessor::reset()
     Chip::SFTRST_SYNC_RSTZ::write(0);
     delayMicroseconds(ResetHoldUs);
     Chip::SFTRST_SYNC_RSTZ::write(1);
+}
+
+bool SyncProcessor::coastPlaced() { return coastPlaced_; }
+
+bool SyncProcessor::clampPlaced() { return clampPlaced_; }
+
+void SyncProcessor::forgetPositions()
+{
+    coastPlaced_ = false;
+    clampPlaced_ = false;
+}
+
+void SyncProcessor::adoptClampPlacement()
+{
+    clampPlaced_ = true;
 }
 
 void SyncProcessor::applyPulseIgnore(bool csync, bool serrated)
@@ -236,6 +253,8 @@ bool SyncProcessor::acquireClampWindow(bool csync, bool component,
         (uint16_t)(2 + lineLength * (csync ? ClampStopCsync : ClampStopSeparate))
         + offset;
 
+    clampPlaced_ = true;
+
     if (withinOneOf(start, SP_CS_CLP_ST::read())
         && withinOneOf(stop, SP_CS_CLP_SP::read()))
         return true;
@@ -273,6 +292,7 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
         SP_H_CST_SP::write((uint16_t)(lineLength * 0.968f));
         SP_HCST_AUTO_EN::write(0);
     }
+    coastPlaced_ = true;
     return true;
 }
 

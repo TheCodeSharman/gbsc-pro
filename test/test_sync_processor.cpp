@@ -606,3 +606,42 @@ TEST_CASE("a composite source without serrations needs a narrow threshold")
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x0e);
 }
+
+// Whether each window has been placed for the source in force. It is state, not
+// a register: nothing on the chip says whether a window was measured or is left
+// over from the source before.
+
+TEST_CASE("placing the coast window records that it is placed")
+{
+    steadyLine(431);
+    SyncProcessor::forgetPositions();
+    REQUIRE_FALSE(SyncProcessor::coastPlaced());
+
+    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+
+    CHECK(SyncProcessor::coastPlaced());
+}
+
+TEST_CASE("a window that could not be measured is not recorded as placed")
+{
+    steadyLine(431);
+    g_stable = false;
+    SyncProcessor::forgetPositions();
+
+    REQUIRE_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+
+    CHECK_FALSE(SyncProcessor::coastPlaced());
+}
+
+TEST_CASE("a new source forgets both windows")
+{
+    steadyLine(431);
+    SyncProcessor::forgetPositions();
+    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::coastPlaced());
+
+    SyncProcessor::forgetPositions();
+
+    CHECK_FALSE(SyncProcessor::coastPlaced());
+    CHECK_FALSE(SyncProcessor::clampPlaced());
+}

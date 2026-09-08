@@ -297,6 +297,26 @@ public:
     // across a source that moved mid-run is placed on two different lines.
     static bool acquireCoastWindow(bool autoCoast, bool (*stable)());
 
+    // Whether each window has been placed for the source in force. State rather
+    // than a register: nothing on the chip distinguishes a window measured for
+    // this source from one left over from the source before, and acting on a
+    // stale one clamps to picture or coasts over the wrong part of the line.
+    //
+    // The acquire operations record their own success, so a window is placed
+    // exactly when the measurement that placed it succeeded.
+    static bool coastPlaced();
+    static bool clampPlaced();
+
+    // A different source: neither window describes it until it is measured
+    // again.
+    static void forgetPositions();
+
+    // Something outside this block placed the clamp, so the acquisition must
+    // not run against it. Bypass is the caller: video routes around the VDS and
+    // the switch configures the clamp itself, so there is no measurement to
+    // record and the placement is adopted rather than derived.
+    static void adoptClampPlacement();
+
     // Where a scaling RGBHV source on composite sync stops coasting. NARROWER
     // than applyDefaultCoastWindow()'s 0x100, and the two are not
     // interchangeable -- there is a test pinning that they differ.

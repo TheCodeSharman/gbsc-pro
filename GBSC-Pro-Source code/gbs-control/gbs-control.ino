@@ -674,8 +674,7 @@ static void LoadDefault()
     // rto->isInLowPowerMode = false;
     rto->applyPresetDoneStage = 0; //
     // rto->presetVlineShift = 0;    
-    rto->clampPositionIsSet = 0;     
-    rto->coastPositionIsSet = 0;     
+    Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncType::forget();
     rto->continousStableCounter = 0; 
     Tv5725::SyncOnGreen::choose(5);        
@@ -1352,8 +1351,7 @@ void setResetParameters_re()
     rto->presetVlineShift = 0;     
     // rto->sourceDisconnected = true;  
     rto->outModeHdBypass = 0;        
-    rto->clampPositionIsSet = 0;     
-    rto->coastPositionIsSet = 0;     
+    Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncType::forget();
     rto->phaseIsSet = 0;             
     rto->continousStableCounter = 0; 
@@ -1390,8 +1388,7 @@ void setResetParameters()
     rto->presetVlineShift = 0;
     rto->sourceDisconnected = true; 
     rto->outModeHdBypass = 0;       
-    rto->clampPositionIsSet = 0;    
-    rto->coastPositionIsSet = 0;    
+    Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncType::forget();
     rto->phaseIsSet = 0;
     rto->continousStableCounter = 0;
@@ -1492,8 +1489,7 @@ void setResetParameters()
     GBS::SFTRST_INT_RSTZ::write(1);
     Tv5725::Interrupts::enableEverySource();
     Tv5725::Interrupts::acknowledgeAll();
-    rto->clampPositionIsSet = 0;     
-    rto->coastPositionIsSet = 0;     
+    Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncType::forget();
     rto->phaseIsSet = 0;
     rto->continousStableCounter = 0; 
@@ -2350,7 +2346,7 @@ void resetPLLAD()
     GBS::PLLAD_VCORST::write(0);
     delay(1);
     latchPLLAD();
-    rto->clampPositionIsSet = 0;     
+    Tv5725::SyncProcessor::forgetPositions();
     rto->continousStableCounter = 1; 
 }
 
@@ -2427,7 +2423,7 @@ void resetPLL()
     delay(1);
     GBS::PLL_VCORST::write(0);
     delay(1);
-    rto->clampPositionIsSet = 0;     
+    Tv5725::SyncProcessor::forgetPositions();
     rto->continousStableCounter = 1; 
 }
 
@@ -2992,8 +2988,7 @@ void doPostPresetLoadSteps()
 
         GBS::GPIO_CONTROL_00::write(0x67);
         GBS::GPIO_CONTROL_01::write(0x00);
-        rto->clampPositionIsSet = 0; // Clamp position setting
-        rto->coastPositionIsSet = 0; // coast position setting
+        Tv5725::SyncProcessor::forgetPositions();
         rto->phaseIsSet = 0;
         rto->continousStableCounter = 0;              
         rto->noSyncCounter = 0;                       
@@ -3171,8 +3166,7 @@ void doPostPresetLoadSteps()
             Tv5725::SyncProcessor::selectExternalSync(1);
         }
 
-        rto->coastPositionIsSet = false;
-        rto->clampPositionIsSet = false;
+        Tv5725::SyncProcessor::forgetPositions();
 
         if (rto->outModeHdBypass) {
             Tv5725::Interrupts::enableEverySource();
@@ -3214,7 +3208,7 @@ void doPostPresetLoadSteps()
         }
 
         updateClampPosition();
-        if (rto->clampPositionIsSet) {
+        if (Tv5725::SyncProcessor::clampPlaced()) {
             if (Tv5725::SyncProcessor::clampHeld()) {
                 Tv5725::SyncProcessor::releaseClamp();
             }
@@ -3287,8 +3281,8 @@ void applyPresets(uint8_t result)
             // change pays nothing.
             //
             // **WHAT RE-ARMS IT IS A CHANGE OF SOURCE, NOT A CLEARED CLAMP.**
-            // SyncType::forget() sits beside coastPositionIsSet and
-            // clampPositionIsSet at the five sites that mean a different source
+            // SyncType::forget() sits beside SyncProcessor::forgetPositions()
+            // at the five sites that mean a different source
             // may now be attached -- the resets, the low-power entry, and
             // LoadDefault() on the input handlers. Six OTHER sites clear those
             // two flags and deliberately do NOT forget, because they are mode
@@ -3647,7 +3641,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         if (Tv5725::SyncType::isCsync()) {
             Tv5725::SyncProcessor::setCoastInvert(true);
         }
-        rto->coastPositionIsSet = false;
+        Tv5725::SyncProcessor::forgetPositions();
         return;
     }
 
@@ -3673,7 +3667,6 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
     }
 
     if (Tv5725::SyncProcessor::acquireCoastWindow(autoCoast, getStatus16SpHsStable)) {
-        rto->coastPositionIsSet = 1;
     }
 }
 
@@ -3706,7 +3699,7 @@ void updateClampPosition() // Update Clamp Position
         GBS::HD_BLK_RV_DATA::write(0x00);
     }
 
-    rto->clampPositionIsSet = true;
+    Tv5725::SyncProcessor::adoptClampPlacement();
 }
 
 void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
@@ -3891,7 +3884,7 @@ void bypassModeSwitch_RGBHV()
     resetDebugPort();
     rto->videoStandardInput = 15;
     rto->autoBestHtotalEnabled = false;
-    rto->clampPositionIsSet = false;
+    Tv5725::SyncProcessor::forgetPositions();
     rto->HPLLState = 0;
 
     Tv5725::Chip::enterBypassRgbhv();
@@ -4268,7 +4261,7 @@ void runSyncWatcher() //
             Tv5725::SyncProcessor::applyDefaultCoastWindow();
             if (sourceHasSerratedSync())
                 Tv5725::SyncProcessor::widenCoastForSerration();
-            rto->coastPositionIsSet = 0;
+                Tv5725::SyncProcessor::forgetPositions();
         }
 
         if (rto->noSyncCounter % 27 == 0) {
@@ -4287,7 +4280,7 @@ void runSyncWatcher() //
         if (rto->inputIsYpBpR && (rto->noSyncCounter == 34) && Info_sate == 0) //&& SeleInputSource == S_YUV )
         {
             Tv5725::SyncProcessor::holdClamp();
-            rto->clampPositionIsSet = false;
+            Tv5725::SyncProcessor::forgetPositions();
         }
 
         if (rto->noSyncCounter == 38) {
@@ -4364,7 +4357,7 @@ void runSyncWatcher() //
             if (newVideoModeCounter == 3) {
                 // freezeVideo();
                 Tv5725::SyncProcessor::applyDefaultCoastWindow();
-                rto->coastPositionIsSet = 0; // coast position setting
+                Tv5725::SyncProcessor::forgetPositions();
                 delay(10);
                 if (getVideoMode() == 0) {
                     updateSpDynamic(1);
@@ -4432,7 +4425,7 @@ void runSyncWatcher() //
         static boolean doFullRestore = 0;
         if (rto->noSyncCounter >= 150) {
 
-            rto->coastPositionIsSet = false;
+            Tv5725::SyncProcessor::forgetPositions();
             rto->phaseIsSet = false;
             FrameSync::reset(uopt->frameTimeLockMethod);
             doFullRestore = 1;
@@ -4476,7 +4469,7 @@ void runSyncWatcher() //
         if (rto->continousStableCounter == 45) {
             GBS::ADC_UNUSED_67::write(0);
 
-            rto->clampPositionIsSet = 0; // Clamp position setting
+            Tv5725::SyncProcessor::forgetPositions();
         }
 
         if (rto->continousStableCounter % 31 == 0) {
@@ -4641,7 +4634,7 @@ void runSyncWatcher() //
                     Tv5725::SyncProcessor::writeSdVsyncStart(2);
                     Tv5725::SyncProcessor::writeSdVsyncStop(0);
 
-                    rto->coastPositionIsSet = rto->clampPositionIsSet = 0; // Clamp position setting
+                    Tv5725::SyncProcessor::forgetPositions();
                     rto->videoStandardInput = 14;
 
                     if (GBS::PLLAD_ICP::read() >= 6) {
@@ -4701,7 +4694,7 @@ void runSyncWatcher() //
                         Tv5725::SyncProcessor::writeSdVsyncStart(2);
                         Tv5725::SyncProcessor::writeSdVsyncStop(0);
 
-                        rto->coastPositionIsSet = rto->clampPositionIsSet = 0; // Clamp position setting
+                        Tv5725::SyncProcessor::forgetPositions();
                         rto->videoStandardInput = 14;
 
                         if (GBS::PLLAD_ICP::read() >= 6) {
@@ -4928,7 +4921,7 @@ void runSyncWatcher() //
                 }
             }
 
-            rto->clampPositionIsSet = false;
+            Tv5725::SyncProcessor::forgetPositions();
             lastTimeSogAndPllRateCheck = millis();
         }
     }
@@ -5458,8 +5451,7 @@ void setup()
     rto->isInLowPowerMode = false;    
     rto->applyPresetDoneStage = 0;     
     rto->presetVlineShift = 0;         
-    rto->clampPositionIsSet = 0;       
-    rto->coastPositionIsSet = 0;       
+    Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncType::forget();
     rto->continousStableCounter = 0;   
     Tv5725::SyncOnGreen::choose(5);          
@@ -6083,7 +6075,7 @@ void loop()
         runSyncWatcher();                                                                                               
         lastTimeSyncWatcher = millis();
 
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && rto->videoStandardInput > 0 && rto->clampPositionIsSet && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
+        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && rto->videoStandardInput > 0 && Tv5725::SyncProcessor::clampPlaced() && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
             if (Tv5725::SourceMeasurement::dividerLatched(
                     Tv5725::SourceMeasurement::measureLineSamples(),
                     GBS::PLLAD_MD::read())) {
@@ -6106,7 +6098,7 @@ void loop()
     // that arms it. Worth arming only on a source that has been stable a while
     // with the divider latched, which STATUS_SYNC_PROC_HTOTAL is the witness for.
     if (rto->autoBestHtotalEnabled && !FrameSync::ready() && rto->syncWatcherEnabled) {
-        if (rto->continousStableCounter >= 10 && rto->coastPositionIsSet &&
+        if (rto->continousStableCounter >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
             ((millis() - lastVsyncLock) > 500)) {
             if ((rto->continousStableCounter % 5) == 0) {
                 if (Tv5725::SourceMeasurement::dividerLatched(
@@ -6118,11 +6110,11 @@ void loop()
     }
 
     if ((!rgbhvBypass() && rto->videoStandardInput != 0) &&
-        rto->syncWatcherEnabled && !rto->coastPositionIsSet) {
+        rto->syncWatcherEnabled && !Tv5725::SyncProcessor::coastPlaced()) {
         if (rto->continousStableCounter >= 7) {
             if ((getStatus16SpHsStable() == 1) && (getVideoMode() == rto->videoStandardInput)) {
                 updateCoastPosition(0);
-                if (rto->coastPositionIsSet) {
+                if (Tv5725::SyncProcessor::coastPlaced()) {
                     if (sourceHasSerratedSync()) 
                     {
 
@@ -6135,9 +6127,9 @@ void loop()
     }
 
     if ((rto->videoStandardInput != 0) && (rto->continousStableCounter >= 4) &&
-        !rto->clampPositionIsSet && rto->syncWatcherEnabled) {
+        !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
         updateClampPosition();
-        if (rto->clampPositionIsSet) {
+        if (Tv5725::SyncProcessor::clampPlaced()) {
             if (Tv5725::SyncProcessor::clampHeld()) {
                 Tv5725::SyncProcessor::releaseClamp();
             }
@@ -6985,8 +6977,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             uint32_t wanted = rto->displayClock.hzNow();
                             if (wanted >= 1000000 && wanted <= 250000000) {
                                 clockGen.setFrequency(wanted);
-                                rto->clampPositionIsSet = 0; // Clamp position setting
-                                rto->coastPositionIsSet = 0; // coast position setting
+                                Tv5725::SyncProcessor::forgetPositions();
                             }
                             Serial.print(F("set freqExtClockGen: "));
                             Serial.println((uint32_t)rto->displayClock.hzNow());
