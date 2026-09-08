@@ -89,8 +89,8 @@ void SyncProcessor::applyForSyncType(bool csync)
         Adc::ADC_SOGEN::write(1);
         SP_SOG_MODE::write(1);
         SP_NO_COAST_REG::write(0);
-        SP_PRE_COAST::write(4);
-        SP_POST_COAST::write(7);
+        SP_PRE_COAST::write(SerratedPreCoastLines);
+        SP_POST_COAST::write(SerratedPostCoastLines);
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(1);
         SP_H_PROTECT::write(1);
@@ -270,8 +270,8 @@ void SyncProcessor::applyForScalingRgbhv(bool csync)
 void SyncProcessor::applySeparationThresholds(bool csync)
 {
     if (csync) {
-        SP_PRE_COAST::write(0x04);
-        SP_POST_COAST::write(0x07);
+        SP_PRE_COAST::write(SerratedPreCoastLines);
+        SP_POST_COAST::write(SerratedPostCoastLines);
         SP_DLT_REG::write(0x70);
         SP_H_PULSE_IGNOR::write(0x02);
     } else {

@@ -3669,8 +3669,6 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
     if (rto->videoStandardInput != 0) {
         if (rto->videoStandardInput <= 2) {
-            GBS::SP_PRE_COAST::write(7);
-            GBS::SP_POST_COAST::write(3);
             GBS::SP_DLT_REG::write(0xC0);
             GBS::SP_H_TIMER_VAL::write(0x28);
 
@@ -3731,19 +3729,12 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
                 }
             }
         } else if (rto->videoStandardInput <= 4) {
-            GBS::SP_PRE_COAST::write(7);
-            GBS::SP_POST_COAST::write(6);
-
             GBS::SP_DLT_REG::write(0xA0);
             GBS::SP_H_PULSE_IGNOR::write(0x0E);
         } else if (rto->videoStandardInput == 5) {
-            GBS::SP_PRE_COAST::write(7);
-            GBS::SP_POST_COAST::write(7);
             GBS::SP_DLT_REG::write(0x30);
             GBS::SP_H_PULSE_IGNOR::write(0x08);
         } else if (rto->videoStandardInput <= 7) {
-            GBS::SP_PRE_COAST::write(9);
-            GBS::SP_POST_COAST::write(18);
             GBS::SP_DLT_REG::write(0x70);
 
             GBS::SP_H_PULSE_IGNOR::write(0x06);

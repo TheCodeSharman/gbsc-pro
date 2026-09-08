@@ -14,8 +14,14 @@ namespace Tv5725 {
 // 7.03%, where the IF reading gives twice the mode's sync width.
 //
 // What is not here is everything that moves per source: updateSpDynamic() owns
-// the coast and delta quadruple and Tv5725::SourceMeasurement SP_RT_HS_SP. A
+// the delta and pulse-ignore pair and Tv5725::SourceMeasurement SP_RT_HS_SP. A
 // static write of either would fight a per-source decision.
+//
+// THE COAST LENGTHS ARE THIS BLOCK'S ALONE. Nothing else may write
+// SP_PRE_COAST or SP_POST_COAST: a second writer closes a loop, because the
+// coast changes the measured line count, a changed count arms a solve, and a
+// solve applies the sync type -- which writes the coast again.
+// docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
 //
 // DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. Set 1110 against a 2553-sample
 // line, and again at only 100 low, SP_VTOTAL fell to a steady 97/98 through the
@@ -223,6 +229,15 @@ public:
     // nothing. The bit lives in the chip's reset register; the operation is
     // this block's.
     static void reset();
+
+    // How many lines either side of the vertical interval a composite source is
+    // coasted over. A 625-line source's equalisation pulses sit either side of
+    // the interval at twice line rate; coasted far enough they are skipped and
+    // the count is the source's lines, and coasted too few after it they are
+    // counted and it measures 622.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    static const uint8_t SerratedPreCoastLines = 7;
+    static const uint8_t SerratedPostCoastLines = 3;
 
     // Coast further, and ignore fewer short pulses, for a serrated source whose
     // sync has gone. Equalisation pulses sit either side of the vertical

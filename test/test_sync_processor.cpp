@@ -72,8 +72,8 @@ TEST_CASE("csync coasts around the vertical interval and protects the line")
     CHECK(applied<SyncProcessor::SP_EXT_SYNC_SEL>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_SOG_MODE>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_NO_COAST_REG>(csync) == 0);
-    CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 4);
-    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 7);
+    CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 7);
+    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 3);
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 1);
@@ -460,13 +460,28 @@ TEST_CASE("a source with its own H and V is coasted over nothing and ignores not
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x00);
 }
 
+TEST_CASE("the composite coast pair counts a source's lines, not its serrations")
+{
+    // Coasted 4 lines before the vertical interval and 7 after, a 625-line
+    // source's equalisation pulses fall inside the count and it measures 622.
+    // Coasted 7 and 3 the same source measures 314.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    SyncProcessor::applyForSyncType(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+}
+
 TEST_CASE("a composite source is coasted over its vertical interval")
 {
     Wire.reset();
     SyncProcessor::applySeparationThresholds(true);
 
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 0x04);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 0x07);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x02);
 }
