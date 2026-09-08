@@ -63,6 +63,17 @@ public:
     // The standard that scaling RGBHV runs as.
     static const uint8_t ScalingRgbhvStandard = 3;
 
+    // Whether the output in force is scaling RGBHV, which the load above
+    // decides and later steps of the same load ask about. State rather than a
+    // chip register: it lived in s1_2c, an address RD-5725-1.1 does not
+    // document, and every reader had to be ordered against the load that
+    // cleared it.
+    static bool scalingRgbhvInForce();
+    static void rememberScalingRgbhv(bool enabled);
+
+    // A load is starting, and what the last one enabled says nothing about it.
+    static void forgetScalingRgbhv();
+
 private:
     uint8_t videoStandardInput_;
     bool inputIsYpBpR_;

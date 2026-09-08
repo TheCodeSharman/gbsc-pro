@@ -164,3 +164,33 @@ TEST_CASE("a tall source outside that rate window takes the third")
     CHECK(PresetLoad::rgbhvStandardFor(627, 44.0f) == 3);
     CHECK(PresetLoad::rgbhvStandardFor(627, 53.8f) == 3);
 }
+
+// Whether the output in force is scaling RGBHV. State rather than a chip
+// register: the firmware kept it in an address the datasheet does not document,
+// where a load cleared it and every reader had to be ordered around that.
+
+TEST_CASE("nothing is scaling RGBHV until a load says so")
+{
+    PresetLoad::forgetScalingRgbhv();
+
+    CHECK_FALSE(PresetLoad::scalingRgbhvInForce());
+}
+
+TEST_CASE("a load that enables scaling RGBHV is remembered")
+{
+    PresetLoad::forgetScalingRgbhv();
+
+    PresetLoad::rememberScalingRgbhv(true);
+
+    CHECK(PresetLoad::scalingRgbhvInForce());
+}
+
+TEST_CASE("the next load forgets what the last one enabled")
+{
+    PresetLoad::forgetScalingRgbhv();
+    PresetLoad::rememberScalingRgbhv(true);
+
+    PresetLoad::forgetScalingRgbhv();
+
+    CHECK_FALSE(PresetLoad::scalingRgbhvInForce());
+}

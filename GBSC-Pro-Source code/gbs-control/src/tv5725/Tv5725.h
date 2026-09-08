@@ -374,7 +374,6 @@ public:
 
 
 
-    typedef UReg<0x01, 0x2C, 1, 1> GBS_OPTION_SCALING_RGBHV;
 
 
 

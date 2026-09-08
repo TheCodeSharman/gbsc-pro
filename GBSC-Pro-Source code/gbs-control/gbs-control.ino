@@ -1259,16 +1259,16 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
 
 // The output resolution asked for, against the standard the detection reported.
 //
-// GBS_OPTION_SCALING_RGBHV is read here rather than inside the choice because
-// loadComputedPreset() clears it, so a load has to build the choice before it
-// runs. It gates the 1024p -> 960p downshift alone, with standard 8, and that
-// asymmetry is upstream's rather than a design.
+// Whether scaling RGBHV is in force is read here rather than inside the choice
+// because loadComputedPreset() forgets it, so a load has to build the choice
+// before it runs. It gates the 1024p -> 960p downshift alone, with standard 8,
+// and that asymmetry is upstream's rather than a design.
 static Tv5725::OutputChoice outputChoiceFor(uint8_t standard)
 {
   return Tv5725::OutputChoice(uopt->presetPreference,
                               uopt->matchPresetSource != 0,
                               standard != 8 &&
-                                  GBS::GBS_OPTION_SCALING_RGBHV::read() == 0,
+                                  !Tv5725::PresetLoad::scalingRgbhvInForce(),
                               rto->presetIsPalForce60);
 }
 
@@ -1300,7 +1300,7 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 
   // The load rewrites the scanline stages, so whatever was applied is gone.
   Tv5725::Deinterlacer::forgetScanlines();
-  GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+  Tv5725::PresetLoad::forgetScalingRgbhv();
 
   FrameSync::cleanup();
 
@@ -1318,7 +1318,7 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 
   if (load.enableScalingRgbhv())
   {
-    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
+    Tv5725::PresetLoad::rememberScalingRgbhv(true);
   }
   rto->videoStandardInput = load.videoStandardInputAfterLoad();
 }
@@ -1412,7 +1412,7 @@ void setResetParameters()
     GBS::ADC_UNUSED_66::write(0);
     GBS::ADC_UNUSED_67::write(0);
     rto->presetID = 0;
-    GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+    Tv5725::PresetLoad::forgetScalingRgbhv();
 
     Tv5725::InputFormatter::applyVerticalTiming(
         Tv5725::InputFormatter::NormalTiming);
@@ -1706,7 +1706,7 @@ void prepareSyncProcessor()
     writeOneByte(0x53, 0x00);
     writeOneByte(0x54, 0x00);
 
-    if (!rgbhvBypass() && (GBS::GBS_OPTION_SCALING_RGBHV::read() != 1)) {
+    if (!rgbhvBypass() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
         GBS::SP_CLAMP_MANUAL::write(0);
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::holdClamp();
@@ -2945,7 +2945,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::setCoastInvert(false);
-        if (!rto->outModeHdBypass && GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
+        if (!rto->outModeHdBypass && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
             updateSpDynamic(0);
         }
 
@@ -3055,7 +3055,7 @@ void doPostPresetLoadSteps()
         Tv5725::VideoProcessor::applyFreeRunTiming();
 
         if (!rto->outModeHdBypass && rto->autoBestHtotalEnabled &&
-            GBS::GBS_OPTION_SCALING_RGBHV::read() == 0 && !avoidAutoBest &&
+            !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
             (rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4)) {
 
             updateCoastPosition(0);
@@ -3177,11 +3177,11 @@ void doPostPresetLoadSteps()
             return;
         }
 
-        if (GBS::GBS_OPTION_SCALING_RGBHV::read() == 1) {
+        if (Tv5725::PresetLoad::scalingRgbhvInForce()) {
             rto->videoStandardInput = 14;
         }
 
-        if (GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
+        if (!Tv5725::PresetLoad::scalingRgbhvInForce()) {
             unsigned long timeout = millis();
             while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
                 delay(4);
@@ -3912,7 +3912,7 @@ void bypassModeSwitch_RGBHV()
     // opposite of the truth. Several sites read it back to decide things,
     // including PresetLoad via writeProgramArrayNew() and the autoBestHtotal
     // guard in doPostPresetLoadSteps().
-    GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+    Tv5725::PresetLoad::forgetScalingRgbhv();
 
     delay(200);
 }
@@ -4171,7 +4171,7 @@ static void loadScalingRgbhvPreset(uint8_t standard)
     rto->videoStandardInput = standard;
     applyPresets(standard);
 
-    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
+    Tv5725::PresetLoad::rememberScalingRgbhv(true);
     Tv5725::InputFormatter::writeLineCounterStart(16);
     rto->videoStandardInput = 14;
 
@@ -4596,7 +4596,7 @@ void runSyncWatcher() //
                 if (heldLines != 0) {
                     sourceLines = heldLines;
                     rto->isValidForScalingRGBHV = true;
-                    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
+                    Tv5725::PresetLoad::rememberScalingRgbhv(true);
                     rto->autoBestHtotalEnabled = 1;
 
                     if (Tv5725::SyncType::isCsync() == false) {

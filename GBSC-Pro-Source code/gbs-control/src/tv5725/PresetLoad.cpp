@@ -2,6 +2,27 @@
 
 namespace Tv5725 {
 
+namespace {
+
+bool scalingRgbhvInForce_ = false;
+
+}  // namespace
+
+bool PresetLoad::scalingRgbhvInForce()
+{
+    return scalingRgbhvInForce_;
+}
+
+void PresetLoad::rememberScalingRgbhv(bool enabled)
+{
+    scalingRgbhvInForce_ = enabled;
+}
+
+void PresetLoad::forgetScalingRgbhv()
+{
+    scalingRgbhvInForce_ = false;
+}
+
 PresetLoad::PresetLoad(uint8_t videoStandardInput, uint8_t adcInputSel,
                        bool preferScalingRgbhv, bool validForScalingRgbhv)
     : videoStandardInput_(videoStandardInput == NoValidMode ? 0 : videoStandardInput),
