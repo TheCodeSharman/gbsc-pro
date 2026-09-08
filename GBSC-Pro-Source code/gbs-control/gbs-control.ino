@@ -655,7 +655,7 @@ static void LoadDefault()
     rto->phaseSP = 16;                 
     rto->failRetryAttempts = 0;        
     rto->presetID = 0;                 
-    rto->HPLLState = 0;
+    Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
     rto->scanlinesEnabled = false;                
@@ -1360,7 +1360,7 @@ void setResetParameters_re()
     rto->isInLowPowerMode = false;   
     Tv5725::SyncOnGreen::choose(5);        
     rto->failRetryAttempts = 0;      
-    rto->HPLLState = 0;
+    Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->scanlinesEnabled = false;                
     Tv5725::SyncType::set(false);                   
@@ -1397,7 +1397,7 @@ void setResetParameters()
     rto->isInLowPowerMode = false;  
     Tv5725::SyncOnGreen::choose(5);       
     rto->failRetryAttempts = 0;     
-    rto->HPLLState = 0;
+    Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->scanlinesEnabled = false;                
     Tv5725::SyncType::set(false);                   
@@ -3867,7 +3867,7 @@ void bypassModeSwitch_RGBHV()
     rto->videoStandardInput = 15;
     rto->autoBestHtotalEnabled = false;
     Tv5725::SyncProcessor::forgetPositions();
-    rto->HPLLState = 0;
+    Tv5725::Adc::forgetPllBand();
 
     Tv5725::Chip::enterBypassRgbhv();
 
@@ -4790,8 +4790,6 @@ void runSyncWatcher() //
                 delay(100);
             }
 
-            static uint8_t oldHPLLState = 0;
-
             // **THE SYNC TYPE HAS ONE OWNER, AND STATUS_INT_SOG_BAD IS NOT
             // EVIDENCE ABOUT IT.** A second route to csync used to sit here,
             // flipping the type after four 900 ms runs with that bit set. It
@@ -4828,60 +4826,11 @@ void runSyncWatcher() //
 
             Tv5725::Interrupts::acknowledgeSogBad();
 
-            oldHPLLState = rto->HPLLState;
-            if (currentPllRate != 0) {
-                if (currentPllRate < 1030) {
-                    rto->HPLLState = 1;
-                } else if (currentPllRate < 2300) {
-                    rto->HPLLState = 2;
-                } else if (currentPllRate < 3200) {
-                    rto->HPLLState = 3;
-                } else if (currentPllRate < 3800) {
-                    rto->HPLLState = 4;
-                } else {
-                    rto->HPLLState = 5;
-                }
-            }
+            const bool pllBandMoved = Tv5725::Adc::pllBandFollows(currentPllRate);
 
-            if (rgbhvBypass()) {
-                if (oldHPLLState != rto->HPLLState) {
-                    uint8_t postDivider = GBS::PLLAD_KS::read();
-                    if (rto->HPLLState == 1) {
-                        postDivider = 2;
-                        GBS::PLLAD_KS::write(postDivider);
-                        GBS::PLLAD_FS::write(0); // FS, VCO Gain Selection
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 2) {
-                        postDivider = 1;
-                        GBS::PLLAD_KS::write(postDivider); // VCO post crossover control, determined by CKO frequency
-                        GBS::PLLAD_FS::write(0); // FS, VCO Gain Selection
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 3) {
-                        postDivider = 1;
-                        GBS::PLLAD_KS::write(postDivider); // VCO post crossover control, determined by CKO frequency
-                        GBS::PLLAD_FS::write(1);
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 4) {
-                        postDivider = 0;
-                        GBS::PLLAD_KS::write(postDivider);
-                        GBS::PLLAD_FS::write(0); // FS、VCO Gain Selection
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 5) {
-                        postDivider = 0;
-                        GBS::PLLAD_KS::write(postDivider);
-                        GBS::PLLAD_FS::write(1);
-                        GBS::PLLAD_ICP::write(6);
-                    }
-
-                    latchPLLAD();
-                    delay(2);
-                    rto->osr = Tv5725::Adc::applyOversample(postDivider, 4);
-                    latchPLLAD();
-                    delay(100);
-                }
-            } else if (scalingRgbhv()) {
-                if (oldHPLLState != rto->HPLLState) {
-                }
+            if (pllBandMoved && rgbhvBypass()) {
+                rto->osr = Tv5725::Adc::applyPllBand();
+                delay(100);
             }
 
             if (scalingRgbhv()) {
@@ -5404,7 +5353,7 @@ void setup()
     rto->phaseSP = 16;
     rto->failRetryAttempts = 0;  
     rto->presetID = 0;           
-    rto->HPLLState = 0;
+    Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
     rto->scanlinesEnabled = false;                

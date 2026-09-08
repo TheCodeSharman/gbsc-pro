@@ -47,6 +47,25 @@ static int latchRisingEdge()
     return -1;
 }
 
+static int lastLatchRisingEdge()
+{
+    const uint8_t mask = static_cast<uint8_t>(1u << Adc::PLLAD_LAT::bitOffset);
+    bool low = false;
+    int at = -1;
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        if (Wire.trace[i].segment != 5
+            || Wire.trace[i].reg != Adc::PLLAD_LAT::byteOffset)
+            continue;
+        if (!(Wire.trace[i].value & mask))
+            low = true;
+        else if (low) {
+            at = static_cast<int>(i);
+            low = false;
+        }
+    }
+    return at;
+}
+
 // --- what the latch loads, calculated rather than inherited -------------------
 
 TEST_CASE("the post divider comes from the datasheet's crossover table")
@@ -449,4 +468,101 @@ TEST_CASE("restarting the adjusters leaves both out of bypass")
 
     CHECK(Adc::PA_SP_BYPSZ::read() == 1);
     CHECK(Adc::PA_ADC_BYPSZ::read() == 1);
+}
+
+// The PLL's operating band, steered from a measured rate. The group is only
+// rewritten when the band moves, because the latch that loads it takes the PLL
+// out of lock.
+
+TEST_CASE("a rate arriving on a forgotten band moves it")
+{
+    Wire.reset();
+    Adc::forgetPllBand();
+
+    CHECK(Adc::pllBandFollows(1500));
+}
+
+TEST_CASE("a rate inside the band in force moves nothing")
+{
+    Wire.reset();
+    Adc::forgetPllBand();
+    REQUIRE(Adc::pllBandFollows(1500));
+
+    CHECK_FALSE(Adc::pllBandFollows(2000));
+}
+
+TEST_CASE("a rate over a boundary moves the band")
+{
+    Wire.reset();
+    Adc::forgetPllBand();
+    REQUIRE(Adc::pllBandFollows(1500));
+
+    CHECK(Adc::pllBandFollows(2500));
+}
+
+TEST_CASE("a rate of nothing leaves the band where it was")
+{
+    Wire.reset();
+    Adc::forgetPllBand();
+    REQUIRE(Adc::pllBandFollows(1500));
+
+    CHECK_FALSE(Adc::pllBandFollows(0));
+}
+
+TEST_CASE("observing a rate writes no register")
+{
+    Wire.reset();
+    Adc::forgetPllBand();
+
+    REQUIRE(Adc::pllBandFollows(1500));
+
+    CHECK(Wire.trace.empty());
+}
+
+TEST_CASE("each band asks for its own post divider and VCO gain")
+{
+    struct Band {
+        uint32_t rate;
+        uint32_t postDivider;
+        uint32_t gain;
+    };
+    const Band bands[] = {
+        {900, 2, 0}, {1500, 1, 0}, {2500, 1, 1}, {3500, 0, 0}, {4000, 0, 1},
+    };
+
+    for (size_t i = 0; i < sizeof(bands) / sizeof(bands[0]); ++i) {
+        Wire.reset();
+        Adc::forgetPllBand();
+        REQUIRE(Adc::pllBandFollows(bands[i].rate));
+
+        Adc::applyPllBand();
+
+        CHECK(Adc::PLLAD_KS::read() == bands[i].postDivider);
+        CHECK(Adc::PLLAD_FS::read() == bands[i].gain);
+        CHECK(Adc::PLLAD_ICP::read() == 6);
+    }
+}
+
+TEST_CASE("nothing the band wrote is left unlatched")
+{
+    // The tap the oversampling selects shares a byte with the post divider and
+    // is written after the first edge, so the group is latched twice.
+    Wire.reset();
+    Adc::forgetPllBand();
+    REQUIRE(Adc::pllBandFollows(1500));
+
+    Adc::applyPllBand();
+
+    CHECK(lastWriteOf<Adc::PLLAD_KS>() < lastLatchRisingEdge());
+    CHECK(lastWriteOf<Adc::PLLAD_ICP>() < lastLatchRisingEdge());
+}
+
+TEST_CASE("a band nothing has measured writes nothing")
+{
+    Wire.reset();
+    Adc::forgetPllBand();
+
+    Adc::applyPllBand();
+
+    CHECK(Wire.trace.empty());
 }

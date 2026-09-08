@@ -531,7 +531,7 @@ static void LoadDefault()
     rto->phaseSP = 16;                 //
     rto->failRetryAttempts = 0;        //
     rto->presetID = 0;                 //
-    rto->HPLLState = 0;
+    Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; // 运动自适应隔行扫描
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
     rto->scanlinesEnabled = false;                // 扫描线启用

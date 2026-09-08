@@ -299,6 +299,25 @@ public:
     // register self-consistent. SourceMeasurement.h
     static void applyForBypassRgbhv();
 
+    // The PLL's operating band, steered from a measured rate. Held rather than
+    // read back: PLLAD_LAT loads the whole group on a rising edge, so the
+    // registers report a band the PLL may not be running yet.
+    //
+    // True when the rate has left the band in force, which is the only time the
+    // group is worth rewriting -- the latch that loads it takes the PLL out of
+    // lock, so a rate that has not moved is left alone. A rate of nothing is no
+    // reading and moves nothing.
+    static bool pllBandFollows(uint32_t rate);
+
+    // Nothing is known about the band, so the next rate that arrives counts as
+    // a move. What every path that drops the PLL asks for.
+    static void forgetPllBand();
+
+    // Put the charge pump, the VCO gain and the post divider where the held
+    // band wants them, latch, and set the oversampling that divider can carry.
+    // Returns the oversampling installed, and 0 when there is no band to apply.
+    static uint8_t applyPllBand();
+
     // The analog gain and offset, a triple at a time. Six registers that no
     // class owned: every caller wrote them one by one, and "put the stored
     // calibration back" was spelled out at five sites.
