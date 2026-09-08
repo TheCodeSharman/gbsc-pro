@@ -16,25 +16,35 @@ Both are connected at once. `/input?src=vga` and `/input?src=ypbpr` move the
 analog routing and the ADC input together, so a change can be judged against
 both sync types from a session with nobody at the bench.
 
-The RISC PC settles in about 15 s. **The Wii does not settle quickly and its
-line count moves while it tries**, so a reading taken early is of the settle:
-310 with excursions to 97, 315, 607 and 634, `CAPTURE_ENABLE` flapping as each
-solve is armed and dropped.
+## Acquisition is seconds, and a wait of minutes is a fault
 
-**THE WII TAKES THREE TO FOUR MINUTES TO ACQUIRE, AND A TEST THAT STOPS SOONER
-REPORTS A FAULT THAT IS NOT THERE.** Measured from a settled unit: no signal at
-30, 60, 90, 120 and 180 s, full-screen picture by 240 s. Three separate runs
-that gave up at ~145 s all concluded it never locks.
+Measured on the RISC PC, timed from the input switch:
 
-Throughout the wait the coast pair cycles between three values, each naming its
-writer -- 9/9 the sync watcher's no-sync branch, 7/3 `updateSpDynamic()`, 4/7
-`SyncProcessor::applyForSyncType()` -- with `CAPTURE_ENABLE` flapping and the
-line count moving 310 / 97 / 319 / 329 under them. The engine wins that race
-eventually, which is what the minutes are.
-`docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`.
+```
+ 0.0  /input?src=vga queued
+ 1.6  own V sync: yes after 137ms  ->  separate H/V
+ 6.4  own V sync: yes after 2ms
+ 7.2  sampling: 311 lines x 50.08 Hz -> line rate 15625
+ 8.1  present: true, state: acquired
+10.4  running frame sync, clock gen enabled = 1
+```
 
-So the component path is testable, at about four minutes a switch. Budget for it
-rather than reading the wait as a failure.
+Steady at 311 thereafter. The sync-type probe answers in 2-3 ms once the source
+is up, and the solve costs about ten milliseconds, so **nothing about acquiring
+a source takes minutes**.
+
+The Wii on `ypbpr` does not converge at all. Over 60 s the count ran 202, 207,
+214, 216, 266, 294, 310, 315, 317, 319, 539 and 607 with `source moved: count`
+re-arming continuously and `FrameSyncManager::cleanup()` between each attempt.
+Those are two families -- the true count near 310 and the doubled count near
+607 -- which is the coast pair being written by two owners and the engine
+re-solving off whichever won.
+`docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
+
+**So the component path is not slow, it is broken, and waiting is not the
+remedy.** A source that has not solved in about ten seconds is not settling, and
+budgeting minutes for it hides the fault rather than tolerating it. Step 5 of
+`docs/retiring-the-sync-watcher.md` is what closes it.
 
 ## Direct analog against the ADV chain
 
