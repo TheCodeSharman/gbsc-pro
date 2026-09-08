@@ -179,6 +179,19 @@ bool SourceMeasurement::countIsSource(uint16_t lines)
         && lines <= CaptureWindow::SourceVerticalTotalMax;
 }
 
+bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines)
+{
+    const uint16_t frameLines = (uint16_t)(halfLines / 2);
+    if (!countIsSource(frameLines))
+        return false;
+
+    const int32_t toHalfLines = (int32_t)lines - (int32_t)halfLines;
+    const int32_t toFrame = (int32_t)lines - (int32_t)frameLines;
+    const int32_t fromHalfLines = toHalfLines < 0 ? -toHalfLines : toHalfLines;
+    const int32_t fromFrame = toFrame < 0 ? -toFrame : toFrame;
+    return fromHalfLines < fromFrame;
+}
+
 bool SourceMeasurement::sampleSteady()
 {
     uint16_t lines = measureSourceLines();
@@ -197,7 +210,14 @@ bool SourceMeasurement::sampleSteady()
 
     if (steadyRun_ < SteadySamples)
         ++steadyRun_;
-    return steadyRun_ >= SteadySamples;
+    if (steadyRun_ < SteadySamples)
+        return false;
+
+    if (countIsSerrations(lines, measureSourceHalfLines())) {
+        steadyRun_ = 0;
+        return false;
+    }
+    return true;
 }
 
 void SourceMeasurement::resetSteadiness()
@@ -381,6 +401,13 @@ uint16_t SourceMeasurement::countHeldStill(uint16_t lines)
 uint16_t SourceMeasurement::measureSourceLines()
 {
     return GBS::STATUS_SYNC_PROC_VTOTAL::read();
+}
+
+uint16_t SourceMeasurement::measureSourceHalfLines()
+{
+    if (!GBS::STATUS_IF_VT_OK::read())
+        return 0;
+    return GBS::VPERIOD_IF::read();
 }
 
 uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)

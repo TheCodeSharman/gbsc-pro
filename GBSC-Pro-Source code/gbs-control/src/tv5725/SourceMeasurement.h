@@ -122,6 +122,18 @@ public:
     // gross-error nets rather than a classification.
     static bool countIsSource(uint16_t lines);
 
+    // Whether the sync processor is counting the source's lines or the
+    // serration and equalisation pulses either side of its vertical interval.
+    // It counts through the coast, so a coast that does not cover them counts
+    // them as lines and reports about twice the source. `halfLines` is
+    // VPERIOD_IF, which measures the same frame by a route the coast disturbs
+    // by a few counts but cannot double.
+    //
+    // False when the witness is not measuring, which is the separate-sync case
+    // and is not a judgement that the count is good.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    static bool countIsSerrations(uint16_t lines, uint16_t halfLines);
+
     // The source's line count, corrected for a divider the ADC PLL cannot lock
     // to. The sync processor counts in ADC clocks, so on too small a divider the
     // PLL locks to every Nth hsync: it reports a count N times too low and N
@@ -259,6 +271,11 @@ public:
     // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,
     // and every other quantity the engine needs it computed itself.
     static uint16_t measureSourceLines();
+
+    // The frame in half-lines, from the input formatter rather than the sync
+    // processor, so the coast cannot double it. Zero when STATUS_IF_VT_OK says
+    // the measurement did not complete, which is the separate-sync case.
+    static uint16_t measureSourceHalfLines();
 
     // How long the count must hold before a preset load, and how far two
     // readings may differ and still count as holding. Much longer than the

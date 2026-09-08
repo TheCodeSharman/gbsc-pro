@@ -45,6 +45,16 @@ static void seedSourceLines(uint16_t lines)
     g_log.clear();
 }
 
+// The input formatter's own measurement of the frame, in half-lines, and the
+// bit that says it completed. Call AFTER seedSourceLines(), which resets the bus
+// -- left unseeded the witness reads nothing and judges nothing.
+static void seedSourceHalfLines(uint16_t halfLines)
+{
+    Wire.bank[0][0x07] = (uint8_t)((halfLines & 0x7F) << 1);
+    Wire.bank[0][0x08] = (uint8_t)((halfLines >> 7) & 0x0F);
+    Wire.bank[0][0x00] |= 0x01;
+}
+
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
 static const uint32_t BenchLineRate = 15550;
@@ -1048,4 +1058,56 @@ TEST_CASE("a count outside the agreement window does not")
     seedSourceLines(631);
 
     CHECK(SourceMeasurement::countHeldStill(627) == 0);
+}
+
+// Telling the source's lines from the serrations either side of its vertical
+// interval. The sync processor counts through the coast, so a coast that does
+// not cover the equalisation pulses counts them as lines; the input formatter
+// measures the same frame in half-lines by a route the coast cannot double.
+// docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+
+TEST_CASE("a field count against the frame in half-lines is the source's lines")
+{
+    CHECK_FALSE(SourceMeasurement::countIsSerrations(310, 624));
+}
+
+TEST_CASE("a count as large as the half-line total is the serrations")
+{
+    CHECK(SourceMeasurement::countIsSerrations(607, 624));
+}
+
+TEST_CASE("a half-line total that measures nothing refuses to judge the count")
+{
+    // VPERIOD_IF is debris on a separate-sync source, where it reads values
+    // like 20 against a true 311. Judged against that, any count at all looks
+    // nearer the total than half of it.
+    CHECK_FALSE(SourceMeasurement::countIsSerrations(311, 20));
+}
+
+
+TEST_CASE("a serration count never goes steady, however still it holds")
+{
+    // The coast is not covering the equalisation pulses, so the sync processor
+    // counts them and reports about twice the source. It holds that value
+    // perfectly, which is exactly what a steadiness run on its own cannot see.
+    seedSourceLines(607);
+    seedSourceHalfLines(624);
+    SourceMeasurement measurement;
+
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples * 3; ++i) {
+        CAPTURE(i);
+        CHECK_FALSE(measurement.sampleSteady());
+    }
+}
+
+TEST_CASE("a field count goes steady with the witness live")
+{
+    seedSourceLines(310);
+    seedSourceHalfLines(624);
+    SourceMeasurement measurement;
+
+    for (uint8_t i = 1; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+
+    CHECK(measurement.sampleSteady());
 }
