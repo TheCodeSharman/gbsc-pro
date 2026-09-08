@@ -73,6 +73,44 @@ raster follow. Sampled over three minutes the count ran 310, 314, 315, 317, 318,
 this, correctly — the source really is failing its steadiness run. The run is
 doing its job; what it is measuring is being moved underneath it.
 
+## `VPERIOD_IF` survives the coast the sync processor's count does not
+
+Sampled from `loop()` at 35 Hz with `/freeze?on=1` holding the engine off, so
+the pair stays parked and the divider does not chase the count. `SP_PRE_COAST`
+and `SP_POST_COAST` written by hand and read back, 12 s at the bad pair between
+two good ones, `STATUS_SYNC_PROC_HTOTAL` 2250 in every sample of all three
+windows:
+
+| coast | `STATUS_SYNC_PROC_VTOTAL` | `VPERIOD_IF` |
+|---|---|---|
+| 7/3 | 310 in 265/265 | 624 in 265/265 |
+| 4/7 | 310x229, **607x91**, 328/329x30, and 352, 354, 531, 630, 631, 632, **862** | 619..628 only |
+| 7/3 | 310 in 320/320 | 624 in 320/320 |
+
+**Both measurements are disturbed, and the difference in magnitude is the whole
+point.** The sync processor's count goes bimodal at roughly twice the source and
+reaches 862; the input formatter's stays within **five counts of 624**, and in
+363 samples of the bad pair it never once reports a doubled value.
+
+So `VPERIOD_IF` is not immune to the coast, and a rule that assumes it constant
+is wrong. What it is, is unable to make the error that matters. The two agree on
+a good coast within a fixed deficit -- 310 against 624/2 -- and disagree by
+nearly 300 on a bad one, which is separation enough to test against despite the
+dither.
+
+**Recovery is immediate and complete in both directions**, with nothing else
+touched: the first sample after the good pair goes back is already 310, and
+320 of 320 follow it.
+
+### Why the freeze is required
+
+With automation running, a hand-written pair is overwritten inside 1.5 s --
+`Geometry::poll()` applies the sync type, which is now the pair's only owner.
+`/freeze?on=1` gates both the sketch's paths and the engine, since `loop()`
+passes `engineMayRun` to `Geometry::useRunGate()`. It also holds the divider
+still, which is what separates the coast's effect on the measurement from the
+engine's response to it.
+
 ## The two owners form a closed loop, and it never settles
 
 The fight is self-sustaining on any source the coast can act on. Each link is
