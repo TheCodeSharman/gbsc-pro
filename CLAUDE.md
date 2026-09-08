@@ -188,6 +188,41 @@ means the loop is not running, or the heap gate is shut — read `/bootlog`'s
 FrameSync spam, so a missing line is not evidence the step did not run: judge by
 outcome, and by what the next line implies.
 
+### AN HTTP READ IS NOT A SAMPLE. `/samplinglog` IS.
+
+`/getreg` is deferred to `loop()` and answers at tens of hertz at best, so it
+cannot tell a value that dithers from one read torn across two states, and it
+cannot see a transient at all. `Tv5725::SamplingLog` samples from inside
+`loop()` and prints CSV to the console.
+
+```sh
+make -C build flash-ota HOST=… GBS_SAMPLING_LOG=1     # off in the default build
+curl 'http://<ip>/samplinglog?ms=25&for=30000'        # follow the source
+curl 'http://<ip>/samplinglog?low=1600&high=2900&step=100&dwell=400'   # walk the divider
+```
+
+One line per sample carries the divider, `STATUS_MISC_PLLAD_LOCK`,
+`STATUS_SYNC_PROC_VTOTAL`, `STATUS_SYNC_PROC_HTOTAL`, `HPERIOD_IF`,
+`VPERIOD_IF`, `HSACT`, the IF status bits and the latched interrupt byte — read
+adjacently in one pass, which is what makes two of them comparable to each other.
+`SamplingLog::event()` logs a decision as the branch takes it, which no dump
+afterwards can show.
+
+**Two measurements from one session, both of which sent a diagnosis the wrong
+way before the log was used:**
+
+| | HTTP point reads | on-device at 35 Hz |
+|---|---|---|
+| `HPERIOD_IF`, RISC PC | a steady 431, four for four | **511 in 624 of 1043 samples**, 38 distinct values |
+| `STATUS_SYNC_PROC_VTOTAL`, Wii | 149 / 160 / 230 / 299 among 310s | **310 in 1050 of 1050** |
+
+So HTTP under-reported a railing register as healthy, and over-reported a steady
+one as intermittent. **A count of agreeing HTTP samples is not evidence of
+stability** — a dozen reads at five-second spacing say nothing about the
+5.99 seconds between each pair. The console also drops bursts, so ask for an
+interval the link can carry: `ms=25` over 30 s lands ~1050 lines and reports its
+own effective rate.
+
 ## The system has three control domains, and you can only see one
 
 This is the single most expensive thing to not know. An evening was spent
