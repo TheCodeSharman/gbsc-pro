@@ -49,8 +49,6 @@ void HdBypass::enable()
     release();
 
     HD_IN_DREG_BYPS::write(0);                   // s1_30[0:0]
-    HD_MATRIX_BYPS::write(0);                    // s1_30[1:1]
-    HD_DYN_BYPS::write(0);                       // s1_30[2:2]
     HD_SEL_BLK_IN::write(0);                     // s1_30[3:3]
 
     // RD-5725-1.1 documents these as a gain and an offset and gives no scale
@@ -228,12 +226,9 @@ void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
     if (standard == 13) {
         applyRgbPatches();
         SyncType::set(true);
-        ColourSpace::DEC_MATRIX_BYPS::write(1);
         SyncProcessor::SP_PRE_COAST::write(4);
         SyncProcessor::SP_POST_COAST::write(4);
         SyncProcessor::SP_DLT_REG::write(0x70);
-        HD_MATRIX_BYPS::write(1);
-        HD_DYN_BYPS::write(1);
         SyncProcessor::SP_VS_PROC_INV_REG::write(0);
 
         Adc::PLLAD_KS::write(0);
@@ -244,6 +239,13 @@ void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
         Adc::DEC2_BYPS::write(1);
         Adc::PLLAD_MD::write(512);
     }
+}
+
+void HdBypass::applyColourPath(bool inputIsYpBpR)
+{
+    ColourSpace::DEC_MATRIX_BYPS::write(1);
+    HD_MATRIX_BYPS::write(inputIsYpBpR ? 0 : 1);
+    HD_DYN_BYPS::write(inputIsYpBpR ? 0 : 1);
 }
 
 void HdBypass::applyRgbhvPll(uint16_t sourceLines)

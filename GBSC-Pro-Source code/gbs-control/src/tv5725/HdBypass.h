@@ -163,6 +163,12 @@ public:
     // because they need the user options and its own R/G/B round trip.
     static void applyForStandard(uint8_t standard, void (*applyRgbPatches)());
 
+    // Which colour path the bypassed sample takes, and the ONE thing bypass has
+    // to know about the source. A component input needs the matrix; an RGB one
+    // needs it and the dynamic range converter out of the way. It follows the
+    // INPUT SELECTION, not any classification of the timing.
+    static void applyColourPath(bool inputIsYpBpR);
+
 private:
     static void applySd(uint8_t standard);
     static void applyProgressive(uint8_t standard);

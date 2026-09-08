@@ -3759,17 +3759,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::PLLAD_ICP::write(5);
     GBS::PLLAD_FS::write(1);
 
-    if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-    {
-        Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
-        GBS::HD_MATRIX_BYPS::write(0);
-        GBS::HD_DYN_BYPS::write(0);
-    } else if (rto->inputIsYpBpR == false) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs))
-    {
-        Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
-        GBS::HD_MATRIX_BYPS::write(1);
-        GBS::HD_DYN_BYPS::write(1);
-    }
+    Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
 
     GBS::HD_SEL_BLK_IN::write(0);
 
@@ -3872,8 +3862,7 @@ void bypassModeSwitch_RGBHV()
     GBS::SFTRST_HDBYPS_RSTZ::write(1);
     GBS::HD_INI_ST::write(0);
 
-    GBS::HD_MATRIX_BYPS::write(1);
-    GBS::HD_DYN_BYPS::write(1);
+    Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
 
     GBS::PAD_SYNC1_IN_ENZ::write(0);
     GBS::PAD_SYNC2_IN_ENZ::write(0);
@@ -3893,7 +3882,6 @@ void bypassModeSwitch_RGBHV()
     GBS::SP_VS_PROC_INV_REG::write(0); 
     Tv5725::Adc::PLLAD_KS::write(1);
     rto->osr = Tv5725::Adc::applyOversample(1, 2);
-    Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1);
     Tv5725::Adc::applyForBypassRgbhv();
     GBS::DAC_RGBS_R0ENZ::write(1);    
     GBS::DAC_RGBS_G0ENZ::write(1);    

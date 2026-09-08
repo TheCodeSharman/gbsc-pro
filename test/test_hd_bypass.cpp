@@ -28,6 +28,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncType.h"
 
+using Tv5725::ColourSpace;
 using Tv5725::HdBypass;
 
 // Neither a gain of 128 nor an offset of 0, so a field left at the poison is
@@ -117,14 +118,52 @@ TEST_CASE("enabling the block releases its reset before configuring it")
     CHECK(released < firstConfig);
 }
 
-TEST_CASE("the input pipe and both converters are in circuit")
+TEST_CASE("the input pipe is in circuit")
 {
     FreshChip chip;
 
     CHECK(Wire.field(1, 0x30, 0, 1) == 0);  // HD_IN_DREG_BYPS
-    CHECK(Wire.field(1, 0x30, 1, 1) == 0);  // HD_MATRIX_BYPS
-    CHECK(Wire.field(1, 0x30, 2, 1) == 0);  // HD_DYN_BYPS
     CHECK(Wire.field(1, 0x30, 3, 1) == 0);  // HD_SEL_BLK_IN
+}
+
+// Which colour path the bypassed sample takes. The one thing bypass has to know
+// about the source, and the input selection is where it is known: a component
+// input needs the matrix, an RGB one needs it out of the way.
+
+TEST_CASE("a component input keeps the matrix in circuit")
+{
+    Wire.reset();
+
+    HdBypass::applyColourPath(true);
+
+    CHECK(HdBypass::HD_MATRIX_BYPS::read() == 0);
+    CHECK(HdBypass::HD_DYN_BYPS::read() == 0);
+    CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 1);
+}
+
+TEST_CASE("an RGB input takes every matrix out of circuit")
+{
+    Wire.reset();
+
+    HdBypass::applyColourPath(false);
+
+    CHECK(HdBypass::HD_MATRIX_BYPS::read() == 1);
+    CHECK(HdBypass::HD_DYN_BYPS::read() == 1);
+    CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 1);
+}
+
+TEST_CASE("the decimator's matrix is out of circuit on either input")
+{
+    // It is the SCALING path's converter, and bypass does not go through it,
+    // so both answers leave it bypassed and only the HD block's pair moves.
+    Wire.reset();
+    HdBypass::applyColourPath(true);
+    const uint32_t component = ColourSpace::DEC_MATRIX_BYPS::read();
+
+    Wire.reset();
+    HdBypass::applyColourPath(false);
+
+    CHECK(component == ColourSpace::DEC_MATRIX_BYPS::read());
 }
 
 TEST_CASE("the dynamic range passes the sample through unchanged")
@@ -239,7 +278,6 @@ TEST_CASE("the reset can be cycled without reloading the configuration")
 
 using Tv5725::Adc;
 using Tv5725::Chip;
-using Tv5725::ColourSpace;
 using Tv5725::ModeDetect;
 using Tv5725::SyncProcessor;
 using Tv5725::SyncType;
@@ -433,15 +471,14 @@ TEST_CASE("1080p leaves the SD vertical window where it found it")
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == Poison);
 }
 
-TEST_CASE("RGBHV arrives as RGB with every matrix out of circuit")
+TEST_CASE("RGBHV patches the RGB path and coasts on its own pair")
 {
+    // The colour path is NOT this arm's: it follows the input selection, which
+    // is where whether the source is component is known.
     applyForStandard(13);
 
     CHECK(rgbPatchCalls == 1);
     CHECK(SyncType::isCsync());
-    CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 1);
-    CHECK(HdBypass::HD_MATRIX_BYPS::read() == 1);
-    CHECK(HdBypass::HD_DYN_BYPS::read() == 1);
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 4);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);
