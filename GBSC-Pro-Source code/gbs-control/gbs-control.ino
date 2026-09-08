@@ -1170,6 +1170,16 @@ bool sourceIsRgbhv() { return rto->videoStandardInput >= 14; }
 bool scalingRgbhv() { return rto->videoStandardInput == 14; }
 bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 
+// Whether the byte names a standard at all. NOT a signal-present test, however
+// it reads at the sites below: it says only that something was recognised and
+// nothing has cleared it, which is why a source the sync processor is counting
+// can sit here with the byte at 0. The measurement that answers the other
+// question is Geometry::sourceIsPresent(). docs/retiring-mode-detect.md
+static bool standardIsHeld()
+{
+    return rto->videoStandardInput != 0;
+}
+
 // The two bands the standard byte's values fall into where anything still
 // branches on them: 1 to 4 are the interlaced and progressive SD standards, 5
 // to 7 the HD ones. Named because they were spelled out five times, and because
@@ -2935,7 +2945,7 @@ void doPostPresetLoadSteps()
 
     // if(Info_sate == 0)
     {
-        if (rto->videoStandardInput == 0) {
+        if (!standardIsHeld()) {
             uint8_t videoMode = getVideoMode();
             if (videoMode > 0) {
                 rto->videoStandardInput = videoMode;
@@ -3322,7 +3332,7 @@ void applyPresets(uint8_t result)
     }
 
     boolean waitExtra = 0;
-    if (rto->outModeHdBypass || rgbhvBypass() || rto->videoStandardInput == 0) {
+    if (rto->outModeHdBypass || rgbhvBypass() || !standardIsHeld()) {
         waitExtra = 1;
         if (result <= 4 || result == 14 || result == 8 || result == 9) {
             GBS::SFTRST_IF_RSTZ::write(1);
@@ -3629,7 +3639,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
     const bool searching =
         SyncSearch::shouldSweepSyncProcessor(vidModeReadout, sourceIsCounted);
 
-    if (rto->videoStandardInput == 0 && searching) {
+    if (!standardIsHeld() && searching) {
         Tv5725::SyncProcessor::applyPulseWidthDifference();
         return;
     }
@@ -3646,7 +3656,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
     if (rto->videoStandardInput >= 13) {
         Tv5725::SyncProcessor::applySeparationThresholds(
             Tv5725::SyncType::isCsync());
-    } else if (rto->videoStandardInput != 0) {
+    } else if (standardIsHeld()) {
         Tv5725::SyncProcessor::applyPulseWidthDifference();
         Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(),
                                                 sourceHasSerratedSync());
@@ -3655,7 +3665,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
 void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 {
-    if (((rto->videoStandardInput == 0) || rgbhvBypass()) ||
+    if ((!standardIsHeld() || rgbhvBypass()) ||
         !rto->boardHasPower || rto->sourceDisconnected) {
         return;
     }
@@ -3666,7 +3676,7 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 
 void updateClampPosition() // Update Clamp Position
 {
-    if ((rto->videoStandardInput == 0) || !rto->boardHasPower || rto->sourceDisconnected) {
+    if (!standardIsHeld() || !rto->boardHasPower || rto->sourceDisconnected) {
         return;
     }
 
@@ -4250,7 +4260,7 @@ void runSyncWatcher() //
     // component path chooses its own level and this would walk it off.
     if (!rto->inputIsYpBpR && newVideoModeCounter == 0) {
         const Tv5725::SyncOnGreen::Tuning tuning = Tv5725::SyncOnGreen::tune(
-            sourceDisturbed, rto->videoStandardInput != 0, millisNow,
+            sourceDisturbed, standardIsHeld(), millisNow,
             putSogLevelInForce, optimizeSogLevel);
         if (tuning.sourceUnsettled)
             lastVsyncLock = millis();
@@ -4354,7 +4364,7 @@ void runSyncWatcher() //
     }
 
     if (((detectedVideoMode != 0 && detectedVideoMode != rto->videoStandardInput) ||
-         (detectedVideoMode != 0 && rto->videoStandardInput == 0)) &&
+         (detectedVideoMode != 0 && !standardIsHeld())) &&
         !rgbhvBypass()) {
 
         if (newVideoModeCounter < 255) {
@@ -4416,7 +4426,7 @@ void runSyncWatcher() //
                 Tv5725::FrameBuffer::releaseCapture();
                 printInfo();
                 newVideoModeCounter = 0;
-                if (rto->videoStandardInput == 0) {
+                if (!standardIsHeld()) {
                     rto->noSyncCounter = 0x05ff;
                 }
             }
@@ -5949,7 +5959,7 @@ void loop()
         runSyncWatcher();                                                                                               
         lastTimeSyncWatcher = millis();
 
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && rto->videoStandardInput > 0 && Tv5725::SyncProcessor::clampPlaced() && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
+        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && standardIsHeld() && Tv5725::SyncProcessor::clampPlaced() && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
             if (Tv5725::SourceMeasurement::dividerLatched(
                     Tv5725::SourceMeasurement::measureLineSamples(),
                     GBS::PLLAD_MD::read())) {
@@ -5983,7 +5993,7 @@ void loop()
         }
     }
 
-    if ((!rgbhvBypass() && rto->videoStandardInput != 0) &&
+    if ((!rgbhvBypass() && standardIsHeld()) &&
         rto->syncWatcherEnabled && !Tv5725::SyncProcessor::coastPlaced()) {
         if (rto->continousStableCounter >= 7) {
             if ((getStatus16SpHsStable() == 1) && (getVideoMode() == rto->videoStandardInput)) {
@@ -6000,7 +6010,7 @@ void loop()
         }
     }
 
-    if ((rto->videoStandardInput != 0) && (rto->continousStableCounter >= 4) &&
+    if (standardIsHeld() && (rto->continousStableCounter >= 4) &&
         !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
         updateClampPosition();
         if (Tv5725::SyncProcessor::clampPlaced()) {
@@ -6569,7 +6579,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     //   videoMode = rto->videoStandardInput;
                     // PresetPreference backup = uopt->presetPreference;
                     // uopt->presetPreference = Output720P;
-                    // rto->videoStandardInput = 0;
                     // applyPresets(videoMode);
                     // uopt->presetPreference = backup;
                 } break;
