@@ -33,18 +33,16 @@ Steady at 311 thereafter. The sync-type probe answers in 2-3 ms once the source
 is up, and the solve costs about ten milliseconds, so **nothing about acquiring
 a source takes minutes**.
 
-The Wii on `ypbpr` does not converge at all. Over 60 s the count ran 202, 207,
-214, 216, 266, 294, 310, 315, 317, 319, 539 and 607 with `source moved: count`
-re-arming continuously and `FrameSyncManager::cleanup()` between each attempt.
-Those are two families -- the true count near 310 and the doubled count near
-607 -- which is the coast pair being written by two owners and the engine
-re-solving off whichever won.
+The Wii on `ypbpr` acquires 9.3 s after the input switch and then holds: 12 of
+12 samples over a minute at `STATUS_SYNC_PROC_VTOTAL` 310, `VPERIOD_IF` 624,
+`HPERIOD_IF` 431, `PLLAD_MD` 2250, coast 7/3, and a clean full-screen picture.
+
+**Both sources are therefore seconds, and a wait of minutes is a fault to
+diagnose rather than a budget to allow.** Until the coast pair had one owner
+this source never converged at all: the count came back in five families and
+`PLLAD_MD` halved and doubled under it, for as long as anyone watched.
 `docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
 
-**So the component path is not slow, it is broken, and waiting is not the
-remedy.** A source that has not solved in about ten seconds is not settling, and
-budgeting minutes for it hides the fault rather than tolerating it. Step 5 of
-`docs/retiring-the-sync-watcher.md` is what closes it.
 
 ## Direct analog against the ADV chain
 

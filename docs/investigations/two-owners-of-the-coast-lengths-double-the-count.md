@@ -46,6 +46,9 @@ counted as lines.
 | `SyncProcessor::applyForSyncType(true)` | 4 / 7 | whenever the sync type is applied — which the probe does per source mode change |
 | `updateSpDynamic()`, the `videoStandardInput <= 2` arm | 7 / 3 | on its own schedule inside the escalation ladder |
 
+The second writer is gone. What follows is what it cost while it was there, and
+what closing it fixed.
+
 Whichever ran last is in force. Neither consults the other, and nothing
 reconciles them.
 
@@ -135,19 +138,40 @@ Two further measurements from the same run, on one machine in one mode with only
   the deficit is flat across every coast pair. `../sync-type-selection.md` carries
   the three-line deficit as untested; it is not the coast.
 
-## Why this is step 5's, not a fix to make here
+## How it is closed
 
-The coast lengths around the vertical interval are `applyForSyncType()`'s by
-design — `SyncProcessor.h` says so, and they follow the sync type. The `<= 2`
-arm writing them as well is the per-standard ladder that step 5 of
-`docs/retiring-the-sync-watcher.md` exists to collapse.
+`SyncProcessor` owns `SP_PRE_COAST` and `SP_POST_COAST` alone. The per-standard
+ladder in `updateSpDynamic()` no longer writes them, and the pair is named --
+`SerratedPreCoastLines` 7 and `SerratedPostCoastLines` 3 -- for what it decides,
+which is whether the equalisation pulses land inside the count.
 
-**Picking a winner is not the fix.** 4/7 measures this source wrongly and 7/3
-measures it correctly, but 7/3 is upstream's tuning for one standard and the
-right answer is not "always use the SD pair" — a source whose vertical interval
-is shorter wants less coast, and nothing here measures the interval. What the
-step needs is one owner and a value derived from something measured, and this
-is the evidence for how much that is worth.
+The value is 7/3 rather than 4/7 on two measurements: on the serrated source 7/3
+counts the lines and 4/7 counts the serrations, and on the only progressive
+source that reaches this path the coast does nothing at all, so there is nothing
+the change can cost there.
+
+**It is still not a value derived from something measured**, and that stays
+open: nothing on this board measures the vertical interval, so a source whose
+interval is shorter than PAL's has no rule to fall back on. What has changed is
+that the question can be asked -- with one owner the pair stays where it is
+written, which is what the sweep above could not achieve.
+
+Standards 3 to 7 are HD component and have no source here, so collapsing their
+7/6, 7/7 and 9/18 onto the sync type's pair is untested.
+
+### What it fixed
+
+Same build, one input switch apart:
+
+| | before | after |
+|---|---|---|
+| convergence | none in 60 s | `acquired` 9.3 s after the switch |
+| count | five families | 310, 12 of 12 samples over a minute |
+| coast | 7/3 and 4/7 alternating, unasked | 7/3, unmoved |
+| `PLLAD_MD` | 2250 and 1124 alternating | 2250 |
+| picture | scrambled | clean, full screen |
+
+The RISC PC control is unchanged throughout at vt 311, coast 0/0.
 
 ## What it is not
 
