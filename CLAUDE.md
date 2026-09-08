@@ -11,11 +11,20 @@ component colour path -- and YPbPr is a *direct analog* path, so its timings are
 its own. Only composite and S-Video go through the ADV7280/ADV7391 chain, which
 regenerates them to broadcast standard, so any argument resting on a source being
 standard-conformant reaches those two and nothing else.
-**BOTH ARE CONNECTED AT ONCE AND SWITCHING NEEDS NO BENCH TRIP** --
-`/input?src=vga` and `/input?src=ypbpr`, so a session can judge a change against
-both sync types without anyone touching a cable. The Wii is slow to settle and
-re-solves several times getting there, so a reading or a photograph taken inside
-the first ~90 s is of the settle rather than of the change.
+**BOTH ARE PLUGGED IN AND POWERED AT ONCE, AND SWITCHING NEEDS NO BENCH TRIP**
+-- `/input?src=vga` and `/input?src=ypbpr`, so a session can judge a change
+against both inputs without anyone touching a cable. The Wii is slow to settle
+and re-solves several times getting there: **three to four minutes to acquire**,
+so a reading or a photograph taken before that is of the settle rather than of
+the change.
+
+**ALL THREE SYNC ARRANGEMENTS ARE ON THE BENCH AND ALL THREE ARE SCRIPTABLE.**
+The RISC PC's sync type is one CMOS value rather than a mode-file setting, and
+ModeServ sets it -- `SYNC 0` separate, `SYNC 1` composite, `SYNC 3` auto -- so
+**a COMPOSITE-SYNC RGBHV source exists here**, on `vga`, and a branch keyed on
+csync with RGBHV is bench testable rather than host-test-only. Sync on green is
+the Wii on `ypbpr`. No sync arrangement is out of reach from a session.
+
 **`docs/bench-sources.md` is what each source can prove; read it before
 concluding a branch is untestable**, and it carries what each one is currently
 known to do.
@@ -63,6 +72,7 @@ command per connection -- the close is the end of the reply. It lives in the
 printf 'MODE X320 Y256 C256 F50\n' | nc 192.168.88.10 6502   # the bench mode
 printf 'PATTERN PM5544\n'          | nc 192.168.88.10 6502   # redraw, or pick the plainer CARD
 printf 'MODES\n'                   | nc 192.168.88.10 6502   # what this monitor definition allows
+printf 'SYNC 1\n'                  | nc 192.168.88.10 6502   # 0 separate, 1 composite, 3 auto
 printf 'PING\n'                    | nc 192.168.88.10 6502   # OK ModeServ 1
 ```
 
@@ -73,6 +83,12 @@ signal after a mode change is black with a flashing cursor, which reads from
 here as a scaler with no output and has been diagnosed as one. **A session can therefore change the source without
 anyone at the bench**, which is what makes the mode-change recovery below usable
 unattended.
+
+`SYNC` changes the machine's sync type and re-applies the mode so the change
+reaches VIDC20's external register -- no reboot, no bench trip. It replies with
+the type read back and the mode it landed in. **This is what makes the RISC PC a
+composite-sync source as well as a separate-sync one**, so the two sync types can
+be judged against one input, one cable and one raster, with nothing else moving.
 
 `--source` opts into tests needing a locked signal; `--preset-save` opts into
 tests that write flash. Without `--host` everything hardware skips, so a bare
