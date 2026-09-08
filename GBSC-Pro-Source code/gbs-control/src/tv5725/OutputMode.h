@@ -127,14 +127,9 @@ public:
     // ModeBypass: it resolves a raster that is on the chip, and bypass has none.
     static const OutputMode *forFrameHeight(uint16_t frameLines);
 
-    // The mode a preference names. NULL for bypass and for a custom preset,
-    // neither of which is a resolution. A preference is one height whatever the
-    // source runs at; matchPresetSource swaps between two of them, and that is
-    // OutputChoice's, because it needs a measured rate.
+    // The mode a preference names. NULL for a custom preset, which is not a
+    // resolution. A preference is one height whatever the source runs at.
     static const OutputMode *forPreference(PresetPreference presetPreference);
-
-    // The threshold that determines when a mode is considered PAL or NTSC.
-    static const uint16_t PalNtscSplitHz = 55;
 
     // Calculates the output timings for the given frame rate. ceilingHz clamps
     // the display clock to usable maximum.

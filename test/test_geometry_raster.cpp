@@ -272,24 +272,6 @@ static bool pollUntilResolved(Geometry &engine)
     return false;
 }
 
-TEST_CASE("a source that changes rate re-resolves the pair matchPresetSource swaps")
-{
-    // Nothing re-states the choice across a source mode change: the engine
-    // notices the source moved and resolves what it is holding against the rate
-    // it has just measured. Resolving where the choice was made instead keys
-    // the swap on the rate of the source being left.
-    SettledEngine settled;
-
-    settled.engine.modeChanged(OutputChoice(Output480P, true, true, false), 4);
-    REQUIRE(pollUntilSolved(settled.engine));
-    CHECK(frameLinesWritten() == 625);
-
-    setSourceLines(524);
-    g_fieldRate = 59.94f;
-    REQUIRE(pollUntilResolved(settled.engine));
-    CHECK(frameLinesWritten() == 525);
-}
-
 static void forgetWrites()
 {
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s)

@@ -1267,19 +1267,12 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
   return code | (pal ? 0x10 : 0x00);
 }
 
-// The output resolution asked for, against the standard the detection reported.
-//
-// Whether scaling RGBHV is in force is read here rather than inside the choice
-// because loadComputedPreset() forgets it, so a load has to build the choice
-// before it runs. It gates the 1024p -> 960p downshift alone, with standard 8,
-// and that asymmetry is upstream's rather than a design.
-static Tv5725::OutputChoice outputChoiceFor(uint8_t standard)
+// The output resolution asked for. Nothing qualifies it: a preference names a
+// height and the source does not get a say.
+static Tv5725::OutputChoice outputChoiceFor()
 {
-  return Tv5725::OutputChoice(uopt->presetPreference,
-                              uopt->matchPresetSource != 0,
-                              standard != 8 &&
-                                  !Tv5725::PresetLoad::scalingRgbhvInForce(),
-                              rto->presetIsPalForce60);
+  return Tv5725::OutputChoice(
+      (Tv5725::PresetPreference)uopt->presetPreference);
 }
 
 // What the OUTPUT resolution decides, and all it decides. Everything else
@@ -2877,10 +2870,10 @@ uint32_t getPllRate()
 static void changeOutputResolution(uint8_t standard)
 {
     const bool pal = (standard == 2 || standard == 4);
-    const Tv5725::OutputChoice choice = outputChoiceFor(standard);
+    const Tv5725::OutputChoice choice = outputChoiceFor();
 
     rto->outputChoice = choice;
-    rto->presetID = presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal);
+    rto->presetID = presetIdFor(choice.resolve(), pal);
 
     if (!geometry.outputChanged(choice)) {
         applyPresets(standard);
@@ -3394,9 +3387,8 @@ void applyPresets(uint8_t result)
         // The id keys on the detection result, as it always has. The raster
         // keys on the rate the engine measures, which is what changed.
         const bool pal = (result == 2 || result == 4);
-        const Tv5725::OutputChoice choice = outputChoiceFor(result);
-        loadComputedPreset(choice,
-                           presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal));
+        const Tv5725::OutputChoice choice = outputChoiceFor();
+        loadComputedPreset(choice, presetIdFor(choice.resolve(), pal));
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
 
         rto->videoStandardInput = result;

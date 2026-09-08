@@ -129,11 +129,7 @@ bool Geometry::solveRaster()
     // The choice is an input, not a read-back. Deriving the mode from
     // VDS_VSYNC_RST would leave the preset table -- the thing this replaces --
     // its only writer. docs/chip-initialisation.md.
-    //
-    // Resolved HERE rather than where the choice was made, because
-    // matchPresetSource swaps within a pair on the source's field rate and this
-    // is the first point that rate has been measured.
-    const OutputMode *mode = choice_.resolve(sampling_.fieldRateHz());
+    const OutputMode *mode = choice_.resolve();
     rasterMode_ = mode;
     if (mode == 0) {
         // Not a failure, and NOT a fall back to 1080p: the choice names no
@@ -222,10 +218,7 @@ void Geometry::modeChanged(const OutputChoice &choice, uint8_t oversample)
     syncTypeProbed_ = false;
     choice_ = choice;
 
-    // Provisional, because solveScanMode() runs before the rate is measured and
-    // needs a frame height to bound the line doubler with. solveRaster()
-    // resolves it again once there is a measurement to resolve it against.
-    rasterMode_ = choice.resolve(sampling_.fieldRateHz());
+    rasterMode_ = choice.resolve();
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
@@ -249,7 +242,7 @@ bool Geometry::outputChanged(const OutputChoice &choice)
     // **THE LINE DOUBLER IS A PROPERTY OF THE OUTPUT AS MUCH AS OF THE SOURCE**:
     // what decides it is whether the doubled frame fits the raster, so a shorter
     // raster strands a doubling that fitted the taller one.
-    rasterMode_ = choice.resolve(sampling_.fieldRateHz());
+    rasterMode_ = choice.resolve();
 
     const bool wasDoubled = sampling_.lineDoubled();
     solveScanMode();

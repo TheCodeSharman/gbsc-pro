@@ -62,7 +62,6 @@ uint8_t OutputMode::clockDividerFor(uint16_t frameLines, float fieldRateHz,
     return best;
 }
 
-const uint16_t OutputMode::PalNtscSplitHz;
 
 const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
 {
@@ -77,8 +76,6 @@ const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
 
     // 480p and 576p are separate preferences: a preference names a resolution
     // and nothing else, so either is selectable whatever the source runs at.
-    // Choosing between them by field rate is matchPresetSource's job, next to
-    // the 960 against 1024 swap it already makes.
     if (presetPreference == Output480P)
         return &Mode480p;
     if (presetPreference == Output576P)
