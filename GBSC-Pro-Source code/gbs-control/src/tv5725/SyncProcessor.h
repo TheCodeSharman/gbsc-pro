@@ -13,9 +13,11 @@ namespace Tv5725 {
 // source's mode file read in ADC -- 181/2553 = 7.09% against AKF50's 36/512 =
 // 7.03%, where the IF reading gives twice the mode's sync width.
 //
-// What is not here is everything that moves per source: updateSpDynamic() owns
-// the delta and pulse-ignore pair and Tv5725::SourceMeasurement SP_RT_HS_SP. A
-// static write of either would fight a per-source decision.
+// WHAT init() MUST NOT WRITE is everything that moves per source: the pulse
+// width difference and pulse ignore pair, which follow the sync type and what
+// the source's sync carries, and SP_RT_HS_SP, which Tv5725::SourceMeasurement
+// holds off the divider. A static write of either would fight a per-source
+// decision.
 //
 // THE COAST LENGTHS ARE THIS BLOCK'S ALONE. Nothing else may write
 // SP_PRE_COAST or SP_POST_COAST: a second writer closes a loop, because the
@@ -270,6 +272,18 @@ public:
     // threshold, the same as it would on separate sync.
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseIgnore(bool csync, bool serrated);
+
+    // Configure the separator to HUNT for a source rather than to read one it
+    // has already found: ignore only the shortest pulses, coast on the default
+    // window without the sub coast, and forget both placements so whatever
+    // locks is measured for itself rather than against the source before.
+    //
+    // It separates on the SAME threshold a settled source is read with. The two
+    // values this alternated between are measured identical on a source with
+    // its own vertical sync and four lines apart on a serrated one, where the
+    // lower of them is the wrong answer.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    static void applyForSearch(bool csync);
 
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical

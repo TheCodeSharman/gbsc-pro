@@ -3618,30 +3618,12 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         SyncSearch::shouldSweepSyncProcessor(vidModeReadout, sourceIsCounted);
 
     if (rto->videoStandardInput == 0 && searching) {
-        if (GBS::SP_DLT_REG::read() > 0x30)
-            GBS::SP_DLT_REG::write(0x30);
-        else
-            GBS::SP_DLT_REG::write(0xC0);
+        Tv5725::SyncProcessor::applyPulseWidthDifference();
         return;
     }
 
     if (withCurrentVideoModeCheck && searching) {
-        if ((rto->noSyncCounter % 16) <= 8 && rto->noSyncCounter != 0) {
-            GBS::SP_DLT_REG::write(0x30);
-        } else if ((rto->noSyncCounter % 16) > 8 && rto->noSyncCounter != 0) {
-            GBS::SP_DLT_REG::write(0xC0);
-        } else {
-            GBS::SP_DLT_REG::write(0x30);
-        }
-        GBS::SP_H_PULSE_IGNOR::write(0x02);
-
-        Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        GBS::SP_H_COAST::write(0);
-        GBS::SP_H_TIMER_VAL::write(0x3a);
-        if (Tv5725::SyncType::isCsync()) {
-            Tv5725::SyncProcessor::setCoastInvert(true);
-        }
-        Tv5725::SyncProcessor::forgetPositions();
+        Tv5725::SyncProcessor::applyForSearch(Tv5725::SyncType::isCsync());
         return;
     }
 
@@ -4303,7 +4285,6 @@ void runSyncWatcher() //
                     printf("noSyncCounter max2 \n");
                 }
             }
-            GBS::SP_H_COAST::write(0);
             Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
             Tv5725::SyncProcessor::applyDefaultCoastWindow();
             Tv5725::SyncProcessor::applyDefaultClampWindow();

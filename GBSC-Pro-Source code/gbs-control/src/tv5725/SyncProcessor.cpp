@@ -27,6 +27,13 @@ const uint8_t SerratedPulseIgnore = 0x6b;
 const uint8_t UnserratedPulseIgnore = 0x02;
 const uint8_t WidestUsefulPulseIgnore = 0x33;
 
+// What the search asks for while nothing is counting: the least the field can
+// hide, so every pulse reaches the separator. The H timer beside it is measured
+// as a don't-care across its whole range and is here to be written from one
+// place rather than because a value was chosen.
+const uint8_t SearchPulseIgnore = 0x02;
+const uint8_t SearchHTimerValue = 0x3a;
+
 }  // namespace
 
 void SyncProcessor::writeSdVsyncStart(uint16_t start)
@@ -111,6 +118,18 @@ void SyncProcessor::widenCoastForSerration()
     const uint8_t ignore = (uint8_t)SP_H_PULSE_IGNOR::read();
     if (ignore >= WidestUsefulPulseIgnore)
         SP_H_PULSE_IGNOR::write(ignore / 2);
+}
+
+void SyncProcessor::applyForSearch(bool csync)
+{
+    applyPulseWidthDifference();
+    SP_H_PULSE_IGNOR::write(SearchPulseIgnore);
+    applyDefaultCoastWindow();
+    SP_H_COAST::write(0);
+    SP_H_TIMER_VAL::write(SearchHTimerValue);
+    if (csync)
+        setCoastInvert(true);
+    forgetPositions();
 }
 
 void SyncProcessor::applyDefaultCoastWindow()

@@ -645,3 +645,82 @@ TEST_CASE("a new source forgets both windows")
     CHECK_FALSE(SyncProcessor::coastPlaced());
     CHECK_FALSE(SyncProcessor::clampPlaced());
 }
+
+// Configuring the separator to HUNT for a source, rather than to read one it
+// has already found. The search runs when nothing is counting, so it asks for
+// the settings most likely to see a pulse at all.
+
+TEST_CASE("the search ignores only the shortest pulses")
+{
+    Wire.reset();
+
+    SyncProcessor::applyForSearch(false);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x02);
+}
+
+TEST_CASE("the search separates on the threshold every source is read with")
+{
+    Wire.reset();
+    SyncProcessor::applyPulseWidthDifference();
+    const uint32_t settled = SyncProcessor::SP_DLT_REG::read();
+
+    Wire.reset();
+    SyncProcessor::applyForSearch(false);
+
+    CHECK(SyncProcessor::SP_DLT_REG::read() == settled);
+}
+
+TEST_CASE("the search coasts on the default window and over no sub coast")
+{
+    Wire.reset();
+    SyncProcessor::applyDefaultCoastWindow();
+    const uint32_t start = SyncProcessor::SP_H_CST_ST::read();
+    const uint32_t stop = SyncProcessor::SP_H_CST_SP::read();
+
+    SyncProcessor::SP_H_CST_ST::write(0x77);
+    SyncProcessor::SP_H_CST_SP::write(0x777);
+    SyncProcessor::SP_H_COAST::write(1);
+
+    SyncProcessor::applyForSearch(false);
+
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == start);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == stop);
+    CHECK(SyncProcessor::SP_H_COAST::read() == 0);
+}
+
+TEST_CASE("a composite source coasts inverted while it is searched for")
+{
+    Wire.reset();
+    SyncProcessor::setCoastInvert(false);
+
+    SyncProcessor::applyForSearch(true);
+
+    CHECK(SyncProcessor::SP_COAST_INV_REG::read() == 1);
+}
+
+TEST_CASE("a source with its own sync has its coast inversion left alone")
+{
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        SyncProcessor::applyForSearch(false);
+        under[i] = SyncProcessor::SP_COAST_INV_REG::read();
+    }
+
+    CHECK(under[0] != under[1]);
+}
+
+TEST_CASE("the search forgets where the windows were placed")
+{
+    steadyLine(431);
+    SyncProcessor::forgetPositions();
+    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::coastPlaced());
+
+    SyncProcessor::applyForSearch(false);
+
+    CHECK_FALSE(SyncProcessor::coastPlaced());
+    CHECK_FALSE(SyncProcessor::clampPlaced());
+}
