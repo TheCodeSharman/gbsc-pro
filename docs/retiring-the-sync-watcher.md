@@ -26,13 +26,12 @@ every symptom this fork has chased is a case of it:
   Both writes are `SyncProcessor`'s now, so the class arbitrates them -- what
   remains is the sketch deciding WHEN to hunt.
   `docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`
-- The **ADC PLL group has two owners on both paths**.
-  `Adc::applySampleRate()` derives `PLLAD_KS` from the measured line rate;
-  `updateCoastPosition()` writes `PLLAD_ICP` and `PLLAD_FS` and latches, for a
-  csync source under 322 lines, and the 900 ms check inside the RGBHV block
-  writes `PLLAD_KS`, `PLLAD_FS` and `PLLAD_ICP` and latches, keyed on
-  `rto->HPLLState`. A PLL left unlocked shows as a scrambled picture with every
-  config register correct.
+- The **ADC PLL group had owners on both paths**. `Adc::applySampleRate()`
+  derives `PLLAD_KS` from the measured line rate, and the 900 ms check inside
+  the RGBHV block wrote the whole triple from a band index of its own. That
+  index is `Adc`'s now; what is left outside the class is the scaling-RGBHV
+  entry pulling `PLLAD_ICP` back to 5, twice, which travels with step 10. A PLL
+  left unlocked shows as a scrambled picture with every config register correct.
   `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 - The steadiness of the source is counted twice, as `rto->noSyncCounter` and
   `rto->continousStableCounter` in the sketch and as `idleRun_` in the engine,
@@ -144,7 +143,7 @@ that list does not.
 |---|---|
 | steer the deinterlacer | the `VPERIOD_IF` motion-adaptive and scanline state machine |
 | steer the HD bypass vsync window | `steerHdBypassVsyncWindow()`, already extracted |
-| steer the ADC PLL | `HPLLState` and its `PLLAD_KS`/`FS`/`ICP` writes |
+| steer the ADC PLL | the band index and its `PLLAD_KS`/`FS`/`ICP` writes |
 
 ## What is in it, and who owns each piece
 
@@ -165,7 +164,7 @@ that list does not.
 | the new-mode debounce | `Geometry::sourceMoved()` | yes |
 | motion-adaptive deinterlace and scanlines, by `VPERIOD_IF` | `Deinterlacer` | yes |
 | scaling-RGBHV entry, exit and preset choice | `PresetLoad`, `OutputChoice`, `SourceKey` | yes |
-| `HPLLState` and the ADC PLL steering | `Adc`, as the one owner of the group | class yes |
+| the PLL band and its steering | `Adc`, as the one owner of the group | yes |
 | the ADC input toggle while hunting | injected action, sketch | — |
 | `applyPresets()` | injected action, sketch | — |
 | the no-signal latch at `0x07fe` | presence, published | yes |
@@ -205,7 +204,7 @@ default.
 | left in the sketch by an earlier step | its owner | lands at |
 |---|---|---|
 | `updateSpDynamic()`'s decision of when to hunt | `Geometry`, off its own steadiness run | step 13, with the watcher |
-| `lastVsyncLock` | FrameSync, which is the only thing that reads it | step 11, with the rate steer |
+| `lastVsyncLock` | FrameSync, which is the only thing that reads it | with the rate steer, once FrameSync has an owner |
 | `rto->phaseIsSet` | `Adc` | step 6, with the sampling phase |
 | `rto->coastPositionIsSet`, `rto->clampPositionIsSet` | `SyncProcessor` | step 5 |
 
@@ -411,8 +410,12 @@ flagged counter.
 becoming an injected action. The largest single piece, and the one that carries
 most of the standard byte.
 
-**11. Steer the ADC PLL.** `HPLLState` and its `PLLAD_KS`/`FS`/`ICP` writes
-become `Adc`'s, so the group has one owner on every path.
+**11. Steer the ADC PLL.** The band index and its `PLLAD_KS`/`FS`/`ICP` writes
+become `Adc`'s, so the group has one owner on every path. **The band moved; the
+RATE did not**, and it cannot yet: `getPllRate()` drives the debug pin through
+the test bus and counts pulse ticks with FrameSync, which the engine has no
+route to. So the sketch measures and the class decides, and the measurement
+lands wherever FrameSync does.
 
 **12. Delete `getVideoMode()` and `videoStandardInput`**, which by then have no
 readers. `docs/retiring-mode-detect.md` has what each of their fifteen values
