@@ -25,8 +25,21 @@ carrying either value.
 So the flag that says the output is scaling RGBHV is set only while the block
 runs, and the block runs only while the predicate the flag feeds is already
 true. Bypass is the one entry: detection writes 15, `rgbhvBypass()` goes true,
-and the chain starts. **Once the source is neither bypassed nor already
-scaling, nothing can put it back.**
+and the chain starts. **Once that entry is behind it, nothing can re-arm the
+chain.**
+
+**The state it falls into is SCALING, and that is the whole trick.** An output
+is either bypassed or scaled and there is no third option -- but
+`scalingRgbhv()` does not mean *scaling*. It is a conjunction: the output is
+scaled AND the source is classified RGBHV. Drop the second half and the source
+is still scaled, now as an ordinary broadcast standard, which is neither
+`rgbhvBypass()` nor `scalingRgbhv()` and satisfies no predicate that would put
+it back.
+
+**A predicate that welds an output fact to a source classification is what makes
+that representable at all.** With the two facts apart -- the output chosen, the
+source measured -- "scaled as PAL SD while actually RGBHV" is not a state the
+firmware can be in.
 
 ## What it looks like on the bench
 

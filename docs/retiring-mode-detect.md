@@ -319,6 +319,38 @@ output rather than a standard, the first row is `loadComputedPreset()` alone and
 the other two are the bypass switches called directly. It goes with the byte
 rather than before it, because the dispatch is the byte's last real reader.
 
+### 3c. Bypass is ONE output mode, and it picks its own register path
+
+**Bypass is a single concept: take the source and leave the scaler out of it.**
+Whether that ends in the HD path or the RGBHV path is an implementation detail
+of the bypass mode, decided from what the source measures -- not two output
+modes for a caller to choose between.
+
+`Tv5725::HdBypass` is already that class. It carries `applySd()`,
+`applyProgressive()`, `applyHd()` AND `applyRgbhvPll()`, and both sketch
+switches route through its `enable()`. **Only its name says otherwise.**
+
+What is still split, and what has to go:
+
+| split | today | belongs to |
+|---|---|---|
+| two entry points | `setOutModeHdBypass()`, `bypassModeSwitch_RGBHV()` | one `apply()` on the mode |
+| two flags | `rto->outModeHdBypass`, `videoStandardInput == 15` | the resolved `OutputMode` |
+| the path choice | `applyForStandard()` branching on the standard byte | the measured source |
+
+**The passthrough preference does not reach both halves today, which is the bug
+this shape removes.** `presetPreference == OutputBypass` is read in the sync
+watcher's new-mode block and calls `setOutModeHdBypass()` -- the HD path, always.
+The RGBHV path is reached from the standard byte holding 15 and from nowhere
+else, so a user asking for pass-through on an RGBHV source gets the other one.
+
+**And it dissolves `sourceIsRgbhv()`.** That predicate exists mostly to decide
+scaled against bypassed for a source with no preset. Once the user chooses
+bypass and `bypassCanBeDisplayed()` says whether the display can show it, there
+is nothing left for it to decide -- which is what
+`docs/investigations/the-rgbhv-question-is-two-questions.md` found no way
+through while the two questions stayed welded together.
+
 ### 4. Delete `SourceMeasurement::adopt()`
 
 The only place the engine reads `PLLAD_MD` as an input. Custom presets are gone
