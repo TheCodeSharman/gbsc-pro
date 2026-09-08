@@ -1690,16 +1690,7 @@ void prepareSyncProcessor()
     writeOneByte(0x33, 0x3a);
     writeOneByte(0x34, 0x06);
 
-    if (rto->videoStandardInput == 0)
-        GBS::SP_DLT_REG::write(0x70);
-    else if (rto->videoStandardInput <= 4)
-        GBS::SP_DLT_REG::write(0xC0);
-    else if (rto->videoStandardInput <= 6)
-        GBS::SP_DLT_REG::write(0xA0);
-    else if (rto->videoStandardInput == 7)
-        GBS::SP_DLT_REG::write(0x70);
-    else
-        GBS::SP_DLT_REG::write(0x70);
+    Tv5725::SyncProcessor::applyPulseWidthDifference();
 
     if (sourceHasSerratedSync()) {
         GBS::SP_H_PULSE_IGNOR::write(0x6b);
@@ -3669,7 +3660,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
     if (rto->videoStandardInput != 0) {
         if (rto->videoStandardInput <= 2) {
-            GBS::SP_DLT_REG::write(0xC0);
+            Tv5725::SyncProcessor::applyPulseWidthDifference();
             GBS::SP_H_TIMER_VAL::write(0x28);
 
             if (Tv5725::SyncType::isCsync()) {
@@ -3729,13 +3720,13 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
                 }
             }
         } else if (rto->videoStandardInput <= 4) {
-            GBS::SP_DLT_REG::write(0xA0);
+            Tv5725::SyncProcessor::applyPulseWidthDifference();
             GBS::SP_H_PULSE_IGNOR::write(0x0E);
         } else if (rto->videoStandardInput == 5) {
-            GBS::SP_DLT_REG::write(0x30);
+            Tv5725::SyncProcessor::applyPulseWidthDifference();
             GBS::SP_H_PULSE_IGNOR::write(0x08);
         } else if (rto->videoStandardInput <= 7) {
-            GBS::SP_DLT_REG::write(0x70);
+            Tv5725::SyncProcessor::applyPulseWidthDifference();
 
             GBS::SP_H_PULSE_IGNOR::write(0x06);
         } else if (rto->videoStandardInput >= 13) {

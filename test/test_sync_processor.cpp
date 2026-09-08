@@ -557,3 +557,18 @@ TEST_CASE("coasting further for a serrated source leaves the pulse-ignore alone"
     CHECK(SyncProcessor::SP_PRE_COAST::read() > pre);
     CHECK(SyncProcessor::SP_POST_COAST::read() > post);
 }
+
+TEST_CASE("the pulse-width difference threshold clears the measured floor")
+{
+    // Below 0x70 a serrated source is miscounted -- 307 against 310 at 0x30,
+    // and no lock at all at 0 -- while every value from 0x70 to 0xFF reads it
+    // identically and a separate-sync source is indifferent across the whole
+    // range. So one value serves both, with margin over the floor rather than
+    // at it.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    Wire.reset();
+
+    SyncProcessor::applyPulseWidthDifference();
+
+    CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
+}

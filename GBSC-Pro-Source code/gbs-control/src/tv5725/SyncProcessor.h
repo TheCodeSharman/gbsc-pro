@@ -252,6 +252,14 @@ public:
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
     static void widenCoast();
 
+    // How different a pulse width must be to read as vertical. ONE value for
+    // every source: a serrated source is miscounted below 0x70 and reads
+    // identically at every value above it, and a separate-sync source is
+    // indifferent across the whole range, so the per-standard tables this
+    // replaces were choosing between values measured to be the same.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    static void applyPulseWidthDifference();
+
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.

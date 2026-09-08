@@ -19,6 +19,7 @@ namespace {
 const unsigned int ResetHoldUs = 10;
 
 const uint8_t SerratedCoastLines = 9;
+const uint16_t PulseWidthDifference = 0xC0;
 const uint8_t WidestUsefulPulseIgnore = 0x33;
 
 }  // namespace
@@ -61,6 +62,11 @@ void SyncProcessor::reset()
     Chip::SFTRST_SYNC_RSTZ::write(0);
     delayMicroseconds(ResetHoldUs);
     Chip::SFTRST_SYNC_RSTZ::write(1);
+}
+
+void SyncProcessor::applyPulseWidthDifference()
+{
+    SP_DLT_REG::write(PulseWidthDifference);
 }
 
 void SyncProcessor::widenCoast()
