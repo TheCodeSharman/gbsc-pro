@@ -4383,12 +4383,6 @@ void runSyncWatcher() //
                 }
                 boolean wantPassThroughMode = uopt->presetPreference == 10;
 
-                if (((rto->videoStandardInput == 1 || rto->videoStandardInput == 3) && (detectedVideoMode == 2 || detectedVideoMode == 4)) ||
-                    rto->videoStandardInput == 0 ||
-                    ((rto->videoStandardInput == 2 || rto->videoStandardInput == 4) && (detectedVideoMode == 1 || detectedVideoMode == 3))) {
-                } else {
-                }
-
                 if (!wantPassThroughMode) {
 
                     applyPresets(detectedVideoMode);
