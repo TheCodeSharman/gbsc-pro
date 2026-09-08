@@ -82,6 +82,13 @@ concept of a video standard does not survive here.
 makes it the source for sync-type work. It is one CMOS value re-applied to
 VIDC20's external register, not a mode-file setting.
 
+**So a composite-sync RGBHV source is on the bench**, and `SYNC 1` is all it
+takes to reach it. A branch that wants csync *and* RGBHV together -- which
+neither the separate-sync default nor the Wii's sync on green can reach -- has a
+live source, so it is bench testable rather than host-test-only. It is also the
+only way to move the sync type with nothing else changing: same machine, same
+cable, same input, same raster.
+
 **It cannot produce an interlaced mode through a monitor definition** -- the MDF
 format has ten keys and none is interlace. `*TV vert,interlace` with 0 meaning ON
 does it, or `VDU 23,0,8,&81` immediately, neither of which ModeServ exposes yet.
