@@ -29,9 +29,10 @@ every symptom this fork has chased is a case of it:
 - The **ADC PLL group had owners on both paths**. `Adc::applySampleRate()`
   derives `PLLAD_KS` from the measured line rate, and the 900 ms check inside
   the RGBHV block wrote the whole triple from a band index of its own. That
-  index is `Adc`'s now; what is left outside the class is the scaling-RGBHV
-  entry pulling `PLLAD_ICP` back to 5, twice, which travels with step 10. A PLL
-  left unlocked shows as a scrambled picture with every config register correct.
+  index is `Adc`'s now, and so is the scaling path's own charge pump. What is
+  left outside the class is `setResetParameters()` and the HD bypass switch. A
+  PLL left unlocked shows as a scrambled picture with every config register
+  correct.
   `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 - The steadiness of the source is counted twice, as `rto->noSyncCounter` and
   `rto->continousStableCounter` in the sketch and as `idleRun_` in the engine,
@@ -409,6 +410,22 @@ flagged counter.
 **10. The RGBHV block**, to `PresetLoad` and `OutputChoice`, with the preset load
 becoming an injected action. The largest single piece, and the one that carries
 most of the standard byte.
+
+**Its two entries are one call now.** Leaving bypass and crossing into another
+preset's bucket ran thirty byte-identical lines each, so every register in that
+sequence had two writers. The sync processor's share is
+`SyncProcessor::applyForScalingRgbhv()` and the ADC's is
+`Adc::applyScalingChargePump()`; what is still spelled out is the option bit,
+the line counter's start, the standard byte's round trip through
+`applyPresets()`, and the external clock generator. Those are the four this step
+still has to place, and the standard byte's is step 12's.
+
+**The second entry may not survive the step it is waiting on.** It exists to
+reload a different preset when the source's line count crosses 280 or 380, which
+is per-standard preset selection over tables that no longer exist -- so what it
+still does is set an output resolution preference and take the byte round trip
+again. Whether anything is left once `OutputChoice` answers instead is step 12's
+question, not a sequence to preserve on the way there.
 
 **11. Steer the ADC PLL.** The band index and its `PLLAD_KS`/`FS`/`ICP` writes
 become `Adc`'s, so the group has one owner on every path. **The band moved; the
