@@ -1170,6 +1170,21 @@ bool sourceIsRgbhv() { return rto->videoStandardInput >= 14; }
 bool scalingRgbhv() { return rto->videoStandardInput == 14; }
 bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 
+// The two bands the standard byte's values fall into where anything still
+// branches on them: 1 to 4 are the interlaced and progressive SD standards, 5
+// to 7 the HD ones. Named because they were spelled out five times, and because
+// what each site actually wants -- a line rate, a scan mode, an oversampling --
+// is a measurement the engine holds. docs/retiring-mode-detect.md
+static bool standardIsSd()
+{
+    return rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4;
+}
+
+static bool standardIsHd()
+{
+    return rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7;
+}
+
 // Whether the loop may steer this source between scaling RGBHV and RGBHV
 // bypass. 14 and 15 name the OUTPUT as much as the source, so an RGBHV source
 // switched to HD bypass reads as one of them and the steering pulls it straight
@@ -1788,7 +1803,7 @@ boolean optimizePhaseSP()
 
         rto->phaseSP = 16;
         rto->phaseADC = 16;
-        if (rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
+        if (standardIsSd()) {
             if (rto->osr == 4) {
                 rto->phaseADC += 16;
                 rto->phaseADC &= 0x1f;
@@ -1840,13 +1855,13 @@ boolean optimizePhaseSP()
 
             rto->phaseADC = 16;
 
-            if (rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7) {
+            if (standardIsHd()) {
                 if (rto->osr == 2) {
 
                     rto->phaseADC += 16;
                     rto->phaseADC &= 0x1f;
                 }
-            } else if (rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
+            } else if (standardIsSd()) {
                 if (rto->osr == 4) {
 
                     rto->phaseADC += 16;
@@ -1857,7 +1872,7 @@ boolean optimizePhaseSP()
 
             rto->phaseSP = 16;
             rto->phaseADC = 16;
-            if (rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
+            if (standardIsSd()) {
                 if (rto->osr == 4) {
                     rto->phaseADC += 16;
                     rto->phaseADC &= 0x1f;
@@ -3056,7 +3071,7 @@ void doPostPresetLoadSteps()
 
         if (!rto->outModeHdBypass && rto->autoBestHtotalEnabled &&
             !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
-            (rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4)) {
+            standardIsSd()) {
 
             updateCoastPosition(0);
             delay(1);
