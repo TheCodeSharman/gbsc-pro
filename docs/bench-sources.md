@@ -33,9 +33,11 @@ Steady at 311 thereafter. The sync-type probe answers in 2-3 ms once the source
 is up, and the solve costs about ten milliseconds, so **nothing about acquiring
 a source takes minutes**.
 
-The Wii on `ypbpr` acquires 9.3 s after the input switch and then holds: 12 of
-12 samples over a minute at `STATUS_SYNC_PROC_VTOTAL` 310, `VPERIOD_IF` 624,
-`HPERIOD_IF` 431, `PLLAD_MD` 2250, coast 7/3, and a clean full-screen picture.
+The Wii on `ypbpr` acquires 9.3 s after the input switch and then holds.
+Sampled from `loop()` at 35 Hz for 30 s: `STATUS_SYNC_PROC_VTOTAL` 310 in
+1050/1050, `VPERIOD_IF` 624 in 1050/1050, `HPERIOD_IF` 431/430, no interrupts
+latched at any point, and a clean full-screen picture. The RISC PC reads 311 in
+1043/1043 the same way.
 
 **Both sources are therefore seconds, and a wait of minutes is a fault to
 diagnose rather than a budget to allow.** Until the coast pair had one owner

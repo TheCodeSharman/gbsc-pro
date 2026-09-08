@@ -166,12 +166,21 @@ Same build, one input switch apart:
 | | before | after |
 |---|---|---|
 | convergence | none in 60 s | `acquired` 9.3 s after the switch |
-| count | five families | 310, 12 of 12 samples over a minute |
+| count | five families | 310 |
 | coast | 7/3 and 4/7 alternating, unasked | 7/3, unmoved |
 | `PLLAD_MD` | 2250 and 1124 alternating | 2250 |
 | picture | scrambled | clean, full screen |
 
-The RISC PC control is unchanged throughout at vt 311, coast 0/0.
+**The steadiness is measured on-device, not over HTTP.** `/samplinglog?ms=25`
+over 30 s puts `STATUS_SYNC_PROC_VTOTAL` at **310 in 1050 of 1050 samples**,
+`VPERIOD_IF` at 624 in all of them, `HPERIOD_IF` at 431/430, and the latched
+interrupt byte at 0 throughout — so nothing is arming a solve. The RISC PC
+control reads 311 in 1043 of 1043.
+
+That distinction matters here, because HTTP point reads of the same settled
+source returned 149, 160, 230 and 299 among the 310s and were read as the source
+failing to hold. The on-device log does not corroborate them.
+`../../CLAUDE.md`, "an HTTP read is not a sample".
 
 ## What it is not
 
