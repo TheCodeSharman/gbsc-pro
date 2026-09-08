@@ -118,14 +118,24 @@ line doubler is a property of the output as much as of the source**: what
 decides it is whether the doubled frame fits the raster.
 docs/investigations/an-output-change-is-not-a-source-change.md
 
-**A `Tv5725::OutputChoice` is not yet a resolution.** It carries the user's
-preference and the three facts that qualify it — `matchPresetSource`, whether
-the 1024p→960p downshift is open, and whether `PalForce60` is showing a 50 Hz
-source at 60 — and becomes an `OutputMode` only when a field rate is handed to
-`resolve()`. `solveRaster()` is where that happens, because it is the first
-point in a mode change at which the *new* source has been measured. Resolving
-where the choice is made instead keys the pair swaps on the rate of the source
-being left.
+**A preference names a resolution and NOTHING ELSE, and the source gets no say
+in it.** `Tv5725::OutputChoice` carries the user's preference and
+`resolve()` returns the `OutputMode` it names.
+
+**The source's field rate used to choose between two of them**, swapping 960p
+against 1024p and 480p against 576p to whichever member matched the rate — the
+taller at 50 Hz, the shorter at 60. That is the rate standing in for the
+source's ACTIVE LINE COUNT, which only holds where rate and line count are
+locked together by a broadcast standard. On a machine that programs arbitrary
+modes the same 256-line raster came out at two different output resolutions
+depending on a quantity that had not moved, so it is deleted rather than fixed.
+
+**What was underneath it is worth having, and it is not the rate.** An output
+whose active height is a whole multiple of the source's scales without
+resampling — 480 is 2x240, 960 is 4x240 — and the engine measures the line
+count directly. An option keyed on that is open, and would be a new feature
+rather than a restoration: it needs a rule for what to do when no available
+height is a multiple, which the pairs never had.
 
 **A mode change is covered by a capture freeze, and every way out of `poll()`
 releases it.** The windows land seconds after the load, once the source has
