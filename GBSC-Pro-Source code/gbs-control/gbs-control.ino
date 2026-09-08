@@ -1180,21 +1180,6 @@ static bool standardIsHeld()
     return rto->videoStandardInput != 0;
 }
 
-// The two bands the standard byte's values fall into where anything still
-// branches on them: 1 to 4 are the interlaced and progressive SD standards, 5
-// to 7 the HD ones. Named because they were spelled out five times, and because
-// what each site actually wants -- a line rate, a scan mode, an oversampling --
-// is a measurement the engine holds. docs/retiring-mode-detect.md
-static bool standardIsSd()
-{
-    return rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4;
-}
-
-static bool standardIsHd()
-{
-    return rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7;
-}
-
 // Whether the loop may steer this source between scaling RGBHV and RGBHV
 // bypass. 14 and 15 name the OUTPUT as much as the source, so an RGBHV source
 // switched to HD bypass reads as one of them and the steering pulls it straight
@@ -1813,11 +1798,13 @@ boolean optimizePhaseSP()
 
         rto->phaseSP = 16;
         rto->phaseADC = 16;
-        if (standardIsSd()) {
-            if (rto->osr == 4) {
-                rto->phaseADC += 16;
-                rto->phaseADC &= 0x1f;
-            }
+
+        // Half a sample of ADC phase, for the oversampling in force. Nothing
+        // but interlaced SD asks for 4 and applyOversample() never raises what
+        // it was given, so the ratio says this on its own.
+        if (rto->osr == 4) {
+            rto->phaseADC += 16;
+            rto->phaseADC &= 0x1f;
         }
         delay(8);
         runTest = 0;
@@ -1865,28 +1852,25 @@ boolean optimizePhaseSP()
 
             rto->phaseADC = 16;
 
-            if (standardIsHd()) {
-                if (rto->osr == 2) {
+            // The second arm still reads the byte, because 2 is also what a
+            // progressive source and the default ask for, so the ratio does not
+            // separate them. What it wants is the source's line rate, which the
+            // engine holds and bypass does not. docs/retiring-mode-detect.md
+            const bool hdAtItsOwnOversample =
+                rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7
+                && rto->osr == 2;
 
-                    rto->phaseADC += 16;
-                    rto->phaseADC &= 0x1f;
-                }
-            } else if (standardIsSd()) {
-                if (rto->osr == 4) {
-
-                    rto->phaseADC += 16;
-                    rto->phaseADC &= 0x1f;
-                }
+            if (rto->osr == 4 || hdAtItsOwnOversample) {
+                rto->phaseADC += 16;
+                rto->phaseADC &= 0x1f;
             }
         } else {
 
             rto->phaseSP = 16;
             rto->phaseADC = 16;
-            if (standardIsSd()) {
-                if (rto->osr == 4) {
-                    rto->phaseADC += 16;
-                    rto->phaseADC &= 0x1f;
-                }
+            if (rto->osr == 4) {
+                rto->phaseADC += 16;
+                rto->phaseADC &= 0x1f;
             }
         }
     }
@@ -3081,7 +3065,7 @@ void doPostPresetLoadSteps()
 
         if (!rto->outModeHdBypass && rto->autoBestHtotalEnabled &&
             !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
-            standardIsSd()) {
+            rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4) {
 
             updateCoastPosition(0);
             delay(1);
