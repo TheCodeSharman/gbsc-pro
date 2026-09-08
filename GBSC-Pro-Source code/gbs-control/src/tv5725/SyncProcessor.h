@@ -256,6 +256,20 @@ public:
     // across a source that moved mid-run is placed on two different lines.
     static bool acquireCoastWindow(bool autoCoast, bool (*stable)());
 
+    // Where a scaling RGBHV source on composite sync stops coasting. NARROWER
+    // than applyDefaultCoastWindow()'s 0x100, and the two are not
+    // interchangeable -- there is a test pinning that they differ.
+    static const uint16_t ScalingRgbhvCoastStop = 0x80;
+
+    // Put the sync path back for a scaling RGBHV source, after a preset written
+    // for another standard has moved it. A separate-sync source runs uncoasted
+    // and clamps by hand; a composite one coasts on the window above.
+    //
+    // The separate-sync arm deliberately leaves the coast window alone, so this
+    // is not the whole of what the RGBHV block does before a preset load -- that
+    // path also drops the ADC and display PLLs, and is not this operation.
+    static void applyForScalingRgbhv(bool csync);
+
     // How the separator decides a pulse is vertical, for a source whose sync
     // carries no broadcast vertical interval: the coast lengths either side of
     // it, the pulse-width difference that reads as vertical, and the width

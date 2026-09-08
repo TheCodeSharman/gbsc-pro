@@ -4748,16 +4748,8 @@ void runSyncWatcher() //
                     }
 
                     updateSpDynamic(1);
-                    if (Tv5725::SyncType::isCsync() == false) {
-                        GBS::SP_SOG_MODE::write(0);
-                        GBS::SP_CLAMP_MANUAL::write(1); 
-                        GBS::SP_NO_COAST_REG::write(1);
-                    } else {
-                        GBS::SP_SOG_MODE::write(1);
-                        GBS::SP_H_CST_ST::write(0x10);
-                        GBS::SP_H_CST_SP::write(0x80);
-                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
-                    }
+                    Tv5725::SyncProcessor::applyForScalingRgbhv(
+                        Tv5725::SyncType::isCsync());
                     delay(300);
 
                     if (rto->extClockGenDetected) {
@@ -4823,16 +4815,8 @@ void runSyncWatcher() //
                         }
 
                         updateSpDynamic(1);
-                        if (Tv5725::SyncType::isCsync() == false) {
-                            GBS::SP_SOG_MODE::write(0);
-                            GBS::SP_CLAMP_MANUAL::write(1); 
-                            GBS::SP_NO_COAST_REG::write(1);
-                        } else {
-                            GBS::SP_SOG_MODE::write(1);
-                            GBS::SP_H_CST_ST::write(0x10);
-                            GBS::SP_H_CST_SP::write(0x80);
-                            Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
-                        }
+                        Tv5725::SyncProcessor::applyForScalingRgbhv(
+                            Tv5725::SyncType::isCsync());
                         delay(300);
 
                         if (rto->extClockGenDetected) {

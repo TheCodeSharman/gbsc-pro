@@ -470,3 +470,56 @@ TEST_CASE("a composite source is coasted over its vertical interval")
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x02);
 }
+
+// Putting the sync path back for a scaling RGBHV source, after a preset written
+// for another standard has moved it.
+
+TEST_CASE("a composite-sync scaling RGBHV source coasts on its own window")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    SyncProcessor::applyForScalingRgbhv(true);
+
+    CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x80);
+    CHECK(SyncProcessor::SP_H_PROTECT::read() == 1);
+}
+
+TEST_CASE("that window is NARROWER than the default and does not substitute")
+{
+    // 0x80 against applyDefaultCoastWindow()'s 0x100. The two look alike and
+    // are not the same operation: swapping one for the other moves where the
+    // sync processor stops coasting by half a window.
+    Wire.reset();
+    SyncProcessor::applyForScalingRgbhv(true);
+    const uint32_t scaling = SyncProcessor::SP_H_CST_SP::read();
+
+    Wire.reset();
+    SyncProcessor::applyDefaultCoastWindow();
+
+    CHECK(scaling != SyncProcessor::SP_H_CST_SP::read());
+}
+
+TEST_CASE("a separate-sync scaling RGBHV source runs uncoasted and clamps by hand")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    SyncProcessor::applyForScalingRgbhv(false);
+
+    CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
+    CHECK(SyncProcessor::SP_CLAMP_MANUAL::read() == 1);
+    CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1);
+}
+
+TEST_CASE("the separate-sync arm leaves the coast window where it was")
+{
+    Wire.reset();
+
+    SyncProcessor::applyForScalingRgbhv(false);
+
+    CHECK_FALSE(Wire.touched[0x05][0x4D]);
+    CHECK_FALSE(Wire.touched[0x05][0x4F]);
+}

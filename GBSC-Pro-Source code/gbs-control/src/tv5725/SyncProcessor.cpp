@@ -253,6 +253,20 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
     return true;
 }
 
+void SyncProcessor::applyForScalingRgbhv(bool csync)
+{
+    if (csync) {
+        SP_SOG_MODE::write(1);
+        SP_H_CST_ST::write(0x10);
+        SP_H_CST_SP::write(ScalingRgbhvCoastStop);
+        setHsyncOverflowProtect(true);
+    } else {
+        SP_SOG_MODE::write(0);
+        SP_CLAMP_MANUAL::write(1);
+        SP_NO_COAST_REG::write(1);
+    }
+}
+
 void SyncProcessor::applySeparationThresholds(bool csync)
 {
     if (csync) {
