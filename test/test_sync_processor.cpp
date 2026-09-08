@@ -724,3 +724,40 @@ TEST_CASE("the search forgets where the windows were placed")
     CHECK_FALSE(SyncProcessor::coastPlaced());
     CHECK_FALSE(SyncProcessor::clampPlaced());
 }
+
+TEST_CASE("the scaling RGBHV path takes the retiming module's auto polarity")
+{
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        SyncProcessor::applyForScalingRgbhv(i == 0);
+
+        CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 1);
+    }
+}
+
+TEST_CASE("the scaling RGBHV path puts the SD vertical sync at the top of the frame")
+{
+    Wire.reset();
+    SyncProcessor::writeSdVsyncStart(301);
+    SyncProcessor::writeSdVsyncStop(299);
+
+    SyncProcessor::applyForScalingRgbhv(false);
+
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 2);
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
+    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 0);
+    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
+}
+
+TEST_CASE("a scaling RGBHV source is a new source, so neither window is placed")
+{
+    steadyLine(431);
+    SyncProcessor::forgetPositions();
+    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::coastPlaced());
+
+    SyncProcessor::applyForScalingRgbhv(false);
+
+    CHECK_FALSE(SyncProcessor::coastPlaced());
+    CHECK_FALSE(SyncProcessor::clampPlaced());
+}

@@ -336,9 +336,18 @@ public:
     // interchangeable -- there is a test pinning that they differ.
     static const uint16_t ScalingRgbhvCoastStop = 0x80;
 
+    // Where the SD vertical sync sits on the scaling RGBHV path: at the top of
+    // the frame, because the count the preset was written for is not this
+    // source's.
+    static const uint16_t ScalingRgbhvVsyncStart = 2;
+    static const uint16_t ScalingRgbhvVsyncStop = 0;
+
     // Put the sync path back for a scaling RGBHV source, after a preset written
-    // for another standard has moved it. A separate-sync source runs uncoasted
-    // and clamps by hand; a composite one coasts on the window above.
+    // for another standard has moved it: the retiming module's auto polarity,
+    // the SD vertical sync, and the sync path itself. A separate-sync source
+    // runs uncoasted and clamps by hand; a composite one coasts on the window
+    // above. Both windows are forgotten, because the preset was chosen for a
+    // count this source does not have.
     //
     // The separate-sync arm deliberately leaves the coast window alone, so this
     // is not the whole of what the RGBHV block does before a preset load -- that

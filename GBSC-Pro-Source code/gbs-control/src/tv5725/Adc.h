@@ -318,6 +318,13 @@ public:
     // Returns the oversampling installed, and 0 when there is no band to apply.
     static uint8_t applyPllBand();
 
+    // The charge pump the scaling path runs on, which is lower than the band
+    // steer's. The read is the guard rather than a decision: only the band
+    // raises it, and rewriting a value already in force costs a latch, which
+    // takes the PLL out of lock for nothing. A write is followed by the PLL's
+    // settling time, so no caller has to remember one.
+    static void applyScalingChargePump();
+
     // The analog gain and offset, a triple at a time. Six registers that no
     // class owned: every caller wrote them one by one, and "put the stored
     // calibration back" was spelled out at five sites.

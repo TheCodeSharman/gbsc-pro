@@ -317,6 +317,11 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
 
 void SyncProcessor::applyForScalingRgbhv(bool csync)
 {
+    SP_SOG_P_ATO::write(1);
+    writeSdVsyncStart(ScalingRgbhvVsyncStart);
+    writeSdVsyncStop(ScalingRgbhvVsyncStop);
+    forgetPositions();
+
     if (csync) {
         SP_SOG_MODE::write(1);
         SP_H_CST_ST::write(0x10);

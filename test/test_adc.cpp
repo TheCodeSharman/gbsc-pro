@@ -566,3 +566,26 @@ TEST_CASE("a band nothing has measured writes nothing")
 
     CHECK(Wire.trace.empty());
 }
+
+TEST_CASE("the scaling path brings the charge pump down off the band's")
+{
+    Wire.reset();
+    Adc::PLLAD_ICP::write(6);
+
+    Adc::applyScalingChargePump();
+
+    CHECK(Adc::PLLAD_ICP::read() == 5);
+    CHECK(lastWriteOf<Adc::PLLAD_ICP>() < lastLatchRisingEdge());
+}
+
+TEST_CASE("a charge pump already below the band's is not relatched")
+{
+    Wire.reset();
+    Adc::PLLAD_ICP::write(4);
+    const size_t before = Wire.trace.size();
+
+    Adc::applyScalingChargePump();
+
+    CHECK(Adc::PLLAD_ICP::read() == 4);
+    CHECK(Wire.trace.size() == before);
+}

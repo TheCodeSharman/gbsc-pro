@@ -24,6 +24,10 @@ const PllBand PllBands[] = {
 
 const uint8_t PllBandCount = sizeof(PllBands) / sizeof(PllBands[0]);
 const uint8_t PllChargePump = 6;
+const uint8_t ScalingChargePump = 5;
+
+// How long the PLL is given to settle after the charge pump moves under it.
+const unsigned int ChargePumpSettleMs = 40;
 
 // The oversampling the band steer asks for. Whatever the post divider cannot
 // carry comes back reduced.
@@ -244,6 +248,16 @@ uint8_t Adc::applyPllBand()
     const uint8_t ratio = applyOversample(postDivider, PllBandOversample);
     latch();
     return ratio;
+}
+
+void Adc::applyScalingChargePump()
+{
+    if (PLLAD_ICP::read() < PllChargePump)
+        return;
+
+    PLLAD_ICP::write(ScalingChargePump);
+    latch();
+    delay(ChargePumpSettleMs);
 }
 
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,

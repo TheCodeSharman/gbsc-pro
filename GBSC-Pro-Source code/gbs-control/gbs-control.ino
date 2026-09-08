@@ -4170,6 +4170,43 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
     hdBypassLastMeasure = millis();
 }
 
+// Load the preset a scaling RGBHV source of this standard wants, and put back
+// what the preset does not know it is running under: the option bit, the line
+// counter's start, the ADC's charge pump and the sync path.
+//
+// The standard reaches applyPresets() as a byte and is set straight back to the
+// scaling-RGBHV marker afterwards, which is one number carrying two facts and
+// what step 12 removes. docs/retiring-mode-detect.md
+static void loadScalingRgbhvPreset(uint8_t standard)
+{
+    rto->videoStandardInput = standard;
+    applyPresets(standard);
+
+    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
+    Tv5725::InputFormatter::writeLineCounterStart(16);
+    rto->videoStandardInput = 14;
+
+    Tv5725::Adc::applyScalingChargePump();
+    updateSpDynamic(1);
+    Tv5725::SyncProcessor::applyForScalingRgbhv(Tv5725::SyncType::isCsync());
+    delay(300);
+
+    if (!rto->extClockGenDetected)
+        return;
+
+    if (!rto->outModeHdBypass
+        && GBS::PLL648_CONTROL_01::read() != 0x35
+        && GBS::PLL648_CONTROL_01::read() != 0x75) {
+        rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
+        clockGen.enable();
+        ESP.wdtFeed();
+        delayMicroseconds(800);
+        GBS::PLL648_CONTROL_01::write(0x75);
+    }
+
+    externalClockGenSyncInOutRate();
+}
+
 void runSyncWatcher() // 
 {
     // Frozen: docs/gbs-control-debug-interface.md
@@ -4594,52 +4631,14 @@ void runSyncWatcher() //
                     Serial.printf("sourceRate: ");
                     Serial.println(sourceRate);
 
-                    rto->videoStandardInput =
+                    const uint8_t standard =
                         Tv5725::PresetLoad::rgbhvStandardFor(sourceLines, sourceRate);
-                
+
                     if (uopt->presetPreference == 10)
                         uopt->presetPreference = Output1080P;
 
                     activePresetLineCount = sourceLines;
-                    applyPresets(rto->videoStandardInput);
-
-                    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                    Tv5725::InputFormatter::writeLineCounterStart(16);
-                    GBS::SP_SOG_P_ATO::write(1);
-
-                    Tv5725::SyncProcessor::writeSdVsyncStart(2);
-                    Tv5725::SyncProcessor::writeSdVsyncStop(0);
-
-                    Tv5725::SyncProcessor::forgetPositions();
-                    rto->videoStandardInput = 14;
-
-                    if (GBS::PLLAD_ICP::read() >= 6) {
-                        GBS::PLLAD_ICP::write(5);
-                        latchPLLAD();
-                        delay(40);
-                    }
-
-                    updateSpDynamic(1);
-                    Tv5725::SyncProcessor::applyForScalingRgbhv(
-                        Tv5725::SyncType::isCsync());
-                    delay(300);
-
-                    if (rto->extClockGenDetected) {
-
-                        if (!rto->outModeHdBypass) {
-                            if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-
-                                rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-
-                                clockGen.enable();
-                                ESP.wdtFeed();
-                                delayMicroseconds(800);
-                                GBS::PLL648_CONTROL_01::write(0x75);
-                            }
-                        }
-
-                        externalClockGenSyncInOutRate();
-                    }
+                    loadScalingRgbhvPreset(standard);
                 }
             }
 
@@ -4660,45 +4659,7 @@ void runSyncWatcher() //
                         }
 
                         activePresetLineCount = sourceLines;
-                        rto->videoStandardInput = wantedStandard;
-                        applyPresets(rto->videoStandardInput);
-
-                        GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                        Tv5725::InputFormatter::writeLineCounterStart(16);
-                        GBS::SP_SOG_P_ATO::write(1);
-
-                        Tv5725::SyncProcessor::writeSdVsyncStart(2);
-                        Tv5725::SyncProcessor::writeSdVsyncStop(0);
-
-                        Tv5725::SyncProcessor::forgetPositions();
-                        rto->videoStandardInput = 14;
-
-                        if (GBS::PLLAD_ICP::read() >= 6) {
-                            GBS::PLLAD_ICP::write(5);
-                            latchPLLAD();
-                        }
-
-                        updateSpDynamic(1);
-                        Tv5725::SyncProcessor::applyForScalingRgbhv(
-                            Tv5725::SyncType::isCsync());
-                        delay(300);
-
-                        if (rto->extClockGenDetected) {
-
-                            if (!rto->outModeHdBypass) {
-                                if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-
-                                    rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-
-                                    clockGen.enable();
-                                    ESP.wdtFeed();
-                                    delayMicroseconds(800);
-                                    GBS::PLL648_CONTROL_01::write(0x75);
-                                }
-                            }
-
-                            externalClockGenSyncInOutRate();
-                        }
+                        loadScalingRgbhvPreset(wantedStandard);
                     }
                 }
             }
