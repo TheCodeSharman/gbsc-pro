@@ -106,7 +106,10 @@ returns the old values while setting the new.
 **What that would buy, and it is now the only way to get it.** No register on
 this board has been shown to establish interlace: the dedicated status bits call
 the RISC PC's 311-line progressive mode PAL interlace, bit-identical to the Wii's
-real 576i, and `VPERIOD_IF` counts half-lines so the two read 623 against 624.
+real 576i, and `VPERIOD_IF` counts half-lines so the two read 623 against 624
+**with the RISC PC on composite sync**. On separate sync it reads debris and
+`STATUS_IF_VT_OK` 0 -- the measurement needs the sync separator in the path, so
+a reading taken on `SYNC 0` is not a contradiction of the 623.
 `docs/investigations/vperiod-if-on-rgbhv.md`.
 
 Two readings survive that, and **the two existing sources cannot separate them**,

@@ -179,6 +179,33 @@ so far needed.
 `INTERLACE_PROGRESSIVE_RECOGNIZE` at s0_04[7:6] is a second name for those same
 two bits, which the one-name-per-field rule forbids.
 
+## It survives every failure the sync processor has
+
+Where `VPERIOD_IF` is live it is not merely a second opinion, it is unmoved by
+what breaks the first one. Measured on the Wii while the sync processor was in
+each of its failure modes, `VPERIOD_IF` read **624 with `STATUS_IF_VT_OK` 1 in
+every sample**:
+
+| `STATUS_SYNC_PROC_VTOTAL` | `Geometry::sourceState()` | `VPERIOD_IF` |
+|---|---|---|
+| 310, correct | `acquired` | 624 |
+| 254 / 160 / 149 / 230, wandering | `absent` | 624 |
+| 97, the no-lock value, held 40 s | `absent` | 624 |
+
+So a source the engine calls absent is being measured correctly and continuously
+by the input formatter, with a validity flag saying so. That is the witness the
+coast lengths lack: `SP_PRE_COAST`/`SP_POST_COAST` corrupt the sync processor's
+count and cannot reach this one, so the pair can in principle be steered to make
+the two agree rather than held as a constant.
+`two-owners-of-the-coast-lengths-double-the-count.md`.
+
+**What is not established** is the arithmetic tying them together. The counts are
+in different units -- `VPERIOD_IF` in half-lines of the frame, the sync processor
+in lines of the field -- and the one comparison that would pin the relation, a
+coast parked long enough to force the doubled count while both are read, cannot
+be taken any more: with one owner a hand-written pair is overwritten within
+1.5 s. Forcing it needs the engine held off, not a register write.
+
 ## What this costs the geometry engine
 
 `VPERIOD_IF` measures the FRAME while `STATUS_SYNC_PROC_VTOTAL` measures the
