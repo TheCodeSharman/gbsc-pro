@@ -3655,27 +3655,13 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         Tv5725::SyncProcessor::setCoastInvert(false);
     }
 
-    if (rto->videoStandardInput != 0) {
-        if (rto->videoStandardInput <= 2) {
-            Tv5725::SyncProcessor::applyPulseWidthDifference();
-            GBS::SP_H_TIMER_VAL::write(0x28);
-
-            Tv5725::SyncProcessor::applyPulseIgnore(
-                Tv5725::SyncType::isCsync(), sourceHasSerratedSync());
-        } else if (rto->videoStandardInput <= 4) {
-            Tv5725::SyncProcessor::applyPulseWidthDifference();
-            Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(), false);
-        } else if (rto->videoStandardInput == 5) {
-            Tv5725::SyncProcessor::applyPulseWidthDifference();
-            Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(), false);
-        } else if (rto->videoStandardInput <= 7) {
-            Tv5725::SyncProcessor::applyPulseWidthDifference();
-
-            Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(), false);
-        } else if (rto->videoStandardInput >= 13) {
-            Tv5725::SyncProcessor::applySeparationThresholds(
-                Tv5725::SyncType::isCsync());
-        }
+    if (rto->videoStandardInput >= 13) {
+        Tv5725::SyncProcessor::applySeparationThresholds(
+            Tv5725::SyncType::isCsync());
+    } else if (rto->videoStandardInput != 0) {
+        Tv5725::SyncProcessor::applyPulseWidthDifference();
+        Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(),
+                                                sourceHasSerratedSync());
     }
 }
 
