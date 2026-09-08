@@ -4243,20 +4243,15 @@ void runSyncWatcher() //
             Tv5725::SyncProcessor::applyDefaultCoastWindow();
             if (sourceHasSerratedSync())
                 Tv5725::SyncProcessor::widenCoastForSerration();
-                Tv5725::SyncProcessor::forgetPositions();
+            Tv5725::SyncProcessor::forgetPositions();
         }
 
         if (rto->noSyncCounter % 27 == 0) {
-
             updateSpDynamic(1);
         }
 
-        if (rto->noSyncCounter % 32 == 0) {
-            if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-                Tv5725::FrameBuffer::releaseCapture();
-            } else {
-                // freezeVideo();
-            }
+        if (rto->noSyncCounter % 32 == 0 && GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
+            Tv5725::FrameBuffer::releaseCapture();
         }
 
         if (rto->inputIsYpBpR && (rto->noSyncCounter == 34) && Info_sate == 0) //&& SeleInputSource == S_YUV )
