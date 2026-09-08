@@ -482,8 +482,8 @@ TEST_CASE("a composite source is coasted over its vertical interval")
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
-    CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);
-    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x02);
+    CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x0e);
 }
 
 // Putting the sync path back for a scaling RGBHV source, after a preset written
@@ -571,4 +571,38 @@ TEST_CASE("the pulse-width difference threshold clears the measured floor")
     SyncProcessor::applyPulseWidthDifference();
 
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
+}
+
+// How short a horizontal pulse must be to be ignored. Three states, each
+// measured, and no two of them interchangeable: the value that reads a serrated
+// source stops a high-rate one locking at all.
+// docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+
+TEST_CASE("a source with its own vertical sync ignores every pulse")
+{
+    Wire.reset();
+    SyncProcessor::applyPulseIgnore(false, false);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0xff);
+}
+
+TEST_CASE("a serrated source needs the threshold above its equalisation pulses")
+{
+    // Measured on PAL 576i: 0x6B reads the source's 310 lines and every
+    // smaller value tried reads 314 to 316, steadily and wrongly.
+    Wire.reset();
+    SyncProcessor::applyPulseIgnore(true, true);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+}
+
+TEST_CASE("a composite source without serrations needs a narrow threshold")
+{
+    // Measured at 40 kHz on composite sync: 0x02, 0x06 and 0x0E all read the
+    // source, and 0x33 upwards does not lock at all. The serrated value is
+    // among those that do not.
+    Wire.reset();
+    SyncProcessor::applyPulseIgnore(true, false);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x0e);
 }

@@ -1692,11 +1692,8 @@ void prepareSyncProcessor()
 
     Tv5725::SyncProcessor::applyPulseWidthDifference();
 
-    if (sourceHasSerratedSync()) {
-        GBS::SP_H_PULSE_IGNOR::write(0x6b);
-    } else {
-        GBS::SP_H_PULSE_IGNOR::write(0x02);
-    }
+    Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(),
+                                            sourceHasSerratedSync());
 
     GBS::SP_H_TOTAL_EQ_THD::write(3);
 
@@ -3663,72 +3660,18 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
             Tv5725::SyncProcessor::applyPulseWidthDifference();
             GBS::SP_H_TIMER_VAL::write(0x28);
 
-            if (Tv5725::SyncType::isCsync()) {
-                uint16_t hPeriod = GBS::HPERIOD_IF::read();
-                for (int i = 0; i < 16; i++) {
-                    if (hPeriod == 511 || hPeriod < 200) {
-                        hPeriod = GBS::HPERIOD_IF::read();
-                        if (i == 15) {
-                            hPeriod = 300;
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                    ESP.wdtFeed();
-                    delayMicroseconds(100);
-                }
-
-                uint16_t ignoreLength = hPeriod * 0.081f;
-                if (hPeriod <= 200) {
-                    ignoreLength = 0x18;
-                }
-
-                double ratioHs, ratioHsAverage = 0.0;
-                uint8_t testOk = 0;
-                for (int i = 0; i < 30; i++) {
-                    ratioHs = (double)GBS::STATUS_SYNC_PROC_HLOW_LEN::read() / (double)(GBS::STATUS_SYNC_PROC_HTOTAL::read() + 1);
-                    if (ratioHs > 0.041 && ratioHs < 0.152) {
-                        testOk++;
-                        ratioHsAverage += ratioHs;
-                        if (testOk == 12) {
-                            ratioHs = ratioHsAverage / testOk;
-                            break;
-                        }
-                        ESP.wdtFeed();
-                        delayMicroseconds(30);
-                    }
-                }
-                if (testOk != 12) {
-                    ratioHs = 0.032;
-                }
-
-                uint16_t pllDiv = GBS::PLLAD_MD::read();
-                ignoreLength = ignoreLength + (pllDiv * (ratioHs * 0.38));
-
-                if (ignoreLength > GBS::SP_H_PULSE_IGNOR::read() || GBS::SP_H_PULSE_IGNOR::read() >= 0x90) {
-                    if (ignoreLength > 0x90) {
-                        ignoreLength = 0x90;
-                    }
-                    if (ignoreLength >= 0x1A && ignoreLength <= 0x42) {
-                        ignoreLength = 0x1A;
-                    }
-                    if (ignoreLength != GBS::SP_H_PULSE_IGNOR::read()) {
-                        GBS::SP_H_PULSE_IGNOR::write(ignoreLength);
-                        rto->coastPositionIsSet = 0; // coast position setting
-                    }
-                }
-            }
+            Tv5725::SyncProcessor::applyPulseIgnore(
+                Tv5725::SyncType::isCsync(), sourceHasSerratedSync());
         } else if (rto->videoStandardInput <= 4) {
             Tv5725::SyncProcessor::applyPulseWidthDifference();
-            GBS::SP_H_PULSE_IGNOR::write(0x0E);
+            Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(), false);
         } else if (rto->videoStandardInput == 5) {
             Tv5725::SyncProcessor::applyPulseWidthDifference();
-            GBS::SP_H_PULSE_IGNOR::write(0x08);
+            Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(), false);
         } else if (rto->videoStandardInput <= 7) {
             Tv5725::SyncProcessor::applyPulseWidthDifference();
 
-            GBS::SP_H_PULSE_IGNOR::write(0x06);
+            Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncType::isCsync(), false);
         } else if (rto->videoStandardInput >= 13) {
             Tv5725::SyncProcessor::applySeparationThresholds(
                 Tv5725::SyncType::isCsync());

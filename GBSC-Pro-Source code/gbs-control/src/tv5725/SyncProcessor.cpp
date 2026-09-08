@@ -20,6 +20,9 @@ const unsigned int ResetHoldUs = 10;
 
 const uint8_t SerratedCoastLines = 9;
 const uint16_t PulseWidthDifference = 0xC0;
+const uint8_t OwnVsyncPulseIgnore = 0xff;
+const uint8_t SerratedPulseIgnore = 0x6b;
+const uint8_t UnserratedPulseIgnore = 0x02;
 const uint8_t WidestUsefulPulseIgnore = 0x33;
 
 }  // namespace
@@ -62,6 +65,15 @@ void SyncProcessor::reset()
     Chip::SFTRST_SYNC_RSTZ::write(0);
     delayMicroseconds(ResetHoldUs);
     Chip::SFTRST_SYNC_RSTZ::write(1);
+}
+
+void SyncProcessor::applyPulseIgnore(bool csync, bool serrated)
+{
+    if (!csync)
+        SP_H_PULSE_IGNOR::write(OwnVsyncPulseIgnore);
+    else
+        SP_H_PULSE_IGNOR::write(serrated ? SerratedPulseIgnore
+                                         : UnserratedPulseIgnore);
 }
 
 void SyncProcessor::applyPulseWidthDifference()
@@ -113,7 +125,7 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_NO_COAST_REG::write(1);
         SP_PRE_COAST::write(0);
         SP_POST_COAST::write(0);
-        SP_H_PULSE_IGNOR::write(0xff);
+        applyPulseIgnore(csync, false);
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);
@@ -283,12 +295,12 @@ void SyncProcessor::applySeparationThresholds(bool csync)
     if (csync) {
         SP_PRE_COAST::write(SerratedPreCoastLines);
         SP_POST_COAST::write(SerratedPostCoastLines);
-        SP_DLT_REG::write(0x70);
-        SP_H_PULSE_IGNOR::write(0x02);
+        applyPulseWidthDifference();
+        applyPulseIgnore(true, false);
     } else {
         SP_PRE_COAST::write(0x00);
         SP_POST_COAST::write(0x00);
-        SP_H_PULSE_IGNOR::write(0xff);
+        applyPulseIgnore(false, false);
         SP_DLT_REG::write(0x00);
     }
 }

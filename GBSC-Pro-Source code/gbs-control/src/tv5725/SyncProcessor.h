@@ -260,6 +260,17 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyPulseWidthDifference();
 
+    // How short a horizontal pulse must be to be ignored. Three states, each
+    // measured, and no two interchangeable -- the value that reads a serrated
+    // source stops a high-rate one locking at all, and the one that reads a
+    // high-rate source counts a serrated one's equalisation pulses as lines.
+    //
+    // `serrated` is the source, not the sync type: a composite-sync source at
+    // 40 kHz carries no vertical interval to coast over and wants the narrow
+    // threshold, the same as it would on separate sync.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    static void applyPulseIgnore(bool csync, bool serrated);
+
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.
