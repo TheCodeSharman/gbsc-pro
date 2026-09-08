@@ -202,7 +202,20 @@ of what the machine emits, because the ADV chain regenerates it.
   testing composite tests all of it but that register.
 - **Composite and component at the same time.** One Wii, one cable, so the
   interlaced-component and the decoder-chain cases cannot both be live.
-- **HD component**, the standards 5, 6 and 7 branch, has no source.
+- **HD component**, the standards 5, 6 and 7 branch, has no source, and getting
+  one is not worth doing. Reaching those classifications needs the source off
+  `vga` -- `getVideoMode()` opens with `sourceIsRgbhv()` and returns the held
+  byte, so no timing produces a standard from 3 to 7 on that input -- which
+  means a cable to the RGBs port and a bench trip. The branches it would reach
+  are deleted by step 12 of `retiring-the-sync-watcher.md`.
+
+  **What is worth having is a higher LINE RATE, and that needs neither.** The
+  RISC PC reaches 40.7 kHz at 800x600@60, which is what established that a
+  composite-sync source at that rate wants the narrow pulse-ignore and does not
+  lock above 0x33 -- `investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.
+  720p is 45 kHz, so a monitor definition reaches it with no new cable and no
+  change of input. VIDC20 cannot do 1080i through an MDF, which has no interlace
+  key.
 
 ## `IF_PRGRSV_CNTRL` is separable with what is already here
 
