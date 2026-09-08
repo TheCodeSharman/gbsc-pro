@@ -74,7 +74,17 @@ why one number reaching two subsystems means two owners.
 | PAL against NTSC | output, chosen, optional | `matchPresetSource` rate matching |
 
 `sourceIsRgbhv()`, `scalingRgbhv()` and `rgbhvBypass()` read the byte for the
-third row, so they are questions about the output, not the source.
+third row, so they LOOK like questions about the output.
+
+**`sourceIsRgbhv()` is not, and defining it over the output is circular.** It
+also answers *is this source RGBHV at all*, which detection establishes before
+any output has been chosen and which gates the block that sets
+`rto->isValidForScalingRGBHV` -- the input to the flag the output half would be
+read from. Rebased that way the bench source is classified as PAL SD within a
+minute, with a picture that still looks right.
+`docs/investigations/the-rgbhv-question-is-two-questions.md`.
+
+So the input half needs a home of its own BEFORE the byte can stop carrying 14.
 
 `PresetLoad::ScalingRgbhvStandard` is the sharpest case: it exists only to make a
 source take another standard's branch for its side effects.
@@ -287,6 +297,27 @@ questions with picture consequences rather than derivations**:
 Neither should be invented. `docs/capture-limits.md` covers the trade `PLLAD_MD`
 makes between sampling density and reaching the end of the line, and the picture
 is the instrument for both.
+
+### 3b. `applyPresets()` is an output selection wearing a preset's name
+
+There are no preset tables. What the function does now is dispatch on the
+standard byte to one of three outcomes -- compute an output and load it, name an
+HD standard and return, or switch to RGBHV bypass -- and every one of those is a
+statement about the OUTPUT. The byte is only how the caller says which.
+
+    result 1,2,3,4,8,9,14   outputChoiceFor(result) -> loadComputedPreset()
+    result 5,6,7,13         hold the standard, setOutModeHdBypass(false)
+    result 15               bypassModeSwitch_RGBHV()
+
+`OutputChoice` already carries the first row's answer and `OutputMode::isBypass()`
+already names the sentinel the engine holds for the other two, so the dispatch
+is a third spelling of a fact those two classes own. What the rows do not share
+is WHICH bypass -- HD or RGBHV -- and that is the piece neither class holds.
+
+So this function is not renamed, it is dissolved: once the caller passes an
+output rather than a standard, the first row is `loadComputedPreset()` alone and
+the other two are the bypass switches called directly. It goes with the byte
+rather than before it, because the dispatch is the byte's last real reader.
 
 ### 4. Delete `SourceMeasurement::adopt()`
 
