@@ -215,3 +215,31 @@ Being dead on separate sync means it supplies nothing at all there. Combined wit
 the status bits above, **no register on this board establishes interlace**.
 `docs/retiring-mode-detect.md`.
 
+## What the deinterlacer does with it, and why that still works
+
+`VPERIOD_IF` counts half lines, so an interlaced source's alternating fields
+make it EVEN near a broadcast total and a progressive one ODD.
+`Tv5725::Deinterlacer::periodIsInterlaced()` and `periodIsProgressive()` are
+that parity test, and the motion-adaptive path runs off nothing else.
+
+**It is gated on `STATUS_IF_VT_OK`, which is what keeps the debris out.**
+Measured on the two bench sources:
+
+| source | `VPERIOD_IF` | `STATUS_IF_VT_OK` |
+|---|---|---|
+| RISC PC on `vga`, RGBHV, progressive | 0, 57, 99, 112 across runs | 0 |
+| Wii on `ypbpr`, PAL 576i | 624, every sample | 1 |
+
+So the bit separates the two sources exactly, and the deinterlacer never sees a
+period from the RGBHV path at all.
+
+**The two answers are not each other's negation.** A period near neither total
+says nothing, and the progressive totals are not the interlaced ones: NTSC's
+sits one BELOW its interlaced total and PAL's one ABOVE. A caller that treats
+"not interlaced" as "progressive" acts on debris.
+
+**What this does NOT settle is whether the parity could identify interlace in
+general.** It answers only for a source whose vertical measurement completes,
+and on this bench that is one source with one scan mode. An RGBHV source never
+reaches it, so the progressive half of the test has no source here that
+exercises it.
