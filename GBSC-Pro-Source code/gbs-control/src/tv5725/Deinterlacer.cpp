@@ -7,6 +7,12 @@
 
 namespace Tv5725 {
 
+namespace {
+
+bool scanlinesApplied_ = false;
+
+}  // namespace
+
 void Deinterlacer::init()
 {
     DIAG_BOB_MIN_BYPS::write(1);                      // s2_00[0:0]
@@ -132,8 +138,31 @@ void Deinterlacer::init()
 }
 
 
+bool Deinterlacer::scanlinesApplied()
+{
+    return scanlinesApplied_;
+}
+
+void Deinterlacer::forgetScanlines()
+{
+    scanlinesApplied_ = false;
+}
+
+void Deinterlacer::applyScanlineStrength(uint8_t strength)
+{
+    if (!scanlinesApplied_)
+        return;
+
+    MADPT_Y_MI_OFFSET::write(strength);
+    MADPT_UV_MI_OFFSET::write(strength);
+}
+
 void Deinterlacer::enableScanlines(uint8_t strength)
 {
+    if (scanlinesApplied_)
+        return;
+    scanlinesApplied_ = true;
+
     MADPT_UVDLY_PD_SP::write(0);
     MADPT_UVDLY_PD_ST::write(0);
     MADPT_EN_UV_DEINT::write(1);
@@ -157,6 +186,10 @@ void Deinterlacer::enableScanlines(uint8_t strength)
 
 void Deinterlacer::disableScanlines()
 {
+    if (!scanlinesApplied_)
+        return;
+    scanlinesApplied_ = false;
+
     MAPDT_VT_SEL_PRGV::write(1);
 
     MADPT_UVDLY_PD_SP::write(4);

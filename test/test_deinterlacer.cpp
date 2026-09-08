@@ -124,6 +124,7 @@ TEST_CASE("scanlines drop alternate lines at the strength asked for")
 {
     Wire.reset();
     Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
 
     Deinterlacer::enableScanlines(0x30);
 
@@ -140,6 +141,7 @@ TEST_CASE("scanlines take the deinterlacer RAM out of bypass")
     // colour while every register still reads correct.
     Wire.reset();
     Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
 
     Deinterlacer::enableScanlines(0x30);
 
@@ -154,6 +156,7 @@ TEST_CASE("scanlines reach the two registers outside this block")
     // processor's white level expansion carries the brightening.
     Wire.reset();
     Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
 
     Deinterlacer::enableScanlines(0x30);
 
@@ -166,6 +169,9 @@ TEST_CASE("scanlines reach the two registers outside this block")
 TEST_CASE("turning scanlines off puts every bypass back")
 {
     Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x30);
     Wire.poison(Poison);
 
     Deinterlacer::disableScanlines();
@@ -267,4 +273,94 @@ TEST_CASE("turning the motion-adaptive path off stops both fifos")
     CHECK(FrameBuffer::RFF_FETCH_NUM::read() == 1);
     CHECK(FrameBuffer::WFF_FF_STA_INV::read() == 1);
     CHECK(Deinterlacer::MADPT_Y_MI_DET_BYPS::read() == 1);
+}
+
+// Whether the scanline stages are in force. State rather than a register: the
+// chip has no bit for it, and the firmware kept one in an undocumented register
+// that a preset load cleared behind the RAM copy's back.
+
+TEST_CASE("nothing is applied until the scanlines are switched on")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("switching the scanlines on records that they are applied")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+
+    Deinterlacer::enableScanlines(0x40);
+
+    CHECK(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("switching them off again records that they are not")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+
+    Deinterlacer::disableScanlines();
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("switching on what is already on writes nothing")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+    const size_t applied = Wire.trace.size();
+
+    Deinterlacer::enableScanlines(0x40);
+
+    CHECK(Wire.trace.size() == applied);
+}
+
+TEST_CASE("switching off what is already off writes nothing")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    const size_t before = Wire.trace.size();
+
+    Deinterlacer::disableScanlines();
+
+    CHECK(Wire.trace.size() == before);
+}
+
+TEST_CASE("a preset load rewrote the stages, so what was applied is forgotten")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+
+    Deinterlacer::forgetScanlines();
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the strength moves under scanlines that are in force")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+
+    Deinterlacer::applyScanlineStrength(0x20);
+
+    CHECK(Deinterlacer::MADPT_Y_MI_OFFSET::read() == 0x20);
+    CHECK(Deinterlacer::MADPT_UV_MI_OFFSET::read() == 0x20);
+}
+
+TEST_CASE("the strength is not written when no scanlines are in force")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    const size_t before = Wire.trace.size();
+
+    Deinterlacer::applyScanlineStrength(0x20);
+
+    CHECK(Wire.trace.size() == before);
 }

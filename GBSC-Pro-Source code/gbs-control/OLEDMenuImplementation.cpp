@@ -9,6 +9,7 @@
 #include "src/WebSocketsServer.h"
 #include "fonts.h"
 #include "src/tv5725/Adc.h"
+#include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SyncProcessor.h"
 #include "src/tv5725/SyncType.h"
 #include <stdio.h>
@@ -534,7 +535,7 @@ static void LoadDefault()
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; // 运动自适应隔行扫描
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
-    rto->scanlinesEnabled = false;                // 扫描线启用
+    Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    // 板有电源
     rto->presetIsPalForce60 = false;              // 预设为 PalForce60
     Tv5725::SyncType::set(false);                   // 同步类型

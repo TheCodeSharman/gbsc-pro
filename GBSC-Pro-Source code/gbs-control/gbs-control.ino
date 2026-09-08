@@ -658,7 +658,7 @@ static void LoadDefault()
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
-    rto->scanlinesEnabled = false;                
+    Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    
     rto->presetIsPalForce60 = false;              
     Tv5725::SyncType::set(false);                   
@@ -1298,11 +1298,8 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
   rto->outputChoice = choice;
   rto->presetID = presetId;
 
-  // Nothing reads this any more. It is cleared because a unit upgraded from a
-  // firmware that had custom presets can have it set on the chip, and a
-  // register dump showing "custom" with no such thing in the build reads as a
-  // fault.
-  GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
+  // The load rewrites the scanline stages, so whatever was applied is gone.
+  Tv5725::Deinterlacer::forgetScanlines();
   GBS::GBS_OPTION_SCALING_RGBHV::write(0);
 
   FrameSync::cleanup();
@@ -1362,7 +1359,7 @@ void setResetParameters_re()
     rto->failRetryAttempts = 0;      
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->scanlinesEnabled = false;                
+    Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::SyncType::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
@@ -1399,7 +1396,7 @@ void setResetParameters()
     rto->failRetryAttempts = 0;     
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->scanlinesEnabled = false;                
+    Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::SyncType::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
@@ -2993,7 +2990,7 @@ void doPostPresetLoadSteps()
         rto->continousStableCounter = 0;              
         rto->noSyncCounter = 0;                       
         rto->motionAdaptiveDeinterlaceActive = false; 
-        rto->scanlinesEnabled = false;                
+        Tv5725::Deinterlacer::forgetScanlines();
         rto->failRetryAttempts = 0;                   
         rto->videoIsFrozen = true;
         rto->sourceDisconnected = false;
@@ -3969,22 +3966,14 @@ void runAutoGain() //
     }
 }
 
-void enableScanlines() 
+void enableScanlines()
 {
-    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 0) {
-        Tv5725::Deinterlacer::enableScanlines(uopt->scanlineStrength);
-        GBS::GBS_OPTION_SCANLINES_ENABLED::write(1);
-    }
-    rto->scanlinesEnabled = 1;
+    Tv5725::Deinterlacer::enableScanlines(uopt->scanlineStrength);
 }
 
-void disableScanlines() //
+void disableScanlines()
 {
-    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-        Tv5725::Deinterlacer::disableScanlines();
-        GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
-    }
-    rto->scanlinesEnabled = 0;
+    Tv5725::Deinterlacer::disableScanlines();
 }
 
 void enableMotionAdaptDeinterlace() //
@@ -4521,9 +4510,7 @@ void runSyncWatcher() //
                         filteredLineCountMotionAdaptiveOff = 0;
                         if (filteredLineCountMotionAdaptiveOn >= 2) {
                             if (uopt->deintMode == 0 && !rto->motionAdaptiveDeinterlaceActive) {
-                                if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-                                    disableScanlines();
-                                }
+                                disableScanlines();
                                 enableMotionAdaptDeinterlace();
                                 if (timingAdjustDelay == 0) {
                                     timingAdjustDelay = 11;
@@ -4562,9 +4549,9 @@ void runSyncWatcher() //
                             FrameSync::reset(uopt->frameTimeLockMethod);
                             lastVsyncLock = millis();
                         }
-                        if (uopt->wantScanlines && !rto->scanlinesEnabled) {
+                        if (uopt->wantScanlines && !Tv5725::Deinterlacer::scanlinesApplied()) {
                             enableScanlines();
-                        } else if (!uopt->wantScanlines && rto->scanlinesEnabled) {
+                        } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
                             disableScanlines();
                         }
                     }
@@ -4585,9 +4572,9 @@ void runSyncWatcher() //
                 }
 
                 if (uopt->wantScanlines) {
-                    if (!rto->scanlinesEnabled && !rto->motionAdaptiveDeinterlaceActive && !preventScanlines) {
+                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !rto->motionAdaptiveDeinterlaceActive && !preventScanlines) {
                         enableScanlines();
-                    } else if (!uopt->wantScanlines && rto->scanlinesEnabled) {
+                    } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
                         disableScanlines();
                     }
                 }
@@ -4797,11 +4784,11 @@ void runSyncWatcher() //
             if (scalingRgbhv()) {
 
                 if (uopt->wantScanlines) {
-                    if (!rto->scanlinesEnabled && !rto->motionAdaptiveDeinterlaceActive) {
+                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !rto->motionAdaptiveDeinterlaceActive) {
                         if (GBS::IF_LD_RAM_BYPS::read() == 0) {
                             enableScanlines();
                         }
-                    } else if (!uopt->wantScanlines && rto->scanlinesEnabled) {
+                    } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
                         disableScanlines();
                     }
                 }
@@ -5317,7 +5304,7 @@ void setup()
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
-    rto->scanlinesEnabled = false;                
+    Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    
     rto->presetIsPalForce60 = false;
     Tv5725::SyncType::set(false);          
@@ -6260,9 +6247,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'd': {
 
-                    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-                        disableScanlines();
-                    }
+                    disableScanlines();
 
                     if (uopt->enableFrameTimeLock && FrameSync::getSyncLastCorrection() != 0) {
                         FrameSync::reset(uopt->frameTimeLockMethod);
@@ -6388,9 +6373,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'p':
                     if (!rto->motionAdaptiveDeinterlaceActive) {
-                        if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-                            disableScanlines();
-                        }
+                        disableScanlines();
                         enableMotionAdaptDeinterlace();
                     } else {
                         disableMotionAdaptDeinterlace();
@@ -6513,11 +6496,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         ok ? "accepted" : "refused and restored", GBS::PLLAD_MD::read());
                 } break;
                 case 'N': {
-                    if (rto->scanlinesEnabled) {
-                        rto->scanlinesEnabled = false; // 
+                    if (Tv5725::Deinterlacer::scanlinesApplied()) {
                         disableScanlines();
                     } else {
-                        rto->scanlinesEnabled = true;
                         enableScanlines();
                     }
                 } break;
@@ -7260,9 +7241,7 @@ void handleType2Command(char argument)
             if (uopt->deintMode != 1) {
                 uopt->deintMode = 1;
                 disableMotionAdaptDeinterlace();
-                if (GBS::GBS_OPTION_SCANLINES_ENABLED::read()) {
-                    disableScanlines();
-                }
+                disableScanlines();
                 saveUserPrefs();
             }; // SerialMprintln(F("Deinterlacer: Bob"));
             break;
@@ -7368,10 +7347,7 @@ void handleType2Command(char argument)
             } else {
                 uopt->scanlineStrength = 0x50;
             }
-            if (rto->scanlinesEnabled) {
-                GBS::MADPT_Y_MI_OFFSET::write(uopt->scanlineStrength);
-                GBS::MADPT_UV_MI_OFFSET::write(uopt->scanlineStrength);
-            }
+            Tv5725::Deinterlacer::applyScanlineStrength(uopt->scanlineStrength);
             saveUserPrefs();
             break;
         case 'W':
@@ -11275,9 +11251,7 @@ void OSD_selectOption()
                     if (uopt->deintMode != 1) {
                         uopt->deintMode = 1;
                         disableMotionAdaptDeinterlace();
-                        if (GBS::GBS_OPTION_SCANLINES_ENABLED::read()) {
-                            disableScanlines();
-                        }
+                        disableScanlines();
                         saveUserPrefs();
                     } else if (uopt->deintMode != 0) {
                         uopt->deintMode = 0;

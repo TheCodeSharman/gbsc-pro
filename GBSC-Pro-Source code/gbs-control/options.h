@@ -158,7 +158,6 @@ struct runTimeOptions
     bool videoIsFrozen;
     bool motionAdaptiveDeinterlaceActive;
     bool deinterlaceAutoEnabled;
-    bool scanlinesEnabled;
     bool boardHasPower;
     bool presetIsPalForce60;
     bool isValidForScalingRGBHV;

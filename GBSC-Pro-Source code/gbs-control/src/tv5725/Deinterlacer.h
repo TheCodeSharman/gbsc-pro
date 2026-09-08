@@ -488,8 +488,24 @@ public:
     // Turning it off does NOT clear RFF_YUV_DEINTERLACE. The motion-adaptive
     // path owns that value and clearing it here would take that path's setting
     // with it.
+    // Both are idempotent: applied twice, the second call writes nothing.
     static void enableScanlines(uint8_t strength);
     static void disableScanlines();
+
+    // Whether those stages are in force. State rather than a register: the chip
+    // has no bit for it, and a copy kept in an undocumented one was cleared by
+    // a preset load behind the second copy's back, so the two guards disagreed
+    // after every load.
+    static bool scanlinesApplied();
+
+    // A preset load rewrote these stages, so whatever was applied is gone. It
+    // writes nothing: the registers are already the load's.
+    static void forgetScanlines();
+
+    // Move the strength of the scanlines already in force, which is the only
+    // part of them a user control changes on its own. Nothing is written when
+    // none are applied.
+    static void applyScanlineStrength(uint8_t strength);
 
     // How long the buffer is given to fill before the deinterlacer is pointed
     // at it.
