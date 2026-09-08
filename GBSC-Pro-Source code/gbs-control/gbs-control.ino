@@ -3978,14 +3978,8 @@ void disableScanlines()
 
 void enableMotionAdaptDeinterlace() //
 {
-    // The coefficient upstream ships for the two SD standards and for nothing
-    // else. It goes with the standard byte at step 12 of
-    // docs/retiring-the-sync-watcher.md, once a measurement can name the source.
-    uint8_t verticalTap = Tv5725::Deinterlacer::KeepVerticalTap;
-    if (rto->videoStandardInput == 1)
-        verticalTap = 6;
-    else if (rto->videoStandardInput == 2)
-        verticalTap = 4;
+    const uint8_t verticalTap =
+        Tv5725::Deinterlacer::verticalTapFor(GBS::VPERIOD_IF::read());
 
     Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
                                             Tv5725::FrameBuffer::releaseCapture);
@@ -4479,7 +4473,7 @@ void runSyncWatcher() //
         }
 
         if (rto->continousStableCounter >= 3) {
-            if ((rto->videoStandardInput == 1 || rto->videoStandardInput == 2) &&
+            if (GBS::STATUS_IF_VT_OK::read() == 1 &&
                 !rto->outModeHdBypass && rto->noSyncCounter == 0) {
 
                 static uint8_t timingAdjustDelay = 0;
@@ -4504,8 +4498,7 @@ void runSyncWatcher() //
                         }
                     }
 
-                    if (VPERIOD_IF == 522 || VPERIOD_IF == 524 || VPERIOD_IF == 526 ||
-                        VPERIOD_IF == 622 || VPERIOD_IF == 624 || VPERIOD_IF == 626) {
+                    if (Tv5725::Deinterlacer::periodIsInterlaced(VPERIOD_IF)) {
                         filteredLineCountMotionAdaptiveOn++;
                         filteredLineCountMotionAdaptiveOff = 0;
                         if (filteredLineCountMotionAdaptiveOn >= 2) {
@@ -4522,8 +4515,7 @@ void runSyncWatcher() //
                             }
                             filteredLineCountMotionAdaptiveOn = 0;
                         }
-                    } else if (VPERIOD_IF == 521 || VPERIOD_IF == 523 || VPERIOD_IF == 525 ||
-                               VPERIOD_IF == 623 || VPERIOD_IF == 625 || VPERIOD_IF == 627) {
+                    } else if (Tv5725::Deinterlacer::periodIsProgressive(VPERIOD_IF)) {
                         filteredLineCountMotionAdaptiveOff++;
                         filteredLineCountMotionAdaptiveOn = 0;
                         if (filteredLineCountMotionAdaptiveOff >= 2) {

@@ -11,7 +11,50 @@ namespace {
 
 bool scanlinesApplied_ = false;
 
+// Where each answer's period sits, and how far either side of it still names
+// that period. The progressive totals are not the interlaced ones: NTSC's sits
+// one BELOW its interlaced total and PAL's one ABOVE, which is measured rather
+// than symmetric.
+const uint16_t InterlacedNtscPeriod = 524;
+const uint16_t InterlacedPalPeriod = 624;
+const uint16_t ProgressiveNtscPeriod = 523;
+const uint16_t ProgressivePalPeriod = 625;
+const uint16_t PeriodTolerance = 2;
+
+bool namesPeriod(uint16_t verticalPeriod, uint16_t total)
+{
+    return verticalPeriod + PeriodTolerance >= total
+        && verticalPeriod <= total + PeriodTolerance;
+}
+
 }  // namespace
+
+bool Deinterlacer::periodIsInterlaced(uint16_t verticalPeriod)
+{
+    if (verticalPeriod % 2 != 0)
+        return false;
+
+    return namesPeriod(verticalPeriod, InterlacedNtscPeriod)
+        || namesPeriod(verticalPeriod, InterlacedPalPeriod);
+}
+
+bool Deinterlacer::periodIsProgressive(uint16_t verticalPeriod)
+{
+    if (verticalPeriod % 2 == 0)
+        return false;
+
+    return namesPeriod(verticalPeriod, ProgressiveNtscPeriod)
+        || namesPeriod(verticalPeriod, ProgressivePalPeriod);
+}
+
+uint8_t Deinterlacer::verticalTapFor(uint16_t verticalPeriod)
+{
+    if (namesPeriod(verticalPeriod, InterlacedNtscPeriod))
+        return 6;
+    if (namesPeriod(verticalPeriod, InterlacedPalPeriod))
+        return 4;
+    return KeepVerticalTap;
+}
 
 void Deinterlacer::init()
 {

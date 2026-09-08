@@ -515,6 +515,23 @@ public:
     // outside the field and cannot be mistaken for one.
     static const uint8_t KeepVerticalTap = 0xff;
 
+    // What the input formatter's vertical period says about the source. Fields
+    // alternate, so an interlaced source counts an EVEN number of half lines
+    // near one of the two broadcast totals and a progressive one an odd number.
+    //
+    // NEITHER ANSWER IS THE OTHER'S NEGATION. A period near neither total says
+    // nothing, and the RGBHV path leaves debris here rather than a measurement,
+    // so a caller acting on the negation acts on garbage. Ask STATUS_IF_VT_OK
+    // whether there is a measurement at all before either.
+    // docs/investigations/vperiod-if-on-rgbhv.md
+    static bool periodIsInterlaced(uint16_t verticalPeriod);
+    static bool periodIsProgressive(uint16_t verticalPeriod);
+
+    // The vertical tap the motion-adaptive path runs at for that period: the
+    // two broadcast totals want different coefficients, and a period naming
+    // neither keeps whatever is in force.
+    static uint8_t verticalTapFor(uint16_t verticalPeriod);
+
     // The motion-adaptive path: two fields in flight, so the frame buffer
     // fetches a line ahead and the write side is told not to invert its start.
     //
