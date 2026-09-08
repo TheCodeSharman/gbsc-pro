@@ -20,9 +20,11 @@ goes out with it.
 engine once (`geometry.sourceInterrupted()`). Two owners of one model is the register problem one level up, and
 every symptom this fork has chased is a case of it:
 
-- `SP_H_PULSE_IGNOR` has two owners. `SyncProcessor::applyForSyncType(false)`
-  writes 255 on every mode change and `updateSpDynamic()` writes 2 on its own
-  schedule. The register reads 2 on a locked source and the screen is black.
+- `SP_H_PULSE_IGNOR` had two owners. `SyncProcessor::applyForSyncType(false)`
+  writes 255 on every mode change and the sketch's search wrote 2 on its own
+  schedule; the register reads 2 on a locked source and the screen is black.
+  Both writes are `SyncProcessor`'s now, so the class arbitrates them -- what
+  remains is the sketch deciding WHEN to hunt.
   `docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`
 - The **ADC PLL group has two owners on both paths**.
   `Adc::applySampleRate()` derives `PLLAD_KS` from the measured line rate;
@@ -202,15 +204,17 @@ default.
 
 | left in the sketch by an earlier step | its owner | lands at |
 |---|---|---|
-| `updateSpDynamic()` | `SyncProcessor` -- it writes `SP_*` and nothing else | step 5, with the coast window |
+| `updateSpDynamic()`'s decision of when to hunt | `Geometry`, off its own steadiness run | step 13, with the watcher |
 | `lastVsyncLock` | FrameSync, which is the only thing that reads it | step 11, with the rate steer |
 | `rto->phaseIsSet` | `Adc` | step 6, with the sampling phase |
 | `rto->coastPositionIsSet`, `rto->clampPositionIsSet` | `SyncProcessor` | step 5 |
 
-`updateSpDynamic()` is not tidying. It is the second owner of
+`updateSpDynamic()` was not tidying. It was the second owner of
 `SP_H_PULSE_IGNOR`, writing 2 where `applyForSyncType()` wrote 255, and a black
-screen on a locked source is what that costs -- so it is one of the faults this
-plan exists for rather than a leftover to sweep up afterwards.
+screen on a locked source is what that cost -- one of the faults this plan
+exists for rather than a leftover to sweep up afterwards. Every register it
+writes is now behind a named `SyncProcessor` operation and what is left of it is
+the decision of whether the source is being hunted for or read.
 `docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`
 
 Each step is a bounded commit plus its host test, cherry-pickable on its own.
@@ -353,18 +357,17 @@ What the ladder does, rung by rung, and which rungs have an owner:
 | `== 1` | one pass of grace, returns | no registers |
 | `== 2` | lift the sync separator level off the floor, on a serrated source | `SyncOnGreen::liftOffFloor()` |
 | `== 8` | put the coast window back, then widen it on a serrated source | `SyncProcessor::applyDefaultCoastWindow()`, `widenCoastForSerration()` |
-| `% 27` | `updateSpDynamic(1)` | **step 5's**, with the coast window |
+| `% 27` | configure the separator to hunt | `SyncProcessor::applyForSearch()` |
 | `% 32` | unfreeze if HSACT | **step 8's**, with `FrameBuffer` |
 | `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
 | `== 38` | make mode detect re-latch | `ModeDetect::nudge()` |
 | `> 47, % 16` | csync only: try the other overflow-protect setting | `SyncProcessor::toggleHsyncOverflowProtect()` |
-| `% 150` | reacquire the sync type, put the coast and clamp windows back, `updateSpDynamic(1)`, nudge, re-acquire the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()`, the two window defaults, `ModeDetect::nudge()`, `SyncOnGreen::reacquire()`, `SyncProcessor::reset()`, `ModeDetect::reset()`; `SP_H_COAST` and `updateSpDynamic()` are step 5's |
+| `% 150` | reacquire the sync type, put the coast and clamp windows back, `updateSpDynamic(1)`, nudge, re-acquire the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()`, the two window defaults, `ModeDetect::nudge()`, `SyncOnGreen::reacquire()`, `SyncProcessor::reset()`, `ModeDetect::reset()`, `SyncProcessor::applyForSearch()` |
 | `% 413` | try the other ADC input, put it back if nothing locks | `Adc::selectOtherInput()` and `selectInput()`; the wait stays with the counter |
 
-**Every rung now names an operation.** What is still written raw inside the
-ladder belongs to steps 5 and 8 and travels with them: `SP_H_COAST`,
-`updateSpDynamic()` and the `STATUS_SYNC_PROC_HSACT` read in front of the
-unfreeze.
+**Every rung now names an operation, and no rung writes a register itself.**
+The one read still taken raw is `STATUS_SYNC_PROC_HSACT` in front of the
+unfreeze, which travels with step 8.
 
 **`Adc::bounceInput()` is NOT what `% 413` became**, and the two must not be
 merged. The bounce takes the input away and puts the SAME one back, to clear a
