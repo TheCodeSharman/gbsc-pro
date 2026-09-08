@@ -13,10 +13,18 @@ regenerates them to broadcast standard, so any argument resting on a source bein
 standard-conformant reaches those two and nothing else.
 **BOTH ARE PLUGGED IN AND POWERED AT ONCE, AND SWITCHING NEEDS NO BENCH TRIP**
 -- `/input?src=vga` and `/input?src=ypbpr`, so a session can judge a change
-against both inputs without anyone touching a cable. The Wii is slow to settle
-and re-solves several times getting there: **three to four minutes to acquire**,
-so a reading or a photograph taken before that is of the settle rather than of
-the change.
+against both inputs without anyone touching a cable.
+
+**ACQUISITION IS SECONDS, SO A WAIT OF MINUTES IS A FAULT AND NOT A SETTLE.**
+Measured on `vga`: `/input?src=vga` to `sampling: 311 lines x 50.08 Hz` in 7.2 s,
+`state: acquired` at 8.1 s, FrameSync steering by 10.4 s, and the sync-type probe
+answering `own V sync: yes after 2ms`. On `ypbpr` the count does not converge at
+all -- 60 s of 202, 214, 216, 266, 294, 310, 315, 317, 319, 539, 607 with
+`source moved: count` re-arming continuously -- which is the two-owner coast
+fault flipping between the true count and the doubled one, not the console
+taking its time. `docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
+**Do not budget minutes for a source to appear**; a source that has not solved
+in about ten seconds is not settling.
 
 **ALL THREE SYNC ARRANGEMENTS ARE ON THE BENCH AND ALL THREE ARE SCRIPTABLE.**
 The RISC PC's sync type is one CMOS value rather than a mode-file setting, and
