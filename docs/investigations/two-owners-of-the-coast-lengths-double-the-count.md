@@ -70,6 +70,71 @@ raster follow. Sampled over three minutes the count ran 310, 314, 315, 317, 318,
 this, correctly — the source really is failing its steadiness run. The run is
 doing its job; what it is measuring is being moved underneath it.
 
+## The two owners form a closed loop, and it never settles
+
+The fight is self-sustaining on any source the coast can act on. Each link is
+measured:
+
+1. the coast pair changes the count -- the sweep below,
+2. a changed count is `source moved: count`, which arms a solve,
+3. the solve runs the sync-type probe, which applies the sync type,
+4. `applyForSyncType()` writes its pair, and the count changes again.
+
+So the fault feeds itself. Watched on `ypbpr` with nothing touched, over 20 s:
+coast 7/3 -> 4/7 -> 7/3, `SP_H_PULSE_IGNOR` 107 -> 44 -> 107, `PLLAD_MD` 2250 ->
+1124.
+
+**The pair does not stay written long enough to measure.** Sweeping
+`SP_PRE_COAST` x `SP_POST_COAST` over 0..10 x 0..10 on the Wii, reading the pair
+back twice at 0.35 s and 0.55 s after writing it, **7 of 121 writes survived
+both reads**. The counts seen across the sweep fall into families rather than
+values:
+
+| family | samples |
+|---|---|
+| 310 | 113 |
+| 317..319 | 64 |
+| 605..611 | 22 |
+| 0 | 18 |
+| 97..99 | 6 |
+
+One source, unchanged throughout.
+
+**So no sweep can choose the value while two owners remain.** Single ownership
+is not the tidy-up that follows the measurement, it is what makes the
+measurement possible. Establish one owner, then sweep.
+
+## The coast does nothing on a source without serrations
+
+The same sweep on the RISC PC at 320x256@50, `SYNC 1`, so composite sync with a
+progressive RGB source: **`STATUS_SYNC_PROC_VTOTAL` read 308 at all 242 samples
+across all 121 pairs.** The coast pair has no effect on the count at all.
+
+That is the first link of the loop missing, and it is why this source acquires
+in about eight seconds while the Wii never converges. A progressive source's
+vertical sync carries no equalisation or serration pulses, so there is nothing
+for the coast to skip and nothing for its value to change.
+
+**Two consequences.** A coast value cannot be validated against a progressive
+source -- every value scores identically -- so the RISC PC is a control for the
+loop, not a reference for the value. And a coast rule derived from anything the
+board measures has to be derived from something that varies with the vertical
+interval, which no progressive source exercises.
+
+## Composite sync reclassifies the source, and the count loses three lines
+
+Two further measurements from the same run, on one machine in one mode with only
+`*Configure Sync` moving:
+
+- On separate sync the RISC PC is RGBHV and reads `STATUS_SYNC_PROC_VTOTAL` 311,
+  its true count. On composite sync it lands in `updateSpDynamic()`'s
+  `videoStandardInput <= 2` arm -- coast 7/3, `SP_DLT_REG` 0xC0,
+  `SP_H_PULSE_IGNOR` 107 -- so **the sync type decides the video-standard
+  classification** of an unchanged 311-line source.
+- On composite sync the count is **308 against a true 311**, and the sweep shows
+  the deficit is flat across every coast pair. `../sync-type-selection.md` carries
+  the three-line deficit as untested; it is not the coast.
+
 ## Why this is step 5's, not a fix to make here
 
 The coast lengths around the vertical interval are `applyForSyncType()`'s by
@@ -92,7 +157,9 @@ is the evidence for how much that is worth.
   replaced did; the `<= 2` arm is untouched.
 - **Not the ADC clock fault**, as above: the divider echoes.
 - **Not the source settling.** The state held at 4/7 for 75 s of continuous
-  sampling, and the hand-written pair moved it instantly in both directions.
+  sampling, and the hand-written pair moved it instantly in both directions. A
+  source acquires in about eight seconds when the loop above is not running.
+  `../bench-sources.md`.
 
 ## See also
 
