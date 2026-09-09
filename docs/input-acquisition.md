@@ -990,13 +990,16 @@ rather than the sketch poking registers and leaving the engine to notice. That
 is what makes the code tractable to reason about: one path in, whether the
 request came from the menu, the remote or HTTP.
 
-**It does not wait for `InputAcquisition`.** The call is one the sketch makes,
-so `applyInputSelection()` can take the engine's entry point today -- and it has
-a bug with a reproduction to answer for: nothing forgets the sync type on an
-input change, so `ypbpr` and back to `vga` leaves `SP_SOG_MODE` 1 on a
-separate-sync source counting 97 lines, with no route out because the count
-never moves to arm a re-probe. `applyPresets()` stops being how the engine hears
-about a source at step 10; the input event is earlier and cheaper than that.
+**What it fixes is a RACE, not a missing call.** The sync type IS re-established
+after an input change -- the latched-disturbance re-arm gets there. But the probe
+runs 2 ms after the switch, against a separator the ladder is still cycling on
+from the absent input it just left, so it can answer a question about the
+previous input's state: measured once in three returns, a separate-sync source
+classified as csync, recovered only because the re-arm fired three more probes.
+Remove those and the state is the latch. An input event should probe from a
+known state instead of racing an acquisition loop that does not know it
+happened, and ordering those two is what the layer is for.
+`docs/investigations/the-sync-type-probe-races-the-separator-walk.md`
 
 ### The input toggle is an input event, not the ladder's last rung
 
@@ -1064,18 +1067,18 @@ Two reproductions reach most of this and are scriptable from a session:
   recovery has to be checked against
 
 **AND THAT SECOND ONE IS NOT `/input?src=rgbs` WHILE THE Wii IS POWERED.**
-Measured 2026-09-09: selecting `rgbs` came back `state: acquired`, 310 lines x
-50.24 Hz, `ADC_INPUT_SEL` 0 -- the Wii's own signature, on the input nothing is
-plugged into. Selecting an input the HC32 routes elsewhere does not disconnect
-what the ADC is already looking at. So the absent-source reproduction needs the
-Wii powered DOWN, which is a bench trip, and a session that assumes `rgbs` is
-empty is testing the Wii.
+Selecting `rgbs` came back `state: acquired`, 310 lines x 50.24 Hz,
+`ADC_INPUT_SEL` 0 -- the Wii's own signature, on the input nothing is plugged
+into. Selecting an input the HC32 routes elsewhere does not disconnect what the
+ADC is already looking at, so the reproduction needs the console unplugged and a
+session that assumes `rgbs` is empty is testing the Wii. Absent looks like
+`state: absent`, `VTOTAL` 0, `DAC_RGBS_PWDNZ` 0.
 
-The same measurement shows why the sync-type latch does not reproduce on a live
-bench: `vga` -> `ypbpr` -> `vga` and `vga` -> `rgbs` -> `vga` both recovered in
-under seven seconds, because the away leg acquired and the return leg's count
-moved, arming `unusable count` and with it the re-probe. The latch needs that
-arm already spent, which only an away leg with no signal can do.
+**And a dwell-based reproduction is not one.** The separator level CYCLES on an
+absent source rather than settling, so what a round trip does depends on where in
+that cycle it lands, not on how long it lasted: 8 s, 90 s and 90 s again gave
+right, wrong, right.
+`docs/investigations/the-sync-type-probe-races-the-separator-walk.md`
 
 The two cover different arms, and the SD one is not optional here: the RISC PC
 over ModeServ covers arbitrary rasters, both sync types and progressive, while a
