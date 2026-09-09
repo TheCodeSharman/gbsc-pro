@@ -368,6 +368,18 @@ What is still split, and what has to go:
 | two flags | `rto->outModeHdBypass`, `videoStandardInput == 15` | the resolved `OutputMode` |
 | the path choice | `applyForStandard()` branching on the standard byte | the measured source |
 
+**And the path choice can go entirely, because one route serves both.** The HD
+bypass channel carries an arbitrary RGBHV source -- measured, RISC PC on `vga`
+at 800x600@60 -- once its raster is derived from the divider the engine already
+holds rather than frozen per standard. Entering that route on such a source
+today gives no signal, and the cause is that `applyForStandard()` has no arm for
+14 or 15, so the block keeps `enable()`'s resting timing.
+`docs/investigations/one-bypass-route-carries-rgbhv.md`.
+
+That makes `ADC2DAC` the one to retire rather than the one to generalise: the HD
+channel is the only route with a matrix and a dynamic range converter in
+circuit, so it is the only one that can carry a component source at all.
+
 **The passthrough preference does not reach both halves today, which is the bug
 this shape removes.** `presetPreference == OutputBypass` is read in the sync
 watcher's new-mode block and calls `setOutModeHdBypass()` -- the HD path, always.
