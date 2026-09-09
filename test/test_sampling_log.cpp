@@ -159,3 +159,27 @@ TEST_CASE("the walk clocks the ADC from the rate it is handed, not from HPERIOD_
 
     CHECK(GBS::PLLAD_KS::read() == 2);
 }
+
+// The walk writes PLLAD_MD, which the engine owns and re-solves from held
+// state. Two writers on one field is the fault this project exists to remove,
+// so the walk has to say it is running -- and a monitor run must NOT, because
+// watching a live engine is the whole point of it.
+TEST_CASE("the walk says it is running, so the engine can be held off it")
+{
+    sourceOnTheBus(2250);
+    SamplingLog log;
+    CHECK_FALSE(log.sweeping());
+
+    SUBCASE("a walk is sweeping until it finishes") {
+        log.sweep(0, 1600, 1800, 100, 40, 4, HeldLineRateHz);
+        CHECK(log.sweeping());
+        driveToEnd(log, 10);
+        CHECK_FALSE(log.sweeping());
+    }
+
+    SUBCASE("a monitor run never is") {
+        log.monitor(0, 25, 200);
+        CHECK(log.active());
+        CHECK_FALSE(log.sweeping());
+    }
+}

@@ -64,6 +64,8 @@ SamplingLog::SamplingLog()
 
 bool SamplingLog::active() const { return mode_ != Idle; }
 
+bool SamplingLog::sweeping() const { return mode_ == Sweeping; }
+
 void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
                           uint32_t durationMs)
 {

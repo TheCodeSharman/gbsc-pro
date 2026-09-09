@@ -58,6 +58,12 @@ public:
                       uint8_t videoStandardInput);
 
     bool active() const;
+
+    // Whether the DIVIDER WALK is running, which is not the same question as
+    // active(). The walk writes PLLAD_MD, which the engine owns and re-derives
+    // from held state, so the two must not both be writing it -- while a
+    // monitor run only reads, and watching a live engine is the point of it.
+    bool sweeping() const;
     void poll(uint32_t nowMs);
 
 private:

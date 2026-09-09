@@ -5188,6 +5188,14 @@ void myLog(char const *type, char command)
 // docs/input-acquisition.md
 static bool engineMayRun()
 {
+#if GBS_SAMPLING_LOG
+    // The divider walk writes PLLAD_MD, which the engine owns. Left running,
+    // the two take turns writing it and the walk's readings are taken through
+    // a divider it did not set. A monitor run is exempt: it only reads, and
+    // watching a live engine is what it is for.
+    if (samplingLog.sweeping())
+        return false;
+#endif
     return !AUTOMATION_FROZEN();
 }
 
