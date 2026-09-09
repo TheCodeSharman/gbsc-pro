@@ -69,12 +69,10 @@ static unsigned registersWritten()
 }
 
 // The detection pass runs on a cadence, so a run of passes is a run of ticks.
-static uint32_t g_nowMs = 0;
 
 static bool pollOnce(VideoPath &engine)
 {
-    g_nowMs += VideoPath::DetectionIntervalMs;
-    return engine.poll(g_nowMs);
+    return engine.poll(true);
 }
 
 // poll() gates on a line count steady over several passes before it will pay for

@@ -58,13 +58,11 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
-// The detection pass runs on a cadence, so a run of passes is a run of ticks.
-static uint32_t g_nowMs = 0;
-
+// The cadence is the acquisition layer's, so a case driving the engine directly
+// says whether this pass may take a detection reading.
 static bool pollOnce(Tv5725::VideoPath &engine)
 {
-    g_nowMs += Tv5725::VideoPath::DetectionIntervalMs;
-    return engine.poll(g_nowMs);
+    return engine.poll(true);
 }
 
 // poll() gates on a line count steady over several passes before it will pay

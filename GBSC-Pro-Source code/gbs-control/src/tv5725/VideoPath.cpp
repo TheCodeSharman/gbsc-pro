@@ -30,7 +30,6 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling)
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       mayRun_(0),
       solvedLines_(0), solvedLineRateHz_(0),
-      detectedMs_(0), detectedEver_(false),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
       sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0),
@@ -265,22 +264,13 @@ bool VideoPath::outputModeChanged(const OutputChoice &choice)
     return solveWindows();
 }
 
-bool VideoPath::detectionDue(uint32_t nowMs)
-{
-    if (detectedEver_ && nowMs - detectedMs_ < DetectionIntervalMs)
-        return false;
-    detectedMs_ = nowMs;
-    detectedEver_ = true;
-    return true;
-}
-
-bool VideoPath::poll(uint32_t nowMs)
+bool VideoPath::poll(bool detectionDue)
 {
     if (mayRun_ != 0 && !mayRun_())
         return false;
 
     if (!modePending_) {
-        if (detectionDue(nowMs) && sourceMoved())
+        if (detectionDue && sourceMoved())
             inputTimingsChanged(modeOversample_);
         return modePending_ ? false : (solvePending_ ? resolve() : false);
     }

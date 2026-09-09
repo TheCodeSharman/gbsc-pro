@@ -19,8 +19,20 @@ public:
     // pass that completes a mode change.
     bool poll(uint32_t nowMs);
 
+    // How often the source is counted. loop() goes round far faster than this,
+    // so a steadiness run counted per call is not the same length as one
+    // counted per tick and every threshold keyed on it means something
+    // different.
+    static const uint32_t DetectionIntervalMs = 20;
+
 private:
+    // Whether this pass is a detection pass. Consumes the tick, so it is asked
+    // once.
+    bool detectionDue(uint32_t nowMs);
+
     Tv5725::VideoPath &videoPath_;
+    uint32_t detectedMs_;
+    bool detectedEver_;
 };
 
 #endif  // INPUT_ACQUISITION_H_

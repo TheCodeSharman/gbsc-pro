@@ -257,15 +257,12 @@ static void checkBenchGeometry()
     CHECK(registersWritten() == 64);   // the two DAC selects share s0_4b
 }
 
-// The detection pass runs on a cadence, so a case that wants a run of them
-// wants a run of ticks. A case that wants poll() WITHOUT one calls
-// engine.poll(g_nowMs) and leaves the clock where it is.
-static uint32_t g_nowMs = 0;
-
+// The cadence belongs to the acquisition layer, so a case says outright whether
+// this pass may take a detection reading. One that wants poll() WITHOUT one
+// passes false.
 static bool pollOnce(VideoPath &engine)
 {
-    g_nowMs += VideoPath::DetectionIntervalMs;
-    return engine.poll(g_nowMs);
+    return engine.poll(true);
 }
 
 // poll() runs on every loop() pass, and the steadiness gate wants a few before
@@ -552,7 +549,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
 
     SUBCASE("a mode with no timings") {
         engine.outputModeChanged(OutputChoice());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(pollOnce(engine));
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
@@ -560,7 +557,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
 
     SUBCASE("and bypass, where there is no solve coming at all") {
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         engine.enterBypass();
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
@@ -652,7 +649,7 @@ TEST_CASE("a source nobody has framed takes no place in the table")
     for (uint16_t lines = 311; lines <= 315; ++lines) {
         seedSourceLines(lines);
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
     }
 
@@ -789,7 +786,7 @@ TEST_CASE("the table says when it has something new to write")
         frameAt(engine, 300, 120, 40, -15);
         seedSourceLines(524);
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(engine.framingRevision() != settled);
@@ -798,7 +795,7 @@ TEST_CASE("the table says when it has something new to write")
     SUBCASE("but a source change with nothing tuned does not") {
         seedSourceLines(524);
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(engine.framingRevision() == settled);
@@ -1075,10 +1072,10 @@ TEST_CASE("the source is counted on a cadence, not once a loop pass")
     seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
     g_fieldRate = 60.0f;
 
-    // The clock stands still, so however many times loop() comes round, no pass
-    // counts and the source has not been seen to move.
+    // No detection pass, so however many times loop() comes round the source has
+    // not been seen to move.
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(engine.poll(g_nowMs));
+        CHECK_FALSE(engine.poll(false));
     CHECK(Adc::PLLAD_MD::read() == 2250);
 
     bool solved = false;
@@ -1136,7 +1133,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
     SUBCASE("a line-doubled source is sampled at twice the write limit") {
         g_dividerWhenSampled = 0;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(true));
     }
@@ -1146,7 +1143,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         g_fieldRate = 60.0f;
         g_dividerWhenSampled = 0;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(false));
     }
@@ -1157,7 +1154,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         seedField(5, 0x12, 0, 12, 1124);
         g_dividerWhenSampled = 0;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled != 1124);
     }
@@ -1187,7 +1184,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
 
         g_blankStartWhenSampled = 0xFFFF;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 524);
     }
@@ -1197,7 +1194,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
 
         g_blankStartWhenSampled = 0xFFFF;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 2 * 311);
     }
@@ -1209,7 +1206,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
         // here -- and this is the case that matters, because a window is not
         // only stranded by a mode change.
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         seedField(1, 0x1C, 0, 11, 700);
@@ -1398,7 +1395,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
     SUBCASE("a source with no vsync of its own is composite sync") {
         g_hasOwnVsync = false;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(SyncType::isCsync());
@@ -1410,7 +1407,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
     SUBCASE("a source bringing its own vsync is separate H/V") {
         g_hasOwnVsync = true;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK_FALSE(SyncType::isCsync());

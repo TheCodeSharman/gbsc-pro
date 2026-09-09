@@ -47,7 +47,7 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
     uint32_t nowMs = 0;
     bool solved = false;
     for (uint8_t i = 0; !solved && i < 4 * SourceMeasurement::SteadySamples; ++i) {
-        nowMs += VideoPath::DetectionIntervalMs;
+        nowMs += InputAcquisition::DetectionIntervalMs;
         solved = acquisition.poll(nowMs);
     }
 
@@ -59,4 +59,42 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
     CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
     CHECK(Adc::PLLAD_MD::read() == 2250);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 2250 / 2);
+}
+
+TEST_CASE("detection runs on the layer's cadence, not on every call")
+{
+    // loop() goes round far faster than the interval, so a run counted per call
+    // is not the same length as one counted per tick -- and every threshold
+    // keyed on it means something different. The cadence is the layer's because
+    // the layer owns the tick; the engine no longer sees a clock at all.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    VideoPath path(clock, sampling);
+    InputAcquisition acquisition(path);
+
+    path.outputModeChanged(OutputChoice(Output1080P));
+    path.inputTimingsChanged(4);
+
+    uint32_t now = 0;
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i) {
+        now += InputAcquisition::DetectionIntervalMs;
+        if (acquisition.poll(now))
+            break;
+    }
+    REQUIRE_FALSE(path.changing());
+
+    // The source moves, and the layer is hammered inside one interval.
+    seed(0, 0x1B, 0, 11, 524);
+    for (uint16_t i = 0; i < 200; ++i)
+        acquisition.poll(now);
+    CHECK_FALSE(path.changing());
+
+    // On the cadence, the same source change is noticed.
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples
+                        && !path.changing(); ++i) {
+        now += InputAcquisition::DetectionIntervalMs;
+        acquisition.poll(now);
+    }
+    CHECK(path.changing());
 }
