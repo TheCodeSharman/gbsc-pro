@@ -467,7 +467,7 @@ being protected, which is the usual reason to prefer a nudge over a re-acquire.
 What survives of it is the free first pass -- one dropped measurement, not a
 strategy.
 
-### `0x07fe` is a signal, not a park, and its comment says otherwise
+### `0x07fe` is a signal, not a park -- and it needs no replacement
 
 The two sites that write `rto->noSyncCounter = 0x07fe` are commented as stopping
 the escalation before it reaches the input toggle. **That is not what it does.**
@@ -479,74 +479,44 @@ A block further down reads the value:
         rto->HdmiHoldDetection = true;
     }
 
-So the write is a MESSAGE: announce no signal, set `HdmiHoldDetection`, and
-**restart the run from zero**. The ladder does not stop -- it begins again and
-reaches the input toggle in another 413 passes. It has a second trigger nobody
-wrote, the counter reaching 2046 by counting, about 41 s at the 20 ms tick. Both
-paths want the same thing: end the round.
+So the write is a MESSAGE: announce, set the flag, and **restart the run from
+zero**. The ladder does not stop -- it begins again and reaches the input toggle
+in another 413 passes. It has a second trigger nobody wrote, the counter
+reaching 2046 by counting, about 41 s at the 20 ms tick. One value carries a
+trigger reached two ways, a report, and a state change.
 
-**That is a cycle, which the ordered list already has**, so the replacement is
-`SyncRecovery::CycleLength` reaching its end with the two rungs ending it early.
-**It is NOT a flag meaning "a source was seen here"** -- that reading was tried
-and reverted, because the counter reset is the point of the value rather than a
-side effect.
+**DECIDED: "no signal" is a STATE, and the search never stops.** A unit with
+nothing to show keeps looking for a displayable input for as long as it has
+none, because the user may plug something in or switch the source on at any
+moment. There is no terminus to design.
 
-**The cadence changes if this is done naively**: 2046 passes today against a
-cycle of 451, so the no-signal announcement arrives four times sooner. Whether
-41 s or 9 s is right is a judgement about what a television should be told.
+That dissolves the value rather than replacing it. Both of its triggers stop
+being events:
 
-**One thing left to decide, and it is not mechanical:** whether rung 0's early
-return survives. It makes the first failed pass free, so a single dropped
+| today | becomes |
+|---|---|
+| the ladder ran out | the cycle wraps, and the input policy gets its turn |
+| a rung found something | `sourceState()` says acquired; there is nothing to promote |
+
+**`HdmiHoldDetection` goes with it.** Traced: set true in that block alone,
+cleared by `inputAndSyncDetect()` on finding a source, and read in exactly ONE
+place -- the RGBHV limit-no-sync branch, where it suppresses
+`setResetParameters()`, `prepareSyncProcessor()` and `SyncProcessor::reset()`.
+Its meaning is *we have already given up, stop tearing the chip down again*, and
+an ordered list tried once per cycle runs the destructive rung once by
+construction. The name is also wrong: nothing about it concerns HDMI.
+
+**And the cadence question evaporates.** It looked like a product judgement --
+41 s today against a 451-pass cycle of about 9 s, so a naive move tells the
+television four times sooner. It tells the television nothing: `"No Signal Out"`
+is a console string, and no OSD, web UI or output path renders a no-signal state
+at all. Whenever one is wanted it reads the state rather than catching an event.
+
+**One thing is left to decide, and it is not mechanical:** whether rung 0's
+early return survives. It makes the first failed pass free, so a single dropped
 measurement costs nothing -- but against a run counted in detection passes
 rather than 20 ms ticks, one pass is a different amount of time, and the
 debounce may want to be the run's own.
-
-## The rule for every step
-
-**A step MOVES an owner. It never adds a second one.** The sketch's copy is
-deleted in the same commit that puts the register under a class, or the fault
-this whole plan is about is what the step introduces. That is the one thing to
-check in review, and it is checkable: after the step, exactly one place writes
-the field.
-
-**And a step is stated as one of the named operations above.** One that cannot
-be is a step that has not been understood yet, and moving it will carry the
-ladder's shape across with it.
-
-**THE ENTRY GATE IS THE FREEZE, AND NOT `rto->boardHasPower`.** The pairing
-reads natural and the second half is a trap: that flag is a latched failure
-rather than a live reading. `runSourceRecovery()` sets it false when
-`checkBoardPower()` fails and its success branch never sets it back, so it holds
-false for the whole recovery -- exactly when the engine has to solve. Gated on
-it, detection probes every seven seconds against an engine that can never
-answer, and the unit does not reacquire: sync processor counting 0, DAC down and
-`/geometry` all zeroes, where the same source recovers at once without it.
-A power fact the engine can trust would have to be measured, not read off that
-flag.
-
-**NOTHING STAYS IN THE SKETCH BECAUSE IT WAS AWKWARD TO MOVE.** A routine being
-extracted usually reaches into two or three other subsystems, and the honest
-intermediate is to take what belongs to the class and leave the rest where it
-is. That is a step, not an end state: every side effect left behind has an owner
-of its own, and the plan names it rather than letting it settle in the sketch by
-default.
-
-| left in the sketch by an earlier step | its owner | lands at |
-|---|---|---|
-| `updateSpDynamic()`'s decision of when to hunt | `VideoPath`, off its own steadiness run | step 13, with the watcher |
-| `lastVsyncLock` | FrameSync, which is the only thing that reads it | with the rate steer, once FrameSync has an owner |
-| `rto->phaseIsSet` | `Adc` | step 6, with the sampling phase |
-| `rto->coastPositionIsSet`, `rto->clampPositionIsSet` | `SyncProcessor` | step 5 |
-
-`updateSpDynamic()` was not tidying. It was the second owner of
-`SP_H_PULSE_IGNOR`, writing 2 where `applyForSyncType()` wrote 255, and a black
-screen on a locked source is what that cost -- one of the faults this plan
-exists for rather than a leftover to sweep up afterwards. Every register it
-writes is now behind a named `SyncProcessor` operation and what is left of it is
-the decision of whether the source is being hunted for or read.
-`docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md`
-
-Each step is a bounded commit plus its host test, cherry-pickable on its own.
 
 ## The order
 
