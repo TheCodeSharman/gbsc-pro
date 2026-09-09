@@ -60,6 +60,7 @@ private:
     bool rateMoved();
     bool countHeld(uint16_t lines);
     void holdSolvedSource();
+    void forgetSolvedSource();
 
     // Measure the source, through the state prepareToMeasure() just established.
     // `settling` distinguishes a source that cannot be read YET from one that
@@ -71,6 +72,12 @@ private:
     bool (*mayRun_)();
     uint32_t detectedMs_;
     bool detectedEver_;
+
+    // What the last solve ran against, which is what a fresh reading is compared
+    // against. 0 lines means nothing has been solved, which is what bypass
+    // leaves too.
+    uint16_t solvedLines_;
+    uint32_t solvedLineRateHz_;
 
     uint16_t idleLines_;
     uint8_t idleRun_;

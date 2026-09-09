@@ -9,7 +9,8 @@
 InputAcquisition::InputAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0), detectedMs_(0),
-      detectedEver_(false), idleLines_(0), idleRun_(0),
+      detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
+      idleLines_(0), idleRun_(0),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false) {}
 
@@ -65,13 +66,26 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
 // just been measured and dipping sourceIsPresent() for the polls it takes.
 void InputAcquisition::holdSolvedSource()
 {
-    idleLines_ = videoPath_.solvedLines();
+    solvedLines_ = sampling_.sourceLines();
+    solvedLineRateHz_ = sampling_.lineRateHz();
+
+    idleLines_ = solvedLines_;
     idleRun_ = Tv5725::SourceMeasurement::SteadySamples;
 
     // A solve that has just written the divider has not had a line counted
     // through it yet, so the sampling half is asked on the next idle pass
     // rather than assumed here.
     sourceState_ = SourceAcquired;
+}
+
+// Bypass solves no raster, so what the last scaled solve ran against no longer
+// describes what is on air. Leaving bypass through outputModeChanged() never
+// solves either, so a count left standing would arm a source event against a
+// measurement two output modes old.
+void InputAcquisition::forgetSolvedSource()
+{
+    solvedLines_ = 0;
+    solvedLineRateHz_ = 0;
 }
 
 // Whether the count has held long enough to be the source's rather than a
@@ -98,7 +112,9 @@ bool InputAcquisition::sourceMoved()
     // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
     // change so a later poll cannot write one over the setup it just chose.
     const Tv5725::OutputMode *mode = videoPath_.outputMode();
-    if (mode == 0 || mode->isBypass() || videoPath_.solvedLines() == 0) {
+    if (mode != 0 && mode->isBypass())
+        forgetSolvedSource();
+    if (mode == 0 || solvedLines_ == 0) {
         sourceInterrupted_ = false;
         return false;
     }
@@ -137,7 +153,7 @@ bool InputAcquisition::sourceMoved()
         if (!held || unusableCountArmed_)
             return false;
         unusableCountArmed_ = true;
-        logSourceMoved("unusable count", lines, videoPath_.solvedLines());
+        logSourceMoved("unusable count", lines, solvedLines_);
         return true;
     }
 
@@ -154,21 +170,21 @@ bool InputAcquisition::sourceMoved()
     // self-consistent.
     const bool interrupted = sourceInterrupted_;
     sourceInterrupted_ = false;
-    const bool countMoved = lines != videoPath_.solvedLines();
+    const bool countMoved = lines != solvedLines_;
     if (!interrupted && !countMoved && !rateMoved())
         return false;
 
     logSourceMoved(interrupted ? "interrupt" : countMoved ? "count" : "rate",
-                   lines, videoPath_.solvedLines());
+                   lines, solvedLines_);
     idleRun_ = 0;
     return true;
 }
 
 bool InputAcquisition::rateMoved()
 {
-    const uint32_t rate = Tv5725::SourceMeasurement::measureLineRateFromHPeriod(videoPath_.solvedLines());
-    if (rate == 0 || videoPath_.solvedLineRateHz() == 0
-        || Tv5725::SourceMeasurement::ratesAgree(rate, videoPath_.solvedLineRateHz())) {
+    const uint32_t rate = Tv5725::SourceMeasurement::measureLineRateFromHPeriod(solvedLines_);
+    if (rate == 0 || solvedLineRateHz_ == 0
+        || Tv5725::SourceMeasurement::ratesAgree(rate, solvedLineRateHz_)) {
         candidateRateHz_ = 0;
         rateRun_ = 0;
         return false;
@@ -194,7 +210,7 @@ bool InputAcquisition::rateMoved()
     // vsync spin, which is what the cheap gate exists to avoid -- affordable
     // only because a corroborated disagreement is rare.
     const uint32_t confirmed = Tv5725::SourceMeasurement::lineRateFrom(
-        videoPath_.solvedLines(), getSourceFieldRate(0));
+        solvedLines_, getSourceFieldRate(0));
     if (confirmed == 0 || !Tv5725::SourceMeasurement::ratesAgree(rate, confirmed))
         return false;
 

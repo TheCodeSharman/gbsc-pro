@@ -101,12 +101,6 @@ public:
     // for a source event, but a mode change in flight does.
     bool changingMode() const;
 
-    // What the last solve ran against, which is what a fresh reading is compared
-    // against. 0 lines means nothing has been solved, which is what bypass
-    // leaves too.
-    uint16_t solvedLines() const;
-    uint32_t solvedLineRateHz() const;
-
     // Probe the sync type again and put the chip on the answer, for the
     // escalation a source that will not lock reaches. Returns whether the source
     // carries composite sync.
@@ -206,8 +200,6 @@ private:
     bool scanModeApplied_;
     bool syncTypeProbed_;
     bool (*syncProbe_)();
-    uint16_t solvedLines_;
-    uint32_t solvedLineRateHz_;
     SourceKey framedKey_;
     FramingTable &framings_;
     bool solvePending_;

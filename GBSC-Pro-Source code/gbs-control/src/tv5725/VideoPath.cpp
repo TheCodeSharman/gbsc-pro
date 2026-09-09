@@ -29,7 +29,6 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       sampling_(sampling),
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
-      solvedLines_(0), solvedLineRateHz_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
       choice_(), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
@@ -42,10 +41,6 @@ const SourceKey &VideoPath::framedKey() const { return framedKey_; }
 bool VideoPath::changing() const { return modePending_ || solvePending_; }
 
 bool VideoPath::changingMode() const { return modePending_; }
-
-uint16_t VideoPath::solvedLines() const { return solvedLines_; }
-
-uint32_t VideoPath::solvedLineRateHz() const { return solvedLineRateHz_; }
 
 uint16_t VideoPath::capturableOn(const Axis &axis) const
 {
@@ -292,10 +287,6 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     displayClock_.reset();
     solveForSource();
 
-    // What this solve ran against, so a source that later differs from it arms
-    // a change without anyone having to say so.
-    solvedLines_ = sampling_.sourceLines();
-    solvedLineRateHz_ = sampling_.lineRateHz();
     modePending_ = false;
     FrameBuffer::releaseCapture();
     return PollSolved;
@@ -334,7 +325,6 @@ void VideoPath::enterBypass()
     rasterMode_ = &ModeBypass;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
-    solvedLines_ = 0;
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
     // from the last scaled mode would size the next one's picture.
