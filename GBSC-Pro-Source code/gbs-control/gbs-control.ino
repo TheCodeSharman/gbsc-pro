@@ -717,7 +717,7 @@ void printBinary(unsigned char num)
 }
 // The standard a preset load is for. The classification is not trusted on its
 // own: it reports nothing on a source whose H-sync is arriving, so the held
-// standard answers where it cannot. docs/retiring-mode-detect.md
+// standard answers where it cannot. docs/input-acquisition.md
 static uint8_t standardForPresetLoad()
 {
     const uint8_t videoMode = getVideoMode();
@@ -1174,7 +1174,7 @@ bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 // it reads at the sites below: it says only that something was recognised and
 // nothing has cleared it, which is why a source the sync processor is counting
 // can sit here with the byte at 0. The measurement that answers the other
-// question is VideoPath::sourceIsPresent(). docs/retiring-mode-detect.md
+// question is VideoPath::sourceIsPresent(). docs/input-acquisition.md
 static bool standardIsHeld()
 {
     return rto->videoStandardInput != 0;
@@ -1847,7 +1847,7 @@ boolean optimizePhaseSP()
             // The second arm still reads the byte, because 2 is also what a
             // progressive source and the default ask for, so the ratio does not
             // separate them. What it wants is the source's line rate, which the
-            // engine holds and bypass does not. docs/retiring-mode-detect.md
+            // engine holds and bypass does not. docs/input-acquisition.md
             const bool hdAtItsOwnOversample =
                 rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7
                 && rto->osr == 2;
@@ -4146,7 +4146,7 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
 //
 // The standard reaches applyPresets() as a byte and is set straight back to the
 // scaling-RGBHV marker afterwards, which is one number carrying two facts and
-// what step 12 removes. docs/retiring-mode-detect.md
+// what step 12 removes. docs/input-acquisition.md
 static void loadScalingRgbhvPreset(uint8_t standard)
 {
     rto->videoStandardInput = standard;
@@ -5179,7 +5179,7 @@ void myLog(char const *type, char command)
 // The engine's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
 // failure rather than a live reading, and it stays false through the whole
 // recovery -- exactly when the engine has to solve.
-// docs/retiring-the-sync-watcher.md
+// docs/input-acquisition.md
 static bool engineMayRun()
 {
     return !AUTOMATION_FROZEN();
@@ -7939,7 +7939,7 @@ void startWebserver()
             // classification disagree, and only seeing both at once says which.
             // The state names which of the three, because absent and unlocked
             // want the same recovery and only one is worth re-probing the sync
-            // type on. docs/retiring-the-sync-watcher.md
+            // type on. docs/input-acquisition.md
             geometry.sourceIsPresent() ? "true" : "false",
             geometry.sourceState() == Tv5725::SourceAcquired   ? "acquired"
             : geometry.sourceState() == Tv5725::SourceUnlocked ? "unlocked"

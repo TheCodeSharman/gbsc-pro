@@ -17,7 +17,7 @@ namespace Tv5725 {
 // Two of the fields init() establishes have runtime writers that override them:
 // MD_SEL_VGA60 follows the sync type and MD_HD1250P_CNTRL the medium-resolution
 // line count. Nothing else moves them: the threshold dither that used to wander
-// twelve of them is deleted, and docs/retiring-mode-detect.md says why it is not
+// twelve of them is deleted, and docs/input-acquisition.md says why it is not
 // needed on this board.
 class ModeDetect {
 public:

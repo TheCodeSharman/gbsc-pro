@@ -22,7 +22,7 @@
 // last step, so it stays the rarest thing the ladder does, which is what its
 // `% 413` was buying.
 //
-// docs/retiring-the-sync-watcher.md, "Escalation".
+// docs/input-acquisition.md, "Escalation".
 
 #include <stdint.h>
 

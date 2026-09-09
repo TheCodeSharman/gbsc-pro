@@ -21,7 +21,7 @@ namespace Tv5725 {
 // **THE LEVEL IS HELD, NOT READ BACK.** Every ratchet that walks it takes the
 // level it last set as its starting point; deriving the next one from the
 // register asks the chip what it was told, and a read taken while the source is
-// unlocked walks it somewhere nobody chose. docs/retiring-the-sync-watcher.md
+// unlocked walks it somewhere nobody chose. docs/input-acquisition.md
 class SyncOnGreen {
 public:
     typedef UReg<0x05, 0x02, 1, 5> ADC_SOGCTRL;                       // When = 1, ADC enable SOG mode SOG control signal ADC
@@ -106,7 +106,7 @@ public:
 
     // What a tuning pass leaves for someone else to do. Each belongs to
     // another class and is claimed by a later step of
-    // docs/retiring-the-sync-watcher.md: the sync processor refresh at step 5,
+    // docs/input-acquisition.md: the sync processor refresh at step 5,
     // the vsync lock stamp at step 11, the sampling phase at step 6.
     struct Tuning {
         bool sourceUnsettled;
