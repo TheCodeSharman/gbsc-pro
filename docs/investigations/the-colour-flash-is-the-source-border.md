@@ -18,7 +18,7 @@ liveness animation flipped the screen border cyan and magenta twice a second
 magenta border gives a green one. Subtracting a colour from everything is what a
 wrong black reference does.
 
-## The intervention that settles it
+## The intervention that identifies the trigger
 
 `BORDER OFF` -- ModeServ now defaults to it -- leaves the border black and
 flips only the ring and corners inside the picture. Three frames over twelve
@@ -41,20 +41,27 @@ moves it:
 | the output raster | it casts at `STATUS_SYNC_PROC_VTOTAL` 627, the VESA total, as readily as at 679 |
 | our firmware | present on `be58a24f4`, the 2026-08-02 build. **Never a regression** |
 
-## What is still open
+## What is still open, which is the substance of it
 
-**Which stage reconstructs black is not localised.** The intervention proves the
-border causes it; it does not say what reacts to the border. It is not the
+**Which stage reconstructs black is not localised, so the fault is not
+understood.** The intervention proves the border triggers it; it does not say
+what reacts to the border, and avoiding a trigger is not a fix. It is not the
 TV5725's clamp window, its gains or its offsets, all of which were held or moved
 without effect. What is left in the path is the MS9288A, which samples the analog
 output and re-encodes it, and which is on no I2C bus, has no register map and
 configures itself from mask ROM -- so if it is doing its own level detection,
 nothing here can observe or stop it.
 
-That matters for more than this card: **any source whose picture content swings
-its average level may move the output's black in pass-through**, and there is no
-scaler-side control to hold it. A source with a static border is the only thing
-shown to avoid it.
+That matters for more than this card, and is why this stays open: **any source
+whose picture content swings its average level may move the output's black in
+pass-through**, and there is no scaler-side control to hold it. A static border
+avoids it on this bench and nowhere else -- a console with a flashing title
+screen would do the same thing and cannot be told not to.
+
+What would advance it: a source that swings its average level WITHOUT a border,
+to separate "the border specifically" from "the average level of the frame"; and
+a scope on the analog output during the swing, to see whether black is moving on
+the wire before the encoder or only after it. Neither needs the scaler changed.
 
 ## Consequence for the source
 
