@@ -113,14 +113,12 @@ struct runTimeOptions
     // here because both reach it; Tv5725::VideoPath is handed a reference.
     Tv5725::DisplayClock displayClock;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
-    uint8_t presetVlineShift;
     uint8_t videoStandardInput; // 0 - unknown, 1 - NTSC like, 2 - PAL like, 3 480p NTSC, 4 576p PAL
     uint8_t phaseSP;
     uint8_t phaseADC;
     uint8_t syncLockFailIgnore;
     uint8_t applyPresetDoneStage;//应用预置完成阶段
     uint8_t continousStableCounter;
-    uint8_t failRetryAttempts;
     uint8_t presetID;  // PresetID
     uint8_t medResLineCount;
     uint8_t osr;
@@ -154,7 +152,6 @@ struct runTimeOptions
     bool motionAdaptiveDeinterlaceActive;
     bool deinterlaceAutoEnabled;
     bool boardHasPower;
-    bool presetIsPalForce60;
     bool isValidForScalingRGBHV;
     bool extClockGenDetected;
     bool HdmiHoldDetection;

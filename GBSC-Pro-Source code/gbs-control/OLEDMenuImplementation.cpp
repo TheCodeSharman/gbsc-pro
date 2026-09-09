@@ -530,14 +530,12 @@ static void LoadDefault()
     rto->syncWatcherEnabled = true;    //
     rto->phaseADC = 16;                //
     rto->phaseSP = 16;                 //
-    rto->failRetryAttempts = 0;        //
     rto->presetID = 0;                 //
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; // 运动自适应隔行扫描
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
     Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    // 板有电源
-    rto->presetIsPalForce60 = false;              // 预设为 PalForce60
     Tv5725::SyncMeasurement::set(false);                   // 同步类型
 
     // **AND FORGET THAT IT WAS EVER MEASURED.** set() deliberately does not mark
@@ -558,7 +556,6 @@ static void LoadDefault()
     rto->sourceDisconnected = true; //
     // rto->isInLowPowerMode = false; //
     rto->applyPresetDoneStage = 0; //
-    // rto->presetVlineShift = 0;     //
     Tv5725::SyncProcessor::forgetPositions();
     rto->continousStableCounter = 0; //
     Tv5725::SyncOnGreen::choose(5);  //

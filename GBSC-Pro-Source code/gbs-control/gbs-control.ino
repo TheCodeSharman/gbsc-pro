@@ -654,14 +654,12 @@ static void LoadDefault()
     rto->syncWatcherEnabled = true;    
     rto->phaseADC = 16;                
     rto->phaseSP = 16;                 
-    rto->failRetryAttempts = 0;        
     rto->presetID = 0;                 
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
     Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    
-    rto->presetIsPalForce60 = false;              
     Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;                  
@@ -674,7 +672,6 @@ static void LoadDefault()
     rto->sourceDisconnected = true; 
     // rto->isInLowPowerMode = false;
     rto->applyPresetDoneStage = 0; //
-    // rto->presetVlineShift = 0;    
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
     rto->continousStableCounter = 0; 
@@ -1386,7 +1383,6 @@ void setResetParameters_re()
     rto->videoStandardInput = 0;   
     rto->videoIsFrozen = false;    
     rto->applyPresetDoneStage = 0; 
-    rto->presetVlineShift = 0;     
     // rto->sourceDisconnected = true;  
     rto->outModeHdBypass = 0;        
     Tv5725::SyncProcessor::forgetPositions();
@@ -1397,7 +1393,6 @@ void setResetParameters_re()
 
     rto->isInLowPowerMode = false;   
     Tv5725::SyncOnGreen::choose(5);        
-    rto->failRetryAttempts = 0;      
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     Tv5725::Deinterlacer::forgetScanlines();
@@ -1423,7 +1418,6 @@ void setResetParameters()
     rto->videoStandardInput = 0;
     rto->videoIsFrozen = false; 
     rto->applyPresetDoneStage = 0;
-    rto->presetVlineShift = 0;
     rto->sourceDisconnected = true; 
     rto->outModeHdBypass = 0;       
     Tv5725::SyncProcessor::forgetPositions();
@@ -1434,7 +1428,6 @@ void setResetParameters()
 
     rto->isInLowPowerMode = false;  
     Tv5725::SyncOnGreen::choose(5);       
-    rto->failRetryAttempts = 0;     
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     Tv5725::Deinterlacer::forgetScanlines();
@@ -3030,7 +3023,6 @@ void doPostPresetLoadSteps()
         rto->noSyncCounter = 0;                       
         rto->motionAdaptiveDeinterlaceActive = false; 
         Tv5725::Deinterlacer::forgetScanlines();
-        rto->failRetryAttempts = 0;                   
         rto->videoIsFrozen = true;
         rto->sourceDisconnected = false;
         rto->boardHasPower = true;
@@ -3354,7 +3346,6 @@ void applyPresets(uint8_t result)
             GBS::SFTRST_DEC_RSTZ::write(1);
         }
     }
-    rto->presetIsPalForce60 = 0;
     rto->outModeHdBypass = 0; // 
 
 
@@ -3402,7 +3393,6 @@ void applyPresets(uint8_t result)
         if (result == 2 || result == 4) 
         {
             Serial.println(F("PAL@50 to 60Hz"));
-            rto->presetIsPalForce60 = 1;
         }
         if (result == 2) {
             result = 1;
@@ -3817,7 +3807,6 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     rto->phaseADC = 24;
     setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
-    rto->outModeHdBypass = 1;
 
     unsigned long timeout = millis();
     while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
@@ -5318,14 +5307,12 @@ void setup()
     rto->syncWatcherEnabled = true;    
     rto->phaseADC = 16;
     rto->phaseSP = 16;
-    rto->failRetryAttempts = 0;  
     rto->presetID = 0;           
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; 
     rto->deinterlaceAutoEnabled = true;           
     Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    
-    rto->presetIsPalForce60 = false;
     Tv5725::SyncMeasurement::set(false);          
     rto->isValidForScalingRGBHV = false; 
     rto->medResLineCount = 0x33;
@@ -5342,7 +5329,6 @@ void setup()
     rto->sourceDisconnected = true;   
     rto->isInLowPowerMode = false;    
     rto->applyPresetDoneStage = 0;     
-    rto->presetVlineShift = 0;         
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
     rto->continousStableCounter = 0;   
@@ -6204,7 +6190,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         traceStandard = -1;
         rto->videoStandardInput = forced;
         rto->inputIsYpBpR = traceIsYuv;
-        rto->presetIsPalForce60 = tracePal60;
 
         // Delimiters, not timestamps: the parser must not have to guess where a
         // load starts, and the helpers that read live measurements make the
