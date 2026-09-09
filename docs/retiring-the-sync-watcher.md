@@ -533,6 +533,48 @@ It lands with step 10, where the preset load becomes an injected action: the
 same commit that stops `applyPresets()` being how the engine hears about a
 source is the one that gives input selection somewhere better to call.
 
+### Most of the ladder is one operation, applied in fragments
+
+The rungs look like eleven strategies. They are not. Rung 8, the `% 150` block,
+does all of this in one pass:
+
+    setHsyncOverflowProtect(false)   undoes rung 7
+    applyDefaultCoastWindow()        rung 2
+    applyDefaultClampWindow()
+    updateSpDynamic(1)               rung 3
+    ModeDetect::nudge()              rung 6
+    SyncOnGreen::reacquire(...)      rungs 1 and 11
+    SyncProcessor::reset()
+    ModeDetect::reset()
+
+**Six of the eleven rungs are strictly contained in one of the others.** So the
+ladder tries fragments of the acquisition, one at a time, and eventually tries
+all of it -- and the order the fragments come in is historical rather than
+principled, because they are not alternatives to each other.
+
+Only four rungs are a genuinely different act: `ReleaseCapture`, which is frame
+buffer state rather than a measurement; `HoldClamp`, which is not the default
+clamp window; `ReprobeSyncType`; and `ToggleInput`, which the section below
+shows is an input event.
+
+**The engine does not work in fragments.** A source event measures everything
+from scratch, which is what makes it possible to say what the engine believes
+and why. An escalation that re-does one measurement at a time is the older
+shape -- nursing a part-configured chip back into lock -- and it survives only
+because acquisition was never one operation to call.
+
+So the ladder collapses to about three states rather than eleven: acquire;
+acquire with the blocks reset first; change the input. `SyncRecovery` as it
+stands preserves the eleven deliberately, because a list that reproduces today's
+positions is reviewable against today's behaviour -- but it is an intermediate,
+not the destination, and the destination is much smaller.
+
+**The one argument for keeping cheap early rungs is not overreacting to a brief
+dropout**, and it is weaker than it looks: the branch only runs when the source
+is ALREADY unlocked, so there is no picture being protected, which is the usual
+reason to prefer a nudge over a re-acquire. What survives of it is the free
+first pass, which is one dropped measurement rather than a strategy.
+
 ### The input toggle is an input event, not the ladder's last rung
 
 The ladder's rungs all mean *try harder to acquire the source on this input*.
