@@ -533,6 +533,51 @@ It lands with step 10, where the preset load becomes an injected action: the
 same commit that stops `applyPresets()` being how the engine hears about a
 source is the one that gives input selection somewhere better to call.
 
+### The input toggle is an input event, not the ladder's last rung
+
+The ladder's rungs all mean *try harder to acquire the source on this input*.
+`ToggleInput` does not: it means *give up on this input and look at the other
+one*, which is a different kind of act and is literally an input change. Four
+things follow from where it sits that stop making sense once that is said, and
+all four are things this page has separately recorded as awkward:
+
+- **It is the only rung gated on user intent.** `detectionMayChangeInput()` asks
+  whether the user chose this input, which is a policy about commands, not about
+  acquisition. No other rung asks anything of the kind.
+- **It is the only rung that must stop the ladder when it SUCCEEDS**, and that
+  is the whole reason a stop-escalating concept was needed. It stops because it
+  changed the input, so everything the ladder had established is stale.
+- **It is out of order.** `ReopenSogSeparator` sits after it at 450 -- so the
+  mux moves before the cheaper, less destructive separator reopen is tried.
+  Remove the toggle and the remaining list is cleanly cheapest to most
+  expensive, ending on the reopen.
+- **It is why `0x07fe` had to be a message.** The ladder had no way to say
+  "promote this decision" except by writing a value another block reads.
+
+So the shape is one level up, and it is the same collapse as the section above:
+
+    inputChanged()   the input the source arrives on is now unknown
+    modeChanged()    same input, the source moved
+    poll()           runs the ladder while sourceIsPresent() is false
+
+`Geometry::inputChanged()` is the entry point the sketch is missing -- called by
+`applyInputSelection()` from the menu, the remote and HTTP, and called by the
+escalation when it exhausts. It forgets the sync type, the measurement and the
+escalation position, because a different input shares none of them.
+
+**And it dissolves the cadence question.** "No signal out" is not what one
+exhausted ladder means -- it is what exhausting the INPUTS means. On a unit
+where nothing is chosen that is inputs times cycles, which is naturally the
+longer timer the 2046-pass expiry was approximating, and on a unit where the
+user chose an input there is nowhere to promote to and the ladder simply cycles.
+Neither needs a sentinel, and neither is the 451 the list happens to use.
+
+**Not measured, and it is a design note rather than a finding.** What supports
+it is that four separately-recorded awkwardnesses have one cause; what would
+test it is the bench reproduction this page already names -- `/input?src=ypbpr`
+with nothing plugged into it is a genuinely absent source, reachable without a
+bench trip, and `/input?src=vga` recovers it.
+
 ## The bar
 
 **Observable picture behaviour, on the paths the bench can exercise** — not
