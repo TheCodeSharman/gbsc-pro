@@ -3759,6 +3759,9 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     resetDebugPort();
 
+    // Again, and not redundant: doPostPresetLoadSteps() above turns the frame
+    // time lock back on for a source it judges eligible, and bypass has no
+    // solved raster for it to steer.
     rto->autoBestHtotalEnabled = false;
     Tv5725::Chip::OUT_SYNC_SEL::write(1);
 
