@@ -40,7 +40,7 @@ public:
     // Which standard's preset a scaled RGBHV source of this many lines wants,
     // against the count the loaded preset was chosen for. 0 keeps that preset.
     // The buckets are measured, not derived: 280 and 380 lines.
-    static uint8_t rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLines);
+    static uint8_t rgbhvPresetStandard(uint16_t sourceLines);
 
     // The same question for a source nothing has been loaded for yet, which is
     // the one place the field rate is consulted -- and only above 380 lines.
@@ -69,7 +69,16 @@ public:
     // document, and every reader had to be ordered against the load that
     // cleared it.
     static bool scalingRgbhvInForce();
-    static void rememberScalingRgbhv(bool enabled);
+
+    // A scaling RGBHV preset is loaded, chosen for a source of this many lines.
+    // The count travels with the flag because they are one fact: comparing a
+    // fresh count against one the loaded preset was not chosen for reloads a
+    // preset the source never left.
+    static void rememberScalingRgbhv(uint16_t sourceLines);
+
+    // For a load that enables scaling RGBHV without establishing which source
+    // it is for. No count can have crossed a bucket away from it.
+    static const uint16_t SourceLinesUnknown = 0;
 
     // A load is starting, and what the last one enabled says nothing about it.
     static void forgetScalingRgbhv();

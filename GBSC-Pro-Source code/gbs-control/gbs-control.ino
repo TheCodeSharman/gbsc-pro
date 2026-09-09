@@ -1337,7 +1337,8 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 
   if (load.enableScalingRgbhv())
   {
-    Tv5725::PresetLoad::rememberScalingRgbhv(true);
+    Tv5725::PresetLoad::rememberScalingRgbhv(
+        Tv5725::PresetLoad::SourceLinesUnknown);
   }
   rto->videoStandardInput = load.videoStandardInputAfterLoad();
 }
@@ -4164,12 +4165,12 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
 // The standard reaches applyPresets() as a byte and is set straight back to the
 // scaling-RGBHV marker afterwards, which is one number carrying two facts and
 // what step 12 removes. docs/input-acquisition.md
-static void loadScalingRgbhvPreset(uint8_t standard)
+static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
 {
     rto->videoStandardInput = standard;
     applyPresets(standard);
 
-    Tv5725::PresetLoad::rememberScalingRgbhv(true);
+    Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
     Tv5725::InputFormatter::writeLineCounterStart(16);
     rto->videoStandardInput = 14;
 
@@ -4576,7 +4577,6 @@ void runSyncWatcher() //
         static uint16_t RGBHVNoSyncCounter = 0;
 
         if (uopt->preferScalingRgbhv && rto->continousStableCounter >= 2) {
-            static uint16_t activePresetLineCount = 0;
 
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
             if (sourceLines != 0 && rgbhvBypass()) {
@@ -4586,7 +4586,7 @@ void runSyncWatcher() //
                 if (heldLines != 0) {
                     sourceLines = heldLines;
                     rto->isValidForScalingRGBHV = true;
-                    Tv5725::PresetLoad::rememberScalingRgbhv(true);
+                    Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
                     rto->autoBestHtotalEnabled = 1;
 
                     if (Tv5725::SyncMeasurement::isCsync() == false) {
@@ -4614,8 +4614,7 @@ void runSyncWatcher() //
                     if (uopt->presetPreference == 10)
                         uopt->presetPreference = Output1080P;
 
-                    activePresetLineCount = sourceLines;
-                    loadScalingRgbhvPreset(standard);
+                    loadScalingRgbhvPreset(standard, sourceLines);
                 }
             }
 
@@ -4623,7 +4622,7 @@ void runSyncWatcher() //
                 SYNC_EVENT("rgbhv-keep-scaling", sourceLines);
 
                 const uint8_t wantedStandard =
-                    Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines, activePresetLineCount);
+                    Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines);
 
                 if (wantedStandard != 0) {
 
@@ -4635,8 +4634,7 @@ void runSyncWatcher() //
                             uopt->presetPreference = Output720P;
                         }
 
-                        activePresetLineCount = sourceLines;
-                        loadScalingRgbhvPreset(wantedStandard);
+                        loadScalingRgbhvPreset(wantedStandard, sourceLines);
                     }
                 }
             }

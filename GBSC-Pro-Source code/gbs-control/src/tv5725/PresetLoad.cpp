@@ -5,6 +5,7 @@ namespace Tv5725 {
 namespace {
 
 bool scalingRgbhvInForce_ = false;
+uint16_t scalingRgbhvLines_ = 0;
 
 }  // namespace
 
@@ -13,14 +14,16 @@ bool PresetLoad::scalingRgbhvInForce()
     return scalingRgbhvInForce_;
 }
 
-void PresetLoad::rememberScalingRgbhv(bool enabled)
+void PresetLoad::rememberScalingRgbhv(uint16_t sourceLines)
 {
-    scalingRgbhvInForce_ = enabled;
+    scalingRgbhvInForce_ = true;
+    scalingRgbhvLines_ = sourceLines;
 }
 
 void PresetLoad::forgetScalingRgbhv()
 {
     scalingRgbhvInForce_ = false;
+    scalingRgbhvLines_ = 0;
 }
 
 PresetLoad::PresetLoad(uint8_t videoStandardInput, uint8_t adcInputSel,
@@ -51,8 +54,9 @@ bool PresetLoad::enableScalingRgbhv() const
     return enableScalingRgbhv_;
 }
 
-uint8_t PresetLoad::rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLines)
+uint8_t PresetLoad::rgbhvPresetStandard(uint16_t sourceLines)
 {
+    const uint16_t loadedLines = scalingRgbhvLines_;
     if (sourceLines < 280 && loadedLines > 280)
         return 1;
     if (sourceLines < 380 && loadedLines > 380)

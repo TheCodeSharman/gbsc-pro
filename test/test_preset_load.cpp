@@ -109,27 +109,32 @@ TEST_CASE("a scaled RGBHV source changes preset when its line count changes buck
     // is reloaded when the count crosses 280 or 380 away from the count the
     // loaded preset was chosen for. 0 means keep the one already loaded.
     SUBCASE("no crossing keeps the loaded preset") {
-        CHECK(PresetLoad::rgbhvPresetStandard(311, 311) == 0);
-        CHECK(PresetLoad::rgbhvPresetStandard(300, 311) == 0);
-        CHECK(PresetLoad::rgbhvPresetStandard(525, 525) == 0);
+        PresetLoad::rememberScalingRgbhv(311);
+        CHECK(PresetLoad::rgbhvPresetStandard(311) == 0);
+        CHECK(PresetLoad::rgbhvPresetStandard(300) == 0);
+
+        PresetLoad::rememberScalingRgbhv(525);
+        CHECK(PresetLoad::rgbhvPresetStandard(525) == 0);
     }
 
     SUBCASE("down past 280") {
-        CHECK(PresetLoad::rgbhvPresetStandard(262, 311) == 1);
+        PresetLoad::rememberScalingRgbhv(311);
+        CHECK(PresetLoad::rgbhvPresetStandard(262) == 1);
     }
 
     SUBCASE("down past 380 but not past 280") {
-        CHECK(PresetLoad::rgbhvPresetStandard(312, 525) == 2);
+        PresetLoad::rememberScalingRgbhv(525);
+        CHECK(PresetLoad::rgbhvPresetStandard(312) == 2);
     }
 
     SUBCASE("up past 380") {
-        CHECK(PresetLoad::rgbhvPresetStandard(525, 311) == 3);
+        PresetLoad::rememberScalingRgbhv(311);
+        CHECK(PresetLoad::rgbhvPresetStandard(525) == 3);
     }
 
-    SUBCASE("nothing loaded yet is not a crossing") {
-        // activePresetLineCount starts at 0, so every comparison against it
-        // reads as "the loaded preset was for fewer lines".
-        CHECK(PresetLoad::rgbhvPresetStandard(311, 0) == 0);
+    SUBCASE("a load that did not establish its source is not a crossing") {
+        PresetLoad::rememberScalingRgbhv(PresetLoad::SourceLinesUnknown);
+        CHECK(PresetLoad::rgbhvPresetStandard(311) == 0);
     }
 }
 
@@ -188,9 +193,35 @@ TEST_CASE("a load that enables scaling RGBHV is remembered")
 TEST_CASE("the next load forgets what the last one enabled")
 {
     PresetLoad::forgetScalingRgbhv();
-    PresetLoad::rememberScalingRgbhv(true);
+    PresetLoad::rememberScalingRgbhv(311);
 
     PresetLoad::forgetScalingRgbhv();
 
     CHECK_FALSE(PresetLoad::scalingRgbhvInForce());
+}
+
+// The count the loaded preset was chosen for travels with the flag saying one
+// is loaded: they are one fact, and a reader comparing a fresh count against a
+// stale one reloads a preset the source never left.
+
+TEST_CASE("the count a scaling RGBHV preset was loaded for is held with it")
+{
+    PresetLoad::forgetScalingRgbhv();
+
+    PresetLoad::rememberScalingRgbhv(311);
+
+    CHECK(PresetLoad::scalingRgbhvInForce());
+    CHECK(PresetLoad::rgbhvPresetStandard(311) == 0);
+    CHECK(PresetLoad::rgbhvPresetStandard(525) == 3);
+}
+
+TEST_CASE("forgetting the load forgets the count it was chosen for")
+{
+    PresetLoad::rememberScalingRgbhv(525);
+
+    PresetLoad::forgetScalingRgbhv();
+
+    // Nothing is loaded, so no count can have crossed a bucket away from it.
+    CHECK(PresetLoad::rgbhvPresetStandard(262) == 0);
+    CHECK(PresetLoad::rgbhvPresetStandard(311) == 0);
 }
