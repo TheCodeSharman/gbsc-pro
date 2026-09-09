@@ -68,7 +68,7 @@ Full 6-segment dumps, diffable with
 | `riscpc-broken-2026-08-01.json` | 08-01 18:16 | no lock after cable fiddling |
 | `riscpc-422-stock-2026-08-01b.json` | 08-01 21:19 | 422-line raster, stock registers |
 | `zarch-akf50-fullscreen-2026-08-02.json` | 08-02 01:06 | Zarch, hand-tuned to full screen |
-| `bypass-800x600-fills-2026-08-02.json` | 08-02 15:52 | HD bypass 800x600, **fills the panel** |
+| `bypass-800x600-fills-2026-08-02.json` | 08-02 15:52 | 800x600 pass-through, **fills the panel**. The note inside it says "HD bypass" and that is wrong: decoded it is `DAC_RGBS_ADC2DAC` 1 with `BYPS2DAC` 0, so it is the ADC-to-DAC route and the HD bypass channel carries only sync (`OUT_SYNC_SEL` 1). Every `HD_*` raster register still reads `enable()`'s resting value -- `HD_HSYNC_RST` 1023, `HD_HB_ST` 3976, `HD_HB_SP` 208, `HD_VS_SP` 7 -- because on that route they are not in the video path. `PLLAD_MD` 1856, `KS` 1, `FS` 1. **It fills the panel because the scaler emits no raster of its own**: the source's 800x600@60 goes out unchanged and the television scales it, which is why pass-through needs no pan or zoom |
 | `fills-corrupt-2026-08-02.json` | 08-02 15:59 | 320x256 full screen via tweak controls, **corrupt** |
 | `clean-not-filling-2026-08-02.json` | 08-02 16:01 | 320x256, clean, does **not** fill |
 | `before-capture-display-region-2026-08-02.json` | 08-02 16:25 | the above, re-captured immediately before the next test |
