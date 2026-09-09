@@ -23,7 +23,7 @@ solving a divider of 1124 on the scaling path.
 
 **Neither route is a colour space**, which the `DAC_RGBS_` prefix on both
 invites. Both switches call `HdBypass::applyColourPath(rto->inputIsYpBpR)`, so
-the component decision follows the input selection on either. What differs is
+the YPbPr decision follows the input selection on either. What differs is
 that on `ADC2DAC` those `HD_*` writes are not in the video path at all, and the
 one converter that is -- the decimator's -- is bypassed unconditionally. So as
 configured, `ADC2DAC` can carry RGB and nothing else.
@@ -89,3 +89,57 @@ carries rather than being extended with a fourteenth and fifteenth case.
   values the switch installed.
 - **Standards 5, 6 and 7 stay unexercised.** No source on this bench produces
   them, so what their arms freeze is not checkable here either way.
+
+## Which route survives is decided by the colour path, and it is not ADC2DAC
+
+This page says YPbPr rather than component throughout, because RGB is carried
+on separate channels too and is component video by the same definition. The
+distinction that matters here is luma plus colour difference against red, green
+and blue, and only the first needs converting.
+
+The chip works in YUV internally, so the conversion a source needs depends on
+which side of the pipeline it is on. Measured on both bench sources, scaling:
+
+| | RISC PC, RGB | Wii, YPbPr |
+|---|---|---|
+| `IF_MATRIX_BYPS` | 1 | 1 |
+| `DEC_MATRIX_BYPS` | **0** | **1** |
+| `VDS_CONVT_BYPS` | 0 | 0 |
+
+`ColourSpace::applyRgb()` writes `DEC_MATRIX_BYPS` 0 and `applyYuv()` writes 1,
+so **the decimator's converter is the RGB-to-YUV input stage**: in circuit for an
+RGB source, bypassed for a YPbPr one. It converts in that direction only.
+
+`VDS_CONVT_BYPS` 0 on both is the YUV-to-RGB stage on the way out, which the DAC
+needs because the board feeds the encoder analog RGB.
+
+So the converters this part offers are one RGB-to-YUV in the decimator, one
+YUV-to-RGB in the VDS, and one YUV-to-RGB in the HD bypass channel
+(`HD_MATRIX_BYPS`, with `HD_DYN_BYPS` beside it).
+
+**On the ADC-to-DAC route the VDS is not in the path and the HD channel is not
+in the path, so the only converter left runs the wrong way.** An RGB source
+needs no conversion at all there -- RGB in, RGB out -- which is why that route
+has always worked and why the fills-the-panel reference has every matrix
+bypassed. A YPbPr source needs one YUV-to-RGB and there is nowhere on that
+route to do it.
+
+**YPbPr pass-through therefore requires `DAC_RGBS_BYPS2DAC`**, and is not a
+configuration of the ADC-to-DAC route that has not been found yet.
+
+That leaves the route as a real choice, but a one-line one taken from the input
+selection rather than from a classification -- the same `rto->inputIsYpBpR` that
+`HdBypass::applyColourPath()` already keys on.
+
+## Testing YPbPr pass-through on this bench
+
+The Wii at 576i cannot be bypassed here: 15 kHz, which the bench display refuses,
+and `bypassCanBeDisplayed()` correctly declines it.
+
+**A Wii set to 480p can.** Settings -> Screen -> TV Resolution -> EDTV/HDTV over
+the same component cable gives 31.5 kHz progressive, which the display shows.
+That reaches standard 3, whose `applyProgressive()` arm already carries real
+480p values, and `/sc?K` routes it through `setOutModeHdBypass()` to the HD
+channel with `applyColourPath(true)` writing `HD_MATRIX_BYPS` 0. So the
+YPbPr bypass path becomes exercisable end to end, which no source on this
+bench has previously allowed.
