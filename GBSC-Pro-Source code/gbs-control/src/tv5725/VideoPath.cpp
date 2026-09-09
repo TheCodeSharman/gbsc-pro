@@ -1,4 +1,4 @@
-#include "Geometry.h"
+#include "VideoPath.h"
 
 #include <Arduino.h>
 
@@ -20,9 +20,9 @@
 
 namespace Tv5725 {
 
-// --- Geometry ----------------------------------------------------------
+// --- VideoPath ----------------------------------------------------------
 
-Geometry::Geometry(DisplayClock &displayClock)
+VideoPath::VideoPath(DisplayClock &displayClock)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
       samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
@@ -39,11 +39,11 @@ Geometry::Geometry(DisplayClock &displayClock)
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
-const PanAndZoom &Geometry::framing() const { return framing_; }
+const PanAndZoom &VideoPath::framing() const { return framing_; }
 
-const FramingTable &Geometry::framings() const { return framings_; }
+const FramingTable &VideoPath::framings() const { return framings_; }
 
-bool Geometry::rememberFraming(const SourceKey &key, const PanAndZoom &framing)
+bool VideoPath::rememberFraming(const SourceKey &key, const PanAndZoom &framing)
 {
     if (!framings_.remember(key, framing))
         return false;
@@ -51,46 +51,46 @@ bool Geometry::rememberFraming(const SourceKey &key, const PanAndZoom &framing)
     return true;
 }
 
-const SourceKey &Geometry::framedKey() const { return framedKey_; }
+const SourceKey &VideoPath::framedKey() const { return framedKey_; }
 
-uint16_t Geometry::framingRevision() const { return framingRevision_; }
+uint16_t VideoPath::framingRevision() const { return framingRevision_; }
 
-bool Geometry::changing() const { return modePending_ || solvePending_; }
+bool VideoPath::changing() const { return modePending_ || solvePending_; }
 
-SourceState Geometry::sourceState() const { return sourceState_; }
+SourceState VideoPath::sourceState() const { return sourceState_; }
 
-bool Geometry::sourceIsPresent() const
+bool VideoPath::sourceIsPresent() const
 {
     return sourceState_ == SourceAcquired && !changing();
 }
 
-uint16_t Geometry::capturableOn(const Axis &axis) const
+uint16_t VideoPath::capturableOn(const Axis &axis) const
 {
     return axis.vertical() ? usableVertical_ : usableHorizontal_;
 }
 
-uint16_t Geometry::originUnitsOn(const Axis &axis) const
+uint16_t VideoPath::originUnitsOn(const Axis &axis) const
 {
     return (uint16_t)lrintf(framing_.originOn(axis) * (float)capturableOn(axis));
 }
 
-uint16_t Geometry::extentUnitsOn(const Axis &axis) const
+uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
 {
     return (uint16_t)lrintf(framing_.extentOn(axis) * (float)capturableOn(axis));
 }
 
-float Geometry::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
+float VideoPath::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
-bool Geometry::sourceLowLineRate() const { return sampling_.lowLineRate(); }
+bool VideoPath::sourceLowLineRate() const { return sampling_.lowLineRate(); }
 
-uint32_t Geometry::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
+uint32_t VideoPath::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
 
 // Measure the source, then solve from it. For the two callers that need the
 // source read again: the deferred retry, whose previous solve was refused
 // against the measurement it already had, and the re-derive command, whose whole
 // contract is the source as it reads now. A caller that has only moved the
 // framing wants solveWindows(), which costs no vsync sample.
-bool Geometry::resolve()
+bool VideoPath::resolve()
 {
     // The same reference the poll pass takes, and for the same reason: a window
     // solved for a taller mode strands the block the rate is timed off, and a
@@ -103,7 +103,7 @@ bool Geometry::resolve()
     return solveWindows();
 }
 
-bool Geometry::solveWindows()
+bool VideoPath::solveWindows()
 {
     CaptureWindow capture;
     if (!measureSourceTimings(capture))
@@ -122,9 +122,9 @@ bool Geometry::solveWindows()
     return true;
 }
 
-const OutputMode *Geometry::outputMode() const { return rasterMode_; }
+const OutputMode *VideoPath::outputMode() const { return rasterMode_; }
 
-bool Geometry::solveRaster()
+bool VideoPath::solveRaster()
 {
     // The choice is an input, not a read-back. Deriving the mode from
     // VDS_VSYNC_RST would leave the preset table -- the thing this replaces --
@@ -198,14 +198,14 @@ bool Geometry::solveRaster()
     return true;
 }
 
-void Geometry::adoptRaster()
+void VideoPath::adoptRaster()
 {
     rasterLinePx_ = GBS::VDS_HSYNC_RST::read() + 1;
     rasterFrameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
     displayClock_.adopt();
 }
 
-void Geometry::inputTimingsChanged(const OutputChoice &choice, uint8_t oversample)
+void VideoPath::inputTimingsChanged(const OutputChoice &choice, uint8_t oversample)
 {
     // The windows land seconds from now, once the source has settled into the
     // mode; until then the previous mode's geometry is what the new source
@@ -232,7 +232,7 @@ void Geometry::inputTimingsChanged(const OutputChoice &choice, uint8_t oversampl
     writeSampling();
 }
 
-bool Geometry::outputModeChanged(const OutputChoice &choice)
+bool VideoPath::outputModeChanged(const OutputChoice &choice)
 {
     choice_ = choice;
     if (modePending_)
@@ -263,7 +263,7 @@ bool Geometry::outputModeChanged(const OutputChoice &choice)
     return solveWindows();
 }
 
-bool Geometry::detectionDue(uint32_t nowMs)
+bool VideoPath::detectionDue(uint32_t nowMs)
 {
     if (detectedEver_ && nowMs - detectedMs_ < DetectionIntervalMs)
         return false;
@@ -272,7 +272,7 @@ bool Geometry::detectionDue(uint32_t nowMs)
     return true;
 }
 
-bool Geometry::poll(uint32_t nowMs)
+bool VideoPath::poll(uint32_t nowMs)
 {
     if (mayRun_ != 0 && !mayRun_())
         return false;
@@ -369,7 +369,7 @@ bool Geometry::poll(uint32_t nowMs)
 }
 
 
-bool Geometry::reset()
+bool VideoPath::reset()
 {
     // The entry goes with the framing. "Back to default" has to mean the table
     // stops answering for this source, or the solve that follows restores
@@ -385,12 +385,12 @@ bool Geometry::reset()
     return solveWindows();
 }
 
-void Geometry::sourceInterrupted()
+void VideoPath::sourceInterrupted()
 {
     sourceInterrupted_ = true;
 }
 
-void Geometry::enterBypass()
+void VideoPath::enterBypass()
 {
     // The measurement is NOT discarded. Bypass does not measure, so what is
     // held is the rate from the mode that preceded it -- which is the fact a
@@ -417,7 +417,7 @@ void Geometry::enterBypass()
     activeLinesStop_ = 0;
 }
 
-bool Geometry::solveForSource()
+bool VideoPath::solveForSource()
 {
     const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz());
     if (arriving == framedKey_)
@@ -433,18 +433,18 @@ bool Geometry::solveForSource()
 
 
 
-void Geometry::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
+void VideoPath::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
 
-void Geometry::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
+void VideoPath::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
-bool Geometry::reacquireSyncType()
+bool VideoPath::reacquireSyncType()
 {
     syncTypeProbed_ = false;
     establishSyncType();
     return SyncType::isCsync();
 }
 
-void Geometry::establishSyncType()
+void VideoPath::establishSyncType()
 {
     if (syncTypeProbed_ || syncProbe_ == 0)
         return;
@@ -456,7 +456,7 @@ void Geometry::establishSyncType()
     delay(SyncProcessor::PathSettleMs);
 }
 
-void Geometry::holdReferenceSampling()
+void VideoPath::holdReferenceSampling()
 {
     const uint16_t reference = SourceMeasurement::referenceDivider(sampling_.lineDoubled());
     const uint32_t estimate = sampling_.estimatedLineRateHz();
@@ -490,7 +490,7 @@ void Geometry::holdReferenceSampling()
 // One quantity in three registers, each written by the block that declares it.
 // The divider goes first because Adc latches it, and the latch loads KS, CKOS
 // and ICP with it -- so anything setting those must already have run.
-void Geometry::writeSampling()
+void VideoPath::writeSampling()
 {
     if (!sampling_.usable())
         return;
@@ -527,7 +527,7 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
 // the answer holds whatever the last idle pass concluded -- true -- for as long
 // as the solve goes on failing. That is precisely when whoever reads it needs
 // to know the source is not usable.
-bool Geometry::noSourceToSolve()
+bool VideoPath::noSourceToSolve()
 {
     sourceState_ = SourceAbsent;
     return false;
@@ -536,7 +536,7 @@ bool Geometry::noSourceToSolve()
 // The solve gated on its own steadiness run over this count, longer than the
 // idle one, so the idle run starts satisfied rather than re-earning what has
 // just been measured and dipping sourceIsPresent() for the polls it takes.
-void Geometry::holdSolvedSource()
+void VideoPath::holdSolvedSource()
 {
     idleLines_ = solvedLines_;
     idleRun_ = SourceMeasurement::SteadySamples;
@@ -549,7 +549,7 @@ void Geometry::holdSolvedSource()
 
 // Whether the count has held long enough to be the source's rather than a
 // reading taken through something still settling.
-bool Geometry::countHeld(uint16_t lines)
+bool VideoPath::countHeld(uint16_t lines)
 {
     if (lines != idleLines_) {
         idleLines_ = lines;
@@ -566,7 +566,7 @@ bool Geometry::countHeld(uint16_t lines)
 // **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
 // steadiness run, and filling it while the engine is idle leaves the next mode
 // change's first poll believing a count from the mode before it.
-bool Geometry::sourceMoved()
+bool VideoPath::sourceMoved()
 {
     // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
     // change so a later poll cannot write one over the setup it just chose.
@@ -636,7 +636,7 @@ bool Geometry::sourceMoved()
     return true;
 }
 
-bool Geometry::rateMoved()
+bool VideoPath::rateMoved()
 {
     const uint32_t rate = SourceMeasurement::measureLineRateFromHPeriod(solvedLines_);
     if (rate == 0 || solvedLineRateHz_ == 0
@@ -677,7 +677,7 @@ bool Geometry::rateMoved()
     return true;
 }
 
-void Geometry::solveScanMode()
+void VideoPath::solveScanMode()
 {
     const uint16_t lines =
         SourceMeasurement::measureSourceLinesCorrected(sampling_.divider());
@@ -702,7 +702,7 @@ void Geometry::solveScanMode()
     scanModeApplied_ = true;
 }
 
-bool Geometry::solveSampling(uint8_t oversample)
+bool VideoPath::solveSampling(uint8_t oversample)
 {
     if (!sampling_.solve(sampling_.lineRateHz(), oversample)) {
         samplingPending_ = true;
@@ -713,12 +713,12 @@ bool Geometry::solveSampling(uint8_t oversample)
     return true;
 }
 
-int16_t Geometry::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)
+int16_t VideoPath::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)
 {
     return pixels == 0 ? 0 : axis.stepUnits(pixels, scale.magnification());
 }
 
-bool Geometry::pan(int16_t dxPixels, int16_t dyPixels)
+bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)
 {
     PanAndZoom wanted = framing_;
     wanted.panBy(AxisHorizontal, unitsFor(dxPixels, horizontalScale_, AxisHorizontal),
@@ -728,7 +728,7 @@ bool Geometry::pan(int16_t dxPixels, int16_t dyPixels)
     return step(wanted);
 }
 
-bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
+bool VideoPath::zoom(int16_t dhPixels, int16_t dvPixels)
 {
     PanAndZoom wanted = framing_;
     wanted.zoomBy(AxisHorizontal, unitsFor(dhPixels, horizontalScale_, AxisHorizontal),
@@ -738,18 +738,18 @@ bool Geometry::zoom(int16_t dhPixels, int16_t dvPixels)
     return step(wanted);
 }
 
-bool Geometry::applyFraming(const PanAndZoom &framing)
+bool VideoPath::applyFraming(const PanAndZoom &framing)
 {
     return step(framing);
 }
 
-bool Geometry::fail()
+bool VideoPath::fail()
 {
     solvePending_ = true;
     return false;
 }
 
-bool Geometry::measureSourceTimings(CaptureWindow &capture)
+bool VideoPath::measureSourceTimings(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
                        activeLinesStop_);
@@ -768,7 +768,7 @@ bool Geometry::measureSourceTimings(CaptureWindow &capture)
     return true;
 }
 
-bool Geometry::calculateInputFormatterRegisters(CaptureWindow &capture)
+bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
 {
     capture.setFraming(framing_);
     framing_ = capture.framing();
@@ -777,14 +777,14 @@ bool Geometry::calculateInputFormatterRegisters(CaptureWindow &capture)
     return capture.usable() ? true : fail();
 }
 
-VideoProcessorTimings Geometry::calculateOutputRaster(const CaptureWindow &capture) const
+VideoProcessorTimings VideoPath::calculateOutputRaster(const CaptureWindow &capture) const
 {
     return VideoProcessorTimings(capture.horizontal().width(), capture.vertical().width(),
                             capture.linePx(), capture.frameLines(),
                             activeStop_, activeLinesStop_);
 }
 
-void Geometry::write(const VideoProcessorTimings &solved, const CaptureWindow &capture)
+void VideoPath::write(const VideoProcessorTimings &solved, const CaptureWindow &capture)
 {
     // 1. Far edges OUTWARD only, which can only add headroom. The memory window
     // hugs the picture, so it moves in as well as out; narrowing it here would
@@ -847,7 +847,7 @@ void Geometry::write(const VideoProcessorTimings &solved, const CaptureWindow &c
         GBS::PB_CAP_OFFSET::write(offset);
 }
 
-bool Geometry::step(const PanAndZoom &wanted)
+bool VideoPath::step(const PanAndZoom &wanted)
 {
     PanAndZoom before = framing_;
     framing_ = wanted;

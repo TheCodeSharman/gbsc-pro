@@ -12,7 +12,7 @@ namespace Tv5725 {
 // All twelve preset tables agree on every field here and none of it moves with
 // the mode, while RD-5725-1.1 documents what the fields do without offering a
 // right value for a board -- so this is a hundred constants carried for
-// continuity. The geometry, which is what does move, is Geometry's.
+// continuity. The geometry, which is what does move, is VideoPath's.
 //
 // Two absences that look like omissions:
 //

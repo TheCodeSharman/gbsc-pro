@@ -5,7 +5,7 @@
 
 namespace Tv5725 {
 
-Controls::Controls(Geometry &engine, Print &console)
+Controls::Controls(VideoPath &engine, Print &console)
     : engine_(engine), console_(console) {}
 
 bool Controls::horizontalPan(int16_t pixels)
@@ -36,7 +36,7 @@ bool Controls::verticalZoom(int16_t pixels)
     return moved;
 }
 
-Geometry &Controls::engine() const { return engine_; }
+VideoPath &Controls::engine() const { return engine_; }
 
 void Controls::report(const char *control, int16_t pixels) const
 {

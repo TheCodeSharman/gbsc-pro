@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
+.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -37,7 +37,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|HdBypass|Adc|SamplingLog|SourceStandard|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|HdBypass|Adc|SamplingLog|SourceStandard|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -401,12 +401,12 @@ memory-bus:
 # they hold are configured, which is a constraint BETWEEN classes that no
 # per-class view can see.
 #
-# GLOBBED, never written out, for the reason the geometry target gives: a
+# GLOBBED, never written out, for the reason the video-path target gives: a
 # hand-written source list drifted within an hour of being written. Controls.cpp
-# and Geometry.cpp are the only exclusions -- the first needs more of Arduino than
+# and VideoPath.cpp are the only exclusions -- the first needs more of Arduino than
 # the fake provides, the second calls getSourceFieldRate(), which lives in the
 # sketch and not in src/.
-BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls)\.cpp$$') $(CLOCK_SRC)
+BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls)\.cpp$$') $(CLOCK_SRC)
 
 bringup:
 	@mkdir -p "$(OUT)"
@@ -582,31 +582,31 @@ deinterlacer:
 	  "$(HERE)/test_deinterlacer.cpp" src/tv5725/Deinterlacer.cpp
 	@"$(OUT)/test_deinterlacer"
 
-## geometry-raster: host unit tests for what the engine does while the source is unsettled
+## video-path-raster: host unit tests for what the engine does while the source is unsettled
 #
-# The geometry engine, off the board. Geometry.cpp was excluded from every host
+# The engine, off the board. VideoPath.cpp was excluded from every host
 # build for touching GBS:: and including <Arduino.h>; fake/Wire.h covered the
 # first and fake/Arduino.h -- three lines, for `boolean` -- covers the second.
 # getSourceFieldRate() is the sketch's, and the test supplies its own, which is
 # what makes the source measurement holdable still.
-geometry-raster:
+video-path-raster:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry_raster" \
-	  "$(HERE)/test_geometry_raster.cpp" $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_geometry_raster"
+	  -o "$(OUT)/test_video_path_raster" \
+	  "$(HERE)/test_video_path_raster.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_path_raster"
 
-## geometry-windows: host unit tests for the registers one solve writes
+## video-path-windows: host unit tests for the registers one solve writes
 #
 # The net under deleting doPostPresetLoadSteps()'s geometry writes. Those all sit
 # behind videoStandardInput 1-4, 8 or 9, and the bench source comes up as 14, so
-# no bench test can reach them -- see the header of test_geometry_windows.cpp.
-geometry-windows:
+# no bench test can reach them -- see the header of test_video_path_windows.cpp.
+video-path-windows:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry_windows" \
-	  "$(HERE)/test_geometry_windows.cpp" $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_geometry_windows"
+	  -o "$(OUT)/test_video_path_windows" \
+	  "$(HERE)/test_video_path_windows.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_path_windows"
 
 ## controls: host unit tests for the OSD and IR control surface
 #
@@ -656,19 +656,19 @@ sampling-log:
 	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sampling_log"
 
-## geometry: the registers each Tv5725::Geometry entry point writes
+## video-path: the registers each Tv5725::VideoPath entry point writes
 #
-# Each case drives Geometry at the top and reads the chip back through the
+# Each case drives VideoPath at the top and reads the chip back through the
 # firmware's own register declarations -- InputFormatter::IF_HSYNC_RST and the
 # rest -- so a failure names the field and prints both values, and every number
 # is checkable against docs/scaler-geometry-model.md. The count of registers
 # written is asserted alongside, so a stray write fails too.
-geometry:
+video-path:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry" \
-	  "$(HERE)/test_geometry.cpp" $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_geometry"
+	  -o "$(OUT)/test_video_path" \
+	  "$(HERE)/test_video_path.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_path"
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -682,7 +682,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
+test: sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

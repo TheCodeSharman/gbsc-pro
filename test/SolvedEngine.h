@@ -1,7 +1,7 @@
 #ifndef TEST_SOLVED_ENGINE_H_
 #define TEST_SOLVED_ENGINE_H_
 
-// A solved Geometry over the fake bus, shared by the suites that need one.
+// A solved VideoPath over the fake bus, shared by the suites that need one.
 // Header-only and defining its globals: every host test is a single-translation
 // -unit binary, so one include per binary is the whole contract.
 
@@ -12,7 +12,7 @@
 
 FakeTwoWire Wire;
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 // The sketch defines this for real; here the test drives it, so the one input
@@ -61,15 +61,15 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
 // The detection pass runs on a cadence, so a run of passes is a run of ticks.
 static uint32_t g_nowMs = 0;
 
-static bool pollOnce(Tv5725::Geometry &engine)
+static bool pollOnce(Tv5725::VideoPath &engine)
 {
-    g_nowMs += Tv5725::Geometry::DetectionIntervalMs;
+    g_nowMs += Tv5725::VideoPath::DetectionIntervalMs;
     return engine.poll(g_nowMs);
 }
 
 // poll() gates on a line count steady over several passes before it will pay
 // for a field rate measurement, so a solve takes more than one call.
-static bool pollUntilSolved(Tv5725::Geometry &engine)
+static bool pollUntilSolved(Tv5725::VideoPath &engine)
 {
     for (uint8_t i = 0; i < 4 * Tv5725::SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(engine))
@@ -84,7 +84,7 @@ static bool pollUntilSolved(Tv5725::Geometry &engine)
 // left behind.
 struct SolvedEngine {
     Tv5725::DisplayClock clock;
-    Tv5725::Geometry engine;
+    Tv5725::VideoPath engine;
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,

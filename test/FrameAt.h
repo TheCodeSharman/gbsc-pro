@@ -11,9 +11,9 @@
 
 #include <doctest/doctest.h>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 
-static void frameAt(Tv5725::Geometry &engine, int16_t zh, int16_t zv,
+static void frameAt(Tv5725::VideoPath &engine, int16_t zh, int16_t zv,
                     int16_t ph, int16_t pv)
 {
     using namespace Tv5725;

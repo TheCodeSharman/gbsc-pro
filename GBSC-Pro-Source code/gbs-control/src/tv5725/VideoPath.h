@@ -1,5 +1,5 @@
-#ifndef TV5725_GEOMETRY_H_
-#define TV5725_GEOMETRY_H_
+#ifndef TV5725_VIDEO_PATH_H_
+#define TV5725_VIDEO_PATH_H_
 
 // Where the geometry meets the TV5725's registers, and the only place they meet.
 // docs/firmware-geometry-engine.md
@@ -42,9 +42,9 @@ enum SourceState {
 
 class OutputMode;
 
-class Geometry {
+class VideoPath {
 public:
-    explicit Geometry(DisplayClock &displayClock);
+    explicit VideoPath(DisplayClock &displayClock);
 
     const PanAndZoom &framing() const;
 
@@ -361,4 +361,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_GEOMETRY_H_
+#endif  // TV5725_VIDEO_PATH_H_

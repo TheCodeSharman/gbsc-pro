@@ -74,7 +74,7 @@ public:
 
     // Bring the framing back to what the line can actually realise. capture()
     // clamps the WINDOW, and a framing left beyond anything reachable kills the
-    // control in that direction -- see Geometry::readCapture().
+    // control in that direction -- see VideoPath::readCapture().
     void clampToLine(const InputLine &line, const SourceTiming &timing,
                      const Axis &axis, const OutputRaster &raster);
 

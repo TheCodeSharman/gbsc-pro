@@ -156,7 +156,7 @@ TEST_CASE("the engine uses the divider it was GIVEN, not the one in the register
 
     REQUIRE(solved.engine.resolve());
 
-    // Not vacuous: test_geometry.cpp's checkBenchGeometry() pins both of these
+    // Not vacuous: test_video_path.cpp's checkBenchGeometry() pins both of these
     // to the values measured on the unit, so "unchanged" is anchored to a
     // number rather than to whatever the engine happened to leave.
     CHECK(Wire.field(1, 0x18, 0, 11) == startBefore);
@@ -250,7 +250,7 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     g_fieldRate = 50.08f;
 
     DisplayClock clock;
-    Geometry engine(clock);
+    VideoPath engine(clock);
 
     engine.inputTimingsChanged(Tv5725::OutputChoice(Tv5725::Output1080P), 4);
     CHECK_FALSE(pollUntilSolved(engine));

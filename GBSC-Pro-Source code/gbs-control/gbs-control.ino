@@ -67,7 +67,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
 #include "src/tv5725/FramingText.h"
 #include "src/tv5725/SlotText.h"
-#include "src/tv5725/Geometry.h"
+#include "src/tv5725/VideoPath.h"
 #include "src/tv5725/FramingSaveTimer.h"
 #include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
@@ -975,7 +975,7 @@ SerialMirror SerialM;
 // initialised in the order they appear, so geometry is ready before the controls
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
-Tv5725::Geometry geometry(rtos.displayClock);
+Tv5725::VideoPath geometry(rtos.displayClock);
 
 // The framing table, in its own file. Separate from /preferencesv2.txt because
 // it is variable length and keyed, and mixing it with the scalar settings
@@ -1032,7 +1032,7 @@ void externalClockGenResetClock()
     // it, because loop() stashes the divider and parks
     // DisplayClock::ExternalPclkIn in PLL648_CONTROL_01 -- so the register
     // stops answering what the raster asked for. The paths that solve no raster
-    // adopt it through Geometry::enterBypass().
+    // adopt it through VideoPath::enterBypass().
     Tv5725::DisplayClock &displayClock = rto->displayClock;
     uint32_t steered = displayClock.reset();
 
@@ -1174,7 +1174,7 @@ bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 // it reads at the sites below: it says only that something was recognised and
 // nothing has cleared it, which is why a source the sync processor is counting
 // can sit here with the byte at 0. The measurement that answers the other
-// question is Geometry::sourceIsPresent(). docs/retiring-mode-detect.md
+// question is VideoPath::sourceIsPresent(). docs/retiring-mode-detect.md
 static bool standardIsHeld()
 {
     return rto->videoStandardInput != 0;
@@ -3132,7 +3132,7 @@ void doPostPresetLoadSteps()
         // Both halves of that pair are Tv5725::Memory's: the offset is
         // Memory::offsetFor(the output line) and the fetch is computed
         // against it, so deriving one from the other after the fact could
-        // only fight the model. Geometry::write() sets both.
+        // only fight the model. VideoPath::write() sets both.
 
         if (!rto->outModeHdBypass) {
             ResetSDRAM();
@@ -4200,7 +4200,7 @@ void runSyncWatcher() //
     }
 
     // A source that returns at the SAME line count and a different field rate is
-    // invisible to Geometry::sourceMoved(), which has only the count to go on, so
+    // invisible to VideoPath::sourceMoved(), which has only the count to go on, so
     // the engine holds a rate the source no longer runs at and nothing re-arms it.
     // The chip latches the disturbance instead. Measured: a wrong rate solved
     // against a correct count survives indefinitely and takes /sc?~ to clear.

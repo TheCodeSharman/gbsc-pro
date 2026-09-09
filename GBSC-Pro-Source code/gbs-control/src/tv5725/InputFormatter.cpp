@@ -54,7 +54,7 @@ void InputFormatter::init()
 
     // Horizontal blanking set 0. The IF module has three sets -- 0 at
     // s1_10/s1_12, 1 at s1_14/s1_16, 2 at s1_18/s1_1a -- with no selector
-    // documented between them; Geometry::write() owns set 2, the capture window
+    // documented between them; VideoPath::write() owns set 2, the capture window
     // and the one that demonstrably moves the picture. Set 1 is deliberately
     // absent, measured inert and asserted absent by test_bringup.cpp
     // (docs/investigations/preset-abandonment-audit.md). Set 0 has not had that

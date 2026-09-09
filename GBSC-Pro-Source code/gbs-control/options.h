@@ -111,7 +111,7 @@ struct runTimeOptions
 
     // The display clock, which the engine steers from the raster it solved and
     // the frame time lock walks away from that on every correction. It lives
-    // here because both reach it; Tv5725::Geometry is handed a reference.
+    // here because both reach it; Tv5725::VideoPath is handed a reference.
     Tv5725::DisplayClock displayClock;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
     // PLL648_CONTROL_01 selects PCLKIN while the external clock generator

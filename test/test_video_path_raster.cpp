@@ -18,7 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 using namespace Tv5725;
@@ -71,15 +71,15 @@ static unsigned registersWritten()
 // The detection pass runs on a cadence, so a run of passes is a run of ticks.
 static uint32_t g_nowMs = 0;
 
-static bool pollOnce(Geometry &engine)
+static bool pollOnce(VideoPath &engine)
 {
-    g_nowMs += Geometry::DetectionIntervalMs;
+    g_nowMs += VideoPath::DetectionIntervalMs;
     return engine.poll(g_nowMs);
 }
 
 // poll() gates on a line count steady over several passes before it will pay for
 // a field rate measurement, so a solve takes more than one call.
-static bool pollUntilSolved(Geometry &engine)
+static bool pollUntilSolved(VideoPath &engine)
 {
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(engine))
@@ -89,7 +89,7 @@ static bool pollUntilSolved(Geometry &engine)
 
 struct SettledEngine {
     DisplayClock clock;
-    Geometry engine;
+    VideoPath engine;
 
     SettledEngine() : engine(clock)
     {
@@ -264,7 +264,7 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 // VDS_VSYNC_RST, s3_02[14:4] -- the output frame the engine writes.
 static uint16_t frameLinesWritten() { return Wire.field(3, 0x02, 4, 11) + 1; }
 
-static bool pollUntilResolved(Geometry &engine)
+static bool pollUntilResolved(VideoPath &engine)
 {
     for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(engine))
@@ -359,7 +359,7 @@ TEST_CASE("the engine always holds what the output is doing")
 TEST_CASE("nothing solved yet is not bypass")
 {
     DisplayClock clock;
-    Geometry engine(clock);
+    VideoPath engine(clock);
 
     CHECK((engine.outputMode() == 0));
 }

@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 #include "Axis.h"
-#include "Geometry.h"
+#include "VideoPath.h"
 
 class Print;
 
@@ -15,21 +15,21 @@ namespace Tv5725 {
 
 class Controls {
 public:
-    Controls(Geometry &engine, Print &console);
+    Controls(VideoPath &engine, Print &console);
 
     bool horizontalPan(int16_t pixels);
     bool verticalPan(int16_t pixels);
     bool horizontalZoom(int16_t pixels);
     bool verticalZoom(int16_t pixels);
 
-    Geometry &engine() const;
+    VideoPath &engine() const;
 
 private:
     // The ADJ line: what the press asked for and the registers it landed in.
     // Under GBS_DEBUG, like every other console line.
     void report(const char *control, int16_t pixels) const;
 
-    Geometry &engine_;
+    VideoPath &engine_;
     Print &console_;
 };
 

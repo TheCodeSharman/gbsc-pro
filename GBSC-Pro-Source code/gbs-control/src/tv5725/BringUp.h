@@ -28,7 +28,7 @@ namespace Tv5725 {
 //   default is 0. That includes bits a preset table set inside a byte it owns:
 //   Deinterlacer leaves five RESERVED groups the table wrote 1.
 //
-// - The output raster, the windows, the scales, the clock. Geometry computes
+// - The output raster, the windows, the scales, the clock. VideoPath computes
 //   those.
 class BringUp {
 public:
