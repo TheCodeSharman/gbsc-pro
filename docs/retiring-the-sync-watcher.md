@@ -170,6 +170,38 @@ the information the list restores, and it is why the gate cannot open in front
 of the ladder as it stands: `sourceIsPresent()` lets the counter ADVANCE where
 it used to sit pinned at 150, so rungs that never ran before start running.
 
+### `0x07fe` is a signal, not a park, and its comment says otherwise
+
+The two sites that write `rto->noSyncCounter = 0x07fe` are commented as stopping
+the escalation before it reaches the input toggle. **That is not what it does.**
+A block further down reads the value:
+
+    if (rto->noSyncCounter >= 0x07fe) {
+        rto->noSyncCounter = 0;
+        printf("No Signal Out\n");
+        rto->HdmiHoldDetection = true;
+    }
+
+So the write is a MESSAGE to that block, and its effect is: announce no signal,
+set `HdmiHoldDetection`, and **restart the run from zero**. The ladder does not
+stop -- it begins again, and reaches the input toggle in another 413 passes.
+
+`0x07fe` has a second trigger nobody wrote: the counter reaches 2046 by counting,
+which is about 41 seconds of no sync at the 20 ms tick. So the block is both "the
+ladder gave up" and "one of these two rungs found something", on one path, and
+the reason it works is that both want the same thing -- end the round.
+
+**That is a cycle, which is what the ordered list already has.** The honest
+replacement is `SyncRecovery::CycleLength` reaching its end, with the two rungs
+ending the cycle early rather than jumping a counter to a number chosen to be
+above a threshold. What it is NOT is a flag meaning "a source was seen here":
+that reading was tried, and it is wrong because the counter reset is the point.
+
+**The cadence changes if this is done naively.** Natural expiry is 2046 passes
+today and the list's cycle is 451, so the no-signal announcement would arrive
+four times sooner. Whether 41 s or 9 s is right is a judgement about what a
+television should be told, not something the refactor can settle.
+
 **What has to be decided before it moves, and neither is mechanical:**
 
 - **What happens at the end of the list.** The moduli have no end; they cycle
