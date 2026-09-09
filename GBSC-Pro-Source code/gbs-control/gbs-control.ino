@@ -1191,7 +1191,7 @@ bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 // it reads at the sites below: it says only that something was recognised and
 // nothing has cleared it, which is why a source the sync processor is counting
 // can sit here with the byte at 0. The measurement that answers the other
-// question is VideoPath::sourceIsPresent(). docs/input-acquisition.md
+// question is InputAcquisition::sourceIsPresent(). docs/input-acquisition.md
 static bool standardIsHeld()
 {
     return rto->videoStandardInput != 0;
@@ -4233,7 +4233,7 @@ void runSyncWatcher() //
     // measuring, so arming on arrival does not read the source mid-transition.
     const bool sourceDisturbed = Tv5725::Interrupts::takeSourceDisturbed();
     if (sourceDisturbed)
-        geometry.sourceInterrupted();
+        inputAcquisition.sourceInterrupted();
 
     // Not while a mode change is working through, and not on YPbPr: the
     // component path chooses its own level and this would walk it off.
@@ -7965,9 +7965,9 @@ void startWebserver()
             // The state names which of the three, because absent and unlocked
             // want the same recovery and only one is worth re-probing the sync
             // type on. docs/input-acquisition.md
-            geometry.sourceIsPresent() ? "true" : "false",
-            geometry.sourceState() == Tv5725::SourceAcquired   ? "acquired"
-            : geometry.sourceState() == Tv5725::SourceUnlocked ? "unlocked"
+            inputAcquisition.sourceIsPresent() ? "true" : "false",
+            inputAcquisition.sourceState() == InputAcquisition::SourceAcquired   ? "acquired"
+            : inputAcquisition.sourceState() == InputAcquisition::SourceUnlocked ? "unlocked"
                                                                : "absent");
         request->send(200, "application/json", body);
     });

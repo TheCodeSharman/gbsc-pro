@@ -18,7 +18,17 @@ FakeTwoWire Wire;
 // The sketch defines this for real; here the test drives it, so the one input
 // that cannot be held still on a board is a constant here.
 static float g_fieldRate = 50.08f;
-float getSourceFieldRate(boolean) { return g_fieldRate; }
+
+// Counted because the cost is the point: this samples vsync edges through
+// FrameSync, up to 250 ms a pulse, which is why the solve has a cheap gate in
+// front of it and why a quiet source must not reach it at all.
+static unsigned g_fieldRateCalls = 0;
+
+float getSourceFieldRate(boolean)
+{
+    ++g_fieldRateCalls;
+    return g_fieldRate;
+}
 uint32_t getPllRate() { return 0; }
 void tv5725Log(const char *) {}
 
@@ -58,11 +68,14 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
-// The cadence is the acquisition layer's, so a case driving the engine directly
-// says whether this pass may take a detection reading.
+// One pass of the engine. The source event is the acquisition layer's, so a case
+// driving the engine directly gets the solving half alone -- and both outcomes
+// that used to read as poll() returning true still do.
 static bool pollOnce(Tv5725::VideoPath &engine)
 {
-    return engine.poll(true);
+    const Tv5725::VideoPath::PollOutcome outcome = engine.poll();
+    return outcome == Tv5725::VideoPath::PollSolved
+        || outcome == Tv5725::VideoPath::PollResolved;
 }
 
 // poll() gates on a line count steady over several passes before it will pay

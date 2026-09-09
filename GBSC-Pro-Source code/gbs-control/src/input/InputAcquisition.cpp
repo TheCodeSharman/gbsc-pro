@@ -1,9 +1,15 @@
 #include "InputAcquisition.h"
 
+#include <stdio.h>
+
+#include "../tv5725/OutputMode.h"
+
 InputAcquisition::InputAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0), detectedMs_(0),
-      detectedEver_(false) {}
+      detectedEver_(false), idleLines_(0), idleRun_(0),
+      unusableCountArmed_(false), sourceState_(SourceAbsent),
+      candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false) {}
 
 void InputAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -12,6 +18,15 @@ float InputAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz
 uint32_t InputAcquisition::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
 
 bool InputAcquisition::sourceLowLineRate() const { return sampling_.lowLineRate(); }
+
+InputAcquisition::SourceState InputAcquisition::sourceState() const { return sourceState_; }
+
+bool InputAcquisition::sourceIsPresent() const
+{
+    return sourceState_ == SourceAcquired && !videoPath_.changing();
+}
+
+void InputAcquisition::sourceInterrupted() { sourceInterrupted_ = true; }
 
 bool InputAcquisition::detectionDue(uint32_t nowMs)
 {
@@ -22,9 +37,205 @@ bool InputAcquisition::detectionDue(uint32_t nowMs)
     return true;
 }
 
+static void logSourceState(InputAcquisition::SourceState state, uint16_t lines, uint16_t samples,
+                           uint16_t divider)
+{
+    char line[88];
+    snprintf(line, sizeof(line),
+             "source %s: %u lines, %u samples against divider %u",
+             state == InputAcquisition::SourceAcquired   ? "acquired"
+             : state == InputAcquisition::SourceUnlocked ? "UNLOCKED"
+                                       : "absent",
+             (unsigned)lines, (unsigned)samples, (unsigned)divider);
+    tv5725Log(line);
+}
+
+static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
+{
+    char line[72];
+    snprintf(line, sizeof(line), "source moved: %s (%u lines, solved %u)",
+             why, (unsigned)lines, (unsigned)solved);
+    tv5725Log(line);
+}
+
+// The solve gated on its own steadiness run over this count, longer than the
+// idle one, so the idle run starts satisfied rather than re-earning what has
+// just been measured and dipping sourceIsPresent() for the polls it takes.
+void InputAcquisition::holdSolvedSource()
+{
+    idleLines_ = videoPath_.solvedLines();
+    idleRun_ = Tv5725::SourceMeasurement::SteadySamples;
+
+    // A solve that has just written the divider has not had a line counted
+    // through it yet, so the sampling half is asked on the next idle pass
+    // rather than assumed here.
+    sourceState_ = SourceAcquired;
+}
+
+// Whether the count has held long enough to be the source's rather than a
+// reading taken through something still settling.
+bool InputAcquisition::countHeld(uint16_t lines)
+{
+    if (lines != idleLines_) {
+        idleLines_ = lines;
+        idleRun_ = 0;
+        return false;
+    }
+    if (idleRun_ < Tv5725::SourceMeasurement::SteadySamples) {
+        ++idleRun_;
+        return false;
+    }
+    return true;
+}
+
+// **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
+// steadiness run, and filling it while the engine is idle leaves the next mode
+// change's first poll believing a count from the mode before it.
+bool InputAcquisition::sourceMoved()
+{
+    // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
+    // change so a later poll cannot write one over the setup it just chose.
+    const Tv5725::OutputMode *mode = videoPath_.outputMode();
+    if (mode == 0 || mode->isBypass() || videoPath_.solvedLines() == 0) {
+        sourceInterrupted_ = false;
+        return false;
+    }
+
+    const uint16_t lines = Tv5725::SourceMeasurement::measureSourceLines();
+
+    // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
+    // caller double-advances it and the steadiness both readers depend on is
+    // no longer over consecutive polls.
+    const bool plausible = Tv5725::SourceMeasurement::countIsSource(lines);
+    const bool held = countHeld(lines);
+
+    // The horizontal half, and it is not a second steadiness run: the divider
+    // is held state the engine chose, so one reading of what the sync processor
+    // counts against it is the whole test.
+    const uint16_t lineSamples = Tv5725::SourceMeasurement::measureLineSamples();
+    const SourceState was = sourceState_;
+    sourceState_ = !(plausible && held) ? SourceAbsent
+                   : Tv5725::SourceMeasurement::dividerLatched(lineSamples,
+                                                       sampling_.divider())
+                       ? SourceAcquired
+                       : SourceUnlocked;
+
+    // The state changing is worth a line because the fault it exists to name is
+    // INTERMITTENT and a poll fast enough to catch it changes what the unit
+    // does. This costs no bus traffic the answer did not already need.
+    if (sourceState_ != was)
+        logSourceState(sourceState_, lines, lineSamples, sampling_.divider());
+
+    // A count no source runs is the wrong sync path's signature -- 97..137 on a
+    // 311-line source, measured -- and a mode change is the only thing that
+    // re-establishes the sync type, so the state that most needs a re-probe was
+    // the one state that could never arm one. It arms ONCE: the count stays
+    // wrong until the probe has moved the path.
+    if (!plausible) {
+        if (!held || unusableCountArmed_)
+            return false;
+        unusableCountArmed_ = true;
+        logSourceMoved("unusable count", lines, videoPath_.solvedLines());
+        return true;
+    }
+
+    unusableCountArmed_ = false;
+    if (!held)
+        return false;
+
+    // The rate and the interrupt each say the source moved where the count
+    // cannot: the same number of lines at a different field rate, which is what
+    // 320x256 at 50, 55 and 60 all are. Both wait behind the SAME steadiness run
+    // rather than firing on arrival, because a source measured mid-transition
+    // yields a rate that passes every check and is tens of percent out --
+    // measured at 18806 Hz against a real 31440, held, with every register
+    // self-consistent.
+    const bool interrupted = sourceInterrupted_;
+    sourceInterrupted_ = false;
+    const bool countMoved = lines != videoPath_.solvedLines();
+    if (!interrupted && !countMoved && !rateMoved())
+        return false;
+
+    logSourceMoved(interrupted ? "interrupt" : countMoved ? "count" : "rate",
+                   lines, videoPath_.solvedLines());
+    idleRun_ = 0;
+    return true;
+}
+
+bool InputAcquisition::rateMoved()
+{
+    const uint32_t rate = Tv5725::SourceMeasurement::measureLineRateFromHPeriod(videoPath_.solvedLines());
+    if (rate == 0 || videoPath_.solvedLineRateHz() == 0
+        || Tv5725::SourceMeasurement::ratesAgree(rate, videoPath_.solvedLineRateHz())) {
+        candidateRateHz_ = 0;
+        rateRun_ = 0;
+        return false;
+    }
+
+    if (candidateRateHz_ == 0
+        || !Tv5725::SourceMeasurement::ratesAgree(rate, candidateRateHz_)) {
+        candidateRateHz_ = rate;
+        rateRun_ = 1;
+        return false;
+    }
+    if (rateRun_ < Tv5725::SourceMeasurement::SteadySamples) {
+        ++rateRun_;
+        return false;
+    }
+
+    candidateRateHz_ = 0;
+    rateRun_ = 0;
+
+    // HPERIOD_IF rails to a value that is WRONG AND STABLE, which no run can
+    // reject: 511 reads as 13183 Hz against a real 15625 and holds. The field
+    // rate is measured a different way and does not rail with it. It costs a
+    // vsync spin, which is what the cheap gate exists to avoid -- affordable
+    // only because a corroborated disagreement is rare.
+    const uint32_t confirmed = Tv5725::SourceMeasurement::lineRateFrom(
+        videoPath_.solvedLines(), getSourceFieldRate(0));
+    if (confirmed == 0 || !Tv5725::SourceMeasurement::ratesAgree(rate, confirmed))
+        return false;
+
+    // The held rate is what moved, and measureLineRate() rejects a rate that
+    // changed at an unchanged count -- so leaving it would refuse the very
+    // measurement this armed the solve for.
+    sampling_.forgetHeldRate();
+    return true;
+}
+
 bool InputAcquisition::poll(uint32_t nowMs)
 {
     if (mayRun_ != 0 && !mayRun_())
         return false;
-    return videoPath_.poll(detectionDue(nowMs));
+
+    // Asked once a pass whether it is used or not, so the cadence does not
+    // stretch over a mode change and fire the moment one lands.
+    const bool detection = detectionDue(nowMs);
+
+    // The source event, ahead of the engine and never during a change it is
+    // still working through. Arming one ends the pass: the solve wants a
+    // measurement taken after the reference sampling clock is in force, which
+    // inputTimingsChanged() has only just written.
+    if (!videoPath_.changingMode() && detection && sourceMoved()) {
+        videoPath_.inputTimingsChanged();
+        return false;
+    }
+
+    switch (videoPath_.poll()) {
+    case Tv5725::VideoPath::PollSolved:
+        holdSolvedSource();
+        return true;
+    case Tv5725::VideoPath::PollResolved:
+        return true;
+    case Tv5725::VideoPath::PollUnmeasurable:
+        // The idle pass is the only other writer of this and the solving branch
+        // never reaches it, so without this the answer holds whatever that pass
+        // last concluded -- present -- for as long as the solve goes on
+        // failing. That is precisely when a reader needs to know it is not.
+        sourceState_ = SourceAbsent;
+        return false;
+    case Tv5725::VideoPath::PollIdle:
+        break;
+    }
+    return false;
 }

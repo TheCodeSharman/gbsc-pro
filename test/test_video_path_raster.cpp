@@ -21,6 +21,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
+#include "RegistersWritten.h"
+
 using namespace Tv5725;
 
 // The source field rate the engine will measure. The sketch defines this for
@@ -58,21 +60,13 @@ static uint32_t horizontalTotalUnwritten()
     return (Poison | (Poison << 8)) & 0x0FFF;
 }
 
-static unsigned registersWritten()
-{
-    unsigned written = 0;
-    for (uint8_t seg = 0; seg < FakeTwoWire::Segments; ++seg)
-        for (int reg = 0; reg < 256; ++reg)
-            if (Wire.touched[seg][reg])
-                ++written;
-    return written;
-}
-
-// The detection pass runs on a cadence, so a run of passes is a run of ticks.
-
+// One pass of the engine. The source event is the acquisition layer's, so a case
+// driving the engine directly gets the solving half alone -- and both outcomes
+// that used to read as poll() returning true still do.
 static bool pollOnce(VideoPath &engine)
 {
-    return engine.poll(true);
+    const VideoPath::PollOutcome outcome = engine.poll();
+    return outcome == VideoPath::PollSolved || outcome == VideoPath::PollResolved;
 }
 
 // poll() gates on a line count steady over several passes before it will pay for

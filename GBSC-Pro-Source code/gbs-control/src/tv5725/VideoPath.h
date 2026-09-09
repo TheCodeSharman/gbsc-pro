@@ -23,23 +23,6 @@
 
 namespace Tv5725 {
 
-// What the engine can say about the source, which is three answers and not two.
-//
-// A steadiness run over the line count answers the VERTICAL question alone, and
-// a source can hold a correct, steady count while the ADC samples a line it is
-// not locked to. Measured after a sync-type round trip: STATUS_SYNC_PROC_VTOTAL
-// 311 held for a minute against STATUS_SYNC_PROC_HTOTAL near 3250 for a divider
-// of 2250, the ADC PLL out of lock, the picture scrambled and every config
-// register reading correct. Absent and Unlocked both want recovery run and
-// Acquired wants none, so collapsing the first two loses nothing there -- but
-// only Unlocked is worth re-probing the sync type on, and a caller that cannot
-// tell a source that is GONE from one that is THERE AND WRONG has to guess.
-enum SourceState {
-    SourceAbsent,     // no line count anything video runs at, held
-    SourceUnlocked,   // counting, and the ADC is not sampling the line chosen for it
-    SourceAcquired,   // counting steadily at the solved count, and sampling it
-};
-
 class OutputMode;
 
 class VideoPath {
@@ -98,6 +81,11 @@ public:
     // how it hears about a new one.
     void inputTimingsChanged(uint8_t oversample);
 
+    // The same event where the oversampling has not moved, which is every
+    // source event the acquisition path raises: it watches the source, and the
+    // oversampling is an output of the last solve rather than of the source.
+    void inputTimingsChanged();
+
     // The user picked a different output resolution. Not a source event: the
     // rate and the divider the last solve measured still describe the source,
     // so this re-solves raster, clock and windows from what is held and
@@ -105,42 +93,38 @@ public:
     // will resolve the choice against its own measurement when it lands.
     bool outputModeChanged(const OutputChoice &choice);
 
-    // One pass of the engine, driven by the acquisition path: settle the source
-    // and apply any pending mode change. True on the pass that completes one.
-    //
-    // **WHETHER THIS PASS MAY TAKE A DETECTION READING IS THE CALLER'S.** The
-    // steadiness run behind sourceIsPresent() is counted in detection passes,
-    // so a caller asking on every loop makes that run a different length -- and
-    // a millis() reached for in here is a hidden input no host test can set.
-    // docs/input-acquisition.md
-    bool poll(bool detectionDue);
+    // What one pass reached, which the caller needs in more detail than a bool.
+    // It holds the steadiness run, and the run is seeded from a mode change that
+    // completed and broken by a solving pass that could not measure -- two
+    // outcomes a single false cannot tell apart, nor either from a pass with
+    // nothing to do.
+    enum PollOutcome {
+        PollIdle,          // nothing was outstanding
+        PollResolved,      // a deferred solve completed; the source was not re-read
+        PollSolved,        // a mode change completed, against solvedLines()
+        PollUnmeasurable,  // a solving pass could not measure the source
+    };
+
+    // One pass: settle the source and apply any pending mode change. Driven by
+    // the acquisition path, which asks whether the source moved BEFORE calling
+    // this and arms a change rather than letting this look for one.
+    PollOutcome poll();
 
     // Whether a mode change is still working through: told the source moved and
     // not yet finished solving for it. What the sync output blanks against.
     bool changing() const;
 
-    // What the engine can say about the source. Published by sourceMoved()
-    // rather than recomputed, because countHeld() advances the run it reads.
-    //
-    // A LIVE COUNT IS NOT THIS ANSWER. An unlocked sync processor produces
-    // counts inside the source bounds -- 216, 271, 276, 312, 305 measured on a
-    // source that was genuinely gone -- so whatever withholds a recovery has to
-    // see the count hold still first.
-    SourceState sourceState() const;
+    // Whether a mode change specifically is outstanding, which is narrower than
+    // changing(): a deferred solve is outstanding too, and the caller may still
+    // look for a source event while one is.
+    bool changingMode() const;
 
-    // Whether the source is acquired AND the engine has nothing outstanding
-    // against it, which is the one state that wants no recovery run.
-    //
-    // THE SECOND HALF IS NOT BELT AND BRACES. sourceState() is published by the
-    // idle pass, so a mode change in flight leaves the verdict taken BEFORE the
-    // source moved standing -- acquired -- and a gate reading the state alone
-    // withholds recovery for as long as the engine goes on failing to settle.
-    bool sourceIsPresent() const;
-
-    // The source disturbed, as the chip latched it. Arms a re-measure, which
-    // the line count alone cannot: a source returning at the same count and a
-    // different field rate moves nothing sourceMoved() can see.
-    void sourceInterrupted();
+    // What the last solve ran against. The caller compares a fresh reading
+    // against these to decide the source moved, so they are the ONLY record of
+    // what was solved for -- 0 lines means nothing has been, which is also what
+    // bypass leaves.
+    uint16_t solvedLines() const;
+    uint32_t solvedLineRateHz() const;
 
     // Probe the sync type again and put the chip on the answer, for the
     // escalation a source that will not lock reaches. Returns whether the
@@ -221,24 +205,6 @@ private:
     // capture write limit doubles with the line doubler, so the two describe
     // one decision and the wrong order sizes the divider for the previous
     // source.
-    // Whether the source has settled on a line count the last solve did not run
-    // against. The engine's own measurement, so a mode change needs nobody to
-    // announce it.
-    bool sourceMoved();
-
-    // Whether the source is running a rate the last solve did not run against.
-    // A refusal from HPERIOD_IF is no information rather than a change, and a
-    // rate that does not hold across a run is the register railing -- which
-    // passes the judgement inside lineRateFromHPeriod() on its own.
-    bool rateMoved();
-
-    // Whether the count has held for a steadiness run.
-    bool countHeld(uint16_t lines);
-
-    // Take the count the solve just ran against as a run already held.
-    bool noSourceToSolve();
-    void holdSolvedSource();
-
     void solveScanMode();
 
     bool fail();
@@ -287,7 +253,6 @@ private:
     uint16_t usableHorizontal_, usableVertical_;
     SourceMeasurement &sampling_;     // the divider this engine solves against
     bool samplingPending_;   // solveSampling() adopted a fallback divider
-    bool sourceInterrupted_; // the chip latched a disturbance, and nothing has re-measured
     uint32_t referenceRateHz_; // the estimate the reference sample rate was sized from
     bool scanModeApplied_;
     bool syncTypeProbed_;
@@ -296,12 +261,6 @@ private:
     uint32_t solvedLineRateHz_;  // and the line rate, which the count cannot show
     SourceKey framedKey_;    // the source the framing held was tuned against
     FramingTable &framings_;   // what the user tuned, per source
-    uint16_t idleLines_;     // the count seen while no mode change is outstanding
-    uint8_t idleRun_;        // how many polls it has held it
-    bool unusableCountArmed_;  // a count no source runs has already armed a change
-    SourceState sourceState_;  // what the idle path last concluded about the source
-    uint32_t candidateRateHz_;  // a rate not yet corroborated across a run
-    uint8_t rateRun_;           // how many polls have agreed on it
     bool solvePending_;
     bool modePending_;
     uint8_t modeOversample_;      // a solve refused because the source was settling

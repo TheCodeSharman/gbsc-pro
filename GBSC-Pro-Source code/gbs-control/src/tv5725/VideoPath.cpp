@@ -26,13 +26,10 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
-      sampling_(sampling), samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
+      sampling_(sampling), samplingPending_(false), referenceRateHz_(0),
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvedLines_(0), solvedLineRateHz_(0),
-      idleLines_(0), idleRun_(0), unusableCountArmed_(false),
-      sourceState_(SourceAbsent),
-      candidateRateHz_(0), rateRun_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
       choice_(), rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
@@ -44,12 +41,11 @@ const SourceKey &VideoPath::framedKey() const { return framedKey_; }
 
 bool VideoPath::changing() const { return modePending_ || solvePending_; }
 
-SourceState VideoPath::sourceState() const { return sourceState_; }
+bool VideoPath::changingMode() const { return modePending_; }
 
-bool VideoPath::sourceIsPresent() const
-{
-    return sourceState_ == SourceAcquired && !changing();
-}
+uint16_t VideoPath::solvedLines() const { return solvedLines_; }
+
+uint32_t VideoPath::solvedLineRateHz() const { return solvedLineRateHz_; }
 
 uint16_t VideoPath::capturableOn(const Axis &axis) const
 {
@@ -186,6 +182,11 @@ void VideoPath::adoptRaster()
     displayClock_.adopt();
 }
 
+void VideoPath::inputTimingsChanged()
+{
+    inputTimingsChanged(modeOversample_);
+}
+
 void VideoPath::inputTimingsChanged(uint8_t oversample)
 {
     // The windows land seconds from now, once the source has settled into the
@@ -246,12 +247,14 @@ bool VideoPath::outputModeChanged(const OutputChoice &choice)
     return solveWindows();
 }
 
-bool VideoPath::poll(bool detectionDue)
+VideoPath::PollOutcome VideoPath::poll()
 {
     if (!modePending_) {
-        if (detectionDue && sourceMoved())
-            inputTimingsChanged(modeOversample_);
-        return modePending_ ? false : (solvePending_ ? resolve() : false);
+        if (!solvePending_)
+            return PollIdle;
+        // A deferred retry, not a mode change: nothing re-reads the source
+        // count here, so there is no run for the caller to seed.
+        return resolve() ? PollResolved : PollIdle;
     }
 
     // **BEFORE EVERYTHING, INCLUDING THE SCAN MODE.** Every measurement below
@@ -288,7 +291,7 @@ bool VideoPath::poll(bool detectionDue)
         // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
         if (sampling_.countWasSerrations())
             SyncProcessor::widenCoast();
-        return noSourceToSolve();
+        return PollUnmeasurable;
     }
 
     // THE measurement of the source for this pass. Everything below derives
@@ -299,7 +302,7 @@ bool VideoPath::poll(bool detectionDue)
         // the capture window can be measured in, so there is nothing to inherit
         // and the flag is only a note to re-solve.
         samplingPending_ = true;
-        return noSourceToSolve();
+        return PollUnmeasurable;
     }
 
     // A rate is worth sizing a raster from once it has REPEATED. The cross-check
@@ -308,10 +311,10 @@ bool VideoPath::poll(bool detectionDue)
     // tenths -- and the raster is out by whatever fraction the rate is, for
     // good, because nothing re-solves it.
     if (!sampling_.rateSettled())
-        return false;
+        return PollIdle;
 
     if (!solveSampling(modeOversample_))
-        return false;
+        return PollIdle;
 
     // Whatever raster is on the chip, taken before the solve that replaces it,
     // so a solve that still refuses leaves the windows sized for something.
@@ -321,7 +324,7 @@ bool VideoPath::poll(bool detectionDue)
         // would pay for a field rate measurement to reach the same answer.
         modePending_ = false;
         FrameBuffer::releaseCapture();
-        return false;
+        return PollIdle;
     }
 
     // raster -> clock -> windows. The clock reads the seed the raster just
@@ -333,10 +336,9 @@ bool VideoPath::poll(bool detectionDue)
     // the engine without anyone having to say so.
     solvedLines_ = sampling_.sourceLines();
     solvedLineRateHz_ = sampling_.lineRateHz();
-    holdSolvedSource();
     modePending_ = false;
     FrameBuffer::releaseCapture();
-    return true;
+    return PollSolved;
 }
 
 
@@ -353,11 +355,6 @@ bool VideoPath::reset()
     // seconds to reach them.
     framing_.reset();
     return solveWindows();
-}
-
-void VideoPath::sourceInterrupted()
-{
-    sourceInterrupted_ = true;
 }
 
 void VideoPath::enterBypass()
@@ -467,182 +464,6 @@ void VideoPath::writeSampling()
                          modeOversample_);
     InputFormatter::writeLineCounter(sampling_.ifLine());
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
-}
-
-static void logSourceState(SourceState state, uint16_t lines, uint16_t samples,
-                           uint16_t divider)
-{
-    char line[88];
-    snprintf(line, sizeof(line),
-             "source %s: %u lines, %u samples against divider %u",
-             state == SourceAcquired   ? "acquired"
-             : state == SourceUnlocked ? "UNLOCKED"
-                                       : "absent",
-             (unsigned)lines, (unsigned)samples, (unsigned)divider);
-    tv5725Log(line);
-}
-
-static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
-{
-    char line[72];
-    snprintf(line, sizeof(line), "source moved: %s (%u lines, solved %u)",
-             why, (unsigned)lines, (unsigned)solved);
-    tv5725Log(line);
-}
-
-// A solving pass that could not measure the source. sourceMoved() is the only
-// other writer of this and the solving branch never reaches it, so without this
-// the answer holds whatever the last idle pass concluded -- true -- for as long
-// as the solve goes on failing. That is precisely when whoever reads it needs
-// to know the source is not usable.
-bool VideoPath::noSourceToSolve()
-{
-    sourceState_ = SourceAbsent;
-    return false;
-}
-
-// The solve gated on its own steadiness run over this count, longer than the
-// idle one, so the idle run starts satisfied rather than re-earning what has
-// just been measured and dipping sourceIsPresent() for the polls it takes.
-void VideoPath::holdSolvedSource()
-{
-    idleLines_ = solvedLines_;
-    idleRun_ = SourceMeasurement::SteadySamples;
-
-    // A solve that has just written the divider has not had a line counted
-    // through it yet, so the sampling half is asked on the next idle pass
-    // rather than assumed here.
-    sourceState_ = SourceAcquired;
-}
-
-// Whether the count has held long enough to be the source's rather than a
-// reading taken through something still settling.
-bool VideoPath::countHeld(uint16_t lines)
-{
-    if (lines != idleLines_) {
-        idleLines_ = lines;
-        idleRun_ = 0;
-        return false;
-    }
-    if (idleRun_ < SourceMeasurement::SteadySamples) {
-        ++idleRun_;
-        return false;
-    }
-    return true;
-}
-
-// **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
-// steadiness run, and filling it while the engine is idle leaves the next mode
-// change's first poll believing a count from the mode before it.
-bool VideoPath::sourceMoved()
-{
-    // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
-    // change so a later poll cannot write one over the setup it just chose.
-    if (rasterMode_ == 0 || rasterMode_->isBypass() || solvedLines_ == 0) {
-        sourceInterrupted_ = false;
-        return false;
-    }
-
-    const uint16_t lines = SourceMeasurement::measureSourceLines();
-
-    // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
-    // caller double-advances it and the steadiness both readers depend on is
-    // no longer over consecutive polls.
-    const bool plausible = SourceMeasurement::countIsSource(lines);
-    const bool held = countHeld(lines);
-
-    // The horizontal half, and it is not a second steadiness run: the divider
-    // is held state the engine chose, so one reading of what the sync processor
-    // counts against it is the whole test.
-    const uint16_t lineSamples = SourceMeasurement::measureLineSamples();
-    const SourceState was = sourceState_;
-    sourceState_ = !(plausible && held) ? SourceAbsent
-                   : SourceMeasurement::dividerLatched(lineSamples,
-                                                       sampling_.divider())
-                       ? SourceAcquired
-                       : SourceUnlocked;
-
-    // The state changing is worth a line because the fault it exists to name is
-    // INTERMITTENT and a poll fast enough to catch it changes what the unit
-    // does. This costs no bus traffic the answer did not already need.
-    if (sourceState_ != was)
-        logSourceState(sourceState_, lines, lineSamples, sampling_.divider());
-
-    // A count no source runs is the wrong sync path's signature -- 97..137 on a
-    // 311-line source, measured -- and a mode change is the only thing that
-    // re-establishes the sync type, so the state that most needs a re-probe was
-    // the one state that could never arm one. It arms ONCE: the count stays
-    // wrong until the probe has moved the path.
-    if (!plausible) {
-        if (!held || unusableCountArmed_)
-            return false;
-        unusableCountArmed_ = true;
-        logSourceMoved("unusable count", lines, solvedLines_);
-        return true;
-    }
-
-    unusableCountArmed_ = false;
-    if (!held)
-        return false;
-
-    // The rate and the interrupt each say the source moved where the count
-    // cannot: the same number of lines at a different field rate, which is what
-    // 320x256 at 50, 55 and 60 all are. Both wait behind the SAME steadiness run
-    // rather than firing on arrival, because a source measured mid-transition
-    // yields a rate that passes every check and is tens of percent out --
-    // measured at 18806 Hz against a real 31440, held, with every register
-    // self-consistent.
-    const bool interrupted = sourceInterrupted_;
-    sourceInterrupted_ = false;
-    const bool countMoved = lines != solvedLines_;
-    if (!interrupted && !countMoved && !rateMoved())
-        return false;
-
-    logSourceMoved(interrupted ? "interrupt" : countMoved ? "count" : "rate",
-                   lines, solvedLines_);
-    idleRun_ = 0;
-    return true;
-}
-
-bool VideoPath::rateMoved()
-{
-    const uint32_t rate = SourceMeasurement::measureLineRateFromHPeriod(solvedLines_);
-    if (rate == 0 || solvedLineRateHz_ == 0
-        || SourceMeasurement::ratesAgree(rate, solvedLineRateHz_)) {
-        candidateRateHz_ = 0;
-        rateRun_ = 0;
-        return false;
-    }
-
-    if (candidateRateHz_ == 0
-        || !SourceMeasurement::ratesAgree(rate, candidateRateHz_)) {
-        candidateRateHz_ = rate;
-        rateRun_ = 1;
-        return false;
-    }
-    if (rateRun_ < SourceMeasurement::SteadySamples) {
-        ++rateRun_;
-        return false;
-    }
-
-    candidateRateHz_ = 0;
-    rateRun_ = 0;
-
-    // HPERIOD_IF rails to a value that is WRONG AND STABLE, which no run can
-    // reject: 511 reads as 13183 Hz against a real 15625 and holds. The field
-    // rate is measured a different way and does not rail with it. It costs a
-    // vsync spin, which is what the cheap gate exists to avoid -- affordable
-    // only because a corroborated disagreement is rare.
-    const uint32_t confirmed = SourceMeasurement::lineRateFrom(
-        solvedLines_, getSourceFieldRate(0));
-    if (confirmed == 0 || !SourceMeasurement::ratesAgree(rate, confirmed))
-        return false;
-
-    // The held rate is what moved, and measureLineRate() rejects a rate that
-    // changed at an unchanged count -- so leaving it would refuse the very
-    // measurement this armed the solve for.
-    sampling_.forgetHeldRate();
-    return true;
 }
 
 void VideoPath::solveScanMode()
