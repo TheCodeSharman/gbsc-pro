@@ -98,9 +98,9 @@ is `InputAcquisition`, which calls the rest.
 |---|---|
 | `inputTimingsChanged(oversample)` | the source is about to change mode; nothing is solved here |
 | `outputModeChanged(choice)` | the user picked a different resolution; re-solves from what is held, measures nothing |
-| `poll(detectionDue)` | drives whatever is outstanding, one pass |
-| `sourceInterrupted()` | the chip latched a disturbance; arms a re-measure |
+| `poll()` | drives whatever is outstanding, one pass, and says what it reached |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
+| `solvedLines()` / `solvedLineRateHz()` | what the last solve ran against |
 | `framing()` | the framing the user has reached, read only |
 | `capturableOn(axis)` | the region the last solve ran against — the denominator |
 | `originUnitsOn(axis)` / `extentUnitsOn(axis)` | that framing in input units |
@@ -108,10 +108,13 @@ is `InputAcquisition`, which calls the rest.
 | `resolve()` | re-derive every register from what is held, without moving the framing |
 | `reset()` | back to the default framing |
 
-**The tick and the gate in front of it are not on that list.** `loop()` calls
-`InputAcquisition::poll(millis())`, which decides whether the pass may run at all
-and whether it may take a detection reading, then calls `poll()` with the answer.
-A cadence reached for down here is an input no host test can set.
+**The tick, the gate and the source EVENT are not on that list.** `loop()` calls
+`InputAcquisition::poll(millis())`, which decides whether the pass may run at
+all, whether the source has moved, and arms the change itself -- so what is left
+here is the solving half, and it takes no clock-shaped argument at all. A cadence
+reached for down here is an input no host test can set, and the steadiness run
+behind the source event is advanced by the reading it is taken from, so it can
+have only one owner.
 
 **Nor is what the source is running.** `sourceFieldRateHz()`,
 `sourceLineRateHz()` and `sourceLowLineRate()` are `InputAcquisition`'s: the half

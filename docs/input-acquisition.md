@@ -715,12 +715,26 @@ time, ending with the flags that make `poll()` disappear. Each is a solve that
 still writes the same registers, so the bar below applies to every one of them
 rather than only to the last.
 
-Landed of it so far: the class, with `loop()` calling it and it calling the
-engine; the detection clock and the cadence; the run gate, which follows the
-tick; and the three publishers of what the source is running. `SourceMeasurement`
-is held by the root and passed to both, as the display clock already is -- this
-class is constructed after the engine, so it cannot yet own a collaborator the
-engine needs at construction.
+Landed of it so far: the class, with `loop()` calling it and it calling
+`VideoPath`; the detection clock and the cadence; the run gate, which follows the
+tick; the three publishers of what the source is running; and the idle pass --
+`sourceMoved()`, `rateMoved()`, `countHeld()`, the run they advance and the
+`SourceState` they publish. `SourceMeasurement` is held by the root and passed to
+both, as the display clock already is: this class is constructed after
+`VideoPath`, so it cannot yet own a collaborator `VideoPath` needs at
+construction.
+
+**The idle pass is what split `poll()`**, at its top-level branch. The layer asks
+whether the source moved and arms the change itself, so what is left below is the
+solving half alone -- and `VideoPath::poll()` takes no clock-shaped argument at
+all any more. The reference-sampling handoff sits inside that remaining half and
+is next.
+
+**`poll()` answers with an outcome, because the caller holds the run.** The run
+is seeded by a mode change that completed and broken by a solving pass that could
+not measure, and one `false` cannot tell those from each other or from a pass
+with nothing to do. A deferred retry is a fourth answer: it re-reads no count, so
+there is no run to seed from it.
 
 **Every caller of `sampling_` MOVES, and never duplicates.** The moment two
 callers advance the steadiness run, `idleRun_` double-advances and the run both
