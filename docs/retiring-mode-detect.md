@@ -326,9 +326,39 @@ Whether that ends in the HD path or the RGBHV path is an implementation detail
 of the bypass mode, decided from what the source measures -- not two output
 modes for a caller to choose between.
 
-`Tv5725::HdBypass` is already that class. It carries `applySd()`,
-`applyProgressive()`, `applyHd()` AND `applyRgbhvPll()`, and both sketch
-switches route through its `enable()`. **Only its name says otherwise.**
+**`Tv5725::HdBypass` is NOT that class, and renaming it to `Bypass` is refused.**
+The HD bypass channel is a block RD-5725-1.1 names -- in the descriptions of
+`SFTRST_HDBYPS_RSTZ`, `DAC_RGBS_BYPS2DAC`, `DIGOUT_BYPS2PAD`, `DIGOUT_ADC2PAD`,
+`OUT_SYNC_SEL` and `OUT_BLANK_SEL_1` -- and it is named for what it is for:
+carrying a high resolution around the scaler. The class owns s1 0x30..0x55,
+which is that block, so it keeps the datasheet's name.
+
+The two routes are different silicon, not two configurations of one block:
+
+| | video path | the HD bypass channel |
+|---|---|---|
+| HD bypass | `DAC_RGBS_BYPS2DAC` 1, HD bypass channel to DAC | carries the video |
+| RGBHV bypass | `DAC_RGBS_ADC2DAC` 1, "ADC (with decimation) to DAC" | **not in the video path** |
+
+`bypassModeSwitch_RGBHV()` releases the block and sets `OUT_SYNC_SEL` to 1 all
+the same, which selects "H/V sync output are from HD bypass" -- so on that route
+the block is the output sync generator and nothing else.
+
+So one output mode over two routes is the shape, and the class is one of the
+routes' blocks. What made the class look general is `applyRgbhvPll()`, which
+writes `PLLAD_KS` and `PLLAD_FS` -- ADC registers and nothing of this block --
+so it belongs to `Adc`, and moving it leaves `HdBypass` holding only its own.
+
+**It is NOT `Adc::postDividerFor()` under another name, and collapsing the two
+would change the values.** `postDividerFor()` is RD-5725-1.1's KS crossover
+table read against a frequency; `applyRgbhvPll()` picks a `(KS, FS)` pair off
+the measured line count at 532 and 810. Against the divider standard 13
+installs immediately before it, the two disagree across the whole 532..809 band
+-- KS 2 against KS 3 -- and no divider maps those line counts onto the
+datasheet's bands at all: 20 MHz would fall at 532 lines only with MD 627, and
+40 MHz at 810 lines only with MD 823. `FS` is a VCO gain rather than a divider
+and moves 1, 0, 1 across the three rows, which no frequency table produces.
+Where the thresholds came from is unrecorded.
 
 What is still split, and what has to go:
 
