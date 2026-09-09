@@ -34,11 +34,11 @@ own V sync: yes after 2ms        (every ~4 s, forever)
 SP_SOG_MODE      1               (csync)
 SP_VTOTAL       97               (a separate-sync source counted through csync)
 ADC_SOGCTRL      1               (pinned at the floor)
-SyncType::isCsync()  false       (the HELD type says separate)
+SyncMeasurement::isCsync()  false       (the HELD type says separate)
 ```
 
 **The register and the held sync type disagree, and nothing reconciles them.**
-The correction was gated on `SyncType::isCsync()`, which is false, so it never
+The correction was gated on `SyncMeasurement::isCsync()`, which is false, so it never
 fired: the message "own V sync found while configured for csync -> separate H/V"
 is absent throughout. The probe runs, answers "yes" every time, and the register
 stays at 1.
@@ -52,7 +52,7 @@ held afterwards.
 
 **`prepareSyncProcessor()` writing `SP_SOG_MODE::write(1)` bare is REFUTED as
 the cause.** It was the leading candidate, being the one write that skips
-`SyncProcessor::applyForSyncType()` and `SyncType::forget()`. Tested directly:
+`SyncProcessor::applyForSyncType()` and `SyncMeasurement::forget()`. Tested directly:
 `SP_SOG_MODE=1` written by hand on a healthy locked source is undone within
 10 s, so the register is actively maintained there. Whatever maintains it is not
 running in the recovery path, and which writer wins in that state is still

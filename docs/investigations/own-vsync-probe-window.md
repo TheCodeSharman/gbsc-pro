@@ -1,6 +1,6 @@
 # The own-V-sync probe timed out on a source that has its own V sync
 
-`SourceMeasurement::sourceHasOwnVsync()` decides whether a source carries
+`SyncMeasurement::hasOwnVsync()` decides whether a source carries
 composite sync or brings its own H and V. It cannot read the answer off the chip
 -- `STATUS_SYNC_PROC_VSACT` reports the path already configured -- so it *moves*
 the path, clearing `SP_EXT_SYNC_SEL`, and asks whether V still arrives.

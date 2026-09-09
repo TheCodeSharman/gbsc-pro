@@ -1,6 +1,6 @@
 # The sync type is probed, because reading it back is circular
 
-`Tv5725::SyncType` chooses between composite-sync separation and separate H/V.
+`Tv5725::SyncMeasurement` chooses between composite-sync separation and separate H/V.
 It holds two facts: what the type is (`isCsync()`) and whether that came from a
 measurement (`isSet()`). `set()` deliberately does not mark the type as probed --
 the YPbPr fallback and the temporary flips during detection assert a type without
@@ -44,16 +44,16 @@ occur with a perfect picture, which is exactly why nothing may gate on it.
 | site | how |
 |---|---|
 | `inputAndSyncDetect()` | field-rate probes **and** `sourceHasOwnVsync()` |
-| `applyPresets()`, the mode-14 arm | `SyncType::probeOnce()`, so it measures only if nothing has for this source |
-| `applyPresets()`, the no-mode arm | `SyncType::probe()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
-| `applyPresets()`, the YPbPr fallback | unconditional `SyncType::set(true)` |
+| `applyPresets()`, the mode-14 arm | `SyncMeasurement::syncType()`, so it measures only if nothing has for this source |
+| `applyPresets()`, the no-mode arm | `SyncMeasurement::probe()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
+| `applyPresets()`, the YPbPr fallback | unconditional `SyncMeasurement::set(true)` |
 
 **Only the mode-14 arm reaches `probeOnce()`**, so on a source that classifies as
 SD the gate below never runs at all and the type comes from
 `inputAndSyncDetect()`'s `set()` calls. That is why the gate cannot be exercised
 from a bench source at 320x256@50.
 
-`SourceMeasurement::sourceHasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits
+`SyncMeasurement::hasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits
 `OwnVsyncSettleMs` for the sync processor to reacquire V, polls for up to
 `OwnVsyncWindowMs`, re-confirms after 10 ms, then restores the register. It logs
 `own V sync: yes after 3ms` each time, which is the only report of how long the
@@ -81,11 +81,11 @@ The cost does not argue against it. Reacquisition is 2-3 ms on a source with its
 own V sync, measured again from the console as `own V sync: yes after 2ms`, and
 the full window is only ever spent on a genuinely composite source, where the
 timeout is the right answer. An earlier form of this section said "it costs over
-a second, so it runs once per SOURCE" -- that is the sketch's `SyncType::isSet()`
+a second, so it runs once per SOURCE" -- that is the sketch's `SyncMeasurement::isSet()`
 gate, and it contradicts the paragraph above it.
 
 `Geometry::useSyncTypeProbe()` is the engine's, per mode change.
-`SyncType::isSet()` and `SyncType::forget()` are the sketch's per-source gate,
+`SyncMeasurement::isSet()` and `SyncMeasurement::forget()` are the sketch's per-source gate,
 described below.
 
 **It currently runs about three times per mode change, not once.** Traced on

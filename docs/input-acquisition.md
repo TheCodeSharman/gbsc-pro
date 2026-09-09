@@ -628,7 +628,7 @@ operation on the idle pass.
 not.** The separator only reaches the sync processor with `SP_SOG_MODE` 1, which
 follows the sync type, so on a separate-sync source the level is inert -- and
 `fastSogAdjust()` and the `% 150` block walk it anyway. `SyncOnGreen::inSyncPath()`
-is that question, asked of held state (`SyncType::isCsync()`) rather than read
+is that question, asked of held state (`SyncMeasurement::isCsync()`) rather than read
 back.
 
 **THE OWNERSHIP LANDS HERE; THE CALL SITES TRAVEL WITH STEP 4.** The pre-emptive

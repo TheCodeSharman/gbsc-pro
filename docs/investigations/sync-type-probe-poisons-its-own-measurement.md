@@ -1,6 +1,6 @@
 # The sync type probe poisons the measurements that follow it
 
-`SourceMeasurement::sourceHasOwnVsync()` decides the sync type by writing
+`SyncMeasurement::hasOwnVsync()` decides the sync type by writing
 `SP_EXT_SYNC_SEL` to 0, waiting, watching for `STATUS_SYNC_PROC_VSACT`, and
 restoring the register. It restores it and **returns immediately**.
 
