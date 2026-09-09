@@ -1038,6 +1038,28 @@ struct FrameSyncAttrs
 };
 typedef FrameSyncManager<GBS, FrameSyncAttrs> FrameSync;
 
+// Hand the display clock to the external generator, keeping the divider the
+// register still names as the seed to steer to. Does nothing once PCLKIN is
+// selected, or on the HD bypass clock.
+//
+// **THIS DUPLICATES WHAT Tv5725::DisplayClock OWNS** -- adopt() takes the seed
+// off the register and select() writes ExternalPclkIn -- and is not yet
+// substitutable for them: select() also asserts PLL_VCORST and PLL_IS, and the
+// settle below has no counterpart there. Both differences need the bench.
+// docs/video-source-acquisition.md
+static void handDisplayClockToGenerator()
+{
+    const uint8_t selected = GBS::PLL648_CONTROL_01::read();
+    if (selected == Tv5725::DisplayClock::ExternalPclkIn
+        || selected == Tv5725::DisplayClock::HdBypassSeed)
+        return;
+
+    clockGen.enable();
+    ESP.wdtFeed();
+    delayMicroseconds(800);
+    GBS::PLL648_CONTROL_01::write(Tv5725::DisplayClock::ExternalPclkIn);
+}
+
 void externalClockGenResetClock()
 {
     if (!rto->extClockGenDetected) {
@@ -1144,7 +1166,6 @@ void externalClockGenDetectAndInitialize()
 
     rto->displayClock.assumeHz(Tv5725::DisplayClock::FallbackHz);
     rto->extClockGenDetected = 0;
-    rto->presetDisplayClock = 0;
 
     if (uopt->disableExternalClockGenerator) {
         return;
@@ -3745,7 +3766,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::PLL_DIVBY2Z::write(0);
 
     GBS::PAD_OSC_CNTRL::write(1);
-    GBS::PLL648_CONTROL_01::write(0x35);
+    GBS::PLL648_CONTROL_01::write(Tv5725::DisplayClock::HdBypassSeed);
     GBS::PLL648_CONTROL_03::write(0x00);
     GBS::PLL_LEN::write(1);
     GBS::DAC_RGBS_R0ENZ::write(1); // RDAC output follows input R data
@@ -4182,15 +4203,8 @@ static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
     if (!rto->extClockGenDetected)
         return;
 
-    if (!rto->outModeHdBypass
-        && GBS::PLL648_CONTROL_01::read() != 0x35
-        && GBS::PLL648_CONTROL_01::read() != 0x75) {
-        rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-        clockGen.enable();
-        ESP.wdtFeed();
-        delayMicroseconds(800);
-        GBS::PLL648_CONTROL_01::write(0x75);
-    }
+    if (!rto->outModeHdBypass)
+        handDisplayClockToGenerator();
 
     externalClockGenSyncInOutRate();
 }
@@ -6024,15 +6038,8 @@ void loop()
             }
 
             if (rto->extClockGenDetected && !scalingRgbhv()) {
-                if (!rto->outModeHdBypass) {
-                    if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-                        rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-                        clockGen.enable();
-                        ESP.wdtFeed();
-                        delayMicroseconds(800);
-                        GBS::PLL648_CONTROL_01::write(0x75);
-                    }
-                }
+                if (!rto->outModeHdBypass)
+                    handDisplayClockToGenerator();
                 externalClockGenSyncInOutRate();
             }
             rto->applyPresetDoneStage = 0;

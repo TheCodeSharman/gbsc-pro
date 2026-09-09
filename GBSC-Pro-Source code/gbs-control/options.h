@@ -113,10 +113,6 @@ struct runTimeOptions
     // here because both reach it; Tv5725::VideoPath is handed a reference.
     Tv5725::DisplayClock displayClock;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
-    // PLL648_CONTROL_01 selects PCLKIN while the external clock generator
-    // drives the display, so the register stops answering what the raster asked
-    // for and the real divider is stashed here.
-    uint8_t presetDisplayClock;
     uint8_t presetVlineShift;
     uint8_t videoStandardInput; // 0 - unknown, 1 - NTSC like, 2 - PAL like, 3 480p NTSC, 4 576p PAL
     uint8_t phaseSP;

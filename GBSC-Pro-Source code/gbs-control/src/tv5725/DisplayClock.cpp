@@ -7,6 +7,7 @@ namespace Tv5725 {
 
 const uint32_t DisplayClock::CeilingHz;
 const uint8_t DisplayClock::ExternalPclkIn;
+const uint8_t DisplayClock::HdBypassSeed;
 const uint32_t DisplayClock::FallbackHz;
 const uint8_t DisplayClock::SeedCount;
 
