@@ -95,10 +95,43 @@ hidden input the host tests cannot set, and every cadence above is a test case.
 last, and the solving branch still runs only while a mode change is pending.
 Acquisition runs always, so it extends the idle branch.
 
-**What acts outside the engine is injected, not called.** Loading a preset,
-selecting an input and driving the OLED live in the sketch and the engine cannot
-reach them. They arrive as function pointers, the way `useSyncTypeProbe()`
-already does.
+**What acts outside the engine is injected, not called.** Loading a preset and
+driving the OLED live in the sketch and the engine cannot reach them. They
+arrive as function pointers, the way `useSyncTypeProbe()` already does.
+
+**BUT INJECTION IS THE WRONG TOOL FOR INPUT SELECTION, AND THIS PAGE USED TO SAY
+OTHERWISE.** It is right where the engine needs an ACTION it cannot reach --
+probing the sync type is a TV5725 operation that happens to be implemented in
+the sketch. It is wrong where the DECISION belongs elsewhere. Handing `Geometry`
+a `selectInput` callback leaves `Geometry` deciding to move a mux on another
+chip; the dependency is disguised rather than removed.
+
+`Tv5725::` has the chip as its boundary. The input path is two muxes in series
+and only one of them is on it -- `ADC_INPUT_SEL` is the TV5725's, `ASW_01`..`04`
+are the HC32F460's, write-only over a UART. `InputSource` already lives outside
+`Tv5725::` for exactly that reason, so an escalation that decides to change
+input crosses a line the tree has already drawn.
+
+The discriminator is whether the engine needs to DECIDE or only to REPORT. It
+needs only to report: not acquired, and out of what it can do alone. What that
+means -- try another source, say nothing more, tell the display -- is policy
+about the board.
+
+So the loop is not `Geometry::poll()` calling out. It is an orchestration layer
+above `Tv5725::` that owns the escalation, the input policy and the composition,
+and calls into the engine for the scaler's share. `poll()` keeps its ordering
+contract and its single entry point; what changes is who calls it and who owns
+the decisions around it.
+
+**It has to delegate rather than accrete.** The product is more than acquisition
+-- OSD, audio, IR, the web UI -- so a top-level class named after it is a
+composition root, and the ladder wants its own collaborator under it. The
+focused responsibility is deciding where video comes from and keeping it coming.
+
+**`Tv5725::SyncRecovery` is in the wrong namespace by this argument**, and that
+is a marginal call today rather than a clear one: ten of its eleven steps are
+TV5725 operations. It becomes clear as the list collapses to the three states
+above, one of which is changing the input.
 
 ## The named operations
 
