@@ -24,7 +24,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncType.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
@@ -1340,7 +1340,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(acquisition));
 
-        CHECK(SyncType::isCsync());
+        CHECK(SyncMeasurement::isCsync());
         CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
         CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 1);
         CHECK(ModeDetect::MD_SEL_VGA60::read() == 0);
@@ -1352,7 +1352,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(acquisition));
 
-        CHECK_FALSE(SyncType::isCsync());
+        CHECK_FALSE(SyncMeasurement::isCsync());
         CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
         CHECK(SyncProcessor::SP_EXT_SYNC_SEL::read() == 0);
         CHECK(ModeDetect::MD_SEL_VGA60::read() == 1);
@@ -1415,7 +1415,7 @@ TEST_CASE("reacquiring the sync type puts the registers on the answered path")
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE_FALSE(SyncType::isCsync());
+    REQUIRE_FALSE(SyncMeasurement::isCsync());
 
     SyncProcessor::SP_SOG_MODE::write(1);
 

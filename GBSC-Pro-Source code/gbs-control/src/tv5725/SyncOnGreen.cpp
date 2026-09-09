@@ -4,7 +4,7 @@
 
 #include "Adc.h"
 #include "Interrupts.h"
-#include "SyncType.h"
+#include "SyncMeasurement.h"
 
 namespace Tv5725 {
 
@@ -171,7 +171,7 @@ void SyncOnGreen::apply() { ADC_SOGCTRL::write(level_); }
 
 uint8_t SyncOnGreen::level() { return level_; }
 
-bool SyncOnGreen::inSyncPath() { return SyncType::isCsync(); }
+bool SyncOnGreen::inSyncPath() { return SyncMeasurement::isCsync(); }
 
 void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
 {

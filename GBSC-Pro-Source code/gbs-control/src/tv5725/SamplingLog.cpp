@@ -8,6 +8,7 @@
 #include "../../gbs_types.h"
 #include "Adc.h"
 #include "SourceMeasurement.h"
+#include "Tv5725Log.h"
 
 namespace Tv5725 {
 

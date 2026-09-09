@@ -9,7 +9,9 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncType.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
+
+void tv5725Log(const char *) {}
 
 using namespace Tv5725;
 
@@ -63,10 +65,10 @@ TEST_CASE("the sync separator is in the sync path only on a csync source")
     // 5, and the level was the first thing blamed for a black screen it could
     // not have caused.
     // docs/investigations/the-no-sync-branch-is-the-only-escape.md
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     CHECK(SyncOnGreen::inSyncPath());
 
-    SyncType::set(false);
+    SyncMeasurement::set(false);
     CHECK_FALSE(SyncOnGreen::inSyncPath());
 }
 
@@ -76,7 +78,7 @@ TEST_CASE("the answer is held state, not SP_SOG_MODE read back")
     // asks the chip what it was told -- and during a probe the two disagree.
     Wire.reset();
     Wire.poison(Poison);
-    SyncType::set(false);
+    SyncMeasurement::set(false);
 
     SyncProcessor::SP_SOG_MODE::write(1);
 
@@ -114,7 +116,7 @@ static void seedSlicer(uint8_t hsActive, uint8_t sliceBus)
 TEST_CASE("a sync separator that is not in the sync path is left alone")
 {
     seedSlicer(1, 0xFF);
-    SyncType::set(false);
+    SyncMeasurement::set(false);
     SyncOnGreen::choose(7);
 
     SyncOnGreen::acquire(testClock, putInForce);
@@ -128,7 +130,7 @@ TEST_CASE("a sync separator already producing clean edges keeps the level chosen
     // The whole cost of the walk is paid per step, so a source that is already
     // good must not be walked off a level that works.
     seedSlicer(1, 0x05);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
     SyncOnGreen::acquire(testClock, putInForce);
@@ -142,7 +144,7 @@ TEST_CASE("a sync separator that never comes good walks to the floor and resets"
     // the ratchet exists for. Reaching the floor without finding a level puts
     // the default back rather than leaving the sync separator wide open.
     seedSlicer(1, 0x00);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(13);
 
     SyncOnGreen::acquire(testClock, putInForce);
@@ -157,7 +159,7 @@ TEST_CASE("the level reaches the sync separator through the injected action")
     // latches that putting a level in force carries, and a divider written
     // without its latch leaves the PLL on the old value.
     seedSlicer(1, 0x05);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(9);
 
     SyncOnGreen::acquire(testClock, putInForce);
@@ -173,7 +175,7 @@ TEST_CASE("the level reaches the sync separator through the injected action")
 TEST_CASE("the coarse pass leaves a sync separator that is already reporting clean edges")
 {
     seedSlicer(1, 0x05);            // both bits the coarse test asks for
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
     SyncOnGreen::acquireCoarse(putInForce);
@@ -187,7 +189,7 @@ TEST_CASE("the coarse pass steps down by two and resets at the floor")
     // 13 -> 11 -> 9 -> 7 -> 5 -> 3, then below 4 it puts the default back
     // rather than leaving the sync separator near wide open.
     seedSlicer(1, 0x00);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(13);
 
     SyncOnGreen::acquireCoarse(putInForce);
@@ -199,7 +201,7 @@ TEST_CASE("the coarse pass steps down by two and resets at the floor")
 TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
 {
     seedSlicer(1, 0x00);
-    SyncType::set(false);
+    SyncMeasurement::set(false);
     SyncOnGreen::choose(7);
 
     SyncOnGreen::acquireCoarse(putInForce);
@@ -215,7 +217,7 @@ TEST_CASE("the coarse pass leaves a sync separator out of the sync path alone")
 TEST_CASE("a level at the floor is lifted one step")
 {
     seedSlicer(1, 0x05);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(1);
 
     SyncOnGreen::liftOffFloor(putInForce);
@@ -227,7 +229,7 @@ TEST_CASE("a level at the floor is lifted one step")
 TEST_CASE("a level with room to step is left where it is")
 {
     seedSlicer(1, 0x05);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(2);
 
     SyncOnGreen::liftOffFloor(putInForce);
@@ -239,7 +241,7 @@ TEST_CASE("a level with room to step is left where it is")
 TEST_CASE("a sync separator out of the sync path is not lifted")
 {
     seedSlicer(1, 0x05);
-    SyncType::set(false);
+    SyncMeasurement::set(false);
     SyncOnGreen::choose(1);
 
     SyncOnGreen::liftOffFloor(putInForce);
@@ -270,7 +272,7 @@ static void seedLineLength(uint8_t hsActive, bool moving, bool pllInReset)
 TEST_CASE("a sync separator out of the sync path is not re-acquired")
 {
     seedLineLength(1, true, false);
-    SyncType::set(false);
+    SyncMeasurement::set(false);
     SyncOnGreen::choose(7);
 
     SyncOnGreen::reacquire(countWalk, putInForce, false);
@@ -282,7 +284,7 @@ TEST_CASE("a sync separator out of the sync path is not re-acquired")
 TEST_CASE("a sync separator whose output moves is handed to the walk")
 {
     seedLineLength(1, true, false);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
     SyncOnGreen::reacquire(countWalk, putInForce, false);
@@ -294,7 +296,7 @@ TEST_CASE("a sync separator whose output moves is handed to the walk")
 TEST_CASE("a sync separator whose output is frozen is parked rather than walked")
 {
     seedLineLength(1, false, false);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
     SyncOnGreen::reacquire(countWalk, putInForce, false);
@@ -309,7 +311,7 @@ TEST_CASE("an ADC PLL held in reset is not evidence the output is frozen")
     // the measurement is in reset, so a reading that does not move there says
     // nothing about the level.
     seedLineLength(1, false, true);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
     SyncOnGreen::reacquire(countWalk, putInForce, false);
@@ -321,7 +323,7 @@ TEST_CASE("an ADC PLL held in reset is not evidence the output is frozen")
 TEST_CASE("re-opening the sync separator takes the walk's place, not its result")
 {
     seedLineLength(1, true, false);
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(11);
 
     SyncOnGreen::reacquire(countWalk, putInForce, true);
@@ -359,7 +361,7 @@ static void seedTuning(uint8_t level, bool sogBad)
     g_inForce = 0;
     g_escalations = 0;
     g_reads = 0;
-    SyncType::set(true);
+    SyncMeasurement::set(true);
     SyncOnGreen::choose(level);
     SyncOnGreen::forgetWindow(g_now);
 }
@@ -428,7 +430,7 @@ TEST_CASE("a sync separator out of the sync path is left alone")
     // SP_SOG_MODE follows the sync type. On a separate-sync source the level
     // is inert, and walking it moves a control nothing is reading.
     seedTuning(11, true);
-    SyncType::set(false);
+    SyncMeasurement::set(false);
 
     SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);
     SyncOnGreen::tune(false, false, fixedClock, putInForce, escalate);

@@ -70,7 +70,7 @@ sync-on-green:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_on_green" \
 	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp src/tv5725/Interrupts.cpp \
-	  src/tv5725/SyncType.cpp
+	  src/tv5725/SyncMeasurement.cpp
 	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis, and its --dump
@@ -463,7 +463,7 @@ chip:
 	  src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(SAMPLING_SRC) \
-	  src/tv5725/SyncType.cpp
+	  src/tv5725/SyncMeasurement.cpp
 	@"$(OUT)/test_chip"
 
 ## hd-bypass: host unit tests for Tv5725::HdBypass
@@ -479,7 +479,7 @@ hd-bypass:
 	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(SAMPLING_SRC) \
-	  src/tv5725/SyncType.cpp
+	  src/tv5725/SyncMeasurement.cpp
 	@"$(OUT)/test_hd_bypass"
 
 ## sync-recovery: host unit tests for Tv5725::SyncRecovery
@@ -530,16 +530,17 @@ sync-processor:
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_processor"
 
-## sync-type: host unit tests for Tv5725::SyncType
+## sync-measurement: host unit tests for Tv5725::SyncMeasurement
 #
 # The probe costs ~500 ms and must run once per SOURCE. Reading the type back is
 # circular -- docs/sync-type-selection.md.
-sync-type:
+sync-measurement:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_sync_type" \
-	  "$(HERE)/test_sync_type.cpp" src/tv5725/SyncType.cpp
-	@"$(OUT)/test_sync_type"
+	  -o "$(OUT)/test_sync_measurement" \
+	  "$(HERE)/test_sync_measurement.cpp" src/tv5725/SyncMeasurement.cpp \
+	  src/tv5725/SyncProcessor.cpp
+	@"$(OUT)/test_sync_measurement"
 
 ## colour-space: host unit tests for Tv5725::ColourSpace
 #

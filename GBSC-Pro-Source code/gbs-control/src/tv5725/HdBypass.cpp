@@ -6,7 +6,7 @@
 #include "ModeDetect.h"
 #include "SourceMeasurement.h"
 #include "SyncProcessor.h"
-#include "SyncType.h"
+#include "SyncMeasurement.h"
 
 namespace Tv5725 {
 
@@ -225,7 +225,7 @@ void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
     }
     if (standard == 13) {
         applyRgbPatches();
-        SyncType::set(true);
+        SyncMeasurement::set(true);
         SyncProcessor::SP_PRE_COAST::write(4);
         SyncProcessor::SP_POST_COAST::write(4);
         SyncProcessor::SP_DLT_REG::write(0x70);

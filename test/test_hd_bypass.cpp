@@ -26,7 +26,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncType.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 
 using Tv5725::ColourSpace;
 using Tv5725::HdBypass;
@@ -280,7 +280,7 @@ using Tv5725::Adc;
 using Tv5725::Chip;
 using Tv5725::ModeDetect;
 using Tv5725::SyncProcessor;
-using Tv5725::SyncType;
+using Tv5725::SyncMeasurement;
 
 // The ladder runs after the switch has written the divider, and the SD arm
 // derives its raster from it -- so a run that leaves it poisoned is asking a
@@ -478,7 +478,7 @@ TEST_CASE("RGBHV patches the RGB path and coasts on its own pair")
     applyForStandard(13);
 
     CHECK(rgbPatchCalls == 1);
-    CHECK(SyncType::isCsync());
+    CHECK(SyncMeasurement::isCsync());
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 4);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);

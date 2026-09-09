@@ -31,7 +31,8 @@
 // below is its one call site here, and everything downstream takes the rate
 // from what that held rather than measuring again.
 float getSourceFieldRate(boolean useSPBus);
-void tv5725Log(const char *message);
+
+#include "Tv5725Log.h"
 
 namespace Tv5725 {
 
@@ -322,28 +323,6 @@ public:
     // window already falls back to the field rate and the raster comes out
     // right. Install one only with something better than a blind bounce.
     static void useCounterRecovery(void (*recover)());
-
-    // How long the sync processor is given to reacquire V after the path moves.
-    static const uint16_t OwnVsyncSettleMs = 240;
-
-    // How long after that V may still arrive and count.
-    //
-    // **SIZED FOR THE TAIL, NOT FOR THE TYPICAL CASE.** Reacquisition is 2-3 ms
-    // most of the time and runs to at least 242 ms, so a window near the
-    // measured maximum times out on a source that does have its own V sync --
-    // and the error is one-directional: a false no latches composite separation
-    // onto a separate-sync source, collapsing SP_VTOTAL and the picture with it,
-    // while a false yes cannot happen, because the bit only rises when V
-    // arrives. Waiting longer costs this once per SOURCE and only where the
-    // timeout is the right answer.
-    static const uint16_t OwnVsyncWindowMs = 1000;
-
-    // Whether the source brings its own V sync, which is what separates it from
-    // composite. Answering it by reading STATUS_SYNC_PROC_VSACT alone is
-    // circular -- the bit reports the path already configured -- so this
-    // *changes* the path first and restores it afterwards.
-    // docs/sync-type-selection.md
-    static bool sourceHasOwnVsync(uint32_t (*nowMs)());
 
     // The line in ADC samples, which is what STATUS_SYNC_PROC_HTOTAL counts.
     // Read to decide whether the other two can be believed at all, never to

@@ -16,7 +16,7 @@
 #include "OutputMode.h"
 #include "ModeDetect.h"
 #include "SyncProcessor.h"
-#include "SyncType.h"
+#include "SyncMeasurement.h"
 
 namespace Tv5725 {
 
@@ -364,7 +364,7 @@ bool VideoPath::reacquireSyncType()
 {
     syncTypeProbed_ = false;
     establishSyncType();
-    return SyncType::isCsync();
+    return SyncMeasurement::isCsync();
 }
 
 void VideoPath::establishSyncType()
@@ -373,7 +373,7 @@ void VideoPath::establishSyncType()
         return;
     syncTypeProbed_ = true;
 
-    const bool csync = SyncType::probe(syncProbe_);
+    const bool csync = SyncMeasurement::probe(syncProbe_);
     SyncProcessor::applyForSyncType(csync);
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
     delay(SyncProcessor::PathSettleMs);

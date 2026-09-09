@@ -4,6 +4,7 @@
 
 #include "../tv5725/OutputMode.h"
 #include "../tv5725/SyncProcessor.h"
+#include "../tv5725/Tv5725Log.h"
 
 InputAcquisition::InputAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)

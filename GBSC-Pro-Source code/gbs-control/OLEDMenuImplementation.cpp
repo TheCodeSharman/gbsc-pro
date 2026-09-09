@@ -11,7 +11,7 @@
 #include "src/tv5725/Adc.h"
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SyncProcessor.h"
-#include "src/tv5725/SyncType.h"
+#include "src/tv5725/SyncMeasurement.h"
 #include <stdio.h>
 
 
@@ -538,7 +538,7 @@ static void LoadDefault()
     Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;                    // 板有电源
     rto->presetIsPalForce60 = false;              // 预设为 PalForce60
-    Tv5725::SyncType::set(false);                   // 同步类型
+    Tv5725::SyncMeasurement::set(false);                   // 同步类型
 
     // **AND FORGET THAT IT WAS EVER MEASURED.** set() deliberately does not mark
     // the type as probed, so without this the previous input's answer survives a
@@ -546,7 +546,7 @@ static void LoadDefault()
     // just written, and a csync source coming after a separate-sync one is never
     // measured. LoadDefault() is reached only from the input handlers in this
     // file, so this is the change-of-source edge. docs/sync-type-selection.md
-    Tv5725::SyncType::forget();
+    Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;          // 有效缩放
     rto->medResLineCount = 0x33;                  //
     rto->osr = 0;                                 //
