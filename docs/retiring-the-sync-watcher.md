@@ -607,12 +607,31 @@ So the shape is one level up, and it is the same collapse as the section above:
 escalation when it exhausts. It forgets the sync type, the measurement and the
 escalation position, because a different input shares none of them.
 
-**And it dissolves the cadence question.** "No signal out" is not what one
-exhausted ladder means -- it is what exhausting the INPUTS means. On a unit
-where nothing is chosen that is inputs times cycles, which is naturally the
-longer timer the 2046-pass expiry was approximating, and on a unit where the
-user chose an input there is nowhere to promote to and the ladder simply cycles.
-Neither needs a sentinel, and neither is the 451 the list happens to use.
+**And it dissolves the cadence question. NOTHING TERMINATES:** a unit with no
+detectable source keeps looking until it finds one, so there is no end state to
+design and no sentinel to write.
+
+    nothing chosen    cycle the ladder on this input; when it exhausts, move to
+                      the next source and start again. Sweep for ever.
+    input chosen      cycle the ladder on that input for ever. Never move.
+
+The second row is the rule that an explicit selection is a command: a chosen
+input is selected whether it has a signal or not, so there is nowhere to promote
+to. `detectionMayChangeInput()` is already that distinction, which is why it is
+the gate on the toggle and on nothing else.
+
+**"No signal out" is a report of state, not a terminus.** Where nothing is
+chosen it falls naturally at the end of a full sweep of the sources, which is
+the longer timer the 2046-pass expiry approximated; where an input was chosen it
+is simply true until it is not. Nothing stops either way.
+
+**And the sweep is over SOURCES, not the two ADC inputs.** `selectOtherInput()`
+moves `ADC_INPUT_SEL` alone, so it can only ever try the other half of one mux
+-- the HC32's analog switches do not move with it, and five of the six inputs
+need the frame sent to them. A sweep that means what it says goes through
+`applyInputSelection()`, which is also what `applySavedInputSource()`'s silent
+`default:` branch should do when nothing was ever stored.
+`docs/retiring-mode-detect.md` and the input-selection section below.
 
 **Not measured, and it is a design note rather than a finding.** What supports
 it is that four separately-recorded awkwardnesses have one cause; what would
