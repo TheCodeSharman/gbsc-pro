@@ -1,14 +1,38 @@
 # Retiring runSyncWatcher()
 
-Goal: `runSyncWatcher()` is deleted, and everything periodic the firmware does
-to a source happens inside `Geometry::poll()` — one entry point, calling a named
-method on whichever class owns the registers involved.
+Goal: `runSyncWatcher()` is deleted, and the one responsibility it carries --
+keep video coming -- has a class. That class is **`InputAcquisition`**, and it
+sits ABOVE `Tv5725::`: it owns the escalation, the input policy and the
+no-signal report, and calls the engine for the scaler's share.
 
 `loop()` ends up with one call where it has two:
 
 ```
-geometry.poll(millis());
+inputAcquisition.poll(millis());
 ```
+
+`Tv5725::VideoPath::poll()` is called by IT rather than by `loop()`.
+
+## The split is measurement against policy
+
+**The engine measures and the layer decides**, and the division is not a
+preference. `sourceMoved()` compares the source against the count and rate the
+last solve ran against, read through the divider the engine itself chose -- so
+anything else taking that reading needs a second copy of the divider, which is
+the parallel model this page exists to delete. What the engine does not own is
+what to do about the answer.
+
+| | owns |
+|---|---|
+| `Tv5725::VideoPath` | measures the source, solves the scaler, publishes `sourceState()` |
+| `InputAcquisition` | reads that verdict, runs the ladder, decides the input, reports "no signal out" |
+
+**And the tick belongs to the caller.** `poll()` self-gates on its own
+`DetectionIntervalMs`, so a layer with a cadence of its own puts two clocks in
+the loop -- the ladder's and detection's. That is how `noSyncCounter` and
+`idleRun_` came to count runs of different lengths. Whether the escalation wants
+a slower cadence than detection is a bench question, and asking it at all
+requires one owner of the tick.
 
 This is the plan for the order. `docs/retiring-mode-detect.md` is the plan for
 the standard byte, whose surviving references are inside this function and which
@@ -80,7 +104,7 @@ reads the source's line count to ask whether it moved; the same reading answers
 whether the source is acquired, so both questions are asked once per pass off one
 measurement. That is also what keeps a steadiness run honest — two callers each
 advancing a run over the same count is the double-advance that
-`Geometry::sourceIsPresent()` had to be written around.
+`VideoPath::sourceIsPresent()` had to be written around.
 
 **This is the lean, not a settled answer.** The watcher's own timers are 20 ms,
 150 ticks and 900 ms, and whether the escalation steps want a slower cadence than
@@ -102,8 +126,8 @@ arrive as function pointers, the way `useSyncTypeProbe()` already does.
 **BUT INJECTION IS THE WRONG TOOL FOR INPUT SELECTION, AND THIS PAGE USED TO SAY
 OTHERWISE.** It is right where the engine needs an ACTION it cannot reach --
 probing the sync type is a TV5725 operation that happens to be implemented in
-the sketch. It is wrong where the DECISION belongs elsewhere. Handing `Geometry`
-a `selectInput` callback leaves `Geometry` deciding to move a mux on another
+the sketch. It is wrong where the DECISION belongs elsewhere. Handing `VideoPath`
+a `selectInput` callback leaves `VideoPath` deciding to move a mux on another
 chip; the dependency is disguised rather than removed.
 
 `Tv5725::` has the chip as its boundary. The input path is two muxes in series
@@ -117,21 +141,22 @@ needs only to report: not acquired, and out of what it can do alone. What that
 means -- try another source, say nothing more, tell the display -- is policy
 about the board.
 
-So the loop is not `Geometry::poll()` calling out. It is an orchestration layer
-above `Tv5725::` that owns the escalation, the input policy and the composition,
-and calls into the engine for the scaler's share. `poll()` keeps its ordering
-contract and its single entry point; what changes is who calls it and who owns
-the decisions around it.
+So the loop is not `VideoPath::poll()` calling out. It is `InputAcquisition`,
+above `Tv5725::`, owning the escalation and the input policy and calling into
+the engine for the scaler's share. `poll()` keeps its ordering contract and its
+single entry point; what changes is who calls it and who owns the decisions
+around it.
 
-**It has to delegate rather than accrete.** The product is more than acquisition
--- OSD, audio, IR, the web UI -- so a top-level class named after it is a
-composition root, and the ladder wants its own collaborator under it. The
-focused responsibility is deciding where video comes from and keeping it coming.
+**It is a collaborator, not the composition root.** The product is more than
+acquisition -- OSD, audio, IR, the web UI -- so the class named for the whole
+would accrete all of it. `InputAcquisition`'s responsibility is narrower and
+stateable in one line: decide where video comes from, and keep it coming.
 
-**`Tv5725::SyncRecovery` is in the wrong namespace by this argument**, and that
-is a marginal call today rather than a clear one: ten of its eleven steps are
-TV5725 operations. It becomes clear as the list collapses to the three states
-above, one of which is changing the input.
+**`Tv5725::SyncRecovery` is in the wrong namespace by this argument**, and
+naming the layer is what settles it: ten of its eleven steps are TV5725
+operations, which is why it reads as marginal, but the eleventh changes the
+input and the list as a whole is policy about the board. It moves out of
+`Tv5725::` into `InputAcquisition` at step 7.
 
 ## The named operations
 
@@ -187,7 +212,7 @@ owner -- that half of step 7 has landed -- so what is left is the POSITION.
 | 6 | `== 38` | -- | `ModeDetect::nudge()` |
 | 7 | `> 47`, `% 16` | csync | `toggleHsyncOverflowProtect()` |
 | 8 | `% 150` | -- | clear overflow protect, default coast and clamp, `updateSpDynamic(1)`, nudge Mode Detect, re-acquire the SOG level, reset the sync processor, reset Mode Detect |
-| 9 | `== 150` or `% 900` | -- | `Geometry::reacquireSyncType()`; parks at `0x07fe` if it finds V sync |
+| 9 | `== 150` or `% 900` | -- | `VideoPath::reacquireSyncType()`; parks at `0x07fe` if it finds V sync |
 | 10 | `% 413` | `detectionMayChangeInput()` | `Adc::selectOtherInput()`, kept only if it locks within 210 ms |
 
 **Four of the eleven repeat, and that is the behaviour the ordered list
@@ -259,7 +284,7 @@ television should be told, not something the refactor can settle.
 | what it does | owner | exists |
 |---|---|---|
 | the freeze gate | `poll()`'s own entry gate | yes |
-| `getVideoMode()`, `getStatus16SpHsStable()` | `Geometry::sourceIsPresent()` | yes |
+| `getVideoMode()`, `getStatus16SpHsStable()` | `VideoPath::sourceIsPresent()` | yes |
 | HD bypass vsync window steering | `HdBypass` | yes |
 | the source-disturbed interrupt | `Interrupts`, read by `poll()` | yes |
 | the SOG sync separator level, all three routines | `Adc` | class yes, method no |
@@ -270,7 +295,7 @@ television should be told, not something the refactor can settle.
 | freeze and unfreeze | `FrameBuffer` | yes |
 | ADC phase optimisation | `Adc` | class yes, method no |
 | `noSyncCounter`, `continousStableCounter`, `RGBHVNoSyncCounter` | one steadiness run in the engine | partly |
-| the new-mode debounce | `Geometry::sourceMoved()` | yes |
+| the new-mode debounce | `VideoPath::sourceMoved()` | yes |
 | motion-adaptive deinterlace and scanlines, by `VPERIOD_IF` | `Deinterlacer` | yes |
 | scaling-RGBHV entry, exit and preset choice | `PresetLoad`, `OutputChoice`, `SourceKey` | yes |
 | the PLL band and its steering | `Adc`, as the one owner of the group | yes |
@@ -312,7 +337,7 @@ default.
 
 | left in the sketch by an earlier step | its owner | lands at |
 |---|---|---|
-| `updateSpDynamic()`'s decision of when to hunt | `Geometry`, off its own steadiness run | step 13, with the watcher |
+| `updateSpDynamic()`'s decision of when to hunt | `VideoPath`, off its own steadiness run | step 13, with the watcher |
 | `lastVsyncLock` | FrameSync, which is the only thing that reads it | with the rate steer, once FrameSync has an owner |
 | `rto->phaseIsSet` | `Adc` | step 6, with the sampling phase |
 | `rto->coastPositionIsSet`, `rto->clampPositionIsSet` | `SyncProcessor` | step 5 |
@@ -339,7 +364,7 @@ policy moves. It separates the two facts that variable carried — the level
 force* — which is why a straight substitution would have been wrong.
 
 **2. The detection cadence.** `poll()` takes the clock and the idle detection
-pass runs on `Geometry::DetectionIntervalMs`. The steadiness run is counted in
+pass runs on `VideoPath::DetectionIntervalMs`. The steadiness run is counted in
 detection passes and `loop()` goes round far faster than the sync watcher's
 20 ms tick, so without this a run counted per pass is not the same length as one
 counted per tick and every threshold keyed on it means something different.
@@ -421,7 +446,7 @@ test separates them and no ESP restart recovers it.
 
 **4. One steadiness run, WHICH IS THE NO-SYNC GATE.** `noSyncCounter`,
 `continousStableCounter` and `RGBHVNoSyncCounter` become reads of the engine's
-own run, and `Geometry::sourceIsPresent()` replaces the classification at the
+own run, and `VideoPath::sourceIsPresent()` replaces the classification at the
 gate. Everything below is keyed on the run.
 
 **AND STEP 7 HAS TO COME FIRST, WHICH THE ORDER ABOVE GETS WRONG.** The gate
@@ -453,10 +478,18 @@ named recoveries. What moves here is the run.
 
 **6. Acquire the sampling phase**, to `Adc`.
 
-**7. The escalation list** replaces the counter ladder: an ordered set of named
-recoveries tried in turn, in place of `% 27`, `% 32`, `== 38`, `% 150` and
-`% 413`. **Step 4 waits on this**, because wiring the gate is what lets the
-branch advance far enough to reach these.
+**7. `InputAcquisition`, and the escalation list it holds.** The ordered set of
+named recoveries replaces `% 27`, `% 32`, `== 38`, `% 150` and `% 413` -- and it
+lands in a class of its own above `Tv5725::`, because a list with no owner is
+what `SyncRecovery` is today. `SyncRecovery` moves out of `Tv5725::` with it.
+**Step 4 waits on this**, because wiring the gate is what lets the branch
+advance far enough to reach these.
+
+**This is the step that inverts the call.** `InputAcquisition::poll()` takes the
+tick, asks the engine for `sourceState()`, and runs a rung when the answer is
+not acquired. `VideoPath::poll()` stops being called from `loop()` on the same
+pass and becomes the engine's share of one sequence, which is what removes the
+second clock.
 
 What the ladder does, rung by rung, and which rungs have an owner:
 
@@ -470,7 +503,7 @@ What the ladder does, rung by rung, and which rungs have an owner:
 | `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
 | `== 38` | make mode detect re-latch | `ModeDetect::nudge()` |
 | `> 47, % 16` | csync only: try the other overflow-protect setting | `SyncProcessor::toggleHsyncOverflowProtect()` |
-| `% 150` | reacquire the sync type, put the coast and clamp windows back, `updateSpDynamic(1)`, nudge, re-acquire the sync separator level, reset the sync processor, reset mode detect | `Geometry::reacquireSyncType()`, the two window defaults, `ModeDetect::nudge()`, `SyncOnGreen::reacquire()`, `SyncProcessor::reset()`, `ModeDetect::reset()`, `SyncProcessor::applyForSearch()` |
+| `% 150` | reacquire the sync type, put the coast and clamp windows back, `updateSpDynamic(1)`, nudge, re-acquire the sync separator level, reset the sync processor, reset mode detect | `VideoPath::reacquireSyncType()`, the two window defaults, `ModeDetect::nudge()`, `SyncOnGreen::reacquire()`, `SyncProcessor::reset()`, `ModeDetect::reset()`, `SyncProcessor::applyForSearch()` |
 | `% 413` | try the other ADC input, put it back if nothing locks | `Adc::selectOtherInput()` and `selectInput()`; the wait stays with the counter |
 
 **Every rung now names an operation, and no rung writes a register itself.**
@@ -487,7 +520,7 @@ recovery puts a green screen on every solve that lands on a flagged counter.
 correction used to be one-directional: it could move a held csync to separate
 and never back, and it never reconciled the register with the held value, so a
 source counted through the wrong path with the held type already right had no
-route out. `Geometry::reacquireSyncType()` is that rung — it applies the probe's
+route out. `VideoPath::reacquireSyncType()` is that rung — it applies the probe's
 answer to the chip whatever the held value says — and it also stops the recovery
 probing an input whose connector settles the sync type.
 
@@ -546,7 +579,8 @@ lands wherever FrameSync does.
 readers. `docs/retiring-mode-detect.md` has what each of their fifteen values
 carried and what replaced it.
 
-**13. Delete `runSyncWatcher()`**, and `loop()` calls `poll(millis())` alone.
+**13. Delete `runSyncWatcher()`**, and `loop()` calls
+`inputAcquisition.poll(millis())` alone.
 
 ## Input selection is the same collapse, one level up
 
@@ -562,9 +596,13 @@ rather than the sketch poking registers and leaving the engine to notice. That
 is what makes the code tractable to reason about: one path in, whether the
 request came from the menu, the remote or HTTP.
 
-It lands with step 10, where the preset load becomes an injected action: the
-same commit that stops `applyPresets()` being how the engine hears about a
-source is the one that gives input selection somewhere better to call.
+**It does not wait for `InputAcquisition`.** The call is one the sketch makes,
+so `applyInputSelection()` can take the engine's entry point today -- and it has
+a bug with a reproduction to answer for: nothing forgets the sync type on an
+input change, so `ypbpr` and back to `vga` leaves `SP_SOG_MODE` 1 on a
+separate-sync source counting 97 lines, with no route out because the count
+never moves to arm a re-probe. `applyPresets()` stops being how the engine hears
+about a source at step 10; the input event is earlier and cheaper than that.
 
 ### Most of the ladder is one operation, applied in fragments
 
@@ -629,16 +667,20 @@ all four are things this page has separately recorded as awkward:
 - **It is why `0x07fe` had to be a message.** The ladder had no way to say
   "promote this decision" except by writing a value another block reads.
 
-So the shape is one level up, and it is the same collapse as the section above:
+So the shape is one level up, and it is the same collapse as the section above.
+The engine already names three ways the problem moves, and only one of them is
+missing:
 
-    inputChanged()   the input the source arrives on is now unknown
-    modeChanged()    same input, the source moved
-    poll()           runs the ladder while sourceIsPresent() is false
+    inputMuxChanged()      the input the source arrives on is now unknown
+    inputTimingsChanged()  same input, the source moved
+    outputModeChanged()    the user picked a different output resolution
+    poll()                 runs the ladder while sourceIsPresent() is false
 
-`Geometry::inputChanged()` is the entry point the sketch is missing -- called by
-`applyInputSelection()` from the menu, the remote and HTTP, and called by the
-escalation when it exhausts. It forgets the sync type, the measurement and the
-escalation position, because a different input shares none of them.
+`VideoPath::inputMuxChanged()` is the entry point the sketch is missing --
+called by `applyInputSelection()` from the menu, the remote and HTTP, and called
+by `InputAcquisition` when the ladder exhausts. It forgets the sync type,
+because a different input shares none of it, and the escalation position is
+`InputAcquisition`'s to forget rather than the engine's.
 
 **And it dissolves the cadence question. NOTHING TERMINATES:** a unit with no
 detectable source keeps looking until it finds one, so there is no end state to
