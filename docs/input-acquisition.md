@@ -4,9 +4,10 @@ Goal: `runSyncWatcher()` and `rto->videoStandardInput` are both deleted, and the
 responsibility they share -- keep video coming, and know what is coming -- has
 one owner instead of none.
 
-**`InputAcquisition`** sits ABOVE `Tv5725::`. It holds the state, owns the tick,
-coordinates the measurement and decides. `Tv5725::SourceMeasurement` reads the
-source for it and `Tv5725::VideoPath` is handed the answer and writes registers.
+**`InputAcquisition`** sits ABOVE `Tv5725::`. It owns the tick, coordinates the
+measurement and decides. `Tv5725::SourceMeasurement` reads the source for it and
+`Tv5725::VideoPath` is handed the answer and writes registers. Each of the three
+holds what it alone reads, which is the rule the whole page turns on.
 `loop()` ends up with one call where it has two:
 
 ```
@@ -30,15 +31,15 @@ Both questions are still here and they are still different:
 - **the order the code moves in** -- *The order*, thirteen steps, with the
   byte's stages folded onto the steps that carry them
 
-## InputAcquisition holds the state, and that is the whole design
+## InputAcquisition decides, and that is the whole design
 
-Three parties, one direction of flow. The state lives in ONE of them.
+Three parties, one direction of flow. Each holds what it alone reads.
 
 | | |
 |---|---|
-| `InputAcquisition` | **holds the state.** Owns the tick, coordinates the measurement, decides the divider and the input, runs the ladder, reports "no signal out" |
+| `InputAcquisition` | **decides.** Owns the tick, coordinates the measurement, decides the divider and the input, runs the ladder, reports "no signal out". Holds what the last solve ran against, because that is what it compares a fresh reading to |
 | `Tv5725::SourceMeasurement` | called by it. Reads the source off the chip -- the only thing that does |
-| `Tv5725::VideoPath` | handed that state. Solves raster, clock, windows and scales, and writes them. Decides nothing |
+| `Tv5725::VideoPath` | told what changed. Solves raster, clock, windows and scales, and writes them, holding what one solve leaves for the next. Decides nothing |
 
 **"The engine" is the new code, all of it.** The word names one axis and only
 one: the classes under `src/` against the legacy sketch -- `runSyncWatcher()`,
@@ -56,30 +57,39 @@ changes owner rather than being divided, because its statics are already pure
 chip reads and its instance is the steadiness run and the divider -- one
 coherent job, in the wrong hands.
 
-### The state is passed, not held twice
+### What moves is what another class reads, and nothing else
 
-`VideoPath` is handed a value and returns one. It holds nothing across a call,
-so there is no second copy of anything to disagree with the first. What moves
-out of it:
+**The test is whether a field has a reader outside the class that writes it**,
+not whether `VideoPath` holds it. A field with two owners is the fault this
+design exists to remove; a solver holding its own working state is not.
+
+Applied to `VideoPath`, one field met it:
 
 | | |
 |---|---|
-| `sampling_` | the measurement and the divider |
-| `choice_`, `rasterMode_` | the output asked for, and what it resolved to |
-| `solvedLines_`, `solvedLineRateHz_` | what the last solve ran against |
-| the raster, both scales, the capturable region | outputs of one solve that the next one needs |
-| `modePending_`, `solvePending_`, `syncTypeProbed_`, `scanModeApplied_`, `idleRun_`, `sourceState_`, `detectedMs_` | the poll loop itself |
+| `solvedLines_`, `solvedLineRateHz_` | **moved.** Written by `VideoPath`, read by it never, read by `InputAcquisition` at nine sites |
+| the raster, both scales, the porch stops, the capturable region | **stays.** Outputs of one solve that only the next solve reads |
+| `framing_`, `framedKey_`, `scanModeApplied_`, `syncTypeProbed_` | **stays.** No reader outside the class |
+| `choice_`, `rasterMode_`, `modePending_`, `solvePending_`, `usableHorizontal_`, `usableVertical_` | **stays.** Published through accessors; the class derives from them |
 
-**This does not make the state go away; it gives it one owner.** Passed as
-separate arguments the signature is unusable, so it is one value -- and that
-value IS the video path's state, held by `InputAcquisition`. What is bought is
-that it is visible at the call site, impossible to hold two copies of, and
-constructible directly by a host test instead of being reached through seeded
-registers and a faked clock.
+**Keep the state that describes the video output nearest the class that solves
+it.** Gathering all of it into `InputAcquisition` does not remove state -- it
+relocates it and adds a parameter, because a signature taking it as separate
+arguments is unusable, so it becomes one struct another class mutates. That
+leaves the data in one class and the behaviour that owns it in another, and it
+makes the acquisition layer a fresh place to put things: the accretion `rto` is,
+with a new destination. The acquisition layer has no use for a porch stop.
 
-**It does not contradict the rule that the engine calculates from held state.**
-That rule forbids reading a register back to derive another. Where the state is
-held is not what it is about, and moving it up leaves it intact.
+**The fault behind the rule is duplication, and it does not generalise.** Two
+callers advancing one steadiness run leaves `idleRun_` double-advanced and the
+run no longer over consecutive polls. That argues against two owners of one
+fact, which is what `solvedLines_` was, and says nothing about a solver holding
+what it derived.
+
+**A move still costs something, so it is worth being the only one.** Bypass used
+to zero the count directly in `enterBypass()`; the reader now forgets it when
+`outputMode()` reads as bypass -- equivalent, because the guard runs before any
+comparison, but a derivation where there was a direct write.
 
 **The framing table is NOT `InputAcquisition`'s.** The user's pan and zoom, per
 source, persisted to flash, is product state rather than acquisition -- and a
@@ -155,8 +165,11 @@ Not every class flattens, and the line is what the class is for:
 
 | | |
 |---|---|
-| **stateless** -- a solver | `VideoPath`, `CaptureWindow`, `OutputRaster`, `Scale`, `RasterFit`, `BlankingTiming` |
-| **stateful** -- a driver holding a level or a ramp | `DisplayClock`, which ramps the Si5351 over time; `SyncOnGreen`, which holds the separator level and deliberately separates the level CHOSEN from the level in force |
+| **stateless** -- a solver called with everything it needs | `CaptureWindow`, `OutputRaster`, `Scale`, `RasterFit`, `BlankingTiming` |
+| **stateful** -- a driver holding a level, a ramp or its own last answer | `DisplayClock`, which ramps the Si5351 over time; `SyncOnGreen`, which holds the separator level and deliberately separates the level CHOSEN from the level in force; `VideoPath`, which holds the raster, the scales and the framing one solve leaves for the next |
+
+`VideoPath` sits in the second row because a solve reads what the one before it
+produced. It calls the first row; it is not one of them.
 
 ### The divider needs the output, which is why it moves up rather than down
 
@@ -701,22 +714,24 @@ what `SyncRecovery` is today. `SyncRecovery` moves out of `Tv5725::` with it.
 **Step 4 waits on this**, because wiring the gate is what lets the branch
 advance far enough to reach these.
 
-**This is the step that inverts the call, and the state moves with it.**
+**This is the step that inverts the call.**
 `InputAcquisition::poll()` takes the tick, drives `SourceMeasurement`, and runs
-a rung when the source is not acquired. `VideoPath::poll()` does not move --
-its stages become named calls made in order, and everything it held becomes a
-value the new class owns. *InputAcquisition holds the state* above is what this
-step builds.
+a rung when the source is not acquired. `VideoPath::poll()` does not move -- its
+stages become named calls made in order.
+
+**What state travels with it is decided one field at a time**, by the test in
+*What moves is what another class reads*. `solvedLines_` and
+`solvedLineRateHz_` did; nothing else in `VideoPath` does, so the rest stays
+with the solver that derives it.
 
 **It is the largest step on the list and it does not have to land at once.**
 The order inside it is: create the class with the tick and the ladder; move
-`SourceMeasurement` to it; then take the state out of `VideoPath` a group at a
-time, ending with the flags that make `poll()` disappear. Each is a solve that
-still writes the same registers, so the bar below applies to every one of them
-rather than only to the last.
+`SourceMeasurement` to it; then the flags that make `poll()` disappear. Each is
+a solve that still writes the same registers, so the bar below applies to every
+one of them rather than only to the last.
 
 Landed of it so far: the class, with `loop()` calling it and it calling
-`VideoPath`; the detection clock and the cadence; the run gate, which follows the
+`VideoPath`; the count and line rate the last solve ran against; the detection clock and the cadence; the run gate, which follows the
 tick; the three publishers of what the source is running; and the idle pass --
 `sourceMoved()`, `rateMoved()`, `countHeld()`, the run they advance and the
 `SourceState` they publish. `SourceMeasurement` is held by the root and passed to
@@ -736,10 +751,11 @@ not measure, and one `false` cannot tell those from each other or from a pass
 with nothing to do. A deferred retry is a fourth answer: it re-reads no count, so
 there is no run to seed from it.
 
-**Every caller of `sampling_` MOVES, and never duplicates.** The moment two
-callers advance the steadiness run, `idleRun_` double-advances and the run both
-readers depend on is no longer over consecutive polls -- which is the fault
-`sourceIsPresent()` was written around.
+**THE STEADINESS RUN HAS ONE ADVANCER.** The moment two callers advance it,
+`idleRun_` double-advances and the run both readers depend on is no longer over
+consecutive polls -- which is the fault `sourceIsPresent()` was written around.
+That is a rule about one field with two owners, and it is why `sampling_` is
+held by the root and passed to both rather than copied.
 
 **The framing table is the one piece that does not wait**, because it moves to
 the root rather than to this class: the root already persists it and round-trips
