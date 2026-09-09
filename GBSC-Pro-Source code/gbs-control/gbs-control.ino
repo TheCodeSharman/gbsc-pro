@@ -619,26 +619,36 @@ Pinger pinger;
 #endif
 
 
+// The run-time state that says nothing about what is attached: the acquisition
+// machinery's own defaults. Boot and the input handlers' reset both start from
+// it, and what they believe about the SOURCE differs -- LoadDefault() comes up
+// with the frame buffer frozen and boot does not -- so that half stays at the
+// call sites.
+static void resetRunTimeDefaults()
+{
+    rto->autoBestHtotalEnabled = true;
+    rto->syncLockFailIgnore = 16;
+    rto->syncWatcherEnabled = true;
+    rto->phaseADC = 16;
+    rto->phaseSP = 16;
+    rto->presetID = 0;
+    Tv5725::Adc::forgetPllBand();
+    rto->motionAdaptiveDeinterlaceActive = false;
+    rto->deinterlaceAutoEnabled = true;
+    Tv5725::Deinterlacer::forgetScanlines();
+    rto->boardHasPower = true;
+    Tv5725::SyncMeasurement::set(false);
+    rto->isValidForScalingRGBHV = false;
+    rto->medResLineCount = 0x33;
+    rto->osr = 0;
+    rto->notRecognizedCounter = 0;
+}
+
 static void LoadDefault()
 {
     loadDefaultUserOptions();
 
-    rto->autoBestHtotalEnabled = true; 
-    rto->syncLockFailIgnore = 16;      
-    rto->syncWatcherEnabled = true;    
-    rto->phaseADC = 16;                
-    rto->phaseSP = 16;                 
-    rto->presetID = 0;                 
-    Tv5725::Adc::forgetPllBand();
-    rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->deinterlaceAutoEnabled = true;           
-    Tv5725::Deinterlacer::forgetScanlines();
-    rto->boardHasPower = true;                    
-    Tv5725::SyncMeasurement::set(false);                   
-    rto->isValidForScalingRGBHV = false;          
-    rto->medResLineCount = 0x33;                  
-    rto->osr = 0;                                 
-    rto->notRecognizedCounter = 0;                
+    resetRunTimeDefaults();
 
     rto->videoStandardInput = 0;    
     rto->outModeHdBypass = false;   
@@ -1739,11 +1749,6 @@ void goLowPowerWithInputDetection()
     delay(100);
     rto->isInLowPowerMode = true;
 }
-
-// How long HSOUT/VSOUT are taken away to make the encoder re-acquire after the
-// output raster moves. Measured working at 1500; the minimum is unestablished,
-// and this blocks loop() once per mode change.
-static const uint16_t ENCODER_RELOCK_MS = 250;
 
 boolean optimizePhaseSP() 
 {
@@ -5157,22 +5162,7 @@ void setup()
     rto->allowUpdatesOTA = false;      
     rto->freezeAutomation = false; // never persisted: a reboot returns to normal
     rto->enableDebugPings = false;     
-    rto->autoBestHtotalEnabled = true; 
-    rto->syncLockFailIgnore = 16;      
-    rto->syncWatcherEnabled = true;    
-    rto->phaseADC = 16;
-    rto->phaseSP = 16;
-    rto->presetID = 0;           
-    Tv5725::Adc::forgetPllBand();
-    rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->deinterlaceAutoEnabled = true;           
-    Tv5725::Deinterlacer::forgetScanlines();
-    rto->boardHasPower = true;                    
-    Tv5725::SyncMeasurement::set(false);          
-    rto->isValidForScalingRGBHV = false; 
-    rto->medResLineCount = 0x33;
-    rto->osr = 0;                  
-    rto->notRecognizedCounter = 0; 
+    resetRunTimeDefaults();
 
     rto->inputIsYpBpR = false;   
     rto->videoStandardInput = 0; 
