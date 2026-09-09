@@ -1,8 +1,8 @@
-#ifndef TV5725_INPUT_LINE_H_
-#define TV5725_INPUT_LINE_H_
+#ifndef TV5725_VIDEO_SOURCE_LINE_H_
+#define TV5725_VIDEO_SOURCE_LINE_H_
 
-// The source line a capture window is placed on: how long it is, and how much
-// of it the framing may not have.
+// The video source's line, as a capture window is placed on it: how long it is,
+// and how much of it the framing may not have.
 
 #include <stdint.h>
 
@@ -14,7 +14,7 @@ namespace Tv5725 {
 // PanAndZoom::capture() and PanAndZoom::clampToLine() clamp against this and
 // must agree exactly: one unit of disagreement is a dead zone where every press
 // back produces an identical window. docs/firmware-geometry-engine.md
-class InputLine {
+class VideoSourceLine {
 public:
     // How far into the line the capture path keeps writing video. Past it the
     // writes are Y=U=V=0, which decodes to green and destroys the picture
@@ -24,9 +24,9 @@ public:
 
     // The whole line is available. Vertical uses this: the exclusion is the
     // HSYNC pulse and there is no vertical equivalent.
-    explicit InputLine(uint16_t units);
+    explicit VideoSourceLine(uint16_t units);
 
-    InputLine(uint16_t units, uint16_t syncUnits);
+    VideoSourceLine(uint16_t units, uint16_t syncUnits);
 
     // Where the window rolls over.
     uint16_t units() const;
@@ -59,7 +59,7 @@ public:
     //
     // The tail is bounded by WriteLimitUnits, which is measured rather than
     // derived from anything this class is handed. docs/capture-limits.md
-    static InputLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine);
+    static VideoSourceLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine);
 
 private:
     uint16_t units_;
@@ -68,4 +68,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_INPUT_LINE_H_
+#endif  // TV5725_VIDEO_SOURCE_LINE_H_

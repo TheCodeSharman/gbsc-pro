@@ -1,4 +1,4 @@
-// Host-compiled unit tests for src/input/SyncSearch.h -- `make -C test sync-search`.
+// Host-compiled unit tests for src/videosource/SyncSearch.h -- `make -C test sync-search`.
 //
 // The question is only "which search does this saved source and this V-sync
 // reading select", which is pure logic -- so the detection livelock is
@@ -8,7 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/input/SyncSearch.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/SyncSearch.h"
 
 TEST_CASE("a source with V-sync takes the V-sync-present search")
 {

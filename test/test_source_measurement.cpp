@@ -17,7 +17,7 @@
 
 FakeTwoWire Wire;
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
@@ -208,7 +208,7 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // buys capturing the whole of it, and no table's divider does.
         uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLine, Oversample, true);
         CHECK(chosen < 2269);
-        CHECK(SourceMeasurement::ifLineFor(chosen, true) <= InputLine::WriteLimitUnits);
+        CHECK(SourceMeasurement::ifLineFor(chosen, true) <= VideoSourceLine::WriteLimitUnits);
         CHECK(SourceMeasurement::withinLimit(chosen, BenchLine, Oversample));
     }
 
@@ -221,14 +221,14 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
 
 TEST_CASE("the divider is capped so the whole line stays inside the write limit")
 {
-    // Past InputLine::WriteLimitUnits the capture path stops writing video, so
+    // Past VideoSourceLine::WriteLimitUnits the capture path stops writing video, so
     // a line longer than that loses its tail whatever the ADC rating allows.
     // The divider is what decides the line length, which makes it the lever:
     // sample the line more coarsely and 2250 samples reach the end of it.
     // docs/capture-limits.md
     uint16_t chosen = SourceMeasurement::recommendedDivider(BenchLineRate, 4, true);
 
-    CHECK(SourceMeasurement::ifLineFor(chosen, true) <= InputLine::WriteLimitUnits);
+    CHECK(SourceMeasurement::ifLineFor(chosen, true) <= VideoSourceLine::WriteLimitUnits);
 
     SUBCASE("and the ADC rating still binds where it is the tighter of the two") {
         // 31.5 kHz has room for 1258 under the rating, well inside the limit.
@@ -401,8 +401,8 @@ TEST_CASE("the divider ceiling follows the decimation too")
     const uint16_t doubled = SourceMeasurement::recommendedDivider(15574u, 4, true);
     const uint16_t progressive = SourceMeasurement::recommendedDivider(37469u, 4, false);
 
-    CHECK(SourceMeasurement::ifLineFor(doubled, true) <= InputLine::WriteLimitUnits);
-    CHECK(SourceMeasurement::ifLineFor(progressive, false) <= InputLine::WriteLimitUnits);
+    CHECK(SourceMeasurement::ifLineFor(doubled, true) <= VideoSourceLine::WriteLimitUnits);
+    CHECK(SourceMeasurement::ifLineFor(progressive, false) <= VideoSourceLine::WriteLimitUnits);
 }
 
 // --- the line rate, measured off the chip ------------------------------------
@@ -815,9 +815,9 @@ TEST_CASE("the reference divider is even, like every divider the solver picks")
     CHECK((SourceMeasurement::referenceDivider(true) & 1u) == 0);
 
     SUBCASE("and it is still the write limit, rounded down to reach it") {
-        CHECK(SourceMeasurement::referenceDivider(false) <= InputLine::WriteLimitUnits);
-        CHECK(SourceMeasurement::referenceDivider(true) <= 2 * InputLine::WriteLimitUnits);
-        CHECK(SourceMeasurement::referenceDivider(false) >= InputLine::WriteLimitUnits - 1);
+        CHECK(SourceMeasurement::referenceDivider(false) <= VideoSourceLine::WriteLimitUnits);
+        CHECK(SourceMeasurement::referenceDivider(true) <= 2 * VideoSourceLine::WriteLimitUnits);
+        CHECK(SourceMeasurement::referenceDivider(false) >= VideoSourceLine::WriteLimitUnits - 1);
     }
 }
 

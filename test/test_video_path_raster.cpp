@@ -18,7 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -68,15 +68,15 @@ static uint32_t horizontalTotalUnwritten()
 // The clock only has to increase. Which pass is a detection pass is the
 // cadence's business and no case here is about that.
 static uint32_t g_nowMs = 0;
-static bool pollOnce(InputAcquisition &acquisition)
+static bool pollOnce(VideoSourceAcquisition &acquisition)
 {
-    g_nowMs += InputAcquisition::DetectionIntervalMs;
+    g_nowMs += VideoSourceAcquisition::DetectionIntervalMs;
     return acquisition.poll(g_nowMs);
 }
 
 // poll() gates on a line count steady over several passes before it will pay for
 // a field rate measurement, so a solve takes more than one call.
-static bool pollUntilSolved(InputAcquisition &acquisition)
+static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(acquisition))
@@ -89,7 +89,7 @@ struct SettledEngine {
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine;
-    InputAcquisition acquisition;
+    VideoSourceAcquisition acquisition;
 
     SettledEngine()
         : engine(clock, sampling, framings), acquisition(sampling, engine)
@@ -273,7 +273,7 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 // VDS_VSYNC_RST, s3_02[14:4] -- the output frame the engine writes.
 static uint16_t frameLinesWritten() { return Wire.field(3, 0x02, 4, 11) + 1; }
 
-static bool pollUntilResolved(InputAcquisition &acquisition)
+static bool pollUntilResolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(acquisition))

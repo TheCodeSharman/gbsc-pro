@@ -12,7 +12,7 @@ const PanAndZoom &ActiveImage::framing() const { return framing_; }
 
 void ActiveImage::setFraming(const PanAndZoom &framing) { framing_ = framing; }
 
-void ActiveImage::panBy(const InputLine &line, const SourceTiming &timing,
+void ActiveImage::panBy(const VideoSourceLine &line, const SourceTiming &timing,
                         const Axis &axis, int16_t units, const OutputRaster &raster)
 {
     if (!framing_.tunedOn(axis))
@@ -20,7 +20,7 @@ void ActiveImage::panBy(const InputLine &line, const SourceTiming &timing,
     framing_.panBy(axis, units, line.capturable());
 }
 
-void ActiveImage::zoomBy(const InputLine &line, const SourceTiming &timing,
+void ActiveImage::zoomBy(const VideoSourceLine &line, const SourceTiming &timing,
                          const Axis &axis, int16_t units, const OutputRaster &raster)
 {
     if (!framing_.tunedOn(axis))
@@ -38,7 +38,7 @@ bool ActiveImage::operator!=(const ActiveImage &other) const
     return !(*this == other);
 }
 
-uint16_t ActiveImage::defaultWidth(const InputLine &line,
+uint16_t ActiveImage::defaultWidth(const VideoSourceLine &line,
                                    const SourceTiming &timing, const Axis &axis)
 {
     const float extent = timing.published() ? timing.activeExtent(axis)
@@ -48,7 +48,7 @@ uint16_t ActiveImage::defaultWidth(const InputLine &line,
     return (uint16_t)clampWidth(lrintf(line.units() * extent), line, 0, axis);
 }
 
-ActiveImage::Placement ActiveImage::place(const InputLine &line,
+ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
                                           const SourceTiming &timing,
                                           const Axis &axis,
                                           const OutputRaster &raster) const
@@ -80,7 +80,7 @@ ActiveImage::Placement ActiveImage::place(const InputLine &line,
     return placed;
 }
 
-BlankingTiming ActiveImage::capture(const InputLine &line,
+BlankingTiming ActiveImage::capture(const VideoSourceLine &line,
                                     const SourceTiming &timing,
                                     const Axis &axis, const OutputRaster &raster) const
 {
@@ -92,7 +92,7 @@ BlankingTiming ActiveImage::capture(const InputLine &line,
                          (uint16_t)(placed.start + placed.width));
 }
 
-void ActiveImage::clampToLine(const InputLine &line, const SourceTiming &timing,
+void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &timing,
                               const Axis &axis, const OutputRaster &raster)
 {
     if (line.units() == 0)
@@ -111,7 +111,7 @@ void ActiveImage::clampToLine(const InputLine &line, const SourceTiming &timing,
                     (float)placed.width / (float)usable);
 }
 
-long ActiveImage::clampWidth(long width, const InputLine &line,
+long ActiveImage::clampWidth(long width, const VideoSourceLine &line,
                              const OutputRaster &raster, const Axis &axis)
 {
     if (width > (long)line.capturable())

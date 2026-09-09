@@ -1,16 +1,16 @@
-#ifndef INPUT_ACQUISITION_H_
-#define INPUT_ACQUISITION_H_
+#ifndef VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_
+#define VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_
 
 // Decide where video comes from and keep it coming. Owns the tick, measures the
-// source, and calls Tv5725::VideoPath to solve the registers from the reading.
-// docs/input-acquisition.md
+// video source, and calls Tv5725::VideoPath to solve the registers from the
+// reading. docs/input-acquisition.md
 
 #include <stdint.h>
 
 #include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/VideoPath.h"
 
-class InputAcquisition {
+class VideoSourceAcquisition {
 public:
     // Three answers, not two. A steady line count is the vertical half only: a
     // source can hold a correct count while the ADC samples a line it is not
@@ -22,7 +22,7 @@ public:
         SourceAcquired,
     };
 
-    InputAcquisition(Tv5725::SourceMeasurement &sampling,
+    VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                      Tv5725::VideoPath &videoPath);
 
     // One pass, from loop(). True when a mode change completes.
@@ -88,4 +88,4 @@ private:
     bool sourceInterrupted_;
 };
 
-#endif  // INPUT_ACQUISITION_H_
+#endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_

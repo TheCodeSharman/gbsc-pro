@@ -1,9 +1,10 @@
-#ifndef INPUT_INPUT_SOURCE_H_
-#define INPUT_INPUT_SOURCE_H_
+#ifndef VIDEOSOURCE_VIDEO_SOURCE_SELECTION_H_
+#define VIDEOSOURCE_VIDEO_SOURCE_SELECTION_H_
 
-// The six inputs the unit offers, and everything that differs between them.
+// The six video sources the unit offers, and everything that differs between
+// them. Nothing here is about key presses -- src/input/ is those.
 //
-// **THE INPUT PATH IS TWO MUXES IN SERIES AND ONLY ONE IS VISIBLE.** The TV5725's
+// **THE VIDEO SOURCE PATH IS TWO MUXES IN SERIES AND ONLY ONE IS VISIBLE.** The TV5725's
 // ADC_INPUT_SEL picks which ADC input is read; whether the HC32F460 has connected
 // anything to it is asw_01..04, which appear in no register dump and cannot be
 // read back. Both are set from one row here, so the halves cannot disagree.
@@ -20,7 +21,7 @@
 
 #include <stdint.h>
 
-class InputSource {
+class VideoSourceSelection {
 public:
     // The values the preferences file already keeps in `Info`, so the enum IS
     // the stored representation and nothing new goes on flash.
@@ -97,4 +98,4 @@ public:
     static const char *name(Id id);
 };
 
-#endif  // INPUT_INPUT_SOURCE_H_
+#endif  // VIDEOSOURCE_VIDEO_SOURCE_SELECTION_H_

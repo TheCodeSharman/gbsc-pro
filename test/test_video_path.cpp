@@ -20,7 +20,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
@@ -254,15 +254,15 @@ static void checkBenchGeometry()
 // The clock only has to increase. Which pass is a detection pass is the
 // cadence's business and no case here is about that.
 static uint32_t g_nowMs = 0;
-static bool pollOnce(InputAcquisition &acquisition)
+static bool pollOnce(VideoSourceAcquisition &acquisition)
 {
-    g_nowMs += InputAcquisition::DetectionIntervalMs;
+    g_nowMs += VideoSourceAcquisition::DetectionIntervalMs;
     return acquisition.poll(g_nowMs);
 }
 
 // poll() runs on every loop() pass, and the steadiness gate wants a few before
 // it will pay for a field rate measurement.
-static bool pollUntilSolved(InputAcquisition &acquisition)
+static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(acquisition))
@@ -284,7 +284,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -312,7 +312,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -355,7 +355,7 @@ TEST_CASE("a line count outside what any source runs is never measured against")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -382,7 +382,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -410,7 +410,7 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(OutputChoice());
     engine.inputTimingsChanged(4);
@@ -441,7 +441,7 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
 
@@ -474,7 +474,7 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
@@ -517,7 +517,7 @@ TEST_CASE("capture is frozen across a mode change and released when it lands")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -534,7 +534,7 @@ TEST_CASE("capture stays frozen while the source is still settling")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -560,7 +560,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     SUBCASE("a mode with no timings") {
         engine.outputModeChanged(OutputChoice());
@@ -597,7 +597,7 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -631,7 +631,7 @@ TEST_CASE("a source comes back to the framing it was left at")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -665,7 +665,7 @@ TEST_CASE("a source nobody has framed takes no place in the table")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     for (uint16_t lines = 311; lines <= 315; ++lines) {
         seedSourceLines(lines);
@@ -686,7 +686,7 @@ TEST_CASE("a source nobody has framed gets the computed default")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -720,7 +720,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
     REQUIRE(framings.remember(SourceKey(311, 50.08f), stored));
@@ -753,7 +753,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -776,7 +776,7 @@ TEST_CASE("a reset forgets what the table stored for this source")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -801,7 +801,7 @@ TEST_CASE("the table says when it has something new to write")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -844,7 +844,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -930,7 +930,7 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
@@ -976,7 +976,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
@@ -1039,7 +1039,7 @@ TEST_CASE("the scan mode is corrected even when the source cannot be measured")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
@@ -1066,7 +1066,7 @@ TEST_CASE("bypass keeps the line rate it last measured")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1097,7 +1097,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     SUBCASE("a line-doubled source is sampled at twice the write limit") {
         g_dividerWhenSampled = 0;
@@ -1146,7 +1146,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     SUBCASE("a frame that shrank is not measured through the taller mode's window") {
         seedField(0, 0x1B, 0, 11, 524);   // STATUS_SYNC_PROC_VTOTAL
@@ -1206,7 +1206,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
 
@@ -1230,7 +1230,7 @@ TEST_CASE("the reference is re-applied when the count it was sized from moves")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     // A count high enough to put CKO over the 40 MHz crossover at the
     // progressive reference, then the settled one, which is under it.
@@ -1265,7 +1265,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1300,7 +1300,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     CHECK_FALSE(engine.framedKey().valid());
 
     engine.outputModeChanged(benchMode());
@@ -1330,7 +1330,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
     g_probeCalls = 0;
 
@@ -1366,7 +1366,7 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1408,7 +1408,7 @@ TEST_CASE("reacquiring the sync type puts the registers on the answered path")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1431,7 +1431,7 @@ TEST_CASE("reacquiring the sync type asks the probe again")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1452,7 +1452,7 @@ TEST_CASE("reacquiring the sync type reports what the source carries")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1488,7 +1488,7 @@ TEST_CASE("a source whose serrations are counted as lines is coasted further")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     pollUntilSolved(acquisition);
@@ -1508,7 +1508,7 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
-    InputAcquisition acquisition(sampling, engine);
+    VideoSourceAcquisition acquisition(sampling, engine);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));

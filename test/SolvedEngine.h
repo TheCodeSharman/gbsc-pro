@@ -12,7 +12,7 @@
 
 FakeTwoWire Wire;
 
-#include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -76,15 +76,15 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
 // The clock only has to increase. Which pass is a detection pass is the
 // cadence's business and no case here is about that.
 static uint32_t g_nowMs = 0;
-static bool pollOnce(InputAcquisition &acquisition)
+static bool pollOnce(VideoSourceAcquisition &acquisition)
 {
-    g_nowMs += InputAcquisition::DetectionIntervalMs;
+    g_nowMs += VideoSourceAcquisition::DetectionIntervalMs;
     return acquisition.poll(g_nowMs);
 }
 
 // poll() gates on a line count steady over several passes before it will pay
 // for a field rate measurement, so a solve takes more than one call.
-static bool pollUntilSolved(InputAcquisition &acquisition)
+static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 4 * Tv5725::SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(acquisition))
@@ -102,7 +102,7 @@ struct SolvedEngine {
     Tv5725::SourceMeasurement sampling;
     Tv5725::FramingTable framings;
     Tv5725::VideoPath engine;
-    InputAcquisition acquisition;
+    VideoSourceAcquisition acquisition;
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,

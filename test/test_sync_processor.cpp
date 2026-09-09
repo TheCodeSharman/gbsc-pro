@@ -132,7 +132,7 @@ TEST_CASE("the SD vertical sync positions are one value each, not two halves")
 
 // SP_EXT_SYNC_SEL: 0 takes H and V from the dedicated pins, 1 leaves the sync
 // processor on composite or sync-on-green. It travels with the input choice, so
-// it is set from an InputSource row rather than from the sync type.
+// it is set from an VideoSourceSelection row rather than from the sync type.
 
 template <typename Field>
 static uint32_t afterExternalSync(uint8_t sel)

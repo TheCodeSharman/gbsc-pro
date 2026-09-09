@@ -489,7 +489,7 @@ ChecksumSender sender;
 
 // The ESP and the HC32 each persist the selected input separately and neither
 // can read the other back, so nothing else reconciles them at boot. The byte is
-// taken whole from InputSource, low nibble included -- assembling it from a
+// taken whole from VideoSourceSelection, low nibble included -- assembling it from a
 // base array and a mode is what dropped VGA's asw_01.
 void sendInputFrame(uint8_t frame)
 {
@@ -606,7 +606,7 @@ void SetReg(unsigned char reg, unsigned char val)
 //   sender.send(Adv_SIGNALIZED);
 // }
 
-void applyInputRegisters(const InputSource::Settings &settings)
+void applyInputRegisters(const VideoSourceSelection::Settings &settings)
 {
     if (settings.writesAdc)
         Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
@@ -615,9 +615,9 @@ void applyInputRegisters(const InputSource::Settings &settings)
         Tv5725::Adc::selectInput(settings.adcInputSel);
 }
 
-void applyInputSelection(InputSource::Id id)
+void applyInputSelection(VideoSourceSelection::Id id)
 {
-    const InputSource::Settings settings = InputSource::settingsFor(id);
+    const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(id);
 
     SeleInputSource = settings.legacySource;
     Info = id;
@@ -633,28 +633,28 @@ void applyInputSelection(InputSource::Id id)
 void InputVGA_mode(uint8_t mode)
 {
     Checksum_Sendmode(VGA, !mode);
-    applyInputSelection(InputSource::Vga);
+    applyInputSelection(VideoSourceSelection::Vga);
 }
 void InputRGsB_mode(uint8_t mode)
 {
     Checksum_Sendmode(RGsB, !mode);
-    applyInputSelection(InputSource::RgsB);
+    applyInputSelection(VideoSourceSelection::RgsB);
 }
 void InputRGBs_mode(uint8_t mode)
 {
     Checksum_Sendmode(RGBs, !mode);
-    applyInputSelection(InputSource::Rgbs);
+    applyInputSelection(VideoSourceSelection::Rgbs);
 }
 
 void InputRGBs(void)
 {
     sender.send(RGBs);
-    applyInputSelection(InputSource::Rgbs);
+    applyInputSelection(VideoSourceSelection::Rgbs);
 }
 void InputYUV(void)
 {
     sender.send(Ypbpr);
-    applyInputSelection(InputSource::Ypbpr);
+    applyInputSelection(VideoSourceSelection::Ypbpr);
 }
 
 void InputNULL(void)
@@ -668,12 +668,12 @@ void InputNULL(void)
 void InputRGsB(void)
 {
     sender.send(RGsB);
-    applyInputSelection(InputSource::RgsB);
+    applyInputSelection(VideoSourceSelection::RgsB);
 }
 void InputVGA(void)
 {
     Checksum_Sendmode(VGA, 1);
-    applyInputSelection(InputSource::Vga);
+    applyInputSelection(VideoSourceSelection::Vga);
 }
 void InputINFO(void)
 {
@@ -681,7 +681,7 @@ void InputINFO(void)
     SeleInputSource = S_YUV;
     // Info = InfoSV;
     resetSyncProcessor();
-    applyInputRegisters(InputSource::settingsFor(InputSource::Composite));
+    applyInputRegisters(VideoSourceSelection::settingsFor(VideoSourceSelection::Composite));
     BriorCon = 2;
     rto->sourceDisconnected = true;
     saveUserPrefs();
@@ -689,24 +689,24 @@ void InputINFO(void)
 void InputSV(void)
 {
     sender.send(Adv_7391_SV);
-    applyInputSelection(InputSource::SVideo);
+    applyInputSelection(VideoSourceSelection::SVideo);
 }
 
 void InputSV_mode(uint8_t mode)
 {
     Checksum_Sendmode(Adv_7391_SV, mode);
-    applyInputSelection(InputSource::SVideo);
+    applyInputSelection(VideoSourceSelection::SVideo);
 }
 void InputAV(void)
 {
     sender.send(Adv_7391_AV);
-    applyInputSelection(InputSource::Composite);
+    applyInputSelection(VideoSourceSelection::Composite);
 }
 
 void InputAV_mode(uint8_t mode)
 {
     Checksum_Sendmode(Adv_7391_AV, mode);
-    applyInputSelection(InputSource::Composite);
+    applyInputSelection(VideoSourceSelection::Composite);
 }
 
 void Send_TvMode(uint8_t Mode)

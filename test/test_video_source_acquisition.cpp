@@ -1,4 +1,4 @@
-// Host tests for InputAcquisition -- `make -C test input-acquisition`.
+// Host tests for VideoSourceAcquisition -- `make -C test input-acquisition`.
 //
 // It owns the tick and calls down for each piece, so what is asserted here is
 // the OUTCOME: a source driven through this class alone reaches the same solved
@@ -12,7 +12,7 @@
 #include "SolvedEngine.h"
 #include "RegistersWritten.h"
 
-#include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
@@ -62,7 +62,7 @@ struct Acquiring {
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath path;
-    InputAcquisition acquisition;
+    VideoSourceAcquisition acquisition;
     uint32_t nowMs;
 
     Acquiring()
@@ -76,7 +76,7 @@ struct Acquiring {
 
     bool poll()
     {
-        nowMs += InputAcquisition::DetectionIntervalMs;
+        nowMs += VideoSourceAcquisition::DetectionIntervalMs;
         return acquisition.poll(nowMs);
     }
 
@@ -117,7 +117,7 @@ static void checkBenchAnchors()
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 2250 / 2);
 }
 
-TEST_CASE("a source driven through InputAcquisition solves the same registers")
+TEST_CASE("a source driven through VideoSourceAcquisition solves the same registers")
 {
     seedBenchSource();
     Acquiring unit;
@@ -158,7 +158,7 @@ TEST_CASE("detection runs on the layer's cadence, not on every call")
 
     uint32_t now = 0;
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i) {
-        now += InputAcquisition::DetectionIntervalMs;
+        now += VideoSourceAcquisition::DetectionIntervalMs;
         if (unit.acquisition.poll(now))
             break;
     }
@@ -173,7 +173,7 @@ TEST_CASE("detection runs on the layer's cadence, not on every call")
     // On the cadence, the same source change is noticed.
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples
                         && !unit.path.changing(); ++i) {
-        now += InputAcquisition::DetectionIntervalMs;
+        now += VideoSourceAcquisition::DetectionIntervalMs;
         unit.acquisition.poll(now);
     }
     CHECK(unit.path.changing());
@@ -349,7 +349,7 @@ TEST_CASE("a source counted steadily and sampled at the chosen divider is acquir
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         unit.poll();
 
-    CHECK(unit.acquisition.sourceState() == InputAcquisition::SourceAcquired);
+    CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAcquired);
     CHECK(unit.acquisition.sourceIsPresent());
 }
 
@@ -364,7 +364,7 @@ TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlock
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         unit.poll();
 
-    CHECK(unit.acquisition.sourceState() == InputAcquisition::SourceUnlocked);
+    CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked);
 }
 
 TEST_CASE("unlocked is not absent, because the two want opposite things")
@@ -382,7 +382,7 @@ TEST_CASE("unlocked is not absent, because the two want opposite things")
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         unit.poll();
 
-    CHECK(unit.acquisition.sourceState() != InputAcquisition::SourceAbsent);
+    CHECK(unit.acquisition.sourceState() != VideoSourceAcquisition::SourceAbsent);
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
 
@@ -420,7 +420,7 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         unit.poll();
 
-    CHECK(unit.acquisition.sourceState() == InputAcquisition::SourceAbsent);
+    CHECK(unit.acquisition.sourceState() == VideoSourceAcquisition::SourceAbsent);
 }
 
 // --- reacquiring the sync type, the escalation ladder's rung -----------------

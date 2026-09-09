@@ -4,7 +4,7 @@
 // The rectangle grabbed out of the source's, and the thing pan and zoom move.
 #include <stdint.h>
 
-#include "InputLine.h"
+#include "VideoSourceLine.h"
 #include "OutputRaster.h"
 #include "ActiveImage.h"
 #include "SourceMeasurement.h"
@@ -69,7 +69,7 @@ public:
     // The horizontal line knows what the hsync pulse takes off its head; the
     // vertical does not, because nothing has measured the vsync equivalent and
     // a guess there would crop picture rather than blanking.
-    const InputLine &horizontalLine() const;
+    const VideoSourceLine &horizontalLine() const;
 
     // The capturable region this axis offers, which is the denominator the
     // framing's proportions are taken against.
@@ -81,7 +81,7 @@ public:
     bool usable() const;
 
 private:
-    InputLine horizontalLine_, verticalLine_;
+    VideoSourceLine horizontalLine_, verticalLine_;
     SourceTiming timing_;
     OutputRaster line_;       // output raster, horizontal
     OutputRaster frame_;      // output raster, vertical

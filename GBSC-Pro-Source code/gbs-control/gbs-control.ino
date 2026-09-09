@@ -91,8 +91,8 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
-#include "src/input/InputAcquisition.h"
-#include "src/input/InputSource.h"
+#include "src/videosource/VideoSourceAcquisition.h"
+#include "src/videosource/VideoSourceSelection.h"
 #if GBS_SAMPLING_LOG
 #include "src/tv5725/SamplingLog.h"
 // The sync watcher's RGBHV choices, named as they are taken. A register dump
@@ -102,7 +102,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #else
 #define SYNC_EVENT(what, lines) ((void)0)
 #endif
-#include "src/input/SyncSearch.h"
+#include "src/videosource/SyncSearch.h"
 
 enum PresetID : uint8_t {
     PresetHdBypass = 0x21,
@@ -152,7 +152,7 @@ char userCommand;
 // web server serves from network-stack callbacks rather than from loop() -- so
 // doing any of that in the handler touches the bus from the wrong context. The
 // route parses and queues; loop() selects.
-volatile uint8_t pendingInputSelection = InputSource::None;
+volatile uint8_t pendingInputSelection = VideoSourceSelection::None;
 
 #if GBS_SAMPLING_LOG
 Tv5725::SamplingLog samplingLog;
@@ -1024,7 +1024,7 @@ Tv5725::Controls geometryControls(geometry, SerialM);
 // The acquisition path, which owns the tick loop() used to hand the engine
 // directly. It calls down for the scaler's share; the escalation, the input
 // policy and the no-signal report move into it. docs/input-acquisition.md
-InputAcquisition inputAcquisition(sourceSampling, geometry);
+VideoSourceAcquisition inputAcquisition(sourceSampling, geometry);
 
 
 #include "framesync.h"
@@ -1191,7 +1191,7 @@ bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 // it reads at the sites below: it says only that something was recognised and
 // nothing has cleared it, which is why a source the sync processor is counting
 // can sit here with the byte at 0. The measurement that answers the other
-// question is InputAcquisition::sourceIsPresent(). docs/input-acquisition.md
+// question is VideoSourceAcquisition::sourceIsPresent(). docs/input-acquisition.md
 static bool standardIsHeld()
 {
     return rto->videoStandardInput != 0;
@@ -1391,10 +1391,10 @@ void setResetParameters_re()
 // is where a sweep starts looking.
 static uint8_t selectedAdcInput()
 {
-    const InputSource::Id chosen = InputSource::fromStored(Info);
-    if (chosen == InputSource::None)
+    const VideoSourceSelection::Id chosen = VideoSourceSelection::fromStored(Info);
+    if (chosen == VideoSourceSelection::None)
         return 1;
-    return InputSource::settingsFor(chosen).adcInputSel;
+    return VideoSourceSelection::settingsFor(chosen).adcInputSel;
 }
 
 void setResetParameters()
@@ -1924,8 +1924,8 @@ void optimizeSogLevel()
 // connector to ask, so the measurement stands.
 boolean syncTypeHasOwnVsync()
 {
-    const InputSource::Id id = (InputSource::Id)Info;
-    if (InputSource::chosen(id) && !InputSource::syncTypeMustBeMeasured(id))
+    const VideoSourceSelection::Id id = (VideoSourceSelection::Id)Info;
+    if (VideoSourceSelection::chosen(id) && !VideoSourceSelection::syncTypeMustBeMeasured(id))
         return false;
     return sourceHasOwnVsync();
 }
@@ -1960,13 +1960,13 @@ boolean sourceHasOwnVsync()
 // does, and that is what a choice refuses.
 static bool detectionMayChangeInput()
 {
-    return !InputSource::chosen(Info);
+    return !VideoSourceSelection::chosen(Info);
 }
 
 void applySavedInputSource()
 {
-    const InputSource::Id saved = InputSource::fromStored(Info);
-    if (saved == InputSource::None) {
+    const VideoSourceSelection::Id saved = VideoSourceSelection::fromStored(Info);
+    if (saved == VideoSourceSelection::None) {
         // Nothing chosen, so leave the muxes alone and let detection sweep.
         // Only ADC_INPUT_SEL 0 and 1 carry video -- 2 is written solely by
         // calibrateAdcOffset() as a calibration reference -- which is what
@@ -1976,7 +1976,7 @@ void applySavedInputSource()
         return;
     }
 
-    const InputSource::Settings settings = InputSource::settingsFor(saved);
+    const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(saved);
     applyInputRegisters(settings);
 
     // The other half of the path: the HC32's asw_01..04 decide what is actually
@@ -1984,7 +1984,7 @@ void applySavedInputSource()
     sendInputFrame(settings.frame);
 
     bootLogPrintf("INPUT: %s frame=0x%02x ADC_INPUT_SEL=%u t=%lums\n",
-                  InputSource::name(saved), (unsigned)settings.frame,
+                  VideoSourceSelection::name(saved), (unsigned)settings.frame,
                   (unsigned)GBS::ADC_INPUT_SEL::read(), (unsigned long)millis());
 }
 
@@ -1995,14 +1995,14 @@ static_assert(SyncSearch::SourceRgbs == S_RGBs, "SyncSearch::SourceRgbs drifted 
 static_assert(SyncSearch::SourceVga == S_VGA, "SyncSearch::SourceVga drifted from S_VGA");
 static_assert(SyncSearch::SourceYuv == S_YUV, "SyncSearch::SourceYuv drifted from S_YUV");
 
-// InputSource::Id IS the stored `Info` byte, which is what lets the boot restore
+// VideoSourceSelection::Id IS the stored `Info` byte, which is what lets the boot restore
 // reconstruct all six. Nothing else checks the two spellings agree.
-static_assert(InputSource::Rgbs == InfoRGBs, "InputSource::Rgbs drifted from InfoRGBs");
-static_assert(InputSource::RgsB == InfoRGsB, "InputSource::RgsB drifted from InfoRGsB");
-static_assert(InputSource::Vga == InfoVGA, "InputSource::Vga drifted from InfoVGA");
-static_assert(InputSource::Ypbpr == InfoYUV, "InputSource::Ypbpr drifted from InfoYUV");
-static_assert(InputSource::SVideo == InfoSV, "InputSource::SVideo drifted from InfoSV");
-static_assert(InputSource::Composite == InfoAV, "InputSource::Composite drifted from InfoAV");
+static_assert(VideoSourceSelection::Rgbs == InfoRGBs, "VideoSourceSelection::Rgbs drifted from InfoRGBs");
+static_assert(VideoSourceSelection::RgsB == InfoRGsB, "VideoSourceSelection::RgsB drifted from InfoRGsB");
+static_assert(VideoSourceSelection::Vga == InfoVGA, "VideoSourceSelection::Vga drifted from InfoVGA");
+static_assert(VideoSourceSelection::Ypbpr == InfoYUV, "VideoSourceSelection::Ypbpr drifted from InfoYUV");
+static_assert(VideoSourceSelection::SVideo == InfoSV, "VideoSourceSelection::SVideo drifted from InfoSV");
+static_assert(VideoSourceSelection::Composite == InfoAV, "VideoSourceSelection::Composite drifted from InfoAV");
 
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
@@ -6946,20 +6946,20 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                               rto->osr, inputAcquisition.sourceLineRateHz());
         }
 #endif
-        if (pendingInputSelection != InputSource::None) {
+        if (pendingInputSelection != VideoSourceSelection::None) {
             // Cleared before acting, not after: every handler below blocks for
             // seconds while detection runs, and a second request landing in that
             // window must queue a new selection rather than be swallowed.
-            const InputSource::Id wanted = (InputSource::Id)pendingInputSelection;
-            pendingInputSelection = InputSource::None;
+            const VideoSourceSelection::Id wanted = (VideoSourceSelection::Id)pendingInputSelection;
+            pendingInputSelection = VideoSourceSelection::None;
 
             switch (wanted) {
-                case InputSource::Rgbs: InputRGBs(); break;
-                case InputSource::RgsB: InputRGsB(); break;
-                case InputSource::Vga: InputVGA(); break;
-                case InputSource::Ypbpr: InputYUV(); break;
-                case InputSource::SVideo: InputSV(); break;
-                case InputSource::Composite: InputAV(); break;
+                case VideoSourceSelection::Rgbs: InputRGBs(); break;
+                case VideoSourceSelection::RgsB: InputRGsB(); break;
+                case VideoSourceSelection::Vga: InputVGA(); break;
+                case VideoSourceSelection::Ypbpr: InputYUV(); break;
+                case VideoSourceSelection::SVideo: InputSV(); break;
+                case VideoSourceSelection::Composite: InputAV(); break;
                 default: break;
             }
         }
@@ -7917,8 +7917,8 @@ void startWebserver()
         }
 
         const String value = request->getParam("src")->value();
-        const InputSource::Id wanted = InputSource::fromName(value.c_str());
-        if (wanted == InputSource::None) {
+        const VideoSourceSelection::Id wanted = VideoSourceSelection::fromName(value.c_str());
+        if (wanted == VideoSourceSelection::None) {
             request->send(400, "application/json",
                 "{\"error\":\"unknown src: rgbs rgsb vga ypbpr sv av\"}");
             return;
@@ -7927,7 +7927,7 @@ void startWebserver()
         pendingInputSelection = wanted;
         char body[64];
         snprintf_P(body, sizeof(body), PSTR("{\"queued\":\"%s\"}"),
-            InputSource::name(wanted));
+            VideoSourceSelection::name(wanted));
         request->send(200, "application/json", body);
     });
 
@@ -7970,8 +7970,8 @@ void startWebserver()
             // want the same recovery and only one is worth re-probing the sync
             // type on. docs/input-acquisition.md
             inputAcquisition.sourceIsPresent() ? "true" : "false",
-            inputAcquisition.sourceState() == InputAcquisition::SourceAcquired   ? "acquired"
-            : inputAcquisition.sourceState() == InputAcquisition::SourceUnlocked ? "unlocked"
+            inputAcquisition.sourceState() == VideoSourceAcquisition::SourceAcquired   ? "acquired"
+            : inputAcquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked ? "unlocked"
                                                                : "absent");
         request->send(200, "application/json", body);
     });

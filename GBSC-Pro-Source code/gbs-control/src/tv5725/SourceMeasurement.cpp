@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 #include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
-#include "InputLine.h"   // the capture write limit, likewise
+#include "VideoSourceLine.h"   // the capture write limit, likewise
 #include "Adc.h"             // the sample rate, which the divider is half of
 #include "InputFormatter.h"   // the line counter, in the units the divider sets
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
@@ -142,11 +142,11 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
     uint16_t backed = (uint16_t)(((uint32_t)ceiling * RecommendedPercent) / 100);
 
     // The second ceiling: a line the capture path cannot write to the end of.
-    // InputLine::WriteLimitUnits is in IF units and ifLineFor() halves, so the
+    // VideoSourceLine::WriteLimitUnits is in IF units and ifLineFor() halves, so the
     // divider that puts the line end exactly on the limit is twice it.
     const uint16_t forWriteLimit = lineDoubled
-        ? (uint16_t)(InputLine::WriteLimitUnits * 2)
-        : InputLine::WriteLimitUnits;
+        ? (uint16_t)(VideoSourceLine::WriteLimitUnits * 2)
+        : VideoSourceLine::WriteLimitUnits;
     if (backed > forWriteLimit)
         backed = forWriteLimit;
 
@@ -341,8 +341,8 @@ uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoub
 
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
 {
-    const uint16_t limit = lineDoubled ? (uint16_t)(2 * InputLine::WriteLimitUnits)
-                                       : InputLine::WriteLimitUnits;
+    const uint16_t limit = lineDoubled ? (uint16_t)(2 * VideoSourceLine::WriteLimitUnits)
+                                       : VideoSourceLine::WriteLimitUnits;
     // Even, for the reason recommendedDivider() masks: an odd divider leaves
     // the input formatter half a sample out from the line the ADC delivers, and
     // the rate is timed off that block. WriteLimitUnits is odd, so only the

@@ -33,12 +33,12 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncL
     if (SourceMeasurement::lineRateFrom(sourceLines, source.fieldRateHz()) == 0)
         return false;
 
-    horizontalLine_ = InputLine::measured(horizontalWrap, hsyncLow, source.divider());
+    horizontalLine_ = VideoSourceLine::measured(horizontalWrap, hsyncLow, source.divider());
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and
     // whole source lines otherwise. docs/scaler-geometry-model.md
-    verticalLine_ = InputLine(source.lineDoubled() ? 2 * (sourceLines + 1)
+    verticalLine_ = VideoSourceLine(source.lineDoubled() ? 2 * (sourceLines + 1)
                                                    : sourceLines + 1);
 
     timing_ = SourceTiming::matching(sourceLines, source.fieldRateHz(),
@@ -91,7 +91,7 @@ const BlankingTiming &CaptureWindow::horizontal() const { return horizontal_; }
 
 const BlankingTiming &CaptureWindow::vertical() const { return vertical_; }
 
-const InputLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
+const VideoSourceLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
 
 uint16_t CaptureWindow::capturableOn(const Axis &axis) const
 {

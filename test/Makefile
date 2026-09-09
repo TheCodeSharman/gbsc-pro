@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery input-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
+.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -45,7 +45,7 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/Adc.cpp \
 # acquisition path makes in order -- so a case that wants a solve links the
 # layer with it.
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
-	$(CLOCK_SRC) src/input/InputAcquisition.cpp
+	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp
 
 HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|SourceStandard|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
@@ -97,7 +97,7 @@ source-key:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_key" \
 	  "$(HERE)/test_source_key.cpp" src/tv5725/SourceKey.cpp \
-	  $(SAMPLING_SRC) src/tv5725/InputLine.cpp
+	  $(SAMPLING_SRC) src/tv5725/VideoSourceLine.cpp
 	@"$(OUT)/test_source_key"
 
 ## source-timing: host unit tests for Tv5725::SourceTiming
@@ -110,7 +110,7 @@ source-timing:
 	  -o "$(OUT)/test_source_timing" \
 	  "$(HERE)/test_source_timing.cpp" src/tv5725/SourceTiming.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/InputLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
 	@"$(OUT)/test_source_timing"
@@ -126,7 +126,7 @@ framing-table:
 	  -o "$(OUT)/test_framing_table" \
 	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -143,7 +143,7 @@ slot-table:
 	  -o "$(OUT)/test_slot_table" \
 	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -160,7 +160,7 @@ framing-text:
 	  "$(HERE)/test_framing_text.cpp" src/tv5725/FramingText.cpp \
 	  src/tv5725/FramingLine.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/SourceKey.cpp \
-	  $(SAMPLING_SRC) src/tv5725/InputLine.cpp \
+	  $(SAMPLING_SRC) src/tv5725/VideoSourceLine.cpp \
 	  src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/AxisSolution.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
@@ -177,18 +177,18 @@ slot-text:
 	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
 	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_slot_text"
 
-## input-line: host unit tests for Tv5725::InputLine
+## video-source-line: host unit tests for Tv5725::VideoSourceLine
 #
 # What of a line arrives intact: the hsync pulse at the head, and the write
 # limit past which nothing is captured at all. docs/capture-limits.md.
-input-line:
-	$(call geometry_unit,test_input_line)
+video-source-line:
+	$(call geometry_unit,test_video_source_line)
 
 ## active-image: host unit tests for Tv5725::ActiveImage, and its --dump
 #
@@ -216,7 +216,7 @@ source-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_measurement" \
 	  "$(HERE)/test_source_measurement.cpp" $(SAMPLING_SRC) \
-	  src/tv5725/InputLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp \
 	 
@@ -322,17 +322,17 @@ rate-agreement:
 	  "$(HERE)/test_rate_agreement.cpp" src/clock/RateAgreement.cpp
 	@"$(OUT)/test_rate_agreement"
 
-## input-source: host unit tests for the six inputs the OLED offers
+## video-source-selection: host unit tests for the six inputs the OLED offers
 #
 # The frame byte, the sync routing and what the preferences file keeps, as one
 # table. VGA's low nibble is the whole reason it exists: sent as 0x60 the HC32
 # leaves HS_IN on sync-on-green and a VGA source never locks.
-input-source:
+video-source-selection:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) \
-	  -o "$(OUT)/test_input_source" \
-	  "$(HERE)/test_input_source.cpp" src/input/InputSource.cpp
-	@"$(OUT)/test_input_source"
+	  -o "$(OUT)/test_video_source_selection" \
+	  "$(HERE)/test_video_source_selection.cpp" src/videosource/VideoSourceSelection.cpp
+	@"$(OUT)/test_video_source_selection"
 
 ## sync-search: host unit tests for which sync search a saved input selects
 #
@@ -343,7 +343,7 @@ input-source:
 sync-search:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sync_search" \
-	  "$(HERE)/test_sync_search.cpp" src/input/SyncSearch.cpp
+	  "$(HERE)/test_sync_search.cpp" src/videosource/SyncSearch.cpp
 	@"$(OUT)/test_sync_search"
 
 ## preset-load: host unit tests for the mode state a preset load decides
@@ -630,7 +630,7 @@ controls:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_controls" \
 	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
-	  src/input/InputAcquisition.cpp
+	  src/videosource/VideoSourceAcquisition.cpp
 	@"$(OUT)/test_controls"
 
 ## adc: host unit tests for the ADC PLL's divider and latch
@@ -683,17 +683,17 @@ video-path:
 	  "$(HERE)/test_video_path.cpp" $(GEOMETRY_RASTER_SRC)
 	@"$(OUT)/test_video_path"
 
-## input-acquisition: the layer that owns the tick and calls down
+## video-source-acquisition: the layer that owns the tick and calls down
 #
 # Driven at the top, asserting the solved registers rather than that a call was
 # forwarded. Links the whole engine because the outcome is the engine's.
-input-acquisition:
+video-source-acquisition:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_input_acquisition" \
-	  "$(HERE)/test_input_acquisition.cpp" src/input/InputAcquisition.cpp \
+	  -o "$(OUT)/test_video_source_acquisition" \
+	  "$(HERE)/test_video_source_acquisition.cpp" src/videosource/VideoSourceAcquisition.cpp \
 	  $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_input_acquisition"
+	@"$(OUT)/test_video_source_acquisition"
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -707,7 +707,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log
+test: sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

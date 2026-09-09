@@ -22,7 +22,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ActiveImage.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BlankingTiming.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PanAndZoom.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
@@ -35,7 +35,7 @@ using namespace Tv5725;
 // The framing is proportions now, so a test that means "40 units of zoom" has
 // to say so in units against a line. Seeds the default for that line and moves
 // it, which is what a press does.
-static Tv5725::ActiveImage framed(const Tv5725::InputLine &line, float rate,
+static Tv5725::ActiveImage framed(const Tv5725::VideoSourceLine &line, float rate,
                                   const Tv5725::Axis &axis, int16_t zoomUnits,
                                   int16_t panUnits, uint16_t raster = 0)
 {
@@ -49,13 +49,13 @@ static Tv5725::ActiveImage framed(const Tv5725::InputLine &line, float rate,
 
 TEST_CASE("the framing is held as state and the window is derived")
 {
-    BlankingTiming wide = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
-    BlankingTiming centred = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+    BlankingTiming wide = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
+    BlankingTiming centred = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
 
     SUBCASE("the default framing takes the default capture width") {
         ActiveImage at_rest;
-        BlankingTiming got = at_rest.capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
-        CHECK(got.start() - got.stop() == ActiveImage::defaultWidth(InputLine(1126), 50.0f, AxisHorizontal));
+        BlankingTiming got = at_rest.capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
+        CHECK(got.start() - got.stop() == ActiveImage::defaultWidth(VideoSourceLine(1126), 50.0f, AxisHorizontal));
     }
 
     SUBCASE("one unit of zoom is one unit of capture") {
@@ -64,14 +64,14 @@ TEST_CASE("the framing is held as state and the window is derived")
         // and a ratio small enough to give 1 there rounds to nothing at a
         // narrow capture.
         for (int16_t units : {1, 2, 7, 40, 300}) {
-            BlankingTiming in = framed(InputLine(1126), 50.0f, AxisHorizontal, units, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+            BlankingTiming in = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, units, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
             CHECK((wide.start() - wide.stop()) - (in.start() - in.stop()) == units);
         }
     }
 
     SUBCASE("one unit is one unit at a narrow capture too") {
-        BlankingTiming narrow = framed(InputLine(1126), 50.0f, AxisHorizontal, 800, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
-        BlankingTiming narrower = framed(InputLine(1126), 50.0f, AxisHorizontal, 801, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming narrow = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 800, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming narrower = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 801, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK((narrow.start() - narrow.stop()) - (narrower.start() - narrower.stop())
               == 1);
     }
@@ -79,8 +79,8 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("zoom out and back returns the window exactly") {
         // Integer units, so this is exact by construction rather than by the
         // rounding happening to cancel.
-        BlankingTiming there = framed(InputLine(1126), 50.0f, AxisHorizontal, 137, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
-        BlankingTiming back = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming there = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 137, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming back = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK(((back.stop() == wide.stop()) && (back.start() == wide.start())));
         CHECK(there.start() - there.stop() < wide.start() - wide.stop());
     }
@@ -88,23 +88,23 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("panning moves the window and keeps its width") {
         // Zoomed first, because the default window is wide enough that a pan of
         // 40 units runs into the end of the line and is clamped there.
-        BlankingTiming cropped = framed(InputLine(1126), 50.0f, AxisHorizontal, 200, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
-        BlankingTiming moved = framed(InputLine(1126), 50.0f, AxisHorizontal, 200, +40, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming cropped = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 200, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming moved = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 200, +40, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK(moved.stop() == cropped.stop() + 40);
         CHECK(moved.start() - moved.stop() == cropped.start() - cropped.stop());
     }
 
     SUBCASE("a pan is clamped to the line rather than crossing it") {
-        BlankingTiming far_right = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, +5000, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming far_right = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, +5000, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK(far_right.start() <= 1126);
         CHECK(far_right.start() - far_right.stop() == centred.start() - centred.stop());
-        BlankingTiming far_left = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, -5000, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming far_left = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, -5000, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK(far_left.stop() == 0);
         CHECK(far_left.start() - far_left.stop() == centred.start() - centred.stop());
     }
 
     SUBCASE("a zoom in never crops the capture away to nothing") {
-        BlankingTiming tiny = framed(InputLine(1126), 50.0f, AxisHorizontal, 5000, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming tiny = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 5000, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK(tiny.start() - tiny.stop() >= MinimumCapture);
     }
 
@@ -114,14 +114,14 @@ TEST_CASE("the framing is held as state and the window is derived")
         // picture jumping rather than as a capture fault. Three steps of
         // zoom-out reach it: 0..624 of a 624-unit frame.
         for (int16_t units : {-1, -20, -60, -100, -500, -5000}) {
-            BlankingTiming w = framed(InputLine(624), 50.0f, AxisVertical, units, 0, 0).capture(InputLine(624), 50.0f, AxisVertical, 0);
+            BlankingTiming w = framed(VideoSourceLine(624), 50.0f, AxisVertical, units, 0, 0).capture(VideoSourceLine(624), 50.0f, AxisVertical, 0);
             CHECK(w.start() <= 623);
         }
     }
 
     SUBCASE("the same wrap bound applies horizontally") {
         for (int16_t units : {-1, -60, -200, -300, -5000}) {
-            BlankingTiming w = framed(InputLine(1126), 50.0f, AxisHorizontal, units, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+            BlankingTiming w = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, units, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
             CHECK(w.start() <= 1276);
         }
     }
@@ -129,28 +129,28 @@ TEST_CASE("the framing is held as state and the window is derived")
     SUBCASE("a pan cannot put the capture stop on the wrap point either") {
         // pan_capture() bounds it the same way, for the same reason.
         for (int16_t p : {+5000, +600, -5000}) {
-            CHECK(framed(InputLine(624), 50.0f, AxisVertical, 0, p, 0).capture(InputLine(624), 50.0f, AxisVertical, 0).start()
-                  <= InputLine(624).lastCapture());
-            CHECK(framed(InputLine(1126), 50.0f, AxisHorizontal, 0, p, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0).start()
-                  <= InputLine(1126).lastCapture());
+            CHECK(framed(VideoSourceLine(624), 50.0f, AxisVertical, 0, p, 0).capture(VideoSourceLine(624), 50.0f, AxisVertical, 0).start()
+                  <= VideoSourceLine(624).lastCapture());
+            CHECK(framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, p, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0).start()
+                  <= VideoSourceLine(1126).lastCapture());
         }
     }
 
     SUBCASE("the capture stop never lands on the line reset itself") {
         for (int16_t p : {+5000, +600, +132}) {
-            CHECK(framed(InputLine(1265), 50.0f, AxisHorizontal, 0, p, 0).capture(InputLine(1265), 50.0f, AxisHorizontal, 0).start() <= 1263);
+            CHECK(framed(VideoSourceLine(1265), 50.0f, AxisHorizontal, 0, p, 0).capture(VideoSourceLine(1265), 50.0f, AxisHorizontal, 0).start() <= 1263);
         }
     }
 
     SUBCASE("a zoom out never runs past the line") {
-        BlankingTiming huge = framed(InputLine(1126), 50.0f, AxisHorizontal, -5000, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+        BlankingTiming huge = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, -5000, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
         CHECK(huge.start() <= 1126);
         CHECK(huge.stop() <= huge.start());
     }
 
     SUBCASE("the vertical axis derives from its own frame the same way") {
-        BlankingTiming v = framed(InputLine(624), 50.0f, AxisVertical, 0, 0, 0).capture(InputLine(624), 50.0f, AxisVertical, 0);
-        CHECK(v.start() - v.stop() == ActiveImage::defaultWidth(InputLine(624), 50.0f, AxisVertical));
+        BlankingTiming v = framed(VideoSourceLine(624), 50.0f, AxisVertical, 0, 0, 0).capture(VideoSourceLine(624), 50.0f, AxisVertical, 0);
+        CHECK(v.start() - v.stop() == ActiveImage::defaultWidth(VideoSourceLine(624), 50.0f, AxisVertical));
         CHECK_NEAR((int)v.stop(), AxisVertical.activeStart() * 624.0f, 1.0);
     }
 }
@@ -169,7 +169,7 @@ TEST_CASE("a source running a published raster is captured where that raster put
     // picture, and nothing on this chip can measure that -- so a source running
     // a raster the standards state is placed from the standard rather than from
     // the assumption an unrecognised one takes.
-    const InputLine line(1126);
+    const VideoSourceLine line(1126);
     const SourceTiming dmt = SourceTiming::matching(524, 59.94f, 96.0f / 800.0f);
 
     BlankingTiming got = ActiveImage().capture(line, dmt, AxisHorizontal, 0);
@@ -186,16 +186,16 @@ TEST_CASE("a source matching no published raster is captured across the envelope
     // visible and one press trims them, where a cropped edge looks like a
     // fault. Measured against stock AKF50, whose 15 kHz modes put picture
     // between 15.4% and 90.4% of the line and 7.1% and 99.4% of the frame.
-    const InputLine line(1126);
+    const VideoSourceLine line(1126);
 
     BlankingTiming got = ActiveImage().capture(line, 50.0f, AxisHorizontal, 0);
     CHECK_NEAR(got.stop(), 0.117f * 1126.0f, 1.0f);
     CHECK_NEAR(got.start(), 0.981f * 1126.0f, 1.0f);
 
     SUBCASE("and the vertical envelope does not split on field rate") {
-        BlankingTiming fifty = ActiveImage().capture(InputLine(624), 50.0f,
+        BlankingTiming fifty = ActiveImage().capture(VideoSourceLine(624), 50.0f,
                                                      AxisVertical, 0);
-        BlankingTiming sixty = ActiveImage().capture(InputLine(624), 60.0f,
+        BlankingTiming sixty = ActiveImage().capture(VideoSourceLine(624), 60.0f,
                                                      AxisVertical, 0);
         CHECK(fifty.stop() == sixty.stop());
         CHECK(fifty.start() == sixty.start());
@@ -219,9 +219,9 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         CHECK(AxisVertical.minimumCapture(Raster) == 282);
 
         ActiveImage f;
-        f.zoomBy(InputLine(623), Rate, AxisVertical, 5000, Raster);  // hard against the stop
-        f.clampToLine(InputLine(623), Rate, AxisVertical, Raster);
-        BlankingTiming got = f.capture(InputLine(623), Rate, AxisVertical, Raster);
+        f.zoomBy(VideoSourceLine(623), Rate, AxisVertical, 5000, Raster);  // hard against the stop
+        f.clampToLine(VideoSourceLine(623), Rate, AxisVertical, Raster);
+        BlankingTiming got = f.capture(VideoSourceLine(623), Rate, AxisVertical, Raster);
         CHECK(got.start() - got.stop() == 282);
     }
 
@@ -236,67 +236,67 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         // defaultWidth() has no raster -- the default is a property of the line
         // alone -- so 0 means "no scale floor" rather than "floor of zero".
         ActiveImage f;
-        f.zoomBy(InputLine(1126), Rate, AxisHorizontal, 5000, 0);
-        f.clampToLine(InputLine(1126), Rate, AxisHorizontal, 0);
-        BlankingTiming got = f.capture(InputLine(1126), Rate, AxisHorizontal, 0);
+        f.zoomBy(VideoSourceLine(1126), Rate, AxisHorizontal, 5000, 0);
+        f.clampToLine(VideoSourceLine(1126), Rate, AxisHorizontal, 0);
+        BlankingTiming got = f.capture(VideoSourceLine(1126), Rate, AxisHorizontal, 0);
         CHECK(got.start() - got.stop() == MinimumCapture);
     }
 
     SUBCASE("an overshooting pan is brought back to what the line allows") {
         ActiveImage f;
-        f.panBy(InputLine(Units), Rate, AxisHorizontal, 200, 0);  // way past
-        f.clampToLine(InputLine(Units), Rate, AxisHorizontal, 0);
+        f.panBy(VideoSourceLine(Units), Rate, AxisHorizontal, 200, 0);  // way past
+        f.clampToLine(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
         // The framing is a proportion now, so the reachable edge is asserted on
         // the window it lands on rather than on the units behind it.
-        BlankingTiming pinned = f.capture(InputLine(Units), Rate, AxisHorizontal, 0);
-        CHECK(pinned.start() == InputLine(Units).lastCapture());
+        BlankingTiming pinned = f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        CHECK(pinned.start() == VideoSourceLine(Units).lastCapture());
     }
 
     SUBCASE("and one unit back then actually moves the window") {
         ActiveImage f;
-        f.panBy(InputLine(Units), Rate, AxisHorizontal, 200, 0);
-        f.clampToLine(InputLine(Units), Rate, AxisHorizontal, 0);
-        BlankingTiming at_edge = f.capture(InputLine(Units), Rate, AxisHorizontal, 0);
+        f.panBy(VideoSourceLine(Units), Rate, AxisHorizontal, 200, 0);
+        f.clampToLine(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        BlankingTiming at_edge = f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
 
-        f.panBy(InputLine(Units), Rate, AxisHorizontal, -1, 0);
-        BlankingTiming back = f.capture(InputLine(Units), Rate, AxisHorizontal, 0);
+        f.panBy(VideoSourceLine(Units), Rate, AxisHorizontal, -1, 0);
+        BlankingTiming back = f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
         CHECK(back.stop() < at_edge.stop());
     }
 
     SUBCASE("the same holds at the other end of the line") {
         ActiveImage f;
-        f.panBy(InputLine(Units), Rate, AxisHorizontal, -200, 0);
-        f.clampToLine(InputLine(Units), Rate, AxisHorizontal, 0);
-        CHECK(f.capture(InputLine(Units), Rate, AxisHorizontal, 0).stop()
-              == InputLine(Units).firstCapture());
+        f.panBy(VideoSourceLine(Units), Rate, AxisHorizontal, -200, 0);
+        f.clampToLine(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        CHECK(f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0).stop()
+              == VideoSourceLine(Units).firstCapture());
 
-        BlankingTiming at_edge = f.capture(InputLine(Units), Rate, AxisHorizontal, 0);
-        f.panBy(InputLine(Units), Rate, AxisHorizontal, +1, 0);
-        CHECK(f.capture(InputLine(Units), Rate, AxisHorizontal, 0).stop() > at_edge.stop());
+        BlankingTiming at_edge = f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        f.panBy(VideoSourceLine(Units), Rate, AxisHorizontal, +1, 0);
+        CHECK(f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0).stop() > at_edge.stop());
     }
 
     SUBCASE("vertically too, which is the 'or bottom' half of the report") {
         ActiveImage f;
-        f.panBy(InputLine(624), Rate, AxisVertical, -400, 0);
-        f.clampToLine(InputLine(624), Rate, AxisVertical, 0);
-        BlankingTiming at_edge = f.capture(InputLine(624), Rate, AxisVertical, 0);
+        f.panBy(VideoSourceLine(624), Rate, AxisVertical, -400, 0);
+        f.clampToLine(VideoSourceLine(624), Rate, AxisVertical, 0);
+        BlankingTiming at_edge = f.capture(VideoSourceLine(624), Rate, AxisVertical, 0);
         CHECK(at_edge.stop() == 0);
 
-        f.panBy(InputLine(624), Rate, AxisVertical, +1, 0);
-        CHECK(f.capture(InputLine(624), Rate, AxisVertical, 0).stop() > at_edge.stop());
+        f.panBy(VideoSourceLine(624), Rate, AxisVertical, +1, 0);
+        CHECK(f.capture(VideoSourceLine(624), Rate, AxisVertical, 0).stop() > at_edge.stop());
     }
 
     SUBCASE("an overshooting zoom is brought back the same way") {
         // clampWidth() pins the width at MinimumCapture, and the same dead zone
         // forms in horizontalZoom_ if the framing is left holding the overshoot.
         ActiveImage f;
-        f.zoomBy(InputLine(Units), Rate, AxisHorizontal, 5000, 0);
-        f.clampToLine(InputLine(Units), Rate, AxisHorizontal, 0);
-        BlankingTiming tightest = f.capture(InputLine(Units), Rate, AxisHorizontal, 0);
+        f.zoomBy(VideoSourceLine(Units), Rate, AxisHorizontal, 5000, 0);
+        f.clampToLine(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        BlankingTiming tightest = f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
         CHECK(tightest.start() - tightest.stop() == MinimumCapture);
 
-        f.zoomBy(InputLine(Units), Rate, AxisHorizontal, -1, 0);
-        BlankingTiming wider = f.capture(InputLine(Units), Rate, AxisHorizontal, 0);
+        f.zoomBy(VideoSourceLine(Units), Rate, AxisHorizontal, -1, 0);
+        BlankingTiming wider = f.capture(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
         CHECK(wider.start() - wider.stop() > tightest.start() - tightest.stop());
     }
 
@@ -305,12 +305,12 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         // hand-written pair is not on. Every clamp after it must be a no-op, or
         // the window walks a unit at a time each time the mode is re-applied.
         ActiveImage f{PanAndZoom(0.10f, 0.78f, 0.09f, 0.80f)};
-        f.clampToLine(InputLine(Units), Rate, AxisHorizontal, 0);
-        f.clampToLine(InputLine(624), Rate, AxisVertical, 0);
+        f.clampToLine(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        f.clampToLine(VideoSourceLine(624), Rate, AxisVertical, 0);
 
         ActiveImage settled = f;
-        f.clampToLine(InputLine(Units), Rate, AxisHorizontal, 0);
-        f.clampToLine(InputLine(624), Rate, AxisVertical, 0);
+        f.clampToLine(VideoSourceLine(Units), Rate, AxisHorizontal, 0);
+        f.clampToLine(VideoSourceLine(624), Rate, AxisVertical, 0);
         CHECK(f == settled);
     }
 }
@@ -324,7 +324,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
     // here at the 2250 the write limit caps the divider to.
     // 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const InputLine SourceLine = InputLine::measured(LineUnits, HsyncLow, AdcLine);
+    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine);
     const float Rate = 50.0f;
 
     SUBCASE("zooming all the way out stops clear of the sync") {
@@ -352,7 +352,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
         // takes 81 at the head, so 1045 remain: the picture nobody complained
         // about must not move by so much as a unit.
         BlankingTiming guarded = ActiveImage().capture(SourceLine, Rate, AxisHorizontal, 0);
-        BlankingTiming whole = ActiveImage().capture(InputLine(LineUnits), Rate, AxisHorizontal, 0);
+        BlankingTiming whole = ActiveImage().capture(VideoSourceLine(LineUnits), Rate, AxisHorizontal, 0);
         CHECK(guarded.stop() == whole.stop());
         CHECK(guarded.start() == whole.start());
     }
@@ -386,7 +386,7 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
     // The stock preset commonly leaves IF_VB_ST <= IF_VB_SP, and what the chip
     // means by that is not established. The engine computes a window rather
     // than decoding one.
-    BlankingTiming w = framed(InputLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(1126), 50.0f, AxisHorizontal, 0);
+    BlankingTiming w = framed(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0);
 
     SUBCASE("a default capture is placed on the line, not centred in it") {
         // Active video is never centred: sync plus back porch runs far longer
@@ -405,7 +405,7 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
 
     SUBCASE("a default capture never exceeds the line it sits in") {
         for (uint16_t units : {64, 256, 624, 1277, 2559}) {
-            BlankingTiming any = framed(InputLine(units), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(units), 50.0f, AxisHorizontal, 0);
+            BlankingTiming any = framed(VideoSourceLine(units), 50.0f, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(units), 50.0f, AxisHorizontal, 0);
             CHECK(any.start() <= units);
             CHECK(any.start() > any.stop());
         }
@@ -414,14 +414,14 @@ TEST_CASE("a nonsense capture is replaced, not trusted")
     SUBCASE("the default is one envelope, whatever the field rate") {
         // The envelope contains what every real source puts on a line, so
         // splitting it by field rate would only make one of the two crop.
-        CHECK(ActiveImage::defaultWidth(InputLine(624), 60.0f, AxisVertical)
-              == ActiveImage::defaultWidth(InputLine(624), 50.0f, AxisVertical));
-        CHECK(ActiveImage::defaultWidth(InputLine(1126), 50.0f, AxisHorizontal)
-              == ActiveImage::defaultWidth(InputLine(1126), 60.0f, AxisHorizontal));
+        CHECK(ActiveImage::defaultWidth(VideoSourceLine(624), 60.0f, AxisVertical)
+              == ActiveImage::defaultWidth(VideoSourceLine(624), 50.0f, AxisVertical));
+        CHECK(ActiveImage::defaultWidth(VideoSourceLine(1126), 50.0f, AxisHorizontal)
+              == ActiveImage::defaultWidth(VideoSourceLine(1126), 60.0f, AxisHorizontal));
     }
 
     SUBCASE("a line of zero yields nothing rather than a wrapped window") {
-        BlankingTiming none = framed(InputLine(0), 50.0f, AxisHorizontal, 0, 0, 0).capture(InputLine(0), 50.0f, AxisHorizontal, 0);
+        BlankingTiming none = framed(VideoSourceLine(0), 50.0f, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(0), 50.0f, AxisHorizontal, 0);
         CHECK(((none.stop() == 0) && (none.start() == 0)));
     }
 }
@@ -434,8 +434,8 @@ TEST_CASE("no framing puts the capture stop past what the line can write")
 
     for (uint16_t units : lines) {
         for (bool vertical : {false, true}) {
-            const InputLine line = vertical ? InputLine(units)
-                                            : InputLine::measured(units, 181, 2553);
+            const VideoSourceLine line = vertical ? VideoSourceLine(units)
+                                            : VideoSourceLine::measured(units, 181, 2553);
             CAPTURE(units);
             CAPTURE(vertical);
             CAPTURE(line.lastCapture());
@@ -465,7 +465,7 @@ static void dumpGrid()
     // Python vertical equivalent, so that half is covered by the host tests only.
     for (uint16_t units : {320, 624, 1277, 2048, 2559})
         for (float rate : {50.0f, 60.0f}) {
-            BlankingTiming w = framed(InputLine(units), rate, AxisHorizontal, 0, 0, 0).capture(InputLine(units), rate, AxisHorizontal, 0);
+            BlankingTiming w = framed(VideoSourceLine(units), rate, AxisHorizontal, 0, 0, 0).capture(VideoSourceLine(units), rate, AxisHorizontal, 0);
             std::printf("default %u %.0f %u %u\n", units, rate, w.stop(), w.start());
         }
 
@@ -477,7 +477,7 @@ static void dumpGrid()
             for (int16_t pan : {0, 50, 400, -400})
                 for (int vertical = 0; vertical < 2; ++vertical) {
                     const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
-                    InputLine line(units, vertical ? 0 : (uint16_t)(units / 14));
+                    VideoSourceLine line(units, vertical ? 0 : (uint16_t)(units / 14));
 
                     // Seed the untuned default for this line, then move it by the
                     // same units the old four-integer framing carried, so the

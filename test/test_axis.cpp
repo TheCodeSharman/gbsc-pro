@@ -583,7 +583,7 @@ TEST_CASE("the display window is the picture, at both ends")
 }
 
 // The capture stop is what the pan walks toward the end of the line, and past
-// InputLine::lastCapture() the input formatter is writing blanking rather than
+// VideoSourceLine::lastCapture() the input formatter is writing blanking rather than
 // video. The control has to stop before that rather than the output hiding it
 
 // `--dump` prints the solved grid for inspection by hand.

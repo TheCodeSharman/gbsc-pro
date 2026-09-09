@@ -1,10 +1,10 @@
-#include "InputLine.h"
+#include "VideoSourceLine.h"
 
 #include <math.h>
 
 namespace Tv5725 {
 
-const uint16_t InputLine::WriteLimitUnits;
+const uint16_t VideoSourceLine::WriteLimitUnits;
 
 namespace {
 
@@ -22,23 +22,23 @@ const float FallbackDuty = 0.07f;
 
 }  // namespace
 
-InputLine::InputLine(uint16_t units) : units_(units), syncUnits_(0) {}
+VideoSourceLine::VideoSourceLine(uint16_t units) : units_(units), syncUnits_(0) {}
 
-InputLine::InputLine(uint16_t units, uint16_t syncUnits)
+VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits)
     : units_(units), syncUnits_(syncUnits) {}
 
-uint16_t InputLine::units() const { return units_; }
+uint16_t VideoSourceLine::units() const { return units_; }
 
-uint16_t InputLine::syncUnits() const { return syncUnits_; }
+uint16_t VideoSourceLine::syncUnits() const { return syncUnits_; }
 
-uint16_t InputLine::progressiveStop(uint16_t start) const
+uint16_t VideoSourceLine::progressiveStop(uint16_t start) const
 {
     return start + units_;
 }
 
-uint16_t InputLine::firstCapture() const { return syncUnits_; }
+uint16_t VideoSourceLine::firstCapture() const { return syncUnits_; }
 
-uint16_t InputLine::lastCapture() const
+uint16_t VideoSourceLine::lastCapture() const
 {
     // Neither of the last two units is a capture stop. `units` is the wrap
     // point, and a window written onto it rolls rather than clamping;
@@ -53,13 +53,13 @@ uint16_t InputLine::lastCapture() const
     return beforeWrap > WriteLimitUnits ? WriteLimitUnits : beforeWrap;
 }
 
-uint16_t InputLine::capturable() const
+uint16_t VideoSourceLine::capturable() const
 {
     uint16_t first = firstCapture(), last = lastCapture();
     return last > first ? last - first : 0;
 }
 
-InputLine InputLine::measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine)
+VideoSourceLine VideoSourceLine::measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine)
 {
     float duty = adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f;
     if (duty < DutyMin || duty > DutyMax)
@@ -68,7 +68,7 @@ InputLine InputLine::measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine
     // Round UP, so a pulse that ends part way through a unit leaves that unit
     // outside the capture rather than half in it. DutyMax bounds it at 15% of
     // the line, so what is left is always the greater part of it.
-    return InputLine(units, (uint16_t)ceilf(units * duty));
+    return VideoSourceLine(units, (uint16_t)ceilf(units * duty));
 }
 
 }  // namespace Tv5725

@@ -1,4 +1,4 @@
-// Host-compiled unit tests for Tv5725::InputLine -- `make -C test input-line`.
+// Host-compiled unit tests for Tv5725::VideoSourceLine -- `make -C test input-line`.
 // What of a line arrives intact: the hsync pulse at the head, and the write
 // limit past which nothing is captured. docs/capture-limits.md.
 
@@ -14,7 +14,7 @@
 // The bus the register-touching sources link against.
 FakeTwoWire Wire;
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 
 using namespace Tv5725;
 
@@ -23,7 +23,7 @@ using namespace Tv5725;
 // exactly one line from wherever it starts.
 TEST_CASE("the progressive line window spans exactly one line")
 {
-    const InputLine SourceLine = InputLine::measured(1126, 160, 2250);
+    const VideoSourceLine SourceLine = VideoSourceLine::measured(1126, 160, 2250);
 
     SUBCASE("it starts where IF_LINE_ST says and runs a whole line") {
         // The bench value: 64 + 1126 = 1190.
@@ -38,7 +38,7 @@ TEST_CASE("the progressive line window spans exactly one line")
     SUBCASE("a longer line makes a longer window") {
         // The whole reason this cannot be a constant: PLLAD_MD moves and the
         // line moves with it.
-        CHECK(InputLine::measured(1057, 128, 2114).progressiveStop(64) == 1121);
+        CHECK(VideoSourceLine::measured(1057, 128, 2114).progressiveStop(64) == 1121);
     }
 
     SUBCASE("it may run past the end of the line, and that is not a fault") {
@@ -57,7 +57,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     // of PLLAD_MD 2553 and read here at the 2250 the write limit caps the
     // divider to. 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const InputLine SourceLine = InputLine::measured(LineUnits, HsyncLow, AdcLine);
+    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine);
 
     SUBCASE("the pulse width comes from the hsync duty") {
         CHECK(SourceLine.syncUnits() == 81);
@@ -66,7 +66,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     SUBCASE("a wider pulse excludes proportionally more") {
         // 800x600@60 is hsync 128 of 1056, a duty of 0.121 -- nearly twice the
         // bench source's. A fixed guard would under-clip it.
-        CHECK(InputLine::measured(1126, 128, 1056).syncUnits() == 137);
+        CHECK(VideoSourceLine::measured(1126, 128, 1056).syncUnits() == 137);
     }
 
     SUBCASE("an unmeasurable duty falls back to what the retimer is set for") {
@@ -76,14 +76,14 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
         // SP_RT_HS_SP = PLLAD_MD x 0.93 configures the retimer for.
         for (uint16_t railed : {(uint16_t)0, (uint16_t)4095, (uint16_t)10}) {
             // ceil(1126 x 0.07) = 79, against the 81 the duty measures.
-            CHECK(InputLine::measured(1126, railed, 2250).syncUnits() == 79);
+            CHECK(VideoSourceLine::measured(1126, railed, 2250).syncUnits() == 79);
         }
     }
 
     SUBCASE("a line with nothing measured keeps all of itself") {
-        CHECK(InputLine(1126).syncUnits() == 0);
-        CHECK(InputLine(1126).firstCapture() == 0);
-        CHECK(InputLine(1126).lastCapture() == 1124);
+        CHECK(VideoSourceLine(1126).syncUnits() == 0);
+        CHECK(VideoSourceLine(1126).firstCapture() == 0);
+        CHECK(VideoSourceLine(1126).lastCapture() == 1124);
     }
 }
 
@@ -94,18 +94,18 @@ TEST_CASE("the capture stops at the write limit, however long the line is")
     // the engine. Past the limit nothing is written, and a window that reaches
     // there loses the picture in it rather than showing it.
     // docs/capture-limits.md
-    CHECK(InputLine(1277).lastCapture() == InputLine::WriteLimitUnits);
+    CHECK(VideoSourceLine(1277).lastCapture() == VideoSourceLine::WriteLimitUnits);
 
     SUBCASE("a line already inside it is bound by its own wrap") {
         // The two bounds meet at the divider SourceMeasurement now chooses: 1126 units,
         // where the wrap is the tighter by two.
-        CHECK(InputLine(1126).lastCapture() == 1124);
-        CHECK(InputLine(1126).lastCapture() < InputLine::WriteLimitUnits);
+        CHECK(VideoSourceLine(1126).lastCapture() == 1124);
+        CHECK(VideoSourceLine(1126).lastCapture() < VideoSourceLine::WriteLimitUnits);
     }
 
     SUBCASE("the head guard still applies, and the two do not cross") {
-        InputLine bench = InputLine::measured(1277, 181, 2553);
+        VideoSourceLine bench = VideoSourceLine::measured(1277, 181, 2553);
         CHECK(bench.firstCapture() < bench.lastCapture());
-        CHECK(bench.capturable() == InputLine::WriteLimitUnits - bench.syncUnits());
+        CHECK(bench.capturable() == VideoSourceLine::WriteLimitUnits - bench.syncUnits());
     }
 }

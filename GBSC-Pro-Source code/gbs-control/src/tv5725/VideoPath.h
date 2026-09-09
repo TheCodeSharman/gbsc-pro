@@ -10,7 +10,7 @@
 #include "../../gbs_types.h"
 #include "BlankingTiming.h"
 #include "DisplayClock.h"
-#include "InputLine.h"
+#include "VideoSourceLine.h"
 #include "CaptureWindow.h"
 #include "OutputChoice.h"
 #include "OutputMode.h"

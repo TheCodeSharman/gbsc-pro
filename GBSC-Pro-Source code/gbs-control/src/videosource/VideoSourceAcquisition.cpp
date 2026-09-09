@@ -1,4 +1,4 @@
-#include "InputAcquisition.h"
+#include "VideoSourceAcquisition.h"
 
 #include <stdio.h>
 
@@ -6,7 +6,7 @@
 #include "../tv5725/SyncProcessor.h"
 #include "../tv5725/Tv5725Log.h"
 
-InputAcquisition::InputAcquisition(Tv5725::SourceMeasurement &sampling,
+VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0), detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
@@ -14,24 +14,24 @@ InputAcquisition::InputAcquisition(Tv5725::SourceMeasurement &sampling,
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false) {}
 
-void InputAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
+void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
-float InputAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
+float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
-uint32_t InputAcquisition::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
+uint32_t VideoSourceAcquisition::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
 
-bool InputAcquisition::sourceLowLineRate() const { return sampling_.lowLineRate(); }
+bool VideoSourceAcquisition::sourceLowLineRate() const { return sampling_.lowLineRate(); }
 
-InputAcquisition::SourceState InputAcquisition::sourceState() const { return sourceState_; }
+VideoSourceAcquisition::SourceState VideoSourceAcquisition::sourceState() const { return sourceState_; }
 
-bool InputAcquisition::sourceIsPresent() const
+bool VideoSourceAcquisition::sourceIsPresent() const
 {
     return sourceState_ == SourceAcquired && !videoPath_.changing();
 }
 
-void InputAcquisition::sourceInterrupted() { sourceInterrupted_ = true; }
+void VideoSourceAcquisition::sourceInterrupted() { sourceInterrupted_ = true; }
 
-bool InputAcquisition::detectionDue(uint32_t nowMs)
+bool VideoSourceAcquisition::detectionDue(uint32_t nowMs)
 {
     if (detectedEver_ && nowMs - detectedMs_ < DetectionIntervalMs)
         return false;
@@ -40,14 +40,14 @@ bool InputAcquisition::detectionDue(uint32_t nowMs)
     return true;
 }
 
-static void logSourceState(InputAcquisition::SourceState state, uint16_t lines, uint16_t samples,
+static void logSourceState(VideoSourceAcquisition::SourceState state, uint16_t lines, uint16_t samples,
                            uint16_t divider)
 {
     char line[88];
     snprintf(line, sizeof(line),
              "source %s: %u lines, %u samples against divider %u",
-             state == InputAcquisition::SourceAcquired   ? "acquired"
-             : state == InputAcquisition::SourceUnlocked ? "UNLOCKED"
+             state == VideoSourceAcquisition::SourceAcquired   ? "acquired"
+             : state == VideoSourceAcquisition::SourceUnlocked ? "UNLOCKED"
                                        : "absent",
              (unsigned)lines, (unsigned)samples, (unsigned)divider);
     tv5725Log(line);
@@ -64,7 +64,7 @@ static void logSourceMoved(const char *why, uint16_t lines, uint16_t solved)
 // The solve gated on its own steadiness run over this count, longer than the
 // idle one, so the idle run starts satisfied rather than re-earning what has
 // just been measured and dipping sourceIsPresent() for the polls it takes.
-void InputAcquisition::holdSolvedSource()
+void VideoSourceAcquisition::holdSolvedSource()
 {
     solvedLines_ = sampling_.sourceLines();
     solvedLineRateHz_ = sampling_.lineRateHz();
@@ -82,7 +82,7 @@ void InputAcquisition::holdSolvedSource()
 // describes what is on air. Leaving bypass through outputModeChanged() never
 // solves either, so a count left standing would arm a source event against a
 // measurement two output modes old.
-void InputAcquisition::forgetSolvedSource()
+void VideoSourceAcquisition::forgetSolvedSource()
 {
     solvedLines_ = 0;
     solvedLineRateHz_ = 0;
@@ -90,7 +90,7 @@ void InputAcquisition::forgetSolvedSource()
 
 // Whether the count has held long enough to be the source's rather than a
 // reading taken through something still settling.
-bool InputAcquisition::countHeld(uint16_t lines)
+bool VideoSourceAcquisition::countHeld(uint16_t lines)
 {
     if (lines != idleLines_) {
         idleLines_ = lines;
@@ -107,7 +107,7 @@ bool InputAcquisition::countHeld(uint16_t lines)
 // **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
 // steadiness run, and filling it while the engine is idle leaves the next mode
 // change's first poll believing a count from the mode before it.
-bool InputAcquisition::sourceMoved()
+bool VideoSourceAcquisition::sourceMoved()
 {
     // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
     // change so a later poll cannot write one over the setup it just chose.
@@ -180,7 +180,7 @@ bool InputAcquisition::sourceMoved()
     return true;
 }
 
-bool InputAcquisition::rateMoved()
+bool VideoSourceAcquisition::rateMoved()
 {
     const uint32_t rate = Tv5725::SourceMeasurement::measureLineRateFromHPeriod(solvedLines_);
     if (rate == 0 || solvedLineRateHz_ == 0
@@ -221,7 +221,7 @@ bool InputAcquisition::rateMoved()
     return true;
 }
 
-bool InputAcquisition::poll(uint32_t nowMs)
+bool VideoSourceAcquisition::poll(uint32_t nowMs)
 {
     if (mayRun_ != 0 && !mayRun_())
         return false;
@@ -260,7 +260,7 @@ bool InputAcquisition::poll(uint32_t nowMs)
     return true;
 }
 
-bool InputAcquisition::measureSource(bool &settling)
+bool VideoSourceAcquisition::measureSource(bool &settling)
 {
     // The cheap gate. Everything below this line measures, and the field rate
     // costs up to 250 ms a vsync pulse. The reference sampling clock is what
