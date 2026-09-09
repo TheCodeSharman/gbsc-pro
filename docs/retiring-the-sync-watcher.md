@@ -138,6 +138,49 @@ coast, reset the sync processor, reset mode detect, re-probe the sync type,
 toggle the ADC input. The magic moduli carry no information that a position in
 that list does not.
 
+### What the ladder does today, against that list
+
+Read off `runSyncWatcher()`'s no-sync branch. Every rung already calls a named
+owner -- that half of step 7 has landed -- so what is left is the POSITION.
+
+| # | fires at | extra condition | operation |
+|---|---|---|---|
+| 0 | `== 1` | -- | nothing: returns, so one missed pass costs no escalation |
+| 1 | `== 2` | `newVideoModeCounter == 0` and serrated sync | `SyncOnGreen::liftOffFloor` |
+| 2 | `== 8` | -- | default coast window, widen if serrated, forget positions |
+| 3 | `% 27` | -- | `updateSpDynamic(1)` |
+| 4 | `% 32` | `STATUS_SYNC_PROC_HSACT` 1 | `FrameBuffer::releaseCapture()` |
+| 5 | `== 34` | YPbPr, `Info_sate` 0 | hold clamp, forget positions |
+| 6 | `== 38` | -- | `ModeDetect::nudge()` |
+| 7 | `> 47`, `% 16` | csync | `toggleHsyncOverflowProtect()` |
+| 8 | `% 150` | -- | clear overflow protect, default coast and clamp, `updateSpDynamic(1)`, nudge Mode Detect, re-acquire the SOG level, reset the sync processor, reset Mode Detect |
+| 9 | `== 150` or `% 900` | -- | `Geometry::reacquireSyncType()`; parks at `0x07fe` if it finds V sync |
+| 10 | `% 413` | `detectionMayChangeInput()` | `Adc::selectOtherInput()`, kept only if it locks within 210 ms |
+
+**Four of the eleven repeat, and that is the behaviour the ordered list
+changes**: 3, 4, 7, 8 and 10 come round again for as long as the source stays
+absent, where the list tries each once. Three of the repeats are cheap and one
+is not -- 10 moves the input mux, and rung 9's park at `0x07fe` exists to stop
+the counter ever reaching it once a V sync has been seen.
+
+**The positions are not an order.** 3 and 4 interleave with 2 and 5 by accident
+of their moduli, and 7 only starts after 47 while repeating every 16, so which
+recovery has been tried by a given count is not readable from the code. That is
+the information the list restores, and it is why the gate cannot open in front
+of the ladder as it stands: `sourceIsPresent()` lets the counter ADVANCE where
+it used to sit pinned at 150, so rungs that never ran before start running.
+
+**What has to be decided before it moves, and neither is mechanical:**
+
+- **What happens at the end of the list.** The moduli have no end; they cycle
+  for ever, which is what a source that is genuinely unplugged needs. An ordered
+  list tried once has to either stop, or restart, or hold at its last rung, and
+  that choice is what the unplugged case is judged on.
+- **Whether rung 0's early return survives.** It makes the first failed pass
+  free, so a single dropped measurement costs nothing. Against a run counted in
+  detection passes rather than 20 ms ticks -- step 2 -- one pass is a different
+  amount of time, and the debounce may want to be the run's own.
+
 **Maintenance**, while a source is acquired:
 
 | operation | replaces |
