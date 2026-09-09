@@ -399,14 +399,15 @@ advancing a run over the same count is the double-advance that
 150 ticks and 900 ms, and whether the escalation steps want a slower cadence than
 the detection check is something to try on the bench rather than to derive.
 
-**So `poll()` takes the clock.** A `millis()` reached for inside the engine is a
-hidden input the host tests cannot set, and every cadence above is a test case.
-`poll(uint32_t nowMs)`, the same direction
-`SourceMeasurement::sourceHasOwnVsync(uint32_t (*nowMs)())` already takes.
+**So the tick is a parameter, wherever it is owned.** A `millis()` reached for
+inside a class is a hidden input the host tests cannot set, and every cadence
+above is a test case. `poll(uint32_t nowMs)` is the direction
+`SourceMeasurement::sourceHasOwnVsync(uint32_t (*nowMs)())` already takes, and
+it is what lets the clock change owner at step 7 without changing meaning.
 
-**`poll()`'s ordering contract is unchanged.** Raster, clock, windows, rate steer
-last, and the solving branch still runs only while a mode change is pending.
-Acquisition runs always, so it extends the idle branch.
+**The ordering contract survives the inversion.** Raster, clock, windows, rate
+steer last -- that is a property of the solve, not of the loop around it, so it
+holds wherever the solve is called from.
 
 **What acts outside the engine is injected, not called.** Loading a preset and
 driving the OLED live in the sketch and the engine cannot reach them. They
@@ -431,10 +432,9 @@ means -- try another source, say nothing more, tell the display -- is policy
 about the board.
 
 So the loop is not `VideoPath::poll()` calling out. It is `InputAcquisition`,
-above `Tv5725::`, owning the escalation and the input policy and calling into
-the engine for the scaler's share. `poll()` keeps its ordering contract and its
-single entry point; what changes is who calls it and who owns the decisions
-around it.
+above `Tv5725::`, holding the state and calling down for each piece: the source
+off `SourceMeasurement`, the registers off `VideoPath`. The engine keeps its
+ordering contract and loses its loop.
 
 **It is a collaborator, not the composition root.** The product is more than
 acquisition -- OSD, audio, IR, the web UI -- so the class named for the whole
