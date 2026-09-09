@@ -88,13 +88,17 @@ bench instruments and the hardware suite. A build without it answers 404.
 
 ## What the sketch may call
 
-`Geometry`'s public surface is what the sketch may reach, and nothing else:
+`Tv5725::VideoPath` is the engine's geometry half, and this is its whole
+surface. **The engine is the new code, all of it** -- `InputAcquisition` and
+every `Tv5725::` class -- as against the legacy sketch; what the sketch may reach
+is `InputAcquisition`, which calls the rest.
+[input-acquisition.md](input-acquisition.md)
 
 | | |
 |---|---|
-| `modeChanged(choice, oversample)` | the source is about to change mode; nothing is solved here |
-| `outputChanged(choice)` | the user picked a different resolution; re-solves from what is held, measures nothing |
-| `poll()` | drives whatever is outstanding, on every pass of `loop()` |
+| `inputTimingsChanged(oversample)` | the source is about to change mode; nothing is solved here |
+| `outputModeChanged(choice)` | the user picked a different resolution; re-solves from what is held, measures nothing |
+| `poll(detectionDue)` | drives whatever is outstanding, one pass |
 | `sourceInterrupted()` | the chip latched a disturbance; arms a re-measure |
 | `enterBypass()` | video routes around the VDS, so there is no solve coming |
 | `framing()` | the framing the user has reached, read only |
@@ -103,7 +107,16 @@ bench instruments and the hardware suite. A build without it answers 404.
 | `pan(dx, dy)` / `zoom(dh, dv)` | one press, in OUTPUT PIXELS |
 | `resolve()` | re-derive every register from what is held, without moving the framing |
 | `reset()` | back to the default framing |
-| `sourceFieldRateHz()` / `sourceLineRateHz()` / `sourceLowLineRate()` | the source as the last solve measured it |
+
+**The tick and the gate in front of it are not on that list.** `loop()` calls
+`InputAcquisition::poll(millis())`, which decides whether the pass may run at all
+and whether it may take a detection reading, then calls `poll()` with the answer.
+A cadence reached for down here is an input no host test can set.
+
+**Nor is what the source is running.** `sourceFieldRateHz()`,
+`sourceLineRateHz()` and `sourceLowLineRate()` are `InputAcquisition`'s: the half
+coordinating the measurement is the one that can answer, and this half is handed
+the reading to derive registers from.
 
 The sequence a mode change runs — sampling, raster, clock, windows — is private,
 because running one step alone skips the rest of it and each depends on the one
@@ -153,7 +166,7 @@ inheriting the corner put 41 px of the previous frame down the left of the
 screen, and inheriting the picture size froze a picture at 620 lines that no
 zoom step could grow.
 
-**And since 2026-08-13 the raster is computed too.** `Geometry::solveRaster()`
+**And since 2026-08-13 the raster is computed too.** `VideoPath::solveRaster()`
 derives both totals, both sync pulses and the display clock seed from the frame
 height and the measured field rate, so the preset table's raster bytes are
 overwritten on every mode change. Measured 1436 x 1126 at 80.85 MHz before,
@@ -321,18 +334,19 @@ narrow it is `VDS_?B_SP` moving up. That makes the safe order fixed:
 
 ## Bypass
 
-`Geometry::readCapture()` refuses when the output raster reads under 64. In RGBHV
-bypass the video path does not go through the VDS at all, `VDS_?SYNC_RST` reads
-0, and there is no geometry to solve — writing one would write into a path
-nobody is using. See [rgbhv-bypass-trap.md](rgbhv-bypass-trap.md).
+`CaptureWindow::scaling()` is false when the output raster reads under 64, and
+a solve stops there. In RGBHV bypass the video path does not go through the VDS
+at all, `VDS_?SYNC_RST` reads 0, and there is no geometry to solve — writing one
+would write into a path nobody is using. See [rgbhv-bypass-trap.md](rgbhv-bypass-trap.md).
 
-**The engine measures only what it scales, so in bypass it can answer nothing
-about the source.** Neither bypass switch reaches `doPostPresetLoadSteps()`, so
-`Geometry::modeChanged()` never fires for a bypassed mode and no poll measures
-one; `enterBypass()` calls `SourceMeasurement::forgetSource()` so the last
-scaled mode's rate cannot be read as this one's. A reader on the bypass path
-asking `sourceLowLineRate()` therefore gets a truthful "nothing measured", not
-the source in front of it.
+**Bypass measures nothing, and the held measurement is deliberately kept
+across it.** Neither bypass switch reaches `doPostPresetLoadSteps()`, so
+`inputTimingsChanged()` never fires for a bypassed mode and no poll measures
+one — so what `sourceLowLineRate()` answers there is the rate from the mode that
+preceded bypass. That is the fact the caller wants: whether the display can show
+this source at all is asked *while* bypassed, and discarding the reading does not
+remove the stale fact, it only moves the question to something that cannot
+answer it.
 
 What is left there is `rto->videoStandardInput`, and on that path it is honest:
 it carries the mode `getVideoMode()` detected immediately before the switch, and

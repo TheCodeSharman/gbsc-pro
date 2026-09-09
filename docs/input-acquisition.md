@@ -40,6 +40,16 @@ Three parties, one direction of flow. The state lives in ONE of them.
 | `Tv5725::SourceMeasurement` | called by it. Reads the source off the chip -- the only thing that does |
 | `Tv5725::VideoPath` | handed that state. Solves raster, clock, windows and scales, and writes them. Decides nothing |
 
+**"The engine" is the new code, all of it.** The word names one axis and only
+one: the classes under `src/` against the legacy sketch -- `runSyncWatcher()`,
+`rto` and the globals. `InputAcquisition` is engine, and so is every `Tv5725::`
+class; a move between them is internal and says nothing about the axis.
+
+**Every step below moves a responsibility INTO the engine, and nothing ever
+moves out.** So a step is described by what it takes over, never by what a class
+"loses" -- writing that `VideoPath` lost something to `InputAcquisition` reads as
+the engine shrinking, which is the opposite of what is happening.
+
 **Nothing above `Tv5725::` touches the bus.** `InputAcquisition` coordinates the
 measurement; it does not take it. `SourceMeasurement` stays one class and
 changes owner rather than being divided, because its statics are already pure
@@ -697,6 +707,18 @@ The order inside it is: create the class with the tick and the ladder; move
 time, ending with the flags that make `poll()` disappear. Each is a solve that
 still writes the same registers, so the bar below applies to every one of them
 rather than only to the last.
+
+Landed of it so far: the class, with `loop()` calling it and it calling the
+engine; the detection clock and the cadence; the run gate, which follows the
+tick; and the three publishers of what the source is running. `SourceMeasurement`
+is held by the root and passed to both, as the display clock already is -- this
+class is constructed after the engine, so it cannot yet own a collaborator the
+engine needs at construction.
+
+**Every caller of `sampling_` MOVES, and never duplicates.** The moment two
+callers advance the steadiness run, `idleRun_` double-advances and the run both
+readers depend on is no longer over consecutive polls -- which is the fault
+`sourceIsPresent()` was written around.
 
 **The framing table is the one piece that does not wait**, because it moves to
 the root rather than to this class: the root already persists it and round-trips
