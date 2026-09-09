@@ -28,6 +28,7 @@ TEST_CASE("each step fires at the count the moduli first fired it at")
     CHECK(SyncRecovery::stepAt(63) == SyncRecovery::HsyncOverflowProtect);
     CHECK(SyncRecovery::stepAt(150) == SyncRecovery::FullReset);
     CHECK(SyncRecovery::stepAt(413) == SyncRecovery::ToggleInput);
+    CHECK(SyncRecovery::stepAt(450) == SyncRecovery::ReopenSogSeparator);
 }
 
 TEST_CASE("the sync-type re-probe follows the reset instead of sharing its count")
@@ -63,10 +64,10 @@ TEST_CASE("the list cycles, because an unplugged source needs it to")
 {
     // Stopping would leave a unit switched off and on again with no way back,
     // which is what the moduli never doing so was buying.
-    CHECK(SyncRecovery::stepAt(414 + 2) == SyncRecovery::LiftSogFloor);
-    CHECK(SyncRecovery::stepAt(414 + 150) == SyncRecovery::FullReset);
-    CHECK(SyncRecovery::stepAt(414 + 413) == SyncRecovery::ToggleInput);
-    CHECK(SyncRecovery::stepAt(3 * 414 + 8) == SyncRecovery::CoastWindow);
+    CHECK(SyncRecovery::stepAt(451 + 2) == SyncRecovery::LiftSogFloor);
+    CHECK(SyncRecovery::stepAt(451 + 150) == SyncRecovery::FullReset);
+    CHECK(SyncRecovery::stepAt(451 + 413) == SyncRecovery::ToggleInput);
+    CHECK(SyncRecovery::stepAt(3 * 451 + 8) == SyncRecovery::CoastWindow);
 }
 
 TEST_CASE("the input toggle stays the rarest step, once per cycle")
@@ -83,7 +84,7 @@ TEST_CASE("the input toggle stays the rarest step, once per cycle")
 
 TEST_CASE("every step is reachable exactly once per cycle")
 {
-    for (uint8_t s = SyncRecovery::LiftSogFloor; s <= SyncRecovery::ToggleInput; ++s) {
+    for (uint8_t s = SyncRecovery::LiftSogFloor; s <= SyncRecovery::ReopenSogSeparator; ++s) {
         CAPTURE(s);
         uint16_t seen = 0;
         for (uint16_t p = 0; p < SyncRecovery::CycleLength; ++p) {
@@ -98,5 +99,6 @@ TEST_CASE("positionOf names where a step sits, and None sits nowhere")
 {
     CHECK(SyncRecovery::positionOf(SyncRecovery::LiftSogFloor) == 2);
     CHECK(SyncRecovery::positionOf(SyncRecovery::ToggleInput) == 413);
+    CHECK(SyncRecovery::positionOf(SyncRecovery::ReopenSogSeparator) == 450);
     CHECK(SyncRecovery::positionOf(SyncRecovery::None) == 0);
 }

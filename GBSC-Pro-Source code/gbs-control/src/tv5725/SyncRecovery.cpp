@@ -12,6 +12,12 @@ struct Rung {
 // Today's first-fire counts, in order. Only ReprobeSyncType moves: it shared
 // 150 with FullReset, and one pass later -- about 20 ms -- buys one step per
 // position and costs nothing measurable.
+//
+// ReopenSogSeparator was not a rung at all. It was `% 450` handed to
+// SyncOnGreen::reacquire() as its `reopen` flag -- every third pass of the
+// reset block, meaning "this caller has run out of walks". That is an
+// escalation, so it gets a position rather than hiding inside another step's
+// arguments.
 const Rung Ladder[] = {
     {2, SyncRecovery::LiftSogFloor},
     {8, SyncRecovery::CoastWindow},
@@ -23,6 +29,7 @@ const Rung Ladder[] = {
     {150, SyncRecovery::FullReset},
     {151, SyncRecovery::ReprobeSyncType},
     {413, SyncRecovery::ToggleInput},
+    {450, SyncRecovery::ReopenSogSeparator},
 };
 
 const uint8_t RungCount = sizeof(Ladder) / sizeof(Ladder[0]);

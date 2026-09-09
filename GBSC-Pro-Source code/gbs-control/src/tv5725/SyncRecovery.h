@@ -43,6 +43,7 @@ public:
         FullReset,              // sync processor and Mode Detect, with the windows
         ReprobeSyncType,        // ask whether the source has its own V sync
         ToggleInput,            // the guess of last resort: the other ADC input
+        ReopenSogSeparator,     // walks exhausted: reopen the separator fully
     };
 
     // Nothing escalates on the first failed pass. One dropped measurement is not
@@ -52,7 +53,7 @@ public:
 
     // Where the list restarts. One past the last step's position, so the last
     // step fires at its own count rather than at zero.
-    static const uint16_t CycleLength = 414;
+    static const uint16_t CycleLength = 451;
 
     // The step due after this many consecutive failed passes, or None. Pure:
     // the caller still decides whether that step's own precondition holds --
