@@ -1029,11 +1029,16 @@ TEST_CASE("the source is counted on a cadence, not once a loop pass")
     CHECK(Adc::PLLAD_MD::read() == 1124);
 }
 
-TEST_CASE("bypass measures nothing, so it reports no line rate")
+TEST_CASE("bypass keeps the line rate it last measured")
 {
-    // The held rate outlives the mode that produced it, and bypass never
-    // measures: the sync processor's readers would then be configured for a
-    // source that has been gone since the excursion started.
+    // Bypass does not measure, so the held rate is the one from the mode that
+    // preceded it -- which is exactly the fact the caller wants. Whether the
+    // source is a 15 kHz line decides whether the display can show it at all,
+    // and that question is asked while bypassed.
+    //
+    // Discarding it here did not remove the stale fact, it moved it: the sketch
+    // then read videoStandardInput instead, which carries the same measurement
+    // from the same moment and cannot say what the rate was.
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
@@ -1041,10 +1046,12 @@ TEST_CASE("bypass measures nothing, so it reports no line rate")
     engine.modeChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.sourceLowLineRate());
+    const uint32_t measured = engine.sourceLineRateHz();
+    REQUIRE(measured != 0);
 
     engine.enterBypass();
-    CHECK(engine.sourceLineRateHz() == 0);
-    CHECK_FALSE(engine.sourceLowLineRate());
+    CHECK(engine.sourceLineRateHz() == measured);
+    CHECK(engine.sourceLowLineRate());
 }
 
 TEST_CASE("the source is measured through a known divider, not the last mode's")

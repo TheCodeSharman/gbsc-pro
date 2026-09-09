@@ -392,7 +392,10 @@ void Geometry::sourceInterrupted()
 
 void Geometry::enterBypass()
 {
-    sampling_.forgetSource();
+    // The measurement is NOT discarded. Bypass does not measure, so what is
+    // held is the rate from the mode that preceded it -- which is the fact a
+    // caller asking whether the display can show this source wants, and the
+    // only place it exists once the standard byte is gone.
 
     // No raster is solved here, so the register is the only source of the seed
     // the encoder is already running on.

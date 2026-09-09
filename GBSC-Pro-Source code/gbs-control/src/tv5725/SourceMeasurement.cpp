@@ -338,13 +338,6 @@ float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
 uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoubled_); }
 
-void SourceMeasurement::forgetSource()
-{
-    lineRateHz_ = 0;
-    goodLineRateHz_ = 0;
-    goodLines_ = 0;
-}
-
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
 {
     const uint16_t limit = lineDoubled ? (uint16_t)(2 * InputLine::WriteLimitUnits)

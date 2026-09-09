@@ -1186,15 +1186,11 @@ static bool standardIsHeld()
 // back out. docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
 bool steerableRgbhv() { return sourceIsRgbhv() && !rto->outModeHdBypass; }
 
-// Whether the source runs a 15 kHz line. The engine measures only what it
-// scales, so in bypass it holds no measurement and the standard byte is what is
-// left -- honest there, because it carries the mode detected immediately before
-// the switch. docs/firmware-geometry-engine.md
+// Whether the source runs a 15 kHz line. One reader, on every path: the engine
+// keeps the rate it last measured across a bypass switch, so bypass is not a
+// special case. docs/firmware-geometry-engine.md
 static boolean sourceLowLineRate()
 {
-    if (rto->outModeHdBypass)
-        return rto->videoStandardInput == 1 || rto->videoStandardInput == 2;
-
     return geometry.sourceLowLineRate();
 }
 

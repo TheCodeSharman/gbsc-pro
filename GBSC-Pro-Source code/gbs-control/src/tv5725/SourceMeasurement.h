@@ -404,10 +404,6 @@ public:
     // both and of the ~21.8 kHz a programmable source reaches between them.
     static const uint32_t LowLineRateBelowHz = 20000;
 
-    // Forget the source: bypass measures nothing, and the held rate would
-    // otherwise outlive the mode that produced it.
-    void forgetSource();
-
     // The last rate that passed the cross-check against the line count.
     // lineRateHz() is the last one MEASURED and a refusal clears it, so a
     // reader that has to survive a sync loss asks this one.
