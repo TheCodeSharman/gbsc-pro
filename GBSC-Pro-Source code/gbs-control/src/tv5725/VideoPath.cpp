@@ -205,7 +205,7 @@ void VideoPath::adoptRaster()
     displayClock_.adopt();
 }
 
-void VideoPath::inputTimingsChanged(const OutputChoice &choice, uint8_t oversample)
+void VideoPath::inputTimingsChanged(uint8_t oversample)
 {
     // The windows land seconds from now, once the source has settled into the
     // mode; until then the previous mode's geometry is what the new source
@@ -216,9 +216,11 @@ void VideoPath::inputTimingsChanged(const OutputChoice &choice, uint8_t oversamp
     modeOversample_ = oversample;
     scanModeApplied_ = false;
     syncTypeProbed_ = false;
-    choice_ = choice;
 
-    rasterMode_ = choice.resolve();
+    // Off the held choice, not off an argument. solveRaster() derives it again
+    // when the solve runs; this keeps outputMode() answering consistently until
+    // then.
+    rasterMode_ = choice_.resolve();
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
@@ -279,7 +281,7 @@ bool VideoPath::poll(uint32_t nowMs)
 
     if (!modePending_) {
         if (detectionDue(nowMs) && sourceMoved())
-            inputTimingsChanged(choice_, modeOversample_);
+            inputTimingsChanged(modeOversample_);
         return modePending_ ? false : (solvePending_ ? resolve() : false);
     }
 

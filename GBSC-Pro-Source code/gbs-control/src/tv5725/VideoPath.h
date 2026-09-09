@@ -110,11 +110,10 @@ public:
     // settled, and the choice does not become a resolution until the field rate
     // behind it has been measured.
     //
-    // **THE CHOICE ARGUMENT IS OUTPUT STATE THE ENGINE ALREADY HOLDS**, set
-    // again here for no reason a source event can give. It survives the rename
-    // rather than being removed with it, because dropping it changes who owns
-    // the resolution and that is its own commit.
-    void inputTimingsChanged(const OutputChoice &choice, uint8_t oversample);
+    // Takes no output choice: a source event has nothing to say about the
+    // output, and the engine holds the choice already. outputModeChanged() is
+    // how it hears about a new one.
+    void inputTimingsChanged(uint8_t oversample);
 
     // The user picked a different output resolution. Not a source event: the
     // rate and the divider the last solve measured still describe the source,

@@ -1294,7 +1294,10 @@ static void applyOutputResolutionSettings()
 // doPostPresetLoadSteps() and has no other writer.
 void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 {
-  rto->outputChoice = choice;
+  // The engine is told the choice HERE, by the call whose job that is. It used
+  // to arrive as an argument to the source event further down, which is how a
+  // source event came to carry output state.
+  geometry.outputModeChanged(choice);
   rto->presetID = presetId;
 
   // The load rewrites the scanline stages, so whatever was applied is gone.
@@ -2868,7 +2871,6 @@ static void changeOutputResolution(uint8_t standard)
     const bool pal = (standard == 2 || standard == 4);
     const Tv5725::OutputChoice choice = outputChoiceFor();
 
-    rto->outputChoice = choice;
     rto->presetID = presetIdFor(choice.resolve(), pal);
 
     if (!geometry.outputModeChanged(choice)) {
@@ -3028,7 +3030,7 @@ void doPostPresetLoadSteps()
         // later goes with the message; loop() drives the rest once the source
         // has settled into the new mode. AFTER the block above, which settles
         // rto->osr.
-        geometry.inputTimingsChanged(rto->outputChoice, rto->osr);
+        geometry.inputTimingsChanged(rto->osr);
 
         GBS::ADC_TEST_04::write(0x02); // 1:0 REF test resistance selection 4:2REF test current selection
         GBS::ADC_TEST_0C::write(0x12);

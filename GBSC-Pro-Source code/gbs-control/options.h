@@ -107,7 +107,6 @@ struct runTimeOptions
     //
     // A choice naming no resolution -- a custom preset, whose saved bytes are
     // the mode, or bypass -- leaves the raster alone.
-    Tv5725::OutputChoice outputChoice;
 
     // The display clock, which the engine steers from the raster it solved and
     // the frame time lock walks away from that on every correction. It lives
