@@ -30,6 +30,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
 #include "FrameAt.h"
+#include "RegistersWritten.h"
 
 using namespace Tv5725;
 
@@ -131,18 +132,6 @@ static void seedSourceHalfLines(uint16_t halfLines)
 }
 
 static OutputChoice benchMode() { return OutputChoice(Output1080P); }
-
-// A stray write lands somewhere nothing below reads, so it moves this and
-// nothing else. Reading every field but counting none would miss it.
-static unsigned registersWritten()
-{
-    unsigned written = 0;
-    for (uint8_t seg = 0; seg < FakeTwoWire::Segments; ++seg)
-        for (int reg = 0; reg < 256; ++reg)
-            if (Wire.touched[seg][reg])
-                ++written;
-    return written;
-}
 
 // --- what a whole solve puts on the chip -------------------------------------
 
@@ -1887,70 +1876,6 @@ TEST_CASE("nothing has been solved, so no source is present")
 
     CHECK_FALSE(engine.sourceIsPresent());
 }
-
-// The run gate. loop() reaches poll() directly rather than through the sync
-// watcher, so the freeze five sketch functions honour never reached the engine
-// -- and a bench measurement that froze automation had the solver rewriting
-// the windows underneath it.
-static bool g_mayRun = true;
-static unsigned g_gateAsked = 0;
-static bool runGate()
-{
-    ++g_gateAsked;
-    return g_mayRun;
-}
-
-TEST_CASE("a shut gate stops the engine writing anything")
-{
-    seedBenchSource();
-    DisplayClock clock;
-    SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
-    engine.useRunGate(runGate);
-    g_mayRun = false;
-
-    engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
-    Wire.reset();
-    poisonChip();
-    CHECK_FALSE(pollUntilSolved(engine));
-
-    CHECK(registersWritten() == 0);
-}
-
-TEST_CASE("the gate is asked per poll, so what it stopped resumes")
-{
-    // A change outstanding when the gate shuts is still outstanding when it
-    // opens: the engine picks the mode change back up rather than losing it.
-    seedBenchSource();
-    DisplayClock clock;
-    SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
-    engine.useRunGate(runGate);
-    g_mayRun = false;
-    engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
-    REQUIRE_FALSE(pollUntilSolved(engine));
-
-    g_mayRun = true;
-    REQUIRE(pollUntilSolved(engine));
-
-    checkBenchGeometry();
-}
-
-TEST_CASE("an engine with no gate runs, which is what every caller did before")
-{
-    seedBenchSource();
-    DisplayClock clock;
-    SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
-
-    engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
-
-    CHECK(pollUntilSolved(engine));
-}
-
 
 TEST_CASE("a source whose serrations are counted as lines is coasted further")
 {

@@ -28,7 +28,6 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling)
       sampling_(sampling), samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
       framingRevision_(0),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
-      mayRun_(0),
       solvedLines_(0), solvedLineRateHz_(0),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
       sourceState_(SourceAbsent),
@@ -260,9 +259,6 @@ bool VideoPath::outputModeChanged(const OutputChoice &choice)
 
 bool VideoPath::poll(bool detectionDue)
 {
-    if (mayRun_ != 0 && !mayRun_())
-        return false;
-
     if (!modePending_) {
         if (detectionDue && sourceMoved())
             inputTimingsChanged(modeOversample_);
@@ -420,8 +416,6 @@ bool VideoPath::solveForSource()
 
 
 void VideoPath::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsync; }
-
-void VideoPath::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
 bool VideoPath::reacquireSyncType()
 {

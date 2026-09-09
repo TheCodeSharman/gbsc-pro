@@ -10,6 +10,7 @@
 #include <doctest/doctest.h>
 
 #include "SolvedEngine.h"
+#include "RegistersWritten.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
@@ -33,6 +34,28 @@ static void seedBenchSource()
     seed(0, 0x1B, 0, 11, 311);
 }
 
+// One tick per interval, which is what the layer's own cadence asks for. The
+// clock is carried in so a case can go on ticking after one of these returns.
+static bool solveThrough(InputAcquisition &acquisition, uint32_t &nowMs)
+{
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i) {
+        nowMs += InputAcquisition::DetectionIntervalMs;
+        if (acquisition.poll(nowMs))
+            return true;
+    }
+    return false;
+}
+
+// The bench anchors: the raster this output asks for, and the divider the
+// engine solves for a 311-line 50 Hz source -- not the 2553 the seed left,
+// which is the previous load's.
+static void checkBenchAnchors()
+{
+    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
+    CHECK(Adc::PLLAD_MD::read() == 2250);
+    CHECK(InputFormatter::IF_HSYNC_RST::read() == 2250 / 2);
+}
+
 TEST_CASE("a source driven through InputAcquisition solves the same registers")
 {
     seedBenchSource();
@@ -45,20 +68,9 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
     path.inputTimingsChanged(4);
 
     uint32_t nowMs = 0;
-    bool solved = false;
-    for (uint8_t i = 0; !solved && i < 4 * SourceMeasurement::SteadySamples; ++i) {
-        nowMs += InputAcquisition::DetectionIntervalMs;
-        solved = acquisition.poll(nowMs);
-    }
+    REQUIRE(solveThrough(acquisition, nowMs));
 
-    REQUIRE(solved);
-
-    // The bench anchors: the raster this output asks for, and the divider the
-    // engine solves for a 311-line 50 Hz source -- not the 2553 the seed left,
-    // which is the previous load's.
-    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
-    CHECK(Adc::PLLAD_MD::read() == 2250);
-    CHECK(InputFormatter::IF_HSYNC_RST::read() == 2250 / 2);
+    checkBenchAnchors();
 }
 
 TEST_CASE("the layer reports what the source is running")
@@ -76,12 +88,7 @@ TEST_CASE("the layer reports what the source is running")
     path.inputTimingsChanged(4);
 
     uint32_t nowMs = 0;
-    bool solved = false;
-    for (uint8_t i = 0; !solved && i < 4 * SourceMeasurement::SteadySamples; ++i) {
-        nowMs += InputAcquisition::DetectionIntervalMs;
-        solved = acquisition.poll(nowMs);
-    }
-    REQUIRE(solved);
+    REQUIRE(solveThrough(acquisition, nowMs));
 
     CHECK(acquisition.sourceLineRateHz() == sampling.heldLineRateHz());
     CHECK(acquisition.sourceLineRateHz() != 0);
@@ -128,4 +135,68 @@ TEST_CASE("detection runs on the layer's cadence, not on every call")
         acquisition.poll(now);
     }
     CHECK(path.changing());
+}
+
+// The run gate, on the tick rather than inside the engine. loop() reaches this
+// layer directly rather than through the sync watcher, so the freeze five sketch
+// functions honour reached nothing -- and a bench measurement that froze
+// automation had the solver rewriting the windows underneath it.
+static bool g_mayRun = true;
+static bool runGate() { return g_mayRun; }
+
+TEST_CASE("a shut gate stops the path writing anything")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    VideoPath path(clock, sampling);
+    InputAcquisition acquisition(sampling, path);
+    acquisition.useRunGate(runGate);
+    g_mayRun = false;
+
+    path.outputModeChanged(OutputChoice(Output1080P));
+    path.inputTimingsChanged(4);
+    Wire.reset();
+    poisonChip();
+
+    uint32_t nowMs = 0;
+    CHECK_FALSE(solveThrough(acquisition, nowMs));
+    CHECK(registersWritten() == 0);
+}
+
+TEST_CASE("the gate is asked per tick, so what it stopped resumes")
+{
+    // A change outstanding when the gate shuts is still outstanding when it
+    // opens: the mode change is picked back up rather than lost.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    VideoPath path(clock, sampling);
+    InputAcquisition acquisition(sampling, path);
+    acquisition.useRunGate(runGate);
+    g_mayRun = false;
+
+    path.outputModeChanged(OutputChoice(Output1080P));
+    path.inputTimingsChanged(4);
+    uint32_t nowMs = 0;
+    REQUIRE_FALSE(solveThrough(acquisition, nowMs));
+
+    g_mayRun = true;
+    REQUIRE(solveThrough(acquisition, nowMs));
+    checkBenchAnchors();
+}
+
+TEST_CASE("no gate runs, which is what every caller did before")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    VideoPath path(clock, sampling);
+    InputAcquisition acquisition(sampling, path);
+
+    path.outputModeChanged(OutputChoice(Output1080P));
+    path.inputTimingsChanged(4);
+
+    uint32_t nowMs = 0;
+    CHECK(solveThrough(acquisition, nowMs));
 }

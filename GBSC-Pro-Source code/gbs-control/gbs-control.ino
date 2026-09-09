@@ -5188,7 +5188,7 @@ void myLog(char const *type, char command)
            type, command, uopt->presetPreference, uopt->presetSlot, rto->presetID);
 }
 
-// The engine's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
+// The acquisition path's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
 // failure rather than a live reading, and it stays false through the whole
 // recovery -- exactly when the engine has to solve.
 // docs/input-acquisition.md
@@ -5214,10 +5214,10 @@ void setup()
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
 
-    // The freeze, which loop() applies to everything it calls except the
-    // engine -- poll() is reached directly rather than through
-    // runSyncWatcher()'s gate. docs/gbs-control-debug-interface.md
-    geometry.useRunGate(engineMayRun);
+    // The freeze, on the tick rather than inside the engine: loop() reaches the
+    // acquisition path directly rather than through runSyncWatcher()'s gate.
+    // docs/gbs-control-debug-interface.md
+    inputAcquisition.useRunGate(engineMayRun);
 
     // delay(700);
     // ESP.wdtDisable();

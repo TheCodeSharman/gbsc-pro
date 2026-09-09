@@ -4,7 +4,7 @@
 // Deciding where video comes from, and keeping it coming.
 //
 // It sits above Tv5725:: and owns the tick: the escalation, the input policy
-// and the no-signal report are its, and the scaler's share is the engine's.
+// and the no-signal report are its, and the scaler's share is VideoPath's.
 // docs/input-acquisition.md
 
 #include <stdint.h>
@@ -21,15 +21,25 @@ public:
     // pass that completes a mode change.
     bool poll(uint32_t nowMs);
 
+    // Whether the tick may be taken at all, asked at the top of every poll().
+    // Everything below it writes registers, so a bench measurement that has
+    // frozen automation has to stop it. Without one the path always runs, which
+    // is what every caller did before.
+    //
+    // A change outstanding when the gate shuts stays outstanding, so the output
+    // stays blanked until it opens again: a mode change stopped half way
+    // through has no settled timing to show the encoder.
+    void useRunGate(bool (*mayRun)());
+
     // How often the source is counted. loop() goes round far faster than this,
     // so a steadiness run counted per call is not the same length as one
     // counted per tick and every threshold keyed on it means something
     // different.
     static const uint32_t DetectionIntervalMs = 20;
 
-    // What the source is running, as the last measurement found it. This layer
-    // coordinates the measurement, so it is the one that can answer -- the
-    // engine is handed the reading and derives registers from it.
+    // What the source is running, as the last measurement found it. This class
+    // coordinates the measurement, so it is the one that can answer; VideoPath
+    // is handed the reading and derives registers from it.
     // docs/input-acquisition.md
     float sourceFieldRateHz() const;
     uint32_t sourceLineRateHz() const;
@@ -46,6 +56,7 @@ private:
 
     Tv5725::SourceMeasurement &sampling_;
     Tv5725::VideoPath &videoPath_;
+    bool (*mayRun_)();
     uint32_t detectedMs_;
     bool detectedEver_;
 };

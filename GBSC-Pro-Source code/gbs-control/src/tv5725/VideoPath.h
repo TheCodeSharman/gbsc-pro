@@ -88,18 +88,6 @@ public:
     // docs/sync-type-selection.md
     void useSyncTypeProbe(bool (*hasOwnVsync)());
 
-    // Whether the engine may act at all, asked at the top of every poll().
-    // Everything below it writes registers, so a bench measurement that has
-    // frozen automation and a board with no power both have to stop it -- and
-    // loop() reaches poll() DIRECTLY rather than through the sync watcher, so
-    // the watcher's own gate never covered it. Without one the engine always
-    // runs, which is what every caller did before.
-    //
-    // A change outstanding when the gate shuts stays outstanding, so the
-    // output stays blanked until it opens again: an engine stopped half way
-    // through a mode change has no settled timing to show the encoder.
-    void useRunGate(bool (*mayRun)());
-
     // The three ways the problem moves, and each name says WHOSE thing changed.
     // "mode" on its own did not, which is how a source event came to be handed
     // an OutputChoice and look reasonable.
@@ -125,19 +113,14 @@ public:
     // will resolve the choice against its own measurement when it lands.
     bool outputModeChanged(const OutputChoice &choice);
 
-    // Called by the sketch main loop - allows the engine to determine when the
-    // source has settled and apply any pending mode changes. True on the pass
-    // that completes a mode change.
+    // One pass of the engine, driven by the acquisition path: settle the source
+    // and apply any pending mode change. True on the pass that completes one.
     //
-    // **THE DETECTION PASS RUNS ON A CADENCE, NOT ONCE A LOOP.** The steadiness
-    // run behind sourceIsPresent() is counted in detection passes, and loop()
-    // goes round far faster than 20 ms -- so a run counted per pass is not the
-    // same length as one counted per tick, and every threshold keyed on it
-    // means something different. The clock is a parameter because a cadence
-    // reached for inside the engine is an input the host tests cannot set.
-    // Whether this pass may take a detection reading is the CALLER's answer:
-    // the clock is not this class's, and a millis() reached for in here is a
-    // hidden input no host test can set. docs/input-acquisition.md
+    // **WHETHER THIS PASS MAY TAKE A DETECTION READING IS THE CALLER'S.** The
+    // steadiness run behind sourceIsPresent() is counted in detection passes,
+    // so a caller asking on every loop makes that run a different length -- and
+    // a millis() reached for in here is a hidden input no host test can set.
+    // docs/input-acquisition.md
     bool poll(bool detectionDue);
 
     // Whether a mode change is still working through: told the source moved and
@@ -317,7 +300,6 @@ private:
     bool scanModeApplied_;
     bool syncTypeProbed_;
     bool (*syncProbe_)();   // the registers have been written for this mode change
-    bool (*mayRun_)();      // whether the engine may act at all, asked per poll
     uint16_t solvedLines_;   // the source line count the last solve ran against
     uint32_t solvedLineRateHz_;  // and the line rate, which the count cannot show
     SourceKey framedKey_;    // the source the framing held was tuned against
