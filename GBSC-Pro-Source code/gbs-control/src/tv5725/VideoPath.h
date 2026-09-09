@@ -209,14 +209,7 @@ private:
 
     bool fail();
 
-    // The known sampling state a measurement is taken from, before it is taken.
-    // Disturbing, so it belongs where the source has just changed and the
-    // picture is moving anyway -- never on a schedule.
-    void holdReferenceSampling();
     void establishSyncType();
-
-    // The divider, the IF line counter and the retime stop, to their owners.
-    void writeSampling();
 
     // A divider the source cannot lock to, moved off. Always false: correcting
     // a divider is not a solve, and the mode change has not landed.
@@ -253,7 +246,6 @@ private:
     uint16_t usableHorizontal_, usableVertical_;
     SourceMeasurement &sampling_;     // the divider this engine solves against
     bool samplingPending_;   // solveSampling() adopted a fallback divider
-    uint32_t referenceRateHz_; // the estimate the reference sample rate was sized from
     bool scanModeApplied_;
     bool syncTypeProbed_;
     bool (*syncProbe_)();   // the registers have been written for this mode change

@@ -4,6 +4,8 @@
 
 #include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
 #include "InputLine.h"   // the capture write limit, likewise
+#include "Adc.h"             // the sample rate, which the divider is half of
+#include "InputFormatter.h"   // the line counter, in the units the divider sets
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
 #include "../../gbs_types.h"
@@ -169,7 +171,8 @@ SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
       rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
-      rateAttempts_(0), recoveryTried_(false), serrationsSeen_(false)
+      rateAttempts_(0), recoveryTried_(false), serrationsSeen_(false),
+      referenceRateHz_(0)
 {
 }
 
@@ -385,6 +388,42 @@ void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = line
 bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
 
 uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
+
+void SourceMeasurement::applySampling(uint8_t oversample)
+{
+    if (!usable())
+        return;
+
+    Adc::applySampleRate(divider_, lineRateHz_, oversample);
+    InputFormatter::writeLineCounter(ifLine());
+    SyncProcessor::writeRetimeStop(retimeStop());
+}
+
+void SourceMeasurement::applyReferenceSampling(uint8_t oversample)
+{
+    const uint16_t reference = referenceDivider(lineDoubled_);
+    const uint32_t estimate = estimatedLineRateHz();
+
+    // Unconditional, ahead of the return below. The reference divider is a
+    // function of the scan mode alone, so a source that did not move asks for
+    // the one already in force -- and a window is not only stranded by a mode
+    // change. Nothing else writes these two until a solve succeeds, which is
+    // the thing they are stopping.
+    InputFormatter::writeReferenceVerticalBlank();
+
+    if (divider_ == reference && estimate == referenceRateHz_)
+        return;
+
+    referenceRateHz_ = estimate;
+    holdDivider(reference);
+
+    // The oversampling stays as the mode asks for it: PLLAD_CKOS and the
+    // decimators describe one ratio between them, and the IF's units come off
+    // the decimated clock. Only the divider is being moved to a known value.
+    Adc::applySampleRate(reference, estimate, oversample);
+    InputFormatter::writeLineCounter(ifLine());
+    SyncProcessor::writeRetimeStop(retimeStop());
+}
 
 uint16_t SourceMeasurement::countHeldStill(uint16_t lines)
 {

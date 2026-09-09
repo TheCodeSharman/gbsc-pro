@@ -26,7 +26,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
-      sampling_(sampling), samplingPending_(false), referenceRateHz_(0),
+      sampling_(sampling), samplingPending_(false),
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvedLines_(0), solvedLineRateHz_(0),
@@ -73,7 +73,7 @@ bool VideoPath::resolve()
     // solved for a taller mode strands the block the rate is timed off, and a
     // count taken through the previous mode's divider is not the source's.
     // Neither caller here reaches the one in poll().
-    holdReferenceSampling();
+    sampling_.applyReferenceSampling(modeOversample_);
 
     if (!sampling_.measureLineRate())
         return fail();
@@ -213,7 +213,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // ADC clocks -- so every measurement is garbage until this runs, the
     // steadiness gate never passes, and the pass that would have fixed the
     // clock never arrives.
-    writeSampling();
+    sampling_.applySampling(modeOversample_);
 }
 
 bool VideoPath::outputModeChanged(const OutputChoice &choice)
@@ -278,7 +278,7 @@ VideoPath::PollOutcome VideoPath::poll()
     // Applying the reference afterwards puts the fix on the far side of the
     // gate its absence holds shut.
     // docs/investigations/field-rate-measured-downstream.md
-    holdReferenceSampling();
+    sampling_.applyReferenceSampling(modeOversample_);
 
     // The cheap gate. Everything below this line measures, and the field rate
     // costs up to 250 ms a vsync pulse. The reference above is what opens it:
@@ -421,51 +421,6 @@ void VideoPath::establishSyncType()
     delay(SyncProcessor::PathSettleMs);
 }
 
-void VideoPath::holdReferenceSampling()
-{
-    const uint16_t reference = SourceMeasurement::referenceDivider(sampling_.lineDoubled());
-    const uint32_t estimate = sampling_.estimatedLineRateHz();
-
-    // Unconditional, ahead of the return below. The reference divider is a
-    // function of the scan mode alone, so a source that did not move asks for
-    // the one already in force -- and a window is not only stranded by a mode
-    // change. Nothing else writes these two until a solve succeeds, which is
-    // the thing they are stopping.
-    InputFormatter::writeReferenceVerticalBlank();
-
-    // The estimate is half of it, not a detail: PLLAD_KS is an octave of CKO,
-    // which is the divider TIMES the rate. A count caught mid-transition picks
-    // the wrong octave, and the reference divider for a scan mode does not
-    // change when the count settles -- so a return keyed on the divider alone
-    // leaves KS wrong with PLLAD_MD right, which is a state nothing can measure
-    // its way out of.
-    if (sampling_.divider() == reference && estimate == referenceRateHz_)
-        return;
-
-    referenceRateHz_ = estimate;
-    sampling_.holdDivider(reference);
-    // The oversampling stays as the mode asks for it: PLLAD_CKOS and the
-    // decimators describe one ratio between them, and the IF's units come off
-    // the decimated clock. Only the divider is being moved to a known value.
-    Adc::applySampleRate(reference, estimate, modeOversample_);
-    InputFormatter::writeLineCounter(sampling_.ifLine());
-    SyncProcessor::writeRetimeStop(sampling_.retimeStop());
-}
-
-// One quantity in three registers, each written by the block that declares it.
-// The divider goes first because Adc latches it, and the latch loads KS, CKOS
-// and ICP with it -- so anything setting those must already have run.
-void VideoPath::writeSampling()
-{
-    if (!sampling_.usable())
-        return;
-
-    Adc::applySampleRate(sampling_.divider(), sampling_.lineRateHz(),
-                         modeOversample_);
-    InputFormatter::writeLineCounter(sampling_.ifLine());
-    SyncProcessor::writeRetimeStop(sampling_.retimeStop());
-}
-
 void VideoPath::solveScanMode()
 {
     const uint16_t lines =
@@ -497,7 +452,7 @@ bool VideoPath::solveSampling(uint8_t oversample)
         samplingPending_ = true;
         return false;
     }
-    writeSampling();
+    sampling_.applySampling(modeOversample_);
     samplingPending_ = false;
     return true;
 }

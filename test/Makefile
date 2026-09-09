@@ -35,9 +35,15 @@ help:
 # that links DisplayClock.cpp links the clock with it.
 CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 
+# Tv5725::SourceMeasurement holds one quantity in three registers -- PLLAD_MD,
+# IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
+# declare them link wherever it does.
+SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/Adc.cpp \
+	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp
+
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|HdBypass|Adc|SamplingLog|SourceStandard|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|SourceStandard|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -87,7 +93,7 @@ source-key:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_key" \
 	  "$(HERE)/test_source_key.cpp" src/tv5725/SourceKey.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/InputLine.cpp
+	  $(SAMPLING_SRC) src/tv5725/InputLine.cpp
 	@"$(OUT)/test_source_key"
 
 ## source-timing: host unit tests for Tv5725::SourceTiming
@@ -99,7 +105,7 @@ source-timing:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_timing" \
 	  "$(HERE)/test_source_timing.cpp" src/tv5725/SourceTiming.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
 	  src/tv5725/InputLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
@@ -115,7 +121,7 @@ framing-table:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_framing_table" \
 	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
 	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
@@ -132,7 +138,7 @@ slot-table:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_slot_table" \
 	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
 	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
@@ -150,7 +156,7 @@ framing-text:
 	  "$(HERE)/test_framing_text.cpp" src/tv5725/FramingText.cpp \
 	  src/tv5725/FramingLine.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/SourceKey.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/InputLine.cpp \
+	  $(SAMPLING_SRC) src/tv5725/InputLine.cpp \
 	  src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/AxisSolution.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
@@ -166,7 +172,7 @@ slot-text:
 	  -o "$(OUT)/test_slot_text" \
 	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
 	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
 	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
@@ -205,10 +211,11 @@ source-measurement:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_measurement" \
-	  "$(HERE)/test_source_measurement.cpp" src/tv5725/SourceMeasurement.cpp \
+	  "$(HERE)/test_source_measurement.cpp" $(SAMPLING_SRC) \
 	  src/tv5725/InputLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
-	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
+	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp \
+	 
 	@"$(OUT)/test_source_measurement"
 
 ## memory: host unit tests for the playback burst structure
@@ -449,9 +456,9 @@ chip:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_chip" \
 	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
-	  src/tv5725/Adc.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp \
+	  $(SAMPLING_SRC) \
 	  src/tv5725/SyncType.cpp
 	@"$(OUT)/test_chip"
 
@@ -464,11 +471,11 @@ hd-bypass:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
-	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp src/tv5725/Adc.cpp \
+	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
 	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/SyncType.cpp
+	  $(SAMPLING_SRC) \
+	  src/tv5725/SyncType.cpp
 	@"$(OUT)/test_hd_bypass"
 
 ## sync-recovery: host unit tests for Tv5725::SyncRecovery
@@ -640,8 +647,8 @@ source-standard:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_standard" \
-	  "$(HERE)/test_source_standard.cpp" src/tv5725/SourceStandard.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp
+	  "$(HERE)/test_source_standard.cpp" src/tv5725/SourceStandard.cpp \
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_source_standard"
 
 ## sampling-log: host unit tests for Tv5725::SamplingLog
@@ -652,8 +659,8 @@ sampling-log:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sampling_log" \
-	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp
+	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp \
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_sampling_log"
 
 ## video-path: the registers each Tv5725::VideoPath entry point writes

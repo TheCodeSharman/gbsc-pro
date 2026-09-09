@@ -1153,3 +1153,121 @@ TEST_CASE("a good count clears a serration verdict")
 
     CHECK_FALSE(measurement.countWasSerrations());
 }
+
+// --- putting the chip on the sampling clock ---------------------------------
+//
+// The divider, the IF line counter and the retime stop are ONE quantity in three
+// registers, and this class holds it -- so it writes all three. Anything that
+// wrote one of them alone would leave the input formatter describing a line the
+// ADC is not delivering, which is a solid green display with sync still stable.
+
+static uint16_t dividerInForce() { return (uint16_t)Wire.field(5, 0x12, 0, 12); }
+static uint16_t lineCounterInForce() { return (uint16_t)Wire.field(1, 0x0E, 0, 11); }
+static uint16_t retimeStopInForce() { return (uint16_t)Wire.field(5, 0x4B, 0, 12); }
+
+TEST_CASE("applying the sampling writes all three registers of the one quantity")
+{
+    Wire.reset();
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    g_fieldRate = 50.08f;
+    REQUIRE(sampling.measureLineRate());
+    REQUIRE(sampling.solve(sampling.lineRateHz(), 4));
+
+    sampling.applySampling(4);
+
+    CHECK(dividerInForce() == sampling.divider());
+    CHECK(lineCounterInForce() == sampling.ifLine());
+    CHECK(retimeStopInForce() == sampling.retimeStop());
+}
+
+TEST_CASE("a measurement that solved nothing puts nothing on the chip")
+{
+    // Writing a divider of zero stops the ADC clocking the line at all, and
+    // every register downstream is then sized for a line that never arrives.
+    Wire.reset();
+    SourceMeasurement sampling;
+
+    REQUIRE_FALSE(sampling.usable());
+    sampling.applySampling(4);
+
+    CHECK_FALSE(Wire.touched[5][0x12]);
+    CHECK_FALSE(Wire.touched[1][0x0E]);
+}
+
+TEST_CASE("the reference puts the chip on a divider this class chose")
+{
+    // A count taken through the previous mode's divider is not the source's, so
+    // the reference goes on BEFORE anything measures.
+    Wire.reset();
+    SourceMeasurement sampling;
+    sampling.holdLineDoubling(false);
+    sampling.holdDivider(1234);
+
+    sampling.applyReferenceSampling(4);
+
+    CHECK(sampling.divider() == SourceMeasurement::referenceDivider(false));
+    CHECK(dividerInForce() == SourceMeasurement::referenceDivider(false));
+    CHECK(lineCounterInForce() == sampling.ifLine());
+}
+
+TEST_CASE("the reference for a line-doubled source is its own")
+{
+    // The capture write limit doubles with the line doubler, so the reference
+    // is a function of the scan mode and not a constant.
+    Wire.reset();
+    SourceMeasurement sampling;
+    sampling.holdLineDoubling(true);
+
+    sampling.applyReferenceSampling(4);
+
+    CHECK(sampling.divider() == SourceMeasurement::referenceDivider(true));
+    CHECK(sampling.divider() != SourceMeasurement::referenceDivider(false));
+}
+
+// The estimate the reference is sized from comes off the steadiness run, not off
+// a single read, so a case that moves it has to complete a run at the new count.
+static void settleAt(SourceMeasurement &sampling, uint16_t lines)
+{
+    seedSourceLines(lines);
+    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+        sampling.sampleSteady();
+}
+
+TEST_CASE("a reference already in force is not written again")
+{
+    // It re-latches the ADC PLL, which is a relock nothing asked for, and this
+    // runs on every pass of a mode change that has not settled yet.
+    Wire.reset();
+    SourceMeasurement sampling;
+    settleAt(sampling, 311);
+    sampling.applyReferenceSampling(4);
+    REQUIRE(Wire.touched[5][0x12]);
+
+    Wire.reset();
+    settleAt(sampling, 311);
+    sampling.applyReferenceSampling(4);
+
+    CHECK_FALSE(Wire.touched[5][0x12]);
+}
+
+TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
+{
+    // PLLAD_KS is an octave of CKO, and CKO is the divider TIMES the rate -- so
+    // a count caught mid-transition picks the wrong octave, and the reference
+    // divider for a scan mode does not change when the count settles. A return
+    // keyed on the divider alone leaves KS wrong with PLLAD_MD right, which is a
+    // state nothing can measure its way out of.
+    Wire.reset();
+    SourceMeasurement sampling;
+    settleAt(sampling, 700);
+    sampling.applyReferenceSampling(4);
+    const uint16_t divider = sampling.divider();
+
+    Wire.reset();
+    settleAt(sampling, 311);
+    sampling.applyReferenceSampling(4);
+
+    CHECK(sampling.divider() == divider);   // the reference itself has not moved
+    CHECK(Wire.touched[5][0x12]);           // and it was written anyway
+}

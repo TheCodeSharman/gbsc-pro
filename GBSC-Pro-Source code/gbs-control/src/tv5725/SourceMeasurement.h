@@ -395,6 +395,24 @@ public:
     // Take a divider that was chosen rather than solved.
     void holdDivider(uint16_t divider);
 
+    // Put the chip on the divider held, in all three of the registers that
+    // carry it. The divider goes first because Adc latches it, and the latch
+    // loads KS, CKOS and ICP with it -- so anything setting those must already
+    // have run. A measurement that solved nothing writes nothing.
+    void applySampling(uint8_t oversample);
+
+    // Take the reference divider for the scan mode and put the chip on it, so
+    // what is measured next is counted through a divider this class chose
+    // rather than the previous mode's.
+    //
+    // Idempotent on BOTH the divider and the estimate it was sized from, not on
+    // the divider alone: PLLAD_KS is an octave of CKO and CKO is the divider
+    // times the rate, so a count caught mid-transition picks the wrong octave
+    // while the reference for a scan mode stays put. A return keyed on the
+    // divider alone leaves KS wrong with PLLAD_MD right, which is a state
+    // nothing can measure its way out of.
+    void applyReferenceSampling(uint8_t oversample);
+
     // A rate good enough to pick the ADC's crossover row on a pass that has
     // measured none. From the line count, which the divider does not touch --
     // never from the held rate, which is the previous mode's.
@@ -467,6 +485,7 @@ private:
     uint8_t rateAttempts_;
     bool recoveryTried_;   // the flagged-counter recovery, once per source event
     bool serrationsSeen_;  // the last completed steadiness run read the serrations
+    uint32_t referenceRateHz_;  // the estimate the reference sample rate was sized from
 
     static bool counterFlagged_;
     static void (*counterRecovery_)();
