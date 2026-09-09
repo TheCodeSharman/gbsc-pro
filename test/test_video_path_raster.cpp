@@ -65,7 +65,7 @@ static unsigned registersWritten()
         for (int reg = 0; reg < 256; ++reg)
             if (Wire.touched[seg][reg])
                 ++written;
-                return written;
+    return written;
 }
 
 // The detection pass runs on a cadence, so a run of passes is a run of ticks.
@@ -84,7 +84,7 @@ static bool pollUntilSolved(VideoPath &engine)
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(engine))
             return true;
-            return false;
+    return false;
 }
 
 struct SettledEngine {
@@ -278,7 +278,7 @@ static bool pollUntilResolved(VideoPath &engine)
     for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(engine))
             return true;
-            return false;
+    return false;
 }
 
 static void forgetWrites()
@@ -286,7 +286,7 @@ static void forgetWrites()
     for (uint8_t s = 0; s < FakeTwoWire::Segments; ++s)
         for (int r = 0; r < 256; ++r)
             Wire.touched[s][r] = false;
-            Wire.trace.clear();
+    Wire.trace.clear();
 }
 
 TEST_CASE("an output change re-solves the raster without re-measuring the source")

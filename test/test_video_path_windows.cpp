@@ -70,7 +70,7 @@ TEST_CASE("no field is left holding what was there before the solve")
         CAPTURE(f.name);
         uint32_t stale = (static_cast<uint32_t>(Poison) * 0x0101u >> f.offset)
                          & ((1u << f.width) - 1u);
-                         CHECK(Wire.field(f.seg, f.reg, f.offset, f.width) != stale);
+        CHECK(Wire.field(f.seg, f.reg, f.offset, f.width) != stale);
     }
 }
 
@@ -281,7 +281,7 @@ TEST_CASE("the framing reported in units is the capture window on the chip")
 
     CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
           == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11));
-          CHECK(solved.engine.extentUnitsOn(AxisVertical)
+    CHECK(solved.engine.extentUnitsOn(AxisVertical)
           == Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11));
 
     SUBCASE("and it follows a press") {
