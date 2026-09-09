@@ -908,10 +908,10 @@ twelve tables while they existed, which is what `BringUp` was built from.
   picture that reaches it — it is a bound on usable width, not an artefact to
   hide. The position is absolute in the line and unmoved by the capture start,
   the source's timings or the memory clock; what counts to 2250 ADC samples is
-  unknown. `InputLine::WriteLimitUnits` is 1125 IF units — 2250 ADC samples —
+  unknown. `VideoSourceLine::WriteLimitUnits` is 1125 IF units — 2250 ADC samples —
   and `SourceMeasurement` caps `PLLAD_MD` there so the whole line arrives, which
   is why the bench now runs a 1126-unit IF line rather than 1277, and
-  `InputLine::lastCapture()` clamps the lines the divider did not choose. Do not
+  `VideoSourceLine::lastCapture()` clamps the lines the divider did not choose. Do not
   read the divider cap as the tearing ceiling that was removed — that one stays
   refuted. `docs/capture-limits.md`.
 - **The horizontal axis has no native resolution.** The chip sees sync edges, not
@@ -1223,7 +1223,7 @@ firmware C++.
 
   | the fact | the copies |
   |---|---|
-  | what causes the tail green at IF 1126 | `InputLine.h` and the host tests both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
+  | what causes the tail green at IF 1126 | `VideoSourceLine.h` and the host tests both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
   | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against the **4.0x** `test_axis.cpp` asserts, `Scale::Min` having become derived |
 
   One fact, three copies, two wrong, and every test passed — because tests check
