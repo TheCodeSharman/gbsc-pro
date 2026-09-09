@@ -61,7 +61,8 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath path(clock, sampling);
+    FramingTable framings;
+    VideoPath path(clock, sampling, framings);
     InputAcquisition acquisition(sampling, path);
 
     path.outputModeChanged(OutputChoice(Output1080P));
@@ -81,7 +82,8 @@ TEST_CASE("the layer reports what the source is running")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath path(clock, sampling);
+    FramingTable framings;
+    VideoPath path(clock, sampling, framings);
     InputAcquisition acquisition(sampling, path);
 
     path.outputModeChanged(OutputChoice(Output1080P));
@@ -108,7 +110,8 @@ TEST_CASE("detection runs on the layer's cadence, not on every call")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath path(clock, sampling);
+    FramingTable framings;
+    VideoPath path(clock, sampling, framings);
     InputAcquisition acquisition(sampling, path);
 
     path.outputModeChanged(OutputChoice(Output1080P));
@@ -149,7 +152,8 @@ TEST_CASE("a shut gate stops the path writing anything")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath path(clock, sampling);
+    FramingTable framings;
+    VideoPath path(clock, sampling, framings);
     InputAcquisition acquisition(sampling, path);
     acquisition.useRunGate(runGate);
     g_mayRun = false;
@@ -171,7 +175,8 @@ TEST_CASE("the gate is asked per tick, so what it stopped resumes")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath path(clock, sampling);
+    FramingTable framings;
+    VideoPath path(clock, sampling, framings);
     InputAcquisition acquisition(sampling, path);
     acquisition.useRunGate(runGate);
     g_mayRun = false;
@@ -191,7 +196,8 @@ TEST_CASE("no gate runs, which is what every caller did before")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath path(clock, sampling);
+    FramingTable framings;
+    VideoPath path(clock, sampling, framings);
     InputAcquisition acquisition(sampling, path);
 
     path.outputModeChanged(OutputChoice(Output1080P));

@@ -83,13 +83,14 @@ static bool pollUntilSolved(Tv5725::VideoPath &engine)
 struct SolvedEngine {
     Tv5725::DisplayClock clock;
     Tv5725::SourceMeasurement sampling;
+    Tv5725::FramingTable framings;
     Tv5725::VideoPath engine;
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
                  Tv5725::OutputChoice choice =
                      Tv5725::OutputChoice(Tv5725::Output1080P))
-        : engine(clock, sampling)
+        : engine(clock, sampling, framings)
     {
         Wire.reset();
         poisonChip();

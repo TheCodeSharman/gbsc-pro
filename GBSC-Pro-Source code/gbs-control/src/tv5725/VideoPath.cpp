@@ -22,11 +22,12 @@ namespace Tv5725 {
 
 // --- VideoPath ----------------------------------------------------------
 
-VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling)
+VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
+                     FramingTable &framings)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
       sampling_(sampling), samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
-      framingRevision_(0),
+      framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvedLines_(0), solvedLineRateHz_(0),
       idleLines_(0), idleRun_(0), unusableCountArmed_(false),
@@ -39,19 +40,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling)
 
 const PanAndZoom &VideoPath::framing() const { return framing_; }
 
-const FramingTable &VideoPath::framings() const { return framings_; }
-
-bool VideoPath::rememberFraming(const SourceKey &key, const PanAndZoom &framing)
-{
-    if (!framings_.remember(key, framing))
-        return false;
-    ++framingRevision_;
-    return true;
-}
-
 const SourceKey &VideoPath::framedKey() const { return framedKey_; }
-
-uint16_t VideoPath::framingRevision() const { return framingRevision_; }
 
 bool VideoPath::changing() const { return modePending_ || solvePending_; }
 
@@ -356,8 +345,7 @@ bool VideoPath::reset()
     // The entry goes with the framing. "Back to default" has to mean the table
     // stops answering for this source, or the solve that follows restores
     // exactly what was just discarded and the control does nothing.
-    if (framings_.forget(framedKey_))
-        ++framingRevision_;
+    framings_.forget(framedKey_);
 
     // A framing change like any other. The source has not moved and no load has
     // disturbed the ADC, so the divider, the raster and the clock all re-derive
@@ -851,7 +839,7 @@ bool VideoPath::step(const PanAndZoom &wanted)
     // turned off where it is used would otherwise lose every tuning. Only the
     // flash write is debounced. One that moved nothing stores nothing, which is
     // also what keeps sixteen places from filling with computed defaults.
-    rememberFraming(framedKey_, framing_);
+    framings_.remember(framedKey_, framing_);
     return true;
 }
 

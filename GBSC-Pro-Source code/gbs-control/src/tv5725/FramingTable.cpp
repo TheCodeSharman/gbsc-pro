@@ -4,7 +4,7 @@ namespace Tv5725 {
 
 const uint16_t FramingTable::Entries;
 
-FramingTable::FramingTable() : count_(0) {}
+FramingTable::FramingTable() : count_(0), revision_(0) {}
 
 int16_t FramingTable::indexOf(const SourceKey &key) const
 {
@@ -34,6 +34,7 @@ bool FramingTable::remember(const SourceKey &key, const PanAndZoom &framing)
     const int16_t at = indexOf(key);
     if (at >= 0) {
         framings_[at] = framing;
+        moved();
         return true;
     }
     if (count_ >= Entries)
@@ -42,6 +43,7 @@ bool FramingTable::remember(const SourceKey &key, const PanAndZoom &framing)
     keys_[count_] = key;
     framings_[count_] = framing;
     ++count_;
+    moved();
     return true;
 }
 
@@ -56,10 +58,15 @@ bool FramingTable::forget(const SourceKey &key)
     keys_[at] = keys_[count_ - 1];
     framings_[at] = framings_[count_ - 1];
     --count_;
+    moved();
     return true;
 }
 
 uint16_t FramingTable::count() const { return count_; }
+
+uint16_t FramingTable::revision() const { return revision_; }
+
+void FramingTable::moved() { ++revision_; }
 
 const SourceKey &FramingTable::keyAt(uint16_t index) const { return keys_[index]; }
 
@@ -68,6 +75,12 @@ const PanAndZoom &FramingTable::framingAt(uint16_t index) const
     return framings_[index];
 }
 
-void FramingTable::clear() { count_ = 0; }
+void FramingTable::clear()
+{
+    if (count_ == 0)
+        return;
+    count_ = 0;
+    moved();
+}
 
 }  // namespace Tv5725

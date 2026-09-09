@@ -276,7 +276,8 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -302,7 +303,8 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -343,7 +345,8 @@ TEST_CASE("a line count outside what any source runs is never measured against")
     seedField(0, 0x1B, 0, 11, 97);
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -368,7 +371,8 @@ TEST_CASE("entering bypass leaves nothing to solve")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -394,7 +398,8 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(OutputChoice());
     engine.inputTimingsChanged(4);
@@ -423,7 +428,8 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
 
@@ -454,7 +460,8 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -495,7 +502,8 @@ TEST_CASE("capture is frozen across a mode change and released when it lands")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -510,7 +518,8 @@ TEST_CASE("capture stays frozen while the source is still settling")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -534,7 +543,8 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     SUBCASE("a mode with no timings") {
         engine.outputModeChanged(OutputChoice());
@@ -569,7 +579,8 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -601,7 +612,8 @@ TEST_CASE("a source comes back to the framing it was left at")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -633,7 +645,8 @@ TEST_CASE("a source nobody has framed takes no place in the table")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     for (uint16_t lines = 311; lines <= 315; ++lines) {
         seedSourceLines(lines);
@@ -642,7 +655,7 @@ TEST_CASE("a source nobody has framed takes no place in the table")
         REQUIRE(pollUntilSolved(engine));
     }
 
-    CHECK(engine.framings().count() == 0);
+    CHECK(framings.count() == 0);
 }
 
 TEST_CASE("a source nobody has framed gets the computed default")
@@ -652,7 +665,8 @@ TEST_CASE("a source nobody has framed gets the computed default")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -684,10 +698,11 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
-    REQUIRE(engine.rememberFraming(SourceKey(311, 50.08f), stored));
+    REQUIRE(framings.remember(SourceKey(311, 50.08f), stored));
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -715,17 +730,18 @@ TEST_CASE("a press stores the framing without leaving the source")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
-    REQUIRE(engine.framings().count() == 0);
+    REQUIRE(framings.count() == 0);
 
     frameAt(engine, 300, 120, 40, -15);
 
     PanAndZoom stored;
-    REQUIRE(engine.framings().find(SourceKey(311, 50.08f), &stored));
+    REQUIRE(framings.find(SourceKey(311, 50.08f), &stored));
     CHECK(stored == engine.framing());
 }
 
@@ -736,7 +752,8 @@ TEST_CASE("a reset forgets what the table stored for this source")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -744,11 +761,11 @@ TEST_CASE("a reset forgets what the table stored for this source")
     const PanAndZoom untouched = engine.framing();
 
     frameAt(engine, 300, 120, 40, -15);
-    REQUIRE(engine.framings().count() == 1);
+    REQUIRE(framings.count() == 1);
 
     REQUIRE(engine.reset());
 
-    CHECK(engine.framings().count() == 0);
+    CHECK(framings.count() == 0);
     CHECK(engine.framing() == untouched);
 }
 
@@ -759,16 +776,17 @@ TEST_CASE("the table says when it has something new to write")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
-    const uint16_t settled = engine.framingRevision();
+    const uint16_t settled = framings.revision();
 
     SUBCASE("a solve that stores nothing leaves it alone") {
         REQUIRE(engine.resolve());
-        CHECK(engine.framingRevision() == settled);
+        CHECK(framings.revision() == settled);
     }
 
     SUBCASE("and a source change that stores a tuning moves it") {
@@ -778,7 +796,7 @@ TEST_CASE("the table says when it has something new to write")
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
-        CHECK(engine.framingRevision() != settled);
+        CHECK(framings.revision() != settled);
     }
 
     SUBCASE("but a source change with nothing tuned does not") {
@@ -787,7 +805,7 @@ TEST_CASE("the table says when it has something new to write")
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
-        CHECK(engine.framingRevision() == settled);
+        CHECK(framings.revision() == settled);
     }
 }
 
@@ -800,7 +818,8 @@ TEST_CASE("a framed picture holds every window against the framing")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -884,7 +903,8 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     DisplayClock clock;
 
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -928,7 +948,8 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     DisplayClock clock;
 
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -989,7 +1010,8 @@ TEST_CASE("the scan mode is corrected even when the source cannot be measured")
     DisplayClock clock;
 
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
@@ -1018,7 +1040,8 @@ TEST_CASE("the engine arms itself when the source line count changes")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1050,7 +1073,8 @@ TEST_CASE("the source is counted on a cadence, not once a loop pass")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1088,7 +1112,8 @@ TEST_CASE("bypass keeps the line rate it last measured")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1117,7 +1142,8 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     SUBCASE("a line-doubled source is sampled at twice the write limit") {
         g_dividerWhenSampled = 0;
@@ -1164,7 +1190,8 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     SUBCASE("a frame that shrank is not measured through the taller mode's window") {
         seedField(0, 0x1B, 0, 11, 524);   // STATUS_SYNC_PROC_VTOTAL
@@ -1222,7 +1249,8 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
     DisplayClock clock;
 
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
 
@@ -1241,7 +1269,8 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1283,7 +1312,8 @@ TEST_CASE("the reference is re-applied when the count it was sized from moves")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     // A count high enough to put CKO over the 40 MHz crossover at the
     // progressive reference, then the settled one, which is under it.
@@ -1316,7 +1346,8 @@ TEST_CASE("a framing applied whole lands as the window it describes")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1337,7 +1368,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     SUBCASE("and the source is left framed that way for next time") {
         PanAndZoom remembered;
-        REQUIRE(engine.framings().find(SourceKey(311, 50.08f), &remembered));
+        REQUIRE(framings.find(SourceKey(311, 50.08f), &remembered));
         CHECK(remembered == engine.framing());
     }
 }
@@ -1349,7 +1380,8 @@ TEST_CASE("the engine says which source the framing it holds is against")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     CHECK_FALSE(engine.framedKey().valid());
 
     engine.outputModeChanged(benchMode());
@@ -1377,7 +1409,8 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
     g_probeCalls = 0;
 
@@ -1411,7 +1444,8 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1456,7 +1490,8 @@ TEST_CASE("a source counted steadily and sampled at the chosen divider is acquir
     seedLineSamples(2250);                // the divider seedBenchSource writes
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -1474,7 +1509,8 @@ TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlock
     seedLineSamples(3250);                // what the bench measured, against 2250
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -1496,7 +1532,8 @@ TEST_CASE("unlocked is not absent, because the two want opposite things")
     seedLineSamples(3250);
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -1518,7 +1555,8 @@ TEST_CASE("a source is not present while a mode change is still working through"
     seedLineSamples(2250);
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -1539,7 +1577,8 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
     seedLineSamples(2250);
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
@@ -1564,7 +1603,8 @@ TEST_CASE("reacquiring the sync type puts the registers on the answered path")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1585,7 +1625,8 @@ TEST_CASE("reacquiring the sync type asks the probe again")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1604,7 +1645,8 @@ TEST_CASE("reacquiring the sync type reports what the source carries")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1632,7 +1674,8 @@ TEST_CASE("a count no source runs re-establishes the sync type")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1657,7 +1700,8 @@ TEST_CASE("a count no source runs arms the probe once, not once a poll")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1684,7 +1728,8 @@ TEST_CASE("a field rate the line count cannot show re-solves the source")
     seedField(0, 0x06, 0, 9, 431);     // HPERIOD_IF, this source at 50 Hz
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1715,7 +1760,8 @@ TEST_CASE("a rate seen once does not re-solve the source")
     seedField(0, 0x06, 0, 9, 431);     // HPERIOD_IF, this source at 50 Hz
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1746,7 +1792,8 @@ TEST_CASE("a rate the field rate does not confirm leaves the source alone")
     seedField(0, 0x06, 0, 9, 431);     // HPERIOD_IF, this source at 50 Hz
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
@@ -1775,7 +1822,8 @@ TEST_CASE("a source the sync processor is counting is present")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1791,7 +1839,8 @@ TEST_CASE("a source that stops counting is not present")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1813,7 +1862,8 @@ TEST_CASE("counts that never hold still are not a source")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1841,7 +1891,8 @@ TEST_CASE("a source that cannot be measured is not present while a change is pen
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
@@ -1870,7 +1921,8 @@ TEST_CASE("nothing has been solved, so no source is present")
     seedBenchSource();
     DisplayClock clock;
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
 
     pollOnce(engine);
 
@@ -1892,7 +1944,8 @@ TEST_CASE("a source whose serrations are counted as lines is coasted further")
     DisplayClock clock;
 
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     pollUntilSolved(engine);
@@ -1910,7 +1963,8 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
     DisplayClock clock;
 
     SourceMeasurement sampling;
-    VideoPath engine(clock, sampling);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));

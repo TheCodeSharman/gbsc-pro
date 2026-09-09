@@ -44,27 +44,19 @@ class OutputMode;
 
 class VideoPath {
 public:
-    // The measurement is not this class's. It is what the source IS, taken off
-    // the chip and held by the layer that coordinates measuring; this class is
-    // handed it and derives registers from it. docs/input-acquisition.md
-    VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling);
+    // Neither collaborator is this class's. The measurement is what the source
+    // IS, taken off the chip and held by whoever coordinates measuring; the
+    // table is the user's tuning, persisted to flash by whoever owns the file.
+    // This class is handed both and derives registers from them.
+    // docs/input-acquisition.md
+    VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
+              FramingTable &framings);
 
     const PanAndZoom &framing() const;
-
-    // What has been tuned, against the sources it was tuned for. The engine
-    // puts a framing in when the user leaves the source; whoever owns the file
-    // reads it back at boot and writes it out. docs/framing-presets.md
-    const FramingTable &framings() const;
-    bool rememberFraming(const SourceKey &key, const PanAndZoom &framing);
 
     // The source the framing held is against. Invalid until one has been
     // measured, so a caller storing a framing against it has to ask first.
     const SourceKey &framedKey() const;
-
-    // Moves whenever the table does. A pad press must not write flash, so the
-    // sketch debounces -- and comparing this against what it last wrote is how
-    // it knows a write is owed at all rather than paying for one every tick.
-    uint16_t framingRevision() const;
 
     // The capturable region the last solve ran against, which is the
     // denominator the framing's proportions are taken against. A caller holding
@@ -303,8 +295,7 @@ private:
     uint16_t solvedLines_;   // the source line count the last solve ran against
     uint32_t solvedLineRateHz_;  // and the line rate, which the count cannot show
     SourceKey framedKey_;    // the source the framing held was tuned against
-    FramingTable framings_;
-    uint16_t framingRevision_;
+    FramingTable &framings_;   // what the user tuned, per source
     uint16_t idleLines_;     // the count seen while no mode change is outstanding
     uint8_t idleRun_;        // how many polls it has held it
     bool unusableCountArmed_;  // a count no source runs has already armed a change

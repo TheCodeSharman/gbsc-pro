@@ -37,6 +37,12 @@ public:
 
     uint16_t count() const;
 
+    // Moves whenever the table does, and only then. A pad press must not write
+    // flash, so whoever owns the file debounces on this rather than paying for
+    // a read every tick -- and comparing it against what was last written is
+    // how a write is known to be owed at all.
+    uint16_t revision() const;
+
     // For whoever writes the file out.
     const SourceKey &keyAt(uint16_t index) const;
     const PanAndZoom &framingAt(uint16_t index) const;
@@ -46,9 +52,12 @@ public:
 private:
     int16_t indexOf(const SourceKey &key) const;
 
+    void moved();
+
     SourceKey keys_[Entries];
     PanAndZoom framings_[Entries];
     uint16_t count_;
+    uint16_t revision_;
 };
 
 }  // namespace Tv5725

@@ -116,3 +116,78 @@ TEST_CASE("forgetting a source frees its place")
     CHECK(table.count() == 0);
     CHECK_FALSE(table.find(Bench, 0));
 }
+
+// --- the revision -----------------------------------------------------------
+//
+// What says a flash write is owed. A press must not write flash, so the caller
+// debounces on this rather than paying for a read every tick -- and BOTH the
+// engine and whoever loads the file mutate the table, so a counter held by
+// either one misses the other's change.
+
+TEST_CASE("a fresh table has not moved")
+{
+    FramingTable table;
+    FramingTable other;
+
+    CHECK(table.revision() == other.revision());
+}
+
+TEST_CASE("remembering, replacing and forgetting each move the revision")
+{
+    FramingTable table;
+    const uint16_t fresh = table.revision();
+
+    REQUIRE(table.remember(Bench, Framed));
+    const uint16_t stored = table.revision();
+    CHECK(stored != fresh);
+
+    // Re-tuning the same source replaces the entry rather than adding one, and
+    // the file still owes a write.
+    REQUIRE(table.remember(Bench, PanAndZoom()));
+    const uint16_t retuned = table.revision();
+    CHECK(retuned != stored);
+
+    REQUIRE(table.forget(Bench));
+    CHECK(table.revision() != retuned);
+}
+
+TEST_CASE("a refused change does not move the revision")
+{
+    // Nothing was stored, so nothing is owed. A revision that moved anyway
+    // would make every rejected press cost a flash write.
+    FramingTable table;
+    REQUIRE(table.remember(Bench, Framed));
+    const uint16_t stored = table.revision();
+
+    CHECK_FALSE(table.remember(SourceKey(), Framed));
+    CHECK(table.revision() == stored);
+
+    CHECK_FALSE(table.forget(SourceKey(0, 0.0f)));
+    CHECK(table.revision() == stored);
+}
+
+TEST_CASE("a full table refuses a new source without moving the revision")
+{
+    FramingTable table;
+    for (uint16_t i = 0; i < FramingTable::Entries; ++i)
+        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f), Framed));
+    const uint16_t full = table.revision();
+
+    CHECK_FALSE(table.remember(SourceKey(999, 50.0f), Framed));
+    CHECK(table.revision() == full);
+}
+
+TEST_CASE("clearing a table that held something moves the revision")
+{
+    FramingTable table;
+    REQUIRE(table.remember(Bench, Framed));
+    const uint16_t stored = table.revision();
+
+    table.clear();
+    CHECK(table.revision() != stored);
+
+    // An empty table cleared again is not a change, so nothing is owed.
+    const uint16_t emptied = table.revision();
+    table.clear();
+    CHECK(table.revision() == emptied);
+}

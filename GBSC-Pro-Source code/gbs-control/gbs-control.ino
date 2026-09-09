@@ -982,7 +982,12 @@ SerialMirror SerialM;
 // docs/input-acquisition.md
 Tv5725::SourceMeasurement sourceSampling;
 
-Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling);
+// What the user tuned, per source. Product state rather than acquisition, and
+// the root is what persists it -- holding it here is what removes the round
+// trip a load and a save took through the engine. docs/input-acquisition.md
+Tv5725::FramingTable sourceFramings;
+
+Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling, sourceFramings);
 
 // The framing table, in its own file. Separate from /preferencesv2.txt because
 // it is variable length and keyed, and mixing it with the scalar settings
@@ -5603,7 +5608,7 @@ void setup()
         // own read failure is distinguishable in the boot log from theirs.
         loadFramingTable();
         bootLogPrintf("FRAMING: %u stored, suspect=%d t=%lums\n",
-            (unsigned)geometry.framings().count(), framingIsSuspect ? 1 : 0,
+            (unsigned)sourceFramings.count(), framingIsSuspect ? 1 : 0,
             (unsigned long)millis());
 
         loadSlotFramings();
@@ -8590,7 +8595,7 @@ void loadFramingTable()
         // Nothing stored yet is not a failed read. Every source takes its
         // computed default and the first tuning is saveable.
         framingIsSuspect = false;
-        framingSaves.markSaved(geometry.framingRevision());
+        framingSaves.markSaved(sourceFramings.revision());
         return;
     }
 
@@ -8610,10 +8615,10 @@ void loadFramingTable()
     f.close();
 
     for (uint16_t i = 0; i < read.count(); ++i)
-        geometry.rememberFraming(read.keyAt(i), read.framingAt(i));
+        sourceFramings.remember(read.keyAt(i), read.framingAt(i));
 
     framingIsSuspect = false;
-    framingSaves.markSaved(geometry.framingRevision());
+    framingSaves.markSaved(sourceFramings.revision());
 }
 
 void saveFramingTable()
@@ -8631,17 +8636,16 @@ void saveFramingTable()
               "originH extentH originV extentV\n"
               "# in ten-thousandths of the capturable region\n"));
 
-    const Tv5725::FramingTable &table = geometry.framings();
-    Tv5725::FramingText text(const_cast<Tv5725::FramingTable &>(table));
+    Tv5725::FramingText text(sourceFramings);
     char line[80];
-    for (uint16_t i = 0; i < table.count(); ++i)
+    for (uint16_t i = 0; i < sourceFramings.count(); ++i)
         if (text.writeLine(i, line, sizeof(line))) {
             f.print(line);
             f.print('\n');
         }
     f.close();
 
-    framingSaves.markSaved(geometry.framingRevision());
+    framingSaves.markSaved(sourceFramings.revision());
 }
 
 // Which slot the user has selected, as an index into slotFramings, or -1 when
@@ -8728,7 +8732,7 @@ bool recallSlotFraming(int16_t slot)
 // Called every loop. Nothing is written until the table has held still.
 void pollFramingSave(uint32_t now)
 {
-    if (framingSaves.due(geometry.framingRevision(), now, FramingSaveQuietMs))
+    if (framingSaves.due(sourceFramings.revision(), now, FramingSaveQuietMs))
         saveFramingTable();
 }
 
