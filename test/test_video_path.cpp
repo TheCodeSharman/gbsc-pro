@@ -54,9 +54,9 @@ float getSourceFieldRate(boolean)
     ++g_fieldRateCalls;
     g_dividerWhenSampled = (uint16_t)(Wire.bank[5][0x12] |
                                       ((Wire.bank[5][0x13] & 0x0F) << 8));
-    g_blankStartWhenSampled = (uint16_t)(Wire.bank[1][0x1C] |
+                                      g_blankStartWhenSampled = (uint16_t)(Wire.bank[1][0x1C] |
                                          ((Wire.bank[1][0x1D] & 0x07) << 8));
-    return g_fieldRate;
+                                         return g_fieldRate;
 }
 void tv5725Log(const char *) {}
 uint32_t getPllRate() { return 0; }
@@ -67,17 +67,17 @@ static const uint8_t Poison = 0xE2;
 
 static void seedField(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
                       uint32_t value)
-{
+                      {
     uint8_t span = static_cast<uint8_t>((offset + width + 7) / 8);
     uint32_t mask = ((1u << width) - 1u) << offset;
     uint32_t raw = 0;
     for (uint8_t i = 0; i < span; ++i)
         raw |= static_cast<uint32_t>(Wire.bank[seg][static_cast<uint8_t>(reg + i)])
                << (8 * i);
-    raw = (raw & ~mask) | ((value << offset) & mask);
-    for (uint8_t i = 0; i < span; ++i)
-        Wire.bank[seg][static_cast<uint8_t>(reg + i)] =
-            static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
+               raw = (raw & ~mask) | ((value << offset) & mask);
+               for (uint8_t i = 0; i < span; ++i)
+               Wire.bank[seg][static_cast<uint8_t>(reg + i)] =
+               static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
 // The registers the engine is allowed to read, so a poison wipes the source
@@ -141,7 +141,7 @@ static unsigned registersWritten()
         for (int reg = 0; reg < 256; ++reg)
             if (Wire.touched[seg][reg])
                 ++written;
-    return written;
+                return written;
 }
 
 // --- what a whole solve puts on the chip -------------------------------------
@@ -275,7 +275,7 @@ static bool pollUntilSolved(VideoPath &engine)
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         if (pollOnce(engine))
             return true;
-    return false;
+            return false;
 }
 
 // --- the scenarios, each the sketch's own call sequence ----------------------
@@ -418,7 +418,7 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     const unsigned settled = g_fieldRateCalls;
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(pollOnce(engine));
-    CHECK(g_fieldRateCalls == settled);
+        CHECK(g_fieldRateCalls == settled);
 
     // The raster is left exactly as it was: a mode nobody could name is not a
     // reason to move one that is already driving a picture.
@@ -552,15 +552,15 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
 
     SUBCASE("a mode with no timings") {
         engine.outputModeChanged(OutputChoice());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(pollOnce(engine));
-        CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
+            CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
 
     SUBCASE("and bypass, where there is no solve coming at all") {
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         engine.enterBypass();
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
@@ -599,11 +599,11 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     const float unit = 1.0f / (float)engine.capturableOn(AxisVertical);
     CHECK_NEAR(engine.framing().originOn(AxisHorizontal),
                tuned.originOn(AxisHorizontal), unit);
-    CHECK_NEAR(engine.framing().extentOn(AxisHorizontal),
+               CHECK_NEAR(engine.framing().extentOn(AxisHorizontal),
                tuned.extentOn(AxisHorizontal), unit);
-    CHECK_NEAR(engine.framing().originOn(AxisVertical),
+               CHECK_NEAR(engine.framing().originOn(AxisVertical),
                tuned.originOn(AxisVertical), unit);
-    CHECK_NEAR(engine.framing().extentOn(AxisVertical),
+               CHECK_NEAR(engine.framing().extentOn(AxisVertical),
                tuned.extentOn(AxisVertical), unit);
 }
 
@@ -652,7 +652,7 @@ TEST_CASE("a source nobody has framed takes no place in the table")
     for (uint16_t lines = 311; lines <= 315; ++lines) {
         seedSourceLines(lines);
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
     }
 
@@ -716,7 +716,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
         const uint16_t usable = engine.capturableOn(axis);
         CHECK(engine.originUnitsOn(axis)
               == lrintf(stored.originOn(axis) * (float)usable));
-        CHECK(engine.extentUnitsOn(axis)
+              CHECK(engine.extentUnitsOn(axis)
               == lrintf(stored.extentOn(axis) * (float)usable));
     }
 }
@@ -789,7 +789,7 @@ TEST_CASE("the table says when it has something new to write")
         frameAt(engine, 300, 120, 40, -15);
         seedSourceLines(524);
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(engine.framingRevision() != settled);
@@ -798,7 +798,7 @@ TEST_CASE("the table says when it has something new to write")
     SUBCASE("but a source change with nothing tuned does not") {
         seedSourceLines(524);
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(engine.framingRevision() == settled);
@@ -1079,7 +1079,7 @@ TEST_CASE("the source is counted on a cadence, not once a loop pass")
     // counts and the source has not been seen to move.
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(engine.poll(g_nowMs));
-    CHECK(Adc::PLLAD_MD::read() == 2250);
+        CHECK(Adc::PLLAD_MD::read() == 2250);
 
     bool solved = false;
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
@@ -1136,7 +1136,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
     SUBCASE("a line-doubled source is sampled at twice the write limit") {
         g_dividerWhenSampled = 0;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(true));
     }
@@ -1146,7 +1146,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         g_fieldRate = 60.0f;
         g_dividerWhenSampled = 0;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(false));
     }
@@ -1157,7 +1157,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         seedField(5, 0x12, 0, 12, 1124);
         g_dividerWhenSampled = 0;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled != 1124);
     }
@@ -1187,7 +1187,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
 
         g_blankStartWhenSampled = 0xFFFF;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 524);
     }
@@ -1197,7 +1197,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
 
         g_blankStartWhenSampled = 0xFFFF;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 2 * 311);
     }
@@ -1209,7 +1209,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
         // here -- and this is the case that matters, because a window is not
         // only stranded by a mode change.
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         seedField(1, 0x1C, 0, 11, 700);
@@ -1265,7 +1265,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         g_fieldRateCalls = 0;
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(pollOnce(engine));
-        CHECK(g_fieldRateCalls == 0);
+            CHECK(g_fieldRateCalls == 0);
     }
 
     SUBCASE("an interrupted one is measured again") {
@@ -1281,7 +1281,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         g_fieldRateCalls = 0;
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(pollOnce(engine));
-        CHECK(g_fieldRateCalls == 0);
+            CHECK(g_fieldRateCalls == 0);
     }
 }
 
@@ -1345,7 +1345,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
         CAPTURE(vertical);
         CHECK(engine.originUnitsOn(axis)
               == lrintf(stored.originOn(axis) * (float)usable));
-        CHECK(engine.extentUnitsOn(axis)
+              CHECK(engine.extentUnitsOn(axis)
               == lrintf(stored.extentOn(axis) * (float)usable));
     }
 
@@ -1398,7 +1398,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
     SUBCASE("a source with no vsync of its own is composite sync") {
         g_hasOwnVsync = false;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(SyncType::isCsync());
@@ -1410,7 +1410,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
     SUBCASE("a source bringing its own vsync is separate H/V") {
         g_hasOwnVsync = true;
         engine.outputModeChanged(benchMode());
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK_FALSE(SyncType::isCsync());
@@ -1439,7 +1439,7 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     // a settle plus a window, which is not something a poll may do.
     for (uint8_t i = 0; i < 6; ++i)
         pollOnce(engine);
-    CHECK(g_probeCalls == 1);
+        CHECK(g_probeCalls == 1);
 
     // A second change is a second source as far as this is concerned.
     engine.outputModeChanged(benchMode());
@@ -1538,7 +1538,7 @@ TEST_CASE("a source is not present while a mode change is still working through"
     REQUIRE(pollUntilSolved(engine));
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         pollOnce(engine);
-    REQUIRE(engine.sourceIsPresent());
+        REQUIRE(engine.sourceIsPresent());
 
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
