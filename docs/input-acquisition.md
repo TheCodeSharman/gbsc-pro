@@ -2,17 +2,18 @@
 
 Goal: `runSyncWatcher()` and `rto->videoStandardInput` are both deleted, and the
 responsibility they share -- keep video coming, and know what is coming -- has
-two owners instead of none.
+one owner instead of none.
 
-**`InputAcquisition`** sits ABOVE `Tv5725::` and owns the escalation, the input
-policy and the no-signal report. **`Tv5725::VideoPath`** measures the source and
-solves the scaler. `loop()` ends up with one call where it has two:
+**`InputAcquisition`** sits ABOVE `Tv5725::`. It holds the state, owns the tick,
+coordinates the measurement and decides. `Tv5725::SourceMeasurement` reads the
+source for it and `Tv5725::VideoPath` is handed the answer and writes registers.
+`loop()` ends up with one call where it has two:
 
 ```
 inputAcquisition.poll(millis());
 ```
 
-`VideoPath::poll()` is called by IT rather than by `loop()`.
+`VideoPath::poll()` does not survive: it is turned inside out, not moved.
 
 ## One job seen from two ends
 
@@ -29,19 +30,110 @@ Both questions are still here and they are still different:
 - **the order the code moves in** -- *The order*, thirteen steps, with the
   byte's stages folded onto the steps that carry them
 
-## The split is measurement against policy
+## InputAcquisition holds the state, and that is the whole design
 
-**The engine measures and the layer decides**, and the division is not a
-preference. `sourceMoved()` compares the source against the count and rate the
-last solve ran against, read through the divider the engine itself chose -- so
-anything else taking that reading needs a second copy of the divider, which is
-the parallel model this page exists to delete. What the engine does not own is
-what to do about the answer.
+Three parties, one direction of flow. The state lives in ONE of them.
 
-| | owns |
+| | |
 |---|---|
-| `Tv5725::VideoPath` | measures the source, solves the scaler, publishes `sourceState()` |
-| `InputAcquisition` | reads that verdict, runs the ladder, decides the input, reports "no signal out" |
+| `InputAcquisition` | **holds the state.** Owns the tick, coordinates the measurement, decides the divider and the input, runs the ladder, reports "no signal out" |
+| `Tv5725::SourceMeasurement` | called by it. Reads the source off the chip -- the only thing that does |
+| `Tv5725::VideoPath` | handed that state. Solves raster, clock, windows and scales, and writes them. Decides nothing |
+
+**Nothing above `Tv5725::` touches the bus.** `InputAcquisition` coordinates the
+measurement; it does not take it. `SourceMeasurement` stays one class and
+changes owner rather than being divided, because its statics are already pure
+chip reads and its instance is the steadiness run and the divider -- one
+coherent job, in the wrong hands.
+
+### The state is passed, not held twice
+
+`VideoPath` is handed a value and returns one. It holds nothing across a call,
+so there is no second copy of anything to disagree with the first. What moves
+out of it:
+
+| | |
+|---|---|
+| `sampling_` | the measurement and the divider |
+| `choice_`, `rasterMode_` | the output asked for, and what it resolved to |
+| `solvedLines_`, `solvedLineRateHz_` | what the last solve ran against |
+| the raster, both scales, the capturable region | outputs of one solve that the next one needs |
+| `modePending_`, `solvePending_`, `syncTypeProbed_`, `scanModeApplied_`, `idleRun_`, `sourceState_`, `detectedMs_` | the poll loop itself |
+
+**This does not make the state go away; it gives it one owner.** Passed as
+separate arguments the signature is unusable, so it is one value -- and that
+value IS the video path's state, held by `InputAcquisition`. What is bought is
+that it is visible at the call site, impossible to hold two copies of, and
+constructible directly by a host test instead of being reached through seeded
+registers and a faked clock.
+
+**It does not contradict the rule that the engine calculates from held state.**
+That rule forbids reading a register back to derive another. Where the state is
+held is not what it is about, and moving it up leaves it intact.
+
+**The framing table is NOT `InputAcquisition`'s.** The user's pan and zoom, per
+source, persisted to flash, is product state rather than acquisition -- and a
+layer that takes it takes everything, which is the accretion this class exists
+to avoid. **The root loads it, holds it and passes it down.**
+
+Half of that is already true and the other half is the anomaly: the root does
+the file I/O -- `loadFramingTable()` and `saveFramingTable()`, debounced through
+`FramingSaveTimer` -- but the table itself lives in the engine, so a load pushes
+entries in through `rememberFraming()` and a save reads them back out through
+`framings()`. The root is persisting state it does not own, round-tripped
+through the class least able to say what it is for. Holding it removes the round
+trip and the `const_cast` the save needs.
+
+### Stateless where it solves, stateful where it drives
+
+Not every class flattens, and the line is what the class is for:
+
+| | |
+|---|---|
+| **stateless** -- a solver | `VideoPath`, `CaptureWindow`, `OutputRaster`, `Scale`, `RasterFit`, `BlankingTiming` |
+| **stateful** -- a driver holding a level or a ramp | `DisplayClock`, which ramps the Si5351 over time; `SyncOnGreen`, which holds the separator level and deliberately separates the level CHOSEN from the level in force |
+
+### The divider needs the output, which is why it moves up rather than down
+
+`solveScanMode()` decides line doubling from `rasterMode_->frameLines()` -- the
+resolution the user picked, not the source:
+
+    output choice -> raster frame lines -> line doubling -> divider -> capture window
+                                                ^
+                                          line count, measured
+
+So the divider is not derivable from the source alone, and the party deciding it
+has to know what the chosen output can show. **That argues for the move rather
+than against it**: line doubling asks whether this source can be shown at this
+output, which is the same question `bypassCanBeDisplayed()` asks and is policy,
+not geometry. The present placement already carries the apology -- `solveScanMode()`
+has to read `rasterMode_` BEFORE `solveRaster()` runs, because the held raster
+would otherwise be the resolution being left. Move the decision and the apology
+goes.
+
+What it costs is one read-only fact published by `VideoPath`: how many source
+lines the chosen output can show.
+
+### poll() inverts, it does not vanish
+
+A mode change needs the engine to act TWICE with a measurement in between,
+because a count taken through the previous mode's divider is not the source's:
+
+    event  ->  put the chip on a reference sampling clock
+           ->  measure through it                            <- the handoff
+           ->  solve everything from the reading
+
+That is what `poll()`'s early returns already do, hidden. So it goes away as a
+self-driving loop and its stages become named calls `InputAcquisition` makes in
+order, with the sequence readable at the call site rather than inferred from
+where the refusals land. `holdReferenceSampling()` and `writeSampling()` go with
+it: `PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are one quantity in three
+registers that `SourceMeasurement` already owns, so the writes travel with the
+class rather than staying behind.
+
+**A refusal becomes a return value**, not a flag re-checked on the next tick.
+`solvePending_` exists because the engine had a tick to retry on; the caller has
+one instead.
 
 **And the tick belongs to the caller.** `poll()` self-gates on its own
 `DetectionIntervalMs`, so a layer with a cadence of its own puts two clocks in
@@ -265,10 +357,9 @@ register cannot be made correct by improving either owner.
 
 **It is not a relocation, it is a merge.** The watcher and the engine are two
 implementations of one idea — *notice that the sync changed, and configure the
-registers for what is there now*. That idea is sane and it is the engine's; what
-the watcher adds is the acquisition the engine does not do yet. So the watcher's
-logic is folded into the mode-change detection that already exists, and the
-ladder of counters and conditionals around it does not come with it.
+registers for what is there now*. That idea is sane; what the watcher adds is
+the acquisition neither does properly. So the two fold into one sequence, and
+the ladder of counters and conditionals does not come with it.
 
 **The engine currently DEPENDS on the watcher, which is why it cannot simply be
 deleted.** What it relies on today:
@@ -286,8 +377,10 @@ Each row is a step: the engine takes the job over and the sketch's copy goes.
 `loop()` have no relationship: the watcher writes `SP_H_PULSE_IGNOR` on its own
 20 ms tick with no knowledge that a solve is in flight, and a solve writes the
 divider with no knowledge that the watcher is about to walk the sync separator. Inside
-one function the order is decided rather than raced. That is not available from
-two entry points however well each behaves.
+one sequence the order is decided rather than raced. That is not available from
+two entry points however well each behaves -- and it is why the entry point is
+`InputAcquisition::poll()` rather than the engine's: the engine cannot sequence
+a recovery it does not own.
 
 **NAMED OPERATIONS, NOT A LADDER.** The watcher's structure is a counter and a
 run of conditionals against it — `% 27`, `% 32`, `== 38`, `% 150`, `% 413` — and
@@ -623,7 +716,9 @@ policy moves. It separates the two facts that variable carried — the level
 *chosen* for a source the ADC has not been brought up for, and the level *in
 force* — which is why a straight substitution would have been wrong.
 
-**2. The detection cadence.** `poll()` takes the clock and the idle detection
+**2. The detection cadence.** *(Landed, and step 7 takes the clock off it again
+-- the cadence has to be a parameter before it can change owner.)* `poll()`
+takes the clock and the idle detection
 pass runs on `VideoPath::DetectionIntervalMs`. The steadiness run is counted in
 detection passes and `loop()` goes round far faster than the sync watcher's
 20 ms tick, so without this a run counted per pass is not the same length as one
@@ -745,11 +840,19 @@ what `SyncRecovery` is today. `SyncRecovery` moves out of `Tv5725::` with it.
 **Step 4 waits on this**, because wiring the gate is what lets the branch
 advance far enough to reach these.
 
-**This is the step that inverts the call.** `InputAcquisition::poll()` takes the
-tick, asks the engine for `sourceState()`, and runs a rung when the answer is
-not acquired. `VideoPath::poll()` stops being called from `loop()` on the same
-pass and becomes the engine's share of one sequence, which is what removes the
-second clock.
+**This is the step that inverts the call, and the state moves with it.**
+`InputAcquisition::poll()` takes the tick, drives `SourceMeasurement`, and runs
+a rung when the source is not acquired. `VideoPath::poll()` does not move --
+its stages become named calls made in order, and everything it held becomes a
+value the new class owns. *InputAcquisition holds the state* above is what this
+step builds.
+
+**It is the largest step on the list and it does not have to land at once.**
+The order inside it is: create the class with the tick and the ladder; move
+`SourceMeasurement` to it; then take the state out of `VideoPath` a group at a
+time, ending with the flags that make `poll()` disappear. Each is a solve that
+still writes the same registers, so the bar below applies to every one of them
+rather than only to the last.
 
 What the ladder does, rung by rung, and which rungs have an owner:
 
@@ -998,7 +1101,8 @@ makes between sampling density and reaching the end of the line, and the picture
 is the instrument for both.
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
-`inputAcquisition.poll(millis())` alone.
+`inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is gone by then,
+so there is one tick in the firmware and one owner of it.
 
 ## Input selection is the same collapse, one level up
 
@@ -1143,9 +1247,22 @@ Two reproductions reach most of this and are scriptable from a session:
 
 - a sync-type round trip, `SYNC 1` then `SYNC 0` over ModeServ, which exercises
   the sync-type probe, the coast and clamp windows and the sync separator level
-- `/input?src=rgbs` with nothing attached, which is the only "the signal really
-  has gone" case reachable without a cable change, and is what a step that
-  withholds recovery has to be checked against
+- an input with genuinely no signal, which is what a step that withholds
+  recovery has to be checked against
+
+**AND THAT SECOND ONE IS NOT `/input?src=rgbs` WHILE THE Wii IS POWERED.**
+Measured 2026-09-09: selecting `rgbs` came back `state: acquired`, 310 lines x
+50.24 Hz, `ADC_INPUT_SEL` 0 -- the Wii's own signature, on the input nothing is
+plugged into. Selecting an input the HC32 routes elsewhere does not disconnect
+what the ADC is already looking at. So the absent-source reproduction needs the
+Wii powered DOWN, which is a bench trip, and a session that assumes `rgbs` is
+empty is testing the Wii.
+
+The same measurement shows why the sync-type latch does not reproduce on a live
+bench: `vga` -> `ypbpr` -> `vga` and `vga` -> `rgbs` -> `vga` both recovered in
+under seven seconds, because the away leg acquired and the return leg's count
+moved, arming `unusable count` and with it the re-probe. The latch needs that
+arm already spent, which only an away leg with no signal can do.
 
 The two cover different arms, and the SD one is not optional here: the RISC PC
 over ModeServ covers arbitrary rasters, both sync types and progressive, while a
