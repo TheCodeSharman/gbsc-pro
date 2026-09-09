@@ -84,6 +84,54 @@ entries in through `rememberFraming()` and a save reads them back out through
 through the class least able to say what it is for. Holding it removes the round
 trip and the `const_cast` the save needs.
 
+### The root is a class, and `rto` drains into it rather than becoming it
+
+There is no composition root today -- "the root" is the sketch's globals -- which
+is why `struct runTimeOptions` became the place state goes when it has nowhere
+else. It needs to be a class, `RetroScaler`, holding what nobody else claims and
+composing the rest: `InputAcquisition`, the framing table, the web server, the
+OSD, audio, IR.
+
+**`rto` IS NOT PROMOTED TO IT.** Forty-odd fields with at least five owners
+between them, so a class built by renaming the struct is born holding four other
+classes' state -- the accretion the section above exists to prevent, and a step
+that adds an owner rather than moving one. It is drained instead, a group at a
+time, as the step that claims each group lands:
+
+| group | goes to |
+|---|---|
+| `noSyncCounter`, `continousStableCounter`, `notRecognizedCounter`, `failRetryAttempts`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `InputAcquisition` |
+| `videoStandardInput`, `osr`, `presetID`, `presetDisplayClock`, `presetVlineShift`, `outModeHdBypass`, `presetIsPalForce60`, `applyPresetDoneStage` | the value handed to `VideoPath` |
+| `phaseSP`, `phaseADC`, `phaseIsSet` | `Adc` |
+| `motionAdaptiveDeinterlaceActive`, `deinterlaceAutoEnabled` | `Deinterlacer` |
+| `medResLineCount` | `ModeDetect`, which already has `applyMedResLineCount()` |
+| `videoIsFrozen` | `FrameBuffer` |
+| `autoBestHtotalEnabled`, `syncLockFailIgnore` | FrameSync, once it has an owner |
+| `inputIsYpBpR` | `InputSource` |
+| `webServerEnabled`, `webServerStarted`, `allowUpdatesOTA`, `enableDebugPings`, `printInfos`, `freezeAutomation`, `boardHasPower`, `isInLowPowerMode`, `extClockGenDetected` | `RetroScaler` |
+
+Only the last row is root configuration, and `boardHasPower` is in it under
+protest -- it is a latched failure rather than a live reading, which *The rule
+for every step* covers.
+
+**The root is already improvising inside the struct**, which is the tell that it
+is missing rather than optional:
+
+    // The display clock ... lives here because both reach it;
+    // Tv5725::VideoPath is handed a reference.
+    Tv5725::DisplayClock displayClock;
+
+That is composition, in a state bag, with a comment explaining why.
+
+**Build it when it has a job, not before.** A root class created ahead of the
+owners is a fresh place to put things, and the discipline erodes exactly as it
+did in `rto`. Its first two jobs are holding the framing table -- which it
+already persists and round-trips through the engine -- and constructing
+`InputAcquisition` at step 7.
+
+**`uopt` is not the same problem.** Persisted user options, coherent, with a
+file format. It stays as it is.
+
 ### Stateless where it solves, stateful where it drives
 
 Not every class flattens, and the line is what the class is for:
