@@ -1298,6 +1298,30 @@ firmware C++.
   a handover is stated in the imperative and stops being true when the session
   ends. When a session produces both, the findings go in `docs/investigations/`
   and the rest leaves the repo.
+- **WORK GOES ON `dev`. `main` IS WHAT HAS BEEN REVIEWED**, and it moves only
+  when a review advances it — never as a side effect of doing the work.
+  **Check the branch before the first commit of a session**, because a session
+  that starts on `main` will happily put a day's work there and destroy the one
+  signal the branch carries. Nothing is lost when that happens and the repair is
+  pointer movement, as long as `main` is still a pure fast-forward ahead of
+  `origin/main`:
+
+  ```sh
+  git rev-list --count main..origin/main    # 0, or stop and think
+  git merge-base --is-ancestor dev main     # dev must be behind main
+  git branch -f dev main && git checkout dev && git branch -f main origin/main
+  git merge-base --is-ancestor main dev     # main is now an ancestor of dev
+  ```
+
+  No `feature/` or `fix/` branches, and no self-review PRs. The discipline is in
+  how commits are split, not in branch topology.
+- **`dev` IS PUSHED SO IT CAN BE READ ON GITHUB, and the review is of the
+  RESULTING CODE rather than of each commit.** Hundreds of commits are not read
+  one at a time; what is reviewed is the engine as it now stands. So a push is
+  routine and carries no promise that the history is final — **once the code is
+  agreed, the commits are squashed aggressively to remove churn** and the series
+  rationalised. Keep upstream-cherry-pickable commits separable through that;
+  our own churn folds.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
