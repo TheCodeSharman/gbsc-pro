@@ -37,7 +37,8 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
 {
     seedBenchSource();
     DisplayClock clock;
-    VideoPath path(clock);
+    SourceMeasurement sampling;
+    VideoPath path(clock, sampling);
     InputAcquisition acquisition(path);
 
     path.outputModeChanged(OutputChoice(Output1080P));

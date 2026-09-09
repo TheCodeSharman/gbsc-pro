@@ -22,10 +22,10 @@ namespace Tv5725 {
 
 // --- VideoPath ----------------------------------------------------------
 
-VideoPath::VideoPath(DisplayClock &displayClock)
+VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
-      samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
+      sampling_(sampling), samplingPending_(false), sourceInterrupted_(false), referenceRateHz_(0),
       framingRevision_(0),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       mayRun_(0),

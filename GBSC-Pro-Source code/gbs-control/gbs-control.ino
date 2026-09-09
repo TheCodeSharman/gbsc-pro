@@ -976,7 +976,13 @@ SerialMirror SerialM;
 // initialised in the order they appear, so geometry is ready before the controls
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
-Tv5725::VideoPath geometry(rtos.displayClock);
+// What the source IS, measured off the chip. The composition root holds it and
+// hands it to both the engine and the acquisition path, the way it already
+// holds the display clock: the engine derives from it and does not own it.
+// docs/input-acquisition.md
+Tv5725::SourceMeasurement sourceSampling;
+
+Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling);
 
 // The framing table, in its own file. Separate from /preferencesv2.txt because
 // it is variable length and keyed, and mixing it with the scalar settings

@@ -254,7 +254,9 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     g_fieldRate = 50.08f;
 
     DisplayClock clock;
-    VideoPath engine(clock);
+
+    SourceMeasurement sampling;
+    VideoPath engine(clock, sampling);
 
     engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
     engine.inputTimingsChanged(4);

@@ -89,9 +89,10 @@ static bool pollUntilSolved(VideoPath &engine)
 
 struct SettledEngine {
     DisplayClock clock;
+    SourceMeasurement sampling;
     VideoPath engine;
 
-    SettledEngine() : engine(clock)
+    SettledEngine() : engine(clock, sampling)
     {
         Wire.reset();
         poisonChip();
@@ -371,7 +372,8 @@ TEST_CASE("the engine always holds what the output is doing")
 TEST_CASE("nothing solved yet is not bypass")
 {
     DisplayClock clock;
-    VideoPath engine(clock);
+    SourceMeasurement sampling;
+    VideoPath engine(clock, sampling);
 
     CHECK((engine.outputMode() == 0));
 }

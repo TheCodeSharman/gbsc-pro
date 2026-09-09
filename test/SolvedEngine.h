@@ -84,13 +84,14 @@ static bool pollUntilSolved(Tv5725::VideoPath &engine)
 // left behind.
 struct SolvedEngine {
     Tv5725::DisplayClock clock;
+    Tv5725::SourceMeasurement sampling;
     Tv5725::VideoPath engine;
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
                  Tv5725::OutputChoice choice =
                      Tv5725::OutputChoice(Tv5725::Output1080P))
-        : engine(clock)
+        : engine(clock, sampling)
     {
         Wire.reset();
         poisonChip();
@@ -104,7 +105,7 @@ struct SolvedEngine {
         seed(0, 0x1B, 0, 11, sourceLines);   // STATUS_SYNC_PROC_VTOTAL
 
         engine.outputModeChanged(choice);
-    engine.inputTimingsChanged(4);
+        engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(engine));
     }
 

@@ -44,7 +44,10 @@ class OutputMode;
 
 class VideoPath {
 public:
-    explicit VideoPath(DisplayClock &displayClock);
+    // The measurement is not this class's. It is what the source IS, taken off
+    // the chip and held by the layer that coordinates measuring; this class is
+    // handed it and derives registers from it. docs/input-acquisition.md
+    VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling);
 
     const PanAndZoom &framing() const;
 
@@ -320,7 +323,7 @@ private:
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;
-    SourceMeasurement sampling_;      // the divider this engine solves against
+    SourceMeasurement &sampling_;     // the divider this engine solves against
     bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool sourceInterrupted_; // the chip latched a disturbance, and nothing has re-measured
     uint32_t referenceRateHz_; // the estimate the reference sample rate was sized from
