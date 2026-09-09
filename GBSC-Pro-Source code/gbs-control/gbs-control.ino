@@ -718,7 +718,7 @@ void printBinary(unsigned char num)
 }
 // The standard a preset load is for. The classification is not trusted on its
 // own: it reports nothing on a source whose H-sync is arriving, so the held
-// standard answers where it cannot. docs/input-acquisition.md
+// standard answers where it cannot. docs/video-source-acquisition.md
 static uint8_t standardForPresetLoad()
 {
     const uint8_t videoMode = getVideoMode();
@@ -979,12 +979,12 @@ SerialMirror SerialM;
 // What the source IS, measured off the chip. The composition root holds it and
 // hands it to both the engine and the acquisition path, the way it already
 // holds the display clock: the engine derives from it and does not own it.
-// docs/input-acquisition.md
+// docs/video-source-acquisition.md
 Tv5725::SourceMeasurement sourceSampling;
 
 // What the user tuned, per source. Product state rather than acquisition, and
 // the root is what persists it -- holding it here is what removes the round
-// trip a load and a save took through the engine. docs/input-acquisition.md
+// trip a load and a save took through the engine. docs/video-source-acquisition.md
 Tv5725::FramingTable sourceFramings;
 
 Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling, sourceFramings);
@@ -1023,7 +1023,7 @@ Tv5725::Controls geometryControls(geometry, SerialM);
 
 // The acquisition path, which owns the tick loop() used to hand the engine
 // directly. It calls down for the scaler's share; the escalation, the input
-// policy and the no-signal report move into it. docs/input-acquisition.md
+// policy and the no-signal report move into it. docs/video-source-acquisition.md
 VideoSourceAcquisition inputAcquisition(sourceSampling, geometry);
 
 
@@ -1191,7 +1191,7 @@ bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 // it reads at the sites below: it says only that something was recognised and
 // nothing has cleared it, which is why a source the sync processor is counting
 // can sit here with the byte at 0. The measurement that answers the other
-// question is VideoSourceAcquisition::sourceIsPresent(). docs/input-acquisition.md
+// question is VideoSourceAcquisition::sourceIsPresent(). docs/video-source-acquisition.md
 static bool standardIsHeld()
 {
     return rto->videoStandardInput != 0;
@@ -1205,7 +1205,7 @@ bool steerableRgbhv() { return sourceIsRgbhv() && !rto->outModeHdBypass; }
 
 // Whether the source runs a 15 kHz line. One reader, on every path: the held
 // rate survives a bypass switch, so bypass is not a special case.
-// docs/input-acquisition.md
+// docs/video-source-acquisition.md
 static boolean sourceLowLineRate()
 {
     return inputAcquisition.sourceLowLineRate();
@@ -1865,7 +1865,7 @@ boolean optimizePhaseSP()
             // The second arm still reads the byte, because 2 is also what a
             // progressive source and the default ask for, so the ratio does not
             // separate them. What it wants is the source's line rate, which the
-            // engine holds and bypass does not. docs/input-acquisition.md
+            // engine holds and bypass does not. docs/video-source-acquisition.md
             const bool hdAtItsOwnOversample =
                 rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7
                 && rto->osr == 2;
@@ -4164,7 +4164,7 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
 //
 // The standard reaches applyPresets() as a byte and is set straight back to the
 // scaling-RGBHV marker afterwards, which is one number carrying two facts and
-// what step 12 removes. docs/input-acquisition.md
+// what step 12 removes. docs/video-source-acquisition.md
 static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
 {
     rto->videoStandardInput = standard;
@@ -4617,7 +4617,7 @@ void runSyncWatcher() //
                     // pass-through on a source that qualifies for scaling RGBHV
                     // loses the choice. Removing the assignment needs the load
                     // to take the resolution rather than read the option --
-                    // docs/input-acquisition.md, step 12's byte round trip.
+                    // docs/video-source-acquisition.md, step 12's byte round trip.
                     uopt->presetPreference = Tv5725::OutputChoice::scaledOr(
                         (Tv5725::PresetPreference)uopt->presetPreference);
 
@@ -5200,7 +5200,7 @@ void myLog(char const *type, char command)
 // The acquisition path's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
 // failure rather than a live reading, and it stays false through the whole
 // recovery -- exactly when the engine has to solve.
-// docs/input-acquisition.md
+// docs/video-source-acquisition.md
 static bool engineMayRun()
 {
 #if GBS_SAMPLING_LOG
@@ -7968,7 +7968,7 @@ void startWebserver()
             // classification disagree, and only seeing both at once says which.
             // The state names which of the three, because absent and unlocked
             // want the same recovery and only one is worth re-probing the sync
-            // type on. docs/input-acquisition.md
+            // type on. docs/video-source-acquisition.md
             inputAcquisition.sourceIsPresent() ? "true" : "false",
             inputAcquisition.sourceState() == VideoSourceAcquisition::SourceAcquired   ? "acquired"
             : inputAcquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked ? "unlocked"

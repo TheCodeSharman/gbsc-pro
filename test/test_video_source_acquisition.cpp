@@ -4,7 +4,7 @@
 // the OUTCOME: a source driven through this class alone reaches the same solved
 // registers that driving Tv5725::VideoPath directly reaches. A test that only
 // checked the call was forwarded would pass against a class that forwarded it
-// to nothing useful. docs/input-acquisition.md
+// to nothing useful. docs/video-source-acquisition.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
@@ -232,7 +232,7 @@ TEST_CASE("no gate runs, which is what every caller did before")
 // What the source IS, and whether it moved. Measured here because this class
 // owns the tick: the run behind every answer is counted in detection passes,
 // and a second party advancing it would make it a different length.
-// docs/input-acquisition.md
+// docs/video-source-acquisition.md
 
 TEST_CASE("the engine arms itself when the source line count changes")
 {

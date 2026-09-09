@@ -3,7 +3,7 @@
 
 // Decide where video comes from and keep it coming. Owns the tick, measures the
 // video source, and calls Tv5725::VideoPath to solve the registers from the
-// reading. docs/input-acquisition.md
+// reading. docs/video-source-acquisition.md
 
 #include <stdint.h>
 
@@ -15,7 +15,7 @@ public:
     // Three answers, not two. A steady line count is the vertical half only: a
     // source can hold a correct count while the ADC samples a line it is not
     // locked to. Absent and Unlocked both want recovery, but only Unlocked is
-    // worth re-probing the sync type on. docs/input-acquisition.md
+    // worth re-probing the sync type on. docs/video-source-acquisition.md
     enum SourceState {
         SourceAbsent,
         SourceUnlocked,

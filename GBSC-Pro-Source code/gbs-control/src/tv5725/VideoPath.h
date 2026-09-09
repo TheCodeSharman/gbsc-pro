@@ -83,7 +83,7 @@ public:
     //
     // Sync type, then scan mode, then sampling clock, and all three before any
     // count is taken. Each one corrupts every measurement below it if left set
-    // for the previous source. docs/input-acquisition.md
+    // for the previous source. docs/video-source-acquisition.md
     bool prepareToMeasure();
 
     // Solve every register from the measurement the caller has just taken.
