@@ -196,16 +196,6 @@ void PR_rgb(void)
   printf("VAL:R %d G %d B %d \n", R_VAL, G_VAL, B_VAL);
 #endif
 }
-int round_up_if_above(double value) {
-    int integer_part = (int)value;
-    double decimal_part = value - integer_part;
-
-    if (decimal_part > 0.5) {
-        return integer_part + 1;
-    } else {
-        return integer_part;
-    }
-}
 void Color_Conversion(void)
 {
     GBS::VDS_Y_OFST::write((signed char)((float)(0.299f * (R_VAL - 128)) + (float)(0.587f * (G_VAL - 128)) + (float)(0.114f * (B_VAL - 128))));
@@ -430,7 +420,6 @@ const int pin_switch = 0; // D3 = GPIO0
 
 
 void handleRotate(int8_t rotation);
-void handlePress();
 
 /*
 OLED MENU
@@ -629,21 +618,6 @@ unsigned long pingLastTime;
 Pinger pinger; 
 #endif
 
-void clearFrame()
-{
-    writeOneByte(0xF0, 0);    
-    writeOneByte(0x46, 0x00); 
-    writeOneByte(0x47, 0x00); 
-
-    // Clear memory banks
-    for (int y = 0; y < 6; y++) {
-        writeOneByte(0xF0, (uint8_t)y); // Select the bank
-        for (int z = 0; z < 16; z++) {
-            uint8_t bank[16] = {0};       // Initialize bank with zeros
-            writeBytes(z * 16, bank, 16); // Write zeros to the bank
-        }
-    }
-}
 
 static void LoadDefault()
 {
@@ -687,32 +661,7 @@ static void submitRegisterJob(AsyncWebServerRequest *request, const RegisterQueu
 static void serviceRegisterQueue();
 #endif
 void UpDisplay(void);
-void printBinary(unsigned char num);
-void turnOffWiFi();
-void turnOffWiFi()
-{
-    WiFi.mode(WIFI_OFF); 
-    Serial.println("WiFi has been turned off.");
-}
-void turnOnWiFi();
-void turnOnWiFi()
-{
-    WiFi.mode(WIFI_AP);                  // Setting WiFi Mode to Access Point Mode
-    WiFi.softAP(full_ssid, ap_password); 
-    Serial.println("WiFi has been turned on.");
-    Serial.print("Access Point IP address: ");
-    Serial.println(WiFi.softAPIP()); // Print the IP address of the access point
-}
 
-void printBinary(unsigned char num)
-{
-
-    for (int i = sizeof(num) * 8 - 1; i >= 0; i--) {
-
-        putchar((num & (1U << i)) ? '1' : '0');
-    }
-    putchar('\n'); 
-}
 // The standard a preset load is for. The classification is not trusted on its
 // own: it reports nothing on a source whose H-sync is arriving, so the held
 // standard answers where it cannot. docs/video-source-acquisition.md
@@ -1772,15 +1721,6 @@ void setAndUpdateSogLevel(uint8_t level)
     latchPLLAD();
     Tv5725::Interrupts::acknowledgeAll();
 }
-void goLowPowerWithInputDetection_re() 
-{
-    // GBS::OUT_SYNC_CNTRL::write(0);
-    // GBS::DAC_RGBS_PWDNZ::write(0);
-    setResetParameters_re();
-    prepareSyncProcessor(); 
-    delay(100);
-    // rto->isInLowPowerMode = true;
-}
 void goLowPowerWithInputDetection()
 {
     // The dark-boot state, recorded at the moment it is entered. This powers the
@@ -2302,10 +2242,6 @@ uint8_t inputAndSyncDetect()
 }
 
 
-uint8_t getSingleByteFromPreset(const uint8_t *programArray, unsigned int offset)
-{
-    return pgm_read_byte(programArray + offset);
-}
 // Read from register
 static inline void readFromRegister(uint8_t reg, int bytesToRead, uint8_t *output)
 {
@@ -2557,32 +2493,6 @@ void moveHS(uint16_t amountToAdd, bool subtracting)
     printVideoTimings();
 }
 
-void moveVS(uint16_t amountToAdd, bool subtracting)
-{
-    uint16_t vtotal = GBS::VDS_VSYNC_RST::read();
-    if (vtotal == 0)
-        return;
-    uint16_t VDS_DIS_VB_ST = GBS::VDS_DIS_VB_ST::read();
-    uint16_t newVDS_VS_ST = GBS::VDS_VS_ST::read();
-    uint16_t newVDS_VS_SP = GBS::VDS_VS_SP::read();
-
-    if (subtracting) {
-        if ((newVDS_VS_ST - amountToAdd) > VDS_DIS_VB_ST) {
-            newVDS_VS_ST -= amountToAdd;
-            newVDS_VS_SP -= amountToAdd;
-        } else
-            ; // SerialMprintln("limit");
-    } else {
-        if ((newVDS_VS_SP + amountToAdd) < vtotal) {
-            newVDS_VS_ST += amountToAdd;
-            newVDS_VS_SP += amountToAdd;
-        } else
-            ; // SerialMprintln("limit");
-    }
-
-    GBS::VDS_VS_ST::write(newVDS_VS_ST);
-    GBS::VDS_VS_SP::write(newVDS_VS_SP);
-}
 
 void invertHS()
 {
@@ -2639,7 +2549,7 @@ uint16_t getCsVsStop()
 }
 
 // Dump the scaler's live display timings: on demand from the web UI (`/sc?,`)
-// or serial (`,`), and after every moveHS()/moveVS() nudge. printf_P gives one
+// or serial (`,`), and after every moveHS() nudge. printf_P gives one
 // WebSocket frame per line, with the format strings left in flash.
 void printVideoTimings()
 {
@@ -2686,26 +2596,6 @@ void resetDebugPort()
     GBS::VDS_TEST_EN::write(1);
 }
 
-void readEeprom()
-{
-    int addr = 0;
-    const uint8_t eepromAddr = 0x50;
-    Wire.beginTransmission(eepromAddr);
-
-    Wire.write(addr >> 8);
-    Wire.write((uint8_t)addr);
-    Wire.endTransmission();
-    Wire.requestFrom(eepromAddr, (uint8_t)128);
-    uint8_t readData = 0;
-    uint8_t i = 0;
-    while (Wire.available()) {
-
-        readData = Wire.read();
-        Serial.println(readData, HEX);
-
-        i++;
-    }
-}
 
 // The OSD bar's four controls, and **the only way it may reach the geometry**.
 // Anything here that writes a register directly -- VDS_HB_SP, VDS_HSCALE and
@@ -3564,10 +3454,6 @@ boolean getSyncPresent() //
     return false;
 }
 
-boolean getStatus00IfHsVsStable()
-{
-    return ((GBS::STATUS_00::read() & 0x04) == 0x04) ? 1 : 0;
-}
 
 boolean getStatus16SpHsStable()
 {
@@ -3608,12 +3494,6 @@ void advancePhase()
     setAndLatchPhaseADC();
 }
 
-void movePhaseThroughRange()
-{
-    for (uint8_t i = 0; i < 128; i++) {
-        advancePhase();
-    }
-}
 
 void setAndLatchPhaseSP()
 {
@@ -4116,13 +3996,6 @@ void startWire()
     // Wire.setClock(400000);
 }
 
-void fastSogAdjust()
-{
-    if (rto->noSyncCounter > 5)
-        return;
-
-    Tv5725::SyncOnGreen::acquireCoarse(putSogLevelInForce);
-}
 
 // Bypass solves no raster, so the sync processor's vertical window is steered
 // from the source's own line count. 15 kHz only -- above that the window the
@@ -5038,17 +4911,6 @@ void ICACHE_RAM_ATTR isrRotaryEncoderRotateForNewMenu()
     }
 }
 
-void handlePress() {
-
-	  static unsigned long lastInterruptTime = 0;
-    unsigned long interruptTime = millis();
-    if ((interruptTime - lastInterruptTime > 500) && (oled_menuItem == 0))   //Minimum Repeat Press Interval
-    {
-        oledNav = OLEDMenuNav::ENTER;
-        ++rotaryIsrID;
-    }
-    lastInterruptTime = interruptTime;
-}
 void ICACHE_RAM_ATTR isrRotaryEncoderPushForNewMenu()
 {
     static unsigned long lastInterruptTime = 0;
@@ -5196,12 +5058,6 @@ void handleWiFi(boolean instant)
     yield();
 }
 
-void myLog(char const *type, char command)
-{
-
-    printf("%s command %c at settings source %d, custom slot %d, status %x\n",
-           type, command, uopt->presetPreference, uopt->presetSlot, rto->presetID);
-}
 
 // The acquisition path's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
 // failure rather than a live reading, and it stays false through the whole
@@ -5256,7 +5112,6 @@ void setup()
 #if USE_NEW_OLED_MENU
     // versatile_encoder = new Versatile_RotaryEncoder(pin_a, pin_b, pin_switch);
     // versatile_encoder->setHandleRotate(handleRotate);  //
-    // versatile_encoder->setHandlePress(handlePress);//
 
     attachInterrupt(digitalPinToInterrupt(pin_a),   isrRotaryEncoderRotateForNewMenu, CHANGE);
     attachInterrupt(digitalPinToInterrupt(pin_b),   isrRotaryEncoderRotateForNewMenu, CHANGE);   //isrRotaryEncoderPushForNewMenu
@@ -5624,7 +5479,6 @@ void setup()
             (unsigned long)millis());
     }
 
-    // ReadUserIRRemote();
 
     GBS::PAD_CKIN_ENZ::write(1);
     externalClockGenDetectAndInitialize();
@@ -6235,7 +6089,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     serialCommand = ' ';
                 }
             }
-            // myLog("serial", serialCommand);
 
             switch (serialCommand) {
                 case ' ':
@@ -6978,7 +6831,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
 void handleType2Command(char argument)
 {
-    // myLog("user", argument);
     switch (argument) {
         case '0':
 
@@ -8533,58 +8385,7 @@ void initUpdateOTA()
     yield();
 }
 
-void StrClear(char *str, uint16_t length)
-{
-    for (int i = 0; i < length; i++) {
-        str[i] = 0;
-    }
-}
 
-// void SaveUserIRRemote()
-// {
-
-//   File f = LittleFS.open("/IRmote.txt", "w");
-//   if (!f)
-//   {
-//     return;
-//   }
-//   f.write((uint8_t *)IRKeyMenu, 4);
-//   f.write((uint8_t *)IRKeySave, 4);
-//   f.write((uint8_t *)IRKeyInfo, 4);
-//   f.write((uint8_t *)IRKeyRight, 4);
-//   f.write((uint8_t *)IRKeyLeft, 4);
-//   f.write((uint8_t *)IRKeyUp, 4);
-//   f.write((uint8_t *)IRKeyDown, 4);
-//   f.write((uint8_t *)IRKeyOk, 4);
-//   f.write((uint8_t *)IRKeyExit, 4);
-//   f.write((uint8_t *)IRKeyMute, 4);
-//   f.write((uint8_t *)kRecv2, 4);
-//   f.write((uint8_t *)kRecv3, 4);
-
-//   f.close();
-// }
-
-void ReadUserIRRemote()
-{
-
-    File f = LittleFS.open("/IRmote.txt", "r");
-    if (!f) {
-        return;
-    }
-    f.read((uint8_t *)IRKeyMenu, 4);
-    f.read((uint8_t *)IRKeySave, 4);
-    f.read((uint8_t *)IRKeyInfo, 4);
-    f.read((uint8_t *)IRKeyRight, 4);
-    f.read((uint8_t *)IRKeyLeft, 4);
-    f.read((uint8_t *)IRKeyUp, 4);
-    f.read((uint8_t *)IRKeyDown, 4);
-    f.read((uint8_t *)IRKeyOk, 4);
-    f.read((uint8_t *)IRKeyExit, 4);
-    f.read((uint8_t *)IRKeyMute, 4);
-    f.read((uint8_t *)kRecv2, 4);
-    f.read((uint8_t *)kRecv3, 4);
-    f.close();
-}
 // = (uint8_t)(f.read() - '0');
 void loadFramingTable()
 {
@@ -10384,7 +10185,6 @@ void OSD_selectOption()
                     PR_rgb();
                     break;
                 case IRKeyOk:
-                    // turnOffWiFi();
                     saveUserPrefs();
                     // serialCommand = 'K';
                     break;
@@ -10455,7 +10255,6 @@ void OSD_selectOption()
                     break;
 
                 case IRKeyOk:
-                    // turnOnWiFi();
                     saveUserPrefs();
                     break;
 
