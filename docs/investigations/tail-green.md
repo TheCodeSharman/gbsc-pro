@@ -57,7 +57,7 @@ the hsync pulse at IF 0..88.9 — a green band appears on the **left**. Move the
 start clear of the pulse (`114..1114`) and the left edge is clean.
 
 That one is captured content: the sync tip digitised as video. The head never
-shows it in normal use because `InputLine::firstCapture()` returns `syncUnits`,
+shows it in normal use because `VideoSourceLine::firstCapture()` returns `syncUnits`,
 96 in this configuration, and the solver keeps the window clear of it.
 
 ## Where X is
@@ -163,9 +163,9 @@ Two changes, and they compose: the divider does the work and the clamp is the
 backstop.
 
 `SourceMeasurement::recommendedDivider()` caps `PLLAD_MD` so `ifLineFor()` stays at or
-below `InputLine::WriteLimitUnits` — a divider of 2250, since the IF halves it.
+below `VideoSourceLine::WriteLimitUnits` — a divider of 2250, since the IF halves it.
 That is a **second** ceiling alongside the ADC's 162 MSPS rating, with its own
-justification, and the tighter of the two binds. `InputLine::lastCapture()` then clamps the far end of
+justification, and the tighter of the two binds. `VideoSourceLine::lastCapture()` then clamps the far end of
 the window at the limit, for the lines the divider did not choose — `adopt()`
 takes whatever a custom preset or a bypass switch left behind.
 

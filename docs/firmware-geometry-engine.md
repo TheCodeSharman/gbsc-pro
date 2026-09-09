@@ -89,9 +89,9 @@ bench instruments and the hardware suite. A build without it answers 404.
 ## What the sketch may call
 
 `Tv5725::VideoPath` is the engine's geometry half, and this is its whole
-surface. **The engine is the new code, all of it** -- `InputAcquisition` and
+surface. **The engine is the new code, all of it** -- `VideoSourceAcquisition` and
 every `Tv5725::` class -- as against the legacy sketch; what the sketch may reach
-is `InputAcquisition`, which calls the rest.
+is `VideoSourceAcquisition`, which calls the rest.
 [input-acquisition.md](input-acquisition.md)
 
 | | |
@@ -109,7 +109,7 @@ is `InputAcquisition`, which calls the rest.
 | `reset()` | back to the default framing |
 
 **The tick, the gate and the source EVENT are not on that list.** `loop()` calls
-`InputAcquisition::poll(millis())`, which decides whether the pass may run at
+`VideoSourceAcquisition::poll(millis())`, which decides whether the pass may run at
 all, whether the source has moved, and arms the change itself -- so what is left
 here is the solving half, and it takes no clock-shaped argument at all. A cadence
 reached for down here is an input no host test can set, and the steadiness run
@@ -117,7 +117,7 @@ behind the source event is advanced by the reading it is taken from, so it can
 have only one owner.
 
 **Nor is what the source is running.** `sourceFieldRateHz()`,
-`sourceLineRateHz()` and `sourceLowLineRate()` are `InputAcquisition`'s: the half
+`sourceLineRateHz()` and `sourceLowLineRate()` are `VideoSourceAcquisition`'s: the half
 coordinating the measurement is the one that can answer, and this half is handed
 the reading to derive registers from.
 
@@ -254,8 +254,8 @@ carried as 127 and measured 90 on the bench TV.
 `AxisVertical`'s `windowStopMin` is 0 and is an *assumption* — nobody has crept
 it.
 
-**The capture may not take the hsync pulse.** `Tv5725::InputLine` carries the
-wrap point *and* what is unusable on it, and `InputLine::measured()` derives the
+**The capture may not take the hsync pulse.** `Tv5725::VideoSourceLine` carries the
+wrap point *and* what is unusable on it, and `VideoSourceLine::measured()` derives the
 second
 from the source: `ceil(units x HLOW_LEN / PLLAD_MD)`, excluded at the **head**
 only, because `SP_RT_HS_ST` is 0 and the input formatter counts from the sync's

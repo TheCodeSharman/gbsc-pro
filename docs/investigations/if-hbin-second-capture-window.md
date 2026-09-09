@@ -11,7 +11,7 @@ and only one of them is derived.
 
 | window | fields | owner | active span |
 |---|---|---|---|
-| set 2 | `IF_HB_SP2` .. `IF_HB_ST2` | `Geometry` — `InputLine::firstCapture()` .. `lastCapture()` | 80 .. 1124 |
+| set 2 | `IF_HB_SP2` .. `IF_HB_ST2` | `Geometry` — `VideoSourceLine::firstCapture()` .. `lastCapture()` | 80 .. 1124 |
 | hbin | `IF_HBIN_ST` .. `IF_HBIN_SP` | nobody | 272 .. |
 
 Both were read in one pass with `PLLAD_MD` 2250, `STATUS_SYNC_PROC_HLOW_LEN`

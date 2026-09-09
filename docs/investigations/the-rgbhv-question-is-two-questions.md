@@ -1,7 +1,7 @@
 # `sourceIsRgbhv()` cannot be derived from the output, because it decides the output
 
 `rto->videoStandardInput` carries 14 for a scaled RGBHV source and 15 for a
-bypassed one, and `docs/input-acquisition.md` files both under *what output
+bypassed one, and `docs/video-source-acquisition.md` files both under *what output
 was chosen*. That reading invites an obvious step: hold the output mode
 somewhere of its own, define the three predicates over it, and the byte stops
 carrying either value.

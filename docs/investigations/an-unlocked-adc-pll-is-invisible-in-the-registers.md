@@ -99,7 +99,7 @@ state.
 
 **The `% 413` ADC input toggle is NOT the candidate, and cannot be**, on this
 bench or any unit with an input selected: it is gated on
-`detectionMayChangeInput()`, which is `!InputSource::chosen(Info)`. Measured over
+`detectionMayChangeInput()`, which is `!VideoSourceSelection::chosen(Info)`. Measured over
 a 125 s hunt with `ADC_INPUT_SEL` read 35 times, it never moved.
 
 **AND IT IS NOT THE PLL FAILING TO LOCK EITHER.**

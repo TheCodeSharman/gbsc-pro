@@ -1,7 +1,7 @@
 # The HD bypass channel carries an RGBHV source, so two routes are one too many
 
 The firmware has two bypass switches reaching two DAC routes, and the standard
-byte decides which. `docs/input-acquisition.md`, *Bypass is ONE output mode*, wants one
+byte decides which. `docs/video-source-acquisition.md`, *Bypass is ONE output mode*, wants one
 over one route. What stood in the way was an untested assumption: that the HD
 bypass channel is for HD broadcast standards and cannot carry an arbitrary PC
 raster.

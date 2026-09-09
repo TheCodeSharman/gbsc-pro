@@ -1,10 +1,10 @@
-# Input acquisition
+# Video source acquisition
 
 Goal: `runSyncWatcher()` and `rto->videoStandardInput` are both deleted, and the
 responsibility they share -- keep video coming, and know what is coming -- has
 one owner instead of none.
 
-**`InputAcquisition`** sits ABOVE `Tv5725::`. It owns the tick, coordinates the
+**`VideoSourceAcquisition`** sits ABOVE `Tv5725::`. It owns the tick, coordinates the
 measurement and decides. `Tv5725::SourceMeasurement` reads the source for it and
 `Tv5725::VideoPath` is handed the answer and writes registers. Each of the three
 holds what it alone reads, which is the rule the whole page turns on.
@@ -31,27 +31,27 @@ Both questions are still here and they are still different:
 - **the order the code moves in** -- *The order*, thirteen steps, with the
   byte's stages folded onto the steps that carry them
 
-## InputAcquisition decides, and that is the whole design
+## VideoSourceAcquisition decides, and that is the whole design
 
 Three parties, one direction of flow. Each holds what it alone reads.
 
 | | |
 |---|---|
-| `InputAcquisition` | **decides.** Owns the tick, coordinates the measurement, decides the divider and the input, runs the ladder, reports "no signal out". Holds what the last solve ran against, because that is what it compares a fresh reading to |
+| `VideoSourceAcquisition` | **decides.** Owns the tick, coordinates the measurement, decides the divider and the input, runs the ladder, reports "no signal out". Holds what the last solve ran against, because that is what it compares a fresh reading to |
 | `Tv5725::SourceMeasurement` | called by it. Reads the source off the chip -- the only thing that does |
 | `Tv5725::VideoPath` | told what changed. Solves raster, clock, windows and scales, and writes them, holding what one solve leaves for the next. Decides nothing |
 
 **"The engine" is the new code, all of it.** The word names one axis and only
 one: the classes under `src/` against the legacy sketch -- `runSyncWatcher()`,
-`rto` and the globals. `InputAcquisition` is engine, and so is every `Tv5725::`
+`rto` and the globals. `VideoSourceAcquisition` is engine, and so is every `Tv5725::`
 class; a move between them is internal and says nothing about the axis.
 
 **Every step below moves a responsibility INTO the engine, and nothing ever
 moves out.** So a step is described by what it takes over, never by what a class
-"loses" -- writing that `VideoPath` lost something to `InputAcquisition` reads as
+"loses" -- writing that `VideoPath` lost something to `VideoSourceAcquisition` reads as
 the engine shrinking, which is the opposite of what is happening.
 
-**Nothing above `Tv5725::` touches the bus.** `InputAcquisition` coordinates the
+**Nothing above `Tv5725::` touches the bus.** `VideoSourceAcquisition` coordinates the
 measurement; it does not take it. `SourceMeasurement` stays one class and
 changes owner rather than being divided, because its statics are already pure
 chip reads and its instance is the steadiness run and the divider -- one
@@ -67,13 +67,13 @@ Applied to `VideoPath`, one field met it:
 
 | | |
 |---|---|
-| `solvedLines_`, `solvedLineRateHz_` | **moved.** Written by `VideoPath`, read by it never, read by `InputAcquisition` at nine sites |
+| `solvedLines_`, `solvedLineRateHz_` | **moved.** Written by `VideoPath`, read by it never, read by `VideoSourceAcquisition` at nine sites |
 | the raster, both scales, the porch stops, the capturable region | **stays.** Outputs of one solve that only the next solve reads |
 | `framing_`, `framedKey_`, `scanModeApplied_`, `syncTypeProbed_` | **stays.** No reader outside the class |
 | `choice_`, `rasterMode_`, `modePending_`, `solvePending_`, `usableHorizontal_`, `usableVertical_` | **stays.** Published through accessors; the class derives from them |
 
 **Keep the state that describes the video output nearest the class that solves
-it.** Gathering all of it into `InputAcquisition` does not remove state -- it
+it.** Gathering all of it into `VideoSourceAcquisition` does not remove state -- it
 relocates it and adds a parameter, because a signature taking it as separate
 arguments is unusable, so it becomes one struct another class mutates. That
 leaves the data in one class and the behaviour that owns it in another, and it
@@ -91,7 +91,7 @@ to zero the count directly in `enterBypass()`; the reader now forgets it when
 `outputMode()` reads as bypass -- equivalent, because the guard runs before any
 comparison, but a derivation where there was a direct write.
 
-**The framing table is NOT `InputAcquisition`'s.** The user's pan and zoom, per
+**The framing table is NOT `VideoSourceAcquisition`'s.** The user's pan and zoom, per
 source, persisted to flash, is product state rather than acquisition -- and a
 layer that takes it takes everything, which is the accretion this class exists
 to avoid. **The root loads it, holds it and passes it down.**
@@ -109,14 +109,14 @@ move it only when they change something, so a refused press costs no write.
 
 **Not `RetroScaler` yet.** Holding one member is not a job, and a root class
 created ahead of its owners is a fresh place to put things -- the accretion `rto`
-is. It arrives when it also constructs `InputAcquisition`.
+is. It arrives when it also constructs `VideoSourceAcquisition`.
 
 ### The root is a class, and `rto` drains into it rather than becoming it
 
 There is no composition root today -- "the root" is the sketch's globals -- which
 is why `struct runTimeOptions` became the place state goes when it has nowhere
 else. It needs to be a class, `RetroScaler`, holding what nobody else claims and
-composing the rest: `InputAcquisition`, the framing table, the web server, the
+composing the rest: `VideoSourceAcquisition`, the framing table, the web server, the
 OSD, audio, IR.
 
 **`rto` IS NOT PROMOTED TO IT.** Forty-odd fields with at least five owners
@@ -127,14 +127,14 @@ time, as the step that claims each group lands:
 
 | group | goes to |
 |---|---|
-| `noSyncCounter`, `continousStableCounter`, `notRecognizedCounter`, `failRetryAttempts`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `InputAcquisition` |
+| `noSyncCounter`, `continousStableCounter`, `notRecognizedCounter`, `failRetryAttempts`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `VideoSourceAcquisition` |
 | `videoStandardInput`, `osr`, `presetID`, `presetDisplayClock`, `presetVlineShift`, `outModeHdBypass`, `presetIsPalForce60`, `applyPresetDoneStage` | the value handed to `VideoPath` |
 | `phaseSP`, `phaseADC`, `phaseIsSet` | `Adc` |
 | `motionAdaptiveDeinterlaceActive`, `deinterlaceAutoEnabled` | `Deinterlacer` |
 | `medResLineCount` | `ModeDetect`, which already has `applyMedResLineCount()` |
 | `videoIsFrozen` | `FrameBuffer` |
 | `autoBestHtotalEnabled`, `syncLockFailIgnore` | FrameSync, once it has an owner |
-| `inputIsYpBpR` | `InputSource` |
+| `inputIsYpBpR` | `VideoSourceSelection` |
 | `webServerEnabled`, `webServerStarted`, `allowUpdatesOTA`, `enableDebugPings`, `printInfos`, `freezeAutomation`, `boardHasPower`, `isInLowPowerMode`, `extClockGenDetected` | `RetroScaler` |
 
 Only the last row is root configuration, and `boardHasPower` is in it under
@@ -154,7 +154,7 @@ That is composition, in a state bag, with a comment explaining why.
 owners is a fresh place to put things, and the discipline erodes exactly as it
 did in `rto`. Its first two jobs are holding the framing table -- which it
 already persists and round-trips through the engine -- and constructing
-`InputAcquisition` at step 7.
+`VideoSourceAcquisition` at step 7.
 
 **`uopt` is not the same problem.** Persisted user options, coherent, with a
 file format. It stays as it is.
@@ -202,7 +202,7 @@ because a count taken through the previous mode's divider is not the source's:
            ->  solve everything from the reading
 
 That is what `poll()`'s early returns already do, hidden. So it goes away as a
-self-driving loop and its stages become named calls `InputAcquisition` makes in
+self-driving loop and its stages become named calls `VideoSourceAcquisition` makes in
 order, with the sequence readable at the call site rather than inferred from
 where the refusals land. `holdReferenceSampling()` and `writeSampling()` go with
 it: `PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are one quantity in three
@@ -383,7 +383,7 @@ changing meaning.
 where it is a DECISION.** Probing the sync type is a TV5725 operation that
 happens to live in the sketch, so it arrives as a function pointer. Selecting an
 input is not: `ADC_INPUT_SEL` is the TV5725's mux but `ASW_01`..`04` are the
-HC32F460's, write-only over a UART, and `InputSource` already lives outside
+HC32F460's, write-only over a UART, and `VideoSourceSelection` already lives outside
 `Tv5725::` for that reason. An engine handed a `selectInput` callback is
 deciding to move a mux on another chip -- the dependency disguised rather than
 removed. It reports *not acquired, and out of what I can do alone*; what that
@@ -707,7 +707,7 @@ the run.
 
 **6. Acquire the sampling phase**, to `Adc`.
 
-**7. `InputAcquisition`, and the escalation list it holds.** The ordered set of
+**7. `VideoSourceAcquisition`, and the escalation list it holds.** The ordered set of
 named recoveries replaces `% 27`, `% 32`, `== 38`, `% 150` and `% 413` -- and it
 lands in a class of its own above `Tv5725::`, because a list with no owner is
 what `SyncRecovery` is today. `SyncRecovery` moves out of `Tv5725::` with it.
@@ -715,7 +715,7 @@ what `SyncRecovery` is today. `SyncRecovery` moves out of `Tv5725::` with it.
 advance far enough to reach these.
 
 **This is the step that inverts the call.**
-`InputAcquisition::poll()` takes the tick, drives `SourceMeasurement`, and runs
+`VideoSourceAcquisition::poll()` takes the tick, drives `SourceMeasurement`, and runs
 a rung when the source is not acquired. `VideoPath::poll()` does not move -- its
 stages become named calls made in order.
 
@@ -1053,9 +1053,9 @@ The engine already names three ways the problem moves, and only one is missing:
     outputModeChanged()    the user picked a different output resolution
 
 `VideoPath::inputMuxChanged()` is the entry point the sketch lacks -- called by
-`applyInputSelection()` and by `InputAcquisition` when the ladder exhausts. It
+`applyInputSelection()` and by `VideoSourceAcquisition` when the ladder exhausts. It
 forgets the sync type, because a different input shares none of it; the
-escalation position is `InputAcquisition`'s to forget.
+escalation position is `VideoSourceAcquisition`'s to forget.
 
 **NOTHING TERMINATES, which dissolves the cadence question.** A unit with no
 detectable source keeps looking, so there is no end state to design and no

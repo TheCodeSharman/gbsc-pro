@@ -30,7 +30,7 @@ The source is the RISC PC on `vga`, separate sync, and the probe classified it a
 composite. What recovered it is the latched-disturbance re-arm firing three more
 probes. **Remove those and the state is exactly what the handover recorded**, so
 the retry loop is the whole of the margin -- which is why
-`docs/input-acquisition.md` records at step 3 that consuming the latch on a
+`docs/video-source-acquisition.md` records at step 3 that consuming the latch on a
 completed solve leaves the unit on the csync path.
 
 ## Why it is intermittent: the separator level is CYCLING, not ratcheting
@@ -69,7 +69,7 @@ Not *nothing forgets the sync type* -- something does, eventually, via the
 re-arm. It is that **an input change should probe from a known state instead of
 racing an acquisition loop that does not know it happened.**
 
-`docs/input-acquisition.md` is where that lands: the layer that owns both the
+`docs/video-source-acquisition.md` is where that lands: the layer that owns both the
 ladder and the measurement can order them, and neither can today.
 
 ## Bench notes this produced

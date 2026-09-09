@@ -86,7 +86,7 @@ detail.
 What it is the only source for: **arbitrary rasters**. A monitor definition can
 program modes no enumeration contains, which is the whole reason the input-side
 concept of a video standard does not survive here.
-`docs/input-acquisition.md`.
+`docs/video-source-acquisition.md`.
 
 `SYNC 0|1|3` switches the machine between separate and composite sync, which
 makes it the source for sync-type work. It is one CMOS value re-applied to
@@ -234,6 +234,6 @@ interlaced RISC PC mode to establish that.
 ## Why this matters to a register argument
 
 Two subsystems that never see the same input cannot be shown to agree by testing
-one of them. `docs/input-acquisition.md` deletes branches keyed to a video
+one of them. `docs/video-source-acquisition.md` deletes branches keyed to a video
 standard, and which branch a change is judged against is decided entirely by
 which source is plugged in.

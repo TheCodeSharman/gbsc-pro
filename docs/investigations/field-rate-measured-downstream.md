@@ -54,7 +54,7 @@ nothing of the reading it admits.
 raster change -- `IF_LD_SEL_PROV` and `IF_PRGRSV_CNTRL` both read 1, and only
 `InputFormatter::applyScanMode()` writes the first, so `scanModeChanged(false)`
 ran -- and with line doubling off `recommendedDivider()` clamps to
-`InputLine::WriteLimitUnits & ~1`, which is 1124 exactly.
+`VideoSourceLine::WriteLimitUnits & ~1`, which is 1124 exactly.
 
 `recoverDivider()` identifies the 2:1 multiple correctly and still cannot
 escape: it re-derives through `recommendedDivider()`, which re-applies the same

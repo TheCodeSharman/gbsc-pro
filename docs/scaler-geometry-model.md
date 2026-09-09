@@ -328,7 +328,7 @@ syncUnits = ceil(IF line units x duty)
 ```
 
 On the bench RiscPC `181 / 2553` = 0.0709 and `ceil(1277 x 0.0709)` = **91**.
-`Tv5725::InputLine::measured()` computes exactly that, per solve, so a source with
+`Tv5725::VideoSourceLine::measured()` computes exactly that, per solve, so a source with
 a 0.121 duty excludes 155 units instead.
 
 **It also explains `SP_RT_HS_SP`.** `gbs-control.ino` writes `PLLAD_MD x 0.93`.
@@ -357,7 +357,7 @@ artefact the capture does not produce would crop picture for nothing.
 
 ### The last two units of the line are not capture stops
 
-`InputLine::lastCapture()` is `units - 2`, and both excluded units are excluded
+`VideoSourceLine::lastCapture()` is `units - 2`, and both excluded units are excluded
 for their own reason.
 
 `units` is the wrap point — `IF_VB_ST` rolls at `2 x (VTOTAL + 1)` and

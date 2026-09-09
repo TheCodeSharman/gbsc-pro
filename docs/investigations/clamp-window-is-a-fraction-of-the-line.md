@@ -86,6 +86,6 @@ apart, compared as mean colour, separate them.
 
 ## Where the fix belongs
 
-`docs/input-acquisition.md` step 5 moves the clamp window to
+`docs/video-source-acquisition.md` step 5 moves the clamp window to
 `SyncProcessor`. The placement wants the measured sync edge rather than a
 proportion of the line, and `HLOW_LEN` is already read on the same pass.

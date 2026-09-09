@@ -103,7 +103,7 @@ tighter binds. At four-times oversampling the rating is the tighter above about
 17.6 kHz, so the write limit binds only at slow line rates — this bench's
 15.55 kHz among them.
 
-`InputLine::lastCapture()` clamps the far end of the capture window at
+`VideoSourceLine::lastCapture()` clamps the far end of the capture window at
 `WriteLimitUnits`. With the divider capped this never fires — it is there for the
 lines the divider did not choose, since `SourceMeasurement::adopt()` takes
 whatever a bypass switch left in the register.

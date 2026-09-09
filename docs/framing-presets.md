@@ -44,7 +44,7 @@ instant. Every geometry fault of 2026-08-06 was a window derived from something
 that had moved; this removes the class rather than guarding it.
 
 **`usableExtent` is the denominator, and it is not the input line.** It is
-bounded by `InputLine::WriteLimitUnits` as well, so a window satisfying the
+bounded by `VideoSourceLine::WriteLimitUnits` as well, so a window satisfying the
 invariant cannot run past the write limit and produce the tail green of
 `docs/capture-limits.md`. `MinimumCapture` bounds `extent` from below, for the
 reason it does today: a control that can crop to nothing is one keypress from a
