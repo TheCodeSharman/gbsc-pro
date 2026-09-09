@@ -86,13 +86,20 @@ source, persisted to flash, is product state rather than acquisition -- and a
 layer that takes it takes everything, which is the accretion this class exists
 to avoid. **The root loads it, holds it and passes it down.**
 
-Half of that is already true and the other half is the anomaly: the root does
-the file I/O -- `loadFramingTable()` and `saveFramingTable()`, debounced through
-`FramingSaveTimer` -- but the table itself lives in the engine, so a load pushes
-entries in through `rememberFraming()` and a save reads them back out through
-`framings()`. The root is persisting state it does not own, round-tripped
-through the class least able to say what it is for. Holding it removes the round
-trip and the `const_cast` the save needs.
+**Done.** `sourceFramings` is a root global beside `sourceSampling` and the
+display clock, passed to `VideoPath` by reference. It still reads and writes the
+table -- that is what a press does -- but it no longer publishes it, so the load
+and the save reach it directly rather than through `rememberFraming()` and
+`framings()`, and the `const_cast` the save needed is gone with them.
+
+**The revision is `FramingTable`'s, and it has to be.** It says a flash write is
+owed, and BOTH the root and `VideoPath` change the table -- so a counter held by
+either one cannot see the other's change. `remember()`, `forget()` and `clear()`
+move it only when they change something, so a refused press costs no write.
+
+**Not `RetroScaler` yet.** Holding one member is not a job, and a root class
+created ahead of its owners is a fresh place to put things -- the accretion `rto`
+is. It arrives when it also constructs `InputAcquisition`.
 
 ### The root is a class, and `rto` drains into it rather than becoming it
 

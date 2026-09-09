@@ -8,8 +8,8 @@ control. It survives a reboot, and it survives changing the output resolution.
 `Tv5725::SourceKey` is the key, `Tv5725::FramingTable` the table,
 `Tv5725::FramingLine` the record's grammar, `Tv5725::FramingText` the file,
 `Tv5725::SlotTable` and `Tv5725::SlotText` the numbered slots,
-`Tv5725::Geometry` the behaviour, and `gbs-control.ino` the two files
-themselves. Seeding the table with VESA defaults for a recognised timing is the
+`Tv5725::VideoPath` the behaviour, and `gbs-control.ino` the two files
+themselves -- and the tables, which it owns and hands down. Seeding the table with VESA defaults for a recognised timing is the
 part still to come.
 
 ## What it unblocks
@@ -105,7 +105,10 @@ tuning.
 ## Slots
 
 The table above is what the engine remembers on its own: the last framing per
-source, restored when that source comes back. A **slot** is the framing the user
+source, restored when that source comes back. **The root holds both tables**, and
+the engine is handed the per-source one: the user's tuning is product state, and
+persisting state through the class that only derives registers from it is the
+round trip this arrangement removes. A **slot** is the framing the user
 chose to keep and named, so there may be several for one source and none at all.
 
 `/slots.txt`, one record a line, the slot then the record `FramingLine` owns:
@@ -128,7 +131,7 @@ is keyed by what the chip measured.
 - **Written on an explicit save**, so there is nothing to debounce. It carries
   the same read guard as the preferences and the framing table: a boot that
   could not read the file refuses to save over it.
-- **Restored through the engine.** `Geometry::applyFraming()` re-solves every
+- **Restored through the engine.** `VideoPath::applyFraming()` re-solves every
   register from the stored proportions, which is what lets a slot survive an
   output resolution change and is what a register dump could not do.
 - **A slot carries no output resolution.** That is a preference of its own, and
@@ -221,19 +224,21 @@ against the writer. Requirements:
 ## Behaviour
 
 - **On a source mode change**, look the key up and apply the stored proportions
-  before the windows are solved. `Geometry::poll()` owns the order — raster, clock,
+  before the windows are solved. `VideoPath::poll()` owns the order — raster, clock,
   windows, rate steer — and the framing is an input to the window step.
 - **With no entry**, use the computed default exactly as now. A default framing
   saved and restored unchanged produces identical registers.
 - **Saving is debounced, not per keypress.** A pad press must not write flash.
   The in-memory table follows every press; only the file waits, for 15 seconds
-  of the framing holding still.
+  of the framing holding still. What says a write is owed is
+  `FramingTable::revision()`, which moves when the table does and only then —
+  so a press that stores nothing, and a table cleared twice, cost nothing.
 - **A reset forgets the entry**, not just the framing. Without that the solve
   that follows finds the entry and restores exactly what was discarded, and the
   control does nothing.
 - **Changing the OUTPUT resolution keeps the framing.** The proportions are
   taken against the capturable region, so an output change keeps the user's
-  intent. This is why the key is the source alone: `Geometry` keeps the framing
+  intent. This is why the key is the source alone: `VideoPath` keeps the framing
   when the key has not moved and looks it up when it has.
 
   **Within a unit, not bit-exact.** An output too short to show a doubled frame
