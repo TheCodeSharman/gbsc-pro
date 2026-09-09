@@ -183,3 +183,27 @@ TEST_CASE("the walk says it is running, so the engine can be held off it")
         CHECK_FALSE(log.sweeping());
     }
 }
+
+TEST_CASE("a decision repeated is not news, so only a change is emitted")
+{
+    // Measured on a locked bench source: rgbhv-keep-scaling fired 37 times a
+    // SECOND, which floods the console every other diagnostic is read from and
+    // says nothing the first line did not. A branch that holds shows as a gap
+    // between timestamps; how often it is re-entered inside that gap is what a
+    // monitor run answers.
+    SamplingLog::event(10, "held", 311, 14);
+    g_lastLine.clear();
+
+    SamplingLog::event(20, "held", 311, 14);
+    CHECK(g_lastLine.empty());
+
+    SUBCASE("a different branch is news") {
+        SamplingLog::event(30, "moved", 311, 14);
+        CHECK(g_lastLine == "evt,30,moved,311,14");
+    }
+
+    SUBCASE("the same branch on a different count is news") {
+        SamplingLog::event(30, "held", 312, 14);
+        CHECK(g_lastLine == "evt,30,held,312,14");
+    }
+}

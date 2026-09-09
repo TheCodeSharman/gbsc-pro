@@ -57,6 +57,11 @@ public:
     static void event(uint32_t nowMs, const char *what, uint16_t lines,
                       uint8_t videoStandardInput);
 
+    // The longest branch name the sketch passes, plus room. A name that does
+    // not fit is truncated for the comparison only, so two long names sharing a
+    // prefix would read as one decision -- none do.
+    static const uint8_t BranchNameMax = 24;
+
     bool active() const;
 
     // Whether the DIVIDER WALK is running, which is not the same question as
@@ -80,6 +85,14 @@ private:
     uint8_t oversample_;
     uint32_t durationMs_;
     uint32_t startedMs_, stepStartedMs_, lastSampleMs_;
+
+    // What the last emitted event said. A decision the branch takes again is
+    // not news, and repeating it drowns the console: measured at 37 identical
+    // lines a second on a locked source.
+    static char lastWhat_[BranchNameMax];
+    static uint16_t lastLines_;
+    static uint8_t lastStandard_;
+    static bool lastValid_;
 };
 
 }  // namespace Tv5725

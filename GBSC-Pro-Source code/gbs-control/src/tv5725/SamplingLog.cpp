@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "SamplingLog.h"
 
 #include <Arduino.h>
@@ -46,9 +48,24 @@ void emitLine(uint32_t sinceMs, uint16_t divider)
 
 }  // namespace
 
+char SamplingLog::lastWhat_[SamplingLog::BranchNameMax] = {0};
+uint16_t SamplingLog::lastLines_ = 0;
+uint8_t SamplingLog::lastStandard_ = 0;
+bool SamplingLog::lastValid_ = false;
+
 void SamplingLog::event(uint32_t nowMs, const char *what, uint16_t lines,
                         uint8_t videoStandardInput)
 {
+    if (lastValid_ && lines == lastLines_ && videoStandardInput == lastStandard_
+        && strncmp(what, lastWhat_, BranchNameMax - 1) == 0)
+        return;
+
+    strncpy(lastWhat_, what, BranchNameMax - 1);
+    lastWhat_[BranchNameMax - 1] = '\0';
+    lastLines_ = lines;
+    lastStandard_ = videoStandardInput;
+    lastValid_ = true;
+
     char line[96];
     snprintf(line, sizeof(line), "evt,%lu,%s,%u,%u", (unsigned long)nowMs, what,
              (unsigned)lines, (unsigned)videoStandardInput);
