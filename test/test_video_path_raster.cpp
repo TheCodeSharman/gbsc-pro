@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -60,21 +61,25 @@ static uint32_t horizontalTotalUnwritten()
     return (Poison | (Poison << 8)) & 0x0FFF;
 }
 
-// One pass of the engine. The source event is the acquisition layer's, so a case
-// driving the engine directly gets the solving half alone -- and both outcomes
-// that used to read as poll() returning true still do.
-static bool pollOnce(VideoPath &engine)
+// One pass of the whole acquisition path. The engine no longer drives itself:
+// its stages are named calls the layer makes in order, with the measurement of
+// the source taken between them, so a case that wants a solve drives the layer.
+//
+// The clock only has to increase. Which pass is a detection pass is the
+// cadence's business and no case here is about that.
+static uint32_t g_nowMs = 0;
+static bool pollOnce(InputAcquisition &acquisition)
 {
-    const VideoPath::PollOutcome outcome = engine.poll();
-    return outcome == VideoPath::PollSolved || outcome == VideoPath::PollResolved;
+    g_nowMs += InputAcquisition::DetectionIntervalMs;
+    return acquisition.poll(g_nowMs);
 }
 
 // poll() gates on a line count steady over several passes before it will pay for
 // a field rate measurement, so a solve takes more than one call.
-static bool pollUntilSolved(VideoPath &engine)
+static bool pollUntilSolved(InputAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-        if (pollOnce(engine))
+        if (pollOnce(acquisition))
             return true;
     return false;
 }
@@ -84,8 +89,10 @@ struct SettledEngine {
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine;
+    InputAcquisition acquisition;
 
-    SettledEngine() : engine(clock, sampling, framings)
+    SettledEngine()
+        : engine(clock, sampling, framings), acquisition(sampling, engine)
     {
         Wire.reset();
         poisonChip();
@@ -100,7 +107,7 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
 
     CHECK(horizontalTotalWritten() == 1916);
 
@@ -121,7 +128,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
     setSourceLines(97);
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    CHECK_FALSE(pollUntilSolved(settled.engine));
+    CHECK_FALSE(pollUntilSolved(settled.acquisition));
 
     // A half-written raster is worse than none: the totals go in before the
     // sync positions, so bailing between them would leave the two disagreeing.
@@ -134,7 +141,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
         // table's 1445 x 1126 where the engine wants its own, with the Si5351
         // on 81.48 MHz to match the wrong one.
         setSourceLines(311);
-        REQUIRE(pollUntilSolved(settled.engine));
+        REQUIRE(pollUntilSolved(settled.acquisition));
         CHECK(horizontalTotalWritten() == 1916);
 
         // VDS_VSYN_SIZE1/2 are the vertical totals the frame-rate selector picks
@@ -154,7 +161,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     g_fieldRate = 50.08f;
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(horizontalTotalWritten() == 1916);
 
     // The same 311-line source now reading 60 Hz is the transient this guard
@@ -163,12 +170,12 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     g_fieldRate = 60.0f;
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    CHECK_FALSE(pollUntilSolved(settled.engine));
+    CHECK_FALSE(pollUntilSolved(settled.acquisition));
     CHECK(horizontalTotalWritten() == 1916);
 
     SUBCASE("and the poll after the rate returns lands it") {
         g_fieldRate = 50.08f;
-        REQUIRE(pollUntilSolved(settled.engine));
+        REQUIRE(pollUntilSolved(settled.acquisition));
         CHECK(horizontalTotalWritten() == 1916);
     }
 }
@@ -182,7 +189,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     setSourceLines(97);
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE_FALSE(pollUntilSolved(settled.engine));
+    REQUIRE_FALSE(pollUntilSolved(settled.acquisition));
 
     // Past 535 lines the unit drops to RGBHV bypass, where video routes around
     // the VDS and there is no raster to solve. bypassModeSwitch_RGBHV() returns
@@ -194,7 +201,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     poisonChip();
     setSourceLines(311);
 
-    CHECK_FALSE(pollUntilSolved(settled.engine));
+    CHECK_FALSE(pollUntilSolved(settled.acquisition));
     CHECK(registersWritten() == 0);
 }
 
@@ -213,13 +220,13 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE_FALSE(pollUntilSolved(settled.engine));
+    REQUIRE_FALSE(pollUntilSolved(settled.acquisition));
     CHECK(Wire.field(5, 0x12, 0, 12) ==
           Tv5725::SourceMeasurement::referenceDivider(true));
 
     SUBCASE("and the poll that can measure it computes one") {
         g_fieldRate = 50.08f;
-        REQUIRE(pollUntilSolved(settled.engine));
+        REQUIRE(pollUntilSolved(settled.acquisition));
 
         // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
         // there, and the capture write limit takes it to 2250.
@@ -243,7 +250,7 @@ TEST_CASE("a solve points the part at the clock source that can serve the raster
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
 
     CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
 
@@ -258,7 +265,7 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
 
     CHECK(Wire.bank[0][0x41] == 0x85);
 }
@@ -266,10 +273,10 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 // VDS_VSYNC_RST, s3_02[14:4] -- the output frame the engine writes.
 static uint16_t frameLinesWritten() { return Wire.field(3, 0x02, 4, 11) + 1; }
 
-static bool pollUntilResolved(VideoPath &engine)
+static bool pollUntilResolved(InputAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
-        if (pollOnce(engine))
+        if (pollOnce(acquisition))
             return true;
     return false;
 }
@@ -294,7 +301,7 @@ TEST_CASE("an output change re-solves the raster without re-measuring the source
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(frameLinesWritten() == 1125);
 
     forgetWrites();
@@ -318,7 +325,7 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(Wire.field(5, 0x12, 0, 12) == 2250);
 
     REQUIRE(settled.engine.outputModeChanged(OutputChoice(Output480P)));
@@ -340,7 +347,7 @@ TEST_CASE("an output change while a mode change is in flight waits for it")
     CHECK_FALSE(settled.engine.outputModeChanged(OutputChoice(Output480P)));
 
     setSourceLines(311);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
     CHECK(frameLinesWritten() == 525);
 }
 
@@ -353,7 +360,7 @@ TEST_CASE("the engine always holds what the output is doing")
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE((settled.engine.outputMode() == &Mode1080p));
     CHECK_FALSE(settled.engine.outputMode()->isBypass());
 
@@ -380,7 +387,7 @@ TEST_CASE("a raster is never solved for bypass")
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(settled.engine));
+    REQUIRE(pollUntilSolved(settled.acquisition));
     const uint16_t solved = frameLinesWritten();
 
     forgetWrites();

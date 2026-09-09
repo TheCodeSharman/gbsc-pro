@@ -41,7 +41,11 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp
 
-GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
+# The engine no longer drives itself -- its stages are named calls the
+# acquisition path makes in order -- so a case that wants a solve links the
+# layer with it.
+GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
+	$(CLOCK_SRC) src/input/InputAcquisition.cpp
 
 HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|SourceStandard|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
@@ -624,7 +628,8 @@ controls:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_controls" \
-	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC)
+	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
+	  src/input/InputAcquisition.cpp
 	@"$(OUT)/test_controls"
 
 ## adc: host unit tests for the ADC PLL's divider and latch

@@ -26,7 +26,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings)
     : displayClock_(displayClock),
       usableHorizontal_(0), usableVertical_(0),
-      sampling_(sampling), samplingPending_(false),
+      sampling_(sampling),
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvedLines_(0), solvedLineRateHz_(0),
@@ -247,70 +247,30 @@ bool VideoPath::outputModeChanged(const OutputChoice &choice)
     return solveWindows();
 }
 
-VideoPath::PollOutcome VideoPath::poll()
+VideoPath::PollOutcome VideoPath::pollDeferred()
 {
-    if (!modePending_) {
-        if (!solvePending_)
-            return PollIdle;
-        // A deferred retry, not a mode change: nothing re-reads the source
-        // count here, so there is no run for the caller to seed.
-        return resolve() ? PollResolved : PollIdle;
-    }
+    if (modePending_ || !solvePending_)
+        return PollIdle;
 
-    // **BEFORE EVERYTHING, INCLUDING THE SCAN MODE.** Every measurement below
-    // is counted through the sync path, so a path still set for the source
-    // before this one leaves the gates shut and nothing downstream can open
-    // them: a separate-sync source on the csync path counts 97 lines for ever.
+    // A deferred retry, not a mode change: nothing re-reads the source count
+    // here, so there is no run for the caller to seed.
+    return resolve() ? PollResolved : PollIdle;
+}
+
+bool VideoPath::prepareToMeasure()
+{
+    if (!modePending_)
+        return false;
+
     establishSyncType();
-
-    // **BEFORE THE GATES BELOW, AND THIS IS THE POINT OF IT.** The input
-    // formatter's own measurements are only meaningful once its scan mode
-    // matches the source, so a scan mode left wrong makes the gates fail and a
-    // scan mode derived after them is never reached. The sync processor counts
-    // the source directly and is indifferent to the scan mode, which is what
-    // makes the line count usable here and nothing else.
     solveScanMode();
-
-    // **BEFORE THE LINE COUNT, because the line count is a measurement too.**
-    // The sync processor counts in ADC clocks, so on the previous mode's
-    // divider the PLL sits outside its lock range and the count that comes back
-    // is not the source's -- and that count is what the gate below is reading.
-    // Applying the reference afterwards puts the fix on the far side of the
-    // gate its absence holds shut.
-    // docs/investigations/field-rate-measured-downstream.md
     sampling_.applyReferenceSampling(modeOversample_);
+    return true;
+}
 
-    // The cheap gate. Everything below this line measures, and the field rate
-    // costs up to 250 ms a vsync pulse. The reference above is what opens it:
-    // a count taken through the previous mode's divider is not the source's.
-    if (!sampling_.sampleSteady()) {
-        // The count settled on the serrations, so the pair in force is not
-        // covering them. Margin over the default rather than a search for the
-        // lowest pair that works: which pairs measure a source is not
-        // reproducible between runs.
-        // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-        if (sampling_.countWasSerrations())
-            SyncProcessor::widenCoast();
-        return PollUnmeasurable;
-    }
-
-    // THE measurement of the source for this pass. Everything below derives
-    // from it -- the divider, the raster, both windows -- so nothing can end up
-    // solved against a rate something else was not.
-    if (!sampling_.measureLineRate()) {
-        // Deferred, not settled for. The reference above is already a divider
-        // the capture window can be measured in, so there is nothing to inherit
-        // and the flag is only a note to re-solve.
-        samplingPending_ = true;
-        return PollUnmeasurable;
-    }
-
-    // A rate is worth sizing a raster from once it has REPEATED. The cross-check
-    // inside measureLineRate() bounds the rate against the line count, which
-    // catches a settling source off by tens of percent and passes one off by
-    // tenths -- and the raster is out by whatever fraction the rate is, for
-    // good, because nothing re-solves it.
-    if (!sampling_.rateSettled())
+VideoPath::PollOutcome VideoPath::solveFromMeasurement()
+{
+    if (!modePending_)
         return PollIdle;
 
     if (!solveSampling(modeOversample_))
@@ -333,14 +293,13 @@ VideoPath::PollOutcome VideoPath::poll()
     solveForSource();
 
     // What this solve ran against, so a source that later differs from it arms
-    // the engine without anyone having to say so.
+    // a change without anyone having to say so.
     solvedLines_ = sampling_.sourceLines();
     solvedLineRateHz_ = sampling_.lineRateHz();
     modePending_ = false;
     FrameBuffer::releaseCapture();
     return PollSolved;
 }
-
 
 bool VideoPath::reset()
 {
@@ -375,7 +334,6 @@ void VideoPath::enterBypass()
     rasterMode_ = &ModeBypass;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
-    samplingPending_ = false;
     solvedLines_ = 0;
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
@@ -448,12 +406,9 @@ void VideoPath::solveScanMode()
 
 bool VideoPath::solveSampling(uint8_t oversample)
 {
-    if (!sampling_.solve(sampling_.lineRateHz(), oversample)) {
-        samplingPending_ = true;
+    if (!sampling_.solve(sampling_.lineRateHz(), oversample))
         return false;
-    }
     sampling_.applySampling(modeOversample_);
-    samplingPending_ = false;
     return true;
 }
 

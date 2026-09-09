@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "../tv5725/OutputMode.h"
+#include "../tv5725/SyncProcessor.h"
 
 InputAcquisition::InputAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
@@ -221,21 +222,52 @@ bool InputAcquisition::poll(uint32_t nowMs)
         return false;
     }
 
-    switch (videoPath_.poll()) {
-    case Tv5725::VideoPath::PollSolved:
-        holdSolvedSource();
-        return true;
-    case Tv5725::VideoPath::PollResolved:
-        return true;
-    case Tv5725::VideoPath::PollUnmeasurable:
-        // The idle pass is the only other writer of this and the solving branch
-        // never reaches it, so without this the answer holds whatever that pass
-        // last concluded -- present -- for as long as the solve goes on
-        // failing. That is precisely when a reader needs to know it is not.
-        sourceState_ = SourceAbsent;
+    // Nothing outstanding that needs the source read again.
+    if (!videoPath_.prepareToMeasure())
+        return videoPath_.pollDeferred() == Tv5725::VideoPath::PollResolved;
+
+    bool settling = false;
+    if (!measureSource(settling)) {
+        // The idle pass is the only other writer of this and the solve never
+        // reaches it, so without this the answer holds whatever that pass last
+        // concluded -- present -- for as long as the source cannot be read.
+        // That is precisely when a reader needs to know it cannot.
+        if (!settling)
+            sourceState_ = SourceAbsent;
         return false;
-    case Tv5725::VideoPath::PollIdle:
-        break;
     }
-    return false;
+
+    if (videoPath_.solveFromMeasurement() != Tv5725::VideoPath::PollSolved)
+        return false;
+    holdSolvedSource();
+    return true;
+}
+
+bool InputAcquisition::measureSource(bool &settling)
+{
+    // The cheap gate. Everything below this line measures, and the field rate
+    // costs up to 250 ms a vsync pulse. The reference sampling clock is what
+    // opens it: a count taken through the previous mode's divider is not the
+    // source's.
+    if (!sampling_.sampleSteady()) {
+        // The count settled on the serrations, so the coast pair in force is
+        // not covering them. Margin over the default rather than a search for
+        // the lowest pair that works: which pairs measure a source is not
+        // reproducible between runs.
+        // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+        if (sampling_.countWasSerrations())
+            Tv5725::SyncProcessor::widenCoast();
+        return false;
+    }
+
+    if (!sampling_.measureLineRate())
+        return false;
+
+    // A rate is worth sizing a raster from once it has REPEATED. The cross-check
+    // inside measureLineRate() bounds the rate against the line count, which
+    // catches a settling source off by tens of percent and passes one off by
+    // tenths -- and the raster is out by whatever fraction the rate is, for
+    // good, because nothing re-solves it.
+    settling = !sampling_.rateSettled();
+    return !settling;
 }

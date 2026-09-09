@@ -12,6 +12,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/input/InputAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -68,22 +69,25 @@ static void seed(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
             static_cast<uint8_t>((raw >> (8 * i)) & 0xFF);
 }
 
-// One pass of the engine. The source event is the acquisition layer's, so a case
-// driving the engine directly gets the solving half alone -- and both outcomes
-// that used to read as poll() returning true still do.
-static bool pollOnce(Tv5725::VideoPath &engine)
+// One pass of the whole acquisition path. The engine no longer drives itself:
+// its stages are named calls the layer makes in order, with the measurement of
+// the source taken between them, so a case that wants a solve drives the layer.
+//
+// The clock only has to increase. Which pass is a detection pass is the
+// cadence's business and no case here is about that.
+static uint32_t g_nowMs = 0;
+static bool pollOnce(InputAcquisition &acquisition)
 {
-    const Tv5725::VideoPath::PollOutcome outcome = engine.poll();
-    return outcome == Tv5725::VideoPath::PollSolved
-        || outcome == Tv5725::VideoPath::PollResolved;
+    g_nowMs += InputAcquisition::DetectionIntervalMs;
+    return acquisition.poll(g_nowMs);
 }
 
 // poll() gates on a line count steady over several passes before it will pay
 // for a field rate measurement, so a solve takes more than one call.
-static bool pollUntilSolved(Tv5725::VideoPath &engine)
+static bool pollUntilSolved(InputAcquisition &acquisition)
 {
     for (uint8_t i = 0; i < 4 * Tv5725::SourceMeasurement::SteadySamples; ++i)
-        if (pollOnce(engine))
+        if (pollOnce(acquisition))
             return true;
     return false;
 }
@@ -98,12 +102,13 @@ struct SolvedEngine {
     Tv5725::SourceMeasurement sampling;
     Tv5725::FramingTable framings;
     Tv5725::VideoPath engine;
+    InputAcquisition acquisition;
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
                  Tv5725::OutputChoice choice =
                      Tv5725::OutputChoice(Tv5725::Output1080P))
-        : engine(clock, sampling, framings)
+        : engine(clock, sampling, framings), acquisition(sampling, engine)
     {
         Wire.reset();
         poisonChip();
@@ -118,7 +123,7 @@ struct SolvedEngine {
 
         engine.outputModeChanged(choice);
         engine.inputTimingsChanged(4);
-        REQUIRE(pollUntilSolved(engine));
+        REQUIRE(pollUntilSolved(acquisition));
     }
 
     ~SolvedEngine() { g_fieldRate = 50.08f; }

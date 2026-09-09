@@ -27,11 +27,8 @@ class OutputMode;
 
 class VideoPath {
 public:
-    // Neither collaborator is this class's. The measurement is what the source
-    // IS, taken off the chip and held by whoever coordinates measuring; the
-    // table is the user's tuning, persisted to flash by whoever owns the file.
-    // This class is handed both and derives registers from them.
-    // docs/input-acquisition.md
+    // Neither collaborator is this class's: it is handed both and derives
+    // registers from them. docs/input-acquisition.md
     VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
               FramingTable &framings);
 
@@ -81,9 +78,8 @@ public:
     // how it hears about a new one.
     void inputTimingsChanged(uint8_t oversample);
 
-    // The same event where the oversampling has not moved, which is every
-    // source event the acquisition path raises: it watches the source, and the
-    // oversampling is an output of the last solve rather than of the source.
+    // The same event at the oversampling already held, which is what a source
+    // event wants: the oversampling is an output of the last solve.
     void inputTimingsChanged();
 
     // The user picked a different output resolution. Not a source event: the
@@ -93,36 +89,42 @@ public:
     // will resolve the choice against its own measurement when it lands.
     bool outputModeChanged(const OutputChoice &choice);
 
-    // What one pass reached, which the caller needs in more detail than a bool.
-    // It holds the steadiness run, and the run is seeded from a mode change that
-    // completed and broken by a solving pass that could not measure -- two
-    // outcomes a single false cannot tell apart, nor either from a pass with
-    // nothing to do.
+    // The caller holds the steadiness run, so it needs more than a bool: the run
+    // is seeded by PollSolved and left alone by the rest.
     enum PollOutcome {
-        PollIdle,          // nothing was outstanding
-        PollResolved,      // a deferred solve completed; the source was not re-read
+        PollIdle,
+        PollResolved,      // a deferred solve; the source was not re-read
         PollSolved,        // a mode change completed, against solvedLines()
-        PollUnmeasurable,  // a solving pass could not measure the source
+        PollUnmeasurable,
     };
 
-    // One pass: settle the source and apply any pending mode change. Driven by
-    // the acquisition path, which asks whether the source moved BEFORE calling
-    // this and arms a change rather than letting this look for one.
-    PollOutcome poll();
+    // Establish the sync path, the scan mode and a known sampling clock, so that
+    // what the caller measures next means something. Measures nothing itself.
+    // False when no mode change is outstanding.
+    //
+    // Sync type, then scan mode, then sampling clock, and all three before any
+    // count is taken. Each one corrupts every measurement below it if left set
+    // for the previous source. docs/input-acquisition.md
+    bool prepareToMeasure();
+
+    // Solve every register from the measurement the caller has just taken.
+    PollOutcome solveFromMeasurement();
+
+    // Retry a solve that was refused against a reading already taken. Needs no
+    // fresh measurement.
+    PollOutcome pollDeferred();
 
     // Whether a mode change is still working through: told the source moved and
     // not yet finished solving for it. What the sync output blanks against.
     bool changing() const;
 
-    // Whether a mode change specifically is outstanding, which is narrower than
-    // changing(): a deferred solve is outstanding too, and the caller may still
-    // look for a source event while one is.
+    // Narrower than changing(): a deferred solve does not stop the caller
+    // looking for a source event, but a mode change in flight does.
     bool changingMode() const;
 
-    // What the last solve ran against. The caller compares a fresh reading
-    // against these to decide the source moved, so they are the ONLY record of
-    // what was solved for -- 0 lines means nothing has been, which is also what
-    // bypass leaves.
+    // What the last solve ran against, which is what a fresh reading is compared
+    // against. 0 lines means nothing has been solved, which is what bypass
+    // leaves too.
     uint16_t solvedLines() const;
     uint32_t solvedLineRateHz() const;
 
@@ -245,7 +247,6 @@ private:
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;
     SourceMeasurement &sampling_;     // the divider this engine solves against
-    bool samplingPending_;   // solveSampling() adopted a fallback divider
     bool scanModeApplied_;
     bool syncTypeProbed_;
     bool (*syncProbe_)();   // the registers have been written for this mode change

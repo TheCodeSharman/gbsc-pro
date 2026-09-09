@@ -175,7 +175,7 @@ TEST_CASE("a preset load computes the divider it uses")
     g_fieldRate = 50.08f;
     solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
     solved.engine.inputTimingsChanged(4);
-    REQUIRE(pollUntilSolved(solved.engine));
+    REQUIRE(pollUntilSolved(solved.acquisition));
 
     const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4, true);
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
@@ -205,20 +205,20 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     g_fieldRate = 0.0f;
     solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
     solved.engine.inputTimingsChanged(4);
-    CHECK_FALSE(pollUntilSolved(solved.engine));
+    CHECK_FALSE(pollUntilSolved(solved.acquisition));
     CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited, true));
 
     SUBCASE("and a later refusal keeps the divider it had already solved") {
         g_fieldRate = 50.08f;
         solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
         solved.engine.inputTimingsChanged(4);
-        REQUIRE(pollUntilSolved(solved.engine));
+        REQUIRE(pollUntilSolved(solved.acquisition));
         const uint32_t heldDivider = Wire.field(5, 0x12, 0, 12);
 
         g_fieldRate = 0.0f;
         solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
         solved.engine.inputTimingsChanged(4);
-        CHECK_FALSE(pollUntilSolved(solved.engine));
+        CHECK_FALSE(pollUntilSolved(solved.acquisition));
         CHECK(Wire.field(5, 0x12, 0, 12) == heldDivider);
     }
 }
@@ -258,10 +258,11 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
+    InputAcquisition acquisition(sampling, engine);
 
     engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
     engine.inputTimingsChanged(4);
-    CHECK_FALSE(pollUntilSolved(engine));
+    CHECK_FALSE(pollUntilSolved(acquisition));
 
     // The window is parked at the reference, not solved for 97 lines: the
     // input formatter emits nothing to measure while its vertical blank lies
