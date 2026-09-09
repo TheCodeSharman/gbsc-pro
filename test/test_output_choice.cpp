@@ -64,3 +64,26 @@ TEST_CASE("a choice that names no resolution resolves to no mode")
     CHECK((OutputChoice(OutputCustomized).resolve() == 0));
     CHECK((OutputChoice((PresetPreference)6).resolve() == 0));
 }
+
+// A scaling RGBHV load has to name a resolution. The preference may not -- it
+// can be pass-through, which is not a resolution to scale to -- so the load
+// asks for the scaled reading of it rather than each caller carrying a literal.
+
+TEST_CASE("a preference that names a resolution is its own scaled reading")
+{
+    const PresetPreference asked[] = { Output480P, Output576P, Output720P,
+                                       Output960P, Output1024P, Output1080P };
+    for (unsigned i = 0; i < sizeof(asked) / sizeof(asked[0]); ++i)
+        CHECK((OutputChoice::scaledOr(asked[i]) == asked[i]));
+}
+
+TEST_CASE("a preference naming no resolution reads as the scaled default")
+{
+    CHECK((OutputChoice::scaledOr(OutputBypass) == OutputChoice::ScaledDefault));
+    CHECK((OutputChoice::scaledOr(OutputCustomized) == OutputChoice::ScaledDefault));
+}
+
+TEST_CASE("the scaled default resolves to a mode")
+{
+    CHECK((OutputChoice(OutputChoice::ScaledDefault).resolve() != 0));
+}

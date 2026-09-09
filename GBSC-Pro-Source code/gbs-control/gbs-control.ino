@@ -4611,8 +4611,15 @@ void runSyncWatcher() //
                     const uint8_t standard =
                         Tv5725::PresetLoad::rgbhvStandardFor(sourceLines, sourceRate);
 
-                    if (uopt->presetPreference == 10)
-                        uopt->presetPreference = Output1080P;
+                    // A load has to name a resolution and pass-through is not
+                    // one. **THE USER'S PREFERENCE IS OVERWRITTEN HERE, AND
+                    // saveUserPrefs() LATER PERSISTS IT**, so asking for
+                    // pass-through on a source that qualifies for scaling RGBHV
+                    // loses the choice. Removing the assignment needs the load
+                    // to take the resolution rather than read the option --
+                    // docs/input-acquisition.md, step 12's byte round trip.
+                    uopt->presetPreference = Tv5725::OutputChoice::scaledOr(
+                        (Tv5725::PresetPreference)uopt->presetPreference);
 
                     loadScalingRgbhvPreset(standard, sourceLines);
                 }
@@ -4630,9 +4637,8 @@ void runSyncWatcher() //
                         Tv5725::SourceMeasurement::countHeldStill(sourceLines);
                     if (heldLines != 0) {
                         sourceLines = heldLines;
-                        if (uopt->presetPreference == 10) {
-                            uopt->presetPreference = Output720P;
-                        }
+                        uopt->presetPreference = Tv5725::OutputChoice::scaledOr(
+                            (Tv5725::PresetPreference)uopt->presetPreference);
 
                         loadScalingRgbhvPreset(wantedStandard, sourceLines);
                     }

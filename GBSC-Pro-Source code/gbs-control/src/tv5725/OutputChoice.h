@@ -23,6 +23,15 @@ public:
     // custom preset, or nothing chosen.
     const OutputMode *resolve() const;
 
+    // The resolution a load runs at when the preference names none. Every other
+    // site that has to substitute one uses this.
+    static const PresetPreference ScaledDefault = Output1080P;
+
+    // The preference read as a resolution to scale to. A caller that must load
+    // a scaled preset cannot act on bypass or a custom preset, so those read as
+    // the default rather than as nothing.
+    static PresetPreference scaledOr(PresetPreference wanted);
+
 private:
     PresetPreference preference_;
 };
