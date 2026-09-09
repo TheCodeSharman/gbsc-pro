@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
+.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery input-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -669,6 +669,18 @@ video-path:
 	  -o "$(OUT)/test_video_path" \
 	  "$(HERE)/test_video_path.cpp" $(GEOMETRY_RASTER_SRC)
 	@"$(OUT)/test_video_path"
+
+## input-acquisition: the layer that owns the tick and calls down
+#
+# Driven at the top, asserting the solved registers rather than that a call was
+# forwarded. Links the whole engine because the outcome is the engine's.
+input-acquisition:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_input_acquisition" \
+	  "$(HERE)/test_input_acquisition.cpp" src/input/InputAcquisition.cpp \
+	  $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_input_acquisition"
 
 ## register-queue: host unit tests for the deferred register queue
 #

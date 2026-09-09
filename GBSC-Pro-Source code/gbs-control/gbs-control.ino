@@ -91,6 +91,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
+#include "src/input/InputAcquisition.h"
 #include "src/input/InputSource.h"
 #if GBS_SAMPLING_LOG
 #include "src/tv5725/SamplingLog.h"
@@ -1008,6 +1009,11 @@ static bool slotFramingIsSuspect = true;
 
 Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
+
+// The acquisition path, which owns the tick loop() used to hand the engine
+// directly. It calls down for the scaler's share; the escalation, the input
+// policy and the no-signal report move into it. docs/input-acquisition.md
+InputAcquisition inputAcquisition(geometry);
 
 
 #include "framesync.h"
@@ -5907,7 +5913,7 @@ void loop()
 
     pollFramingSave(millis());
 
-    if (geometry.poll(millis())) {
+    if (inputAcquisition.poll(millis())) {
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
         // re-establishing it here is the only thing that does: the
