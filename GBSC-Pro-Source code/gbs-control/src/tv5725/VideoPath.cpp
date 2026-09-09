@@ -78,12 +78,6 @@ uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
     return (uint16_t)lrintf(framing_.extentOn(axis) * (float)capturableOn(axis));
 }
 
-float VideoPath::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
-
-bool VideoPath::sourceLowLineRate() const { return sampling_.lowLineRate(); }
-
-uint32_t VideoPath::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
-
 // Measure the source, then solve from it. For the two callers that need the
 // source read again: the deferred retry, whose previous solve was refused
 // against the measurement it already had, and the re-derive command, whose whole

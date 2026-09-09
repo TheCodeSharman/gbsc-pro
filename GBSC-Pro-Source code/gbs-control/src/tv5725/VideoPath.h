@@ -208,14 +208,6 @@ public:
     // VDS. Held rather than read back off VDS_?SYNC_RST.
     const OutputMode *outputMode() const;
 
-    // The source field rate the last solve ran at. Held, not measured here, so
-    // a network callback may ask.
-    float sourceFieldRateHz() const;
-
-    // Whether the source runs a 15 kHz line, and the held rate that says so.
-    bool sourceLowLineRate() const;
-    uint32_t sourceLineRateHz() const;
-
 private:
 
     // Every window and both scales, from the framing and the source as the last

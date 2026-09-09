@@ -1019,7 +1019,7 @@ Tv5725::Controls geometryControls(geometry, SerialM);
 // The acquisition path, which owns the tick loop() used to hand the engine
 // directly. It calls down for the scaler's share; the escalation, the input
 // policy and the no-signal report move into it. docs/input-acquisition.md
-InputAcquisition inputAcquisition(geometry);
+InputAcquisition inputAcquisition(sourceSampling, geometry);
 
 
 #include "framesync.h"
@@ -1198,12 +1198,12 @@ static bool standardIsHeld()
 // back out. docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
 bool steerableRgbhv() { return sourceIsRgbhv() && !rto->outModeHdBypass; }
 
-// Whether the source runs a 15 kHz line. One reader, on every path: the engine
-// keeps the rate it last measured across a bypass switch, so bypass is not a
-// special case. docs/firmware-geometry-engine.md
+// Whether the source runs a 15 kHz line. One reader, on every path: the held
+// rate survives a bypass switch, so bypass is not a special case.
+// docs/input-acquisition.md
 static boolean sourceLowLineRate()
 {
-    return geometry.sourceLowLineRate();
+    return inputAcquisition.sourceLowLineRate();
 }
 
 // Bypass hands the source's OWN timing to the encoder, so it only works where
@@ -6934,7 +6934,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             pendingSamplingSweep = false;
             samplingLog.sweep(millis(), pendingSamplingA, pendingSamplingB,
                               pendingSamplingC, (uint16_t)pendingSamplingD,
-                              rto->osr, geometry.sourceLineRateHz());
+                              rto->osr, inputAcquisition.sourceLineRateHz());
         }
 #endif
         if (pendingInputSelection != InputSource::None) {
@@ -7950,8 +7950,8 @@ void startWebserver()
             (int)lrintf(geometry.framing().extentOn(Tv5725::AxisHorizontal) * 10000.0f),
             (int)lrintf(geometry.framing().originOn(Tv5725::AxisVertical) * 10000.0f),
             (int)lrintf(geometry.framing().extentOn(Tv5725::AxisVertical) * 10000.0f),
-            (unsigned long)geometry.sourceLineRateHz(),
-            geometry.sourceLowLineRate() ? "true" : "false",
+            (unsigned long)inputAcquisition.sourceLineRateHz(),
+            inputAcquisition.sourceLowLineRate() ? "true" : "false",
             // The engine's own answer to "is a source there": a steadiness run
             // over the line count paired with one reading of what the sync
             // processor counts against the divider, not a live reading of
@@ -8020,7 +8020,7 @@ void startWebserver()
             rto->displayClock.seed(),
             (unsigned long)rto->displayClock.hz(),
             (unsigned long)rto->displayClock.hzNow(),
-            geometry.sourceFieldRateHz(),
+            inputAcquisition.sourceFieldRateHz(),
             (long)FrameSync::targetPhase());
         request->send(200, "application/json", body);
     });

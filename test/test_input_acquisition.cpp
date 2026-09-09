@@ -39,7 +39,7 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
     DisplayClock clock;
     SourceMeasurement sampling;
     VideoPath path(clock, sampling);
-    InputAcquisition acquisition(path);
+    InputAcquisition acquisition(sampling, path);
 
     path.outputModeChanged(OutputChoice(Output1080P));
     path.inputTimingsChanged(4);
@@ -61,6 +61,37 @@ TEST_CASE("a source driven through InputAcquisition solves the same registers")
     CHECK(InputFormatter::IF_HSYNC_RST::read() == 2250 / 2);
 }
 
+TEST_CASE("the layer reports what the source is running")
+{
+    // The measurement is coordinated here, so this is where the answer comes
+    // from. Asserted against the solve rather than against the seed: a
+    // publisher wired to a second SourceMeasurement would read zero.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    VideoPath path(clock, sampling);
+    InputAcquisition acquisition(sampling, path);
+
+    path.outputModeChanged(OutputChoice(Output1080P));
+    path.inputTimingsChanged(4);
+
+    uint32_t nowMs = 0;
+    bool solved = false;
+    for (uint8_t i = 0; !solved && i < 4 * SourceMeasurement::SteadySamples; ++i) {
+        nowMs += InputAcquisition::DetectionIntervalMs;
+        solved = acquisition.poll(nowMs);
+    }
+    REQUIRE(solved);
+
+    CHECK(acquisition.sourceLineRateHz() == sampling.heldLineRateHz());
+    CHECK(acquisition.sourceLineRateHz() != 0);
+    CHECK(acquisition.sourceFieldRateHz() == doctest::Approx(50.08f));
+
+    // The bench source is a 15 kHz line, which is what decides whether bypass
+    // can be displayed at all.
+    CHECK(acquisition.sourceLowLineRate());
+}
+
 TEST_CASE("detection runs on the layer's cadence, not on every call")
 {
     // loop() goes round far faster than the interval, so a run counted per call
@@ -71,7 +102,7 @@ TEST_CASE("detection runs on the layer's cadence, not on every call")
     DisplayClock clock;
     SourceMeasurement sampling;
     VideoPath path(clock, sampling);
-    InputAcquisition acquisition(path);
+    InputAcquisition acquisition(sampling, path);
 
     path.outputModeChanged(OutputChoice(Output1080P));
     path.inputTimingsChanged(4);

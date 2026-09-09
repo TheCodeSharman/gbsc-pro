@@ -1104,13 +1104,13 @@ TEST_CASE("bypass keeps the line rate it last measured")
     engine.outputModeChanged(benchMode());
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(engine));
-    REQUIRE(engine.sourceLowLineRate());
-    const uint32_t measured = engine.sourceLineRateHz();
+    REQUIRE(sampling.lowLineRate());
+    const uint32_t measured = sampling.heldLineRateHz();
     REQUIRE(measured != 0);
 
     engine.enterBypass();
-    CHECK(engine.sourceLineRateHz() == measured);
-    CHECK(engine.sourceLowLineRate());
+    CHECK(sampling.heldLineRateHz() == measured);
+    CHECK(sampling.lowLineRate());
 }
 
 TEST_CASE("the source is measured through a known divider, not the last mode's")

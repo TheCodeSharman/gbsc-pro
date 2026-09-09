@@ -9,11 +9,13 @@
 
 #include <stdint.h>
 
+#include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/VideoPath.h"
 
 class InputAcquisition {
 public:
-    explicit InputAcquisition(Tv5725::VideoPath &videoPath);
+    InputAcquisition(Tv5725::SourceMeasurement &sampling,
+                     Tv5725::VideoPath &videoPath);
 
     // One tick for the whole acquisition path, taken from loop(). True on the
     // pass that completes a mode change.
@@ -25,11 +27,24 @@ public:
     // different.
     static const uint32_t DetectionIntervalMs = 20;
 
+    // What the source is running, as the last measurement found it. This layer
+    // coordinates the measurement, so it is the one that can answer -- the
+    // engine is handed the reading and derives registers from it.
+    // docs/input-acquisition.md
+    float sourceFieldRateHz() const;
+    uint32_t sourceLineRateHz() const;
+
+    // Whether the source runs a 15 kHz line. Held across a bypass switch, which
+    // measures nothing, so a caller asking whether the display can show this
+    // source gets the rate from the mode that preceded it.
+    bool sourceLowLineRate() const;
+
 private:
     // Whether this pass is a detection pass. Consumes the tick, so it is asked
     // once.
     bool detectionDue(uint32_t nowMs);
 
+    Tv5725::SourceMeasurement &sampling_;
     Tv5725::VideoPath &videoPath_;
     uint32_t detectedMs_;
     bool detectedEver_;
