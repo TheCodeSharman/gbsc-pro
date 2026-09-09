@@ -205,7 +205,7 @@ void Geometry::adoptRaster()
     displayClock_.adopt();
 }
 
-void Geometry::modeChanged(const OutputChoice &choice, uint8_t oversample)
+void Geometry::inputTimingsChanged(const OutputChoice &choice, uint8_t oversample)
 {
     // The windows land seconds from now, once the source has settled into the
     // mode; until then the previous mode's geometry is what the new source
@@ -232,7 +232,7 @@ void Geometry::modeChanged(const OutputChoice &choice, uint8_t oversample)
     writeSampling();
 }
 
-bool Geometry::outputChanged(const OutputChoice &choice)
+bool Geometry::outputModeChanged(const OutputChoice &choice)
 {
     choice_ = choice;
     if (modePending_)
@@ -279,7 +279,7 @@ bool Geometry::poll(uint32_t nowMs)
 
     if (!modePending_) {
         if (detectionDue(nowMs) && sourceMoved())
-            modeChanged(choice_, modeOversample_);
+            inputTimingsChanged(choice_, modeOversample_);
         return modePending_ ? false : (solvePending_ ? resolve() : false);
     }
 

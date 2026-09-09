@@ -103,7 +103,7 @@ struct SolvedEngine {
         seed(5, 0x12, 0, 12, 2553);          // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, sourceLines);   // STATUS_SYNC_PROC_VTOTAL
 
-        engine.modeChanged(choice, 4);
+        engine.inputTimingsChanged(choice, 4);
         REQUIRE(pollUntilSolved(engine));
     }
 

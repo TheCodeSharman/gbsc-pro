@@ -97,17 +97,31 @@ public:
     // through a mode change has no settled timing to show the encoder.
     void useRunGate(bool (*mayRun)());
 
-    // Notify the engine that the source has changed mode. The registers are
-    // not written until the source has settled, and the choice does not become
-    // a resolution until the field rate behind it has been measured.
-    void modeChanged(const OutputChoice &choice, uint8_t oversample);
+    // The three ways the problem moves, and each name says WHOSE thing changed.
+    // "mode" on its own did not, which is how a source event came to be handed
+    // an OutputChoice and look reasonable.
+    //
+    //   inputMuxChanged      which physical input -- everything is unknown
+    //   inputTimingsChanged  same input, the source's line or frame rate moved
+    //   outputModeChanged    the user picked a different output resolution
+
+    // The source's timings moved, so the capture window and everything solved
+    // from it are stale. The registers are not written until the source has
+    // settled, and the choice does not become a resolution until the field rate
+    // behind it has been measured.
+    //
+    // **THE CHOICE ARGUMENT IS OUTPUT STATE THE ENGINE ALREADY HOLDS**, set
+    // again here for no reason a source event can give. It survives the rename
+    // rather than being removed with it, because dropping it changes who owns
+    // the resolution and that is its own commit.
+    void inputTimingsChanged(const OutputChoice &choice, uint8_t oversample);
 
     // The user picked a different output resolution. Not a source event: the
     // rate and the divider the last solve measured still describe the source,
     // so this re-solves raster, clock and windows from what is held and
-    // measures nothing. False where a mode change is still in flight, which
+    // measures nothing. False where a timings change is still in flight, which
     // will resolve the choice against its own measurement when it lands.
-    bool outputChanged(const OutputChoice &choice);
+    bool outputModeChanged(const OutputChoice &choice);
 
     // Called by the sketch main loop - allows the engine to determine when the
     // source has settled and apply any pending mode changes. True on the pass
@@ -208,7 +222,7 @@ private:
     bool solveWindows();
 
     // A solve that keeps the framing when the SOURCE is the one it was tuned
-    // against, and drops it when it is not. applyPresets() calls modeChanged()
+    // against, and drops it when it is not. applyPresets() calls inputTimingsChanged()
     // for a source mode change and for the user picking a different output
     // resolution, and only the first of those invalidates a framing: the
     // proportions are taken against the capturable region, which the output

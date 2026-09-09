@@ -291,7 +291,7 @@ TEST_CASE("a settled source is solved on the first poll that can measure it")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     checkBenchGeometry();
@@ -315,7 +315,7 @@ TEST_CASE("a source still settling gets no geometry solved against it")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     g_fieldRate = 0.0f;
 
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
@@ -354,7 +354,7 @@ TEST_CASE("a line count outside what any source runs is never measured against")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
 
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(pollOnce(engine));
@@ -377,7 +377,7 @@ TEST_CASE("entering bypass leaves nothing to solve")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     Wire.reset();
@@ -401,7 +401,7 @@ TEST_CASE("a mode with no timings is given up on, not asked about forever")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(OutputChoice(), 4);
+    engine.inputTimingsChanged(OutputChoice(), 4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(pollOnce(engine));
 
@@ -427,7 +427,7 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
 
     // Two for a mode change, and no more: one reading has nothing to agree
     // with, so the pass that takes it stops there and the next one solves
@@ -456,7 +456,7 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     seedBenchSource();
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     REQUIRE(engine.zoom(400, 120));
@@ -496,7 +496,7 @@ TEST_CASE("capture is frozen across a mode change and released when it lands")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 0);
 
     REQUIRE(pollUntilSolved(engine));
@@ -509,7 +509,7 @@ TEST_CASE("capture stays frozen while the source is still settling")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     g_fieldRate = 0.0f;
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(pollOnce(engine));
@@ -532,14 +532,14 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
     Geometry engine(clock);
 
     SUBCASE("a mode with no timings") {
-        engine.modeChanged(OutputChoice(), 4);
+        engine.inputTimingsChanged(OutputChoice(), 4);
         for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
             CHECK_FALSE(pollOnce(engine));
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
 
     SUBCASE("and bypass, where there is no solve coming at all") {
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         engine.enterBypass();
         CHECK(FrameBuffer::CAPTURE_ENABLE::read() == 1);
     }
@@ -549,7 +549,7 @@ TEST_CASE("a mode change nothing will ever solve does not leave capture frozen")
 
 TEST_CASE("changing the output keeps the framing the user tuned")
 {
-    // applyPresets() is the one caller of modeChanged(), and it runs for a
+    // applyPresets() is the one caller of inputTimingsChanged(), and it runs for a
     // SOURCE mode change and for a user picking a different output resolution.
     // The framing is a proportion of the capturable region, so an output change
     // keeps the user's intent and dropping it makes every output change a
@@ -563,13 +563,13 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     frameAt(engine, 300, 120, 40, -15);
     const PanAndZoom tuned = engine.framing();
 
-    engine.modeChanged(OutputChoice(Output480P), 4);
+    engine.inputTimingsChanged(OutputChoice(Output480P), 4);
     REQUIRE(pollUntilSolved(engine));
 
     const float unit = 1.0f / (float)engine.capturableOn(AxisVertical);
@@ -592,7 +592,7 @@ TEST_CASE("a source comes back to the framing it was left at")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     frameAt(engine, 300, 120, 40, -15);
@@ -600,12 +600,12 @@ TEST_CASE("a source comes back to the framing it was left at")
 
     // Away to another source entirely, and back.
     seedSourceLines(524);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.framing() != tuned);
 
     seedSourceLines(311);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     CHECK(engine.framing() == tuned);
@@ -622,7 +622,7 @@ TEST_CASE("a source nobody has framed takes no place in the table")
 
     for (uint16_t lines = 311; lines <= 315; ++lines) {
         seedSourceLines(lines);
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
     }
 
@@ -637,19 +637,19 @@ TEST_CASE("a source nobody has framed gets the computed default")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     const PanAndZoom untouched = engine.framing();
 
     seedSourceLines(524);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     const PanAndZoom other = engine.framing();
 
     // Never framed, so coming back gives the same default it gave the first
     // time rather than the other source's framing.
     seedSourceLines(311);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     CHECK(engine.framing() == untouched);
@@ -668,7 +668,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
     REQUIRE(engine.rememberFraming(SourceKey(311, 50.08f), stored));
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     // The WINDOW, not the float. A solve re-grids the proportions onto the
@@ -694,7 +694,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.framings().count() == 0);
 
@@ -713,7 +713,7 @@ TEST_CASE("a reset forgets what the table stored for this source")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     const PanAndZoom untouched = engine.framing();
 
@@ -734,7 +734,7 @@ TEST_CASE("the table says when it has something new to write")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     const uint16_t settled = engine.framingRevision();
 
@@ -746,7 +746,7 @@ TEST_CASE("the table says when it has something new to write")
     SUBCASE("and a source change that stores a tuning moves it") {
         frameAt(engine, 300, 120, 40, -15);
         seedSourceLines(524);
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(engine.framingRevision() != settled);
@@ -754,7 +754,7 @@ TEST_CASE("the table says when it has something new to write")
 
     SUBCASE("but a source change with nothing tuned does not") {
         seedSourceLines(524);
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(engine.framingRevision() == settled);
@@ -771,7 +771,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     // What the solve placed before anything was framed. Held rather than
@@ -851,7 +851,7 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     // The window stays inside the 500 lines the counter reaches, and the scale
@@ -892,7 +892,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     // The capture write limit is what caps it here, not the ADC rating, which
@@ -906,7 +906,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     seedField(0, 0x17, 0, 12, 2247);   // and twice the samples per line, which
     seedField(0, 0x19, 0, 12, 181);    // is the evidence of the multiple
     g_fieldRate = 50.08f;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
 
     // Nothing to wait for. The reference is written before the count is read,
     // so the divider that made the count unmeasurable is gone on the first
@@ -949,7 +949,7 @@ TEST_CASE("the scan mode is corrected even when the source cannot be measured")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         pollOnce(engine);
 
@@ -977,7 +977,7 @@ TEST_CASE("the engine arms itself when the source line count changes")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(Adc::PLLAD_MD::read() == 2250);
 
@@ -1007,7 +1007,7 @@ TEST_CASE("the source is counted on a cadence, not once a loop pass")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(Adc::PLLAD_MD::read() == 2250);
 
@@ -1043,7 +1043,7 @@ TEST_CASE("bypass keeps the line rate it last measured")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.sourceLowLineRate());
     const uint32_t measured = engine.sourceLineRateHz();
@@ -1072,7 +1072,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
 
     SUBCASE("a line-doubled source is sampled at twice the write limit") {
         g_dividerWhenSampled = 0;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(true));
     }
@@ -1081,7 +1081,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         seedField(0, 0x1B, 0, 11, 524);   // STATUS_SYNC_PROC_VTOTAL
         g_fieldRate = 60.0f;
         g_dividerWhenSampled = 0;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(false));
     }
@@ -1091,7 +1091,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         // bench sticks on when a return to 311 lines cannot measure.
         seedField(5, 0x12, 0, 12, 1124);
         g_dividerWhenSampled = 0;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_dividerWhenSampled != 1124);
     }
@@ -1119,7 +1119,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
         seedField(1, 0x1C, 0, 11, 578);   // IF_VB_ST, solved for 311 doubled
 
         g_blankStartWhenSampled = 0xFFFF;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 524);
     }
@@ -1128,7 +1128,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
         seedField(1, 0x1C, 0, 11, 700);   // beyond even the doubled 622
 
         g_blankStartWhenSampled = 0xFFFF;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
         CHECK(g_blankStartWhenSampled < 2 * 311);
     }
@@ -1139,7 +1139,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
         // the parking on the reference having CHANGED therefore never fires
         // here -- and this is the case that matters, because a window is not
         // only stranded by a mode change.
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
 
         seedField(1, 0x1C, 0, 11, 700);
@@ -1165,7 +1165,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
 
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
         pollOnce(engine);
@@ -1183,7 +1183,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     SUBCASE("a quiet source is left alone") {
@@ -1231,7 +1231,7 @@ TEST_CASE("the reference is re-applied when the count it was sized from moves")
     g_fieldRate = 0.0f;
 
     seedField(0, 0x1B, 0, 11, 700);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
         pollOnce(engine);
 
@@ -1254,7 +1254,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
@@ -1286,7 +1286,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     Geometry engine(clock);
     CHECK_FALSE(engine.framedKey().valid());
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     CHECK(engine.framedKey() == SourceKey(311, 50.08f));
@@ -1315,7 +1315,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
 
     SUBCASE("a source with no vsync of its own is composite sync") {
         g_hasOwnVsync = false;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK(SyncType::isCsync());
@@ -1326,7 +1326,7 @@ TEST_CASE("a mode change establishes the sync type before it measures anything")
 
     SUBCASE("a source bringing its own vsync is separate H/V") {
         g_hasOwnVsync = true;
-        engine.modeChanged(benchMode(), 4);
+        engine.inputTimingsChanged(benchMode(), 4);
         REQUIRE(pollUntilSolved(engine));
 
         CHECK_FALSE(SyncType::isCsync());
@@ -1345,7 +1345,7 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
 
     g_hasOwnVsync = true;
     g_probeCalls = 0;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     CHECK(g_probeCalls == 1);
 
@@ -1356,7 +1356,7 @@ TEST_CASE("the sync type is probed once per mode change, not once per poll")
     CHECK(g_probeCalls == 1);
 
     // A second change is a second source as far as this is concerned.
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     CHECK(g_probeCalls == 2);
 }
@@ -1383,7 +1383,7 @@ TEST_CASE("a source counted steadily and sampled at the chosen divider is acquir
     seedLineSamples(2250);                // the divider seedBenchSource writes
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
@@ -1399,7 +1399,7 @@ TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlock
     seedLineSamples(3250);                // what the bench measured, against 2250
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
@@ -1419,7 +1419,7 @@ TEST_CASE("unlocked is not absent, because the two want opposite things")
     seedLineSamples(3250);
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         pollOnce(engine);
@@ -1439,13 +1439,13 @@ TEST_CASE("a source is not present while a mode change is still working through"
     seedLineSamples(2250);
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
         pollOnce(engine);
     REQUIRE(engine.sourceIsPresent());
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
 
     CHECK(engine.changing());
     CHECK_FALSE(engine.sourceIsPresent());
@@ -1457,7 +1457,7 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
     seedLineSamples(2250);
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     seedField(0, 0x1B, 0, 11, 97);        // the wrong sync path's count
@@ -1483,7 +1483,7 @@ TEST_CASE("reacquiring the sync type puts the registers on the answered path")
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE_FALSE(SyncType::isCsync());
 
@@ -1502,7 +1502,7 @@ TEST_CASE("reacquiring the sync type asks the probe again")
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     g_probeCalls = 0;
 
@@ -1519,7 +1519,7 @@ TEST_CASE("reacquiring the sync type reports what the source carries")
     engine.useSyncTypeProbe(probeOwnVsync);
 
     g_hasOwnVsync = true;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     CHECK_FALSE(engine.reacquireSyncType());
@@ -1546,7 +1546,7 @@ TEST_CASE("a count no source runs re-establishes the sync type")
 
     g_hasOwnVsync = true;
     g_probeCalls = 0;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(g_probeCalls == 1);
 
@@ -1569,7 +1569,7 @@ TEST_CASE("a count no source runs arms the probe once, not once a poll")
 
     g_hasOwnVsync = true;
     g_probeCalls = 0;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     seedSourceLines(97);
@@ -1591,7 +1591,7 @@ TEST_CASE("a field rate the line count cannot show re-solves the source")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(Adc::PLLAD_MD::read() == 2250);
 
@@ -1623,7 +1623,7 @@ TEST_CASE("a rate seen once does not re-solve the source")
 
     g_hasOwnVsync = true;
     g_probeCalls = 0;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(g_probeCalls == 1);
 
@@ -1652,7 +1652,7 @@ TEST_CASE("a rate the field rate does not confirm leaves the source alone")
 
     g_hasOwnVsync = true;
     g_probeCalls = 0;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(g_probeCalls == 1);
 
@@ -1676,7 +1676,7 @@ TEST_CASE("a source the sync processor is counting is present")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     CHECK(engine.sourceIsPresent());
@@ -1690,7 +1690,7 @@ TEST_CASE("a source that stops counting is not present")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.sourceIsPresent());
 
@@ -1710,7 +1710,7 @@ TEST_CASE("counts that never hold still are not a source")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.sourceIsPresent());
 
@@ -1736,13 +1736,13 @@ TEST_CASE("a source that cannot be measured is not present while a change is pen
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
     REQUIRE(engine.sourceIsPresent());
 
     // A count that holds still -- so the cheap gate passes -- with no field
     // rate behind it, which is what an unlocked sync processor produces.
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     g_fieldRate = 0.0f;
     seedSourceLines(283);
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
@@ -1787,7 +1787,7 @@ TEST_CASE("a shut gate stops the engine writing anything")
     engine.useRunGate(runGate);
     g_mayRun = false;
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     Wire.reset();
     poisonChip();
     CHECK_FALSE(pollUntilSolved(engine));
@@ -1804,7 +1804,7 @@ TEST_CASE("the gate is asked per poll, so what it stopped resumes")
     Geometry engine(clock);
     engine.useRunGate(runGate);
     g_mayRun = false;
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE_FALSE(pollUntilSolved(engine));
 
     g_mayRun = true;
@@ -1819,7 +1819,7 @@ TEST_CASE("an engine with no gate runs, which is what every caller did before")
     DisplayClock clock;
     Geometry engine(clock);
 
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
 
     CHECK(pollUntilSolved(engine));
 }
@@ -1839,7 +1839,7 @@ TEST_CASE("a source whose serrations are counted as lines is coasted further")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     pollUntilSolved(engine);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() > before);
@@ -1854,7 +1854,7 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
 
     DisplayClock clock;
     Geometry engine(clock);
-    engine.modeChanged(benchMode(), 4);
+    engine.inputTimingsChanged(benchMode(), 4);
     REQUIRE(pollUntilSolved(engine));
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == before);

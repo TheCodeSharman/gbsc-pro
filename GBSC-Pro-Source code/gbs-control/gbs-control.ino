@@ -2871,7 +2871,7 @@ static void changeOutputResolution(uint8_t standard)
     rto->outputChoice = choice;
     rto->presetID = presetIdFor(choice.resolve(), pal);
 
-    if (!geometry.outputChanged(choice)) {
+    if (!geometry.outputModeChanged(choice)) {
         applyPresets(standard);
         return;
     }
@@ -3028,7 +3028,7 @@ void doPostPresetLoadSteps()
         // later goes with the message; loop() drives the rest once the source
         // has settled into the new mode. AFTER the block above, which settles
         // rto->osr.
-        geometry.modeChanged(rto->outputChoice, rto->osr);
+        geometry.inputTimingsChanged(rto->outputChoice, rto->osr);
 
         GBS::ADC_TEST_04::write(0x02); // 1:0 REF test resistance selection 4:2REF test current selection
         GBS::ADC_TEST_0C::write(0x12);
