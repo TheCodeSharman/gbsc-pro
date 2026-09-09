@@ -86,7 +86,7 @@ detail.
 What it is the only source for: **arbitrary rasters**. A monitor definition can
 program modes no enumeration contains, which is the whole reason the input-side
 concept of a video standard does not survive here.
-`docs/retiring-mode-detect.md`.
+`docs/input-acquisition.md`.
 
 `SYNC 0|1|3` switches the machine between separate and composite sync, which
 makes it the source for sync-type work. It is one CMOS value re-applied to
@@ -207,7 +207,7 @@ of what the machine emits, because the ADV chain regenerates it.
   `vga` -- `getVideoMode()` opens with `sourceIsRgbhv()` and returns the held
   byte, so no timing produces a standard from 3 to 7 on that input -- which
   means a cable to the RGBs port and a bench trip. The branches it would reach
-  are deleted by step 12 of `retiring-the-sync-watcher.md`.
+  are deleted by step 12 of `input-acquisition.md`.
 
   **What is worth having is a higher LINE RATE, and that needs neither.** The
   RISC PC reaches 40.7 kHz at 800x600@60, which is what established that a
@@ -234,6 +234,6 @@ interlaced RISC PC mode to establish that.
 ## Why this matters to a register argument
 
 Two subsystems that never see the same input cannot be shown to agree by testing
-one of them. `docs/retiring-mode-detect.md` deletes branches keyed to a video
+one of them. `docs/input-acquisition.md` deletes branches keyed to a video
 standard, and which branch a change is judged against is decided entirely by
 which source is plugged in.

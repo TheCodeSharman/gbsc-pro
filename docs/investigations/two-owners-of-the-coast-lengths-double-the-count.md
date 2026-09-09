@@ -268,6 +268,6 @@ failing to hold. The on-device log does not corroborate them.
 
 ## See also
 
-- [../retiring-the-sync-watcher.md](../retiring-the-sync-watcher.md), step 5
+- [../input-acquisition.md](../input-acquisition.md), step 5
 - [the-sketch-hunts-while-the-engine-is-locked.md](the-sketch-hunts-while-the-engine-is-locked.md)
   — the same two-owner shape on `SP_H_PULSE_IGNOR`

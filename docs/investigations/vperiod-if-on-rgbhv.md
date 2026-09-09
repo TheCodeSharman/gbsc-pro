@@ -213,7 +213,7 @@ FIELD, so the two disagreeing by a factor of two is what interlace looks like --
 but it counts half-lines and so does not distinguish interlace by magnitude.
 Being dead on separate sync means it supplies nothing at all there. Combined with
 the status bits above, **no register on this board establishes interlace**.
-`docs/retiring-mode-detect.md`.
+`docs/input-acquisition.md`.
 
 ## What the deinterlacer does with it, and why that still works
 

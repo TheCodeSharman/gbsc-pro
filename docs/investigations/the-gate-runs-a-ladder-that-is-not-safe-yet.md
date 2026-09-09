@@ -1,7 +1,7 @@
 # Step 4's gate is right, and wiring it runs an escalation ladder that is not
 
 `runSyncWatcher()` classifies the source with `getVideoMode()`. Replacing that
-with `Geometry::sourceIsPresent()` is step 4 of `docs/retiring-the-sync-watcher.md`,
+with `Geometry::sourceIsPresent()` is step 4 of `docs/input-acquisition.md`,
 and the measurement says the engine is the one telling the truth.
 
 ## The two answers, measured
@@ -119,7 +119,7 @@ predicate breaks the ladder that was working.
 
 So step 4 does not wait on step 7 any more -- that is done. It waits on
 `getVideoMode()` no longer mis-classifying a scaling-RGBHV source, which is
-`docs/retiring-mode-detect.md` and step 12, and on the standard byte that forces
+`docs/input-acquisition.md` and step 12, and on the standard byte that forces
 `videoStandardInput` to 3 carrying two facts at once.
 
 ## What has to happen first

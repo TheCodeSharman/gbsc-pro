@@ -65,7 +65,7 @@ have run still produces a plausible level. The full suite was green across all
 **And the settled state looks right.** On a source that is already locked the
 handover is never reached, so the two versions are indistinguishable until a
 detection sweep runs. It takes the sync-type round trip to reach it, which is
-why `docs/retiring-the-sync-watcher.md` names that reproduction as mandatory
+why `docs/input-acquisition.md` names that reproduction as mandatory
 for anything touching the level rather than leaving it to the author.
 
 ## The general shape
