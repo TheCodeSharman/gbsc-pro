@@ -155,6 +155,24 @@ void HdBypass::applyRgbhv(uint16_t divider)
 
     HD_HS_ST::write(ChannelSyncDelay);
     HD_HS_SP::write(ChannelSyncDelay + SyncPulseWidth);
+
+    // An RGBHV source arrives with its own sync rather than sync on green, so
+    // the separator's automatic polarity goes on.
+    //
+    // **NOT SP_CLAMP_MANUAL.** The retired ADC-to-DAC switch set it and got
+    // away with it because restartAfterBypassSwitch() re-latched both phase
+    // adjusters straight after; here nothing does, and handing the clamp to
+    // software that never drives it leaves each channel's black level adrift --
+    // measured, the colour bars lose yellow and green entirely while every
+    // colour-path register still reads correct.
+    SyncProcessor::SP_SOG_P_ATO::write(1);
+    SyncProcessor::SP_VS_PROC_INV_REG::write(0);
+
+    // The sync path this source arrives on. doPostPresetLoadSteps() settles it
+    // for a scaled RGBHV source and not for a bypassed one, so without this the
+    // separator stays wherever detection left it -- on sync on green for a
+    // source with its own separate sync.
+    SyncProcessor::applyForSyncType(SyncMeasurement::isCsync());
 }
 
 void HdBypass::applySd(uint8_t standard)

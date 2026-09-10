@@ -3307,7 +3307,8 @@ void applyPresets(uint8_t result)
         setOutModeHdBypass(false);
         return;
     } else if (result == 15) {
-        bypassModeSwitch_RGBHV();
+        rto->videoStandardInput = result;
+        setOutModeHdBypass(false);
         return;
     }
 
@@ -3597,6 +3598,14 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     rto->autoBestHtotalEnabled = false;
     rto->outModeHdBypass = 1;
 
+    // Held state a bypass invalidates. The divider is the bypass literal from
+    // here, so a band steered for the scaled one no longer describes the PLL,
+    // and scaling RGBHV is not what the chip is doing any more -- several sites
+    // read that flag back to decide things.
+    Tv5725::Adc::forgetPllBand();
+    Tv5725::PresetLoad::forgetScalingRgbhv();
+    Tv5725::SyncProcessor::forgetPositions();
+
     // Video routes around the VDS here, so no solve is coming. The bypass
     // register writes below belong to the engine too, once it owns them.
     geometry.enterBypass();
@@ -3677,6 +3686,13 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
                                        Tv5725::Adc::BypassDivider, applyRGBPatches);
 
+    // AFTER the ladder, not before it. The bring-up and the load in front of
+    // this leave both pads disabled, so an earlier write is undone and the
+    // sync inputs are dead -- SP_VTOTAL 97 and no signal, with every other
+    // register reading correct.
+    GBS::PAD_SYNC1_IN_ENZ::write(0);
+    GBS::PAD_SYNC2_IN_ENZ::write(0);
+
     GBS::DEC_IDREG_EN::write(1);
     GBS::DEC_WEN_MODE::write(1);
     rto->phaseSP = 8;
@@ -3730,85 +3746,6 @@ static void restartAfterBypassSwitch()
     setAndLatchPhaseSP();
     setAndLatchPhaseADC();
     latchPLLAD();
-}
-
-void bypassModeSwitch_RGBHV() 
-{
-    SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
-
-    // Bypass reconfigures the chip away from the scaling setup, so the next
-    // scaled load has to re-establish it.
-    Tv5725::BringUp::arm();
-    if (!rto->boardHasPower) {
-        return;
-    }
-
-    Tv5725::Chip::outputDown();
-
-    // Video routes around the VDS here, so no solve is coming. The bypass
-    // register writes below belong to the engine too, once it owns them.
-    geometry.enterBypass();
-
-    Tv5725::HdBypass::enable();
-    externalClockGenResetClock();
-    FrameSync::cleanup();
-    GBS::ADC_UNUSED_62::write(0x00);
-    GBS::PA_ADC_BYPSZ::write(1);
-    GBS::PA_SP_BYPSZ::write(1);
-    applyRGBPatches();
-    resetDebugPort();
-    rto->videoStandardInput = 15;
-    rto->autoBestHtotalEnabled = false;
-    Tv5725::SyncProcessor::forgetPositions();
-    Tv5725::Adc::forgetPllBand();
-
-    Tv5725::Chip::enterBypassRgbhv();
-
-    GBS::SFTRST_HDBYPS_RSTZ::write(1);
-    GBS::HD_INI_ST::write(0);
-
-    Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
-
-    GBS::PAD_SYNC1_IN_ENZ::write(0);
-    GBS::PAD_SYNC2_IN_ENZ::write(0);
-
-    GBS::SP_SOG_P_ATO::write(1);
-    Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
-    if (Tv5725::SyncMeasurement::isCsync()) {
-        Tv5725::SyncOnGreen::choose(24);
-    }
-    rto->phaseADC = 16;
-    rto->phaseSP = 8;
-    GBS::SP_CLAMP_MANUAL::write(1);  
-    Tv5725::SyncProcessor::setCoastInvert(false);
-
-    Tv5725::SyncProcessor::setSubCoast(false);
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_VS_PROC_INV_REG::write(0); 
-    Tv5725::Adc::PLLAD_KS::write(1);
-    rto->osr = Tv5725::Adc::applyOversample(1, 2);
-    Tv5725::Adc::applyForBypassRgbhv();
-    GBS::DAC_RGBS_R0ENZ::write(1);    
-    GBS::DAC_RGBS_G0ENZ::write(1);    
-    GBS::DAC_RGBS_B0ENZ::write(1);    
-    GBS::OUT_SYNC_CNTRL::write(1);    
-
-    restartAfterBypassSwitch();
-
-    applyStoredAdcGain();
-
-    rto->presetID = PresetBypassRGBHV;
-
-    // Beside the preset id, because they are one fact: which mode the chip is
-    // in. The branch that sends a source here clears
-    // rto->isValidForScalingRGBHV in RAM only, and outside the low-power path
-    // nothing else clears the register -- so without this the bit says the
-    // opposite of the truth. Several sites read it back to decide things,
-    // including PresetLoad via writeProgramArrayNew() and the autoBestHtotal
-    // guard in doPostPresetLoadSteps().
-    Tv5725::PresetLoad::forgetScalingRgbhv();
-
-    delay(200);
 }
 
 void runAutoGain() //
@@ -6211,7 +6148,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                     break;
                 case 'k':
-                    bypassModeSwitch_RGBHV();
+                    setOutModeHdBypass(false);
                     break;
                 case 'K':
                     if (!bypassCanBeDisplayed()) {

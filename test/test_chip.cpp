@@ -37,9 +37,9 @@ static void routedTo(void (*route)())
     route();
 }
 
-TEST_CASE("the scaler takes the DACs off both bypass routes")
+TEST_CASE("the scaler takes the DACs off the bypass route")
 {
-    routedTo(Chip::enterBypassRgbhv);
+    routedTo(Chip::routeToHdBypass);
     Chip::routeToScaler();
 
     CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
@@ -47,22 +47,28 @@ TEST_CASE("the scaler takes the DACs off both bypass routes")
     CHECK(Chip::OUT_SYNC_SEL::read() == 0);
 }
 
-TEST_CASE("RGBHV bypass takes the DACs off the HD bypass route")
+TEST_CASE("NOTHING routes the ADC to the DACs")
 {
-    // bypassModeSwitch_RGBHV() does not run the bring-up, so nothing else
-    // clears DAC_RGBS_BYPS2DAC on the way in. Reached by selecting the
-    // pass-through output and then feeding an RGBHV source.
-    routedTo(Chip::routeToHdBypass);
-    Chip::enterBypassRgbhv();
+    // The ADC-to-DAC route is retired. It has no YUV-to-RGB converter in
+    // circuit, so it could only ever carry an RGB source, where the HD bypass
+    // channel carries either.
+    // docs/investigations/one-bypass-route-carries-rgbhv.md
+    fresh();
+    Chip::routeToHdBypass();
+    CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
 
-    CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 1);
-    CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 0);
-    CHECK(Chip::OUT_SYNC_SEL::read() == 1);
+    fresh();
+    Chip::routeToScaler();
+    CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
+
+    fresh();
+    Chip::init();
+    CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
 }
 
-TEST_CASE("HD bypass takes the DACs off the RGBHV bypass route")
+TEST_CASE("the bypass route takes the DACs off the scaler")
 {
-    routedTo(Chip::enterBypassRgbhv);
+    routedTo(Chip::routeToScaler);
     Chip::routeToHdBypass();
 
     CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 1);
