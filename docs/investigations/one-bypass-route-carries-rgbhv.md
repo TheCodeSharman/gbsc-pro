@@ -144,11 +144,43 @@ registers, and the bypass arm writes the first directly, so the other two go
 stale. Writing 1726, the 93% this divider asks for, leaves the profile
 unchanged.
 
-**What is left in the path is the ADC, the decimator, the HD channel's own
-gain and offset stages, and the DAC.** Nothing addressable has moved the band,
-which points at a fixed offset between the video the channel emits and the sync
-it emits beside it. That is a timing measurement rather than a register sweep:
-HSOUT against the start of active video, on both routes, with a scope.
+### It was the sync's POSITION, and the sweep above had not moved it
+
+`HD_HS_SP` was swept and `HD_HS_ST` was not. `HS_SP` is the pulse's trailing
+edge, so moving it changes the WIDTH and leaves the leading edge -- which is
+what the sink triggers on -- exactly where it was. The row above records a
+sweep that could not have found this.
+
+Moving `HD_HS_ST` closes the band, linearly and completely:
+
+| `HD_HS_ST` | dark band |
+|---|---|
+| 0 | 32 columns |
+| 20 | 16 columns |
+| 40 | none |
+
+**40 counts, and it is the channel's delay rather than the source's back
+porch.** Measured at 800x600@60 and again at 640x480@60 -- different back
+porches, the same correction -- which is what makes it a constant beside
+`Adc::BypassDivider` rather than something to derive per source. Video passes
+through the channel on this route and around it on the ADC-to-DAC one, while
+the block emits the same sync either way, so the sync arrives ahead of the
+sample it describes.
+
+### And a second band, at the other edge, hidden by the first
+
+With the picture sitting far enough right, the loss at the right was off the
+measurement: only the left 200 columns were being profiled. Corrected, the
+picture ended at column 1097 where the ADC-to-DAC route runs past 1140.
+
+`HD_HB_ST` at `0.945` of the line was the cause -- the fraction `applySd()`
+uses. Pass-through plays out what the source sends and the source's porches are
+already black, so an early blank only takes picture off the right. It starts at
+the end of the line now, still below `HD_HSYNC_RST` so the generator opens.
+
+**Profile both edges.** Each of these two hid the other: the left band pushed
+the picture right and masked the clipping, and the clipping made the left band
+look like the whole fault.
 
 So the band is not programmed blanking, not the played-out line's length, not
 where the output sync pulse sits, not the scaler's display window, and not which
