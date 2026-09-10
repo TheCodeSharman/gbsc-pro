@@ -43,6 +43,28 @@ Key roles, from `OSD_TV/remote.h`:
 waits for the timeout. Do not add a handler to one without first establishing it
 is reachable.
 
+## Removing a menu item is a layout judgement, not a deletion
+
+Both menus navigate by explicit per-key targets written out at each branch, so a
+state has no owner that knows its neighbours. **The Up and Down targets are not
+symmetric**: `94`'s Up reaches Compatibility while the branch above it reaches
+`94` on Up and `98` on Down, and `94`'s Down is `103` rather than the branch it
+came from. Splicing a state out therefore means choosing what each inbound key
+should reach, which the code does not say.
+
+The television side is worse: a row is a run of `OSD_c2`/`OSD_c3` character
+writes at fixed `P` positions, so removing an option's ON/OFF field leaves its
+label painted and the page unreflowed.
+
+**This is what blocks removing a user option**, rather than the option's own
+plumbing. `PalForce60` and `matchPresetSource` are both dead -- the first had its
+standard-byte swap deleted and the second never had a consumer at all, only a
+preferences byte, a websocket status bit, an IR toggle and two menu displays --
+and both still occupy an OLED state and a TV OSD row for that reason.
+
+Extracting the menus into a described structure is what makes such a removal
+mechanical. Until then, budget a remote for any menu change.
+
 ## Info reports two things that are not what they look like
 
 **`Err` is an unhandled class, not a fault.** The resolution line classifies the
