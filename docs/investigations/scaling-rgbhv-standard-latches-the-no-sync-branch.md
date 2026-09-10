@@ -80,7 +80,7 @@ output. Step 6 is the cheapest place to break the loop — a disturbance the
 firmware caused is not the source moving — but it leaves the sketch in the
 no-sync branch, so the recovery routines keep running underneath a good solve.
 
-`docs/investigations/scaling-rgbhv-flag-is-not-the-standard.md` records the same
+`docs/investigations/two-spellings-of-scaling-rgbhv.md` records the same
 one-number-two-meanings shape from the register side.
 
 ## Recovering it, and why that is the proof
