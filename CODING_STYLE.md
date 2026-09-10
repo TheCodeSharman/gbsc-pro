@@ -124,6 +124,26 @@ as expected, including after a `using namespace Tv5725;`.
 Registers migrate out of `Tv5725::Tv5725` into the subsystem that owns them, so
 what remains in it is whatever has no owner yet. `docs/chip-initialisation.md`.
 
+### An unused register DECLARATION stays; an unused helper does not
+
+Dead firmware is deleted here without ceremony. A register field declaration is
+not dead firmware, and the two are not weighed the same way.
+
+**A declaration cannot be recovered by reading the datasheet.** RD-5725-1.1
+contradicts itself on every wide field -- the bit diagram, the Bit/Name table
+rows and the slice written into the function description disagree -- and this
+header carries fields whose slices came from cross-checking all three against
+the bench rather than from the PDF. The tooling that produced them was deleted
+once it had stopped finding things. So a declaration removed today costs bench
+work to restore, while a typedef kept costs no flash, no RAM and no runtime.
+
+**Everything else around the registers is firmware and goes when nothing uses
+it**: constants naming a ratio or an icon, lookup tables, convenience wrappers.
+They encode nothing the datasheet does not, and unused ones make a search return
+subsystems that have nothing to do with each other.
+
+The test is therefore not "is it used" but "is it a fact about the chip".
+
 ## One class per file, named after the class — `ClassName.h`
 
 `src/tv5725/Scale.h` holds `Tv5725::Scale` and nothing else, and
