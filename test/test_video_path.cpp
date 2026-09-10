@@ -622,6 +622,45 @@ TEST_CASE("changing the output keeps the framing the user tuned")
                tuned.extentOn(AxisVertical), unit);
 }
 
+TEST_CASE("a framing tuned on one output resolution is not rewritten by another")
+{
+    // The framing is a proportion of the capturable INPUT region, so nothing
+    // about the output may reach it. The magnification floor is what used to:
+    // solved against a wider raster it seeded the framing back at the floor, and
+    // a stored framing then meant a different part of the source on every output
+    // resolution. Under that floor a 300 unit capture was not reachable on
+    // either output -- the horizontal extent stopped at 514 units at 480p and
+    // 479 at 1080p -- so this pins both halves: that the crop happens at all,
+    // and that it survives the output change. Cropping past what the scale can
+    // put back letterboxes the picture rather than stopping the control, where
+    // interpolation starts to look bad being perceptual and the user's to find.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.outputModeChanged(OutputChoice(Output480P));
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    const long crop = (long)engine.extentUnitsOn(AxisHorizontal) - 300;
+    REQUIRE(crop > 0);
+    frameAt(engine, (int16_t)crop, 0, 0, 0);
+    const PanAndZoom tuned = engine.framing();
+
+    engine.outputModeChanged(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    const float unit = 1.0f / (float)engine.capturableOn(AxisHorizontal);
+    CHECK_NEAR(engine.framing().extentOn(AxisHorizontal),
+               tuned.extentOn(AxisHorizontal), unit);
+    CHECK_NEAR(engine.framing().originOn(AxisHorizontal),
+               tuned.originOn(AxisHorizontal), unit);
+}
+
 TEST_CASE("a source comes back to the framing it was left at")
 {
     // The point of the table: tune a source, go somewhere else, come back, and

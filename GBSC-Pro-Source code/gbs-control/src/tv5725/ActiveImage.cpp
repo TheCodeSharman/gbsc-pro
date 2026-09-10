@@ -13,18 +13,18 @@ const PanAndZoom &ActiveImage::framing() const { return framing_; }
 void ActiveImage::setFraming(const PanAndZoom &framing) { framing_ = framing; }
 
 void ActiveImage::panBy(const VideoSourceLine &line, const SourceTiming &timing,
-                        const Axis &axis, int16_t units, const OutputRaster &raster)
+                        const Axis &axis, int16_t units)
 {
     if (!framing_.tunedOn(axis))
-        clampToLine(line, timing, axis, raster);
+        clampToLine(line, timing, axis);
     framing_.panBy(axis, units, line.capturable());
 }
 
 void ActiveImage::zoomBy(const VideoSourceLine &line, const SourceTiming &timing,
-                         const Axis &axis, int16_t units, const OutputRaster &raster)
+                         const Axis &axis, int16_t units)
 {
     if (!framing_.tunedOn(axis))
-        clampToLine(line, timing, axis, raster);
+        clampToLine(line, timing, axis);
     framing_.zoomBy(axis, units, line.capturable());
 }
 
@@ -43,29 +43,24 @@ uint16_t ActiveImage::defaultWidth(const VideoSourceLine &line,
 {
     const float extent = timing.published() ? timing.activeExtent(axis)
                                             : axis.activeExtent();
-    // No raster here: the DEFAULT width is a property of the line alone, and
-    // the scale floor is applied by the callers that know the raster.
-    return (uint16_t)clampWidth(lrintf(line.units() * extent), line, 0, axis);
+    return (uint16_t)clampWidth(lrintf(line.units() * extent), line);
 }
 
 ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
                                           const SourceTiming &timing,
-                                          const Axis &axis,
-                                          const OutputRaster &raster) const
+                                          const Axis &axis) const
 {
     uint16_t usable = line.capturable();
     long width, start;
 
     if (framing_.tunedOn(axis) && usable > 0) {
-        width = clampWidth(lrintf(framing_.extentOn(axis) * (float)usable), line,
-                           raster, axis);
+        width = clampWidth(lrintf(framing_.extentOn(axis) * (float)usable), line);
         start = (long)line.firstCapture()
               + lrintf(framing_.originOn(axis) * (float)usable);
     } else {
         // Nothing has framed this axis yet, so the computed default stands in
         // until the first solve seeds it. clampToLine() is where that happens.
-        width = clampWidth((long)defaultWidth(line, timing, axis), line,
-                           raster, axis);
+        width = clampWidth((long)defaultWidth(line, timing, axis), line);
         const float from = timing.published() ? timing.activeStart(axis)
                                               : axis.activeStart();
         start = lrintf(from * (float)line.units());
@@ -82,18 +77,18 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
 
 BlankingTiming ActiveImage::capture(const VideoSourceLine &line,
                                     const SourceTiming &timing,
-                                    const Axis &axis, const OutputRaster &raster) const
+                                    const Axis &axis) const
 {
     if (line.units() == 0)
         return BlankingTiming();
 
-    Placement placed = place(line, timing, axis, raster);
+    Placement placed = place(line, timing, axis);
     return BlankingTiming((uint16_t)placed.start,
                          (uint16_t)(placed.start + placed.width));
 }
 
 void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &timing,
-                              const Axis &axis, const OutputRaster &raster)
+                              const Axis &axis)
 {
     if (line.units() == 0)
         return;
@@ -105,41 +100,17 @@ void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &t
     // Seeds an axis nobody has framed yet from the default it just placed, and
     // brings a framed one back to what this line can realise. Both are the same
     // write, because the placement is the answer either way.
-    Placement placed = place(line, timing, axis, raster);
+    Placement placed = place(line, timing, axis);
     framing_.seedOn(axis,
                     (float)(placed.start - (long)line.firstCapture()) / (float)usable,
                     (float)placed.width / (float)usable);
 }
 
-long ActiveImage::clampWidth(long width, const VideoSourceLine &line,
-                             const OutputRaster &raster, const Axis &axis)
+long ActiveImage::clampWidth(long width, const VideoSourceLine &line)
 {
     if (width > (long)line.capturable())
         width = line.capturable();
-
-    // The part cannot minify, so a capture the room cannot hold is not shown
-    // smaller -- its far end is simply not drawn.
-    if (raster.solved()) {
-        const long ceiling =
-            (long)axis.maximumCapture(raster.total(), raster.activeStop());
-        if (ceiling > 0 && width > ceiling)
-            width = ceiling;
-    }
-
-    // Two floors, and the scale's is usually the higher. MinimumCapture stops
-    // the control cropping to nothing; Axis::minimumCapture stops it cropping
-    // past what the magnification can put back, which without it letterboxes
-    // instead of stopping. Measured: a 1126 vertical raster floors at 282, and
-    // 282 is exactly the last capture that filled the screen.
-    long floor = (long)MinimumCapture;
-    if (raster.solved()) {
-        long scaleFloor = (long)axis.minimumCapture(raster.total());
-        if (scaleFloor > floor)
-            floor = scaleFloor;
-    }
-
-
-    return width < floor ? floor : width;
+    return width < (long)MinimumCapture ? (long)MinimumCapture : width;
 }
 
 }  // namespace Tv5725

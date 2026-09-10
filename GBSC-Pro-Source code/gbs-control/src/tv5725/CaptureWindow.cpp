@@ -68,11 +68,11 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted)
     // smaller press back then produces an identical window and is reverted,
     // leaving the control dead in that direction. Only the hold ramp presses
     // that far -- measured pv -51 against a limit of -46, ph -144 against -134.
-    image_.clampToLine(horizontalLine_, timing_, AxisHorizontal, line_);
-    image_.clampToLine(verticalLine_, timing_, AxisVertical, frame_);
+    image_.clampToLine(horizontalLine_, timing_, AxisHorizontal);
+    image_.clampToLine(verticalLine_, timing_, AxisVertical);
 
-    horizontal_ = image_.capture(horizontalLine_, timing_, AxisHorizontal, line_);
-    vertical_ = image_.capture(verticalLine_, timing_, AxisVertical, frame_);
+    horizontal_ = image_.capture(horizontalLine_, timing_, AxisHorizontal);
+    vertical_ = image_.capture(verticalLine_, timing_, AxisVertical);
 
     // A pixel costs one 32-bit word, and a line wide enough to overrun the
     // capture buffer is reachable because the width is in ADC samples and

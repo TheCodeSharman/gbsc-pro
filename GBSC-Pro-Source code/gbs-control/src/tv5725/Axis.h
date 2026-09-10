@@ -42,10 +42,9 @@ public:
     uint16_t windowStopMin() const;
 
     // How far this axis is willing to magnify, as a VDS_?SCALE floor. DERIVED as
-    // Scale::Unity / max magnification -- 4.0x on both axes -- and it must stay
-    // derived: a fixed horizontal 500 left only 73 units of zoom travel once
-    // solveRaster() widened the raster, because minimumCapture() follows the
-    // raster while PanAndZoom::defaultWidth() follows the input line alone.
+    // Scale::Unity / max magnification -- 4.0x on both axes. It bounds the SCALE
+    // register and nothing else: a capture too small to fill the raster
+    // letterboxes rather than being refused, so this never reaches the framing.
     // Nothing in the part bounds it -- RD-5725-1.1 states no minimum and the
     // field is 10 bits -- so where interpolation starts to look bad is
     // perceptual, and the user's to find.
@@ -63,8 +62,10 @@ public:
     int16_t stepUnits(int16_t pixels, float magnification) const;
 
     // The smallest capture that can still fill `rasterTotal` at this axis's full
-    // magnification. Below it cropping cannot be compensated, so the picture
-    // shrinks on screen and the display window closes in around it.
+    // magnification -- where letterboxing STARTS. Below it cropping cannot be
+    // compensated, so the picture shrinks on screen and the display window
+    // closes in around it. Nothing clamps against it: the shrinking picture is
+    // visible and one press back undoes it, where a clamp is a dead control.
     uint16_t minimumCapture(uint16_t rasterTotal) const;
 
     // The largest capture this raster can SHOW. VDS_?SCALE divides 1024 and
