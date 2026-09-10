@@ -524,6 +524,17 @@ public:
     // so a caller acting on the negation acts on garbage. Ask STATUS_IF_VT_OK
     // whether there is a measurement at all before either.
     // docs/investigations/vperiod-if-on-rgbhv.md
+    // Whether the source is interlaced, asking Mode Detect first and falling
+    // back to the period only where it names nothing.
+    //
+    // **THE PERIOD TABLE SEPARATES 480i FROM 480p BY ONE COUNT** -- 524 against
+    // 523 -- so a source landing on the wrong side is deinterlaced while
+    // progressive, and every second line comes out of the bob RAM. Measured on
+    // a Wii at 480p, which reads VPERIOD_IF 524 exactly. Mode Detect measures
+    // the same fact and states it, with lock flags beside it.
+    static bool sourceIsInterlaced(uint16_t verticalPeriod);
+    static bool sourceIsProgressive(uint16_t verticalPeriod);
+
     static bool periodIsInterlaced(uint16_t verticalPeriod);
     static bool periodIsProgressive(uint16_t verticalPeriod);
 

@@ -55,6 +55,14 @@ static void seedSourceHalfLines(uint16_t halfLines)
     Wire.bank[0][0x00] |= 0x01;
 }
 
+// What Mode Detect publishes about the source, in STATUS_00. Only an interlaced
+// source can have its count doubled by the serrations, so a case about that
+// fault has to say so. Call AFTER seedSourceLines(), which resets the bus.
+static void seedInterlaced()
+{
+    Wire.bank[0][0x00] |= 0x20;   // STATUS_IF_INP_PAL_INT
+}
+
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
 static const uint32_t BenchLineRate = 15550;
@@ -1092,12 +1100,36 @@ TEST_CASE("a count outside the agreement window does not")
 
 TEST_CASE("a field count against the frame in half-lines is the source's lines")
 {
-    CHECK_FALSE(SourceMeasurement::countIsSerrations(310, 624));
+    CHECK_FALSE(SourceMeasurement::countIsSerrations(310, 624, true));
 }
 
 TEST_CASE("a count as large as the half-line total is the serrations")
 {
-    CHECK(SourceMeasurement::countIsSerrations(607, 624));
+    CHECK(SourceMeasurement::countIsSerrations(607, 624, true));
+}
+
+TEST_CASE("a progressive source whose frame the witness counts in lines is not serrations")
+{
+    // 480p on YPbPr, measured on the bench: SP_VTOTAL 524 with VPERIOD_IF 524,
+    // steady, STATUS_IF_VT_OK set. The witness is not reporting half-lines
+    // here, so the count sits exactly ON it -- which reads identically to a
+    // doubled count and rejects a source that is entirely correct.
+    //
+    // HPERIOD_IF 214 gives 31395 Hz, and 31395 / 525 is 59.8 Hz. A doubled
+    // count would imply half of that, and no television runs at half a field
+    // rate: that is what separates the two, and the witness alone cannot.
+    CHECK_FALSE(SourceMeasurement::countIsSerrations(524, 524, false));
+}
+
+TEST_CASE("a progressive source cannot have counted the serrations")
+{
+    // The count doubles because the sync processor runs through the half-line
+    // structure and counts the FRAME where a covered coast counts the FIELD.
+    // Progressive sources have no such distinction, so the witness comparison
+    // must not even be reached -- these are the serration numbers, and they
+    // still answer false.
+    CHECK(SourceMeasurement::countIsSerrations(607, 624, true));
+    CHECK_FALSE(SourceMeasurement::countIsSerrations(607, 624, false));
 }
 
 TEST_CASE("a half-line total that measures nothing refuses to judge the count")
@@ -1105,7 +1137,7 @@ TEST_CASE("a half-line total that measures nothing refuses to judge the count")
     // VPERIOD_IF is debris on a separate-sync source, where it reads values
     // like 20 against a true 311. Judged against that, any count at all looks
     // nearer the total than half of it.
-    CHECK_FALSE(SourceMeasurement::countIsSerrations(311, 20));
+    CHECK_FALSE(SourceMeasurement::countIsSerrations(311, 20, true));
 }
 
 
@@ -1116,6 +1148,7 @@ TEST_CASE("a serration count never goes steady, however still it holds")
     // perfectly, which is exactly what a steadiness run on its own cannot see.
     seedSourceLines(607);
     seedSourceHalfLines(624);
+    seedInterlaced();
     SourceMeasurement measurement;
 
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples * 3; ++i) {
@@ -1142,6 +1175,7 @@ TEST_CASE("the reason a serration count was refused is available to the caller")
     // count" by the return value alone, and only the second is worth acting on.
     seedSourceLines(607);
     seedSourceHalfLines(624);
+    seedInterlaced();
     SourceMeasurement measurement;
 
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
@@ -1165,6 +1199,7 @@ TEST_CASE("a good count clears a serration verdict")
 {
     seedSourceLines(607);
     seedSourceHalfLines(624);
+    seedInterlaced();
     SourceMeasurement measurement;
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
         measurement.sampleSteady();
@@ -1172,6 +1207,7 @@ TEST_CASE("a good count clears a serration verdict")
 
     seedSourceLines(310);
     seedSourceHalfLines(624);
+    seedInterlaced();
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
         measurement.sampleSteady();
 

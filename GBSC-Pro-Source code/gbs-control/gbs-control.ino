@@ -4411,7 +4411,7 @@ void runSyncWatcher() //
                         }
                     }
 
-                    if (Tv5725::Deinterlacer::periodIsInterlaced(VPERIOD_IF)) {
+                    if (Tv5725::Deinterlacer::sourceIsInterlaced(VPERIOD_IF)) {
                         filteredLineCountMotionAdaptiveOn++;
                         filteredLineCountMotionAdaptiveOff = 0;
                         if (filteredLineCountMotionAdaptiveOn >= 2) {
@@ -4428,7 +4428,7 @@ void runSyncWatcher() //
                             }
                             filteredLineCountMotionAdaptiveOn = 0;
                         }
-                    } else if (Tv5725::Deinterlacer::periodIsProgressive(VPERIOD_IF)) {
+                    } else if (Tv5725::Deinterlacer::sourceIsProgressive(VPERIOD_IF)) {
                         filteredLineCountMotionAdaptiveOff++;
                         filteredLineCountMotionAdaptiveOn = 0;
                         if (filteredLineCountMotionAdaptiveOff >= 2) {

@@ -2,9 +2,23 @@
 
 #include <Arduino.h>   // delay(), a hardware settling time
 
+#include "../../gbs_types.h"
 #include "Chip.h"
 
 namespace Tv5725 {
+
+
+bool ModeDetect::sourceIsInterlaced()
+{
+    return GBS::STATUS_IF_INP_NTSC_INT::read() == 1
+        || GBS::STATUS_IF_INP_PAL_INT::read() == 1;
+}
+
+bool ModeDetect::sourceIsProgressive()
+{
+    return GBS::STATUS_IF_INP_NTSC_PRG::read() == 1
+        || GBS::STATUS_IF_INP_PAL_PRG::read() == 1;
+}
 
 void ModeDetect::init()
 {

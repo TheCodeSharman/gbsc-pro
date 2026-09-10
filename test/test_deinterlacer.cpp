@@ -14,6 +14,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Deinterlacer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
@@ -416,4 +417,49 @@ TEST_CASE("a period naming no total leaves the tap where it is")
 {
     CHECK(Deinterlacer::verticalTapFor(112)
           == static_cast<uint8_t>(Deinterlacer::KeepVerticalTap));
+}
+
+
+// --- what Mode Detect says, against what the period implies -----------------
+//
+// The period table separates 480i from 480p by ONE count -- 524 against 523 --
+// and a source that lands on the wrong side is deinterlaced when it is
+// progressive. Measured on the bench: a Wii at 480p reads VPERIOD_IF 524, the
+// interlaced NTSC period exactly, and the bob RAM stays in the path.
+//
+// Mode Detect measures the same fact and publishes it in STATUS_00 with lock
+// flags beside it, so it answers first and the period table is the fallback for
+// a source it names nothing for.
+
+static void seedModeDetect(uint8_t bits)
+{
+    Wire.reset();
+    Wire.bank[0][0x00] = bits;
+}
+
+static const uint8_t NtscInterlaced  = 0x08;   // STATUS_IF_INP_NTSC_INT
+static const uint8_t NtscProgressive = 0x10;   // STATUS_IF_INP_NTSC_PRG
+
+TEST_CASE("Mode Detect outranks the period table where it names the source")
+{
+    SUBCASE("a progressive source on the interlaced NTSC period") {
+        seedModeDetect(NtscProgressive);
+        REQUIRE(Deinterlacer::periodIsInterlaced(524));
+        CHECK_FALSE(Deinterlacer::sourceIsInterlaced(524));
+        CHECK(Deinterlacer::sourceIsProgressive(524));
+    }
+
+    SUBCASE("an interlaced source is still interlaced") {
+        seedModeDetect(NtscInterlaced);
+        CHECK(Deinterlacer::sourceIsInterlaced(524));
+        CHECK_FALSE(Deinterlacer::sourceIsProgressive(524));
+    }
+}
+
+TEST_CASE("a source Mode Detect names nothing for falls back to the period")
+{
+    seedModeDetect(0);
+    CHECK(Deinterlacer::sourceIsInterlaced(524));
+    CHECK(Deinterlacer::sourceIsProgressive(523));
+    CHECK_FALSE(Deinterlacer::sourceIsInterlaced(523));
 }

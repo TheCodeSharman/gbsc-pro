@@ -39,7 +39,8 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 # IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
 # declare them link wherever it does.
 SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/Adc.cpp \
-	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp
+	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
+	src/tv5725/ModeDetect.cpp
 
 # The engine no longer drives itself -- its stages are named calls the
 # acquisition path makes in order -- so a case that wants a solve links the
@@ -460,7 +461,7 @@ chip:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_chip" \
 	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
-	  src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(SAMPLING_SRC) \
 	  src/tv5725/SyncMeasurement.cpp
@@ -476,7 +477,7 @@ hd-bypass:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
 	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
-	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(SAMPLING_SRC) \
 	  src/tv5725/SyncMeasurement.cpp
@@ -591,7 +592,7 @@ deinterlacer:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_deinterlacer" \
-	  "$(HERE)/test_deinterlacer.cpp" src/tv5725/Deinterlacer.cpp
+	  "$(HERE)/test_deinterlacer.cpp" src/tv5725/Deinterlacer.cpp src/tv5725/ModeDetect.cpp
 	@"$(OUT)/test_deinterlacer"
 
 ## video-path-raster: host unit tests for what the engine does while the source is unsettled

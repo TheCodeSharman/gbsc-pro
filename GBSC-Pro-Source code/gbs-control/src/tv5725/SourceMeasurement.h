@@ -132,8 +132,21 @@ public:
     //
     // False when the witness is not measuring, which is the separate-sync case
     // and is not a judgement that the count is good.
+    //
+    // **THE WITNESS ALONE CANNOT SEPARATE THE TWO.** It reports half-lines on
+    // the sources this was built from, but not on all of them: 480p on YPbPr
+    // measures VPERIOD_IF 524 against SP_VTOTAL 524, so a correct count sits
+    // exactly ON the total and reads identically to a doubled one. Judged on
+    // the witness alone that source is rejected on every pass, no solve ever
+    // runs, and SyncOutput holds the sync pads blanked for ever.
+    //
+    // `interlaced` is what separates them, and it is measured rather than
+    // inferred -- ModeDetect::sourceIsInterlaced(). A progressive source has no
+    // field and frame to differ, so nothing can double its count and this can
+    // only answer false.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-    static bool countIsSerrations(uint16_t lines, uint16_t halfLines);
+    static bool countIsSerrations(uint16_t lines, uint16_t halfLines,
+                                  bool interlaced);
 
     // Whether the last steadiness run ended on a count that reads as the
     // serrations rather than the source. The return of sampleSteady() cannot

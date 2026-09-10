@@ -6,6 +6,7 @@
 #include "VideoSourceLine.h"   // the capture write limit, likewise
 #include "Adc.h"             // the sample rate, which the divider is half of
 #include "InputFormatter.h"   // the line counter, in the units the divider sets
+#include "ModeDetect.h"   // whether the source is interlaced, which it measures
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
 #include "../../gbs_types.h"
@@ -185,8 +186,12 @@ bool SourceMeasurement::countWasSerrations() const
     return serrationsSeen_;
 }
 
-bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines)
+bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
+                                          bool interlaced)
 {
+    if (!interlaced)
+        return false;
+
     const uint16_t frameLines = (uint16_t)(halfLines / 2);
     if (!countIsSource(frameLines))
         return false;
@@ -219,7 +224,8 @@ bool SourceMeasurement::sampleSteady()
     if (steadyRun_ < SteadySamples)
         return false;
 
-    if (countIsSerrations(lines, measureSourceHalfLines())) {
+    if (countIsSerrations(lines, measureSourceHalfLines(),
+                          ModeDetect::sourceIsInterlaced())) {
         serrationsSeen_ = true;
         steadyRun_ = 0;
         return false;

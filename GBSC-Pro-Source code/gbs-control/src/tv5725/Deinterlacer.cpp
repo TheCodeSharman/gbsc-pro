@@ -1,5 +1,7 @@
 #include "Deinterlacer.h"
 
+#include "ModeDetect.h"
+
 #include <Arduino.h>
 
 #include "FrameBuffer.h"
@@ -28,6 +30,24 @@ bool namesPeriod(uint16_t verticalPeriod, uint16_t total)
 }
 
 }  // namespace
+
+bool Deinterlacer::sourceIsInterlaced(uint16_t verticalPeriod)
+{
+    if (ModeDetect::sourceIsInterlaced())
+        return true;
+    if (ModeDetect::sourceIsProgressive())
+        return false;
+    return periodIsInterlaced(verticalPeriod);
+}
+
+bool Deinterlacer::sourceIsProgressive(uint16_t verticalPeriod)
+{
+    if (ModeDetect::sourceIsProgressive())
+        return true;
+    if (ModeDetect::sourceIsInterlaced())
+        return false;
+    return periodIsProgressive(verticalPeriod);
+}
 
 bool Deinterlacer::periodIsInterlaced(uint16_t verticalPeriod)
 {
