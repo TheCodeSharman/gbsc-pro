@@ -9,7 +9,7 @@ and right. The same source in RGBHV bypass shows the card complete.
 | | what it is | state |
 |---|---|---|
 | head blanking | `IF_HBIN_SP` blanks into the capture where the doubler is bypassed | **closed** |
-| the line offset | picture sits ~70 IF units later than the arithmetic places it, and its tail wraps | open |
+| the line offset | the IF origin is ~72 ADC samples late, and one sync width early where hsync is inverted | **modelled**, not yet fixed |
 | the transmitted window | the produced picture is wider than the encoder transmits | open |
 
 ## The source, exactly
@@ -83,47 +83,91 @@ changes the picture by one photo pixel and leaves `IF_HBIN_SP` just as live;
 the interpolator and low-pass filter are bypassable — the block's blanking and
 line-reset timing are always in circuit.
 
-## Fault 2: the picture sits ~70 IF units late, and its tail wraps
+## Fault 2: the origin is one pipeline lag late, and one sync width early on inverted hsync
 
-With the head blanking out of the way a black band remains at the left. Creeping
-the capture start with the picture fitted, and reading where content begins:
+The IF line's origin is not where the capture arithmetic places it, and the
+error has two terms. In IF units, the source's first active pixel lands at
 
-| `IF_HB_SP2` | 230 | 250 | 270 | 290 | 300 | 310 | 320 | 340 |
-|---|---|---|---|---|---|---|---|---|
-| content start, photo px | 125 | 93 | 61 | 28 | **11** | 11 | 11 | 11 |
+```
+measured = sync + back porch + border + LAG - (hsync inverted ? sync : 0)
+```
 
-1.63 photo px per IF unit, which is the magnification, and the knee is at
-**IF 300**. The card's first pixel is due at IF 230. The 40 px left border ends
-there, so the capture already starts inside the picture and 70 units of black
-follow it.
+with **LAG ≈ 72 IF units**, constant across four modes spanning three
+resolutions, both hsync polarities and sync widths from 64 to 128 source pixels.
 
-**Capturing the whole line shows where they went.** At IF 2..1123 magnified
-1.01x, a second castellation column appears at IF ~8..24, before the sync and
-porch black band that runs IF ~60..306. That column is the card's *right* edge,
-wrapped past the 1124-unit line end: the picture occupies IF ~300..1152 and its
-tail reappears at the head. **One offset accounts for both edges** — the left
-black band and the right-hand loss are the same fault seen from two ends.
+| mode | `sync_pol` | sync, src px | knee, IF | `sync+bp+border`, IF | offset | sync, IF | LAG |
+|---|---|---|---|---|---|---|---|
+| 800x600@60 | 0 | 128 | 302.1 | 229.9 | **+72.2** | 136.2 | +72.2 |
+| 800x600@56 | 0 | 72 | 277.9 | 208.6 | **+69.3** | 79.0 | +69.3 |
+| 384x288@70 | 2 | 68 | 356.5 | 281.0 | **+75.5** | 127.4 | +75.5 |
+| 640x480@75 | 3 | 64 | 211.8 | 227.5 | **−15.7** | 85.6 | +69.9 |
 
-This falsifies a stated premise. `VideoSourceLine.h` says the hsync pulse is at
-the HEAD of the IF line, and `firstCapture()` returns `syncUnits` on that basis.
-The photograph has picture content before the sync.
+All four at `PLLAD_MD` 1124 with the line doubler bypassed, so one IF unit is
+one ADC sample and LAG is ~72 ADC samples. The offset column is what a model
+without the sync term has to explain: it changes sign. The LAG column is what
+one bit of extra state reduces it to.
 
-**Refuted as the cause**, each swept with the picture fitted inside the panel so
-a shift would have been visible:
+**The sync term is decided by a bit the chip already reports.**
+`STATUS_SYNC_PROC_HSPOL` reads 1 on AKF50's `sync_pol` 0 and 2 modes and 0 on
+its `sync_pol` 3 modes, `sync_pol` bit 0 being hsync. Where the pulse is
+positive-going the IF origin is its leading edge; where it is inverted the
+origin is the trailing edge, so the sync interval is already behind the origin
+and the picture arrives one sync width sooner.
 
-- `SP_RT_HS_SP`, 950..1110 — no positional effect at all.
-- `IF_LINE_ST` with `IF_LINE_SP` following it, 0..128 — no horizontal effect.
-  It changes the colour, not the framing. Its 64 is close enough to 70 to be
-  tempting and it is not the cause.
-- `IF_HBIN_SP` — fault 1, and the offset survives fixing it.
+`VideoSourceLine::firstCapture()` returns `syncUnits` on the premise that the
+origin is the leading edge. That premise holds for one polarity only. On the
+other the sync has already been skipped and adding `syncUnits` places the
+capture window one sync width too late, on top of the LAG that applies to both.
 
-**The offset is not a constant, which is what makes it hard.** 800x600@60 puts
-the picture ~70 IF units later than the arithmetic; 640x480@60 puts it about 54
-units *earlier*. So it is not a fixed pipeline latency, and no single correction
-fits both. Both readings come from the same knee method, and on 640x480 the
-knee may be the border rather than the picture — the border is a different
-colour there and black on 800x600 — so re-measuring both against a source
-feature that is unambiguous at both ends is the first move, before any model.
+**Refuted by these measurements**, each of which fitted a subset:
+
+- *No single correction fits both modes.* One does; it needs the polarity bit.
+- *The offset is half the sync width.* 800x600@56 predicts 248.1 IF under it and
+  measures 277.9, at a slope of 2.17 photo px per IF unit — 65 photo pixels out.
+- *The offset is one sync width.* 640x480@75 predicts 141.9 and measures 211.8.
+- *640x480@60 puts the picture 54 units early while 800x600@60 puts it 70 late,
+  so it is not a fixed pipeline latency.* Both readings are of the real effect;
+  the sign is the sync term.
+
+**The everyday 15 kHz source cannot show it.** 320x256@50 is `sync_pol` 0 and
+line doubled, so one IF unit is half an ADC sample and the lag is ~36 IF units,
+against borders of 44 source pixels a side. The error stays inside the border.
+
+### The instrument
+
+`PATTERN CARD` rather than `PATTERN PM5544`. The plain card's outermost
+concentric band is bright, `H/32` source pixels wide, and starts at active pixel
+0 against a screen border `PROCpatinit` forces black — one feature, the same
+feature on every mode. PM5544's outermost feature is a castellation whose colour
+and cell width both depend on the mode, so a brightness threshold locates a
+different source pixel on each one, which is what produced offsets that appeared
+not to share a model. The card's outer ring flashes yellow against white, which
+costs about 2 photo pixels of edge position and does not reach the geometry.
+
+The measurement is the knee, driven by the engine's own pan control so the
+capture origin is read from `/geometry` rather than poked:
+
+- Zoom in until the pan has range past the expected knee, park the origin at its
+  earliest, then pan later in fixed steps.
+- Below the picture's true start the band's edge tracks the origin 1:1. At it,
+  the band pins to the display window's left edge and the readings break into a
+  sawtooth of the card's own band pitch. The knee is where the fitted line meets
+  the floor.
+- Slope and floor both come from the state being measured, so **no photo column
+  to output pixel mapping is needed** and the encoder re-locking between source
+  modes does not matter. Measured photo pixels per output pixel ran 0.83 to 1.11
+  across these four states, which is why an absolute mapping cannot be carried
+  between them.
+
+Repeatability is ±0.2 photo px, measured over seven shots at a clamped pan.
+`tools/gbsc-pro-hwtest/photo_profile.py` is the column profile and edge finder.
+
+**640x480@60 is not independently pinned.** The model puts its picture start at
+IF 133.6 and `firstCapture()` is 131, so the engine cannot pan early enough to
+put the origin before the picture, and there is no sloped region to fit. What is
+measurable there is consistent: the outer bands leave the head of the window
+between origin IF 227 and 243, which places the picture start between IF 121 and
+138.
 
 ## Fault 3: the produced picture is wider than the encoder transmits
 
