@@ -3675,7 +3675,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::HD_INI_ST::write(0);
 
     Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
-                                       sourceSampling.divider(), applyRGBPatches);
+                                       Tv5725::Adc::BypassDivider, applyRGBPatches);
 
     GBS::DEC_IDREG_EN::write(1);
     GBS::DEC_WEN_MODE::write(1);

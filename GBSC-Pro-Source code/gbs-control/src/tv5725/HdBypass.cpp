@@ -22,12 +22,23 @@ const uint8_t AnalogFilter40MHz = 3;
 const uint16_t RgbhvShortLines = 532;
 const uint16_t RgbhvTallLines = 810;
 
-// The played-out line, in ADC samples, as a function of the divider the source
-// was sampled at. Measured on an 800x600 RGBHV source at divider 1124.
+// The played-out line as a function of the line the CHANNEL sees, which is the
+// divider over the oversampling ratio rather than the divider itself.
 // docs/investigations/one-bypass-route-carries-rgbhv.md
 const uint16_t RasterGuardSamples = 8;
 const float ActiveFraction = 0.945f;
 const uint16_t BlankEndSamples = 0x90;
+
+// What pass-through samples at, on either route. The ADC-to-DAC switch has
+// always used these and its picture is the reference the HD route is judged
+// against, so the two ask the ADC for the same thing.
+const uint8_t BypassPostDivider = 1;
+
+// Undecimated. Pass-through has no scaler to feed and the channel plays out
+// what it is given, so halving the sample stream only costs horizontal detail:
+// measured on an 800x600 source, decimating by two takes the played-out line to
+// 928 samples for 800 active pixels and the gratings stop resolving.
+const uint8_t BypassOversample = 1;
 
 }  // namespace
 
@@ -104,10 +115,10 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
         applyRgbhvPll(SourceMeasurement::measureSourceLines());
 }
 
-void HdBypass::applyHorizontalFromDivider(uint16_t divider)
+void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 {
-    HD_HSYNC_RST::write((divider / 2) + RasterGuardSamples);
-    HD_HB_ST::write(divider * ActiveFraction);
+    HD_HSYNC_RST::write(channelLine + RasterGuardSamples);
+    HD_HB_ST::write(channelLine * ActiveFraction);
     HD_HB_SP::write(BlankEndSamples);
 }
 
@@ -116,10 +127,17 @@ void HdBypass::applyRgbhv(uint16_t divider)
     if (divider == 0)
         return;
 
+    Adc::PLLAD_KS::write(BypassPostDivider);
+    const uint8_t ratio = Adc::applyOversample(BypassPostDivider, BypassOversample);
+
+    // The charge pump, the VCO gain and the widest analog corner, which are the
+    // rest of what the ADC-to-DAC route asks for. It writes its own divider,
+    // so the caller's goes in after it.
+    Adc::applyForBypassRgbhv();
     Adc::PLLAD_MD::write(divider);
     Adc::latch();
 
-    applyHorizontalFromDivider(divider);
+    applyHorizontalFromChannelLine(divider / (ratio < 1 ? 1 : ratio));
 }
 
 void HdBypass::applySd(uint8_t standard)
@@ -134,7 +152,9 @@ void HdBypass::applySd(uint8_t standard)
     SyncProcessor::SP_HS_LOOP_SEL::write(0);
     Adc::ADC_FLTR::write(AnalogFilter40MHz);
 
-    applyHorizontalFromDivider(Adc::PLLAD_MD::read());
+    HD_HSYNC_RST::write((Adc::PLLAD_MD::read() / 2) + RasterGuardSamples);
+    HD_HB_ST::write(Adc::PLLAD_MD::read() * ActiveFraction);
+    HD_HB_SP::write(BlankEndSamples);
     HD_HS_ST::write(0x80);
     HD_HS_SP::write(0x00);
 

@@ -299,6 +299,12 @@ public:
     // register self-consistent. SourceMeasurement.h
     static void applyForBypassRgbhv();
 
+    // The divider pass-through samples at, on either route. A literal rather
+    // than the measured divider: it is what the ADC-to-DAC switch has always
+    // used, and that route's picture is the reference the HD route is judged
+    // against. docs/investigations/adc-pll-lock-range.md
+    static const uint16_t BypassDivider = 1856;
+
     // The PLL's operating band, steered from a measured rate. Held rather than
     // read back: PLLAD_LAT loads the whole group on a rising edge, so the
     // registers report a band the PLL may not be running yet.

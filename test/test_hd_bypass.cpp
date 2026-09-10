@@ -287,14 +287,15 @@ using Tv5725::SyncMeasurement;
 // different question from the one the trace answers.
 static const uint16_t DividerBeforeLadder = 2345;
 
-static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311)
+static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311,
+                             uint16_t divider = DividerBeforeLadder)
 {
     Wire.reset();
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
     Tv5725::Tv5725::STATUS_SYNC_PROC_VTOTAL::write(sourceLines);
     rgbPatchCalls = 0;
-    HdBypass::applyForStandard(standard, DividerBeforeLadder, countRgbPatches);
+    HdBypass::applyForStandard(standard, divider, countRgbPatches);
 }
 
 TEST_CASE("interlaced SD plays out a raster derived from the divider")
@@ -471,21 +472,34 @@ TEST_CASE("1080p leaves the SD vertical window where it found it")
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == Poison);
 }
 
-TEST_CASE("an RGBHV source plays out a raster derived from the divider")
+TEST_CASE("an RGBHV source plays out the line the CHANNEL sees, not the ADC line")
 {
-    // Without an arm of its own it keeps enable()'s resting timing, which is a
-    // raster for no source and the sink refuses it. The derivation is the one
-    // the SD arm already carries, and it is what the bench measured working on
-    // an 800x600 RGBHV source.
+    // The channel is fed the decimated sample stream, so its line is the
+    // divider over the oversampling ratio. Derived from the ADC line instead,
+    // HD_HB_ST lands beyond the end of the channel's line and the blank
+    // generator never fires at all -- which is what left a bar of the source's
+    // own back porch down the left and clipped the right.
     // docs/investigations/one-bypass-route-carries-rgbhv.md
     for (uint8_t standard : {14, 15}) {
         CAPTURE(standard);
-        applyForStandard(standard);
+        applyForStandard(standard, 311, 1856);
 
-        CHECK(HdBypass::HD_HSYNC_RST::read() == 1180);  // MD / 2 + 8
-        CHECK(HdBypass::HD_HB_ST::read() == 2216);      // 0.945 of MD
-        CHECK(HdBypass::HD_HB_SP::read() == 144);
+        CHECK(HdBypass::HD_HSYNC_RST::read() == 1864);  // 1856 + 8
+        CHECK(HdBypass::HD_HB_ST::read() == 1753);      // 0.945 of 1856
+        CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
     }
+}
+
+TEST_CASE("an RGBHV source samples the way the ADC-to-DAC route does")
+{
+    // One sampling configuration for pass-through, whichever route carries it.
+    applyForStandard(14, 311, 1856);
+
+    CHECK(Adc::PLLAD_MD::read() == 1856);
+    CHECK(Adc::PLLAD_KS::read() == 1);
+    CHECK(Adc::PLLAD_ICP::read() == 4);
+    CHECK(Adc::PLLAD_FS::read() == 0);
+    CHECK(Adc::ADC_FLTR::read() == 0);
 }
 
 TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal")
@@ -501,9 +515,8 @@ TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal"
     HdBypass::applyForStandard(14, 1124, countRgbPatches);
 
     CHECK(Adc::PLLAD_MD::read() == 1124);
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 570);   // 1124 / 2 + 8
+    CHECK(HdBypass::HD_HSYNC_RST::read() == 1132);  // 1124 + 8
     CHECK(HdBypass::HD_HB_ST::read() == 1062);      // 0.945 of 1124
-    CHECK(HdBypass::HD_HB_SP::read() == 144);
 }
 
 TEST_CASE("an unmeasured source leaves the bypass raster alone")

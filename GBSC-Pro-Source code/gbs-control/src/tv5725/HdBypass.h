@@ -178,11 +178,15 @@ private:
     // The played-out line derived from the divider the source was sampled at.
     // Shared, because a raster frozen per standard is what left an RGBHV source
     // with a raster for no source.
-    static void applyHorizontalFromDivider(uint16_t divider);
+    // The played-out line, from the line the CHANNEL is fed rather than from
+    // the divider. HD_HB_ST beyond the end of that line leaves the blank
+    // generator inert, which is not a blank window that never closes but one
+    // that never opens.
+    static void applyHorizontalFromChannelLine(uint16_t channelLine);
 
-    // A source with no standard of its own. It samples at the divider the
-    // engine measured and plays out the line that divider implies; the vertical
-    // windows and the sync pulses stay where the switch put them.
+    // A source with no standard of its own. It asks the ADC for what the
+    // ADC-to-DAC route asks for and plays out the line the channel then sees;
+    // the vertical windows and the sync pulses stay where the switch put them.
     static void applyRgbhv(uint16_t divider);
 
     static void applySd(uint8_t standard);
