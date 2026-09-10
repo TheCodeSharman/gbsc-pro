@@ -18,6 +18,22 @@ void Chip::outputUp()
     PAD_SYNC_OUT_ENZ::write(0);
 }
 
+void Chip::enterBypassRgbhv()
+{
+    GBS::PLL_CKIS::write(0);
+    GBS::PLL_DIVBY2Z::write(0);
+    GBS::PLL_ADS::write(0);
+    MemoryBus::useFeedbackClock();
+    PAD_TRI_ENZ::write(1);
+    GBS::PLL648_CONTROL_01::write(0x35);
+    GBS::PLL648_CONTROL_03::write(0x00);
+    GBS::PLL_LEN::write(1);
+
+    DAC_RGBS_BYPS2DAC::write(0);
+    DAC_RGBS_ADC2DAC::write(1);
+    OUT_SYNC_SEL::write(1);
+}
+
 void Chip::routeToHdBypass()
 {
     DAC_RGBS_ADC2DAC::write(0);
