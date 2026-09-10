@@ -130,6 +130,26 @@ the last scaled load (`VDS_HSYNC_RST` 1667 here) and none of it is emitted.
 `HD_SEL_BLK_IN` is ruled out with them: taking the blank from the input rather
 than from the one sync generates leaves the profile identical.
 
+**The input formatter is out of the path too.** `IF_HBIN_SP` 272 -> 600 and
+`IF_HB_SP` 72 -> 400, each with a fresh profile, change nothing. So the HD
+channel is fed from the decimated ADC stream ahead of the capture chain, and
+neither capture window, the frame buffer nor the scaler is between it and the
+DAC.
+
+**The sync processor's retime window is not it either**, though sizing it
+correctly is a real fix on its own account: `SP_RT_HS_SP` read 1045 against a
+divider of 1856, which is 93% of 1124 -- the divider from before the switch.
+`PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are one quantity in three
+registers, and the bypass arm writes the first directly, so the other two go
+stale. Writing 1726, the 93% this divider asks for, leaves the profile
+unchanged.
+
+**What is left in the path is the ADC, the decimator, the HD channel's own
+gain and offset stages, and the DAC.** Nothing addressable has moved the band,
+which points at a fixed offset between the video the channel emits and the sync
+it emits beside it. That is a timing measurement rather than a register sweep:
+HSOUT against the start of active video, on both routes, with a scope.
+
 So the band is not programmed blanking, not the played-out line's length, not
 where the output sync pulse sits, not the scaler's display window, and not which
 blank the channel selects. What differs between the routes and is
