@@ -207,7 +207,7 @@ of what the machine emits, because the ADV chain regenerates it.
   `vga` -- `getVideoMode()` opens with `sourceIsRgbhv()` and returns the held
   byte, so no timing produces a standard from 3 to 7 on that input -- which
   means a cable to the RGBs port and a bench trip. The branches it would reach
-  are deleted by step 12 of `input-acquisition.md`.
+  are deleted by step 12 of `video-source-acquisition.md`.
 
   **What is worth having is a higher LINE RATE, and that needs neither.** The
   RISC PC reaches 40.7 kHz at 800x600@60, which is what established that a

@@ -954,10 +954,32 @@ costs, measured against the tree:
 | 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | `SourceStandard` is deleted; its SD arm is live on YPbPr |
 | 3, 4 | progressive SD, 480p and 576p | 5 | with it |
 | 5, 6, 7 | HD, reached through the HD bypass switch | 3 | the bypass entry points merge -- step 10 |
-| 8, 9 | progressive, beside 3 and 4 in `isProgressive()` | none directly; only `result ==` in `applyPresets()` | the dispatch dissolves |
+| 8 | medium resolution: mode detect answers only once `MD_HD1250P_CNTRL` is walked onto the source | 6, three of them a live search in `inputAndSyncDetect()` | the search has a measurement to answer it, and the 110 MHz filter arm has an owner |
+| 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
 | 13 | the YPbPr arm of that dispatch | 3 | with the dispatch |
 | 14 | scaling RGBHV | 4, two of them the `scalingRgbhv()` and `sourceIsRgbhv()` predicates | `OutputChoice` answers instead -- step 10 |
 | 15 | RGBHV bypass | 9 | with it |
+
+**NEITHER 8 NOR 9 DIES WITH THE DISPATCH, and neither is a `videoStandardInput`
+value.** No site reads the field as 8 or 9 -- which is what makes them look free
+-- but both are produced by `getVideoMode()` and both carry register policy that
+has to land somewhere first.
+
+8 is a SEARCH, not a classification. `inputAndSyncDetect()` walks
+`MD_HD1250P_CNTRL` upwards until `getVideoMode()` answers 8, keeps the value
+that worked in `rto->medResLineCount`, and `ModeDetect::applyMedResLineCount()`
+replays it on every load. Deleting the value deletes the search's only
+termination condition. Its `SourceStandard` arm also moves the analog corner to
+110 MHz and sets `PLLAD_ICP` to 6, which is the sharpness judgement below.
+
+9 is `getVideoMode()`'s answer for a source it never recognised but which held a
+steady line count for 255 consecutive polls -- the route by which an unknown
+source is scaled rather than abandoned. Its `SourceStandard` arm drops
+`PLLAD_KS` an octave, and that arm is ALREADY a measurement: `sourceIsTall()`
+reads `SourceMeasurement::measureSourceLines()` twice. The `standard_ == 9` in
+front of it is a classification narrowing a measurement that would otherwise
+stand on its own, which is the one place on this list where the byte can be
+removed without deciding a new policy.
 
 **Two values carry two meanings, and those are the ones that bite.** 3 is 480p
 NTSC *and* `PresetLoad::ScalingRgbhvStandard`, so a scaling RGBHV source takes
@@ -1011,10 +1033,17 @@ other**, and deleting the class changes the component picture.
 **And two more effects survive on every path.**
 
 Everything else it writes has a later owner. `PLLAD_KS` is overwritten by
-`Adc::applySampleRate()`, which `VideoPath::writeSampling()` calls on every mode
-change and which derives the post divider from `divider x lineRate` -- the
-measurement, correctly. The IF and VDS delays are overwritten by bring-up. Both
-owners are the right ones, so those writes are already dead.
+`Adc::applySampleRate()`, reached from `inputTimingsChanged()` a few lines after
+`apply()` returns, which derives the post divider from `divider x lineRate` --
+the measurement, correctly. The IF and VDS delays are overwritten by bring-up.
+
+**THAT OVERWRITE IS CONDITIONAL, so the writes are dead on a solved source and
+live on an unsolved one.** `SourceMeasurement::applySampling()` returns before
+it without a usable measurement, and `Adc::applySampleRate()` skips the
+`PLLAD_KS` write entirely on a zero line rate rather than pick a crossover row
+by arithmetic on a zero. A load with nothing measured yet is exactly the case
+that reaches `apply()`, so its post divider is what the ADC runs on until the
+first solve lands.
 
 What is left:
 

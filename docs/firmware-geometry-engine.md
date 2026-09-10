@@ -92,7 +92,7 @@ bench instruments and the hardware suite. A build without it answers 404.
 surface. **The engine is the new code, all of it** -- `VideoSourceAcquisition` and
 every `Tv5725::` class -- as against the legacy sketch; what the sketch may reach
 is `VideoSourceAcquisition`, which calls the rest.
-[input-acquisition.md](input-acquisition.md)
+[video-source-acquisition.md](video-source-acquisition.md)
 
 | | |
 |---|---|
