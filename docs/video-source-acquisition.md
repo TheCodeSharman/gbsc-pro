@@ -974,12 +974,18 @@ termination condition. Its `SourceStandard` arm also moves the analog corner to
 
 9 is `getVideoMode()`'s answer for a source it never recognised but which held a
 steady line count for 255 consecutive polls -- the route by which an unknown
-source is scaled rather than abandoned. Its `SourceStandard` arm drops
-`PLLAD_KS` an octave, and that arm is ALREADY a measurement: `sourceIsTall()`
-reads `SourceMeasurement::measureSourceLines()` twice. The `standard_ == 9` in
-front of it is a classification narrowing a measurement that would otherwise
-stand on its own, which is the one place on this list where the byte can be
-removed without deciding a new policy.
+source is scaled rather than abandoned. Its `SourceStandard` arm is gone: the
+octave drop past 650 lines now runs off `sourceIsTall()` alone, which reads
+`SourceMeasurement::measureSourceLines()` twice with a settle between. What put
+the clock outside its crossover row was always the count, so every progressive
+standard gets the divider that fits rather than only the one Mode Detect failed
+to name. `SourceStandard` is down to one reference to the value, in
+`isProgressive()`, and that one goes with the byte.
+
+**No bench source reaches the threshold**, the tallest mode the RISC PC offers
+being 800x600 at 627 lines, so that branch is proven at host level only. What
+the bench does prove is the other side: on 320x256@50 the divider, the crossover
+row, the analog corner and the whole capture window are unchanged across it.
 
 **Two values carry two meanings, and those are the ones that bite.** 3 is 480p
 NTSC *and* `PresetLoad::ScalingRgbhvStandard`, so a scaling RGBHV source takes
