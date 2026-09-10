@@ -965,7 +965,11 @@ NTSC *and* `PresetLoad::ScalingRgbhvStandard`, so a scaling RGBHV source takes
 *and* `PresetLoad::NoValidMode`, the sentinel a load normalises to 0. Neither can
 be retired by choosing a different number for it.
 
-**`Tv5725::PresetLoad` does not survive this step.** Its instance half --
+**`Tv5725::PresetLoad` does not survive this step, and it goes with the CONCEPT
+rather than with the field.** Keeping it and giving it a byte-free signature
+would preserve the idea that a load is chosen by classifying the source, which
+is the thing being retired; the field is only how that idea is spelled. Its
+instance half --
 `videoStandardInput()`, `videoStandardInputAfterLoad()`, `enableScalingRgbhv()`,
 `inputIsYpBpR()` -- is a pure function of the byte, constructed at exactly one
 site in the firmware, and every member goes with the byte except
