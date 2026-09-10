@@ -34,6 +34,14 @@ const uint16_t BlankEndSamples = 0x90;
 // against, so the two ask the ADC for the same thing.
 const uint8_t BypassPostDivider = 1;
 
+// How far the sample lags the sync the block emits beside it, in channel
+// clocks. Video passes THROUGH the channel here and around it on the
+// ADC-to-DAC route, and the sync generator does not account for the difference.
+// Measured at 800x600@60 and 640x480@60: the same 40 either way, so it is the
+// channel's delay rather than any source's back porch.
+const uint16_t ChannelSyncDelay = 40;
+const uint16_t SyncPulseWidth = 124;
+
 // Undecimated. Pass-through has no scaler to feed and the channel plays out
 // what it is given, so halving the sample stream only costs horizontal detail:
 // measured on an 800x600 source, decimating by two takes the played-out line to
@@ -118,7 +126,13 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
 void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 {
     HD_HSYNC_RST::write(channelLine + RasterGuardSamples);
-    HD_HB_ST::write(channelLine * ActiveFraction);
+
+    // At the end of the line, not at a fraction of it. Pass-through plays out
+    // whatever the source sends and the source's own porches are already black,
+    // so blanking earlier only takes picture off the right -- measured, 0.945
+    // of the line cost the last 3% of the panel. It still has to sit below
+    // HD_HSYNC_RST or the generator never opens at all.
+    HD_HB_ST::write(channelLine);
     HD_HB_SP::write(BlankEndSamples);
 }
 
@@ -138,6 +152,9 @@ void HdBypass::applyRgbhv(uint16_t divider)
     Adc::latch();
 
     applyHorizontalFromChannelLine(divider / (ratio < 1 ? 1 : ratio));
+
+    HD_HS_ST::write(ChannelSyncDelay);
+    HD_HS_SP::write(ChannelSyncDelay + SyncPulseWidth);
 }
 
 void HdBypass::applySd(uint8_t standard)

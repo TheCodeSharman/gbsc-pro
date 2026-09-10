@@ -485,9 +485,25 @@ TEST_CASE("an RGBHV source plays out the line the CHANNEL sees, not the ADC line
         applyForStandard(standard, 311, 1856);
 
         CHECK(HdBypass::HD_HSYNC_RST::read() == 1864);  // 1856 + 8
-        CHECK(HdBypass::HD_HB_ST::read() == 1753);      // 0.945 of 1856
+        CHECK(HdBypass::HD_HB_ST::read() == 1856);      // the line's end
         CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
     }
+}
+
+TEST_CASE("an RGBHV source delays its sync to match the channel's own delay")
+{
+    // Video passes THROUGH the channel on this route and around it on the
+    // ADC-to-DAC one, but the sync the block emits is the same either way. Left
+    // at the counter's origin it leads the video it belongs to, and the sink
+    // opens its window early on a band of the source's back porch.
+    //
+    // Measured at 800x600@60 and again at 640x480@60 -- different back porches,
+    // same correction -- so it is the channel's delay and not the source's.
+    // docs/investigations/one-bypass-route-carries-rgbhv.md
+    applyForStandard(14, 311, 1856);
+
+    CHECK(HdBypass::HD_HS_ST::read() == 40);
+    CHECK(HdBypass::HD_HS_SP::read() == 164);
 }
 
 TEST_CASE("an RGBHV source samples the way the ADC-to-DAC route does")
@@ -516,7 +532,7 @@ TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal"
 
     CHECK(Adc::PLLAD_MD::read() == 1124);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1132);  // 1124 + 8
-    CHECK(HdBypass::HD_HB_ST::read() == 1062);      // 0.945 of 1124
+    CHECK(HdBypass::HD_HB_ST::read() == 1124);      // the line's end
 }
 
 TEST_CASE("an unmeasured source leaves the bypass raster alone")
