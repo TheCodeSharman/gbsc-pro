@@ -115,6 +115,19 @@ it is not emitting crops picture.
 line than it reports: the bench reads 524 on the 525-line mode, and 311 on
 AKF50's 312-line 320x256.
 
+## The stated position is in the SOURCE's line, not in this one
+
+Every percentage above is a position in the line the standard describes,
+counted from the hsync leading edge. The IF line is counted from whichever edge
+the chip triggered on, and carries video a capture lag behind it, so the two are
+the same position only where nothing displaced them.
+
+`VideoSourceLine::videoAt()` is the mapping, and `ActiveImage::place()` puts an
+untuned axis through it rather than using the fraction directly. Placing the
+window at the stated fraction of the IF line put it 72 units before the picture
+on a positive-going pulse, and one whole sync width past it on an inverted one.
+`docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`
+
 ## The remaining Acorn modes are VESA-rastered but not VESA-blanked
 
 Stock AKF50 states each mode as `sync, back porch, left border, display, right

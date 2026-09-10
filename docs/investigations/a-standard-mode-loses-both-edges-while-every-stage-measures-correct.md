@@ -9,7 +9,7 @@ and right. The same source in RGBHV bypass shows the card complete.
 | | what it is | state |
 |---|---|---|
 | head blanking | `IF_HBIN_SP` blanks into the capture where the doubler is bypassed | **closed** |
-| the line offset | the IF origin is ~72 ADC samples late, and one sync width early where hsync is inverted | **modelled**, not yet fixed |
+| the line offset | the IF origin is ~72 units late, and one sync width early where hsync is inverted | **corrected in placement**; the tail past the write limit remains |
 | the transmitted window | the produced picture is wider than the encoder transmits | open |
 
 ## The source, exactly
@@ -114,10 +114,54 @@ positive-going the IF origin is its leading edge; where it is inverted the
 origin is the trailing edge, so the sync interval is already behind the origin
 and the picture arrives one sync width sooner.
 
-`VideoSourceLine::firstCapture()` returns `syncUnits` on the premise that the
-origin is the leading edge. That premise holds for one polarity only. On the
-other the sync has already been skipped and adding `syncUnits` places the
-capture window one sync width too late, on top of the LAG that applies to both.
+### What the engine does with it
+
+`VideoSourceLine` carries the lag and which end of the pulse the line is counted
+from. `firstCapture()` is `lag + (syncAtHead ? syncUnits : 0)`, and `videoAt()`
+maps a position a standard states as a fraction of ITS line onto this one.
+`ActiveImage::place()` puts an untuned axis through `videoAt()`; placing it at
+the stated fraction of the IF line directly was where the wrong premise lived,
+and correcting `firstCapture()` alone never reaches it because the default start
+sits above that floor. `SourceMeasurement::measureHsyncPositive()` reads
+`STATUS_SYNC_PROC_HSPOL`, and `CaptureWindow::readRasters()` is handed it the way
+it is already handed `HLOW_LEN`.
+
+**The lag is not applied where the line doubler is in circuit.** `IF_HBIN_SP` is
+that FIFO's own line reset there and places the picture itself: measured on
+320x256@50, the picture starts at IF 159 against a nominal 242 -- negative, on a
+positive-going pulse -- and the picture is complete. Applying a lag to it would
+move a picture nothing is wrong with.
+
+Measured across the change, default framing, `/sc?B` in both states:
+
+| mode | `IF_HB_SP2` before | after | `ch` before | after |
+|---|---|---|---|---|
+| 800x600@60, positive | 231 | **271** | 984 | 913 |
+| 640x480@60, inverted | 203 | **144** | 992 | 1051 |
+| 320x256@50, doubled | 132 | 132 | 1043 | 1043 |
+
+The inverted mode gets 59 units of its own picture back, and lands within about
+six source pixels of where AKF50 puts active -- the DMT-against-AKF50 border
+difference `docs/investigations/vesa-modes-are-clipped-by-default.md` records and
+leaves to the user. The doubled mode does not move at all.
+
+### What is left: the tail is past the write limit
+
+On 800x600@60 the picture occupies IF 302..1152 and nothing is captured past
+1125, so its last ~29 units cannot be reached by any window. The default is
+right-clamped to 271..1123 rather than placed at 302, which is why the left band
+shrinks by about half rather than closing: 64 photo px of it went, against 124
+that were there.
+
+Closing it needs the line to end a lag before the limit, which means capping the
+divider at `WriteLimitUnits - CaptureLagUnits` where the doubler is bypassed --
+1124 to 1052 on this mode, 6.4% of the horizontal sampling density, on every
+undoubled source. That is a picture-quality trade rather than a correctness one.
+
+`SP_RT_HS_ST` is the cheaper thing to try first and has never been swept: it is
+the retiming start, reads 0, and if it moves the line's origin the lag can be
+cancelled outright. `SP_RT_HS_SP` was swept over 950..1110 with no positional
+effect, which says nothing about the start.
 
 **Refuted by these measurements**, each of which fitted a subset:
 
