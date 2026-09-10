@@ -71,6 +71,36 @@ tolerance. Fixing it moves the capture from the envelope's 971 IF units to DMT's
 853 and holds it there, which improves the picture materially and does not
 complete it.
 
+## It is not the bypass route's residual, which is closed
+
+The HD bypass channel had a left band of its own, about 2.4% of the panel. That
+one is **closed** -- `HD_HS_ST`, the sync pulse's leading edge, corrected by the
+channel's own 40 counts, with `HD_HB_ST` closing a second band at the right.
+`one-bypass-route-carries-rgbhv.md` has the measurement.
+
+**They share a symptom and nothing else.** This fault is on the SCALING path,
+where there is no HD channel in the picture at all and the sync the sink
+triggers on is the VDS's. Reaching for `HD_HS_ST` here reaches a register that
+is not in the path.
+
+## A second source shows it, and narrows what they share
+
+The Wii on `ypbpr` at 480p loses the left the same way, measured against
+pass-through at the same camera position: the horizontal rules of the Wii's
+Screen menu reach both panel edges in pass-through and start a fifth of the way
+in when scaled, running off the right.
+
+So it is not a property of 800x600, of the RISC PC, of `vga`, or of a
+monitor-definition file. What the two sources share is that both run **above
+31 kHz and are NOT line doubled**, where the bench's everyday 15 kHz source is
+doubled and frames correctly. `SourceMeasurement::lineDoubled()` is the term
+that separates them, and no capture-window default has ever been measured
+against a source where it is false.
+
+That is a candidate rather than a conclusion -- two sources is not a
+characterisation, and the doubling changes the IF's units, the divider and the
+line counter together, so which of them carries the error is not established.
+
 ## Where to look next
 
 The remaining assumption nobody has tested is that
