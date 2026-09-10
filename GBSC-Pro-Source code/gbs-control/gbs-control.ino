@@ -1202,6 +1202,28 @@ static boolean bypassCanBeDisplayed()
     return sourceSampling.rateCanBypass();
 }
 
+// The line count a BYPASSED source has slowed to, when the display can no
+// longer show it -- 0 while bypass still reaches the panel, and 0 when no count
+// has held still long enough to say. The count comes back rather than a
+// verdict, so what is reported is the reading that decided.
+//
+// **bypassCanBeDisplayed() CANNOT ANSWER THIS.** It asks the held rate, and
+// bypass measures nothing -- so the held rate still names the mode bypass was
+// entered on, keeps reading as displayable however far the source slows, and
+// the branch that would leave never fires. The count is live.
+//
+// The cheap read gates the expensive confirmation: leaving costs a preset load,
+// and a source mid-change counts anything at all. docs/rgbhv-bypass-trap.md
+static uint16_t bypassLinesBelowTheDisplay()
+{
+    const uint16_t counted = Tv5725::SourceMeasurement::measureSourceLines();
+    if (sourceSampling.countCanBypass(counted))
+        return 0;
+
+    const uint16_t held = Tv5725::SourceMeasurement::countHeldStill(counted);
+    return held != 0 && !sourceSampling.countCanBypass(held) ? held : 0;
+}
+
 // A 15 kHz line whose vertical interval carries equalisation and serration
 // pulses. The rate alone does not say so, and the coast settings below break the
 // horizontal count on a source that has none.
@@ -4553,9 +4575,11 @@ void runSyncWatcher() //
         // Already bypassed and the source has slowed past what the display
         // takes -- a mode change does not re-enter bypass, so nothing else
         // re-asks the question and the panel stays blank for ever.
-        if (rgbhvBypass() && !bypassCanBeDisplayed()) {
-            printf("bypass left: %lu Hz line, needs %lu\n",
-                   (unsigned long)sourceSampling.heldLineRateHz(),
+        const uint16_t slowedTo =
+            rgbhvBypass() ? bypassLinesBelowTheDisplay() : 0;
+        if (slowedTo != 0) {
+            printf("bypass left: %u lines is under the %lu Hz floor\n",
+                   (unsigned)slowedTo,
                    (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
             rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
             rto->isValidForScalingRGBHV = true;

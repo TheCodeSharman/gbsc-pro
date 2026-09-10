@@ -366,6 +366,15 @@ bool SourceMeasurement::rateCanBypass() const
     return heldLineRateHz() >= BypassMinLineRateHz;
 }
 
+bool SourceMeasurement::countCanBypass(uint16_t lines) const
+{
+    if (lines == 0)
+        return false;
+    const float rate =
+        fieldRateHz_ > 0.0f ? fieldRateHz_ : (float)NominalFieldRateHz;
+    return (uint32_t)((float)lines * rate) >= BypassMinLineRateHz;
+}
+
 bool SourceMeasurement::lowLineRate() const
 {
     return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;

@@ -430,7 +430,27 @@ public:
     // own timing to the encoder, so an unmeasured or slow source has to stay on
     // the scaling path -- which shows any rate -- rather than put torn content
     // on the panel that reads as a broken scaler.
+    //
+    // This asks the HELD rate, so it answers only where a measurement has just
+    // been taken. Bypass is not such a place -- countCanBypass() is.
     bool rateCanBypass() const;
+
+    // The same question asked of a source counted NOW, for a source that is
+    // already bypassed.
+    //
+    // **THE HELD RATE CANNOT ANSWER THERE.** Bypass measures nothing, so what
+    // is held still names the mode bypass was entered on: a source that slows
+    // underneath keeps reading as displayable, the branch that would leave
+    // never fires, and the panel stays blank for ever. The count is live, and
+    // the divider does not touch it.
+    //
+    // The count is taken against the HELD FIELD RATE rather than the held line
+    // rate, because a mode change moves the count and usually leaves the field
+    // rate where it was. A source that changes both at once is the one case
+    // this cannot see, and it costs no vsync spin to be right about the rest.
+    // A count of 0 is nothing measured and decides nothing.
+    // docs/rgbhv-bypass-trap.md
+    bool countCanBypass(uint16_t lines) const;
 
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.

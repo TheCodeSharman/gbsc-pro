@@ -804,6 +804,40 @@ TEST_CASE("only a rate a display accepts may be bypassed")
     }
 }
 
+TEST_CASE("a source already bypassed is judged on a count taken now")
+{
+    // **THE HELD RATE CANNOT ANSWER THIS.** Bypass measures nothing, so what is
+    // held still names the mode bypass was entered on -- a source that slows
+    // underneath it keeps reading as displayable, the branch that would leave
+    // never fires, and the panel stays blank for ever.
+    // docs/rgbhv-bypass-trap.md
+    SourceMeasurement measurement;
+
+    seedSourceLines(524);
+    g_fieldRate = 60.0f;
+    CHECK(measurement.measureLineRate());
+    CHECK(measurement.rateCanBypass());
+
+    SUBCASE("the held rate outlives the mode it was measured on") {
+        // 320x256@50 arrives while bypassed. Nothing re-measures, so the held
+        // rate is still the 31.4 kHz line of the mode before it.
+        seedSourceLines(311);
+        CHECK(measurement.rateCanBypass());
+    }
+
+    SUBCASE("the count is what has moved, and it refuses") {
+        CHECK_FALSE(measurement.countCanBypass(311));
+    }
+
+    SUBCASE("a count the display still takes stays bypassed") {
+        CHECK(measurement.countCanBypass(524));
+    }
+
+    SUBCASE("nothing counted decides nothing") {
+        CHECK_FALSE(measurement.countCanBypass(0));
+    }
+}
+
 TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
 {
     // SP_H_PULSE_IGNOR and the coast window both key on a line whose vertical
