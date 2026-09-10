@@ -941,6 +941,41 @@ lands wherever FrameSync does.
 no readers. *What the byte conflates* above has what each of its fifteen values
 carried and what replaced it.
 
+**THE UNIT OF REMOVAL IS THE VALUE, NOT THE FIELD.** Deleting the field means
+deleting every reference to every value it ever held, so a change that moves one
+value to another -- 3 to 14, say, to close the window
+`docs/investigations/two-spellings-of-scaling-rgbhv.md` describes -- entrenches
+the byte rather than retiring it, and is undone by this step. What each value
+costs, measured against the tree:
+
+| value | means | sites | goes when |
+|---|---|---|---|
+| 0 | nothing recognised | 7, all but one a write; `standardIsHeld()` is the only reader | a validated measurement replaces the no-sync gate -- step 4 |
+| 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | `SourceStandard` is deleted; its SD arm is live on YPbPr |
+| 3, 4 | progressive SD, 480p and 576p | 5 | with it |
+| 5, 6, 7 | HD, reached through the HD bypass switch | 3 | the bypass entry points merge -- step 10 |
+| 8, 9 | progressive, beside 3 and 4 in `isProgressive()` | none directly; only `result ==` in `applyPresets()` | the dispatch dissolves |
+| 13 | the YPbPr arm of that dispatch | 3 | with the dispatch |
+| 14 | scaling RGBHV | 4, two of them the `scalingRgbhv()` and `sourceIsRgbhv()` predicates | `OutputChoice` answers instead -- step 10 |
+| 15 | RGBHV bypass | 9 | with it |
+
+**Two values carry two meanings, and those are the ones that bite.** 3 is 480p
+NTSC *and* `PresetLoad::ScalingRgbhvStandard`, so a scaling RGBHV source takes
+`SourceStandard`'s progressive arm for the length of a load. 15 is RGBHV bypass
+*and* `PresetLoad::NoValidMode`, the sentinel a load normalises to 0. Neither can
+be retired by choosing a different number for it.
+
+**`Tv5725::PresetLoad` does not survive this step.** Its instance half --
+`videoStandardInput()`, `videoStandardInputAfterLoad()`, `enableScalingRgbhv()`,
+`inputIsYpBpR()` -- is a pure function of the byte, constructed at exactly one
+site in the firmware, and every member goes with the byte except
+`inputIsYpBpR()`, which is `adcInputSel == 0` and belongs to
+`VideoSourceSelection` beside the rest of that table. Its static half -- the
+scaling RGBHV state and the two line-count buckets -- is engine state and an
+output question, so it goes to `VideoPath` and `OutputChoice`. The class was
+extracted so mode state would outlive the preset tables; it has, and there is no
+second job waiting for it.
+
 The byte goes with the function, and nothing holds a standard afterwards. Two
 things come out with it.
 
