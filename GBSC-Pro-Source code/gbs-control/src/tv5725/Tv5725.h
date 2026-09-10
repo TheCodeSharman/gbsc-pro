@@ -712,57 +712,6 @@ public:
 
 
     typedef UReg<0x05, 0x69, 0, 8> ADC_UNUSED_69;
-
-
-    static const uint8_t OSD_ZOOM_1X = 0;
-    static const uint8_t OSD_ZOOM_2X = 1;
-    static const uint8_t OSD_ZOOM_3X = 2;
-    static const uint8_t OSD_ZOOM_4X = 3;
-    static const uint8_t OSD_ZOOM_5X = 4;
-    static const uint8_t OSD_ZOOM_6X = 5;
-    static const uint8_t OSD_ZOOM_7X = 6;
-    static const uint8_t OSD_ZOOM_8X = 7;
-
-    static const uint8_t OSD_MENU_DISP_STYLE_VERTICAL = 0;
-    static const uint8_t OSD_MENU_DISP_STYLE_HORIZONTAL = 1;
-
-    static const uint8_t OSD_ICON_NONE = 0;
-    static const uint8_t OSD_ICON_BRIGHTNESS = 1;
-    static const uint8_t OSD_ICON_CONTRAST = 2;
-    static const uint8_t OSD_ICON_HUE = 3;
-    static const uint8_t OSD_ICON_SOUND = 4;
-    static const uint8_t OSD_ICON_UP_DOWN = 8;
-    static const uint8_t OSD_ICON_LEFT_RIGHT = 9;
-    static const uint8_t OSD_ICON_VERTICAL_SIZE = 10;
-    static const uint8_t OSD_ICON_HORIZONTAL_SIZE = 11;
-    static const uint8_t OSD_ICON_COUNT = 8;
-
-    static inline uint8_t osdIcon(uint8_t index)
-    {
-        static const uint8_t osdIcons[8] = {
-            OSD_ICON_BRIGHTNESS,
-            OSD_ICON_CONTRAST,
-            OSD_ICON_HUE,
-            OSD_ICON_SOUND,
-            OSD_ICON_UP_DOWN,
-            OSD_ICON_LEFT_RIGHT,
-            OSD_ICON_VERTICAL_SIZE,
-            OSD_ICON_HORIZONTAL_SIZE,
-        };
-        return osdIcons[index];
-    }
-
-    static const uint8_t OSD_COLOR_BLACK = 0;
-    static const uint8_t OSD_COLOR_BLUE = 1;
-    static const uint8_t OSD_COLOR_GREEN = 2;
-    static const uint8_t OSD_COLOR_CYAN = 3;
-    static const uint8_t OSD_COLOR_RED = 4;
-    static const uint8_t OSD_COLOR_MAGENTA = 5;
-    static const uint8_t OSD_COLOR_YELLOW = 6;
-    static const uint8_t OSD_COLOR_WHITE = 7;
-
-    static const uint8_t OSD_FORMAT_YCBCR = 1;
-    static const uint8_t OSD_FORMAT_RGB = 0;
 };
 
 } // namespace Tv5725
