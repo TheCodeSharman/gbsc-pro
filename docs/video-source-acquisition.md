@@ -277,13 +277,24 @@ and the scan mode solve carrying the rest), and what output was CHOSEN
 from the first. PAL against NTSC survives only as the option where the user asks
 for the output frame rate to match the source's.
 
-**`SourceKey` cannot separate two very different sources, and nothing on this
-board can.** The sync processor counts FIELDS, so a 576i console reads 310
-against the RISC PC's progressive 311 at the same 50 Hz -- and nothing else
-measures interlace either: `VPERIOD_IF` is one half-line apart, and the
-dedicated status bits agree with each other and are wrong. So interlace is not a
-third fact the key can carry. Whether that is the chip's limit is undecided, and
-an interlaced RISC PC mode would decide it.
+**`SourceKey` cannot separate two very different sources on its LINE COUNT.**
+The sync processor counts FIELDS, so a 576i console reads 310 against the RISC
+PC's progressive 311 at the same 50 Hz.
+
+**INTERLACE IS MEASURED ON THIS BOARD, AND THE FIRMWARE ALREADY DOES IT.**
+`Deinterlacer::periodIsInterlaced()` keys on `VPERIOD_IF`'s PARITY -- interlaced
+requires an even period, progressive an odd one -- and the motion-adaptive
+deinterlacer switches on and off from it, live on the Wii. The half-line that
+separates the two is not too small to read; it IS the reading. An earlier
+version of this page said nothing on the board measures interlace, which the
+deinterlacer contradicts.
+
+What is limited is the table rather than the quantity: the period also has to
+land within `PeriodTolerance` of one of four hardcoded SD totals -- 524 and 624
+interlaced, 523 and 625 progressive. So an ARBITRARY interlaced raster is
+matched by none of them and reads as neither, which an interlaced RISC PC mode
+would confirm. That is what stops the key carrying interlace for every source,
+and it is a table to widen rather than a measurement to invent.
 `docs/investigations/vperiod-if-on-rgbhv.md`, `docs/bench-sources.md`.
 
 **`sourceIsRgbhv()` is circular if defined over the output.** It also answers
