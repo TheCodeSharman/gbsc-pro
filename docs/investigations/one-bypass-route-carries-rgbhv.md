@@ -65,6 +65,34 @@ which is the one witness that the divider latched, and
 **So the HD bypass channel is not HD-only.** What made it look that way is a
 raster frozen per standard instead of derived from the measurement.
 
+## The firmware does it now
+
+`applyForStandard()` has an arm for a source with no standard, and it is the
+derivation `applySd()` already carried, shared between them.
+
+**The divider is handed in rather than read back**, and that is the whole
+difference between working and not. `setOutModeHdBypass()` writes a literal 2345
+into `PLLAD_MD` on its way to the ladder, so a derivation that reads the register
+solves for that literal: measured, an 800x600 source the engine measured at 1124
+got `HD_HSYNC_RST` 1180 and `HD_HB_ST` 2216, and the sink reported no signal
+exactly as it did with no arm at all. Given the engine's divider the arm writes
+and latches it, so the ADC samples at the density the raster is drawn for --
+which on a bypass route is the picture rather than an internal detail.
+
+Measured through the firmware, RiscPC on `vga` at 800x600@60 via `/sc?K`:
+
+    PLLAD_MD                  1124
+    HD_HSYNC_RST               570
+    HD_HB_ST                  1062
+    HD_HB_SP                   144
+    DAC_RGBS_BYPS2DAC            1
+    STATUS_SYNC_PROC_HTOTAL   1124   the divider latched
+    STATUS_MISC_PLLAD_LOCK       1
+
+full-screen and sharp, the PM5544 gratings resolved finer than the scaled path
+renders them. A source with nothing measured keeps the resting timing rather
+than deriving a raster from a zero.
+
 ## What follows
 
 The reason for a second route was that an arbitrary raster could not be known,
@@ -84,9 +112,8 @@ carries rather than being extended with a fourteenth and fifteenth case.
   1 as an RGB source wants, ADC gains balanced at 123/123/123 and offsets at
   64/64/64, and all three DAC channels enabled. It is the border colour fault
   seen on the scaling path too, which is parked.
-- **The derivation was applied by hand**, not by firmware, and only at one
-  raster. `HD_HB_SP`, the vertical windows and the sync pulses were left at the
-  values the switch installed.
+- **The vertical windows and the sync pulses** are left at the values the
+  switch installed. Only the horizontal derivation is programmed.
 - **Standards 5, 6 and 7 stay unexercised.** No source on this bench produces
   them, so what their arms freeze is not checkable here either way.
 
