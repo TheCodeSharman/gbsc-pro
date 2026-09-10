@@ -553,4 +553,9 @@ uint16_t SourceMeasurement::measureHsyncLow()
     return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
+bool SourceMeasurement::measureHsyncPositive()
+{
+    return GBS::STATUS_SYNC_PROC_HSPOL::read() != 0;
+}
+
 }  // namespace Tv5725

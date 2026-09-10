@@ -107,7 +107,8 @@ struct SolvedEngine {
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
                  Tv5725::OutputChoice choice =
-                     Tv5725::OutputChoice(Tv5725::Output1080P))
+                     Tv5725::OutputChoice(Tv5725::Output1080P),
+                 bool hsyncPositive = true)
         : engine(clock, sampling, framings), acquisition(sampling, engine)
     {
         Wire.reset();
@@ -120,6 +121,9 @@ struct SolvedEngine {
         seed(0, 0x19, 0, 12, hsyncLow);      // STATUS_SYNC_PROC_HLOW_LEN
         seed(5, 0x12, 0, 12, 2553);          // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, sourceLines);   // STATUS_SYNC_PROC_VTOTAL
+        // Which end of the pulse the line is counted from. The bench source is
+        // positive-going; every VESA mode below 800x600 is not.
+        seed(0, 0x16, 0, 1, hsyncPositive ? 1 : 0);   // STATUS_SYNC_PROC_HSPOL
 
         engine.outputModeChanged(choice);
         engine.inputTimingsChanged(4);

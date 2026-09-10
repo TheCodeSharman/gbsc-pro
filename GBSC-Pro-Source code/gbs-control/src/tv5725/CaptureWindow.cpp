@@ -12,7 +12,8 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
-bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncLow)
+bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncLow,
+                                bool hsyncPositive)
 {
     const uint16_t sourceLines = source.sourceLines();
     const uint16_t horizontalWrap = source.ifLine() + 1;
@@ -33,7 +34,14 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncL
     if (SourceMeasurement::lineRateFrom(sourceLines, source.fieldRateHz()) == 0)
         return false;
 
-    horizontalLine_ = VideoSourceLine::measured(horizontalWrap, hsyncLow, source.divider());
+    // The capture path delivers video a fixed lag after the sync edge the line
+    // is counted from, EXCEPT where the line doubler is in circuit: IF_HBIN_SP
+    // is that FIFO's own line reset and places the picture itself.
+    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+    const uint16_t lagUnits = source.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits;
+
+    horizontalLine_ = VideoSourceLine::measured(horizontalWrap, hsyncLow, source.divider(),
+                                                lagUnits, hsyncPositive);
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and

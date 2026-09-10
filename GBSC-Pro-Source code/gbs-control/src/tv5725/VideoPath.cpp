@@ -442,7 +442,8 @@ bool VideoPath::measureSourceTimings(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
                        activeLinesStop_);
-    if (!capture.readRasters(sampling_, SourceMeasurement::measureHsyncLow())) {
+    if (!capture.readRasters(sampling_, SourceMeasurement::measureHsyncLow(),
+                             SourceMeasurement::measureHsyncPositive())) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;

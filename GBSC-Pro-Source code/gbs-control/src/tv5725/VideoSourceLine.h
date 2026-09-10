@@ -22,6 +22,12 @@ public:
     // docs/capture-limits.md
     static const uint16_t WriteLimitUnits = 1125;
 
+    // How far after the sync edge the line is counted from video reaches the
+    // input formatter. Measured on four undoubled modes as 69..76 units, with
+    // the offset it explains running -16 to +76.
+    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+    static const uint16_t CaptureLagUnits = 72;
+
     // The whole line is available. Vertical uses this: the exclusion is the
     // HSYNC pulse and there is no vertical equivalent.
     explicit VideoSourceLine(uint16_t units);
@@ -31,11 +37,19 @@ public:
     // Where the window rolls over.
     uint16_t units() const;
 
-    // How much of the line the hsync pulse takes at the HEAD.
+    // How much of the line the hsync pulse takes. Whether that is at the head
+    // is the `syncAtHead` measured() was given.
     uint16_t syncUnits() const;
 
     uint16_t firstCapture() const;
     uint16_t lastCapture() const;
+
+    // Where a position a video standard states as a fraction of ITS line lands
+    // in this one. The standard counts from the hsync leading edge; this line
+    // is counted from whichever edge the chip triggered on and carries video a
+    // lag behind it, so the two are the same position only on a line nothing
+    // displaced.
+    uint16_t videoAt(float lineFraction) const;
 
     // The widest capture this line can hold.
     uint16_t capturable() const;
@@ -54,16 +68,28 @@ public:
     // the pulse is that fraction of `units`. Nothing here is a constant for one
     // source: a 0.121 duty source excludes nearly twice what a 0.071 one does.
     //
-    // The pulse is at the HEAD, because SP_RT_HS_ST reads 0 and the input
-    // formatter counts from the sync's leading edge.
+    // `syncAtHead` is STATUS_SYNC_PROC_HSPOL. A positive-going pulse puts the
+    // line's origin on its leading edge, so the pulse is at the head and no
+    // window may start inside it; an inverted one puts the origin on the
+    // trailing edge, where the sync interval is already behind the origin and
+    // the guard would throw away video.
+    //
+    // `lagUnits` is CaptureLagUnits where the capture path places the picture,
+    // and zero where something else does -- on a doubled line IF_HBIN_SP is the
+    // FIFO's own reset and puts the picture where it wants it.
     //
     // The tail is bounded by WriteLimitUnits, which is measured rather than
     // derived from anything this class is handed. docs/capture-limits.md
-    static VideoSourceLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine);
+    static VideoSourceLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine,
+                                    uint16_t lagUnits, bool syncAtHead);
 
 private:
+    VideoSourceLine(uint16_t units, uint16_t syncUnits, uint16_t lagUnits, bool syncAtHead);
+
     uint16_t units_;
     uint16_t syncUnits_;
+    uint16_t lagUnits_;
+    bool syncAtHead_;
 };
 
 }  // namespace Tv5725

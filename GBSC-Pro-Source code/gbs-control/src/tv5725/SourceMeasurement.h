@@ -312,6 +312,11 @@ public:
     static uint16_t countHeldStill(uint16_t lines);
     static uint16_t measureHsyncLow();
 
+    // Whether the hsync pulse is positive-going, which decides where in the
+    // line the sync interval sits. STATUS_SYNC_PROC_HSPOL, and the one thing
+    // that tells the capture window which end of the pulse it is counting from.
+    static bool measureHsyncPositive();
+
     // The line rate from HPERIOD_IF alone, or 0 where the run does not stand up
     // to the line count. One register read, no vsync spin, so it is affordable
     // on the idle path -- which is what lets a rate change at an unchanged

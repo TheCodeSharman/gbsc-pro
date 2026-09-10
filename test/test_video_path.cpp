@@ -89,6 +89,11 @@ static void seedSourceMeasurement()
 {
     seedField(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
     seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL
+    // The bench source's hsync is positive-going, which is what puts the pulse
+    // at the head of the line. Unseeded this reads 0, the inverted case, and
+    // the capture window then correctly stops guarding a head with no pulse in
+    // it -- so leaving it out tests a source this fixture is not describing.
+    seedField(0, 0x16, 0, 1, 1);       // STATUS_SYNC_PROC_HSPOL
     g_fieldRate = 50.08f;
 }
 
@@ -960,6 +965,7 @@ TEST_CASE("a progressive source's vertical capture fits the counter it is on")
     seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
     seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
     seedField(0, 0x19, 0, 12, 84);     // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 1);       // STATUS_SYNC_PROC_HSPOL
     seedField(5, 0x12, 0, 12, 1124);   // PLLAD_MD
     seedField(0, 0x1B, 0, 11, 499);    // STATUS_SYNC_PROC_VTOTAL
     seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
@@ -1007,6 +1013,7 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
     seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
     seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 1);       // STATUS_SYNC_PROC_HSPOL
     seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
     seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
     g_fieldRate = 60.0f;

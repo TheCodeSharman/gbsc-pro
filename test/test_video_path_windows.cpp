@@ -391,13 +391,21 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // processor counts from zero and reports as 524 -- which is what the bench
     // reads on a source running this mode.
     const uint16_t Divider = 1124;
-    SolvedEngine solved(524, 59.94f, (uint16_t)(Divider * 96 / 800));
+    SolvedEngine solved(524, 59.94f, (uint16_t)(Divider * 96 / 800),
+                        Tv5725::OutputChoice(Tv5725::Output1080P), false);
 
     const long line = Wire.field(1, 0x0E, 0, 11) + 1;
     const long stop = Wire.field(1, 0x1A, 0, 11);
     const long start = Wire.field(1, 0x18, 0, 11);
 
-    CHECK_NEAR(stop, 0.180 * line, 2);
+    // 18.0% is where the published raster puts picture in ITS line, counted
+    // from the hsync leading edge. This mode's pulse is inverted, so the line is
+    // counted from the trailing edge with the 135 units of pulse already behind
+    // it, and video arrives a capture lag after that.
+    const long sync = 135;   // ceil(1125 x 134 / 1124)
+    const long lag = Tv5725::VideoSourceLine::CaptureLagUnits;
+
+    CHECK_NEAR(stop, 0.180 * line + lag - sync, 2);
     CHECK_NEAR(start - stop, 0.800 * line, 2);
 }
 

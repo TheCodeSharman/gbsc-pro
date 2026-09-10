@@ -54,7 +54,8 @@ public:
     //
     // The three together are also what identifies a published raster, so this
     // is where the timing an untuned window is placed from is resolved.
-    bool readRasters(const SourceMeasurement &source, uint16_t hsyncLow);
+    bool readRasters(const SourceMeasurement &source, uint16_t hsyncLow,
+                     bool hsyncPositive);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

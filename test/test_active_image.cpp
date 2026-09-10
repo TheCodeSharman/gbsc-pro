@@ -304,7 +304,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
     // here at the 2250 the write limit caps the divider to.
     // 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine);
+    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine, 0, true);
     const float Rate = 50.0f;
 
     SUBCASE("zooming all the way out stops clear of the sync") {
@@ -415,7 +415,7 @@ TEST_CASE("no framing puts the capture stop past what the line can write")
     for (uint16_t units : lines) {
         for (bool vertical : {false, true}) {
             const VideoSourceLine line = vertical ? VideoSourceLine(units)
-                                            : VideoSourceLine::measured(units, 181, 2553);
+                                            : VideoSourceLine::measured(units, 181, 2553, 0, true);
             CAPTURE(units);
             CAPTURE(vertical);
             CAPTURE(line.lastCapture());
@@ -494,4 +494,33 @@ int main(int argc, char **argv)
         return 0;
     }
     return doctest::Context(argc, argv).run();
+}
+
+// The default framing is where the picture sits before anyone frames it, and it
+// comes from the standard's own active start -- a position in the SOURCE's line.
+// Placing it at that fraction of the IF line assumes the two lines share an
+// origin, which they do not.
+// docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+TEST_CASE("the default capture starts where video lands, not where the standard states it")
+{
+    // 800x600@60 at PLLAD_MD 1124: HLOW_LEN 138 of 1124 is its 12.1% duty.
+    const uint16_t Units = 1125, HsyncLow = 138, AdcLine = 1124;
+    const uint16_t Lag = Tv5725::VideoSourceLine::CaptureLagUnits;
+    const float Rate = 60.0f;
+
+    SUBCASE("a positive pulse puts it a lag past the arithmetic") {
+        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, true);
+        VideoSourceLine placed = VideoSourceLine::measured(Units, HsyncLow, AdcLine, 0, true);
+        BlankingTiming got = ActiveImage().capture(line, Rate, AxisHorizontal);
+        BlankingTiming was = ActiveImage().capture(placed, Rate, AxisHorizontal);
+        CHECK(got.stop() - was.stop() == Lag);
+    }
+
+    SUBCASE("an inverted pulse puts it a sync width the other way") {
+        VideoSourceLine positive = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, true);
+        VideoSourceLine inverted = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, false);
+        BlankingTiming at_head = ActiveImage().capture(positive, Rate, AxisHorizontal);
+        BlankingTiming behind = ActiveImage().capture(inverted, Rate, AxisHorizontal);
+        CHECK(at_head.stop() - behind.stop() == positive.syncUnits());
+    }
 }

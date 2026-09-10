@@ -63,7 +63,10 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
         width = clampWidth((long)defaultWidth(line, timing, axis), line);
         const float from = timing.published() ? timing.activeStart(axis)
                                               : axis.activeStart();
-        start = lrintf(from * (float)line.units());
+        // The standard states that position in ITS line. This one is counted
+        // from whichever sync edge the chip triggered on, and carries video a
+        // lag behind it.
+        start = line.videoAt(from);
     }
 
     if (start < (long)line.firstCapture())

@@ -23,7 +23,7 @@ using namespace Tv5725;
 // exactly one line from wherever it starts.
 TEST_CASE("the progressive line window spans exactly one line")
 {
-    const VideoSourceLine SourceLine = VideoSourceLine::measured(1126, 160, 2250);
+    const VideoSourceLine SourceLine = VideoSourceLine::measured(1126, 160, 2250, 0, true);
 
     SUBCASE("it starts where IF_LINE_ST says and runs a whole line") {
         // The bench value: 64 + 1126 = 1190.
@@ -38,7 +38,7 @@ TEST_CASE("the progressive line window spans exactly one line")
     SUBCASE("a longer line makes a longer window") {
         // The whole reason this cannot be a constant: PLLAD_MD moves and the
         // line moves with it.
-        CHECK(VideoSourceLine::measured(1057, 128, 2114).progressiveStop(64) == 1121);
+        CHECK(VideoSourceLine::measured(1057, 128, 2114, 0, true).progressiveStop(64) == 1121);
     }
 
     SUBCASE("it may run past the end of the line, and that is not a fault") {
@@ -57,7 +57,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     // of PLLAD_MD 2553 and read here at the 2250 the write limit caps the
     // divider to. 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine);
+    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine, 0, true);
 
     SUBCASE("the pulse width comes from the hsync duty") {
         CHECK(SourceLine.syncUnits() == 81);
@@ -66,7 +66,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     SUBCASE("a wider pulse excludes proportionally more") {
         // 800x600@60 is hsync 128 of 1056, a duty of 0.121 -- nearly twice the
         // bench source's. A fixed guard would under-clip it.
-        CHECK(VideoSourceLine::measured(1126, 128, 1056).syncUnits() == 137);
+        CHECK(VideoSourceLine::measured(1126, 128, 1056, 0, true).syncUnits() == 137);
     }
 
     SUBCASE("an unmeasurable duty falls back to what the retimer is set for") {
@@ -76,7 +76,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
         // SP_RT_HS_SP = PLLAD_MD x 0.93 configures the retimer for.
         for (uint16_t railed : {(uint16_t)0, (uint16_t)4095, (uint16_t)10}) {
             // ceil(1126 x 0.07) = 79, against the 81 the duty measures.
-            CHECK(VideoSourceLine::measured(1126, railed, 2250).syncUnits() == 79);
+            CHECK(VideoSourceLine::measured(1126, railed, 2250, 0, true).syncUnits() == 79);
         }
     }
 
@@ -104,8 +104,72 @@ TEST_CASE("the capture stops at the write limit, however long the line is")
     }
 
     SUBCASE("the head guard still applies, and the two do not cross") {
-        VideoSourceLine bench = VideoSourceLine::measured(1277, 181, 2553);
+        VideoSourceLine bench = VideoSourceLine::measured(1277, 181, 2553, 0, true);
         CHECK(bench.firstCapture() < bench.lastCapture());
         CHECK(bench.capturable() == VideoSourceLine::WriteLimitUnits - bench.syncUnits());
+    }
+}
+
+// Video does not reach the input formatter at the sync edge the line is counted
+// from. Measured on four undoubled modes: the first active pixel lands ~72 units
+// later than the sync-and-porch arithmetic places it, and one whole sync width
+// earlier again where the hsync pulse is inverted, because the origin is then
+// the pulse's trailing edge and the sync interval is already behind it.
+// docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+TEST_CASE("the capture starts where video arrives, not at the sync edge")
+{
+    // 800x600@60 at PLLAD_MD 1124. HLOW_LEN 136 of 1124 is the 12.1% duty its
+    // 128-of-1056 hsync gives, so 137 units of pulse.
+    const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
+    const uint16_t Lag = VideoSourceLine::CaptureLagUnits;
+
+    SUBCASE("a positive pulse sits at the head and the lag follows it") {
+        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, true).firstCapture()
+              == 137 + Lag);
+    }
+
+    SUBCASE("an inverted pulse is behind the origin, leaving the lag alone") {
+        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, false).firstCapture()
+              == Lag);
+    }
+
+    SUBCASE("an inverted pulse gives back the units the head guard was taking") {
+        VideoSourceLine positive = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, true);
+        VideoSourceLine inverted = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, false);
+        CHECK(inverted.capturable() - positive.capturable() == positive.syncUnits());
+    }
+
+    SUBCASE("a line whose origin is placed for it takes no lag") {
+        // The doubled path: IF_HBIN_SP is the FIFO's line reset there and puts
+        // the picture where it wants it, so the lag is not the caller's to add.
+        CHECK(VideoSourceLine::measured(1126, 160, 2250, 0, true).firstCapture() == 81);
+    }
+}
+
+// A video standard states where active video begins as a position in its own
+// line, counted from the hsync leading edge. This line is counted from whichever
+// edge the chip triggered on, and delivers video a lag after it, so the two are
+// not the same position.
+TEST_CASE("a position in the source's line maps onto where video lands in this one")
+{
+    const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
+    const uint16_t Lag = VideoSourceLine::CaptureLagUnits;
+    // 800x600@60: sync, back porch and border are 216 of its 1056 pixels.
+    const float ActiveStart = 216.0f / 1056.0f;
+
+    SUBCASE("a positive pulse moves it on by the lag alone") {
+        // 230 by the arithmetic, 302 measured on the bench.
+        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, true)
+                  .videoAt(ActiveStart) == 230 + Lag);
+    }
+
+    SUBCASE("an inverted pulse moves it back by the sync interval as well") {
+        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, false);
+        CHECK(line.videoAt(ActiveStart) == 230 + Lag - line.syncUnits());
+    }
+
+    SUBCASE("a line placed by something else maps one to one") {
+        // The vertical axis, and the doubled horizontal one.
+        CHECK(VideoSourceLine(624).videoAt(0.5f) == 312);
     }
 }
