@@ -14,9 +14,17 @@ on the television.
 | **OLED menu** | the 128x64 SSD1306 on the unit itself | `OLEDMenuManager`, `OLEDMenuImplementation.cpp` | yes, but it is a separate tree and holds no Move/Scale |
 
 The TV5725 has an icon-and-bar OSD of its own at `s0_90`..`s0_98`. **Nothing
-drives it**: the firmware writes none of those registers, and the menu on the
-television comes from the STV9426. The names are still in the register
-catalogue, so a search for "OSD" finds them — with no owner and no writer.
+drives it** and the menu on the television comes from the STV9426, so the block
+has no owner. It is not quite unwritten: `Tv5725::Chip`'s bring-up parks the
+command handshake at rest — `OSD_COMMAND_FINISH` 1, `OSD_INT_NG_LAT` 0,
+`OSD_TEST_SEL` 0 — because every writer of that handshake toggles it around a
+command and nothing else establishes it. Three registers of about twenty.
+
+The names are still in the register catalogue, so a search for "OSD" finds them.
+The forty helper constants that used to sit beside them — zoom ratios, menu
+styles, icon ids, colours, formats — are gone, along with the `osdIcon()` lookup,
+because those were firmware rather than facts about the chip. `CODING_STYLE.md`
+has why the declarations stay when the constants do not.
 
 **Do not reinstate it.** Its initialisation read as live enough to be worth
 analysing — colours, position and zoom all set up — from an entry point nothing
