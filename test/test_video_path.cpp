@@ -244,7 +244,8 @@ static void checkBenchGeometry()
     CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
     CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 0);
 
-    CHECK(registersWritten() == 64);   // the two DAC selects share s0_4b
+    // The two DAC selects share s0_4b; IF_HBIN_SP is 12 bits over s1_26/s1_27.
+    CHECK(registersWritten() == 66);
 }
 
 // One pass of the whole acquisition path. The engine no longer drives itself:

@@ -13,8 +13,9 @@ namespace Tv5725 {
 // The static half: IF_SEL24BIT = 1 takes the 24-bit input path, IF_SEL_HSCALE =
 // 1 puts the horizontal scaler in circuit, IF_SEL_ADC_SYNC = 1 takes sync from
 // the ADC rather than the digital port, and the piecewise H-sync rate correction
-// is off. What moves per mode -- IF_HB_*, IF_HBIN_SP, IF_LINE_SP -- is the
-// engine's, which computes the capture window rather than transcribing it.
+// is off. What moves per mode -- IF_HB_* and IF_LINE_SP -- is the engine's,
+// which computes the capture window rather than transcribing it; IF_HBIN_SP
+// moves with the scan mode instead, and applyScanMode() says why.
 //
 // IF_LD_ST shares s1_0c with IF_LD_RAM_BYPS (bit 0) and IF_INI_ST (bits 7-5),
 // both written by doPostPresetLoadSteps(). Three owners in one byte is safe only
@@ -283,6 +284,21 @@ public:
         LineDoubled,   // 15 kHz source, doubled to the output line rate
         Progressive,   // already at line rate, doubler bypassed
     };
+
+    // IF_HBIN_SP is two things, and which one depends on the scan mode. With the
+    // line-double FIFO in circuit it is that FIFO's line reset and moving it pans
+    // the whole picture; with the FIFO bypassed it is a blanking edge in the
+    // capture window's own units, so any value it holds crops the left of the
+    // picture a second time.
+    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+    //
+    // The smallest window the part accepts: IF_HBIN_ST is 0 and a stop of 0
+    // there blanks the whole line.
+    static const uint16_t NoHeadBlanking = 2;
+
+    // The reset position, which has no derivation -- the ten scaling tables
+    // shipped 136..272 and this is the one the bench picture is right on.
+    static const uint16_t LineDoubleReset = 272;
 
     // Put every register that decides the scan mode into one of the two states.
     static void applyScanMode(ScanMode mode);

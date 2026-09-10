@@ -117,6 +117,28 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
     CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
 }
 
+TEST_CASE("a progressive source blanks nothing at the head of the captured line")
+{
+    FreshChip chip;
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+
+    // With the line-double FIFO bypassed IF_HBIN_SP is a blanking edge in the
+    // capture window's own units, so anything it holds is a second left crop
+    // nothing asked for. 0 blanks the whole line against IF_HBIN_ST 0.
+    CHECK(Wire.field(1, 0x26, 0, 12) == 2);
+}
+
+TEST_CASE("a line-doubled source keeps the line-double FIFO's reset position")
+{
+    FreshChip chip;
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+
+    CHECK(Wire.field(1, 0x26, 0, 12) == 272);
+}
+
 // --- the per-load state, which shares bytes with owners that are not here -----
 
 TEST_CASE("the vertical timing leaves the scan mode alone")
