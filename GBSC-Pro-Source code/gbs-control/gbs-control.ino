@@ -1284,8 +1284,7 @@ static void applyOutputResolutionSettings()
 // engine to resolve and solve the raster from.
 //
 // s1_2B and s1_2C are cleared here because nothing else clears them and they
-// latch across loads. PALFORCED60 in particular is set by
-// doPostPresetLoadSteps() and has no other writer.
+// latch across loads.
 void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 {
   // The engine is told the choice HERE, by the call whose job that is. It used
@@ -3285,19 +3284,12 @@ void applyPresets(uint8_t result)
         }
     }
 
-    if (uopt->PalForce60 == 1) 
-    {
-        if (result == 2 || result == 4) 
-        {
-            Serial.println(F("PAL@50 to 60Hz"));
-        }
-        if (result == 2) {
-            result = 1;
-        }
-        if (result == 4) {
-            result = 3;
-        }
-    }
+    // PalForce60's 2 -> 1 and 4 -> 3 swap was here: the option remains, and
+    // toggling it now changes nothing. It mapped a PAL standard onto its NTSC
+    // twin so a table keyed on the byte would load the 60 Hz raster, and there
+    // are no tables. Removing the option itself means removing its OLED and TV
+    // OSD menu items, which is a menu-layout change only a remote can check.
+    // docs/video-source-acquisition.md
 
     if (result == 1 || result == 3 || result == 8 || result == 9 || result == 14 ||
         result == 2 || result == 4) {
