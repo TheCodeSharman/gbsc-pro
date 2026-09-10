@@ -85,7 +85,7 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
 
     const int written = snprintf(
         out, size, "%u@%u = %ld %ld %ld %ld",
-        (unsigned)key.lines(), (unsigned)key.rateBucket(),
+        (unsigned)key.lines(), (unsigned)lrintf(key.rateHz()),
         tenThousandthsOf(framing.originOn(AxisHorizontal)),
         tenThousandthsOf(framing.extentOn(AxisHorizontal)),
         tenThousandthsOf(framing.originOn(AxisVertical)),

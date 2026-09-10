@@ -61,7 +61,7 @@ const SourceTiming::Raster *SourceTiming::lookUp(uint16_t sourceLines,
     for (uint16_t i = 0; i < PublishedCount; ++i) {
         const Raster &raster = Published[i];
         if (measured.lines() + 1 != raster.totalLines
-            || measured.rateBucket() != raster.rateBucket)
+            || fabsf(measured.rateHz() - (float)raster.rateHz) > RateToleranceHz)
             continue;
 
         const float duty = (float)raster.syncPixels / (float)raster.totalPixels;

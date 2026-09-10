@@ -39,6 +39,15 @@ TEST_CASE("the rate is bucketed wider than it jitters")
     CHECK(SourceKey(311, 50.02f) == SourceKey(311, 50.13f));
 }
 
+TEST_CASE("jitter across a whole hertz is still the same source")
+{
+    // Measured on the bench at 800x600@60: the same source read 37879 and 38135
+    // Hz over its 628 lines within one session, which is 60.32 and 60.72. DMT
+    // states 60.317, so the boundary of a one-hertz bucket sits 0.18 Hz away and
+    // the identity flips across it -- taking the stored framing with it.
+    CHECK(SourceKey(627, 60.32f) == SourceKey(627, 60.72f));
+}
+
 TEST_CASE("adjacent standards stay apart")
 {
     CHECK(SourceKey(311, 50.08f) != SourceKey(311, 60.05f));

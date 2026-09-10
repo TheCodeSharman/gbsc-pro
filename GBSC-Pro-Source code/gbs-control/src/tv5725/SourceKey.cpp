@@ -6,30 +6,31 @@
 
 namespace Tv5725 {
 
-const float RateBucketHz = 1.0f;
+const float RateToleranceHz = 2.0f;
 
-SourceKey::SourceKey() : lines_(0), rateBucket_(0) {}
+SourceKey::SourceKey() : lines_(0), rateHz_(0.0f) {}
 
 SourceKey::SourceKey(uint16_t sourceLines, float fieldRateHz)
-    : lines_(0), rateBucket_(0)
+    : lines_(0), rateHz_(0.0f)
 {
     // The one owner of both bounds already, on the count and the rate together.
     if (SourceMeasurement::lineRateFrom(sourceLines, fieldRateHz) == 0)
         return;
     lines_ = sourceLines;
-    rateBucket_ = (uint16_t)lrintf(fieldRateHz / RateBucketHz);
+    rateHz_ = fieldRateHz;
 }
 
-bool SourceKey::valid() const { return lines_ != 0 && rateBucket_ != 0; }
+bool SourceKey::valid() const { return lines_ != 0 && rateHz_ > 0.0f; }
 
 uint16_t SourceKey::lines() const { return lines_; }
 
-uint16_t SourceKey::rateBucket() const { return rateBucket_; }
+float SourceKey::rateHz() const { return rateHz_; }
 
 bool SourceKey::operator==(const SourceKey &other) const
 {
     return valid() && other.valid()
-        && lines_ == other.lines_ && rateBucket_ == other.rateBucket_;
+        && lines_ == other.lines_
+        && fabsf(rateHz_ - other.rateHz_) <= RateToleranceHz;
 }
 
 bool SourceKey::operator!=(const SourceKey &other) const

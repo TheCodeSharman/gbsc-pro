@@ -79,3 +79,26 @@ TEST_CASE("a source running neither standard is left unpublished")
     CHECK_FALSE(SourceTiming::matching(311, 50.08f, 0.071f).published());
     CHECK_FALSE(SourceTiming::matching(97, 50.08f, 0.12f).published());
 }
+
+// The bench RISC PC on AKF50's 800x600@60, measured 2026-09-10: VTOTAL 627,
+// PLLAD_MD 1124, HLOW_LEN 137, line rate 37879 -> 60.32 Hz. AKF50's own timings
+// are 128,48,40,800,40,0 of 1056 at 40 MHz, so its 800 active pixels start at
+// 216 exactly where DMT puts them -- the 40-pixel borders sit in the porches.
+TEST_CASE("the bench RISC PC at 800x600@60 is recognised as the published mode")
+{
+    SourceTiming t = SourceTiming::matching(627, 60.32f, 137.0f / 1124.0f);
+
+    REQUIRE(t.published());
+    CHECK_NEAR(t.activeStart(AxisHorizontal), 216.0f / 1056.0f, 0.0005f);
+    CHECK_NEAR(t.activeExtent(AxisHorizontal), 800.0f / 1056.0f, 0.0005f);
+}
+
+// The bench measured this source's line rate at both 37879 and 38135 Hz within
+// one session -- 60.32 Hz and 60.72 Hz over its 628 lines. DMT states 60.317.
+TEST_CASE("a field rate that wobbles across half a hertz still finds its mode")
+{
+    const float duty = 137.0f / 1124.0f;
+
+    CHECK(SourceTiming::matching(627, 60.32f, duty).published());
+    CHECK(SourceTiming::matching(627, 60.72f, duty).published());
+}

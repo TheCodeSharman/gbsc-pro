@@ -40,7 +40,7 @@ public:
 
 private:
     struct Raster {
-        uint16_t totalLines, rateBucket;
+        uint16_t totalLines, rateHz;
         uint16_t totalPixels, syncPixels, activeStartPixel, activePixels;
         uint16_t activeStartLine, activeLines;
     };
