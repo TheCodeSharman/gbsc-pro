@@ -2980,7 +2980,9 @@ void doPostPresetLoadSteps()
 
         Tv5725::VideoProcessor::applyFreeRunTiming();
 
-        if (!rto->outModeHdBypass && rto->autoBestHtotalEnabled &&
+        // No autoBestHtotalEnabled term: it was assigned from outModeHdBypass
+        // ninety lines above and nothing between touches either.
+        if (!rto->outModeHdBypass &&
             !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
             rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4) {
 
