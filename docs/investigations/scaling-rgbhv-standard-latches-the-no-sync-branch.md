@@ -96,3 +96,47 @@ cycling and dark from one holding a clean full-screen picture: the whole
 difference is `rto->videoStandardInput` in ESP RAM, 3 against 14. A register
 dump cannot see this fault, and diffing one against a known-good will report
 that nothing is wrong.
+
+
+## The re-solve loop is fed by the engine's own last reading
+
+Measured on a `GBS_SAMPLING_LOG=1` build, the loop runs about once a second and
+the console shows why:
+
+```
+source moved: count (311 lines, solved 304)
+sampling: 311 lines x 50.08 Hz -> line rate 15625
+sampling: 304 lines x 50.08 Hz -> line rate 15274
+externalClockGenSyncInOutRate()
+```
+
+**One solve samples several times and keeps the LAST.** The first reading is the
+source's true count and a later one is not, so `solvedLines_` ends up holding
+the wrong number; the next pass measures 311 honestly, that disagrees with the
+304 it solved for, and `sourceMoved()` re-arms. Forever.
+
+The counts within one solve descend monotonically -- 311, 310, 308, 307, 306,
+305, 304, 302 -- and the sequence ends at the clock steer. Jitter does not ramp.
+The sync processor counts in ADC CLOCKS, so a divider write or a clock steer
+part-way through a solve moves the count without the source moving at all: the
+engine is disturbing its own measurement and then believing it.
+
+**So the fix is not a better filter.** Two things follow, and neither needs a
+tolerance:
+
+- do not measure across a write -- the rule the divider already has, applied to
+  the clock steer as well
+- record the count the solve was computed FROM, rather than whatever the last
+  sample read
+
+The steadiness gate does not help here: it guards what is ACCEPTED, and the
+disturbed sample is stored after it has already passed.
+
+**It is not a regression.** The same stall reproduces on a build from before any
+of this was touched, and worse -- `vt: 0`, `ht: 1023`, `u: 96`, `s: 0`, the SOG
+level walked to 1 -- so the source never gets counted at all.
+
+What is still missing is which write does it. The console prints are not enough;
+`/samplinglog`'s CSV reads the divider, the PLL lock, `VTOTAL` and `HTOTAL`
+adjacently in one pass, so a divider moving while the count falls would show in
+a single row.
