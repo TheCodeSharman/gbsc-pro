@@ -1193,9 +1193,13 @@ static boolean sourceLowLineRate()
 // at all, which reads as the scaler having failed rather than as the television
 // refusing the mode -- so the request is refused here instead.
 // docs/rgbhv-bypass-trap.md
+// Whether bypass would reach the panel. Asked at EVERY entry, not only at the
+// serial command: bypass hands the source's own timing to the encoder, and a
+// rate the display refuses puts torn content on the panel that reads as a
+// broken scaler rather than as a refused mode. docs/rgbhv-bypass-trap.md
 static boolean bypassCanBeDisplayed()
 {
-    return !sourceLowLineRate();
+    return sourceSampling.rateCanBypass();
 }
 
 // A 15 kHz line whose vertical interval carries equalisation and serration
@@ -3307,8 +3311,21 @@ void applyPresets(uint8_t result)
         setOutModeHdBypass(false);
         return;
     } else if (result == 15) {
-        bypassModeSwitch_RGBHV();
-        return;
+        if (!bypassCanBeDisplayed()) {
+            // Back to the scaling path, which shows any rate. The byte is the
+            // caller's statement that this source has no preset, not an
+            // instruction to put an unshowable raster on the panel.
+            printf("bypass refused: %lu Hz line, needs %lu\n",
+                   (unsigned long)sourceSampling.heldLineRateHz(),
+                   (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
+            rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
+            rto->isValidForScalingRGBHV = true;
+            const Tv5725::OutputChoice choice = outputChoiceFor();
+            loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
+        } else {
+            bypassModeSwitch_RGBHV();
+            return;
+        }
     }
 
     rto->videoStandardInput = result;
@@ -4522,10 +4539,29 @@ void runSyncWatcher() //
 
         }
 
-        if (!uopt->preferScalingRgbhv && scalingRgbhv()) {
+        // The user asked for pass-through AND the display can show this
+        // source's line. Without the second half a slow source is handed
+        // straight to the encoder, which shows nothing -- measured, 21780 Hz
+        // and below give no signal on the bench panel.
+        if (!uopt->preferScalingRgbhv && scalingRgbhv() && bypassCanBeDisplayed()) {
             rto->videoStandardInput = 15;
             rto->isValidForScalingRGBHV = false; 
             applyPresets(rto->videoStandardInput);
+            delay(300);
+        }
+
+        // Already bypassed and the source has slowed past what the display
+        // takes -- a mode change does not re-enter bypass, so nothing else
+        // re-asks the question and the panel stays blank for ever.
+        if (rgbhvBypass() && !bypassCanBeDisplayed()) {
+            printf("bypass left: %lu Hz line, needs %lu\n",
+                   (unsigned long)sourceSampling.heldLineRateHz(),
+                   (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
+            rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
+            rto->isValidForScalingRGBHV = true;
+            const Tv5725::OutputChoice choice = outputChoiceFor();
+            loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
+            doPostPresetLoadSteps();
             delay(300);
         }
 
@@ -6211,6 +6247,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                     break;
                 case 'k':
+                    if (!bypassCanBeDisplayed()) {
+                        printf("bypass refused: source line rate too low\n");
+                        break;
+                    }
                     bypassModeSwitch_RGBHV();
                     break;
                 case 'K':

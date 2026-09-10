@@ -416,6 +416,22 @@ public:
     // docs/investigations/serrated-sync-is-not-line-rate.md
     bool lowLineRate() const;
 
+    // The lowest line the bench display accepts, bracketed by measurement
+    // rather than taken from the VGA standard: 26650 Hz locks and 21780 Hz
+    // gives no signal, so the floor sits between them and admits every rate
+    // proven to work while refusing every rate proven not to. 22..26 kHz is
+    // untested and refused, which costs a scaled picture rather than a blank
+    // panel. NOT LowLineRateBelowHz -- that sits at 20 kHz to put the ~21 kHz a
+    // programmable source reaches on the fast side of the 15 kHz split, and the
+    // display takes neither. docs/rgbhv-bypass-trap.md
+    static const uint32_t BypassMinLineRateHz = 26000;
+
+    // Whether bypass would reach the panel at all. Bypass hands the source's
+    // own timing to the encoder, so an unmeasured or slow source has to stay on
+    // the scaling path -- which shows any rate -- rather than put torn content
+    // on the panel that reads as a broken scaler.
+    bool rateCanBypass() const;
+
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
     // Measured rather than derived: 363 lines are doubled and 448 are not, and

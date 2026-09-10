@@ -755,6 +755,55 @@ TEST_CASE("a source is not doubled into an output that cannot show the result")
     }
 }
 
+TEST_CASE("only a rate a display accepts may be bypassed")
+{
+    // Bypass hands the source's own timing to the encoder, so it works only
+    // where the DISPLAY can show that timing. Refusing falls back to the
+    // scaling path, which shows any rate; accepting wrongly puts torn,
+    // sheared content on the panel that reads as a broken scaler.
+    // docs/rgbhv-bypass-trap.md
+    SourceMeasurement measurement;
+
+    SUBCASE("nothing measured yet cannot be bypassed") {
+        CHECK_FALSE(measurement.rateCanBypass());
+    }
+
+    SUBCASE("a 15.6 kHz line cannot") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(measurement.rateCanBypass());
+    }
+
+    SUBCASE("the 31.4 kHz VGA line can") {
+        // 640x480@60, VTOTAL 524. Measured locking.
+        seedSourceLines(524);
+        g_fieldRate = 60.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK(measurement.rateCanBypass());
+    }
+
+    SUBCASE("26.6 kHz can, which is under the VGA line") {
+        // 640x512@50, VTOTAL 533. Measured locking, which is why the floor is
+        // bracketed rather than taken from the VGA standard.
+        seedSourceLines(533);
+        g_fieldRate = 50.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK(measurement.rateCanBypass());
+    }
+
+    SUBCASE("21.8 kHz cannot, measured") {
+        // 640x352@60, VTOTAL 363. Measured: the sink reports no signal, and
+        // this rate clears LowLineRateBelowHz -- so that constant is not the
+        // one to ask.
+        seedSourceLines(363);
+        g_fieldRate = 60.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(measurement.lowLineRate());
+        CHECK_FALSE(measurement.rateCanBypass());
+    }
+}
+
 TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
 {
     // SP_H_PULSE_IGNOR and the coast window both key on a line whose vertical

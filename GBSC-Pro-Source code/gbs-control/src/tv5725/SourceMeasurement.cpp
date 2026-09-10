@@ -361,6 +361,11 @@ uint32_t SourceMeasurement::estimatedLineRateHz() const
 
 uint32_t SourceMeasurement::heldLineRateHz() const { return goodLineRateHz_; }
 
+bool SourceMeasurement::rateCanBypass() const
+{
+    return heldLineRateHz() >= BypassMinLineRateHz;
+}
+
 bool SourceMeasurement::lowLineRate() const
 {
     return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
