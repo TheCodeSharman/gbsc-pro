@@ -41,7 +41,7 @@ uint8_t PresetLoad::videoStandardInput() const
 
 uint8_t PresetLoad::videoStandardInputAfterLoad() const
 {
-    return enableScalingRgbhv_ ? ScalingRgbhvStandard : videoStandardInput_;
+    return enableScalingRgbhv_ ? ScalingRgbhv : videoStandardInput_;
 }
 
 bool PresetLoad::inputIsYpBpR() const

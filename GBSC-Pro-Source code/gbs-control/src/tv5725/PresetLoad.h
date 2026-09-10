@@ -60,8 +60,8 @@ public:
     // The sentinel writeProgramArrayNew() clears on every load.
     static const uint8_t NoValidMode = 15;
 
-    // The standard that scaling RGBHV runs as.
-    static const uint8_t ScalingRgbhvStandard = 3;
+    // The byte that names scaling RGBHV, which is what scalingRgbhv() tests.
+    static const uint8_t ScalingRgbhv = 14;
 
     // Whether the output in force is scaling RGBHV, which the load above
     // decides and later steps of the same load ask about. State rather than a

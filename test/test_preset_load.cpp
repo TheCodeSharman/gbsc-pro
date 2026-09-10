@@ -74,16 +74,17 @@ TEST_CASE("scaling RGBHV needs both the preference and a source that can take it
     }
 }
 
-TEST_CASE("enabling scaling RGBHV moves videoStandardInput to 3 after the load")
+TEST_CASE("enabling scaling RGBHV leaves the byte naming scaling RGBHV")
 {
-    // 3 is the scaling-RGBHV standard. This happens AFTER the table is written,
-    // so the two values genuinely differ during one load and the class has to
-    // report both -- collapsing them to one accessor would write 3 into the
-    // value the byte loop reads.
+    // 14 is what scalingRgbhv() tests, so a load that turns the mode on has to
+    // leave that and not a standard number. 3 is 480p NTSC as well, so a byte
+    // holding it is indistinguishable from a progressive SD source and takes
+    // SourceStandard's progressive arm.
+    // docs/investigations/two-spellings-of-scaling-rgbhv.md
     PresetLoad load(0, AdcRgb, true, true);
 
     CHECK(load.videoStandardInput() == 0);
-    CHECK(load.videoStandardInputAfterLoad() == 3);
+    CHECK(load.videoStandardInputAfterLoad() == 14);
 }
 
 TEST_CASE("without scaling RGBHV the standard is left as the table saw it")

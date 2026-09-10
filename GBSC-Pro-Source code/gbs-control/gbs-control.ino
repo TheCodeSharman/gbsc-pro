@@ -3104,10 +3104,6 @@ void doPostPresetLoadSteps()
             return;
         }
 
-        if (Tv5725::PresetLoad::scalingRgbhvInForce()) {
-            rto->videoStandardInput = 14;
-        }
-
         if (!Tv5725::PresetLoad::scalingRgbhvInForce()) {
             unsigned long timeout = millis();
             while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
