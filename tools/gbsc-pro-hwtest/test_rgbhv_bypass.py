@@ -34,7 +34,7 @@ BYPASS_DIVIDER = 1856
 
 # ADC2DAC and OUT_SYNC_SEL are 1 in bypass and 0 on the scaling path. The scale
 # registers are NOT the tell: bypass leaves them on the last scaled load's.
-PATH = ("DAC_RGBS_ADC2DAC", "OUT_SYNC_SEL", "GBS_OPTION_SCALING_RGBHV",
+PATH = ("DAC_RGBS_ADC2DAC", "OUT_SYNC_SEL",
         "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL", "PLLAD_MD")
 
 
@@ -66,8 +66,12 @@ def in_bypass(at):
 
 
 def scaling(at):
-    return (at["DAC_RGBS_ADC2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
-            and at["GBS_OPTION_SCALING_RGBHV"] == 1)
+    # Whether scaling RGBHV is in force is FIRMWARE state, held in PresetLoad.
+    # It used to be a bit at s1_2c, and asserting that bit here outlived the
+    # firmware writing it: every one of these tests failed on the marker alone
+    # while the route bits read correct. What the chip can still answer is which
+    # route the video takes, which is the question these tests ask.
+    return at["DAC_RGBS_ADC2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
 
 
 def at_mode(host, where, command, lines):
