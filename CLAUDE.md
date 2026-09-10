@@ -709,10 +709,16 @@ twelve tables while they existed, which is what `BringUp` was built from.
   sync processor's retime window) are **ONE quantity in THREE registers**, and
   `Tv5725::SourceMeasurement` owns all three off one held value. It is *state*,
   handed to `Tv5725::CaptureWindow` rather than read back — the same rule
-  `CaptureWindow::ProgressiveStart` already carried. Verified across all twelve shipped
-  tables: `IF_HSYNC_RST == PLLAD_MD/2` without exception, while `SP_RT_HS_SP` is
-  wrong in five of them (`ntsc_1280x720` ships **68** against 2180) and is only
-  saved by the runtime write.
+  `CaptureWindow::ProgressiveStart` already carried.
+
+  **`IF_HSYNC_RST` is `PLLAD_MD` HALVED ONLY WHERE THE LINE IS DOUBLED**, which is
+  what `SourceMeasurement::ifLineFor()` does — an IF unit is two ADC samples on a
+  doubled line and one on an undoubled one. All twelve shipped tables were
+  line-doubled SD, so `== PLLAD_MD/2` held across every one of them and reads as a
+  universal law; measured on an 800x600@60 RGBHV source it is `== PLLAD_MD`, 1124
+  against 1124, and that is correct. `SP_RT_HS_SP` is wrong in five of the tables
+  (`ntsc_1280x720` ships **68** against 2180) and is only saved by the runtime
+  write.
 
   **`STATUS_SYNC_PROC_HTOTAL` is the only thing on the board that can see a
   missing latch**, because it counts real ADC clocks per line and so reports the
