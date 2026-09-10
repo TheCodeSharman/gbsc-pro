@@ -11,7 +11,8 @@
 
 namespace Tv5725 {
 
-// How far two field-rate readings may sit apart and still be the same source.
+// How far two field-rate readings may sit apart and still be the same source,
+// in parts per thousand.
 //
 // **A BUCKET CANNOT DO THIS JOB.** Quantising the rate puts a boundary
 // somewhere, and a standard whose rate lands near one has its identity flip
@@ -19,9 +20,16 @@ namespace Tv5725 {
 // of a one-hertz bucket, and the bench read that source at 60.32 and 60.72
 // within a session. A tolerance has no boundary to land near.
 //
-// Wide enough for that jitter, narrow enough that no two standards sharing a
-// line count come within it: the closest such pair is ten hertz apart.
-extern const float RateToleranceHz;
+// **IT MUST NOT BE NARROWER THAN THE MOVEMENT TRIGGER**, which is asserted
+// against SourceMeasurement in SourceKey.cpp. A rate change inside that trigger
+// arms no mode change, so a key that moved there would swap the stored framing
+// with no re-solve behind it.
+//
+// Nothing is lost at the wide end. AKF50's own line counts carrying more than
+// one rate are 364, 449 and 525, and their rates sit 0.01% to 0.3% apart --
+// modes differing only in pixel clock, which this chip cannot separate anyway.
+// The frame time lock steers out what is left.
+extern const uint16_t RateTolerancePerMille;
 
 class SourceKey {
 public:

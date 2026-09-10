@@ -48,6 +48,17 @@ TEST_CASE("jitter across a whole hertz is still the same source")
     CHECK(SourceKey(627, 60.32f) == SourceKey(627, 60.72f));
 }
 
+TEST_CASE("a rate change too small to be movement does not change identity")
+{
+    // ratesAgree() calls two rates within HeldRateTolerancePerMille the same
+    // measurement, so a change inside it arms no mode change. If the key moved
+    // there, solveForSource() would swap the stored framing with no re-solve
+    // behind it -- a silent reframing on drift.
+    //
+    // 60.0 against 62.5 is 4.2%, inside the 5% that trigger allows.
+    CHECK(SourceKey(627, 60.0f) == SourceKey(627, 62.5f));
+}
+
 TEST_CASE("adjacent standards stay apart")
 {
     CHECK(SourceKey(311, 50.08f) != SourceKey(311, 60.05f));
