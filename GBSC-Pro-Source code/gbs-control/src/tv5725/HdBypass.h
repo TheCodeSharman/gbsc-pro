@@ -161,7 +161,12 @@ public:
     //
     // An RGBHV source additionally gets the RGB patches, which are the sketch's
     // because they need the user options and its own R/G/B round trip.
-    static void applyForStandard(uint8_t standard, void (*applyRgbPatches)());
+    // `divider` is the sampling divider the engine measured for this source.
+    // Handed in rather than read back: the switch writes a literal into
+    // PLLAD_MD on its way here, so the register answers for that literal and
+    // not for the source.
+    static void applyForStandard(uint8_t standard, uint16_t divider,
+                                 void (*applyRgbPatches)());
 
     // Which colour path the bypassed sample takes, and the ONE thing bypass has
     // to know about the source. A component input needs the matrix; an RGB one
@@ -170,6 +175,16 @@ public:
     static void applyColourPath(bool inputIsYpBpR);
 
 private:
+    // The played-out line derived from the divider the source was sampled at.
+    // Shared, because a raster frozen per standard is what left an RGBHV source
+    // with a raster for no source.
+    static void applyHorizontalFromDivider(uint16_t divider);
+
+    // A source with no standard of its own. It samples at the divider the
+    // engine measured and plays out the line that divider implies; the vertical
+    // windows and the sync pulses stay where the switch put them.
+    static void applyRgbhv(uint16_t divider);
+
     static void applySd(uint8_t standard);
     static void applyProgressive(uint8_t standard);
     static void applyHd(uint8_t standard, void (*applyRgbPatches)());

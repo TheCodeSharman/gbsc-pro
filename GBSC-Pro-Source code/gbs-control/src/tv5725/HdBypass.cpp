@@ -22,6 +22,13 @@ const uint8_t AnalogFilter40MHz = 3;
 const uint16_t RgbhvShortLines = 532;
 const uint16_t RgbhvTallLines = 810;
 
+// The played-out line, in ADC samples, as a function of the divider the source
+// was sampled at. Measured on an 800x600 RGBHV source at divider 1124.
+// docs/investigations/one-bypass-route-carries-rgbhv.md
+const uint16_t RasterGuardSamples = 8;
+const float ActiveFraction = 0.945f;
+const uint16_t BlankEndSamples = 0x90;
+
 }  // namespace
 
 void HdBypass::init()
@@ -81,7 +88,8 @@ void HdBypass::enable()
     HD_BLK_RV_DATA::write(0);                    // s1_55[7:0]
 }
 
-void HdBypass::applyForStandard(uint8_t standard, void (*applyRgbPatches)())
+void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
+                                void (*applyRgbPatches)())
 {
     if (standard <= 2)
         applySd(standard);
@@ -89,9 +97,29 @@ void HdBypass::applyForStandard(uint8_t standard, void (*applyRgbPatches)())
         applyProgressive(standard);
     else if (standard <= 7 || standard == 13)
         applyHd(standard, applyRgbPatches);
+    else
+        applyRgbhv(divider);
 
     if (standard == 13)
         applyRgbhvPll(SourceMeasurement::measureSourceLines());
+}
+
+void HdBypass::applyHorizontalFromDivider(uint16_t divider)
+{
+    HD_HSYNC_RST::write((divider / 2) + RasterGuardSamples);
+    HD_HB_ST::write(divider * ActiveFraction);
+    HD_HB_SP::write(BlankEndSamples);
+}
+
+void HdBypass::applyRgbhv(uint16_t divider)
+{
+    if (divider == 0)
+        return;
+
+    Adc::PLLAD_MD::write(divider);
+    Adc::latch();
+
+    applyHorizontalFromDivider(divider);
 }
 
 void HdBypass::applySd(uint8_t standard)
@@ -106,9 +134,7 @@ void HdBypass::applySd(uint8_t standard)
     SyncProcessor::SP_HS_LOOP_SEL::write(0);
     Adc::ADC_FLTR::write(AnalogFilter40MHz);
 
-    HD_HSYNC_RST::write((Adc::PLLAD_MD::read() / 2) + 8);
-    HD_HB_ST::write(Adc::PLLAD_MD::read() * 0.945f);
-    HD_HB_SP::write(0x90);
+    applyHorizontalFromDivider(Adc::PLLAD_MD::read());
     HD_HS_ST::write(0x80);
     HD_HS_SP::write(0x00);
 

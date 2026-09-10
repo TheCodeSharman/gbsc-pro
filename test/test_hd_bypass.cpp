@@ -294,7 +294,7 @@ static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311)
     Adc::PLLAD_MD::write(DividerBeforeLadder);
     Tv5725::Tv5725::STATUS_SYNC_PROC_VTOTAL::write(sourceLines);
     rgbPatchCalls = 0;
-    HdBypass::applyForStandard(standard, countRgbPatches);
+    HdBypass::applyForStandard(standard, DividerBeforeLadder, countRgbPatches);
 }
 
 TEST_CASE("interlaced SD plays out a raster derived from the divider")
@@ -469,6 +469,58 @@ TEST_CASE("1080p leaves the SD vertical window where it found it")
 
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == Poison);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == Poison);
+}
+
+TEST_CASE("an RGBHV source plays out a raster derived from the divider")
+{
+    // Without an arm of its own it keeps enable()'s resting timing, which is a
+    // raster for no source and the sink refuses it. The derivation is the one
+    // the SD arm already carries, and it is what the bench measured working on
+    // an 800x600 RGBHV source.
+    // docs/investigations/one-bypass-route-carries-rgbhv.md
+    for (uint8_t standard : {14, 15}) {
+        CAPTURE(standard);
+        applyForStandard(standard);
+
+        CHECK(HdBypass::HD_HSYNC_RST::read() == 1180);  // MD / 2 + 8
+        CHECK(HdBypass::HD_HB_ST::read() == 2216);      // 0.945 of MD
+        CHECK(HdBypass::HD_HB_SP::read() == 144);
+    }
+}
+
+TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal")
+{
+    // The switch writes a literal into PLLAD_MD on its way here, so a raster
+    // read back off the register is a raster for that literal. Measured on the
+    // bench: derived from the switch's 2345 against a source measured at 1124,
+    // the sink reports no signal.
+    Wire.reset();
+    Wire.poison(Poison);
+    Adc::PLLAD_MD::write(DividerBeforeLadder);
+
+    HdBypass::applyForStandard(14, 1124, countRgbPatches);
+
+    CHECK(Adc::PLLAD_MD::read() == 1124);
+    CHECK(HdBypass::HD_HSYNC_RST::read() == 570);   // 1124 / 2 + 8
+    CHECK(HdBypass::HD_HB_ST::read() == 1062);      // 0.945 of 1124
+    CHECK(HdBypass::HD_HB_SP::read() == 144);
+}
+
+TEST_CASE("an unmeasured source leaves the bypass raster alone")
+{
+    // Nothing solved yet. Deriving from a zero would play out a raster of no
+    // width at all, where the resting timing at least leaves the block in the
+    // state the switch built.
+    Wire.reset();
+    Wire.poison(Poison);
+    HdBypass::enable();
+    Adc::PLLAD_MD::write(DividerBeforeLadder);
+
+    HdBypass::applyForStandard(14, 0, countRgbPatches);
+
+    CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
+    CHECK(HdBypass::HD_HSYNC_RST::read() == 1023);
+    CHECK(HdBypass::HD_HB_ST::read() == 3976);
 }
 
 TEST_CASE("RGBHV patches the RGB path and coasts on its own pair")
