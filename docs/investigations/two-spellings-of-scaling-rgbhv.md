@@ -53,20 +53,28 @@ reads 0 where the arm writes 1, with no other writer -- so the arm is largely
 dead on this path. **`rto->osr` is not**: the engine takes it through
 `inputTimingsChanged(osr)`, and it is the one output of the call that survives.
 
-## What would settle it
+## The window is closed
 
-Make `videoStandardInputAfterLoad()` return 14 and delete the repair. The window
-closes, `scalingRgbhv()` agrees with `scalingRgbhvInForce()` everywhere, and one
-of the byte's meanings is gone.
+`videoStandardInputAfterLoad()` returns 14 and the repair is gone, so
+`scalingRgbhv()` agrees with `scalingRgbhvInForce()` everywhere and 3 no longer
+means two things.
 
-The measurement that says whether it is safe is `rto->osr` and the sync
-processor's SD vsync pair, before and after, on the bench RiscPC -- which is a
-scaling RGBHV source, so it takes this path on every load. Equal `osr` means the
-arm was already contributing nothing that outlived it.
+Measured on the bench RiscPC at 320x256@50 on `vga`, a scaling RGBHV source that
+takes this path on every load: all 608 config and 48 status registers
+byte-identical across the change, and the photographed test card unchanged.
 
-**`PLLAD_KS::read()` as the argument is the reason the answer is not derivable
-from the code.** What the divider holds at that instant is set by whichever path
-reached the load, so the two arms can agree on one route and differ on another.
+**`osr` comes out 2 on both arms whenever `PLLAD_KS` reads 1 or more**, which is
+why the arm was contributing nothing that outlived it. `applyProgressive()` asks
+`applyOversample(1, 2)` and the no-arm route asks `applyOversample(KS, 2)`; both
+give 2, and they part only where `KS` reads 0 -- after an HD standard or a tall
+source, neither of which this bench can produce.
+
+**Two branches that could not run while the byte held 3 are now live.** Neither
+moves a register on this source: the `scalingRgbhv()` arm at the sync processor
+branches only on composite sync, and the `>= 5` sub-coast write lands on a value
+already in force. RGBHV with composite sync does not acquire on either build --
+`m:0`, `u:96`, `own V sync: no` -- so that arm has no behaviour to compare.
+[scaling-rgbhv-standard-latches-the-no-sync-branch.md](scaling-rgbhv-standard-latches-the-no-sync-branch.md)
 
 ## The register spelling is gone
 

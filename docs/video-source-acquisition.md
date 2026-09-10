@@ -245,6 +245,31 @@ facts**, which is why one number reaching two subsystems means two owners:
 | SD/HD input branching | neither | nothing -- one algorithm for every source |
 | PAL against NTSC | output, chosen, optional | `matchPresetSource` rate matching |
 
+**THE VALUES ARE NOT ALTERNATIVES TO EACH OTHER, WHICH IS THE FLAW UNDER ALL
+OF THE ABOVE.** "RGBHV" names the signal arrangement on the plug -- R, G, B and
+separate H and V. "Progressive SD" names a timing -- a line count, a field rate
+and a scan mode. A source is one of each at once, not one or the other: the
+bench RISC PC at 320x256@50 arrives over RGBHV *and* runs progressive at an SD
+line rate, and a Wii at 480p is the same timing over component. So a byte where
+3 means progressive SD and 14 means RGBHV is not a list of cases to pick from;
+it is two orthogonal axes flattened onto one, and a load can only leave one
+answer in it.
+
+That is why no assignment to the byte is the right one, and why the fix is
+never a better number. Three independent facts are involved and the firmware
+already holds two of them properly:
+
+| axis | what it answers | where it lives |
+|---|---|---|
+| the plug | which input is selected, and whether it is component | `VideoSourceSelection`, `ADC_INPUT_SEL`, `inputIsYpBpR` |
+| the timing | line count, field rate, scan mode | `SourceMeasurement`, `SourceKey` |
+| the route | scaled, HD bypass, RGBHV bypass | `OutputChoice`, `OutputMode` |
+
+`inputIsYpBpR` is read off the ADC mux rather than off the byte and is already
+right. `sourceIsRgbhv()` is the one that is not: it is spelled as a question
+about the plug and derived from a byte that, once it holds 14 or 15, is
+answering about the route.
+
 **A video standard becomes two concepts that do not meet:** what the input IS,
 measured (`SourceKey` -- line count and bucketed field rate -- with `SyncType`
 and the scan mode solve carrying the rest), and what output was CHOSEN
