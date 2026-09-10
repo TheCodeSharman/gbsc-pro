@@ -289,63 +289,24 @@ private:
         return true;
     }
 
-    // Find appropriate htotal that makes output frame time slightly more than the input.
-    static bool findBestHTotal(uint32_t &bestHtotal)
+    // Whether there is a raster and both vsync periods can be read, which is
+    // the whole of what arms the frame time lock.
+    //
+    // This replaced a search for the output horizontal total that would match
+    // the input frame time. Its answer was DISCARDED -- init() returned it and
+    // the one caller ignored the return -- so the search decided only whether
+    // arming succeeded, which is these three checks. The raster is solved by
+    // Tv5725::VideoPath now. docs/video-source-acquisition.md
+    static bool bothVsyncPeriodsReadable()
     {
-        uint16_t inHtotal = HSYNC_RST::read();
+        if (HSYNC_RST::read() == 0)
+            return false;
+
         uint32_t inPeriod, outPeriod;
-
-        if (inHtotal == 0)
-        {
-            return false;
-        } // safety
         if (!sampleVsyncPeriods(&inPeriod, &outPeriod))
-        {
             return false;
-        }
 
-        if (inPeriod == 0 || outPeriod == 0)
-        {
-            return false;
-        } // safety
-
-        // allow ~4 negative (inPeriod is < outPeriod) clock cycles jitter
-        if ((inPeriod > outPeriod ? inPeriod - outPeriod : outPeriod - inPeriod) <= 4)
-        {
-            /*if (inPeriod >= outPeriod) {
-        Serial.print("inPeriod >= out: ");
-        Serial.println(inPeriod - outPeriod);
-      }
-      else {
-        Serial.print("inPeriod < out: ");
-        Serial.println(outPeriod - inPeriod);
-      }*/
-            bestHtotal = inHtotal;
-        }
-        else
-        {
-            // large htotal can push intermediates to 33 bits
-            bestHtotal = (uint64_t)(inHtotal * (uint64_t)inPeriod) / (uint64_t)outPeriod;
-        }
-
-        // new 08.11.19: skip this step, IF period measurement should be stable enough to give repeatable results
-        // if (bestHtotal == (inHtotal + 1)) { bestHtotal -= 1; } // works well
-        // if (bestHtotal == (inHtotal - 1)) { bestHtotal += 1; } // check with SNES + vtotal = 1000 (1280x960)
-
-#ifdef FS_DEBUG
-        if (bestHtotal != inHtotal)
-        {
-            Serial.print(F("                     wants new htotal, oldbest: "));
-            Serial.print(inHtotal);
-            Serial.print(F(" newbest: "));
-            Serial.println(bestHtotal);
-            Serial.print(F("                     inPeriod: "));
-            Serial.print(inPeriod);
-            Serial.print(F(" outPeriod: "));
-            Serial.println(outPeriod);
-        }
-#endif
-        return true;
+        return inPeriod != 0 && outPeriod != 0;
     }
 
 public:
@@ -470,23 +431,16 @@ public:
         delayLock = 0;
     }
 
-    static uint16_t init()
+    // Arm the frame time lock. False where the source or the output cannot be
+    // measured yet, which leaves it unarmed for the caller to retry.
+    static bool init()
     {
-        uint32_t bestHTotal = 0;
-
-        // Adjust output horizontal sync timing so that the overall
-        // frame time is as close to the input as possible while still
-        // being less.  Increasing the vertical frame size slightly
-        // should then push the output frame time to being larger than
-        // the input.
-        if (!findBestHTotal(bestHTotal))
-        {
-            return 0;
-        }
+        if (!bothVsyncPeriodsReadable())
+            return false;
 
         syncLockReady = true;
         delayLock = 0;
-        return (uint16_t)bestHTotal;
+        return true;
     }
 
     // Measures whatever DEBUG_IN_PIN is already carrying: the CALLER selects the
