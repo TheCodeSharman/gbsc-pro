@@ -124,6 +124,30 @@ has always worked and why the fills-the-panel reference has every matrix
 bypassed. A YPbPr source needs one YUV-to-RGB and there is nowhere on that
 route to do it.
 
+**THE ADC IS NOT WHAT STOPS IT.** It digitises three analog channels and has no
+opinion about what they carry; YPbPr arrives on the same R, G and B lines and is
+sampled exactly as RGB is. The constraint is at the far end -- the DAC drives
+analog RGB into the MS9288A, which cannot be told to expect anything else, being
+on no I2C bus with its firmware in mask ROM and `MCUSEL` strapped low.
+
+### Measured: YUV into an RGB input, photographed
+
+The failure does not need a component source to reproduce, because the chip
+works in YUV internally and an RGB source is already converted both ways.
+Measured on the bench RiscPC at 320x256@50 on `vga`, scaling: `DEC_MATRIX_BYPS`
+0 converts RGB to YUV going in, `VDS_CONVT_BYPS` 0 converts back on the way out.
+
+Setting `VDS_CONVT_BYPS` to 1 leaves the output stage emitting the internal YUV
+onto the DAC's RGB pins, which is the same thing ADC-to-DAC would do with a
+component source. **The picture goes overwhelmingly green** -- luma on the green
+channel, the two colour differences sitting near mid-scale on red and blue --
+while the geometry, the sharpness and the frequency gratings stay perfect. The
+signal is intact and only the colour mapping is wrong. Writing 0 back restores
+it exactly.
+
+So the route's limit is the missing converter and nothing else, and it is
+reproducible from either bench source rather than only from a component one.
+
 **YPbPr pass-through therefore requires `DAC_RGBS_BYPS2DAC`**, and is not a
 configuration of the ADC-to-DAC route that has not been found yet.
 
@@ -132,6 +156,10 @@ selection rather than from a classification -- the same `rto->inputIsYpBpR` that
 `HdBypass::applyColourPath()` already keys on.
 
 ## Testing YPbPr pass-through on this bench
+
+The mechanism is settled by the `VDS_CONVT_BYPS` measurement above, which needs
+no component source. What is still unphotographed is a real YPbPr signal through
+`ADC2DAC`.
 
 The Wii at 576i cannot be bypassed here: 15 kHz, which the bench display refuses,
 and `bypassCanBeDisplayed()` correctly declines it.
