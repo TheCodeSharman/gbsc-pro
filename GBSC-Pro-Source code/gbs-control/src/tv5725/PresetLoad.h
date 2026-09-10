@@ -50,7 +50,7 @@ public:
     // reaches applyPresets(). The caller sets the byte to what this returns,
     // loads, and sets it straight back to 14, which is why one number carrying
     // both the source and the output is the thing step 10 removes.
-    // docs/investigations/scaling-rgbhv-flag-is-not-the-standard.md
+    // docs/investigations/two-spellings-of-scaling-rgbhv.md
     static uint8_t rgbhvStandardFor(uint16_t sourceLines, float fieldRateHz);
 
     // The field-rate window the fourth preset claims, above 380 lines.
