@@ -215,10 +215,12 @@ clock, windows, rate steer **last**. It is expressed once, inside `poll()`,
 rather than assembled by the caller — the display clock reads the seed the
 raster just chose, and every window is sized against the raster it lands on.
 
-**The raster sets how far the zoom can go, so widening it is not free.** The
-capture cannot go below `Axis::minimumCapture` — `ceil(raster / maxMagnification)`
-— without leaving a bar, while the default capture is a property of the input
-line alone, so the two do not track. Measured 2026-08-13, when both axes still
+**Widening the raster costs picture quality, not zoom travel.** The capture
+cannot go below `Axis::minimumCapture` — `ceil(raster / maxMagnification)` —
+without leaving a bar, while the default capture is a property of the input line
+alone, so the two do not track. That threshold used to CLAMP the framing, which
+is why the travel column below reads as it does; it no longer does, and a
+capture past it letterboxes instead. Measured 2026-08-13, when both axes still
 magnified at most `1024/500 = 2.048x`:
 
 | ceiling | raster | min capture | zoom travel from default |
@@ -261,15 +263,31 @@ from the source: `ceil(units x HLOW_LEN / PLLAD_MD)`, excluded at the **head**
 only, because `SP_RT_HS_ST` is 0 and the input formatter counts from the sync's
 leading edge.
 
-**The part cannot minify, and both ends of the capture are bounded by that.**
-`VDS_?SCALE` divides 1024 and tops out at `Scale::Max`, so the least
-magnification it can express is 1.001. `Axis::minimumCapture()` stops a zoom
-cropping past what the magnification can put back; `Axis::maximumCapture()` stops
-a framing taking more than the output can show, because a capture past it
-produces a picture past the room and the far end is simply not drawn. Without the
-ceiling the control reads as dead in BOTH directions -- zoom-out is at the bound
-of the capturable region, and zoom-in only trims capture that is already
-off-screen.
+**THE FRAMING IS A PROPORTION OF THE INPUT, AND NO OUTPUT QUANTITY MAY REACH
+IT.** `PanAndZoom` holds where the window starts and how far it runs as
+fractions of the capturable region, so 0 is the first unit the capture can reach
+and 1 the last, and `PanAndZoom::clampOn()` — extent in `[0, 1]`, origin at or
+above 0, `origin + extent` at or below 1 — is the whole bound. `ActiveImage`
+takes no `OutputRaster` at all, which is what makes that true by construction
+rather than by discipline.
+
+It was not always. `clampToLine()` used to place the window against the raster
+and then seed the framing back from what it placed, so every solve at a new
+output resolution rewrote the stored proportions — a framing tuned at one
+resolution meant a different part of the source at the next, and
+`FramingTable::remember()` persisted the rewritten value. Measured: the
+horizontal extent could not be cropped below 514 units at 480p or 479 at 1080p,
+and the same framing produced different windows on the two.
+
+**The part still cannot minify, and that is expressed where the registers are
+solved rather than where the framing is held.** `VDS_?SCALE` divides 1024 and
+tops out at `Scale::Max`, so the least magnification it can express is 1.001;
+`Axis::fitToRaster()` clamps the scale between that and `Scale::Min`. A capture
+too small for the raster therefore letterboxes and one too large has its far end
+cropped — both visible, both undone by one press back, and neither able to touch
+the framing. A clamp in their place is a dead control, and a dead control is the
+worse failure: `Axis::minimumCapture()` now names where letterboxing starts
+rather than where the control stops.
 
 The same bound decides the line doubler. Doubling turns a 311-line source into
 622 units, which 720p and 1080p hold and 480p and 576p do not, so
