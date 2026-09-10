@@ -152,7 +152,7 @@ uint8_t SourceStandard::applyProgressive() const
 
     // Only the post divider moves; PLLAD_CKOS keeps the tap chosen against the
     // one above it, so the two describe different ratios from here on.
-    if (standard_ == 9 && sourceIsTall())
+    if (sourceIsTall())
         Adc::PLLAD_KS::write(TallPostDivider);
 
     if (standard_ == 3) {

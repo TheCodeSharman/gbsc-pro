@@ -41,10 +41,25 @@ static const uint32_t NotWritten = 0xFFFFFFFFu;
 // to supply and why an SD standard replaces it.
 static const uint8_t Inherited = 1;
 
+// The sync processor's line count, which the progressive arm reads to tell a
+// tall source from an ordinary one. Presented explicitly because the poison
+// lands either side of the threshold, so a run that inherited it would take a
+// different branch under each of the complementary poisons below.
+static const uint16_t OrdinarySourceLines = 524;
+static const uint16_t TallSourceLines = 700;
+static uint16_t presentedLines = OrdinarySourceLines;
+
+static void presentLineCount(uint16_t lines)
+{
+    Wire.bank[0][0x1B] = static_cast<uint8_t>(lines & 0xFF);
+    Wire.bank[0][0x1C] = static_cast<uint8_t>(lines >> 8);
+}
+
 static uint8_t apply(uint8_t standard, bool inputIsYpBpR, uint8_t poison)
 {
     Wire.reset();
     Wire.poison(poison);
+    presentLineCount(presentedLines);
     return SourceStandard(standard, inputIsYpBpR).apply(Inherited);
 }
 
@@ -128,15 +143,6 @@ TEST_CASE("a standard with nothing of its own keeps the inherited post divider")
 
 // --- the progressive standards -----------------------------------------------
 
-// The sync processor's line count, which standard 9 reads to tell a tall source
-// from an ordinary one. Written into the bank so the run sees a chosen value
-// rather than the poison, which lands either side of the threshold.
-static void sourceLines(uint16_t lines)
-{
-    Wire.bank[0][0x1B] = static_cast<uint8_t>(lines & 0xFF);
-    Wire.bank[0][0x1C] = static_cast<uint8_t>(lines >> 8);
-}
-
 TEST_CASE("a progressive standard samples twice over, on its own post divider")
 {
     CHECK(apply(3, false, Poison) == 2);
@@ -175,31 +181,36 @@ TEST_CASE("standard 3 opens the SD vsync window later than its neighbours")
     CHECK(WRITTEN(3, false, SyncProcessor::SP_SDCS_VSSP_REG_L) == 13);
 }
 
-TEST_CASE("standard 9 takes a taller source down an octave")
+TEST_CASE("a tall source drops the octave whatever the progressive standard")
 {
     // Past 650 lines the clock the ordinary post divider produces is outside
-    // its crossover row. The count is read twice with a settle between, so one
-    // sample caught mid-transition does not move the divider.
-    Wire.reset();
-    Wire.poison(Poison);
-    sourceLines(700);
-
-    SourceStandard(9, false).apply(Inherited);
-
-    CHECK(Wire.field(5, Adc::PLLAD_KS::byteOffset, Adc::PLLAD_KS::bitOffset,
-                     Adc::PLLAD_KS::bitWidth) == 0);
+    // its crossover row, and what puts it there is the line count -- so the
+    // count alone decides and Mode Detect's classification narrows nothing.
+    // The count is read twice with a settle between, so one sample caught
+    // mid-transition does not move the divider.
+    presentedLines = TallSourceLines;
+    for (uint8_t standard : {3, 4, 8, 9}) {
+        CAPTURE(standard);
+        CHECK(WRITTEN(standard, false, Adc::PLLAD_KS) == 0);
+    }
+    presentedLines = OrdinarySourceLines;
 }
 
-TEST_CASE("standard 9 on an ordinary source keeps the progressive post divider")
+TEST_CASE("an ordinary source keeps the progressive post divider")
 {
-    Wire.reset();
-    Wire.poison(Poison);
-    sourceLines(524);
+    for (uint8_t standard : {3, 4, 8, 9}) {
+        CAPTURE(standard);
+        CHECK(WRITTEN(standard, false, Adc::PLLAD_KS) == 1);
+    }
+}
 
-    SourceStandard(9, false).apply(Inherited);
-
-    CHECK(Wire.field(5, Adc::PLLAD_KS::byteOffset, Adc::PLLAD_KS::bitOffset,
-                     Adc::PLLAD_KS::bitWidth) == 1);
+TEST_CASE("only a progressive source is measured for height")
+{
+    // Interlaced SD and HD each name their own crossover row, so neither asks.
+    presentedLines = TallSourceLines;
+    CHECK(WRITTEN(2, false, Adc::PLLAD_KS) == 2);
+    CHECK(WRITTEN(5, false, Adc::PLLAD_KS) == NotWritten);
+    presentedLines = OrdinarySourceLines;
 }
 
 // --- the HD standards, and the one with a measurement of its own --------------
