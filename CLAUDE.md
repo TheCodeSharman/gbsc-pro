@@ -195,11 +195,37 @@ scaling RGBHV re-arms itself — is unreachable. `u:` then pinned at `96` is tha
 branch cycling its 150-pass recovery, roughly every five seconds, for ever.
 `docs/investigations/scaling-rgbhv-standard-latches-the-no-sync-branch.md`.
 
+**`printf()` IN THE SKETCH DOES NOT REACH THE CONSOLE. `debugPrintf()` DOES.**
+The console mirror is `SerialM`, and `debugPrintf` is
+`SerialM.printf_P(PSTR(fmt), ...)`; a bare `printf` goes to stdout and is
+invisible over the websocket. Several existing messages are bare `printf` --
+`noSyncCounter max2` and `noSyncCounter max1` among them -- so **a missing line
+is not evidence the branch did not run**, and a new diagnostic written with
+`printf` produces a silent route that answers 200.
+
 **A quiet console is not a quiet firmware.** Silence with a live HTTP stack
 means the loop is not running, or the heap gate is shut — read `/bootlog`'s
 `free heap:` line before believing it. And the console DROPS BURSTS under
 FrameSync spam, so a missing line is not evidence the step did not run: judge by
 outcome, and by what the next line implies.
+
+### WHERE A SIGNAL REACHES IS `/testbus`, AND ONLY THE DEVICE CAN TIME IT
+
+`TEST_BUS_SEL` (`s0_4d[4:0]`) picks which block drives `DEBUG_IN_PIN`, and the
+transition count over one window separates a field-rate signal from a line-rate
+one and both from a dead bus. The pin is an ESP GPIO, so no HTTP read can see
+it; `/testbus` queues a sweep for `loop()` and prints CSV to the console.
+
+```sh
+curl 'http://<ip>/testbus?ms=25'            # every selector
+curl 'http://<ip>/testbus?ms=25&sp=4'       # with a sync-processor stage out
+curl 'http://<ip>/testbus?ms=25&if=0'       # with an input-formatter signal out
+```
+
+At 50 Hz expect single-digit transitions in 25 ms, at 15.6 kHz several hundred.
+`SP_TEST_MODULE` selects one sync-processor stage (4 `vs_act_det`, 6 retiming, 7
+out proc) and `IF_TEST_SEL` one input-formatter signal, so **a sweep taken on
+each sync type says which stage stops carrying vertical sync.**
 
 ### AN HTTP READ IS NOT A SAMPLE. `/samplinglog` IS.
 
