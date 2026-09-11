@@ -104,3 +104,33 @@ reads `present: false`. On the scaling-RGBHV source of
 `the-gate-runs-a-ladder-that-is-not-safe-yet.md` the two answers are the other
 way round. Neither is the reliably better answer, which is the constraint on
 step 4 of the plan.
+
+
+## The block infers interlace from the vertical period, and never observes it
+
+The vertical detect values are field lines over a constant, and the constant is
+the same across all three the firmware writes:
+
+| register | written | field lines | lines per unit |
+|---|---|---|---|
+| `MD_NTSC_INT_CNTRL` | 32 | 262.5 | 8.20 |
+| `MD_PAL_INT_CNTRL` | 38 | 312.5 | 8.22 |
+| `MD_NTSC_PRG_CNTRL` | 65 | 525.0 | 8.08 |
+
+`MD_NTSC_INT_CNTRL` against `MD_NTSC_PRG_CNTRL` is a factor of two because a 480i
+FIELD is 262.5 lines and a 480p FRAME is 525. So the interlaced and progressive
+bits are named for what a vertical period implies, and no part of the comparison
+looks at interlacing.
+
+**Which makes the RISC PC's misclassification arithmetic rather than mistuning.**
+320x256@50 is 311 progressive lines per field, and `311 / 8.22` is 37.8, which
+rounds to the 38 that `MD_PAL_INT_CNTRL` holds for a 312.5-line PAL field. The
+two sources have the same vertical period to within 1.5 lines against a quantum
+of 8.2, in a 6-bit field, so **no value of `MD_PAL_INT_CNTRL` separates them**
+and retuning it only moves which source is wrong.
+
+**`MD_PAL_PRG_CNTRL` does not exist.** Every other standard status bit has a
+matching detect register -- `STATUS_IF_INP_NTSC_INT`, `_NTSC_PRG` and `_PAL_INT`
+all do -- and `STATUS_IF_INP_PAL_PRG` has none. Whether that bit is derived from
+a rate plus a vertical period, or can never be set at all, is unresolved; either
+way a 50 Hz progressive source has no slot of its own to land in.
