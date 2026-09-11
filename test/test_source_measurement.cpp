@@ -1331,3 +1331,4 @@ TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
     CHECK(sampling.divider() == divider);   // the reference itself has not moved
     CHECK(Wire.touched[5][0x12]);           // and it was written anyway
 }
+

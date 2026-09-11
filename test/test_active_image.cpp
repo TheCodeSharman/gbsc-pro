@@ -312,9 +312,13 @@ TEST_CASE("the capture window never takes the hsync pulse")
         CHECK(huge.stop() >= SourceLine.syncUnits());
     }
 
-    SUBCASE("and takes the tail down to the line reset, which it may not have") {
+    SUBCASE("and widens to what the capture path will write, not to both ends") {
+        // The ends leave 1043 units between them and the path writes 1024, so
+        // zooming out stops on the width rather than reaching the line reset.
+        // Panning is what reaches the far end. docs/investigations/tail-green.md
         BlankingTiming huge = framed(SourceLine, Rate, AxisHorizontal, -5000, 0, 0).capture(SourceLine, Rate, AxisHorizontal);
-        CHECK(huge.start() == LineUnits - 2);
+        CHECK(huge.start() - huge.stop() == SourceLine.maxCaptureWidth());
+        CHECK(huge.stop() == SourceLine.firstCapture());
     }
 
     SUBCASE("panning to the left stop cannot walk into the sync") {
@@ -324,7 +328,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
 
     SUBCASE("panning to the right stop reaches the last unit before the reset") {
         BlankingTiming right = framed(SourceLine, Rate, AxisHorizontal, 0, +5000, 0).capture(SourceLine, Rate, AxisHorizontal);
-        CHECK(right.start() == LineUnits - 2);
+        CHECK(right.start() == SourceLine.lastCapture());
     }
 
     SUBCASE("the resting picture is untouched") {

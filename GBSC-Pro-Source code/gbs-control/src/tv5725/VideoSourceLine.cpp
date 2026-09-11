@@ -6,6 +6,7 @@ namespace Tv5725 {
 
 const uint16_t VideoSourceLine::WriteLimitUnits;
 const uint16_t VideoSourceLine::CaptureLagUnits;
+const uint16_t VideoSourceLine::CaptureWidthLimitUnits;
 
 namespace {
 
@@ -24,14 +25,17 @@ const float FallbackDuty = 0.07f;
 }  // namespace
 
 VideoSourceLine::VideoSourceLine(uint16_t units)
-    : units_(units), syncUnits_(0), lagUnits_(0), syncAtHead_(true) {}
+    : units_(units), syncUnits_(0), lagUnits_(0), writeLimitUnits_(WriteLimitUnits),
+      syncAtHead_(true) {}
 
 VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits)
-    : units_(units), syncUnits_(syncUnits), lagUnits_(0), syncAtHead_(true) {}
+    : units_(units), syncUnits_(syncUnits), lagUnits_(0),
+      writeLimitUnits_(WriteLimitUnits), syncAtHead_(true) {}
 
 VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits, uint16_t lagUnits,
                                  bool syncAtHead)
-    : units_(units), syncUnits_(syncUnits), lagUnits_(lagUnits), syncAtHead_(syncAtHead) {}
+    : units_(units), syncUnits_(syncUnits), lagUnits_(lagUnits),
+      writeLimitUnits_(WriteLimitUnits), syncAtHead_(syncAtHead) {}
 
 uint16_t VideoSourceLine::units() const { return units_; }
 
@@ -45,6 +49,12 @@ uint16_t VideoSourceLine::progressiveStop(uint16_t start) const
 uint16_t VideoSourceLine::firstCapture() const
 {
     return lagUnits_ + (syncAtHead_ ? syncUnits_ : 0);
+}
+
+uint16_t VideoSourceLine::maxCaptureWidth() const
+{
+    const uint16_t span = capturable();
+    return span > CaptureWidthLimitUnits ? CaptureWidthLimitUnits : span;
 }
 
 uint16_t VideoSourceLine::videoAt(float lineFraction) const
@@ -68,7 +78,7 @@ uint16_t VideoSourceLine::lastCapture() const
     // rather than video. SourceMeasurement caps the divider to keep the line inside the
     // limit, so what this catches is the lines it did not choose -- a custom
     // preset's, a bypass switch's.
-    return beforeWrap > WriteLimitUnits ? WriteLimitUnits : beforeWrap;
+    return beforeWrap > writeLimitUnits_ ? writeLimitUnits_ : beforeWrap;
 }
 
 uint16_t VideoSourceLine::capturable() const
@@ -87,7 +97,14 @@ VideoSourceLine VideoSourceLine::measured(uint16_t units, uint16_t hlowLen, uint
     // Round UP, so a pulse that ends part way through a unit leaves that unit
     // outside the capture rather than half in it. DutyMax bounds it at 15% of
     // the line, so what is left is always the greater part of it.
-    return VideoSourceLine(units, (uint16_t)ceilf(units * duty), lagUnits, syncAtHead);
+    VideoSourceLine line(units, (uint16_t)ceilf(units * duty), lagUnits, syncAtHead);
+
+    // A doubled line greens past a POSITION; an undoubled one past a capture
+    // WIDTH, which capturable() bounds instead. Two ADC samples to the unit is
+    // what says which this is. docs/investigations/tail-green.md
+    if (units == 0 || adcLine < units + units / 2)
+        line.writeLimitUnits_ = units;
+    return line;
 }
 
 }  // namespace Tv5725

@@ -22,6 +22,14 @@ public:
     // docs/capture-limits.md
     static const uint16_t WriteLimitUnits = 1125;
 
+    // How much of a line the capture path writes before it starts writing
+    // blanking. Counted FROM THE START OF THE CAPTURE WINDOW, not from the
+    // start of the line: measured 1035 and 1031 units at two window starts on
+    // an undoubled line, and 1034 on a doubled one. 1024 is under all three and
+    // is what a counter would plausibly stop at.
+    // docs/investigations/tail-green.md
+    static const uint16_t CaptureWidthLimitUnits = 1024;
+
     // How far after the sync edge the line is counted from video reaches the
     // input formatter. Measured on four undoubled modes as 69..76 units, with
     // the offset it explains running -16 to +76.
@@ -51,8 +59,14 @@ public:
     // displaced.
     uint16_t videoAt(float lineFraction) const;
 
-    // The widest capture this line can hold.
+    // The span the framing is a proportion of: everything between the ends.
     uint16_t capturable() const;
+
+    // The widest window that may actually be taken. Narrower than capturable()
+    // wherever the line offers more than the capture path will write, and it is
+    // only the WIDTH that is bounded -- a window may still be panned to the far
+    // end of the line.
+    uint16_t maxCaptureWidth() const;
 
     // Where the input formatter's PROGRESSIVE line window stops, given where
     // IF_LINE_ST starts it. That window is the line double timing -- it belongs
@@ -89,6 +103,7 @@ private:
     uint16_t units_;
     uint16_t syncUnits_;
     uint16_t lagUnits_;
+    uint16_t writeLimitUnits_;
     bool syncAtHead_;
 };
 

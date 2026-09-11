@@ -142,9 +142,11 @@ uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t over
 
     uint16_t backed = (uint16_t)(((uint32_t)ceiling * RecommendedPercent) / 100);
 
-    // The second ceiling: a line the capture path cannot write to the end of.
-    // VideoSourceLine::WriteLimitUnits is in IF units and ifLineFor() halves, so the
-    // divider that puts the line end exactly on the limit is twice it.
+    // The second ceiling, and the two paths are bounded by different quantities.
+    // A doubled line greens past a POSITION, so the divider that puts the line
+    // end on it is twice the limit in IF units. An undoubled line greens past a
+    // capture WIDTH, wherever in the line it sits, so what has to fit is the
+    // widest window the engine could build. docs/investigations/tail-green.md
     const uint16_t forWriteLimit = lineDoubled
         ? (uint16_t)(VideoSourceLine::WriteLimitUnits * 2)
         : VideoSourceLine::WriteLimitUnits;

@@ -111,8 +111,8 @@ void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &t
 
 long ActiveImage::clampWidth(long width, const VideoSourceLine &line)
 {
-    if (width > (long)line.capturable())
-        width = line.capturable();
+    if (width > (long)line.maxCaptureWidth())
+        width = line.maxCaptureWidth();
     return width < (long)MinimumCapture ? (long)MinimumCapture : width;
 }
 

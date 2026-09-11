@@ -106,7 +106,11 @@ TEST_CASE("the capture stops at the write limit, however long the line is")
     SUBCASE("the head guard still applies, and the two do not cross") {
         VideoSourceLine bench = VideoSourceLine::measured(1277, 181, 2553, 0, true);
         CHECK(bench.firstCapture() < bench.lastCapture());
-        CHECK(bench.capturable() == VideoSourceLine::WriteLimitUnits - bench.syncUnits());
+        // The ends would leave 1034 units between them; what the capture path
+        // will write is less, and that is what may be offered.
+        CHECK(bench.lastCapture() - bench.firstCapture()
+              > VideoSourceLine::CaptureWidthLimitUnits);
+        CHECK(bench.maxCaptureWidth() == VideoSourceLine::CaptureWidthLimitUnits);
     }
 }
 
@@ -134,8 +138,10 @@ TEST_CASE("the capture starts where video arrives, not at the sync edge")
     }
 
     SUBCASE("an inverted pulse gives back the units the head guard was taking") {
-        VideoSourceLine positive = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, true);
-        VideoSourceLine inverted = VideoSourceLine::measured(Units, HsyncLow, AdcLine, Lag, false);
+        // A line short enough that what the capture path writes is not the
+        // tighter of the two bounds, or both sides come back clamped equal.
+        VideoSourceLine positive = VideoSourceLine::measured(900, 109, 900, Lag, true);
+        VideoSourceLine inverted = VideoSourceLine::measured(900, 109, 900, Lag, false);
         CHECK(inverted.capturable() - positive.capturable() == positive.syncUnits());
     }
 
@@ -171,5 +177,34 @@ TEST_CASE("a position in the source's line maps onto where video lands in this o
     SUBCASE("a line placed by something else maps one to one") {
         // The vertical axis, and the doubled horizontal one.
         CHECK(VideoSourceLine(624).videoAt(0.5f) == 312);
+    }
+}
+
+// The capture path writes a bounded number of units and then writes blanking,
+// and it counts them FROM THE START OF THE WINDOW rather than from the start of
+// the line. Measured by creeping the output blanking onto the band: 1035 units
+// at a window starting on IF 491 and 1031 at one starting on 560, both on an
+// undoubled line, against 1034 on a doubled one whose window started at 91.
+// docs/investigations/tail-green.md
+TEST_CASE("a capture window may not be wider than the path will write")
+{
+    SUBCASE("a line with room to spare is offered only what the path writes") {
+        // An undoubled 2047-unit line: the ends alone would allow far more.
+        VideoSourceLine line = VideoSourceLine::measured(
+            2047, 248, 2046, VideoSourceLine::CaptureLagUnits, true);
+        CHECK(line.capturable() > VideoSourceLine::CaptureWidthLimitUnits);
+        CHECK(line.maxCaptureWidth() == VideoSourceLine::CaptureWidthLimitUnits);
+    }
+
+    SUBCASE("the bound is the same on a doubled line") {
+        // The bench source one divider step past its cap, where the band was
+        // reproduced: a 1270-unit line whose ends would allow 1119.
+        VideoSourceLine line = VideoSourceLine::measured(1270, 181, 2540, 0, true);
+        CHECK(line.maxCaptureWidth() == VideoSourceLine::CaptureWidthLimitUnits);
+    }
+
+    SUBCASE("a window the ends already bound is left alone") {
+        VideoSourceLine narrow = VideoSourceLine::measured(900, 64, 900, 0, true);
+        CHECK(narrow.maxCaptureWidth() == narrow.capturable());
     }
 }
