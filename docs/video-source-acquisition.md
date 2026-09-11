@@ -165,6 +165,40 @@ lines, so interlace is invisible to it and it answers on every source.
 RGBHV never does -- structural and reproducible,
 `docs/investigations/vperiod-if-on-rgbhv.md`.
 
+**The recognised modes are read first, the user slot second, and both arrive in
+the same burst.** `IF_STATUS_` carries the whole table -- SD, VGA, SVGA, XGA,
+SXGA, 720p, 1080i/p, 1250p -- alongside `STATUS_IF_INP_USER`, so the precedence
+is an order over one read rather than a second lookup. A named mode wins,
+because it carries a standard raster; the user slot answers only what no named
+mode does.
+
+**THE DETECT TABLE IS PROGRAMMABLE, AND ITS HORIZONTAL VALUES ARE `HPERIOD_IF`
+UNITS.** `MD_*_CNTRL` are not datasheet constants, they are a lookup the
+firmware writes at init, and the horizontal ones are `27e6 / (4 x lineRateHz) -
+1` -- checked against what `ModeDetect::init()` writes, six of six within 1.0:
+
+| register | written | computed |
+|---|---|---|
+| `MD_VGA_75HZ_CNTRL` | 178 | 179.0 |
+| `MD_VGA_85HZ_CNTRL` | 154 | 155.0 |
+| `MD_SVGA_60HZ_CNTRL` | 177 | 177.2 |
+| `MD_SVGA_75HZ_CNTRL` | 142 | 143.0 |
+| `MD_SVGA_85HZ_CNTRL` | 124 | 124.8 |
+| `MD_XGA_60HZ_CNTRL` | 139 | 138.6 |
+
+So a detect value is computable for any mode, and what Mode Detect recognises is
+a choice rather than a fixed list.
+
+**AND AN 8-BIT HORIZONTAL VALUE CANNOT REACH A 15 kHz SOURCE.** The ceiling of
+255 puts the lowest expressible line rate at `27e6 / (4 x 256)` = 26.4 kHz. The
+bench RISC PC at 15625 Hz needs 431, so it cannot be expressed horizontally at
+all, `MD_USER_DEF_HCNTRL` included -- which is why the SD modes are defined by
+VERTICAL detect values instead (`MD_NTSC_INT_CNTRL` 32, `MD_PAL_INT_CNTRL` 38,
+`MD_NTSC_PRG_CNTRL` 65). Teaching Mode Detect a 15 kHz custom mode has to go
+through `MD_USER_DEF_VCNTRL`, and the unit those vertical values are in is not
+derived: the interlaced and progressive ones fit roughly field-lines/8 and
+`MD_VGA_CNTRL` at 62 does not.
+
 **THE USER SLOT IS WHAT STOPS A CUSTOM MODE COSTING THE SLOW PATH TWICE.**
 `MD_USER_DEF_HCNTRL` and `MD_USER_DEF_VCNTRL` (`s1_81`, `s1_80`) are a
 user-defined mode, and `STATUS_IF_INP_USER` is the bit that fires when they
