@@ -208,20 +208,29 @@ adjacently in one pass, which is what makes two of them comparable to each other
 `SamplingLog::event()` logs a decision as the branch takes it, which no dump
 afterwards can show.
 
-**Two measurements from one session, both of which sent a diagnosis the wrong
-way before the log was used:**
+`STATUS_SYNC_PROC_VTOTAL` on the Wii is the measurement that made the case:
+HTTP point reads gave 149 / 160 / 230 / 299 among 310s where the log gave
+**310 in 1050 of 1050**, so HTTP over-reported a steady register as
+intermittent. **A count of agreeing HTTP samples is not evidence of stability**
+— a dozen reads at five-second spacing say nothing about the 5.99 seconds
+between each pair. The console also drops bursts, so ask for an interval the
+link can carry: `ms=25` over 30 s lands ~1050 lines and reports its own
+effective rate.
 
-| | HTTP point reads | on-device at 35 Hz |
-|---|---|---|
-| `HPERIOD_IF`, RISC PC | a steady 431, four for four | **511 in 624 of 1043 samples**, 38 distinct values |
-| `STATUS_SYNC_PROC_VTOTAL`, Wii | 149 / 160 / 230 / 299 among 310s | **310 in 1050 of 1050** |
+**THE OPPOSITE CLAIM IS REFUTED: HTTP DOES NOT REPORT A RAILED `HPERIOD_IF` AS
+HEALTHY.** Measured against the log in one window on one railed state, seven
+HTTP reads at five-second spacing returned **zero** healthy values, and dense
+HTTP and the log agree the register is railed. So a sparse read is not a trap
+that shows 431 while the part rails — it shows 255 and 511 like everything else.
+What the two do disagree on is WHICH bad value, and that is not a split read:
+`read_field()`'s two requests and `read_named()`'s one agree with each other.
+`docs/investigations/hperiod-if-railing.md`.
 
-So HTTP under-reported a railing register as healthy, and over-reported a steady
-one as intermittent. **A count of agreeing HTTP samples is not evidence of
-stability** — a dozen reads at five-second spacing say nothing about the
-5.99 seconds between each pair. The console also drops bursts, so ask for an
-interval the link can carry: `ms=25` over 30 s lands ~1050 lines and reports its
-own effective rate.
+**AND A READING TAKEN TWO SOURCE EXCURSIONS LATER IS NOT A SECOND INSTRUMENT.**
+An input change or a sync-type round trip re-rails the register, so a healthy
+HTTP sample before one and a railed on-device sample after it compare two
+states, not two instruments. That is how the refuted claim above was arrived at,
+twice. Sample both in ONE window, or say which state each belongs to.
 
 ## The system has three control domains, and you can only see one
 
