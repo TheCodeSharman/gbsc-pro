@@ -16,10 +16,9 @@ longer makes. `docs/rgbhv-bypass-trap.md` has what was measured.
 
 ## The horizontal bound is a position, not a width
 
-**On the doubled path.** Measured on an undoubled line it follows the capture
-width instead, and the two readings have not been reconciled — see
-`investigations/tail-green.md`. Everything in this section is the doubled
-measurement.
+**Superseded.** X is a capture width counted from the start of the window, not a
+position — see `investigations/tail-green.md`. This section is kept because the
+usable-fraction arithmetic below still bounds what a line can carry.
 
 X = 1125 IF units = 2250 ADC samples, counted from the line start. It does not
 move with the capture start, with the source's border or porch timings, or with
@@ -104,14 +103,12 @@ Two things, and they compose.
 `SourceMeasurement::recommendedDivider()` caps the IF line at 1125 units, which
 is `PLLAD_MD` 2250 on a doubled line and 1125 on an undoubled one.
 
-**On the undoubled path that cap is not derived from anything measured there.**
-X was measured once, on a line-doubled source, where 1125 IF units and 2250 ADC
-samples are the same position. Measured on an undoubled line the tail green
-follows the capture WIDTH rather than a position, with a threshold near 1280
-units, and the 11-bit `IF_HSYNC_RST` caps the line at 2047 in any case. The two
-readings do not yet reconcile; `investigations/tail-green.md` has both and the
-sweep that would settle them. Until then the cap stays where it is, because it
-is the conservative one.
+**X is not a position, and this cap is not what enforces it.** The bound is a
+capture WIDTH of about 1034 units counted from the start of the window, the same
+on both scan modes; it read as a position only because every measurement of it
+held the window's start fixed. `VideoSourceLine::maxCaptureWidth()` is what
+enforces it now. The 11-bit `IF_HSYNC_RST` caps the line at 2047 units
+independently. `investigations/tail-green.md` has the measurements.
 
 This is a **second** ceiling beside the ADC's 162 MSPS rating, and whichever is
 tighter binds. Which one that is depends on the oversampling the solve picked:

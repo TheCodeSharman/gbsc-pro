@@ -216,43 +216,46 @@ the IF writes blanking data into the buffer, so playback reads written green
 rather than stale memory. That works and costs capture width, a dependency on the
 source having porch to reach, and a green field instead of a black one.
 
-## On an undoubled line it is a WIDTH, not a position
+## It is a WIDTH, counted from the START of the capture window
 
-The measurement above is on 320x256@50, which is **line doubled**. There one IF
-unit is two ADC samples, so "IF unit 1125" and "ADC sample 2250" are the same
-place and no reading can separate them. The firmware caps the divider as though
-the bound were 1125 IF units; this page's prose concludes it counts samples.
+Neither reading above is right, and both failed the same way: each held the
+capture START fixed and moved the end, where "a position in the line" and "a
+width from the window start" are the same number.
 
-Measured 2026-09-11 on 800x600@60, undoubled, at `PLLAD_MD` 2046 -- a 2047-unit
-line, twice what the divider cap normally allows -- with the capture **end
-pinned at 2045** and only the start moved:
+**Measured by creeping `VDS_DIS_HB_ST` onto the band.** The output blanking is a
+register rather than a photographed edge, and moving it does not disturb the
+capture, so the band stays put while it is measured. Counting green columns
+rather than requiring a run of them gives a sharp edge -- 18, 16, 14, 11, 10, 1,
+0 over seven steps.
 
-| capture width | window | tail green |
-|---|---|---|
-| 1266 | 779..2045 | none |
-| 1428 | 617..2045 | **yes** |
-| 1611 | 434..2045 | **yes** |
+| line | capture window | green starts at output | in capture units | **from window start** |
+|---|---|---|---|---|
+| undoubled, `PLLAD_MD` 2046 | 491..2042 | 1131 | 1526 | **1035** |
+| undoubled, `PLLAD_MD` 2046 | 560..1973 | 1230 | 1591 | **1031** |
+| doubled, `PLLAD_MD` 2548 | 91..crept | -- | 1125 | **1034** |
 
-**A position bound would have shown green in all three**, the end being past it
-every time. Narrowing from the other side puts the threshold at 1256..1302
-units, and the band's left edge tracks the width monotonically -- 1557, 1502,
-1450, 1401, 1351, 1302 units put it at photo column 934, 970, 1008, 1040, 1080,
-1120, and 1256 units clears it.
+The third row is this page's original measurement, re-read: it crept the end to
+1125 from a start of 91, which is a width of 1034.
 
-So on the undoubled path the bound is a capture width of about **1280 units**,
-and `VideoSourceLine::WriteLimitUnits` does not describe it. It has never cost
-anything because the divider cap keeps the line short enough that the widest
-window the engine can build -- `lastCapture() - firstCapture()`, about 914 units
-at `PLLAD_MD` 1124 -- cannot reach it.
+So **the capture path writes about 1034 units from wherever the window starts
+and then writes blanking**, on both scan modes. Not a position -- 1526 against
+1591 for the same bound. Not an output pixel -- 1131 against 1230. Not a total:
+cutting the captured lines from 600 to 479 at a fixed width does not move the
+band by one column, which takes `CAP_SAFE_GUARD` and every memory-size
+explanation with it.
 
-**The two readings are not yet reconciled.** The doubled measurement varied the
-start over 62..263 and X did not move, which a width bound cannot produce; this
-one pins the end and X moves with the width, which a position bound cannot
-produce. Repeating the pinned-end sweep on the doubled source is what would
-settle it, and neither reading is safe to build on until it is.
+`VideoSourceLine::CaptureWidthLimitUnits` is 1024 -- under all three readings,
+and what a counter would plausibly stop at. `maxCaptureWidth()` bounds the
+window's WIDTH by it while `capturable()` still spans both ends, because only
+the width is bounded: a window may still be panned to the far end of the line.
 
-**`MemoryMap` does not catch it.** The window at 1428 units was not narrowed, so
-the firmware's SDRAM bound believes it fits.
+**A width sweep cannot find this bound, and the reason is worth knowing.** The
+band only becomes visible once the magnification is low enough to bring it
+inside the encoder's transmitted window, which is about 1378 output pixels.
+Below roughly `VDS_HSCALE` 830 the band exists and is never transmitted, so a
+sweep that watches the picture reports a threshold near 1270 units that is the
+edge of the transmitted window rather than the onset of the band. Two such
+sweeps agreed with each other, on two source modes, and were both wrong.
 
 ### Two ceilings found on the way
 
@@ -262,11 +265,14 @@ units whatever the divider. `PLLAD_MD` 2094 was accepted, latched, and read back
 correctly at `STATUS_SYNC_PROC_HTOTAL` while `IF_HSYNC_RST` held **46** -- 2094
 modulo 2048 -- with the picture destroyed and nothing reporting a fault.
 
-**The ADC is nowhere near binding on a VESA-class source.** At 800x600@60's
-37,879 Hz with `PLLAD_CKOS` 0, `maxDivider()` allows about 4013. What holds
-`PLLAD_MD` at 1124 is the write-limit cap alone, which is also why RGBHV bypass
-runs the same source at 1856: bypass writes nothing to memory, so no capture
-bound applies to it.
+**The ADC is not what caps a VESA-class source.** At 800x600@60's 37,879 Hz with
+`PLLAD_CKOS` 0, `maxDivider()` allows about 4013 and the sampling budget is a
+quarter used. At the bench's 15,625 Hz the solve runs four times oversampling and
+spends 98% of the 162 MSPS on it, which is what caps that divider at 2540. The
+two trade against one budget: `PLLAD_MD x lineRate x oversample <= 162 MSPS`, so
+four times oversampling at 37,879 Hz would cap the divider at 1069 -- fewer
+samples than it takes today. `postDividerFor()` limits it again, offering at most
+two times once CKO clears 40 MHz.
 
 ## See also
 
