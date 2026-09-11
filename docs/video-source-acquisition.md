@@ -106,6 +106,89 @@ changes owner rather than being divided, because its statics are already pure
 chip reads and its instance is the steadiness run and the divider -- one
 coherent job, in the wrong hands.
 
+### The measurement escalates, and stops as soon as VideoPath can be called
+
+One sequence, cheapest first, driven by what is still missing rather than by
+which tier failed. **The recovery ladder is the bottom of this list, not a
+second one**: both answer "there are no usable timings yet, what next", and
+`SyncRecovery` is that list starting at position 4.
+
+    the chip says the mode changed
+      0  acquire the sync type            2-3 ms with its own V sync
+      1  read Mode Detect                 one burst, the whole classification
+      2  read HPERIOD_IF, VPERIOD_IF      the IF's own periods
+      3  the test-port measurement        the slow one
+      4  reconfigure                      coast, clamp, SOG level, sp dynamic
+      5  reset                            sync processor, Mode Detect
+      -> the timings are complete
+      -> call VideoPath, which recalculates the input windows, then the
+         active window, and the rest of the solve
+
+**The sync type is above the measurements, not below them.** Every reading under
+it is taken through the sync path, so a separate-sync source counted through
+csync measures nothing usable -- `SP_SOG_MODE` 1 with `SP_VTOTAL` 97. It is
+cheap enough to sit there, and the full probe window is spent only on a
+genuinely composite source where the timeout is the answer.
+
+**Input selection is not in this list.** It answers which connector carries a
+source, which is a level up; folding it in makes every failed measurement a
+candidate for moving the mux, and taking the input away turns the screen green
+for as long as it is gone.
+
+**IT BAILS THE MOMENT IT HOLDS WHAT `VideoPath` NEEDS.** The exit condition is a
+complete timing set -- line count, field rate, line rate, scan mode -- not
+reaching the end of the list. A tier that answers half of it leaves only the
+other half to escalate for, which is the RGBHV case exactly: `HPERIOD_IF` is
+exact there and `VPERIOD_IF` is debris, so the horizontal completes at the
+second step and only the vertical goes on to the third.
+
+**The trigger is the chip's, not a poll.** `STATUS_INT_INP_SW`, `s0_0F[3]`, is
+"input source switch the mode", and `INT_ENABLE3` is already 1. Two things stand
+in the way today: nothing reads it, and `loop()` calls
+`Interrupts::acknowledgeAllButSogBad()` every 3 s, which writes `0xfe` to
+`s0_58` -- bits 1 to 7, bit 3 among them. **The signal is destroyed on a timer
+before any reader could consume it.** `STATUS_INT_SOG_SW` is what the sketch
+uses instead, and it is a proxy: it reports the sync separator switching, not
+the mode changing.
+
+What each step can answer, measured:
+
+| step | Wii 480i on `ypbpr` | RiscPC 320x256@50 on `vga` |
+|---|---|---|
+| Mode Detect, `s0_00..s0_05` | `SD`, `NTSC_INT`, `INT` -- standard, scan, and so the timings | **no mode bit set at all** |
+| `HPERIOD_IF` | 428, exact for 15734 Hz | 431, exact for 15625 Hz |
+| `VPERIOD_IF` | 524, `STATUS_IF_VT_BAD` 0 | 144, **`STATUS_IF_VT_BAD` 1 -- debris** |
+
+`HPERIOD_IF` measures a period against the chip's 27 MHz rather than counting
+lines, so interlace is invisible to it and it answers on every source.
+`VPERIOD_IF` answers only where the IF completes a vertical measurement, which
+RGBHV never does -- structural and reproducible,
+`docs/investigations/vperiod-if-on-rgbhv.md`.
+
+**THE USER SLOT IS WHAT STOPS A CUSTOM MODE COSTING THE SLOW PATH TWICE.**
+`MD_USER_DEF_HCNTRL` and `MD_USER_DEF_VCNTRL` (`s1_81`, `s1_80`) are a
+user-defined mode, and `STATUS_IF_INP_USER` is the bit that fires when they
+match. Both read 255 -- the reset value, never programmed -- which is why that
+bit never answers. Written from a completed measurement, a custom mode becomes a
+recognised one: Mode Detect answers it at the first step from then on, and the
+mode-change interrupt starts firing for it, because a switch detector keyed on
+the classification has nothing to report while the classification is nothing.
+
+**Mode Detect carries a generic scan bit that nothing reads.**
+`ModeDetect::sourceIsInterlaced()` asks `STATUS_IF_INP_NTSC_INT` and
+`STATUS_IF_INP_PAL_INT` only, where `STATUS_IF_INP_INT` at `s0_04[6]` answers
+for any mode -- 1080i, or a custom interlaced one. It is set on the Wii at 480i
+alongside the NTSC bit.
+
+**The steadiness run is the third step, and reaching it on a recognised source
+is the fault.** `countHeld()` needs four consecutive identical counts, and an
+interlaced source's field count alternates by construction: measured on the Wii
+at 480i, `STATUS_SYNC_PROC_VTOTAL` takes exactly two values over 1417 samples,
+260 and 259, near evenly. So `sourceIsPresent()` never goes true, the mode never
+solves, and the picture rolls -- while Mode Detect has the answer in one burst
+and `STATUS_IF_INP_NTSC_INT` reads 1 in 755 of 755.
+`docs/investigations/interlaced-source-measurement.md`.
+
 ### What moves is what another class reads, and nothing else
 
 **The test is whether a field has a reader outside the class that writes it**,
