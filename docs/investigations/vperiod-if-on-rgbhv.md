@@ -1,8 +1,25 @@
 # Why `VPERIOD_IF` never completes a measurement on RGBHV
 
-**Status:** structural and reproducible. **The board-level question is settled:
-`VPERIOD_IF` works here, and the fault is specific to the RGBHV path.** What
-remains open is whether the sync route or the video standard is the discriminator. What the firmware does about it
+**Status:** CLOSED. **The discriminator is the SYNC ROUTE, not the video
+standard and not RGBHV as such**: `VPERIOD_IF` is valid whenever the sync
+separator is in the path and debris when it is not. Measured on one input, one
+cable, one mode, with only the RISC PC's sync type moving --
+
+| `vga`, 320x256@50 | separate | composite |
+|---|---|---|
+| `VPERIOD_IF` | 62, debris | **623** |
+| `STATUS_IF_VT_BAD` | **1** in 582/582 | **0** in 53/53 |
+| `SP_SOG_MODE` | 0 | 1 |
+
+-- which confirms the separator hypothesis below on a stricter test than the
+RGBS experiment it proposed, because that one moved the input port and the video
+standard as well. `docs/sync-type-selection.md` carries the register detail.
+
+**The experiment described at the end is no longer blocked the way it says.**
+ModeServ changes the RISC PC's sync type live over TCP, so no CMOS change and no
+reboot is involved, and the sync route can be moved without touching a cable.
+The RGBS-through-the-Sync-port version remains the only way to separate the
+PORT from the sync route, which nothing so far has needed. What the firmware does about it
 — substitute `STATUS_SYNC_PROC_VTOTAL`, treat a non-zero value as debris — is in
 [`tv5725-chip.md`](../tv5725-chip.md).
 

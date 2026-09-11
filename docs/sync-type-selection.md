@@ -145,6 +145,39 @@ Worth knowing before running the hardware suite on a source like this one: it
 can leave the unit without a picture, and the fix is one HTTP call rather than a
 power cycle.
 
+## `SP_SOG_MODE` selects the separator, not sync on green
+
+The name is the datasheet's and is kept, but it describes the wrong thing. The
+bit is 1 whenever the sync separator is in the path, whatever feeds it.
+
+Measured on one input, one cable, one mode, with only the RISC PC's sync type
+moving over ModeServ:
+
+| `vga`, 320x256@50 | separate | composite | separate again |
+|---|---|---|---|
+| `SP_SOG_MODE` | 0 | **1** | 0 |
+| `SP_EXT_SYNC_SEL` | 0 | **1** | 0 |
+| `SP_SOG_SRC_SEL` | 0 | 0 | 0 |
+| `STATUS_IF_VT_BAD` | 1 | **0** | 1 |
+| `VPERIOD_IF` | 43, debris | **623** | 34, debris |
+
+Composite sync arrives on the HSync pin there, with nothing on green, and the
+bit still reads 1. The datasheet uses "SOG" the same way throughout -- the
+`SP_CS_*` positions are documented as "Sync separation control SOG clamp/hs
+positions", and `SP_SOG_SRC_SEL` offers "1: select hs as sog source", which only
+means something if SOG names the separator's input rather than the green
+channel. Its own text for the bit is "Out control 1: SOG mode; 0: normal mode".
+
+`SP_EXT_SYNC_SEL` is what moves alongside it. `SP_SOG_SRC_SEL` is written 0 by
+the firmware in three places and never 1.
+
+**AND THE SEPARATOR IS WHAT THE INPUT FORMATTER MEASURES VERTICAL TIMING FROM.**
+`VPERIOD_IF` and `STATUS_IF_VT_BAD` follow the same bit, which settles the open
+question in `docs/investigations/vperiod-if-on-rgbhv.md`: the discriminator is
+the sync route, not the video standard and not RGBHV. A separate-sync source
+leaves the separator with nothing to extract, so the IF never completes a
+vertical measurement while the sync processor counts happily off the VSync pin.
+
 ## What is *not* being claimed
 
 - **This is not the intermittent shear glitch.** That was closed as
