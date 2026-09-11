@@ -1,9 +1,13 @@
 # What the board can capture
 
-**One bound decides whether a source arrives intact**, and it is horizontal:
-capture must end before **IF 1125**. Past it the capture path stops writing video
-and writes `Y=U=V=0`, which decodes to a green band, and active picture there is
-destroyed. Nothing enforces it, so the loss is silent.
+**One bound decides whether a source arrives intact**, and it is horizontal: the
+capture path writes about **1034 IF units from wherever the window starts** and
+then writes `Y=U=V=0`, which decodes to a green band, and active picture there is
+destroyed. Nothing in hardware enforces it, so the loss is silent.
+
+It is a WIDTH, not a position in the line, and the difference decides the fix:
+the window may sit anywhere, but no window may be wider than that -- so the
+divider has to keep the line short enough that one window still spans it.
 
 It is measured in `docs/investigations/tail-green.md`, which also records the
 explanations that turned out to be wrong.
@@ -24,16 +28,19 @@ X = 1125 IF units = 2250 ADC samples, counted from the line start. It does not
 move with the capture start, with the source's border or porch timings, or with
 the memory clock across a 2:1 sweep. Whatever counts, counts samples.
 
-Because it is a position, the usable fraction of any line is `2250 / PLLAD_MD`,
-and the whole line fits only when `PLLAD_MD <= 2250`. That caps the line at 1125
-IF units, which then have to cover every pixel the source puts on it:
+Read as a position, the usable fraction of any line is `2250 / PLLAD_MD`. The
+width reading gives the same ceiling on what a line can carry, because a window
+of about 1024 units is all there is however it is placed:
 
 ```
-IF units per source pixel = 1125 / htotal
+IF units per source pixel = 1024 / htotal
 ```
 
-So **htotal 1125 is the ceiling** for one sample per source pixel, and 562 for
-two.
+So **htotal 1024 is the ceiling** for one sample per source pixel, and 512 for
+two. A source wider than about 512 active pixels cannot be sampled above Nyquist
+at all, whatever the divider does -- which is why fine vertical detail on a
+VESA-class source aliases, and why passing such a source through unscaled is the
+only way to carry it intact.
 
 ## Stock AKF50, the bound applied
 
@@ -100,23 +107,61 @@ Two floors bound the trade:
 
 Two things, and they compose.
 
-`SourceMeasurement::recommendedDivider()` caps the IF line at 1125 units, which
-is `PLLAD_MD` 2250 on a doubled line and 1125 on an undoubled one.
+**X is not a position.** The bound is a capture WIDTH of about 1034 units
+counted from the start of the window, the same on both scan modes; it read as a
+position only because every measurement of it held the window's start fixed.
+`VideoSourceLine::maxCaptureWidth()` bounds the window by it.
+`investigations/tail-green.md` has the measurements.
 
-**X is not a position, and this cap is not what enforces it.** The bound is a
-capture WIDTH of about 1034 units counted from the start of the window, the same
-on both scan modes; it read as a position only because every measurement of it
-held the window's start fixed. `VideoSourceLine::maxCaptureWidth()` is what
-enforces it now. The 11-bit `IF_HSYNC_RST` caps the line at 2047 units
-independently. `investigations/tail-green.md` has the measurements.
+`SourceMeasurement::recommendedDivider()` then holds the divider where the whole
+line stays *reachable*: `VideoSourceLine::framableIfLine()` inverts
+`capturable()` from the measured sync duty, the pulse polarity and the capture
+lag, so a window opened to `maxCaptureWidth()` still spans the line end to end.
+Without it the picture stops growing before the line does when the user zooms
+out, and the far end is reachable only by giving up the near one.
 
-This is a **second** ceiling beside the ADC's 162 MSPS rating, and whichever is
-tighter binds. Which one that is depends on the oversampling the solve picked:
-at four times, the rating is tighter above about 17.6 kHz. At `PLLAD_CKOS` 0 it
-is not tight at all — 800x600@60's 37,879 Hz allows about 4013 — and the write
-limit is what holds the divider at 1124. RGBHV bypass runs the same source at
-1856 for the same reason: it writes nothing to memory, so no capture bound
-reaches it.
+The bound is per source, because every term of it is:
+
+| | duty | pulse | lag | IF line | `PLLAD_MD` |
+|---|---|---|---|---|---|
+| 800x600@60 | 0.122 | at head | 72 | 1250 | 1250 |
+| 320x256@50, doubled | 0.071 | at head | 0 | 1103 | 2206 |
+| an inverted pulse, doubled | — | behind the origin | 0 | 1025 | 2050 |
+
+An inverted pulse is the tightest: the sync interval is already behind the
+origin, so nothing is guarded off the head and the whole line counts against the
+limit. A doubled line carries no lag, because `IF_HBIN_SP` is the FIFO's own
+reset and places the picture itself.
+
+The 11-bit `IF_HSYNC_RST`, `IF_HB_ST2` and `IF_HB_SP2` cap the line at 2047
+units above all of it — `SourceMeasurement::IfLineUnitsMax`. A line past that
+wraps rather than failing.
+
+This is a ceiling beside the ADC's 162 MSPS rating, and whichever is tighter
+binds. **The rating is never the tighter one for a source this board sees**: it
+allows 4095 dividers below 39.6 kHz and about 2532 at 1280x1024@60's 63,960 Hz,
+where the capture width has already stopped the line well short. RGBHV bypass
+runs at 1856 whatever the source: it writes nothing to memory, so no capture
+bound reaches it.
+
+**The rating is read at the oversampling INSTALLED, not the one asked for.**
+`Adc::oversampleFor()` reduces a request the crossover row refuses, and the row
+is chosen from the divider's own clock — so budgeting for the request is
+circular. Reserving the whole rating for four times puts that clock at 40.5 MHz,
+one step over `postDividerFor()`'s 40 MHz row, where two is what installs and
+the part converts at 81 MSPS: the rating reserved and half of it spent.
+
+| clock (`PLLAD_MD` x line rate) | `PLLAD_KS` | oversampling available |
+|---|---|---|
+| >= 80 MHz | 0 | none |
+| 40..80 MHz | 1 | 2x |
+| 20..40 MHz | 2 | 4x |
+| < 20 MHz | 3 | 8x |
+
+`modeOversample_` is 4 everywhere, so what is installed falls out of the divider
+rather than being chosen. Measured on 800x600@60: a 42.9 MHz clock at
+`PLLAD_MD` 1124 and a 51.5 MHz one at 1250 are the same row, so raising the
+divider there costs no oversampling.
 
 `VideoSourceLine::lastCapture()` clamps the far end of the capture window at
 `WriteLimitUnits`. With the divider capped this never fires — it is there for the
