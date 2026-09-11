@@ -82,6 +82,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SourceStandard.h"
 #include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/SyncMeasurement.h"
+#include "src/tv5725/SyncRecovery.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
@@ -4034,6 +4035,107 @@ static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
     externalClockGenSyncInOutRate();
 }
 
+// The other ADC input, kept only if something locks there quickly.
+static void tryOtherAdcInput()
+{
+    const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
+    delay(40);
+
+    unsigned long timeout = millis();
+    while (millis() - timeout <= 210) {
+        if (getStatus16SpHsStable()) {
+            rto->noSyncCounter = 0x07fe;
+            printf("noSyncCounter max1 \n");
+            return;
+        }
+        handleWiFi(0);
+        delay(1);
+    }
+
+    Tv5725::Adc::selectInput(previousInput);
+}
+
+// One rung of the escalation ladder. Which rung is Tv5725::SyncRecovery's; the
+// conditions here are facts about the source rather than about the position, so
+// a rung whose precondition fails costs its turn and the list moves on.
+static void runRecoveryStep(Tv5725::SyncRecovery::Step step, bool modeSettled)
+{
+    switch (step) {
+    case Tv5725::SyncRecovery::None:
+        break;
+
+    case Tv5725::SyncRecovery::LiftSogFloor:
+        if (modeSettled && sourceHasSerratedSync())
+            Tv5725::SyncOnGreen::liftOffFloor(putSogLevelInForce);
+        break;
+
+    case Tv5725::SyncRecovery::CoastWindow:
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
+        if (sourceHasSerratedSync())
+            Tv5725::SyncProcessor::widenCoastForSerration();
+        Tv5725::SyncProcessor::forgetPositions();
+        break;
+
+    case Tv5725::SyncRecovery::SyncProcessorDynamic:
+        updateSpDynamic(1);
+        break;
+
+    case Tv5725::SyncRecovery::ReleaseCapture:
+        if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1)
+            Tv5725::FrameBuffer::releaseCapture();
+        break;
+
+    case Tv5725::SyncRecovery::HoldClamp:
+        if (rto->inputIsYpBpR && Info_sate == 0) {
+            Tv5725::SyncProcessor::holdClamp();
+            Tv5725::SyncProcessor::forgetPositions();
+        }
+        break;
+
+    case Tv5725::SyncRecovery::NudgeModeDetect:
+        Tv5725::ModeDetect::nudge();
+        break;
+
+    case Tv5725::SyncRecovery::HsyncOverflowProtect:
+        if (Tv5725::SyncMeasurement::isCsync())
+            Tv5725::SyncProcessor::toggleHsyncOverflowProtect();
+        break;
+
+    case Tv5725::SyncRecovery::FullReset:
+        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
+        Tv5725::SyncProcessor::applyDefaultClampWindow();
+        updateSpDynamic(1);
+        Tv5725::ModeDetect::nudge();
+        delay(80);
+        Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce, false);
+        Tv5725::SyncProcessor::reset();
+        delay(8);
+        Tv5725::ModeDetect::reset();
+        delay(8);
+        break;
+
+    case Tv5725::SyncRecovery::ReprobeSyncType:
+        printInfo();
+        // A V sync arriving is proof of a source, so the run restarts rather
+        // than escalating on to the input toggle.
+        if (!geometry.reacquireSyncType()) {
+            rto->noSyncCounter = 0x07fe;
+            printf("noSyncCounter max2 \n");
+        }
+        break;
+
+    case Tv5725::SyncRecovery::ToggleInput:
+        if (detectionMayChangeInput())
+            tryOtherAdcInput();
+        break;
+
+    case Tv5725::SyncRecovery::ReopenSogSeparator:
+        Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce, true);
+        break;
+    }
+}
+
 void runSyncWatcher() // 
 {
     // Frozen: docs/gbs-control-debug-interface.md
@@ -4100,84 +4202,8 @@ void runSyncWatcher() //
 
         rto->phaseIsSet = 0;
 
-        if (newVideoModeCounter == 0 && rto->noSyncCounter == 2 && sourceHasSerratedSync())
-            Tv5725::SyncOnGreen::liftOffFloor(putSogLevelInForce);
-
-        if (rto->noSyncCounter == 8) {
-            Tv5725::SyncProcessor::applyDefaultCoastWindow();
-            if (sourceHasSerratedSync())
-                Tv5725::SyncProcessor::widenCoastForSerration();
-            Tv5725::SyncProcessor::forgetPositions();
-        }
-
-        if (rto->noSyncCounter % 27 == 0) {
-            updateSpDynamic(1);
-        }
-
-        if (rto->noSyncCounter % 32 == 0 && GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-            Tv5725::FrameBuffer::releaseCapture();
-        }
-
-        if (rto->inputIsYpBpR && (rto->noSyncCounter == 34) && Info_sate == 0) //&& SeleInputSource == S_YUV )
-        {
-            Tv5725::SyncProcessor::holdClamp();
-            Tv5725::SyncProcessor::forgetPositions();
-        }
-
-        if (rto->noSyncCounter == 38) {
-            Tv5725::ModeDetect::nudge();
-        }
-
-        if (Tv5725::SyncMeasurement::isCsync() && rto->noSyncCounter > 47 &&
-            rto->noSyncCounter % 16 == 0)
-            Tv5725::SyncProcessor::toggleHsyncOverflowProtect();
-
-        if (rto->noSyncCounter % 150 == 0) {
-            if (rto->noSyncCounter == 150 || rto->noSyncCounter % 900 == 0) {
-
-                printInfo();
-
-                // A V sync arriving is proof of a source, so the escalation
-                // stops here rather than reaching the input toggle below.
-                if (!geometry.reacquireSyncType()) {
-                    rto->noSyncCounter = 0x07fe;
-                    printf("noSyncCounter max2 \n");
-                }
-            }
-            Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-            Tv5725::SyncProcessor::applyDefaultCoastWindow();
-            Tv5725::SyncProcessor::applyDefaultClampWindow();
-            updateSpDynamic(1);           
-            Tv5725::ModeDetect::nudge();
-            delay(80);
-
-            Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce,
-                                           rto->noSyncCounter % 450 == 0);
-
-            Tv5725::SyncProcessor::reset();
-            delay(8);
-            Tv5725::ModeDetect::reset();
-            delay(8);
-        }
-
-        if (rto->noSyncCounter % 413 == 0 && detectionMayChangeInput()) {
-            const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
-            delay(40);
-
-            unsigned long timeout = millis();
-            while (millis() - timeout <= 210) {
-                if (getStatus16SpHsStable()) {
-                    rto->noSyncCounter = 0x07fe;
-                    printf("noSyncCounter max1 \n");
-                    break;
-                }
-                handleWiFi(0);
-                delay(1);
-            }
-
-            if (millis() - timeout > 210)
-                Tv5725::Adc::selectInput(previousInput);
-        }
+        runRecoveryStep(Tv5725::SyncRecovery::stepAt(rto->noSyncCounter),
+                        newVideoModeCounter == 0);
 
         newVideoModeCounter = 0;
     }
