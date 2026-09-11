@@ -25,7 +25,7 @@ TEST_CASE("each step fires at the count the moduli first fired it at")
     CHECK(SyncRecovery::stepAt(32) == SyncRecovery::ReleaseCapture);
     CHECK(SyncRecovery::stepAt(34) == SyncRecovery::HoldClamp);
     CHECK(SyncRecovery::stepAt(38) == SyncRecovery::NudgeModeDetect);
-    CHECK(SyncRecovery::stepAt(63) == SyncRecovery::HsyncOverflowProtect);
+    CHECK(SyncRecovery::stepAt(48) == SyncRecovery::HsyncOverflowProtect);
     CHECK(SyncRecovery::stepAt(150) == SyncRecovery::FullReset);
     CHECK(SyncRecovery::stepAt(413) == SyncRecovery::ToggleInput);
     CHECK(SyncRecovery::stepAt(450) == SyncRecovery::ReopenSogSeparator);
@@ -37,6 +37,13 @@ TEST_CASE("the sync-type re-probe follows the reset instead of sharing its count
     // position is the whole point of the list, and a pass is about 20 ms.
     CHECK(SyncRecovery::stepAt(150) == SyncRecovery::FullReset);
     CHECK(SyncRecovery::stepAt(151) == SyncRecovery::ReprobeSyncType);
+}
+
+TEST_CASE("the overflow-protect step avoids the count the power check writes")
+{
+    // loop() rewrites the counter to 63 when the board-power check at 61 passes,
+    // and the next pass increments past it, so a step at 63 can never be seen.
+    CHECK(SyncRecovery::stepAt(63) == SyncRecovery::None);
 }
 
 TEST_CASE("nothing fires between the steps")

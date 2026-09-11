@@ -13,6 +13,9 @@ struct Rung {
 // 150 with FullReset, and one pass later -- about 20 ms -- buys one step per
 // position and costs nothing measurable.
 //
+// No step may sit at 63. The board-power check rewrites the counter to it and
+// the next pass increments past, so 63 is never a count a step is asked for.
+//
 // ReopenSogSeparator was not a rung at all. It was `% 450` handed to
 // SyncOnGreen::reacquire() as its `reopen` flag -- every third pass of the
 // reset block, meaning "this caller has run out of walks". That is an
@@ -25,7 +28,7 @@ const Rung Ladder[] = {
     {32, SyncRecovery::ReleaseCapture},
     {34, SyncRecovery::HoldClamp},
     {38, SyncRecovery::NudgeModeDetect},
-    {63, SyncRecovery::HsyncOverflowProtect},
+    {48, SyncRecovery::HsyncOverflowProtect},
     {150, SyncRecovery::FullReset},
     {151, SyncRecovery::ReprobeSyncType},
     {413, SyncRecovery::ToggleInput},
