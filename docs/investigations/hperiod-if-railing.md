@@ -919,3 +919,44 @@ one place a railed `HPERIOD_IF` reaches a register that stays written.
 tests that move the divider upward leave it temporarily in bounds; the same test
 run on its own, on a settled unit, fails. Run it against a unit at its solved
 divider or the pass means nothing.
+
+## HTTP does not report the railed register as healthy
+
+The claim that a point read over HTTP shows a steady 431 while the part rails
+does not reproduce. `HPERIOD_IF` read three ways over ONE window on ONE railed
+state, RiscPC 320x256@50 on `vga`, the rail induced by an `/input?src=rgbs`
+excursion and back:
+
+| instrument | n | 431-ish | >= 500 |
+|---|---|---|---|
+| `/samplinglog?ms=25`, on device | 1021 | **0** | 736 (72.1%) |
+| HTTP `read_named()`, 55 Hz | 1767 | **0** | 929 (52.6%) |
+| the same HTTP series at 5 s spacing | 7 | **0** | 2 (28.6%) |
+
+Seven reads five seconds apart returned 255, 511, 6 and 263 -- obviously bad
+values, not a plausible healthy one. The control on a clean state has all three
+at 431 with nothing at 500 or above, so the instruments are not merely reporting
+noise.
+
+**The residual disagreement is the DISTRIBUTION of bad values, not the verdict.**
+HTTP reports 255 where the log reports 511 -- the same low byte with bit 8
+clear -- and holds ~53% at or above 500 against the log's ~72%. Three
+explanations are refuted:
+
+- **a split read across the field's two registers.** `HPERIOD_IF` is nine bits
+  at `s0_06`, so it spans two. `read_field()` fetches one byte per HTTP request
+  and `read_named()` fetches the field in one, and interleaved on the railed
+  state they agree: 76.3% and 72.1% with bit 8 set.
+- **observer load.** HTTP reads ~53% at or above 500 with the sampling log
+  running beside it and ~53% without it.
+- **the transport.** `/getreg` is deferred to `loop()` through `RegisterQueue`,
+  so both instruments read the same field off the same bus from the same loop.
+
+What is left is the phase each samples at, and nothing here settles it. It does
+not reach the healthy/railed verdict, which is what a diagnosis turns on.
+
+**WHAT PRODUCED THE ORIGINAL READING IS A STATE CHANGE BETWEEN THE TWO
+SAMPLES.** An input change or a sync-type round trip re-rails the register, so
+a healthy HTTP sample taken before one and an on-device capture taken after it
+describe two states. Sample both instruments in one window, or say which state
+each belongs to.
