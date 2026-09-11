@@ -240,6 +240,21 @@ public:
     static void applyPhaseSyncProcessor(uint8_t phase);
     static void applyPhaseAdc(uint8_t phase);
 
+    // The phase in force for each adjuster, HELD. Nothing reads it back: the
+    // value is one this class chose, and PA_ADC_S reports it only once its own
+    // latch has loaded it. docs/video-source-acquisition.md
+    static void choosePhaseSyncProcessor(uint8_t phase);
+    static void choosePhaseAdc(uint8_t phase);
+    static uint8_t phaseSyncProcessor();
+    static uint8_t phaseAdc();
+
+    // Both, in one call, because a caller that moves one usually moves the
+    // other and the two latches are separate edges.
+    static void applyPhases();
+
+    // One step round the ADC's field, for a caller walking it by hand.
+    static void nudgePhaseAdc();
+
     // Take both adjusters through their bypass and back, which is what makes a
     // newly latched phase take effect.
     static void restartPhaseAdjusters();
@@ -343,6 +358,9 @@ public:
 private:
     // How many taps above the post divider a ratio asks for: one per doubling.
     static uint8_t stepsFor(uint8_t oversample);
+
+    static uint8_t phaseSyncProcessor_;
+    static uint8_t phaseAdc_;
 
 };
 

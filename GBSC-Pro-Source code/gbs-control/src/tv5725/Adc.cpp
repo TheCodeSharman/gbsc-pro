@@ -94,6 +94,36 @@ void Adc::latch()
     PLLAD_LAT::write(1);
 }
 
+uint8_t Adc::phaseSyncProcessor_ = 16;
+uint8_t Adc::phaseAdc_ = 16;
+
+void Adc::choosePhaseSyncProcessor(uint8_t phase)
+{
+    if (phase <= PhaseMax)
+        phaseSyncProcessor_ = phase;
+}
+
+void Adc::choosePhaseAdc(uint8_t phase)
+{
+    if (phase <= PhaseMax)
+        phaseAdc_ = phase;
+}
+
+uint8_t Adc::phaseSyncProcessor() { return phaseSyncProcessor_; }
+
+uint8_t Adc::phaseAdc() { return phaseAdc_; }
+
+void Adc::applyPhases()
+{
+    applyPhaseSyncProcessor(phaseSyncProcessor_);
+    applyPhaseAdc(phaseAdc_);
+}
+
+void Adc::nudgePhaseAdc()
+{
+    phaseAdc_ = (uint8_t)((phaseAdc_ + 1) & PhaseMax);
+}
+
 void Adc::applyPhaseSyncProcessor(uint8_t phase)
 {
     if (phase > PhaseMax)

@@ -589,3 +589,43 @@ TEST_CASE("a charge pump already below the band's is not relatched")
     CHECK(Adc::PLLAD_ICP::read() == 4);
     CHECK(Wire.trace.size() == before);
 }
+
+TEST_CASE("the sampling phase is held here, and nothing reads it off the chip")
+{
+    // Both phases were the sketch's, and one site took PA_ADC_S back into the
+    // held value -- a register standing in for state the engine chose. One
+    // owner holds both, chooses without writing, and puts them in force
+    // together. docs/video-source-acquisition.md
+    Wire.reset();
+
+    Adc::choosePhaseSyncProcessor(9);
+    Adc::choosePhaseAdc(24);
+
+    CHECK(Adc::phaseSyncProcessor() == 9);
+    CHECK(Adc::phaseAdc() == 24);
+
+    SUBCASE("choosing reaches no register") {
+        CHECK(Adc::PA_SP_S::read() == 0);
+        CHECK(Adc::PA_ADC_S::read() == 0);
+    }
+
+    SUBCASE("putting them in force latches both adjusters") {
+        Adc::applyPhases();
+
+        CHECK(Adc::PA_SP_S::read() == 9);
+        CHECK(Adc::PA_SP_LAT::read() == 1);
+        CHECK(Adc::PA_ADC_S::read() == 24);
+        CHECK(Adc::PA_ADC_LAT::read() == 1);
+    }
+
+    SUBCASE("a phase past the field is refused rather than truncated") {
+        Adc::choosePhaseAdc(Adc::PhaseMax + 1);
+        CHECK(Adc::phaseAdc() == 24);
+    }
+
+    SUBCASE("the ADC's phase steps round its field") {
+        Adc::choosePhaseAdc(Adc::PhaseMax);
+        Adc::nudgePhaseAdc();
+        CHECK(Adc::phaseAdc() == 0);
+    }
+}

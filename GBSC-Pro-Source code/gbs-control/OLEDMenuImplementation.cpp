@@ -528,8 +528,8 @@ static void LoadDefault()
     rto->autoBestHtotalEnabled = true; // 已启用自动最佳总计
     rto->syncLockFailIgnore = 16;      //
     rto->syncWatcherEnabled = true;    //
-    rto->phaseADC = 16;                //
-    rto->phaseSP = 16;                 //
+    Tv5725::Adc::choosePhaseAdc(16);
+    Tv5725::Adc::choosePhaseSyncProcessor(16);
     rto->presetID = 0;                 //
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false; // 运动自适应隔行扫描

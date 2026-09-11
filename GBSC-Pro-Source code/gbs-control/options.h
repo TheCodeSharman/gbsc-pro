@@ -114,8 +114,6 @@ struct runTimeOptions
     Tv5725::DisplayClock displayClock;
     uint16_t noSyncCounter; // is always at least 1 when checking value in syncwatcher
     uint8_t videoStandardInput; // 0 - unknown, 1 - NTSC like, 2 - PAL like, 3 480p NTSC, 4 576p PAL
-    uint8_t phaseSP;
-    uint8_t phaseADC;
     uint8_t syncLockFailIgnore;
     uint8_t applyPresetDoneStage;//应用预置完成阶段
     uint8_t continousStableCounter;

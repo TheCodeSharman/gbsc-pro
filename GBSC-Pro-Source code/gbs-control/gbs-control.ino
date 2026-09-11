@@ -629,8 +629,8 @@ static void resetRunTimeDefaults()
     rto->autoBestHtotalEnabled = true;
     rto->syncLockFailIgnore = 16;
     rto->syncWatcherEnabled = true;
-    rto->phaseADC = 16;
-    rto->phaseSP = 16;
+    Tv5725::Adc::choosePhaseAdc(16);
+    Tv5725::Adc::choosePhaseSyncProcessor(16);
     rto->presetID = 0;
     Tv5725::Adc::forgetPllBand();
     rto->motionAdaptiveDeinterlaceActive = false;
@@ -1775,6 +1775,12 @@ void goLowPowerWithInputDetection()
     rto->isInLowPowerMode = true;
 }
 
+// Half a sample of phase, which is half the five-bit field.
+static uint8_t halfSampleOn(uint8_t phase)
+{
+    return (uint8_t)((phase + 16) & Tv5725::Adc::PhaseMax);
+}
+
 boolean optimizePhaseSP() 
 {
     uint16_t pixelClock = GBS::PLLAD_MD::read();
@@ -1790,15 +1796,14 @@ boolean optimizePhaseSP()
 
     if (Tv5725::SyncOnGreen::level() <= 2) {
 
-        rto->phaseSP = 16;
-        rto->phaseADC = 16;
+        Tv5725::Adc::choosePhaseSyncProcessor(16);
+        Tv5725::Adc::choosePhaseAdc(16);
 
         // Half a sample of ADC phase, for the oversampling in force. Nothing
         // but interlaced SD asks for 4 and applyOversample() never raises what
         // it was given, so the ratio says this on its own.
         if (rto->osr == 4) {
-            rto->phaseADC += 16;
-            rto->phaseADC &= 0x1f;
+            Tv5725::Adc::choosePhaseAdc(halfSampleOn(Tv5725::Adc::phaseAdc()));
         }
         delay(8);
         runTest = 0;
@@ -1806,9 +1811,10 @@ boolean optimizePhaseSP()
 
     if (runTest) {
 
+        uint8_t phaseSP = Tv5725::Adc::phaseSyncProcessor();
         for (uint8_t u = 0; u < 34; u++) {
-            rto->phaseSP++;
-            rto->phaseSP &= 0x1f;
+            phaseSP = (uint8_t)((phaseSP + 1) & Tv5725::Adc::PhaseMax);
+            Tv5725::Adc::choosePhaseSyncProcessor(phaseSP);
             setAndLatchPhaseSP();
             badHt = 0;
             ESP.wdtFeed();
@@ -1824,7 +1830,7 @@ boolean optimizePhaseSP()
 
             if ((badHt + prevBadHt + prevPrevBadHt) > worstBadHt) {
                 worstBadHt = (badHt + prevBadHt + prevPrevBadHt);
-                worstPhaseSP = (rto->phaseSP - 1) & 0x1f;
+                worstPhaseSP = (uint8_t)((phaseSP - 1) & Tv5725::Adc::PhaseMax);
             }
 
             if (badHt == 0) {
@@ -1842,9 +1848,8 @@ boolean optimizePhaseSP()
         }
 
         if (worstBadHt != 0) {
-            rto->phaseSP = (worstPhaseSP + 16) & 0x1f;
-
-            rto->phaseADC = 16;
+            Tv5725::Adc::choosePhaseSyncProcessor(halfSampleOn(worstPhaseSP));
+            Tv5725::Adc::choosePhaseAdc(16);
 
             // The second arm still reads the byte, because 2 is also what a
             // progressive source and the default ask for, so the ratio does not
@@ -1855,16 +1860,14 @@ boolean optimizePhaseSP()
                 && rto->osr == 2;
 
             if (rto->osr == 4 || hdAtItsOwnOversample) {
-                rto->phaseADC += 16;
-                rto->phaseADC &= 0x1f;
+                Tv5725::Adc::choosePhaseAdc(halfSampleOn(Tv5725::Adc::phaseAdc()));
             }
         } else {
 
-            rto->phaseSP = 16;
-            rto->phaseADC = 16;
+            Tv5725::Adc::choosePhaseSyncProcessor(16);
+            Tv5725::Adc::choosePhaseAdc(16);
             if (rto->osr == 4) {
-                rto->phaseADC += 16;
-                rto->phaseADC &= 0x1f;
+                Tv5725::Adc::choosePhaseAdc(halfSampleOn(Tv5725::Adc::phaseAdc()));
             }
         }
     }
@@ -2891,8 +2894,8 @@ void doPostPresetLoadSteps()
             if (Tv5725::SyncMeasurement::isCsync()) {
                 Tv5725::SyncOnGreen::choose(24);
             }
-            rto->phaseADC = 16;
-            rto->phaseSP = 8;
+            Tv5725::Adc::choosePhaseAdc(16);
+            Tv5725::Adc::choosePhaseSyncProcessor(8);
         }
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
@@ -2919,8 +2922,7 @@ void doPostPresetLoadSteps()
             rto->autoBestHtotalEnabled = true;
         }
 
-        rto->phaseADC = GBS::PA_ADC_S::read();
-        rto->phaseSP = 8;
+        Tv5725::Adc::choosePhaseSyncProcessor(8);
 
         if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
         {
@@ -3524,19 +3526,19 @@ boolean getStatus16SpHsStable()
 
 void advancePhase()
 {
-    rto->phaseADC = (rto->phaseADC + 1) & 0x1f;
+    Tv5725::Adc::nudgePhaseAdc();
     setAndLatchPhaseADC();
 }
 
 
 void setAndLatchPhaseSP()
 {
-    Tv5725::Adc::applyPhaseSyncProcessor(rto->phaseSP);
+    Tv5725::Adc::applyPhaseSyncProcessor(Tv5725::Adc::phaseSyncProcessor());
 }
 
 void setAndLatchPhaseADC()
 {
-    Tv5725::Adc::applyPhaseAdc(rto->phaseADC);
+    Tv5725::Adc::applyPhaseAdc(Tv5725::Adc::phaseAdc());
 }
 
 
@@ -3718,8 +3720,8 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     GBS::DEC_IDREG_EN::write(1);
     GBS::DEC_WEN_MODE::write(1);
-    rto->phaseSP = 8;
-    rto->phaseADC = 24;
+    Tv5725::Adc::choosePhaseSyncProcessor(8);
+    Tv5725::Adc::choosePhaseAdc(24);
     setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
 
@@ -3816,8 +3818,8 @@ void bypassModeSwitch_RGBHV()
     if (Tv5725::SyncMeasurement::isCsync()) {
         Tv5725::SyncOnGreen::choose(24);
     }
-    rto->phaseADC = 16;
-    rto->phaseSP = 8;
+    Tv5725::Adc::choosePhaseAdc(16);
+    Tv5725::Adc::choosePhaseSyncProcessor(8);
     GBS::SP_CLAMP_MANUAL::write(1);  
     Tv5725::SyncProcessor::setCoastInvert(false);
 
@@ -6335,17 +6337,16 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     resetPLLAD();
                     break;
                 case 'v':
-                    rto->phaseSP += 1;
-                    rto->phaseSP &= 0x1f;
+                    Tv5725::Adc::choosePhaseSyncProcessor(
+                        (uint8_t)((Tv5725::Adc::phaseSyncProcessor() + 1)
+                                  & Tv5725::Adc::PhaseMax));
                     ; // SerialMprint("SP: ");
-                    ; // SerialMprintln(rto->phaseSP);
                     setAndLatchPhaseSP();
                     break;
                 case 'b':
                     advancePhase();
                     latchPLLAD();
                     ; // SerialMprint("ADC: ");
-                    ; // SerialMprintln(rto->phaseADC);
                     break;
                 case '#':
                     rto->videoStandardInput = 13;
@@ -7210,7 +7211,6 @@ void handleType2Command(char argument)
             setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
             optimizePhaseSP();
             ; // SerialMprint("Phase: ");
-            ; // SerialMprint(rto->phaseSP);
             ; // SerialMprint(" SOG: ");
             ; // SerialMprint(Tv5725::SyncOnGreen::level());
             ; // SerialMprintln();
