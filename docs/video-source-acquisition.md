@@ -644,13 +644,17 @@ held-standard fallback where there were three, the threshold dither deleted,
 it, rather than being unpicked reference by reference from inside a function
 that is going anyway.
 
-**Next is the SOG level.** Wiring `sourceIsPresent()` into that gate is measured
-to fix the fault it is for and to leave the unit stuck behind a starved sync
-separator, so the two have to land in that order -- steps 3 and 4 below.
+**Steps 1, 2, 3 and 5 have landed.** `SyncOnGreen` owns the separator level and
+its acquisition; `SyncProcessor` owns the coast and clamp windows, leaving
+`updateCoastPosition()` and `updateClampPosition()` as the gates in front of
+them. **Step 6 is next**, and it is the last of the bounded ownership moves: the
+held sampling phase and its sweep are still the sketch's.
+
+What is left after it is not an ownership move. Steps 4 and 7 are one change --
+the gate may not open in front of a ladder whose rungs are positions rather than
+an order -- and steps 8 to 13 follow the byte out.
 
 Each step below extracts one named operation, merges it into the idle pass, and
-deletes the sketch's copy in the same commit.
-
 deletes the sketch's copy in the same commit.
 
 **1. One owner for the sync separator level.** `Tv5725::SyncOnGreen` holds the level and
@@ -669,9 +673,11 @@ counted per tick and every threshold keyed on it means something different.
 Nothing else can read the engine's run until it counts in the units the sketch's
 counters did.
 
-**3. Acquire the sync separator level.** `optimizeSogLevel()`,
-`fastSogAdjust()`, `tuneSogLevelPreemptively()` and every ratchet become one
-operation on the idle pass.
+**3. Acquire the sync separator level.** *(Landed.)* `fastSogAdjust()` and
+`tuneSogLevelPreemptively()` are gone and `SyncOnGreen` carries `acquire()`,
+`acquireCoarse()`, `liftOffFloor()`, `reacquire()` and `tune()`.
+`optimizeSogLevel()` stays in the sketch deliberately -- it is the walk that is
+handed IN, and what it knows that the class must not is `rgbhvBypass()`.
 
 **It must ask whether sync on green IS the sync source, and two of the four do
 not.** The separator only reaches the sync processor with `SP_SOG_MODE` 1, which
@@ -737,11 +743,20 @@ position and a control latch the sketch writes -- `0x07fe`, `0x05ff`, `63`, `1`
 -- and those stay a local index until step 7 replaces them. What moves here is
 the run.
 
-**5. Acquire the coast and clamp windows**, to `SyncProcessor`, with
-`updateCoastPosition()`'s writes to the ADC PLL group deleted rather than moved —
-`Adc` owns that group.
+**5. Acquire the coast and clamp windows**, to `SyncProcessor`. *(Landed.)*
+`SyncProcessor::acquireCoastWindow()`, `acquireClampWindow()` and
+`adoptClampPlacement()` own them, and the ADC PLL writes were deleted rather
+than moved because `Adc` owns that group. What is left in the sketch is the
+GATING -- `standardIsHeld()`, `getVideoMode()`, `rgbhvBypass()` -- which is step
+4's to replace, and an `if` whose body is empty.
 
-**6. Acquire the sampling phase**, to `Adc`.
+**6. Acquire the sampling phase**, to `Adc`. The class already owns
+`applyPhaseSyncProcessor()`, `applyPhaseAdc()`, `restartPhaseAdjusters()` and
+`PhaseMax`; what is still the sketch's is the HELD phase -- `rto->phaseSP` and
+`rto->phaseADC` -- the two latch wrappers over it, and `optimizePhaseSP()`'s
+sweep. The sweep reads `SyncOnGreen::level()` and
+`SourceMeasurement::dividerLatched()`, both of which are already owned, so what
+moves is the state and the loop around them.
 
 **7. `VideoSourceAcquisition`, and the escalation list it holds.** The ordered set of
 named recoveries replaces `% 27`, `% 32`, `== 38`, `% 150` and `% 413` -- and it
