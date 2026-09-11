@@ -113,6 +113,100 @@ uint8_t Adc::phaseSyncProcessor() { return phaseSyncProcessor_; }
 
 uint8_t Adc::phaseAdc() { return phaseAdc_; }
 
+namespace {
+
+// Half a sample of phase, which is half the five-bit field.
+uint8_t halfSampleOn(uint8_t phase)
+{
+    return (uint8_t)((phase + 16) & Adc::PhaseMax);
+}
+
+// The mid of the field, which is what a caller with nothing to search gets.
+const uint8_t MidField = 16;
+
+// How far the search walks. Two more than the field, so the window either side
+// of the phase it started on is scored with both its neighbours.
+const uint8_t SweepSteps = 34;
+
+// How many of the sweep's samples must be clean before its answer is believed.
+// Half the field plus one: below that the good phases are not a window, they
+// are scatter.
+const uint8_t SweepGoodEnough = 17;
+
+// Samples taken at each phase before it is scored.
+const uint8_t SamplesPerPhase = 20;
+
+}  // namespace
+
+bool Adc::acquirePhase(uint8_t oversample, bool sweep,
+                       bool halfSampleAtOversampleTwo,
+                       uint16_t (*lineSamples)(), void (*feedWatchdog)())
+{
+    // What the sync processor should be counting, whoever wrote it: bypass puts
+    // its own divider here without going through a measurement.
+    const uint16_t perLine = PLLAD_MD::read();
+
+    if (!sweep) {
+        choosePhaseSyncProcessor(MidField);
+        choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
+        delay(8);
+        applyPhases();
+        return true;
+    }
+
+    uint8_t worstScore = 0, worstPhase = 0, clean = 0;
+    uint8_t badHere = 0, badBefore = 0, badBeforeThat = 0;
+    uint8_t phase = phaseSyncProcessor();
+
+    for (uint8_t step = 0; step < SweepSteps; ++step) {
+        phase = (uint8_t)((phase + 1) & PhaseMax);
+        choosePhaseSyncProcessor(phase);
+        applyPhaseSyncProcessor(phase);
+
+        badHere = 0;
+        feedWatchdog();
+        delayMicroseconds(256);
+        feedWatchdog();
+        for (uint8_t i = 0; i < SamplesPerPhase; ++i) {
+            if (lineSamples() != perLine) {
+                ++badHere;
+                feedWatchdog();
+                delayMicroseconds(384);
+            }
+        }
+
+        // Scored over three neighbours, so one bad phase beside two clean ones
+        // does not out-vote a run of three.
+        const uint8_t window = (uint8_t)(badHere + badBefore + badBeforeThat);
+        if (window > worstScore) {
+            worstScore = window;
+            worstPhase = (uint8_t)((phase - 1) & PhaseMax);
+        }
+        if (badHere == 0)
+            ++clean;
+
+        badBeforeThat = badBefore;
+        badBefore = badHere;
+    }
+
+    if (clean < SweepGoodEnough)
+        return false;
+
+    if (worstScore != 0) {
+        choosePhaseSyncProcessor(halfSampleOn(worstPhase));
+        choosePhaseAdc(oversample == 4 || halfSampleAtOversampleTwo
+                           ? halfSampleOn(MidField) : MidField);
+    } else {
+        choosePhaseSyncProcessor(MidField);
+        choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
+    }
+
+    applyPhaseSyncProcessor(phaseSyncProcessor());
+    delay(1);
+    applyPhaseAdc(phaseAdc());
+    return true;
+}
+
 void Adc::applyPhases()
 {
     applyPhaseSyncProcessor(phaseSyncProcessor_);

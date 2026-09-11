@@ -1775,108 +1775,31 @@ void goLowPowerWithInputDetection()
     rto->isInLowPowerMode = true;
 }
 
-// Half a sample of phase, which is half the five-bit field.
-static uint8_t halfSampleOn(uint8_t phase)
-{
-    return (uint8_t)((phase + 16) & Tv5725::Adc::PhaseMax);
-}
+static void feedWatchdog() { ESP.wdtFeed(); }
 
-boolean optimizePhaseSP() 
+boolean optimizePhaseSP()
 {
-    uint16_t pixelClock = GBS::PLLAD_MD::read();
-    uint8_t badHt = 0, prevBadHt = 0, worstBadHt = 0, worstPhaseSP = 0, prevPrevBadHt = 0, goodHt = 0;
-    boolean runTest = 1;
-
     // Eight samples rather than the two the other sites use: this asks whether
     // a phase sweep is worth running, not whether the divider was latched.
     if (!Tv5725::SourceMeasurement::dividerLatched(
-            Tv5725::SourceMeasurement::measureLineSamples(), pixelClock, 8)) {
+            Tv5725::SourceMeasurement::measureLineSamples(),
+            GBS::PLLAD_MD::read(), 8)) {
         return 0;
     }
 
-    if (Tv5725::SyncOnGreen::level() <= 2) {
+    // The one case the oversampling ratio cannot separate: 2 is also what a
+    // progressive source and the default ask for. What it wants is the source's
+    // line rate, which the engine holds and bypass does not, so the byte stays
+    // until it leaves with its branch. docs/video-source-acquisition.md
+    const bool hdAtItsOwnOversample =
+        rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7
+        && rto->osr == 2;
 
-        Tv5725::Adc::choosePhaseSyncProcessor(16);
-        Tv5725::Adc::choosePhaseAdc(16);
-
-        // Half a sample of ADC phase, for the oversampling in force. Nothing
-        // but interlaced SD asks for 4 and applyOversample() never raises what
-        // it was given, so the ratio says this on its own.
-        if (rto->osr == 4) {
-            Tv5725::Adc::choosePhaseAdc(halfSampleOn(Tv5725::Adc::phaseAdc()));
-        }
-        delay(8);
-        runTest = 0;
-    }
-
-    if (runTest) {
-
-        uint8_t phaseSP = Tv5725::Adc::phaseSyncProcessor();
-        for (uint8_t u = 0; u < 34; u++) {
-            phaseSP = (uint8_t)((phaseSP + 1) & Tv5725::Adc::PhaseMax);
-            Tv5725::Adc::choosePhaseSyncProcessor(phaseSP);
-            setAndLatchPhaseSP();
-            badHt = 0;
-            ESP.wdtFeed();
-            delayMicroseconds(256);
-            ESP.wdtFeed();
-            for (uint8_t i = 0; i < 20; i++) {
-                if (GBS::STATUS_SYNC_PROC_HTOTAL::read() != pixelClock) {
-                    badHt++;
-                    ESP.wdtFeed();
-                    delayMicroseconds(384);
-                }
-            }
-
-            if ((badHt + prevBadHt + prevPrevBadHt) > worstBadHt) {
-                worstBadHt = (badHt + prevBadHt + prevPrevBadHt);
-                worstPhaseSP = (uint8_t)((phaseSP - 1) & Tv5725::Adc::PhaseMax);
-            }
-
-            if (badHt == 0) {
-
-                goodHt++;
-            }
-
-            prevPrevBadHt = prevBadHt;
-            prevBadHt = badHt;
-        }
-
-        if (goodHt < 17) {
-
-            return 0;
-        }
-
-        if (worstBadHt != 0) {
-            Tv5725::Adc::choosePhaseSyncProcessor(halfSampleOn(worstPhaseSP));
-            Tv5725::Adc::choosePhaseAdc(16);
-
-            // The second arm still reads the byte, because 2 is also what a
-            // progressive source and the default ask for, so the ratio does not
-            // separate them. What it wants is the source's line rate, which the
-            // engine holds and bypass does not. docs/video-source-acquisition.md
-            const bool hdAtItsOwnOversample =
-                rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7
-                && rto->osr == 2;
-
-            if (rto->osr == 4 || hdAtItsOwnOversample) {
-                Tv5725::Adc::choosePhaseAdc(halfSampleOn(Tv5725::Adc::phaseAdc()));
-            }
-        } else {
-
-            Tv5725::Adc::choosePhaseSyncProcessor(16);
-            Tv5725::Adc::choosePhaseAdc(16);
-            if (rto->osr == 4) {
-                Tv5725::Adc::choosePhaseAdc(halfSampleOn(Tv5725::Adc::phaseAdc()));
-            }
-        }
-    }
-
-    setAndLatchPhaseSP();
-    delay(1);
-    setAndLatchPhaseADC();
-
-    return 1;
+    return Tv5725::Adc::acquirePhase(rto->osr,
+                                     Tv5725::SyncOnGreen::level() > 2,
+                                     hdAtItsOwnOversample,
+                                     Tv5725::SourceMeasurement::measureLineSamples,
+                                     feedWatchdog);
 }
 
 static uint32_t millisNow() { return (uint32_t)millis(); }

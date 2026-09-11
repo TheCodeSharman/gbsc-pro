@@ -629,3 +629,101 @@ TEST_CASE("the sampling phase is held here, and nothing reads it off the chip")
         CHECK(Adc::phaseAdc() == 0);
     }
 }
+
+// A sync processor whose line count is unstable at a chosen band of phases,
+// which is the only thing the sweep judges by. Reads back the phase actually
+// latched, so it answers the search rather than a script of it.
+static uint16_t g_sweepDivider = 0;
+static uint8_t g_badFrom = 0, g_badTo = 0;
+static unsigned g_feeds = 0;
+
+static uint16_t lineSamplesAtPhase()
+{
+    const uint8_t at = Adc::PA_SP_S::read();
+    const bool bad = at >= g_badFrom && at <= g_badTo;
+    return bad ? (uint16_t)(g_sweepDivider + 1) : g_sweepDivider;
+}
+
+static void countFeed() { ++g_feeds; }
+
+TEST_CASE("the sampling phase is swept for the window furthest from the worst")
+{
+    // The search walks the field, scores each phase by how often the sync
+    // processor miscounts the line, and takes the point OPPOSITE the worst run
+    // of three -- so the phase chosen is half a field away from where sampling
+    // was least stable. docs/video-source-acquisition.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 4; g_badTo = 6;
+    g_feeds = 0;
+    Adc::choosePhaseSyncProcessor(16);
+    Adc::choosePhaseAdc(16);
+
+    CHECK(Adc::acquirePhase(2, true, false, lineSamplesAtPhase, countFeed));
+
+    SUBCASE("the phase lands opposite the worst window") {
+        CHECK(Adc::phaseSyncProcessor() == 21);
+    }
+
+    SUBCASE("and both adjusters are latched with it") {
+        CHECK(Adc::PA_SP_S::read() == 21);
+        CHECK(Adc::PA_SP_LAT::read() == 1);
+        CHECK(Adc::PA_ADC_LAT::read() == 1);
+    }
+
+    SUBCASE("the watchdog is fed inside the loop, not once around it") {
+        CHECK(g_feeds > 34);
+    }
+}
+
+TEST_CASE("a sweep that finds no steady phase chooses none")
+{
+    // Every phase miscounting means the fault is not the phase, and picking one
+    // out of noise is worse than leaving it.
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 0; g_badTo = Adc::PhaseMax;
+    Adc::choosePhaseSyncProcessor(9);
+    Adc::choosePhaseAdc(24);
+
+    CHECK_FALSE(Adc::acquirePhase(2, true, false, lineSamplesAtPhase, countFeed));
+
+    // The ADC's phase is untouched, because only the search writes it.
+    CHECK(Adc::phaseAdc() == 24);
+
+    // **The sync processor's is left where the WALK stopped**, not where it
+    // started: the search latches each phase to score it, so a refusal still
+    // leaves the last one it tried. Two steps on from the entry phase, because
+    // the walk is two longer than the field. That is what the sketch did and it
+    // is preserved here rather than quietly repaired -- a failed search leaving
+    // the phase somewhere it did not choose is a defect to fix against a bench
+    // reading, not in a move.
+    CHECK(Adc::phaseSyncProcessor() == 11);
+}
+
+TEST_CASE("a separator too starved to judge by skips the search")
+{
+    // The sweep scores phases by the sync processor's count, and a starved
+    // separator makes that noise -- so the mid of the field is the whole of
+    // the answer and the search is not worth its 34 steps.
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_badFrom = 0; g_badTo = Adc::PhaseMax;
+    g_feeds = 0;
+    Adc::choosePhaseSyncProcessor(3);
+    Adc::choosePhaseAdc(3);
+
+    CHECK(Adc::acquirePhase(2, false, false, lineSamplesAtPhase, countFeed));
+
+    CHECK(Adc::phaseSyncProcessor() == 16);
+    CHECK(Adc::phaseAdc() == 16);
+    CHECK(g_feeds == 0);
+
+    SUBCASE("four times oversampling asks for half a sample more on the ADC") {
+        Adc::acquirePhase(4, false, false, lineSamplesAtPhase, countFeed);
+        CHECK(Adc::phaseAdc() == 0);   // 16 + 16, round the five-bit field
+    }
+}

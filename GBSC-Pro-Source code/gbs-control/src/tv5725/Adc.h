@@ -255,6 +255,26 @@ public:
     // One step round the ADC's field, for a caller walking it by hand.
     static void nudgePhaseAdc();
 
+    // Choose both phases for the source now arriving, and put them in force.
+    // False means nothing was worth choosing and neither phase moved.
+    //
+    // `sweep` is whether the sync separator is delivering edges clean enough
+    // for the search to mean anything; a starved one makes every score noise,
+    // and the mid of the field is then the whole of the answer.
+    //
+    // `halfSampleAtOversampleTwo` is the one case the oversampling ratio cannot
+    // separate on its own, and it applies only where the search found a worst
+    // window -- the two shortcut arms take the ratio alone.
+    //
+    // `lineSamples` is the sync processor's count per line and `feedWatchdog`
+    // is the platform's. Both are handed IN: the count is another block's
+    // register, and a file here reaching for ESP.wdtFeed() is a design signal
+    // rather than a dependency to admit. docs/video-source-acquisition.md
+    static bool acquirePhase(uint8_t oversample, bool sweep,
+                             bool halfSampleAtOversampleTwo,
+                             uint16_t (*lineSamples)(),
+                             void (*feedWatchdog)());
+
     // Take both adjusters through their bypass and back, which is what makes a
     // newly latched phase take effect.
     static void restartPhaseAdjusters();
