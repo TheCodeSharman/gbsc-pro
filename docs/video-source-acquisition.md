@@ -960,6 +960,41 @@ question, not a sequence to preserve on the way there.
 **And the byte's two largest branches come out here**, because this is the
 block that reads them.
 
+### What decides bypass, once the block has moved
+
+**A source at or above 640x480 is passed through; anything below is scaled.**
+Measured on the bench panel: 800x600, 1024x768 and 1280x1024 all display in
+passthrough. Expressed in what the board can measure, that is a source the line
+doubler is not needed for and whose rate can reach the sink --
+`LineDoubleBelowLines` and `BypassMinLineRateHz`, both already measured
+constants. It puts 240p, 288p, 480i and 576i on the scaling path and every
+VGA-class raster through.
+
+**`rateCanBypass()` is a HARD GATE on the whole choice, not half of the
+default.** Passthrough is not offerable where the rate cannot reach the sink,
+and a stored preference is re-checked on apply rather than trusted. `SourceKey`
+determines the line rate, so the gate answers the same at selection and at
+apply.
+
+**The user overrides it per mode, and the override is stored the way the framing
+is** -- same `SourceKey`, same record, same lifecycle, found at the moment the
+decision is needed. `preferScalingRgbhv` goes with the policy it encoded: a
+global boolean cannot express a per-source decision, and neither of its two
+answers is right for every source.
+
+**The reason is not preference, it is what the capture can carry.** The write
+limit bounds a window at about 1024 IF units however it is placed, so a source
+wider than about 512 active pixels cannot be sampled above Nyquist whatever the
+divider does -- 1280x1024 cannot carry every pixel at all. Fine vertical detail
+on a VESA-class source aliases on the scaling path, and passing it through is
+the only way it arrives intact. `../capture-limits.md`.
+
+**It is not a general answer about displays, and cannot be.** EDID is
+unreachable -- the encoder is on no MCU's bus -- so what a sink accepts is
+unmeasurable from here and the default is one panel's answer. That is what the
+per-mode override is for, and why a bypass entered automatically needs a way
+back that does not depend on the picture: the removed 535-line gate had none.
+
 ### `applyPresets()` is an output selection wearing a preset's name
 
 There are no preset tables. What the function does now is dispatch on the
