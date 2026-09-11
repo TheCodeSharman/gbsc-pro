@@ -83,43 +83,56 @@ never seeded, and the picture rolls while every register reads correct.
 `mode-detect-answers-before-any-measurement.md`.
 
 
-## The scan type is in `VPERIOD_IF`'s parity, and the classification is consulted first
+## The scan type is the half line in `VPERIOD_IF`, and line doubling inverts its parity
 
-A real interlace change on the RISC PC -- `INTERLACE ON|OFF` over ModeServ, same
-machine, cable, input, mode and sync type -- moves one thing:
+An interlaced field carries a half line. `VPERIOD_IF` is the only count on the
+board with the resolution to hold one -- and it has that resolution only where
+the input formatter doubles the line, which is what puts the count in half lines.
+So the parity that means interlaced is not fixed: **it inverts with
+`IF_HS_DEC_FACTOR`.**
 
-```
-INTERLACE OFF   VPERIOD_IF 623 x800, all odd    VTOTAL 308   s0_00..05  a7 00 00 00 40 10
-INTERLACE ON    VPERIOD_IF 624 x779, all even   VTOTAL 309   s0_00..05  a7 00 00 00 40 10
-INTERLACE OFF   VPERIOD_IF 623 x814, all odd    VTOTAL 308
-```
+Measured with `INTERLACE ON|OFF` over ModeServ, one machine, one cable, one
+input, composite sync throughout, only the mode's line rate and the interlace
+flag moving:
 
-2393 samples, no exceptions. **The Mode Detect classification is byte-identical
-across the change**, so `STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` carry no
-interlace information at 15 kHz and 50 Hz -- they report a vertical-period family.
-The half-line is in `VPERIOD_IF`, as odd against even.
+| mode | line rate | `IF_HS_DEC_FACTOR` | progressive | interlaced |
+|---|---|---|---|---|
+| 320x256@50 | 15625 | 1 | 623 odd x519 | 624 even x519 |
+| 640x200@60 | 15697 | 1 | 523 odd x534 | 524 even x536 |
+| 640x480@60 | 31690 | **0** | **524 even x526** | **525 odd x529** |
 
-**`Deinterlacer` already implements the parity test and asks the classification
-first.**
+3163 samples, every state unanimous. The Wii on `ypbpr` fits it from the other
+side: 480i is line doubled and reads `VPERIOD_IF` 524 x531, and 480p is not
+doubled and reads 524 as well. **The same period, two scan types** -- which no
+table of broadcast totals and no fixed parity can separate, and which is why the
+480p bench source was read as interlaced.
 
-    bool Deinterlacer::sourceIsInterlaced(uint16_t verticalPeriod) {
-        if (ModeDetect::sourceIsInterlaced())  return true;
-        if (ModeDetect::sourceIsProgressive()) return false;
-        return periodIsInterlaced(verticalPeriod);
-    }
+The rule that holds across all eight states is one line:
 
-`periodIsInterlaced()` opens with a parity check and matches 624 as
-`InterlacedPalPeriod` and 623 as `ProgressivePalPeriod` within tolerance, so it is
-right in both states. `ModeDetect::sourceIsInterlaced()` reads
-`STATUS_IF_INP_PAL_INT`, which is 1 in both. **So the wrong answer wins on this
-source**: the firmware calls the progressive RISC PC interlaced whenever it is on
-composite sync.
+    interlaced  <=>  (VPERIOD_IF + lineDoubled) is odd
 
-**The order is what is wrong, not either test.** The classification is right
-about the family and the rate and cannot see the half-line; the period
-measurement sees the half-line and needs a family to interpret it against. For
-scan type the measurement is the authority.
+`SourceMeasurement::scanTypeFor()` is that, and `scanType()` applies it to the
+doubling the engine currently holds. The count must be a plausible vertical
+total first -- doubled counts are halved before that check -- or the answer is
+`ScanUnknown` and the caller leaves the deinterlacer where it is.
 
-**And it only works where `VPERIOD_IF` does**, which is with the sync separator
-in the path. On separate sync the parity is debris, so the scan type has no
-source there at all. `vperiod-if-on-rgbhv.md`.
+**The classification cannot supply this.** `s0_00..05` is byte-identical across
+a real interlace change at 15 kHz and 50 Hz, `a7 00 00 00 40 10` both ways, so
+`STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` report a vertical-period family
+and nothing about scan. Consulted first, as `Deinterlacer` used to, it engaged
+the motion-adaptive deinterlacer on the progressive RISC PC and held it there
+through a real interlace change in both directions -- measured on the bench,
+`MAPDT_VT_SEL_PRGV` 0 with `WFF_ENABLE` and `RFF_ENABLE` 1 in all three states.
+With the measurement answering, the same three states read off, engaged, off.
+
+**It only works where `VPERIOD_IF` does**, which is with the sync separator in
+the path. On separate sync the register holds debris -- 33 to 101 on the bench
+source -- and `STATUS_IF_VT_OK` reads 0 beside it, which is the gate the caller
+gives it. There the scan type has no source at all.
+
+**`SourceMeasurement::countIsSerrations()` still takes the classification**, and
+it is the second consumer of the same unreliable bit. It asks whether a count
+could have doubled, which only an interlaced source can do. On every state
+measured here it reaches the same verdict either way, so there is no fault to
+chase -- but the measured scan type is the better input and is now available
+beside it.

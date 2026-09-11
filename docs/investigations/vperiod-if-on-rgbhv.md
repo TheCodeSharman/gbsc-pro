@@ -232,34 +232,30 @@ Being dead on separate sync means it supplies nothing at all there. Combined wit
 the status bits above, **no register on this board establishes interlace**.
 `docs/video-source-acquisition.md`.
 
-## What the deinterlacer does with it, and why that still works
+## What the scan-type measurement does with it, and why that still works
 
-`VPERIOD_IF` counts half lines, so an interlaced source's alternating fields
-make it EVEN near a broadcast total and a progressive one ODD.
-`Tv5725::Deinterlacer::periodIsInterlaced()` and `periodIsProgressive()` are
-that parity test, and the motion-adaptive path runs off nothing else.
+`VPERIOD_IF` carries the half line an interlaced field adds, and
+`SourceMeasurement::scanType()` reads it against the line doubling the engine
+holds -- doubling is what puts the count in half lines, so which parity means
+interlaced inverts with it. The motion-adaptive path runs off nothing else.
 
 **It is gated on `STATUS_IF_VT_OK`, which is what keeps the debris out.**
 Measured on the two bench sources:
 
 | source | `VPERIOD_IF` | `STATUS_IF_VT_OK` |
 |---|---|---|
-| RISC PC on `vga`, RGBHV, progressive | 0, 57, 99, 112 across runs | 0 |
+| RISC PC on `vga`, RGBHV, progressive | 0, 33, 57, 101, 112 across runs | 0 |
 | Wii on `ypbpr`, PAL 576i | 624, every sample | 1 |
 
-So the bit separates the two sources exactly, and the deinterlacer never sees a
-period from the RGBHV path at all.
+So the bit separates the two sources exactly, and the measurement never sees a
+period from the RGBHV path at all. A count too short to be a vertical total
+answers `ScanUnknown` behind that gate, and the caller leaves the deinterlacer
+where it is.
 
-**The two answers are not each other's negation.** A period near neither total
-says nothing, and the progressive totals are not the interlaced ones: NTSC's
-sits one BELOW its interlaced total and PAL's one ABOVE. A caller that treats
-"not interlaced" as "progressive" acts on debris.
-
-**What this does NOT settle is whether the parity could identify interlace in
-general.** It answers only for a source whose vertical measurement completes,
-and on this bench that is one source with one scan mode. An RGBHV source never
-reaches it, so the progressive half of the test has no source here that
-exercises it.
+**The parity generalises, and the doubling is what makes it do so.** Six states
+on the RISC PC -- three modes either side of the doubling boundary, interlace
+toggled on each -- and both Wii scan types agree with one rule.
+`interlaced-source-measurement.md`.
 
 
 ## The test bus localises it: one selector stops carrying vertical sync

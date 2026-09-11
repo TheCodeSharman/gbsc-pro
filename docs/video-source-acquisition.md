@@ -225,13 +225,13 @@ improvement it looks like: it would spread a wrong answer to every mode rather
 than fixing one.
 
 So the classification supplies the FAMILY and the rate, and **the scan type comes
-from `VPERIOD_IF`'s PARITY**: a real interlace change on the RISC PC moves it 623
-odd to 624 even, 2393 samples with no exceptions, while the classification stays
-byte-identical. The half-line is the whole signal, and a line counter cannot hold
-it -- `docs/investigations/interlaced-source-measurement.md`.
-
-`Deinterlacer` already has that test and asks the classification first, so the
-wrong answer currently wins. The order is what is wrong, not either test.
+from the half line in `VPERIOD_IF`**, which `SourceMeasurement::scanType()`
+reads. The parity carrying that half line INVERTS with line doubling, because
+doubling is what puts the count in half lines: a real interlace change moves the
+doubled 320x256@50 from 623 odd to 624 even and the undoubled 640x480@60 from
+524 even to 525 odd. A Wii reads 524 at 480i and at 480p, so the doubling is
+what separates them and neither parity nor a table of totals does.
+`docs/investigations/interlaced-source-measurement.md`.
 
 On separate sync the same source sets no bit at all, so the misclassification
 needs the separator in the path, exactly as `VPERIOD_IF` does.
@@ -469,21 +469,16 @@ for the output frame rate to match the source's.
 The sync processor counts FIELDS, so a 576i console reads 310 against the RISC
 PC's progressive 311 at the same 50 Hz.
 
-**INTERLACE IS MEASURED ON THIS BOARD, AND THE FIRMWARE ALREADY DOES IT.**
-`Deinterlacer::periodIsInterlaced()` keys on `VPERIOD_IF`'s PARITY -- interlaced
-requires an even period, progressive an odd one -- and the motion-adaptive
-deinterlacer switches on and off from it, live on the Wii. The half-line that
-separates the two is not too small to read; it IS the reading. An earlier
-version of this page said nothing on the board measures interlace, which the
-deinterlacer contradicts.
+**INTERLACE IS MEASURED ON THIS BOARD.** `SourceMeasurement::scanType()` reads
+the half line an interlaced field carries out of `VPERIOD_IF`, against the line
+doubling the engine holds, and the motion-adaptive deinterlacer switches on and
+off from it. The half line that separates the two is not too small to read; it
+IS the reading, and it needs no table of broadcast totals.
 
-What is limited is the table rather than the quantity: the period also has to
-land within `PeriodTolerance` of one of four hardcoded SD totals -- 524 and 624
-interlaced, 523 and 625 progressive. So an ARBITRARY interlaced raster is
-matched by none of them and reads as neither, which an interlaced RISC PC mode
-would confirm. That is what stops the key carrying interlace for every source,
-and it is a table to widen rather than a measurement to invent.
-`docs/investigations/vperiod-if-on-rgbhv.md`, `docs/bench-sources.md`.
+What bounds it is the sync route rather than the raster: `VPERIOD_IF` is a
+measurement only with the sync separator in the path, so on separate sync the
+scan type has no source. That is what stops the key carrying interlace for every
+source. `docs/investigations/vperiod-if-on-rgbhv.md`, `docs/bench-sources.md`.
 
 **`sourceIsRgbhv()` is circular if defined over the output.** It also answers
 *is this source RGBHV at all*, which detection establishes before any output is

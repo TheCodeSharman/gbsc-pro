@@ -136,17 +136,24 @@ discriminator runs: same machine, same cable, same input, same mode, same sync
 type, only interlace moving. The chip resolves it and the CLASSIFICATION does
 not.
 
-| RISC PC 320x256@50, composite sync | `VPERIOD_IF` | parity | `VTOTAL` | `s0_00..05` |
-|---|---|---|---|---|
-| `INTERLACE OFF` | 623 x800 | all odd | 308 | `a7 00 00 00 40 10` |
-| `INTERLACE ON` | 624 x779 | all even | 309 | `a7 00 00 00 40 10` |
-| `INTERLACE OFF` again | 623 x814 | all odd | 308 | -- |
+| composite sync, `INTERLACE` | line rate | doubled | `VPERIOD_IF` | `VTOTAL` | `s0_00..05` |
+|---|---|---|---|---|---|
+| 320x256@50 `OFF` | 15625 | 1 | 623 odd x519 | 308 | `a7 00 00 00 40 10` |
+| 320x256@50 `ON` | 15625 | 1 | 624 even x519 | 309 | `a7 00 00 00 40 10` |
+| 640x200@60 `OFF` | 15697 | 1 | 523 odd x534 | 258 | -- |
+| 640x200@60 `ON` | 15697 | 1 | 524 even x536 | 259 | -- |
+| 640x480@60 `OFF` | 31690 | **0** | **524 even x526** | 522 | -- |
+| 640x480@60 `ON` | 31690 | **0** | **525 odd x529** | 523 | -- |
 
-2393 samples, no exceptions. **The classification is byte-identical across a real
-interlace change**, so `STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` carry no
-interlace information at this line rate -- they report a vertical-period family
-and nothing else. The half-line lands in `VPERIOD_IF` as odd against even, which
-separates them completely.
+3163 samples, every state unanimous. **The classification is byte-identical
+across a real interlace change**, so `STATUS_IF_INP_INT` and
+`STATUS_IF_INP_PAL_INT` carry no interlace information at this line rate -- they
+report a vertical-period family and nothing else.
+
+**The half line lands in `VPERIOD_IF`, and which parity carries it INVERTS with
+line doubling**, because doubling is what puts the count in half lines. So the
+RISC PC gives both halves of that rule on its own, and a mode sweep across the
+doubling boundary is what it is for.
 
 An interlaced RISC PC mode is the discriminator -- same machine, same cable, same
 input, same sync arrangement, **only interlace changes**. If the status bits move,
