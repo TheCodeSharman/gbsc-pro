@@ -238,6 +238,23 @@ bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
     return fromHalfLines < fromFrame;
 }
 
+SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeriod,
+                                                          bool lineDoubled)
+{
+    const uint16_t lines = lineDoubled ? (uint16_t)(verticalPeriod / 2)
+                                       : verticalPeriod;
+    if (!countIsSource(lines))
+        return ScanUnknown;
+
+    const bool carriesHalfLine = (verticalPeriod % 2 != 0) != lineDoubled;
+    return carriesHalfLine ? ScanInterlaced : ScanProgressive;
+}
+
+SourceMeasurement::ScanType SourceMeasurement::scanType(uint16_t verticalPeriod) const
+{
+    return scanTypeFor(verticalPeriod, lineDoubled_);
+}
+
 bool SourceMeasurement::sampleSteady()
 {
     uint16_t lines = measureSourceLines();

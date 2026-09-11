@@ -1406,3 +1406,72 @@ TEST_CASE("the sampling budget is spent at the rate the ADC actually converts at
         }
     }
 }
+
+
+// --- the scan type ----------------------------------------------------------
+//
+// An interlaced field carries a half line, and VPERIOD_IF is the only count on
+// the board with the resolution to hold one -- but only where the input
+// formatter doubles the line, which is what puts the count in half lines. So
+// the parity that means interlaced INVERTS with line doubling, and neither
+// parity nor a table of broadcast totals answers on its own.
+//
+// Every value below is measured, one machine and one cable, with only the
+// mode's line rate and its interlace flag moving.
+// docs/investigations/interlaced-source-measurement.md
+
+TEST_CASE("the scan type is the half line in VPERIOD_IF")
+{
+    SUBCASE("a doubled count carries the half line as an even period") {
+        // RiscPC 320x256@50 and 640x200@60, composite sync, 519 and 534 samples.
+        CHECK(SourceMeasurement::scanTypeFor(623, true)
+              == SourceMeasurement::ScanProgressive);
+        CHECK(SourceMeasurement::scanTypeFor(624, true)
+              == SourceMeasurement::ScanInterlaced);
+        CHECK(SourceMeasurement::scanTypeFor(523, true)
+              == SourceMeasurement::ScanProgressive);
+        CHECK(SourceMeasurement::scanTypeFor(524, true)
+              == SourceMeasurement::ScanInterlaced);
+    }
+
+    SUBCASE("an undoubled count carries it as an odd one") {
+        // RiscPC 640x480@60, 31690 Hz, IF_HS_DEC_FACTOR 0, 526 and 529 samples.
+        CHECK(SourceMeasurement::scanTypeFor(524, false)
+              == SourceMeasurement::ScanProgressive);
+        CHECK(SourceMeasurement::scanTypeFor(525, false)
+              == SourceMeasurement::ScanInterlaced);
+    }
+}
+
+// A Wii reads VPERIOD_IF 524 at 480i AND at 480p, so no table of totals and no
+// parity alone separates them. The doubling does, and it is held state.
+TEST_CASE("the two scan types of one source can share a period")
+{
+    CHECK(SourceMeasurement::scanTypeFor(524, true)
+          == SourceMeasurement::ScanInterlaced);
+    CHECK(SourceMeasurement::scanTypeFor(524, false)
+          == SourceMeasurement::ScanProgressive);
+}
+
+// The separate-sync path leaves debris here rather than a period -- 33 to 101
+// on the bench source, with STATUS_IF_VT_OK reading 0 beside it.
+TEST_CASE("a period too short to be a vertical one answers nothing")
+{
+    CHECK(SourceMeasurement::scanTypeFor(57, true)
+          == SourceMeasurement::ScanUnknown);
+    CHECK(SourceMeasurement::scanTypeFor(101, true)
+          == SourceMeasurement::ScanUnknown);
+    CHECK(SourceMeasurement::scanTypeFor(0, false)
+          == SourceMeasurement::ScanUnknown);
+}
+
+TEST_CASE("the scan type of the held source uses the doubling in force")
+{
+    SourceMeasurement sampling;
+
+    sampling.holdLineDoubling(true);
+    CHECK(sampling.scanType(524) == SourceMeasurement::ScanInterlaced);
+
+    sampling.holdLineDoubling(false);
+    CHECK(sampling.scanType(524) == SourceMeasurement::ScanProgressive);
+}

@@ -4436,7 +4436,10 @@ void runSyncWatcher() //
                         }
                     }
 
-                    if (Tv5725::Deinterlacer::sourceIsInterlaced(VPERIOD_IF)) {
+                    const Tv5725::SourceMeasurement::ScanType scan =
+                        sourceSampling.scanType(VPERIOD_IF);
+
+                    if (scan == Tv5725::SourceMeasurement::ScanInterlaced) {
                         filteredLineCountMotionAdaptiveOn++;
                         filteredLineCountMotionAdaptiveOff = 0;
                         if (filteredLineCountMotionAdaptiveOn >= 2) {
@@ -4453,7 +4456,7 @@ void runSyncWatcher() //
                             }
                             filteredLineCountMotionAdaptiveOn = 0;
                         }
-                    } else if (Tv5725::Deinterlacer::sourceIsProgressive(VPERIOD_IF)) {
+                    } else if (scan == Tv5725::SourceMeasurement::ScanProgressive) {
                         filteredLineCountMotionAdaptiveOff++;
                         filteredLineCountMotionAdaptiveOn = 0;
                         if (filteredLineCountMotionAdaptiveOff >= 2) {

@@ -162,6 +162,25 @@ public:
     static bool countIsSerrations(uint16_t lines, uint16_t halfLines,
                                   bool interlaced);
 
+    enum ScanType {
+        ScanUnknown,
+        ScanProgressive,
+        ScanInterlaced,
+    };
+
+    // The source's scan type, from the half line an interlaced field carries.
+    // VPERIOD_IF is the only count with the resolution to hold one, and only
+    // where the input formatter doubles the line -- which is what puts the
+    // count in half lines and INVERTS the parity that means interlaced. A Wii
+    // reads 524 at 480i and at 480p, so neither parity nor a table of
+    // broadcast totals answers without the doubling.
+    //
+    // Ask STATUS_IF_VT_OK whether there is a measurement at all before this:
+    // the separate-sync path leaves debris in VPERIOD_IF rather than a period.
+    // docs/investigations/interlaced-source-measurement.md
+    static ScanType scanTypeFor(uint16_t verticalPeriod, bool lineDoubled);
+    ScanType scanType(uint16_t verticalPeriod) const;
+
     // Whether the last steadiness run ended on a count that reads as the
     // serrations rather than the source. The return of sampleSteady() cannot
     // say this: a run still gathering samples and a run that gathered them and

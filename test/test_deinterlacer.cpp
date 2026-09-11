@@ -366,47 +366,6 @@ TEST_CASE("the strength is not written when no scanlines are in force")
     CHECK(Wire.trace.size() == before);
 }
 
-// What the input formatter's vertical period says about the source. An
-// interlaced source's fields alternate, so it counts an EVEN number of half
-// lines near one of the two broadcast totals and a progressive one an odd
-// number. The two answers are not each other's negation: a period near neither
-// total says nothing, and the caller must act on neither.
-
-TEST_CASE("an even period at either broadcast total reads as interlaced")
-{
-    CHECK(Deinterlacer::periodIsInterlaced(524));
-    CHECK(Deinterlacer::periodIsInterlaced(624));
-    CHECK(Deinterlacer::periodIsInterlaced(522));
-    CHECK(Deinterlacer::periodIsInterlaced(626));
-}
-
-TEST_CASE("an odd period at either total reads as progressive")
-{
-    CHECK(Deinterlacer::periodIsProgressive(525));
-    CHECK(Deinterlacer::periodIsProgressive(625));
-    CHECK(Deinterlacer::periodIsProgressive(521));
-    CHECK(Deinterlacer::periodIsProgressive(627));
-}
-
-TEST_CASE("a period near neither total answers neither question")
-{
-    // The RGBHV path leaves debris here rather than a measurement -- 112 on the
-    // bench source, with STATUS_IF_VT_OK reading 0 beside it.
-    CHECK_FALSE(Deinterlacer::periodIsInterlaced(112));
-    CHECK_FALSE(Deinterlacer::periodIsProgressive(112));
-    CHECK_FALSE(Deinterlacer::periodIsInterlaced(0));
-    CHECK_FALSE(Deinterlacer::periodIsProgressive(0));
-}
-
-TEST_CASE("the two answers never both hold")
-{
-    for (uint16_t period = 500; period <= 650; ++period) {
-        const bool both = Deinterlacer::periodIsInterlaced(period)
-                          && Deinterlacer::periodIsProgressive(period);
-        CHECK_FALSE(both);
-    }
-}
-
 TEST_CASE("the vertical tap follows the total the period sits at")
 {
     CHECK(Deinterlacer::verticalTapFor(524) == 6);
@@ -419,47 +378,3 @@ TEST_CASE("a period naming no total leaves the tap where it is")
           == static_cast<uint8_t>(Deinterlacer::KeepVerticalTap));
 }
 
-
-// --- what Mode Detect says, against what the period implies -----------------
-//
-// The period table separates 480i from 480p by ONE count -- 524 against 523 --
-// and a source that lands on the wrong side is deinterlaced when it is
-// progressive. Measured on the bench: a Wii at 480p reads VPERIOD_IF 524, the
-// interlaced NTSC period exactly, and the bob RAM stays in the path.
-//
-// Mode Detect measures the same fact and publishes it in STATUS_00 with lock
-// flags beside it, so it answers first and the period table is the fallback for
-// a source it names nothing for.
-
-static void seedModeDetect(uint8_t bits)
-{
-    Wire.reset();
-    Wire.bank[0][0x00] = bits;
-}
-
-static const uint8_t NtscInterlaced  = 0x08;   // STATUS_IF_INP_NTSC_INT
-static const uint8_t NtscProgressive = 0x10;   // STATUS_IF_INP_NTSC_PRG
-
-TEST_CASE("Mode Detect outranks the period table where it names the source")
-{
-    SUBCASE("a progressive source on the interlaced NTSC period") {
-        seedModeDetect(NtscProgressive);
-        REQUIRE(Deinterlacer::periodIsInterlaced(524));
-        CHECK_FALSE(Deinterlacer::sourceIsInterlaced(524));
-        CHECK(Deinterlacer::sourceIsProgressive(524));
-    }
-
-    SUBCASE("an interlaced source is still interlaced") {
-        seedModeDetect(NtscInterlaced);
-        CHECK(Deinterlacer::sourceIsInterlaced(524));
-        CHECK_FALSE(Deinterlacer::sourceIsProgressive(524));
-    }
-}
-
-TEST_CASE("a source Mode Detect names nothing for falls back to the period")
-{
-    seedModeDetect(0);
-    CHECK(Deinterlacer::sourceIsInterlaced(524));
-    CHECK(Deinterlacer::sourceIsProgressive(523));
-    CHECK_FALSE(Deinterlacer::sourceIsInterlaced(523));
-}

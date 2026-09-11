@@ -1,7 +1,5 @@
 #include "Deinterlacer.h"
 
-#include "ModeDetect.h"
-
 #include <Arduino.h>
 
 #include "FrameBuffer.h"
@@ -13,14 +11,10 @@ namespace {
 
 bool scanlinesApplied_ = false;
 
-// Where each answer's period sits, and how far either side of it still names
-// that period. The progressive totals are not the interlaced ones: NTSC's sits
-// one BELOW its interlaced total and PAL's one ABOVE, which is measured rather
-// than symmetric.
-const uint16_t InterlacedNtscPeriod = 524;
-const uint16_t InterlacedPalPeriod = 624;
-const uint16_t ProgressiveNtscPeriod = 523;
-const uint16_t ProgressivePalPeriod = 625;
+// Which broadcast family the period sits in, and how far either side of a
+// total still names it. The tap is a family choice, not a scan-type one.
+const uint16_t NtscPeriod = 524;
+const uint16_t PalPeriod = 624;
 const uint16_t PeriodTolerance = 2;
 
 bool namesPeriod(uint16_t verticalPeriod, uint16_t total)
@@ -31,47 +25,11 @@ bool namesPeriod(uint16_t verticalPeriod, uint16_t total)
 
 }  // namespace
 
-bool Deinterlacer::sourceIsInterlaced(uint16_t verticalPeriod)
-{
-    if (ModeDetect::sourceIsInterlaced())
-        return true;
-    if (ModeDetect::sourceIsProgressive())
-        return false;
-    return periodIsInterlaced(verticalPeriod);
-}
-
-bool Deinterlacer::sourceIsProgressive(uint16_t verticalPeriod)
-{
-    if (ModeDetect::sourceIsProgressive())
-        return true;
-    if (ModeDetect::sourceIsInterlaced())
-        return false;
-    return periodIsProgressive(verticalPeriod);
-}
-
-bool Deinterlacer::periodIsInterlaced(uint16_t verticalPeriod)
-{
-    if (verticalPeriod % 2 != 0)
-        return false;
-
-    return namesPeriod(verticalPeriod, InterlacedNtscPeriod)
-        || namesPeriod(verticalPeriod, InterlacedPalPeriod);
-}
-
-bool Deinterlacer::periodIsProgressive(uint16_t verticalPeriod)
-{
-    if (verticalPeriod % 2 == 0)
-        return false;
-
-    return namesPeriod(verticalPeriod, ProgressiveNtscPeriod)
-        || namesPeriod(verticalPeriod, ProgressivePalPeriod);
-}
-
 uint8_t Deinterlacer::verticalTapFor(uint16_t verticalPeriod)
 {
-    if (namesPeriod(verticalPeriod, InterlacedNtscPeriod))
+    if (namesPeriod(verticalPeriod, NtscPeriod))
         return 6;
-    if (namesPeriod(verticalPeriod, InterlacedPalPeriod))
+    if (namesPeriod(verticalPeriod, PalPeriod))
         return 4;
     return KeepVerticalTap;
 }
