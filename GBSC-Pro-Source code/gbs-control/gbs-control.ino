@@ -168,6 +168,15 @@ volatile uint16_t pendingSamplingC = 0;
 volatile uint32_t pendingSamplingD = 0;
 #endif
 
+#if GBS_DEBUG
+// What /testbus queued, for loop() to start. The route answers from a network
+// callback, which must not touch the bus.
+volatile bool pendingTestBusSweep = false;
+volatile uint16_t pendingTestBusMs = 25;
+volatile uint8_t pendingTestBusSp = 0xff;
+volatile uint8_t pendingTestBusIf = 0xff;
+#endif
+
 // How many output pixels the pending press asked for, or 0 for the pad's own
 // step. Cleared as the command is consumed, so a press from the OSD or the
 // serial port never inherits one.
@@ -4035,6 +4044,71 @@ static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
     externalClockGenSyncInOutRate();
 }
 
+#if GBS_DEBUG
+// WHERE A SIGNAL REACHES, which no register value can answer. TEST_BUS_SEL picks
+// which block drives DEBUG_IN_PIN, and the transition count over one window
+// separates a field-rate signal from a line-rate one and both from a dead bus:
+// at 50 Hz expect single digits, at 15.6 kHz several hundred.
+//
+// SP_TEST_MODULE exposes one sync-processor stage (4 is vs_act_det, 6 the
+// retiming module, 7 out proc) and IF_TEST_SEL one input-formatter signal, so a
+// sweep taken on each sync type says which stage stops carrying vertical sync.
+static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t ifSel)
+{
+    const uint8_t selBackup = GBS::TEST_BUS_SEL::read();
+    const uint8_t enBackup = GBS::TEST_BUS_EN::read();
+    const uint8_t spModBackup = GBS::SP_TEST_MODULE::read();
+    const uint8_t spEnBackup = GBS::SP_TEST_EN::read();
+    const uint8_t ifSelBackup = GBS::IF_TEST_SEL::read();
+    const uint8_t ifEnBackup = GBS::IF_TEST_EN::read();
+
+    if (spModule != 0xff) {
+        GBS::SP_TEST_MODULE::write(spModule);
+        GBS::SP_TEST_EN::write(1);
+    }
+    if (ifSel != 0xff) {
+        GBS::IF_TEST_SEL::write(ifSel);
+        GBS::IF_TEST_EN::write(1);
+    }
+    GBS::TEST_BUS_EN::write(1);
+
+    debugPrintf("tb,header,sel,transitions,first,last,spins ms=%u sp=%d if=%d sogmode=%d\n",
+           (unsigned)windowMs, (int)(int8_t)spModule, (int)(int8_t)ifSel,
+           (int)GBS::SP_SOG_MODE::read());
+
+    for (uint8_t sel = 0; sel < 32; sel++) {
+        GBS::TEST_BUS_SEL::write(sel);
+        delay(1);
+
+        int level = digitalRead(DEBUG_IN_PIN);
+        const int first = level;
+        uint32_t transitions = 0;
+        uint32_t spins = 0;
+        const uint32_t deadline = millis() + windowMs;
+        while ((int32_t)(millis() - deadline) < 0) {
+            const int sample = digitalRead(DEBUG_IN_PIN);
+            if (sample != level) {
+                transitions++;
+                level = sample;
+            }
+            if (++spins % 4096 == 0)
+                ESP.wdtFeed();
+        }
+        debugPrintf("tb,%u,%u,%d,%d,%u\n", (unsigned)sel, (unsigned)transitions,
+               first, level, (unsigned)spins);
+        handleWiFi(0);
+    }
+
+    GBS::TEST_BUS_SEL::write(selBackup);
+    GBS::TEST_BUS_EN::write(enBackup);
+    GBS::SP_TEST_MODULE::write(spModBackup);
+    GBS::SP_TEST_EN::write(spEnBackup);
+    GBS::IF_TEST_SEL::write(ifSelBackup);
+    GBS::IF_TEST_EN::write(ifEnBackup);
+    debugPrintf("tb,done\n");
+}
+#endif
+
 // The other ADC input, kept only if something locks there quickly.
 static void tryOtherAdcInput()
 {
@@ -6777,6 +6851,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             }
         }
 
+#if GBS_DEBUG
+        if (pendingTestBusSweep) {
+            pendingTestBusSweep = false;
+            sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusIf);
+        }
+#endif
 #if GBS_SAMPLING_LOG
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
@@ -7714,6 +7794,26 @@ void startWebserver()
     // Until this existed the OLED was the ONLY way to choose an input: the six
     // handlers had two callers between them, the menu and one IR key. A unit
     // that came up on the wrong one needed someone standing at it.
+#if GBS_DEBUG
+    // Which block still carries a signal, sampled on the device because the
+    // rate is the answer and an HTTP read cannot see one.
+    //
+    //   /testbus?ms=25                 sweep every TEST_BUS_SEL
+    //   /testbus?ms=25&sp=4            with the sync processor's vs_act_det out
+    //   /testbus?ms=25&if=0            with an input formatter signal out
+    server.on("/testbus", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name, int fallback) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : fallback;
+        };
+        pendingTestBusMs = (uint16_t)number("ms", 25);
+        pendingTestBusSp = (uint8_t)number("sp", 0xff);
+        pendingTestBusIf = (uint8_t)number("if", 0xff);
+        pendingTestBusSweep = true;
+        request->send(200, "application/json", "{\"queued\":\"testbus\"}");
+    });
+#endif
+
 #if GBS_SAMPLING_LOG
     // Log the source measurements from loop(), where HTTP polling cannot reach:
     // at tens of hertz a host cannot tell a value that dithers from one read
