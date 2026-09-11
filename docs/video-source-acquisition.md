@@ -517,47 +517,55 @@ only on a genuinely composite one where the timeout is the right answer.
 | steer the HD bypass vsync window | `steerHdBypassVsyncWindow()`, already extracted |
 | steer the ADC PLL | the band index and its `PLLAD_KS`/`FS`/`ICP` writes |
 
-### The rungs today, and why the positions are not an order
+### The rungs, in the order they are tried
 
-Read off `runSyncWatcher()`'s no-sync branch. Every rung already calls a named
-owner, so what is left is the POSITION.
+`Tv5725::SyncRecovery::stepAt()` answers which rung a pass is due, and
+`runSyncWatcher()`'s no-sync branch dispatches on the answer. Each step fires
+once at its position; the list cycles at 451, because a source that has been
+switched off and on again needs it to.
 
-| # | fires at | extra condition | operation |
+| position | step | extra condition | operation |
 |---|---|---|---|
-| 0 | `== 1` | -- | nothing: returns, so one missed pass costs no escalation |
-| 1 | `== 2` | `newVideoModeCounter == 0` and serrated sync | `SyncOnGreen::liftOffFloor` |
-| 2 | `== 8` | -- | default coast window, widen if serrated, forget positions |
-| 3 | `% 27` | -- | `updateSpDynamic(1)` |
-| 4 | `% 32` | `STATUS_SYNC_PROC_HSACT` 1 | `FrameBuffer::releaseCapture()` |
-| 5 | `== 34` | YPbPr, `Info_sate` 0 | hold clamp, forget positions |
-| 6 | `== 38` | -- | `ModeDetect::nudge()` |
-| 7 | `> 47`, `% 16` | csync | `toggleHsyncOverflowProtect()` |
-| 8 | `% 150` | -- | clear overflow protect, default coast and clamp, `updateSpDynamic(1)`, nudge Mode Detect, re-acquire the SOG level, reset the sync processor, reset Mode Detect |
-| 9 | `== 150` or `% 900` | -- | `VideoPath::reacquireSyncType()`; parks at `0x07fe` if it finds V sync |
-| 10 | `% 413` | `detectionMayChangeInput()` | `Adc::selectOtherInput()`, kept only if it locks within 210 ms |
+| 0, 1 | `None` | -- | the free first pass: one dropped measurement is not a source going away |
+| 2 | `LiftSogFloor` | no mode change in flight, serrated sync | `SyncOnGreen::liftOffFloor()` |
+| 8 | `CoastWindow` | -- | default coast window, widen if serrated, forget positions |
+| 27 | `SyncProcessorDynamic` | -- | `updateSpDynamic(1)` |
+| 32 | `ReleaseCapture` | `STATUS_SYNC_PROC_HSACT` 1 | `FrameBuffer::releaseCapture()` |
+| 34 | `HoldClamp` | YPbPr, `Info_sate` 0 | hold clamp, forget positions |
+| 38 | `NudgeModeDetect` | -- | `ModeDetect::nudge()` |
+| 48 | `HsyncOverflowProtect` | csync | `SyncProcessor::toggleHsyncOverflowProtect()` |
+| 150 | `FullReset` | -- | clear overflow protect, default coast and clamp, `updateSpDynamic(1)`, nudge Mode Detect, re-acquire the SOG level, reset the sync processor, reset Mode Detect |
+| 151 | `ReprobeSyncType` | -- | `VideoPath::reacquireSyncType()`; parks at `0x07fe` if it finds V sync |
+| 413 | `ToggleInput` | `detectionMayChangeInput()` | `Adc::selectOtherInput()`, kept only if it locks within 210 ms |
+| 450 | `ReopenSogSeparator` | -- | `SyncOnGreen::reacquire()` with the separator reopened |
 
-**The positions are not an order.** 3 and 4 interleave with 2 and 5 by accident
-of their moduli, and 7 only starts after 47 while repeating every 16, so which
-recovery has been tried by a given count is not readable from the code. Rungs 3,
-4, 7, 8 and 10 repeat for as long as the source stays absent, where an ordered
-list tries each once.
+**NO STEP MAY SIT AT 63.** The board-power check rewrites `noSyncCounter` to it
+when the check at 61 passes, and the next pass increments past, so 63 is never
+a count a step is asked for.
 
-**That is why the gate cannot open in front of the ladder as it stands.**
+Two positions were compounded and are now separate. `ReopenSogSeparator` was the
+`% 450` argument handed to `SyncOnGreen::reacquire()` from inside the reset
+block, which is an escalation hiding in another step's parameter.
+`ReprobeSyncType` shared 150 with `FullReset`, so the probe now applies its
+answer after the reset rather than before it.
+
+**What the ordering does NOT settle is the gate.**
 `sourceIsPresent()` lets the counter ADVANCE where it used to sit pinned at 150,
-so rungs that never ran before start running -- measured, ending at
-`SP_SOG_MODE` 1 against a held sync type of separate, `SP_VTOTAL` 97, and no way
-back. `docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md`.
+and a list tried once per cycle is what makes that survivable rather than what
+makes it safe -- measured before the list, the gate ended at `SP_SOG_MODE` 1
+against a held sync type of separate, `SP_VTOTAL` 97, and no way back.
+`docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md`.
 
 ### Six of the eleven are contained in a seventh
 
-Rung 8, the `% 150` block, does all of this in one pass:
+`FullReset` does all of this in one pass:
 
-    setHsyncOverflowProtect(false)   undoes rung 7
-    applyDefaultCoastWindow()        rung 2
+    setHsyncOverflowProtect(false)   undoes HsyncOverflowProtect
+    applyDefaultCoastWindow()        CoastWindow
     applyDefaultClampWindow()
-    updateSpDynamic(1)               rung 3
-    ModeDetect::nudge()              rung 6
-    SyncOnGreen::reacquire(...)      rungs 1 and 11
+    updateSpDynamic(1)               SyncProcessorDynamic
+    ModeDetect::nudge()              NudgeModeDetect
+    SyncOnGreen::reacquire(...)      LiftSogFloor and ReopenSogSeparator
     SyncProcessor::reset()
     ModeDetect::reset()
 
@@ -700,8 +708,10 @@ its acquisition, `SyncProcessor` the coast and clamp windows, `Adc` the sampling
 phase -- leaving `updateCoastPosition()`, `updateClampPosition()` and
 `optimizePhaseSP()` as the GATES in front of them, which is step 4's to replace.
 
-**Step 7 is next**, and it has to precede step 4: the gate may not open in front
-of a ladder whose rungs are positions rather than an order.
+**Step 7 is in flight.** The ladder is an ordered list and the sketch dispatches
+on it, which is what step 4 was waiting for; what is left of step 7 is the
+OWNER -- the list still lives under `Tv5725::` and the sketch still holds the
+counter that indexes it.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
@@ -731,7 +741,7 @@ handed IN, and what it knows that the class must not is `rgbhvBypass()`.
 **It must ask whether sync on green IS the sync source, and two of the four do
 not.** The separator only reaches the sync processor with `SP_SOG_MODE` 1, which
 follows the sync type, so on a separate-sync source the level is inert -- and
-`fastSogAdjust()` and the `% 150` block walk it anyway. `SyncOnGreen::inSyncPath()`
+`fastSogAdjust()` and `FullReset` walk it anyway. `SyncOnGreen::inSyncPath()`
 is that question, asked of held state (`SyncMeasurement::isCsync()`) rather than read
 back.
 
@@ -826,11 +836,18 @@ separate that case from a progressive source and what it wants is the line rate.
 That one leaves with its branch at step 10.
 
 **7. `VideoSourceAcquisition`, and the escalation list it holds.** The ordered set of
-named recoveries replaces `% 27`, `% 32`, `== 38`, `% 150` and `% 413` -- and it
-lands in a class of its own above `Tv5725::`, because a list with no owner is
-what `SyncRecovery` is today. `SyncRecovery` moves out of `Tv5725::` with it.
-**Step 4 waits on this**, because wiring the gate is what lets the branch
-advance far enough to reach these.
+named recoveries has replaced `% 27`, `% 32`, `== 38`, `% 150` and `% 413`;
+`runSyncWatcher()` dispatches on `SyncRecovery::stepAt()` and each step fires
+once per cycle. What is left is the OWNER: the list belongs above `Tv5725::`
+with the class that holds the tick, and `SyncRecovery` moves out of `Tv5725::`
+with it. **Step 4 waits on this**, because wiring the gate is what lets the
+branch advance far enough to reach these.
+
+**THE BENCH CANNOT REACH THE LADDER ABOVE POSITION 8**, so the upper rungs are
+covered by host tests for which step fires and by inspection for what it does.
+Measured on an `/input?src=rgbs` excursion with nothing attached: the counter
+runs 0..14 and is reset continuously by the disconnected-source path, never
+approaching 27.
 
 **This is the step that inverts the call.**
 `VideoSourceAcquisition::poll()` takes the tick, drives `SourceMeasurement`, and runs
@@ -849,7 +866,8 @@ a solve that still writes the same registers, so the bar below applies to every
 one of them rather than only to the last.
 
 Landed of it so far: the class, with `loop()` calling it and it calling
-`VideoPath`; the count and line rate the last solve ran against; the detection clock and the cadence; the run gate, which follows the
+`VideoPath`; the ladder as an ordered list the sketch dispatches on; the count
+and line rate the last solve ran against; the detection clock and the cadence; the run gate, which follows the
 tick; the three publishers of what the source is running; and the idle pass --
 `sourceMoved()`, `rateMoved()`, `countHeld()`, the run they advance and the
 `SourceState` they publish. `SourceMeasurement` is held by the root and passed to
@@ -880,32 +898,18 @@ the root rather than to this class: the root already persists it and round-trips
 it through the engine, so holding it is an ownership move with no dependency on
 the ladder, provable by host tests and a pad press over HTTP.
 
-What the ladder does, rung by rung, and which rungs have an owner:
-
-| trigger | what it does | owner |
-|---|---|---|
-| `== 1` | one pass of grace, returns | no registers |
-| `== 2` | lift the sync separator level off the floor, on a serrated source | `SyncOnGreen::liftOffFloor()` |
-| `== 8` | put the coast window back, then widen it on a serrated source | `SyncProcessor::applyDefaultCoastWindow()`, `widenCoastForSerration()` |
-| `% 27` | configure the separator to hunt | `SyncProcessor::applyForSearch()` |
-| `% 32` | unfreeze if HSACT | **step 8's**, with `FrameBuffer` |
-| `== 34` | YPbPr only: hold the clamp | `SyncProcessor::holdClamp()` |
-| `== 38` | make mode detect re-latch | `ModeDetect::nudge()` |
-| `> 47, % 16` | csync only: try the other overflow-protect setting | `SyncProcessor::toggleHsyncOverflowProtect()` |
-| `% 150` | reacquire the sync type, put the coast and clamp windows back, `updateSpDynamic(1)`, nudge, re-acquire the sync separator level, reset the sync processor, reset mode detect | `VideoPath::reacquireSyncType()`, the two window defaults, `ModeDetect::nudge()`, `SyncOnGreen::reacquire()`, `SyncProcessor::reset()`, `ModeDetect::reset()`, `SyncProcessor::applyForSearch()` |
-| `% 413` | try the other ADC input, put it back if nothing locks | `Adc::selectOtherInput()` and `selectInput()`; the wait stays with the counter |
-
-**Every rung now names an operation, and no rung writes a register itself.**
+**Every rung names an operation, and no rung writes a register itself.**
 The one read still taken raw is `STATUS_SYNC_PROC_HSACT` in front of the
 unfreeze, which travels with step 8.
 
-**`Adc::bounceInput()` is NOT what `% 413` became**, and the two must not be
-merged. The bounce takes the input away and puts the SAME one back, to clear a
-railed `HPERIOD_IF`; the rung moves to the OTHER input and keeps it if the
-source locks there. Nothing calls the bounce, and wiring it as an automatic
-recovery puts a green screen on every solve that lands on a flagged counter.
+**`Adc::bounceInput()` is NOT `ToggleInput`**, and the two must not be merged.
+The bounce takes the input away and puts the SAME one back, to clear a railed
+`HPERIOD_IF`; the step moves to the OTHER input and keeps it if the source locks
+there. Nothing calls the bounce, and wiring it as an automatic recovery puts a
+green screen -- for as long as the input is away -- on every solve that reaches
+that position.
 
-**`% 150` is the compound one and it is where the harm was.** Its sync-type
+**`FullReset` is the compound one and it is where the harm was.** Its sync-type
 correction used to be one-directional: it could move a held csync to separate
 and never back, and it never reconciled the register with the held value, so a
 source counted through the wrong path with the held type already right had no
@@ -927,11 +931,6 @@ it on whether `STATUS_SYNC_PROC_HLOW_LEN` changes across a run of reads, and a
 fake register holding one value can only reach the frozen branch. `FakeTwoWire`
 has `drift()` for that, and any rung judged on movement rather than on a value
 will want it.
-
-**`Adc::bounceInput()` is what `% 413` becomes, and nothing installs it**: it
-turns the whole screen green for as long as the input is away, so wiring it as
-an automatic recovery puts a visible flash on every solve that lands on a
-flagged counter.
 
 **8. Freeze and unfreeze**, to `FrameBuffer`, which owns capture already.
 

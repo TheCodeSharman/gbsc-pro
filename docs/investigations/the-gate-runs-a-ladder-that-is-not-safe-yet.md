@@ -124,10 +124,13 @@ So step 4 does not wait on step 7 any more -- that is done. It waits on
 
 ## What has to happen first
 
-Step 7 is done: every rung named, every register under the class that owns it.
-It was not sufficient. What the measurements above add is that the ladder was
-never the whole risk -- the classification the gate replaces is load-bearing for
-the escalation in a way the engine's answer cannot substitute for.
+The ladder is no longer the blocker. Every rung is named, every register is
+under the class that owns it, and the positions are an ordered list --
+`Tv5725::SyncRecovery::stepAt()`, each step fired once per cycle rather than
+repeating on a modulus. None of that was sufficient. What the measurements above
+add is that the ladder was never the whole risk -- the classification the gate
+replaces is load-bearing for the escalation in a way the engine's answer cannot
+substitute for.
 
 Two things found while getting here are fixed and shipped, and both stand on
 their own:
@@ -150,6 +153,13 @@ present it must stay 0: the fault drops it for the length of each re-solve, so
 the encoder is shown a dropout every few seconds and the television stays dark
 with every register reading correct. Measured before the gate, 8 drops in 1262
 reads over 25 s.
+
+**AN EMPTY INPUT IS NOT A SECOND REPRODUCTION.** `/input?src=rgbs` with nothing
+attached leaves the disconnected-source path in charge, and it resets
+`noSyncCounter` continuously: measured, the counter runs 0..14 for a minute and
+never approaches 27, so no rung above the coast window is reached. What the
+excursion does exercise is the return -- the source comes back at 311 lines x
+50.08 Hz -- and nothing about the escalation.
 
 **THE DARK TELEVISION IS NOT THE GATE'S DOING, and reading it as such attributes
 a standing fault to whatever change is in flight.** The same round trip on a
