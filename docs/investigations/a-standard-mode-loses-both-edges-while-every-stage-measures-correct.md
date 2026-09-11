@@ -163,6 +163,19 @@ the retiming start, reads 0, and if it moves the line's origin the lag can be
 cancelled outright. `SP_RT_HS_SP` was swept over 950..1110 with no positional
 effect, which says nothing about the start.
 
+**Raising the divider instead does not work as stated, and the reason is worth
+knowing.** The lag is a fixed count of ADC samples, so sampling the line twice
+as finely halves it measured in source pixels -- and the ADC has the headroom,
+allowing about 4013 on this mode against the 1124 it runs. Two things stop it:
+the input formatter's line and window registers are 11 bits, so the line cannot
+exceed 2047 units whatever the divider, and the tail green returns once the
+capture window grows past about 1280 units. `docs/investigations/tail-green.md`
+has the sweep and what it refutes.
+
+**An unrelated fault is open on this mode**: the picture carries a
+high-frequency horizontal wobble at the default solve. It is not the capture
+lag -- it predates that work -- and it has not been diagnosed.
+
 **Refuted by these measurements**, each of which fitted a subset:
 
 - *No single correction fits both modes.* One does; it needs the polarity bit.

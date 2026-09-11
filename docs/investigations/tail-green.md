@@ -216,6 +216,58 @@ the IF writes blanking data into the buffer, so playback reads written green
 rather than stale memory. That works and costs capture width, a dependency on the
 source having porch to reach, and a green field instead of a black one.
 
+## On an undoubled line it is a WIDTH, not a position
+
+The measurement above is on 320x256@50, which is **line doubled**. There one IF
+unit is two ADC samples, so "IF unit 1125" and "ADC sample 2250" are the same
+place and no reading can separate them. The firmware caps the divider as though
+the bound were 1125 IF units; this page's prose concludes it counts samples.
+
+Measured 2026-09-11 on 800x600@60, undoubled, at `PLLAD_MD` 2046 -- a 2047-unit
+line, twice what the divider cap normally allows -- with the capture **end
+pinned at 2045** and only the start moved:
+
+| capture width | window | tail green |
+|---|---|---|
+| 1266 | 779..2045 | none |
+| 1428 | 617..2045 | **yes** |
+| 1611 | 434..2045 | **yes** |
+
+**A position bound would have shown green in all three**, the end being past it
+every time. Narrowing from the other side puts the threshold at 1256..1302
+units, and the band's left edge tracks the width monotonically -- 1557, 1502,
+1450, 1401, 1351, 1302 units put it at photo column 934, 970, 1008, 1040, 1080,
+1120, and 1256 units clears it.
+
+So on the undoubled path the bound is a capture width of about **1280 units**,
+and `VideoSourceLine::WriteLimitUnits` does not describe it. It has never cost
+anything because the divider cap keeps the line short enough that the widest
+window the engine can build -- `lastCapture() - firstCapture()`, about 914 units
+at `PLLAD_MD` 1124 -- cannot reach it.
+
+**The two readings are not yet reconciled.** The doubled measurement varied the
+start over 62..263 and X did not move, which a width bound cannot produce; this
+one pins the end and X moves with the width, which a position bound cannot
+produce. Repeating the pinned-end sweep on the doubled source is what would
+settle it, and neither reading is safe to build on until it is.
+
+**`MemoryMap` does not catch it.** The window at 1428 units was not narrowed, so
+the firmware's SDRAM bound believes it fits.
+
+### Two ceilings found on the way
+
+**The input formatter's geometry registers are 11 bits.** `IF_HSYNC_RST`,
+`IF_HB_ST2` and `IF_HB_SP2` are all `[10:0]`, so the IF line cannot exceed 2047
+units whatever the divider. `PLLAD_MD` 2094 was accepted, latched, and read back
+correctly at `STATUS_SYNC_PROC_HTOTAL` while `IF_HSYNC_RST` held **46** -- 2094
+modulo 2048 -- with the picture destroyed and nothing reporting a fault.
+
+**The ADC is nowhere near binding on a VESA-class source.** At 800x600@60's
+37,879 Hz with `PLLAD_CKOS` 0, `maxDivider()` allows about 4013. What holds
+`PLLAD_MD` at 1124 is the write-limit cap alone, which is also why RGBHV bypass
+runs the same source at 1856: bypass writes nothing to memory, so no capture
+bound applies to it.
+
 ## See also
 
 - [`../scaler-geometry-model.md`](../scaler-geometry-model.md) — the arithmetic

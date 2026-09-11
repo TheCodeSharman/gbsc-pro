@@ -16,6 +16,11 @@ longer makes. `docs/rgbhv-bypass-trap.md` has what was measured.
 
 ## The horizontal bound is a position, not a width
 
+**On the doubled path.** Measured on an undoubled line it follows the capture
+width instead, and the two readings have not been reconciled — see
+`investigations/tail-green.md`. Everything in this section is the doubled
+measurement.
+
 X = 1125 IF units = 2250 ADC samples, counted from the line start. It does not
 move with the capture start, with the source's border or porch timings, or with
 the memory clock across a 2:1 sweep. Whatever counts, counts samples.
@@ -96,12 +101,25 @@ Two floors bound the trade:
 
 Two things, and they compose.
 
-`SourceMeasurement::recommendedDivider()` caps `PLLAD_MD` at 2250, so the line the ADC
-delivers is at most 1125 IF units long and the whole of it is inside the limit.
+`SourceMeasurement::recommendedDivider()` caps the IF line at 1125 units, which
+is `PLLAD_MD` 2250 on a doubled line and 1125 on an undoubled one.
+
+**On the undoubled path that cap is not derived from anything measured there.**
+X was measured once, on a line-doubled source, where 1125 IF units and 2250 ADC
+samples are the same position. Measured on an undoubled line the tail green
+follows the capture WIDTH rather than a position, with a threshold near 1280
+units, and the 11-bit `IF_HSYNC_RST` caps the line at 2047 in any case. The two
+readings do not yet reconcile; `investigations/tail-green.md` has both and the
+sweep that would settle them. Until then the cap stays where it is, because it
+is the conservative one.
+
 This is a **second** ceiling beside the ADC's 162 MSPS rating, and whichever is
-tighter binds. At four-times oversampling the rating is the tighter above about
-17.6 kHz, so the write limit binds only at slow line rates — this bench's
-15.55 kHz among them.
+tighter binds. Which one that is depends on the oversampling the solve picked:
+at four times, the rating is tighter above about 17.6 kHz. At `PLLAD_CKOS` 0 it
+is not tight at all — 800x600@60's 37,879 Hz allows about 4013 — and the write
+limit is what holds the divider at 1124. RGBHV bypass runs the same source at
+1856 for the same reason: it writes nothing to memory, so no capture bound
+reaches it.
 
 `VideoSourceLine::lastCapture()` clamps the far end of the capture window at
 `WriteLimitUnits`. With the divider capped this never fires — it is there for the
