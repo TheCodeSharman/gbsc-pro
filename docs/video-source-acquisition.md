@@ -208,11 +208,29 @@ recognised one: Mode Detect answers it at the first step from then on, and the
 mode-change interrupt starts firing for it, because a switch detector keyed on
 the classification has nothing to report while the classification is nothing.
 
-**Mode Detect carries a generic scan bit that nothing reads.**
-`ModeDetect::sourceIsInterlaced()` asks `STATUS_IF_INP_NTSC_INT` and
-`STATUS_IF_INP_PAL_INT` only, where `STATUS_IF_INP_INT` at `s0_04[6]` answers
-for any mode -- 1080i, or a custom interlaced one. It is set on the Wii at 480i
-alongside the NTSC bit.
+**TIER 1'S SCAN ANSWER IS NOT TRUSTWORTHY AT 15 kHz, AND IT FAILS CONFIDENTLY.**
+The bench RISC PC at 320x256@50 is PROGRESSIVE, and on composite sync Mode Detect
+classifies it as PAL INTERLACED:
+
+| | `s0_00..05` | bits set |
+|---|---|---|
+| Wii 480i, genuinely interlaced | `8f 00 00 00 40 00` | `SD`, `NTSC_INT`, `INT` |
+| RISC PC 311-line progressive | `a7 00 00 00 40 10` | `SD`, `PAL_INT`, `INT`, `SW` |
+
+311 lines per progressive field is what a vertical-period detector sees from a
+312.5-line PAL field, so the two are ambiguous to it. **The generic
+`STATUS_IF_INP_INT` bit repeats the error rather than correcting it**, which is
+why extending `ModeDetect::sourceIsInterlaced()` to read it is not the
+improvement it looks like: it would spread a wrong answer to every mode rather
+than fixing one.
+
+So the classification supplies the FAMILY and the rate, and the scan type has to
+come from somewhere that measures. The chip is not blind to interlace at that
+line rate -- it calls the Wii's 15734 Hz 480i correctly -- so this is ambiguity
+in the source, not a limit of the block.
+
+On separate sync the same source sets no bit at all, so the misclassification
+needs the separator in the path, exactly as `VPERIOD_IF` does.
 
 **The steadiness run is the third step, and reaching it on a recognised source
 is the fault.** `countHeld()` needs four consecutive identical counts, and an

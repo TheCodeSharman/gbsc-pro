@@ -33,6 +33,14 @@ Steady at 311 thereafter. The sync-type probe answers in 2-3 ms once the source
 is up, and the solve costs about ten milliseconds, so **nothing about acquiring
 a source takes minutes**.
 
+**The Wii's output mode decides whether it acquires at all.** At 480p it
+acquires and holds -- 524 lines x 59.80 Hz in 15.2 s, `PLLAD_MD` 1096 against
+`STATUS_SYNC_PROC_HTOTAL` 1096, `HPERIOD_IF` 214, a clean picture. At 480i it
+never reaches `acquired`: the field count alternates 259/260 by construction and
+the steadiness run needs four identical samples, so the solve never completes and
+the picture rolls while every register reads correct.
+`docs/investigations/mode-detect-answers-before-any-measurement.md`.
+
 The Wii on `ypbpr` acquires 9.3 s after the input switch and then holds.
 Sampled from `loop()` at 35 Hz for 30 s: `STATUS_SYNC_PROC_VTOTAL` 310 in
 1050/1050, `VPERIOD_IF` 624 in 1050/1050, `HPERIOD_IF` 431/430, no interrupts
@@ -114,12 +122,26 @@ real 576i, and `VPERIOD_IF` counts half-lines so the two read 623 against 624
 a reading taken on `SYNC 0` is not a contradiction of the 623.
 `docs/investigations/vperiod-if-on-rgbhv.md`.
 
+The full classification burst, `s0_00..s0_05` in one read, with the RISC PC
+progressive on composite sync beside the Wii genuinely interlaced:
+
+| | raw | bits set |
+|---|---|---|
+| Wii 480i | `8f 00 00 00 40 00` | `SD`, `NTSC_INT`, `INT` |
+| RISC PC 311-line progressive | `a7 00 00 00 40 10` | `SD`, `PAL_INT`, `INT`, `SW` |
+| RISC PC, separate sync | `00 00 00 00 00 00` | none |
+
 Two readings survive that, and **the two existing sources cannot separate them**,
 because the Wii and the RISC PC differ in interlace *and* in input and sync path
 at once:
 
 1. the chip cannot resolve interlace at 15 kHz and 50 Hz at all, or
 2. it can, and a 311-line progressive mode is genuinely ambiguous against 576i.
+
+**Reading 1 is weakened but not refuted.** The Wii at 480i is a 15734 Hz
+interlaced source and the chip calls it `NTSC_INT` correctly, so the block is not
+blind to interlace at a 15 kHz line rate -- which leaves reading 1 resting
+entirely on the 50 Hz half. The discriminator below is still what settles it.
 
 An interlaced RISC PC mode is the discriminator -- same machine, same cable, same
 input, same sync arrangement, **only interlace changes**. If the status bits move,
