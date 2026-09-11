@@ -693,15 +693,15 @@ held-standard fallback where there were three, the threshold dither deleted,
 it, rather than being unpicked reference by reference from inside a function
 that is going anyway.
 
-**Steps 1, 2, 3 and 5 have landed.** `SyncOnGreen` owns the separator level and
-its acquisition; `SyncProcessor` owns the coast and clamp windows, leaving
-`updateCoastPosition()` and `updateClampPosition()` as the gates in front of
-them. **Step 6 is next**, and it is the last of the bounded ownership moves: the
-held sampling phase and its sweep are still the sketch's.
+**Steps 1, 2, 3, 5 and 6 have landed, and with them every bounded ownership
+move.** What is left is not extraction: steps 4 and 7 are one change, and 8 to
+13 follow the byte out. `SyncOnGreen` owns the separator level and
+its acquisition, `SyncProcessor` the coast and clamp windows, `Adc` the sampling
+phase -- leaving `updateCoastPosition()`, `updateClampPosition()` and
+`optimizePhaseSP()` as the GATES in front of them, which is step 4's to replace.
 
-What is left after it is not an ownership move. Steps 4 and 7 are one change --
-the gate may not open in front of a ladder whose rungs are positions rather than
-an order -- and steps 8 to 13 follow the byte out.
+**Step 7 is next**, and it has to precede step 4: the gate may not open in front
+of a ladder whose rungs are positions rather than an order.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
@@ -799,21 +799,31 @@ than moved because `Adc` owns that group. What is left in the sketch is the
 GATING -- `standardIsHeld()`, `getVideoMode()`, `rgbhvBypass()` -- which is step
 4's to replace, and an `if` whose body is empty.
 
-**6. Acquire the sampling phase**, to `Adc`. *(The state has landed.)* `Adc`
-holds both phases and refuses one past the five-bit field;
+**6. Acquire the sampling phase**, to `Adc`. *(Landed.)* `Adc` holds both
+phases, refuses one past the five-bit field, and runs the search.
 `rto->phaseSP`/`phaseADC` are gone, and with them the site that took `PA_ADC_S`
 back into the held value -- `Adc` is the only writer of either phase register,
 so that read could only ever return what it had written.
 
-**What is left is the sweep, and it is blocked on two things rather than one.**
-`optimizePhaseSP()` calls `ESP.wdtFeed()` inside both loops, and
-`test/fake/Arduino.h` is deliberately not a general shim -- a file under
-`src/tv5725/` wanting it is a design signal, so the feed is handed IN the way
-`optimizeSogLevel()` already is. And its second arm reads `videoStandardInput`
-for a case the oversampling ratio cannot separate, which leaves with its branch
-at step 10 rather than before it. The sweep's search is also not host-testable
-against a flat fake: it reads `STATUS_SYNC_PROC_HTOTAL` back after writing a
-phase, so only its gates and its two shortcut arms can be reached.
+**The search is handed its readings**, and the two things that looked like
+blockers had one answer. `lineSamples` is the sync processor's count, another
+block's register; `feedWatchdog` is the platform's, and `test/fake/Arduino.h` is
+deliberately not a general shim. Both arrive as function pointers, the way
+`SyncOnGreen::acquire()` already takes `nowMs` and the walk -- and that is what
+makes the search host-testable at all, because a stub answering from the phase
+actually latched answers the SEARCH rather than a script of it.
+
+**A failed search leaves the phase where the WALK stopped.** The sweep latches
+each phase to score it, so a refusal still leaves the last one tried, two steps
+on from where it started. Preserved rather than repaired, and the test says so:
+a failed search leaving the phase somewhere nobody chose wants a bench reading
+behind the fix, not a move.
+
+What the sketch keeps is not leftover. The divider-latched gate stays in front
+of the call, so `Adc` needs no `SourceMeasurement`; and
+`videoStandardInput >= 5 && <= 7 && osr == 2` stays, because the ratio cannot
+separate that case from a progressive source and what it wants is the line rate.
+That one leaves with its branch at step 10.
 
 **7. `VideoSourceAcquisition`, and the escalation list it holds.** The ordered set of
 named recoveries replaces `% 27`, `% 32`, `== 38`, `% 150` and `% 413` -- and it
