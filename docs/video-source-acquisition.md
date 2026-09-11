@@ -41,6 +41,55 @@ Three parties, one direction of flow. Each holds what it alone reads.
 | `Tv5725::SourceMeasurement` | called by it. Reads the source off the chip -- the only thing that does |
 | `Tv5725::VideoPath` | told what changed. Solves raster, clock, windows and scales, and writes them, holding what one solve leaves for the next. Decides nothing |
 
+**The table is the TARGET, not the tree.** `VideoSourceAcquisition` reads the
+divider today only to log it and to check the latch; the ladder is still
+`runSyncWatcher()`'s. What each party holds is settled; where the code is
+against it is the list of steps below.
+
+### `VideoPath` does not poll, it is told
+
+`VideoSourceAcquisition` owns the tick, the escalation ladder, and the
+orchestration of every part the acquisition touches -- the ADC, the sync
+processor, the sync separator, Mode Detect, the input mux. `VideoPath` receives
+EVENTS, and there are three:
+
+| event | what moved |
+|---|---|
+| the input mux changed | a different source is on the ADC |
+| the video source changed its mode | the raster the source is sending |
+| the output resolution changed | including passthrough being selected |
+
+Nothing else reaches it, and it asks for nothing on a tick. Remeasuring and
+reconfiguring the chip is what it does in response to one of the three; deciding
+that one happened is not its job.
+
+**Today that is a three-call handshake rather than an event.**
+`prepareToMeasure()`, `pollDeferred()` and `solveFromMeasurement()` are the
+acquisition layer driving one solve in stages, which is the polling relationship
+the target removes.
+
+### The measurement is the acquisition layer's, so the timings arrive known
+
+`VideoPath` is called once the source HAS been measured, with the timings it
+needs, rather than holding the class that takes them. Of the nineteen places it
+reaches `SourceMeasurement` today, thirteen are reads of a measured value -- the
+line count, the field rate, the line rate, the divider, the scan mode, the hsync
+width and its polarity -- and those become what the event carries. Seven are
+commands that drive the measurement, and they belong to the layer that owns the
+tick. `applySampling()` stays: `PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are
+one quantity in three registers, and writing them is configuring the chip rather
+than measuring it.
+
+**The reason is the ladder, not tidiness.** An escalation ladder and the
+measurement it escalates against cannot be optimised while they are read from
+two places: which recovery has been tried, and what the source read when it was
+tried, have to be one state before either can be reasoned about.
+
+**One circularity has to be designed around.** The scan mode depends on how many
+lines the OUTPUT can display, which is `VideoPath`'s, and the divider depends on
+the scan mode -- so the acquisition layer has to ASK before it decides. A query,
+the way `outputMode()` already is, not shared state.
+
 **"The engine" is the new code, all of it.** The word names one axis and only
 one: the classes under `src/` against the legacy sketch -- `runSyncWatcher()`,
 `rto` and the globals. `VideoSourceAcquisition` is engine, and so is every `Tv5725::`
