@@ -208,3 +208,40 @@ TEST_CASE("a capture window may not be wider than the path will write")
         CHECK(narrow.maxCaptureWidth() == narrow.capturable());
     }
 }
+
+TEST_CASE("the longest line one window can span end to end")
+{
+    // capturable() is the span the framing is a proportion of, and
+    // maxCaptureWidth() bounds a window at CaptureWidthLimitUnits -- so a line
+    // whose capturable span is wider than that has ends no single window can
+    // reach at once. The divider is the only lever on it.
+    const float BenchDuty = 181.0f / 2250.0f;      // 320x256@50, doubled
+    const float VesaDuty = 165.0f / 1350.0f;       // 800x600@60, hsync at head
+
+    SUBCASE("the line it returns fits, and one more unit does not") {
+        const uint16_t ifLine = VideoSourceLine::framableIfLine(
+            VesaDuty, VideoSourceLine::CaptureLagUnits, true, false);
+        CHECK(VideoSourceLine::measured(ifLine + 1, (uint16_t)(ifLine * VesaDuty),
+                                        ifLine, VideoSourceLine::CaptureLagUnits, true)
+                  .capturable() <= VideoSourceLine::CaptureWidthLimitUnits);
+        CHECK(ifLine == 1250);
+    }
+
+    SUBCASE("an inverted pulse has no head guard, so its line is shorter") {
+        // The sync interval is already behind the origin, so firstCapture() is
+        // the lag alone and the whole rest of the line is capturable.
+        CHECK(VideoSourceLine::framableIfLine(
+                  VesaDuty, VideoSourceLine::CaptureLagUnits, false, false) == 1097);
+    }
+
+    SUBCASE("a doubled line places the picture itself, so it carries no lag") {
+        CHECK(VideoSourceLine::framableIfLine(BenchDuty, 0, true, true) == 1115);
+    }
+
+    SUBCASE("a duty the sync processor would refuse falls back rather than opening up") {
+        // A duty of 0 would otherwise say the whole line is capturable and put
+        // the bound above anything the write path can take.
+        CHECK(VideoSourceLine::framableIfLine(0.0f, 0, true, true)
+              == VideoSourceLine::framableIfLine(0.07f, 0, true, true));
+    }
+}

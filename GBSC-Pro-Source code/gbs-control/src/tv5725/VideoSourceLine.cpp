@@ -87,10 +87,9 @@ uint16_t VideoSourceLine::capturable() const
     return last > first ? last - first : 0;
 }
 
-VideoSourceLine VideoSourceLine::measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine,
-                                          uint16_t lagUnits, bool syncAtHead)
+VideoSourceLine VideoSourceLine::forDuty(uint16_t units, float duty, bool lineDoubled,
+                                         uint16_t lagUnits, bool syncAtHead)
 {
-    float duty = adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f;
     if (duty < DutyMin || duty > DutyMax)
         duty = FallbackDuty;
 
@@ -100,11 +99,40 @@ VideoSourceLine VideoSourceLine::measured(uint16_t units, uint16_t hlowLen, uint
     VideoSourceLine line(units, (uint16_t)ceilf(units * duty), lagUnits, syncAtHead);
 
     // A doubled line greens past a POSITION; an undoubled one past a capture
-    // WIDTH, which capturable() bounds instead. Two ADC samples to the unit is
-    // what says which this is. docs/investigations/tail-green.md
-    if (units == 0 || adcLine < units + units / 2)
+    // WIDTH, which capturable() bounds instead.
+    // docs/investigations/tail-green.md
+    if (units == 0 || !lineDoubled)
         line.writeLimitUnits_ = units;
     return line;
+}
+
+VideoSourceLine VideoSourceLine::measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine,
+                                          uint16_t lagUnits, bool syncAtHead)
+{
+    // Two ADC samples to the unit is what says the line is doubled.
+    return forDuty(units, adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f,
+                   adcLine >= units + units / 2, lagUnits, syncAtHead);
+}
+
+uint16_t VideoSourceLine::framableIfLine(float syncDuty, uint16_t lagUnits,
+                                         bool syncAtHead, bool lineDoubled)
+{
+    if (syncDuty < DutyMin || syncDuty > DutyMax)
+        syncDuty = FallbackDuty;
+
+    // capturable() only grows with the line, so the largest one that fits is
+    // the closed-form inverse of it, walked down by the unit or two that
+    // rounding the sync guard up can cost.
+    const float head = syncAtHead ? syncDuty : 0.0f;
+    const float units = ((float)CaptureWidthLimitUnits + 2.0f + (float)lagUnits)
+                        / (1.0f - head);
+    uint16_t ifLine = units > 2.0f ? (uint16_t)units : 2;
+
+    while (ifLine > 2
+           && forDuty((uint16_t)(ifLine + 1), syncDuty, lineDoubled, lagUnits, syncAtHead)
+                  .capturable() > CaptureWidthLimitUnits)
+        --ifLine;
+    return ifLine;
 }
 
 }  // namespace Tv5725

@@ -115,11 +115,11 @@ TEST_CASE("the playback stride covers the widest fetch, and holds still while zo
     // follows the capture, which grows as the picture zooms OUT -- so a stride
     // sized for the framing on screen is short of the one the next press wants,
     // and it arrives as a green band down the right of the picture.
-    // The bench line, COMPUTED rather than inherited: the divider caps at 2250
-    // ADC samples so the whole line arrives, giving IF_HSYNC_RST 1125 and a
-    // wrap at 1126. The 1276 seeded in the fixture is what the previous load
-    // left behind, and the engine writes over it.
-    CHECK(Wire.field(4, 0x37, 0, 10) == Memory::offsetFor(1126));
+    // The bench line, COMPUTED rather than inherited: the divider caps at 2230
+    // ADC samples so one window can still span the line, giving IF_HSYNC_RST
+    // 1115 and a wrap at 1116. The 1276 seeded in the fixture is what the
+    // previous load left behind, and the engine writes over it.
+    CHECK(Wire.field(4, 0x37, 0, 10) == Memory::offsetFor(1116));
     CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
 
     SUBCASE("and the zoom that widens the capture does not outgrow it") {
@@ -177,7 +177,12 @@ TEST_CASE("a preset load computes the divider it uses")
     solved.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(solved.acquisition));
 
-    const uint16_t wanted = SourceMeasurement::recommendedDivider(15550, 4, true);
+    // Bounded so one window still spans the line: the bench pulse is
+    // positive-going, so the head guard is the sync interval and 1115 IF units
+    // is what is left inside CaptureWidthLimitUnits.
+    const uint16_t wanted = SourceMeasurement::recommendedDivider(
+        15550, 4, true,
+        VideoSourceLine::framableIfLine(181.0f / 2250.0f, 0, true, true));
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
 
     CHECK(Wire.field(5, 0x12, 0, 12) == wanted);
@@ -199,27 +204,30 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     // measurement that did not happen is the green screen. With the tables gone
     // there is nothing to fall back on either, and an engine with no divider
     // defers every solve forever -- so a first refusal adopts what it finds.
+    // What it is left on is the REFERENCE the measurement was attempted
+    // through: a divider sized for the write limit alone, which every scan mode
+    // shares and no source's measurement is needed to compute.
     SolvedEngine solved;
-    const uint32_t inherited = Wire.field(5, 0x12, 0, 12);
+    const uint16_t reference = SourceMeasurement::referenceDivider(true);
 
     g_fieldRate = 0.0f;
     solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
     solved.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(solved.acquisition));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor((uint16_t)inherited, true));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(reference, true));
 
-    SUBCASE("and a later refusal keeps the divider it had already solved") {
+    SUBCASE("and a later refusal lands on the same reference, not on nothing") {
         g_fieldRate = 50.08f;
         solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
         solved.engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(solved.acquisition));
-        const uint32_t heldDivider = Wire.field(5, 0x12, 0, 12);
+        CHECK(Wire.field(5, 0x12, 0, 12) != reference);   // it did solve one
 
         g_fieldRate = 0.0f;
         solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
         solved.engine.inputTimingsChanged(4);
         CHECK_FALSE(pollUntilSolved(solved.acquisition));
-        CHECK(Wire.field(5, 0x12, 0, 12) == heldDivider);
+        CHECK(Wire.field(5, 0x12, 0, 12) == reference);
     }
 }
 
@@ -378,7 +386,7 @@ TEST_CASE("the engine writes the scan mode its own measurement implies")
     // And the divider that follows from it.
     CHECK(Wire.field(5, Tv5725::Adc::PLLAD_MD::byteOffset,
                      Tv5725::Adc::PLLAD_MD::bitOffset,
-                     Tv5725::Adc::PLLAD_MD::bitWidth) == 2250);
+                     Tv5725::Adc::PLLAD_MD::bitWidth) == 2230);
 }
 
 // Nothing on the chip can measure where active video starts, so an unrecognised

@@ -228,11 +228,14 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
         g_fieldRate = 50.08f;
         REQUIRE(pollUntilSolved(settled.acquisition));
 
-        // 311 lines at 50.08 Hz is 15574 Hz. The ADC rating leaves room for 2548
-        // there, and the capture write limit takes it to 2250.
-        CHECK(Wire.field(5, 0x12, 0, 12) == 2250);
-        CHECK(Wire.field(1, 0x0E, 0, 11) == 1125);   // IF_HSYNC_RST, divider / 2
-        CHECK(Wire.field(5, 0x4B, 0, 12) == 2092);   // SP_RT_HS_SP, 93% of it
+        // 311 lines at 50.08 Hz is 15574 Hz, and the ADC rating is nowhere
+        // near binding. What answers is the capture width: this source's pulse
+        // is inverted, so the sync interval is already behind the origin and
+        // the whole line is capturable -- which leaves room for 1025 IF units
+        // rather than the 1113 a pulse at the head would allow.
+        CHECK(Wire.field(5, 0x12, 0, 12) == 2050);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 1025);   // IF_HSYNC_RST, divider / 2
+        CHECK(Wire.field(5, 0x4B, 0, 12) == 1906);   // SP_RT_HS_SP, 93% of it
     }
 }
 
@@ -320,18 +323,22 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
     // The doubler is a property of the OUTPUT as much as of the source: 311
     // lines doubled is 624, which fits a 1125-line frame and does not fit a
     // 525-line one. So an output change can move the scan mode, and the divider
-    // with it, because the capture write limit doubles with the doubler.
+    // with it: an IF unit is two ADC samples on a doubled line and one on an
+    // undoubled one, so the same capture width costs twice the divider.
     SettledEngine settled;
 
     settled.engine.outputModeChanged(OutputChoice(Output1080P));
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
-    REQUIRE(Wire.field(5, 0x12, 0, 12) == 2250);
+    REQUIRE(Wire.field(5, 0x12, 0, 12) == 2050);
 
     REQUIRE(settled.engine.outputModeChanged(OutputChoice(Output480P)));
 
     CHECK(frameLinesWritten() == 525);
-    CHECK(Wire.field(5, 0x12, 0, 12) == 1124);
+    // Not half of 2050: the undoubled path carries CaptureLagUnits in
+    // firstCapture() where the doubled one places the picture itself, so it has
+    // that much more line to spend before capturable() reaches the limit.
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1096);
 }
 
 TEST_CASE("an output change while a mode change is in flight waits for it")

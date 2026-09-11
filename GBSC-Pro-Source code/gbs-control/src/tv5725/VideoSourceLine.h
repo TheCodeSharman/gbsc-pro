@@ -76,6 +76,17 @@ public:
     // whichever line it was picked against.
     uint16_t progressiveStop(uint16_t start) const;
 
+    // The longest IF line whose whole capturable span still fits inside
+    // CaptureWidthLimitUnits, so one window can reach both of its ends. Counted
+    // as SourceMeasurement::ifLineFor() reports it; CaptureWindow spans one
+    // more unit than that, which is where the line wraps.
+    //
+    // The divider is the only lever on this: the capture path writes a bounded
+    // width whatever the source does, so a line sampled finely enough to run
+    // past it has ends no single window can hold at once.
+    static uint16_t framableIfLine(float syncDuty, uint16_t lagUnits, bool syncAtHead,
+                                   bool lineDoubled);
+
     // The line as the chip measures it. `hlowLen` is STATUS_SYNC_PROC_HLOW_LEN,
     // the hsync low duration in ADC samples, and `adcLine` is PLLAD_MD, the
     // whole line in the same samples -- so their ratio is the hsync duty and
@@ -99,6 +110,9 @@ public:
 
 private:
     VideoSourceLine(uint16_t units, uint16_t syncUnits, uint16_t lagUnits, bool syncAtHead);
+
+    static VideoSourceLine forDuty(uint16_t units, float duty, bool lineDoubled,
+                                   uint16_t lagUnits, bool syncAtHead);
 
     uint16_t units_;
     uint16_t syncUnits_;

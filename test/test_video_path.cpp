@@ -153,9 +153,9 @@ static void checkBenchGeometry()
 
     // The sampling divider in its three registers: IF_HSYNC_RST is PLLAD_MD/2
     // and SP_RT_HS_SP is 93% of it. One quantity, never read back.
-    CHECK(Adc::PLLAD_MD::read() == 2250);
-    CHECK(InputFormatter::IF_HSYNC_RST::read() == 1125);
-    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2092);
+    CHECK(Adc::PLLAD_MD::read() == 2230);
+    CHECK(InputFormatter::IF_HSYNC_RST::read() == 1115);
+    CHECK(SyncProcessor::SP_RT_HS_SP::read() == 2073);
 
     // PLLAD_LAT is the rising edge that loads MD into the PLL, so a divider
     // written after it leaves the ADC clocking at the old one.
@@ -171,18 +171,18 @@ static void checkBenchGeometry()
     // The capture window: this source runs no raster the standards state, so it
     // is placed across the envelope of what real sources put on a line. The
     // doubler is in the path here, so the vertical counts half-lines.
-    CHECK(InputFormatter::IF_HB_SP2::read() == 132);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1105);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 131);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1095);
     CHECK(InputFormatter::IF_VB_SP::read() == 38);
     CHECK(InputFormatter::IF_VB_ST::read() == 620);
 
     // The progressive line window spans exactly one line from where it starts,
     // and may run past the end of the line without that being a fault.
     CHECK(InputFormatter::IF_LINE_ST::read() == 64);
-    CHECK(InputFormatter::IF_LINE_SP::read() == 1190);
+    CHECK(InputFormatter::IF_LINE_SP::read() == 1180);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 557);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 552);
     CHECK(VideoProcessor::VDS_VSCALE::read() == 533);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
@@ -219,8 +219,8 @@ static void checkBenchGeometry()
 
     // The playback burst, sized from the capture width so the fetch rate does
     // not move with the scale.
-    CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
-    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 244);
+    CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 279);
+    CHECK(FrameBuffer::PB_FETCH_NUM::read() == 241);
 
     // The rest of what PLLAD_LAT loads, and the decimators that follow the tap
     // it selects. 2250 samples on a 15574 Hz line is 35.0 MHz, the datasheet's
@@ -499,8 +499,8 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     CHECK(g_fieldRateCalls - before == 0);
     CHECK_FALSE(engine.changing());
 
-    CHECK(InputFormatter::IF_HB_SP2::read() == 132);
-    CHECK(InputFormatter::IF_HB_ST2::read() == 1105);
+    CHECK(InputFormatter::IF_HB_SP2::read() == 131);
+    CHECK(InputFormatter::IF_HB_ST2::read() == 1095);
     CHECK(InputFormatter::IF_VB_SP::read() == 38);
     CHECK(InputFormatter::IF_VB_ST::read() == 620);
 
@@ -919,7 +919,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     CHECK(InputFormatter::IF_VB_SP::read() == linesStart - 15 + 60);
     CHECK(InputFormatter::IF_VB_ST::read() == linesStop - 15 + 60 - 120);
     CHECK(InputFormatter::IF_LINE_ST::read() == 64);
-    CHECK(InputFormatter::IF_LINE_SP::read() == 1190);
+    CHECK(InputFormatter::IF_LINE_SP::read() == 1180);
 
     // Both scales rise to magnify the smaller capture onto the same raster.
     CHECK(VideoProcessor::VDS_HSCALE::read() < wideScale);
@@ -945,10 +945,12 @@ TEST_CASE("a framed picture holds every window against the framing")
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());
 
-    CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 282);
+    CHECK(FrameBuffer::PB_CAP_OFFSET::read() == 279);
 
-    // The raster did not change, so its registers are not rewritten.
-    CHECK(registersWritten() == 32);
+    // The raster did not change, so its registers are not rewritten. The
+    // sampling group is: the solved divider is no longer the reference one, so
+    // applyReferenceSampling() has something to write rather than returning.
+    CHECK(registersWritten() == 42);
 }
 
 // --- the IF line counter follows the scan mode -------------------------------
@@ -1028,15 +1030,16 @@ TEST_CASE("a divider the source cannot lock to is replaced before it is believed
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    // The capture write limit is what caps it here, not the ADC rating, which
-    // is why the same 1124 comes out of the 75 Hz mode as well.
-    REQUIRE(Adc::PLLAD_MD::read() == 1124);
+    // What caps it is the capture WIDTH: 1240 is the finest sampling that
+    // leaves capturable() inside CaptureWidthLimitUnits, so one window can
+    // still reach both ends of the line.
+    REQUIRE(Adc::PLLAD_MD::read() == 1240);
 
     // The source changes down. The sketch reloads a preset for the new
     // standard, so the engine is told the mode changed -- but the divider it is
     // holding is the one that made the count unmeasurable.
     seedField(0, 0x1B, 0, 11, 155);    // one line counted per two sent
-    seedField(0, 0x17, 0, 12, 2247);   // and twice the samples per line, which
+    seedField(0, 0x17, 0, 12, 2479);   // and twice the samples per line, which
     seedField(0, 0x19, 0, 12, 181);    // is the evidence of the multiple
     g_fieldRate = 50.08f;
     engine.outputModeChanged(benchMode());
@@ -1561,4 +1564,44 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
     REQUIRE(pollUntilSolved(acquisition));
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == before);
+}
+
+TEST_CASE("a source is sampled as finely as one window can still span its line")
+{
+    // 800x600@60: 628 lines at 60 Hz, with the bench reading a sync low of 137
+    // of the 1124-sample reference line. The capture path writes a bounded
+    // WIDTH, so the line may be sampled only as finely as leaves capturable()
+    // inside it -- 1250 against the 1124 that holding the whole line under
+    // WriteLimitUnits gave, which is 1.18 samples per source pixel against
+    // 1.06. docs/capture-limits.md
+    Wire.reset();
+    poisonChip();
+    seedField(3, 0x01, 0, 12, 1915);   // VDS_HSYNC_RST, output line - 1
+    seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
+    seedField(1, 0x0E, 0, 11, 1124);   // IF_HSYNC_RST, capture wrap - 1
+    seedField(0, 0x19, 0, 12, 137);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 1);       // STATUS_SYNC_PROC_HSPOL
+    seedField(0, 0x1B, 0, 11, 627);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
+    g_fieldRate = 60.0f;
+
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.outputModeChanged(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(Adc::PLLAD_MD::read() == 1250);
+
+    SUBCASE("the IF line counter follows it, undoubled") {
+        CHECK(InputFormatter::IF_HSYNC_RST::read() == 1250);
+    }
+
+    // That capturable() then fits the write limit is VideoSourceLine's, and is
+    // asserted there: HLOW_LEN scales with the divider on the part and the fake
+    // holds whatever was seeded, so the duty here is not the one this divider
+    // would really be measured against.
 }

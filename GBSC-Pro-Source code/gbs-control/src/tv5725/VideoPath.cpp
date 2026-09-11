@@ -72,6 +72,12 @@ bool VideoPath::resolve()
 
     if (!sampling_.measureLineRate())
         return fail();
+
+    // The reference is what the measurement was TAKEN through, never what the
+    // source is left on: it is sized for the write limit alone, so leaving it
+    // in place discards the bound the measurement was taken to compute.
+    if (!solveSampling(modeOversample_))
+        return fail();
     return solveWindows();
 }
 
@@ -396,7 +402,17 @@ void VideoPath::solveScanMode()
 
 bool VideoPath::solveSampling(uint8_t oversample)
 {
-    if (!sampling_.solve(sampling_.lineRateHz(), oversample))
+    // The duty is a ratio, so whichever divider is on the chip when the pulse
+    // is measured gives the same answer as the one about to replace it.
+    const uint16_t divider = sampling_.divider();
+    const float duty = divider > 0
+        ? (float)SourceMeasurement::measureHsyncLow() / (float)divider : 0.0f;
+    const uint16_t framable = VideoSourceLine::framableIfLine(
+        duty,
+        sampling_.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits,
+        SourceMeasurement::measureHsyncPositive(), sampling_.lineDoubled());
+
+    if (!sampling_.solve(sampling_.lineRateHz(), oversample, framable))
         return false;
     sampling_.applySampling(modeOversample_);
     return true;

@@ -97,16 +97,30 @@ public:
     // rate of 0 (no lock) is also 0.
     static uint16_t maxDivider(uint32_t lineRateHz, uint8_t oversample);
 
+    // The longest IF line the input formatter's geometry registers can hold.
+    // IF_HSYNC_RST, IF_HB_ST2 and IF_HB_SP2 are all [10:0], and a line past
+    // this wraps rather than failing: PLLAD_MD 2094 was accepted, latched and
+    // read back correctly at STATUS_SYNC_PROC_HTOTAL while IF_HSYNC_RST held
+    // 46, with the picture destroyed and nothing reporting a fault.
+    // docs/investigations/tail-green.md
+    static const uint16_t IfLineUnitsMax = 2047;
+
     // The divider to write at a MODE CHANGE: under the ADC rating by
     // RecommendedPercent, and even, so ifLineFor() divides exactly rather than
     // truncating half a sample away. A zoom must never move it -- that would
     // resample the picture the user is watching.
     //
+    // `maxIfLineUnits` is the longest line one window may span end to end --
+    // VideoSourceLine::framableIfLine(), from the measured sync duty and
+    // polarity. Zero falls back to WriteLimitUnits, for a caller with no
+    // measurement to compute it from.
+    // docs/capture-limits.md
+    //
     // Returns 0 for an unmeasurable line rate rather than a default. A divider
     // written from a measurement that did not happen takes the sync processor
     // with it, leaving no picture to diagnose from.
     static uint16_t recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
-                                       bool lineDoubled);
+                                       bool lineDoubled, uint16_t maxIfLineUnits = 0);
 
     // Nothing chosen yet. A caller must be able to SEE that rather than get a
     // zero it would go on to write.
@@ -286,7 +300,7 @@ public:
     // unmeasurable, so the previous choice survives a dropped measurement --
     // the safe direction to be wrong in, since the sync watcher re-solves once
     // the source settles.
-    bool solve(uint32_t lineRateHz, uint8_t oversample);
+    bool solve(uint32_t lineRateHz, uint8_t oversample, uint16_t maxIfLineUnits = 0);
 
     // The source, as the sync processor counts it. These are the only reads of
     // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,

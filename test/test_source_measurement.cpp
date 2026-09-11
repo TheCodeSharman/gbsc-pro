@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
@@ -84,36 +85,41 @@ TEST_CASE("the IF line follows the divider, because they are one quantity")
 
 TEST_CASE("the ADC has a rated sampling ceiling and the divider must respect it")
 {
-    // DS-5725-3.2: "Maximum analog sampling rate up to 162MSPS". The sample
-    // clock is PLLAD_MD x line rate, and oversampling multiplies it.
+    // DS-5725-3.2: "Maximum analog sampling rate up to 162MSPS". The rate the
+    // part CONVERTS at is PLLAD_MD x line rate x the oversampling installed,
+    // and Adc::postDividerFor() picks the crossover row from the first two of
+    // those -- so the row reduces the oversampling as the clock rises, the
+    // ceiling falls on the clock alone, and asking for a ratio the row refuses
+    // does not move it.
     SUBCASE("the bench is inside the limit, but only just") {
-        // 2553 x 15550 x 4. That is 98.0% of the 162 MSPS rating.
+        // 2553 x 15550 x 4. That is 98.0% of the 162 MSPS rating, and the row
+        // at a 39.7 MHz clock does carry four times.
         CHECK(SourceMeasurement::sampleRateHz(BenchDivider, BenchLineRate, 4) == 158796600u);
         CHECK(SourceMeasurement::withinLimit(BenchDivider, BenchLineRate, 4));
     }
 
-    SUBCASE("98% of rated is not margin, and the ceiling says so") {
-        // 162e6 / (15550 x 4) = 2604. The unit sits at 2553, which is 98% of
-        // the largest divider that fits at all -- somebody maximised it, and a
-        // brief PLL unlock was seen on the bench.
-        CHECK(SourceMeasurement::maxDivider(BenchLineRate, 4) == 2604);
+    SUBCASE("what caps a slow line is the 12-bit field, not the rating") {
+        // 162 MSPS buys 10418 dividers at the bench line rate, and PLLAD_MD
+        // holds twelve bits.
+        CHECK(SourceMeasurement::maxDivider(BenchLineRate, 4)
+              == SourceMeasurement::DividerMax);
     }
 
-    SUBCASE("a higher line rate needs a smaller divider, which is why presets differ") {
-        // 31.5 kHz at this divider would be 322 MSPS, twice the rating. Nothing
-        // is wrong with the preset tables carrying different values; what is
-        // wrong is that the value is inherited rather than derived.
-        CHECK_FALSE(SourceMeasurement::withinLimit(BenchDivider, 31500, 4));
-        CHECK(SourceMeasurement::maxDivider(31500, 4) == 1285);
+    SUBCASE("a divider the rating refuses is one whose CLOCK is over it") {
+        // 2553 at 31.5 kHz is a clock of 80.4 MHz, and the row there carries no
+        // oversampling at all -- so the part converts at 80.4 MSPS and is well
+        // inside the rating. Reaching the rating takes a clock over 162 MHz.
+        CHECK(SourceMeasurement::withinLimit(BenchDivider, 31500, 4));
+        CHECK_FALSE(SourceMeasurement::withinLimit(
+            SourceMeasurement::DividerMax, 45000, 4));
     }
 
-    SUBCASE("oversampling counts, because it multiplies the ADC clock") {
-        // At 31.5 kHz, halving the oversample doubles the ceiling: 1285 -> 2571.
-        // The bench's own line rate is too slow to show this -- at x1 and x2 the
-        // arithmetic wants 10418 and 5209, and both are past the 12-bit field.
-        CHECK(SourceMeasurement::maxDivider(31500, 4) == 1285);
-        CHECK(SourceMeasurement::maxDivider(31500, 2) == 2571);
-        CHECK(SourceMeasurement::maxDivider(31500, 1) == SourceMeasurement::DividerMax);
+    SUBCASE("asking for oversampling the row refuses does not move the ceiling") {
+        CHECK(SourceMeasurement::maxDivider(31500, 4)
+              == SourceMeasurement::maxDivider(31500, 1));
+        CHECK(SourceMeasurement::maxDivider(63960, 4)
+              == SourceMeasurement::maxDivider(63960, 1));
+        CHECK(SourceMeasurement::maxDivider(63960, 4) == 2532);
     }
 }
 
@@ -177,11 +183,13 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
     const uint8_t Oversample = 4;
 
     SUBCASE("whichever of the two ceilings is tighter is what binds") {
-        // 15550 Hz: 162 MSPS / (15550 x 4) = 2604, 98% of that is 2550, and the
-        // write limit takes it down to 2250. 31500 Hz: room for 1285, 98% is
-        // 1258, and the write limit is nowhere near it.
+        // The write limit is the tighter one at every line rate a source on
+        // this board runs: 162 MSPS spends 4095 dividers at 39.6 kHz and the
+        // doubled write limit is 2250, so the rating only reaches the answer
+        // above about 72 kHz.
         CHECK(SourceMeasurement::recommendedDivider(BenchLine, Oversample, true) == 2250);
-        CHECK(SourceMeasurement::recommendedDivider(31500, Oversample, true) == 1258);
+        CHECK(SourceMeasurement::recommendedDivider(31500, Oversample, true) == 2250);
+        CHECK(SourceMeasurement::recommendedDivider(90000, Oversample, true) == 1764);
     }
 
     SUBCASE("it samples every mode that gets scaled at all") {
@@ -204,11 +212,13 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // field rate, and a reading that comes in low would put a divider
         // computed at the ceiling over the rating.
         //
-        // Read at 31.5 kHz, the rate where the rating is the binding ceiling.
-        uint16_t chosen = SourceMeasurement::recommendedDivider(31500, Oversample, true);
-        CHECK(chosen > (uint16_t)(SourceMeasurement::maxDivider(31500, Oversample) * 0.97f));
-        CHECK(SourceMeasurement::withinLimit(chosen, 31500, Oversample));
-        CHECK_FALSE(SourceMeasurement::withinLimit(1285 + 1, 31500, Oversample));
+        // Read at 90 kHz, above where the write limit stops being the
+        // tighter of the two and the rating is what answers.
+        uint16_t chosen = SourceMeasurement::recommendedDivider(90000, Oversample, true);
+        CHECK(chosen > (uint16_t)(SourceMeasurement::maxDivider(90000, Oversample) * 0.97f));
+        CHECK(SourceMeasurement::withinLimit(chosen, 90000, Oversample));
+        CHECK_FALSE(SourceMeasurement::withinLimit(
+            SourceMeasurement::maxDivider(90000, Oversample) + 1, 90000, Oversample));
     }
 
     SUBCASE("and at the bench rate it now sits below every shipped table") {
@@ -239,8 +249,8 @@ TEST_CASE("the divider is capped so the whole line stays inside the write limit"
     CHECK(SourceMeasurement::ifLineFor(chosen, true) <= VideoSourceLine::WriteLimitUnits);
 
     SUBCASE("and the ADC rating still binds where it is the tighter of the two") {
-        // 31.5 kHz has room for 1258 under the rating, well inside the limit.
-        CHECK(SourceMeasurement::recommendedDivider(31500, 4, true) == 1258);
+        // 90 kHz has room for 1764 under the rating, inside the write limit.
+        CHECK(SourceMeasurement::recommendedDivider(90000, 4, true) == 1764);
     }
 
     SUBCASE("it is still even, so the IF line divides exactly") {
@@ -1332,3 +1342,67 @@ TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
     CHECK(Wire.touched[5][0x12]);           // and it was written anyway
 }
 
+
+TEST_CASE("the divider is bounded so one window can span the whole line")
+{
+    // The capture path writes CaptureWidthLimitUnits from wherever the window
+    // starts, so a line sampled finely enough that capturable() runs past that
+    // has ends no single window can hold at once -- the user zooms out and the
+    // picture stops growing short of the line. The divider is the only lever.
+    // docs/capture-limits.md
+    const uint32_t VesaLine = 37879;     // 800x600@60
+    const uint16_t Framable = VideoSourceLine::framableIfLine(
+        165.0f / 1350.0f, VideoSourceLine::CaptureLagUnits, true, false);
+
+    SUBCASE("which is more samples than holding the whole line under the write limit") {
+        CHECK(SourceMeasurement::recommendedDivider(VesaLine, 1, false, Framable)
+              > SourceMeasurement::recommendedDivider(VesaLine, 1, false));
+    }
+
+    SUBCASE("and the line it chooses is the one that fits") {
+        CHECK(SourceMeasurement::recommendedDivider(VesaLine, 1, false, Framable) == 1250);
+    }
+
+    SUBCASE("no bound offered keeps the whole line inside the write limit") {
+        CHECK(SourceMeasurement::recommendedDivider(VesaLine, 1, false, 0)
+              == SourceMeasurement::recommendedDivider(VesaLine, 1, false));
+    }
+
+    SUBCASE("the IF's 11-bit geometry registers are a wall above both") {
+        // IF_HSYNC_RST, IF_HB_ST2 and IF_HB_SP2 are all [10:0]. PLLAD_MD 2094
+        // was accepted, latched and read back correctly at
+        // STATUS_SYNC_PROC_HTOTAL while IF_HSYNC_RST held 46 -- 2094 modulo
+        // 2048 -- with the picture destroyed and nothing reporting a fault.
+        const uint16_t chosen =
+            SourceMeasurement::recommendedDivider(20000, 1, false, 3000);
+        CHECK(SourceMeasurement::ifLineFor(chosen, false)
+              <= SourceMeasurement::IfLineUnitsMax);
+    }
+}
+
+TEST_CASE("the sampling budget is spent at the rate the ADC actually converts at")
+{
+    // Adc::oversampleFor() reduces a request the crossover row cannot give, and
+    // the row is chosen from the divider's own clock -- so budgeting for the
+    // oversampling ASKED FOR caps the divider for a load the part is never
+    // asked to take. 162 MSPS reserved for four times puts that clock at
+    // 40.5 MHz, one step over postDividerFor()'s 40 MHz row, where two is what
+    // installs and the part converts at half the rating it reserved.
+
+    SUBCASE("an oversampling the row will refuse does not cap the divider") {
+        CHECK(SourceMeasurement::maxDivider(31500, 4)
+              == SourceMeasurement::maxDivider(31500, 1));
+    }
+
+    SUBCASE("and the converted rate stays inside the rating at every line rate") {
+        for (uint32_t rate = 15000; rate <= 70000; rate += 500) {
+            for (uint8_t wanted = 1; wanted <= 8; wanted = (uint8_t)(wanted * 2)) {
+                const uint16_t divider = SourceMeasurement::maxDivider(rate, wanted);
+                const uint8_t installed = Adc::oversampleFor(
+                    Adc::postDividerFor((uint32_t)divider * rate), wanted);
+                REQUIRE(SourceMeasurement::sampleRateHz(divider, rate, installed)
+                        <= SourceMeasurement::MaxSampleRateHz);
+            }
+        }
+    }
+}
