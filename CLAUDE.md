@@ -11,20 +11,33 @@ component colour path -- and YPbPr is a *direct analog* path, so its timings are
 its own. Only composite and S-Video go through the ADV7280/ADV7391 chain, which
 regenerates them to broadcast standard, so any argument resting on a source being
 standard-conformant reaches those two and nothing else.
-**BOTH ARE PLUGGED IN AND POWERED AT ONCE, AND SWITCHING NEEDS NO BENCH TRIP**
--- `/input?src=vga` and `/input?src=ypbpr`, so a session can judge a change
-against both inputs without anyone touching a cable.
+**BOTH ARE PLUGGED IN AND POWERED AT ONCE, ALL THE TIME, AND SWITCHING NEEDS NO
+BENCH TRIP** -- `/input?src=vga` and `/input?src=ypbpr`, so a session judges a
+change against both inputs without anyone touching a cable and without asking
+first. **Neither source has to be arranged**: assuming the Wii needs setting up,
+or proposing it as an experiment rather than reaching for it, is the same
+mistake as not using it at all.
 
-**ACQUISITION IS SECONDS, SO A WAIT OF MINUTES IS A FAULT AND NOT A SETTLE.**
-Measured on `vga`: `/input?src=vga` to `sampling: 311 lines x 50.08 Hz` in 7.2 s,
-`state: acquired` at 8.1 s, FrameSync steering by 10.4 s, and the sync-type probe
-answering `own V sync: yes after 2ms`. On `ypbpr` the count does not converge at
-all -- 60 s of 202, 214, 216, 266, 294, 310, 315, 317, 319, 539, 607 with
-`source moved: count` re-arming continuously -- which is the two-owner coast
-fault flipping between the true count and the doubled one, not the console
-taking its time. `docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
+**ACQUISITION IS SECONDS ON BOTH INPUTS, SO A WAIT OF MINUTES IS A FAULT AND NOT
+A SETTLE.** Measured on `vga`: `/input?src=vga` to `sampling: 311 lines x
+50.08 Hz` in 7.2 s, `state: acquired` at 8.1 s, FrameSync steering by 10.4 s,
+and the sync-type probe answering `own V sync: yes after 2ms`. Measured on
+`ypbpr` with the Wii in 480p: `/input?src=ypbpr` to `sampling: 524 lines x
+59.80 Hz -> line rate 31395` in 15.2 s, acquired and holding, `PLLAD_MD` 1096
+against `STATUS_SYNC_PROC_HTOTAL` 1096, `SP_SOG_MODE` 1, `HPERIOD_IF` at the 214
+that mode is due, and a clean legible picture.
 **Do not budget minutes for a source to appear**; a source that has not solved
 in about ten seconds is not settling.
+
+**ESTABLISH WHICH WII OUTPUT MODE IS SET BEFORE JUDGING THE INPUT.** The two
+measured so far behave completely differently: 480p solves in 15 s and holds,
+480i never reaches `state: acquired` at all, because an interlaced field count
+alternates 259/260 and the steadiness run needs four identical samples --
+measured, two values in 1417 samples, and the picture rolls while every register
+reads correct. A wandering count is a property of the mode, so
+`ypbpr` is not unusable as an input.
+`docs/investigations/mode-detect-answers-before-any-measurement.md`,
+`docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
 
 **ALL THREE SYNC ARRANGEMENTS ARE ON THE BENCH AND ALL THREE ARE SCRIPTABLE.**
 The RISC PC's sync type is one CMOS value rather than a mode-file setting, and
