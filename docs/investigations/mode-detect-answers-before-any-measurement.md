@@ -50,30 +50,31 @@ its acknowledge.
 - **Nothing reads it.** The only reference outside the register declaration is
   `INT_RST_3::write(0x0)` in `init()`.
 - **`loop()` destroys it every 3 s.** `Interrupts::acknowledgeAllButSogBad()`
-  writes `0xfe` to `s0_58`, which is bits 1 to 7 and includes bit 3.
+  writes `0xfe` to `s0_58`, which is bits 1 to 7 and includes bit 3. A reader
+  has at most that long to consume it.
 - The sketch uses `STATUS_INT_SOG_SW`, `s0_0F[1]`, in its place. That reports
   the sync separator switching rather than the mode changing.
 
-Polled at roughly 50 Hz for 62 s across two source mode changes on `vga`, with
-no writes in the window:
+**IT FIRES, AND ONLY THE ON-DEVICE LOG CAN SEE IT.** `SamplingLog` logs
+`STATUS_0F` whole and unacknowledged, sampled from inside `loop()`: bit 3 is set
+in **75 of 637** samples across a mode change on `vga`, including on the change
+itself, at `intstatus` `0xa9` with `STATUS_SYNC_PROC_VTOTAL` mid-transition at
+286.
 
-| bit | result |
-|---|---|
-| `STATUS_INT_INP_SW` | **0 in 3079 of 3079** |
-| `STATUS_INT_SOG_SW` | 1 in **1** of 3079 -- `takeSourceDisturbed()` consumes it in ~20 ms |
-| `STATUS_IF_INP_SW` | 1 for 40 s, then clear; not a change latch |
+**AN HTTP POLL IS BLIND TO IT, AND SAYS SO CONFIDENTLY.** The same bit read
+through `/getreg` at roughly 50 Hz for 62 s across two mode changes gives **0 in
+3079 of 3079**. Register reads are deferred to `loop()`, and during a mode change
+`loop()` is inside detection's long searches, so the poll rate collapses in
+exactly the window the bit fires in. A reading of zero there is not evidence the
+bit stays clear, and the explanation it invites -- that Mode Detect classifies
+nothing on this source, so there is no mode to switch between -- is unsupported.
 
-A single catch on `SOG_SW` is what a consumed latch looks like. Bit 3 survives
-up to 3 s and was never seen set, so on this source it does not fire at all.
-**The leading explanation is that Mode Detect classifies nothing on it**: a
-switch detector keyed on the classification has nothing to report while the
-classification is nothing. That predicts the bit DOES fire on a source Mode
-Detect recognises, which is untested -- it wants a Wii mode change between 480i
-and 480p, where both sides classify.
+**It also fires with no mode change.** Bit 3 stayed set for 1.5 s with the count
+steady at 311 while `HPERIOD_IF` was railing, so it carries false positives and
+is a signal to qualify rather than to trust alone.
 
-**An acknowledge pulse of `INT_RST_3` makes the bit read 0/1 at random.**
-Measured before the clean run above and mistaken for the bit firing; the
-62-second poll with no writes is the one to believe.
+**An acknowledge pulse of `INT_RST_3` makes the bit read 0/1 at random**, which
+is a third way to get a wrong answer about it.
 
 ## What it costs on the interlaced source
 

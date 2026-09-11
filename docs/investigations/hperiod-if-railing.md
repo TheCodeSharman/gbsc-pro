@@ -960,3 +960,32 @@ SAMPLES.** An input change or a sync-type round trip re-rails the register, so
 a healthy HTTP sample taken before one and an on-device capture taken after it
 describe two states. Sample both instruments in one window, or say which state
 each belongs to.
+
+
+## `STATUS_IF_HT_BAD` separates the railed STATE, but not a good read inside it
+
+Two measurements that look contradictory and are not.
+
+Within a persistent railed state, the flag selects nothing: 5302 reads with
+`HT_OK` 1 in 146 of them and **0 of those 146 within 2% of the 431 due**, the
+same `HPERIOD_IF` distribution either side of it. That is the survey above.
+
+Across the boundary it separates cleanly. One `SamplingLog` capture at 25 ms
+carrying a railed state, a mode change, and the recovery:
+
+```
+railed     ifbits 0x0c / 0x0d   HT_BAD 1, HT_OK 0   hperiod 511, 18, 2, 17, 9, 8, 262
+recovered  ifbits 0x09          HT_BAD 0, HT_OK 1   hperiod 212 at 640x480@60
+                                                    hperiod 431 at 320x256@50
+```
+
+So it is a **state** indicator, not a per-read validity gate: `HT_BAD` 1 says the
+horizontal measurement is not to be trusted at all, while `HT_OK` 1 on a single
+read says nothing, because it flickers to 1 inside a railed state. Use it to
+decide whether to believe the register, never to pick good samples out of a bad
+run.
+
+It follows the Mode Detect lock/unlock counters --
+`MD_HPERIOD_LOCK_VALUE` 22 stable lines to clear, `MD_HPERIOD_UNLOCK_VALUE` 5
+unstable lines to set -- so it is the chip's own stability estimate rather than a
+second measurement. `docs/video-source-acquisition.md`.
