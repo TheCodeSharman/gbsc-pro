@@ -483,7 +483,17 @@ reload to recover.
 Why it rails is not established. See
 [investigations/hperiod-if-railing.md](investigations/hperiod-if-railing.md).
 
-## `VPERIOD_IF` is invalid on RGBHV, and the chip says so twice
+## `VPERIOD_IF` is invalid on SEPARATE SYNC, and the chip says so twice
+
+**The discriminator is the sync route, not RGBHV.** The input formatter takes its
+vertical timing from the sync separator, so a source with its own VSync pin
+leaves the separator nothing to extract while the sync processor counts happily.
+Measured on one input, one cable, one mode, moving only the RISC PC's sync type:
+`VPERIOD_IF` 62 with `STATUS_IF_VT_BAD` 1 in 582 of 582 on separate sync, and 623
+with `VT_BAD` 0 in 53 of 53 on composite. Everything below was measured on the
+separate-sync default and stands; the heading used to name RGBHV because that is
+the only separate-sync source on this bench.
+`docs/investigations/vperiod-if-on-rgbhv.md`, `docs/sync-type-selection.md`.
 
 Measured on the bench RISC PC at 320×256 (VTOTAL 311), RGBHV **scaling**, firmware
 unfrozen, picture correct:
@@ -499,13 +509,13 @@ unfrozen, picture correct:
 
 Only the vertical half is bad, and the chip flags it on two separate bits.
 
-**It has never worked here, and the archive proves it.** Across 22 snapshots
+**It has never worked on the separate-sync default, and the archive proves it.** Across 22 snapshots
 spanning 2026-08-01 to 08-03, including `SOLVED-*` states captured with a
 confirmed clean full-screen picture: `VT_OK` = 0 and `VT_BAD` = 1 in **22 of 22**,
 `VPERIOD_IF` scattered across 13, 21, 25, 26, 45, 72, 75, 84, 195, 249, 361, 545
 with no relation to the source, and `SP_VTOTAL` correct every time.
 
-**A non-zero `VPERIOD_IF` on RGBHV is debris, not data.** Pulsing Mode Detect
+**A non-zero `VPERIOD_IF` on separate sync is debris, not data.** Pulsing Mode Detect
 (`SFTRST_MODE_RSTZ`, s0 `0x47` bit 1) takes it from 129 to 0, where it stays,
 while `HPERIOD_IF` holds at 431. The counter is not returning a bad measurement —
 it is never completing one, and 129 was latched from an earlier state.

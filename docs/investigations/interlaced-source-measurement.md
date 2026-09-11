@@ -54,3 +54,30 @@ everything above it sits still. It reads as a deinterlacing fault and is not one
 — it is the framing, and pulling the vertical extent in clears it. The rest of
 the picture is stable throughout, which is the tell: bob judder moves the whole
 image.
+
+
+## NTSC 480i alternates where PAL 576i held steady
+
+The same console, the other output mode, measured 2026-09-12 over 1417 samples:
+
+```
+STATUS_SYNC_PROC_VTOTAL   260 x736, 259 x681   -- two values, near evenly
+VPERIOD_IF                524 x1417
+```
+
+576i above reads a single steady 310, so **the half-line is expressed as an
+alternation in one mode and absorbed into a constant undercount in the other**.
+Both are short of the true field: 259.5 against 262.5, and 310 against 312.5.
+
+**So an alternating count is not an interlace detector.** One interlaced source
+alternates and another does not, which rules out the obvious reading of the
+2026-09-12 measurement. Nor is the ratio `VPERIOD_IF / STATUS_SYNC_PROC_VTOTAL`,
+which is about 2 on both -- and is 2.02 on the progressive RISC PC under
+composite sync as well, because `VPERIOD_IF` counts the doubled IF line rather
+than the source's.
+
+**What it costs is acquisition.** `VideoSourceAcquisition::countHeld()` needs four
+consecutive identical counts, which an alternating field count never supplies, so
+480i never reaches `acquired`: no solve runs for the mode, the output clock is
+never seeded, and the picture rolls while every register reads correct.
+`mode-detect-answers-before-any-measurement.md`.
