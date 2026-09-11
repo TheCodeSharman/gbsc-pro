@@ -224,10 +224,14 @@ why extending `ModeDetect::sourceIsInterlaced()` to read it is not the
 improvement it looks like: it would spread a wrong answer to every mode rather
 than fixing one.
 
-So the classification supplies the FAMILY and the rate, and the scan type has to
-come from somewhere that measures. The chip is not blind to interlace at that
-line rate -- it calls the Wii's 15734 Hz 480i correctly -- so this is ambiguity
-in the source, not a limit of the block.
+So the classification supplies the FAMILY and the rate, and **the scan type comes
+from `VPERIOD_IF`'s PARITY**: a real interlace change on the RISC PC moves it 623
+odd to 624 even, 2393 samples with no exceptions, while the classification stays
+byte-identical. The half-line is the whole signal, and a line counter cannot hold
+it -- `docs/investigations/interlaced-source-measurement.md`.
+
+`Deinterlacer` already has that test and asks the classification first, so the
+wrong answer currently wins. The order is what is wrong, not either test.
 
 On separate sync the same source sets no bit at all, so the misclassification
 needs the separator in the path, exactly as `VPERIOD_IF` does.

@@ -107,11 +107,11 @@ live source, so it is bench testable rather than host-test-only. It is also the
 only way to move the sync type with nothing else changing: same machine, same
 cable, same input, same raster.
 
-**It cannot produce an interlaced mode through a monitor definition** -- the MDF
-format has ten keys and none is interlace. `*TV vert,interlace` with 0 meaning ON
-does it, or `VDU 23,0,8,&81` immediately, neither of which ModeServ exposes yet.
-Adding it needs a `MODE ... I1` and a readback through `OS_Byte 144`, which
-returns the old values while setting the new.
+**ModeServ exposes it: `INTERLACE ON|OFF`.** The MDF format has ten keys and
+none is interlace, so it goes through `*TV vert,interlace` -- 0 meaning ON, the
+sense inverted -- and the mode is re-applied so the change reaches the wire.
+There is no OS call that reads it back, so the reported state is what the server
+last set and a fresh server reports OFF whatever `*TV` was.
 
 **What that would buy, and it is now the only way to get it.** No register on
 this board has been shown to establish interlace: the dedicated status bits call
@@ -131,17 +131,22 @@ progressive on composite sync beside the Wii genuinely interlaced:
 | RISC PC 311-line progressive | `a7 00 00 00 40 10` | `SD`, `PAL_INT`, `INT`, `SW` |
 | RISC PC, separate sync | `00 00 00 00 00 00` | none |
 
-Two readings survive that, and **the two existing sources cannot separate them**,
-because the Wii and the RISC PC differ in interlace *and* in input and sync path
-at once:
+**SETTLED, AND IT IS THE SECOND READING.** With `INTERLACE ON|OFF` the
+discriminator runs: same machine, same cable, same input, same mode, same sync
+type, only interlace moving. The chip resolves it and the CLASSIFICATION does
+not.
 
-1. the chip cannot resolve interlace at 15 kHz and 50 Hz at all, or
-2. it can, and a 311-line progressive mode is genuinely ambiguous against 576i.
+| RISC PC 320x256@50, composite sync | `VPERIOD_IF` | parity | `VTOTAL` | `s0_00..05` |
+|---|---|---|---|---|
+| `INTERLACE OFF` | 623 x800 | all odd | 308 | `a7 00 00 00 40 10` |
+| `INTERLACE ON` | 624 x779 | all even | 309 | `a7 00 00 00 40 10` |
+| `INTERLACE OFF` again | 623 x814 | all odd | 308 | -- |
 
-**Reading 1 is weakened but not refuted.** The Wii at 480i is a 15734 Hz
-interlaced source and the chip calls it `NTSC_INT` correctly, so the block is not
-blind to interlace at a 15 kHz line rate -- which leaves reading 1 resting
-entirely on the 50 Hz half. The discriminator below is still what settles it.
+2393 samples, no exceptions. **The classification is byte-identical across a real
+interlace change**, so `STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` carry no
+interlace information at this line rate -- they report a vertical-period family
+and nothing else. The half-line lands in `VPERIOD_IF` as odd against even, which
+separates them completely.
 
 An interlaced RISC PC mode is the discriminator -- same machine, same cable, same
 input, same sync arrangement, **only interlace changes**. If the status bits move,

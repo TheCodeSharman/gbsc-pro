@@ -81,3 +81,45 @@ consecutive identical counts, which an alternating field count never supplies, s
 480i never reaches `acquired`: no solve runs for the mode, the output clock is
 never seeded, and the picture rolls while every register reads correct.
 `mode-detect-answers-before-any-measurement.md`.
+
+
+## The scan type is in `VPERIOD_IF`'s parity, and the classification is consulted first
+
+A real interlace change on the RISC PC -- `INTERLACE ON|OFF` over ModeServ, same
+machine, cable, input, mode and sync type -- moves one thing:
+
+```
+INTERLACE OFF   VPERIOD_IF 623 x800, all odd    VTOTAL 308   s0_00..05  a7 00 00 00 40 10
+INTERLACE ON    VPERIOD_IF 624 x779, all even   VTOTAL 309   s0_00..05  a7 00 00 00 40 10
+INTERLACE OFF   VPERIOD_IF 623 x814, all odd    VTOTAL 308
+```
+
+2393 samples, no exceptions. **The Mode Detect classification is byte-identical
+across the change**, so `STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` carry no
+interlace information at 15 kHz and 50 Hz -- they report a vertical-period family.
+The half-line is in `VPERIOD_IF`, as odd against even.
+
+**`Deinterlacer` already implements the parity test and asks the classification
+first.**
+
+    bool Deinterlacer::sourceIsInterlaced(uint16_t verticalPeriod) {
+        if (ModeDetect::sourceIsInterlaced())  return true;
+        if (ModeDetect::sourceIsProgressive()) return false;
+        return periodIsInterlaced(verticalPeriod);
+    }
+
+`periodIsInterlaced()` opens with a parity check and matches 624 as
+`InterlacedPalPeriod` and 623 as `ProgressivePalPeriod` within tolerance, so it is
+right in both states. `ModeDetect::sourceIsInterlaced()` reads
+`STATUS_IF_INP_PAL_INT`, which is 1 in both. **So the wrong answer wins on this
+source**: the firmware calls the progressive RISC PC interlaced whenever it is on
+composite sync.
+
+**The order is what is wrong, not either test.** The classification is right
+about the family and the rate and cannot see the half-line; the period
+measurement sees the half-line and needs a family to interpret it against. For
+scan type the measurement is the authority.
+
+**And it only works where `VPERIOD_IF` does**, which is with the sync separator
+in the path. On separate sync the parity is debris, so the scan type has no
+source there at all. `vperiod-if-on-rgbhv.md`.
