@@ -146,6 +146,9 @@ public:
 
     typedef UReg<0x05, 0x56, 0, 8> SP_5_56;
 
+    // SOG here is the sync SEPARATOR'S INPUT, not sync on green. This reads 1
+    // for composite sync arriving on the HSync pin with nothing on green, and
+    // SP_EXT_SYNC_SEL moves with it. docs/sync-type-selection.md
     typedef UReg<0x05, 0x56, 0, 1> SP_SOG_MODE;                       // Out control 1: SOG mode; 0: normal mode
 
     typedef UReg<0x05, 0x56, 1, 1> SP_HS2PLL_INV_REG;                 // Out control When =1, HS to PLL invert
