@@ -260,3 +260,29 @@ general.** It answers only for a source whose vertical measurement completes,
 and on this bench that is one source with one scan mode. An RGBHV source never
 reaches it, so the progressive half of the test has no source here that
 exercises it.
+
+
+## The test bus localises it: one selector stops carrying vertical sync
+
+`TEST_BUS_SEL` picks which block drives `DEBUG_IN_PIN`, and `/testbus` counts its
+transitions over 25 ms from inside `loop()`. Swept on the bench RISC PC at
+320x256@50 with only the sync type moving:
+
+| `TEST_BUS_SEL` | separate | composite | |
+|---|---|---|---|
+| `0x00` input vsync | 2 | 4 | field rate on both |
+| `0x02` output vsync | 2 | 2 | field rate on both |
+| **`0x0a`** | **0** | **2** | **field rate on composite only** |
+| `0x05`, `0x06`, `0x07`, `0x0e`, `0x0f`, `0x10`, `0x12` | 1300-3900 | 1300-4400 | line rate on both |
+
+**Vertical sync reaches the chip on separate sync** -- selector `0x00` carries it
+either way, which is the same conclusion `STATUS_SYNC_PROC_VSACT` and a correct
+`STATUS_SYNC_PROC_VTOTAL` already supported. What changes is one bus. `0x0a` is
+recorded in `framesync.h` as the selector the sync watcher and the HTotal search
+use.
+
+That is corroboration for the separator hypothesis rather than proof of it: it
+shows a vertical signal that exists only with the separator in the path, and it
+does not establish that the input formatter's vertical measurement reads that
+particular bus. The next step is a sweep with `SP_TEST_MODULE` and `IF_TEST_SEL`
+set, which `/testbus` takes as parameters.
