@@ -989,3 +989,38 @@ It follows the Mode Detect lock/unlock counters --
 `MD_HPERIOD_LOCK_VALUE` 22 stable lines to clear, `MD_HPERIOD_UNLOCK_VALUE` 5
 unstable lines to set -- so it is the chip's own stability estimate rather than a
 second measurement. `docs/video-source-acquisition.md`.
+
+
+## The indicators re-lock in about 150 ms, and only a Mode Detect reset can time it
+
+Whether `STATUS_IF_HT_BAD` and `STATUS_IF_VT_BAD` answer in milliseconds or in
+seconds decides whether they are worth consulting early in acquisition. Nothing
+that moves the SOURCE can measure it: a sync round trip on the bench RISC PC
+costs about twenty seconds of hunting -- `NO_SYNC` toggling, `SP_VTOTAL` at 97
+and then 0 -- so what it times is the firmware re-solving, not the block.
+
+Pulsing `SFTRST_MODE_RSTZ` low and back leaves the source, the sync type and the
+divider exactly where they are, so the recovery is the block's own. Measured on
+composite sync at 320x256@50 with `/samplinglog?ms=25`, eight pulses, 962
+samples:
+
+```
+VT_BAD set for  175, 175, 151, 125, 151, 150, 151, 151 ms
+HT_BAD never set at all
+```
+
+So the vertical indicator is back inside **175 ms at worst**, and that is an
+upper bound: the window includes however long Mode Detect was held in reset
+between two register writes, and the sample interval is 25 ms. The nominal from
+`MD_VPERIOD_LOCK_VALUE` 4 is four frames, 80 ms at 50 Hz.
+
+**The horizontal indicator never flagged across any of the eight**, which puts
+it at or below the 25 ms sample interval -- consistent with
+`MD_HPERIOD_LOCK_VALUE` 22 lines, 1.4 ms.
+
+**A reading taken during a source excursion is not this measurement.** The same
+`ms=25` log across a separate-to-composite change shows `HPERIOD_IF` thrashing
+1, 5, 7, 8, 12, 13, 15, 16, 255, 260, 431, 510, 511 with `HT_BAD` following it
+sample by sample. The separate-sync fault is a measurement that never converges
+rather than a register stuck at a rail, and an indicator tracking that is
+working correctly.
