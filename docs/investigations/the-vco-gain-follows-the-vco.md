@@ -73,6 +73,26 @@ Two things hid behind it.
 `Adc::applySampleRate()` writes the gain beside the divider and the row now, from
 the VCO the two imply, and the band steer is gone with its table.
 
+## The scaling path was already running the gain the rule gives
+
+The rule is derived from a pass-through sweep, so it is worth saying what it
+does to the other path. Bench RiscPC at 320x256@50 on `vga`, scaling, after the
+change:
+
+    PLLAD_MD                 2208     CKO 34.5 MHz
+    PLLAD_KS                    2     VCO 138.0 MHz
+    PLLAD_FS                    1     what vcoGainFor() gives above 130 MHz
+    STATUS_MISC_PLLAD_LOCK      1     in 8 of 8 samples
+    STATUS_SYNC_PROC_HTOTAL  2208     the divider latched
+    HPERIOD_IF                431     the value 311 lines at 50 Hz is due
+
+**Unchanged, and it was luck rather than a derivation.** Nothing on the scaling
+path chose the gain: `Adc::init()` writes 1 at bring-up and the only other
+writer for this source is `SourceStandard::apply()`'s standard-8 arm, which this
+one does not reach. The bench source happens to sit at 138.0 MHz, eight above
+the threshold -- so a source a little slower would have run on the bring-up's
+literal with nothing to say whether it suited.
+
 ## What this does not show
 
 - **Where the boundaries actually are.** The sweep has 7.5 MHz steps and the
