@@ -110,7 +110,7 @@ void InputFormatter::applyVerticalTiming(VerticalTiming timing)
     IF_VS_FLIP::write(1);
 }
 
-void InputFormatter::applyScanMode(ScanMode mode)
+void InputFormatter::applyScanMode(ScanMode mode, bool component)
 {
     const bool progressive = mode == Progressive;
 
@@ -120,6 +120,7 @@ void InputFormatter::applyScanMode(ScanMode mode)
     IF_LD_RAM_BYPS::write(progressive ? 1 : 0);
     IF_SEL_WEN::write(progressive ? 1 : 0);
     IF_HS_SEL_LPF::write(progressive ? 0 : 1);
+    IF_HS_Y_PDELAY::write(!progressive && component ? 2 : 3);
     IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
 }
 

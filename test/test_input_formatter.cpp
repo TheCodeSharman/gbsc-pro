@@ -95,8 +95,8 @@ TEST_CASE("a line-doubled source undoes every progressive setting")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
 
     CHECK(Wire.field(1, 0x0B, 4, 2) == 1);  // IF_HS_DEC_FACTOR
     CHECK(Wire.field(1, 0x0B, 7, 1) == 0);  // IF_LD_SEL_PROV
@@ -108,8 +108,8 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
 
     CHECK(Wire.field(1, 0x0B, 4, 2) == 0);  // IF_HS_DEC_FACTOR
     CHECK(Wire.field(1, 0x0B, 7, 1) == 1);  // IF_LD_SEL_PROV
@@ -124,10 +124,10 @@ TEST_CASE("the line doubler's write enable follows the scan mode")
     // sources: 0 on the 15 kHz RGBHV raster, 1 on component 480p.
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
     CHECK(Wire.field(1, 0x02, 0, 1) == 1);  // IF_SEL_WEN
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
     CHECK(Wire.field(1, 0x02, 0, 1) == 0);
 }
 
@@ -135,18 +135,35 @@ TEST_CASE("the horizontal low-pass follows the scan mode the other way")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
     CHECK(Wire.field(1, 0x02, 1, 1) == 0);  // IF_HS_SEL_LPF
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
     CHECK(Wire.field(1, 0x02, 1, 1) == 1);
+}
+
+TEST_CASE("a line-doubled component source takes a shorter luma delay")
+{
+    // Only a component source arrives with luma and chroma on separate paths,
+    // so only a component source needs them realigned -- and only where the
+    // line doubler adds the stage that puts them out.
+    FreshChip chip;
+
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, true);
+    CHECK(Wire.field(1, 0x02, 5, 2) == 2);  // IF_HS_Y_PDELAY
+
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    CHECK(Wire.field(1, 0x02, 5, 2) == 3);
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive, true);
+    CHECK(Wire.field(1, 0x02, 5, 2) == 3);
 }
 
 TEST_CASE("a progressive source blanks nothing at the head of the captured line")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
 
     // With the line-double FIFO bypassed IF_HBIN_SP is a blanking edge in the
     // capture window's own units, so anything it holds is a second left crop
@@ -158,8 +175,8 @@ TEST_CASE("a line-doubled source keeps the line-double FIFO's reset position")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
 
     CHECK(Wire.field(1, 0x26, 0, 12) == 272);
 }
@@ -172,7 +189,7 @@ TEST_CASE("the vertical timing leaves the scan mode alone")
     // written by applyScanMode() from a different caller at a different time.
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
     InputFormatter::applyVerticalTiming(InputFormatter::VcrTiming);
 
     CHECK(Wire.field(1, 0x00, 5, 1) == 0);  // IF_VS_SEL

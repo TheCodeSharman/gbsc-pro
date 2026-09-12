@@ -6,6 +6,13 @@ namespace Tv5725 {
 
 namespace {
 
+// ADC_INPUT_SEL 0 is the pair carrying Pb and Pr beside Y.
+const uint8_t ComponentInputSel = 0;
+
+}  // namespace
+
+namespace {
+
 const uint8_t PllChargePump = 6;
 const uint8_t ScalingChargePump = 5;
 
@@ -18,8 +25,11 @@ const uint8_t Adc::OversampleAsClockAllows;
 
 void Adc::selectInput(uint8_t inputSel)
 {
+    inputSel_ = inputSel;
     ADC_INPUT_SEL::write(inputSel);
 }
+
+bool Adc::inputIsComponent() { return inputSel_ == ComponentInputSel; }
 
 void Adc::enableSyncOnGreen(uint8_t enable)
 {
@@ -71,6 +81,11 @@ void Adc::latch()
 
 uint8_t Adc::phaseSyncProcessor_ = 16;
 uint8_t Adc::phaseAdc_ = 16;
+
+// Which of the two the chip comes up on is whatever the last boot left, and no
+// read-back can be trusted to mean the source is component, so the engine
+// captures RGB until an input is selected.
+uint8_t Adc::inputSel_ = 1;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
 {
@@ -223,18 +238,18 @@ void Adc::restartPhaseAdjusters()
 
 uint8_t Adc::selectOtherInput()
 {
-    const uint8_t selected = ADC_INPUT_SEL::read();
-    ADC_INPUT_SEL::write(selected == 1 ? 0 : 1);
+    const uint8_t selected = inputSel_;
+    selectInput(selected == 1 ? 0 : 1);
     return selected;
 }
 
 void Adc::bounceInput()
 {
-    const uint8_t selected = ADC_INPUT_SEL::read();
+    const uint8_t selected = inputSel_;
 
     ADC_INPUT_SEL::write(0);
     delay(BounceMs);
-    ADC_INPUT_SEL::write(selected);
+    selectInput(selected);
 }
 
 uint8_t Adc::postDividerFor(uint32_t ckoHz)

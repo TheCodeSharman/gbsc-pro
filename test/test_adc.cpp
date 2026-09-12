@@ -390,7 +390,7 @@ TEST_CASE("the bounce leaves the rest of the byte alone")
 TEST_CASE("trying the other input moves off the one in force and says which it was")
 {
     Wire.reset();
-    Adc::ADC_INPUT_SEL::write(1);
+    Adc::selectInput(1);
 
     const uint8_t previous = Adc::selectOtherInput();
 
@@ -401,7 +401,7 @@ TEST_CASE("trying the other input moves off the one in force and says which it w
 TEST_CASE("trying the other input from anywhere but one lands on one")
 {
     Wire.reset();
-    Adc::ADC_INPUT_SEL::write(2);
+    Adc::selectInput(2);
 
     const uint8_t previous = Adc::selectOtherInput();
 
@@ -677,4 +677,44 @@ TEST_CASE("a separator too starved to judge by skips the search")
         Adc::acquirePhase(4, false, false, lineSamplesAtPhase, countFeed);
         CHECK(Adc::phaseAdc() == 0);   // 16 + 16, round the five-bit field
     }
+}
+
+// --- which input the capture path is reading ---------------------------------
+
+TEST_CASE("the ADC holds which input it selected, and says whether it is component")
+{
+    // ADC_INPUT_SEL 0 is the component pair. Held rather than read back: a
+    // register is where a value is written to, never where it is kept, and the
+    // engine needs the answer to realign luma against chroma.
+    Wire.reset();
+
+    Adc::selectInput(1);
+    CHECK_FALSE(Adc::inputIsComponent());
+
+    Adc::selectInput(0);
+    CHECK(Adc::inputIsComponent());
+}
+
+TEST_CASE("moving to the other input moves the held answer with it")
+{
+    Wire.reset();
+    Adc::selectInput(0);
+
+    CHECK(Adc::selectOtherInput() == 0);
+    CHECK_FALSE(Adc::inputIsComponent());
+
+    CHECK(Adc::selectOtherInput() == 1);
+    CHECK(Adc::inputIsComponent());
+}
+
+TEST_CASE("a bounce puts the same input back, so the held answer does not move")
+{
+    // The bounce clears a railed HPERIOD_IF by taking the input away and
+    // putting the SAME one back. Nothing about the source changed.
+    Wire.reset();
+    Adc::selectInput(1);
+
+    Adc::bounceInput();
+
+    CHECK_FALSE(Adc::inputIsComponent());
 }

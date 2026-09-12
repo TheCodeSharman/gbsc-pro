@@ -217,6 +217,12 @@ public:
     static uint8_t selectOtherInput();
     static void enableSyncOnGreen(uint8_t enable);
 
+    // Whether the selected input carries luma and chroma on separate pins, so
+    // the capture path has to realign them. Answered from what selectInput()
+    // wrote, never read back: a register is where a value is written to, not
+    // where it is kept.
+    static bool inputIsComponent();
+
     static void init();
 
     // A rising edge on PLLAD_LAT loads MD, ND, KS, CKOS and ICP together. The
@@ -377,6 +383,7 @@ private:
 
     static uint8_t phaseSyncProcessor_;
     static uint8_t phaseAdc_;
+    static uint8_t inputSel_;
 
 };
 

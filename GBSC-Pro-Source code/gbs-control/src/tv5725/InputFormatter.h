@@ -301,7 +301,10 @@ public:
     static const uint16_t LineDoubleReset = 272;
 
     // Put every register that decides the scan mode into one of the two states.
-    static void applyScanMode(ScanMode mode);
+    // The colour path comes with it because the luma delay needs both: only a
+    // component source arrives with luma and chroma separated, and only the
+    // line doubler puts them out.
+    static void applyScanMode(ScanMode mode, bool component);
 };
 
 }  // namespace Tv5725

@@ -182,9 +182,10 @@ void VideoProcessor::clockInputOnFallingEdge()
     VDS_IN_DREG_BYPS::write(0);
 }
 
-void VideoProcessor::applyScanMode(bool lineDoubled)
+void VideoProcessor::applyScanMode(bool lineDoubled, bool component)
 {
     VDS_V_DELAY::write(lineDoubled ? 0 : 1);
+    VDS_Y_DELAY::write(lineDoubled && !component ? 2 : 3);
 }
 
 }  // namespace Tv5725

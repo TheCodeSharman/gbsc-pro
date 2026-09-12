@@ -396,10 +396,13 @@ void VideoPath::solveScanMode()
     if (scanModeApplied_ && doubled == sampling_.lineDoubled())
         return;
 
+    const bool component = Adc::inputIsComponent();
+
     sampling_.holdLineDoubling(doubled);
     InputFormatter::applyScanMode(doubled ? InputFormatter::LineDoubled
-                                          : InputFormatter::Progressive);
-    VideoProcessor::applyScanMode(doubled);
+                                          : InputFormatter::Progressive,
+                                  component);
+    VideoProcessor::applyScanMode(doubled, component);
     Deinterlacer::applyScanMode(doubled);
     scanModeApplied_ = true;
 }

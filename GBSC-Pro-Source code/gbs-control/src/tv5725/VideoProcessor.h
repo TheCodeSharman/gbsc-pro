@@ -862,7 +862,7 @@ public:
 
     // The block's share of the 422/444 conversion delays. The line doubler adds
     // a stage the chroma path does not take, so the realignment follows it.
-    static void applyScanMode(bool lineDoubled);
+    static void applyScanMode(bool lineDoubled, bool component);
 };
 
 }  // namespace Tv5725

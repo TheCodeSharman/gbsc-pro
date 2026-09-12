@@ -119,20 +119,18 @@ TEST_CASE("no standard writes what the scan mode decides")
     }
 }
 
-TEST_CASE("a component SD source gets the luma and chroma delays")
+TEST_CASE("no standard writes the luma delay either")
 {
-    // Only YPbPr arrives with luma and chroma on separate paths, so only YPbPr
-    // needs them realigned.
-    CHECK(WRITTEN(2, true, InputFormatter::IF_HS_TAP11_BYPS) == 0);
-    CHECK(WRITTEN(2, true, InputFormatter::IF_HS_Y_PDELAY) == 2);
-    CHECK(WRITTEN(2, true, VideoProcessor::VDS_Y_DELAY) == 3);
-}
-
-TEST_CASE("an RGB SD source is left with the delays it had")
-{
-    CHECK(WRITTEN(2, false, InputFormatter::IF_HS_TAP11_BYPS) == NotWritten);
-    CHECK(WRITTEN(2, false, InputFormatter::IF_HS_Y_PDELAY) == NotWritten);
-    CHECK(WRITTEN(2, false, VideoProcessor::VDS_Y_DELAY) == NotWritten);
+    // It needs the colour path as well as the scan mode, and both are the
+    // engine's: it is told which connector is live and it measures the doubler.
+    for (uint8_t standard : {1, 2, 3, 4, 8, 9}) {
+        CAPTURE(standard);
+        for (bool ypbpr : {false, true}) {
+            CHECK(WRITTEN(standard, ypbpr, InputFormatter::IF_HS_TAP11_BYPS) == NotWritten);
+            CHECK(WRITTEN(standard, ypbpr, InputFormatter::IF_HS_Y_PDELAY) == NotWritten);
+            CHECK(WRITTEN(standard, ypbpr, VideoProcessor::VDS_Y_DELAY) == NotWritten);
+        }
+    }
 }
 
 TEST_CASE("a standard with nothing of its own writes nothing at all")
@@ -141,7 +139,7 @@ TEST_CASE("a standard with nothing of its own writes nothing at all")
     // itself, and there is no line of that shape to prepare the rest of the
     // pipeline for.
     CHECK(WRITTEN(14, false, Adc::ADC_FLTR) == NotWritten);
-    CHECK(WRITTEN(14, false, InputFormatter::IF_HS_Y_PDELAY) == NotWritten);
+    CHECK(WRITTEN(14, false, SyncProcessor::SP_SDCS_VSST_REG_L) == NotWritten);
     CHECK(WRITTEN(14, false, InputFormatter::IF_PRGRSV_CNTRL) == NotWritten);
     CHECK(WRITTEN(14, false, VideoProcessor::VDS_Y_DELAY) == NotWritten);
 }
@@ -151,14 +149,6 @@ TEST_CASE("a standard with nothing of its own writes nothing at all")
 TEST_CASE("a progressive standard narrows the ADC's analog filter")
 {
     CHECK(WRITTEN(4, false, Adc::ADC_FLTR) == 3);
-}
-
-TEST_CASE("a progressive standard realigns luma and chroma whatever the colour space")
-{
-    // Unlike interlaced SD, where only a component source gets these.
-    CHECK(WRITTEN(4, false, InputFormatter::IF_HS_TAP11_BYPS) == 0);
-    CHECK(WRITTEN(4, false, InputFormatter::IF_HS_Y_PDELAY) == 3);
-    CHECK(WRITTEN(4, false, VideoProcessor::VDS_Y_DELAY) == 3);
 }
 
 TEST_CASE("standard 3 opens the SD vsync window later than its neighbours")
@@ -214,7 +204,7 @@ TEST_CASE("standard 8 opens the filter its progressive neighbours narrowed")
     CHECK(WRITTEN(8, false, Adc::ADC_FLTR) == 1);
 
     // and keeps what it does not disagree with
-    CHECK(WRITTEN(8, false, InputFormatter::IF_HS_Y_PDELAY) == 3);
+    CHECK(WRITTEN(8, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 14);
 }
 
 // --- the input line's horizontal blanking -------------------------------------

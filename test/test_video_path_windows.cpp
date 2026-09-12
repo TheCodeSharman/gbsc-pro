@@ -389,6 +389,27 @@ TEST_CASE("the engine writes the scan mode its own measurement implies")
                      Tv5725::Adc::PLLAD_MD::bitWidth) == 2230);
 }
 
+TEST_CASE("the engine realigns luma for the input the ADC was told to select")
+{
+    // Which connector is live is not a measurement -- nothing on the chip
+    // reports it -- so it is held by the class that selected it, and the engine
+    // asks that rather than reading a register or being handed a callback.
+    Tv5725::Adc::selectInput(1);
+    SolvedEngine solved;   // 311 lines, so line doubled
+
+    CHECK(Wire.field(1, 0x02, 5, 2) == 3);  // IF_HS_Y_PDELAY
+    CHECK(Wire.field(3, 0x24, 4, 2) == 2);  // VDS_Y_DELAY
+
+    Tv5725::Adc::selectInput(0);
+    solved.engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(solved.acquisition));
+
+    CHECK(Wire.field(1, 0x02, 5, 2) == 2);
+    CHECK(Wire.field(3, 0x24, 4, 2) == 3);
+
+    Tv5725::Adc::selectInput(1);
+}
+
 TEST_CASE("the engine realigns the 422/444 conversion with the scan mode")
 {
     // Three blocks share the alignment and each has been taking its value from

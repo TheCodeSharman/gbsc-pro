@@ -2139,7 +2139,7 @@ uint8_t detectAndSwitchToActiveInput()
         }
 
         if (detectionMayChangeInput()) {
-            GBS::ADC_INPUT_SEL::write(!currentInput);
+            Tv5725::Adc::selectInput(!currentInput);
             delay(200);
         }
 
@@ -3223,7 +3223,7 @@ void applyPresets(uint8_t result)
 
         result = 3;
         if (detectionMayChangeInput())
-            GBS::ADC_INPUT_SEL::write(1);
+            Tv5725::Adc::selectInput(1);
         delay(100);
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
             rto->inputIsYpBpR = 0;
@@ -3237,7 +3237,7 @@ void applyPresets(uint8_t result)
             Tv5725::SyncMeasurement::probe(sourceHasOwnVsync);
         } else {
             if (detectionMayChangeInput())
-                GBS::ADC_INPUT_SEL::write(0);
+                Tv5725::Adc::selectInput(0);
             delay(100);
             if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
                 rto->inputIsYpBpR = 1;
@@ -4786,7 +4786,7 @@ void calibrateAdcOffset()
 {
     GBS::PAD_BOUT_EN::write(0);
     GBS::PLL648_CONTROL_01::write(0xA5);
-    GBS::ADC_INPUT_SEL::write(2);
+    Tv5725::Adc::selectInput(2);
     Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
     Tv5725::Adc::enableGainMeasurement(true);
     GBS::ADC_5_03::write(0x31);

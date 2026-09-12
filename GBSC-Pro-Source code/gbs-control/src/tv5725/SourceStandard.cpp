@@ -59,14 +59,6 @@ void SourceStandard::applyHd() const
 void SourceStandard::applySd() const
 {
     Adc::ADC_FLTR::write(AnalogFilter40MHz);
-
-    // Only a component source arrives with luma and chroma on separate paths,
-    // so only a component source needs them realigned.
-    if (inputIsYpBpR_) {
-        InputFormatter::IF_HS_TAP11_BYPS::write(0);
-        InputFormatter::IF_HS_Y_PDELAY::write(2);
-        VideoProcessor::VDS_Y_DELAY::write(3);
-    }
 }
 
 void SourceStandard::applyProgressive() const
@@ -75,10 +67,6 @@ void SourceStandard::applyProgressive() const
 
     SyncProcessor::writeSdVsyncStart(14);
     SyncProcessor::writeSdVsyncStop(11);
-
-    InputFormatter::IF_HS_TAP11_BYPS::write(0);
-    InputFormatter::IF_HS_Y_PDELAY::write(3);
-    VideoProcessor::VDS_Y_DELAY::write(3);
 
     if (standard_ == 3) {
         SyncProcessor::writeSdVsyncStart(16);
