@@ -1536,3 +1536,35 @@ shown to measure scan type, and the pair `NTSC_INT`/`NTSC_PRG` separates 480i
 from 480p only because one is a 262-line field and the other a 525-line frame.
 
 Ignore them for scan type. `docs/investigations/interlaced-source-measurement.md`
+
+
+## The steadiness runs: two instances, one policy
+
+There are two runs over `measureSourceLines()`, with the same threshold,
+advanced on the same poll:
+
+| where | asks |
+|---|---|
+| `SourceMeasurement::sampleSteady()` | is the count worth paying 250 ms for a field rate |
+| `VideoSourceAcquisition::countHeld()` | has the source moved |
+
+**The instances must stay separate.** Filling the idle one while the engine is
+idle leaves the next mode change's first poll believing a count from the mode
+before it, which is why the source-moved gate has its own.
+
+**The policy must not be.** Teaching one of them to accept an interlaced count's
+alternation left the other blocking, and an interlaced source still never
+acquired -- measured on the bench, the fix looked complete and changed nothing.
+`Tv5725::SteadyRun` holds the definition once and both delegate.
+
+**Two more runs of the same shape remain**, over the field rate rather than the
+count: `VideoSourceAcquisition::rateMoved()` and
+`SourceMeasurement::rateSettled()`. They compare with a tolerance rather than for
+equality and use different thresholds -- 4 against 8 -- so folding them is a
+separate question, and the first thing to ask is whether three different
+questions should share `SteadySamples`.
+
+**`countHeldStill()` is deliberately not one of them.** It blocks for 30 samples
+at 10 ms before a preset load, with a plus or minus 3 tolerance, because a load
+is expensive and a source mid-change gives a count that is wrong AND steady for a
+few samples.
