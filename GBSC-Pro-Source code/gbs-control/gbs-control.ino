@@ -177,6 +177,13 @@ volatile bool pendingTestBusSweep = false;
 volatile uint16_t pendingTestBusMs = 25;
 volatile uint8_t pendingTestBusSp = 0xff;
 volatile uint8_t pendingTestBusIf = 0xff;
+
+// What /sampleclock queued. Same reason: the route answers from a network
+// callback and the bus belongs to loop().
+volatile bool pendingSampleClock = false;
+volatile bool pendingSampleClockApply = false;
+volatile uint16_t pendingSampleClockDivider = 0;
+volatile uint8_t pendingSampleClockOversample = 0;
 #endif
 
 // How many output pixels the pending press asked for, or 0 for the pad's own
@@ -4052,6 +4059,61 @@ static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
 }
 
 #if GBS_DEBUG
+// The whole ADC sampling group, applied the way the firmware applies it, so an
+// experiment over it costs a request rather than a flash.
+//
+// **THE GROUP CANNOT BE BISECTED BY HAND.** PLLAD_MD, KS, CKOS, ICP, FS and the
+// two decimators are one setting: PLLAD_LAT loads several of them on a rising
+// edge and the loop filter has to suit the tap, so writing two or three of them
+// over /setreg leaves the PLL unlocked in a state that locked beforehand. This
+// goes through the same call the switch does, and moves the channel's played-out
+// raster with the divider, which is the other half a hand sweep gets wrong.
+//
+// Pass-through only. On the scaling path the divider belongs to the engine,
+// which re-solves it from the measurement and would take this straight back.
+static void reportSampleClock(const char *what)
+{
+    debugPrintf("sample clock %s: MD %u KS %u CKOS %u DEC2_BYPS %u "
+                "HSYNC_RST %u HTOTAL %u lock %u\n",
+                what,
+                (unsigned)GBS::PLLAD_MD::read(), (unsigned)GBS::PLLAD_KS::read(),
+                (unsigned)Tv5725::Adc::PLLAD_CKOS::read(),
+                (unsigned)Tv5725::Adc::DEC2_BYPS::read(),
+                (unsigned)GBS::HD_HSYNC_RST::read(),
+                (unsigned)GBS::STATUS_SYNC_PROC_HTOTAL::read(),
+                (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read());
+}
+
+static void applyPassThroughSampleClock(bool apply, uint16_t divider,
+                                        uint8_t oversample)
+{
+    if (!apply) {
+        reportSampleClock("now");
+        return;
+    }
+
+    if (!Tv5725::VideoRoute::isHdBypassChannel()) {
+        debugPrintf("sample clock: not passing through, nothing applied\n");
+        return;
+    }
+
+    const uint32_t lineRateHz = sourceSampling.heldLineRateHz();
+    const uint16_t wanted =
+        divider != 0 ? divider : Tv5725::HdBypass::dividerFor(lineRateHz);
+    const uint8_t ratio =
+        oversample != 0 ? oversample : Tv5725::HdBypass::BypassOversample;
+
+    Tv5725::HdBypass::applyPassThroughSampling(wanted, lineRateHz, ratio);
+
+    // Writing the group is not enough to re-establish lock: the switch restarts
+    // the PLL and the phase adjusters after it, and without that the ADC PLL
+    // stays out of lock at whatever was written -- measured, including when the
+    // value written is the one it already held.
+    restartAfterBypassSwitch();
+
+    reportSampleClock("applied");
+}
+
 // WHERE A SIGNAL REACHES, which no register value can answer. TEST_BUS_SEL picks
 // which block drives DEBUG_IN_PIN, and the transition count over one window
 // separates a field-rate signal from a line-rate one and both from a dead bus:
@@ -6867,6 +6929,12 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             pendingTestBusSweep = false;
             sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusIf);
         }
+        if (pendingSampleClock) {
+            pendingSampleClock = false;
+            applyPassThroughSampleClock(pendingSampleClockApply,
+                                        pendingSampleClockDivider,
+                                        pendingSampleClockOversample);
+        }
 #endif
 #if GBS_SAMPLING_LOG
         if (pendingSamplingMonitor) {
@@ -7818,6 +7886,29 @@ void startWebserver()
         pendingTestBusIf = (uint8_t)number("if", 0xff);
         pendingTestBusSweep = true;
         request->send(200, "application/json", "{\"queued\":\"testbus\"}");
+    });
+
+    // The ADC sampling group, in one request, the way the firmware writes it.
+    //
+    //   /sampleclock                    report the group, change nothing
+    //   /sampleclock?md=2039&os=2       apply a divider and an oversampling ratio
+    //
+    // Either parameter alone is enough to apply; the one left out takes what
+    // the source is due.
+    //
+    // Queued, and it answers on the console: the group latches together, so a
+    // reply written from the network callback would report registers the bus
+    // has not been given a chance to write.
+    server.on("/sampleclock", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : 0;
+        };
+        pendingSampleClockApply = request->hasParam("md") || request->hasParam("os");
+        pendingSampleClockDivider = (uint16_t)number("md");
+        pendingSampleClockOversample = (uint8_t)number("os");
+        pendingSampleClock = true;
+        request->send(200, "application/json", "{\"queued\":\"sampleclock\"}");
     });
 #endif
 

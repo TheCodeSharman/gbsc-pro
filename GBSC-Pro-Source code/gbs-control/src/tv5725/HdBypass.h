@@ -192,6 +192,27 @@ public:
                                  uint32_t lineRateHz,
                                  void (*applyRgbPatches)());
 
+    // The oversampling pass-through asks the ADC for. One is undecimated.
+    //
+    // **THIS IS NOT WHAT IS IN FORCE.** The sketch sets rto->osr from its own
+    // applyOversample() before the switch calls this, and a later re-apply
+    // installs that instead -- measured, the group reads ratio 1 immediately
+    // after this writes it and ratio 2 two tenths of a second later. Two owners,
+    // and the fix is to decide which ratio is right rather than to make this one
+    // win. ../../../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
+    static const uint8_t BypassOversample = 1;
+
+    // The sampling and the played-out raster for a source with no standard of
+    // its own, which are one operation: the raster follows the line the CHANNEL
+    // sees, and that is the divider over the oversampling ratio.
+    //
+    // Public because it is what an experiment varies. The ADC PLL group latches
+    // together and its loop filter has to suit the tap, so writing part of it by
+    // hand unlocks the PLL -- Adc::applySampleRate() underneath is the only
+    // thing that writes all of it.
+    static void applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
+                                         uint8_t oversample = BypassOversample);
+
     // Which colour path the bypassed sample takes, and the ONE thing bypass has
     // to know about the source. A component input needs the matrix; an RGB one
     // needs it and the dynamic range converter out of the way. It follows the
@@ -207,11 +228,6 @@ private:
     // generator inert, which is not a blank window that never closes but one
     // that never opens.
     static void applyHorizontalFromChannelLine(uint16_t channelLine);
-
-    // A source with no standard of its own. It plays out the line the channel
-    // sees; the vertical windows and the sync pulses stay where the switch put
-    // them.
-    static void applyRgbhv(uint16_t divider, uint32_t lineRateHz);
 
     static void applySd(uint8_t standard);
     static void applyProgressive(uint8_t standard);

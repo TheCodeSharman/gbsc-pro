@@ -37,20 +37,6 @@ const uint16_t BlankEndSamples = 0x90;
 const uint16_t ChannelSyncDelay = 40;
 const uint16_t SyncPulseWidth = 124;
 
-// Undecimated, and it cannot usefully be anything else.
-//
-// Oversampling on this part is bought from the SAME crossover ladder, not from
-// a second clock: Adc::applyOversample() takes a faster tap of the one VCO, so
-// each doubling costs a step of PLLAD_KS headroom. Asking for two therefore
-// caps the ADC clock at the top row's 80 MHz, which halves what reaches the
-// channel -- measured on an 800x600 source, the played-out line falls to 928
-// samples for 800 active pixels and the gratings stop resolving.
-//
-// The band where it would cost nothing is below about 19.6 kHz, and that is
-// under the rate a bypassed source needs to reach the sink at all.
-// test_hd_bypass.cpp pins both halves.
-const uint8_t BypassOversample = 1;
-
 }  // namespace
 
 void HdBypass::init()
@@ -125,7 +111,7 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
     else if (standard <= 7 || standard == 13)
         applyHd(standard, applyRgbPatches);
     else
-        applyRgbhv(divider, lineRateHz);
+        applyPassThroughSampling(divider, lineRateHz);
 
     if (standard == 13)
         applyRgbhvPll(SourceMeasurement::measureSourceLines());
@@ -154,7 +140,8 @@ uint16_t HdBypass::dividerFor(uint32_t lineRateHz)
     return (uint16_t)(clockBound < channelBound ? clockBound : channelBound);
 }
 
-void HdBypass::applyRgbhv(uint16_t divider, uint32_t lineRateHz)
+void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
+                                        uint8_t oversample)
 {
     if (divider == 0)
         return;
@@ -167,8 +154,7 @@ void HdBypass::applyRgbhv(uint16_t divider, uint32_t lineRateHz)
     // PLLAD_LAT loads them together. The row follows the clock the divider and
     // the line rate make between them: frozen, it takes the PLL out of lock the
     // moment either moves far enough.
-    const uint8_t ratio =
-        Adc::applySampleRate(divider, lineRateHz, BypassOversample);
+    const uint8_t ratio = Adc::applySampleRate(divider, lineRateHz, oversample);
 
     applyHorizontalFromChannelLine(divider / (ratio < 1 ? 1 : ratio));
 
