@@ -1378,30 +1378,6 @@ void activeFrameTimeLockInitialSteps()
     }
 }
 
-void setResetParameters_re() 
-{
-    holdStandard(Tv5725::PresetLoad::NoStandard);   
-    rto->videoIsFrozen = false;    
-    rto->applyPresetDoneStage = 0; 
-    // rto->sourceDisconnected = true;  
-    Tv5725::VideoRoute::toScaler();        
-    Tv5725::SyncProcessor::forgetPositions();
-    Tv5725::SyncMeasurement::forget();
-    rto->phaseIsSet = 0;             
-    rto->continousStableCounter = 0; 
-    rto->noSyncCounter = 0;          
-
-    rto->isInLowPowerMode = false;   
-    Tv5725::SyncOnGreen::choose(5);        
-    Tv5725::Deinterlacer::disableMotionAdapt();
-    Tv5725::Deinterlacer::forgetScanlines();
-    Tv5725::SyncMeasurement::set(false);                   
-    rto->isValidForScalingRGBHV = false;          
-    rto->medResLineCount = 0x33;
-    rto->osr = 0;                  
-    rto->notRecognizedCounter = 0; 
-}
-
 // The ADC input the user chose, or the RGB pins when nothing is chosen -- which
 // is where a sweep starts looking.
 static uint8_t selectedAdcInput()
