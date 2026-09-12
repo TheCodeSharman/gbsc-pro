@@ -96,6 +96,48 @@ program modes no enumeration contains, which is the whole reason the input-side
 concept of a video standard does not survive here.
 `docs/video-source-acquisition.md`.
 
+### The line rate the bench reaches is the MONITOR DEFINITION's, not the machine's
+
+The stock AKF50 definition the bench runs has **28 modes, none above 37.9 kHz**,
+and that ceiling is the file rather than VIDC20. Surveyed across the thirteen
+Acorn definitions RISC OS ships:
+
+| definition | modes | fastest line | at |
+|---|---|---|---|
+| AKF11-40 | 7 | 15.6 kHz | 8 MHz |
+| AKF50 / 52 / 53 | 28 | 37.9 kHz | 40 MHz |
+| AKF60 / 65 / 72 / 74 | 28 | 48.4 kHz | 65 MHz |
+| AKF80 / 85 | 31 | 63.7 kHz | **110 MHz** |
+| AKF91 / 92 | 34 | 74.8 kHz | 136 MHz |
+
+**The machine's own ceiling is 110 MHz**, and what says so is the round number
+appearing as the top of two independent files where every other pixel rate in
+them is an awkward one. 100.00 MHz caps the AKF60 group the same way.
+
+So a mode faster than the bench has ever run needs **no custom definition and no
+new hardware** -- only a different stock file. What that reaches:
+
+| | AKF50 | AKF60 | AKF80 |
+|---|---|---|---|
+| 1600x600 | 37.9 kHz | **46.9 kHz** | 46.9 kHz |
+| 1024x768 | -- | 48.4 kHz | 60.0 kHz |
+| 1280x1024 | -- | -- | **63.7 kHz** |
+
+1600x600 exists in all three, which makes it the discriminator: the same card
+and the same horizontal detail at two line rates, with nothing else moving.
+
+**`docs/investigations/the-decimators-filter.md`'s open trade needs exactly
+that** -- above a 39.2 kHz line rate the pass-through divider's own cap pushes
+CKO past 80 MHz, `PLLAD_KS` lands on the top crossover row and there is no
+faster tap to oversample from. AKF50 cannot reach it and AKF60 clears it by
+7.7 kHz.
+
+It also retires *the AKF50 has no 1280x1024* as a statement about the bench:
+it is a statement about one file, and AKF80 has it at 63.7 kHz.
+
+**Not checked: the VRAM.** 1024x768 is 786 KB at 8 bpp and 393 KB at 4 bpp, so
+which depths a faster definition actually offers depends on the machine.
+
 `SYNC 0|1|3` switches the machine between separate and composite sync, which
 makes it the source for sync-type work. It is one CMOS value re-applied to
 VIDC20's external register, not a mode-file setting.
