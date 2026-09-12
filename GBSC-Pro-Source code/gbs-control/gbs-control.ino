@@ -2889,9 +2889,13 @@ void doPostPresetLoadSteps()
         Tv5725::InputFormatter::writeLineCounterStart(0);
         Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
 
-        rto->osr = Tv5725::SourceStandard(rto->videoStandardInput,
-                                          rto->inputIsYpBpR)
-                       .apply(GBS::PLLAD_KS::read());
+        Tv5725::SourceStandard(rto->videoStandardInput, rto->inputIsYpBpR).apply();
+
+        // The most the clock can carry, for every source: the decimators undo
+        // the faster tap so the same samples a line reach the pipeline either
+        // way, and they filter. applySampleRate() clamps it to the crossover
+        // row. docs/investigations/the-decimators-filter.md
+        rto->osr = Tv5725::Adc::OversampleAsClockAllows;
 
         resetDebugPort();
 

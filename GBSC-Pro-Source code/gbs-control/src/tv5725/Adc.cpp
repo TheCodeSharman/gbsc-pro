@@ -14,6 +14,8 @@ const unsigned int ChargePumpSettleMs = 40;
 
 }  // namespace
 
+const uint8_t Adc::OversampleAsClockAllows;
+
 void Adc::selectInput(uint8_t inputSel)
 {
     ADC_INPUT_SEL::write(inputSel);
