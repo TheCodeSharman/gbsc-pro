@@ -1,6 +1,7 @@
 #ifndef TV5725_HD_BYPASS_H
 #define TV5725_HD_BYPASS_H
 
+#include "Adc.h"
 #include "Tv5725.h"
 
 namespace Tv5725 {
@@ -192,26 +193,24 @@ public:
                                  uint32_t lineRateHz,
                                  void (*applyRgbPatches)());
 
-    // The oversampling pass-through asks the ADC for. One is undecimated.
-    //
-    // **THIS IS NOT WHAT IS IN FORCE.** The sketch sets rto->osr from its own
-    // applyOversample() before the switch calls this, and a later re-apply
-    // installs that instead -- measured, the group reads ratio 1 immediately
-    // after this writes it and ratio 2 two tenths of a second later. Two owners,
-    // and the fix is to decide which ratio is right rather than to make this one
-    // win. ../../../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
-    static const uint8_t BypassOversample = 1;
-
     // The sampling and the played-out raster for a source with no standard of
-    // its own, which are one operation: the raster follows the line the CHANNEL
-    // sees, and that is the divider over the oversampling ratio.
+    // its own, which are one operation.
+    //
+    // The played-out line is the DIVIDER, not the divider over the oversampling
+    // ratio: the decimators undo the faster tap, so PLLAD_MD samples a line
+    // reach the channel whatever the ratio. Measured -- at ratio two with the
+    // raster halved the picture fills half the screen and the rest is black,
+    // through an encoder that has re-acquired, and putting the raster back to
+    // the divider restores it whole.
+    // ../../../docs/investigations/the-decimators-filter.md
     //
     // Public because it is what an experiment varies. The ADC PLL group latches
     // together and its loop filter has to suit the tap, so writing part of it by
     // hand unlocks the PLL -- Adc::applySampleRate() underneath is the only
     // thing that writes all of it.
-    static void applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
-                                         uint8_t oversample = BypassOversample);
+    static void applyPassThroughSampling(
+        uint16_t divider, uint32_t lineRateHz,
+        uint8_t oversample = Adc::OversampleAsClockAllows);
 
     // Which colour path the bypassed sample takes, and the ONE thing bypass has
     // to know about the source. A component input needs the matrix; an RGB one

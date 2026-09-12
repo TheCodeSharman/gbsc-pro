@@ -22,8 +22,7 @@ const uint8_t AnalogFilter40MHz = 3;
 const uint16_t RgbhvShortLines = 532;
 const uint16_t RgbhvTallLines = 810;
 
-// The played-out line as a function of the line the CHANNEL sees, which is the
-// divider over the oversampling ratio rather than the divider itself.
+// The played-out line as a function of the line the CHANNEL sees.
 // docs/investigations/one-bypass-route-carries-rgbhv.md
 const uint16_t RasterGuardSamples = 8;
 const float ActiveFraction = 0.945f;
@@ -150,13 +149,13 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     // own divider, so the caller's goes in after it.
     Adc::applyForBypassRgbhv();
 
-    // Divider, crossover row, clock tap and decimators in one call, because
-    // PLLAD_LAT loads them together. The row follows the clock the divider and
-    // the line rate make between them: frozen, it takes the PLL out of lock the
-    // moment either moves far enough.
-    const uint8_t ratio = Adc::applySampleRate(divider, lineRateHz, oversample);
+    // Divider, crossover row, VCO gain, clock tap and decimators in one call,
+    // because PLLAD_LAT loads them together. The row and the gain follow the
+    // clock the divider and the line rate make between them: frozen, they take
+    // the PLL out of lock the moment either moves far enough.
+    Adc::applySampleRate(divider, lineRateHz, oversample);
 
-    applyHorizontalFromChannelLine(divider / (ratio < 1 ? 1 : ratio));
+    applyHorizontalFromChannelLine(divider);
 
     HD_HS_ST::write(ChannelSyncDelay);
     HD_HS_SP::write(ChannelSyncDelay + SyncPulseWidth);

@@ -320,6 +320,19 @@ public:
     // the clock cannot give comes back reduced.
     static uint8_t oversampleFor(uint8_t postDivider, uint8_t wanted);
 
+    // Ask for this and get the most the clock can carry, which is 2^postDivider
+    // -- oversampleFor() halves whatever it cannot reach, and RD-5725-1.1's
+    // crossover table has no row below /8, so 8 always lands on the maximum.
+    //
+    // **MORE IS BETTER AND IT IS FREE.** The tap is faster and the decimators
+    // undo it, so the same PLLAD_MD samples a line reach the pipeline either
+    // way, and the decimators FILTER: measured at 1600x600@60 passed through,
+    // doubling the ratio cuts the alias beat on the PM5544 wedge by 17 to 41%
+    // on the blocks where the scaler's sampling is the limit, and changes
+    // nothing on the blocks where the panel is.
+    // ../../../docs/investigations/the-decimators-filter.md
+    static const uint8_t OversampleAsClockAllows = 8;
+
     // The clock tap and the decimators, against a post divider the caller
     // holds. Returns the oversampling actually installed. The latch is not
     // fired: PLLAD_LAT loads MD, ND, KS, CKOS and ICP together, so a caller

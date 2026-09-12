@@ -526,30 +526,45 @@ TEST_CASE("a source with no standard samples off its own clock")
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
 
-TEST_CASE("oversampling cannot pay in pass-through at any rate it is reached at")
+TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all")
 {
-    // Oversampling is bought from the SAME crossover ladder, not from a second
-    // clock: applyOversample() takes a faster tap of the one VCO, so a doubling
-    // costs a step of PLLAD_KS headroom and a ratio the row cannot carry comes
-    // back reduced. That is what puts it out of reach here.
+    // The decimators undo the faster tap, so PLLAD_MD samples a line reach the
+    // channel whatever the ratio -- the played-out raster does not shrink with
+    // it. Measured: at ratio two with the raster halved the picture fills half
+    // the screen through an encoder that has re-acquired, and putting the
+    // raster back to the divider restores it whole.
+    // docs/investigations/the-decimators-filter.md
 
-    SUBCASE("a divider that keeps the channel line asks for a row that has no tap") {
-        // 2039 samples reaching the channel at oversample two means 4078 at the
-        // ADC, which on a bench line is 154 MHz -- the top row, with nothing
-        // above it to tap.
-        CHECK(Adc::applySampleRate(4078, 37879, 2) == 1);
+    SUBCASE("the played-out line is the divider, not the divider over the ratio") {
+        Wire.reset();
+        HdBypass::applyPassThroughSampling(2039, 37879, 2);
+        REQUIRE(Adc::ADC_CLK_ICLK1X::read() == 1);   // ratio two really applied
+
+        CHECK(HdBypass::HD_HSYNC_RST::read() == 2039 + 8);
+        CHECK(HdBypass::HD_HB_ST::read() == 2039);
     }
 
-    SUBCASE("the band where it would be free is below the floor bypass needs") {
-        // Free means both ratios reach the channel's own cap, so the doubling
-        // costs no delivered samples. That needs the ADC clock under the top
-        // row's 80 MHz with twice the channel's line behind it.
-        const uint32_t freeBelowHz =
-            80000000u / (2u * (HdBypass::MaxChannelLine - 8u));
-        const uint32_t bypassFloorHz =
-            Tv5725::SourceMeasurement::BypassMinLineRateHz;
+    SUBCASE("the raster is the same at either ratio") {
+        Wire.reset();
+        HdBypass::applyPassThroughSampling(2039, 37879, 1);
+        const uint16_t undecimated = HdBypass::HD_HSYNC_RST::read();
 
-        CHECK(freeBelowHz < bypassFloorHz);
+        Wire.reset();
+        HdBypass::applyPassThroughSampling(2039, 37879, 2);
+
+        CHECK(HdBypass::HD_HSYNC_RST::read() == undecimated);
+    }
+
+    SUBCASE("asking for more than the row carries takes what it has") {
+        // A doubling costs a step of PLLAD_KS headroom and there is no tap
+        // above the top row, so the ceiling is 2^postDivider.
+        Wire.reset();
+        CHECK(Adc::applySampleRate(2039, 37879, Adc::OversampleAsClockAllows) == 2);
+        CHECK(Adc::PLLAD_KS::read() == 1);
+
+        Wire.reset();
+        CHECK(Adc::applySampleRate(2039, 60000, Adc::OversampleAsClockAllows) == 1);
+        CHECK(Adc::PLLAD_KS::read() == 0);
     }
 }
 

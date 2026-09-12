@@ -4002,7 +4002,7 @@ static void applyPassThroughSampleClock(bool apply, uint16_t divider,
     const uint16_t wanted =
         divider != 0 ? divider : Tv5725::HdBypass::dividerFor(lineRateHz);
     const uint8_t ratio =
-        oversample != 0 ? oversample : Tv5725::HdBypass::BypassOversample;
+        oversample != 0 ? oversample : Tv5725::Adc::OversampleAsClockAllows;
 
     Tv5725::HdBypass::applyPassThroughSampling(wanted, lineRateHz, ratio);
 
