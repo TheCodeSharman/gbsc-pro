@@ -12,6 +12,7 @@
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SyncProcessor.h"
 #include "src/tv5725/SyncMeasurement.h"
+#include "src/tv5725/VideoRoute.h"
 #include <stdio.h>
 
 
@@ -551,7 +552,7 @@ static void LoadDefault()
     rto->notRecognizedCounter = 0;                //
 
     rto->videoStandardInput = 0;    // 视频标准输入
-    rto->outModeHdBypass = false;   //
+    Tv5725::VideoRoute::toScaler();   //
     rto->videoIsFrozen = true;      //
     rto->sourceDisconnected = true; //
     // rto->isInLowPowerMode = false; //

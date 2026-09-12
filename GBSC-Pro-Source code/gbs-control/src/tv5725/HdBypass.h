@@ -150,8 +150,8 @@ public:
 
     // Whether the block is out of reset. Read from the chip because it is the
     // only thing that knows: a caller clearing the whole of s0_47 and putting
-    // back what it found cannot get this from rto->outModeHdBypass, which is
-    // the sketch's intent rather than the block's state.
+    // back what it found cannot get this from Tv5725::VideoRoute, which is which
+    // route was selected rather than whether the block is configurable.
     static bool enabled();
 
     // What the source's standard implies for the block: the raster it plays

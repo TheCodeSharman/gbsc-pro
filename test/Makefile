@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
+.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard video-route clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -359,6 +359,17 @@ preset-load:
 	  "$(HERE)/test_preset_load.cpp" src/tv5725/PresetLoad.cpp
 	@"$(OUT)/test_preset_load"
 
+## video-route: host unit tests for Tv5725::VideoRoute
+#
+# Which route carries the video to the DAC, and that taking one releases the
+# others -- the two bypass switches are mutually exclusive in the chip, and
+# nothing held that.
+video-route:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_video_route" \
+	  "$(HERE)/test_video_route.cpp" src/tv5725/VideoRoute.cpp
+	@"$(OUT)/test_video_route"
+
 ## memory-map: host unit tests for the SDRAM layout and the capture capacity
 #
 # Whether the frame the engine is about to capture fits in the buffer the chip
@@ -461,6 +472,7 @@ chip:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_chip" \
 	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
+	  src/tv5725/VideoRoute.cpp \
 	  src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(SAMPLING_SRC) \
@@ -477,7 +489,7 @@ hd-bypass:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
 	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
-	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp \
+	  src/tv5725/Chip.cpp src/tv5725/VideoRoute.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(SAMPLING_SRC) \
 	  src/tv5725/SyncMeasurement.cpp
@@ -718,7 +730,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log
+test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log video-route
 all: test
 
 ## clean: remove the compiled test binaries

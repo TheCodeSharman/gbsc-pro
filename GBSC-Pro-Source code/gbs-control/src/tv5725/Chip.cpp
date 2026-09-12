@@ -1,6 +1,7 @@
 #include "Chip.h"
 
 #include "MemoryBus.h"
+#include "VideoRoute.h"
 
 #include "../../gbs_types.h"
 
@@ -32,12 +33,16 @@ void Chip::enterBypassRgbhv()
     DAC_RGBS_BYPS2DAC::write(0);
     DAC_RGBS_ADC2DAC::write(1);
     OUT_SYNC_SEL::write(1);
+
+    VideoRoute::toAdcToDac();
 }
 
 void Chip::routeToHdBypass()
 {
     DAC_RGBS_ADC2DAC::write(0);
     DAC_RGBS_BYPS2DAC::write(1);
+
+    VideoRoute::toHdBypassChannel();
 }
 
 void Chip::routeToScaler()
@@ -45,6 +50,8 @@ void Chip::routeToScaler()
     DAC_RGBS_BYPS2DAC::write(0x0);
     DAC_RGBS_ADC2DAC::write(0x0);
     OUT_SYNC_SEL::write(0x0);
+
+    VideoRoute::toScaler();
 }
 
 void Chip::init()

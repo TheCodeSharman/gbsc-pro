@@ -138,7 +138,6 @@ struct runTimeOptions
     bool inputIsYpBpR;
     bool syncWatcherEnabled;
     bool freezeAutomation;
-    bool outModeHdBypass;
     bool printInfos;
     bool sourceDisconnected;   //源断开
     bool webServerEnabled;

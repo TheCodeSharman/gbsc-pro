@@ -87,6 +87,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
 #include "src/tv5725/Chip.h"
+#include "src/tv5725/VideoRoute.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
 #include "src/clock/ClockGen.h"
@@ -661,7 +662,7 @@ static void LoadDefault()
     resetRunTimeDefaults();
 
     rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;    
-    rto->outModeHdBypass = false;   
+    Tv5725::VideoRoute::toScaler();   
     rto->videoIsFrozen = true;      
     rto->sourceDisconnected = true; 
     // rto->isInLowPowerMode = false;
@@ -1084,7 +1085,7 @@ void externalClockGenSyncInOutRate()
     if (GBS::PAD_CKIN_ENZ::read() != 0) {
         return;
     }
-    if (rto->outModeHdBypass) {
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
         return;
     }
     if (GBS::PLL648_CONTROL_01::read() != 0x75) {
@@ -1188,7 +1189,7 @@ static bool standardIsHeld()
 // bypass. 14 and 15 name the OUTPUT as much as the source, so an RGBHV source
 // switched to HD bypass reads as one of them and the steering pulls it straight
 // back out. docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
-bool steerableRgbhv() { return sourceIsRgbhv() && !rto->outModeHdBypass; }
+bool steerableRgbhv() { return sourceIsRgbhv() && !Tv5725::VideoRoute::isHdBypassChannel(); }
 
 // Whether the source runs a 15 kHz line. One reader, on every path: the held
 // rate survives a bypass switch, so bypass is not a special case.
@@ -1344,7 +1345,7 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
                                 rto->isValidForScalingRGBHV);
 
   rto->videoStandardInput = load.videoStandardInput();
-  rto->outModeHdBypass = 0;
+  Tv5725::VideoRoute::toScaler();
   rto->inputIsYpBpR = load.inputIsYpBpR();
 
   if (load.enableScalingRgbhv())
@@ -1378,7 +1379,7 @@ void setResetParameters_re()
     rto->videoIsFrozen = false;    
     rto->applyPresetDoneStage = 0; 
     // rto->sourceDisconnected = true;  
-    rto->outModeHdBypass = 0;        
+    Tv5725::VideoRoute::toScaler();        
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
     rto->phaseIsSet = 0;             
@@ -1413,7 +1414,7 @@ void setResetParameters()
     rto->videoIsFrozen = false; 
     rto->applyPresetDoneStage = 0;
     rto->sourceDisconnected = true; 
-    rto->outModeHdBypass = 0;       
+    Tv5725::VideoRoute::toScaler();       
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
     rto->phaseIsSet = 0;
@@ -2376,7 +2377,7 @@ void resetDigital()
     GBS::SFTRST_SYNC_RSTZ::write(1);
     Tv5725::HdBypass::hold();
     GBS::SFTRST_INT_RSTZ::write(1);
-    if (rto->outModeHdBypass) {
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
         GBS::SFTRST_IF_RSTZ::write(0);
         GBS::SFTRST_DEINT_RSTZ::write(0);
         GBS::SFTRST_MEM_FF_RSTZ::write(0);
@@ -2410,7 +2411,7 @@ void resetDigital()
 
 void moveHS(uint16_t amountToAdd, bool subtracting)
 {
-    if (rto->outModeHdBypass) {
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
         uint16_t SP_CS_HS_ST = GBS::SP_CS_HS_ST::read();
         uint16_t SP_CS_HS_SP = GBS::SP_CS_HS_SP::read();
         uint16_t htotal = GBS::HD_HSYNC_RST::read();
@@ -2834,7 +2835,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::setCoastInvert(false);
-        if (!rto->outModeHdBypass && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
+        if (!Tv5725::VideoRoute::isHdBypassChannel() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
             updateSpDynamic(0);
         }
 
@@ -2849,7 +2850,7 @@ void doPostPresetLoadSteps()
             applyRGBPatches();
         }
 
-        if (rto->outModeHdBypass) {
+        if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Chip::OUT_SYNC_SEL::write(1);
             rto->autoBestHtotalEnabled = false;
         } else {
@@ -2941,9 +2942,9 @@ void doPostPresetLoadSteps()
 
         Tv5725::VideoProcessor::applyFreeRunTiming();
 
-        // No autoBestHtotalEnabled term: it was assigned from outModeHdBypass
-        // ninety lines above and nothing between touches either.
-        if (!rto->outModeHdBypass &&
+        // No autoBestHtotalEnabled term: it was assigned from the route ninety
+        // lines above and nothing between touches either.
+        if (!Tv5725::VideoRoute::isHdBypassChannel() &&
             !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
             rto->videoStandardInput >= Tv5725::PresetLoad::SdFirst
             && rto->videoStandardInput <= Tv5725::PresetLoad::SdLast) {
@@ -3028,7 +3029,7 @@ void doPostPresetLoadSteps()
         // against it, so deriving one from the other after the fact could
         // only fight the model. VideoPath::write() sets both.
 
-        if (!rto->outModeHdBypass) {
+        if (!Tv5725::VideoRoute::isHdBypassChannel()) {
             ResetSDRAM();
         }
 
@@ -3057,7 +3058,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncProcessor::forgetPositions();
 
-        if (rto->outModeHdBypass) {
+        if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Interrupts::enableEverySource();
             Tv5725::Interrupts::acknowledgeAll();
 
@@ -3195,7 +3196,7 @@ void applyPresets(uint8_t result)
     }
 
     boolean waitExtra = 0;
-    if (rto->outModeHdBypass || rgbhvBypass() || !standardIsHeld()) {
+    if (Tv5725::VideoRoute::isHdBypassChannel() || rgbhvBypass() || !standardIsHeld()) {
         waitExtra = 1;
         if (result <= 4 || result == 14 || result == 8 || result == 9) {
             GBS::SFTRST_IF_RSTZ::write(1);
@@ -3203,7 +3204,7 @@ void applyPresets(uint8_t result)
             GBS::SFTRST_DEC_RSTZ::write(1);
         }
     }
-    rto->outModeHdBypass = 0; // 
+    Tv5725::VideoRoute::toScaler(); // 
 
 
     if (GBS::ADC_UNUSED_62::read() != 0x00) {
@@ -3544,7 +3545,7 @@ void updateClampPosition() // Update Clamp Position
     GBS::SP_CLAMP_MANUAL::write(rto->inputIsYpBpR ? 0 : 1);
 
     uint16_t offset = 0;
-    if (rto->inputIsYpBpR && rto->outModeHdBypass && sourceLowLineRate()) {
+    if (rto->inputIsYpBpR && Tv5725::VideoRoute::isHdBypassChannel() && sourceLowLineRate()) {
         offset = 0x60;
     }
 
@@ -3554,7 +3555,7 @@ void updateClampPosition() // Update Clamp Position
         return;
     }
 
-    if (rto->inputIsYpBpR && rto->outModeHdBypass) {
+    if (rto->inputIsYpBpR && Tv5725::VideoRoute::isHdBypassChannel()) {
         GBS::HD_BLK_GY_DATA::write(0x05);
         GBS::HD_BLK_BU_DATA::write(0x00);
         GBS::HD_BLK_RV_DATA::write(0x00);
@@ -3574,7 +3575,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     Tv5725::BringUp::arm();
 
     rto->autoBestHtotalEnabled = false;
-    rto->outModeHdBypass = 1;
+    Tv5725::VideoRoute::toHdBypassChannel();
 
     // Video routes around the VDS here, so no solve is coming. The bypass
     // register writes below belong to the engine too, once it owns them.
@@ -3984,7 +3985,7 @@ static void forgetHdBypassLineCount() { hdBypassLineCount = 0; }
 
 static void steerHdBypassVsyncWindow(boolean syncStable)
 {
-    if (!rto->outModeHdBypass || !syncStable || !sourceLowLineRate())
+    if (!Tv5725::VideoRoute::isHdBypassChannel() || !syncStable || !sourceLowLineRate())
         return;
     if (millis() - hdBypassLastMeasure <= 765)
         return;
@@ -4041,7 +4042,7 @@ static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
     if (!rto->extClockGenDetected)
         return;
 
-    if (!rto->outModeHdBypass)
+    if (!Tv5725::VideoRoute::isHdBypassChannel())
         handDisplayClockToGenerator();
 
     externalClockGenSyncInOutRate();
@@ -4415,7 +4416,7 @@ void runSyncWatcher() //
 
         if (rto->continousStableCounter >= 3) {
             if (GBS::STATUS_IF_VT_OK::read() == 1 &&
-                !rto->outModeHdBypass && rto->noSyncCounter == 0) {
+                !Tv5725::VideoRoute::isHdBypassChannel() && rto->noSyncCounter == 0) {
 
                 static uint8_t timingAdjustDelay = 0;
                 static uint8_t oddEvenWhenArmed = 0;
@@ -5248,7 +5249,7 @@ void setup()
 
     rto->inputIsYpBpR = false;   
     rto->videoStandardInput = Tv5725::PresetLoad::NoStandard; 
-    rto->outModeHdBypass = false;
+    Tv5725::VideoRoute::toScaler();
     rto->videoIsFrozen = false;  
     if (!rto->webServerEnabled)
         rto->webServerStarted = false;
@@ -5953,7 +5954,7 @@ void loop()
             }
 
             if (rto->extClockGenDetected && !scalingRgbhv()) {
-                if (!rto->outModeHdBypass)
+                if (!Tv5725::VideoRoute::isHdBypassChannel())
                     handDisplayClockToGenerator();
                 externalClockGenSyncInOutRate();
             }
@@ -5984,7 +5985,7 @@ void loop()
                 // Every branch here re-decides the output mode, and none of
                 // them is about HD bypass. A source that changes mode under it
                 // is the detection block's, which asks presetPreference.
-                if (!rto->outModeHdBypass) {
+                if (!Tv5725::VideoRoute::isHdBypassChannel()) {
                     if (scalingRgbhv()) {
                         rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
                     } else {

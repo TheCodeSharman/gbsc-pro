@@ -19,8 +19,10 @@ void tv5725Log(const char *) {}
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
 
 using Tv5725::Chip;
+using Tv5725::VideoRoute;
 
 static const uint8_t Poison = 0xA5;
 
@@ -87,4 +89,13 @@ TEST_CASE("the bring-up leaves every DAC route off")
     CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
     CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 0);
     CHECK(Chip::DAC_RGBS_BYPS_IREG::read() == 0);
+}
+
+TEST_CASE("the route in force follows the registers that select it")
+{
+    // The held value and s0_4b cannot disagree, because the writer records it.
+    routedTo(Chip::routeToScaler);
+    Chip::enterBypassRgbhv();
+
+    CHECK(VideoRoute::route() == VideoRoute::AdcToDac);
 }

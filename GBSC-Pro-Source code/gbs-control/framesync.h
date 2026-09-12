@@ -23,6 +23,7 @@
 #include "src/clock/ClockGen.h"
 #include "src/clock/RateAgreement.h"
 #include "src/tv5725/DisplayClock.h"
+#include "src/tv5725/VideoRoute.h"
 
 // FS_DEBUG:      full verbose debug over serial
 // FS_DEBUG_LED:  just blink LED (off = adjust phase, on = normal phase)
@@ -627,10 +628,10 @@ public:
             return true;
         }
 
-        if (rto->outModeHdBypass)
+        if (Tv5725::VideoRoute::isHdBypassChannel())
         {
             fsDebugPrintf(
-                "Skipping FrameSyncManager::runFrequency(), rto->outModeHdBypass\n");
+                "Skipping FrameSyncManager::runFrequency(), the HD bypass channel carries the video\n");
             return true;
         }
         // Not a sentinel: PLL_VS4 = 11 is what takes the display clock from
