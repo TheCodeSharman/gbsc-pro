@@ -204,7 +204,7 @@ void (*SourceMeasurement::counterRecovery_)() = 0;
 SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
-      rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
+      rateRejections_(0), lineDoubled_(true), steady_(SteadySamples),
       rateAttempts_(0), recoveryTried_(false), serrationsSeen_(false),
       referenceRateHz_(0)
 {
@@ -250,9 +250,14 @@ SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeri
     return carriesHalfLine ? ScanInterlaced : ScanProgressive;
 }
 
+bool SourceMeasurement::countAlternated() const { return steady_.alternated(); }
+
 SourceMeasurement::ScanType SourceMeasurement::scanType(uint16_t verticalPeriod) const
 {
-    return scanTypeFor(verticalPeriod, lineDoubled_);
+    const ScanType measured = scanTypeFor(verticalPeriod, lineDoubled_);
+    if (measured != ScanUnknown)
+        return measured;
+    return countAlternated() ? ScanInterlaced : ScanUnknown;
 }
 
 bool SourceMeasurement::sampleSteady()
@@ -260,26 +265,17 @@ bool SourceMeasurement::sampleSteady()
     uint16_t lines = measureSourceLines();
 
     if (!countIsSource(lines)) {
-        steadyLines_ = lines;
-        steadyRun_ = 0;
+        steady_.restart(lines);
         return false;
     }
 
-    if (lines != steadyLines_) {
-        steadyLines_ = lines;
-        steadyRun_ = 1;
-        return false;
-    }
-
-    if (steadyRun_ < SteadySamples)
-        ++steadyRun_;
-    if (steadyRun_ < SteadySamples)
+    if (!steady_.sample(lines))
         return false;
 
     if (countIsSerrations(lines, measureSourceHalfLines(),
                           ModeDetect::sourceIsInterlaced())) {
         serrationsSeen_ = true;
-        steadyRun_ = 0;
+        steady_.restart(lines);
         return false;
     }
     serrationsSeen_ = false;
@@ -288,8 +284,7 @@ bool SourceMeasurement::sampleSteady()
 
 void SourceMeasurement::resetSteadiness()
 {
-    steadyRun_ = 0;
-    steadyLines_ = 0;
+    steady_.reset();
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
 }
@@ -393,7 +388,7 @@ uint32_t SourceMeasurement::lineRateHz() const { return lineRateHz_; }
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 
-uint16_t SourceMeasurement::steadyLines() const { return steadyLines_; }
+uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
@@ -414,8 +409,8 @@ void SourceMeasurement::holdDivider(uint16_t divider) { divider_ = divider; }
 
 uint32_t SourceMeasurement::estimatedLineRateHz() const
 {
-    if (steadyLines_ != 0)
-        return (uint32_t)steadyLines_ * NominalFieldRateHz;
+    if (steady_.value() != 0)
+        return (uint32_t)steady_.value() * NominalFieldRateHz;
     return goodLineRateHz_;
 }
 

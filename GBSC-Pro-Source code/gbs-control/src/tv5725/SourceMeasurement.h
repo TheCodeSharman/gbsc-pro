@@ -32,6 +32,7 @@
 // from what that held rather than measuring again.
 float getSourceFieldRate(boolean useSPBus);
 
+#include "SteadyRun.h"
 #include "Tv5725Log.h"
 
 namespace Tv5725 {
@@ -179,7 +180,17 @@ public:
     // the separate-sync path leaves debris in VPERIOD_IF rather than a period.
     // docs/investigations/interlaced-source-measurement.md
     static ScanType scanTypeFor(uint16_t verticalPeriod, bool lineDoubled);
+
+    // The held source's scan type. The period answers wherever it is a
+    // measurement; where it is not -- separate sync, which leaves debris in
+    // VPERIOD_IF -- the steadiness run's alternation is all there is, and a
+    // count that does not alternate claims nothing, because a Wii at PAL 576i
+    // holds a steady 310 while genuinely interlaced.
     ScanType scanType(uint16_t verticalPeriod) const;
+
+    // Whether the settled count alternates by one, which only an interlaced
+    // field can make it do.
+    bool countAlternated() const;
 
     // Whether the last steadiness run ended on a count that reads as the
     // serrations rather than the source. The return of sampleSteady() cannot
@@ -546,8 +557,7 @@ private:
     uint8_t rateRejections_;
     bool lineDoubled_;
 
-    uint16_t steadyLines_;
-    uint8_t steadyRun_;
+    SteadyRun steady_;
     uint8_t rateAttempts_;
     bool recoveryTried_;   // the flagged-counter recovery, once per source event
     bool serrationsSeen_;  // the last completed steadiness run read the serrations

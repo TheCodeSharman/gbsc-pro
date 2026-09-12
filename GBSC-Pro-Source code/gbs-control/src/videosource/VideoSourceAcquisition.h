@@ -79,8 +79,7 @@ private:
     uint16_t solvedLines_;
     uint32_t solvedLineRateHz_;
 
-    uint16_t idleLines_;
-    uint8_t idleRun_;
+    Tv5725::SteadyRun idle_;
     bool unusableCountArmed_;
     SourceState sourceState_;
     uint32_t candidateRateHz_;

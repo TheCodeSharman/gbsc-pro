@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
+.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -38,7 +38,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 # Tv5725::SourceMeasurement holds one quantity in three registers -- PLLAD_MD,
 # IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
 # declare them link wherever it does.
-SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/Adc.cpp \
+SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
 	src/tv5725/ModeDetect.cpp
 
@@ -584,6 +584,16 @@ interrupts:
 	  "$(HERE)/test_interrupts.cpp" src/tv5725/Interrupts.cpp
 	@"$(OUT)/test_interrupts"
 
+## steady-run: host unit tests for Tv5725::SteadyRun
+#
+# One definition of "settled" for the two runs over the same register read.
+steady-run:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_steady_run" \
+	  "$(HERE)/test_steady_run.cpp" src/tv5725/SteadyRun.cpp
+	@"$(OUT)/test_steady_run"
+
 ## deinterlacer: host unit tests for Tv5725::Deinterlacer
 #
 # The whole of segment 2, asserted as a byte image against the table it
@@ -708,7 +718,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log
+test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log
 all: test
 
 ## clean: remove the compiled test binaries

@@ -1475,3 +1475,90 @@ TEST_CASE("the scan type of the held source uses the doubling in force")
     sampling.holdLineDoubling(false);
     CHECK(sampling.scanType(524) == SourceMeasurement::ScanProgressive);
 }
+
+
+// --- an interlaced count never holds still, and that IS the measurement ------
+//
+// An interlaced field carries a half line, so the sync processor's count
+// alternates by one and four consecutive identical samples never arrive. A Wii
+// at 480i therefore never reached `acquired`: no solve ran, the output clock
+// was never seeded, and the picture rolled while every register read correct.
+//
+// The alternation is not noise to be tolerated. It is the only scan-type signal
+// that survives separate sync, where VPERIOD_IF holds debris -- measured at two
+// rasters, 311/312 and 261/262, against a progressive count that never moves at
+// either. docs/investigations/interlaced-source-measurement.md
+
+static bool settleAlternating(SourceMeasurement &measurement, uint16_t low,
+                              uint8_t samples)
+{
+    bool steady = false;
+    for (uint8_t i = 0; i < samples; ++i) {
+        seedSourceLines(i % 2 ? (uint16_t)(low + 1) : low);
+        steady = measurement.sampleSteady();
+    }
+    return steady;
+}
+
+TEST_CASE("a count alternating by one settles instead of running for ever")
+{
+    SourceMeasurement measurement;
+
+    CHECK(settleAlternating(measurement, 259, 8));
+}
+
+TEST_CASE("the pair's higher count is the one settled on")
+{
+    // Both values undercount the true field -- 259.5 against 262.5 on a Wii at
+    // 480i -- so the higher of the pair is the closer of the two.
+    SourceMeasurement measurement;
+    REQUIRE(settleAlternating(measurement, 259, 8));
+
+    CHECK(measurement.steadyLines() == 260);
+}
+
+TEST_CASE("a count alternating by one reads as interlaced where the period cannot")
+{
+    // Separate sync: STATUS_IF_VT_OK is 0 and VPERIOD_IF holds debris, so
+    // scanTypeFor() has nothing and the alternation is all there is.
+    SourceMeasurement measurement;
+    REQUIRE(settleAlternating(measurement, 311, 8));
+
+    CHECK(measurement.scanType(57) == SourceMeasurement::ScanInterlaced);
+}
+
+TEST_CASE("a measured period still outranks the alternation")
+{
+    SourceMeasurement measurement;
+    measurement.holdLineDoubling(true);
+    REQUIRE(settleAlternating(measurement, 311, 8));
+
+    // 623 doubled is progressive, whatever the count did.
+    CHECK(measurement.scanType(623) == SourceMeasurement::ScanProgressive);
+}
+
+TEST_CASE("a steady count claims nothing about the scan type on its own")
+{
+    // A Wii at PAL 576i holds a steady 310 while genuinely interlaced -- 1186
+    // samples, zero changes -- so a count that does not alternate is not
+    // evidence of a progressive source.
+    seedSourceLines(310);
+    SourceMeasurement measurement;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+    REQUIRE(measurement.sampleSteady());
+
+    CHECK(measurement.scanType(57) == SourceMeasurement::ScanUnknown);
+}
+
+TEST_CASE("a count that moves by more than one still starts the run again")
+{
+    seedSourceLines(311);
+    SourceMeasurement measurement;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        measurement.sampleSteady();
+    REQUIRE(measurement.sampleSteady());
+
+    seedSourceLines(313);
+    CHECK_FALSE(measurement.sampleSteady());
+}

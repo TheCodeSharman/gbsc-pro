@@ -10,7 +10,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0), detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
-      idleLines_(0), idleRun_(0),
+      idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false) {}
 
@@ -69,8 +69,7 @@ void VideoSourceAcquisition::holdSolvedSource()
     solvedLines_ = sampling_.sourceLines();
     solvedLineRateHz_ = sampling_.lineRateHz();
 
-    idleLines_ = solvedLines_;
-    idleRun_ = Tv5725::SourceMeasurement::SteadySamples;
+    idle_.settle(solvedLines_);
 
     // A solve that has just written the divider has not had a line counted
     // through it yet, so the sampling half is asked on the next idle pass
@@ -92,16 +91,7 @@ void VideoSourceAcquisition::forgetSolvedSource()
 // reading taken through something still settling.
 bool VideoSourceAcquisition::countHeld(uint16_t lines)
 {
-    if (lines != idleLines_) {
-        idleLines_ = lines;
-        idleRun_ = 0;
-        return false;
-    }
-    if (idleRun_ < Tv5725::SourceMeasurement::SteadySamples) {
-        ++idleRun_;
-        return false;
-    }
-    return true;
+    return idle_.sample(lines);
 }
 
 // **THIS MUST NOT USE sampling_.sampleSteady().** That call is the solve's own
@@ -176,7 +166,7 @@ bool VideoSourceAcquisition::sourceMoved()
 
     logSourceMoved(interrupted ? "interrupt" : countMoved ? "count" : "rate",
                    lines, solvedLines_);
-    idleRun_ = 0;
+    idle_.reset();
     return true;
 }
 
