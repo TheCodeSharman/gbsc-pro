@@ -22,7 +22,7 @@ Two sites conspire, and neither is about HD bypass:
 | the `CheckInputFrequency()` block | `if (scalingRgbhv()) rto->videoStandardInput = 15;` — parks the standard at RGBHV bypass so the arm below rebuilds the scaling setup |
 | the `sourceIsRgbhv()` arm | `if (rgbhvBypass())` → an RGBHV source is stranded in bypass with `preferScalingRgbhv` on, so pull it out: `applyPresets()` |
 
-`applyPresets()` clears `rto->outModeHdBypass`, loads a scaled preset, and the
+`applyPresets()` puts the route back on the scaler, loads a scaled preset, and the
 solve that follows ends in `Chip::routeToScaler()`. It repeats for as long as
 bypass is asked for.
 
@@ -32,7 +32,7 @@ RAM only — so the file still reads `OutputBypass` while the running firmware h
 long since replaced it. Reading the file is what makes the detection block look
 innocent: `wantPassThroughMode` is computed from RAM.
 
-`steerableRgbhv()` — `sourceIsRgbhv() && !rto->outModeHdBypass` — is what stands
+`steerableRgbhv()` — an RGBHV source not on the HD bypass channel — is what stands
 the steering down, and the `CheckInputFrequency()` block is skipped whole for
 the same reason: every branch of it re-decides the output mode. A source that
 changes mode under HD bypass is the detection block's, which asks

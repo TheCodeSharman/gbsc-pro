@@ -316,7 +316,7 @@ time, as the step that claims each group lands:
 | group | goes to |
 |---|---|
 | `noSyncCounter`, `continousStableCounter`, `notRecognizedCounter`, `failRetryAttempts`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `VideoSourceAcquisition` |
-| `videoStandardInput`, `osr`, `presetID`, `presetDisplayClock`, `presetVlineShift`, `outModeHdBypass`, `presetIsPalForce60`, `applyPresetDoneStage` | the value handed to `VideoPath` |
+| `videoStandardInput`, `osr`, `presetID`, `presetDisplayClock`, `presetVlineShift`, `presetIsPalForce60`, `applyPresetDoneStage` | the value handed to `VideoPath` |
 | `phaseSP`, `phaseADC`, `phaseIsSet` | `Adc` |
 | `motionAdaptiveDeinterlaceActive`, `deinterlaceAutoEnabled` | `Deinterlacer` |
 | `medResLineCount` | `ModeDetect`, which already has `applyMedResLineCount()` |
@@ -1190,8 +1190,14 @@ What is still split:
 | split | today | belongs to |
 |---|---|---|
 | two entry points | `setOutModeHdBypass()`, `bypassModeSwitch_RGBHV()` | one `apply()` on the mode |
-| two flags | `rto->outModeHdBypass`, `videoStandardInput == 15` | the resolved `OutputMode` |
+| the source's classification | `videoStandardInput` 14 and 15 | the measured source |
 | the path choice | `applyForStandard()` branching on the standard byte | the measured source |
+
+**WHICH ROUTE CARRIES THE VIDEO HAS ONE OWNER.** `Tv5725::VideoRoute` holds it
+and `Tv5725::Chip`'s three route methods record what they have just written, so
+the held value and `s0_4b` cannot disagree. What the standard byte still carries
+of this is the SOURCE half -- 14 and 15 say an RGBHV source is scaled or not --
+and `steerableRgbhv()` is that half plus the route.
 
 **And the path choice can go entirely, because one route serves both.** The HD
 bypass channel carries an arbitrary RGBHV source -- measured, RISC PC on `vga`

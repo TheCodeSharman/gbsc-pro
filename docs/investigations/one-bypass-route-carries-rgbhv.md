@@ -198,24 +198,27 @@ accounted for -- described the state before `HD_HS_ST` was swept at all.
 It has none of this in it: no HD channel, no pass-through sync generator. See
 `a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`.
 
-## Merging the routes needs the steering flag separated first
+## The route has one owner, and the exit from bypass depends on it
 
 Routing RGBHV bypass through `setOutModeHdBypass()` is right about the route and
-wrong about how a source LEAVES it.
+easy to get wrong about how a source LEAVES it.
 
-`steerableRgbhv()` is `sourceIsRgbhv() && !rto->outModeHdBypass`. The ADC-to-DAC
-switch left `outModeHdBypass` at 0, so that predicate held and the sync
-watcher's steering block was the route back out of bypass and onto the scaling
-path once `preferScalingRgbhv` allowed it. `setOutModeHdBypass()` sets the flag
-to 1, so the predicate goes false and there is no exit at all.
+`steerableRgbhv()` is the sync watcher's gate on the block that takes a source
+back out of bypass and onto the scaling path once `preferScalingRgbhv` allows
+it, and the HD bypass channel closes that gate: a source held there is meant to
+stay there. Spelled as two flags, one switch could set its own and leave the
+other's standing, and the source then had no exit at all -- measured, the unit
+sat in bypass through `/sc?~`, `/uc?p`, `/uc?h`, an `ADC_INPUT_SEL` bounce, a
+source mode round trip and an OTA reset, with `STATUS_SYNC_PROC_VTOTAL` reading
+311 the whole time.
 
-Measured: the unit sat in bypass through `/sc?~`, `/uc?p`, `/uc?h`, an
-`ADC_INPUT_SEL` bounce, a source mode round trip and an OTA reset, with
-`STATUS_SYNC_PROC_VTOTAL` reading 311 the whole time.
+`Tv5725::VideoRoute` is the one value now, recorded by `Tv5725::Chip` as it
+writes `s0_4b`, so no transition can leave two routes reading as in force.
 
 **Which route carries the video and whether the loop may steer this source are
-two facts, and `rto->outModeHdBypass` is carrying both.** Separating them comes
-before the merge, not after it.
+still two facts.** The second is the standard byte's 14 and 15, which say an
+RGBHV source is scaled or not, and that half comes off the byte before the
+entry points merge.
 
 **And a 15 kHz source in bypass is not a fault to chase.** With
 `preferScalingRgbhv` off, the firmware correctly holds an RGBHV source in

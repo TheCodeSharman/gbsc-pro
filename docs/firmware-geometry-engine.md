@@ -376,7 +376,7 @@ it is filed as 480p — cannot be in HD bypass at all, because taking that branc
 clears the pass-through preference. So the sync processor's SD settings do not
 all read the same place. On the scaling path they ask the measured rate; in
 bypass they ask the byte, and the sketch routes the question on
-`rto->outModeHdBypass`.
+`Tv5725::VideoRoute`.
 
 ## The sampling divider
 
