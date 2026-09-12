@@ -395,9 +395,18 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   to compare configurations leaves the PLL unlocked -- measured twice in one
   session, `STATUS_MISC_PLLAD_LOCK` 0 with `STATUS_SYNC_PROC_HTOTAL` wandering a
   few counts under the divider, in states that locked before the poking started.
-  **`Adc::applySampleRate()` is the only thing that writes the whole group**, so
-  an experiment over these registers is a firmware change and a flash, not a
-  `/setreg` sweep. `/sc?~` recovers.
+  **`/sampleclock` IS THE INSTRUMENT**, behind `GBS_DEBUG` and pass-through only:
+  it writes the whole group through the call the bypass switch makes, moves the
+  channel's played-out raster with the divider, and restarts the PLL afterwards
+  — which is itself required, because applying the group alone leaves it
+  unlocked even at the value it already held.
+
+  ```sh
+  curl 'http://<ip>/sampleclock'                 # report, change nothing
+  curl 'http://<ip>/sampleclock?md=2039&os=2'    # divider and oversampling
+  ```
+
+  It answers on the console, not in the reply. `/sc?~` recovers.
 - **`/sc?~` IS THE RECOVERY FOR A UNIT THAT COMES BACK FROM A FLASH WITH NO
   PICTURE, and reflashing is not.** The signature is `SP_SOG_MODE` 1 on a
   separate-sync source with `SP_VTOTAL` 0 or 97, `ADC_SOGCTRL` walked to 1 or 2,
