@@ -118,6 +118,8 @@ void InputFormatter::applyScanMode(ScanMode mode)
     IF_LD_SEL_PROV::write(progressive ? 1 : 0);
     IF_PRGRSV_CNTRL::write(progressive ? 1 : 0);
     IF_LD_RAM_BYPS::write(progressive ? 1 : 0);
+    IF_SEL_WEN::write(progressive ? 1 : 0);
+    IF_HS_SEL_LPF::write(progressive ? 0 : 1);
     IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
 }
 

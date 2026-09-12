@@ -2,7 +2,6 @@
 
 #include "Adc.h"
 #include "Tv5725.h"
-#include "Deinterlacer.h"
 #include "InputFormatter.h"
 #include "SyncProcessor.h"
 #include "VideoProcessor.h"
@@ -60,14 +59,12 @@ void SourceStandard::applyHd() const
 void SourceStandard::applySd() const
 {
     Adc::ADC_FLTR::write(AnalogFilter40MHz);
-    InputFormatter::IF_SEL_WEN::write(0);
 
     // Only a component source arrives with luma and chroma on separate paths,
     // so only a component source needs them realigned.
     if (inputIsYpBpR_) {
         InputFormatter::IF_HS_TAP11_BYPS::write(0);
         InputFormatter::IF_HS_Y_PDELAY::write(2);
-        VideoProcessor::VDS_V_DELAY::write(0);
         VideoProcessor::VDS_Y_DELAY::write(3);
     }
 }
@@ -79,12 +76,8 @@ void SourceStandard::applyProgressive() const
     SyncProcessor::writeSdVsyncStart(14);
     SyncProcessor::writeSdVsyncStop(11);
 
-    InputFormatter::IF_SEL_WEN::write(1);
-    InputFormatter::IF_HS_SEL_LPF::write(0);
     InputFormatter::IF_HS_TAP11_BYPS::write(0);
     InputFormatter::IF_HS_Y_PDELAY::write(3);
-    VideoProcessor::VDS_V_DELAY::write(1);
-    Deinterlacer::MADPT_Y_DELAY_UV_DELAY::write(1);
     VideoProcessor::VDS_Y_DELAY::write(3);
 
     if (standard_ == 3) {

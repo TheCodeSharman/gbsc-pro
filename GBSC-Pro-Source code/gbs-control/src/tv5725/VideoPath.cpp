@@ -9,6 +9,7 @@
 
 #include "Adc.h"
 #include "CaptureWindow.h"
+#include "Deinterlacer.h"
 #include "FrameBuffer.h"
 #include "InputFormatter.h"
 #include "Memory.h"
@@ -17,6 +18,7 @@
 #include "ModeDetect.h"
 #include "SyncProcessor.h"
 #include "SyncMeasurement.h"
+#include "VideoProcessor.h"
 
 namespace Tv5725 {
 
@@ -397,6 +399,8 @@ void VideoPath::solveScanMode()
     sampling_.holdLineDoubling(doubled);
     InputFormatter::applyScanMode(doubled ? InputFormatter::LineDoubled
                                           : InputFormatter::Progressive);
+    VideoProcessor::applyScanMode(doubled);
+    Deinterlacer::applyScanMode(doubled);
     scanModeApplied_ = true;
 }
 

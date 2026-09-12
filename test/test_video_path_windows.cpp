@@ -389,6 +389,19 @@ TEST_CASE("the engine writes the scan mode its own measurement implies")
                      Tv5725::Adc::PLLAD_MD::bitWidth) == 2230);
 }
 
+TEST_CASE("the engine realigns the 422/444 conversion with the scan mode")
+{
+    // Three blocks share the alignment and each has been taking its value from
+    // the standard byte. The doubler is the fact behind all three, and the
+    // engine is the only thing that measures it.
+    SolvedEngine solved;   // 311 lines at 50.08 Hz, so line doubled
+
+    CHECK(Wire.field(1, 0x02, 0, 1) == 0);  // IF_SEL_WEN
+    CHECK(Wire.field(1, 0x02, 1, 1) == 1);  // IF_HS_SEL_LPF
+    CHECK(Wire.field(3, 0x24, 2, 1) == 0);  // VDS_V_DELAY
+    CHECK(Wire.field(2, 0x17, 0, 4) == 0);  // MADPT_Y_DELAY
+}
+
 // Nothing on the chip can measure where active video starts, so an unrecognised
 // source is placed from an assumption. A source running a raster the standards
 // state is placed from the standard instead.

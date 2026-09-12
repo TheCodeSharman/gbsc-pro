@@ -534,6 +534,10 @@ public:
     static void enableMotionAdapt(uint8_t verticalTap, void (*releaseCapture)());
     static void disableMotionAdapt();
 
+    // The block's share of the 422/444 conversion delays, beside
+    // InputFormatter::applyScanMode() and VideoProcessor::applyScanMode().
+    static void applyScanMode(bool lineDoubled);
+
     // Whether the motion-adaptive path is running, owned here because this is
     // what writes the registers that make it so. A caller keeping its own copy
     // is what let the two disagree, after which nothing could turn the path

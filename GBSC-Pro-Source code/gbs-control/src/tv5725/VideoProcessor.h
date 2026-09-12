@@ -859,6 +859,10 @@ public:
 
     // Input data taken on the falling edge of the clock.
     static void clockInputOnFallingEdge();
+
+    // The block's share of the 422/444 conversion delays. The line doubler adds
+    // a stage the chroma path does not take, so the realignment follows it.
+    static void applyScanMode(bool lineDoubled);
 };
 
 }  // namespace Tv5725

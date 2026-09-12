@@ -276,4 +276,9 @@ void Deinterlacer::disableMotionAdapt()
     motionAdaptEngaged_ = false;
 }
 
+void Deinterlacer::applyScanMode(bool lineDoubled)
+{
+    MADPT_Y_DELAY::write(lineDoubled ? 0 : 1);
+}
+
 }  // namespace Tv5725

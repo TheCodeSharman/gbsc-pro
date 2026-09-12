@@ -117,6 +117,31 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
     CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
 }
 
+TEST_CASE("the line doubler's write enable follows the scan mode")
+{
+    // IF_SEL_WEN is the write enable FOR the line double, so which way it goes
+    // is the same fact applyScanMode() is already given. Measured on both bench
+    // sources: 0 on the 15 kHz RGBHV raster, 1 on component 480p.
+    FreshChip chip;
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    CHECK(Wire.field(1, 0x02, 0, 1) == 1);  // IF_SEL_WEN
+
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    CHECK(Wire.field(1, 0x02, 0, 1) == 0);
+}
+
+TEST_CASE("the horizontal low-pass follows the scan mode the other way")
+{
+    FreshChip chip;
+
+    InputFormatter::applyScanMode(InputFormatter::Progressive);
+    CHECK(Wire.field(1, 0x02, 1, 1) == 0);  // IF_HS_SEL_LPF
+
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled);
+    CHECK(Wire.field(1, 0x02, 1, 1) == 1);
+}
+
 TEST_CASE("a progressive source blanks nothing at the head of the captured line")
 {
     FreshChip chip;

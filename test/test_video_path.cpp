@@ -250,7 +250,9 @@ static void checkBenchGeometry()
     CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 0);
 
     // The two DAC selects share s0_4b; IF_HBIN_SP is 12 bits over s1_26/s1_27.
-    CHECK(registersWritten() == 66);
+    // s1_02, s3_24 and s2_17 are the 422/444 conversion delays, which follow
+    // the scan mode the engine measures.
+    CHECK(registersWritten() == 69);
 }
 
 // One pass of the whole acquisition path. The engine no longer drives itself:
