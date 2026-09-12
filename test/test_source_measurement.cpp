@@ -1034,17 +1034,24 @@ TEST_CASE("the field rate is derived over the same frame the line rate assumed")
     CHECK(sampling.fieldRateHz() < 50.1f);
 }
 
-TEST_CASE("a believable HPERIOD_IF run measures the line rate without a vsync spin")
+TEST_CASE("a corroborated HPERIOD_IF run measures the line rate without a vsync spin")
 {
     SourceMeasurement sampling;
     seedSourceLines(311);
     seedHPeriod(431);
-    g_fieldRateCalls = 0;
+    g_fieldRate = 50.08f;
 
+    // The first reading has nothing held to check it against, so it is paid
+    // for once.
     REQUIRE(sampling.measureLineRate());
     CHECK(sampling.lineRateHz() == 15625u);
 
-    // The cost is the point: nothing spun for a vsync edge.
+    g_fieldRateCalls = 0;
+    REQUIRE(sampling.measureLineRate());
+    CHECK(sampling.lineRateHz() == 15625u);
+
+    // The cost is the point: the held rate corroborates the reading, so nothing
+    // spun for a vsync edge.
     CHECK(g_fieldRateCalls == 0);
 }
 
@@ -1086,6 +1093,62 @@ TEST_CASE("a flagged window is refused however good the readings look")
     // it is not a window to take a rate from.
     const uint16_t settled[] = {431, 431, 430};
     CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311, true) == 0u);
+}
+
+// The window's three tests all pass a value that is railed AND plausible: 272
+// on a 311-line source is 24725 Hz, a 79.25 Hz field rate, above the floor and
+// inside the band, and a stuck register repeats perfectly. The held rate is
+// what rejects it -- and at adoption there is nothing held, or the count moved,
+// so there is nothing to reject it with. The field rate is measured a different
+// way and does not rail with it.
+// docs/investigations/hperiod-if-railing.md
+TEST_CASE("a railed reading is refused where the field rate contradicts it")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(272);
+    g_fieldRate = 50.08f;
+
+    REQUIRE(sampling.measureLineRate());
+
+    // 50.08 x 312, which is what the source runs at, not the 24725 the counter
+    // states.
+    CHECK(sampling.lineRateHz() == 15624u);
+}
+
+TEST_CASE("a railed reading never becomes the held rate")
+{
+    // rateFollowsCount() refuses a rate that moved at an unchanged count, but
+    // only HeldRateRejectionLimit times over -- a source that genuinely changes
+    // rate without changing its count must not hold the mode change open for
+    // ever. Railed, that escape hatch is what lets the bad value in, and once
+    // held it rejects every correct reading against itself.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRate = 50.08f;
+    REQUIRE(sampling.measureLineRate());
+    REQUIRE(sampling.heldLineRateHz() == 15625u);
+
+    seedHPeriod(272);
+    for (unsigned i = 0; i < 2u * SourceMeasurement::HeldRateRejectionLimit; ++i)
+        sampling.measureLineRate();
+
+    CHECK(sampling.heldLineRateHz() == 15624u);
+}
+
+TEST_CASE("a reading the field rate cannot speak to stands")
+{
+    // The spin reports 0 with no lock, which is the composite-sync case the
+    // HPERIOD route exists to serve. Nothing contradicts the reading, so
+    // nothing withholds it.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRate = 0.0f;
+
+    REQUIRE(sampling.measureLineRate());
+    CHECK(sampling.lineRateHz() == 15625u);
 }
 
 TEST_CASE("a reading implying a line no television generates is refused")

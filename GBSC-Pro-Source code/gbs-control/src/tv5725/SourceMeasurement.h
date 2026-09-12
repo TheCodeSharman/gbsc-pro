@@ -259,6 +259,12 @@ public:
     static bool rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
                                  uint16_t heldLines, uint32_t heldLineRateHz);
 
+    // Whether the held rate is in a position to judge a reading at all. Nothing
+    // held and a count that moved both leave rateFollowsCount() accepting
+    // whatever it is given, which is where a railed HPERIOD_IF gets in.
+    static bool heldRateJudges(uint16_t lines, uint16_t heldLines,
+                               uint32_t heldLineRateHz);
+
     // Whether two line rates are the same measurement. HeldRateTolerancePerMille
     // apart, which is what separates a source that moved from one being read
     // through a settling PLL.
@@ -565,6 +571,10 @@ public:
     uint16_t retimeStop() const;
 
 private:
+    // Whether the rate already held stands behind a new reading. Free, where
+    // asking the field rate costs a vsync spin.
+    bool heldRateCorroborates(uint32_t lineRateHz) const;
+
     uint16_t divider_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;

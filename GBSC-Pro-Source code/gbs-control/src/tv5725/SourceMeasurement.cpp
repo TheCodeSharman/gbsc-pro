@@ -97,12 +97,22 @@ uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz
     return (uint32_t)(fieldRateHz * (float)(sourceLines + 1));
 }
 
+bool SourceMeasurement::heldRateJudges(uint16_t lines, uint16_t heldLines,
+                                       uint32_t heldLineRateHz)
+{
+    return heldLineRateHz != 0 && lines == heldLines;
+}
+
+bool SourceMeasurement::heldRateCorroborates(uint32_t lineRateHz) const
+{
+    return heldRateJudges(sourceLines_, goodLines_, goodLineRateHz_)
+           && ratesAgree(lineRateHz, goodLineRateHz_);
+}
+
 bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
                                          uint16_t heldLines, uint32_t heldLineRateHz)
 {
-    if (heldLineRateHz == 0 || lineRateHz == 0)
-        return true;
-    if (lines != heldLines)
+    if (lineRateHz == 0 || !heldRateJudges(lines, heldLines, heldLineRateHz))
         return true;
 
     return ratesAgree(lineRateHz, heldLineRateHz);
@@ -336,6 +346,17 @@ bool SourceMeasurement::measureLineRate()
         recoveryTried_ = true;
         counterRecovery_();
         lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
+    }
+
+    // HPERIOD_IF rails to a value that is WRONG AND STABLE, and every test the
+    // window applies is passed by one. The held rate is what rejects it, so
+    // where nothing is held or it disagrees the field rate answers instead --
+    // measured a different way, and it does not rail with it.
+    // docs/investigations/hperiod-if-railing.md
+    if (lineRateHz_ != 0 && !heldRateCorroborates(lineRateHz_)) {
+        const uint32_t confirmed = lineRateFrom(sourceLines_, getSourceFieldRate(0));
+        if (confirmed != 0 && !ratesAgree(lineRateHz_, confirmed))
+            lineRateHz_ = confirmed;
     }
 
     if (lineRateHz_ != 0) {
