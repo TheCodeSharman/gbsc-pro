@@ -4522,24 +4522,25 @@ void runSyncWatcher() //
                     Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
                     rto->autoBestHtotalEnabled = 1;
 
-                    if (Tv5725::SyncMeasurement::isCsync() == false) {
-                        GBS::SP_SOG_MODE::write(0);
-                        GBS::SP_NO_COAST_REG::write(1);
+                    // The field rate is measured a few lines down, so the sync
+                    // path has to be in order first. This spelled out a subset
+                    // of what SyncProcessor::applyForScalingRgbhv() writes --
+                    // byte for byte on csync, and on separate sync without
+                    // SP_CLAMP_MANUAL, SP_SOG_P_ATO or the vsync window.
+                    const bool csync = Tv5725::SyncMeasurement::isCsync();
+                    Tv5725::SyncProcessor::applyForScalingRgbhv(csync);
+                    if (!csync) {
                         GBS::ADC_5_00::write(0x10);
                         GBS::PLL_IS::write(0);
                         GBS::PLL_VCORST::write(1);
                         delay(320);
-                    } else {
-                        GBS::SP_SOG_MODE::write(1);
-                        GBS::SP_H_CST_ST::write(0x10);
-                        GBS::SP_H_CST_SP::write(0x80);
-                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
                     }
                     delay(4);
 
                     float sourceRate = getSourceFieldRate(1);
-                    Serial.printf("sourceRate: ");
-                    Serial.println(sourceRate);
+                    debugPrintf("leaving bypass: %u lines x %d.%02d Hz\n",
+                                (unsigned)sourceLines, (int)sourceRate,
+                                (int)(sourceRate * 100) % 100);
 
                     const uint8_t standard =
                         Tv5725::PresetLoad::rgbhvStandardFor(sourceLines, sourceRate);
