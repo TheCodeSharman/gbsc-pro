@@ -68,6 +68,11 @@ public:
 
     typedef UReg<0x05, 0x33, 0, 8> SP_H_TIMER_VAL;                    // Timer value control H timer value for h detect
 
+    // Two addresses in this block that RD-5725-1.1 names no field at. Carried
+    // at what the sketch's bring-up wrote them, since nothing says what they do.
+    typedef UReg<0x05, 0x23, 0, 8> SYNC_PROC_5_23;
+    typedef UReg<0x05, 0x5D, 0, 8> SYNC_PROC_5_5D;
+
     typedef UReg<0x05, 0x34, 0, 8> SP_V_TIMER_VAL;                    // Timer value control V timer for V detect
 
     typedef UReg<0x05, 0x35, 0, 12> SP_DLT_REG;                       // Sync separation control Sync pulse width difference

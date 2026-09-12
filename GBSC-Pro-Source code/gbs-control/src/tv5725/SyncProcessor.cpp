@@ -396,6 +396,8 @@ void SyncProcessor::init()
     SP_V_PRD_EQ_THD::write(0x2);                 // s5_2f[7:0]
     SP_VT_DLT_REG::write(0x2F);                  // s5_31[7:0]
     SP_VSIN_INV_REG::write(0x0);                 // s5_32[0:0]
+    SYNC_PROC_5_23::write(0x0);                  // s5_23, no documented field
+    SP_H_TIMER_VAL::write(0x3A);                 // s5_33[7:0]
     SP_V_TIMER_VAL::write(0x6);                  // s5_34[7:0]
     SP_CS_P_SWAP::write(0x0);                    // s5_3e[0:0]
     SP_HD_MODE::write(0x0);                      // s5_3e[1:1]
@@ -417,6 +419,7 @@ void SyncProcessor::init()
     SP_HT_DIFF_REG::write(0x5);                  // s5_58[11:0]
     SP_VT_DIFF_REG::write(0x1);                  // s5_5a[10:0]
     SP_STBLE_CNT_REG::write(0x3);                // s5_5c[7:0]
+    SYNC_PROC_5_5D::write(0x2);                  // s5_5d, absent from RD-5725-1.1
     SP_TEST_EN::write(0x1);                      // s5_63[0:0]
     SP_TEST_MODULE::write(0x7);                  // s5_63[3:1]
     SP_TEST_SIGNAL_SEL::write(0x0);              // s5_63[6:4]

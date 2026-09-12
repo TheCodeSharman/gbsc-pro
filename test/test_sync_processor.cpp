@@ -761,3 +761,39 @@ TEST_CASE("a scaling RGBHV source is a new source, so neither window is placed")
     CHECK_FALSE(SyncProcessor::coastPlaced());
     CHECK_FALSE(SyncProcessor::clampPlaced());
 }
+
+// Whether the bring-up writes a field at all. Two complementary poisons: one
+// cannot tell a field written 0 from one left at a poison whose bits are
+// already 0.
+template <typename Field>
+static bool bringUpWrites()
+{
+    uint32_t seen[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        SyncProcessor::init();
+        seen[i] = Field::read();
+    }
+    return seen[0] == seen[1];
+}
+
+TEST_CASE("the bring-up leaves the retime stop to the class that holds the divider")
+{
+    // SP_RT_HS_SP is 93% of PLLAD_MD: one quantity in three registers, all
+    // three written by SourceMeasurement off one held value. A second writer
+    // here puts a window on the sync processor that the ADC clock does not
+    // match, and the header above says what poisoning it costs.
+    CHECK_FALSE(bringUpWrites<SyncProcessor::SP_RT_HS_SP>());
+}
+
+TEST_CASE("the bring-up establishes the rest of the block the sketch used to write")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::init();
+
+    CHECK(SyncProcessor::SP_H_TIMER_VAL::read() == 0x3A);
+    CHECK(SyncProcessor::SYNC_PROC_5_23::read() == 0x00);
+    CHECK(SyncProcessor::SYNC_PROC_5_5D::read() == 0x02);
+}

@@ -1670,26 +1670,8 @@ void updateHVSyncEdge()
 
 void prepareSyncProcessor() 
 {
-    writeOneByte(0xF0, 5);
-    GBS::SP_SOG_P_ATO::write(0);   
+    GBS::SP_SOG_P_ATO::write(0);
     GBS::SP_JITTER_SYNC::write(0); // Use falling and rising edge to sync input Hsync
-
-    writeOneByte(0x21, 0x18);
-    writeOneByte(0x22, 0x0F);
-    writeOneByte(0x23, 0x00);
-    writeOneByte(0x24, 0x40);
-    writeOneByte(0x25, 0x00);
-    writeOneByte(0x26, 0x04);
-    writeOneByte(0x27, 0x00);
-    writeOneByte(0x2a, 0x0F);
-
-    writeOneByte(0x2d, 0x03);
-    writeOneByte(0x2e, 0x00);
-    writeOneByte(0x2f, 0x02);
-    writeOneByte(0x31, 0x2f);
-
-    writeOneByte(0x33, 0x3a);
-    writeOneByte(0x34, 0x06);
 
     Tv5725::SyncProcessor::applyPulseWidthDifference();
 
@@ -1704,16 +1686,6 @@ void prepareSyncProcessor()
     GBS::SP_CS_HS_ST::write(0x10);
     GBS::SP_CS_HS_SP::write(0x00);
 
-    writeOneByte(0x49, 0x00);
-    writeOneByte(0x4a, 0x00); //
-    writeOneByte(0x4b, 0x44);
-    writeOneByte(0x4c, 0x00); //
-
-    writeOneByte(0x51, 0x02);
-    writeOneByte(0x52, 0x00);
-    writeOneByte(0x53, 0x00);
-    writeOneByte(0x54, 0x00);
-
     if (!rgbhvBypass() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
         GBS::SP_CLAMP_MANUAL::write(0);
         Tv5725::SyncProcessor::clampFromReferenceClock();
@@ -1727,15 +1699,8 @@ void prepareSyncProcessor()
     }
 
     GBS::SP_HS_REG::write(1);
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_VS_PROC_INV_REG::write(0); 
-
-    writeOneByte(0x58, 0x05);
-    writeOneByte(0x59, 0x00);
-    writeOneByte(0x5a, 0x01);
-    writeOneByte(0x5b, 0x00);
-    writeOneByte(0x5c, 0x03);
-    writeOneByte(0x5d, 0x02);
+    GBS::SP_HS_PROC_INV_REG::write(0);
+    GBS::SP_VS_PROC_INV_REG::write(0);
 }
 
 void setAndUpdateSogLevel(uint8_t level)
@@ -5539,6 +5504,15 @@ void setup()
 
         zeroAll();
         setResetParameters();
+
+        // BEFORE detection, which runs below and cannot measure a source
+        // through a sync processor left at zeros: with the coast and the delta
+        // registers clear, STATUS_SYNC_PROC_HTOTAL reads a number that does not
+        // move when the divider is written and latched by hand. The full
+        // bring-up runs after the last setResetParameters(), which is too late
+        // for this, and this block survives it -- SFTRST_SYNC_RSTZ is not one of
+        // the six that call holds.
+        Tv5725::SyncProcessor::init();
         prepareSyncProcessor();
 
         uint8_t productId = GBS::CHIP_ID_PRODUCT::read();
