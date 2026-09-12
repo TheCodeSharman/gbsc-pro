@@ -62,6 +62,15 @@ public:
     // prefix would read as one decision -- none do.
     static const uint8_t BranchNameMax = 24;
 
+    // How many registers the solved output carries.
+    static const uint8_t SolveFields = 14;
+
+    // How often a monitor run compares the solved output. The engine re-solves
+    // on a source event, seconds apart, so this is far slower than the sample
+    // interval: fourteen reads at the sample cadence would more than double
+    // what the run costs the bus it is measuring through.
+    static const uint16_t SolveIntervalMs = 250;
+
     bool active() const;
 
     // Whether the DIVIDER WALK is running, which is not the same question as
@@ -74,6 +83,12 @@ public:
 private:
     void applyStep(uint32_t nowMs);
     void emit(uint32_t nowMs);
+
+    // Where the engine solved, emitted when it moves. Every register in it is
+    // an OUTPUT the engine calculated from held state, so the set of them is
+    // the comparison one run is judged against another on -- and the one a
+    // register dump over HTTP cannot take without changing what it measures.
+    void reportSolve(uint32_t nowMs);
     void finish(uint32_t nowMs);
 
     enum Mode : uint8_t { Idle, Monitoring, Sweeping };
@@ -85,6 +100,10 @@ private:
     uint8_t oversample_;
     uint32_t durationMs_;
     uint32_t startedMs_, stepStartedMs_, lastSampleMs_;
+
+    uint16_t solve_[SolveFields];
+    uint32_t lastSolveMs_;
+    bool solveValid_;
 
     // What the last emitted event said. A decision the branch takes again is
     // not news, and repeating it drowns the console: measured at 37 identical

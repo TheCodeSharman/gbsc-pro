@@ -47,6 +47,29 @@ void emitLine(uint32_t sinceMs, uint16_t divider)
     tv5725Log(line);
 }
 
+// The solved OUTPUT. Every one of these the engine calculated from held state,
+// so together they say where a solve landed -- the raster, both scales, both
+// display windows, both output sync pulses, and the input line the capture is
+// counted in. The sync starts are here because an output sync start is a pan,
+// and a comparison that leaves them out cannot see the picture move.
+void readSolve(uint16_t (&into)[SamplingLog::SolveFields])
+{
+    into[0] = (uint16_t)GBS::VDS_HSYNC_RST::read();
+    into[1] = (uint16_t)GBS::VDS_VSYNC_RST::read();
+    into[2] = (uint16_t)GBS::VDS_HSCALE::read();
+    into[3] = (uint16_t)GBS::VDS_VSCALE::read();
+    into[4] = (uint16_t)GBS::VDS_DIS_HB_ST::read();
+    into[5] = (uint16_t)GBS::VDS_DIS_HB_SP::read();
+    into[6] = (uint16_t)GBS::VDS_DIS_VB_ST::read();
+    into[7] = (uint16_t)GBS::VDS_DIS_VB_SP::read();
+    into[8] = (uint16_t)GBS::VDS_HS_ST::read();
+    into[9] = (uint16_t)GBS::VDS_HS_SP::read();
+    into[10] = (uint16_t)GBS::VDS_VS_ST::read();
+    into[11] = (uint16_t)GBS::VDS_VS_SP::read();
+    into[12] = (uint16_t)GBS::IF_HSYNC_RST::read();
+    into[13] = (uint16_t)GBS::IF_HBIN_SP::read();
+}
+
 }  // namespace
 
 char SamplingLog::lastWhat_[SamplingLog::BranchNameMax] = {0};
@@ -76,8 +99,10 @@ void SamplingLog::event(uint32_t nowMs, const char *what, uint16_t lines,
 SamplingLog::SamplingLog()
     : mode_(Idle), low_(0), high_(0), step_(0), dwellMs_(0), interval_(0),
       restoreDivider_(0), divider_(0), lineRateHz_(0), oversample_(1),
-      durationMs_(0), startedMs_(0), stepStartedMs_(0), lastSampleMs_(0)
+      durationMs_(0), startedMs_(0), stepStartedMs_(0), lastSampleMs_(0),
+      lastSolveMs_(0), solveValid_(false)
 {
+    memset(solve_, 0, sizeof(solve_));
 }
 
 bool SamplingLog::active() const { return mode_ != Idle; }
@@ -94,8 +119,12 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
     stepStartedMs_ = startedMs_;
     lastSampleMs_ = startedMs_ - interval_;
     durationMs_ = durationMs;
+    solveValid_ = false;
     tv5725Log("smp,header,ms,divider,pllad_lock,sp_vtotal,sp_htotal,"
               "hperiod_if,vperiod_if,hsact,ifbits,intstatus");
+    tv5725Log("sol,header,ms,vds_hsync_rst,vds_vsync_rst,vds_hscale,vds_vscale,"
+              "dis_hb_st,dis_hb_sp,dis_vb_st,dis_vb_sp,hs_st,hs_sp,vs_st,vs_sp,"
+              "if_hsync_rst,if_hbin_sp");
 }
 
 void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
@@ -141,6 +170,30 @@ void SamplingLog::emit(uint32_t nowMs)
              mode_ == Sweeping ? divider_ : (uint16_t)GBS::PLLAD_MD::read());
 }
 
+void SamplingLog::reportSolve(uint32_t nowMs)
+{
+    if (solveValid_ && (uint32_t)(nowMs - lastSolveMs_) < SolveIntervalMs)
+        return;
+    lastSolveMs_ = nowMs;
+
+    uint16_t solved[SolveFields];
+    readSolve(solved);
+    if (solveValid_ && memcmp(solved, solve_, sizeof(solved)) == 0)
+        return;
+    memcpy(solve_, solved, sizeof(solve_));
+    solveValid_ = true;
+
+    char line[112];
+    snprintf(line, sizeof(line),
+             "sol,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u",
+             (unsigned long)nowMs, (unsigned)solved[0], (unsigned)solved[1],
+             (unsigned)solved[2], (unsigned)solved[3], (unsigned)solved[4],
+             (unsigned)solved[5], (unsigned)solved[6], (unsigned)solved[7],
+             (unsigned)solved[8], (unsigned)solved[9], (unsigned)solved[10],
+             (unsigned)solved[11], (unsigned)solved[12], (unsigned)solved[13]);
+    tv5725Log(line);
+}
+
 void SamplingLog::finish(uint32_t nowMs)
 {
     if (mode_ == Sweeping) {
@@ -165,6 +218,7 @@ void SamplingLog::poll(uint32_t nowMs)
             finish(now);
             return;
         }
+        reportSolve(now);
         emit(now);
         return;
     }

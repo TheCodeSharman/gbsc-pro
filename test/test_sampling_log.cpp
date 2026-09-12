@@ -12,6 +12,7 @@
 #include <doctest/doctest.h>
 
 #include <string>
+#include <vector>
 
 #include "fake/Wire.h"
 
@@ -21,9 +22,11 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/gbs_types.h"
 
-// The emitted line is the instrument, so one test reads it.
+// The emitted line is the instrument, so one test reads it. A poll emits more
+// than one kind, so the run is kept as well as the last line.
 static std::string g_lastLine;
-void tv5725Log(const char *line) { g_lastLine = line; }
+static std::vector<std::string> g_lines;
+void tv5725Log(const char *line) { g_lastLine = line; g_lines.push_back(line); }
 
 // SourceMeasurement.h declares the two the sketch supplies; nothing here spins
 // for a field rate.
@@ -206,4 +209,92 @@ TEST_CASE("a decision repeated is not news, so only a change is emitted")
         SamplingLog::event(30, "held", 312, 14);
         CHECK(g_lastLine == "evt,30,held,312,14");
     }
+}
+
+// What a run has to be compared on is where the engine SOLVED, and reading that
+// over HTTP changes the outcome: /getreg is deferred to loop(), so a full dump
+// per return is hundreds of requests through the very loop being measured. The
+// affordable subset that was used instead left out VDS_HS_ST, and an output
+// sync start is a pan.
+static void seedSolvedOutput(uint16_t hsyncStart)
+{
+    GBS::VDS_HSYNC_RST::write(1915);
+    GBS::VDS_VSYNC_RST::write(1125);
+    GBS::VDS_HSCALE::write(850);
+    GBS::VDS_VSCALE::write(512);
+    GBS::VDS_DIS_HB_ST::write(99);
+    GBS::VDS_DIS_HB_SP::write(1501);
+    GBS::VDS_DIS_VB_ST::write(20);
+    GBS::VDS_DIS_VB_SP::write(620);
+    GBS::VDS_HS_ST::write(hsyncStart);
+    GBS::VDS_HS_SP::write(62);
+    GBS::VDS_VS_ST::write(4);
+    GBS::VDS_VS_SP::write(8);
+    GBS::IF_HSYNC_RST::write(1104);
+    GBS::IF_HBIN_SP::write(336);
+}
+
+// The columns, with the leader and the timestamp taken off, so a case pins the
+// record without pinning the cadence it is written at.
+static std::string solveColumns()
+{
+    for (size_t i = g_lines.size(); i-- > 0;) {
+        const std::string &line = g_lines[i];
+        if (line.rfind("sol,", 0) != 0 || line.rfind("sol,header", 0) == 0)
+            continue;
+        const size_t afterMs = line.find(',', 4);
+        return line.substr(afterMs + 1);
+    }
+    return "";
+}
+
+static void driveMonitor(SamplingLog &log, uint32_t fromMs, uint32_t toMs)
+{
+    for (uint32_t now = fromMs; now <= toMs; now += 10)
+        log.poll(now);
+}
+
+TEST_CASE("a monitor run reports the solved output from inside the loop")
+{
+    sourceOnTheBus(2250);
+    seedSolvedOutput(10);
+    SamplingLog log;
+
+    log.monitor(0, 10, 10000);
+    g_lines.clear();
+    log.poll(10);
+
+    CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,10,62,4,8,1104,336");
+}
+
+TEST_CASE("a solve that has not moved is not repeated")
+{
+    // The same reason a repeated decision is not emitted: the console is the
+    // instrument every other reading is taken from, and a line per sample of a
+    // solve that is holding drowns it.
+    sourceOnTheBus(2250);
+    seedSolvedOutput(10);
+    SamplingLog log;
+    log.monitor(0, 10, 10000);
+    log.poll(10);
+    g_lines.clear();
+
+    driveMonitor(log, 20, 3000);
+
+    CHECK(solveColumns().empty());
+}
+
+TEST_CASE("an output sync start that moved is news, because it is a pan")
+{
+    sourceOnTheBus(2250);
+    seedSolvedOutput(10);
+    SamplingLog log;
+    log.monitor(0, 10, 10000);
+    log.poll(10);
+    g_lines.clear();
+
+    seedSolvedOutput(62);
+    driveMonitor(log, 20, 3000);
+
+    CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,62,62,4,8,1104,336");
 }
