@@ -47,13 +47,31 @@ That makes the divider a proxy rather than the cause. The engine halves the
 divider when the line rate doubles, holding the VCO still, and the loop is then
 run at twice the reference frequency with the same `PLLAD_ICP`.
 
-## What was refuted on the way
+## Two effects, and the extent on screen tells them apart
 
-**"The gratings beat, so it is the sampling ratio."** 1096 samples across a line
-of 864 source pixels is 1.268 samples per pixel, and a PM5544 grating is built
-to expose exactly that -- but a ratio artefact can only appear where there is
-detail fine enough to alias. The beating covers flat areas too, which a ratio
-cannot do and a moving clock can.
+A third mode separates them. Frame-to-frame PSNR is two stills of ONE state
+taken seconds apart: a locked clock reproduces the frame, a drifting one does
+not, so the number measures the drift and not the picture.
+
+| mode | divider | `pllad_lock` | PSNR y, 3 pairs | extent of the beating |
+|---|---|---|---|---|
+| 320x256@50 | 2208 | 1 | 40.51 dB | none |
+| 800x600@60 | 2039 | 1 | 39.45 dB | the finest grating only |
+| 720x576@50 | 1096 | 0 | 38.23 dB | the whole image |
+
+**Where the beating appears is the discriminator, and it separates a ratio from
+a drift.** A sampling ratio can only alias where the detail is fine enough to
+alias, so it stops at the finest grating and leaves flat area alone -- which is
+what 800x600 does, locked, at a divider that does not divide its line. A clock
+that is moving has no such limit and reaches flat area, which is what 720x576
+does. Both are real and they are not the same fault.
+
+So the ratio argument is sound and was applied to the wrong mode:
+
+**"The gratings beat, so 720x576 is the sampling ratio."** 1096 samples across a
+line of 864 source pixels is 1.268 samples per pixel, which a PM5544 grating is
+built to expose -- but the beating there covers flat areas, which a ratio cannot
+do. At 800x600 the same argument holds and the extent matches it.
 
 **"`ifbits` 9 flags the fault."** `STATUS_IF_VT_BAD` is set at 720x576, and it is
 equally set on the clean 320x256 control, in all 552 samples. It is the normal
