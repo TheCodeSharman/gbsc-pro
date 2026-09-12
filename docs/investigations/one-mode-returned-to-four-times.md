@@ -95,6 +95,37 @@ acquisition. The run WITH dumps showed no shift and the run WITHOUT showed it
 twice -- consistent with the measurement changing the outcome, in the direction
 that hides it.
 
+## A solve armed against a source that is still moving
+
+Named as a candidate for the intermittent framing, with the evidence that
+supports it. The RGBHV steering arms solves against counts no source runs,
+logged as they are taken:
+
+```
+evt,rgbhv-leave-bypass,375,15
+evt,rgbhv-keep-scaling,97,14
+evt,rgbhv-keep-scaling,155,14
+evt,rgbhv-keep-scaling,114,14
+```
+
+375, 97, 155 and 114 lines against a 311-line source. The steering reads
+`STATUS_SYNC_PROC_VTOTAL` directly rather than taking the count the engine has
+measured behind its own steadiness run, so a mode change in flight is read as a
+source.
+
+`countHeldStill()` is meant to gate that, and it gates the COUNT. It does not
+gate the field rate measured afterwards, which is the 0.00 Hz in
+`leaving-bypass-measures-before-the-source-settles.md`. So there is at least one
+quantity a solve can be armed on while the source is moving underneath it, and
+a solve that takes hundreds of milliseconds has that long to be overtaken.
+
+What this does not yet say is whether a solve so armed is CORRECTED or LEFT.
+`VideoPath::sourceMoved()` re-arms on a settled count that differs from the
+solved one, which is the mechanism that should correct it -- and the logs show
+it doing so, `rgbhv-keep-scaling` following at the right count. Whether every
+such solve is caught, and whether one caught mid-write leaves a register the
+next solve does not recompute, is the question.
+
 ## Why this stops here
 
 Every conclusion above is drawn against a firmware in which `runSyncWatcher()`
