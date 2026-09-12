@@ -718,3 +718,18 @@ TEST_CASE("a bounce puts the same input back, so the held answer does not move")
 
     CHECK_FALSE(Adc::inputIsComponent());
 }
+
+TEST_CASE("bring-up opens the ADC's analog filter as wide as the part offers")
+{
+    // It is an anti-alias low-pass in front of the sampler, so it only does
+    // work where its corner is below Nyquist -- and the narrowest the part
+    // offers is 40 MHz against a Nyquist of 17 MHz on the bench's 15 kHz source
+    // and 39 MHz on its fastest. Swept across all four corners at both clocks
+    // and measured on the picture: indistinguishable, the spread inside a
+    // repeat shot's own noise. The widest never removes detail that is there.
+    Wire.reset();
+    Wire.poison(0xA5);
+    Adc::init();
+
+    CHECK(Adc::ADC_FLTR::read() == 0);
+}

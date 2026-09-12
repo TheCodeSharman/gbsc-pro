@@ -22,11 +22,9 @@ public:
     void apply() const;
 
 private:
-    bool isSd() const;           // 1 and 2, interlaced SD
     bool isProgressive() const;  // 3, 4, 8 and 9
     bool isHd() const;           // 5, 6 and 7, reached through the HD bypass switch
 
-    void applySd() const;
     void applyProgressive() const;
     void applyHd() const;
 

@@ -96,11 +96,15 @@ TEST_CASE("no standard writes the ADC PLL group")
     }
 }
 
-TEST_CASE("interlaced SD narrows the ADC's analog filter")
+TEST_CASE("no standard on the scaling path touches the ADC's analog filter")
 {
-    // ADC_FLTR 3 is the 40 MHz corner, the narrowest RD-5725-1.1 offers.
-    CHECK(WRITTEN(1, false, Adc::ADC_FLTR) == 3);
-    CHECK(WRITTEN(2, false, Adc::ADC_FLTR) == 3);
+    // It is a property of the sample clock, not of a classification, and at
+    // every clock this board reaches its narrowest corner is still above
+    // Nyquist. Adc::init() opens it once, widest, for every source.
+    for (uint8_t standard : {1, 2, 3, 4, 8, 9, 14}) {
+        CAPTURE(standard);
+        CHECK(WRITTEN(standard, false, Adc::ADC_FLTR) == NotWritten);
+    }
 }
 
 TEST_CASE("no standard writes what the scan mode decides")
@@ -138,18 +142,12 @@ TEST_CASE("a standard with nothing of its own writes nothing at all")
     // Standard 14 is RGBHV, which the geometry engine measures and samples for
     // itself, and there is no line of that shape to prepare the rest of the
     // pipeline for.
-    CHECK(WRITTEN(14, false, Adc::ADC_FLTR) == NotWritten);
     CHECK(WRITTEN(14, false, SyncProcessor::SP_SDCS_VSST_REG_L) == NotWritten);
     CHECK(WRITTEN(14, false, InputFormatter::IF_PRGRSV_CNTRL) == NotWritten);
     CHECK(WRITTEN(14, false, VideoProcessor::VDS_Y_DELAY) == NotWritten);
 }
 
 // --- the progressive standards -----------------------------------------------
-
-TEST_CASE("a progressive standard narrows the ADC's analog filter")
-{
-    CHECK(WRITTEN(4, false, Adc::ADC_FLTR) == 3);
-}
 
 TEST_CASE("every progressive standard opens the SD vsync window at one place")
 {
@@ -201,14 +199,21 @@ TEST_CASE("an HD standard opens the ADC filter and takes the line whole")
     CHECK(WRITTEN(5, false, VideoProcessor::VDS_Y_DELAY) == 3);
 }
 
-TEST_CASE("standard 8 opens the filter its progressive neighbours narrowed")
+TEST_CASE("interlaced SD has nothing of its own left at all")
 {
-    // It is in the progressive group as well, so applyProgressive() runs first
-    // and this overrides the parts it disagrees with.
-    CHECK(WRITTEN(8, false, Adc::ADC_FLTR) == 1);
-
-    // and keeps what it does not disagree with
-    CHECK(WRITTEN(8, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 14);
+    // Its filter corner went to Adc::init() and everything else it wrote is
+    // derived from the scan mode or the selected input, so 1 and 2 are values
+    // no register follows any more.
+    for (uint8_t standard : {1, 2}) {
+        CAPTURE(standard);
+        for (bool ypbpr : {false, true}) {
+            Wire.reset();
+            Wire.poison(Poison);
+            presentLineCount(presentedLines);
+            SourceStandard(standard, ypbpr).apply();
+            CHECK(Wire.trace.empty());
+        }
+    }
 }
 
 // --- the input line's horizontal blanking -------------------------------------

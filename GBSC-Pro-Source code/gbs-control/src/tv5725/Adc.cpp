@@ -9,6 +9,9 @@ namespace {
 // ADC_INPUT_SEL 0 is the pair carrying Pb and Pr beside Y.
 const uint8_t ComponentInputSel = 0;
 
+// ADC_FLTR 0 is the 150 MHz corner, the widest RD-5725-1.1 offers.
+const uint8_t WidestFilter = 0;
+
 }  // namespace
 
 namespace {
@@ -41,6 +44,12 @@ void Adc::init()
     ADC_CLK_PA::write(0x0);                      // s5_00[1:0]
     ADC_CLK_PLLAD::write(0x0);                   // s5_00[2:2]
     ADC_POWDZ::write(0x1);                       // s5_03[0:0]
+
+    // The anti-alias low-pass in front of the sampler, widest corner. It only
+    // does work below Nyquist, and the narrowest the part offers is above it at
+    // every sample clock this board reaches. Swept on the picture at 34.5 MHz
+    // and 77.2 MHz: all four corners indistinguishable.
+    ADC_FLTR::write(WidestFilter);                 // s5_03[5:4]
     ADC_TR_RSEL::write(0x2);                     // s5_04[1:0]
     ADC_TR_ISEL::write(0x0);                     // s5_04[4:2]
     ADC_TA_EN::write(0x0);                       // s5_05[0:0]

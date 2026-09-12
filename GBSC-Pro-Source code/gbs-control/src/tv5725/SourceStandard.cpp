@@ -10,9 +10,8 @@ namespace Tv5725 {
 
 namespace {
 
-// ADC_FLTR 3 is the 40 MHz corner, the narrowest RD-5725-1.1 offers; 1 is the
-// 110 MHz one, which is what a line carrying HD detail needs.
-const uint8_t AnalogFilter40MHz = 3;
+// ADC_FLTR 1 is the 110 MHz corner, which is what a line carrying HD detail
+// needs against Adc::init()'s widest.
 const uint8_t AnalogFilter110MHz = 1;
 
 }  // namespace
@@ -20,11 +19,6 @@ const uint8_t AnalogFilter110MHz = 1;
 SourceStandard::SourceStandard(uint8_t videoStandardInput, bool inputIsYpBpR)
     : standard_(videoStandardInput), inputIsYpBpR_(inputIsYpBpR)
 {
-}
-
-bool SourceStandard::isSd() const
-{
-    return standard_ == 1 || standard_ == 2;
 }
 
 bool SourceStandard::isHd() const
@@ -39,9 +33,7 @@ bool SourceStandard::isProgressive() const
 
 void SourceStandard::apply() const
 {
-    if (isSd())
-        applySd();
-    else if (isProgressive())
+    if (isProgressive())
         applyProgressive();
     else if (isHd())
         applyHd();
@@ -56,20 +48,10 @@ void SourceStandard::applyHd() const
     VideoProcessor::VDS_Y_DELAY::write(3);
 }
 
-void SourceStandard::applySd() const
-{
-    Adc::ADC_FLTR::write(AnalogFilter40MHz);
-}
-
 void SourceStandard::applyProgressive() const
 {
-    Adc::ADC_FLTR::write(AnalogFilter40MHz);
-
     SyncProcessor::writeSdVsyncStart(14);
     SyncProcessor::writeSdVsyncStop(11);
-
-    if (standard_ == 8)
-        Adc::ADC_FLTR::write(AnalogFilter110MHz);
 }
 
 }  // namespace Tv5725
