@@ -512,15 +512,17 @@ TEST_CASE("an RGBHV source delays its sync to match the channel's own delay")
     CHECK(HdBypass::HD_HS_SP::read() == 164);
 }
 
-TEST_CASE("an RGBHV source samples the way the ADC-to-DAC route does")
+TEST_CASE("a source with no standard samples off its own clock")
 {
-    // One sampling configuration for pass-through, whichever route carries it.
+    // 1856 samples on a 37879 Hz line is CKO 70.3 MHz, which the crossover
+    // table takes at post divider one and so runs the VCO at 140.6 MHz -- above
+    // the gain threshold the bench sweep put at 130.
     applyForStandard(14, 311, 1856);
 
     CHECK(Adc::PLLAD_MD::read() == 1856);
     CHECK(Adc::PLLAD_KS::read() == 1);
     CHECK(Adc::PLLAD_ICP::read() == 4);
-    CHECK(Adc::PLLAD_FS::read() == 0);
+    CHECK(Adc::PLLAD_FS::read() == 1);
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
 

@@ -469,104 +469,56 @@ TEST_CASE("restarting the adjusters leaves both out of bypass")
     CHECK(Adc::PA_ADC_BYPSZ::read() == 1);
 }
 
-// The PLL's operating band, steered from a measured rate. The group is only
-// rewritten when the band moves, because the latch that loads it takes the PLL
-// out of lock.
+// The VCO gain. RD-5725-1.1 names the bit and gives it no band, so the
+// thresholds here are the bench sweep at 800x600@60: gain 0 locks up to 136 MHz
+// of VCO and fails by 144, gain 1 locks down to 121 MHz and fails by 106.
+// docs/investigations/the-vco-gain-follows-the-vco.md
 
-TEST_CASE("a rate arriving on a forgotten band moves it")
+TEST_CASE("the VCO gain is the low one only where the high one will not lock")
 {
+    // The sweep leaves an overlap between 121 and 136 MHz where both gains
+    // lock, so the threshold inside it is a choice rather than a boundary. What
+    // the rule has to get right is either side of it.
+    CHECK(Adc::vcoGainFor(90900000u) == 0);
+    CHECK(Adc::vcoGainFor(106100000u) == 0);
+
+    CHECK(Adc::vcoGainFor(143900000u) == 1);
+    CHECK(Adc::vcoGainFor(151500000u) == 1);
+    CHECK(Adc::vcoGainFor(159100000u) == 1);
+}
+
+TEST_CASE("the sample rate writes the gain for the VCO, not for CKO")
+{
+    // 143.9 MHz was reached at two post dividers on the bench -- CKO 72.0 MHz
+    // over two and 36.0 MHz over four -- and both need the high gain. Read
+    // against CKO the two would disagree.
     Wire.reset();
-    Adc::forgetPllBand();
+    Adc::applySampleRate(1900, 37879, 1);   // CKO 72.0 MHz, KS 1
+    CHECK(Adc::PLLAD_KS::read() == 1);
+    CHECK(Adc::PLLAD_FS::read() == 1);
 
-    CHECK(Adc::pllBandFollows(1500));
-}
-
-TEST_CASE("a rate inside the band in force moves nothing")
-{
     Wire.reset();
-    Adc::forgetPllBand();
-    REQUIRE(Adc::pllBandFollows(1500));
+    Adc::applySampleRate(950, 37879, 1);    // CKO 36.0 MHz, KS 2
+    CHECK(Adc::PLLAD_KS::read() == 2);
+    CHECK(Adc::PLLAD_FS::read() == 1);
 
-    CHECK_FALSE(Adc::pllBandFollows(2000));
-}
-
-TEST_CASE("a rate over a boundary moves the band")
-{
     Wire.reset();
-    Adc::forgetPllBand();
-    REQUIRE(Adc::pllBandFollows(1500));
-
-    CHECK(Adc::pllBandFollows(2500));
+    Adc::applySampleRate(1200, 37879, 1);   // CKO 45.5 MHz, VCO 90.9 MHz
+    CHECK(Adc::PLLAD_KS::read() == 1);
+    CHECK(Adc::PLLAD_FS::read() == 0);
 }
 
-TEST_CASE("a rate of nothing leaves the band where it was")
+TEST_CASE("a rate of nothing writes no gain it cannot derive")
 {
+    // No CKO, so no VCO to read a gain against. The divider still goes in.
     Wire.reset();
-    Adc::forgetPllBand();
-    REQUIRE(Adc::pllBandFollows(1500));
+    Wire.poison(0xA5);
+    Adc::applySampleRate(1856, 0, 1);
 
-    CHECK_FALSE(Adc::pllBandFollows(0));
+    CHECK(Wire.field(5, 0x11, 5, 1) == ((0xA5 >> 5) & 1));
 }
 
-TEST_CASE("observing a rate writes no register")
-{
-    Wire.reset();
-    Adc::forgetPllBand();
-
-    REQUIRE(Adc::pllBandFollows(1500));
-
-    CHECK(Wire.trace.empty());
-}
-
-TEST_CASE("each band asks for its own post divider and VCO gain")
-{
-    struct Band {
-        uint32_t rate;
-        uint32_t postDivider;
-        uint32_t gain;
-    };
-    const Band bands[] = {
-        {900, 2, 0}, {1500, 1, 0}, {2500, 1, 1}, {3500, 0, 0}, {4000, 0, 1},
-    };
-
-    for (size_t i = 0; i < sizeof(bands) / sizeof(bands[0]); ++i) {
-        Wire.reset();
-        Adc::forgetPllBand();
-        REQUIRE(Adc::pllBandFollows(bands[i].rate));
-
-        Adc::applyPllBand();
-
-        CHECK(Adc::PLLAD_KS::read() == bands[i].postDivider);
-        CHECK(Adc::PLLAD_FS::read() == bands[i].gain);
-        CHECK(Adc::PLLAD_ICP::read() == 6);
-    }
-}
-
-TEST_CASE("nothing the band wrote is left unlatched")
-{
-    // The tap the oversampling selects shares a byte with the post divider and
-    // is written after the first edge, so the group is latched twice.
-    Wire.reset();
-    Adc::forgetPllBand();
-    REQUIRE(Adc::pllBandFollows(1500));
-
-    Adc::applyPllBand();
-
-    CHECK(lastWriteOf<Adc::PLLAD_KS>() < lastLatchRisingEdge());
-    CHECK(lastWriteOf<Adc::PLLAD_ICP>() < lastLatchRisingEdge());
-}
-
-TEST_CASE("a band nothing has measured writes nothing")
-{
-    Wire.reset();
-    Adc::forgetPllBand();
-
-    Adc::applyPllBand();
-
-    CHECK(Wire.trace.empty());
-}
-
-TEST_CASE("the scaling path brings the charge pump down off the band's")
+TEST_CASE("the scaling path brings the charge pump down off the bypass entry's")
 {
     Wire.reset();
     Adc::PLLAD_ICP::write(6);

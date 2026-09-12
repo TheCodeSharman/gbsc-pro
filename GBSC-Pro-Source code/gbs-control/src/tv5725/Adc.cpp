@@ -6,38 +6,11 @@ namespace Tv5725 {
 
 namespace {
 
-// What each band asks of the PLL, and the rate below which it applies. ICP is 6
-// throughout: only the post divider and the VCO gain move.
-struct PllBand {
-    uint32_t below;
-    uint8_t postDivider;
-    uint8_t vcoGain;
-};
-
-const PllBand PllBands[] = {
-    {1030, 2, 0},
-    {2300, 1, 0},
-    {3200, 1, 1},
-    {3800, 0, 0},
-    {0xffffffffu, 0, 1},
-};
-
-const uint8_t PllBandCount = sizeof(PllBands) / sizeof(PllBands[0]);
 const uint8_t PllChargePump = 6;
 const uint8_t ScalingChargePump = 5;
 
 // How long the PLL is given to settle after the charge pump moves under it.
 const unsigned int ChargePumpSettleMs = 40;
-
-// The oversampling the band steer asks for. Whatever the post divider cannot
-// carry comes back reduced.
-const uint8_t PllBandOversample = 4;
-
-// How long the group settles between the two edges that load it.
-const unsigned int PllBandSettleMs = 2;
-
-const uint8_t NoPllBand = 0xff;
-uint8_t pllBand_ = NoPllBand;
 
 }  // namespace
 
@@ -273,6 +246,11 @@ uint8_t Adc::postDividerFor(uint32_t ckoHz)
     return 3;
 }
 
+uint8_t Adc::vcoGainFor(uint32_t vcoHz)
+{
+    return vcoHz >= HighVcoGainAboveHz ? 1 : 0;
+}
+
 uint8_t Adc::oversampleFor(uint8_t postDivider, uint8_t wanted)
 {
     uint8_t ratio = wanted < 1 ? 1 : wanted;
@@ -328,49 +306,10 @@ void Adc::applyForBypassRgbhv()
 {
     ADC_FLTR::write(0);
     PLLAD_ICP::write(4);
-    PLLAD_FS::write(0);
 
     ADC_TA_05_CTRL::write(0x02);
     ADC_TEST_04::write(0x02);
     ADC_TEST_0C::write(0x12);
-}
-
-void Adc::forgetPllBand()
-{
-    pllBand_ = NoPllBand;
-}
-
-bool Adc::pllBandFollows(uint32_t rate)
-{
-    if (rate == 0)
-        return false;
-
-    uint8_t band = 0;
-    while (band + 1 < PllBandCount && rate >= PllBands[band].below)
-        ++band;
-
-    if (band == pllBand_)
-        return false;
-
-    pllBand_ = band;
-    return true;
-}
-
-uint8_t Adc::applyPllBand()
-{
-    if (pllBand_ == NoPllBand)
-        return 0;
-
-    const uint8_t postDivider = PllBands[pllBand_].postDivider;
-    PLLAD_KS::write(postDivider);
-    PLLAD_FS::write(PllBands[pllBand_].vcoGain);
-    PLLAD_ICP::write(PllChargePump);
-    latch();
-    delay(PllBandSettleMs);
-
-    const uint8_t ratio = applyOversample(postDivider, PllBandOversample);
-    latch();
-    return ratio;
 }
 
 void Adc::applyScalingChargePump()
@@ -395,10 +334,17 @@ uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
         return oversample < 1 ? 1 : oversample;
     }
 
-    uint8_t postDivider = postDividerFor((uint32_t)divider * lineRateHz);
+    const uint32_t ckoHz = (uint32_t)divider * lineRateHz;
+    const uint8_t postDivider = postDividerFor(ckoHz);
 
     PLLAD_MD::write(divider);
     PLLAD_KS::write(postDivider);
+
+    // The post divider sits between the VCO and CKO, so the VCO runs at CKO
+    // shifted up by it -- and the gain follows the VCO rather than either of
+    // the two frequencies the caller handed in.
+    PLLAD_FS::write(vcoGainFor(ckoHz << postDivider));
+
     uint8_t ratio = applyOversample(postDivider, oversample);
 
     latch();

@@ -301,6 +301,20 @@ public:
     // the oversampled rate the ADC then runs at.
     static uint8_t postDividerFor(uint32_t ckoHz);
 
+    // The VCO gain PLLAD_FS selects, for a VCO frequency. RD-5725-1.1 calls the
+    // bit "0 default, 1 high gain" and gives no band for it, so this is
+    // measured rather than derived: swept at 800x600@60, the PLL locks with
+    // gain 0 up to 136 MHz and fails by 144, and with gain 1 down to 121 MHz
+    // and fails by 106. The threshold sits in that overlap.
+    //
+    // **IT FOLLOWS THE VCO, NOT CKO AND NOT THE DIVIDER.** 143.9 MHz was
+    // reached at two different post dividers -- CKO 72.0 MHz over 2 and 36.0
+    // MHz over 4 -- and both need gain 1.
+    // ../../../docs/investigations/the-vco-gain-follows-the-vco.md
+    static uint8_t vcoGainFor(uint32_t vcoHz);
+
+    static const uint32_t HighVcoGainAboveHz = 130000000;
+
     // The oversampling that post divider can carry. Each doubling takes an
     // output tap one step faster, and there is none above the top, so a ratio
     // the clock cannot give comes back reduced.
@@ -324,33 +338,13 @@ public:
                                    uint8_t oversample);
 
     // The ADC as pass-through wants it: no internal filtering, and the PLL's
-    // charge pump and VCO gain. NOT the divider -- HdBypass::dividerFor()
-    // answers that against the line rate, and applySampleRate() writes it with
-    // the crossover row it implies.
+    // charge pump. NOT the divider and NOT the VCO gain -- HdBypass::dividerFor()
+    // answers the first against the line rate, and applySampleRate() writes both
+    // it and the gain from the crossover row it implies.
     static void applyForBypassRgbhv();
 
-    // The PLL's operating band, steered from a measured rate. Held rather than
-    // read back: PLLAD_LAT loads the whole group on a rising edge, so the
-    // registers report a band the PLL may not be running yet.
-    //
-    // True when the rate has left the band in force, which is the only time the
-    // group is worth rewriting -- the latch that loads it takes the PLL out of
-    // lock, so a rate that has not moved is left alone. A rate of nothing is no
-    // reading and moves nothing.
-    static bool pllBandFollows(uint32_t rate);
-
-    // Nothing is known about the band, so the next rate that arrives counts as
-    // a move. What every path that drops the PLL asks for.
-    static void forgetPllBand();
-
-    // Put the charge pump, the VCO gain and the post divider where the held
-    // band wants them, latch, and set the oversampling that divider can carry.
-    // Returns the oversampling installed, and 0 when there is no band to apply.
-    static uint8_t applyPllBand();
-
-    // The charge pump the scaling path runs on, which is lower than the band
-    // steer's. The read is the guard rather than a decision: only the band
-    // raises it, and rewriting a value already in force costs a latch, which
+    // The charge pump the scaling path runs on. The read is the guard rather
+    // than a decision: rewriting a value already in force costs a latch, which
     // takes the PLL out of lock for nothing. A write is followed by the PLL's
     // settling time, so no caller has to remember one.
     static void applyScalingChargePump();

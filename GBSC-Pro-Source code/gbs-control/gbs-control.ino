@@ -651,7 +651,6 @@ static void resetRunTimeDefaults()
     Tv5725::Adc::choosePhaseAdc(16);
     Tv5725::Adc::choosePhaseSyncProcessor(16);
     rto->presetID = 0;
-    Tv5725::Adc::forgetPllBand();
     Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;
     Tv5725::Deinterlacer::forgetScanlines();
@@ -1394,7 +1393,6 @@ void setResetParameters_re()
 
     rto->isInLowPowerMode = false;   
     Tv5725::SyncOnGreen::choose(5);        
-    Tv5725::Adc::forgetPllBand();
     Tv5725::Deinterlacer::disableMotionAdapt();
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::SyncMeasurement::set(false);                   
@@ -1429,7 +1427,6 @@ void setResetParameters()
 
     rto->isInLowPowerMode = false;  
     Tv5725::SyncOnGreen::choose(5);       
-    Tv5725::Adc::forgetPllBand();
     Tv5725::Deinterlacer::disableMotionAdapt();
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::SyncMeasurement::set(false);                   
@@ -4704,13 +4701,6 @@ void runSyncWatcher() //
             }
 
             Tv5725::Interrupts::acknowledgeSogBad();
-
-            const bool pllBandMoved = Tv5725::Adc::pllBandFollows(currentPllRate);
-
-            if (pllBandMoved && rgbhvBypass()) {
-                rto->osr = Tv5725::Adc::applyPllBand();
-                delay(100);
-            }
 
             if (scalingRgbhv()) {
 

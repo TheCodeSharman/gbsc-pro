@@ -529,7 +529,6 @@ static void LoadDefault()
     Tv5725::Adc::choosePhaseAdc(16);
     Tv5725::Adc::choosePhaseSyncProcessor(16);
     rto->presetID = 0;                 //
-    Tv5725::Adc::forgetPllBand();
     Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
     Tv5725::Deinterlacer::forgetScanlines();
