@@ -3653,7 +3653,8 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::HD_INI_ST::write(0);
 
     Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
-                                       Tv5725::Adc::BypassDivider,
+                                       Tv5725::HdBypass::dividerFor(
+                                           sourceSampling.heldLineRateHz()),
                                        sourceSampling.heldLineRateHz(),
                                        applyRGBPatches);
 
@@ -3775,7 +3776,8 @@ void bypassModeSwitch_RGBHV()
     // raster is derived from.
     // docs/investigations/one-bypass-route-carries-rgbhv.md
     Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
-                                       Tv5725::Adc::BypassDivider,
+                                       Tv5725::HdBypass::dividerFor(
+                                           sourceSampling.heldLineRateHz()),
                                        sourceSampling.heldLineRateHz(),
                                        applyRGBPatches);
     GBS::DAC_RGBS_R0ENZ::write(1);    

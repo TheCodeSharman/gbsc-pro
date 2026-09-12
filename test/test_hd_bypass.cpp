@@ -523,6 +523,31 @@ TEST_CASE("an RGBHV source samples the way the ADC-to-DAC route does")
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
 
+TEST_CASE("the pass-through divider is as dense as the channel and the PLL allow")
+{
+    // PLLAD_MD is samples per line, and pass-through writes nothing to memory,
+    // so the capture's write limit does not bound it. Two other things do.
+
+    SUBCASE("the channel's own counter binds it at a bench line rate") {
+        // HD_HSYNC_RST is eleven bits and the counter ignores the twelfth the
+        // register stores, so the played-out line stops at 2047 -- the divider
+        // plus the guard the generator needs past it.
+        CHECK(HdBypass::dividerFor(37879) == 2039);
+    }
+
+    SUBCASE("the PLL's top row binds it on a fast line") {
+        // RD-5725-1.1's rows stop at 162 MHz and there is nothing above, so a
+        // fast enough source runs out of clock before it runs out of counter.
+        CHECK(HdBypass::dividerFor(100000) == 1620);
+    }
+
+    SUBCASE("nothing measured asks for nothing") {
+        // A divider of 0 leaves the block at its resting timing rather than
+        // playing out a raster derived from a zero.
+        CHECK(HdBypass::dividerFor(0) == 0);
+    }
+}
+
 TEST_CASE("an RGBHV source takes the crossover row its own clock lands in")
 {
     // The row is not a property of pass-through, it is a property of the

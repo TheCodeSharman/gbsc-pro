@@ -323,22 +323,11 @@ public:
     static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
                                    uint8_t oversample);
 
-    // The ADC as RGBHV bypass wants it: no internal filtering, the PLL's charge
-    // pump and VCO gain, and a divider sized for the bypassed line rather than
-    // for a capture window.
-    //
-    // The divider written here is LOADED BY A LATER RISING EDGE ON PLLAD_LAT,
-    // not by this write. Anything moving this call must keep it before the
-    // latch that follows it, or the register reads the new divider while the
-    // PLL still clocks at the old one -- a solid green screen with every
-    // register self-consistent. SourceMeasurement.h
+    // The ADC as pass-through wants it: no internal filtering, and the PLL's
+    // charge pump and VCO gain. NOT the divider -- HdBypass::dividerFor()
+    // answers that against the line rate, and applySampleRate() writes it with
+    // the crossover row it implies.
     static void applyForBypassRgbhv();
-
-    // The divider pass-through samples at, on either route. A literal rather
-    // than the measured divider: it is what the ADC-to-DAC switch has always
-    // used, and that route's picture is the reference the HD route is judged
-    // against. docs/investigations/adc-pll-lock-range.md
-    static const uint16_t BypassDivider = 1856;
 
     // The PLL's operating band, steered from a measured rate. Held rather than
     // read back: PLLAD_LAT loads the whole group on a rising edge, so the

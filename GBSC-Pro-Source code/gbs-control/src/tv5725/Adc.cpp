@@ -329,7 +329,6 @@ void Adc::applyForBypassRgbhv()
     ADC_FLTR::write(0);
     PLLAD_ICP::write(4);
     PLLAD_FS::write(0);
-    PLLAD_MD::write(BypassDivider);
 
     ADC_TA_05_CTRL::write(0x02);
     ADC_TEST_04::write(0x02);

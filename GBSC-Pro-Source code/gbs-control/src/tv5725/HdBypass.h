@@ -154,6 +154,27 @@ public:
     // route was selected rather than whether the block is configurable.
     static bool enabled();
 
+    // The widest line this block can play out, in its own clocks. HD_HSYNC_RST
+    // is ELEVEN bits and the counter ignores the twelfth the register stores,
+    // so a longer line wraps and the sink drops the mode -- measured, a line of
+    // 2040 displays and one of 2056 gives no signal, 0.8% apart.
+    // ../../../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
+    static const uint16_t MaxChannelLine = 2047;
+
+    // The densest sampling pass-through can ask for at this line rate.
+    //
+    // PLLAD_MD is samples per line and nothing is written to memory here, so
+    // the capture's write limit does not bound it and denser is simply better:
+    // scaling loses detail exactly where the source has most, which is why a
+    // source is passed through at all. Two other things bound it -- the line
+    // this block can play out, and the top of the ADC PLL's crossover table,
+    // whichever is reached first. A rate of nothing asks for nothing.
+    static uint16_t dividerFor(uint32_t lineRateHz);
+
+    // The top of RD-5725-1.1's crossover table: its first row is 162..80 MHz
+    // and there is no row above it.
+    static const uint32_t MaxSampleClockHz = 162000000;
+
     // What the source's standard implies for the block: the raster it plays
     // out, both blanking windows, the polarities the sync processor needs
     // behind them, and the ADC's sampling. Runs AFTER enable(), whose resting

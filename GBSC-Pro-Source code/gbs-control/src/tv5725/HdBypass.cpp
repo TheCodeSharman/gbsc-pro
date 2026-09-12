@@ -132,6 +132,16 @@ void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
     HD_HB_SP::write(BlankEndSamples);
 }
 
+uint16_t HdBypass::dividerFor(uint32_t lineRateHz)
+{
+    if (lineRateHz == 0)
+        return 0;
+
+    const uint32_t channelBound = MaxChannelLine - RasterGuardSamples;
+    const uint32_t clockBound = MaxSampleClockHz / lineRateHz;
+    return (uint16_t)(clockBound < channelBound ? clockBound : channelBound);
+}
+
 void HdBypass::applyRgbhv(uint16_t divider, uint32_t lineRateHz)
 {
     if (divider == 0)
