@@ -147,7 +147,6 @@ struct runTimeOptions
     bool enableDebugPings;
     bool autoBestHtotalEnabled;
     bool videoIsFrozen;
-    bool motionAdaptiveDeinterlaceActive;
     bool deinterlaceAutoEnabled;
     bool boardHasPower;
     bool isValidForScalingRGBHV;

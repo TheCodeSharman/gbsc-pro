@@ -378,3 +378,57 @@ TEST_CASE("a period naming no total leaves the tap where it is")
           == static_cast<uint8_t>(Deinterlacer::KeepVerticalTap));
 }
 
+
+
+// --- who owns "is the motion-adaptive path engaged" -------------------------
+//
+// The sketch used to keep its own copy of this beside the registers, and three
+// reset paths assigned that copy directly without writing the chip. The two
+// then disagreed permanently, and the branch that turns the path off is
+// guarded by the copy -- so a progressive source ran through the deinterlacer
+// RAM for the life of the boot, with RFF_WFF_OFFSET 0x100 putting a shifted
+// second image on screen. Measured on a Wii going 576i -> 480p.
+//
+// So the state belongs to whatever writes the registers, and it can only
+// change by writing them.
+
+TEST_CASE("the motion-adaptive path reports itself engaged")
+{
+    Wire.reset();
+    Deinterlacer::disableMotionAdapt();
+    REQUIRE_FALSE(Deinterlacer::motionAdaptEngaged());
+
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+
+    CHECK(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("turning it off reports it disengaged")
+{
+    Wire.reset();
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+    REQUIRE(Deinterlacer::motionAdaptEngaged());
+
+    Deinterlacer::disableMotionAdapt();
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+// The regression lock. Engagement going true -> false without those writes is
+// exactly the state the sketch used to reach, and the one nothing could undo.
+TEST_CASE("it cannot report itself disengaged without stopping the fifos")
+{
+    Wire.reset();
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+    Wire.reset();
+
+    Deinterlacer::disableMotionAdapt();
+
+    REQUIRE_FALSE(Deinterlacer::motionAdaptEngaged());
+    CHECK(Wire.touched[0x02][0x16]);
+    CHECK(Wire.touched[0x04][0x42]);
+    CHECK(Wire.touched[0x04][0x4d]);
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 1);
+    CHECK(FrameBuffer::WFF_ENABLE::read() == 0);
+    CHECK(FrameBuffer::RFF_ENABLE::read() == 0);
+}

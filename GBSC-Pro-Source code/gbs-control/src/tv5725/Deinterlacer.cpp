@@ -10,6 +10,7 @@ namespace Tv5725 {
 namespace {
 
 bool scanlinesApplied_ = false;
+bool motionAdaptEngaged_ = false;
 
 // Which broadcast family the period sits in, and how far either side of a
 // total still names it. The tap is a family choice, not a scan-type one.
@@ -253,7 +254,10 @@ void Deinterlacer::enableMotionAdapt(uint8_t verticalTap,
         releaseCapture();
     delay(SettleMs);
     MAPDT_VT_SEL_PRGV::write(0);
+    motionAdaptEngaged_ = true;
 }
+
+bool Deinterlacer::motionAdaptEngaged() { return motionAdaptEngaged_; }
 
 void Deinterlacer::disableMotionAdapt()
 {
@@ -269,6 +273,7 @@ void Deinterlacer::disableMotionAdapt()
 
     MADPT_Y_MI_OFFSET::write(0x7f);
     MADPT_Y_MI_DET_BYPS::write(1);
+    motionAdaptEngaged_ = false;
 }
 
 }  // namespace Tv5725

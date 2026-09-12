@@ -643,7 +643,7 @@ static void resetRunTimeDefaults()
     Tv5725::Adc::choosePhaseSyncProcessor(16);
     rto->presetID = 0;
     Tv5725::Adc::forgetPllBand();
-    rto->motionAdaptiveDeinterlaceActive = false;
+    Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;
     Tv5725::Deinterlacer::forgetScanlines();
     rto->boardHasPower = true;
@@ -1388,7 +1388,7 @@ void setResetParameters_re()
     rto->isInLowPowerMode = false;   
     Tv5725::SyncOnGreen::choose(5);        
     Tv5725::Adc::forgetPllBand();
-    rto->motionAdaptiveDeinterlaceActive = false; 
+    Tv5725::Deinterlacer::disableMotionAdapt();
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
@@ -1423,7 +1423,7 @@ void setResetParameters()
     rto->isInLowPowerMode = false;  
     Tv5725::SyncOnGreen::choose(5);       
     Tv5725::Adc::forgetPllBand();
-    rto->motionAdaptiveDeinterlaceActive = false; 
+    Tv5725::Deinterlacer::disableMotionAdapt();
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
@@ -2876,7 +2876,7 @@ void doPostPresetLoadSteps()
         rto->phaseIsSet = 0;
         rto->continousStableCounter = 0;              
         rto->noSyncCounter = 0;                       
-        rto->motionAdaptiveDeinterlaceActive = false; 
+        Tv5725::Deinterlacer::disableMotionAdapt();
         Tv5725::Deinterlacer::forgetScanlines();
         rto->videoIsFrozen = true;
         rto->sourceDisconnected = false;
@@ -3851,13 +3851,11 @@ void enableMotionAdaptDeinterlace() //
 
     Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
                                             Tv5725::FrameBuffer::releaseCapture);
-    rto->motionAdaptiveDeinterlaceActive = true;
 }
 
 void disableMotionAdaptDeinterlace() // 
 {
     Tv5725::Deinterlacer::disableMotionAdapt();
-    rto->motionAdaptiveDeinterlaceActive = false; 
 }
 
 void printInfo()
@@ -4443,7 +4441,7 @@ void runSyncWatcher() //
                         filteredLineCountMotionAdaptiveOn++;
                         filteredLineCountMotionAdaptiveOff = 0;
                         if (filteredLineCountMotionAdaptiveOn >= 2) {
-                            if (uopt->deintMode == 0 && !rto->motionAdaptiveDeinterlaceActive) {
+                            if (uopt->deintMode == 0 && !Tv5725::Deinterlacer::motionAdaptEngaged()) {
                                 disableScanlines();
                                 enableMotionAdaptDeinterlace();
                                 if (timingAdjustDelay == 0) {
@@ -4460,7 +4458,7 @@ void runSyncWatcher() //
                         filteredLineCountMotionAdaptiveOff++;
                         filteredLineCountMotionAdaptiveOn = 0;
                         if (filteredLineCountMotionAdaptiveOff >= 2) {
-                            if (uopt->deintMode == 0 && rto->motionAdaptiveDeinterlaceActive) {
+                            if (uopt->deintMode == 0 && Tv5725::Deinterlacer::motionAdaptEngaged()) {
                                 disableMotionAdaptDeinterlace();
                                 if (timingAdjustDelay == 0) {
                                     timingAdjustDelay = 11;
@@ -4477,7 +4475,7 @@ void runSyncWatcher() //
                     VPERIOD_IF_OLD = VPERIOD_IF;
 
                     if (uopt->deintMode == 1) {
-                        if (rto->motionAdaptiveDeinterlaceActive) {
+                        if (Tv5725::Deinterlacer::motionAdaptEngaged()) {
                             disableMotionAdaptDeinterlace();
                             FrameSync::reset(uopt->frameTimeLockMethod);
                             lastVsyncLock = millis();
@@ -4505,7 +4503,7 @@ void runSyncWatcher() //
                 }
 
                 if (uopt->wantScanlines) {
-                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !rto->motionAdaptiveDeinterlaceActive && !preventScanlines) {
+                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !Tv5725::Deinterlacer::motionAdaptEngaged() && !preventScanlines) {
                         enableScanlines();
                     } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
                         disableScanlines();
@@ -4741,7 +4739,7 @@ void runSyncWatcher() //
             if (scalingRgbhv()) {
 
                 if (uopt->wantScanlines) {
-                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !rto->motionAdaptiveDeinterlaceActive) {
+                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !Tv5725::Deinterlacer::motionAdaptEngaged()) {
                         if (GBS::IF_LD_RAM_BYPS::read() == 0) {
                             enableScanlines();
                         }
@@ -6291,7 +6289,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                     break;
                 case 'p':
-                    if (!rto->motionAdaptiveDeinterlaceActive) {
+                    if (!Tv5725::Deinterlacer::motionAdaptEngaged()) {
                         disableScanlines();
                         enableMotionAdaptDeinterlace();
                     } else {
