@@ -69,6 +69,22 @@ describe the same oversampling as `PLLAD_CKOS`. Pass-through should reach the
 divider through it rather than through a literal, with the channel's 2047 as the
 clamp.
 
+## Oversampling does not lift it, and cannot
+
+The channel's counter counts the DECIMATED clock -- the played-out line is the
+divider over the oversampling ratio -- so oversampling looks like the way to
+sample faster without a longer line. It is not, because oversampling here is
+bought from the same crossover ladder rather than from a second clock:
+`Adc::applyOversample()` takes a faster tap of the one VCO and each doubling
+costs a step of `PLLAD_KS` headroom, so `oversampleFor()` reduces a ratio the
+row cannot carry.
+
+Asking for two therefore holds the ADC clock under the top row's 80 MHz, and
+what reaches the channel halves with it. The band where both ratios reach the
+counter's own cap -- where the doubling would be free -- is below about
+19.6 kHz, and `SourceMeasurement::BypassMinLineRateHz` is 26 kHz: a source slow
+enough for oversampling to cost nothing is too slow to be passed through at all.
+
 ## What the ceiling is worth
 
 1856 to about 2032 is roughly 9.5% more samples per line. It does not reach an
@@ -82,3 +98,39 @@ identical sync to the scaler, differing only in pixel clock.
 at the same 627 total lines and 37.9 kHz line rate as 800x600@60, so the scaler
 cannot tell the two apart and samples both the same. Everything visible between
 them is horizontal resolution.
+
+Measured across the two dividers at 1600x600, the PM5544 wedge resolves further
+at 2039: its leftmost block is stripes where 1856 renders flat grey. Taken off
+the photographs as contrast inside the wedge divided by contrast in the
+colour-bar row of the SAME frame, which divides out the exposure the room moves
+-- 0.819 at 1856 against 0.869 at 2039.
+
+## And 2039 is still short of 1600 active pixels
+
+**The finest wedge block loses its detail entirely** at 1600x600, smearing into
+a slow grey-pink-grey envelope where 800x600 renders it cleanly. **The blocks
+below it are fine** -- no shimmer, a little discolouring at most -- so the
+failure is a boundary rather than a general softening, and the arithmetic puts
+the boundary in the same place.
+
+The channel delivers 2039 samples across the whole line whatever the source's
+pixel clock, and the two modes share a raster, so the same count lands on active
+video in both:
+
+| active pixels | samples on active | finest wedge | samples per cycle |
+|---|---|---|---|
+| 800 | ~1540 | 400 cycles | ~3.9 |
+| 1600 | ~1540 | 800 cycles | ~1.9 |
+
+Just under two samples a cycle is Nyquist, and an alias there beats to near DC:
+the envelope crossing the block IS the beat, which is why the detail does not
+soften but disappears. One block down the frequency halves and two samples a
+cycle become four, which is the margin the rest of the wedge shows.
+
+**Pass-through is far better than scaling and still not transparent much past a
+thousand active pixels**, and no setting on this part lifts that: carrying 800
+cycles wants around 4200 samples a line against a counter that stops at 2047.
+
+The colour in the envelope is the beat reaching the encoder, which re-samples
+the analog output at its own clock and phase rather than ours. Stated as the
+reading it is: the near-Nyquist beat is arithmetic, the colour is not measured.
