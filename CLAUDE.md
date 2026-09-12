@@ -672,6 +672,14 @@ bits, so the header is right and the table is simply an error.
   overwrote earlier ones, one read `(hi, lo)` as `(lo, hi)`. Both looked fine.
 - **The danger is one-directional.** A field declared *narrower* than it is
   truncates every value written through it and says nothing.
+- **A READ-BACK IS NOT PROOF THE HARDWARE ACTED ON THE WRITE.** Reserved bits
+  beside a field are often writable storage with nothing behind them, so
+  widening a field on a successful round trip proves only that the bit exists.
+  `HD_HSYNC_RST` is the case: `s1_38` bit 3 stores a 1 and reads it back, and
+  the channel's counter ignores it — proven by the pair either side of 2048,
+  where a line of 2040 counts displays and one of 2056 gives no signal.
+  **Ask the behaviour, not the register.**
+  `docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`
 - **The PDF's line wrapping is what breaks any re-derivation, in two
   directions.** A long field name wraps across two lines, and a parser that
   keeps only the second gets a fragment — `ALUE`, `EG0`, `R_B` — which reaches
