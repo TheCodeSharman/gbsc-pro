@@ -261,6 +261,14 @@ adjacently in one pass, which is what makes two of them comparable to each other
 `SamplingLog::event()` logs a decision as the branch takes it, which no dump
 afterwards can show.
 
+**A `sol,` line says where the engine SOLVED**, emitted when it moves rather
+than per sample: the raster, both scales, both display windows, both output
+sync pulses, `IF_HSYNC_RST` and `IF_HBIN_SP`. That is the set two runs are
+compared on, and taking it over HTTP is what changes the outcome — a full dump
+per return is hundreds of `loop()`-deferred requests through the loop being
+measured, and the affordable subset used instead left out `VDS_HS_ST`, which is
+a pan.
+
 `STATUS_SYNC_PROC_VTOTAL` on the Wii is the measurement that made the case:
 HTTP point reads gave 149 / 160 / 230 / 299 among 310s where the log gave
 **310 in 1050 of 1050**, so HTTP over-reported a steady register as
