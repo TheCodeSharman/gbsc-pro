@@ -151,13 +151,17 @@ TEST_CASE("a progressive standard narrows the ADC's analog filter")
     CHECK(WRITTEN(4, false, Adc::ADC_FLTR) == 3);
 }
 
-TEST_CASE("standard 3 opens the SD vsync window later than its neighbours")
+TEST_CASE("every progressive standard opens the SD vsync window at one place")
 {
-    CHECK(WRITTEN(4, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 14);
-    CHECK(WRITTEN(4, false, SyncProcessor::SP_SDCS_VSSP_REG_L) == 11);
-
-    CHECK(WRITTEN(3, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 16);
-    CHECK(WRITTEN(3, false, SyncProcessor::SP_SDCS_VSSP_REG_L) == 13);
+    // 3 used to open it two lines later than 4, 8 and 9 with no recorded
+    // reason. Measured on the Wii at 480p, which is standard 3: the picture,
+    // the line and field periods, the counted total and the acquisition are
+    // indistinguishable either side of the move.
+    for (uint8_t standard : {3, 4, 8, 9}) {
+        CAPTURE(standard);
+        CHECK(WRITTEN(standard, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 14);
+        CHECK(WRITTEN(standard, false, SyncProcessor::SP_SDCS_VSSP_REG_L) == 11);
+    }
 }
 
 TEST_CASE("the source's height changes nothing")

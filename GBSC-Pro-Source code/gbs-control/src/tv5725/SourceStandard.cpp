@@ -68,12 +68,8 @@ void SourceStandard::applyProgressive() const
     SyncProcessor::writeSdVsyncStart(14);
     SyncProcessor::writeSdVsyncStop(11);
 
-    if (standard_ == 3) {
-        SyncProcessor::writeSdVsyncStart(16);
-        SyncProcessor::writeSdVsyncStop(13);
-    } else if (standard_ == 8) {
+    if (standard_ == 8)
         Adc::ADC_FLTR::write(AnalogFilter110MHz);
-    }
 }
 
 }  // namespace Tv5725
