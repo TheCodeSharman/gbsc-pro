@@ -57,11 +57,47 @@ public:
     static const uint16_t TallSourceLines = 380;
     static const uint16_t ShortSourceLines = 280;
 
-    // The sentinel writeProgramArrayNew() clears on every load.
+    // The values of rto->videoStandardInput, named so the facets one byte
+    // carries are visible: a source FORMAT in 1..9, a video PATH in 13..15, and
+    // nothing-known at 0. Separating them is what retires the byte.
+    //
+    // **15 DOES DOUBLE DUTY.** It is the sentinel a load clears, and it is what
+    // rgbhvBypass() tests -- bypass being the consequence of having no valid
+    // scaled mode rather than a second meaning invented for the value.
     static const uint8_t NoValidMode = 15;
 
     // The byte that names scaling RGBHV, which is what scalingRgbhv() tests.
     static const uint8_t ScalingRgbhv = 14;
+
+    // YPbPr passed through rather than scaled.
+    static const uint8_t HdBypassStandard = 13;
+
+    // Nothing has been classified.
+    static const uint8_t NoStandard = 0;
+
+    // The SD formats, which are the four Mode Detect names in STATUS_00 and
+    // carry that block's vocabulary. **INT AND PRG NAME THE STANDARD, NOT THIS
+    // SOURCE'S SCAN**: the bits are vertical-period buckets, and a 15 kHz
+    // progressive source lands in an interlaced standard's bucket.
+    // docs/video-source-acquisition.md
+    static const uint8_t NtscInt = 1;                  // STATUS_00 bit 3
+    static const uint8_t PalInt = 2;                   // bit 5
+    static const uint8_t NtscPrg = 3;                  // bit 4
+    static const uint8_t PalPrg = 4;                   // bit 6
+    static const uint8_t SdFirst = NtscInt;
+    static const uint8_t SdLast = PalPrg;
+
+    // Everything above SD. The first three run the ADC at their own
+    // oversampling.
+    static const uint8_t HdFirst = 5;
+    static const uint8_t HdOwnOversampleLast = 7;
+
+    // The lowest value that names a PATH rather than a source format.
+    static const uint8_t PathFirst = 13;
+
+    // ...and the lowest that names an RGBHV one, which is what sourceIsRgbhv()
+    // tests.
+    static const uint8_t RgbhvFirst = 14;
 
     // Whether the output in force is scaling RGBHV, which the load above
     // decides and later steps of the same load ask about. State rather than a

@@ -660,7 +660,7 @@ static void LoadDefault()
 
     resetRunTimeDefaults();
 
-    rto->videoStandardInput = 0;    
+    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;    
     rto->outModeHdBypass = false;   
     rto->videoIsFrozen = true;      
     rto->sourceDisconnected = true; 
@@ -698,7 +698,7 @@ void UpDisplay(void)
 {
     const uint8_t videoMode = standardForPresetLoad();
     if (scalingRgbhv()) {
-        rto->videoStandardInput = 15;
+        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
     } else {
         applyPresets(videoMode);
     }
@@ -1170,9 +1170,9 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
 // 14 and 15 are not standards. The byte has no room for "no standard was
 // recognised", so an RGBHV source borrows the top of its range: scaled when the
 // line count qualifies, bypassed when it does not. docs/rgbhv-bypass-trap.md
-bool sourceIsRgbhv() { return rto->videoStandardInput >= 14; }
-bool scalingRgbhv() { return rto->videoStandardInput == 14; }
-bool rgbhvBypass() { return rto->videoStandardInput == 15; }
+bool sourceIsRgbhv() { return rto->videoStandardInput >= Tv5725::PresetLoad::RgbhvFirst; }
+bool scalingRgbhv() { return rto->videoStandardInput == Tv5725::PresetLoad::ScalingRgbhv; }
+bool rgbhvBypass() { return rto->videoStandardInput == Tv5725::PresetLoad::NoValidMode; }
 
 // Whether the byte names a standard at all. NOT a signal-present test, however
 // it reads at the sites below: it says only that something was recognised and
@@ -1181,7 +1181,7 @@ bool rgbhvBypass() { return rto->videoStandardInput == 15; }
 // question is VideoSourceAcquisition::sourceIsPresent(). docs/video-source-acquisition.md
 static bool standardIsHeld()
 {
-    return rto->videoStandardInput != 0;
+    return rto->videoStandardInput != Tv5725::PresetLoad::NoStandard;
 }
 
 // Whether the loop may steer this source between scaling RGBHV and RGBHV
@@ -1374,7 +1374,7 @@ void activeFrameTimeLockInitialSteps()
 
 void setResetParameters_re() 
 {
-    rto->videoStandardInput = 0;   
+    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;   
     rto->videoIsFrozen = false;    
     rto->applyPresetDoneStage = 0; 
     // rto->sourceDisconnected = true;  
@@ -1409,7 +1409,7 @@ static uint8_t selectedAdcInput()
 
 void setResetParameters()
 {
-    rto->videoStandardInput = 0;
+    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;
     rto->videoIsFrozen = false; 
     rto->applyPresetDoneStage = 0;
     rto->sourceDisconnected = true; 
@@ -1802,7 +1802,8 @@ boolean optimizePhaseSP()
     // line rate, which the engine holds and bypass does not, so the byte stays
     // until it leaves with its branch. docs/video-source-acquisition.md
     const bool hdAtItsOwnOversample =
-        rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7
+        rto->videoStandardInput >= Tv5725::PresetLoad::HdFirst
+        && rto->videoStandardInput <= Tv5725::PresetLoad::HdOwnOversampleLast
         && rto->osr == 2;
 
     return Tv5725::Adc::acquirePhase(rto->osr,
@@ -2033,7 +2034,7 @@ uint8_t detectAndSwitchToActiveInput()
                             delay(30);
                         }
 
-                        rto->videoStandardInput = 15;
+                        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
 
                         applyPresets(rto->videoStandardInput);
                         delay(100);
@@ -2154,7 +2155,7 @@ uint8_t inputAndSyncDetect()
         {
             if (rto->isInLowPowerMode == false) {
                 rto->sourceDisconnected = true; 
-                rto->videoStandardInput = 0;
+                rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;
                 GBS::SP_SOG_MODE::write(1);
                 goLowPowerWithInputDetection();
                 rto->isInLowPowerMode = true;
@@ -2194,7 +2195,7 @@ uint8_t inputAndSyncDetect()
         rto->isInLowPowerMode = false; 
         rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
-        rto->videoStandardInput = 15;
+        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
         resetDebugPort();
 
         if (Info == InfoVGA && rto->HdmiHoldDetection) {
@@ -2944,7 +2945,8 @@ void doPostPresetLoadSteps()
         // ninety lines above and nothing between touches either.
         if (!rto->outModeHdBypass &&
             !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
-            rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4) {
+            rto->videoStandardInput >= Tv5725::PresetLoad::SdFirst
+            && rto->videoStandardInput <= Tv5725::PresetLoad::SdLast) {
 
             updateCoastPosition(0);
             delay(1);
@@ -2965,10 +2967,12 @@ void doPostPresetLoadSteps()
                         boolean ok = 0;
                         float sfr = getSourceFieldRate(0);
 
-                        if (rto->videoStandardInput == 1 || rto->videoStandardInput == 3) {
+                        if (rto->videoStandardInput == Tv5725::PresetLoad::NtscInt
+                            || rto->videoStandardInput == Tv5725::PresetLoad::NtscPrg) {
                             if (sfr > 58.6f && sfr < 61.4f)
                                 ok = 1;
-                        } else if (rto->videoStandardInput == 2 || rto->videoStandardInput == 4) {
+                        } else if (rto->videoStandardInput == Tv5725::PresetLoad::PalInt
+                                   || rto->videoStandardInput == Tv5725::PresetLoad::PalPrg) {
                             if (sfr > 49.1f && sfr < 51.1f)
                                 ok = 1;
                         }
@@ -3043,7 +3047,7 @@ void doPostPresetLoadSteps()
 
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-        if (rto->videoStandardInput >= 5) {
+        if (rto->videoStandardInput >= Tv5725::PresetLoad::HdFirst) {
             Tv5725::SyncProcessor::setSubCoast(false);
         }
 
@@ -3325,7 +3329,7 @@ uint8_t getVideoMode()
             return 5;
         }
 
-        if (rto->videoStandardInput == 4) {
+        if (rto->videoStandardInput == Tv5725::PresetLoad::PalPrg) {
             detectedMode = GBS::STATUS_04::read();
             if ((detectedMode & 0xFF) == 0x80) {
                 return 4;
@@ -3441,7 +3445,8 @@ boolean getStatus16SpHsStable()
 
     uint8_t status16 = GBS::STATUS_16::read();
     if ((status16 & 0x02) == 0x02) {
-        if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
+        if (rto->videoStandardInput == Tv5725::PresetLoad::NtscInt
+            || rto->videoStandardInput == Tv5725::PresetLoad::PalInt) {
             if ((status16 & 0x01) != 0x01) {
                 // printf("\n stable from 1\n");
                 return true;
@@ -3505,7 +3510,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         Tv5725::SyncProcessor::setCoastInvert(false);
     }
 
-    if (rto->videoStandardInput >= 13) {
+    if (rto->videoStandardInput >= Tv5725::PresetLoad::PathFirst) {
         Tv5725::SyncProcessor::applySeparationThresholds(
             Tv5725::SyncMeasurement::isCsync());
     } else if (standardIsHeld()) {
@@ -3731,7 +3736,7 @@ void bypassModeSwitch_RGBHV()
     GBS::PA_SP_BYPSZ::write(1);
     applyRGBPatches();
     resetDebugPort();
-    rto->videoStandardInput = 15;
+    rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
     rto->autoBestHtotalEnabled = false;
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::Adc::forgetPllBand();
@@ -4026,7 +4031,7 @@ static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
 
     Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
     Tv5725::InputFormatter::writeLineCounterStart(16);
-    rto->videoStandardInput = 14;
+    rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
 
     Tv5725::Adc::applyScalingChargePump();
     updateSpDynamic(1);
@@ -4224,7 +4229,7 @@ void runSyncWatcher() //
 
     steerHdBypassVsyncWindow(status16SpHsStable);
 
-    if (rto->videoStandardInput == 13) {
+    if (rto->videoStandardInput == Tv5725::PresetLoad::HdBypassStandard) {
         if (detectedVideoMode == 0) {
             if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
                 detectedVideoMode = 13;
@@ -4592,7 +4597,7 @@ void runSyncWatcher() //
         // straight to the encoder, which shows nothing -- measured, 21780 Hz
         // and below give no signal on the bench panel.
         if (!uopt->preferScalingRgbhv && scalingRgbhv() && bypassCanBeDisplayed()) {
-            rto->videoStandardInput = 15;
+            rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
             rto->isValidForScalingRGBHV = false; 
             applyPresets(rto->videoStandardInput);
             delay(300);
@@ -5242,7 +5247,7 @@ void setup()
     resetRunTimeDefaults();
 
     rto->inputIsYpBpR = false;   
-    rto->videoStandardInput = 0; 
+    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard; 
     rto->outModeHdBypass = false;
     rto->videoIsFrozen = false;  
     if (!rto->webServerEnabled)
@@ -5981,7 +5986,7 @@ void loop()
                 // is the detection block's, which asks presetPreference.
                 if (!rto->outModeHdBypass) {
                     if (scalingRgbhv()) {
-                        rto->videoStandardInput = 15;
+                        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
                     } else {
                         applyPresets(videoMode);
                     }
@@ -6373,7 +6378,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprint("ADC: ");
                     break;
                 case '#':
-                    rto->videoStandardInput = 13;
+                    rto->videoStandardInput = Tv5725::PresetLoad::HdBypassStandard;
                     applyPresets(13);
                     break;
                 case 'n': {
@@ -7065,7 +7070,7 @@ void handleType2Command(char argument)
             // if (argument == 'L')
 
             if (scalingRgbhv()) {
-                rto->videoStandardInput = 15;
+                rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
             } else {
                 changeOutputResolution(videoMode);
             }
