@@ -98,3 +98,15 @@ TEST_CASE("the route in force follows the registers that select it")
 
     CHECK(VideoRoute::route() == VideoRoute::HdBypassChannel);
 }
+
+TEST_CASE("the colour DACs follow their input rather than resting at minimum")
+{
+    // Nothing writes these bits the other way, so a load that clears one leaves
+    // a tinted picture with no register that reads wrong.
+    fresh();
+    Chip::dacsFollowInput();
+
+    CHECK(Chip::DAC_RGBS_R0ENZ::read() == 1);
+    CHECK(Chip::DAC_RGBS_G0ENZ::read() == 1);
+    CHECK(Chip::DAC_RGBS_B0ENZ::read() == 1);
+}

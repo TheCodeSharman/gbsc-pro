@@ -197,6 +197,13 @@ public:
     static void outputDown();
     static void outputUp();
 
+    // The three colour DACs following their input data rather than resting at
+    // their minimum voltage. Every bypass entry wants it, and nothing writes
+    // the bits back the other way: a bulk table load once left B0ENZ clear with
+    // nothing to restore it, which is a yellow-tinted picture with no register
+    // that reads wrong. ../../../docs/preset-load-clobber.md
+    static void dacsFollowInput();
+
     // The DACs on the HD bypass channel. It leaves OUT_SYNC_SEL alone: the
     // switch writes it 1 and then 2 for interlaced SD, so the standard has the
     // last word on it and this would undo that.

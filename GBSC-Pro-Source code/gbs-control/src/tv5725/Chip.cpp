@@ -19,6 +19,13 @@ void Chip::outputUp()
     PAD_SYNC_OUT_ENZ::write(0);
 }
 
+void Chip::dacsFollowInput()
+{
+    DAC_RGBS_R0ENZ::write(1);
+    DAC_RGBS_G0ENZ::write(1);
+    DAC_RGBS_B0ENZ::write(1);
+}
+
 void Chip::enterBypassRgbhv()
 {
     GBS::PLL_CKIS::write(0);

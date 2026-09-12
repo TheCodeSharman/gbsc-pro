@@ -3615,9 +3615,7 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
     GBS::PLL648_CONTROL_01::write(Tv5725::DisplayClock::HdBypassSeed);
     GBS::PLL648_CONTROL_03::write(0x00);
     GBS::PLL_LEN::write(1);
-    GBS::DAC_RGBS_R0ENZ::write(1); // RDAC output follows input R data
-    GBS::DAC_RGBS_G0ENZ::write(1); // GDAC Output follows input G data
-    GBS::DAC_RGBS_B0ENZ::write(1); // BDAC Output follows input B data
+    Tv5725::Chip::dacsFollowInput();
     GBS::DAC_RGBS_S1EN::write(1);
 
     GBS::PAD_TRI_ENZ::write(1);
@@ -3775,9 +3773,7 @@ void bypassModeSwitch_RGBHV()
                                            sourceSampling.heldLineRateHz()),
                                        sourceSampling.heldLineRateHz(),
                                        applyRGBPatches);
-    GBS::DAC_RGBS_R0ENZ::write(1);    
-    GBS::DAC_RGBS_G0ENZ::write(1);    
-    GBS::DAC_RGBS_B0ENZ::write(1);    
+    Tv5725::Chip::dacsFollowInput();
     GBS::OUT_SYNC_CNTRL::write(1);    
 
     restartAfterBypassSwitch();
