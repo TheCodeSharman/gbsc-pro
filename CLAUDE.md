@@ -388,6 +388,16 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 
 ## Things that will cost you an hour if you don't know them
 
+- **THE ADC PLL GROUP CANNOT BE BISECTED BY HAND, AND TRYING COSTS THE LOCK.**
+  `PLLAD_MD`, `PLLAD_KS`, `PLLAD_CKOS`, `PLLAD_ICP`, `PLLAD_FS` and the two
+  decimators are ONE setting: `PLLAD_LAT` loads several of them on a rising edge
+  and the loop filter has to suit the tap. Writing two or three of them over HTTP
+  to compare configurations leaves the PLL unlocked -- measured twice in one
+  session, `STATUS_MISC_PLLAD_LOCK` 0 with `STATUS_SYNC_PROC_HTOTAL` wandering a
+  few counts under the divider, in states that locked before the poking started.
+  **`Adc::applySampleRate()` is the only thing that writes the whole group**, so
+  an experiment over these registers is a firmware change and a flash, not a
+  `/setreg` sweep. `/sc?~` recovers.
 - **`/sc?~` IS THE RECOVERY FOR A UNIT THAT COMES BACK FROM A FLASH WITH NO
   PICTURE, and reflashing is not.** The signature is `SP_SOG_MODE` 1 on a
   separate-sync source with `SP_VTOTAL` 0 or 97, `ADC_SOGCTRL` walked to 1 or 2,
@@ -1259,6 +1269,25 @@ one the same way; the rules below are each a wasted session.
   same amount the change moved it, then compare like with like.
 
 ## Conventions
+
+**EVERY DIFFERENCE MUST BE DELIBERATE, AND THE GOAL IS THE BEST PICTURE WITH THE
+LEAST MECHANISM.** This is the point of the whole refactor and it is easy to
+mistake for tidying, so it is stated first.
+
+Where two paths do the same job differently, the question is *why*, and **"nobody
+knows" is the answer that means collapse them**. An unexplained divergence is not
+a risk to preserve carefully -- it IS the complexity, and preserving it because
+removing it might change something is how it has survived this long. That
+instinct reads as caution and is the opposite: it guarantees the next reader
+inherits the same unanswerable question.
+
+The worked example is the bypass route. Two existed, the second had no reason to,
+and it went -- one route, less code, and the picture measured indistinguishable.
+`docs/investigations/one-bypass-route-carries-rgbhv.md`.
+
+So: keep a difference that has a reason, and write the reason down. Delete one
+that does not. A faithful refactor of an accident preserves the accident.
+
 
 **`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
 than namespaces over file-scope globals, one class per file named after it,
