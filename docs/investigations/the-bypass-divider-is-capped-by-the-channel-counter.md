@@ -34,8 +34,13 @@ thing moving is the count:
 
 Those two lines differ by 0.8%. Nothing that plays out a line 0.8% longer can
 fail while the shorter one works -- but an eleven-bit counter wraps 2056 to 8,
-the line collapses and the sink drops the mode. The datasheet's `[10:8]` plus
-`[7:0]` is right, and the twelfth bit is a register bit with nothing behind it.
+the line collapses and the sink drops the mode.
+
+The datasheet's `[10:8]` plus `[7:0]` is right, and it says what the bit is:
+**the rest of `s1_38` is RESERVED.** So the twelfth bit is storage with nothing
+behind it, which is the worst shape a bit can have -- a read-back that confirms
+a write the hardware never acted on. Reserved bits on this part are writable
+elsewhere too; the preset tables put 1s into three of them.
 
 ## The trap this leaves
 
