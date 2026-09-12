@@ -209,11 +209,11 @@ public:
     // last word on it and this would undo that.
     static void routeToHdBypass();
 
-    // Segment 0 as RGBHV bypass wants it: the display PLL off its scaled
-    // settings, the pads that carry a bypassed source, and the DACs on the HD
-    // bypass channel. The memory clock travels with it and belongs to
-    // Tv5725::MemoryBus, which is why this calls rather than writes it.
-    static void enterBypassRgbhv();
+    // Segment 0 as pass-through wants it: the display PLL off its scaled
+    // settings and the DACs on the HD bypass channel. The memory clock travels
+    // with it and belongs to Tv5725::MemoryBus, which is why this calls rather
+    // than writes it.
+    static void enterHdBypass();
 };
 
 }  // namespace Tv5725

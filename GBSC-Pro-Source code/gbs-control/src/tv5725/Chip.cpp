@@ -1,5 +1,6 @@
 #include "Chip.h"
 
+#include "DisplayClock.h"
 #include "MemoryBus.h"
 #include "VideoRoute.h"
 
@@ -26,14 +27,13 @@ void Chip::dacsFollowInput()
     DAC_RGBS_B0ENZ::write(1);
 }
 
-void Chip::enterBypassRgbhv()
+void Chip::enterHdBypass()
 {
     GBS::PLL_CKIS::write(0);
     GBS::PLL_DIVBY2Z::write(0);
-    GBS::PLL_ADS::write(0);
     MemoryBus::useFeedbackClock();
     PAD_TRI_ENZ::write(1);
-    GBS::PLL648_CONTROL_01::write(0x35);
+    GBS::PLL648_CONTROL_01::write(DisplayClock::HdBypassSeed);
     GBS::PLL648_CONTROL_03::write(0x00);
     GBS::PLL_LEN::write(1);
 
@@ -130,8 +130,8 @@ void Chip::init()
     // --- what reaches the DACs, and what reaches the digital port ---------
     //
     // All three routes off: the DACs take the scaled video, not the input
-    // register and not the ADC. DAC_RGBS_ADC2DAC = 1 is bypassModeSwitch_RGBHV()
-    // putting the ADC straight on the DACs, and only the table cleared it again.
+    // register and not the ADC. DAC_RGBS_ADC2DAC is retired: no converter sits
+    // in its path, so it can carry RGB and nothing else.
     // DIGOUT_* drive the digital port the pads above have already turned off.
     DAC_RGBS_BYPS_IREG::write(0x0);              // s0_4b[0:0]
     DAC_RGBS_BYPS2DAC::write(0x0);               // s0_4b[1:1]

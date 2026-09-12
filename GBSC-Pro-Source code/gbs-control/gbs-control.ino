@@ -3276,7 +3276,7 @@ void applyPresets(uint8_t result)
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
 
         holdStandard(result);
-        setOutModeHdBypass(false);
+        enterHdBypass();
         return;
     } else if (result == Tv5725::PresetLoad::BypassRgbhv) {
         if (!bypassCanBeDisplayed()) {
@@ -3291,7 +3291,8 @@ void applyPresets(uint8_t result)
             const Tv5725::OutputChoice choice = outputChoiceFor();
             loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
         } else {
-            bypassModeSwitch_RGBHV();
+            holdStandard(Tv5725::PresetLoad::BypassRgbhv);
+            enterHdBypass();
             return;
         }
     }
@@ -3569,121 +3570,6 @@ void updateClampPosition() // Update Clamp Position
     Tv5725::SyncProcessor::adoptClampPlacement();
 }
 
-void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
-{
-    if (!rto->boardHasPower) {
-        return;
-    }
-
-    // Same reason as bypassModeSwitch_RGBHV(): what this writes has to be
-    // undone before the chip scales again.
-    Tv5725::BringUp::arm();
-
-    rto->autoBestHtotalEnabled = false;
-    Tv5725::VideoRoute::toHdBypassChannel();
-
-    // Video routes around the VDS here, so no solve is coming. The bypass
-    // register writes below belong to the engine too, once it owns them.
-    geometry.enterBypass();
-
-    externalClockGenResetClock();
-    updateSpDynamic(0);
-    if (GBS::ADC_UNUSED_62::read() != 0x00) {
-        serialCommand = 'D';
-    }
-
-    GBS::SP_NO_COAST_REG::write(0);
-    Tv5725::SyncProcessor::setCoastInvert(false);
-
-    FrameSync::cleanup();
-    GBS::ADC_UNUSED_62::write(0x00);
-    Tv5725::BringUp::holdAllBlocks();
-    GBS::PA_ADC_BYPSZ::write(1);
-    GBS::PA_SP_BYPSZ::write(1);
-
-    rto->presetID = PresetHdBypass;
-
-    if (!regsInitialized) {
-    }
-    doPostPresetLoadSteps();
-
-    resetDebugPort();
-
-    // Again, and not redundant: doPostPresetLoadSteps() above turns the frame
-    // time lock back on for a source it judges eligible, and bypass has no
-    // solved raster for it to steer.
-    rto->autoBestHtotalEnabled = false;
-    Tv5725::Chip::OUT_SYNC_SEL::write(1);
-
-    GBS::PLL_CKIS::write(0);
-    GBS::PLL_DIVBY2Z::write(0);
-
-    GBS::PAD_OSC_CNTRL::write(1);
-    GBS::PLL648_CONTROL_01::write(Tv5725::DisplayClock::HdBypassSeed);
-    GBS::PLL648_CONTROL_03::write(0x00);
-    GBS::PLL_LEN::write(1);
-    Tv5725::Chip::dacsFollowInput();
-    GBS::DAC_RGBS_S1EN::write(1);
-
-    GBS::PAD_TRI_ENZ::write(1);
-    GBS::PLL_MS::write(2);
-    GBS::MEM_PAD_CLK_INVERT::write(0);
-    GBS::SFTRST_DEC_RSTZ::write(1);
-    GBS::SFTRST_MODE_RSTZ::write(1);
-    GBS::SFTRST_SYNC_RSTZ::write(1);
-    GBS::SFTRST_INT_RSTZ::write(1);
-    Tv5725::HdBypass::enable();
-
-    Tv5725::Chip::routeToHdBypass();
-    GBS::SP_HS_LOOP_SEL::write(1);     
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_CS_P_SWAP::write(0);
-    GBS::SP_HS2PLL_INV_REG::write(0);
-
-    GBS::PB_BYPASS::write(1);
-    GBS::PLLAD_MD::write(2345);
-    GBS::PLLAD_KS::write(2);
-    rto->osr = Tv5725::Adc::applyOversample(2, 2);
-    GBS::PLLAD_ICP::write(5);
-    GBS::PLLAD_FS::write(1);
-
-    Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
-
-
-    Tv5725::SyncProcessor::writeSdVsyncStart(0);
-    Tv5725::SyncProcessor::writeSdVsyncStop(2);
-
-    Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
-                                       Tv5725::HdBypass::dividerFor(
-                                           sourceSampling.heldLineRateHz()),
-                                       sourceSampling.heldLineRateHz(),
-                                       applyRGBPatches);
-
-    GBS::DEC_IDREG_EN::write(1);
-    GBS::DEC_WEN_MODE::write(1);
-    Tv5725::Adc::choosePhaseSyncProcessor(8);
-    Tv5725::Adc::choosePhaseAdc(24);
-    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-
-
-    unsigned long timeout = millis();
-    while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
-        delay(1);
-    }
-    while ((getVideoMode() == 0) && (millis() - timeout < 1502)) {
-        delay(1);
-    }
-
-    updateSpDynamic(0);
-    while ((getVideoMode() == 0) && (millis() - timeout < 1502)) {
-        delay(1);
-    }
-
-    Tv5725::Chip::outputUp();
-    delay(200);
-    optimizePhaseSP();
-}
-
 // Restart the blocks a bypass switch has just reconfigured, then load what it
 // chose.
 //
@@ -3714,80 +3600,94 @@ static void restartAfterBypassSwitch()
     latchPLLAD();
 }
 
-void bypassModeSwitch_RGBHV() 
+// The one entry to pass-through, for every source that reaches it.
+//
+// It is NOT a preset load. Nothing here re-runs the scaling bring-up, and
+// Tv5725::BringUp::arm() is the whole of what this owes the scaling path: the
+// fields written below have no owner there, so the next scaled load claims
+// them back by bringing the chip up again.
+//
+// The caller holds the standard first, because HdBypass::applyForStandard()
+// dispatches on it and an RGBHV source holds PresetLoad::BypassRgbhv.
+//
+// docs/investigations/one-bypass-route-carries-rgbhv.md
+void enterHdBypass()
 {
-    SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
-
-    // Bypass reconfigures the chip away from the scaling setup, so the next
-    // scaled load has to re-establish it.
-    Tv5725::BringUp::arm();
     if (!rto->boardHasPower) {
         return;
     }
 
+    SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
+
+    Tv5725::BringUp::arm();
+
+    // Down across the whole switch. Dropping HSOUT/VSOUT is what makes the
+    // encoder re-acquire the timing underneath it; restartAfterBypassSwitch()
+    // raises them again. docs/investigations/encoder-stale-timing.md
     Tv5725::Chip::outputDown();
 
-    // Video routes around the VDS here, so no solve is coming. The bypass
-    // register writes below belong to the engine too, once it owns them.
+    // Video routes around the VDS here, so no solve is coming.
     geometry.enterBypass();
+    rto->autoBestHtotalEnabled = false;
 
-    Tv5725::HdBypass::enable();
     externalClockGenResetClock();
     FrameSync::cleanup();
     GBS::ADC_UNUSED_62::write(0x00);
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
-    applyRGBPatches();
     resetDebugPort();
-    holdStandard(Tv5725::PresetLoad::BypassRgbhv);
-    rto->autoBestHtotalEnabled = false;
     Tv5725::SyncProcessor::forgetPositions();
-    Tv5725::Adc::forgetPllBand();
 
-    Tv5725::Chip::enterBypassRgbhv();
+    // The ADC's sense of what arrives on R, G and B, which the preset load used
+    // to choose. applyColourPath() runs after it and wins on the matrix bits;
+    // applyStoredAdcGain() below puts back the gain applyYuv() overwrites.
+    if (rto->inputIsYpBpR) {
+        applyYuvPatches();
+    } else {
+        applyRGBPatches();
+    }
 
-    Tv5725::HdBypass::release();
-
+    Tv5725::Chip::enterHdBypass();
+    Tv5725::HdBypass::enable();
     Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
 
-    GBS::PAD_SYNC1_IN_ENZ::write(0);
-    GBS::PAD_SYNC2_IN_ENZ::write(0);
-
-    GBS::SP_SOG_P_ATO::write(1);
+    // The sync processor is configured here or nowhere, for the same reason.
     Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
     if (Tv5725::SyncMeasurement::isCsync()) {
         Tv5725::SyncOnGreen::choose(24);
     }
+    Tv5725::SyncProcessor::setCoastInvert(false);
+    Tv5725::SyncProcessor::setSubCoast(false);
+    GBS::SP_SOG_P_ATO::write(1);
+
+    // The four polarities applySd() inverts, put back for everything else. A
+    // path that never brings the chip up inherits whatever the last entry left.
+    GBS::SP_HS_PROC_INV_REG::write(0);
+    GBS::SP_VS_PROC_INV_REG::write(0);
+    GBS::SP_CS_P_SWAP::write(0);
+    GBS::SP_HS2PLL_INV_REG::write(0);
+
     Tv5725::Adc::choosePhaseAdc(16);
     Tv5725::Adc::choosePhaseSyncProcessor(8);
-    GBS::SP_CLAMP_MANUAL::write(1);  
-    Tv5725::SyncProcessor::setCoastInvert(false);
 
-    Tv5725::SyncProcessor::setSubCoast(false);
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_VS_PROC_INV_REG::write(0); 
-    Tv5725::Adc::PLLAD_KS::write(1);
-    rto->osr = Tv5725::Adc::applyOversample(1, 2);
-    Tv5725::Adc::applyForBypassRgbhv();
-
-    // The channel carries the video here, not just the sync, so its raster is
-    // played out for this source rather than left at the block's resting
-    // timing. Last of the ADC group, because it installs the sampling the
-    // raster is derived from.
-    // docs/investigations/one-bypass-route-carries-rgbhv.md
+    // The whole ADC sampling group, from the rate the engine measured: the one
+    // writer of PLLAD_MD on this path, and last of the group because it
+    // installs the sampling the played-out raster is derived from.
     Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
                                        Tv5725::HdBypass::dividerFor(
                                            sourceSampling.heldLineRateHz()),
                                        sourceSampling.heldLineRateHz(),
                                        applyRGBPatches);
+
     Tv5725::Chip::dacsFollowInput();
-    GBS::OUT_SYNC_CNTRL::write(1);    
+    GBS::OUT_SYNC_CNTRL::write(1);
 
     restartAfterBypassSwitch();
 
     applyStoredAdcGain();
+    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 
-    rto->presetID = PresetBypassRGBHV;
+    rto->presetID = PresetHdBypass;
 
     // Beside the preset id, because they are one fact: which mode the chip is
     // in. The branch that sends a source here clears
@@ -3799,6 +3699,10 @@ void bypassModeSwitch_RGBHV()
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
     delay(200);
+
+    // The only phase search on this route: the stable branch of
+    // runSyncWatcher() is skipped while a source is bypassed.
+    optimizePhaseSP();
 }
 
 void runAutoGain() //
@@ -4401,7 +4305,7 @@ void runSyncWatcher() //
                     applyPresets(detectedVideoMode);
                 } else {
                     holdStandard(detectedVideoMode);
-                    setOutModeHdBypass(false);
+                    enterHdBypass();
                 }
                 holdStandard(detectedVideoMode);
                 rto->noSyncCounter = 0;          
@@ -6038,7 +5942,7 @@ void loop()
     if (rto->applyPresetDoneStage == 10) // 
     {
         rto->applyPresetDoneStage = 11;
-        setOutModeHdBypass(false);
+        enterHdBypass();
     }
 
     if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && rto->boardHasPower) {
@@ -6201,7 +6105,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         if (via == TraceViaApply) {
             applyPresets(forced);
         } else if (via == TraceViaBypass) {
-            setOutModeHdBypass(false);
+            enterHdBypass();
         } else {
             doPostPresetLoadSteps();
         }
@@ -6373,14 +6277,15 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         printf("bypass refused: source line rate too low\n");
                         break;
                     }
-                    bypassModeSwitch_RGBHV();
+                    holdStandard(Tv5725::PresetLoad::BypassRgbhv);
+                    enterHdBypass();
                     break;
                 case 'K':
                     if (!bypassCanBeDisplayed()) {
                         printf("pass refused: source line rate too low to bypass\n");
                         break;
                     }
-                    setOutModeHdBypass(false);
+                    enterHdBypass();
                     uopt->presetPreference = OutputBypass;
                     saveUserPrefs();
                     printf("pass \n");

@@ -41,7 +41,7 @@ static void routedTo(void (*route)())
 
 TEST_CASE("the scaler takes the DACs off bypass")
 {
-    routedTo(Chip::enterBypassRgbhv);
+    routedTo(Chip::enterHdBypass);
     Chip::routeToScaler();
 
     CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
@@ -54,7 +54,7 @@ TEST_CASE("bypass puts the DACs on the HD bypass channel and takes its sync")
     // The ADC-to-DAC route is retired: it has no converter in circuit, so it
     // carries RGB and nothing else. One route serves every source.
     routedTo(Chip::routeToScaler);
-    Chip::enterBypassRgbhv();
+    Chip::enterHdBypass();
 
     CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 1);
     CHECK(Chip::DAC_RGBS_ADC2DAC::read() == 0);
@@ -63,7 +63,7 @@ TEST_CASE("bypass puts the DACs on the HD bypass channel and takes its sync")
 
 TEST_CASE("the bypass switch leaves nothing of the scaler on the DACs")
 {
-    routedTo(Chip::enterBypassRgbhv);
+    routedTo(Chip::enterHdBypass);
     Chip::routeToHdBypass();
 
     CHECK(Chip::DAC_RGBS_BYPS2DAC::read() == 1);
@@ -72,8 +72,8 @@ TEST_CASE("the bypass switch leaves nothing of the scaler on the DACs")
 
 TEST_CASE("the HD bypass route leaves the sync select to the standard")
 {
-    // setOutModeHdBypass() writes OUT_SYNC_SEL 1 and then 2 for interlaced SD,
-    // so a route that wrote it would undo the standard's choice.
+    // The entry writes OUT_SYNC_SEL 1 and HdBypass::applySd() then writes 2 for
+    // interlaced SD, so a route that wrote it would undo the standard's choice.
     fresh();
     Chip::routeToHdBypass();
 
@@ -94,7 +94,7 @@ TEST_CASE("the route in force follows the registers that select it")
 {
     // The held value and s0_4b cannot disagree, because the writer records it.
     routedTo(Chip::routeToScaler);
-    Chip::enterBypassRgbhv();
+    Chip::enterHdBypass();
 
     CHECK(VideoRoute::route() == VideoRoute::HdBypassChannel);
 }
