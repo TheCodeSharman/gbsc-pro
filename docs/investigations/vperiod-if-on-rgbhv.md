@@ -258,7 +258,7 @@ toggled on each -- and both Wii scan types agree with one rule.
 `interlaced-source-measurement.md`.
 
 
-## The test bus localises it: one selector stops carrying vertical sync
+## The test bus reading was taken through an undriven bus
 
 `TEST_BUS_SEL` picks which block drives `DEBUG_IN_PIN`, and `/testbus` counts its
 transitions over 25 ms from inside `loop()`. Swept on the bench RISC PC at
@@ -282,3 +282,33 @@ shows a vertical signal that exists only with the separator in the path, and it
 does not establish that the input formatter's vertical measurement reads that
 particular bus. The next step is a sweep with `SP_TEST_MODULE` and `IF_TEST_SEL`
 set, which `/testbus` takes as parameters.
+
+
+## What is refuted, and what the test bus actually shows
+
+**The retiming vertical window is not the cause.** `SP_RT_VS_ST` is 2 against
+`SP_RT_VS_SP` 0, a window whose stop precedes its start, and both are static
+constants never varied by source -- so it looked like the whole fault. Swept on
+separate sync with the stop at 8, 64, 311 and 1000, every write read back, 1854
+samples: `VPERIOD_IF` never moved off 136 and `STATUS_IF_VT_OK` never left 0.
+
+**The earlier `0x0a` comparison was between two states of a bus nothing was
+driving.** `SP_TEST_MODULE` reads 7, which drives nothing. Point it somewhere
+live and the bus carries traffic -- `sp=5` gives 8522 transitions in 25 ms,
+`sp=6` 664, `sp=4` 48. The same applies to selector `0x00`, read at the time as
+"input vsync": it is the input formatter's test output, and `IF_TEST_SEL`
+changes it completely, from 2 at `if=3` to 8325 at `if=4`. So the reading that
+one bus stops carrying vertical sync on separate sync does not stand.
+
+**Nor is any test-bus stage a scan-type detector.** Swept across a real
+interlace change, three passes per configuration, every apparent difference sits
+inside the pass-to-pass spread of a line-rate count. The one exception is
+`sp=4`, `vs_act_det`, at 46-47 progressive against 48 interlaced -- one
+transition out of 47, which more sampling could erase, and not something to
+build on.
+
+**The fault is narrower than "the IF gets no vertical sync".** Within one
+settled state `VPERIOD_IF` is a rock-steady constant -- 136 in 371 of 371, in
+every window, and unchanged across an interlace change. It takes a different
+constant per acquisition episode. It is stuck, not noisy, which points at the
+counter being held or reset rather than counting rubbish.

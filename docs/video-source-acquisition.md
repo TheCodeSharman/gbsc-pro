@@ -1505,3 +1505,34 @@ reproduction is the whole of the evidence.
 - `recoverDivider()` and its gates. Measured working, and the trap they escape
   is real. They come out only when a replacement is shown to clear the same
   trap.
+
+
+## The standard bits are vertical-period buckets, not an interlace measurement
+
+`STATUS_IF_INP_NTSC_INT` and `STATUS_IF_INP_PAL_INT` classify the vertical
+period into a standard's bucket. The `INT` names which standard -- an interlaced
+broadcast one -- and says nothing about whether this source is interlaced.
+
+The thresholds `ModeDetect::init()` writes give it away, against a vertical
+detect unit of field lines over about 8.2:
+
+| register | value | x 8.2 | what it buckets |
+|---|---|---|---|
+| `MD_NTSC_INT_CNTRL` | 32 | 262 | a 525/60 **field** |
+| `MD_PAL_INT_CNTRL` | 38 | 312 | a 625/50 **field** |
+| `MD_NTSC_PRG_CNTRL` | 65 | 533 | a 525/60 **frame** |
+
+Measured: the RISC PC at 640x200@60 is **progressive** and reads
+`STATUS_IF_INP_NTSC_INT` 1, unchanged when interlace is switched on. The same
+holds for `PAL_INT` at 320x256@50. Any raster whose vertical period lands in an
+interlaced bucket is reported as that standard, and a 15 kHz progressive source
+always will, because its field period is inherently in the range of an
+interlaced standard's field.
+
+**So the Wii at 480i reading `NTSC_INT` is not evidence the chip detects
+interlace.** It means only that the vertical period is near 262 lines, which a
+240p source satisfies equally. There is no source on which these bits have been
+shown to measure scan type, and the pair `NTSC_INT`/`NTSC_PRG` separates 480i
+from 480p only because one is a 262-line field and the other a 525-line frame.
+
+Ignore them for scan type. `docs/investigations/interlaced-source-measurement.md`

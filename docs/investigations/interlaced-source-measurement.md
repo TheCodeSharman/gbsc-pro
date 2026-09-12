@@ -65,9 +65,21 @@ STATUS_SYNC_PROC_VTOTAL   260 x736, 259 x681   -- two values, near evenly
 VPERIOD_IF                524 x1417
 ```
 
-576i above reads a single steady 310, so **the half-line is expressed as an
+576i reads a single steady 310, so **the half-line is expressed as an
 alternation in one mode and absorbed into a constant undercount in the other**.
 Both are short of the true field: 259.5 against 262.5, and 310 against 312.5.
+
+**The 576i reading survives dense sampling, so the hole is real.** The original
+was a single value taken before the sampling log existed, which invited the
+explanation that it had simply been under-sampled -- this register is known to
+mislead over HTTP, where point reads gave 149, 160, 230 and 299 among the 310s
+that the log reported 1050 times out of 1050. Re-measured on the device:
+
+```
+Wii PAL 576i    STATUS_SYNC_PROC_VTOTAL   310 in 1186 of 1186, 0 changes
+                VPERIOD_IF                624 in 1186 of 1186
+                IF_HS_DEC_FACTOR 1, STATUS_IF_VT_OK 1
+```
 
 **So an alternating count is not an interlace detector.** One interlaced source
 alternates and another does not, which rules out the obvious reading of the
@@ -136,3 +148,22 @@ could have doubled, which only an interlaced source can do. On every state
 measured here it reaches the same verdict either way, so there is no fault to
 chase -- but the measured scan type is the better input and is now available
 beside it.
+
+
+## The same capture confirms the parity rule on a PAL interlaced source
+
+576i is line doubled and reads `VPERIOD_IF` 624, so `624 + 1` is odd and the
+rule names it interlaced -- correctly, and from a single sample rather than a
+time series. That is the ninth measured state and the first PAL interlaced one.
+
+**It also bounds where the alternation is needed.** Every source on which the
+alternation rule has been shown to fail is a source where `VPERIOD_IF` answers
+correctly, because both are on the separator path. The alternation is only
+needed on separate sync, where `VPERIOD_IF` is dead -- and there it has been
+exact on the one source available, 0 changes in 1486 samples progressive against
+about 1090 in 1478 interlaced, at every coast length.
+
+The risk that survives is precise: **a separate-sync source that absorbs the
+half-line into a steady undercount, as 576i does on SOG, would read
+progressive.** The RISC PC is the only separate-sync source on this bench, so
+nothing here can test it.
