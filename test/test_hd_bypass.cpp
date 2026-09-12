@@ -287,15 +287,20 @@ using Tv5725::SyncMeasurement;
 // different question from the one the trace answers.
 static const uint16_t DividerBeforeLadder = 2345;
 
+// The line the bench source runs, which puts the divider below in the second
+// crossover row. Only the RGBHV arm reads it.
+static const uint32_t BenchLineRateHz = 37879;
+
 static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311,
-                             uint16_t divider = DividerBeforeLadder)
+                             uint16_t divider = DividerBeforeLadder,
+                             uint32_t lineRateHz = BenchLineRateHz)
 {
     Wire.reset();
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
     Tv5725::Tv5725::STATUS_SYNC_PROC_VTOTAL::write(sourceLines);
     rgbPatchCalls = 0;
-    HdBypass::applyForStandard(standard, divider, countRgbPatches);
+    HdBypass::applyForStandard(standard, divider, lineRateHz, countRgbPatches);
 }
 
 TEST_CASE("interlaced SD plays out a raster derived from the divider")
@@ -518,6 +523,29 @@ TEST_CASE("an RGBHV source samples the way the ADC-to-DAC route does")
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
 
+TEST_CASE("an RGBHV source takes the crossover row its own clock lands in")
+{
+    // The row is not a property of pass-through, it is a property of the
+    // frequency the divider and the line rate make between them -- and a row
+    // left on the wrong band takes the PLL out of lock, measured, with the
+    // divider never latching and STATUS_SYNC_PROC_HTOTAL reading neither value.
+
+    SUBCASE("a 70 MHz clock is the second row") {
+        applyForStandard(14, 311, 1856, 37879);
+        CHECK(Adc::PLLAD_KS::read() == 1);
+    }
+
+    SUBCASE("the same divider on a 15 kHz line is 29 MHz and the third") {
+        applyForStandard(14, 311, 1856, 15625);
+        CHECK(Adc::PLLAD_KS::read() == 2);
+    }
+
+    SUBCASE("a divider past the second row's ceiling takes the first") {
+        applyForStandard(14, 311, 2400, 37879);
+        CHECK(Adc::PLLAD_KS::read() == 0);
+    }
+}
+
 TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal")
 {
     // The switch writes a literal into PLLAD_MD on its way here, so a raster
@@ -528,7 +556,7 @@ TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal"
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForStandard(14, 1124, countRgbPatches);
+    HdBypass::applyForStandard(14, 1124, BenchLineRateHz, countRgbPatches);
 
     CHECK(Adc::PLLAD_MD::read() == 1124);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1132);  // 1124 + 8
@@ -545,7 +573,7 @@ TEST_CASE("an unmeasured source leaves the bypass raster alone")
     HdBypass::enable();
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForStandard(14, 0, countRgbPatches);
+    HdBypass::applyForStandard(14, 0, BenchLineRateHz, countRgbPatches);
 
     CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1023);

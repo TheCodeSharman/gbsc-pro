@@ -161,11 +161,14 @@ public:
     //
     // An RGBHV source additionally gets the RGB patches, which are the sketch's
     // because they need the user options and its own R/G/B round trip.
-    // `divider` is the sampling divider the engine measured for this source.
-    // Handed in rather than read back: the switch writes a literal into
-    // PLLAD_MD on its way here, so the register answers for that literal and
-    // not for the source.
+    //
+    // `divider` is the sampling divider and `lineRateHz` the rate it multiplies,
+    // both handed in rather than read back: the switch writes a literal into
+    // PLLAD_MD on its way here, so the register answers for that literal and not
+    // for the source. The two together are the ADC clock, which is what chooses
+    // the PLL's crossover row -- so neither can be left out.
     static void applyForStandard(uint8_t standard, uint16_t divider,
+                                 uint32_t lineRateHz,
                                  void (*applyRgbPatches)());
 
     // Which colour path the bypassed sample takes, and the ONE thing bypass has
@@ -184,10 +187,10 @@ private:
     // that never opens.
     static void applyHorizontalFromChannelLine(uint16_t channelLine);
 
-    // A source with no standard of its own. It asks the ADC for what the
-    // ADC-to-DAC route asks for and plays out the line the channel then sees;
-    // the vertical windows and the sync pulses stay where the switch put them.
-    static void applyRgbhv(uint16_t divider);
+    // A source with no standard of its own. It plays out the line the channel
+    // sees; the vertical windows and the sync pulses stay where the switch put
+    // them.
+    static void applyRgbhv(uint16_t divider, uint32_t lineRateHz);
 
     static void applySd(uint8_t standard);
     static void applyProgressive(uint8_t standard);

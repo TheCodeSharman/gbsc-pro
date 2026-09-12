@@ -29,14 +29,9 @@ const uint16_t RasterGuardSamples = 8;
 const float ActiveFraction = 0.945f;
 const uint16_t BlankEndSamples = 0x90;
 
-// What pass-through samples at, on either route. The ADC-to-DAC switch has
-// always used these and its picture is the reference the HD route is judged
-// against, so the two ask the ADC for the same thing.
-const uint8_t BypassPostDivider = 1;
-
 // How far the sample lags the sync the block emits beside it, in channel
-// clocks. Video passes THROUGH the channel here and around it on the
-// ADC-to-DAC route, and the sync generator does not account for the difference.
+// clocks. The sync generator does not account for the delay the channel adds to
+// the sample beside it.
 // Measured at 800x600@60 and 640x480@60: the same 40 either way, so it is the
 // channel's delay rather than any source's back porch.
 const uint16_t ChannelSyncDelay = 40;
@@ -108,6 +103,7 @@ void HdBypass::enable()
 }
 
 void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
+                                uint32_t lineRateHz,
                                 void (*applyRgbPatches)())
 {
     if (standard <= 2)
@@ -117,7 +113,7 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
     else if (standard <= 7 || standard == 13)
         applyHd(standard, applyRgbPatches);
     else
-        applyRgbhv(divider);
+        applyRgbhv(divider, lineRateHz);
 
     if (standard == 13)
         applyRgbhvPll(SourceMeasurement::measureSourceLines());
@@ -136,20 +132,21 @@ void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
     HD_HB_SP::write(BlankEndSamples);
 }
 
-void HdBypass::applyRgbhv(uint16_t divider)
+void HdBypass::applyRgbhv(uint16_t divider, uint32_t lineRateHz)
 {
     if (divider == 0)
         return;
 
-    Adc::PLLAD_KS::write(BypassPostDivider);
-    const uint8_t ratio = Adc::applyOversample(BypassPostDivider, BypassOversample);
-
-    // The charge pump, the VCO gain and the widest analog corner, which are the
-    // rest of what the ADC-to-DAC route asks for. It writes its own divider,
-    // so the caller's goes in after it.
+    // The charge pump, the VCO gain and the widest analog corner. It writes its
+    // own divider, so the caller's goes in after it.
     Adc::applyForBypassRgbhv();
-    Adc::PLLAD_MD::write(divider);
-    Adc::latch();
+
+    // Divider, crossover row, clock tap and decimators in one call, because
+    // PLLAD_LAT loads them together. The row follows the clock the divider and
+    // the line rate make between them: frozen, it takes the PLL out of lock the
+    // moment either moves far enough.
+    const uint8_t ratio =
+        Adc::applySampleRate(divider, lineRateHz, BypassOversample);
 
     applyHorizontalFromChannelLine(divider / (ratio < 1 ? 1 : ratio));
 
