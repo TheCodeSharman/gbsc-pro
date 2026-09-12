@@ -1320,9 +1320,24 @@ second job waiting for it.
 The byte goes with the function, and nothing holds a standard afterwards. Two
 things come out with it.
 
-**`SourceMeasurement::adopt()`** is the only place the engine reads `PLLAD_MD`
+**`SourceMeasurement::adopt()`** is the only place the ENGINE reads `PLLAD_MD`
 as an input. Custom presets are gone and bypass *chooses* 1856 as a literal, so
 it becomes `hold(divider)` -- told, not read.
+
+**`HdBypass::applySd()` is the other reader, and it disagrees with its caller
+today.** It derives the channel's line from `PLLAD_MD::read()`, while
+`applyForStandard()` is handed the divider as an argument -- and
+`setOutModeHdBypass()` writes a literal 2345 into the register on its way there,
+so the two differ by four hundred counts. Handing the divider in is what made
+the RGBHV arm work at all, and the SD arm has not been moved because no source
+on this bench reaches it: 480p takes the progressive arm and a 15 kHz SD source
+cannot be bypassed to a display that refuses the rate.
+
+**Registers are not storage.** A value the firmware needs to know is held, and a
+register is where it is written to -- never where it is kept. The read-back
+cannot be trusted even about what was written: a reserved bit beside a field
+stores a 1 and the hardware ignores it.
+`investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`
 
 **`Tv5725::SourceStandard` has one caller**, and it is the one piece of this
 step that is not mechanical. `doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
