@@ -114,29 +114,32 @@ Acorn definitions RISC OS ships:
 appearing as the top of two independent files where every other pixel rate in
 them is an awkward one. 100.00 MHz caps the AKF60 group the same way.
 
-So a mode faster than the bench has ever run needs **no custom definition and no
-new hardware** -- only a different stock file. What that reaches:
+What the faster files reach:
 
 | | AKF50 | AKF60 | AKF80 |
 |---|---|---|---|
+| slowest line | **15.6 kHz** | 31.5 kHz | 31.5 kHz |
 | 1600x600 | 37.9 kHz | **46.9 kHz** | 46.9 kHz |
 | 1024x768 | -- | 48.4 kHz | 60.0 kHz |
 | 1280x1024 | -- | -- | **63.7 kHz** |
 
-1600x600 exists in all three, which makes it the discriminator: the same card
-and the same horizontal detail at two line rates, with nothing else moving.
+**NO STOCK FILE HAS BOTH ENDS.** AKF60 and AKF80 clear the cliff and have no
+15 kHz mode at all -- no 311-line mode of any width -- so switching the machine
+to one costs the everyday 320x256@50 source, which is the whole low-line-rate
+and line-doubler case. That is what a custom definition is for, and
+`RiscPc/tools/video-source/make_test_mdf.py` builds one: it now carries the 15
+kHz modes alongside four timings lifted from AKF80, the pair at ONE line count
+with only the rate moving.
 
 **`docs/investigations/the-decimators-filter.md`'s open trade needs exactly
 that** -- above a 39.2 kHz line rate the pass-through divider's own cap pushes
 CKO past 80 MHz, `PLLAD_KS` lands on the top crossover row and there is no
-faster tap to oversample from. AKF50 cannot reach it and AKF60 clears it by
-7.7 kHz.
+faster tap to oversample from.
 
 It also retires *the AKF50 has no 1280x1024* as a statement about the bench:
-it is a statement about one file, and AKF80 has it at 63.7 kHz.
-
-**Not checked: the VRAM.** 1024x768 is 786 KB at 8 bpp and 393 KB at 4 bpp, so
-which depths a faster definition actually offers depends on the machine.
+it is a statement about one file, and AKF80 has it at 63.7 kHz, which is 1.25
+MB at 8 bpp against the machine's 2 MB of VRAM. The depth matters -- the PM5544
+card's palette comes out wrong below 256 colours, measured.
 
 `SYNC 0|1|3` switches the machine between separate and composite sync, which
 makes it the source for sync-type work. It is one CMOS value re-applied to
