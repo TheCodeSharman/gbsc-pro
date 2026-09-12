@@ -209,6 +209,11 @@ public:
     // last word on it and this would undo that.
     static void routeToHdBypass();
 
+    // The video datapath blocks, pulsed through reset and released. On the
+    // bypass channel they are left held: nothing scaled is running, so
+    // releasing them starts blocks with no configuration behind them.
+    static void resetVideoBlocks();
+
     // Segment 0 as pass-through wants it: the display PLL off its scaled
     // settings and the DACs on the HD bypass channel. The memory clock travels
     // with it and belongs to Tv5725::MemoryBus, which is why this calls rather

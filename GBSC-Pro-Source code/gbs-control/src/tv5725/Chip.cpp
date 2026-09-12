@@ -1,12 +1,38 @@
 #include "Chip.h"
 
 #include "DisplayClock.h"
+#include "HdBypass.h"
 #include "MemoryBus.h"
 #include "VideoRoute.h"
 
 #include "../../gbs_types.h"
 
 namespace Tv5725 {
+
+namespace {
+
+// The chain between the input formatter and the scaler.
+void holdMemoryBlocks()
+{
+    Chip::SFTRST_DEINT_RSTZ::write(0);
+    Chip::SFTRST_MEM_FF_RSTZ::write(0);
+    Chip::SFTRST_MEM_RSTZ::write(0);
+    Chip::SFTRST_FIFO_RSTZ::write(0);
+    Chip::SFTRST_OSD_RSTZ::write(0);
+}
+
+void releaseVideoBlocks()
+{
+    Chip::SFTRST_IF_RSTZ::write(1);
+    Chip::SFTRST_DEINT_RSTZ::write(1);
+    Chip::SFTRST_MEM_FF_RSTZ::write(1);
+    Chip::SFTRST_MEM_RSTZ::write(1);
+    Chip::SFTRST_FIFO_RSTZ::write(1);
+    Chip::SFTRST_OSD_RSTZ::write(1);
+    Chip::SFTRST_VDS_RSTZ::write(1);
+}
+
+}  // namespace
 
 void Chip::outputDown()
 {
@@ -56,6 +82,37 @@ void Chip::routeToScaler()
     OUT_SYNC_SEL::write(0x0);
 
     VideoRoute::toScaler();
+}
+
+void Chip::resetVideoBlocks()
+{
+    const bool bypassWasRunning = HdBypass::enabled();
+
+    SFTRST_DEC_RSTZ::write(1);
+    SFTRST_MODE_RSTZ::write(1);
+    SFTRST_SYNC_RSTZ::write(1);
+    HdBypass::hold();
+    SFTRST_INT_RSTZ::write(1);
+
+    if (VideoRoute::isHdBypassChannel()) {
+        SFTRST_IF_RSTZ::write(0);
+        holdMemoryBlocks();
+        SFTRST_VDS_RSTZ::write(0);
+        HdBypass::release();
+        return;
+    }
+
+    // Only the chain BETWEEN the two ends restarts. The input formatter feeds
+    // it and the scaler reads it, and both are configured by the time this
+    // runs, so holding either as well is a reset pulse of a working block.
+    SFTRST_IF_RSTZ::write(1);
+    holdMemoryBlocks();
+    SFTRST_VDS_RSTZ::write(1);
+
+    if (bypassWasRunning)
+        HdBypass::release();
+
+    releaseVideoBlocks();
 }
 
 void Chip::init()

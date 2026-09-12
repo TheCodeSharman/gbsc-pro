@@ -2347,43 +2347,6 @@ void ResetSDRAM()
     GBS::MEM_INI_REG::write(0x82);
 }
 
-void resetDigital()
-{
-    const boolean keepBypassActive = Tv5725::HdBypass::enabled();
-    GBS::SFTRST_DEC_RSTZ::write(1);
-    GBS::SFTRST_MODE_RSTZ::write(1);
-    GBS::SFTRST_SYNC_RSTZ::write(1);
-    Tv5725::HdBypass::hold();
-    GBS::SFTRST_INT_RSTZ::write(1);
-    if (Tv5725::VideoRoute::isHdBypassChannel()) {
-        GBS::SFTRST_IF_RSTZ::write(0);
-        GBS::SFTRST_DEINT_RSTZ::write(0);
-        GBS::SFTRST_MEM_FF_RSTZ::write(0);
-        GBS::SFTRST_MEM_RSTZ::write(0);
-        GBS::SFTRST_FIFO_RSTZ::write(0);
-        GBS::SFTRST_OSD_RSTZ::write(0);
-        GBS::SFTRST_VDS_RSTZ::write(0);
-        Tv5725::HdBypass::release();
-        return;
-    }
-    GBS::SFTRST_IF_RSTZ::write(1);
-    GBS::SFTRST_DEINT_RSTZ::write(0);
-    GBS::SFTRST_MEM_FF_RSTZ::write(0);
-    GBS::SFTRST_MEM_RSTZ::write(0);
-    GBS::SFTRST_FIFO_RSTZ::write(0);
-    GBS::SFTRST_OSD_RSTZ::write(0);
-    GBS::SFTRST_VDS_RSTZ::write(1);
-    if (keepBypassActive) {
-        Tv5725::HdBypass::release();
-    }
-    GBS::SFTRST_IF_RSTZ::write(1);
-    GBS::SFTRST_DEINT_RSTZ::write(1);
-    GBS::SFTRST_MEM_FF_RSTZ::write(1);
-    GBS::SFTRST_MEM_RSTZ::write(1);
-    GBS::SFTRST_FIFO_RSTZ::write(1);
-    GBS::SFTRST_OSD_RSTZ::write(1);
-    GBS::SFTRST_VDS_RSTZ::write(1);
-}
 
 
 
@@ -2979,7 +2942,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::VideoProcessor::applyFrameSequencing();
 
-        resetDigital();
+        Tv5725::Chip::resetVideoBlocks();
 
         resetPLLAD();
         GBS::PLLAD_LEN::write(1); //
@@ -3561,7 +3524,7 @@ void updateClampPosition() // Update Clamp Position
 // rather than derived.
 static void restartAfterBypassSwitch()
 {
-    resetDigital();
+    Tv5725::Chip::resetVideoBlocks();
     Tv5725::SyncProcessor::reset();
     delay(2);
     ResetSDRAM();
@@ -4782,7 +4745,7 @@ void calibrateAdcOffset()
     GBS::ADC_5_00::write(0x02);
     GBS::TEST_BUS_SEL::write(0x0b);
     GBS::TEST_BUS_EN::write(1);
-    resetDigital();
+    Tv5725::Chip::resetVideoBlocks();
 
     uint16_t hitTargetCounter = 0;
     uint16_t readout16 = 0;
@@ -6170,7 +6133,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     geometry.reset();
                     break;
                 case 'q':
-                    resetDigital();
+                    Tv5725::Chip::resetVideoBlocks();
                     delay(2);
                     ResetSDRAM();
                     delay(2);
