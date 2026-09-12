@@ -1,4 +1,4 @@
-// Host-compiled unit tests for src/tv5725/SyncRecovery.cpp
+// Host-compiled unit tests for src/videosource/SyncRecovery.cpp
 // -- `make -C test sync-recovery`.
 //
 // Pure arithmetic, so no fake Wire and no sketch symbols.
@@ -6,9 +6,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncRecovery.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/SyncRecovery.h"
 
-using Tv5725::SyncRecovery;
+
 
 TEST_CASE("the first failed pass escalates nothing")
 {

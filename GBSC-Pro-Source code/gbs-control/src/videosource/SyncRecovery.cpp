@@ -1,7 +1,5 @@
 #include "SyncRecovery.h"
 
-namespace Tv5725 {
-
 namespace {
 
 struct Rung {
@@ -64,4 +62,3 @@ uint16_t SyncRecovery::positionOf(Step step)
     return 0;
 }
 
-}  // namespace Tv5725

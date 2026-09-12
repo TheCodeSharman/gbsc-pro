@@ -1,8 +1,14 @@
-#ifndef TV5725_SYNC_RECOVERY_H_
-#define TV5725_SYNC_RECOVERY_H_
+#ifndef VIDEOSOURCE_SYNC_RECOVERY_H_
+#define VIDEOSOURCE_SYNC_RECOVERY_H_
 
 // The escalation ladder as an ordered list of named recoveries, one per
 // position, rather than a run of moduli on a counter.
+//
+// It sits beside VideoSourceAcquisition rather than under Tv5725:: because a
+// rung is an act of ACQUISITION, not a register block: every step names an
+// operation one of the chip classes performs, and none of them is this one's
+// to write. The class that holds the tick is the one that asks which step is
+// due.
 //
 // **THE MODULI CARRIED TWO FACTS AND ONLY ONE WAS INTENDED.** `% 27` says both
 // "third in the order" and "again for ever", and the second is what makes the
@@ -25,8 +31,6 @@
 // docs/video-source-acquisition.md, "Escalation".
 
 #include <stdint.h>
-
-namespace Tv5725 {
 
 class SyncRecovery {
 public:
@@ -66,6 +70,5 @@ public:
     static uint16_t positionOf(Step step);
 };
 
-}  // namespace Tv5725
 
-#endif  // TV5725_SYNC_RECOVERY_H_
+#endif  // VIDEOSOURCE_SYNC_RECOVERY_H_

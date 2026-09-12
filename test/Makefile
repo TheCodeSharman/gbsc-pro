@@ -505,7 +505,7 @@ hd-bypass:
 	  src/tv5725/SyncMeasurement.cpp
 	@"$(OUT)/test_hd_bypass"
 
-## sync-recovery: host unit tests for Tv5725::SyncRecovery
+## sync-recovery: host unit tests for SyncRecovery
 #
 # Pure arithmetic over the escalation ladder's positions, so it links nothing
 # and needs no fake Wire.
@@ -513,7 +513,7 @@ sync-recovery:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_recovery" \
-	  "$(HERE)/test_sync_recovery.cpp" src/tv5725/SyncRecovery.cpp
+	  "$(HERE)/test_sync_recovery.cpp" src/videosource/SyncRecovery.cpp
 	@"$(OUT)/test_sync_recovery"
 
 ## mode-detect: host unit tests for Tv5725::ModeDetect
