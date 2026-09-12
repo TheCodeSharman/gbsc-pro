@@ -37,10 +37,18 @@ const uint16_t BlankEndSamples = 0x90;
 const uint16_t ChannelSyncDelay = 40;
 const uint16_t SyncPulseWidth = 124;
 
-// Undecimated. Pass-through has no scaler to feed and the channel plays out
-// what it is given, so halving the sample stream only costs horizontal detail:
-// measured on an 800x600 source, decimating by two takes the played-out line to
-// 928 samples for 800 active pixels and the gratings stop resolving.
+// Undecimated, and it cannot usefully be anything else.
+//
+// Oversampling on this part is bought from the SAME crossover ladder, not from
+// a second clock: Adc::applyOversample() takes a faster tap of the one VCO, so
+// each doubling costs a step of PLLAD_KS headroom. Asking for two therefore
+// caps the ADC clock at the top row's 80 MHz, which halves what reaches the
+// channel -- measured on an 800x600 source, the played-out line falls to 928
+// samples for 800 active pixels and the gratings stop resolving.
+//
+// The band where it would cost nothing is below about 19.6 kHz, and that is
+// under the rate a bypassed source needs to reach the sink at all.
+// test_hd_bypass.cpp pins both halves.
 const uint8_t BypassOversample = 1;
 
 }  // namespace

@@ -26,6 +26,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 
 using Tv5725::ColourSpace;
@@ -521,6 +522,33 @@ TEST_CASE("an RGBHV source samples the way the ADC-to-DAC route does")
     CHECK(Adc::PLLAD_ICP::read() == 4);
     CHECK(Adc::PLLAD_FS::read() == 0);
     CHECK(Adc::ADC_FLTR::read() == 0);
+}
+
+TEST_CASE("oversampling cannot pay in pass-through at any rate it is reached at")
+{
+    // Oversampling is bought from the SAME crossover ladder, not from a second
+    // clock: applyOversample() takes a faster tap of the one VCO, so a doubling
+    // costs a step of PLLAD_KS headroom and a ratio the row cannot carry comes
+    // back reduced. That is what puts it out of reach here.
+
+    SUBCASE("a divider that keeps the channel line asks for a row that has no tap") {
+        // 2039 samples reaching the channel at oversample two means 4078 at the
+        // ADC, which on a bench line is 154 MHz -- the top row, with nothing
+        // above it to tap.
+        CHECK(Adc::applySampleRate(4078, 37879, 2) == 1);
+    }
+
+    SUBCASE("the band where it would be free is below the floor bypass needs") {
+        // Free means both ratios reach the channel's own cap, so the doubling
+        // costs no delivered samples. That needs the ADC clock under the top
+        // row's 80 MHz with twice the channel's line behind it.
+        const uint32_t freeBelowHz =
+            80000000u / (2u * (HdBypass::MaxChannelLine - 8u));
+        const uint32_t bypassFloorHz =
+            Tv5725::SourceMeasurement::BypassMinLineRateHz;
+
+        CHECK(freeBelowHz < bypassFloorHz);
+    }
 }
 
 TEST_CASE("the pass-through divider is as dense as the channel and the PLL allow")
