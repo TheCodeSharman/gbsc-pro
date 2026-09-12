@@ -98,9 +98,30 @@ concept of a video standard does not survive here.
 
 ### The line rate the bench reaches is the MONITOR DEFINITION's, not the machine's
 
-The stock AKF50 definition the bench runs has **28 modes, none above 37.9 kHz**,
-and that ceiling is the file rather than VIDC20. Surveyed across the thirteen
-Acorn definitions RISC OS ships:
+**The machine now runs `RetroScaler-Acorn.mdf`, not a stock file** -- 63 modes,
+15.6 kHz to 1080p, Acorn's own timings verbatim plus a CEA-861 block, built by
+`RiscPc/tools/video-source/make_acorn_mdf.py`. `MODES` lists 1280x720 and
+1920x1080, so the ceiling below is history for this bench and is kept because it
+is what a stock file reaches.
+
+Two things about that file are worth knowing before reading a measurement taken
+on it.
+
+**Thirteen modes carry a `mode_name:` and the rest do not.** That field is what
+puts a mode on the Display Manager menu -- AKF50's own version history says so
+-- and a nameless mode is still reachable by `MODE` and by ModeServ. So the
+desktop's monitor icon listing nothing is not a fault.
+
+**AKF50 wins any dedup tie.** Seven 15.6 kHz PAL modes are defined by both AKF11
+and AKF50 with the same line rate, the same 312 lines and the same 50.08 Hz
+field, and different sync widths behind them: 320x256 is 36 units of hsync in
+512 under AKF50 against AKF11's 38. Every measurement recorded against the bench
+is against AKF50's timings, and while AKF11 was winning the key the divider
+settled on 2216 instead of 2208.
+
+The stock AKF50 definition has **28 modes, none above 37.9 kHz**, and that
+ceiling is the file rather than VIDC20. Surveyed across the thirteen Acorn
+definitions RISC OS ships:
 
 | definition | modes | fastest line | at |
 |---|---|---|---|
@@ -140,6 +161,21 @@ It also retires *the AKF50 has no 1280x1024* as a statement about the bench:
 it is a statement about one file, and AKF80 has it at 63.7 kHz, which is 1.25
 MB at 8 bpp against the machine's 2 MB of VRAM. The depth matters -- the PM5544
 card's palette comes out wrong below 256 colours, measured.
+
+### It is the only source that can put ONE divider under two line rates
+
+The engine halves `PLLAD_MD` when the line rate doubles, and at 1096 the ADC PLL
+does not lock -- measured 0 in 667 of 667 samples at 720x576@50, against 1 in
+499 of 552 at 320x256@50 where the divider is 2208. Because this source reaches
+both from one cable, it is what separates the divider from the source: the Wii
+reads the same 0 in 564 of 564 at the same 1096 on a different connector.
+`docs/investigations/the-adc-pll-does-not-lock-at-the-half-divider.md`.
+
+**The PM5544 card is what makes that visible**, and what the card shows says
+which of two faults it is. Beating confined to the finest grating is a sampling
+ratio, which can only alias where the detail is fine enough; beating that
+reaches flat area is a clock that is moving. The card captions itself with the
+mode, sync type and scan mode, so a photograph carries its own conditions.
 
 `SYNC 0|1|3` switches the machine between separate and composite sync, which
 makes it the source for sync-type work. It is one CMOS value re-applied to
