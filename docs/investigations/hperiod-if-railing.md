@@ -1024,3 +1024,50 @@ it at or below the 25 ms sample interval -- consistent with
 sample by sample. The separate-sync fault is a measurement that never converges
 rather than a register stuck at a rail, and an indicator tracking that is
 working correctly.
+
+## The stable form is admitted at adoption, and the field rate is what refuses it
+
+`lineRateFromHPeriod()` applies three tests to a window: the readings agree
+within a count, the rate clears `LineRateFloorHz`, and the field rate it implies
+is one some source runs at. **A single stable wrong value passes all three**, and
+that is the form the sections above name as the one to fear.
+
+What rejects it downstream is the rate already held. `rateFollowsCount()` refuses
+a rate that moved while the line count did not, so on a settled source the held
+rate vets every later reading for free. **The gap is where the held rate cannot
+vet it**, which is exactly where a railed value gets in:
+
+| moment | why the held rate cannot judge |
+|---|---|
+| the first measurement of a source event | nothing is held |
+| the count moved | a genuine mode change carries a new rate with it |
+| `HeldRateRejectionLimit` refusals in a row | the escape hatch that stops a source which really did change rate at an unchanged count from holding the mode change open for ever |
+
+The third is the worst of them, because it fires on a source whose held rate is
+*correct*: 60 consecutive railed readings and the bad value is taken as it
+stands. Once held it is never dislodged, since `rateFollowsCount()` then rejects
+every correct reading against it.
+
+The worked case is `HPERIOD_IF` 272 on the bench's 311-line source. It states
+24725 Hz, a 79.25 Hz field rate — above the floor, inside the band, and steady,
+so nothing in the window objects. The source runs at 50.08.
+
+**`getSourceFieldRate()` is measured a different way and does not rail with it**,
+which is what `VideoSourceAcquisition::rateMoved()` already uses to corroborate a
+*changed* rate. `SourceMeasurement::measureLineRate()` now does the same at
+adoption: where the held rate does not stand behind an HPERIOD-derived reading,
+the field rate is asked, and a reading it contradicts is replaced by the rate the
+field rate states.
+
+Two properties of the shape matter:
+
+- **It costs a vsync spin only where one was affordable anyway.** A corroborated
+  reading is free, which is the settled case and nearly every pass. The spin is
+  paid on the first reading after a source event and whenever the held rate
+  disagrees — and the refused-window path already pays it in both.
+- **A field rate of 0 does not withhold the reading.** The spin reports 0 with no
+  lock, which is the composite-sync case the HPERIOD route exists to serve.
+  Nothing contradicts the reading, so nothing rejects it.
+
+`test/test_source_measurement.cpp` pins all three: the contradicted reading, the
+60-refusal escape hatch, and the unmeasurable field rate.
