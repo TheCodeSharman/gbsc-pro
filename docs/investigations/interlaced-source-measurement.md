@@ -167,3 +167,45 @@ The risk that survives is precise: **a separate-sync source that absorbs the
 half-line into a steady undercount, as 576i does on SOG, would read
 progressive.** The RISC PC is the only separate-sync source on this bench, so
 nothing here can test it.
+
+
+## On separate sync the count alternates at every raster tried
+
+The alternation is the only scan-type signal that survives separate sync, and it
+had been measured at one raster. A second one, same machine and cable, only the
+mode and the interlace flag moving:
+
+| mode | field | progressive | interlaced |
+|---|---|---|---|
+| 320x256@50 | 312.5 | 311 steady, 0 changes in 372 | 311/312, 271 in 369 |
+| 640x200@60 | 262.5 | 261 steady, 0 changes in 384 | 261/262, 188 in 382 |
+
+Steps are exactly plus or minus one in both, and no progressive sample ever
+moves.
+
+**Set against every interlaced state measured, the hole belongs to the sync
+separator rather than to the raster:**
+
+| sync route | field | interlaced |
+|---|---|---|
+| separate | 312.5 | alternates |
+| separate | 262.5 | alternates |
+| composite, separator in path | 312.5 | steady 309 |
+| composite, separator in path | 262.5 | steady 259 |
+| SOG, Wii 576i | 312.5 | steady 310 |
+| SOG, Wii 480i | 262.5 | alternates 259/260 |
+
+The separator retimes vertical sync and can absorb the half-line into a constant
+undercount; separate sync passes the VSync pin through more directly and the
+half-line reaches the counter. **That puts the hole only where the alternation is
+not needed**, since `VPERIOD_IF` is a measurement wherever the separator is in
+the path.
+
+**What this does NOT test is the signal structure.** Every interlaced state the
+RISC PC can produce comes from `*TV vert,interlace`, which offsets the fields but
+does not synthesise broadcast equalisation and serration pulses. So the raster is
+tested and the vertical interval is not, and a genuinely broadcast-interlaced
+source on separate sync is the one thing this bench cannot make. A mode file does
+not close that gap -- it would match the active area, not the pulse structure.
+The one separator-path source with real serrations, the Wii at 480i, does
+alternate, which is at least not evidence against.
