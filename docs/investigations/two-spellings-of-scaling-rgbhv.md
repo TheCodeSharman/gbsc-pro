@@ -10,7 +10,7 @@ that window.
 | | set by | true from |
 |---|---|---|
 | `PresetLoad::scalingRgbhvInForce()` | `rememberScalingRgbhv()` | the load |
-| `scalingRgbhv()`, `videoStandardInput == 14` | `doPostPresetLoadSteps()`, and `loadScalingRgbhvPreset()` | part-way through the load |
+| `scalingRgbhv()`, the byte plus `Tv5725::RgbhvOutput` | `loadComputedPreset()`, and `loadScalingRgbhvPreset()` | the load |
 
 `loadComputedPreset()` writes `videoStandardInputAfterLoad()`, which is
 `PresetLoad::ScalingRgbhvStandard` -- **3**. `scalingRgbhv()` tests **14**. So the
@@ -55,9 +55,11 @@ dead on this path. **`rto->osr` is not**: the engine takes it through
 
 ## The window is closed
 
-`videoStandardInputAfterLoad()` returns 14 and the repair is gone, so
-`scalingRgbhv()` agrees with `scalingRgbhvInForce()` everywhere and 3 no longer
-means two things.
+A load leaves the byte alone. It holds `PresetLoad::Rgbhv` for the whole of a
+scaling RGBHV load -- the source is RGBHV before, during and after it -- and
+what the load establishes is `Tv5725::RgbhvOutput`, so there is no interval in
+which the byte names a standard the source is not. The mid-load repair is gone
+with the value it repaired, and 3 no longer means two things.
 
 Measured on the bench RiscPC at 320x256@50 on `vga`, a scaling RGBHV source that
 takes this path on every load: all 608 config and 48 status registers

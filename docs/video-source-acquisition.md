@@ -1249,8 +1249,8 @@ costs, measured against the tree:
 | 8 | medium resolution: mode detect answers only once `MD_HD1250P_CNTRL` is walked onto the source | 6, three of them a live search in `inputAndSyncDetect()` | the search has a measurement to answer it, and the 110 MHz filter arm has an owner |
 | 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
 | 13 | the YPbPr arm of that dispatch | 3 | with the dispatch |
-| 14 | scaling RGBHV | 4, two of them the `scalingRgbhv()` and `sourceIsRgbhv()` predicates | `OutputChoice` answers instead -- step 10 |
-| 15 | RGBHV bypass | 9 | with it |
+| 14 | an RGBHV source, which is what `sourceIsRgbhv()` tests | the three predicates and `holdStandard()` | `OutputChoice` answers instead -- step 10 |
+| 15 | `applyPresets()`'s request to pass an RGBHV source through, and never held | 3, all of them calls | with the bypass entry points |
 
 **NEITHER 8 NOR 9 DIES WITH THE DISPATCH, and neither is a `videoStandardInput`
 value.** No site reads the field as 8 or 9 -- which is what makes them look free
@@ -1279,22 +1279,26 @@ being 800x600 at 627 lines, so that branch is proven at host level only. What
 the bench does prove is the other side: on 320x256@50 the divider, the crossover
 row, the analog corner and the whole capture window are unchanged across it.
 
-**Two values carry two meanings, and those are the ones that bite.** 3 is 480p
-NTSC *and* `PresetLoad::ScalingRgbhvStandard`, so a scaling RGBHV source takes
-`SourceStandard`'s progressive arm for the length of a load. 15 is RGBHV bypass
-*and* `PresetLoad::NoValidMode`, the sentinel a load normalises to 0. Neither can
-be retired by choosing a different number for it.
+**A value carrying two meanings is the one that bites.** 3 is 480p NTSC *and*
+the standard a scaling RGBHV load is chosen under, so such a source takes
+`SourceStandard`'s progressive arm for the length of a load, and it cannot be
+retired by choosing a different number for it.
+
+**14 AND 15 NO LONGER DO THAT.** 14 says the source is RGBHV, which detection
+establishes before any output has been chosen; `Tv5725::RgbhvOutput` says
+whether a scaled mode is established for it. 15 never reaches the byte at all --
+it is what a caller passes `applyPresets()` to ask for pass-through, translated
+on the way in by `holdStandard()` and reconstructed by `heldStandard()` for the
+callers that compare a detection answer against what is held.
 
 **`Tv5725::PresetLoad` does not survive this step, and it goes with the CONCEPT
 rather than with the field.** Keeping it and giving it a byte-free signature
 would preserve the idea that a load is chosen by classifying the source, which
 is the thing being retired; the field is only how that idea is spelled. Its
-instance half --
-`videoStandardInput()`, `videoStandardInputAfterLoad()`, `enableScalingRgbhv()`,
-`inputIsYpBpR()` -- is a pure function of the byte, constructed at exactly one
-site in the firmware, and every member goes with the byte except
-`inputIsYpBpR()`, which is `adcInputSel == 0` and belongs to
-`VideoSourceSelection` beside the rest of that table. Its static half -- the
+instance half -- `enableScalingRgbhv()` and `inputIsYpBpR()` -- is constructed
+at exactly one site in the firmware, and the first goes with the byte while
+`inputIsYpBpR()` is `adcInputSel == 0` and belongs to `VideoSourceSelection`
+beside the rest of that table. Its static half -- the
 scaling RGBHV state and the two line-count buckets -- is engine state and an
 output question, so it goes to `VideoPath` and `OutputChoice`. The class was
 extracted so mode state would outlive the preset tables; it has, and there is no
