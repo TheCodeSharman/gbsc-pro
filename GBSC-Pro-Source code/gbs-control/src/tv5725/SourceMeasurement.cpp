@@ -103,6 +103,15 @@ bool SourceMeasurement::heldRateJudges(uint16_t lines, uint16_t heldLines,
     return heldLineRateHz != 0 && lines == heldLines;
 }
 
+// The counter's reading, with the field rate derived back out of it so both
+// halves describe the same frame. Over the frame, not the count: VTOTAL is zero
+// based, and this is the inverse of what lineRateFrom() does.
+void SourceMeasurement::takeCounterRate(uint32_t lineRateHz)
+{
+    lineRateHz_ = lineRateHz;
+    fieldRateHz_ = (float)lineRateHz_ / (float)(sourceLines_ + 1);
+}
+
 bool SourceMeasurement::heldRateCorroborates(uint32_t lineRateHz) const
 {
     return heldRateJudges(sourceLines_, goodLines_, goodLineRateHz_)
@@ -331,41 +340,36 @@ bool SourceMeasurement::measureLineRate()
 {
     sourceLines_ = measureSourceLines();
 
-    // HPERIOD_IF first: it states the line rate for the cost of a register read,
-    // where getSourceFieldRate() spins for vsync edges. It rails with nothing to
-    // say so, which is what lineRateFromHPeriod() judges; the field rate is what
-    // answers when the judgement refuses. Neither is trusted on its own -- the
-    // cross-check below reads the same either way.
-    lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
+    // HPERIOD_IF states the line rate for the cost of a register read, where
+    // getSourceFieldRate() spins for vsync edges. It also rails to a value that
+    // is WRONG AND STABLE, and every test lineRateFromHPeriod() applies is
+    // passed by one -- so it is believed only where something corroborates it.
+    // docs/investigations/hperiod-if-railing.md
+    uint32_t fromCounter = measureLineRateFromHPeriod(sourceLines_);
 
     // A flagged counter is not a settling source, and the bounce is the only
     // thing measured to clear one without the source moving. Once per source
     // event: it causes the fault about as readily as it clears it.
-    if (lineRateHz_ == 0 && counterWasFlagged() && counterRecovery_ != 0
+    if (fromCounter == 0 && counterWasFlagged() && counterRecovery_ != 0
         && !recoveryTried_) {
         recoveryTried_ = true;
         counterRecovery_();
-        lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
+        fromCounter = measureLineRateFromHPeriod(sourceLines_);
     }
 
-    // HPERIOD_IF rails to a value that is WRONG AND STABLE, and every test the
-    // window applies is passed by one. The held rate is what rejects it, so
-    // where nothing is held or it disagrees the field rate answers instead --
-    // measured a different way, and it does not rail with it.
-    // docs/investigations/hperiod-if-railing.md
-    if (lineRateHz_ != 0 && !heldRateCorroborates(lineRateHz_)) {
-        const uint32_t confirmed = lineRateFrom(sourceLines_, getSourceFieldRate(0));
-        if (confirmed != 0 && !ratesAgree(lineRateHz_, confirmed))
-            lineRateHz_ = confirmed;
-    }
-
-    if (lineRateHz_ != 0) {
-        // Over the frame, not the count: VTOTAL is zero based, and this is the
-        // inverse of what lineRateFrom() does on the other path.
-        fieldRateHz_ = (float)lineRateHz_ / (float)(sourceLines_ + 1);
+    if (fromCounter != 0 && heldRateCorroborates(fromCounter)) {
+        // Free, and the settled case: the rate already held stands behind it.
+        takeCounterRate(fromCounter);
     } else {
+        // The field rate is measured a different way and does not rail with the
+        // counter. It answers where the counter disagrees, and where it cannot
+        // be measured NOTHING is -- a reading nothing can speak to is the one
+        // form the window's tests cannot judge.
         fieldRateHz_ = getSourceFieldRate(0);
         lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
+        if (fromCounter != 0 && lineRateHz_ != 0
+            && ratesAgree(fromCounter, lineRateHz_))
+            takeCounterRate(fromCounter);
     }
 
     // Against the last reading that was GOOD, not the last one taken: a refusal

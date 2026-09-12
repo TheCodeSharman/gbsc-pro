@@ -575,6 +575,8 @@ private:
     // asking the field rate costs a vsync spin.
     bool heldRateCorroborates(uint32_t lineRateHz) const;
 
+    void takeCounterRate(uint32_t lineRateHz);
+
     uint16_t divider_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;

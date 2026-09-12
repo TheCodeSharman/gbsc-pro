@@ -1137,18 +1137,45 @@ TEST_CASE("a railed reading never becomes the held rate")
     CHECK(sampling.heldLineRateHz() == 15624u);
 }
 
-TEST_CASE("a reading the field rate cannot speak to stands")
+TEST_CASE("a reading nothing can corroborate is refused, not adopted")
 {
-    // The spin reports 0 with no lock, which is the composite-sync case the
-    // HPERIOD route exists to serve. Nothing contradicts the reading, so
-    // nothing withholds it.
+    // The spin reports 0 with no lock, and the counter rails to a value that is
+    // wrong and stable -- so a reading taken while nothing is held and nothing
+    // can speak to it is the one case the window's tests cannot judge at all.
+    // Refusing costs a pass, which the next one retries. Adopting costs until
+    // HeldRateRejectionLimit refusals drain, because the bad value then rejects
+    // every correct reading against itself.
+    //
+    // Nothing is lost by requiring it: the route the counter falls back to is
+    // the field rate, so a source it can never measure never acquired anyway.
     SourceMeasurement sampling;
     seedSourceLines(311);
     seedHPeriod(431);
     g_fieldRate = 0.0f;
 
+    CHECK_FALSE(sampling.measureLineRate());
+    CHECK(sampling.heldLineRateHz() == 0u);
+}
+
+TEST_CASE("a refusal does not spend the rejection budget")
+{
+    // HeldRateRejectionLimit exists so a source that genuinely changed rate at
+    // an unchanged count cannot hold the mode change open for ever. A reading
+    // that was never measured is not such a source, and counting it there
+    // spends the escape hatch on nothing.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRate = 50.08f;
     REQUIRE(sampling.measureLineRate());
-    CHECK(sampling.lineRateHz() == 15625u);
+    REQUIRE(sampling.heldLineRateHz() == 15625u);
+
+    g_fieldRate = 0.0f;
+    seedHPeriod(272);
+    for (unsigned i = 0; i < 2u * SourceMeasurement::HeldRateRejectionLimit; ++i)
+        CHECK_FALSE(sampling.measureLineRate());
+
+    CHECK(sampling.heldLineRateHz() == 15625u);
 }
 
 TEST_CASE("a reading implying a line no television generates is refused")
