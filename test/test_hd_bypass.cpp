@@ -184,7 +184,7 @@ TEST_CASE("the bypass raster comes up at the resting timing")
     FreshChip chip;
 
     CHECK(Wire.field(1, 0x37, 0, 11) == 1023);  // HD_HSYNC_RST
-    CHECK(Wire.field(1, 0x39, 0, 11) == 1046);  // HD_INI_ST
+    CHECK(Wire.field(1, 0x39, 0, 11) == 0);     // HD_INI_ST
     CHECK(Wire.field(1, 0x3B, 0, 12) == 3976);  // HD_HB_ST
     CHECK(Wire.field(1, 0x3D, 0, 12) == 208);   // HD_HB_SP
     CHECK(Wire.field(1, 0x3F, 0, 12) == 0);     // HD_HS_ST

@@ -3644,13 +3644,9 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 
     Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
 
-    GBS::HD_SEL_BLK_IN::write(0);
 
     Tv5725::SyncProcessor::writeSdVsyncStart(0);
     Tv5725::SyncProcessor::writeSdVsyncStop(2);
-
-    GBS::HD_HSYNC_RST::write(0x3ff);
-    GBS::HD_INI_ST::write(0);
 
     Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
                                        Tv5725::HdBypass::dividerFor(
@@ -3745,8 +3741,7 @@ void bypassModeSwitch_RGBHV()
 
     Tv5725::Chip::enterBypassRgbhv();
 
-    GBS::SFTRST_HDBYPS_RSTZ::write(1);
-    GBS::HD_INI_ST::write(0);
+    Tv5725::HdBypass::release();
 
     Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
 

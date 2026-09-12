@@ -90,7 +90,11 @@ void HdBypass::enable()
     HD_V_OFFSET::write(0);                       // s1_36[7:0]
 
     HD_HSYNC_RST::write(1023);                   // s1_37[10:0]
-    HD_INI_ST::write(1046);                      // s1_39[10:0]
+
+    // 0, where RD-5725-1.1's own resting value is 1046. Both bypass entries
+    // overwrote it to 0 immediately, so the larger value never survived a
+    // single line of video and was a resting value in name only.
+    HD_INI_ST::write(0);                         // s1_39[10:0]
     HD_HB_ST::write(3976);                       // s1_3b[11:0]
     HD_HB_SP::write(208);                        // s1_3d[11:0]
     HD_HS_ST::write(0);                          // s1_3f[11:0]
