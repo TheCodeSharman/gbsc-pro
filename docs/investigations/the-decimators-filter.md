@@ -83,10 +83,35 @@ A source above the cliff could be sampled less densely to buy the filtering back
 **Which of those looks better is not measured**, and no mode on the bench monitor
 definition reaches above the cliff to try it.
 
+## The scaling path asked for the same thing the long way round
+
+`SourceStandard` carried a ratio per source class -- interlaced SD 4,
+progressive 2, everything else 2 -- each against a post divider it wrote itself
+rather than the one the clock implies. `oversampleFor()` is
+`min(wanted, 2^postDivider)`, so every one of those is `2^postDivider` wherever
+the two agree, and the table was a hand-written copy of the ceiling.
+
+Measured either side of replacing it with `Adc::OversampleAsClockAllows`:
+
+| | `MD` | `KS` | VCO | ratio before | ratio after |
+|---|---|---|---|---|---|
+| RiscPC 320x256@50 on `vga` | 2208 | 2 | 137.6 MHz | 4 | **4** |
+| Wii 480p on `ypbpr` | 1096 | 2 | 137.6 MHz | 2 | **4** |
+
+The bench source is unchanged register for register, which is what says the
+table was the ceiling. The component source gains a doubling, because its arm
+wrote post divider 1 while the clock lands on 2 -- the ratio was computed
+against a row the source does not run on.
+
+Two arms were incoherent in the same way and are gone with it: a progressive
+source past 650 lines had `PLLAD_KS` written a second time AFTER the ratio was
+chosen, leaving the tap describing a different ratio from the row, and the HD
+arm computed its ratio against whatever row the previous mode left.
+
 ## What this does not show
 
-- **Anything about the scaling path.** `SourceStandard` asks for its own ratio
-  per source class there, and `PLLAD_MD` is bounded by the capture write limit
-  rather than by the channel counter, so the trade above has a different shape.
 - **What the decimators do to content below Nyquist.** The measurement is of
   alias beat, which is content above it.
+- **Whether four is better than two on a scaled source.** The change is
+  measured as locked and correct on both bench sources, and the wedge
+  comparison above was taken passed through rather than scaled.
