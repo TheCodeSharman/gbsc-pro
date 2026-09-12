@@ -12,6 +12,4 @@ void VideoRoute::toScaler() { route_ = Scaler; }
 
 void VideoRoute::toHdBypassChannel() { route_ = HdBypassChannel; }
 
-void VideoRoute::toAdcToDac() { route_ = AdcToDac; }
-
 }  // namespace Tv5725

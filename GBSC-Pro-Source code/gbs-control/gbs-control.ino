@@ -1215,12 +1215,6 @@ static bool standardIsHeld()
     return rto->videoStandardInput != Tv5725::PresetLoad::NoStandard;
 }
 
-// Whether the loop may steer this source between scaling RGBHV and bypass. A
-// source put on the HD bypass channel by hand is meant to stay there, and the
-// steering would pull it straight back out.
-// docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
-bool steerableRgbhv() { return sourceIsRgbhv() && !Tv5725::VideoRoute::isHdBypassChannel(); }
-
 // Whether the source runs a 15 kHz line. One reader, on every path: the held
 // rate survives a bypass switch, so bypass is not a special case.
 // docs/video-source-acquisition.md
@@ -3772,6 +3766,14 @@ void bypassModeSwitch_RGBHV()
     Tv5725::Adc::PLLAD_KS::write(1);
     rto->osr = Tv5725::Adc::applyOversample(1, 2);
     Tv5725::Adc::applyForBypassRgbhv();
+
+    // The channel carries the video here, not just the sync, so its raster is
+    // played out for this source rather than left at the block's resting
+    // timing. Last of the ADC group, because it installs the sampling the
+    // raster is derived from.
+    // docs/investigations/one-bypass-route-carries-rgbhv.md
+    Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
+                                       Tv5725::Adc::BypassDivider, applyRGBPatches);
     GBS::DAC_RGBS_R0ENZ::write(1);    
     GBS::DAC_RGBS_G0ENZ::write(1);    
     GBS::DAC_RGBS_B0ENZ::write(1);    
@@ -4523,7 +4525,11 @@ void runSyncWatcher() //
         }
     }
 
-    if (steerableRgbhv()) {
+    // Scaled or passed through is re-decided from the measurement on every
+    // settled pass, so there is no state a source can be parked in: one route
+    // carries every bypass and which one it is says nothing about why.
+    // docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
+    if (sourceIsRgbhv()) {
         static uint16_t RGBHVNoSyncCounter = 0;
 
         if (rto->continousStableCounter >= 2) {

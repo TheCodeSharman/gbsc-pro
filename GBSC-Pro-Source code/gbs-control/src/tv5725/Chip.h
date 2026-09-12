@@ -174,10 +174,16 @@ public:
     // raster and the windows.
     static void init();
 
-    // The three DAC routes are ALTERNATIVES, and nothing outside this class
-    // clears any of them, so each one clears the others. Two set at once sums
-    // the paths at the DACs: the black level lifts and the colours desaturate
-    // while every register but s0_4b reads correct.
+    // The DAC routes are ALTERNATIVES, and nothing outside this class clears
+    // any of them, so each one clears the others. Two set at once sums the
+    // paths at the DACs: the black level lifts and the colours desaturate while
+    // every register but s0_4b reads correct.
+    //
+    // DAC_RGBS_ADC2DAC is not one of them. It puts the ADC straight on the DACs
+    // with no converter in circuit at all, so it can carry RGB and nothing
+    // else -- a component source comes out green. Bypass goes through the HD
+    // channel, which has the matrix and the dynamic range converter.
+    // ../../../docs/investigations/one-bypass-route-carries-rgbhv.md
     //
     // Put the DACs and the sync outputs back on the scaler. Bypass moves all
     // three and nothing on the scaling path claimed them, so leaving bypass
@@ -197,8 +203,8 @@ public:
     static void routeToHdBypass();
 
     // Segment 0 as RGBHV bypass wants it: the display PLL off its scaled
-    // settings, the pads that carry a bypassed source, and the ADC put straight
-    // on the DACs. The memory clock travels with it and belongs to
+    // settings, the pads that carry a bypassed source, and the DACs on the HD
+    // bypass channel. The memory clock travels with it and belongs to
     // Tv5725::MemoryBus, which is why this calls rather than writes it.
     static void enterBypassRgbhv();
 };

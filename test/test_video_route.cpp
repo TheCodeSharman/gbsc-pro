@@ -1,6 +1,6 @@
 // Host-compiled unit tests for src/tv5725/VideoRoute.h -- `make -C test video-route`.
 //
-// Which route carries the video to the DAC. The three are alternatives in the
+// Which route carries the video to the DAC. The routes are alternatives in the
 // chip, so the value that says which is carrying holds one of them and not a
 // set: a second spelling elsewhere can say two are carrying at once, and the
 // loop then has to read both to reconstruct one fact.
@@ -17,14 +17,6 @@ TEST_CASE("the scaler carries the video until a bypass switch takes the route")
     VideoRoute::toScaler();
 
     CHECK(VideoRoute::route() == VideoRoute::Scaler);
-}
-
-TEST_CASE("taking one bypass route releases the other")
-{
-    VideoRoute::toAdcToDac();
-    VideoRoute::toHdBypassChannel();
-
-    CHECK(VideoRoute::route() == VideoRoute::HdBypassChannel);
 }
 
 TEST_CASE("the scaler takes the route back from a bypass switch")
