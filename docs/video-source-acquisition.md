@@ -1266,7 +1266,7 @@ costs, measured against the tree:
 | value | means | sites | goes when |
 |---|---|---|---|
 | 0 | nothing recognised | 7, all but one a write; `standardIsHeld()` is the only reader | a validated measurement replaces the no-sync gate -- step 4 |
-| 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | `SourceStandard` is deleted; its SD arm is live on YPbPr |
+| 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | **done** -- `SourceStandard::applySd()` is deleted, every field it wrote derived instead |
 | 3, 4 | progressive SD, 480p and 576p | 5 | with it |
 | 5, 6, 7 | HD, reached through the HD bypass switch | 3 | the bypass entry points merge -- step 10 |
 | 8 | medium resolution: mode detect answers only once `MD_HD1250P_CNTRL` is walked onto the source | 6, three of them a live search in `inputAndSyncDetect()` | the search has a measurement to answer it, and the 110 MHz filter arm has an owner |
@@ -1284,8 +1284,9 @@ has to land somewhere first.
 `MD_HD1250P_CNTRL` upwards until `getVideoMode()` answers 8, keeps the value
 that worked in `rto->medResLineCount`, and `ModeDetect::applyMedResLineCount()`
 replays it on every load. Deleting the value deletes the search's only
-termination condition. Its `SourceStandard` arm also moves the analog corner to
-110 MHz and sets `PLLAD_ICP` to 6, which is the sharpness judgement below.
+termination condition. What its `SourceStandard` arm did beyond that is gone:
+the analog corner is one value for every source and `PLLAD_ICP` belongs to
+`Adc::applySampleRate()`, so 8 carries a search and nothing else.
 
 9 is `getVideoMode()`'s answer for a source it never recognised but which held a
 steady line count for 255 consecutive polls -- the route by which an unknown
@@ -1349,65 +1350,52 @@ cannot be trusted even about what was written: a reserved bit beside a field
 stores a 1 and the hardware ignores it.
 `investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`
 
-**`Tv5725::SourceStandard` has one caller**, and it is the one piece of this
-step that is not mechanical. `doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
-branches into an SD, progressive or HD arm. `apply()` also reads `PLLAD_KS` back
-off the chip to pass as its own argument, which is the register-as-input
-anti-pattern in miniature.
+**`Tv5725::SourceStandard` is down to two arms**, and what is left of it is the
+HD bypass path plus one literal. `doPostPresetLoadSteps()` constructs it from the
+byte and calls `apply()`; the SD arm is gone entirely, so 1 and 2 are values no
+register follows.
 
-**Its SD arm is live on YPbPr, so it is not dead code**, and its progressive arm
-is overwritten on RGBHV. Measured on a Wii at 576i against the RISC PC on the
-same build:
+Everything it used to write is now derived from something measured, and the
+measurements are what settled where each piece belongs:
 
-| field | RISC PC | Wii | `applySd()` YPbPr branch writes |
-|---|---|---|---|
-| `IF_HS_Y_PDELAY` | 3 | **2** | 2 |
-| `VDS_Y_DELAY` | 2 | **3** | 3 |
-| `IF_HS_TAP11_BYPS` | -- | **0** | 0 |
-
-The RISC PC holds the bring-up values and the Wii holds the arm's. On RGBHV the
-progressive arm's writes are not in force at all -- `IF_SEL_WEN` reads 0 where it
-writes 1, with no other writer -- so **it is dead on one path and live on the
-other**, and deleting the class changes the component picture.
-
-**And two more effects survive on every path.**
-
-Everything else it writes has a later owner. `PLLAD_KS` is overwritten by
-`Adc::applySampleRate()`, reached from `inputTimingsChanged()` a few lines after
-`apply()` returns, which derives the post divider from `divider x lineRate` --
-the measurement, correctly. The IF and VDS delays are overwritten by bring-up.
-
-**THAT OVERWRITE IS CONDITIONAL, so the writes are dead on a solved source and
-live on an unsolved one.** `SourceMeasurement::applySampling()` returns before
-it without a usable measurement, and `Adc::applySampleRate()` skips the
-`PLLAD_KS` write entirely on a zero line rate rather than pick a crossover row
-by arithmetic on a zero. A load with nothing measured yet is exactly the case
-that reaches `apply()`, so its post divider is what the ADC runs on until the
-first solve lands.
-
-What is left:
-
-| effect | who needs it | note |
+| what it wrote | owner now | derived from |
 |---|---|---|
-| `rto->osr`, the returned oversample | `geometry.inputTimingsChanged(osr)` reads it | a real input to the engine |
-| `ADC_FLTR` | nothing else writes it on this path | the analog corner, 40 MHz on both sources |
-| the YPbPr luma/chroma delays | the component picture | live, measured above |
+| `IF_SEL_WEN`, `IF_HS_SEL_LPF` | `InputFormatter::applyScanMode()` | the line doubler, which the engine measures |
+| `VDS_V_DELAY` | `VideoProcessor::applyScanMode()` | the same |
+| `MADPT_Y_DELAY` | `Deinterlacer::applyScanMode()` | the same |
+| `IF_HS_Y_PDELAY`, `VDS_Y_DELAY` | the two `applyScanMode()`s | the doubler and `Adc::inputIsComponent()` |
+| `IF_HS_TAP11_BYPS` | nothing -- deleted | always 0, which `InputFormatter::init()` leaves |
+| `ADC_FLTR` | `Adc::init()` | nothing: one corner for every source |
+| the standard-3 SD vsync window | nothing -- deleted | measured indistinguishable |
 
-So deleting the class means giving those two an owner, and both are **policy
-questions with picture consequences rather than derivations**:
+**Which connector is live is held, not measured and not read back.** Nothing on
+the chip reports it, so `Adc::selectInput()` records what it wrote and
+`Adc::inputIsComponent()` answers from that. Every writer of `ADC_INPUT_SEL`
+goes through it, which is what makes the held value trustworthy.
 
-- **The wanted oversample.** The arms ask for 4 on interlaced SD ("least
-  horizontal detail, so the most room to oversample"), 2 on progressive, 2 by
-  default. Keyed to the line rate instead, the bench source at 15.6 kHz would ask
-  for 4 where the standard-3 branch currently gives it 2. That changes sampling
-  density on the one path that can be judged.
-- **The analog filter corner.** 40 MHz is the narrowest the part offers and
-  110 MHz is what a line carrying HD detail needs. The corner properly follows
-  the sample clock, but where it should step is a sharpness judgement.
+**The two policy questions this step was waiting on are both settled, by
+measurement rather than by choosing.**
 
-Neither should be invented. `docs/capture-limits.md` covers the trade `PLLAD_MD`
-makes between sampling density and reaching the end of the line, and the picture
-is the instrument for both.
+- **The wanted oversample** is `Adc::OversampleAsClockAllows` on every path
+  already, so the arms' 4-on-interlaced-SD and 2-on-progressive are gone with
+  nothing to replace.
+- **The analog filter corner** is one value, opened widest by `Adc::init()`.
+  `ADC_FLTR` is an anti-alias low-pass in front of the sampler and so does work
+  only below Nyquist, which the narrowest corner the part offers is never at:
+  40 MHz against a Nyquist of 17.3 MHz on the bench's 15 kHz source and 38.6 MHz
+  on its fastest. Swept across all four corners at both clocks, measuring
+  grating modulation on PM5544 with the same corner shot twice as the control,
+  the control's own repeat spans the whole spread and the order is not
+  monotonic. `docs/investigations/the-analog-filter-corner-is-above-nyquist.md`.
+
+What is left in the class is the SD vsync window, which keeps two owners until
+the RGBHV block moves -- `SyncProcessor::applyForScalingRgbhv()` writes 2/0 on
+that path -- and the HD arm, which is the bypass entry points' to take.
+
+**Where the vsync window belongs is `Tv5725::SourceTiming`**, not a new table:
+it is where the sync processor looks for vertical sync inside composite sync,
+measured in lines, and where vertical sync sits in a frame is what that class's
+published rasters already state.
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
 `inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is gone by then,
@@ -1519,8 +1507,8 @@ right, wrong, right.
 
 The two cover different arms, and the SD one is not optional here: the RISC PC
 over ModeServ covers arbitrary rasters, both sync types and progressive, while a
-Wii on YPbPr covers sync on green, interlace and component colour -- which is
-the arm `SourceStandard::applySd()` is live on and step 12 has to account for.
+Wii on YPbPr covers sync on green, interlace and component colour -- the only
+source here that can judge the luma delay `Adc::inputIsComponent()` now decides.
 
 **WHICH ONE A STEP MUST RUN IS NOT THE AUTHOR'S CHOICE.**
 
