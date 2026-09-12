@@ -4232,7 +4232,14 @@ void runSyncWatcher() //
         newVideoModeCounter = 0;
     }
 
-    if (((detectedVideoMode != 0 && detectedVideoMode != rto->videoStandardInput) ||
+    // **AGAINST heldStandard(), NOT THE BYTE.** getVideoMode() answers with
+    // heldStandard() for an RGBHV source, which reconstructs 15 for a bypassed
+    // one while videoStandardInput holds 14 -- so comparing the answer against
+    // the byte makes those two never equal and fires this branch on every pass
+    // of a perfectly healthy bypassed source. The !rgbhvBypass() gate is what
+    // hides that today, and it is also what puts SyncRecovery out of reach on
+    // that path. docs/investigations/the-rgbhv-ladder-is-the-only-one-on-that-path.md
+    if (((detectedVideoMode != 0 && detectedVideoMode != heldStandard()) ||
          (detectedVideoMode != 0 && !standardIsHeld())) &&
         !rgbhvBypass()) {
 
@@ -4300,7 +4307,7 @@ void runSyncWatcher() //
                 }
             }
         }
-    } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && !rgbhvBypass() && (rto->videoStandardInput == detectedVideoMode)) {
+    } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && !rgbhvBypass() && (heldStandard() == detectedVideoMode)) {
 
         if (rto->continousStableCounter < 255) {
             rto->continousStableCounter++;
