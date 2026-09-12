@@ -23,32 +23,27 @@ static const uint8_t AdcRgb = 1;
 TEST_CASE("the input is YPbPr exactly when the ADC mux is on input 0")
 {
     SUBCASE("mux 0 is YPbPr") {
-        PresetLoad load(AdcYpbpr, false, false);
+        PresetLoad load(AdcYpbpr, false);
         CHECK(load.inputIsYpBpR() == true);
     }
 
     SUBCASE("any other mux setting is not") {
-        PresetLoad load(AdcRgb, false, false);
+        PresetLoad load(AdcRgb, false);
         CHECK(load.inputIsYpBpR() == false);
     }
 }
 
-TEST_CASE("scaling RGBHV needs both the preference and a source that can take it")
+TEST_CASE("a load establishes scaling RGBHV for a source that can take it")
 {
-    // Wanting it is not enough: an RGBHV source over 535 lines is trapped in
-    // bypass and is never scaled, which is what isValidForScalingRGBHV carries.
-    SUBCASE("preferred and valid") {
-        PresetLoad load(AdcRgb, true, true);
+    // Whether the source is one the scaling path can serve is decided before
+    // the load, and carried here as isValidForScalingRGBHV.
+    SUBCASE("valid") {
+        PresetLoad load(AdcRgb, true);
         CHECK(load.enableScalingRgbhv() == true);
     }
 
-    SUBCASE("preferred but not valid") {
-        PresetLoad load(AdcRgb, true, false);
-        CHECK(load.enableScalingRgbhv() == false);
-    }
-
-    SUBCASE("valid but not preferred") {
-        PresetLoad load(AdcRgb, false, true);
+    SUBCASE("not valid") {
+        PresetLoad load(AdcRgb, false);
         CHECK(load.enableScalingRgbhv() == false);
     }
 }

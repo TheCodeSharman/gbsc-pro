@@ -26,10 +26,9 @@ void PresetLoad::forgetScalingRgbhv()
     scalingRgbhvLines_ = 0;
 }
 
-PresetLoad::PresetLoad(uint8_t adcInputSel,
-                       bool preferScalingRgbhv, bool validForScalingRgbhv)
+PresetLoad::PresetLoad(uint8_t adcInputSel, bool validForScalingRgbhv)
     : inputIsYpBpR_(adcInputSel == 0),
-      enableScalingRgbhv_(preferScalingRgbhv && validForScalingRgbhv)
+      enableScalingRgbhv_(validForScalingRgbhv)
 {
 }
 

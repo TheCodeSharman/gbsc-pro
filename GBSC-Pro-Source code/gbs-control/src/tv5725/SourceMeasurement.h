@@ -514,6 +514,24 @@ public:
     // docs/rgbhv-bypass-trap.md
     bool countCanBypass(uint16_t lines) const;
 
+    // Whether passing this source through is the right output for it.
+    //
+    // A sink that takes HDMI takes 640x480 and up, so a source at least that
+    // big reaches the panel intact by being handed over untouched -- and the
+    // scaling path cannot carry it well anyway: the capture's write limit bounds
+    // a line at about 1024 IF units however it is placed, so sampling density
+    // falls away exactly as the source gains detail. ../capture-limits.md
+    //
+    // In what the board can measure that is a source the line doubler is not
+    // needed for, whose line rate reaches the sink. Everything below -- 240p,
+    // 288p, 480i, 576i -- is scaled, and so is anything unmeasured, because the
+    // scaling path shows any rate and bypass shows only some.
+    //
+    // Asked of a COUNT and never of the held rate: bypass measures nothing, so
+    // the held rate still names the mode bypass was entered on, and a source
+    // that slows underneath would keep reading as displayable for ever.
+    bool bypassSuitsCount(uint16_t lines) const;
+
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
     // Measured rather than derived: 363 lines are doubled and 448 are not, and

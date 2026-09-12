@@ -14,10 +14,8 @@ namespace Tv5725 {
 class PresetLoad {
 public:
     // adcInputSel is GBS::ADC_INPUT_SEL, the TV5725's own input mux.
-    // validForScalingRgbhv is rto->isValidForScalingRGBHV; preferScalingRgbhv
-    // is the user option.
-    PresetLoad(uint8_t adcInputSel, bool preferScalingRgbhv,
-               bool validForScalingRgbhv);
+    // validForScalingRgbhv is rto->isValidForScalingRGBHV.
+    PresetLoad(uint8_t adcInputSel, bool validForScalingRgbhv);
 
     // ADC mux 0 is the YPbPr input. Only half the input path -- whether the
     // HC32F460 connected anything to it is ASW_01..04 and unreadable.

@@ -1215,9 +1215,9 @@ static bool standardIsHeld()
     return rto->videoStandardInput != Tv5725::PresetLoad::NoStandard;
 }
 
-// Whether the loop may steer this source between scaling RGBHV and RGBHV
-// bypass. A source held on the HD bypass channel is meant to stay there, and
-// the steering would pull it straight back out.
+// Whether the loop may steer this source between scaling RGBHV and bypass. A
+// source put on the HD bypass channel by hand is meant to stay there, and the
+// steering would pull it straight back out.
 // docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
 bool steerableRgbhv() { return sourceIsRgbhv() && !Tv5725::VideoRoute::isHdBypassChannel(); }
 
@@ -1241,28 +1241,6 @@ static boolean sourceLowLineRate()
 static boolean bypassCanBeDisplayed()
 {
     return sourceSampling.rateCanBypass();
-}
-
-// The line count a BYPASSED source has slowed to, when the display can no
-// longer show it -- 0 while bypass still reaches the panel, and 0 when no count
-// has held still long enough to say. The count comes back rather than a
-// verdict, so what is reported is the reading that decided.
-//
-// **bypassCanBeDisplayed() CANNOT ANSWER THIS.** It asks the held rate, and
-// bypass measures nothing -- so the held rate still names the mode bypass was
-// entered on, keeps reading as displayable however far the source slows, and
-// the branch that would leave never fires. The count is live.
-//
-// The cheap read gates the expensive confirmation: leaving costs a preset load,
-// and a source mid-change counts anything at all. docs/rgbhv-bypass-trap.md
-static uint16_t bypassLinesBelowTheDisplay()
-{
-    const uint16_t counted = Tv5725::SourceMeasurement::measureSourceLines();
-    if (sourceSampling.countCanBypass(counted))
-        return 0;
-
-    const uint16_t held = Tv5725::SourceMeasurement::countHeldStill(counted);
-    return held != 0 && !sourceSampling.countCanBypass(held) ? held : 0;
 }
 
 // A 15 kHz line whose vertical interval carries equalisation and serration
@@ -1370,7 +1348,6 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
   // Pure integer logic over rto->, so it lives in Tv5725::PresetLoad and is
   // checked by test_preset_load.cpp.
   const Tv5725::PresetLoad load(GBS::ADC_INPUT_SEL::read(),
-                                uopt->preferScalingRgbhv,
                                 rto->isValidForScalingRGBHV);
 
   Tv5725::VideoRoute::toScaler();
@@ -4549,10 +4526,23 @@ void runSyncWatcher() //
     if (steerableRgbhv()) {
         static uint16_t RGBHVNoSyncCounter = 0;
 
-        if (uopt->preferScalingRgbhv && rto->continousStableCounter >= 2) {
+        if (rto->continousStableCounter >= 2) {
 
             uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-            if (sourceLines != 0 && rgbhvBypass()) {
+
+            // Pass-through wherever it reaches the panel: a source at 640x480
+            // or above arrives intact only by being handed over, because the
+            // capture's write limit takes the sampling density away exactly as
+            // the source gains detail. docs/capture-limits.md
+            //
+            // preferScalingRgbhv is the user's override and no longer the
+            // decision. It cannot express a per-source choice, so it is due to
+            // be replaced by one stored against the SourceKey the framing uses.
+            // docs/video-source-acquisition.md
+            const bool passThrough = !uopt->preferScalingRgbhv
+                                     && sourceSampling.bypassSuitsCount(sourceLines);
+
+            if (sourceLines != 0 && rgbhvBypass() && !passThrough) {
                 SYNC_EVENT("rgbhv-leave-bypass", sourceLines);
                 const uint16_t heldLines =
                     Tv5725::SourceMeasurement::countHeldStill(sourceLines);
@@ -4585,16 +4575,28 @@ void runSyncWatcher() //
                         Tv5725::PresetLoad::rgbhvStandardFor(sourceLines, sourceRate);
 
                     // A load has to name a resolution and pass-through is not
-                    // one. **THE USER'S PREFERENCE IS OVERWRITTEN HERE, AND
-                    // saveUserPrefs() LATER PERSISTS IT**, so asking for
-                    // pass-through on a source that qualifies for scaling RGBHV
-                    // loses the choice. Removing the assignment needs the load
-                    // to take the resolution rather than read the option --
-                    // docs/video-source-acquisition.md, step 12's byte round trip.
+                    // one. **THE PREFERENCE IS OVERWRITTEN HERE AND LATER
+                    // PERSISTED**, which is what removing bypass from the
+                    // resolution list is for: the load should take the
+                    // resolution rather than read the option.
+                    // docs/video-source-acquisition.md
                     uopt->presetPreference = Tv5725::OutputChoice::scaledOr(
                         (Tv5725::PresetPreference)uopt->presetPreference);
 
                     loadScalingRgbhvPreset(standard, sourceLines);
+                }
+            }
+
+            else if (sourceLines != 0 && scalingRgbhv() && passThrough) {
+                SYNC_EVENT("rgbhv-enter-bypass", sourceLines);
+
+                const uint16_t heldLines =
+                    Tv5725::SourceMeasurement::countHeldStill(sourceLines);
+                if (heldLines != 0) {
+                    holdStandard(Tv5725::PresetLoad::BypassRgbhv);
+                    rto->isValidForScalingRGBHV = false;
+                    applyPresets(Tv5725::PresetLoad::BypassRgbhv);
+                    delay(300);
                 }
             }
 
@@ -4618,34 +4620,6 @@ void runSyncWatcher() //
                 }
             }
 
-        }
-
-        // The user asked for pass-through AND the display can show this
-        // source's line. Without the second half a slow source is handed
-        // straight to the encoder, which shows nothing -- measured, 21780 Hz
-        // and below give no signal on the bench panel.
-        if (!uopt->preferScalingRgbhv && scalingRgbhv() && bypassCanBeDisplayed()) {
-            holdStandard(Tv5725::PresetLoad::BypassRgbhv);
-            rto->isValidForScalingRGBHV = false; 
-            applyPresets(Tv5725::PresetLoad::BypassRgbhv);
-            delay(300);
-        }
-
-        // Already bypassed and the source has slowed past what the display
-        // takes -- a mode change does not re-enter bypass, so nothing else
-        // re-asks the question and the panel stays blank for ever.
-        const uint16_t slowedTo =
-            rgbhvBypass() ? bypassLinesBelowTheDisplay() : 0;
-        if (slowedTo != 0) {
-            printf("bypass left: %u lines is under the %lu Hz floor\n",
-                   (unsigned)slowedTo,
-                   (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
-            holdStandard(Tv5725::PresetLoad::Rgbhv);
-            rto->isValidForScalingRGBHV = true;
-            const Tv5725::OutputChoice choice = outputChoiceFor();
-            loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
-            doPostPresetLoadSteps();
-            delay(300);
         }
 
         uint16_t limitNoSync = 0;
@@ -4948,7 +4922,7 @@ void loadDefaultUserOptions()
     uopt->deintMode = 0;           
     uopt->wantVdsLineFilter = 1;
     uopt->wantPeaking = 1;
-    uopt->preferScalingRgbhv = 1;
+    uopt->preferScalingRgbhv = 0;
     uopt->wantTap6 = 1;
     uopt->PalForce60 = 0;
     uopt->matchPresetSource = 1; 
@@ -7239,10 +7213,6 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'x':
-            if (uopt->preferScalingRgbhv && !bypassCanBeDisplayed()) {
-                printf("scaling stays on: source line rate too low to bypass\n");
-                break;
-            }
             uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
             ; // SerialMprint(F("preferScalingRgbhv: "));
             if (uopt->preferScalingRgbhv) {

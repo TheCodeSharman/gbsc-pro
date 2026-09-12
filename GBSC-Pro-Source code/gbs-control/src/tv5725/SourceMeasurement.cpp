@@ -435,6 +435,11 @@ bool SourceMeasurement::lowLineRate() const
     return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
 }
 
+bool SourceMeasurement::bypassSuitsCount(uint16_t lines) const
+{
+    return !lineDoublingFor(lines) && countCanBypass(lines);
+}
+
 bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines,
                                        uint16_t showableUnits)
 {

@@ -822,6 +822,47 @@ TEST_CASE("only a rate a display accepts may be bypassed")
     }
 }
 
+TEST_CASE("a source at 640x480 or above is passed through, and anything below is scaled")
+{
+    // A sink that takes HDMI takes 640x480 and up, so a source at least that
+    // big reaches the panel intact by being handed over untouched -- and the
+    // scaling path cannot carry it well anyway, the capture's write limit
+    // bounding a line at about 1024 IF units however it is placed.
+    // ../capture-limits.md
+    SourceMeasurement measurement;
+
+    SUBCASE("640x480 is the smallest that goes through") {
+        // VTOTAL 524 at 60 Hz -- a 31.5 kHz line, which no sink taking HDMI
+        // may refuse.
+        seedSourceLines(524);
+        g_fieldRate = 60.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK(measurement.bypassSuitsCount(524));
+    }
+
+    SUBCASE("a source the line doubler is needed for is scaled") {
+        // 320x256@50: 311 lines is short of a frame, so the capture doubles it
+        // and there is nothing to hand over.
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(measurement.bypassSuitsCount(311));
+    }
+
+    SUBCASE("a rate the sink refuses is scaled however tall the source") {
+        // 448 lines at 50 Hz is a 22.4 kHz line: tall enough to need no
+        // doubling and still under the floor the bench display locks at.
+        seedSourceLines(448);
+        g_fieldRate = 50.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(measurement.bypassSuitsCount(448));
+    }
+
+    SUBCASE("nothing counted is scaled") {
+        CHECK_FALSE(measurement.bypassSuitsCount(0));
+    }
+}
+
 TEST_CASE("a source already bypassed is judged on a count taken now")
 {
     // **THE HELD RATE CANNOT ANSWER THIS.** Bypass measures nothing, so what is
