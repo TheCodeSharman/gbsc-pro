@@ -25,6 +25,26 @@ That has concrete costs, all of them paid here already:
   output resolution does.
 - **Nothing can be reasoned about.** Asking "is this in spec?" has no answer
   when the only justification is that it worked for someone.
+- **The register file becomes the model, so the firmware reads its own state
+  back out of the chip.** That is the habit's origin, and it outlives the
+  tables: when the settings ARE a register image, a read-back is not asking the
+  hardware anything, it is consulting your own storage. `HdBypass::applySd()`
+  still derives the played-out line from `PLLAD_MD::read()` while its caller is
+  handed the divider, and the two disagree by four hundred counts.
+
+  **A register is where a value is written to, never where it is kept**, and the
+  read-back cannot be trusted even about what was written: a reserved bit beside
+  a field stores a 1 that the hardware ignores.
+  `investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`. The
+  only reads the engine permits are measurements of the source, which nothing
+  else can supply.
+
+  Persistence moves the same way. `/slots.bin` is a positional binary struct,
+  and `slot.h` carries a field that is always 0 and read by nothing because
+  removing it re-lays out the file and garbles the names in every slot already
+  on a unit. The text formats replacing it -- `Tv5725::FramingText`,
+  `Tv5725::SlotText` -- name each value on its own line, so a file that lacks a
+  line degrades for that line alone.
 
 ## Code first
 
