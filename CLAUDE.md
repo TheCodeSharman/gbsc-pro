@@ -95,7 +95,21 @@ printf 'PATTERN PM5544\n'          | nc 192.168.88.10 6502   # redraw, or pick t
 printf 'MODES\n'                   | nc 192.168.88.10 6502   # what this monitor definition allows
 printf 'SYNC 1\n'                  | nc 192.168.88.10 6502   # 0 separate, 1 composite, 3 auto
 printf 'PING\n'                    | nc 192.168.88.10 6502   # OK ModeServ 1
+printf 'VERSION\n'                 | nc 192.168.88.10 6502   # which build is RUNNING
 ```
+
+**`VERSION` FIRST, BEFORE JUDGING ANYTHING THE CARD DOES.** It answers
+`OK ModeServ <build> PatLib <build>`, and it names both because the two files
+tokenise and load separately -- a `Build` that lands one and not the other
+leaves a server whose halves disagree and whose behaviour never says so. Without
+it, "the feature is missing" and "the feature is there and broken" are
+indistinguishable from this end, and a session has been spent inventing probes
+to guess between them.
+
+**The machine runs `RetroScaler-Acorn.mdf`, not a stock definition** -- 63 modes,
+15.6 kHz to 1080p, so `MODES` lists 1280x720 and 1920x1080. Only 13 modes carry a
+name and the rest are nameless, which is why the desktop's monitor icon lists
+nothing; a nameless mode is still reachable by `MODE`. `docs/bench-sources.md`.
 
 `MODE` replies with the mode read back from the hardware, never with the
 request, so a monitor definition that cannot do what was asked does not look
