@@ -82,8 +82,22 @@ row cannot carry.
 Asking for two therefore holds the ADC clock under the top row's 80 MHz, and
 what reaches the channel halves with it.
 
+**AND PASS-THROUGH IS ALREADY OVERSAMPLING BY TWO**, whatever the firmware
+asks for. Read on the bench in pass-through: `PLLAD_KS` 1 with `PLLAD_CKOS` 0 --
+one tap faster -- `ADC_CLK_ICLK1X` 1 and `DEC2_BYPS` 0, which is the ADC
+sampling 4078 a line and the 2x-to-1x stage bringing 2039 to the channel.
+`HdBypass::applyRgbhv()` asks for a ratio of one and writes it; watched through
+a bypass entry at one-second sampling, the group reads ratio 1 at 9.8 s and
+ratio 2 at 10.0 s. **Two owners, and the one that loses is the one that meant
+it**: the sketch sets `rto->osr` from its own `applyOversample(1, 2)` before the
+call, and a later re-apply installs that.
+
+So the divider ceiling above is a ceiling on what reaches the CHANNEL, and the
+ADC is already running at twice it. Oversampling is not the unexplored lever it
+looks like -- it is what pass-through has been doing.
+
 **Whether the stages FILTER before they decimate is open**, and it does not
-change the answer. They are two cascaded stages, each bypassable on its own --
+change what the ceiling is. They are two cascaded stages, each bypassable on its own --
 `DEC1_BYPS` is 4x to 2x and `DEC2_BYPS` is 2x to 1x, so the ratios are 1, 2 and
 4, and `Adc::applyOversample()` writes them with the matching clock dividers
 because the decimators undo in the digital domain what the faster tap added.
