@@ -1054,10 +1054,10 @@ so nothing in the window objects. The source runs at 50.08.
 
 **`getSourceFieldRate()` is measured a different way and does not rail with it**,
 which is what `VideoSourceAcquisition::rateMoved()` already uses to corroborate a
-*changed* rate. `SourceMeasurement::measureLineRate()` now does the same at
-adoption: where the held rate does not stand behind an HPERIOD-derived reading,
-the field rate is asked, and a reading it contradicts is replaced by the rate the
-field rate states.
+*changed* rate. `SourceMeasurement::measureLineRate()` does the same at adoption:
+**the counter's reading is used only where something stands behind it** — the
+rate already held, free, or the field rate at the cost of a vsync spin. A reading
+neither can speak to is refused rather than adopted.
 
 Two properties of the shape matter:
 
@@ -1065,9 +1065,35 @@ Two properties of the shape matter:
   reading is free, which is the settled case and nearly every pass. The spin is
   paid on the first reading after a source event and whenever the held rate
   disagrees — and the refused-window path already pays it in both.
-- **A field rate of 0 does not withhold the reading.** The spin reports 0 with no
-  lock, which is the composite-sync case the HPERIOD route exists to serve.
-  Nothing contradicts the reading, so nothing rejects it.
+- **A refusal does not spend the rejection budget.** `HeldRateRejectionLimit`
+  exists for a source that genuinely changed rate at an unchanged count. A
+  reading that was never measured is not one, and counting it there spends the
+  escape hatch on nothing.
 
-`test/test_source_measurement.cpp` pins all three: the contradicted reading, the
-60-refusal escape hatch, and the unmeasurable field rate.
+### An unmeasurable field rate must withhold the reading, not release it
+
+The first shape of this kept the counter's reading where the field rate could not
+be measured, on the argument that the spin reports 0 with no lock and that is the
+composite-sync case the counter exists to serve. **That is the one moment the hole
+is widest**: a spin that cannot answer is what happens on the first measurement
+after a reset, which is also when nothing is held to vet the reading. The railed
+value went in unchallenged.
+
+Measured on the bench after a flash, with the source untouched and steady:
+
+```
+sampling: 311 lines x 50.08 Hz -> line rate 0     x ~60, over five seconds
+sampling: 311 lines x 50.08 Hz -> line rate 15625
+```
+
+The count never moved and the field rate read correctly throughout. That is the
+engine rejecting sixty correct readings against a held rate that was wrong, and
+then taking one because the limit expired.
+
+**Nothing is lost by requiring corroboration**, which is what makes the choice
+safe: the route the counter falls back to when its window refuses is the field
+rate, so a source whose field rate can never be measured never acquired by either
+path.
+
+`test/test_source_measurement.cpp` pins four cases: the contradicted reading, the
+60-refusal escape hatch, the unmeasurable field rate, and the budget.
