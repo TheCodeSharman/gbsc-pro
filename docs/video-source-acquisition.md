@@ -1174,8 +1174,8 @@ The two routes are different silicon, not two configurations of one block:
 
 | | video path | the HD bypass channel |
 |---|---|---|
-| HD bypass | `DAC_RGBS_BYPS2DAC` 1, HD bypass channel to DAC | carries the video |
-| RGBHV bypass | `DAC_RGBS_ADC2DAC` 1, "ADC (with decimation) to DAC" | **not in the video path** |
+| bypass | `DAC_RGBS_BYPS2DAC` 1, HD bypass channel to DAC | carries the video |
+| retired | `DAC_RGBS_ADC2DAC` 1, "ADC (with decimation) to DAC" | **not in the video path**, and no converter is |
 
 `bypassModeSwitch_RGBHV()` releases the block and sets `OUT_SYNC_SEL` to 1 all
 the same -- "H/V sync output are from HD bypass" -- so on that route the block is
@@ -1199,8 +1199,12 @@ What is still split:
 | split | today | belongs to |
 |---|---|---|
 | two entry points | `setOutModeHdBypass()`, `bypassModeSwitch_RGBHV()` | one `apply()` on the mode |
-| the source's classification | `videoStandardInput` 14 and 15 | the measured source |
+| the source's classification | `videoStandardInput` 14 | the measured source |
 | the path choice | `applyForStandard()` branching on the standard byte | the measured source |
+
+**THE ROUTE IS ONE.** Both entries drive the HD bypass channel and
+`DAC_RGBS_ADC2DAC` is retired, so what is left above is a refactor over a single
+route rather than a change of route.
 
 **WHICH ROUTE CARRIES THE VIDEO HAS ONE OWNER.** `Tv5725::VideoRoute` holds it
 and `Tv5725::Chip`'s three route methods record what they have just written, so

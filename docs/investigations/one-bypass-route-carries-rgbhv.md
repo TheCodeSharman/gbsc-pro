@@ -10,23 +10,24 @@ raster.
 separate sync, `STATUS_SYNC_PROC_VTOTAL` 679, the engine measuring 40662 Hz and
 solving a divider of 1124 on the scaling path.
 
-## The two routes
+## The two routes the part offers, and the one the firmware uses
 
 `Tv5725::Chip` makes them mutually exclusive, each switch clearing the others.
+Only the first is reached now; `DAC_RGBS_ADC2DAC` is retired.
 
 | | `DAC_RGBS_BYPS2DAC` | `DAC_RGBS_ADC2DAC` |
 |---|---|---|
 | RD-5725-1.1 | "enable HD bypass channel to DAC directly" | "ADC (with decimation) to DAC" |
-| reached by | `setOutModeHdBypass()`, standards 5, 6, 7, 13 | `bypassModeSwitch_RGBHV()`, standard 15 |
 | in the video path | the HD bypass channel | nothing between ADC and DAC |
 | colour conversion available | `HD_MATRIX_BYPS`, `HD_DYN_BYPS` | the decimator's `DEC_MATRIX_BYPS` only |
 
 **Neither route is a colour space**, which the `DAC_RGBS_` prefix on both
-invites. Both switches call `HdBypass::applyColourPath(rto->inputIsYpBpR)`, so
-the YPbPr decision follows the input selection on either. What differs is
+invites. The YPbPr decision follows the input selection --
+`HdBypass::applyColourPath(rto->inputIsYpBpR)` -- on either. What differs is
 that on `ADC2DAC` those `HD_*` writes are not in the video path at all, and the
 one converter that is -- the decimator's -- is bypassed unconditionally. So as
-configured, `ADC2DAC` can carry RGB and nothing else.
+configured, `ADC2DAC` can carry RGB and nothing else, and that is what retires
+it.
 
 ## Why the HD route looked unable to carry it
 
@@ -198,27 +199,20 @@ accounted for -- described the state before `HD_HS_ST` was swept at all.
 It has none of this in it: no HD channel, no pass-through sync generator. See
 `a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`.
 
-## The route has one owner, and the exit from bypass depends on it
+## The exit from bypass is a measurement, not a memory of how the source got there
 
-Routing RGBHV bypass through `setOutModeHdBypass()` is right about the route and
-easy to get wrong about how a source LEAVES it.
+Every gate that asked which route the video was on, or which switch had put it
+there, was asking how the source arrived rather than what it is. Both spellings
+of that failed the same way: a source could be left in bypass with nothing able
+to take it out -- measured, the unit sat there through `/sc?~`, `/uc?p`,
+`/uc?h`, an `ADC_INPUT_SEL` bounce, a source mode round trip and an OTA reset,
+with `STATUS_SYNC_PROC_VTOTAL` reading 311 the whole time.
 
-`steerableRgbhv()` is the sync watcher's gate on the block that takes a source
-back out of bypass and onto the scaling path once `preferScalingRgbhv` allows
-it, and the HD bypass channel closes that gate: a source held there is meant to
-stay there. Spelled as two flags, one switch could set its own and leave the
-other's standing, and the source then had no exit at all -- measured, the unit
-sat in bypass through `/sc?~`, `/uc?p`, `/uc?h`, an `ADC_INPUT_SEL` bounce, a
-source mode round trip and an OTA reset, with `STATUS_SYNC_PROC_VTOTAL` reading
-311 the whole time.
-
-`Tv5725::VideoRoute` is the one value now, recorded by `Tv5725::Chip` as it
-writes `s0_4b`, so no transition can leave two routes reading as in force.
-
-**Which route carries the video and whether the loop may steer this source are
-still two facts.** The second is the standard byte's 14 and 15, which say an
-RGBHV source is scaled or not, and that half comes off the byte before the
-entry points merge.
+Nothing needs to remember it. `SourceMeasurement::bypassSuitsCount()` is asked
+on every settled pass, so a 15 kHz source is scaled whatever is carrying it at
+the time and a VGA-class one is passed through. `Tv5725::VideoRoute` records
+which route the chip is actually on, written by `Tv5725::Chip` as it writes
+`s0_4b`, and nothing decides from it.
 
 **And a 15 kHz source in bypass is not a fault to chase.** With
 `preferScalingRgbhv` off, the firmware correctly holds an RGBHV source in
@@ -227,17 +221,17 @@ sheared content that reads as a broken scaling path. `docs/rgbhv-bypass-trap.md`
 already says bypass is not a way to get a picture out of any source; this is
 what it looks like from the far end.
 
-## What follows
+## What is left
 
 The reason for a second route was that an arbitrary raster could not be known,
 so nothing could program the regenerator and the short path was the safe one.
-The engine measures every source's line count, field rate and divider now, so
-that reason is gone -- and the HD channel is strictly the more capable of the
-two, being the only one with a matrix and a dynamic range converter in circuit.
+The engine measures every source's line count, field rate and divider, so that
+reason is gone.
 
-One bypass output mode over one route is therefore reachable, and
-`applyForStandard()`'s arms collapse into the derivation `applySd()` already
-carries rather than being extended with a fourteenth and fifteenth case.
+Both bypass entries drive the channel now. What is still two functions is the
+entries themselves -- one reached from the standard byte's HD values and one
+from an RGBHV source -- and folding them into one is a refactor over a single
+route rather than a change of route, provable by a register diff.
 
 ## What this does not show
 
