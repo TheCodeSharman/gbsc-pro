@@ -777,6 +777,16 @@ debounce may want to be the run's own.
 
 ## The order
 
+**WHAT THE STEPS ARE FOR: the best picture with the least mechanism.** Not a
+faithful refactor -- a faithful refactor of an accident preserves the accident.
+Where two paths do the same job differently, the question is *why*, and "nobody
+knows" means collapse them. An unexplained divergence is not a risk to preserve
+carefully; it is the complexity these steps exist to remove, and preserving it
+because removing it might change something is how it survived. Keep a difference
+that has a reason and write the reason down; delete one that does not.
+`CLAUDE.md`, *Conventions*.
+
+
 **Three stages landed before this list**, and they are what made the rest
 possible: the engine could not be given the watcher's job while the sketch still
 owned the scan mode and the mode-change event.
