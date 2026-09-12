@@ -1093,15 +1093,23 @@ question, not a sequence to preserve on the way there.
 **And the byte's two largest branches come out here**, because this is the
 block that reads them.
 
-### What decides bypass, once the block has moved
+### What decides bypass
 
 **A source at or above 640x480 is passed through; anything below is scaled.**
-Measured on the bench panel: 800x600, 1024x768 and 1280x1024 all display in
-passthrough. Expressed in what the board can measure, that is a source the line
-doubler is not needed for and whose rate can reach the sink --
-`LineDoubleBelowLines` and `BypassMinLineRateHz`, both already measured
-constants. It puts 240p, 288p, 480i and 576i on the scaling path and every
-VGA-class raster through.
+`SourceMeasurement::bypassSuitsCount()` is that rule: a source the line doubler
+is not needed for, whose rate reaches the sink -- `LineDoubleBelowLines` and
+`BypassMinLineRateHz`, both measured constants. It puts 240p, 288p, 480i and
+576i on the scaling path and every VGA-class raster through. Measured on the
+bench panel: 800x600, 1024x768 and 1280x1024 all display in passthrough.
+
+**It reads a COUNT and never the held rate.** Bypass measures nothing, so the
+held rate goes on naming the mode bypass was entered on and a source that slows
+underneath would keep reading as displayable for ever.
+
+The sync watcher's RGBHV steering asks it in both directions today. What is left
+is the same question for a source Mode Detect DOES name -- the new-mode block
+still reads `presetPreference == OutputBypass`, which is pass-through wearing a
+resolution's clothes.
 
 **`rateCanBypass()` is a HARD GATE on the whole choice, not half of the
 default.** Passthrough is not offerable where the rate cannot reach the sink,
@@ -1111,8 +1119,9 @@ apply.
 
 **The user overrides it per mode, and the override is stored the way the framing
 is** -- same `SourceKey`, same record, same lifecycle, found at the moment the
-decision is needed. `preferScalingRgbhv` goes with the policy it encoded: a
-global boolean cannot express a per-source decision, and neither of its two
+decision is needed. `preferScalingRgbhv` is the interim stand-in for it, off by
+default and no longer the decision; it goes with the policy it encoded, because
+a global boolean cannot express a per-source choice and neither of its two
 answers is right for every source.
 
 **The reason is not preference, it is what the capture can carry.** The write

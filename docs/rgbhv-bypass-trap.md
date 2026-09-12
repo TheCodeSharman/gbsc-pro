@@ -1,10 +1,22 @@
 # RGBHV, scaled or bypassed
 
-**The line count decides nothing. The preference does.** `preferScalingRgbhv`
-on — the default — scales an RGBHV source whatever its height; off puts it in
-bypass. Both directions are covered by
-`tools/gbsc-pro-hwtest/test_rgbhv_bypass.py`, which needs `--modeserv` to drive
-the source across the range.
+**THE MEASUREMENT DECIDES.** `SourceMeasurement::bypassSuitsCount()` passes a
+source through when the line doubler is not needed for it and its line rate
+reaches the sink — 640x480 and up, which is everything a sink taking HDMI is
+required to accept — and scales everything below. The sync watcher's steering
+reads it in both directions, so a source that changes mode across the boundary
+crosses on its own.
+
+**Scaling is what costs the picture, which is why the boundary sits there.** The
+capture's write limit bounds a line at about 1024 IF units however it is placed,
+so the sampling divider has to fall as the line rate rises: a VESA-class source
+is softer scaled than handed over untouched. `capture-limits.md`.
+
+`preferScalingRgbhv` is the user's override, defaulting off, and no longer the
+decision. A global boolean cannot express a per-source choice and it is due to
+be replaced by one stored against the `SourceKey` the framing uses.
+`tools/gbsc-pro-hwtest/test_rgbhv_bypass.py` covers both directions and needs
+`--modeserv` to drive the source across the range.
 
 ## The gate that used to decide, and why it is gone
 
