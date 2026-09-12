@@ -7,29 +7,17 @@ namespace Tv5725 {
 
 // The mode state a preset load decides, separated from the bytes it writes.
 //
-// writeProgramArrayNew() does two unrelated jobs: it copies 432 bytes out of a
-// preset table, and it settles mode state the table has no say in. The second
-// has to outlive the first, or it goes when the tables do.
+// A load settles mode state no preset has a say in, and that has to outlive
+// the tables it was entangled with.
 //
 // Plain integers, no registers and no rto->, so it host-compiles.
-//
-// Two values of videoStandardInput matter, not one: the sentinel is cleared
-// before the table is written because the byte loop reads the value while it
-// runs, and scaling RGBHV moves it again afterwards.
 class PresetLoad {
 public:
     // adcInputSel is GBS::ADC_INPUT_SEL, the TV5725's own input mux.
     // validForScalingRgbhv is rto->isValidForScalingRGBHV; preferScalingRgbhv
     // is the user option.
-    PresetLoad(uint8_t videoStandardInput, uint8_t adcInputSel,
-               bool preferScalingRgbhv, bool validForScalingRgbhv);
-
-    // What the table write should see: 15, the "no valid mode" sentinel,
-    // normalised to 0.
-    uint8_t videoStandardInput() const;
-
-    // What to leave behind once the table is written.
-    uint8_t videoStandardInputAfterLoad() const;
+    PresetLoad(uint8_t adcInputSel, bool preferScalingRgbhv,
+               bool validForScalingRgbhv);
 
     // ADC mux 0 is the YPbPr input. Only half the input path -- whether the
     // HC32F460 connected anything to it is ASW_01..04 and unreadable.
@@ -47,9 +35,8 @@ public:
     //
     // **THIS IS A MEASUREMENT, NOT A CLASSIFICATION.** It answers off a line
     // count and a field rate, and the standard byte is only how the answer
-    // reaches applyPresets(). The caller sets the byte to what this returns,
-    // loads, and sets it straight back to 14, which is why one number carrying
-    // both the source and the output is the thing step 10 removes.
+    // reaches applyPresets(). The caller holds what this returns for the length
+    // of the load and puts the source's own classification back afterwards.
     // docs/investigations/two-spellings-of-scaling-rgbhv.md
     static uint8_t rgbhvStandardFor(uint16_t sourceLines, float fieldRateHz);
 
@@ -58,16 +45,21 @@ public:
     static const uint16_t ShortSourceLines = 280;
 
     // The values of rto->videoStandardInput, named so the facets one byte
-    // carries are visible: a source FORMAT in 1..9, a video PATH in 13..15, and
+    // carries are visible: a source FORMAT in 1..9, a video PATH in 13..14, and
     // nothing-known at 0. Separating them is what retires the byte.
-    //
-    // **15 DOES DOUBLE DUTY.** It is the sentinel a load clears, and it is what
-    // rgbhvBypass() tests -- bypass being the consequence of having no valid
-    // scaled mode rather than a second meaning invented for the value.
-    static const uint8_t NoValidMode = 15;
 
-    // The byte that names scaling RGBHV, which is what scalingRgbhv() tests.
-    static const uint8_t ScalingRgbhv = 14;
+    // An RGBHV source, which is what sourceIsRgbhv() tests. Mode Detect names
+    // nothing for it, and detection establishes it before any output has been
+    // chosen. **WHAT THE SOURCE GETS IS NOT HERE**: Tv5725::RgbhvOutput says
+    // whether a scaled mode is established, and that is what scalingRgbhv() and
+    // rgbhvBypass() read.
+    static const uint8_t Rgbhv = 14;
+
+    // What applyPresets() is ASKED for when an RGBHV source should be passed
+    // through. A dispatch value and never held -- the byte holds Rgbhv with the
+    // output bypassed -- so getVideoMode() reconstructs it from the output
+    // rather than reading it back.
+    static const uint8_t BypassRgbhv = 15;
 
     // YPbPr passed through rather than scaled.
     static const uint8_t HdBypassStandard = 13;
@@ -95,10 +87,6 @@ public:
     // The lowest value that names a PATH rather than a source format.
     static const uint8_t PathFirst = 13;
 
-    // ...and the lowest that names an RGBHV one, which is what sourceIsRgbhv()
-    // tests.
-    static const uint8_t RgbhvFirst = 14;
-
     // Whether the output in force is scaling RGBHV, which the load above
     // decides and later steps of the same load ask about. State rather than a
     // chip register: it lived in s1_2c, an address RD-5725-1.1 does not
@@ -120,7 +108,6 @@ public:
     static void forgetScalingRgbhv();
 
 private:
-    uint8_t videoStandardInput_;
     bool inputIsYpBpR_;
     bool enableScalingRgbhv_;
 };

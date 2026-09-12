@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard video-route clean help
+.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard video-route rgbhv-output clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -369,6 +369,16 @@ video-route:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_video_route" \
 	  "$(HERE)/test_video_route.cpp" src/tv5725/VideoRoute.cpp
 	@"$(OUT)/test_video_route"
+
+## rgbhv-output: host unit tests for Tv5725::RgbhvOutput
+#
+# Whether a scaled mode is established for a source Mode Detect names nothing
+# for -- an output question, and not the same as a scaling preset being loaded.
+rgbhv-output:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_rgbhv_output" \
+	  "$(HERE)/test_rgbhv_output.cpp" src/tv5725/RgbhvOutput.cpp
+	@"$(OUT)/test_rgbhv_output"
 
 ## memory-map: host unit tests for the SDRAM layout and the capture capacity
 #
@@ -730,7 +740,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log video-route
+test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log video-route rgbhv-output
 all: test
 
 ## clean: remove the compiled test binaries

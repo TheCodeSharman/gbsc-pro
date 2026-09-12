@@ -26,22 +26,11 @@ void PresetLoad::forgetScalingRgbhv()
     scalingRgbhvLines_ = 0;
 }
 
-PresetLoad::PresetLoad(uint8_t videoStandardInput, uint8_t adcInputSel,
+PresetLoad::PresetLoad(uint8_t adcInputSel,
                        bool preferScalingRgbhv, bool validForScalingRgbhv)
-    : videoStandardInput_(videoStandardInput == NoValidMode ? 0 : videoStandardInput),
-      inputIsYpBpR_(adcInputSel == 0),
+    : inputIsYpBpR_(adcInputSel == 0),
       enableScalingRgbhv_(preferScalingRgbhv && validForScalingRgbhv)
 {
-}
-
-uint8_t PresetLoad::videoStandardInput() const
-{
-    return videoStandardInput_;
-}
-
-uint8_t PresetLoad::videoStandardInputAfterLoad() const
-{
-    return enableScalingRgbhv_ ? ScalingRgbhv : videoStandardInput_;
 }
 
 bool PresetLoad::inputIsYpBpR() const

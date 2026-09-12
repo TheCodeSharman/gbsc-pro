@@ -13,6 +13,7 @@
 #include "src/tv5725/SyncProcessor.h"
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/tv5725/VideoRoute.h"
+#include "src/tv5725/RgbhvOutput.h"
 #include <stdio.h>
 
 
@@ -31,6 +32,7 @@ extern uint8_t RGB_Com;
 
 extern bool scalingRgbhv();
 extern void applyPresets(uint8_t videoMode);
+extern uint8_t standardForPresetLoad();
 extern void setOutModeHdBypass(bool bypass);
 extern void saveUserPrefs();
 extern float getOutputFrameRate();
@@ -115,7 +117,7 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
+    uint8_t videoMode = standardForPresetLoad();
     PresetPreference preset = PresetPreference::Output1080P;
     switch (item->tag)
     {
@@ -140,17 +142,12 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     default:
         break;
     }
-    if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read())
-    {
-        videoMode = rto->videoStandardInput;
-    }
-
     if (item->tag != MT_BYPASS)
     {
         uopt->presetPreference = preset;
         if (scalingRgbhv())
         {
-            rto->videoStandardInput = 15;
+            Tv5725::RgbhvOutput::chooseBypass();
         }
         else
         {

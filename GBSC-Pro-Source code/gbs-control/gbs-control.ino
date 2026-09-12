@@ -88,6 +88,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/BringUp.h"
 #include "src/tv5725/Chip.h"
 #include "src/tv5725/VideoRoute.h"
+#include "src/tv5725/RgbhvOutput.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
 #include "src/clock/ClockGen.h"
@@ -100,7 +101,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 // The sync watcher's RGBHV choices, named as they are taken. A register dump
 // afterwards shows where the firmware arrived and never why.
 #define SYNC_EVENT(what, lines) \
-    Tv5725::SamplingLog::event(millis(), (what), (lines), rto->videoStandardInput)
+    Tv5725::SamplingLog::event(millis(), (what), (lines), heldStandard())
 #else
 #define SYNC_EVENT(what, lines) ((void)0)
 #endif
@@ -661,7 +662,7 @@ static void LoadDefault()
 
     resetRunTimeDefaults();
 
-    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;    
+    holdStandard(Tv5725::PresetLoad::NoStandard);    
     Tv5725::VideoRoute::toScaler();   
     rto->videoIsFrozen = true;      
     rto->sourceDisconnected = true; 
@@ -683,14 +684,25 @@ static void serviceRegisterQueue();
 #endif
 void UpDisplay(void);
 
+// What is held, in the vocabulary applyPresets() takes. An RGBHV source holds
+// one byte value and its OUTPUT beside it, so the request that would reproduce
+// the state is reconstructed rather than read out of the byte.
+static uint8_t heldStandard()
+{
+    if (sourceIsRgbhv())
+        return scalingRgbhv() ? Tv5725::PresetLoad::Rgbhv
+                              : Tv5725::PresetLoad::BypassRgbhv;
+    return rto->videoStandardInput;
+}
+
 // The standard a preset load is for. The classification is not trusted on its
 // own: it reports nothing on a source whose H-sync is arriving, so the held
 // standard answers where it cannot. docs/video-source-acquisition.md
-static uint8_t standardForPresetLoad()
+uint8_t standardForPresetLoad()
 {
     const uint8_t videoMode = getVideoMode();
     if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
-        return rto->videoStandardInput;
+        return heldStandard();
     }
     return videoMode;
 }
@@ -699,7 +711,7 @@ void UpDisplay(void)
 {
     const uint8_t videoMode = standardForPresetLoad();
     if (scalingRgbhv()) {
-        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
+        holdStandard(Tv5725::PresetLoad::BypassRgbhv);
     } else {
         applyPresets(videoMode);
     }
@@ -1168,12 +1180,30 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
         GBS::write(lastSegment, slaveRegister, values, numValues);
 }
 
-// 14 and 15 are not standards. The byte has no room for "no standard was
-// recognised", so an RGBHV source borrows the top of its range: scaled when the
-// line count qualifies, bypassed when it does not. docs/rgbhv-bypass-trap.md
-bool sourceIsRgbhv() { return rto->videoStandardInput >= Tv5725::PresetLoad::RgbhvFirst; }
-bool scalingRgbhv() { return rto->videoStandardInput == Tv5725::PresetLoad::ScalingRgbhv; }
-bool rgbhvBypass() { return rto->videoStandardInput == Tv5725::PresetLoad::NoValidMode; }
+// An RGBHV source is not a standard. The byte has no room for "Mode Detect
+// named nothing", so such a source borrows the top of its range -- and what it
+// GETS is a separate question with a separate owner, so that one value does not
+// have to carry both. docs/rgbhv-bypass-trap.md
+bool sourceIsRgbhv() { return rto->videoStandardInput == Tv5725::PresetLoad::Rgbhv; }
+bool scalingRgbhv() { return sourceIsRgbhv() && Tv5725::RgbhvOutput::isScaling(); }
+bool rgbhvBypass() { return sourceIsRgbhv() && !Tv5725::RgbhvOutput::isScaling(); }
+
+// The one writer of the held standard. An RGBHV source arrives here as the
+// output asked for -- scaled or passed through -- and that half goes to
+// Tv5725::RgbhvOutput rather than into the byte, which holds only that the
+// source is RGBHV. docs/video-source-acquisition.md
+static void holdStandard(uint8_t standard)
+{
+    if (standard == Tv5725::PresetLoad::BypassRgbhv) {
+        Tv5725::RgbhvOutput::chooseBypass();
+        rto->videoStandardInput = Tv5725::PresetLoad::Rgbhv;
+        return;
+    }
+
+    if (standard == Tv5725::PresetLoad::Rgbhv)
+        Tv5725::RgbhvOutput::chooseScaling();
+    rto->videoStandardInput = standard;
+}
 
 // Whether the byte names a standard at all. NOT a signal-present test, however
 // it reads at the sites below: it says only that something was recognised and
@@ -1186,9 +1216,9 @@ static bool standardIsHeld()
 }
 
 // Whether the loop may steer this source between scaling RGBHV and RGBHV
-// bypass. 14 and 15 name the OUTPUT as much as the source, so an RGBHV source
-// switched to HD bypass reads as one of them and the steering pulls it straight
-// back out. docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
+// bypass. A source held on the HD bypass channel is meant to stay there, and
+// the steering would pull it straight back out.
+// docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
 bool steerableRgbhv() { return sourceIsRgbhv() && !Tv5725::VideoRoute::isHdBypassChannel(); }
 
 // Whether the source runs a 15 kHz line. One reader, on every path: the held
@@ -1336,24 +1366,22 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 
   FrameSync::cleanup();
 
-  // Which standard this load lands on, and what it implies for the ADC input
-  // and the scaling-RGBHV option. Pure integer logic over rto->, so it lives in
-  // Tv5725::PresetLoad and is checked by test_preset_load.cpp.
-  const Tv5725::PresetLoad load(rto->videoStandardInput,
-                                GBS::ADC_INPUT_SEL::read(),
+  // What this load implies for the ADC input and the scaling-RGBHV option.
+  // Pure integer logic over rto->, so it lives in Tv5725::PresetLoad and is
+  // checked by test_preset_load.cpp.
+  const Tv5725::PresetLoad load(GBS::ADC_INPUT_SEL::read(),
                                 uopt->preferScalingRgbhv,
                                 rto->isValidForScalingRGBHV);
 
-  rto->videoStandardInput = load.videoStandardInput();
   Tv5725::VideoRoute::toScaler();
   rto->inputIsYpBpR = load.inputIsYpBpR();
 
   if (load.enableScalingRgbhv())
   {
+    Tv5725::RgbhvOutput::chooseScaling();
     Tv5725::PresetLoad::rememberScalingRgbhv(
         Tv5725::PresetLoad::SourceLinesUnknown);
   }
-  rto->videoStandardInput = load.videoStandardInputAfterLoad();
 }
 
 void activeFrameTimeLockInitialSteps()
@@ -1375,7 +1403,7 @@ void activeFrameTimeLockInitialSteps()
 
 void setResetParameters_re() 
 {
-    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;   
+    holdStandard(Tv5725::PresetLoad::NoStandard);   
     rto->videoIsFrozen = false;    
     rto->applyPresetDoneStage = 0; 
     // rto->sourceDisconnected = true;  
@@ -1410,7 +1438,7 @@ static uint8_t selectedAdcInput()
 
 void setResetParameters()
 {
-    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;
+    holdStandard(Tv5725::PresetLoad::NoStandard);
     rto->videoIsFrozen = false; 
     rto->applyPresetDoneStage = 0;
     rto->sourceDisconnected = true; 
@@ -2035,9 +2063,8 @@ uint8_t detectAndSwitchToActiveInput()
                             delay(30);
                         }
 
-                        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
-
-                        applyPresets(rto->videoStandardInput);
+                        holdStandard(Tv5725::PresetLoad::BypassRgbhv);
+                        applyPresets(Tv5725::PresetLoad::BypassRgbhv);
                         delay(100);
 
                         return 3;
@@ -2156,7 +2183,7 @@ uint8_t inputAndSyncDetect()
         {
             if (rto->isInLowPowerMode == false) {
                 rto->sourceDisconnected = true; 
-                rto->videoStandardInput = Tv5725::PresetLoad::NoStandard;
+                holdStandard(Tv5725::PresetLoad::NoStandard);
                 GBS::SP_SOG_MODE::write(1);
                 goLowPowerWithInputDetection();
                 rto->isInLowPowerMode = true;
@@ -2196,7 +2223,7 @@ uint8_t inputAndSyncDetect()
         rto->isInLowPowerMode = false; 
         rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
-        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
+        holdStandard(Tv5725::PresetLoad::BypassRgbhv);
         resetDebugPort();
 
         if (Info == InfoVGA && rto->HdmiHoldDetection) {
@@ -2813,7 +2840,7 @@ void doPostPresetLoadSteps()
         if (!standardIsHeld()) {
             uint8_t videoMode = getVideoMode();
             if (videoMode > 0) {
-                rto->videoStandardInput = videoMode;
+                holdStandard(videoMode);
             }
         }
 
@@ -3149,7 +3176,7 @@ void applyPresets(uint8_t result)
         return;
     }
 
-    if (result == 14) {
+    if (result == Tv5725::PresetLoad::Rgbhv) {
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
             rto->inputIsYpBpR = 0;
 
@@ -3198,7 +3225,8 @@ void applyPresets(uint8_t result)
     boolean waitExtra = 0;
     if (Tv5725::VideoRoute::isHdBypassChannel() || rgbhvBypass() || !standardIsHeld()) {
         waitExtra = 1;
-        if (result <= 4 || result == 14 || result == 8 || result == 9) {
+        if (result <= 4 || result == Tv5725::PresetLoad::Rgbhv || result == 8
+            || result == 9) {
             GBS::SFTRST_IF_RSTZ::write(1);
             GBS::SFTRST_VDS_RSTZ::write(1);
             GBS::SFTRST_DEC_RSTZ::write(1);
@@ -3253,8 +3281,8 @@ void applyPresets(uint8_t result)
     // OSD menu items, which is a menu-layout change only a remote can check.
     // docs/video-source-acquisition.md
 
-    if (result == 1 || result == 3 || result == 8 || result == 9 || result == 14 ||
-        result == 2 || result == 4) {
+    if (result == 1 || result == 3 || result == 8 || result == 9 ||
+        result == Tv5725::PresetLoad::Rgbhv || result == 2 || result == 4) {
 
         // **TWO BRANCHES AND TWELVE TABLE LOADS WERE HERE, AND THEY DIFFERED IN
         // NOTHING BUT WHICH TABLE.** One branch per source standard, each a
@@ -3269,18 +3297,18 @@ void applyPresets(uint8_t result)
         loadComputedPreset(choice, presetIdFor(choice.resolve(), pal));
     } else if (result == 5 || result == 6 || result == 7 || result == 13) {
 
-        rto->videoStandardInput = result;
+        holdStandard(result);
         setOutModeHdBypass(false);
         return;
-    } else if (result == 15) {
+    } else if (result == Tv5725::PresetLoad::BypassRgbhv) {
         if (!bypassCanBeDisplayed()) {
-            // Back to the scaling path, which shows any rate. The byte is the
+            // Back to the scaling path, which shows any rate. The request is the
             // caller's statement that this source has no preset, not an
             // instruction to put an unshowable raster on the panel.
             printf("bypass refused: %lu Hz line, needs %lu\n",
                    (unsigned long)sourceSampling.heldLineRateHz(),
                    (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
-            rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
+            holdStandard(Tv5725::PresetLoad::Rgbhv);
             rto->isValidForScalingRGBHV = true;
             const Tv5725::OutputChoice choice = outputChoiceFor();
             loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
@@ -3290,7 +3318,7 @@ void applyPresets(uint8_t result)
         }
     }
 
-    rto->videoStandardInput = result;
+    holdStandard(result);
     if (waitExtra) {
 
         delay(400);
@@ -3302,13 +3330,12 @@ uint8_t getVideoMode()
 {
     uint8_t detectedMode = 0;
 
+    // Mode Detect names nothing for an RGBHV source, so the answer is what is
+    // already held -- in the vocabulary every caller of this compares against
+    // and passes on.
     if (sourceIsRgbhv()) {
         detectedMode = GBS::STATUS_16::read();
-        if ((detectedMode & 0x0a) > 0) {
-            return rto->videoStandardInput;
-        } else {
-            return 0;
-        }
+        return (detectedMode & 0x0a) > 0 ? heldStandard() : 0;
     }
 
     detectedMode = GBS::STATUS_00::read();
@@ -3737,7 +3764,7 @@ void bypassModeSwitch_RGBHV()
     GBS::PA_SP_BYPSZ::write(1);
     applyRGBPatches();
     resetDebugPort();
-    rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
+    holdStandard(Tv5725::PresetLoad::BypassRgbhv);
     rto->autoBestHtotalEnabled = false;
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::Adc::forgetPllBand();
@@ -4027,12 +4054,12 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
 // what step 12 removes. docs/video-source-acquisition.md
 static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
 {
-    rto->videoStandardInput = standard;
+    holdStandard(standard);
     applyPresets(standard);
 
     Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
     Tv5725::InputFormatter::writeLineCounterStart(16);
-    rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
+    holdStandard(Tv5725::PresetLoad::Rgbhv);
 
     Tv5725::Adc::applyScalingChargePump();
     updateSpDynamic(1);
@@ -4335,10 +4362,10 @@ void runSyncWatcher() //
 
                     applyPresets(detectedVideoMode);
                 } else {
-                    rto->videoStandardInput = detectedVideoMode;
+                    holdStandard(detectedVideoMode);
                     setOutModeHdBypass(false);
                 }
-                rto->videoStandardInput = detectedVideoMode;
+                holdStandard(detectedVideoMode);
                 rto->noSyncCounter = 0;          
                 rto->continousStableCounter = 0; 
                 newVideoModeCounter = 0;
@@ -4598,9 +4625,9 @@ void runSyncWatcher() //
         // straight to the encoder, which shows nothing -- measured, 21780 Hz
         // and below give no signal on the bench panel.
         if (!uopt->preferScalingRgbhv && scalingRgbhv() && bypassCanBeDisplayed()) {
-            rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
+            holdStandard(Tv5725::PresetLoad::BypassRgbhv);
             rto->isValidForScalingRGBHV = false; 
-            applyPresets(rto->videoStandardInput);
+            applyPresets(Tv5725::PresetLoad::BypassRgbhv);
             delay(300);
         }
 
@@ -4613,7 +4640,7 @@ void runSyncWatcher() //
             printf("bypass left: %u lines is under the %lu Hz floor\n",
                    (unsigned)slowedTo,
                    (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
-            rto->videoStandardInput = Tv5725::PresetLoad::ScalingRgbhv;
+            holdStandard(Tv5725::PresetLoad::Rgbhv);
             rto->isValidForScalingRGBHV = true;
             const Tv5725::OutputChoice choice = outputChoiceFor();
             loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
@@ -5248,7 +5275,7 @@ void setup()
     resetRunTimeDefaults();
 
     rto->inputIsYpBpR = false;   
-    rto->videoStandardInput = Tv5725::PresetLoad::NoStandard; 
+    holdStandard(Tv5725::PresetLoad::NoStandard); 
     Tv5725::VideoRoute::toScaler();
     rto->videoIsFrozen = false;  
     if (!rto->webServerEnabled)
@@ -5987,7 +6014,7 @@ void loop()
                 // is the detection block's, which asks presetPreference.
                 if (!Tv5725::VideoRoute::isHdBypassChannel()) {
                     if (scalingRgbhv()) {
-                        rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
+                        holdStandard(Tv5725::PresetLoad::BypassRgbhv);
                     } else {
                         applyPresets(videoMode);
                     }
@@ -6115,7 +6142,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
     if (traceStandard >= 0) {
         const uint8_t forced = (uint8_t)traceStandard;
         traceStandard = -1;
-        rto->videoStandardInput = forced;
+        holdStandard(forced);
         rto->inputIsYpBpR = traceIsYuv;
 
         // Delimiters, not timestamps: the parser must not have to guess where a
@@ -6379,7 +6406,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprint("ADC: ");
                     break;
                 case '#':
-                    rto->videoStandardInput = Tv5725::PresetLoad::HdBypassStandard;
+                    holdStandard(Tv5725::PresetLoad::HdBypassStandard);
                     applyPresets(13);
                     break;
                 case 'n': {
@@ -7071,7 +7098,7 @@ void handleType2Command(char argument)
             // if (argument == 'L')
 
             if (scalingRgbhv()) {
-                rto->videoStandardInput = Tv5725::PresetLoad::NoValidMode;
+                holdStandard(Tv5725::PresetLoad::BypassRgbhv);
             } else {
                 changeOutputResolution(videoMode);
             }
