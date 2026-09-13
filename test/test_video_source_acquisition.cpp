@@ -932,6 +932,64 @@ TEST_CASE("a recovery that settles the question restarts the run")
     CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
 }
 
+TEST_CASE("the run of acquired passes is the layer's too")
+{
+    // rto->continousStableCounter counts passes since the source came good, and
+    // the sketch keys maintenance off it -- the sampling phase, the dynamic
+    // sync-processor write, the deinterlacer. It is the same run as the ladder's
+    // seen from the other side, so it is counted beside the same measurement.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    const uint16_t settled = unit.acquisition.acquiredPasses();
+    REQUIRE(settled > 0);
+
+    unit.poll();
+    unit.poll();
+    CHECK(unit.acquisition.acquiredPasses() == settled + 2);
+}
+
+TEST_CASE("a source that goes away zeroes the acquired run")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.acquiredPasses() > 0);
+
+    seedLineSamples(3250);
+    unit.poll();
+
+    CHECK(unit.acquisition.acquiredPasses() == 0);
+    CHECK(unit.acquisition.unmeasuredPasses() == 1);
+}
+
+TEST_CASE("the run counts detection passes, not loop passes")
+{
+    // loop() calls poll() every time round and runSyncWatcher() every 20 ms, so
+    // a run counted per call is a different length from the one every threshold
+    // was tuned against. It advances on the cadence, which is what makes
+    // SyncRecovery's positions mean what they meant beside runSyncWatcher().
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    const uint16_t settled = unit.acquisition.acquiredPasses();
+
+    uint32_t now = unit.nowMs;
+    for (uint8_t i = 0; i < VideoSourceAcquisition::DetectionIntervalMs - 1; ++i)
+        unit.acquisition.poll(++now);       // 1 ms apart, inside one interval
+
+    CHECK(unit.acquisition.acquiredPasses() == settled);
+}
+
 TEST_CASE("counts that never hold still are not a source")
 {
     // The reverted attempt gated the sketch's recovery on the range check

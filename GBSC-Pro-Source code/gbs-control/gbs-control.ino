@@ -677,7 +677,6 @@ static void LoadDefault()
     rto->applyPresetDoneStage = 0; //
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
-    rto->continousStableCounter = 0; 
     Tv5725::SyncOnGreen::choose(5);        
 }
 
@@ -1399,8 +1398,6 @@ void setResetParameters()
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
     rto->phaseIsSet = 0;
-    rto->continousStableCounter = 0;
-    rto->noSyncCounter = 0;         
 
     rto->isInLowPowerMode = false;  
     Tv5725::SyncOnGreen::choose(5);       
@@ -1498,7 +1495,6 @@ void setResetParameters()
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
     rto->phaseIsSet = 0;
-    rto->continousStableCounter = 0; 
     serialCommand = '@';
     userCommand = '@';
 }
@@ -2225,7 +2221,6 @@ void resetPLLAD()
     delay(1);
     latchPLLAD();
     Tv5725::SyncProcessor::forgetPositions();
-    rto->continousStableCounter = 1; 
 }
 
 void latchPLLAD() { Tv5725::Adc::latch(); }
@@ -2302,7 +2297,6 @@ void resetPLL()
     GBS::PLL_VCORST::write(0);
     delay(1);
     Tv5725::SyncProcessor::forgetPositions();
-    rto->continousStableCounter = 1; 
 }
 
 void ResetSDRAM()
@@ -2783,8 +2777,6 @@ void doPostPresetLoadSteps()
         GBS::GPIO_CONTROL_01::write(0x00);
         Tv5725::SyncProcessor::forgetPositions();
         rto->phaseIsSet = 0;
-        rto->continousStableCounter = 0;              
-        rto->noSyncCounter = 0;                       
         Tv5725::Deinterlacer::disableMotionAdapt();
         Tv5725::Deinterlacer::forgetScanlines();
         rto->videoIsFrozen = true;
@@ -3731,9 +3723,9 @@ void printInfo()
     // printf(print, ...) passed `print` — the output buffer — as the format
     // string, a mangled sprintf. Since `print` is static and nothing ever writes
     // to it, this formatted an empty string: printInfo() has printed nothing at
-    // all, whatever the docs said. It is the only view of noSyncCounter and
-    // continousStableCounter, which live in ESP RAM and so cannot be read back
-    // over I2C, so it is worth having.
+    // all, whatever the docs said. It is the only view of the acquisition run --
+    // `u:` unmeasured passes, `s:` acquired -- which lives in ESP RAM and so
+    // cannot be read back over I2C, so it is worth having.
     //
     // Rate limited, and only the output is: loop() calls printInfo() every
     // iteration with no gate of its own, and SerialM broadcasts to the
@@ -3750,7 +3742,7 @@ void printInfo()
             GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
             h, HSp, v, VSp, stat0FIrq, GBS::TEST_BUS::read(), getVideoMode(),
             GBS::STATUS_SYNC_PROC_HTOTAL::read(), GBS::STATUS_SYNC_PROC_VTOTAL::read() /*+ 1*/,
-            GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), rto->noSyncCounter, rto->continousStableCounter,
+            GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), inputAcquisition.unmeasuredPasses(), inputAcquisition.acquiredPasses(),
             Tv5725::SyncOnGreen::level(), wifi);
         SerialM.print(print);
     }
@@ -4080,7 +4072,10 @@ void runSyncWatcher() //
     }
 
     static uint8_t newVideoModeCounter = 0;
+    static bool wantFullRestore = false;
     bool runSettled = false;
+    const uint16_t unmeasuredPasses = inputAcquisition.unmeasuredPasses();
+    const uint16_t stablePasses = inputAcquisition.acquiredPasses();
     uint8_t detectedVideoMode = getVideoMode();
     boolean status16SpHsStable = getStatus16SpHsStable();
 
@@ -4126,10 +4121,8 @@ void runSyncWatcher() //
     }
 
     if ((detectedVideoMode == 0 || !status16SpHsStable) && !rgbhvBypass()) {
-        rto->noSyncCounter++;            // 
-        rto->continousStableCounter = 0; // 
         lastVsyncLock = millis();
-        if (rto->noSyncCounter == 1) {
+        if (unmeasuredPasses == 1) {
             // freezeVideo(); 
             return;
         }
@@ -4155,7 +4148,6 @@ void runSyncWatcher() //
 
         if (newVideoModeCounter < 255) {
             newVideoModeCounter++;
-            rto->continousStableCounter = 0; 
             if (newVideoModeCounter > 1) {
                 if (newVideoModeCounter == 2) {
                     ;
@@ -4202,8 +4194,6 @@ void runSyncWatcher() //
                     enterHdBypass();
                 }
                 holdStandard(detectedVideoMode);
-                rto->noSyncCounter = 0;          
-                rto->continousStableCounter = 0; 
                 newVideoModeCounter = 0;
                 forgetHdBypassLineCount();
                 delay(20);
@@ -4213,18 +4203,15 @@ void runSyncWatcher() //
                 printInfo();
                 newVideoModeCounter = 0;
                 if (!standardIsHeld()) {
-                    rto->noSyncCounter = 0x05ff;
+                    wantFullRestore = true;
                 }
             }
         }
     } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && !rgbhvBypass() && (heldStandard() == detectedVideoMode)) {
 
-        if (rto->continousStableCounter < 255) {
-            rto->continousStableCounter++;
-        }
-
         static boolean doFullRestore = 0;
-        if (rto->noSyncCounter >= 150) {
+        if (unmeasuredPasses >= 150 || wantFullRestore) {
+            wantFullRestore = false;
 
             Tv5725::SyncProcessor::forgetPositions();
             rto->phaseIsSet = false;
@@ -4232,15 +4219,14 @@ void runSyncWatcher() //
             doFullRestore = 1;
         }
 
-        rto->noSyncCounter = 0; 
         newVideoModeCounter = 0;
 
-        if (rto->continousStableCounter == 1 && !doFullRestore) {
+        if (stablePasses == 1 && !doFullRestore) {
             rto->videoIsFrozen = true;
             Tv5725::FrameBuffer::releaseCapture();
         }
 
-        if (rto->continousStableCounter == 2) {
+        if (stablePasses == 2) {
             updateSpDynamic(0);
             if (doFullRestore) {
                 delay(20);
@@ -4251,35 +4237,35 @@ void runSyncWatcher() //
             Tv5725::FrameBuffer::releaseCapture();
         }
 
-        if (rto->continousStableCounter == 4) {
+        if (stablePasses == 4) {
         }
 
         if (!rto->phaseIsSet) {
-            if (rto->continousStableCounter >= 10 && rto->continousStableCounter < 61) {
+            if (stablePasses >= 10 && stablePasses < 61) {
 
-                if ((rto->continousStableCounter % 10) == 0) {
+                if ((stablePasses % 10) == 0) {
                     rto->phaseIsSet = optimizePhaseSP();
                 }
             }
         }
 
-        if (rto->continousStableCounter == 160) {
+        if (stablePasses == 160) {
             Tv5725::Interrupts::acknowledgeSogBad();
         }
 
-        if (rto->continousStableCounter == 45) {
+        if (stablePasses == 45) {
             GBS::ADC_UNUSED_67::write(0);
 
             Tv5725::SyncProcessor::forgetPositions();
         }
 
-        if (rto->continousStableCounter % 31 == 0) {
+        if (stablePasses % 31 == 0) {
             updateSpDynamic(0);
         }
 
-        if (rto->continousStableCounter >= 3) {
+        if (stablePasses >= 3) {
             if (GBS::STATUS_IF_VT_OK::read() == 1 &&
-                !Tv5725::VideoRoute::isHdBypassChannel() && rto->noSyncCounter == 0) {
+                !Tv5725::VideoRoute::isHdBypassChannel() && unmeasuredPasses == 0) {
 
                 static uint8_t timingAdjustDelay = 0;
                 static uint8_t oddEvenWhenArmed = 0;
@@ -4424,24 +4410,15 @@ void runSyncWatcher() //
         if (!stable) {
 
             RGBHVNoSyncCounter++;
-            rto->continousStableCounter = 0; 
-                                             // if (RGBHVNoSyncCounter % 2 == 0)
-                                             // {
-                                             //     printf("count:0x%02x\n",RGBHVNoSyncCounter);
-                                             //     ESP.wdtFeed();
-                                             // }
         } else {
             RGBHVNoSyncCounter = 0;
 
-            if (rto->continousStableCounter < 255) {
-                rto->continousStableCounter++;
-                if (rto->continousStableCounter == 6) {
-                    updateSpDynamic(1); 
-                }
+            if (stablePasses == 6) {
+                updateSpDynamic(1);
             }
         }
 
-        if (RGBHVNoSyncCounter > limitNoSync && rto->noSyncCounter < 100) {
+        if (RGBHVNoSyncCounter > limitNoSync && unmeasuredPasses < 100) {
             RGBHVNoSyncCounter = 0;
             // if (!rto->isInLowPowerMode)
             if (!rto->HdmiHoldDetection) {
@@ -4449,8 +4426,8 @@ void runSyncWatcher() //
                 prepareSyncProcessor(); 
                 Tv5725::SyncProcessor::reset();   
             }
-            rto->noSyncCounter = 0; 
-            Serial.println("RGBHV limit no sync");
+            inputAcquisition.restartRecovery();
+            debugPrintf("RGBHV limit no sync\n");
             // No Signal Out
         }
 
@@ -4461,7 +4438,6 @@ void runSyncWatcher() //
         //   prepareSyncProcessor();
         //   Tv5725::SyncProcessor::reset();
 
-        //   rto->noSyncCounter = 0;
         //   Serial.println("RGBHV limit no sync");
         // }
 
@@ -4551,7 +4527,6 @@ void runSyncWatcher() //
 
     if (runSettled) {
         inputAcquisition.restartRecovery();
-        rto->noSyncCounter = 0;
         debugPrintf("No Signal Out\n");
         rto->HdmiHoldDetection = true;
     }
@@ -5017,7 +4992,6 @@ void setup()
     rto->applyPresetDoneStage = 0;     
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
-    rto->continousStableCounter = 0;   
     Tv5725::SyncOnGreen::choose(5);          
 
     adco->r_gain = 0;
@@ -5458,7 +5432,6 @@ void runSourceRecovery(unsigned long &lastTimeSourceCheck)
         inputAndSyncDetect();
     } else {
         rto->boardHasPower = false;
-        rto->continousStableCounter = 0;
         rto->syncWatcherEnabled = false;
     }
     lastTimeSourceCheck = millis();
@@ -5466,6 +5439,11 @@ void runSourceRecovery(unsigned long &lastTimeSourceCheck)
     const uint8_t currentSOG = Tv5725::SyncOnGreen::level();
     Tv5725::SyncOnGreen::apply(currentSOG >= 3 ? currentSOG - 1 : 6);
 }
+
+// Passes with nothing measured before the rails are questioned rather than the
+// source. Far past every recovery the ladder runs, so it only fires on a run
+// that none of them fixed.
+static const uint16_t BoardPowerCheckPass = 61;
 
 void loop()
 {
@@ -5585,8 +5563,8 @@ void loop()
         rto->syncWatcherEnabled &&
         FrameSync::ready() &&
         millis() - lastVsyncLock > FrameSyncAttrs::lockInterval &&
-        rto->continousStableCounter > 20 &&
-        rto->noSyncCounter == 0) {
+        inputAcquisition.acquiredPasses() > 20 &&
+        inputAcquisition.unmeasuredPasses() == 0) {
         if (Tv5725::SourceMeasurement::dividerLatched(
                 Tv5725::SourceMeasurement::measureLineSamples(),
                 GBS::PLLAD_MD::read())) {
@@ -5648,7 +5626,7 @@ void loop()
         runSyncWatcher();                                                                                               
         lastTimeSyncWatcher = millis();
 
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && standardIsHeld() && Tv5725::SyncProcessor::clampPlaced() && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
+        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && standardIsHeld() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.unmeasuredPasses() == 0 && inputAcquisition.acquiredPasses() > 90 && rto->boardHasPower) {
             if (Tv5725::SourceMeasurement::dividerLatched(
                     Tv5725::SourceMeasurement::measureLineSamples(),
                     GBS::PLLAD_MD::read())) {
@@ -5671,9 +5649,9 @@ void loop()
     // that arms it. Worth arming only on a source that has been stable a while
     // with the divider latched, which STATUS_SYNC_PROC_HTOTAL is the witness for.
     if (rto->autoBestHtotalEnabled && !FrameSync::ready() && rto->syncWatcherEnabled) {
-        if (rto->continousStableCounter >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
+        if (inputAcquisition.acquiredPasses() >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
             ((millis() - lastVsyncLock) > 500)) {
-            if ((rto->continousStableCounter % 5) == 0) {
+            if ((inputAcquisition.acquiredPasses() % 5) == 0) {
                 if (Tv5725::SourceMeasurement::dividerLatched(
                         Tv5725::SourceMeasurement::measureLineSamples(),
                         GBS::PLLAD_MD::read()))
@@ -5684,7 +5662,7 @@ void loop()
 
     if ((!rgbhvBypass() && standardIsHeld()) &&
         rto->syncWatcherEnabled && !Tv5725::SyncProcessor::coastPlaced()) {
-        if (rto->continousStableCounter >= 7) {
+        if (inputAcquisition.acquiredPasses() >= 7) {
             if ((getStatus16SpHsStable() == 1) && (getVideoMode() == rto->videoStandardInput)) {
                 updateCoastPosition(0);
                 if (Tv5725::SyncProcessor::coastPlaced()) {
@@ -5699,7 +5677,7 @@ void loop()
         }
     }
 
-    if (standardIsHeld() && (rto->continousStableCounter >= 4) &&
+    if (standardIsHeld() && (inputAcquisition.acquiredPasses() >= 4) &&
         !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
         updateClampPosition();
         if (Tv5725::SyncProcessor::clampPlaced()) {
@@ -5711,7 +5689,7 @@ void loop()
 
 
     if ((rto->applyPresetDoneStage == 1) &&
-        ((rto->continousStableCounter > 35 && rto->continousStableCounter < 45) ||
+        ((inputAcquisition.acquiredPasses() > 35 && inputAcquisition.acquiredPasses() < 45) ||
          !rto->syncWatcherEnabled)) {
         if (rto->applyPresetDoneStage == 1) {
 
@@ -5729,7 +5707,7 @@ void loop()
             rto->applyPresetDoneStage = 0;
         }
     } 
-    else if (rto->applyPresetDoneStage == 1 && (rto->continousStableCounter > 35)) {
+    else if (rto->applyPresetDoneStage == 1 && (inputAcquisition.acquiredPasses() > 35)) {
 
         GBS::DAC_RGBS_PWDNZ::write(1);  // 
 
@@ -5766,19 +5744,13 @@ void loop()
         }
     }
 
-    if ((rto->noSyncCounter == 61 || rto->noSyncCounter == 62) && rto->boardHasPower) // 
-    {
-        if (!checkBoardPower()) {
-            rto->noSyncCounter = 1;
-            rto->boardHasPower = false;
-            rto->continousStableCounter = 0; // 
-
-            stopWire(); // 
-                        // printf("out off-2\n");
-        } else {
-
-            rto->noSyncCounter = 63;
-        }
+    // A run this long with nothing measured is worth one I2C probe to tell a
+    // source that went away from a board that lost its rails. One position
+    // rather than two: the pair existed so the second could be latched out.
+    if (inputAcquisition.unmeasuredPasses() == BoardPowerCheckPass && rto->boardHasPower
+        && !checkBoardPower()) {
+        rto->boardHasPower = false;
+        stopWire();
     }
 
     if (!rto->boardHasPower && rto->syncWatcherEnabled) 
@@ -12701,7 +12673,7 @@ void OSD_selectOption()
                 OSD_c2(B, P11, blue_fill);
                 Osd_Display(0x09, "No Input");
             }
-        } else if ((rto->continousStableCounter > 35 || currentInput != 1) || (Info == InfoYUV || Info == InfoSV || Info == InfoAV)) {
+        } else if ((inputAcquisition.acquiredPasses() > 35 || currentInput != 1) || (Info == InfoYUV || Info == InfoSV || Info == InfoAV)) {
             OSD_c2(B, P16, blue_fill);
             if (Info == InfoYUV)
                 Osd_Display(0xFF, "  YPBPR  ");

@@ -15,7 +15,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false),
-      unmeasuredPasses_(0) {}
+      unmeasuredPasses_(0), acquiredPasses_(0) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -273,12 +273,22 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     if (mayRun_ != 0 && !mayRun_())
         return false;
 
-    const bool solved = runPass(nowMs);
+    bool detectionPass = false;
+    const bool solved = runPass(nowMs, detectionPass);
 
-    if (sourceState_ == SourceAcquired)
+    // On the cadence, not per call: loop() polls every time round and the
+    // thresholds every reader keys on were tuned against a 20 ms pass.
+    if (!detectionPass)
+        return solved;
+
+    if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
-    else
+        if (acquiredPasses_ < AcquiredPassCeiling)
+            ++acquiredPasses_;
+    } else {
+        acquiredPasses_ = 0;
         unmeasuredPasses_ = (uint16_t)((unmeasuredPasses_ + 1) % SyncRecovery::CycleLength);
+    }
 
     return solved;
 }
@@ -290,11 +300,16 @@ SyncRecovery::Step VideoSourceAcquisition::recoveryDue() const
 
 void VideoSourceAcquisition::restartRecovery() { unmeasuredPasses_ = 0; }
 
-bool VideoSourceAcquisition::runPass(uint32_t nowMs)
+uint16_t VideoSourceAcquisition::acquiredPasses() const { return acquiredPasses_; }
+
+uint16_t VideoSourceAcquisition::unmeasuredPasses() const { return unmeasuredPasses_; }
+
+bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
 {
     // Asked once a pass whether it is used or not, so the cadence does not
     // stretch over a mode change and fire the moment one lands.
     const bool detection = detectionDue(nowMs);
+    detectionPass = detection;
 
     // The source event, ahead of the engine and never during a change it is
     // still working through. Arming one ends the pass: the solve wants a

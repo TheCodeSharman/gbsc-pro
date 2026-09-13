@@ -61,6 +61,11 @@ public:
     // these, so loop()'s own rate must not reach them.
     static const uint32_t DetectionIntervalMs = 20;
 
+    // Where the acquired run stops counting. Every threshold keyed on it is
+    // well below this, and a run that saturates says the same thing as one that
+    // keeps going: the source has been good for a long time.
+    static const uint16_t AcquiredPassCeiling = 255;
+
     float sourceFieldRateHz() const;
     uint32_t sourceLineRateHz() const;
 
@@ -82,6 +87,13 @@ public:
     // re-probe that found no V sync. Whether a step settled anything is the
     // caller's to say; the count cannot tell.
     void restartRecovery();
+
+    // The two halves of the same run, counted off the same measurement. Passes
+    // since the source was last acquired, and passes since it stopped being --
+    // one of them is always zero. Maintenance keys off the first and the
+    // escalation ladder off the second.
+    uint16_t acquiredPasses() const;
+    uint16_t unmeasuredPasses() const;
 
     // Acquired, and nothing outstanding against it. The second half matters: a
     // mode change in flight leaves the verdict taken before the source moved.
@@ -122,7 +134,7 @@ private:
 
     // One pass, with the run gate already asked and the ladder's count still
     // to advance. Split out so every return from it is counted.
-    bool runPass(uint32_t nowMs);
+    bool runPass(uint32_t nowMs, bool &detectionPass);
 
     Tv5725::SourceMeasurement &sampling_;
     Tv5725::VideoPath &videoPath_;
@@ -149,6 +161,7 @@ private:
     // Consecutive passes that did not reach an acquired source. Wrapped at the
     // ladder's cycle rather than left to run, so the cycle stays aligned.
     uint16_t unmeasuredPasses_;
+    uint16_t acquiredPasses_;
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_

@@ -553,7 +553,6 @@ static void LoadDefault()
     // rto->isInLowPowerMode = false; //
     rto->applyPresetDoneStage = 0; //
     Tv5725::SyncProcessor::forgetPositions();
-    rto->continousStableCounter = 0; //
     Tv5725::SyncOnGreen::choose(5);  //
 }
 
