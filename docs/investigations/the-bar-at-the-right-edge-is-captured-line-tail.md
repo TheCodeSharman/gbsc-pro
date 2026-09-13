@@ -91,6 +91,25 @@ At eighty units the band appears, and its left edge is where `produced` now ends
 **It looks nothing like the bar.** Wide, flat, dim, and multicoloured comb where
 the bar is narrow, bright and blue.
 
+**AND IT IS A BAND, NOT A STRIP.** A write that stops short on every line ought
+to leave a full-height column, and it does not. Row profile over columns
+1140..1215, on two runs shortened by the same eighty units:
+
+| rows | shrunk from capture start 129 | shrunk from capture start 113 |
+|---|---|---|
+| 60..220 | 38 73 89 58 75 79 60 27 | 11 |
+| 340..470 | 11 | 21 64 89 77 63 30 78 |
+
+Same capture width of 874 units, same `produced`, same windows, and the band
+sits in a different place. So its vertical position is not set by the geometry.
+
+What is unwritten is the whole column; what is VISIBLE is wherever the stale
+bytes happen to be bright. On most lines the previous content past `produced` was
+the black beside the picture and reads 10, which looks like nothing at all. Move
+the capture start and a different slice of the old frame occupies those
+addresses. **Judging an exposed tail by where it shows is therefore wrong** -- it
+is there on every line, and the band is a property of what was there before.
+
 **And the bar in that frame is stale**, not written: it is the bar from before the
 shrink, frozen in the region the write no longer reaches. Panning it away first
 and then shrinking by the same eighty units gives the same band with no bar in
