@@ -174,6 +174,31 @@ runs further would be cropped by the clamp silently, where the head guard is
 derived per solve from the hsync duty. Deriving the far end the same way needs to
 know what counts to 2250, and nothing does.
 
+## Which unit the wall is in is undetermined, and it costs a progressive source
+
+**EVERY MEASUREMENT BEHIND X WAS TAKEN ON A LINE-DOUBLED SOURCE, WHERE 1125 IF
+UNITS AND 2250 ADC SAMPLES ARE THE SAME WALL.** The bench RiscPC at 320x256 is
+line doubled, and an IF unit is two ADC samples there, so no reading separates
+the two readings of the constant.
+
+The firmware holds it in IF units and converts by scan mode --
+`VideoSourceLine::WriteLimitUnits` is 1125, and
+`SourceMeasurement::recommendedDivider()` caps the divider against it with
+`samplesPerUnit = lineDoubled ? 2 : 1`. So the divider ceiling is 2250 samples
+line-doubled and **1125 progressive**, and `referenceDivider()` mirrors it at
+2250 and 1124.
+
+If the wall is instead 2250 ADC samples outright, as the usable-fraction
+arithmetic above reads it, then every progressive source is capped at half the
+sampling density the part allows -- every VGA-class raster and 480p, softer than
+it needs to be, with the zoom floor moving with it.
+
+**It is decidable on the bench**: put a progressive source on the SCALING path,
+raise `PLLAD_MD` past 1124 with `/sampleclock`, and find where the tail green
+starts. At ADC 2250 the wall is in samples and the progressive cap is wrong; at
+1125 it is in IF units and the firmware is right. A pass-through source cannot
+answer it -- the IF is out of the path and measures nothing there.
+
 `MemoryMap::captureFits()` bounds the capture against SDRAM, which is a third and
 unrelated limit.
 

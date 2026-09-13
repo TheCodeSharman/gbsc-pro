@@ -853,8 +853,9 @@ being unpicked one at a time.
 
 Landed so far:
 
-- the sync-processor sweep no longer fires on the classification alone
-  (`SyncSearch::shouldSweepSyncProcessor()`)
+- the sync-processor sweep reads no classification at all: both of its
+  negatives are measurements, and `SyncSearch::shouldSweepSyncProcessor()` is
+  deleted with them
 - the three copies of the held-standard fallback are one
   (`standardForPresetLoad()`)
 - the Mode Detect threshold dither is deleted
@@ -889,20 +890,24 @@ every reader reads those. The run advances on the detection cadence rather than
 per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
 what it meant.
 
-**Step 13 is not reachable from here, and the line counts say why.**
-`runSyncWatcher()` is 395 lines in six parts:
+**Step 13 waits on one part now, and the line counts say which.**
+`runSyncWatcher()` is 284 lines in five:
 
 | part | lines | whose |
 |---|---|---|
-| guards, the classifier reads, the HD bypass fixup, the interrupt hand-off, the sync-on-green tuning | 59 | steps 10 and 12 |
-| the no-sync branch | 22 | step 4, landed |
-| the new-mode branch | 65 | step 12 |
-| the stable branch | 62 | step 9 has taken the deinterlacer, the scanlines and the motion adapt out of it |
-| the scaling-RGBHV arm | 153 | **step 10** |
-| the park | 6 | step 4, landed |
+| guards, the interrupt hand-off, the sync-on-green tuning | 48 | step 12 for `standardIsHeld()`, nothing else |
+| the no-sync branch | 12 | **landed** -- `!sourceIsPresent()` is the gate |
+| the stable branch | 87 | **landed** -- `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
+| the scaling-RGBHV arm | 107 | **step 10** |
+| commented-out HDMI hold detection, and the park | 30 | deletable on sight |
 
-**Step 10's 153 lines are what is left of the two**, so deleting the function
-needs it first. That is the order this list already states -- 8 to 13 follow the
+**The new-mode branch is gone.** It classified every pass, compared the answer
+against the held byte, counted up, re-read the classifier thirty times to
+confirm, and called `applyPresets()` -- all of it a second detector beside
+`VideoPath::sourceMoved()`. Both surviving branches gate on the engine's run,
+so **no part of this function reads the classifier**.
+
+**Step 10's arm is what is left**, so deleting the function needs it first. That is the order this list already states -- 8 to 13 follow the
 byte out -- and it is now measured rather than asserted. Steps 9 and 10 are
 part-landed in that `Deinterlacer`, `OutputChoice` and `RgbhvOutput` all exist
 and the sketch still steers them.
@@ -1149,18 +1154,16 @@ standard, and 720x480p's was `0x40` where the raster puts active video at line
 36 -- 28 lines of picture off the top. The replacement is `SourceTiming`, which
 is already keyed on three MEASURED values and states where active video starts.
 
-It does not reach the caller yet, and the reason is structural: `SourceTiming`
-is built inside `CaptureWindow::readRasters()`, which only the SCALING solve
-runs. Measured on the bench, a source handed to pass-through reaches
-`enterHdBypass()` with the line still zero, because the engine measures, decides
-pass-through and switches -- the solve that would have matched the raster never
-happens. So the match belongs beside the measurement that feeds it rather than
-inside the window that consumes it, and `SourceReading` is where it goes, beside
-the sync duty it is matched on.
+**It reaches the caller.** The match is resolved in `VideoPath::sourceMeasured()`,
+before the layer decides the route, and `CaptureWindow` is handed the answer --
+it used to be built inside `CaptureWindow::readRasters()`, which only the
+SCALING solve runs, so a source handed to pass-through arrived with the line
+still zero. Measured on the Wii at 480p, `HD_VB_SP` reads the 36 the published
+raster puts active video at.
 
-Until then the arms cannot lose their constants: blanking nothing is not a safe
-default for the channel, and nothing on this bench can say what the right
-fallback is for a source matching no published raster.
+A source matching no published raster leaves the window alone rather than
+writing zero: blanking nothing could not be distinguished on hardware from the
+source's own screen dimming, so it is not a safe default for the channel.
 
 **Its two entries are one call now.** Leaving bypass and crossing into another
 preset's bucket ran thirty byte-identical lines each, so every register in that
@@ -1170,6 +1173,22 @@ sequence had two writers. The sync processor's share is
 the line counter's start, the standard byte's round trip through
 `applyPresets()`, and the external clock generator. Those are the four this step
 still has to place, and the standard byte's is step 12's.
+
+**AND PASS-THROUGH HAS ONE OWNER.** `VideoSourceAcquisition::passSourceThrough()`
+is the only caller that decides it, because it is the only one holding a
+measurement to decide it on. Three others used to: `doPostPresetLoadSteps()`
+armed a deferred switch whenever `uopt->preferScalingRgbhv` was clear,
+`runSyncWatcher()`'s new-mode branch chose on the same preference, and
+`applyPresets()` chose on the standard byte for results 5/6/7/13 and for
+`BypassRgbhv`. Each entered the channel before the new source had been
+measured, so the channel raster was sized from one divider against a count and
+rate held from the source before it -- measured, a `vga` to `ypbpr` change
+entered carrying 311 lines at 15625 Hz with `STATUS_SYNC_PROC_VTOTAL` at 97,
+and the first reading of the Wii arrived twenty seconds later.
+
+A source asking for pass-through now loads the scaled path, which shows any
+rate, and the measurement that follows moves the route. That closes the step-12
+table's rows for 5, 6, 7 and 15.
 
 **The second entry may not survive the step it is waiting on.** It exists to
 reload a different preset when the source's line count crosses 280 or 380, which
@@ -1194,10 +1213,21 @@ bench panel: 800x600, 1024x768 and 1280x1024 all display in passthrough.
 held rate goes on naming the mode bypass was entered on and a source that slows
 underneath would keep reading as displayable for ever.
 
-The sync watcher's RGBHV steering asks it in both directions today. What is left
-is the same question for a source Mode Detect DOES name -- the new-mode block
-still reads `presetPreference == OutputBypass`, which is pass-through wearing a
-resolution's clothes.
+**The layer asks it in both directions, and no classification is consulted.**
+Every measurement re-answers pass-through, so a source that stops qualifying is
+returned to the resolution chosen rather than stranded. The new-mode block that
+also read `presetPreference == OutputBypass` -- pass-through wearing a
+resolution's clothes -- is deleted with the branch.
+
+**PASS-THROUGH IS NOT DISPLAYING AT EVERY RATE THAT QUALIFIES, AND THE CAUSE IS
+OPEN.** Measured on the RiscPC: 640x480 passes through and displays; 720x576
+passes through and the sink shows nothing. `HdBypass::dividerFor()` returns
+**2039 for both**, because both reach the channel cap rather than the clock
+bound, so the channel raster is identical across the two and the difference is
+the field rate and the line count. Two explanations are refuted. The sink is
+not refusing the mode -- 576p50 is CEA-861 and the same set takes 640x480 raw.
+And `STATUS_MISC_PLLAD_LOCK` is not the discriminator: it reads 0 at 720x576 on
+the SCALING path too, where the picture is correct.
 
 **`rateCanBypass()` is a HARD GATE on the whole choice, not half of the
 default.** Passthrough is not offerable where the rate cannot reach the sink,
@@ -1441,12 +1471,12 @@ costs, measured against the tree:
 | 0 | nothing recognised | 7, all but one a write; `standardIsHeld()` is the only reader | a validated measurement replaces the no-sync gate -- step 4 |
 | 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | **done** -- `SourceStandard::applySd()` is deleted, every field it wrote derived instead |
 | 3, 4 | progressive SD, 480p and 576p | 5 | with it |
-| 5, 6, 7 | HD, reached through the HD bypass switch | 3 | the bypass entry points merge -- step 10 |
+| 5, 6, 7 | HD, reached through the HD bypass switch | 3 | **done** -- the bypass entry points have merged; these load the computed preset and the measurement moves the route |
 | 8 | medium resolution: mode detect answers only once `MD_HD1250P_CNTRL` is walked onto the source | 6, three of them a live search in `inputAndSyncDetect()` | the search has a measurement to answer it, and the 110 MHz filter arm has an owner |
 | 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
 | 13 | the YPbPr arm of that dispatch | 3 | with the dispatch |
 | 14 | an RGBHV source, which is what `sourceIsRgbhv()` tests | the three predicates and `holdStandard()` | `OutputChoice` answers instead -- step 10 |
-| 15 | `applyPresets()`'s request to pass an RGBHV source through, and never held | 3, all of them calls | with the bypass entry points |
+| 15 | `applyPresets()`'s request to pass an RGBHV source through, and never held | 3, all of them calls | **done** -- `applyPresets()` folds it to 14 and lets the measurement decide |
 
 **NEITHER 8 NOR 9 DIES WITH THE DISPATCH, and neither is a `videoStandardInput`
 value.** No site reads the field as 8 or 9 -- which is what makes them look free
