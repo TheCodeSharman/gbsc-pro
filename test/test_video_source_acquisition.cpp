@@ -32,6 +32,7 @@ static void seedBenchSource()
     seed(0, 0x19, 0, 12, 181);
     seed(5, 0x12, 0, 12, 2553);
     seed(0, 0x1B, 0, 11, 311);
+    seed(0, 0x16, 0, 1, 1);              // STATUS_SYNC_PROC_HSPOL, positive-going
 }
 
 // A field written straight into the fake's banks, so seeding an INPUT does not
@@ -107,14 +108,25 @@ static bool probeOwnVsync()
     return g_hasOwnVsync;
 }
 
+// The divider the engine derives for the bench source. It is UNDER the capture
+// write limit rather than at it: 2250 ADC samples is the limit, and a value
+// pinned there is what this file expected while the divider was chosen by the
+// cap instead of from the measured line. docs/capture-limits.md
+static const uint16_t BenchDivider = 2230;
+
+// And for the 524-line 60 Hz mode the transition cases move to, which is
+// progressive and negative-going. The bench runs exactly this on the Wii at
+// 480p -- 524 lines x 59.80 Hz, PLLAD_MD 1096.
+static const uint16_t VesaDivider = 1096;
+
 // The bench anchors: the raster this output asks for, and the divider the
 // engine solves for a 311-line 50 Hz source -- not the 2553 the seed left,
 // which is the previous load's.
 static void checkBenchAnchors()
 {
     CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
-    CHECK(Adc::PLLAD_MD::read() == 2250);
-    CHECK(InputFormatter::IF_HSYNC_RST::read() == 2250 / 2);
+    CHECK(Adc::PLLAD_MD::read() == BenchDivider);
+    CHECK(InputFormatter::IF_HSYNC_RST::read() == BenchDivider / 2);
 }
 
 TEST_CASE("a source driven through VideoSourceAcquisition solves the same registers")
@@ -253,11 +265,12 @@ TEST_CASE("the engine arms itself when the source line count changes")
 
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(Adc::PLLAD_MD::read() == 2250);
+    REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
 
     // The source moves, and NOBODY tells the unit.path.
     seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
     seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
     g_fieldRate = 60.0f;
 
     bool solved = false;
@@ -265,7 +278,7 @@ TEST_CASE("the engine arms itself when the source line count changes")
         solved = unit.poll();
 
     CHECK(solved);
-    CHECK(Adc::PLLAD_MD::read() == 1124);
+    CHECK(Adc::PLLAD_MD::read() == VesaDivider);
     CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == 1);
 }
 
@@ -282,24 +295,25 @@ TEST_CASE("the source is counted on a cadence, not once a loop pass")
 
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(Adc::PLLAD_MD::read() == 2250);
+    REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
 
     seedSourceLines(524);
     seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
     g_fieldRate = 60.0f;
 
     // Inside one interval, so however many times loop() comes round the source
     // has not been seen to move.
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(unit.acquisition.poll(unit.nowMs));
-    CHECK(Adc::PLLAD_MD::read() == 2250);
+    CHECK(Adc::PLLAD_MD::read() == BenchDivider);
 
     bool solved = false;
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
         solved = unit.poll();
 
     CHECK(solved);
-    CHECK(Adc::PLLAD_MD::read() == 1124);
+    CHECK(Adc::PLLAD_MD::read() == VesaDivider);
 }
 
 TEST_CASE("an interrupt re-measures a source whose line count did not move")
@@ -341,7 +355,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
 TEST_CASE("a source counted steadily and sampled at the chosen divider is acquired")
 {
     seedBenchSource();
-    seedLineSamples(2250);                // the divider seedBenchSource writes
+    seedLineSamples(BenchDivider);        // the divider the solve writes
     Acquiring unit;
     unit.start();
     REQUIRE(unit.pollUntilSolved());
@@ -356,7 +370,7 @@ TEST_CASE("a source counted steadily and sampled at the chosen divider is acquir
 TEST_CASE("a source counted steadily at a line the ADC is not sampling is unlocked")
 {
     seedBenchSource();
-    seedLineSamples(3250);                // what the bench measured, against 2250
+    seedLineSamples(3250);                // what the bench measured, against the solved divider
     Acquiring unit;
     unit.start();
     REQUIRE(unit.pollUntilSolved());
@@ -394,7 +408,7 @@ TEST_CASE("a source is not present while a mode change is still working through"
     // exactly as long as the engine is failing to settle. Measured on the
     // bench: SP_VTOTAL 97 with the state still reading acquired.
     seedBenchSource();
-    seedLineSamples(2250);
+    seedLineSamples(BenchDivider);
     Acquiring unit;
     unit.start();
     REQUIRE(unit.pollUntilSolved());
@@ -411,7 +425,7 @@ TEST_CASE("a source is not present while a mode change is still working through"
 TEST_CASE("a count no source runs is absent whatever the sampling says")
 {
     seedBenchSource();
-    seedLineSamples(2250);
+    seedLineSamples(BenchDivider);
     Acquiring unit;
     unit.start();
     REQUIRE(unit.pollUntilSolved());
@@ -488,17 +502,21 @@ TEST_CASE("a field rate the line count cannot show re-solves the source")
 
     unit.start();
     REQUIRE(unit.pollUntilSolved());
-    REQUIRE(Adc::PLLAD_MD::read() == 2250);
+    REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
 
-    // The same 311 lines at 60 Hz. Nothing the count can see has moved, and the
-    // divider is a function of the line rate: 162 MHz over 18750 x 4, backed
-    // off 2%, and under the write limit that clamped the 50 Hz solve.
+    // The same 311 lines at 60 Hz. What has to move is the HELD RATE: the
+    // divider cannot witness this, because the framable line binds at both
+    // rates -- Adc::oversampleFor() carries the crossover row's oversampling
+    // rather than the one asked for, which puts the rate ceiling above
+    // DividerMax either side of the change. docs/capture-limits.md
     seedField(0, 0x06, 0, 9, 359);
     g_fieldRate = 60.29f;
     for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples; ++i)
         unit.poll();
 
-    CHECK(Adc::PLLAD_MD::read() == 2116);
+    // 27 MHz over four times the counter's reading, which is what HPERIOD_IF
+    // 359 means: the rate the register reports, not the nominal one.
+    CHECK(unit.acquisition.sourceLineRateHz() == 27000000u / (4 * (359 + 1)));
 }
 
 TEST_CASE("a rate seen once does not re-solve the source")

@@ -724,8 +724,7 @@ video-source-acquisition:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_video_source_acquisition" \
-	  "$(HERE)/test_video_source_acquisition.cpp" src/videosource/VideoSourceAcquisition.cpp \
-	  $(GEOMETRY_RASTER_SRC)
+	  "$(HERE)/test_video_source_acquisition.cpp" $(GEOMETRY_RASTER_SRC)
 	@"$(OUT)/test_video_source_acquisition"
 
 ## register-queue: host unit tests for the deferred register queue
@@ -740,7 +739,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log video-route rgbhv-output
+test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log video-route rgbhv-output
 all: test
 
 ## clean: remove the compiled test binaries
