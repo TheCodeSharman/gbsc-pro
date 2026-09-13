@@ -1176,6 +1176,15 @@ restored — see the freeze note below, because `/freeze` does not stop it.
 The two snapshot formats are not interchangeable: `dump_registers.py` writes 496
 config registers, `snapdiff.py` writes all 1536. Diff like against like.
 
+**AND A DIFF OVER THE SMALLER SET IS NOT A DIFF OVER THE MACHINE.** Comparing a
+608-register dump against a full one leaves 928 addresses outside the comparison
+entirely, and 114 of those hold values that are neither 0x00 nor 0xff on a
+settled unit — s1 0x60..0x77 is a live table, not padding. So *"a full dump
+either side differs in only five fields"* is a statement about whichever subset
+was taken, and every such conclusion here was drawn over the config range. When
+the question is **what state survived an excursion**, take `snapdiff.py --save`
+at both ends; the config dump answers a narrower question than it appears to.
+
 `geometry.py --host <ip>` prints the input side, output side, and where the three
 horizontal extents disagree — the fastest read on why a picture is wrong.
 
