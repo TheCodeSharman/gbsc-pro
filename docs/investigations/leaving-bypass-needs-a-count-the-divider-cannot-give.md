@@ -77,3 +77,61 @@ the leave-bypass arm does not use it.
 **The first reading taken after a source event must be taken through a reference
 divider, not through the divider the previous mode left.** That is already the
 rule on the scaling path. Bypass is the path it has not reached.
+
+## What is actually left stale, measured with the full solve set
+
+The first pass at this compared the output registers and found them identical,
+which left the HDMI encoder as the only suspect. **That conclusion was an
+artefact of an incomplete set.** Re-run with `SamplingLog`'s widened solve line,
+the return from 1920x1080 to 320x256 leaves this:
+
+| register | stuck at | due | what it is |
+|---|---|---|---|
+| `PLL648_CONTROL_01` | **53** (`0x35`) | 117 (`0x75`) | the HD-bypass display clock seed, not the external generator |
+| `IF_HBIN_SP` | **2** | 272 | the line doubler's own line reset, which PLACES the picture |
+| `IF_HB_SP2` / `IF_HB_ST2` | 205 / 1160 | 129 / 1084 | the capture window, still sized for the mode that was left |
+| `VDS_VSCALE` | 266 | 533 | half |
+| `PLLAD_MD` | 1886 | 2208 | the sampling divider |
+| `OUT_SYNC_SEL` | 1 | 0 | still routed to the HD bypass channel |
+
+Every one is a register the engine owns, and two of them move the picture by
+themselves:
+
+- **A different clock seed is a different output pixel clock**, so the sink is
+  shown a different MODE while `VDS_HSYNC_RST` and the display window read
+  exactly the same. Nothing downstream has to misbehave for the picture to be
+  re-framed.
+- **`IF_HBIN_SP` places the picture horizontally on a line-doubled source**,
+  which the bench source is. 2 against 272 is not a subtle difference.
+
+`/geometry` reports `state: absent` and a line rate of 85882 throughout, so the
+engine knows it has not solved. It simply has no route back.
+
+**The output sync pulses are NOT the cause here**, and it is worth saying so
+because they are the usual one: `VDS_HS_ST` and `VDS_HS_SP` held 0 and 32 across
+the whole excursion. The gap between `VDS_HS_SP` and `VDS_DIS_HB_SP` is the back
+porch the sink counts to find active video, so moving either does pan the
+picture -- it just did not happen here.
+
+**Recovered by `/sampleclock?md=2208&os=4`**, after which every value in the
+table above is back where it belongs, because the solve that finally runs writes
+all of them.
+
+## The claim this refutes, and the one it does not
+
+`the-encoder-reframes-the-output.md` stands: it probed by INTERVENTION, moving
+the output window 60 px by hand, confirming the registers held the new value at
+the moment of the photograph, and observing that the bar did not move. That is
+evidence about a static difference between two output modes.
+
+What does not survive is the separate round-trip claim -- *"the raster registers
+identical either side, therefore the encoder re-acquires"*. The raster registers
+are not a sufficient set. `PLL648_CONTROL_01` and `IF_HBIN_SP` differ across a
+bypass round trip while every raster register agrees, and either is enough to
+move the picture.
+
+**An encoder explanation needs an intervention, not an absence of difference.**
+Nothing on this board can configure the MS9288A, so attributing an effect to it
+closes an investigation rather than advancing one -- and the effect here was in
+registers we own the whole way.
+
