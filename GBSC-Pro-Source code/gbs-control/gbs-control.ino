@@ -4059,23 +4059,12 @@ void runSyncWatcher() //
         return;
     }
 
-    static uint8_t newVideoModeCounter = 0;
-    static bool wantFullRestore = false;
     bool runSettled = false;
     const uint16_t unmeasuredPasses = inputAcquisition.unmeasuredPasses();
     const uint16_t stablePasses = inputAcquisition.acquiredPasses();
-    uint8_t detectedVideoMode = getVideoMode();
     boolean status16SpHsStable = getStatus16SpHsStable();
 
     steerHdBypassVsyncWindow(status16SpHsStable);
-
-    if (rto->videoStandardInput == Tv5725::PresetLoad::HdBypassStandard) {
-        if (detectedVideoMode == 0) {
-            if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
-                detectedVideoMode = 13;
-            }
-        }
-    }
 
     // A source that returns at the SAME line count and a different field rate is
     // invisible to VideoPath::sourceMoved(), which has only the count to go on, so
@@ -4094,9 +4083,9 @@ void runSyncWatcher() //
     if (sourceDisturbed)
         inputAcquisition.sourceInterrupted();
 
-    // Not while a mode change is working through, and not on YPbPr: the
-    // component path chooses its own level and this would walk it off.
-    if (!rto->inputIsYpBpR && newVideoModeCounter == 0) {
+    // Not on YPbPr: the component path chooses its own level and this would
+    // walk it off.
+    if (!rto->inputIsYpBpR) {
         const Tv5725::SyncOnGreen::Tuning tuning = Tv5725::SyncOnGreen::tune(
             sourceDisturbed, standardIsHeld(), millisNow,
             putSogLevelInForce, optimizeSogLevel);
@@ -4108,7 +4097,7 @@ void runSyncWatcher() //
             rto->phaseIsSet = 0;
     }
 
-    if ((detectedVideoMode == 0 || !status16SpHsStable) && !rgbhvBypass()) {
+    if (!inputAcquisition.sourceIsPresent() && !rgbhvBypass()) {
         lastVsyncLock = millis();
         if (unmeasuredPasses == 1) {
             // freezeVideo(); 
@@ -4117,93 +4106,19 @@ void runSyncWatcher() //
 
         rto->phaseIsSet = 0;
 
-        runSettled = runRecoveryStep(inputAcquisition.recoveryDue(),
-                                     newVideoModeCounter == 0);
-
-        newVideoModeCounter = 0;
+        runSettled = runRecoveryStep(inputAcquisition.recoveryDue(), true);
     }
 
-    // **AGAINST heldStandard(), NOT THE BYTE.** getVideoMode() answers with
-    // heldStandard() for an RGBHV source, which reconstructs 15 for a bypassed
-    // one while videoStandardInput holds 14 -- so comparing the answer against
-    // the byte makes those two never equal and fires this branch on every pass
-    // of a perfectly healthy bypassed source. The !rgbhvBypass() gate is what
-    // hides that today, and it is also what puts SyncRecovery out of reach on
-    // that path. docs/investigations/the-rgbhv-ladder-is-the-only-one-on-that-path.md
-    if (((detectedVideoMode != 0 && detectedVideoMode != heldStandard()) ||
-         (detectedVideoMode != 0 && !standardIsHeld())) &&
-        !rgbhvBypass()) {
-
-        if (newVideoModeCounter < 255) {
-            newVideoModeCounter++;
-            if (newVideoModeCounter > 1) {
-                if (newVideoModeCounter == 2) {
-                    ;
-                }
-            }
-            if (newVideoModeCounter == 3) {
-                // freezeVideo();
-                Tv5725::SyncProcessor::applyDefaultCoastWindow();
-                Tv5725::SyncProcessor::forgetPositions();
-                delay(10);
-                if (getVideoMode() == 0) {
-                    updateSpDynamic(1);
-                    delay(40);
-                }
-            }
-        }
-
-        if (newVideoModeCounter >= 8) {
-            uint8_t vidModeReadout = 0;
-            for (int a = 0; a < 30; a++) {
-                vidModeReadout = getVideoMode();
-                if (vidModeReadout == 13) {
-                    newVideoModeCounter = 5;
-                }
-                if (vidModeReadout != detectedVideoMode) {
-                    newVideoModeCounter = 0;
-                }
-            }
-            if (newVideoModeCounter != 0) {
-                rto->videoIsFrozen = false; 
-
-                if (GBS::SP_SOG_MODE::read() == 1) {
-                    Tv5725::SyncMeasurement::set(true);
-                } else {
-                    Tv5725::SyncMeasurement::set(false); 
-                }
-                // The preference is not a route. Whether this source can be
-                // passed through is answered from the measurement that follows,
-                // by VideoSourceAcquisition::passSourceThrough(), which is the
-                // only caller that has one. docs/video-source-acquisition.md
-                applyPresets(detectedVideoMode);
-                holdStandard(detectedVideoMode);
-                newVideoModeCounter = 0;
-                forgetHdBypassLineCount();
-                delay(20);
-                Tv5725::SyncOnGreen::forgetWindow(millisNow());
-            } else {
-                Tv5725::FrameBuffer::releaseCapture();
-                printInfo();
-                newVideoModeCounter = 0;
-                if (!standardIsHeld()) {
-                    wantFullRestore = true;
-                }
-            }
-        }
-    } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && !rgbhvBypass() && (heldStandard() == detectedVideoMode)) {
+    if (inputAcquisition.sourceIsPresent() && !rgbhvBypass()) {
 
         static boolean doFullRestore = 0;
-        if (unmeasuredPasses >= 150 || wantFullRestore) {
-            wantFullRestore = false;
+        if (unmeasuredPasses >= 150) {
 
             Tv5725::SyncProcessor::forgetPositions();
             rto->phaseIsSet = false;
             FrameSync::reset(uopt->frameTimeLockMethod);
             doFullRestore = 1;
         }
-
-        newVideoModeCounter = 0;
 
         if (stablePasses == 1 && !doFullRestore) {
             rto->videoIsFrozen = true;
