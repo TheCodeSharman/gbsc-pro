@@ -177,6 +177,17 @@ not in.
 **Why the divider lands on 2206 on some trips and 2280 on others**, from the
 same source in the same mode.
 
+A second instrument says the same thing and names the healthy one.
+`test_capture_origin.py::test_the_capture_starts_a_lag_after_the_sync_edge`
+checks the engine's first capturable unit against the measured hsync width, and
+run three times across three trips it **fails at `PLLAD_MD` 2280 and 2206 and
+passes at 2208** -- at 2280 reporting 115 where the sync is 81 units. So the
+solve that carries the bar and the solve that is protected from it by the write
+limit are both misplacing the capture window, and the one that neither carries
+the bar nor trips the test is 2208. The bar is one symptom of the divider
+instability rather than a separate fault, and the assumed active extent is not
+implicated on its own.
+
 **Why an excursion sometimes destroys the instance.** Walking `IF_HBIN_ST` up to
 40 and back to 0 restored the bar unchanged on one instance, three times running
 (sum 1259 / 94 / 1259 / 94 / 1259). On two other instances one excursion removed
