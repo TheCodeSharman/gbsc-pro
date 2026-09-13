@@ -34,9 +34,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
-      resolution_(), passedThrough_(false), passThroughSwitch_(0),
-      passThroughAllowed_(false),
-      rasterMode_(0),
+      mode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
@@ -106,24 +104,23 @@ bool VideoPath::solveWindows()
     return true;
 }
 
-const OutputMode *VideoPath::outputMode() const { return rasterMode_; }
+const OutputMode *VideoPath::outputMode() const { return mode_; }
 
 bool VideoPath::solveRaster()
 {
     // The choice is an input, not a read-back. Deriving the mode from
     // VDS_VSYNC_RST would leave the preset table -- the thing this replaces --
     // its only writer. docs/chip-initialisation.md.
-    const OutputMode *mode = resolution_.resolve();
-    rasterMode_ = mode;
+    const OutputMode *mode = mode_;
     if (mode == 0) {
         // Not a failure, and NOT a fall back to 1080p: the choice names no
         // resolution, and a raster nobody has swept keeps what it had.
         return false;
     }
     if (mode->isBypass()) {
-        // Named rather than left to usable(): the output is the source's own
-        // timing, so there is no raster to compute and solving one would write
-        // zeros that every other register agrees with.
+        // The output is the source's own timing, so there is no raster to
+        // compute and solving one would write zeros that every other register
+        // agrees with.
         return false;
     }
 
@@ -206,11 +203,6 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     scanModeApplied_ = false;
     syncTypeProbed_ = false;
 
-    // Off the held choice, not off an argument. solveRaster() derives it again
-    // when the solve runs; this keeps outputMode() answering consistently until
-    // then.
-    rasterMode_ = resolution_.resolve();
-
     // The line count is about to move, so the steadiness run so far means
     // nothing.
     sampling_.resetSteadiness();
@@ -223,31 +215,37 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     sampling_.applySampling(modeOversample_);
 }
 
-void VideoPath::usePassThroughSwitch(void (*enter)()) { passThroughSwitch_ = enter; }
-
-void VideoPath::allowPassThrough(bool allowed) { passThroughAllowed_ = allowed; }
-
-// Whether the source just measured arrives intact only by being handed over.
-// Both halves are the measurement's: a raster the line doubler is not needed
-// for, at a rate that reaches the sink. docs/capture-limits.md
-bool VideoPath::passThroughSuitsSource() const
+bool VideoPath::passedThrough() const
 {
-    return passThroughAllowed_ && passThroughSwitch_ != 0
-           && sampling_.bypassSuitsCount(sampling_.sourceLines())
-           && sampling_.rateCanBypass();
+    return mode_ != 0 && mode_->isBypass();
 }
 
-bool VideoPath::outputModeChanged(const OutputChoice &choice)
+bool VideoPath::setOutputMode(const OutputMode *mode)
 {
-    resolution_ = choice;
-    if (modePending_)
-        return false;
+    if (mode != 0 && mode->isBypass()) {
+        configurePassThrough();
+        return true;
+    }
 
-    // The frame height the scan mode is judged against, before it is judged.
+    const bool leaving = passedThrough();
+
+    // Held before solveScanMode(), which judges the line doubler against it.
     // **THE LINE DOUBLER IS A PROPERTY OF THE OUTPUT AS MUCH AS OF THE SOURCE**:
     // what decides it is whether the doubled frame fits the raster, so a shorter
     // raster strands a doubling that fitted the taller one.
-    rasterMode_ = choice.resolve();
+    mode_ = mode;
+
+    if (leaving) {
+        // Configured here, not solved. The rate held is the one pass-through was
+        // entered on, so what solves this output is the measurement that
+        // follows -- the caller's next one, or the preset load the false sends
+        // it to.
+        configureScalingPath();
+        return false;
+    }
+
+    if (modePending_)
+        return false;
 
     const bool wasDoubled = sampling_.lineDoubled();
     solveScanMode();
@@ -294,55 +292,6 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     if (!modePending_)
         return PollIdle;
 
-    // Bypassed, and the source has moved under it. Pass-through is a statement
-    // about what the SOURCE is -- a raster the panel can take straight, at a
-    // rate that reaches it -- so the measurement just taken re-answers it, and
-    // a source that no longer qualifies leaves rather than being stranded.
-    // docs/video-source-acquisition.md
-    if (passedThrough_) {
-        if (passThroughSuitsSource()) {
-            modePending_ = false;
-            FrameBuffer::releaseCapture();
-            return PollSolved;
-        }
-
-        // Outgrown it. Entering pass-through configured the chip away from the
-        // scaling setup and left the memory blocks, both FIFOs and the VDS in
-        // reset; nothing else on this path claims any of that back, so leaving
-        // is where the chip comes back up. Route first, so the bring-up sees
-        // the path it is configuring.
-        passedThrough_ = false;
-        rasterMode_ = resolution_.resolve();
-        Chip::routeToScaler();
-        if (BringUp::armed())
-            BringUp::init();
-
-        // Configured, then restarted. Chip::init() leaves the VDS and the input
-        // formatter held -- only this releases them, and only on the scaling
-        // branch, which the route above is what selects.
-        Chip::resetVideoBlocks();
-
-        // The decimator's matrix, which pass-through takes out because the HD
-        // bypass channel converts for itself. Which one the source wants is
-        // held by the class that selected the connector, so it is asked rather
-        // than handed in.
-        if (Adc::inputIsComponent())
-            ColourSpace::applyYuv();
-        else
-            ColourSpace::applyRgb();
-
-        // Armed rather than solved from here: the held rate still names the
-        // mode pass-through was entered on, so the next pass measures this one
-        // through the chip that has just been put back.
-        return PollIdle;
-    } else if (passThroughSuitsSource()) {
-        // The other direction, and the same question. Moving the route is the
-        // caller's; what the engine holds afterwards is enterBypass()'s.
-        passThroughSwitch_();
-        enterBypass();
-        return PollSolved;
-    }
-
     if (!solveSampling(modeOversample_))
         return PollIdle;
 
@@ -382,7 +331,7 @@ bool VideoPath::reset()
     return solveWindows();
 }
 
-void VideoPath::enterBypass()
+void VideoPath::configurePassThrough()
 {
     // The measurement is NOT discarded. Bypass does not measure, so what is
     // held is the rate from the mode that preceded it -- which is the fact a
@@ -396,11 +345,11 @@ void VideoPath::enterBypass()
     modePending_ = false;
     FrameBuffer::releaseCapture();
 
-    // resolution_ is NOT touched. It holds the resolution the user asked for, and
-    // pass-through is a different fact about the same output -- overwriting one
-    // with the other is what left the way back with nothing to return to.
-    passedThrough_ = true;
-    rasterMode_ = &ModeBypass;
+    // The resolution the user asked for is NOT touched here, because it is not
+    // held here: pass-through is a different fact about the same output, and
+    // stored in one field the second destroyed the first and left the way back
+    // with nothing to return to.
+    mode_ = &ModeBypass;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
 
@@ -408,6 +357,27 @@ void VideoPath::enterBypass()
     // from the last scaled mode would size the next one's picture.
     activeStop_ = 0;
     activeLinesStop_ = 0;
+}
+
+void VideoPath::configureScalingPath()
+{
+    // Route first, so the bring-up sees the path it is configuring.
+    Chip::routeToScaler();
+    if (BringUp::armed())
+        BringUp::init();
+
+    // Configured, then restarted. Chip::init() leaves the VDS and the input
+    // formatter held -- only this releases them, and only on the scaling
+    // branch, which the route above is what selects.
+    Chip::resetVideoBlocks();
+
+    // The decimator's matrix, which pass-through takes out because the HD bypass
+    // channel converts for itself. Which one the source wants is held by the
+    // class that selected the connector, so it is asked rather than handed in.
+    if (Adc::inputIsComponent())
+        ColourSpace::applyYuv();
+    else
+        ColourSpace::applyRgb();
 }
 
 bool VideoPath::solveForSource()
@@ -460,8 +430,8 @@ void VideoPath::solveScanMode()
     // The porch is not known this early either, so the bound is the raster's own
     // edge and a doubling that only just fits is caught by the capture clamp.
     const uint16_t showable =
-        rasterMode_ && !rasterMode_->isBypass()
-            ? AxisVertical.maximumCapture(rasterMode_->frameLines(), 0) : 0;
+        mode_ && !mode_->isBypass()
+            ? AxisVertical.maximumCapture(mode_->frameLines(), 0) : 0;
     const bool doubled = SourceMeasurement::lineDoublingFor(lines, showable);
     if (scanModeApplied_ && doubled == sampling_.lineDoubled())
         return;

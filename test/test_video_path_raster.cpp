@@ -105,7 +105,7 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
 {
     SettledEngine settled;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
@@ -126,7 +126,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
     // comment and CLAUDE.md -- and it is perfectly steady, so steadiness alone
     // would call it settled.
     setSourceLines(97);
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(settled.acquisition));
 
@@ -159,7 +159,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     SettledEngine settled;
 
     g_fieldRate = 50.08f;
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(horizontalTotalWritten() == 1916);
@@ -168,7 +168,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     // exists for. A raster solved at the wrong rate is out by the ratio of the
     // rates, so the previous answer has to stand.
     g_fieldRate = 60.0f;
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(settled.acquisition));
     CHECK(horizontalTotalWritten() == 1916);
@@ -187,7 +187,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     // Outstanding from the previous mode, which is the common state now that an
     // unsettled source waits rather than giving up.
     setSourceLines(97);
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE_FALSE(pollUntilSolved(settled.acquisition));
 
@@ -196,7 +196,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     // before doPostPresetLoadSteps(), so nothing else clears the mode change,
     // and a solve landing afterwards writes a scaled raster and a recomputed
     // divider straight over the bypass setup.
-    settled.engine.enterBypass();
+    settled.engine.setOutputMode(&ModeBypass);
     Wire.reset();
     poisonChip();
     setSourceLines(311);
@@ -218,7 +218,7 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
     Wire.bank[5][0x13] = 0x07;
     g_fieldRate = 0.0f;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE_FALSE(pollUntilSolved(settled.acquisition));
     CHECK(Wire.field(5, 0x12, 0, 12) ==
@@ -251,7 +251,7 @@ TEST_CASE("a solve points the part at the clock source that can serve the raster
     Clock::ClockGen generator(part);
     settled.clock.driveWith(generator);
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
@@ -266,7 +266,7 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 {
     SettledEngine settled;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
@@ -302,13 +302,13 @@ TEST_CASE("an output change re-solves the raster without re-measuring the source
     // 720p keeps the line doubler, which 480p does not -- see below.
     SettledEngine settled;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(frameLinesWritten() == 1125);
 
     forgetWrites();
-    REQUIRE(settled.engine.outputModeChanged(OutputChoice(Output720P)));
+    REQUIRE(settled.engine.setOutputMode(&Mode720p));
 
     CHECK(frameLinesWritten() == 750);
     CHECK(Wire.touched[3][0x16]);          // VDS_HSCALE -- the windows followed
@@ -327,12 +327,12 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
     // undoubled one, so the same capture width costs twice the divider.
     SettledEngine settled;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE(Wire.field(5, 0x12, 0, 12) == 2050);
 
-    REQUIRE(settled.engine.outputModeChanged(OutputChoice(Output480P)));
+    REQUIRE(settled.engine.setOutputMode(&Mode480p));
 
     CHECK(frameLinesWritten() == 525);
     // Not half of 2050: the undoubled path carries CaptureLagUnits in
@@ -349,9 +349,9 @@ TEST_CASE("an output change while a mode change is in flight waits for it")
     SettledEngine settled;
 
     setSourceLines(97);                    // unsettled: no poll can complete
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
-    CHECK_FALSE(settled.engine.outputModeChanged(OutputChoice(Output480P)));
+    CHECK_FALSE(settled.engine.setOutputMode(&Mode480p));
 
     setSourceLines(311);
     REQUIRE(pollUntilSolved(settled.acquisition));
@@ -365,13 +365,13 @@ TEST_CASE("the engine always holds what the output is doing")
     // catching a chip that had never solved.
     SettledEngine settled;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
     REQUIRE((settled.engine.outputMode() == &Mode1080p));
     CHECK_FALSE(settled.engine.outputMode()->isBypass());
 
-    settled.engine.enterBypass();
+    settled.engine.setOutputMode(&ModeBypass);
     REQUIRE((settled.engine.outputMode() != 0));
     CHECK(settled.engine.outputMode()->isBypass());
 }
@@ -392,16 +392,16 @@ TEST_CASE("a raster is never solved for bypass")
     // solve here would write zeros with every register self-consistent.
     SettledEngine settled;
 
-    settled.engine.outputModeChanged(OutputChoice(Output1080P));
+    settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
     const uint16_t solved = frameLinesWritten();
 
     // 10 cast rather than named: pass-through is not a resolution and
-    // outputModeChanged() can no longer be asked for it. A choice naming no
+    // setOutputMode() can no longer be asked for it. A choice naming no
     // resolution keeps the raster it had rather than solving a wrong one.
     forgetWrites();
-    CHECK_FALSE(settled.engine.outputModeChanged(OutputChoice((PresetPreference)10)));
+    CHECK_FALSE(settled.engine.setOutputMode(0));
 
     CHECK_FALSE(Wire.touched[3][0x02]);      // VDS_VSYNC_RST, the frame total
     CHECK_FALSE(Wire.touched[3][0x01]);      // VDS_HSYNC_RST, the line total

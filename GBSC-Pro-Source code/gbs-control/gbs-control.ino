@@ -1057,7 +1057,7 @@ void externalClockGenResetClock()
     // it, because loop() stashes the divider and parks
     // DisplayClock::ExternalPclkIn in PLL648_CONTROL_01 -- so the register
     // stops answering what the raster asked for. The paths that solve no raster
-    // adopt it through VideoPath::enterBypass().
+    // adopt it through VideoPath::setOutputMode(ModeBypass).
     Tv5725::DisplayClock &displayClock = rto->displayClock;
     uint32_t steered = displayClock.reset();
 
@@ -1336,7 +1336,7 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
   // The engine is told the choice HERE, by the call whose job that is. It used
   // to arrive as an argument to the source event further down, which is how a
   // source event came to carry output state.
-  geometry.outputModeChanged(choice);
+  inputAcquisition.setOutputResolution(choice.resolve());
   rto->presetID = presetId;
 
   // The load rewrites the scanline stages, so whatever was applied is gone.
@@ -2670,7 +2670,7 @@ static void changeOutputResolution(uint8_t standard)
 
     rto->presetID = presetIdFor(choice.resolve(), pal);
 
-    if (!geometry.outputModeChanged(choice)) {
+    if (!inputAcquisition.setOutputResolution(choice.resolve())) {
         applyPresets(standard);
         return;
     }
@@ -2976,7 +2976,7 @@ void doPostPresetLoadSteps()
             // Video routes around the VDS here, so the mode change armed above
             // has no solve coming and the freeze it took would never be
             // released.
-            geometry.enterBypass();
+            geometry.setOutputMode(&Tv5725::ModeBypass);
 
             return;
         }
@@ -3522,7 +3522,7 @@ static void restartAfterBypassSwitch()
 // the decision is taken. docs/video-source-acquisition.md
 static void applyPassThroughPreference()
 {
-    geometry.allowPassThrough(!uopt->preferScalingRgbhv);
+    inputAcquisition.allowPassThrough(!uopt->preferScalingRgbhv);
 }
 
 void enterHdBypass()
@@ -3541,7 +3541,7 @@ void enterHdBypass()
     Tv5725::Chip::outputDown();
 
     // Video routes around the VDS here, so no solve is coming.
-    geometry.enterBypass();
+    geometry.setOutputMode(&Tv5725::ModeBypass);
     rto->autoBestHtotalEnabled = false;
 
     externalClockGenResetClock();
@@ -4936,7 +4936,7 @@ void setup()
     // the only signal that a source may have changed it -- a RISC PC sets it
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
-    geometry.usePassThroughSwitch(enterHdBypass);
+    inputAcquisition.usePassThroughSwitch(enterHdBypass);
     applyPassThroughPreference();
 
     // The freeze, on the tick rather than inside the engine: loop() reaches the

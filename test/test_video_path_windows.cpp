@@ -173,7 +173,7 @@ TEST_CASE("a preset load computes the divider it uses")
 
     // 311 lines at 50 Hz, which is what the seeds above describe.
     g_fieldRate = 50.08f;
-    solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
+    solved.engine.setOutputMode(&Tv5725::Mode1080p);
     solved.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(solved.acquisition));
 
@@ -211,20 +211,20 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     const uint16_t reference = SourceMeasurement::referenceDivider(true);
 
     g_fieldRate = 0.0f;
-    solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
+    solved.engine.setOutputMode(&Tv5725::Mode1080p);
     solved.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(solved.acquisition));
     CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(reference, true));
 
     SUBCASE("and a later refusal lands on the same reference, not on nothing") {
         g_fieldRate = 50.08f;
-        solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
+        solved.engine.setOutputMode(&Tv5725::Mode1080p);
         solved.engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(solved.acquisition));
         CHECK(Wire.field(5, 0x12, 0, 12) != reference);   // it did solve one
 
         g_fieldRate = 0.0f;
-        solved.engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
+        solved.engine.setOutputMode(&Tv5725::Mode1080p);
         solved.engine.inputTimingsChanged(4);
         CHECK_FALSE(pollUntilSolved(solved.acquisition));
         CHECK(Wire.field(5, 0x12, 0, 12) == reference);
@@ -268,7 +268,7 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
     VideoPath engine(clock, sampling, framings);
     VideoSourceAcquisition acquisition(sampling, engine);
 
-    engine.outputModeChanged(Tv5725::OutputChoice(Tv5725::Output1080P));
+    engine.setOutputMode(&Tv5725::Mode1080p);
     engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(acquisition));
 
@@ -434,7 +434,7 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // reads on a source running this mode.
     const uint16_t Divider = 1124;
     SolvedEngine solved(524, 59.94f, (uint16_t)(Divider * 96 / 800),
-                        Tv5725::OutputChoice(Tv5725::Output1080P), false);
+                        &Tv5725::Mode1080p, false);
 
     const long line = Wire.field(1, 0x0E, 0, 11) + 1;
     const long stop = Wire.field(1, 0x1A, 0, 11);
@@ -461,7 +461,7 @@ TEST_CASE("a capture the output cannot show is bounded, not cropped")
 {
     // The bench source into a 480p raster: the line doubler makes the vertical
     // axis count 622 half-lines against a frame with room for about 515.
-    SolvedEngine solved(311, 50.08f, 181, OutputChoice(Output480P));
+    SolvedEngine solved(311, 50.08f, 181, &Mode480p);
 
     const long capture = Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11);
     const long window = Wire.field(3, 0x13, 0, 11) - Wire.field(3, 0x14, 4, 11);

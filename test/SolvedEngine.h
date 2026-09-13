@@ -106,8 +106,7 @@ struct SolvedEngine {
 
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
-                 Tv5725::OutputChoice choice =
-                     Tv5725::OutputChoice(Tv5725::Output1080P),
+                 const Tv5725::OutputMode *choice = &Tv5725::Mode1080p,
                  bool hsyncPositive = true)
         : engine(clock, sampling, framings), acquisition(sampling, engine)
     {
@@ -125,7 +124,7 @@ struct SolvedEngine {
         // positive-going; every VESA mode below 800x600 is not.
         seed(0, 0x16, 0, 1, hsyncPositive ? 1 : 0);   // STATUS_SYNC_PROC_HSPOL
 
-        engine.outputModeChanged(choice);
+        engine.setOutputMode(choice);
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(acquisition));
     }

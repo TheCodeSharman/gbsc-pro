@@ -12,7 +12,6 @@
 #include "DisplayClock.h"
 #include "VideoSourceLine.h"
 #include "CaptureWindow.h"
-#include "OutputChoice.h"
 #include "OutputMode.h"
 #include "OutputTimings.h"
 #include "PanAndZoom.h"
@@ -53,17 +52,6 @@ public:
     // docs/sync-type-selection.md
     void useSyncTypeProbe(bool (*hasOwnVsync)());
 
-    // How the output route is moved into pass-through. The engine decides FROM
-    // THE MEASUREMENT whether to; moving the route is the caller's, because it
-    // is a chip-wide switch rather than a geometry solve. Leaving needs no
-    // action: solveRaster() claims the route back.
-    void usePassThroughSwitch(void (*enter)());
-
-    // Whether pass-through is offerable at all. The interim stand-in for a
-    // per-source override -- a single boolean cannot express one.
-    // docs/video-source-acquisition.md
-    void allowPassThrough(bool allowed);
-
     // The source's timings moved, so the capture window and everything solved
     // from it are stale. The registers are not written until the source has
     // settled, and the choice does not become a resolution until the field rate
@@ -74,12 +62,26 @@ public:
     // event wants: the oversampling is an output of the last solve.
     void inputTimingsChanged();
 
-    // The user picked a different output resolution. Not a source event: the
-    // rate and the divider the last solve measured still describe the source, so
-    // this re-solves raster, clock and windows from what is held and measures
-    // nothing. False where a timings change is still in flight, which will
-    // resolve the choice against its own measurement when it lands.
-    bool outputModeChanged(const OutputChoice &choice);
+    // Configure the chip for this output mode: a resolution, ModeBypass to hand
+    // the source to the panel, or 0 for a custom preset, which names no
+    // resolution and leaves the raster standing on the chip.
+    //
+    // THE ARGUMENT CARRIES BOTH DIRECTIONS. ModeBypass is pass-through and a
+    // resolution is not, so being told a resolution IS the leave -- there is no
+    // second entry point to acquire steps this one lacks, which is how the leave
+    // came to go without the bring-up, the block restart and the colour matrix.
+    // docs/investigations/pass-through-holds-the-only-field-rate-instrument.md
+    //
+    // WHEN to say it is not decided here. Pass-through is a statement about the
+    // source, so the layer that measures answers it.
+    //
+    // A resolution is not a source event -- the rate and the divider the last
+    // solve measured still describe the source, so raster, clock and windows are
+    // re-solved from what is held and nothing is measured. False where the
+    // caller has to load a preset instead: a change already in flight, a mode
+    // naming no resolution, or pass-through just left, which is solved by the
+    // measurement that follows rather than from the rate it was entered on.
+    bool setOutputMode(const OutputMode *mode);
 
     enum PollOutcome {
         PollIdle,
@@ -122,14 +124,6 @@ public:
     bool reacquireSyncType();
 
     bool reset();
-
-    // Notify the engine that the output has gone into bypass: video routes
-    // around the VDS, so no solve is coming.
-    //
-    // EVERY PATH INTO BYPASS HAS TO SAY SO. Only a completed solve clears a mode
-    // change, and bypass never solves -- so an armed one is retried once sync
-    // stabilises and overwrites the setup bypass just chose.
-    void enterBypass();
 
     bool pan(int16_t dxPixels, int16_t dyPixels);
     bool zoom(int16_t dhPixels, int16_t dvPixels);
@@ -179,7 +173,19 @@ private:
     // decision and the wrong order sizes the divider for the previous source.
     void solveScanMode();
 
-    bool passThroughSuitsSource() const;
+    // Whether video routes around the VDS. The mode in force says it, so there
+    // is nothing to hold separately.
+    bool passedThrough() const;
+
+    // EVERY PATH INTO PASS-THROUGH HAS TO REACH THIS. Only a completed solve
+    // clears a mode change, and pass-through never solves -- so an armed one is
+    // retried once sync stabilises and overwrites what the route switch chose.
+    void configurePassThrough();
+
+    // Bring the chip back up on the scaling path. Pass-through configured it
+    // away from that setup and left the memory blocks, both FIFOs and the VDS in
+    // reset, and nothing else on this path claims any of it back.
+    void configureScalingPath();
 
     bool fail();
 
@@ -218,20 +224,10 @@ private:
     bool solvePending_;
     bool modePending_;
     uint8_t modeOversample_;
-    // The output resolution SELECTED -- not what the output is doing, which is
-    // outputMode(). Pass-through suspends it rather than replacing it, so it is
-    // never overwritten and leaving returns to it.
-    OutputChoice resolution_;
-
-    // Whether the source is handed to the panel. Independent of resolution_, which
-    // holds the resolution the user asked for and is never overwritten: leaving
-    // pass-through therefore returns to that resolution rather than re-deriving
-    // one nobody chose. docs/video-source-acquisition.md
-    bool passedThrough_;
-
-    void (*passThroughSwitch_)();
-    bool passThroughAllowed_;
-    const OutputMode *rasterMode_;
+    // The mode in force: the last one this was told to configure the chip for.
+    // ModeBypass while video routes around the VDS, and 0 before anything has
+    // been solved or where the choice names no resolution.
+    const OutputMode *mode_;
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.
     // Zero means there is none, which is what bypass looks like.

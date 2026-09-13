@@ -32,6 +32,25 @@ public:
     // automation. An outstanding mode change survives the gate shutting.
     void useRunGate(bool (*mayRun)());
 
+    // How the output route is moved into pass-through. Deciding to is this
+    // class's, because pass-through is a statement about the measured source;
+    // moving the route is a chip-wide switch the sketch still owns.
+    void usePassThroughSwitch(void (*enter)());
+
+    // Whether pass-through is offerable at all. The interim stand-in for a
+    // per-source override -- a single boolean cannot express one.
+    // docs/video-source-acquisition.md
+    void allowPassThrough(bool allowed);
+
+    // The output resolution the user asked for. Held HERE, because what the
+    // output should do is decided here: pass-through suspends the resolution
+    // rather than replacing it, so the way back is to this rather than to one
+    // nobody chose -- and while it is suspended this only records, because the
+    // measurement is what decides when the output returns.
+    //
+    // False where the caller has to load a preset instead.
+    bool setOutputResolution(const Tv5725::OutputMode *mode);
+
     // How often the source is counted. Every steadiness run below is counted in
     // these, so loop()'s own rate must not reach them.
     static const uint32_t DetectionIntervalMs = 20;
@@ -57,6 +76,21 @@ private:
     bool detectionDue(uint32_t nowMs);
 
     bool sourceMoved();
+
+    // Whether the source just measured arrives intact only by being handed
+    // over. Both halves are the measurement's: a raster the line doubler is not
+    // needed for, at a rate that reaches the sink. docs/capture-limits.md
+    bool passThroughSuitsSource() const;
+
+    // Whether video routes around the VDS, which the mode in force says.
+    bool outputIsPassedThrough() const;
+
+    // Hand the source to the panel, moving the route only where it is not
+    // already there: every measurement re-answers pass-through, so staying is
+    // the usual answer and re-running the switch would drop sync output on a
+    // picture that is working.
+    bool passSourceThrough();
+
     bool rateMoved();
     bool countHeld(uint16_t lines);
     void holdSolvedSource();
@@ -70,6 +104,9 @@ private:
     Tv5725::SourceMeasurement &sampling_;
     Tv5725::VideoPath &videoPath_;
     bool (*mayRun_)();
+    void (*passThroughSwitch_)();
+    bool passThroughAllowed_;
+    const Tv5725::OutputMode *resolution_;
     uint32_t detectedMs_;
     bool detectedEver_;
 

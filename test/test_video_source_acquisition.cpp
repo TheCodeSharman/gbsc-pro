@@ -74,9 +74,9 @@ struct Acquiring {
     Acquiring()
         : path(clock, sampling, framings), acquisition(sampling, path), nowMs(0) {}
 
-    void start(const OutputChoice &choice = OutputChoice(Output1080P))
+    void start(const OutputMode *mode = &Mode1080p)
     {
-        path.outputModeChanged(choice);
+        acquisition.setOutputResolution(mode);
         path.inputTimingsChanged(4);
     }
 
@@ -101,7 +101,6 @@ struct Acquiring {
     }
 };
 
-static OutputChoice benchMode() { return OutputChoice(Output1080P); }
 
 // The register-level switch into pass-through. The engine decides, the switch
 // is whoever knows how to move the route -- the sketch on the board, this here.
@@ -378,7 +377,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         // Pass-through is a statement about the source, so the event that says
         // the source may have moved has to reach it. This one cannot stay: the
         // bench source is line-doubled and 15 kHz, which no panel takes raw.
-        unit.path.enterBypass();
+        unit.path.setOutputMode(&ModeBypass);
         unit.acquisition.sourceInterrupted();
         CHECK(unit.pollUntilSolved(8));
         CHECK_FALSE(unit.path.outputMode()->isBypass());
@@ -397,8 +396,8 @@ TEST_CASE("a source the panel takes straight is passed through, not scaled")
     g_passThroughSwitches = 0;
 
     Acquiring unit;
-    unit.path.usePassThroughSwitch(enterPassThrough);
-    unit.path.allowPassThrough(true);
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -416,8 +415,8 @@ TEST_CASE("pass-through refused leaves the same source scaled")
     g_passThroughSwitches = 0;
 
     Acquiring unit;
-    unit.path.usePassThroughSwitch(enterPassThrough);
-    unit.path.allowPassThrough(false);
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(false);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved(8));
@@ -432,8 +431,8 @@ TEST_CASE("a source below the line doubler is scaled even where pass-through is 
     g_passThroughSwitches = 0;
 
     Acquiring unit;
-    unit.path.usePassThroughSwitch(enterPassThrough);
-    unit.path.allowPassThrough(true);
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
     unit.start();
 
     REQUIRE(unit.pollUntilSolved());
@@ -451,9 +450,9 @@ TEST_CASE("the chosen output resolution survives a pass-through excursion")
     seedPassThroughSource();
 
     Acquiring unit;
-    unit.path.usePassThroughSwitch(enterPassThrough);
-    unit.path.allowPassThrough(true);
-    unit.start(OutputChoice(Output1024P));
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start(&Mode1024p);
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
 
@@ -476,8 +475,8 @@ TEST_CASE("leaving pass-through puts the colour path back")
     seedPassThroughSource();
 
     Acquiring unit;
-    unit.path.usePassThroughSwitch(enterPassThrough);
-    unit.path.allowPassThrough(true);
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -504,8 +503,8 @@ TEST_CASE("leaving pass-through releases the blocks pass-through held")
     seedPassThroughSource();
 
     Acquiring unit;
-    unit.path.usePassThroughSwitch(enterPassThrough);
-    unit.path.allowPassThrough(true);
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
     unit.start();
     REQUIRE(unit.pollUntilSolved(8));
     REQUIRE(unit.path.outputMode()->isBypass());
@@ -529,6 +528,48 @@ TEST_CASE("leaving pass-through releases the blocks pass-through held")
     CHECK(Chip::SFTRST_DEINT_RSTZ::read() == 1);
 }
 
+TEST_CASE("a resolution chosen while the source is passed through is recorded")
+{
+    // The measurement decides pass-through, so a resolution arriving now is not
+    // a reason to leave it -- it is where the output returns when the source
+    // stops qualifying. Refusing it instead sent the caller into a preset load,
+    // which takes the chip off the bypass route with nothing telling the engine.
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    CHECK(unit.acquisition.setOutputResolution(&Mode1024p));
+    CHECK(unit.path.outputMode()->isBypass());
+}
+
+TEST_CASE("a resolution chosen while passed through puts the chip back")
+{
+    // VideoPath configures the chip for the mode it is told, and a resolution is
+    // not pass-through -- so being told one IS the leave, by the same route as
+    // any other. Without that the raster solved landed on a chip whose VDS was
+    // still held and whose route still went round it.
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+    REQUIRE(Chip::SFTRST_VDS_RSTZ::read() == 0);
+
+    unit.path.setOutputMode(&Mode720p);
+
+    CHECK(Chip::SFTRST_VDS_RSTZ::read() == 1);
+}
+
 TEST_CASE("a source that changes under a bypassed output is solved for")
 {
     // The bench fault: with the output bypassed the source changes mode, the
@@ -549,7 +590,7 @@ TEST_CASE("a source that changes under a bypassed output is solved for")
 
     // Passed through, on a raster the panel takes straight, with the divider
     // the bypass switch chose rather than the one the last solve did.
-    unit.path.enterBypass();
+    unit.path.setOutputMode(&ModeBypass);
     REQUIRE(unit.path.outputMode()->isBypass());
     seed(5, 0x12, 0, 12, 1886);
 

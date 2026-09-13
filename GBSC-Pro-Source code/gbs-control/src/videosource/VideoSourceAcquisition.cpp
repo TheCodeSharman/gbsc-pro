@@ -8,13 +8,63 @@
 
 VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
-    : sampling_(sampling), videoPath_(videoPath), mayRun_(0), detectedMs_(0),
+    : sampling_(sampling), videoPath_(videoPath), mayRun_(0),
+      passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
+      detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
+
+void VideoSourceAcquisition::usePassThroughSwitch(void (*enter)()) { passThroughSwitch_ = enter; }
+
+void VideoSourceAcquisition::allowPassThrough(bool allowed) { passThroughAllowed_ = allowed; }
+
+bool VideoSourceAcquisition::setOutputResolution(const Tv5725::OutputMode *mode)
+{
+    resolution_ = mode;
+
+    // Not a reason to leave pass-through, and not a reason to load a preset
+    // either. The source has not moved, so it still arrives intact only by being
+    // handed over; the resolution is where the output returns when it stops
+    // qualifying. A preset load here would take the chip off the bypass route
+    // with nothing telling the engine, leaving it holding a mode the chip is no
+    // longer in.
+    if (outputIsPassedThrough())
+        return true;
+
+    return videoPath_.setOutputMode(mode);
+}
+
+bool VideoSourceAcquisition::outputIsPassedThrough() const
+{
+    const Tv5725::OutputMode *mode = videoPath_.outputMode();
+    return mode != 0 && mode->isBypass();
+}
+
+bool VideoSourceAcquisition::passThroughSuitsSource() const
+{
+    return passThroughAllowed_
+           && sampling_.bypassSuitsCount(sampling_.sourceLines())
+           && sampling_.rateCanBypass();
+}
+
+bool VideoSourceAcquisition::passSourceThrough()
+{
+    if (!passThroughSuitsSource())
+        return false;
+
+    if (!outputIsPassedThrough()) {
+        if (passThroughSwitch_ == 0)
+            return false;
+        passThroughSwitch_();
+    }
+
+    videoPath_.setOutputMode(&Tv5725::ModeBypass);
+    return true;
+}
 
 float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
@@ -233,6 +283,24 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         // That is precisely when a reader needs to know it cannot.
         if (!settling)
             sourceState_ = SourceAbsent;
+        return false;
+    }
+
+    // What the output should do, from the measurement just taken. Pass-through
+    // is a statement about what the SOURCE is -- a raster the panel can take
+    // straight, at a rate that reaches it -- so every measurement re-answers it
+    // and a source that stops qualifying is not left stranded in it.
+    if (passSourceThrough()) {
+        holdSolvedSource();
+        return true;
+    }
+
+    if (outputIsPassedThrough()) {
+        // Outgrown it, so the output goes back to the resolution chosen. The
+        // mode change stays armed: the rate held names the mode pass-through was
+        // entered on, so the next pass measures this source through the chip
+        // setOutputMode() has just put back.
+        videoPath_.setOutputMode(resolution_);
         return false;
     }
 
