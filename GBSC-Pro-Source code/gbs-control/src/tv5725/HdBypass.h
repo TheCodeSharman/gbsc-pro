@@ -229,7 +229,8 @@ private:
     static void applyHorizontalFromChannelLine(uint16_t channelLine);
 
     static void applySd(uint8_t standard);
-    static void applyProgressive(uint8_t standard);
+    static void applyProgressive(uint8_t standard, uint16_t divider,
+                                 uint32_t lineRateHz);
     static void applyHd(uint8_t standard, void (*applyRgbPatches)());
 
     // The ADC PLL's crossover row and VCO gain for an RGBHV source, which is

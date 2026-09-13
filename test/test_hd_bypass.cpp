@@ -354,36 +354,38 @@ TEST_CASE("the two SD field rates differ only in the vertical")
     CHECK(HdBypass::HD_VS_SP::read() == 621);
 }
 
-TEST_CASE("progressive SD takes a fixed raster, not one off the divider")
+TEST_CASE("progressive SD sizes its raster from the divider the engine holds")
 {
-    applyForStandard(3);
+    // The 0x864 blanking start it carried was sized for the 2345 the bypass
+    // switch used to write into PLLAD_MD on the way in. That literal is gone,
+    // so the constant outran the line and the picture came out blanked.
+    applyForStandard(3, 524, 2039, 31469);
 
-    CHECK(Adc::ADC_FLTR::read() == 2);  // the 70 MHz corner
-    CHECK(Adc::PLLAD_KS::read() == 1);
-    CHECK(Adc::PLLAD_CKOS::read() == 0);
-    CHECK(HdBypass::HD_HB_ST::read() == 2148);
-    CHECK(HdBypass::HD_HB_SP::read() == 160);
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
-    CHECK(HdBypass::HD_VB_SP::read() == 64);
+    CHECK(Adc::PLLAD_MD::read() == 2039);
+    CHECK(HdBypass::HD_HSYNC_RST::read() == 2047);
+    CHECK(HdBypass::HD_HB_ST::read() == 2039);
+    CHECK(HdBypass::HD_HB_SP::read() == 144);
 }
 
-TEST_CASE("the two progressive standards differ in the sync pulse alone")
+TEST_CASE("progressive SD blanks the vertical it needs, which pass-through does not")
 {
-    applyForStandard(3);
-    CHECK(HdBypass::HD_HS_ST::read() == 84);
-    CHECK(HdBypass::HD_HS_SP::read() == 2148);
+    applyForStandard(3, 524, 2039, 31469);
+
+    CHECK(HdBypass::HD_VB_ST::read() == 0);
+    CHECK(HdBypass::HD_VB_SP::read() == 64);
     CHECK(HdBypass::HD_VS_ST::read() == 6);
     CHECK(HdBypass::HD_VS_SP::read() == 0);
+}
+
+TEST_CASE("the two progressive standards differ in the vsync window alone")
+{
+    applyForStandard(3, 524, 2039, 31469);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 2);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 8);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 2);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 10);
 
-    applyForStandard(4);
-    CHECK(HdBypass::HD_HS_ST::read() == 16);
-    CHECK(HdBypass::HD_HS_SP::read() == 2176);
-    CHECK(HdBypass::HD_VS_ST::read() == 6);
-    CHECK(HdBypass::HD_VS_SP::read() == 0);
+    applyForStandard(4, 524, 2039, 31469);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 48);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
@@ -523,6 +525,55 @@ TEST_CASE("a source with no standard samples off its own clock")
     CHECK(Adc::PLLAD_KS::read() == 1);
     CHECK(Adc::PLLAD_ICP::read() == 4);
     CHECK(Adc::PLLAD_FS::read() == 1);
+    CHECK(Adc::ADC_FLTR::read() == 0);
+}
+
+TEST_CASE("every arm leaves the blanking start inside the line")
+{
+    // Above HD_HSYNC_RST that edge never fires, so the only blanking left in
+    // the line is HD_HB_SP's and it reads as a black bar down the left of the
+    // picture. applyHorizontalFromChannelLine() states the rule; the arms that
+    // freeze a raster per standard were sized for a divider literal that no
+    // longer exists.
+    // 13 is left out: it writes neither register, so it inherits the channel
+    // raster from whatever entered bypass before it. That is a different
+    // defect and it has no bench source.
+    const uint8_t standards[] = {0, 3, 4, 5, 6, 7, 14};
+
+    for (unsigned i = 0; i < sizeof(standards); i++) {
+        CAPTURE(standards[i]);
+        applyForStandard(standards[i], 524, 2039, 31469);
+
+        CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
+    }
+}
+
+TEST_CASE("a source no standard names is passed through, not taken for SD")
+{
+    // 0 is "nothing recognised", not a standard. Taken for SD it gets a channel
+    // line of PLLAD_MD/2 and a blanking start of 0.945 x PLLAD_MD, so blanking
+    // begins past the end of the line, that edge never fires, and the only one
+    // left is HD_HB_SP -- a black bar down the left of the picture. Measured on
+    // the bench with a Wii at 480p on ypbpr: HD_HSYNC_RST 570 against
+    // HD_HB_ST 1062.
+    applyForStandard(0, 524, 1124, 31469);
+
+    CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
+}
+
+TEST_CASE("a source no standard names samples off the divider it is handed")
+{
+    applyForStandard(0, 524, 1124, 31469);
+
+    CHECK(Adc::PLLAD_MD::read() == 1124);
+}
+
+TEST_CASE("a source no standard names keeps the widest analog corner")
+{
+    // The SD arm narrows it to 40 MHz and inverts four sync polarities, which
+    // on a 480p component source is why it never locks.
+    applyForStandard(0, 524, 1124, 31469);
+
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
 

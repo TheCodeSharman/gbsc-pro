@@ -103,11 +103,13 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
                                 uint32_t lineRateHz,
                                 void (*applyRgbPatches)())
 {
-    if (standard <= 2)
+    // 0 is "nothing recognised" rather than a standard, so it belongs with every
+    // other source no table names -- sampled from the divider the engine holds.
+    if (standard == 1 || standard == 2)
         applySd(standard);
     else if (standard == 3 || standard == 4)
-        applyProgressive(standard);
-    else if (standard <= 7 || standard == 13)
+        applyProgressive(standard, divider, lineRateHz);
+    else if ((standard >= 5 && standard <= 7) || standard == 13)
         applyHd(standard, applyRgbPatches);
     else
         applyPassThroughSampling(divider, lineRateHz);
@@ -200,30 +202,20 @@ void HdBypass::applySd(uint8_t standard)
     }
 }
 
-void HdBypass::applyProgressive(uint8_t standard)
+void HdBypass::applyProgressive(uint8_t standard, uint16_t divider,
+                                uint32_t lineRateHz)
 {
-    Adc::ADC_FLTR::write(AnalogFilter70MHz);
-    Adc::PLLAD_KS::write(1);
-    Adc::PLLAD_CKOS::write(0);
+    applyPassThroughSampling(divider, lineRateHz);
 
-    HD_HB_ST::write(0x864);
-
-    HD_HB_SP::write(0xa0);
     HD_VB_ST::write(0x00);
     HD_VB_SP::write(0x40);
+    HD_VS_ST::write(0x06);
+    HD_VS_SP::write(0x00);
     if (standard == 3) {
-        HD_HS_ST::write(0x54);
-        HD_HS_SP::write(0x864);
-        HD_VS_ST::write(0x06);
-        HD_VS_SP::write(0x00);
         SyncProcessor::writeSdVsyncStart(525 - 5);
         SyncProcessor::writeSdVsyncStop(525 - 3);
     }
     if (standard == 4) {
-        HD_HS_ST::write(0x10);
-        HD_HS_SP::write(0x880);
-        HD_VS_ST::write(0x06);
-        HD_VS_SP::write(0x00);
         SyncProcessor::writeSdVsyncStart(48);
         SyncProcessor::writeSdVsyncStop(46);
     }
