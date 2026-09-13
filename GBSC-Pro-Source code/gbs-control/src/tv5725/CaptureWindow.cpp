@@ -12,8 +12,8 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
-bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncLow,
-                                bool hsyncPositive)
+bool CaptureWindow::readRasters(const SourceMeasurement &source,
+                                const SourceReading &reading)
 {
     const uint16_t sourceLines = source.sourceLines();
     const uint16_t horizontalWrap = source.ifLine() + 1;
@@ -40,8 +40,9 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncL
     // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
     const uint16_t lagUnits = source.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits;
 
-    horizontalLine_ = VideoSourceLine::measured(horizontalWrap, hsyncLow, source.divider(),
-                                                lagUnits, hsyncPositive);
+    horizontalLine_ = VideoSourceLine::forDuty(horizontalWrap, reading.syncDuty(),
+                                               source.lineDoubled(), lagUnits,
+                                               reading.syncAtHead());
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and
@@ -50,7 +51,7 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncL
                                                    : sourceLines + 1);
 
     timing_ = SourceTiming::matching(sourceLines, source.fieldRateHz(),
-                                     (float)hsyncLow / (float)source.divider());
+                                     reading.syncDuty());
     return true;
 }
 

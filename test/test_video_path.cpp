@@ -1254,7 +1254,7 @@ TEST_CASE("the source is measured through a known vertical blank, not the last m
 
         seedField(1, 0x1C, 0, 11, 700);
         g_blankStartWhenSampled = 0xFFFF;
-        REQUIRE(engine.resolve());
+        REQUIRE(acquisition.resolveFromSource());
         CHECK(g_blankStartWhenSampled < 2 * 311);
     }
 }
@@ -1586,6 +1586,59 @@ TEST_CASE("a source that measures its own lines is left on the pair it has")
     REQUIRE(pollUntilSolved(acquisition));
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == before);
+}
+
+TEST_CASE("re-solving every register measures nothing")
+{
+    // The re-derive command re-solves from what is HELD. Measuring is the
+    // acquisition layer's, and it costs up to 250 ms a vsync pulse, so an engine
+    // that reached for it had a second place the source was read from and a
+    // second answer to disagree with. docs/video-source-acquisition.md
+    seedBenchSource();
+
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    g_fieldRateCalls = 0;
+
+    REQUIRE(engine.resolve());
+
+    CHECK(g_fieldRateCalls == 0);
+}
+
+TEST_CASE("a framing press solves from the reading handed in, not from the chip")
+{
+    // The engine is PASSED what the source measures; the layer that measures is
+    // the only thing that reads the chip. So a press re-solves from what is
+    // held, and a sync-processor register moving under it -- which is what a
+    // source event exists to catch -- does not reach the windows until a
+    // measurement does. docs/video-source-acquisition.md
+    seedBenchSource();
+
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    const uint16_t capturable = engine.capturableOn(AxisHorizontal);
+    REQUIRE(capturable > 0);
+
+    // A sync low nothing measured, three times what the source runs.
+    seedField(0, 0x19, 0, 12, 543);    // STATUS_SYNC_PROC_HLOW_LEN
+
+    REQUIRE(engine.pan(-16, 0));
+
+    CHECK(engine.capturableOn(AxisHorizontal) == capturable);
 }
 
 TEST_CASE("a source is sampled as finely as one window can still span its line")

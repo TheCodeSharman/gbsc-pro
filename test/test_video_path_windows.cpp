@@ -432,9 +432,14 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // 640x480@60: 96 of its 800 pixels on sync, and a 525-line frame the sync
     // processor counts from zero and reports as 524 -- which is what the bench
     // reads on a source running this mode.
-    const uint16_t Divider = 1124;
-    SolvedEngine solved(524, 59.94f, (uint16_t)(Divider * 96 / 800),
-                        &Tv5725::Mode1080p, false);
+    //
+    // Seeded against the REFERENCE sampling clock, because that is the one in
+    // force when the layer that measures reads the pulse. The register counts
+    // ADC samples, so on the part it scales with the divider and the duty is the
+    // same either side; the fake holds whatever was seeded. SourceReading.h
+    const uint16_t Divider = Tv5725::SourceMeasurement::referenceDivider(false);
+    const uint16_t HsyncLow = (uint16_t)(Divider * 96 / 800);
+    SolvedEngine solved(524, 59.94f, HsyncLow, &Tv5725::Mode1080p, false);
 
     const long line = Wire.field(1, 0x0E, 0, 11) + 1;
     const long stop = Wire.field(1, 0x1A, 0, 11);
@@ -442,9 +447,9 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
 
     // 18.0% is where the published raster puts picture in ITS line, counted
     // from the hsync leading edge. This mode's pulse is inverted, so the line is
-    // counted from the trailing edge with the 135 units of pulse already behind
-    // it, and video arrives a capture lag after that.
-    const long sync = 135;   // ceil(1125 x 134 / 1124)
+    // counted from the trailing edge with the pulse already behind it, and video
+    // arrives a capture lag after that.
+    const long sync = (long)std::ceil((double)line * (double)HsyncLow / (double)Divider);
     const long lag = Tv5725::VideoSourceLine::CaptureLagUnits;
 
     CHECK_NEAR(stop, 0.180 * line + lag - sync, 2);

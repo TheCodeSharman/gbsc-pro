@@ -8,6 +8,7 @@
 #include "OutputRaster.h"
 #include "ActiveImage.h"
 #include "SourceMeasurement.h"
+#include "SourceReading.h"
 #include "SourceTiming.h"
 #include "BlankingTiming.h"
 
@@ -47,15 +48,14 @@ public:
     // divider into the ADC PLL, so between a write and the latch the register
     // reports a value the chip is not using.
     //
-    // `hsyncLow` is a parameter because the measurement does not hold it. The
-    // line count and the field rate do come off the measurement, which is what
-    // keeps the two being cross-checked against each other rather than against
-    // a value some caller chose. docs/firmware-geometry-engine.md
+    // The sync duty and polarity arrive in the READING, taken by the layer that
+    // measures. The line count and the field rate come off the measurement,
+    // which is what keeps the two cross-checked against each other rather than
+    // against a value some caller chose. docs/firmware-geometry-engine.md
     //
     // The three together are also what identifies a published raster, so this
     // is where the timing an untuned window is placed from is resolved.
-    bool readRasters(const SourceMeasurement &source, uint16_t hsyncLow,
-                     bool hsyncPositive);
+    bool readRasters(const SourceMeasurement &source, const SourceReading &reading);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

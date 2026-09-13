@@ -108,11 +108,13 @@ public:
     static VideoSourceLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine,
                                     uint16_t lagUnits, bool syncAtHead);
 
-private:
-    VideoSourceLine(uint16_t units, uint16_t syncUnits, uint16_t lagUnits, bool syncAtHead);
-
+    // The same line from the duty directly, which is the form a reading taken
+    // against one divider carries across the solve that replaces it.
     static VideoSourceLine forDuty(uint16_t units, float duty, bool lineDoubled,
                                    uint16_t lagUnits, bool syncAtHead);
+
+private:
+    VideoSourceLine(uint16_t units, uint16_t syncUnits, uint16_t lagUnits, bool syncAtHead);
 
     uint16_t units_;
     uint16_t syncUnits_;

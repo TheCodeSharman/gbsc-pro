@@ -5989,7 +5989,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // Re-derive every register from the framing held and the source
                 // as it reads now, without moving the framing.
                 case 'U':
-                    geometry.resolve();
+                    inputAcquisition.resolveFromSource();
                     break;
                 // Back to the default framing. The framing is the engine's own
                 // state and no register holds it, so without this a picture

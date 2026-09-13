@@ -411,6 +411,20 @@ uint16_t SourceMeasurement::divider() const { return divider_; }
 
 uint32_t SourceMeasurement::lineRateHz() const { return lineRateHz_; }
 
+uint16_t SourceMeasurement::readSourceLines() const
+{
+    return measureSourceLinesCorrected(divider_);
+}
+
+SourceReading SourceMeasurement::readSource() const
+{
+    // The duty rather than the register, because the divider this was counted
+    // against is about to move. SourceReading.h.
+    const float duty = divider_ > 0
+        ? (float)measureHsyncLow() / (float)divider_ : 0.0f;
+    return SourceReading(duty, measureHsyncPositive());
+}
+
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 
 uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }

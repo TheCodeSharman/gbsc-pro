@@ -38,6 +38,20 @@ bool VideoSourceAcquisition::setOutputResolution(const Tv5725::OutputMode *mode)
     return videoPath_.setOutputMode(mode);
 }
 
+bool VideoSourceAcquisition::resolveFromSource()
+{
+    // The same reference the poll pass takes, and for the same reason: a window
+    // solved for a taller mode strands the block the rate is timed off, and a
+    // count taken through the previous mode's divider is not the source's.
+    sampling_.applyReferenceSampling(videoPath_.oversample());
+
+    if (!sampling_.measureLineRate())
+        return videoPath_.deferSolve();
+
+    videoPath_.sourceMeasured(sampling_.readSource());
+    return videoPath_.resolve();
+}
+
 bool VideoSourceAcquisition::outputIsPassedThrough() const
 {
     const Tv5725::OutputMode *mode = videoPath_.outputMode();
@@ -271,9 +285,17 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         return false;
     }
 
-    // Nothing outstanding that needs the source read again.
-    if (!videoPath_.prepareToMeasure())
-        return videoPath_.pollDeferred() == Tv5725::VideoPath::PollResolved;
+    // Nothing outstanding that needs the source read again, unless a solve was
+    // refused against the reading it had.
+    if (!videoPath_.changingMode())
+        return videoPath_.solveDeferred() && resolveFromSource();
+
+    // Sync type, then the count, then the scan mode and the sampling clock. The
+    // order is the whole point: the sync path decides what the sync processor
+    // counts, and the scan mode decides the clock every later reading is taken
+    // against. docs/video-source-acquisition.md
+    videoPath_.establishSyncType();
+    videoPath_.prepareToMeasure(sampling_.readSourceLines());
 
     bool settling = false;
     if (!measureSource(settling)) {
@@ -285,6 +307,11 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
             sourceState_ = SourceAbsent;
         return false;
     }
+
+    // The hsync pulse, now that the reference sampling clock it is counted
+    // against is in force and locked. The engine solves every window from this
+    // and reads nothing back itself.
+    videoPath_.sourceMeasured(sampling_.readSource());
 
     // What the output should do, from the measurement just taken. Pass-through
     // is a statement about what the SOURCE is -- a raster the panel can take

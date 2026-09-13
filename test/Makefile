@@ -38,7 +38,8 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 # Tv5725::SourceMeasurement holds one quantity in three registers -- PLLAD_MD,
 # IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
 # declare them link wherever it does.
-SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
+SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/SourceReading.cpp \
+	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
 	src/tv5725/ModeDetect.cpp
 

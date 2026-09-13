@@ -85,26 +85,43 @@ public:
 
     enum PollOutcome {
         PollIdle,
-        PollResolved,      // a deferred solve; the source was not re-read
         PollSolved,        // a mode change completed, against solvedLines()
         PollUnmeasurable,
     };
 
-    // Establish the sync path, the scan mode and a known sampling clock, so that
-    // what the caller measures next means something. Measures nothing itself.
-    // False when no mode change is outstanding.
+    // The oversampling the last source event asked for. The reference sampling
+    // clock is applied at it, by the layer that takes the measurement it exists
+    // to make meaningful.
+    uint8_t oversample() const;
+
+    // A solve was refused against what it was given, so it is worth trying again
+    // once the source settles. False, so a caller can return it.
+    bool deferSolve();
+
+    // Whether a refused solve is waiting for one.
+    bool solveDeferred() const;
+
+    // Put the chip on the sync path the source carries, so that what the caller
+    // reads next is the source rather than the last one's path. Measures
+    // nothing the engine keeps, and runs once per mode change.
+    void establishSyncType();
+
+    // The hsync pulse, taken by the layer that measures and handed over. THE
+    // ENGINE READS NOTHING BACK: every window it solves, now and on every
+    // framing press until the next reading arrives, comes off this.
+    void sourceMeasured(const SourceReading &reading);
+
+    // Establish the scan mode and a known sampling clock from the count just
+    // read, so that what the caller measures next means something. Measures
+    // nothing itself.
     //
-    // Sync type, then scan mode, then sampling clock, and all three before any
-    // count is taken. Each one corrupts every measurement below it if left set
+    // Sync type, then scan mode, then sampling clock, and all three before the
+    // rate is measured. Each one corrupts every measurement below it if left set
     // for the previous source. docs/video-source-acquisition.md
-    bool prepareToMeasure();
+    void prepareToMeasure(uint16_t sourceLines);
 
     // Solve every register from the measurement the caller has just taken.
     PollOutcome solveFromMeasurement();
-
-    // Retry a solve that was refused against a reading already taken. Needs no
-    // fresh measurement.
-    PollOutcome pollDeferred();
 
     // Whether a mode change is still working through: told the source moved and
     // not yet finished solving for it. What the sync output blanks against.
@@ -134,8 +151,9 @@ public:
     // registers. docs/framing-presets.md
     bool applyFraming(const PanAndZoom &framing);
 
-    // Re-solve every register from the framing held and the source as it reads
-    // now. Measures, so it must run from loop().
+    // Re-solve every register from the framing held and the reading last handed
+    // over. MEASURES NOTHING: a caller wanting the source as it reads now
+    // re-reads it and hands the reading in first.
     bool resolve();
 
     // What the output is doing, as one question. Null only before anything has
@@ -171,7 +189,7 @@ private:
     // **Before solveSampling(), because the divider derives from it**: the
     // capture write limit doubles with the line doubler, so the two describe one
     // decision and the wrong order sizes the divider for the previous source.
-    void solveScanMode();
+    void solveScanMode(uint16_t lines);
 
     // Whether video routes around the VDS. The mode in force says it, so there
     // is nothing to hold separately.
@@ -189,14 +207,12 @@ private:
 
     bool fail();
 
-    void establishSyncType();
-
     // Output pixels -> input units. A press of nothing has to be skipped
     // outright: stepUnits() floors at one granule, so an axis the press did not
     // name would drift a unit per press.
     static int16_t unitsFor(int16_t pixels, const Scale &scale, const Axis &axis);
 
-    bool measureSourceTimings(CaptureWindow &capture);
+    bool sizeCaptureWindow(CaptureWindow &capture);
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
     VideoProcessorTimings calculateOutputRaster(const CaptureWindow &capture) const;
 
@@ -228,6 +244,10 @@ private:
     // ModeBypass while video routes around the VDS, and 0 before anything has
     // been solved or where the choice names no resolution.
     const OutputMode *mode_;
+
+    // The last pulse handed over. What every solve runs off, so a framing press
+    // costs no read of the chip.
+    SourceReading reading_;
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.
     // Zero means there is none, which is what bypass looks like.

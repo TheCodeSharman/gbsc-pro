@@ -32,6 +32,7 @@
 // from what that held rather than measuring again.
 float getSourceFieldRate(boolean useSPBus);
 
+#include "SourceReading.h"
 #include "SteadyRun.h"
 #include "Tv5725Log.h"
 
@@ -337,6 +338,15 @@ public:
     // the safe direction to be wrong in, since the sync watcher re-solves once
     // the source settles.
     bool solve(uint32_t lineRateHz, uint8_t oversample, uint16_t maxIfLineUnits = 0);
+
+    // The source's line count, against the divider held. Read BEFORE the
+    // reference sampling clock, because the scan mode is judged from it and the
+    // clock follows the scan mode.
+    uint16_t readSourceLines() const;
+
+    // The hsync pulse, against the divider held. The engine is handed this and
+    // calculates from it, reading nothing back.
+    SourceReading readSource() const;
 
     // The source, as the sync processor counts it. These are the only reads of
     // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,

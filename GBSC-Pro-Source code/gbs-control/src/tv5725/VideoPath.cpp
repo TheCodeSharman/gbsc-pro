@@ -61,23 +61,12 @@ uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
     return (uint16_t)lrintf(framing_.extentOn(axis) * (float)capturableOn(axis));
 }
 
-// Measure the source, then solve from it. For the two callers that need the
-// source read again: the deferred retry, whose previous solve was refused
-// against the measurement it already had, and the re-derive command, whose whole
-// contract is the source as it reads now. A caller that has only moved the
-// framing wants solveWindows(), which costs no vsync sample.
+// Solve every register from what is held. A caller that has only moved the
+// framing wants solveWindows(); this is for one that has just been handed a
+// fresh reading, or whose previous solve was refused against the one it had.
 bool VideoPath::resolve()
 {
-    // The same reference the poll pass takes, and for the same reason: a window
-    // solved for a taller mode strands the block the rate is timed off, and a
-    // count taken through the previous mode's divider is not the source's.
-    // Neither caller here reaches the one in poll().
-    sampling_.applyReferenceSampling(modeOversample_);
-
-    if (!sampling_.measureLineRate())
-        return fail();
-
-    // The reference is what the measurement was TAKEN through, never what the
+    // The reference is what a measurement is TAKEN through, never what the
     // source is left on: it is sized for the write limit alone, so leaving it
     // in place discards the bound the measurement was taken to compute.
     if (!solveSampling(modeOversample_))
@@ -85,10 +74,16 @@ bool VideoPath::resolve()
     return solveWindows();
 }
 
+uint8_t VideoPath::oversample() const { return modeOversample_; }
+
+bool VideoPath::deferSolve() { return fail(); }
+
+bool VideoPath::solveDeferred() const { return solvePending_; }
+
 bool VideoPath::solveWindows()
 {
     CaptureWindow capture;
-    if (!measureSourceTimings(capture))
+    if (!sizeCaptureWindow(capture))
         return false;
     if (!calculateInputFormatterRegisters(capture))
         return false;
@@ -248,7 +243,7 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
         return false;
 
     const bool wasDoubled = sampling_.lineDoubled();
-    solveScanMode();
+    solveScanMode(sampling_.sourceLines());
 
     // Only where the doubling moved. The divider derives from it and from the
     // line rate already held -- so it is re-DERIVED, never re-measured -- and
@@ -266,25 +261,12 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     return solveWindows();
 }
 
-VideoPath::PollOutcome VideoPath::pollDeferred()
+void VideoPath::sourceMeasured(const SourceReading &reading) { reading_ = reading; }
+
+void VideoPath::prepareToMeasure(uint16_t sourceLines)
 {
-    if (modePending_ || !solvePending_)
-        return PollIdle;
-
-    // A deferred retry, not a mode change: nothing re-reads the source count
-    // here, so there is no run for the caller to seed.
-    return resolve() ? PollResolved : PollIdle;
-}
-
-bool VideoPath::prepareToMeasure()
-{
-    if (!modePending_)
-        return false;
-
-    establishSyncType();
-    solveScanMode();
+    solveScanMode(sourceLines);
     sampling_.applyReferenceSampling(modeOversample_);
-    return true;
 }
 
 VideoPath::PollOutcome VideoPath::solveFromMeasurement()
@@ -417,10 +399,8 @@ void VideoPath::establishSyncType()
     delay(SyncProcessor::PathSettleMs);
 }
 
-void VideoPath::solveScanMode()
+void VideoPath::solveScanMode(uint16_t lines)
 {
-    const uint16_t lines =
-        SourceMeasurement::measureSourceLinesCorrected(sampling_.divider());
     if (!SourceMeasurement::countIsSource(lines))
         return;
 
@@ -449,15 +429,10 @@ void VideoPath::solveScanMode()
 
 bool VideoPath::solveSampling(uint8_t oversample)
 {
-    // The duty is a ratio, so whichever divider is on the chip when the pulse
-    // is measured gives the same answer as the one about to replace it.
-    const uint16_t divider = sampling_.divider();
-    const float duty = divider > 0
-        ? (float)SourceMeasurement::measureHsyncLow() / (float)divider : 0.0f;
     const uint16_t framable = VideoSourceLine::framableIfLine(
-        duty,
+        reading_.syncDuty(),
         sampling_.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits,
-        SourceMeasurement::measureHsyncPositive(), sampling_.lineDoubled());
+        reading_.syncAtHead(), sampling_.lineDoubled());
 
     if (!sampling_.solve(sampling_.lineRateHz(), oversample, framable))
         return false;
@@ -501,12 +476,11 @@ bool VideoPath::fail()
     return false;
 }
 
-bool VideoPath::measureSourceTimings(CaptureWindow &capture)
+bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
                        activeLinesStop_);
-    if (!capture.readRasters(sampling_, SourceMeasurement::measureHsyncLow(),
-                             SourceMeasurement::measureHsyncPositive())) {
+    if (!capture.readRasters(sampling_, reading_)) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;

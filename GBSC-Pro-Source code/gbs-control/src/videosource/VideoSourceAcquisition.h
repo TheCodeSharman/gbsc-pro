@@ -42,6 +42,11 @@ public:
     // docs/video-source-acquisition.md
     void allowPassThrough(bool allowed);
 
+    // Re-derive every register from the framing held and the source as it reads
+    // NOW: measure, hand the reading over, and have the engine solve from it.
+    // Measures, so it must run from loop().
+    bool resolveFromSource();
+
     // The output resolution the user asked for. Held HERE, because what the
     // output should do is decided here: pass-through suspends the resolution
     // rather than replacing it, so the way back is to this rather than to one
