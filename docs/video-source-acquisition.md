@@ -1143,6 +1143,25 @@ already do unguarded. One report, one response.
 becoming an injected action. The largest single piece, and the one that carries
 most of the standard byte.
 
+**THE RASTER A SOURCE IS RUNNING HAS TO BE ESTABLISHED BY THE MEASUREMENT, NOT
+BY THE SOLVE.** `HdBypass`'s arms each carried a vertical blanking constant per
+standard, and 720x480p's was `0x40` where the raster puts active video at line
+36 -- 28 lines of picture off the top. The replacement is `SourceTiming`, which
+is already keyed on three MEASURED values and states where active video starts.
+
+It does not reach the caller yet, and the reason is structural: `SourceTiming`
+is built inside `CaptureWindow::readRasters()`, which only the SCALING solve
+runs. Measured on the bench, a source handed to pass-through reaches
+`enterHdBypass()` with the line still zero, because the engine measures, decides
+pass-through and switches -- the solve that would have matched the raster never
+happens. So the match belongs beside the measurement that feeds it rather than
+inside the window that consumes it, and `SourceReading` is where it goes, beside
+the sync duty it is matched on.
+
+Until then the arms cannot lose their constants: blanking nothing is not a safe
+default for the channel, and nothing on this bench can say what the right
+fallback is for a source matching no published raster.
+
 **Its two entries are one call now.** Leaving bypass and crossing into another
 preset's bucket ran thirty byte-identical lines each, so every register in that
 sequence had two writers. The sync processor's share is
