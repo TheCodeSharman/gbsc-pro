@@ -216,52 +216,32 @@ to the output bypass displaced, which `enterBypass()` now keeps.
 `state: acquired` six seconds after the mode change, unaided, with the whole
 solve set back to its pre-excursion values byte for byte.
 
-**BUT THE ENGINE DOES NOT DO IT ALONE, AND THE ORDERING SAYS OTHERWISE.** The
-engine's solve lands before the sketch's `rgbhv-leave-bypass` event, which reads
-as the engine having recovered it. Deleting the sketch's arms refutes that: with
-them gone the same round trip leaves
+**RESOLVED, AND THE CAUSE IS NOT THIS PAGE'S MODEL.** Deleting the sketch's arms
+leaves
 
 ```
 sampling: 311 lines x 0.00 Hz -> line rate 0
 ```
 
-for as long as you watch. The COUNT is correct and steady at 311 -- the fix
-above works -- and the **field rate cannot be measured at all**, so
-`measureLineRate()` refuses, `measureSource()` fails, and
-`solveFromMeasurement()` is never reached. Neither `/sampleclock` nor `/sc?~`
-clears that state; only a reflash did.
+because **entering pass-through held the input formatter in reset, and the field
+rate is timed off that block's test bus**. The count is correct and steady
+throughout; the pulse the rate is measured from does not exist. The arm was
+load-bearing because it went on to call `applyPresets()`, whose bring-up
+releases the block — not because of the register writes it made first, which is
+what the enumeration below claimed.
 
-So the arm was doing load-bearing work before its own measurement, and the
-engine was riding on it.
+`docs/investigations/pass-through-holds-the-only-field-rate-instrument.md` has
+the sweep that settles it, what else leaving has to put back, and the measured
+round trips afterwards. **The reference sampling clock remains necessary and not
+sufficient**, and the section above stands as written.
 
-**The reference sampling clock was necessary and not sufficient, and still is** --
-the section below stands as written, and so does its point that the sync path is
-configured for bypass alongside the clock.
+### The enumeration below is superseded
 
-### What the leave path still needs, now enumerable
-
-That section says how much else is missing "is not enumerable, because there is
-no single definition of the operation". The deletion enumerates it: what the arm
-did between the count and the field rate, and what `prepareToMeasure()` does not:
-
-```cpp
-Tv5725::SyncProcessor::applyForScalingRgbhv(csync);
-if (!csync) {
-    GBS::ADC_5_00::write(0x10);
-    GBS::PLL_IS::write(0);
-    GBS::PLL_VCORST::write(1);
-    delay(320);
-}
-delay(4);
-```
-
-**`getSourceFieldRate()` returning 0.00 is the signature that this is missing.**
-The vertical measurement runs through a path bypass leaves configured for
-itself, so the rate is unmeasurable until the sync processor is put back on the
-scaling configuration and the display PLL is restarted. Until that moves into
-the engine, deleting the sketch's arms substitutes one deadlock for a worse one:
-the original at least held a wandering count, this one holds a correct count and
-no rate, and no user-reachable route clears it.
+It reads the arm's five writes as what the leave path still needs. Four of them
+are claimed by `BringUp::init()` and `Adc::applySampleRate()` already, and
+`SP_CLAMP_MANUAL` has a live writer on every pass. The field rate the arm
+measured is discarded by `rgbhvStandardFor()` below 380 lines, so on the bench
+source it was never used at all.
 
 ### What it did not fix
 
