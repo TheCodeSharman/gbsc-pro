@@ -77,6 +77,12 @@ public:
     // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
     SyncRecovery::Step recoveryDue() const;
 
+    // The run starts again, for a rung that settled the question rather than
+    // advancing it -- a lock found on the other ADC input, or a sync-type
+    // re-probe that found no V sync. Whether a step settled anything is the
+    // caller's to say; the count cannot tell.
+    void restartRecovery();
+
     // Acquired, and nothing outstanding against it. The second half matters: a
     // mode change in flight leaves the verdict taken before the source moved.
     bool sourceIsPresent() const;

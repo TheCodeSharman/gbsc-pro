@@ -909,6 +909,29 @@ TEST_CASE("a source that comes back puts the ladder away")
     CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
 }
 
+TEST_CASE("a recovery that settles the question restarts the run")
+{
+    // Two rungs end the run rather than advancing it: a lock found on the other
+    // ADC input, and a sync-type re-probe that finds no V sync. Whether a step
+    // settled anything is the caller's to say, so it says so rather than
+    // writing a sentinel into the count -- which is what 0x07fe was.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    seedLineSamples(3250);
+    for (uint16_t i = 0; i < SyncRecovery::FirstEscalationPass; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.recoveryDue() != SyncRecovery::None);
+
+    unit.acquisition.restartRecovery();
+
+    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
+}
+
 TEST_CASE("counts that never hold still are not a source")
 {
     // The reverted attempt gated the sketch's recovery on the range check

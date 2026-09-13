@@ -288,6 +288,8 @@ SyncRecovery::Step VideoSourceAcquisition::recoveryDue() const
     return SyncRecovery::stepAt(unmeasuredPasses_);
 }
 
+void VideoSourceAcquisition::restartRecovery() { unmeasuredPasses_ = 0; }
+
 bool VideoSourceAcquisition::runPass(uint32_t nowMs)
 {
     // Asked once a pass whether it is used or not, so the cadence does not

@@ -3966,8 +3966,9 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t ifSel)
 }
 #endif
 
-// The other ADC input, kept only if something locks there quickly.
-static void tryOtherAdcInput()
+// The other ADC input, kept only if something locks there quickly. True when
+// something did, which ends the run.
+static bool tryOtherAdcInput()
 {
     const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
     delay(40);
@@ -3975,21 +3976,21 @@ static void tryOtherAdcInput()
     unsigned long timeout = millis();
     while (millis() - timeout <= 210) {
         if (getStatus16SpHsStable()) {
-            rto->noSyncCounter = 0x07fe;
-            printf("noSyncCounter max1 \n");
-            return;
+            debugPrintf("recovery: locked on the other ADC input\n");
+            return true;
         }
         handleWiFi(0);
         delay(1);
     }
 
     Tv5725::Adc::selectInput(previousInput);
+    return false;
 }
 
 // One rung of the escalation ladder. Which rung is SyncRecovery's; the
 // conditions here are facts about the source rather than about the position, so
 // a rung whose precondition fails costs its turn and the list moves on.
-static void runRecoveryStep(SyncRecovery::Step step, bool modeSettled)
+static bool runRecoveryStep(SyncRecovery::Step step, bool modeSettled)
 {
     switch (step) {
     case SyncRecovery::None:
@@ -4051,20 +4052,21 @@ static void runRecoveryStep(SyncRecovery::Step step, bool modeSettled)
         // A V sync arriving is proof of a source, so the run restarts rather
         // than escalating on to the input toggle.
         if (!geometry.reacquireSyncType()) {
-            rto->noSyncCounter = 0x07fe;
-            printf("noSyncCounter max2 \n");
+            debugPrintf("recovery: no V sync, the run is exhausted\n");
+            return true;
         }
         break;
 
     case SyncRecovery::ToggleInput:
         if (detectionMayChangeInput())
-            tryOtherAdcInput();
+            return tryOtherAdcInput();
         break;
 
     case SyncRecovery::ReopenSogSeparator:
         Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce, true);
         break;
     }
+    return false;
 }
 
 void runSyncWatcher() // 
@@ -4078,6 +4080,7 @@ void runSyncWatcher() //
     }
 
     static uint8_t newVideoModeCounter = 0;
+    bool runSettled = false;
     uint8_t detectedVideoMode = getVideoMode();
     boolean status16SpHsStable = getStatus16SpHsStable();
 
@@ -4133,8 +4136,8 @@ void runSyncWatcher() //
 
         rto->phaseIsSet = 0;
 
-        runRecoveryStep(SyncRecovery::stepAt(rto->noSyncCounter),
-                        newVideoModeCounter == 0);
+        runSettled = runRecoveryStep(inputAcquisition.recoveryDue(),
+                                     newVideoModeCounter == 0);
 
         newVideoModeCounter = 0;
     }
@@ -4546,23 +4549,12 @@ void runSyncWatcher() //
     //   }
     // }
 
-    if ((rto->noSyncCounter >= 0x07fe)) 
-    {
-        rto->noSyncCounter = 0; 
-        // prepareSyncProcessor(); 
-        printf("No Signal Out\n");
-        // rto->isInLowPowerMode = true;  
+    if (runSettled) {
+        inputAcquisition.restartRecovery();
+        rto->noSyncCounter = 0;
+        debugPrintf("No Signal Out\n");
         rto->HdmiHoldDetection = true;
     }
-    /*
-    if (rto->noSyncCounter >= 0x07fe)
-    {
-      GBS::DAC_RGBS_PWDNZ::write(0);
-      rto->noSyncCounter = 0;
-      goLowPowerWithInputDetection();
-      printf("No Signal Out\n");
-    }
-  */
 }
 
 boolean checkBoardPower()
