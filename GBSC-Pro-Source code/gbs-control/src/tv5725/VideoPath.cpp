@@ -8,6 +8,8 @@
 #include <stdio.h>
 
 #include "Adc.h"
+#include "BringUp.h"
+#include "ColourSpace.h"
 #include "CaptureWindow.h"
 #include "Deinterlacer.h"
 #include "FrameBuffer.h"
@@ -303,7 +305,36 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
             FrameBuffer::releaseCapture();
             return PollSolved;
         }
+
+        // Outgrown it. Entering pass-through configured the chip away from the
+        // scaling setup and left the memory blocks, both FIFOs and the VDS in
+        // reset; nothing else on this path claims any of that back, so leaving
+        // is where the chip comes back up. Route first, so the bring-up sees
+        // the path it is configuring.
         choice_ = scaledChoice_;
+        rasterMode_ = choice_.resolve();
+        Chip::routeToScaler();
+        if (BringUp::armed())
+            BringUp::init();
+
+        // Configured, then restarted. Chip::init() leaves the VDS and the input
+        // formatter held -- only this releases them, and only on the scaling
+        // branch, which the route above is what selects.
+        Chip::resetVideoBlocks();
+
+        // The decimator's matrix, which pass-through takes out because the HD
+        // bypass channel converts for itself. Which one the source wants is
+        // held by the class that selected the connector, so it is asked rather
+        // than handed in.
+        if (Adc::inputIsComponent())
+            ColourSpace::applyYuv();
+        else
+            ColourSpace::applyRgb();
+
+        // Armed rather than solved from here: the held rate still names the
+        // mode pass-through was entered on, so the next pass measures this one
+        // through the chip that has just been put back.
+        return PollIdle;
     } else if (passThroughSuitsSource()) {
         // The other direction, and the same question. Moving the route is the
         // caller's; what the engine holds afterwards is enterBypass()'s.

@@ -95,7 +95,11 @@ void Chip::resetVideoBlocks()
     SFTRST_INT_RSTZ::write(1);
 
     if (VideoRoute::isHdBypassChannel()) {
-        SFTRST_IF_RSTZ::write(0);
+        // The input formatter stays released. It is the only block that puts a
+        // vertical pulse on the test bus, and the field rate is timed off that
+        // pulse -- so held, a passed-through source cannot be measured and the
+        // decision to keep passing it through can never be re-answered.
+        // docs/investigations/pass-through-holds-the-only-field-rate-instrument.md
         holdMemoryBlocks();
         SFTRST_VDS_RSTZ::write(0);
         HdBypass::release();

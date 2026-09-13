@@ -3516,6 +3516,14 @@ static void restartAfterBypassSwitch()
 // dispatches on it and an RGBHV source holds PresetLoad::BypassRgbhv.
 //
 // docs/investigations/one-bypass-route-carries-rgbhv.md
+// The engine decides pass-through and this is the user's veto, so it has to
+// reach the engine every time it changes rather than being read from uopt where
+// the decision is taken. docs/video-source-acquisition.md
+static void applyPassThroughPreference()
+{
+    geometry.allowPassThrough(!uopt->preferScalingRgbhv);
+}
+
 void enterHdBypass()
 {
     if (!rto->boardHasPower) {
@@ -3835,36 +3843,6 @@ static void steerHdBypassVsyncWindow(boolean syncStable)
         }
     }
     hdBypassLastMeasure = millis();
-}
-
-// Load the preset a scaling RGBHV source of this standard wants, and put back
-// what the preset does not know it is running under: the option bit, the line
-// counter's start, the ADC's charge pump and the sync path.
-//
-// The standard reaches applyPresets() as a byte and is set straight back to the
-// scaling-RGBHV marker afterwards, which is one number carrying two facts and
-// what step 12 removes. docs/video-source-acquisition.md
-static void loadScalingRgbhvPreset(uint8_t standard, uint16_t sourceLines)
-{
-    holdStandard(standard);
-    applyPresets(standard);
-
-    Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
-    Tv5725::InputFormatter::writeLineCounterStart(16);
-    holdStandard(Tv5725::PresetLoad::Rgbhv);
-
-    Tv5725::Adc::applyScalingChargePump();
-    updateSpDynamic(1);
-    Tv5725::SyncProcessor::applyForScalingRgbhv(Tv5725::SyncMeasurement::isCsync());
-    delay(300);
-
-    if (!rto->extClockGenDetected)
-        return;
-
-    if (!Tv5725::VideoRoute::isHdBypassChannel())
-        handDisplayClockToGenerator();
-
-    externalClockGenSyncInOutRate();
 }
 
 #if GBS_DEBUG
@@ -4407,102 +4385,10 @@ void runSyncWatcher() //
     if (sourceIsRgbhv()) {
         static uint16_t RGBHVNoSyncCounter = 0;
 
-        if (rto->continousStableCounter >= 2) {
-
-            uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-
-            // Pass-through wherever it reaches the panel: a source at 640x480
-            // or above arrives intact only by being handed over, because the
-            // capture's write limit takes the sampling density away exactly as
-            // the source gains detail. docs/capture-limits.md
-            //
-            // preferScalingRgbhv is the user's override and no longer the
-            // decision. It cannot express a per-source choice, so it is due to
-            // be replaced by one stored against the SourceKey the framing uses.
-            // docs/video-source-acquisition.md
-            const bool passThrough = !uopt->preferScalingRgbhv
-                                     && sourceSampling.bypassSuitsCount(sourceLines);
-
-            if (sourceLines != 0 && rgbhvBypass() && !passThrough) {
-                SYNC_EVENT("rgbhv-leave-bypass", sourceLines);
-                const uint16_t heldLines =
-                    Tv5725::SourceMeasurement::countHeldStill(sourceLines);
-                if (heldLines != 0) {
-                    sourceLines = heldLines;
-                    rto->isValidForScalingRGBHV = true;
-                    Tv5725::PresetLoad::rememberScalingRgbhv(sourceLines);
-                    rto->autoBestHtotalEnabled = 1;
-
-                    // The field rate is measured a few lines down, so the sync
-                    // path has to be in order first. This spelled out a subset
-                    // of what SyncProcessor::applyForScalingRgbhv() writes --
-                    // byte for byte on csync, and on separate sync without
-                    // SP_CLAMP_MANUAL, SP_SOG_P_ATO or the vsync window.
-                    const bool csync = Tv5725::SyncMeasurement::isCsync();
-                    Tv5725::SyncProcessor::applyForScalingRgbhv(csync);
-                    if (!csync) {
-                        GBS::ADC_5_00::write(0x10);
-                        GBS::PLL_IS::write(0);
-                        GBS::PLL_VCORST::write(1);
-                        delay(320);
-                    }
-                    delay(4);
-
-                    float sourceRate = getSourceFieldRate(1);
-                    debugPrintf("leaving bypass: %u lines x %d.%02d Hz\n",
-                                (unsigned)sourceLines, (int)sourceRate,
-                                (int)(sourceRate * 100) % 100);
-
-                    const uint8_t standard =
-                        Tv5725::PresetLoad::rgbhvStandardFor(sourceLines, sourceRate);
-
-                    // A load has to name a resolution and pass-through is not
-                    // one. **THE PREFERENCE IS OVERWRITTEN HERE AND LATER
-                    // PERSISTED**, which is what removing bypass from the
-                    // resolution list is for: the load should take the
-                    // resolution rather than read the option.
-                    // docs/video-source-acquisition.md
-                    uopt->presetPreference = Tv5725::OutputChoice::scaledOr(
-                        (Tv5725::PresetPreference)uopt->presetPreference);
-
-                    loadScalingRgbhvPreset(standard, sourceLines);
-                }
-            }
-
-            else if (sourceLines != 0 && scalingRgbhv() && passThrough) {
-                SYNC_EVENT("rgbhv-enter-bypass", sourceLines);
-
-                const uint16_t heldLines =
-                    Tv5725::SourceMeasurement::countHeldStill(sourceLines);
-                if (heldLines != 0) {
-                    holdStandard(Tv5725::PresetLoad::BypassRgbhv);
-                    rto->isValidForScalingRGBHV = false;
-                    applyPresets(Tv5725::PresetLoad::BypassRgbhv);
-                    delay(300);
-                }
-            }
-
-            else if (sourceLines != 0 && scalingRgbhv()) {
-                SYNC_EVENT("rgbhv-keep-scaling", sourceLines);
-
-                const uint8_t wantedStandard =
-                    Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines);
-
-                if (wantedStandard != 0) {
-
-                    const uint16_t heldLines =
-                        Tv5725::SourceMeasurement::countHeldStill(sourceLines);
-                    if (heldLines != 0) {
-                        sourceLines = heldLines;
-                        uopt->presetPreference = Tv5725::OutputChoice::scaledOr(
-                            (Tv5725::PresetPreference)uopt->presetPreference);
-
-                        loadScalingRgbhvPreset(wantedStandard, sourceLines);
-                    }
-                }
-            }
-
-        }
+        // Scaled or passed through is the engine's, from the measurement, both
+        // directions -- VideoPath::passThroughSuitsSource(). What is left here
+        // is the sync-stability watch below, which is about whether there is a
+        // source at all rather than about what to do with it.
 
         uint16_t limitNoSync = 0;
         uint8_t VSHSStatus = 0;
@@ -4798,6 +4684,7 @@ void loadDefaultUserOptions()
     uopt->wantVdsLineFilter = 1;
     uopt->wantPeaking = 1;
     uopt->preferScalingRgbhv = 0;
+    applyPassThroughPreference();
     uopt->wantTap6 = 1;
     uopt->PalForce60 = 0;
     uopt->matchPresetSource = 1; 
@@ -5048,6 +4935,8 @@ void setup()
     // the only signal that a source may have changed it -- a RISC PC sets it
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
+    geometry.usePassThroughSwitch(enterHdBypass);
+    applyPassThroughPreference();
 
     // The freeze, on the tick rather than inside the engine: loop() reaches the
     // acquisition path directly rather than through runSyncWatcher()'s gate.
@@ -5321,6 +5210,7 @@ void setup()
             uopt->preferScalingRgbhv = (uint8_t)(f.read() - '0'); 
             if (uopt->preferScalingRgbhv > 1)
                 uopt->preferScalingRgbhv = 1;
+            applyPassThroughPreference();
 
             uopt->wantTap6 = (uint8_t)(f.read() - '0');
             if (uopt->wantTap6 > 1)
@@ -7105,6 +6995,7 @@ void handleType2Command(char argument)
             break;
         case 'x':
             uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
+            applyPassThroughPreference();
             ; // SerialMprint(F("preferScalingRgbhv: "));
             if (uopt->preferScalingRgbhv) {
                 ; // SerialMprintln("on");

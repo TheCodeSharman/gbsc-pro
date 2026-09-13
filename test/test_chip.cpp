@@ -141,13 +141,31 @@ TEST_CASE("on the bypass channel the scaler's blocks are left in reset")
 
     Chip::resetVideoBlocks();
 
-    CHECK(Chip::SFTRST_IF_RSTZ::read() == 0);
     CHECK(Chip::SFTRST_DEINT_RSTZ::read() == 0);
     CHECK(Chip::SFTRST_MEM_FF_RSTZ::read() == 0);
     CHECK(Chip::SFTRST_MEM_RSTZ::read() == 0);
     CHECK(Chip::SFTRST_FIFO_RSTZ::read() == 0);
     CHECK(Chip::SFTRST_OSD_RSTZ::read() == 0);
     CHECK(Chip::SFTRST_VDS_RSTZ::read() == 0);
+}
+
+TEST_CASE("the input formatter keeps running on the bypass channel")
+{
+    // It is the only block that puts a vertical pulse on the test bus, and the
+    // field rate is timed off that pulse -- so held, a passed-through source
+    // cannot be measured at all, and the decision to keep passing it through
+    // can never be re-answered. Measured: with the IF held, test bus selectors
+    // 0 and 2 carry nothing and every reading is `0.00 Hz`.
+    // docs/investigations/pass-through-holds-the-only-field-rate-instrument.md
+    //
+    // Nothing scaled reads it: the memory blocks, the FIFOs and the VDS stay
+    // held, so it counts the source and drives its test bus and writes nowhere.
+    fresh();
+    VideoRoute::toHdBypassChannel();
+
+    Chip::resetVideoBlocks();
+
+    CHECK(Chip::SFTRST_IF_RSTZ::read() == 1);
 }
 
 TEST_CASE("the decimator, mode detect and sync processor are released either way")

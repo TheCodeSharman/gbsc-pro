@@ -14,6 +14,11 @@
 
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourSpace.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
@@ -101,7 +106,19 @@ static OutputChoice benchMode() { return OutputChoice(Output1080P); }
 // The register-level switch into pass-through. The engine decides, the switch
 // is whoever knows how to move the route -- the sketch on the board, this here.
 static unsigned g_passThroughSwitches = 0;
-static void enterPassThrough() { ++g_passThroughSwitches; }
+static void enterPassThrough()
+{
+    ++g_passThroughSwitches;
+
+    // What the register-level switch does that the engine has to undo: the
+    // route moves, the scaled blocks are left in reset because nothing scaled
+    // is running, and the bring-up is armed because the chip has been
+    // configured away from the scaling setup.
+    VideoRoute::toHdBypassChannel();
+    Chip::resetVideoBlocks();
+    HdBypass::applyColourPath(Adc::inputIsComponent());
+    BringUp::arm();
+}
 
 // A source the panel takes straight: progressive, above the line doubler, at a
 // rate that reaches the sink.
@@ -422,6 +439,69 @@ TEST_CASE("a source below the line doubler is scaled even where pass-through is 
     REQUIRE(unit.pollUntilSolved());
     CHECK_FALSE(unit.path.outputMode()->isBypass());
     CHECK(g_passThroughSwitches == 0);
+}
+
+TEST_CASE("leaving pass-through puts the colour path back")
+{
+    // Pass-through takes the decimator's matrix out, because the HD bypass
+    // channel carries the conversion itself. On the scaling path the matrix is
+    // what makes an RGB source RGB, so left bypassed the picture comes back
+    // with the green channel inverted -- magenta whites over green blacks.
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.path.usePassThroughSwitch(enterPassThrough);
+    unit.path.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    HdBypass::applyColourPath(Adc::inputIsComponent());
+    BringUp::arm();
+    REQUIRE(ColourSpace::DEC_MATRIX_BYPS::read() == 1);
+
+    unit.pollFor(8);
+
+    CHECK(ColourSpace::DEC_MATRIX_BYPS::read() == 0);
+}
+
+TEST_CASE("leaving pass-through releases the blocks pass-through held")
+{
+    // Entering pass-through leaves the memory blocks, both FIFOs, the
+    // deinterlacer and the VDS in reset, because nothing scaled is running.
+    // Nothing on this path claims them back -- the preset load that used to is
+    // what the engine replaces -- so without this the output routes to a scaler
+    // whose blocks are all still held and the sink reports no signal.
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.path.usePassThroughSwitch(enterPassThrough);
+    unit.path.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    // After the re-seed, because seedBenchSource() poisons the bus and the
+    // poison byte has this bit set -- asserted before it, the hold is undone
+    // by the seeding and the check below passes against a chip nothing held.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    VideoRoute::toHdBypassChannel();
+    Chip::resetVideoBlocks();
+    BringUp::arm();
+    REQUIRE(Chip::SFTRST_VDS_RSTZ::read() == 0);
+
+    unit.pollFor(8);
+
+    CHECK(Chip::SFTRST_VDS_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_MEM_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_MEM_FF_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_FIFO_RSTZ::read() == 1);
+    CHECK(Chip::SFTRST_DEINT_RSTZ::read() == 1);
 }
 
 TEST_CASE("a source that changes under a bypassed output is solved for")
