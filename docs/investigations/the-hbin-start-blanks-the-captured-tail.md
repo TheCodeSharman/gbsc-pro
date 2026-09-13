@@ -21,8 +21,11 @@ printf 'MODE X320 Y256 C256 F50\n' | nc 192.168.88.10 6502   # wait ~18 s
 ```
 
 **It arrives on some trips and not others** -- 4 of 6 identical trips at the
-default framing. A trip through RGBHV bypass (`/uc?x` either side of the mode
-change) leaves it at about the same rate, so bypass is not required.
+default framing. Adding `/uc?x` either side of the mode change leaves it at
+about the same rate, and **that toggle does not enter bypass**: measured over
+four entries at 800x600, `DAC_RGBS_ADC2DAC` and `OUT_SYNC_SEL` stay 0 and
+`PLLAD_MD` never moves off 2039. So nothing here says bypass is involved, and a
+plain mode round trip is the whole reproduction.
 
 Strength varies by more than an order of magnitude between instances, from a
 peak of 14 grey levels to 100 over a background of 0, and the colour varies with
@@ -187,6 +190,15 @@ limit are both misplacing the capture window, and the one that neither carries
 the bar nor trips the test is 2208. The bar is one symptom of the divider
 instability rather than a separate fault, and the assumed active extent is not
 implicated on its own.
+
+A third witness reaches the whole picture rather than one edge. `PLLAD_MD` is
+how many ADC samples are taken across one source line, so 2206, 2208 and 2280
+sample the same line at three densities and the grid lands at a different phase
+against the source's finest grating each time. The beat on that grating
+therefore changes between solves, which is aliasing rather than an artefact at
+the edge, and it is visible on every frame. Three instruments now agree the
+divider is the fault and that 2208 is the solve that passes: the bar, the
+capture-origin check, and the grating beat.
 
 **Why an excursion sometimes destroys the instance.** Walking `IF_HBIN_ST` up to
 40 and back to 0 restored the bar unchanged on one instance, three times running
