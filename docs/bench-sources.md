@@ -324,6 +324,19 @@ of what the machine emits, because the ADV chain regenerates it.
   means a cable to the RGBs port and a bench trip. The branches it would reach
   are deleted by step 12 of `video-source-acquisition.md`.
 
+  **1920x1080@60 IS REACHABLE AND MEASURED, and it changes nothing about 5, 6
+  and 7.** `MODE X1920 Y1080 C256 F60` is accepted and the scaler reads it:
+  1124 lines x 60.00 Hz, line rate 67500. The standard byte goes 14 -> 15 and
+  never near 5 -- `rgbhv-enter-bypass` then `bypass-switch` in the console --
+  which is the short circuit above, confirmed on the part rather than by
+  inspection. The picture is full screen and sharp through bypass, and it beats
+  visibly: `STATUS_MISC_PLLAD_LOCK` reads 0 throughout, the ADC PLL never having
+  locked at that line rate.
+
+  **Coming back down deadlocks**, so budget a recovery before running it:
+  `investigations/leaving-bypass-needs-a-count-the-divider-cannot-give.md`.
+  `/sc?~` does not clear it; `/sampleclock?md=2208&os=4` does, at once.
+
   **What is worth having is a higher LINE RATE, and that needs neither.** The
   RISC PC reaches 40.7 kHz at 800x600@60, which is what established that a
   composite-sync source at that rate wants the narrow pulse-ignore and does not
