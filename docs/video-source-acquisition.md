@@ -863,25 +863,37 @@ Landed so far:
 - `VideoPath::sourceIsPresent()`, the measurement that replaces the
   classification at the no-sync gate -- the method, not yet the wiring
 
-**The count is not the progress.** 86 occurrences on 76 lines is roughly
-where it has sat, because what has landed so far is structural -- one
-held-standard fallback where there were three, the threshold dither deleted,
-`sourceIsPresent()` written. The references leave in two blocks, at steps 10 and
-12: the byte is deleted LATE, once the RGBHV block has moved and nothing reads
-it, rather than being unpicked reference by reference from inside a function
-that is going anyway.
+**The count is not the progress**, because what lands is structural. The
+references leave in two blocks, at steps 10 and 12: the byte is deleted LATE,
+once the RGBHV block has moved and nothing reads it, rather than being unpicked
+reference by reference from inside a function that is going anyway. What is left
+of it is two dozen live references spread over thirteen functions --
+`heldStandard()`, `holdStandard()`, `standardIsHeld()`, `sourceIsRgbhv()`,
+`optimizePhaseSP()`, `detectAndSwitchToActiveInput()`, `doPostPresetLoadSteps()`,
+`getVideoMode()`, `getStatus16SpHsStable()`, `updateSpDynamic()`,
+`enterHdBypass()`, `runSyncWatcher()` and `loop()`.
 
-**Steps 1, 2, 3, 5 and 6 have landed, and with them every bounded ownership
-move.** What is left is not extraction: steps 4 and 7 are one change, and 8 to
-13 follow the byte out. `SyncOnGreen` owns the separator level and
-its acquisition, `SyncProcessor` the coast and clamp windows, `Adc` the sampling
-phase -- leaving `updateCoastPosition()`, `updateClampPosition()` and
-`optimizePhaseSP()` as the GATES in front of them, which is step 4's to replace.
+**Steps 1, 2, 3, 5, 6, 7, 8 and 11 have landed, and with them every bounded
+ownership move.** `SyncOnGreen` owns the separator level and its acquisition,
+`SyncProcessor` the coast and clamp windows, `Adc` the sampling phase and the
+ADC PLL band, `FrameBuffer` freeze and unfreeze, and
+`VideoSourceAcquisition` the escalation ladder, with `SyncSearch` beside it
+under `src/videosource/`. That leaves `updateCoastPosition()`,
+`updateClampPosition()` and `optimizePhaseSP()` as the GATES in front of them,
+which is step 4's to replace.
 
-**Step 7 is in flight.** The ladder is an ordered list and the sketch dispatches
-on it, which is what step 4 was waiting for; what is left of step 7 is the
-OWNER -- the list still lives under `Tv5725::` and the sketch still holds the
-counter that indexes it.
+**Step 4 is next, and it is now unblocked.** It was waiting on step 7 for the
+ladder to become an ordered list with an owner, and that has landed. Both halves
+of the replacement already exist and neither is wired: `Tv5725::SteadyRun` is
+built and tested and used by `VideoSourceAcquisition` and `SourceMeasurement`,
+and `sourceIsPresent()` and `sourceState()` answer over `/geometry` -- while the
+sketch still runs `noSyncCounter` and `continousStableCounter` beside them, 66
+references over thirteen functions, 32 of them inside `runSyncWatcher()` and 13
+in `loop()`. So step 4 and step 13 are one demolition rather than two, and step
+4 is what frees the byte's value 0.
+
+Steps 9 and 10 are part-landed: `Deinterlacer`, `OutputChoice` and
+`RgbhvOutput` all exist and the sketch still steers them.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
