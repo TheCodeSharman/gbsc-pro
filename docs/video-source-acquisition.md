@@ -1245,6 +1245,91 @@ scaled against bypassed for a source with no preset. Once the user chooses
 bypass and `bypassCanBeDisplayed()` says whether the display can show it, there
 is nothing left for it to decide.
 
+### The one call: `VideoPath::setOutputMode()`
+
+The engine has three ways to be told what the output should do, and the third is
+not a way in at all:
+
+```cpp
+void outputModeChanged(const OutputChoice &choice);   // a resolution
+void enterBypass();                                    // "bypass happened"
+// and leaving is a branch inside solveFromMeasurement()
+```
+
+**An asymmetry between entering and leaving is what lets one of them acquire
+steps the other lacks.** That is not hypothetical: the leave path was missing the
+bring-up, the block restart and the colour matrix, and each was found separately,
+two of the three by photographing the television.
+`investigations/pass-through-holds-the-only-field-rate-instrument.md`.
+
+One call, both directions:
+
+```cpp
+void setOutputMode(const OutputMode &mode);   // ModeBypass, or a resolution
+```
+
+`enterBypass()`, the leave branch and `outputModeChanged()` all collapse into it,
+and `passedThrough_` goes with them -- the mode says it, so there is nothing to
+hold separately. `ModeBypass` is a real `OutputMode` with `frameLines() == 0`, so
+it is expressible as an argument without putting pass-through back into
+`PresetPreference`, where it destroyed the resolution the user chose.
+
+**The decision leaves with it.** `passThroughSuitsSource()`,
+`allowPassThrough()` and `usePassThroughSwitch()` are policy and a user
+preference living in the class this page says decides nothing. The layer above
+asks the question and calls `setOutputMode()` with the answer.
+
+#### Where it goes, and the two homes that are wrong
+
+**Not `Tv5725::HdBypass`.** That class owns s1 0x30..0x55 and its own reset bit
+-- one block, the one RD-5725-1.1 names. The operation calls into eight classes,
+of which `HdBypass` is four of nineteen calls:
+
+```
+SyncProcessor 4   HdBypass 4   Chip 3   SyncOnGreen 2
+SyncMeasurement 2   Adc 2   PresetLoad 1   BringUp 1
+```
+
+Putting it there makes a leaf block class write Chip's, SyncProcessor's, Adc's
+and BringUp's registers, which inverts the dependency and ends single ownership.
+
+**Not `VideoSourceAcquisition`.** That layer sits above `Tv5725::` and no rung of
+it writes a register.
+
+**Not a new class either**, which is the easy mistake: the LEAVE path already
+lives in `VideoPath`, delegating to block classes, so the enter belongs beside
+it. `VideoPath` is where a chip-wide route switch already is.
+
+#### What blocks moving `enterHdBypass()` in
+
+Of its 53 lines most are already `Tv5725::` calls. Four clusters pin it:
+
+| blocker | where | clears with |
+|---|---|---|
+| `rto->videoStandardInput` | `applyForStandard()`, `optimizePhaseSP()` | step 12 |
+| `FrameSync::cleanup()`, `externalClockGenResetClock()` | the display clock and the Si5351 | step 11 |
+| `adco->r/g/b`, `uopt->enableAutoGain`, `uopt->wantOutputComponent` | `applyStoredAdcGain()`, `applyRGBPatches()` | ADC gain ownership |
+| `rto->boardHasPower`, `autoBestHtotalEnabled`, `presetID` | guards and flags | with their branches |
+
+`rto->inputIsYpBpR` is NOT one of them -- `Adc::inputIsComponent()` already
+answers it from held state, and substituting it removes two lines on its own.
+Three helpers are already free of sketch state entirely:
+`setAndUpdateSogLevel()`, `resetDebugPort()` and `restartAfterBypassSwitch()`.
+
+So the move is incremental rather than blocked: the register-writing core goes
+now, and each cluster above later deletes lines from the sketch rather than
+requiring the shape to be revisited.
+
+#### The hazard
+
+`enterHdBypass()` carries an ordering constraint -- the PLL latches are last, and
+a divider written after `latchPLLAD()` leaves the register reading the new value
+while the part clocks the old one, which is a solid green screen with nothing
+self-inconsistent to diagnose from. **Any split must preserve sequence exactly.**
+What catches a violation is `test_hd_bypass.cpp` plus the three leave-path cases
+in `test_video_source_acquisition.cpp`, and a bench round trip, which is cheap:
+`printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502` and back.
+
 **11. Steer the ADC PLL.** The band index and its `PLLAD_KS`/`FS`/`ICP` writes
 become `Adc`'s, so the group has one owner on every path. **The band moved; the
 RATE did not**, and it cannot yet: `getPllRate()` drives the debug pin through
