@@ -890,19 +890,19 @@ per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
 what it meant.
 
 **Step 13 is not reachable from here, and the line counts say why.**
-`runSyncWatcher()` is 470 lines in six parts:
+`runSyncWatcher()` is 395 lines in six parts:
 
 | part | lines | whose |
 |---|---|---|
 | guards, the classifier reads, the HD bypass fixup, the interrupt hand-off, the sync-on-green tuning | 59 | steps 10 and 12 |
 | the no-sync branch | 22 | step 4, landed |
 | the new-mode branch | 65 | step 12 |
-| the stable branch | 165 | mostly **step 9** -- the deinterlacer, scanlines, motion adapt |
+| the stable branch | 62 | step 9 has taken the deinterlacer, the scanlines and the motion adapt out of it |
 | the scaling-RGBHV arm | 153 | **step 10** |
 | the park | 6 | step 4, landed |
 
-**318 of the 470 lines are steps 9 and 10**, so deleting the function needs both
-of them first. That is the order this list already states -- 8 to 13 follow the
+**Step 10's 153 lines are what is left of the two**, so deleting the function
+needs it first. That is the order this list already states -- 8 to 13 follow the
 byte out -- and it is now measured rather than asserted. Steps 9 and 10 are
 part-landed in that `Deinterlacer`, `OutputChoice` and `RgbhvOutput` all exist
 and the sketch still steers them.
@@ -1128,7 +1128,16 @@ will want it.
 
 **8. Freeze and unfreeze**, to `FrameBuffer`, which owns capture already.
 
-**9. Steer the deinterlacer**, to `Deinterlacer`.
+**9. Steer the deinterlacer**, to `Deinterlacer`. *(Landed.)*
+`Deinterlacer::steer()` holds the filtered scan type, the motion-adaptive engage
+and release, the scanlines and the re-lock in flight. The two acts outside
+`Tv5725::` -- FrameSync and the clock generator -- are REPORTED, the shape
+`SyncOnGreen::tune()` already uses, rather than injected.
+
+**The delayed re-lock's `enableFrameTimeLock` gate is gone**, because
+`FrameSync::reset()` with no standing correction only clears `syncLockReady` and
+`delayLock`, so the gate withheld nothing that the other re-lock path did not
+already do unguarded. One report, one response.
 
 **10. The RGBHV block**, to `PresetLoad` and `OutputChoice`, with the preset load
 becoming an injected action. The largest single piece, and the one that carries
