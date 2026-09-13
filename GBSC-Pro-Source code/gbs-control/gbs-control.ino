@@ -655,6 +655,7 @@ static void resetRunTimeDefaults()
     Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;
     Tv5725::Deinterlacer::forgetScanlines();
+    Tv5725::Deinterlacer::forgetSteering();
     rto->boardHasPower = true;
     Tv5725::SyncMeasurement::set(false);
     rto->isValidForScalingRGBHV = false;
@@ -1340,6 +1341,7 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 
   // The load rewrites the scanline stages, so whatever was applied is gone.
   Tv5725::Deinterlacer::forgetScanlines();
+  Tv5725::Deinterlacer::forgetSteering();
   Tv5725::PresetLoad::forgetScalingRgbhv();
 
   FrameSync::cleanup();
@@ -1403,6 +1405,7 @@ void setResetParameters()
     Tv5725::SyncOnGreen::choose(5);       
     Tv5725::Deinterlacer::disableMotionAdapt();
     Tv5725::Deinterlacer::forgetScanlines();
+    Tv5725::Deinterlacer::forgetSteering();
     Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->medResLineCount = 0x33;
@@ -2779,6 +2782,7 @@ void doPostPresetLoadSteps()
         rto->phaseIsSet = 0;
         Tv5725::Deinterlacer::disableMotionAdapt();
         Tv5725::Deinterlacer::forgetScanlines();
+        Tv5725::Deinterlacer::forgetSteering();
         rto->videoIsFrozen = true;
         rto->sourceDisconnected = false;
         rto->boardHasPower = true;
@@ -4267,102 +4271,27 @@ void runSyncWatcher() //
             if (GBS::STATUS_IF_VT_OK::read() == 1 &&
                 !Tv5725::VideoRoute::isHdBypassChannel() && unmeasuredPasses == 0) {
 
-                static uint8_t timingAdjustDelay = 0;
-                static uint8_t oddEvenWhenArmed = 0;
-                boolean preventScanlines = 0;
+                Tv5725::Deinterlacer::Preferences wanted;
+                wanted.automatic = rto->deinterlaceAutoEnabled;
+                wanted.bob = uopt->deintMode == 1;
+                wanted.scanlines = uopt->wantScanlines;
+                wanted.scanlineStrength = uopt->scanlineStrength;
+                wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
 
-                if (rto->deinterlaceAutoEnabled) {
-                    uint16_t VPERIOD_IF = GBS::VPERIOD_IF::read();
-                    static uint8_t filteredLineCountMotionAdaptiveOn = 0, filteredLineCountMotionAdaptiveOff = 0;
-                    static uint16_t VPERIOD_IF_OLD = VPERIOD_IF;
+                const uint16_t verticalPeriod = GBS::VPERIOD_IF::read();
+                const Tv5725::Deinterlacer::Steering steering =
+                    Tv5725::Deinterlacer::steer(verticalPeriod,
+                                                sourceSampling.scanType(verticalPeriod),
+                                                wanted,
+                                                Tv5725::FrameBuffer::releaseCapture);
 
-                    if (VPERIOD_IF_OLD != VPERIOD_IF) {
-
-                        preventScanlines = 1;
-                        filteredLineCountMotionAdaptiveOn = 0;
-                        filteredLineCountMotionAdaptiveOff = 0;
-                        if (uopt->enableFrameTimeLock || rto->extClockGenDetected) {
-                            if (uopt->deintMode == 1) {
-                                timingAdjustDelay = 11;
-                                oddEvenWhenArmed = VPERIOD_IF % 2;
-                            }
-                        }
-                    }
-
-                    const Tv5725::SourceMeasurement::ScanType scan =
-                        sourceSampling.scanType(VPERIOD_IF);
-
-                    if (scan == Tv5725::SourceMeasurement::ScanInterlaced) {
-                        filteredLineCountMotionAdaptiveOn++;
-                        filteredLineCountMotionAdaptiveOff = 0;
-                        if (filteredLineCountMotionAdaptiveOn >= 2) {
-                            if (uopt->deintMode == 0 && !Tv5725::Deinterlacer::motionAdaptEngaged()) {
-                                disableScanlines();
-                                enableMotionAdaptDeinterlace();
-                                if (timingAdjustDelay == 0) {
-                                    timingAdjustDelay = 11;
-                                    oddEvenWhenArmed = VPERIOD_IF % 2;
-                                } else {
-                                    timingAdjustDelay = 0;
-                                }
-                                preventScanlines = 1;
-                            }
-                            filteredLineCountMotionAdaptiveOn = 0;
-                        }
-                    } else if (scan == Tv5725::SourceMeasurement::ScanProgressive) {
-                        filteredLineCountMotionAdaptiveOff++;
-                        filteredLineCountMotionAdaptiveOn = 0;
-                        if (filteredLineCountMotionAdaptiveOff >= 2) {
-                            if (uopt->deintMode == 0 && Tv5725::Deinterlacer::motionAdaptEngaged()) {
-                                disableMotionAdaptDeinterlace();
-                                if (timingAdjustDelay == 0) {
-                                    timingAdjustDelay = 11;
-                                    oddEvenWhenArmed = VPERIOD_IF % 2;
-                                } else {
-                                    timingAdjustDelay = 0;
-                                }
-                            }
-                            filteredLineCountMotionAdaptiveOff = 0;
-                        }
-                    } else {
-                        filteredLineCountMotionAdaptiveOn = filteredLineCountMotionAdaptiveOff = 0;
-                    }
-                    VPERIOD_IF_OLD = VPERIOD_IF;
-
-                    if (uopt->deintMode == 1) {
-                        if (Tv5725::Deinterlacer::motionAdaptEngaged()) {
-                            disableMotionAdaptDeinterlace();
-                            FrameSync::reset(uopt->frameTimeLockMethod);
-                            lastVsyncLock = millis();
-                        }
-                        if (uopt->wantScanlines && !Tv5725::Deinterlacer::scanlinesApplied()) {
-                            enableScanlines();
-                        } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
-                            disableScanlines();
-                        }
-                    }
-
-                    if (timingAdjustDelay != 0) {
-                        if ((VPERIOD_IF % 2) == oddEvenWhenArmed) {
-                            timingAdjustDelay--;
-                            if (timingAdjustDelay == 0) {
-                                if (uopt->enableFrameTimeLock) {
-                                    FrameSync::reset(uopt->frameTimeLockMethod);
-                                    delay(10);
-                                    lastVsyncLock = millis();
-                                }
-                                externalClockGenSyncInOutRate();
-                            }
-                        }
-                    }
+                if (steering.frameTimingMoved) {
+                    FrameSync::reset(uopt->frameTimeLockMethod);
+                    lastVsyncLock = millis();
                 }
-
-                if (uopt->wantScanlines) {
-                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !Tv5725::Deinterlacer::motionAdaptEngaged() && !preventScanlines) {
-                        enableScanlines();
-                    } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
-                        disableScanlines();
-                    }
+                if (steering.outputRateSettled) {
+                    delay(10);
+                    externalClockGenSyncInOutRate();
                 }
             }
         }

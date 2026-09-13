@@ -531,6 +531,7 @@ static void LoadDefault()
     Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
     Tv5725::Deinterlacer::forgetScanlines();
+    Tv5725::Deinterlacer::forgetSteering();
     rto->boardHasPower = true;                    // 板有电源
     Tv5725::SyncMeasurement::set(false);                   // 同步类型
 

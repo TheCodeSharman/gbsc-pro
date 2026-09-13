@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#include "SourceMeasurement.h"
+
 namespace Tv5725 {
 
 // The motion-adaptive deinterlacer and the diagonal bob before it: the whole of
@@ -543,6 +545,63 @@ public:
     // is what let the two disagree, after which nothing could turn the path
     // off again. docs/investigations/the-deinterlacer-had-two-owners.md
     static bool motionAdaptEngaged();
+
+    // What the user asked the deinterlacer to do. Settings throughout; nothing
+    // here is measured.
+    struct Preferences {
+        // Follow the measured scan type. Off leaves the motion-adaptive path
+        // wherever it was put by hand.
+        bool automatic;
+
+        // Bob rather than motion adapt: drop the second field instead of
+        // interpolating between the two.
+        bool bob;
+
+        bool scanlines;
+        uint8_t scanlineStrength;
+
+        // Whether anything downstream is locked to the output frame time, and
+        // so whether a re-lock is worth arming when the source moves.
+        bool relockable;
+    };
+
+    // What one steering pass decided beyond the registers it wrote itself.
+    // Both acts are outside Tv5725::, so they are reported rather than done.
+    struct Steering {
+        // The deinterlacer changed how many lines it emits, so anything locked
+        // to the output frame time is stale.
+        bool frameTimingMoved;
+
+        // ...and the move has settled, so the generated clock can be resynced
+        // to the new ratio between the rates.
+        bool outputRateSettled;
+    };
+
+    // One maintenance pass over a source that is acquired: engage or release
+    // the motion-adaptive path from the scan type, apply the scanlines asked
+    // for, and say when the output frame timing moved underneath.
+    //
+    // The scan type is filtered over FilteredPasses consecutive readings, and a
+    // vertical period that moves restarts the filter -- a mode still settling
+    // reads as either type before it reads as the right one.
+    //
+    // `releaseCapture` is the caller's unfreeze, for the order enableMotionAdapt()
+    // needs.
+    static Steering steer(uint16_t verticalPeriod,
+                          SourceMeasurement::ScanType scan,
+                          const Preferences &wanted,
+                          void (*releaseCapture)());
+
+    // The chip's deinterlacer state was torn down, so the filtered run and any
+    // re-lock in flight describe a configuration that is gone.
+    static void forgetSteering();
+
+    // Consecutive readings of one scan type before it is acted on.
+    static const uint8_t FilteredPasses = 2;
+
+    // How long a re-lock waits after the change that armed it, counted in
+    // passes where the field parity matches the one it was armed at.
+    static const uint8_t RelockPasses = 11;
 };
 
 }  // namespace Tv5725

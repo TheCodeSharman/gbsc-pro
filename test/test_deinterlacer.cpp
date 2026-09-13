@@ -456,3 +456,263 @@ TEST_CASE("the chroma delay pipe beside it is left alone")
 
     CHECK(Wire.field(2, 0x17, 4, 4) == ((Poison >> 4) & 0xF));
 }
+
+// Steering: one maintenance pass over an acquired source, which is where the
+// motion-adaptive path is engaged and released and where the scanlines follow
+// the preference. docs/video-source-acquisition.md
+
+using Tv5725::SourceMeasurement;
+
+static Deinterlacer::Preferences automatic()
+{
+    Deinterlacer::Preferences wanted;
+    wanted.automatic = true;
+    wanted.bob = false;
+    wanted.scanlines = false;
+    wanted.scanlineStrength = 0x40;
+    wanted.relockable = false;
+    return wanted;
+}
+
+struct AtRest {
+    AtRest()
+    {
+        Wire.reset();
+        Wire.poison(Poison);
+        Deinterlacer::disableMotionAdapt();
+        Deinterlacer::forgetScanlines();
+        Deinterlacer::forgetSteering();
+        g_released = 0;
+    }
+};
+
+static Deinterlacer::Steering pass(uint16_t verticalPeriod,
+                                   SourceMeasurement::ScanType scan,
+                                   const Deinterlacer::Preferences &wanted)
+{
+    return Deinterlacer::steer(verticalPeriod, scan, wanted, releaseStub);
+}
+
+TEST_CASE("one interlaced reading is not enough to engage the motion-adaptive path")
+{
+    AtRest rest;
+
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a settled run of interlaced readings engages it")
+{
+    AtRest rest;
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a vertical period that moved restarts the run")
+{
+    AtRest rest;
+
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    pass(525, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a reading of neither scan type restarts the run")
+{
+    AtRest rest;
+
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    pass(524, SourceMeasurement::ScanUnknown, automatic());
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a settled run of progressive readings releases it again")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanProgressive, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("engaging the motion-adaptive path turns the scanlines off")
+{
+    AtRest rest;
+    Deinterlacer::enableScanlines(0x40);
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the scanlines asked for are applied on a progressive source")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.scanlines = true;
+
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("no scanlines are applied on the pass where the vertical period moved")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+    wanted.scanlines = true;
+
+    pass(525, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the scanlines follow the preference with the steering switched off")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.automatic = false;
+    wanted.scanlines = true;
+
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the scan type steers nothing with the steering switched off")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.automatic = false;
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, wanted);
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("bob releases the motion-adaptive path")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.bob = true;
+
+    pass(524, SourceMeasurement::ScanInterlaced, wanted);
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("releasing it for bob reports the frame timing moved")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.bob = true;
+
+    const Deinterlacer::Steering steering =
+        pass(524, SourceMeasurement::ScanInterlaced, wanted);
+
+    CHECK(steering.frameTimingMoved);
+}
+
+TEST_CASE("bob takes the scanlines away when they are no longer wanted")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.bob = true;
+    wanted.scanlines = true;
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+    wanted.scanlines = false;
+
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("nothing is reported while the re-lock is still counting out")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    bool reported = false;
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses - 2; i++)
+        reported |= pass(524, SourceMeasurement::ScanInterlaced, automatic())
+                        .outputRateSettled;
+
+    CHECK_FALSE(reported);
+}
+
+TEST_CASE("the re-lock is reported once the count runs out")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses - 2; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    const Deinterlacer::Steering steering =
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK(steering.outputRateSettled);
+    CHECK(steering.frameTimingMoved);
+}
+
+TEST_CASE("a pass at the other field parity does not advance the count")
+{
+    // The parity is how an interlaced source's two fields are told apart, so a
+    // re-lock armed on one field is counted out on that field alone.
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    bool reported = false;
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses * 2; i++)
+        reported |= pass(525, SourceMeasurement::ScanInterlaced, automatic())
+                        .outputRateSettled;
+
+    CHECK_FALSE(reported);
+}
+
+TEST_CASE("a second change inside the window cancels the re-lock")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanProgressive, automatic());
+
+    bool reported = false;
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses * 2; i++)
+        reported |= pass(524, SourceMeasurement::ScanProgressive, automatic())
+                        .outputRateSettled;
+
+    CHECK_FALSE(reported);
+}
+
+TEST_CASE("a settled source that has not moved reports nothing")
+{
+    AtRest rest;
+
+    const Deinterlacer::Steering steering =
+        pass(524, SourceMeasurement::ScanProgressive, automatic());
+
+    CHECK_FALSE(steering.frameTimingMoved);
+    CHECK_FALSE(steering.outputRateSettled);
+}

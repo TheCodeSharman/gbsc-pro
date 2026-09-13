@@ -12,6 +12,15 @@ namespace {
 bool scanlinesApplied_ = false;
 bool motionAdaptEngaged_ = false;
 
+// The steering's own state: the filtered scan type, the period it was counted
+// against, and a re-lock waiting for the source to settle under it.
+uint8_t interlacedRun_ = 0;
+uint8_t progressiveRun_ = 0;
+uint16_t lastPeriod_ = 0;
+bool periodKnown_ = false;
+uint8_t relockDelay_ = 0;
+uint8_t relockParity_ = 0;
+
 // Which broadcast family the period sits in, and how far either side of a
 // total still names it. The tap is a family choice, not a scan-type one.
 const uint16_t NtscPeriod = 524;
@@ -22,6 +31,32 @@ bool namesPeriod(uint16_t verticalPeriod, uint16_t total)
 {
     return verticalPeriod + PeriodTolerance >= total
         && verticalPeriod <= total + PeriodTolerance;
+}
+
+void armRelock(uint16_t verticalPeriod)
+{
+    relockDelay_ = Deinterlacer::RelockPasses;
+    relockParity_ = verticalPeriod % 2;
+}
+
+// A second change while one is already waiting cancels it rather than re-arming:
+// the source is still moving, so there is nothing settled to lock to.
+void rearmRelock(uint16_t verticalPeriod)
+{
+    if (relockDelay_ == 0)
+        armRelock(verticalPeriod);
+    else
+        relockDelay_ = 0;
+}
+
+// Counted out on the field the re-lock was armed at, which is what the parity
+// of the period names.
+bool relockCountedOut(uint16_t verticalPeriod)
+{
+    if (relockDelay_ == 0 || (verticalPeriod % 2) != relockParity_)
+        return false;
+
+    return --relockDelay_ == 0;
 }
 
 }  // namespace
@@ -274,6 +309,81 @@ void Deinterlacer::disableMotionAdapt()
     MADPT_Y_MI_OFFSET::write(0x7f);
     MADPT_Y_MI_DET_BYPS::write(1);
     motionAdaptEngaged_ = false;
+}
+
+void Deinterlacer::forgetSteering()
+{
+    interlacedRun_ = 0;
+    progressiveRun_ = 0;
+    periodKnown_ = false;
+    relockDelay_ = 0;
+}
+
+Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
+                                           SourceMeasurement::ScanType scan,
+                                           const Preferences &wanted,
+                                           void (*releaseCapture)())
+{
+    Steering steering = {false, false};
+    bool reconfiguring = false;
+
+    if (wanted.automatic) {
+        if (periodKnown_ && lastPeriod_ != verticalPeriod) {
+            reconfiguring = true;
+            interlacedRun_ = 0;
+            progressiveRun_ = 0;
+            if (wanted.relockable && wanted.bob)
+                armRelock(verticalPeriod);
+        }
+        periodKnown_ = true;
+        lastPeriod_ = verticalPeriod;
+
+        if (scan == SourceMeasurement::ScanInterlaced) {
+            progressiveRun_ = 0;
+            if (++interlacedRun_ >= FilteredPasses) {
+                if (!wanted.bob && !motionAdaptEngaged_) {
+                    disableScanlines();
+                    enableMotionAdapt(verticalTapFor(verticalPeriod), releaseCapture);
+                    rearmRelock(verticalPeriod);
+                    reconfiguring = true;
+                }
+                interlacedRun_ = 0;
+            }
+        } else if (scan == SourceMeasurement::ScanProgressive) {
+            interlacedRun_ = 0;
+            if (++progressiveRun_ >= FilteredPasses) {
+                if (!wanted.bob && motionAdaptEngaged_) {
+                    disableMotionAdapt();
+                    rearmRelock(verticalPeriod);
+                }
+                progressiveRun_ = 0;
+            }
+        } else {
+            interlacedRun_ = 0;
+            progressiveRun_ = 0;
+        }
+
+        if (wanted.bob) {
+            if (motionAdaptEngaged_) {
+                disableMotionAdapt();
+                steering.frameTimingMoved = true;
+            }
+            if (wanted.scanlines && !scanlinesApplied_)
+                enableScanlines(wanted.scanlineStrength);
+            else if (!wanted.scanlines && scanlinesApplied_)
+                disableScanlines();
+        }
+
+        if (relockCountedOut(verticalPeriod)) {
+            steering.frameTimingMoved = true;
+            steering.outputRateSettled = true;
+        }
+    }
+
+    if (wanted.scanlines && !scanlinesApplied_ && !motionAdaptEngaged_ && !reconfiguring)
+        enableScanlines(wanted.scanlineStrength);
+
+    return steering;
 }
 
 void Deinterlacer::applyScanMode(bool lineDoubled)
