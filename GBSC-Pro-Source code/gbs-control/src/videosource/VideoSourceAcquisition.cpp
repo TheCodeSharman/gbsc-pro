@@ -77,16 +77,6 @@ void VideoSourceAcquisition::holdSolvedSource()
     sourceState_ = SourceAcquired;
 }
 
-// Bypass solves no raster, so what the last scaled solve ran against no longer
-// describes what is on air. Leaving bypass through outputModeChanged() never
-// solves either, so a count left standing would arm a source event against a
-// measurement two output modes old.
-void VideoSourceAcquisition::forgetSolvedSource()
-{
-    solvedLines_ = 0;
-    solvedLineRateHz_ = 0;
-}
-
 // Whether the count has held long enough to be the source's rather than a
 // reading taken through something still settling.
 bool VideoSourceAcquisition::countHeld(uint16_t lines)
@@ -99,11 +89,13 @@ bool VideoSourceAcquisition::countHeld(uint16_t lines)
 // change's first poll believing a count from the mode before it.
 bool VideoSourceAcquisition::sourceMoved()
 {
-    // Bypass has no scaled raster to re-solve, and enterBypass() drops the mode
-    // change so a later poll cannot write one over the setup it just chose.
+    // A bypassed output is watched like any other. The line count is a property
+    // of the SOURCE and bypass does not change it, so the count the mode change
+    // into bypass settled on is the reference a later move is measured against
+    // -- and without one there is no event, which is what left a source that
+    // moved under bypass with no route back.
+    // docs/investigations/leaving-bypass-needs-a-count-the-divider-cannot-give.md
     const Tv5725::OutputMode *mode = videoPath_.outputMode();
-    if (mode != 0 && mode->isBypass())
-        forgetSolvedSource();
     if (mode == 0 || solvedLines_ == 0) {
         sourceInterrupted_ = false;
         return false;

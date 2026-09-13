@@ -206,6 +206,10 @@ private:
     bool modePending_;
     uint8_t modeOversample_;
     OutputChoice choice_;
+
+    // The output bypass displaced, so leaving it restores what was asked for
+    // rather than re-deriving a resolution nobody chose.
+    OutputChoice scaledChoice_;
     const OutputMode *rasterMode_;
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.

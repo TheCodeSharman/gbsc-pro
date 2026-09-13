@@ -85,6 +85,16 @@ static void seedField(uint8_t seg, uint8_t reg, uint8_t offset, uint8_t width,
 // The registers the engine is allowed to read, so a poison wipes the source
 // itself: a case that poisons mid-test and expects the same source has to put
 // them back.
+// A raster the panel takes straight: progressive, above the line doubler, and
+// at a rate that reaches the sink. What pass-through is decided from.
+static void seedPassThroughSource()
+{
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
+    g_fieldRate = 60.0f;
+}
+
 static void seedSourceMeasurement()
 {
     seedField(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
@@ -385,7 +395,13 @@ TEST_CASE("entering bypass leaves nothing to solve")
 {
     // In RGBHV bypass the VDS is out of the video path: there is no scaled
     // raster, so a solve must write nothing rather than size a window for one.
+    //
+    // On a source pass-through actually suits. The engine re-answers that from
+    // the measurement on every mode change, so a 15 kHz line-doubled source
+    // parked here would correctly leave rather than sit still.
     seedBenchSource();
+    seedPassThroughSource();
+
     DisplayClock clock;
     SourceMeasurement sampling;
     FramingTable framings;
@@ -398,6 +414,10 @@ TEST_CASE("entering bypass leaves nothing to solve")
 
     Wire.reset();
     poisonChip();
+    // The source has not gone anywhere, and the layer reads it on every pass
+    // now: without this the count comes back as whatever the poison implies and
+    // the engine correctly leaves a pass-through no source is asking for.
+    seedPassThroughSource();
     engine.enterBypass();
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(pollOnce(acquisition));

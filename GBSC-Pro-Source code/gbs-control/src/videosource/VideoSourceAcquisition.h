@@ -60,7 +60,7 @@ private:
     bool rateMoved();
     bool countHeld(uint16_t lines);
     void holdSolvedSource();
-    void forgetSolvedSource();
+
 
     // Measure the source, through the state prepareToMeasure() just established.
     // `settling` distinguishes a source that cannot be read YET from one that

@@ -342,14 +342,49 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         CHECK(g_fieldRateCalls > 0);
     }
 
-    SUBCASE("bypass has no raster to re-solve, so it stays put") {
+    SUBCASE("a bypassed output is re-decided rather than left alone") {
+        // Pass-through is a statement about the source, so the event that says
+        // the source may have moved has to reach it. This one cannot stay: the
+        // bench source is line-doubled and 15 kHz, which no panel takes raw.
         unit.path.enterBypass();
         unit.acquisition.sourceInterrupted();
-        g_fieldRateCalls = 0;
-        for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
-            CHECK_FALSE(unit.poll());
-        CHECK(g_fieldRateCalls == 0);
+        CHECK(unit.pollUntilSolved(8));
+        CHECK_FALSE(unit.path.outputMode()->isBypass());
     }
+}
+
+TEST_CASE("a source that changes under a bypassed output is solved for")
+{
+    // The bench fault: with the output bypassed the source changes mode, the
+    // layer never looks, and every register stays sized for the mode that was
+    // left. The divider is one of them, so the count is read through the wrong
+    // sampling clock, never settles, and the solve that would re-derive it is
+    // the thing that cannot be reached.
+    // docs/investigations/leaving-bypass-needs-a-count-the-divider-cannot-give.md
+    seedBenchSource();
+    seedSourceLines(524);
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
+    g_fieldRate = 60.0f;
+
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // Passed through, on a raster the panel takes straight, with the divider
+    // the bypass switch chose rather than the one the last solve did.
+    unit.path.enterBypass();
+    REQUIRE(unit.path.outputMode()->isBypass());
+    seed(5, 0x12, 0, 12, 1886);
+
+    // and the source drops to the bench mode, which is 15 kHz and line-doubled,
+    // so pass-through no longer reaches the panel at all.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+
+    CHECK(unit.pollUntilSolved(8));
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+    CHECK(Adc::PLLAD_MD::read() == BenchDivider);
 }
 
 TEST_CASE("a source counted steadily and sampled at the chosen divider is acquired")
