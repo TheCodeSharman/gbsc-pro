@@ -32,7 +32,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
-      choice_(), scaledChoice_(), rasterMode_(0),
+      choice_(), scaledChoice_(), passThroughSwitch_(0), passThroughAllowed_(false),
+      rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
 
@@ -219,6 +220,20 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     sampling_.applySampling(modeOversample_);
 }
 
+void VideoPath::usePassThroughSwitch(void (*enter)()) { passThroughSwitch_ = enter; }
+
+void VideoPath::allowPassThrough(bool allowed) { passThroughAllowed_ = allowed; }
+
+// Whether the source just measured arrives intact only by being handed over.
+// Both halves are the measurement's: a raster the line doubler is not needed
+// for, at a rate that reaches the sink. docs/capture-limits.md
+bool VideoPath::passThroughSuitsSource() const
+{
+    return passThroughAllowed_ && passThroughSwitch_ != 0
+           && sampling_.bypassSuitsCount(sampling_.sourceLines())
+           && sampling_.rateCanBypass();
+}
+
 bool VideoPath::outputModeChanged(const OutputChoice &choice)
 {
     choice_ = choice;
@@ -283,13 +298,18 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     // docs/video-source-acquisition.md
     const OutputMode *current = choice_.resolve();
     if (current != 0 && current->isBypass()) {
-        if (sampling_.bypassSuitsCount(sampling_.sourceLines())
-            && sampling_.rateCanBypass()) {
+        if (passThroughSuitsSource()) {
             modePending_ = false;
             FrameBuffer::releaseCapture();
             return PollSolved;
         }
         choice_ = scaledChoice_;
+    } else if (passThroughSuitsSource()) {
+        // The other direction, and the same question. Moving the route is the
+        // caller's; what the engine holds afterwards is enterBypass()'s.
+        passThroughSwitch_();
+        enterBypass();
+        return PollSolved;
     }
 
     if (!solveSampling(modeOversample_))

@@ -98,6 +98,21 @@ struct Acquiring {
 
 static OutputChoice benchMode() { return OutputChoice(Output1080P); }
 
+// The register-level switch into pass-through. The engine decides, the switch
+// is whoever knows how to move the route -- the sketch on the board, this here.
+static unsigned g_passThroughSwitches = 0;
+static void enterPassThrough() { ++g_passThroughSwitches; }
+
+// A source the panel takes straight: progressive, above the line doubler, at a
+// rate that reaches the sink.
+static void seedPassThroughSource()
+{
+    seedField(0, 0x1B, 0, 11, 524);    // STATUS_SYNC_PROC_VTOTAL
+    seedField(0, 0x19, 0, 12, 129);    // STATUS_SYNC_PROC_HLOW_LEN
+    seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL, negative-going
+    g_fieldRate = 60.0f;
+}
+
 // The sync-type probe, and how often it was asked. Whether a source carries its
 // own V sync cannot be read back, so the engine is handed a function that says.
 static bool g_hasOwnVsync = true;
@@ -351,6 +366,62 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         CHECK(unit.pollUntilSolved(8));
         CHECK_FALSE(unit.path.outputMode()->isBypass());
     }
+}
+
+TEST_CASE("a source the panel takes straight is passed through, not scaled")
+{
+    // Pass-through is decided from the MEASUREMENT rather than from a
+    // classification of the source: a raster above the line doubler at a rate
+    // that reaches the sink arrives intact only by being handed over, because
+    // the capture's write limit takes the sampling density away exactly as the
+    // source gains detail. docs/capture-limits.md
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.path.usePassThroughSwitch(enterPassThrough);
+    unit.path.allowPassThrough(true);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    CHECK(unit.path.outputMode()->isBypass());
+    CHECK(g_passThroughSwitches == 1);
+}
+
+TEST_CASE("pass-through refused leaves the same source scaled")
+{
+    // The interim stand-in for a per-source override. It cannot express one, so
+    // it is off by default and is not the decision -- but where it is set, the
+    // measurement does not get to overrule it.
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.path.usePassThroughSwitch(enterPassThrough);
+    unit.path.allowPassThrough(false);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+    CHECK(g_passThroughSwitches == 0);
+}
+
+TEST_CASE("a source below the line doubler is scaled even where pass-through is allowed")
+{
+    // The bench source: 15 kHz and line-doubled, which no panel takes raw.
+    seedBenchSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.path.usePassThroughSwitch(enterPassThrough);
+    unit.path.allowPassThrough(true);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved());
+    CHECK_FALSE(unit.path.outputMode()->isBypass());
+    CHECK(g_passThroughSwitches == 0);
 }
 
 TEST_CASE("a source that changes under a bypassed output is solved for")

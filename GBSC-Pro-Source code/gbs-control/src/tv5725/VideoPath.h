@@ -53,6 +53,17 @@ public:
     // docs/sync-type-selection.md
     void useSyncTypeProbe(bool (*hasOwnVsync)());
 
+    // How the output route is moved into pass-through. The engine decides FROM
+    // THE MEASUREMENT whether to; moving the route is the caller's, because it
+    // is a chip-wide switch rather than a geometry solve. Leaving needs no
+    // action: solveRaster() claims the route back.
+    void usePassThroughSwitch(void (*enter)());
+
+    // Whether pass-through is offerable at all. The interim stand-in for a
+    // per-source override -- a single boolean cannot express one.
+    // docs/video-source-acquisition.md
+    void allowPassThrough(bool allowed);
+
     // The source's timings moved, so the capture window and everything solved
     // from it are stale. The registers are not written until the source has
     // settled, and the choice does not become a resolution until the field rate
@@ -168,6 +179,8 @@ private:
     // decision and the wrong order sizes the divider for the previous source.
     void solveScanMode();
 
+    bool passThroughSuitsSource() const;
+
     bool fail();
 
     void establishSyncType();
@@ -210,6 +223,9 @@ private:
     // The output bypass displaced, so leaving it restores what was asked for
     // rather than re-deriving a resolution nobody chose.
     OutputChoice scaledChoice_;
+
+    void (*passThroughSwitch_)();
+    bool passThroughAllowed_;
     const OutputMode *rasterMode_;
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.
