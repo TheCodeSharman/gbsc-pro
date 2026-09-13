@@ -78,6 +78,18 @@ the leave-bypass arm does not use it.
 divider, not through the divider the previous mode left.** That is already the
 rule on the scaling path. Bypass is the path it has not reached.
 
+## THE OUTCOME IS NO PICTURE, AND THE SINK SAYS SO
+
+The television reports **"No signal"**, not a mode it cannot place. That is the
+distinction `CLAUDE.md` draws for the stale-timing fault: a sink that rejected a
+mode reports no mode, a sink holding a stale one names the old rate. So the
+scaler is emitting timing the sink will not lock to at all -- which is what a
+1915 x 1125 raster clocked from the 81 MHz HD-bypass seed is.
+
+**This is a regression against the firmware this forked from**, which did not
+lose the picture on a source mode change. The recovery is not merely slow, it is
+absent: nothing the user can reach puts the picture back.
+
 ## What is actually left stale, measured with the full solve set
 
 The first pass at this compared the output registers and found them identical,
@@ -106,6 +118,16 @@ themselves:
 
 `/geometry` reports `state: absent` and a line rate of 85882 throughout, so the
 engine knows it has not solved. It simply has no route back.
+
+**A PARTIAL RECOVERY IS ITS OWN STATE, and it is what produces a picture that
+looks merely wrong rather than absent.** `/sampleclock` restores the sampling
+divider, the count settles and the engine reaches `acquired` -- but only the
+registers that solve writes are corrected. Photographed in that state the
+picture is present, panned about 59 output pixels from where a full solve puts
+it, with a grey bar down the right where the playback stage fetches past the end
+of what was written. A following `/sc?~` clears both. So a picture that is
+present but misplaced after an excursion is an INCOMPLETE solve, and the fields
+to read are the ones a raster comparison does not carry.
 
 **The output sync pulses are NOT the cause here**, and it is worth saying so
 because they are the usual one: `VDS_HS_ST` and `VDS_HS_SP` held 0 and 32 across
