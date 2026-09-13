@@ -3020,18 +3020,12 @@ void doPostPresetLoadSteps()
 
         // OutputComponentOrVGA();
 
-        if (!uopt->preferScalingRgbhv && !rgbhvBypass()) {
-            rto->autoBestHtotalEnabled = 0;
-            if (rto->applyPresetDoneStage == 11) {
-
-                rto->applyPresetDoneStage = 1;
-            } else {
-                rto->applyPresetDoneStage = 10;
-            }
-        } else {
-
-            rto->applyPresetDoneStage = 1;
-        }
+        // Pass-through is not decided here. It is a statement about the
+        // measured source, and this runs at the end of a preset load with
+        // whatever the PREVIOUS source measured still held --
+        // VideoSourceAcquisition::passSourceThrough() owns it and re-answers it
+        // from each measurement. docs/video-source-acquisition.md
+        rto->applyPresetDoneStage = 1;
 
         // Capture stays frozen: it is released by the poll() that lands the
         // windows, seconds from now once the source has settled into the new
@@ -3161,8 +3155,19 @@ void applyPresets(uint8_t result)
     // OSD menu items, which is a menu-layout change only a remote can check.
     // docs/video-source-acquisition.md
 
+    // Pass-through is not a preset. A source asking for it still loads the
+    // scaled path, which shows any rate, and whether it is actually passed
+    // through is answered from the measurement that follows, by
+    // VideoSourceAcquisition::passSourceThrough() -- the only caller with one.
+    // docs/video-source-acquisition.md
+    if (result == Tv5725::PresetLoad::BypassRgbhv) {
+        result = Tv5725::PresetLoad::Rgbhv;
+        rto->isValidForScalingRGBHV = true;
+    }
+
     if (result == 1 || result == 3 || result == 8 || result == 9 ||
-        result == Tv5725::PresetLoad::Rgbhv || result == 2 || result == 4) {
+        result == Tv5725::PresetLoad::Rgbhv || result == 2 || result == 4 ||
+        result == 5 || result == 6 || result == 7 || result == 13) {
 
         // **TWO BRANCHES AND TWELVE TABLE LOADS WERE HERE, AND THEY DIFFERED IN
         // NOTHING BUT WHICH TABLE.** One branch per source standard, each a
@@ -3175,28 +3180,6 @@ void applyPresets(uint8_t result)
         const bool pal = (result == 2 || result == 4);
         const Tv5725::OutputChoice choice = outputChoiceFor();
         loadComputedPreset(choice, presetIdFor(choice.resolve(), pal));
-    } else if (result == 5 || result == 6 || result == 7 || result == 13) {
-
-        holdStandard(result);
-        enterHdBypass();
-        return;
-    } else if (result == Tv5725::PresetLoad::BypassRgbhv) {
-        if (!bypassCanBeDisplayed()) {
-            // Back to the scaling path, which shows any rate. The request is the
-            // caller's statement that this source has no preset, not an
-            // instruction to put an unshowable raster on the panel.
-            printf("bypass refused: %lu Hz line, needs %lu\n",
-                   (unsigned long)sourceSampling.heldLineRateHz(),
-                   (unsigned long)Tv5725::SourceMeasurement::BypassMinLineRateHz);
-            holdStandard(Tv5725::PresetLoad::Rgbhv);
-            rto->isValidForScalingRGBHV = true;
-            const Tv5725::OutputChoice choice = outputChoiceFor();
-            loadComputedPreset(choice, presetIdFor(choice.resolve(), false));
-        } else {
-            holdStandard(Tv5725::PresetLoad::BypassRgbhv);
-            enterHdBypass();
-            return;
-        }
     }
 
     holdStandard(result);
@@ -4189,15 +4172,11 @@ void runSyncWatcher() //
                 } else {
                     Tv5725::SyncMeasurement::set(false); 
                 }
-                boolean wantPassThroughMode = !uopt->preferScalingRgbhv;
-
-                if (!wantPassThroughMode) {
-
-                    applyPresets(detectedVideoMode);
-                } else {
-                    holdStandard(detectedVideoMode);
-                    enterHdBypass();
-                }
+                // The preference is not a route. Whether this source can be
+                // passed through is answered from the measurement that follows,
+                // by VideoSourceAcquisition::passSourceThrough(), which is the
+                // only caller that has one. docs/video-source-acquisition.md
+                applyPresets(detectedVideoMode);
                 holdStandard(detectedVideoMode);
                 newVideoModeCounter = 0;
                 forgetHdBypassLineCount();
@@ -5643,12 +5622,6 @@ void loop()
 
         externalClockGenSyncInOutRate();
         rto->applyPresetDoneStage = 0;
-    }
-
-    if (rto->applyPresetDoneStage == 10) // 
-    {
-        rto->applyPresetDoneStage = 11;
-        enterHdBypass();
     }
 
     if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && rto->boardHasPower) {
