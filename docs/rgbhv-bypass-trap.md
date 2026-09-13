@@ -97,7 +97,7 @@ IF simply is not in the path. Establish whether you are in bypass *before*
 reading anything into `HPERIOD_IF`.
 
 **`/geometry` reports the rate held from BEFORE bypass, not `0`.** Bypass
-measures nothing and `VideoPath::enterBypass()` keeps the last measurement
+measures nothing and `VideoPath::setOutputMode()` keeps the last measurement
 deliberately, so the field the engine reports names the mode bypass was entered
 on. Measured: `lineRateHz: 31690` with the source counting 311 lines at 50 Hz,
 thirty seconds after it changed mode. The framing values beside it are the

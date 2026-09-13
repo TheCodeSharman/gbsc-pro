@@ -97,9 +97,8 @@ is `VideoSourceAcquisition`, which calls the rest.
 | | |
 |---|---|
 | `inputTimingsChanged(oversample)` | the source is about to change mode; nothing is solved here |
-| `outputModeChanged(choice)` | the user picked a different resolution; re-solves from what is held, measures nothing |
+| `setOutputMode(mode)` | what the output should do -- a resolution, `ModeBypass`, or 0 for a custom preset. Re-solves from what is held, measures nothing; pass-through is entered and left through this one call |
 | `poll()` | drives whatever is outstanding, one pass, and says what it reached |
-| `enterBypass()` | video routes around the VDS, so there is no solve coming |
 | `solvedLines()` / `solvedLineRateHz()` | what the last solve ran against |
 | `framing()` | the framing the user has reached, read only |
 | `capturableOn(axis)` | the region the last solve ran against — the denominator |
@@ -399,8 +398,8 @@ solid green screen with every register self-consistent:
 | divider correct, `SP_RT_HS_SP` stale | written once by `doPostPresetLoadSteps()`, which the deferred retry never re-enters | one quantity, one owner — `SourceMeasurement` writes all three |
 
 The cross-check is necessary and not sufficient: it catches a rate disagreeing
-with the line count, never a line count that is simply wrong. `enterBypass()`
-drops the pending flag, since neither bypass switch reaches
+with the line count, never a line count that is simply wrong. Entering
+pass-through drops the pending flag, since neither bypass switch reaches
 `doPostPresetLoadSteps()` and a later retry would move the divider under a bypass
 that chose its own.
 

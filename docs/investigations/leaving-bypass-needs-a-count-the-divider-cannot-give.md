@@ -210,7 +210,7 @@ rule the scaling path already had and this path could not reach.
 
 `solveFromMeasurement()` then re-answers pass-through instead of assuming it. A
 source that still suits it stays and solves nothing; one that does not leaves,
-to the output bypass displaced, which `enterBypass()` now keeps.
+to the output bypass displaced, which entering pass-through now keeps.
 
 **Measured on the reproduction above**, RISC PC 1920x1080 -> 320x256 on `vga`:
 `state: acquired` six seconds after the mode change, unaided, with the whole

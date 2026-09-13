@@ -280,8 +280,8 @@ therefore invisible to any check that compares names.
    it. `bypassModeSwitch_RGBHV()` is ~130 hand-written register writes in the
    sketch and `setOutModeHdBypass()` is another; both `return` before
    `doPostPresetLoadSteps()`, so on a bypass mode change the engine is not
-   consulted at all and does not even know the mode changed. `Geometry::
-   enterBypass()` is the seam that call moves behind. **A bypass mode change has
+   consulted at all and does not even know the mode changed. `VideoPath::
+   setOutputMode(&ModeBypass)` is the seam that call moves behind. **A bypass mode change has
    to go through the engine, and the engine has to understand bypass** -- the end
    goal is the engine owning every TV5725 register. Note this is the mode the
    RiscPC desktop boots into at

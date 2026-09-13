@@ -275,7 +275,7 @@ fact, which is what `solvedLines_` was, and says nothing about a solver holding
 what it derived.
 
 **A move still costs something, so it is worth being the only one.** Bypass used
-to zero the count directly in `enterBypass()`; the reader now forgets it when
+to zero the count directly as it was entered; the reader now forgets it when
 `outputMode()` reads as bypass -- equivalent, because the guard runs before any
 comparison, but a derivation where there was a direct write.
 
@@ -1247,39 +1247,49 @@ is nothing left for it to decide.
 
 ### The one call: `VideoPath::setOutputMode()`
 
-The engine has three ways to be told what the output should do, and the third is
-not a way in at all:
+One call says what the output should do, and it is the only one:
 
 ```cpp
-void outputModeChanged(const OutputChoice &choice);   // a resolution
-void enterBypass();                                    // "bypass happened"
-// and leaving is a branch inside solveFromMeasurement()
+bool setOutputMode(const OutputMode *mode);   // ModeBypass, a resolution, or 0
 ```
 
 **An asymmetry between entering and leaving is what lets one of them acquire
 steps the other lacks.** That is not hypothetical: the leave path was missing the
 bring-up, the block restart and the colour matrix, and each was found separately,
 two of the three by photographing the television.
-`investigations/pass-through-holds-the-only-field-rate-instrument.md`.
+`investigations/pass-through-holds-the-only-field-rate-instrument.md`. So both
+directions are arms of this one call, and a resolution arriving from the user
+leaves pass-through by exactly the route the measurement does -- which it did not
+before, and the raster it solved landed on a chip whose VDS was still held.
 
-One call, both directions:
+`ModeBypass` is a real `OutputMode` with `frameLines() == 0`, so pass-through is
+expressible as an argument without going back into `PresetPreference`, where it
+destroyed the resolution the user chose. **Nothing holds it separately**: the
+mode says it, which is what `passedThrough()` reads.
 
-```cpp
-void setOutputMode(const OutputMode &mode);   // ModeBypass, or a resolution
-```
+**A null argument is the third state**, and it is not pass-through: a custom
+preset names no resolution, so there is no raster to solve and the bytes on the
+chip stand. That is why the argument is a pointer.
 
-`enterBypass()`, the leave branch and `outputModeChanged()` all collapse into it,
-and `passedThrough_` goes with them -- the mode says it, so there is nothing to
-hold separately. `ModeBypass` is a real `OutputMode` with `frameLines() == 0`, so
-it is expressible as an argument without putting pass-through back into
-`PresetPreference`, where it destroyed the resolution the user chose.
+**Leaving never solves**, whichever end asked. The rate held is the one
+pass-through was entered on, so the call configures the chip and returns false;
+what solves the output is the measurement that follows -- the caller's next one
+where a mode change is already armed, or the preset load the false sends it to.
 
-**The decision leaves with it.** `passThroughSuitsSource()`,
-`allowPassThrough()` and `usePassThroughSwitch()` are policy and a user
-preference living in the class this page says decides nothing. The layer above
-asks the question and calls `setOutputMode()` with the answer.
+**And the decision is not here.** `passThroughSuitsSource()`, the user's veto and
+the route switch are `VideoSourceAcquisition`'s: pass-through is a statement
+about the measured source, so the layer that measures answers it and `VideoPath`
+is told. Which leaves `setOutputMode()` a configuration call with no policy in
+it at all -- what it does depends on the mode handed to it and the mode already
+in force, and on nothing else.
 
-#### Where it goes, and the two homes that are wrong
+**The resolution the user chose is held up there too**, because it is an input to
+that decision rather than to the configuration: pass-through suspends it, and the
+way back is `setOutputMode(resolution)`. Held in `VideoPath` it is a second
+answer to "what is the output doing" standing beside the mode in force, which is
+the pair that let a 1024p choice come back as 1080p.
+
+#### Where it lives, and the two homes that are wrong
 
 **Not `Tv5725::HdBypass`.** That class owns s1 0x30..0x55 and its own reset bit
 -- one block, the one RD-5725-1.1 names. The operation calls into eight classes,
@@ -1297,7 +1307,7 @@ and BringUp's registers, which inverts the dependency and ends single ownership.
 it writes a register.
 
 **Not a new class either**, which is the easy mistake: the LEAVE path already
-lives in `VideoPath`, delegating to block classes, so the enter belongs beside
+lived in `VideoPath`, delegating to block classes, so the enter belongs beside
 it. `VideoPath` is where a chip-wide route switch already is.
 
 #### What blocks moving `enterHdBypass()` in
@@ -1531,7 +1541,7 @@ The engine already names three ways the problem moves, and only one is missing:
 
     inputMuxChanged()      the input the source arrives on is now unknown
     inputTimingsChanged()  same input, the source moved
-    outputModeChanged()    the user picked a different output resolution
+    setOutputMode()        the output should do this: a resolution, or pass-through
 
 `VideoPath::inputMuxChanged()` is the entry point the sketch lacks -- called by
 `applyInputSelection()` and by `VideoSourceAcquisition` when the ladder exhausts. It
