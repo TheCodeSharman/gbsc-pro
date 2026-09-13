@@ -77,6 +77,19 @@ and write enable from the scale-down block at all. Neither test included an IF
 block reset, so if a selector only latches on one, both negatives would look the
 same as a selector that does nothing.
 
+**`IF_LD_WRST_SEL` is now closed, reset included, and it does nothing.** Cleared
+to 0 and followed by an `SFTRST_IF_RSTZ` pulse, `IF_LD_ST` -- the
+line-generated write reset position the bit is supposed to select -- was walked
+1, 9, 13, 17, 21, 25 against a live right-edge artefact with the picture
+photographed at each step, and neither the artefact nor the picture moved. The
+byte holds the write: `s1_28` reads 0x3e -> 0x3c -> 0x3e with the neighbours
+intact, so this is not a write that failed to land. `IF_LD_ST` is inert under
+both settings of the selector.
+[the-hbin-start-blanks-the-captured-tail.md](the-hbin-start-blanks-the-captured-tail.md)
+has the measurements, and the finding that `IF_HBIN_ST` does have an observable
+effect the other half of this window does not: it blanks the tail of the
+captured line without panning.
+
 ## Why a mode change leaves the wrong value
 
 Three writers, and the arm that needs the field writes none of it:

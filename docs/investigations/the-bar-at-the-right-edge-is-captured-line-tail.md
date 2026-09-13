@@ -149,6 +149,12 @@ This one is fixed to the source.
 because forty pixels of blanking covers thirty pixels of bar. The bar is still
 captured; it is just not shown.
 
+`IF_HBIN_ST` removes it too, from the input side and without moving the picture,
+and it is the field in that block with no per-solve owner --
+[the-hbin-start-blanks-the-captured-tail.md](the-hbin-start-blanks-the-captured-tail.md)
+has the sweep, the registers that do not reach it, and the pair of snapshots
+that are byte-identical with the bar present and absent.
+
 ## Why the colour is not the picture's
 
 It changes between modes -- green and grey at one framing, blue here -- which
