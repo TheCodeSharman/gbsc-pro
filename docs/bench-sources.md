@@ -41,6 +41,16 @@ the steadiness run needs four identical samples, so the solve never completes an
 the picture rolls while every register reads correct.
 `docs/investigations/mode-detect-answers-before-any-measurement.md`.
 
+**THOSE NUMBERS ARE THE SCALING PATH, AND 480p QUALIFIES FOR PASS-THROUGH.**
+`SourceMeasurement::bypassSuitsCount()` passes through anything at or above 400
+lines whose line rate reaches 26 kHz, which 524 lines at 31.4 kHz does -- so the
+engine hands this source to the channel unless pass-through is vetoed. Measured
+over four identical switches, the classification the channel is configured from
+read 0, then 3, then nothing, and every failure to lock on this input happened
+after a bypass switch or in its wake. Vetoed, the same source acquires first
+time in 16 s at the numbers above.
+`docs/investigations/the-bypass-channel-raster-outran-the-line.md`.
+
 The Wii on `ypbpr` acquires 9.3 s after the input switch and then holds.
 Sampled from `loop()` at 35 Hz for 30 s: `STATUS_SYNC_PROC_VTOTAL` 310 in
 1050/1050, `VPERIOD_IF` 624 in 1050/1050, `HPERIOD_IF` 431/430, no interrupts
