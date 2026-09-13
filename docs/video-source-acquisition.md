@@ -882,18 +882,30 @@ under `src/videosource/`. That leaves `updateCoastPosition()`,
 `updateClampPosition()` and `optimizePhaseSP()` as the GATES in front of them,
 which is step 4's to replace.
 
-**Step 4 is next, and it is now unblocked.** It was waiting on step 7 for the
-ladder to become an ordered list with an owner, and that has landed. Both halves
-of the replacement already exist and neither is wired: `Tv5725::SteadyRun` is
-built and tested and used by `VideoSourceAcquisition` and `SourceMeasurement`,
-and `sourceIsPresent()` and `sourceState()` answer over `/geometry` -- while the
-sketch still runs `noSyncCounter` and `continousStableCounter` beside them, 66
-references over thirteen functions, 32 of them inside `runSyncWatcher()` and 13
-in `loop()`. So step 4 and step 13 are one demolition rather than two, and step
-4 is what frees the byte's value 0.
+**Step 4 has landed.** `rto->noSyncCounter` and `rto->continousStableCounter`
+are gone; `VideoSourceAcquisition` counts both halves of the run --
+`acquiredPasses()` and `unmeasuredPasses()`, one of them always zero -- and
+every reader reads those. The run advances on the detection cadence rather than
+per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
+what it meant.
 
-Steps 9 and 10 are part-landed: `Deinterlacer`, `OutputChoice` and
-`RgbhvOutput` all exist and the sketch still steers them.
+**Step 13 is not reachable from here, and the line counts say why.**
+`runSyncWatcher()` is 470 lines in six parts:
+
+| part | lines | whose |
+|---|---|---|
+| guards, the classifier reads, the HD bypass fixup, the interrupt hand-off, the sync-on-green tuning | 59 | steps 10 and 12 |
+| the no-sync branch | 22 | step 4, landed |
+| the new-mode branch | 65 | step 12 |
+| the stable branch | 165 | mostly **step 9** -- the deinterlacer, scanlines, motion adapt |
+| the scaling-RGBHV arm | 153 | **step 10** |
+| the park | 6 | step 4, landed |
+
+**318 of the 470 lines are steps 9 and 10**, so deleting the function needs both
+of them first. That is the order this list already states -- 8 to 13 follow the
+byte out -- and it is now measured rather than asserted. Steps 9 and 10 are
+part-landed in that `Deinterlacer`, `OutputChoice` and `RgbhvOutput` all exist
+and the sketch still steers them.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
