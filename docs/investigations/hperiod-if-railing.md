@@ -423,6 +423,29 @@ inconsistent pair rails `HPERIOD_IF` is not known. Inducing one is a picture
 experiment -- a mismatched tap gives a persistent green screen that a detection
 pass repairs -- so it needs the camera and a clip rather than a still.
 
+## The noisy form can be TOTAL, and then the fallback sizes every raster
+
+A dense run on an acquired source with a clean picture, `/samplinglog?ms=25`
+over 30 s, 1109 samples, `STATUS_SYNC_PROC_VTOTAL` reading 311 in 1107 of them:
+
+| `HPERIOD_IF` | samples |
+|---|---|
+| 511 | 685 |
+| 510 | 65 |
+| 255 | 25 |
+| 2..18 | the remainder |
+| **431, which 311 lines at 50 Hz is due** | **0** |
+
+**Not one reading in 1109 is right.** So "noisy" understates it: in this state
+the counter contributes nothing at all, `measureLineRate()` takes the field-rate
+branch on every solve, and the output raster is sized from a vsync spin rather
+than from a counter. What that costs is in
+`two-instruments-decide-one-raster.md` -- the same source solved 1915 and 1922
+across two recoveries.
+
+The picture is correct throughout. A railed counter with a good picture is not a
+contradiction: the field rate covers for it, less precisely.
+
 ## Why the noisy form has no consequence, and the stable form would
 
 `HPERIOD_IF` is not read only around a mode change. `updateCoastPosition()` and

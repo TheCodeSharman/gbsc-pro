@@ -192,6 +192,45 @@ Patching the second to match the first, call by call, is how the divergence gets
 preserved rather than removed. `CLAUDE.md`, *Conventions*: an unexplained
 divergence is not a risk to preserve carefully, it IS the complexity.
 
+## RESOLVED: the layer watches a bypassed output
+
+The acquisition layer had blinded itself. `VideoSourceAcquisition::sourceMoved()`
+forgot its reference count the moment `outputMode()->isBypass()` and returned
+before measuring anything, so **no source event was ever armed while bypassed**
+-- and `VideoPath` had `enterBypass()` with nothing to leave it by. Leaving was
+the sketch's RGBHV block alone, which is the parallel implementation this page
+is about.
+
+The line count is a property of the SOURCE and pass-through does not change it,
+so the count the change into bypass settled on is a valid reference for a later
+move. Keeping it is what arms the event, and arming the event is what puts the
+change through `VideoPath::prepareToMeasure()` -- the sync type, the scan mode
+and the reference sampling clock, all before anything is counted. That is the
+rule the scaling path already had and this path could not reach.
+
+`solveFromMeasurement()` then re-answers pass-through instead of assuming it. A
+source that still suits it stays and solves nothing; one that does not leaves,
+to the output bypass displaced, which `enterBypass()` now keeps.
+
+**Measured on the reproduction above**, RISC PC 1920x1080 -> 320x256 on `vga`:
+`state: acquired` six seconds after the mode change, unaided, with the whole
+solve set back to its pre-excursion values byte for byte. The engine's solve
+lands before the sketch's `rgbhv-leave-bypass` event, so the route that
+recovered is the engine's.
+
+**The reference sampling clock was necessary and not sufficient, and still is** --
+the section below stands as written. What made it sufficient was the rest of
+`prepareToMeasure()` arriving with it, which is only reachable by routing the
+event through the layer rather than by adding one call to the arm.
+
+### What it did not fix
+
+The picture comes back panned about 48 columns, with the display window running
+past what the capture wrote. `two-instruments-decide-one-raster.md` has the
+measurements: the raster does not determine the framing, a full dump differs in
+five fields none of which position the picture against output sync, and the
+remaining candidate is outside the register map.
+
 ## What actually removes it
 
 Step 10 of `docs/video-source-acquisition.md`. The two paths exist because
