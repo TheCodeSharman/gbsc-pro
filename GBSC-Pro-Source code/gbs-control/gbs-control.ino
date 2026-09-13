@@ -4369,28 +4369,6 @@ void runSyncWatcher() //
             // -> separate H/V" answered by "SOG bad for 4 runs -> csync", with
             // no picture between them. docs/sync-type-selection.md
 
-            uint32_t currentPllRate = 0;
-            static uint32_t oldPllRate = 10;
-
-            if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
-                currentPllRate = getPllRate();
-
-                if (currentPllRate > 100 && currentPllRate < 7500) {
-                    if ((currentPllRate < (oldPllRate - 3)) || (currentPllRate > (oldPllRate + 3))) {
-                        delay(40);
-                        if (GBS::STATUS_INT_SOG_BAD::read() == 1)
-                            delay(100);
-                        currentPllRate = getPllRate();
-
-                        if ((currentPllRate < (oldPllRate - 3)) || (currentPllRate > (oldPllRate + 3))) {
-                            oldPllRate = currentPllRate;
-                        }
-                    }
-                } else {
-                    currentPllRate = 0;
-                }
-            }
-
             Tv5725::Interrupts::acknowledgeSogBad();
 
             if (scalingRgbhv()) {
