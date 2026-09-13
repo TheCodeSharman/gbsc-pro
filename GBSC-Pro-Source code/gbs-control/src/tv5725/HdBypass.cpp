@@ -101,6 +101,7 @@ void HdBypass::enable()
 
 void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
                                 uint32_t lineRateHz,
+                                uint16_t activeStartLine,
                                 void (*applyRgbPatches)())
 {
     // 0 is "nothing recognised" rather than a standard, so it belongs with every
@@ -116,6 +117,17 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
 
     if (standard == 13)
         applyRgbhvPll(SourceMeasurement::measureSourceLines());
+
+    applyVerticalBlanking(activeStartLine);
+}
+
+void HdBypass::applyVerticalBlanking(uint16_t activeStartLine)
+{
+    if (activeStartLine == 0)
+        return;
+
+    HD_VB_ST::write(0);
+    HD_VB_SP::write(activeStartLine);
 }
 
 void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
@@ -187,18 +199,14 @@ void HdBypass::applySd(uint8_t standard)
     if (standard == 1) {
         SyncProcessor::writeSdVsyncStart(250);
         SyncProcessor::writeSdVsyncStop(1);
-        HD_VB_ST::write(500);
         HD_VS_ST::write(3);
         HD_VS_SP::write(522);
-        HD_VB_SP::write(16);
     }
     if (standard == 2) {
         SyncProcessor::writeSdVsyncStart(301);
         SyncProcessor::writeSdVsyncStop(5);
-        HD_VB_ST::write(605);
         HD_VS_ST::write(1);
         HD_VS_SP::write(621);
-        HD_VB_SP::write(16);
     }
 }
 
@@ -207,8 +215,6 @@ void HdBypass::applyProgressive(uint8_t standard, uint16_t divider,
 {
     applyPassThroughSampling(divider, lineRateHz);
 
-    HD_VB_ST::write(0x00);
-    HD_VB_SP::write(0x40);
     HD_VS_ST::write(0x06);
     HD_VS_SP::write(0x00);
     if (standard == 3) {
@@ -238,9 +244,7 @@ void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
         HD_HB_SP::write(0x140);
         HD_HS_ST::write(0x20);
         HD_HS_SP::write(0x80);
-        HD_VB_ST::write(0x00);
-        HD_VB_SP::write(0x6c);
-        HD_VS_ST::write(0x00);
+            HD_VS_ST::write(0x00);
         HD_VS_SP::write(0x05);
         SyncProcessor::writeSdVsyncStart(2);
         SyncProcessor::writeSdVsyncStop(0);
@@ -255,9 +259,7 @@ void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
         HD_HB_SP::write(0xb8);
         HD_HS_ST::write(0x04);
         HD_HS_SP::write(0x50);
-        HD_VB_ST::write(0x00);
-        HD_VB_SP::write(0x1e);
-        HD_VS_ST::write(0x04);
+            HD_VS_ST::write(0x04);
         HD_VS_SP::write(0x09);
         SyncProcessor::writeSdVsyncStart(8);
         SyncProcessor::writeSdVsyncStop(6);
@@ -277,9 +279,7 @@ void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
         HD_HB_SP::write(0xb0);
         HD_HS_ST::write(0x20);
         HD_HS_SP::write(0x70);
-        HD_VB_ST::write(0x00);
-        HD_VB_SP::write(0x2f);
-        HD_VS_ST::write(0x04);
+            HD_VS_ST::write(0x04);
         HD_VS_SP::write(0x0A);
     }
     if (standard == 13) {

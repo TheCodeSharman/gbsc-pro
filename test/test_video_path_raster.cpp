@@ -407,3 +407,39 @@ TEST_CASE("a raster is never solved for bypass")
     CHECK_FALSE(Wire.touched[3][0x01]);      // VDS_HSYNC_RST, the line total
     CHECK(frameLinesWritten() == solved);
 }
+
+// STATUS_SYNC_PROC_HLOW_LEN, s0_19[11:0] -- the hsync low time in ADC samples.
+static void setHsyncLow(uint16_t samples)
+{
+    Wire.bank[0][0x19] = samples & 0xFF;
+    Wire.bank[0][0x1A] = (Wire.bank[0][0x1A] & 0xF0) | ((samples >> 8) & 0x0F);
+}
+
+static bool g_passedThrough = false;
+static void notePassThrough() { g_passedThrough = true; }
+
+TEST_CASE("a source passed through still names where its active video starts")
+{
+    // The raster a source runs is the MEASUREMENT's to establish, not the
+    // solve's: pass-through never solves, and the bypass channel's vertical
+    // blanking is the one thing that needs it. Measured on the bench, a Wii at
+    // 480p reached the bypass switch with this still zero and the channel
+    // blanked 64 lines where the raster puts active video at 36.
+    //
+    // 720x480p is 525 lines at 59.94 Hz with 62 sync of 858, and the duty is
+    // taken against the reference divider the measurement runs on.
+    SettledEngine settled;
+    setSourceLines(524);
+    setHsyncLow(81);
+    g_fieldRate = 59.94f;
+    g_passedThrough = false;
+
+    settled.acquisition.usePassThroughSwitch(notePassThrough);
+    settled.acquisition.allowPassThrough(true);
+    settled.engine.setOutputMode(&Mode1080p);
+    settled.engine.inputTimingsChanged(4);
+    pollUntilSolved(settled.acquisition);
+
+    REQUIRE(g_passedThrough);
+    CHECK(settled.engine.sourceActiveStartLine() == 36);
+}

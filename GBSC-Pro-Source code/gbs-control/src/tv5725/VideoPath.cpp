@@ -29,7 +29,8 @@ namespace Tv5725 {
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings)
     : displayClock_(displayClock),
-      usableHorizontal_(0), usableVertical_(0),
+      usableHorizontal_(0), usableVertical_(0), activeStartLine_(0),
+      timing_(0.0f),
       sampling_(sampling),
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
@@ -50,6 +51,8 @@ uint16_t VideoPath::capturableOn(const Axis &axis) const
 {
     return axis.vertical() ? usableVertical_ : usableHorizontal_;
 }
+
+uint16_t VideoPath::sourceActiveStartLine() const { return activeStartLine_; }
 
 uint16_t VideoPath::originUnitsOn(const Axis &axis) const
 {
@@ -261,7 +264,13 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     return solveWindows();
 }
 
-void VideoPath::sourceMeasured(const SourceReading &reading) { reading_ = reading; }
+void VideoPath::sourceMeasured(const SourceReading &reading)
+{
+    reading_ = reading;
+    timing_ = SourceTiming::matching(sampling_.sourceLines(), sampling_.fieldRateHz(),
+                                     reading.syncDuty());
+    activeStartLine_ = timing_.activeStartLine(sampling_.sourceLines() + 1);
+}
 
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
 {
@@ -480,7 +489,7 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
                        activeLinesStop_);
-    if (!capture.readRasters(sampling_, reading_)) {
+    if (!capture.readRasters(sampling_, reading_, timing_)) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;

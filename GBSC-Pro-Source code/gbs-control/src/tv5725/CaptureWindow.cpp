@@ -13,7 +13,8 @@ CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
 bool CaptureWindow::readRasters(const SourceMeasurement &source,
-                                const SourceReading &reading)
+                                const SourceReading &reading,
+                                const SourceTiming &timing)
 {
     const uint16_t sourceLines = source.sourceLines();
     const uint16_t horizontalWrap = source.ifLine() + 1;
@@ -50,8 +51,7 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     verticalLine_ = VideoSourceLine(source.lineDoubled() ? 2 * (sourceLines + 1)
                                                    : sourceLines + 1);
 
-    timing_ = SourceTiming::matching(sourceLines, source.fieldRateHz(),
-                                     reading.syncDuty());
+    timing_ = timing;
     return true;
 }
 

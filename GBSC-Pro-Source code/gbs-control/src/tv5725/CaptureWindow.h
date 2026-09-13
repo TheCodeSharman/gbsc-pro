@@ -53,9 +53,12 @@ public:
     // which is what keeps the two cross-checked against each other rather than
     // against a value some caller chose. docs/firmware-geometry-engine.md
     //
-    // The three together are also what identifies a published raster, so this
-    // is where the timing an untuned window is placed from is resolved.
-    bool readRasters(const SourceMeasurement &source, const SourceReading &reading);
+    // `timing` is the published raster the MEASUREMENT matched. It is not
+    // resolved here: the three values that identify it are all measured, and a
+    // path that plays the source out rather than scaling it never reaches this
+    // call at all. docs/video-source-acquisition.md
+    bool readRasters(const SourceMeasurement &source, const SourceReading &reading,
+                     const SourceTiming &timing);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.
@@ -78,6 +81,7 @@ public:
 
     uint16_t linePx() const;
     uint16_t frameLines() const;
+
 
     bool usable() const;
 

@@ -39,6 +39,16 @@ public:
     // denominator the framing's proportions are taken against.
     uint16_t capturableOn(const Axis &axis) const;
 
+    // The source line active video starts on, for a path that plays the
+    // source's raster out rather than scaling it. Zero where the measurement
+    // matched no published raster, which is what an untuned source gets: its
+    // own porches are already black, so blanking a guessed count costs picture.
+    //
+    // Established when the reading ARRIVES, not when the solve runs -- the
+    // three values that identify a raster are all measured, and pass-through
+    // never solves. docs/video-source-acquisition.md
+    uint16_t sourceActiveStartLine() const;
+
     // The framing on this axis in input units, against that region.
     // docs/scaler-geometry-model.md
     uint16_t originUnitsOn(const Axis &axis) const;
@@ -231,6 +241,8 @@ private:
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;
+    uint16_t activeStartLine_;
+    SourceTiming timing_;
     SourceMeasurement &sampling_;
     bool scanModeApplied_;
     bool syncTypeProbed_;

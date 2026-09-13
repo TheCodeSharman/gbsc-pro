@@ -3587,6 +3587,7 @@ void enterHdBypass()
                                        Tv5725::HdBypass::dividerFor(
                                            sourceSampling.heldLineRateHz()),
                                        sourceSampling.heldLineRateHz(),
+                                       geometry.sourceActiveStartLine(),
                                        applyRGBPatches);
 
     Tv5725::Chip::dacsFollowInput();

@@ -191,7 +191,17 @@ public:
     // the PLL's crossover row -- so neither can be left out.
     static void applyForStandard(uint8_t standard, uint16_t divider,
                                  uint32_t lineRateHz,
+                                 uint16_t activeStartLine,
                                  void (*applyRgbPatches)());
+
+    // Blank the lines before active video and nothing else. Where active video
+    // starts is not measurable -- a border is black active video, electrically
+    // identical to back porch -- so the caller derives it from the raster its
+    // measurement matched and hands the line in. Zero blanks nothing, which is
+    // what a source matching no published raster gets: its own porches are
+    // already black, the argument applyHorizontalFromChannelLine() makes for
+    // the other axis.
+    static void applyVerticalBlanking(uint16_t activeStartLine);
 
     // The sampling and the played-out raster for a source with no standard of
     // its own, which are one operation.

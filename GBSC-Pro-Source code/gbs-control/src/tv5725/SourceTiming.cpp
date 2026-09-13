@@ -94,4 +94,12 @@ float SourceTiming::activeExtent(const Axis &axis) const
         : (float)raster_->activePixels / (float)raster_->totalPixels;
 }
 
+uint16_t SourceTiming::activeStartLine(uint16_t frameLines) const
+{
+    if (!published())
+        return 0;
+
+    return (uint16_t)(activeStart(AxisVertical) * frameLines + 0.5f);
+}
+
 }  // namespace Tv5725

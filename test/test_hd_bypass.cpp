@@ -292,6 +292,18 @@ static const uint16_t DividerBeforeLadder = 2345;
 // crossover row. Only the RGBHV arm reads it.
 static const uint32_t BenchLineRateHz = 37879;
 
+static void applyForActiveStart(uint8_t standard, uint16_t activeStartLine,
+                                uint16_t divider = 2039,
+                                uint32_t lineRateHz = 31469)
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    Adc::PLLAD_MD::write(DividerBeforeLadder);
+    rgbPatchCalls = 0;
+    HdBypass::applyForStandard(standard, divider, lineRateHz, activeStartLine,
+                               countRgbPatches);
+}
+
 static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311,
                              uint16_t divider = DividerBeforeLadder,
                              uint32_t lineRateHz = BenchLineRateHz)
@@ -301,7 +313,8 @@ static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311,
     Adc::PLLAD_MD::write(DividerBeforeLadder);
     Tv5725::Tv5725::STATUS_SYNC_PROC_VTOTAL::write(sourceLines);
     rgbPatchCalls = 0;
-    HdBypass::applyForStandard(standard, divider, lineRateHz, countRgbPatches);
+    HdBypass::applyForStandard(standard, divider, lineRateHz,
+                               0, countRgbPatches);
 }
 
 TEST_CASE("interlaced SD plays out a raster derived from the divider")
@@ -331,15 +344,13 @@ TEST_CASE("interlaced SD inverts the three sync polarities and flips detection")
     CHECK(SyncProcessor::SP_CS_HS_SP::read() == 0);
 }
 
-TEST_CASE("the two SD field rates differ only in the vertical")
+TEST_CASE("the two SD field rates differ only in where vertical sync sits")
 {
     applyForStandard(1);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 250);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 1);
-    CHECK(HdBypass::HD_VB_ST::read() == 500);
-    CHECK(HdBypass::HD_VB_SP::read() == 16);
     CHECK(HdBypass::HD_VS_ST::read() == 3);
     CHECK(HdBypass::HD_VS_SP::read() == 522);
 
@@ -348,8 +359,6 @@ TEST_CASE("the two SD field rates differ only in the vertical")
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 45);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 5);
-    CHECK(HdBypass::HD_VB_ST::read() == 605);
-    CHECK(HdBypass::HD_VB_SP::read() == 16);
     CHECK(HdBypass::HD_VS_ST::read() == 1);
     CHECK(HdBypass::HD_VS_SP::read() == 621);
 }
@@ -367,12 +376,10 @@ TEST_CASE("progressive SD sizes its raster from the divider the engine holds")
     CHECK(HdBypass::HD_HB_SP::read() == 144);
 }
 
-TEST_CASE("progressive SD blanks the vertical it needs, which pass-through does not")
+TEST_CASE("progressive SD places vertical sync where the standard puts it")
 {
     applyForStandard(3, 524, 2039, 31469);
 
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
-    CHECK(HdBypass::HD_VB_SP::read() == 64);
     CHECK(HdBypass::HD_VS_ST::read() == 6);
     CHECK(HdBypass::HD_VS_SP::read() == 0);
 }
@@ -433,15 +440,13 @@ TEST_CASE("the HD line carries the detail the widest ADC filter passes")
     CHECK(Adc::PLLAD_FS::read() == 1);
 }
 
-TEST_CASE("each HD standard brings its own blanking and sync windows")
+TEST_CASE("each HD standard brings its own horizontal and sync windows")
 {
     applyForStandard(5);
     CHECK(HdBypass::HD_HB_ST::read() == 0);
     CHECK(HdBypass::HD_HB_SP::read() == 320);
     CHECK(HdBypass::HD_HS_ST::read() == 32);
     CHECK(HdBypass::HD_HS_SP::read() == 128);
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
-    CHECK(HdBypass::HD_VB_SP::read() == 108);
     CHECK(HdBypass::HD_VS_ST::read() == 0);
     CHECK(HdBypass::HD_VS_SP::read() == 5);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 2);
@@ -452,8 +457,6 @@ TEST_CASE("each HD standard brings its own blanking and sync windows")
     CHECK(HdBypass::HD_HB_SP::read() == 184);
     CHECK(HdBypass::HD_HS_ST::read() == 4);
     CHECK(HdBypass::HD_HS_SP::read() == 80);
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
-    CHECK(HdBypass::HD_VB_SP::read() == 30);
     CHECK(HdBypass::HD_VS_ST::read() == 4);
     CHECK(HdBypass::HD_VS_SP::read() == 9);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 8);
@@ -464,8 +467,6 @@ TEST_CASE("each HD standard brings its own blanking and sync windows")
     CHECK(HdBypass::HD_HB_SP::read() == 176);
     CHECK(HdBypass::HD_HS_ST::read() == 32);
     CHECK(HdBypass::HD_HS_SP::read() == 112);
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
-    CHECK(HdBypass::HD_VB_SP::read() == 47);
     CHECK(HdBypass::HD_VS_ST::read() == 4);
     CHECK(HdBypass::HD_VS_SP::read() == 10);
 }
@@ -526,6 +527,31 @@ TEST_CASE("a source with no standard samples off its own clock")
     CHECK(Adc::PLLAD_ICP::read() == 4);
     CHECK(Adc::PLLAD_FS::read() == 1);
     CHECK(Adc::ADC_FLTR::read() == 0);
+}
+
+TEST_CASE("the channel blanks the lines before active video, whatever the standard")
+{
+    // 720x480p is 525 lines with active starting at 36. Every arm carried a
+    // constant instead -- the progressive one 0x40, which is 64, so 28 lines of
+    // picture came off the top. STATUS_SYNC_PROC_VTOTAL counts from zero, hence
+    // 524 for a 525-line frame.
+    applyForActiveStart(3, 36);
+
+    CHECK(HdBypass::HD_VB_ST::read() == 0);
+    CHECK(HdBypass::HD_VB_SP::read() == 36);
+}
+
+TEST_CASE("a source running no published raster keeps the window it had")
+{
+    // No raster means no line to trust, and blanking a guessed count costs
+    // picture. Leaving the window alone is the one answer that cannot.
+    Wire.reset();
+    Wire.poison(Poison);
+    HdBypass::HD_VB_SP::write(64);
+
+    HdBypass::applyForStandard(0, 2039, 31469, 0, countRgbPatches);
+
+    CHECK(HdBypass::HD_VB_SP::read() == 64);
 }
 
 TEST_CASE("every arm leaves the blanking start inside the line")
@@ -677,7 +703,8 @@ TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal"
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForStandard(14, 1124, BenchLineRateHz, countRgbPatches);
+    HdBypass::applyForStandard(14, 1124, BenchLineRateHz,
+                               0, countRgbPatches);
 
     CHECK(Adc::PLLAD_MD::read() == 1124);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1132);  // 1124 + 8
@@ -694,7 +721,8 @@ TEST_CASE("an unmeasured source leaves the bypass raster alone")
     HdBypass::enable();
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForStandard(14, 0, BenchLineRateHz, countRgbPatches);
+    HdBypass::applyForStandard(14, 0, BenchLineRateHz,
+                               0, countRgbPatches);
 
     CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1023);

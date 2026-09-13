@@ -102,3 +102,24 @@ TEST_CASE("a field rate that wobbles across half a hertz still finds its mode")
     CHECK(SourceTiming::matching(627, 60.32f, duty).published());
     CHECK(SourceTiming::matching(627, 60.72f, duty).published());
 }
+
+TEST_CASE("the line active video starts on, for a caller that cannot scale")
+{
+    // Pass-through plays the source's own raster out, so the only thing it can
+    // blank correctly is what the raster says is not picture. 720x480p starts
+    // active video at line 36 of 525.
+    const SourceTiming cea = SourceTiming::matching(524, 59.94f, 62.0f / 858.0f);
+    REQUIRE(cea.published());
+
+    CHECK(cea.activeStartLine(525) == 36);
+}
+
+TEST_CASE("a source matching no raster names no line to blank to")
+{
+    // Blanking any of it would be a guess at the picture's expense, and the
+    // source's own porches are already black.
+    const SourceTiming unknown(51.3f);
+    REQUIRE_FALSE(unknown.published());
+
+    CHECK(unknown.activeStartLine(311) == 0);
+}
