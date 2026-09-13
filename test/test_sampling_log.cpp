@@ -232,6 +232,22 @@ static void seedSolvedOutput(uint16_t hsyncStart)
     GBS::VDS_VS_SP::write(8);
     GBS::IF_HSYNC_RST::write(1104);
     GBS::IF_HBIN_SP::write(336);
+
+    // The memory window, which the display window sits inside: the strip
+    // between them shows whatever the playback stage fetches.
+    GBS::VDS_HB_ST::write(1897);
+    GBS::VDS_HB_SP::write(8);
+    GBS::VDS_VB_ST::write(1121);
+    GBS::VDS_VB_SP::write(1);
+
+    // The capture window, and the measured sync pulse the whole framing
+    // coordinate system is anchored to.
+    // docs/investigations/framing-is-anchored-to-a-measured-pulse.md
+    GBS::IF_HB_SP2::write(132);
+    GBS::IF_HB_ST2::write(1105);
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(181);
+
+    GBS::PLL648_CONTROL_01::write(0x75);
 }
 
 // The columns, with the leader and the timestamp taken off, so a case pins the
@@ -264,7 +280,8 @@ TEST_CASE("a monitor run reports the solved output from inside the loop")
     g_lines.clear();
     log.poll(10);
 
-    CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,10,62,4,8,1104,336");
+    CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,10,62,4,8,1104,336,"
+            "1897,8,1121,1,132,1105,117,181");
 }
 
 TEST_CASE("a solve that has not moved is not repeated")
@@ -284,6 +301,26 @@ TEST_CASE("a solve that has not moved is not repeated")
     CHECK(solveColumns().empty());
 }
 
+TEST_CASE("the measured sync pulse is reported but does not re-emit on its own")
+{
+    // It dithers by a unit continuously -- measured on the bench at 156/157 --
+    // and triggering on it would emit a line twice a second saying the solve
+    // had not moved. It matters only where it CROSSES, and the crossing shows
+    // as the capture window moving, which does trigger.
+    // docs/investigations/framing-is-anchored-to-a-measured-pulse.md
+    sourceOnTheBus(2250);
+    seedSolvedOutput(10);
+    SamplingLog log;
+    log.monitor(0, 10, 10000);
+    log.poll(10);
+    g_lines.clear();
+
+    GBS::STATUS_SYNC_PROC_HLOW_LEN::write(180);
+    driveMonitor(log, 20, 3000);
+
+    CHECK(solveColumns().empty());
+}
+
 TEST_CASE("an output sync start that moved is news, because it is a pan")
 {
     sourceOnTheBus(2250);
@@ -296,5 +333,6 @@ TEST_CASE("an output sync start that moved is news, because it is a pan")
     seedSolvedOutput(62);
     driveMonitor(log, 20, 3000);
 
-    CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,62,62,4,8,1104,336");
+    CHECK(solveColumns() == "1915,1125,850,512,99,1501,20,620,62,62,4,8,1104,336,"
+            "1897,8,1121,1,132,1105,117,181");
 }

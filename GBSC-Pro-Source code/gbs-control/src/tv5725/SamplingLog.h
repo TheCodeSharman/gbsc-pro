@@ -63,7 +63,12 @@ public:
     static const uint8_t BranchNameMax = 24;
 
     // How many registers the solved output carries.
-    static const uint8_t SolveFields = 14;
+    static const uint8_t SolveFields = 22;
+
+    // How many of them a change is judged on. The rest are measurements the
+    // solve was derived FROM, reported so a line carries its own cause, and
+    // left out of the comparison because they dither.
+    static const uint8_t SolveTriggerFields = SolveFields - 1;
 
     // How often a monitor run compares the solved output. The engine re-solves
     // on a source event, seconds apart, so this is far slower than the sample
@@ -84,10 +89,19 @@ private:
     void applyStep(uint32_t nowMs);
     void emit(uint32_t nowMs);
 
-    // Where the engine solved, emitted when it moves. Every register in it is
-    // an OUTPUT the engine calculated from held state, so the set of them is
-    // the comparison one run is judged against another on -- and the one a
-    // register dump over HTTP cannot take without changing what it measures.
+    // Where the engine solved, emitted when it moves. The comparison one run is
+    // judged against another on, and the one a register dump over HTTP cannot
+    // take without changing what it measures.
+    //
+    // **A SET THIS IS MISSING A TERM FROM ANSWERS THE WRONG QUESTION.** Every
+    // register in it reading the same is taken to mean the output did not move,
+    // so anything left out is attributed to the encoder instead -- which is a
+    // conclusion nothing on the board can check. It carries the memory window
+    // as well as the display window, because the strip between them shows
+    // whatever the playback stage fetches; and the capture window with the
+    // measured sync pulse, because the framing is a proportion expanded against
+    // a live measurement that moves a unit either way.
+    // docs/investigations/framing-is-anchored-to-a-measured-pulse.md
     void reportSolve(uint32_t nowMs);
     void finish(uint32_t nowMs);
 

@@ -68,6 +68,30 @@ void readSolve(uint16_t (&into)[SamplingLog::SolveFields])
     into[11] = (uint16_t)GBS::VDS_VS_SP::read();
     into[12] = (uint16_t)GBS::IF_HSYNC_RST::read();
     into[13] = (uint16_t)GBS::IF_HBIN_SP::read();
+
+    // The memory window. The display window sits inside it, and the strip
+    // between the two shows whatever the playback stage fetches rather than
+    // black -- which is a bar nothing in the display window can explain.
+    into[14] = (uint16_t)GBS::VDS_HB_ST::read();
+    into[15] = (uint16_t)GBS::VDS_HB_SP::read();
+    into[16] = (uint16_t)GBS::VDS_VB_ST::read();
+    into[17] = (uint16_t)GBS::VDS_VB_SP::read();
+
+    // The capture window and the measurement the framing is anchored to. The
+    // framing is held as a proportion and expanded against a sync pulse read
+    // live, so a one-unit move in it shifts the near edge and the width in
+    // opposite directions with every other register unchanged.
+    into[18] = (uint16_t)GBS::IF_HB_SP2::read();
+    into[19] = (uint16_t)GBS::IF_HB_ST2::read();
+    // Which clock the display runs on. An unchanged raster on a changed clock
+    // is a changed output MODE, and the sink rescales.
+    into[20] = (uint16_t)GBS::PLL648_CONTROL_01::read();
+
+    // LAST, and outside the comparison: it dithers by a unit continuously, so
+    // triggering on it emits a line twice a second saying nothing moved. What
+    // matters is where it CROSSES, and a crossing moves the capture window
+    // above, which does trigger.
+    into[21] = (uint16_t)GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
 }  // namespace
@@ -124,7 +148,8 @@ void SamplingLog::monitor(uint32_t nowMs, uint16_t intervalMs,
               "hperiod_if,vperiod_if,hsact,ifbits,intstatus");
     tv5725Log("sol,header,ms,vds_hsync_rst,vds_vsync_rst,vds_hscale,vds_vscale,"
               "dis_hb_st,dis_hb_sp,dis_vb_st,dis_vb_sp,hs_st,hs_sp,vs_st,vs_sp,"
-              "if_hsync_rst,if_hbin_sp");
+              "if_hsync_rst,if_hbin_sp,hb_st,hb_sp,vb_st,vb_sp,if_hb_sp2,"
+              "if_hb_st2,pll648,hlow_len");
 }
 
 void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
@@ -178,19 +203,16 @@ void SamplingLog::reportSolve(uint32_t nowMs)
 
     uint16_t solved[SolveFields];
     readSolve(solved);
-    if (solveValid_ && memcmp(solved, solve_, sizeof(solved)) == 0)
+    if (solveValid_
+        && memcmp(solved, solve_, SolveTriggerFields * sizeof(solved[0])) == 0)
         return;
     memcpy(solve_, solved, sizeof(solve_));
     solveValid_ = true;
 
-    char line[112];
-    snprintf(line, sizeof(line),
-             "sol,%lu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u",
-             (unsigned long)nowMs, (unsigned)solved[0], (unsigned)solved[1],
-             (unsigned)solved[2], (unsigned)solved[3], (unsigned)solved[4],
-             (unsigned)solved[5], (unsigned)solved[6], (unsigned)solved[7],
-             (unsigned)solved[8], (unsigned)solved[9], (unsigned)solved[10],
-             (unsigned)solved[11], (unsigned)solved[12], (unsigned)solved[13]);
+    char line[176];
+    int at = snprintf(line, sizeof(line), "sol,%lu", (unsigned long)nowMs);
+    for (uint8_t i = 0; i < SolveFields && at > 0 && at < (int)sizeof(line); ++i)
+        at += snprintf(line + at, sizeof(line) - at, ",%u", (unsigned)solved[i]);
     tv5725Log(line);
 }
 
