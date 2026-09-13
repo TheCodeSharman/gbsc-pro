@@ -66,9 +66,10 @@ void InputFormatter::init()
     // scan mode is decided is a value that is not 0, which blanks the whole line.
     IF_HBIN_SP::write(LineDoubleReset);          // s1_26[11:0]
 
-    // Its start, which only the progressive standards write, so without a value
-    // here a source leaving one of them keeps theirs.
-    IF_HBIN_ST::write(0);                        // s1_24[11:0]
+    // Its start. applyScanMode() owns this from here on too; what it needs
+    // before the first scan mode is decided is a defined value, because the
+    // part keeps its registers across an ESP reset.
+    IF_HBIN_ST::write(HeadBlankingStart);        // s1_24[11:0]
 
     IF_SEL_ADC_SYNC::write(0x1);                 // s1_28[2:2]
 }
@@ -122,6 +123,7 @@ void InputFormatter::applyScanMode(ScanMode mode, bool component)
     IF_HS_SEL_LPF::write(progressive ? 0 : 1);
     IF_HS_Y_PDELAY::write(!progressive && component ? 2 : 3);
     IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
+    IF_HBIN_ST::write(HeadBlankingStart);
 }
 
 }  // namespace Tv5725

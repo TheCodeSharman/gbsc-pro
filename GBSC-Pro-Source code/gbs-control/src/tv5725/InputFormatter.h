@@ -296,6 +296,13 @@ public:
     // there blanks the whole line.
     static const uint16_t NoHeadBlanking = 2;
 
+    // IF_HBIN_SP's start, and the other thing this window does: raising it
+    // blanks the tail of the captured line, without panning, from about 32 up
+    // on a 1103-unit line. So a value inherited across a mode change is not
+    // harmless, and applyScanMode() owns it alongside the stop.
+    // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
+    static const uint16_t HeadBlankingStart = 0;
+
     // The reset position, which has no derivation -- the ten scaling tables
     // shipped 136..272 and this is the one the bench picture is right on.
     static const uint16_t LineDoubleReset = 272;

@@ -181,6 +181,23 @@ TEST_CASE("a line-doubled source keeps the line-double FIFO's reset position")
     CHECK(Wire.field(1, 0x26, 0, 12) == 272);
 }
 
+TEST_CASE("a scan mode change re-establishes the head blanking's start")
+{
+    // The other half of the same window, and it reaches the picture: raising it
+    // blanks the tail of the captured line, without panning, from about 32 up.
+    // So a value left behind is not harmless.
+    // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
+    FreshChip chip;
+
+    Wire.bank[1][0x24] = 50;
+    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    CHECK(Wire.field(1, 0x24, 0, 12) == 0);
+
+    Wire.bank[1][0x24] = 50;
+    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    CHECK(Wire.field(1, 0x24, 0, 12) == 0);
+}
+
 // --- the per-load state, which shares bytes with owners that are not here -----
 
 TEST_CASE("the vertical timing leaves the scan mode alone")
