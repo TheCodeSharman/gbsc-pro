@@ -70,9 +70,21 @@ def diff(before, after, register_map, include_volatile=False):
     a = before["config"] if "config" in before else before
     b = after["config"] if "config" in after else after
 
+    # The INTERSECTION, not the union. A key only one snapshot carries is not a
+    # value that changed, it is a question one of them never asked -- the config
+    # dump covers the writable range and --save covers every address, so diffing
+    # one against the other otherwise invents a difference at every address the
+    # narrower one omits.
+    shared = set(a) & set(b)
+    only_before, only_after = set(a) - shared, set(b) - shared
+    if only_before or only_after:
+        print(f"  COVERAGE DIFFERS: {len(shared)} addresses in both, "
+              f"{len(only_before)} only in the first, {len(only_after)} only in "
+              f"the second. Those are NOT compared below.\n")
+
     changed_fields = {}
     changed_bytes = []
-    for key in sorted(set(a) | set(b)):
+    for key in sorted(shared):
         segment, register = int(key.split(":")[0]), int(key.split(":")[1], 16)
         if not include_volatile and (segment, register) in VOLATILE:
             continue
