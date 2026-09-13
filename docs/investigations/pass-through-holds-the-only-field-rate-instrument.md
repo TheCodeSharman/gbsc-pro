@@ -134,3 +134,31 @@ RISC PC on `vga`, `preferScalingRgbhv` off, the sketch's three RGBHV arms delete
 
 Before it, the same round trip produced `0.00 Hz` for as long as it was watched,
 and neither `/sampleclock` nor `/sc?~` cleared it — only a reflash did.
+
+## The round trip is state-neutral, over every address
+
+Taken with `snapdiff.py --save` at both ends -- all 1536 addresses, not the
+608-address config range the earlier comparisons here used -- a full 320x256 ->
+800x600 -> 320x256 excursion leaves **one byte** different:
+
+```
+1 bytes differ, resolving to 1 fields
+    PA_SP_S    16 -> 18    (s5 0x19 b1 w5)
+```
+
+the sync processor's sampling phase, which the phase search re-tunes by design.
+Every other address agrees, including the 928 that no comparison here had ever
+covered.
+
+**So a framing that is wrong after an excursion is not something the excursion
+left behind.** `/geometry` reports the same origin and extent either side, and
+the picture looks the same before and after. What differs from an earlier
+session's framing is the output RASTER the solve landed on -- 1915 against 2022,
+with `PLL648_CONTROL_01` unchanged, so the line is shorter at the same pixel
+clock and the encoder is shown a different mode. That is
+[`two-instruments-decide-one-raster.md`](two-instruments-decide-one-raster.md),
+and it is where a framing question belongs rather than here.
+
+The same measurement retires the standing suspicion that a bypass round trip
+strands registers nobody has looked at. It does not; the set was simply never
+looked at.
