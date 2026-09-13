@@ -63,18 +63,44 @@ Nothing else reaches it, and it asks for nothing on a tick. Remeasuring and
 reconfiguring the chip is what it does in response to one of the three; deciding
 that one happened is not its job.
 
-**Today that is a three-call handshake rather than an event.**
-`prepareToMeasure()`, `pollDeferred()` and `solveFromMeasurement()` are the
-acquisition layer driving one solve in stages, which is the polling relationship
-the target removes.
+**Today that is a four-call handshake rather than an event.**
+`establishSyncType()`, `prepareToMeasure()`, `sourceMeasured()` and
+`solveFromMeasurement()` are the acquisition layer driving one solve in stages,
+which is the polling relationship the target removes.
 
 ### The measurement is the acquisition layer's, so the timings arrive known
 
-`VideoPath` is called once the source HAS been measured, with the timings it
-needs, rather than holding the class that takes them. Of the nineteen places it
-reaches `SourceMeasurement` today, thirteen are reads of a measured value -- the
-line count, the field rate, the line rate, the divider, the scan mode, the hsync
-width and its polarity -- and those become what the event carries. Seven are
+**`VideoPath` no longer reads the source at all.** It read the chip in four
+places -- the corrected line count for the scan mode, the hsync pulse twice for
+the capture window, and the field rate in `resolve()` -- which gave the source
+two readers with nothing reconciling them, and made a framing press pay for a
+register read to re-derive what the engine had already computed. The order the
+reads have to happen in is what the handshake now spells out:
+
+```
+establishSyncType()                    the path the counting happens on
+prepareToMeasure(readSourceLines())    the count -> scan mode -> reference clock
+measureSource()                        the rate, through that clock
+sourceMeasured(readSource())           the pulse, against that clock
+```
+
+**`Tv5725::SourceReading` holds the sync DUTY, not the register.**
+`STATUS_SYNC_PROC_HLOW_LEN` counts ADC samples, so its value means nothing
+without the divider it was counted against -- and the divider moves on every
+solve. Carrying the ratio is what lets one reading survive the solve it is
+handed to. It also closes a disagreement nobody had noticed: `readRasters()` was
+dividing that register by the SOLVED divider while `solveSampling()` divided the
+same register by the reference one, so a single solve ran on two different
+duties.
+
+**The line count is not in the reading**, and the order above says why: the scan
+mode is judged from the count, the reference clock follows the scan mode, and
+the duty is counted against that clock. Two facts, two moments.
+
+What remains is the rest of the handover: of the nineteen places `VideoPath`
+reaches `SourceMeasurement`, the reads that are left are of values it was
+handed or computed -- the line count, the field rate, the line rate, the
+divider, the scan mode -- and those become what the event carries. Seven are
 commands that drive the measurement, and they belong to the layer that owns the
 tick. `applySampling()` stays: `PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are
 one quantity in three registers, and writing them is configuring the chip rather

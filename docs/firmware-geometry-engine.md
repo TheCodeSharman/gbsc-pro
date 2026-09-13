@@ -104,7 +104,8 @@ is `VideoSourceAcquisition`, which calls the rest.
 | `capturableOn(axis)` | the region the last solve ran against — the denominator |
 | `originUnitsOn(axis)` / `extentUnitsOn(axis)` | that framing in input units |
 | `pan(dx, dy)` / `zoom(dh, dv)` | one press, in OUTPUT PIXELS |
-| `resolve()` | re-derive every register from what is held, without moving the framing |
+| `sourceMeasured(reading)` | the hsync pulse, taken by the layer that measures; every window solved until the next one comes off it |
+| `resolve()` | re-solve every register from what is held, without moving the framing and without measuring |
 | `reset()` | back to the default framing |
 
 **The tick, the gate and the source EVENT are not on that list.** `loop()` calls
