@@ -11,8 +11,3 @@ SyncSearch::Search SyncSearch::searchFor(uint8_t inputSource, bool vsyncActive)
     return vsyncActive ? VsyncPresent : VsyncAbsent;
 }
 
-bool SyncSearch::shouldSweepSyncProcessor(uint8_t modeReadout,
-                                          bool sourceIsCounted)
-{
-    return modeReadout == 0 && !sourceIsCounted;
-}

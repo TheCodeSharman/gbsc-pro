@@ -59,17 +59,3 @@ TEST_CASE("sources this path does not own select no search")
     }
 }
 
-TEST_CASE("a source the sync processor is counting is not swept for sync")
-{
-    CHECK(SyncSearch::shouldSweepSyncProcessor(0, true) == false);
-}
-
-TEST_CASE("nothing counted and no mode named is swept")
-{
-    CHECK(SyncSearch::shouldSweepSyncProcessor(0, false) == true);
-}
-
-TEST_CASE("a named mode is never swept")
-{
-    CHECK(SyncSearch::shouldSweepSyncProcessor(15, false) == false);
-}
