@@ -79,5 +79,38 @@ this input's known good: `PLLAD_MD` 1096 against `STATUS_SYNC_PROC_HTOTAL` 1096,
 
 **Every failure to lock on this input happened after a bypass switch or in its
 wake**, and entering bypass rewrites the ADC PLL group and the sync processor.
-Vetoed, the source acquired first time. Whether the channel carries this source
-once its raster is right is not yet measured.
+Vetoed, the source acquired first time.
+
+## The channel does carry it, and the entry is what is unstable
+
+Measured with the raster fixed: a Wii at 480p passes through sharp and full
+screen, `PLLAD_MD` 1124 against `STATUS_SYNC_PROC_HTOTAL` 1124, PLL locked. So
+the route is not the problem and the veto is not the answer.
+
+What is left is the ENTRY. One input switch produced two `bypass-switch` events
+1.5 s apart, under two different standards, each followed by
+`source UNLOCKED: 524 lines, 2039 samples against divider 1124` -- the channel
+raster sized from the divider the arm computed, against a held divider that is
+still the scaled path's.
+
+**The colour path is wrong DURING that churn and right afterwards.** Caught
+mid-entry the picture renders greys as saturated green with a magenta band, the
+signature of chroma carried at the wrong offset, while `HD_MATRIX_BYPS` 0,
+`HD_DYN_BYPS` 0 and `DEC_MATRIX_BYPS` 1 all read correct for a component source.
+A frame taken of the same menu once the entry settled is grey. So it is a
+transient of the entry rather than a steady misconfiguration, and a single
+photograph of it is evidence about WHEN it was taken.
+
+**`HD_BLK_GY_DATA` is a latent second green.** `updateClampPosition()` writes
+`5 / 0 / 0` to the channel's programmed blank for a YPbPr source on this
+channel, where neutral chroma is 128 rather than 0 -- so the blanked region
+decodes green rather than black. `enable()`'s own `0 / 0 / 0` has the same
+problem. It reaches only the blanking, so it is not what the menu showed.
+
+## Comparing two routes needs a source event between them
+
+`/uc?x` moves the preference, and the engine re-decides only on a solve -- so
+three frames taken across two toggles were all pass-through and the comparison
+between them said nothing. Bounce the input after the toggle, and read
+`DAC_RGBS_BYPS2DAC` in the same window as each frame rather than assuming the
+toggle took.
