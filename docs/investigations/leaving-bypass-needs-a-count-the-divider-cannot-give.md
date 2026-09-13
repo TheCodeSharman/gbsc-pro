@@ -157,3 +157,51 @@ Nothing on this board can configure the MS9288A, so attributing an effect to it
 closes an investigation rather than advancing one -- and the effect here was in
 registers we own the whole way.
 
+## The obvious fix does not work, and that is the finding
+
+The deadlock is `countHeldStill()`: it wants 30 readings agreeing within 3, and
+the count is being read through the divider the previous mode chose. The rule
+for that is already in the engine -- `SourceMeasurement::applyReferenceSampling()`,
+which `VideoPath::prepareToMeasure()` calls on every scaling-path mode change so
+a count is never taken through the last mode's clock.
+
+Adding exactly that to the leave-bypass arm, ahead of the count, **does not fix
+it.** Tried and reverted:
+
+```cpp
+sourceSampling.applyReferenceSampling(rto->osr);
+sourceLines = Tv5725::SourceMeasurement::measureSourceLines();
+const uint16_t heldLines = SourceMeasurement::countHeldStill(sourceLines);
+```
+
+The divider does move -- the wandering count shifts from 234..267 to 200..238 --
+and it still never holds. So the reference clock is necessary and not
+sufficient: the sync path is still configured for bypass alongside it, and how
+much else is missing is not enumerable, because there is no single definition of
+"handle a mode change" for this path to be measured against.
+
+**That is the point.** The scaling path handles a source that moved through
+`VideoSourceAcquisition::poll()` -> `VideoPath::prepareToMeasure()` ->
+`solveFromMeasurement()`. The bypassed path handles it in `runSyncWatcher()`'s
+RGBHV block, which reads the count raw, runs its own hold, spells out its own
+sync-processor setup, resets the display PLL by hand with a 320 ms delay,
+measures its own field rate, and loads its own preset. **Two implementations of
+one operation**, and only one of them has been getting the fixes.
+
+Patching the second to match the first, call by call, is how the divergence gets
+preserved rather than removed. `CLAUDE.md`, *Conventions*: an unexplained
+divergence is not a risk to preserve carefully, it IS the complexity.
+
+## What actually removes it
+
+Step 10 of `docs/video-source-acquisition.md`. The two paths exist because
+`sourceIsRgbhv()` is `videoStandardInput == 14`, and that predicate is what
+selects the parallel block -- `getVideoMode()` opens by short-circuiting on it.
+The byte is what makes RGBHV a KIND OF SOURCE with its own handler instead of an
+input selection with an output mode.
+
+Once the source is measured and an output mode is chosen from the measurement,
+there is no bypass-specific mode-change path left to be missing a step from.
+Until then, a source mode change out of a bypassed mode has no route back and
+the television reports no signal.
+
