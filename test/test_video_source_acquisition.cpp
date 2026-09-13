@@ -13,6 +13,7 @@
 #include "RegistersWritten.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/SyncRecovery.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
@@ -859,6 +860,53 @@ TEST_CASE("a source that stops counting is not present")
     unit.poll();
 
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
+}
+
+TEST_CASE("the ladder's position follows the layer's own measurement")
+{
+    // rto->noSyncCounter indexes SyncRecovery::stepAt() from the sketch, and it
+    // advances on a source this class calls present -- which is what walks the
+    // ADC and the sync processor off a source the engine is solving correctly.
+    // The count belongs beside the measurement that decides it, and the
+    // positions carry over unchanged because runSyncWatcher() is called on the
+    // same 20 ms cadence as poll().
+    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
+    seedBenchSource();
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.recoveryDue() == SyncRecovery::None);
+
+    seedSourceLines(0);
+    for (uint16_t i = 0; i < SyncRecovery::FirstEscalationPass; ++i)
+        unit.poll();
+
+    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::LiftSogFloor);
+}
+
+TEST_CASE("a source that comes back puts the ladder away")
+{
+    // Unlocked rather than absent, so the escalation is exercised against a
+    // source that can then be re-acquired: the ladder must retreat, or a source
+    // that recovers keeps taking recoveries it no longer needs.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(unit.acquisition.recoveryDue() == SyncRecovery::None);
+
+    seedLineSamples(3250);
+    for (uint16_t i = 0; i < SyncRecovery::FirstEscalationPass; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.recoveryDue() != SyncRecovery::None);
+
+    seedLineSamples(BenchDivider);
+    unit.poll();
+
+    CHECK(unit.acquisition.recoveryDue() == SyncRecovery::None);
 }
 
 TEST_CASE("counts that never hold still are not a source")

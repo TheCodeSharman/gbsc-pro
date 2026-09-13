@@ -9,6 +9,7 @@
 
 #include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/VideoPath.h"
+#include "SyncRecovery.h"
 
 class VideoSourceAcquisition {
 public:
@@ -69,6 +70,13 @@ public:
 
     SourceState sourceState() const;
 
+    // Which recovery the escalation ladder is due, from this class's own run of
+    // failed passes. The count lives here because the measurement that decides
+    // it does: rto->noSyncCounter advanced on a source the engine calls
+    // present, and walked the ADC and the sync processor off it.
+    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
+    SyncRecovery::Step recoveryDue() const;
+
     // Acquired, and nothing outstanding against it. The second half matters: a
     // mode change in flight leaves the verdict taken before the source moved.
     bool sourceIsPresent() const;
@@ -106,6 +114,10 @@ private:
     // cannot be read at all; only the second is absent.
     bool measureSource(bool &settling);
 
+    // One pass, with the run gate already asked and the ladder's count still
+    // to advance. Split out so every return from it is counted.
+    bool runPass(uint32_t nowMs);
+
     Tv5725::SourceMeasurement &sampling_;
     Tv5725::VideoPath &videoPath_;
     bool (*mayRun_)();
@@ -127,6 +139,10 @@ private:
     uint32_t candidateRateHz_;
     uint8_t rateRun_;
     bool sourceInterrupted_;
+
+    // Consecutive passes that did not reach an acquired source. Wrapped at the
+    // ladder's cycle rather than left to run, so the cycle stays aligned.
+    uint16_t unmeasuredPasses_;
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_

@@ -47,7 +47,8 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/SourceReading.cpp \
 # acquisition path makes in order -- so a case that wants a solve links the
 # layer with it.
 GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
-	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp
+	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp \
+	src/videosource/SyncRecovery.cpp
 
 HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|SourceStandard|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
@@ -664,7 +665,7 @@ controls:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_controls" \
 	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
-	  src/videosource/VideoSourceAcquisition.cpp
+	  src/videosource/VideoSourceAcquisition.cpp src/videosource/SyncRecovery.cpp
 	@"$(OUT)/test_controls"
 
 ## adc: host unit tests for the ADC PLL's divider and latch

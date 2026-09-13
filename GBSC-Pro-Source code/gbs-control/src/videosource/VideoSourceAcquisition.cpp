@@ -14,7 +14,8 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
-      candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false) {}
+      candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false),
+      unmeasuredPasses_(0) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -272,6 +273,23 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     if (mayRun_ != 0 && !mayRun_())
         return false;
 
+    const bool solved = runPass(nowMs);
+
+    if (sourceState_ == SourceAcquired)
+        unmeasuredPasses_ = 0;
+    else
+        unmeasuredPasses_ = (uint16_t)((unmeasuredPasses_ + 1) % SyncRecovery::CycleLength);
+
+    return solved;
+}
+
+SyncRecovery::Step VideoSourceAcquisition::recoveryDue() const
+{
+    return SyncRecovery::stepAt(unmeasuredPasses_);
+}
+
+bool VideoSourceAcquisition::runPass(uint32_t nowMs)
+{
     // Asked once a pass whether it is used or not, so the cadence does not
     // stretch over a mode change and fire the moment one lands.
     const bool detection = detectionDue(nowMs);
