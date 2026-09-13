@@ -32,7 +32,10 @@ enum PresetPreference : uint8_t {
     Output1080P = 5,
     // 6 was OutputDownscale, which went with the preset tables.
     Output576P = 7,
-    OutputBypass = 10,
+    // 10 was OutputBypass. Handing the source to the panel is not a resolution,
+    // and stored in this field it destroyed the one the user chose -- there was
+    // nowhere else it was kept, so the way back had to invent one.
+    // docs/video-source-acquisition.md
 };
 
 // An output mode: its frame height, and the CEA-861 timings that place the sync

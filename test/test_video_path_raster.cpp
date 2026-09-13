@@ -397,8 +397,11 @@ TEST_CASE("a raster is never solved for bypass")
     REQUIRE(pollUntilSolved(settled.acquisition));
     const uint16_t solved = frameLinesWritten();
 
+    // 10 cast rather than named: pass-through is not a resolution and
+    // outputModeChanged() can no longer be asked for it. A choice naming no
+    // resolution keeps the raster it had rather than solving a wrong one.
     forgetWrites();
-    CHECK_FALSE(settled.engine.outputModeChanged(OutputChoice(OutputBypass)));
+    CHECK_FALSE(settled.engine.outputModeChanged(OutputChoice((PresetPreference)10)));
 
     CHECK_FALSE(Wire.touched[3][0x02]);      // VDS_VSYNC_RST, the frame total
     CHECK_FALSE(Wire.touched[3][0x01]);      // VDS_HSYNC_RST, the line total

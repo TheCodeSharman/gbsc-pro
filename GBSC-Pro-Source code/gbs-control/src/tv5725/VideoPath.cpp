@@ -34,7 +34,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
       solvePending_(false), modePending_(false), modeOversample_(4),
-      choice_(), scaledChoice_(), passThroughSwitch_(0), passThroughAllowed_(false),
+      resolution_(), passedThrough_(false), passThroughSwitch_(0),
+      passThroughAllowed_(false),
       rasterMode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
       activeLinesStop_(0) {}
@@ -112,7 +113,7 @@ bool VideoPath::solveRaster()
     // The choice is an input, not a read-back. Deriving the mode from
     // VDS_VSYNC_RST would leave the preset table -- the thing this replaces --
     // its only writer. docs/chip-initialisation.md.
-    const OutputMode *mode = choice_.resolve();
+    const OutputMode *mode = resolution_.resolve();
     rasterMode_ = mode;
     if (mode == 0) {
         // Not a failure, and NOT a fall back to 1080p: the choice names no
@@ -208,7 +209,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // Off the held choice, not off an argument. solveRaster() derives it again
     // when the solve runs; this keeps outputMode() answering consistently until
     // then.
-    rasterMode_ = choice_.resolve();
+    rasterMode_ = resolution_.resolve();
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
@@ -238,7 +239,7 @@ bool VideoPath::passThroughSuitsSource() const
 
 bool VideoPath::outputModeChanged(const OutputChoice &choice)
 {
-    choice_ = choice;
+    resolution_ = choice;
     if (modePending_)
         return false;
 
@@ -298,8 +299,7 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     // rate that reaches it -- so the measurement just taken re-answers it, and
     // a source that no longer qualifies leaves rather than being stranded.
     // docs/video-source-acquisition.md
-    const OutputMode *current = choice_.resolve();
-    if (current != 0 && current->isBypass()) {
+    if (passedThrough_) {
         if (passThroughSuitsSource()) {
             modePending_ = false;
             FrameBuffer::releaseCapture();
@@ -311,8 +311,8 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
         // reset; nothing else on this path claims any of that back, so leaving
         // is where the chip comes back up. Route first, so the bring-up sees
         // the path it is configuring.
-        choice_ = scaledChoice_;
-        rasterMode_ = choice_.resolve();
+        passedThrough_ = false;
+        rasterMode_ = resolution_.resolve();
         Chip::routeToScaler();
         if (BringUp::armed())
             BringUp::init();
@@ -396,14 +396,10 @@ void VideoPath::enterBypass()
     modePending_ = false;
     FrameBuffer::releaseCapture();
 
-    // What to go back to. Bypass is an output MODE, not a source that has to be
-    // re-chosen from scratch on the way out, and the choice it displaced is the
-    // one the user made.
-    const OutputMode *displaced = choice_.resolve();
-    if (displaced == 0 || !displaced->isBypass())
-        scaledChoice_ = choice_;
-
-    choice_ = OutputChoice(OutputBypass);
+    // resolution_ is NOT touched. It holds the resolution the user asked for, and
+    // pass-through is a different fact about the same output -- overwriting one
+    // with the other is what left the way back with nothing to return to.
+    passedThrough_ = true;
     rasterMode_ = &ModeBypass;
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;

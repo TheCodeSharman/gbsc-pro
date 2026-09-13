@@ -218,11 +218,16 @@ private:
     bool solvePending_;
     bool modePending_;
     uint8_t modeOversample_;
-    OutputChoice choice_;
+    // The output resolution SELECTED -- not what the output is doing, which is
+    // outputMode(). Pass-through suspends it rather than replacing it, so it is
+    // never overwritten and leaving returns to it.
+    OutputChoice resolution_;
 
-    // The output bypass displaced, so leaving it restores what was asked for
-    // rather than re-deriving a resolution nobody chose.
-    OutputChoice scaledChoice_;
+    // Whether the source is handed to the panel. Independent of resolution_, which
+    // holds the resolution the user asked for and is never overwritten: leaving
+    // pass-through therefore returns to that resolution rather than re-deriving
+    // one nobody chose. docs/video-source-acquisition.md
+    bool passedThrough_;
 
     void (*passThroughSwitch_)();
     bool passThroughAllowed_;

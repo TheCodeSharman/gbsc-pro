@@ -81,11 +81,6 @@ const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
     if (presetPreference == Output576P)
         return &Mode576p;
 
-    // A resolution choice whose resolution is the source's, so it names a mode
-    // like any other rather than reading as "nothing chosen".
-    if (presetPreference == OutputBypass)
-        return &ModeBypass;
-
     return 0;
 }
 

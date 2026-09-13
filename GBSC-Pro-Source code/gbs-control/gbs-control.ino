@@ -558,14 +558,15 @@ static void bootLogPrintf(const char *fmt, ...)
 // written raw -- so byte 0 is the one position that can be asserted on, and
 // "not all bytes identical" rules out erased flash and zero fill.
 //
-// **BYTE 0 IS A VALUE, NOT A DIGIT.** saveUserPrefs() writes
-// `presetPreference + '0'` and OutputBypass is 10, so the bypass switch puts
-// ':' there. A digits-only bound rejects a file this firmware wrote, on every
-// boot after it, and a rejected file is what stops saveUserPrefs() writing --
-// including the save behind "restore defaults", so nothing in the UI repairs it.
+// Byte 0 is `presetPreference + '0'` and a preference names a resolution, so it
+// is a digit. It was not always: pass-through used to be stored in the same
+// field as the resolutions, at 10, which encodes as ':' -- so the bound here had
+// to admit one, and a digits-only bound rejected a file this firmware had
+// written. A rejected file is what stops saveUserPrefs() writing at all,
+// including the save behind "restore defaults".
 static bool prefsLookPlausible(const uint8_t *buf)
 {
-    if (buf[0] < '0' || buf[0] > (uint8_t)('0' + OutputBypass)) {
+    if (buf[0] < '0' || buf[0] > (uint8_t)('0' + Output576P)) {
         return false;
     }
     for (uint8_t i = 1; i < PREFS_BYTES; i++) {
@@ -3023,7 +3024,7 @@ void doPostPresetLoadSteps()
 
         // OutputComponentOrVGA();
 
-        if (uopt->presetPreference == 10 && !rgbhvBypass()) {
+        if (!uopt->preferScalingRgbhv && !rgbhvBypass()) {
             rto->autoBestHtotalEnabled = 0;
             if (rto->applyPresetDoneStage == 11) {
 
@@ -4188,7 +4189,7 @@ void runSyncWatcher() //
                 } else {
                     Tv5725::SyncMeasurement::set(false); 
                 }
-                boolean wantPassThroughMode = uopt->presetPreference == 10;
+                boolean wantPassThroughMode = !uopt->preferScalingRgbhv;
 
                 if (!wantPassThroughMode) {
 
@@ -6090,9 +6091,14 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         printf("pass refused: source line rate too low to bypass\n");
                         break;
                     }
-                    enterHdBypass();
-                    uopt->presetPreference = OutputBypass;
+                    // The RESOLUTION is not touched. Handing the source over is a
+                    // different fact about the same output, so it is stored on
+                    // its own and leaving returns to the resolution the user
+                    // chose. docs/video-source-acquisition.md
+                    uopt->preferScalingRgbhv = 0;
+                    applyPassThroughPreference();
                     saveUserPrefs();
+                    enterHdBypass();
                     printf("pass \n");
                     break;
                 case 'T':; // SerialMprint(F("auto gain "));

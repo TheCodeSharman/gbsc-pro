@@ -309,11 +309,12 @@ TEST_CASE("forFrameHeight never answers bypass")
 TEST_CASE("a preference that is not a resolution resolves to no mode")
 {
     // 0 leaves the caller to fall back rather than silently solving the wrong
-    // raster. 6 is cast rather than named because the enumerator no longer
-    // exists: OutputDownscale went with the preset tables. Bypass is NOT one of
-    // these -- it names a mode, and having its own is the point.
+    // raster. Both values are cast rather than named because neither enumerator
+    // exists: 6 was OutputDownscale, which went with the preset tables, and 10
+    // was OutputBypass, which went because handing the source to the panel is
+    // not a resolution.
     CHECK((OutputMode::forPreference((PresetPreference)6) == 0));
-    CHECK((OutputMode::forPreference(OutputBypass) == &ModeBypass));
+    CHECK((OutputMode::forPreference((PresetPreference)10) == 0));
 }
 
 TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")

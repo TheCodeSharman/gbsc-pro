@@ -38,12 +38,14 @@ TEST_CASE("the two members of each old pair are reachable on their own")
     CHECK((OutputChoice(Output1024P).resolve() == &Mode1024p));
 }
 
-TEST_CASE("bypass is an output mode, not the absence of one")
+TEST_CASE("a choice cannot name pass-through")
 {
-    // A resolution choice whose resolution is the source's. It resolves to a
-    // mode like any other, so "what is the output doing" has one answer and
-    // nothing has to read a null pointer as an answer.
-    CHECK((OutputChoice(OutputBypass).resolve() == &ModeBypass));
+    // Handing the source to the panel is not a resolution, and storing it in
+    // the same field destroyed the one the user chose -- there was nowhere else
+    // it was kept, so leaving had to invent one. ModeBypass is still a mode, so
+    // "what is the output doing" has one answer; it is reached from the engine's
+    // own state rather than from a choice. docs/video-source-acquisition.md
+    CHECK((OutputChoice((PresetPreference)10).resolve() == 0));
     CHECK(ModeBypass.isBypass());
 }
 
@@ -63,24 +65,6 @@ TEST_CASE("a choice that names no resolution resolves to no mode")
     CHECK((OutputChoice().resolve() == 0));
     CHECK((OutputChoice(OutputCustomized).resolve() == 0));
     CHECK((OutputChoice((PresetPreference)6).resolve() == 0));
-}
-
-// A scaling RGBHV load has to name a resolution. The preference may not -- it
-// can be pass-through, which is not a resolution to scale to -- so the load
-// asks for the scaled reading of it rather than each caller carrying a literal.
-
-TEST_CASE("a preference that names a resolution is its own scaled reading")
-{
-    const PresetPreference asked[] = { Output480P, Output576P, Output720P,
-                                       Output960P, Output1024P, Output1080P };
-    for (unsigned i = 0; i < sizeof(asked) / sizeof(asked[0]); ++i)
-        CHECK((OutputChoice::scaledOr(asked[i]) == asked[i]));
-}
-
-TEST_CASE("a preference naming no resolution reads as the scaled default")
-{
-    CHECK((OutputChoice::scaledOr(OutputBypass) == OutputChoice::ScaledDefault));
-    CHECK((OutputChoice::scaledOr(OutputCustomized) == OutputChoice::ScaledDefault));
 }
 
 TEST_CASE("the scaled default resolves to a mode")

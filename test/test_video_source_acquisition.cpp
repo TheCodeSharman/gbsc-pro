@@ -441,6 +441,31 @@ TEST_CASE("a source below the line doubler is scaled even where pass-through is 
     CHECK(g_passThroughSwitches == 0);
 }
 
+TEST_CASE("the chosen output resolution survives a pass-through excursion")
+{
+    // A resolution and "hand the source over" are independent facts. Stored in
+    // one field the second destroys the first, and the way back has to invent a
+    // resolution nobody asked for -- which is how a 1024p choice came back as
+    // 1080p after a round trip, in RAM and in the preferences file alike.
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.path.usePassThroughSwitch(enterPassThrough);
+    unit.path.allowPassThrough(true);
+    unit.start(OutputChoice(Output1024P));
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+
+    unit.pollFor(8);
+
+    REQUIRE_FALSE(unit.path.outputMode()->isBypass());
+    CHECK(unit.path.outputMode()->frameLines() == Mode1024p.frameLines());
+}
+
 TEST_CASE("leaving pass-through puts the colour path back")
 {
     // Pass-through takes the decimator's matrix out, because the HD bypass

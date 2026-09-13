@@ -136,9 +136,8 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     case MT_480s576:
         preset = PresetPreference::Output480P;
         break;
-    case MT_BYPASS:
-        preset = PresetPreference::OutputBypass;//  OutputBypass   OutputCustomized
-        break;
+    // MT_BYPASS names no resolution, and the branch below skips it: handing the
+    // source to the panel is stored on its own, not in this field.
     default:
         break;
     }
