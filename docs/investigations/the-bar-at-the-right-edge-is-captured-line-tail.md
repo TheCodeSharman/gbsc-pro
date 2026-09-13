@@ -64,6 +64,51 @@ Photo columns map to output pixels at 0.68 by differencing two frames at
 `VDS_DIS_HB_ST` 1899 and 1859, where the difference IS the forty pixels the
 register blanked.
 
+## The exposed-memory artefact is real, and it is a different object
+
+`produced` is the output pixels the write covers -- `capture x 1024 /
+VDS_HSCALE`, where `capture` is `IF_HB_ST2 - IF_HB_SP2`. Where it falls short of
+the display window, the tail of that window is not written and shows what was
+last there. **That artefact exists and is reproducible**, and telling it from the
+bar is the point of this page.
+
+Shrinking `IF_HB_ST2` ALONE, with automation frozen so nothing re-scales, is what
+produces it. Column profile over rows 100..620, capture start held at 129:
+
+| `IF_HB_ST2` | cols 1140..1215 | cols 1225..1240 |
+|---|---|---|
+| 1083 (default) | 10 | 52 58 58 44 |
+| 1063 | 10 | 52 58 59 44 |
+| 1043 | 10 | 52 58 58 44 |
+| 1003 | **25** | 58 63 63 48 |
+
+A twenty and a forty unit shortening change NOTHING, because the source is static:
+what a shortened write leaves behind is identical to what it would have written.
+At eighty units the band appears, and its left edge is where `produced` now ends
+-- `110 + (1003 - 129) x 1024 / 546 = 1749` output px, which is photo column
+1138 against 1135 measured.
+
+**It looks nothing like the bar.** Wide, flat, dim, and multicoloured comb where
+the bar is narrow, bright and blue.
+
+**And the bar in that frame is stale**, not written: it is the bar from before the
+shrink, frozen in the region the write no longer reaches. Panning it away first
+and then shrinking by the same eighty units gives the same band with no bar in
+it:
+
+| cols | bar in shot, then shrunk | panned away | panned away, then shrunk |
+|---|---|---|---|
+| 1140..1215 | 25 | 10 | 24 |
+| 1225..1240 | **58 63 63 48** | 8.7 8.2 7.8 9.5 | **22 21 21 20** |
+
+Same exposure, same windows, same `produced`. The only difference is which source
+units the capture took, which is what makes the bar written content rather than a
+property of the window's end.
+
+**A PAN CANNOT EXPOSE ANY OF THIS.** Both edges move together, so `capture` and
+`produced` are unchanged and the write covers exactly the same output pixels.
+That is why the bar moving under a pan settles what it is.
+
 ## What it is not
 
 **Not the playback stage running off the memory window.** Both windows end on
