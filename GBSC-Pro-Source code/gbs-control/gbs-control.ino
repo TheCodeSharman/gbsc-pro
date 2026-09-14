@@ -1713,9 +1713,14 @@ static void putSogLevelInForce()
     setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
 }
 
+// No bypass term. Tv5725::SyncOnGreen::acquire() refuses the walk and chooses
+// the default whenever the separator is not in the sync path, which is every
+// separate-sync source on either route, so the term only reached a
+// composite-sync source in pass-through -- where the separator IS what the sync
+// processor reads and the walk is what tunes it.
 void optimizeSogLevel()
 {
-    if (rto->boardHasPower == false || rgbhvBypass()) {
+    if (rto->boardHasPower == false) {
         Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::DefaultLevel);
         return;
     }
