@@ -100,6 +100,25 @@ blocking spin for the fallback. **The bound is essential** -- on the
 separate-sync fault the measurement never converges and the flag stays 1
 indefinitely.
 
+**DERIVING THE FIELD RATE FROM THE LINE COUNT IS NOT THE FIX, AND WOULD REMOVE
+THE ONLY CROSS-CHECK.** `STATUS_SYNC_PROC_VTOTAL` and `VPERIOD_IF` are both
+LINE COUNTS -- RD-5725-1.1 gives the second as "input source V total lines" --
+so neither carries a time base and neither states a rate. `HPERIOD_IF` is the
+only register that does, as "input source H total pixels / 4" against the 27 MHz
+reference. So `fieldRate = lineRate / lines` can only be computed from
+`HPERIOD_IF`, which makes it the same reading rearranged rather than a second
+one: `lineRateFrom()` already multiplies in that direction.
+
+`measureLineRate()` calls `getSourceFieldRate()` **only** where the counter rate
+is refused or uncorroborated -- exactly where `HPERIOD_IF` cannot be trusted.
+Substituting an algebraic rearrangement of it there would agree with a railed
+counter by construction, `ratesAgree()` would pass, and the railed rate would be
+adopted. The fast path already takes no pin measurement at all.
+
+The pin is not used for `VPERIOD_IF`, which is a plain register read. It carries
+the FIELD RATE, and FrameSync's input and output vsync sampling, which needs a
+phase and an output period that no register reports.
+
 ## Dead code whose fate is undecided
 
 ### `applyForScalingRgbhv()` and `applyScalingChargePump()` have no callers
