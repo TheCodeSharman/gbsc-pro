@@ -399,86 +399,52 @@ TEST_CASE("the two progressive standards differ in the vsync window alone")
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 46);
 }
 
-TEST_CASE("720p and 1080p replace the divider the switch wrote")
+TEST_CASE("the HD standards sample off the measurement, not off a frozen literal")
 {
-    applyForStandard(5);
-    CHECK(Adc::PLLAD_MD::read() == 2474);
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 550);
+    // 720p, 1080i and 1080p each carried a divider, a crossover row, a clock
+    // tap and a decimator pair chosen for one raster. 720p's PLLAD_MD 2474 is
+    // past MaxChannelLine - RasterGuardSamples, so the channel could never play
+    // the line out whatever the source did.
+    // ../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
+    for (uint8_t standard : {5, 6, 7}) {
+        CAPTURE(standard);
+        applyForStandard(standard, 524, 2039, 31469);
 
-    applyForStandard(7);
-    CHECK(Adc::PLLAD_MD::read() == 2749);
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 0x710);
+        CHECK(Adc::PLLAD_MD::read() == 2039);
+        CHECK(HdBypass::HD_HSYNC_RST::read() == 2047);
+        CHECK(HdBypass::HD_HB_ST::read() == 2039);
+        CHECK(HdBypass::HD_HS_ST::read() == 40);
+        CHECK(HdBypass::HD_HS_SP::read() == 164);
+    }
 }
 
-TEST_CASE("1080i keeps the divider and only widens its raster")
+TEST_CASE("the computed path plays out a vertical sync pulse of its own")
 {
-    applyForStandard(6);
+    // The arms each wrote one and the computed path did not, so it ran on
+    // whatever enable() last rested at. The pulse belongs beside the horizontal
+    // one, which is already the computed path's.
+    Wire.reset();
+    Wire.poison(Poison);
 
-    CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 0x710);
-    CHECK(Adc::PLLAD_KS::read() == 1);
-    CHECK(Adc::PLLAD_CKOS::read() == 0);
-    CHECK(Adc::ADC_FLTR::read() == 1);  // the 110 MHz corner
+    HdBypass::applyPassThroughSampling(2039, 37879);
+
+    CHECK(HdBypass::HD_VS_ST::read() == 2);
+    CHECK(HdBypass::HD_VS_SP::read() == 7);
 }
 
-TEST_CASE("the HD line carries the detail the widest ADC filter passes")
+TEST_CASE("a source with no arm of its own is given the SD vertical sync position")
 {
-    // 720p and 1080p run the 150 MHz corner and one decimator, where 1080i's
-    // half-rate line does not.
-    applyForStandard(5);
-    CHECK(Adc::ADC_FLTR::read() == 0);
-    CHECK(Adc::ADC_CLK_ICLK1X::read() == 0);
-    CHECK(Adc::DEC2_BYPS::read() == 1);
-    CHECK(Adc::PLLAD_ICP::read() == 6);
-    CHECK(Adc::PLLAD_FS::read() == 1);
+    // Nothing on this route writes the pair otherwise, so a source reaching it
+    // inherits whatever the last entry left -- the same defect the four sync
+    // polarities the bypass switch puts back already had. One value for every
+    // source, as the scaling path has.
+    // ../docs/investigations/the-sd-vsync-window-follows-the-sync-type.md
+    applyForStandard(14, 311, 1856);
 
-    applyForStandard(7);
-    CHECK(Adc::ADC_FLTR::read() == 0);
-    CHECK(Adc::ADC_CLK_ICLK1X::read() == 0);
-    CHECK(Adc::DEC2_BYPS::read() == 1);
-    CHECK(Adc::PLLAD_ICP::read() == 6);
-    CHECK(Adc::PLLAD_FS::read() == 1);
-}
-
-TEST_CASE("each HD standard brings its own horizontal and sync windows")
-{
-    applyForStandard(5);
-    CHECK(HdBypass::HD_HB_ST::read() == 0);
-    CHECK(HdBypass::HD_HB_SP::read() == 320);
-    CHECK(HdBypass::HD_HS_ST::read() == 32);
-    CHECK(HdBypass::HD_HS_SP::read() == 128);
-    CHECK(HdBypass::HD_VS_ST::read() == 0);
-    CHECK(HdBypass::HD_VS_SP::read() == 5);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 2);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 0);
-
-    applyForStandard(6);
-    CHECK(HdBypass::HD_HB_ST::read() == 0);
-    CHECK(HdBypass::HD_HB_SP::read() == 184);
-    CHECK(HdBypass::HD_HS_ST::read() == 4);
-    CHECK(HdBypass::HD_HS_SP::read() == 80);
-    CHECK(HdBypass::HD_VS_ST::read() == 4);
-    CHECK(HdBypass::HD_VS_SP::read() == 9);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 8);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 6);
-
-    applyForStandard(7);
-    CHECK(HdBypass::HD_HB_ST::read() == 0);
-    CHECK(HdBypass::HD_HB_SP::read() == 176);
-    CHECK(HdBypass::HD_HS_ST::read() == 32);
-    CHECK(HdBypass::HD_HS_SP::read() == 112);
-    CHECK(HdBypass::HD_VS_ST::read() == 4);
-    CHECK(HdBypass::HD_VS_SP::read() == 10);
-}
-
-TEST_CASE("1080p leaves the SD vertical window where it found it")
-{
-    // Standard 7 is the one HD arm that writes neither half of the pair, so a
-    // ladder that wrote it anyway would show up here and nowhere else.
-    applyForStandard(7);
-
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == Poison);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == Poison);
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 14);
+    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
+    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 11);
 }
 
 TEST_CASE("an RGBHV source plays out the line the CHANNEL sees, not the ADC line")

@@ -241,7 +241,10 @@ private:
     static void applySd(uint8_t standard);
     static void applyProgressive(uint8_t standard, uint16_t divider,
                                  uint32_t lineRateHz);
-    static void applyHd(uint8_t standard, void (*applyRgbPatches)());
+
+    // YPbPr passed through, which is more than a sampling group: the component
+    // patches, the coast pair and the sync-type hold come with it.
+    static void applyComponent(void (*applyRgbPatches)());
 
     // The ADC PLL's crossover row and VCO gain for an RGBHV source, which is
     // the one thing here that no standard can carry: it follows the source's

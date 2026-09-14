@@ -12,10 +12,7 @@ namespace Tv5725 {
 
 namespace {
 
-// RD-5725-1.1's four corners for ADC_FLTR.
-const uint8_t AnalogFilter150MHz = 0;
-const uint8_t AnalogFilter110MHz = 1;
-const uint8_t AnalogFilter70MHz = 2;
+// The narrowest of RD-5725-1.1's four corners for ADC_FLTR.
 const uint8_t AnalogFilter40MHz = 3;
 
 // The two line counts at which an RGBHV source's ADC PLL changes crossover row.
@@ -35,6 +32,13 @@ const uint16_t BlankEndSamples = 0x90;
 // channel's delay rather than any source's back porch.
 const uint16_t ChannelSyncDelay = 40;
 const uint16_t SyncPulseWidth = 124;
+
+// The vertical sync the block emits, in lines of the frame it plays out. Every
+// arm that carried one placed a pulse of five or six lines within ten of the
+// frame's start, so there is no raster property behind the differences between
+// them.
+const uint16_t ChannelVsyncStart = 2;
+const uint16_t ChannelVsyncStop = 7;
 
 }  // namespace
 
@@ -86,8 +90,8 @@ void HdBypass::enable()
     HD_HS_SP::write(124);                        // s1_41[11:0]
     HD_VB_ST::write(0);                          // s1_43[11:0]
     HD_VB_SP::write(20);                         // s1_45[11:0]
-    HD_VS_ST::write(2);                          // s1_47[11:0]
-    HD_VS_SP::write(7);                          // s1_49[11:0]
+    HD_VS_ST::write(ChannelVsyncStart);          // s1_47[11:0]
+    HD_VS_SP::write(ChannelVsyncStop);           // s1_49[11:0]
 
     HD_EXT_VB_ST::write(0);                      // s1_4b[11:0]
     HD_EXT_VB_SP::write(6);                      // s1_4d[11:0]
@@ -104,19 +108,18 @@ void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
                                 uint16_t activeStartLine,
                                 void (*applyRgbPatches)())
 {
-    // 0 is "nothing recognised" rather than a standard, so it belongs with every
-    // other source no table names -- sampled from the divider the engine holds.
+    // Everything with no arm of its own is sampled from the divider the engine
+    // holds, 0 included: it is "nothing recognised" rather than a standard.
     if (standard == 1 || standard == 2)
         applySd(standard);
     else if (standard == 3 || standard == 4)
         applyProgressive(standard, divider, lineRateHz);
-    else if ((standard >= 5 && standard <= 7) || standard == 13)
-        applyHd(standard, applyRgbPatches);
-    else
+    else if (standard == 13)
+        applyComponent(applyRgbPatches);
+    else {
         applyPassThroughSampling(divider, lineRateHz);
-
-    if (standard == 13)
-        applyRgbhvPll(SourceMeasurement::measureSourceLines());
+        SyncProcessor::applySdVsyncPosition();
+    }
 
     applyVerticalBlanking(activeStartLine);
 }
@@ -173,6 +176,8 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
 
     HD_HS_ST::write(ChannelSyncDelay);
     HD_HS_SP::write(ChannelSyncDelay + SyncPulseWidth);
+    HD_VS_ST::write(ChannelVsyncStart);
+    HD_VS_SP::write(ChannelVsyncStop);
 }
 
 void HdBypass::applySd(uint8_t standard)
@@ -227,77 +232,24 @@ void HdBypass::applyProgressive(uint8_t standard, uint16_t divider,
     }
 }
 
-void HdBypass::applyHd(uint8_t standard, void (*applyRgbPatches)())
+void HdBypass::applyComponent(void (*applyRgbPatches)())
 {
-    if (standard == 5) {
-        Adc::PLLAD_MD::write(2474);
-        HD_HSYNC_RST::write(550);
+    applyRgbPatches();
+    SyncMeasurement::set(true);
+    SyncProcessor::SP_PRE_COAST::write(4);
+    SyncProcessor::SP_POST_COAST::write(4);
+    SyncProcessor::SP_DLT_REG::write(0x70);
+    SyncProcessor::SP_VS_PROC_INV_REG::write(0);
 
-        Adc::PLLAD_KS::write(0);
-        Adc::PLLAD_CKOS::write(0);
-        Adc::ADC_FLTR::write(AnalogFilter150MHz);
-        Adc::ADC_CLK_ICLK1X::write(0);
-        Adc::DEC2_BYPS::write(1);
-        Adc::PLLAD_ICP::write(6);
-        Adc::PLLAD_FS::write(1);
-        HD_HB_ST::write(0);
-        HD_HB_SP::write(0x140);
-        HD_HS_ST::write(0x20);
-        HD_HS_SP::write(0x80);
-            HD_VS_ST::write(0x00);
-        HD_VS_SP::write(0x05);
-        SyncProcessor::writeSdVsyncStart(2);
-        SyncProcessor::writeSdVsyncStop(0);
-    }
-    if (standard == 6) {
-        HD_HSYNC_RST::write(0x710);
+    Adc::PLLAD_KS::write(0);
+    Adc::PLLAD_CKOS::write(0);
+    Adc::ADC_CLK_ICLK1X::write(0);
+    Adc::ADC_CLK_ICLK2X::write(0);
+    Adc::DEC1_BYPS::write(1);
+    Adc::DEC2_BYPS::write(1);
+    Adc::PLLAD_MD::write(512);
 
-        Adc::PLLAD_KS::write(1);
-        Adc::PLLAD_CKOS::write(0);
-        Adc::ADC_FLTR::write(AnalogFilter110MHz);
-        HD_HB_ST::write(0);
-        HD_HB_SP::write(0xb8);
-        HD_HS_ST::write(0x04);
-        HD_HS_SP::write(0x50);
-            HD_VS_ST::write(0x04);
-        HD_VS_SP::write(0x09);
-        SyncProcessor::writeSdVsyncStart(8);
-        SyncProcessor::writeSdVsyncStop(6);
-    }
-    if (standard == 7) {
-        Adc::PLLAD_MD::write(2749);
-        HD_HSYNC_RST::write(0x710);
-
-        Adc::PLLAD_KS::write(0);
-        Adc::PLLAD_CKOS::write(0);
-        Adc::ADC_FLTR::write(AnalogFilter150MHz);
-        Adc::ADC_CLK_ICLK1X::write(0);
-        Adc::DEC2_BYPS::write(1);
-        Adc::PLLAD_ICP::write(6);
-        Adc::PLLAD_FS::write(1);
-        HD_HB_ST::write(0x00);
-        HD_HB_SP::write(0xb0);
-        HD_HS_ST::write(0x20);
-        HD_HS_SP::write(0x70);
-            HD_VS_ST::write(0x04);
-        HD_VS_SP::write(0x0A);
-    }
-    if (standard == 13) {
-        applyRgbPatches();
-        SyncMeasurement::set(true);
-        SyncProcessor::SP_PRE_COAST::write(4);
-        SyncProcessor::SP_POST_COAST::write(4);
-        SyncProcessor::SP_DLT_REG::write(0x70);
-        SyncProcessor::SP_VS_PROC_INV_REG::write(0);
-
-        Adc::PLLAD_KS::write(0);
-        Adc::PLLAD_CKOS::write(0);
-        Adc::ADC_CLK_ICLK1X::write(0);
-        Adc::ADC_CLK_ICLK2X::write(0);
-        Adc::DEC1_BYPS::write(1);
-        Adc::DEC2_BYPS::write(1);
-        Adc::PLLAD_MD::write(512);
-    }
+    applyRgbhvPll(SourceMeasurement::measureSourceLines());
 }
 
 void HdBypass::applyColourPath(bool inputIsYpBpR)
