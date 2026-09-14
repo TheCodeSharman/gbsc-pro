@@ -33,7 +33,6 @@ extern uint8_t RGB_Com;
 extern bool scalingRgbhv();
 extern void applyPresets(uint8_t videoMode);
 extern uint8_t standardForPresetLoad();
-extern void setOutModeHdBypass(bool bypass);
 extern void saveUserPrefs();
 extern float getOutputFrameRate();
 extern void loadDefaultUserOptions();
