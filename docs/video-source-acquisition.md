@@ -1213,12 +1213,18 @@ from `loadScalingRgbhvPreset()`, which went with the preset tables, so what they
 do happens nowhere -- and whether each was a put-back that dies with the tables
 or a behaviour to restore is undecided.
 
-What is still spelled out is the line counter's start and the standard byte's
-round trip through `applyPresets()`. The option bit is placed, in
-`loadComputedPreset()`, and **the external clock generator is placed**: the
-`!scalingRgbhv()` exclusion in `loop()`'s handoff stood in front of nobody once
-`loadScalingRgbhvPreset()` was deleted, and is gone. The standard byte's round
-trip is step 12's.
+Three of the four are placed. The option bit is `loadComputedPreset()`'s. **The
+external clock generator is placed**: the `!scalingRgbhv()` exclusion in
+`loop()`'s handoff stood in front of nobody once `loadScalingRgbhvPreset()` was
+deleted, and is gone. **The line counter's start needs nothing placed**: the
+scaling RGBHV arm used to write `IF_INI_ST` 16 over the load's 0, and the two are
+indistinguishable -- measured A/B/A/B on the bench source at the default framing,
+the picture's left edge sits at photo column 93, 93, 93, 92, which is the
+camera's own spread. So the load's one value for every source stands and the 16
+is not a behaviour that went missing.
+
+What is left is the standard byte's round trip through `applyPresets()`, which is
+step 12's.
 
 **AND PASS-THROUGH HAS ONE OWNER.** `VideoSourceAcquisition::passSourceThrough()`
 is the only caller that decides it, because it is the only one holding a
