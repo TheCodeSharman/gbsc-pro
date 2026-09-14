@@ -901,15 +901,36 @@ per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
 what it meant.
 
 **Step 13 waits on nothing. `runSyncWatcher()` has no arm**, and what is left
-is 118 lines in four, every one of them gated on the engine's run rather than on
+is 101 lines in four, every one of them gated on the engine's run rather than on
 what the source is called:
 
 | part | whose |
 |---|---|
 | guards, the interrupt hand-off, the HD bypass vsync window, the sync-on-green tuning | step 12 for `standardIsHeld()`, nothing else |
 | the no-sync branch | `!sourceIsPresent()` is the gate, for every source |
-| the stable branch | `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
+| the stable branch | `sourceIsPresent()` is the gate; `SourceMaintenance` holds its cadence |
 | the 900 ms channel sync polarity and SOG-bad acknowledgement | `isHdBypassChannel()` is the gate |
+
+**THE CADENCE IS A CLASS, AND THE TICK IS ONE TICK.** `SourceMaintenance` names
+what a settled source is due -- the capture hold, the dynamic sync-processor
+write, the separator level, the sampling phase, the window re-place, the SOG-bad
+acknowledgement, the deinterlacer steer -- and performs none of it, the shape
+`SyncRecovery` already uses one level up. What it replaces is fourteen literal
+pass counts inside the stable branch, where the cadence could only be read by
+collecting them.
+
+And it runs **once per count**. `loop()` gated the watcher on a 20 ms timer of
+its own beside the acquisition tick's, so the two drifted: a count could be
+answered twice or not at all, which is why the long-absence restore was
+reachable only through a window of one detection interval.
+`VideoSourceAcquisition::runAdvanced()` says which pass advanced the run, and
+that is the gate.
+
+**One act did not survive the move**, and it is recorded because a reader will
+look for it: `ADC_UNUSED_67::write(0)` at forty-five passes. It is s5 0x67, 16
+bits undescribed in RD-5725-1.1, written in three places and read in none --
+unlike `ADC_UNUSED_69`, which `checkBoardPower()` round trips. The other two
+writers clear 0x64..0x67 together; this one cleared 0x67 alone.
 
 **THE ARM IS RETIRED, AND NEITHER OF ITS ACTS WAS RGBHV'S.**
 
@@ -1816,6 +1837,15 @@ inside the source's vertical blanking, 45 lines being the shortest here.
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
 `inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is already gone, so
 what this leaves is one tick in the firmware and one owner of it.
+
+**The tick is already one tick**, and the cadence and the escalation ladder are
+both classes, so what is left of the function is the ACTS -- and every one of
+them is still a sketch function: `updateSpDynamic()`, `optimizePhaseSP()`,
+`optimizeSogLevel()`, `runRecoveryStep()`, `steerHdBypassVsyncWindow()`. Moving
+the loop that calls them without moving them first only relocates the problem,
+and moving them by handing the engine a callback per act is the shape this
+refactor exists to remove -- the sketch only shrinks. So each act joins the class
+that owns its registers, and the function empties as the last one leaves.
 
 ## Input selection is the same collapse, one level up
 
