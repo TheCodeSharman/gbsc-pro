@@ -2018,7 +2018,8 @@ uint8_t detectAndSwitchToActiveInput()
                 unsigned long timeOutStart = millis();
                 while ((millis() - timeOutStart) < 6000) {
                     delay(2);
-                    if (getVideoMode() > 0) {
+                    if (Tv5725::SourceMeasurement::countIsSource(
+                            Tv5725::SourceMeasurement::measureSourceLines())) {
                         return 2;
                     }
 
