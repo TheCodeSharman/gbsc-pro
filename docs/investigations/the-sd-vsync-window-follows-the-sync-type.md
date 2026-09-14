@@ -48,6 +48,34 @@ So two sources whose sync arrangement is identical are placed ten lines apart
 because a classifier named one of them, and a source whose sync arrangement
 makes the register inert has a value chosen for it anyway.
 
+## It is a free pan, not a raster property
+
+Swept on the Wii at 480p with the engine running, every write read back, and the
+engine's 14 repeated between every treatment. The bottom edge of the cyan tile,
+in rows of a rectified `tv-snap`:
+
+| `SP_SDCS_VSST` | tile bottom | against 14 |
+|---|---|---|
+| 4 | 573 | +14 |
+| **14** (five controls) | **559, 559, 559, 559, 559** | — |
+| 24 | 545 | -14 |
+| 44 | 515 | -44 |
+| 84 | 456 | -103 |
+
+Linear at **1.40 photo rows per count** across the whole 80-count range, with no
+saturation and no break. The panel's 1080 output lines occupy about 680 photo
+rows and the source's 480 lines are scaled to fill them, so 1.40 photo rows is
+**one source line per count** exactly. `STATUS_SYNC_PROC_VTOTAL` 524 and
+`VPERIOD_IF` 524 never move, and neither does the capture window the engine
+solves -- `/geometry` holds `ov` 35, `ev` 480 throughout.
+
+So the register is a vertical pan of the captured frame with no correct value,
+and **the engine already owns vertical pan**. Two owners of one placement, one
+of them chosen by a classification.
+
+The bound is content, not lock: at 84 the tile's height drops from 489 rows to
+441 because the frame has been panned off the top of what is captured.
+
 ## Deleting the arm is not free
 
 `SourceStandard` is down to this one arm and this one register pair, and it has
