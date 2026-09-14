@@ -1664,6 +1664,33 @@ lands wherever FrameSync does.
 no readers. *What the byte conflates* above has what each of its fifteen values
 carried and what replaced it.
 
+**VALUE 14 IS THE INPUT SELECTION, AND THAT IS MEASURED.** The byte reaches 14
+in exactly one place -- `detectAndSwitchToActiveInput()`, gated on
+`currentInput == 1 && (SeleInputSource == S_VGA || SeleInputSource == S_RGBs)`
+-- and everything after is circular, because `getVideoMode()` returns
+`heldStandard()` once `sourceIsRgbhv()` is true. Bench: `vga` reports `m:15`,
+the Wii on `ypbpr` reports `m:3`.
+
+**`S_RGBs` COVERS RGsB TOO, so that gate omits nothing.** `SeleInputSource` is
+the legacy three-value encoding -- `S_RGBs` 1, `S_VGA` 2, `S_YUV` 3 -- and
+`VideoSourceSelection`'s table gives `Rgbs` and `RgsB` the same `legacySource`
+of 1. All three connector-sharing inputs are in. Reading the constant as naming
+only the RGBs input makes it look like a bug and it is not.
+
+`Info` is the full six-value `VideoSourceSelection::Id`, with a static_assert
+chain proving the two spellings agree, so the selection can answer this without
+the byte.
+
+**WHAT STOPS IT BEING A ONE-LINE MOVE** is that the two are not the same
+predicate. `videoStandardInput == 14` means an RGBHV source was DETECTED;
+`VideoSourceSelection::isRgbhv(Info)` means one is SELECTED, and on a
+freshly-selected input with no sync those differ. `rgbhvBypass()` is where that
+bites: `isScaling()` starts false, so the substitution makes it true before
+detection, and its two gates -- `updateCoastPosition()` and `optimizeSogLevel()`
+-- both return early, neutering the separator acquisition on the very input
+being detected. So the readers have to be taken together with what each of them
+actually wanted, which is why this step is the byte and not one predicate.
+
 **THE UNIT OF REMOVAL IS THE VALUE, NOT THE FIELD.** Deleting the field means
 deleting every reference to every value it ever held, so a change that moves one
 value to another -- 3 to 14, say, to close the window
