@@ -2758,7 +2758,7 @@ void doPostPresetLoadSteps()
         Tv5725::InputFormatter::writeLineCounterStart(0);
         Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
 
-        Tv5725::SourceStandard(rto->videoStandardInput, rto->inputIsYpBpR).apply();
+        Tv5725::SourceStandard(rto->videoStandardInput).apply();
 
         // The most the clock can carry, for every source: the decimators undo
         // the faster tap so the same samples a line reach the pipeline either

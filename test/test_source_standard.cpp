@@ -48,24 +48,24 @@ static void presentLineCount(uint16_t lines)
     Wire.bank[0][0x1C] = static_cast<uint8_t>(lines >> 8);
 }
 
-static void apply(uint8_t standard, bool inputIsYpBpR, uint8_t poison)
+static void apply(uint8_t standard, uint8_t poison)
 {
     Wire.reset();
     Wire.poison(poison);
     presentLineCount(presentedLines);
-    SourceStandard(standard, inputIsYpBpR).apply();
+    SourceStandard(standard).apply();
 }
 
 // A field the run left at the poison was never written. One poison proves
 // nothing where its bits already match the wanted value, so the run is repeated
 // under the complement and a field the two disagree about is NotWritten.
-static uint32_t written(uint8_t standard, bool inputIsYpBpR, uint8_t segment,
+static uint32_t written(uint8_t standard, uint8_t segment,
                         uint8_t reg, uint8_t offset, uint8_t width)
 {
     const uint8_t poisons[2] = {Poison, static_cast<uint8_t>(~Poison)};
     uint32_t under[2];
     for (int i = 0; i < 2; ++i) {
-        apply(standard, inputIsYpBpR, poisons[i]);
+        apply(standard, poisons[i]);
         under[i] = Wire.field(segment, reg, offset, width);
     }
     return under[0] == under[1] ? under[0] : NotWritten;
@@ -73,8 +73,8 @@ static uint32_t written(uint8_t standard, bool inputIsYpBpR, uint8_t segment,
 
 // A hand-written address does not error, it returns a plausible number, so a
 // field is named only through its own typedef.
-#define WRITTEN(standard, ypbpr, Field)                                        \
-    written(standard, ypbpr, Field::segment, Field::byteOffset,                \
+#define WRITTEN(standard, Field)                                               \
+    written(standard, Field::segment, Field::byteOffset,                       \
             Field::bitOffset, Field::bitWidth)
 
 TEST_CASE("no standard writes the ADC PLL group")
@@ -85,14 +85,14 @@ TEST_CASE("no standard writes the ADC PLL group")
     // the same thing against a post divider nobody measured.
     for (uint8_t standard : {1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 14}) {
         CAPTURE(standard);
-        CHECK(WRITTEN(standard, false, Adc::PLLAD_KS) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::PLLAD_FS) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::PLLAD_ICP) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::PLLAD_CKOS) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::ADC_CLK_ICLK1X) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::ADC_CLK_ICLK2X) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::DEC1_BYPS) == NotWritten);
-        CHECK(WRITTEN(standard, false, Adc::DEC2_BYPS) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::PLLAD_KS) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::PLLAD_FS) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::PLLAD_ICP) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::PLLAD_CKOS) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::ADC_CLK_ICLK1X) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::ADC_CLK_ICLK2X) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::DEC1_BYPS) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::DEC2_BYPS) == NotWritten);
     }
 }
 
@@ -101,9 +101,9 @@ TEST_CASE("no standard on the scaling path touches the ADC's analog filter")
     // It is a property of the sample clock, not of a classification, and at
     // every clock this board reaches its narrowest corner is still above
     // Nyquist. Adc::init() opens it once, widest, for every source.
-    for (uint8_t standard : {1, 2, 3, 4, 8, 9, 14}) {
+    for (uint8_t standard : {1, 2, 3, 4, 5, 6, 7, 8, 9, 14}) {
         CAPTURE(standard);
-        CHECK(WRITTEN(standard, false, Adc::ADC_FLTR) == NotWritten);
+        CHECK(WRITTEN(standard, Adc::ADC_FLTR) == NotWritten);
     }
 }
 
@@ -113,13 +113,15 @@ TEST_CASE("no standard writes what the scan mode decides")
     // VDS_V_DELAY and MADPT_Y_DELAY realign the 422/444 conversion around it,
     // so all four follow whether the doubler is in the path -- which the engine
     // measures and no classification can improve on.
-    for (uint8_t standard : {1, 2, 3, 4, 8, 9}) {
+    for (uint8_t standard : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
         CAPTURE(standard);
-        CHECK(WRITTEN(standard, false, InputFormatter::IF_SEL_WEN) == NotWritten);
-        CHECK(WRITTEN(standard, false, InputFormatter::IF_HS_SEL_LPF) == NotWritten);
-        CHECK(WRITTEN(standard, false, VideoProcessor::VDS_V_DELAY) == NotWritten);
-        CHECK(WRITTEN(standard, true, VideoProcessor::VDS_V_DELAY) == NotWritten);
-        CHECK(WRITTEN(standard, false, Deinterlacer::MADPT_Y_DELAY) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_SEL_WEN) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_PRGRSV_CNTRL) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HS_DEC_FACTOR) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HS_SEL_LPF) == NotWritten);
+        CHECK(WRITTEN(standard, VideoProcessor::VDS_V_DELAY) == NotWritten);
+        CHECK(WRITTEN(standard, VideoProcessor::VDS_V_DELAY) == NotWritten);
+        CHECK(WRITTEN(standard, Deinterlacer::MADPT_Y_DELAY) == NotWritten);
     }
 }
 
@@ -127,13 +129,11 @@ TEST_CASE("no standard writes the luma delay either")
 {
     // It needs the colour path as well as the scan mode, and both are the
     // engine's: it is told which connector is live and it measures the doubler.
-    for (uint8_t standard : {1, 2, 3, 4, 8, 9}) {
+    for (uint8_t standard : {1, 2, 3, 4, 5, 6, 7, 8, 9}) {
         CAPTURE(standard);
-        for (bool ypbpr : {false, true}) {
-            CHECK(WRITTEN(standard, ypbpr, InputFormatter::IF_HS_TAP11_BYPS) == NotWritten);
-            CHECK(WRITTEN(standard, ypbpr, InputFormatter::IF_HS_Y_PDELAY) == NotWritten);
-            CHECK(WRITTEN(standard, ypbpr, VideoProcessor::VDS_Y_DELAY) == NotWritten);
-        }
+        CHECK(WRITTEN(standard, InputFormatter::IF_HS_TAP11_BYPS) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HS_Y_PDELAY) == NotWritten);
+        CHECK(WRITTEN(standard, VideoProcessor::VDS_Y_DELAY) == NotWritten);
     }
 }
 
@@ -142,9 +142,9 @@ TEST_CASE("a standard with nothing of its own writes nothing at all")
     // Standard 14 is RGBHV, which the geometry engine measures and samples for
     // itself, and there is no line of that shape to prepare the rest of the
     // pipeline for.
-    CHECK(WRITTEN(14, false, SyncProcessor::SP_SDCS_VSST_REG_L) == NotWritten);
-    CHECK(WRITTEN(14, false, InputFormatter::IF_PRGRSV_CNTRL) == NotWritten);
-    CHECK(WRITTEN(14, false, VideoProcessor::VDS_Y_DELAY) == NotWritten);
+    CHECK(WRITTEN(14, SyncProcessor::SP_SDCS_VSST_REG_L) == NotWritten);
+    CHECK(WRITTEN(14, InputFormatter::IF_PRGRSV_CNTRL) == NotWritten);
+    CHECK(WRITTEN(14, VideoProcessor::VDS_Y_DELAY) == NotWritten);
 }
 
 // --- the progressive standards -----------------------------------------------
@@ -157,8 +157,8 @@ TEST_CASE("every progressive standard opens the SD vsync window at one place")
     // indistinguishable either side of the move.
     for (uint8_t standard : {3, 4, 8, 9}) {
         CAPTURE(standard);
-        CHECK(WRITTEN(standard, false, SyncProcessor::SP_SDCS_VSST_REG_L) == 14);
-        CHECK(WRITTEN(standard, false, SyncProcessor::SP_SDCS_VSSP_REG_L) == 11);
+        CHECK(WRITTEN(standard, SyncProcessor::SP_SDCS_VSST_REG_L) == 14);
+        CHECK(WRITTEN(standard, SyncProcessor::SP_SDCS_VSSP_REG_L) == 11);
     }
 }
 
@@ -173,46 +173,33 @@ TEST_CASE("the source's height changes nothing")
         Wire.reset();
         Wire.poison(Poison);
         presentLineCount(presentedLines);
-        SourceStandard(standard, false).apply();
+        SourceStandard(standard).apply();
         const std::vector<FakeTwoWire::Traced> ordinary = Wire.trace;
 
         presentedLines = TallSourceLines;
         Wire.reset();
         Wire.poison(Poison);
         presentLineCount(presentedLines);
-        SourceStandard(standard, false).apply();
+        SourceStandard(standard).apply();
 
         CHECK(Wire.trace.size() == ordinary.size());
     }
     presentedLines = OrdinarySourceLines;
 }
 
-// --- the HD standards, and the one with a measurement of its own --------------
-
-TEST_CASE("an HD standard opens the ADC filter and takes the line whole")
+TEST_CASE("only a progressive standard writes anything at all")
 {
-    // 5, 6 and 7 reach here through the HD bypass switch. ADC_FLTR 1 is the
-    // 110 MHz corner, four times the SD one, and the line doubler comes off.
-    CHECK(WRITTEN(5, false, Adc::ADC_FLTR) == 1);
-    CHECK(WRITTEN(5, false, InputFormatter::IF_PRGRSV_CNTRL) == 1);
-    CHECK(WRITTEN(5, false, InputFormatter::IF_HS_DEC_FACTOR) == 0);
-    CHECK(WRITTEN(5, false, VideoProcessor::VDS_Y_DELAY) == 3);
-}
-
-TEST_CASE("interlaced SD has nothing of its own left at all")
-{
-    // Its filter corner went to Adc::init() and everything else it wrote is
-    // derived from the scan mode or the selected input, so 1 and 2 are values
-    // no register follows any more.
-    for (uint8_t standard : {1, 2}) {
+    // The HD arm is gone: its filter corner is Adc::init()'s one value for every
+    // source, and its scan-mode and luma writes are what the engine derives from
+    // the line doubler it measures. So every standard but 3, 4, 8 and 9 is a
+    // value no register follows.
+    for (uint8_t standard : {1, 2, 5, 6, 7, 13, 14}) {
         CAPTURE(standard);
-        for (bool ypbpr : {false, true}) {
-            Wire.reset();
-            Wire.poison(Poison);
-            presentLineCount(presentedLines);
-            SourceStandard(standard, ypbpr).apply();
-            CHECK(Wire.trace.empty());
-        }
+        Wire.reset();
+        Wire.poison(Poison);
+        presentLineCount(presentedLines);
+        SourceStandard(standard).apply();
+        CHECK(Wire.trace.empty());
     }
 }
 
@@ -226,9 +213,9 @@ TEST_CASE("no standard writes the input line's horizontal blanking")
     // docs/investigations/if-hbin-second-capture-window.md
     for (uint8_t standard : {1, 2, 3, 4, 8, 9, 14}) {
         CAPTURE(standard);
-        CHECK(WRITTEN(standard, false, InputFormatter::IF_HB_ST) == NotWritten);
-        CHECK(WRITTEN(standard, false, InputFormatter::IF_HB_SP) == NotWritten);
-        CHECK(WRITTEN(standard, false, InputFormatter::IF_HBIN_ST) == NotWritten);
-        CHECK(WRITTEN(standard, false, InputFormatter::IF_HBIN_SP) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HB_ST) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HB_SP) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HBIN_ST) == NotWritten);
+        CHECK(WRITTEN(standard, InputFormatter::IF_HBIN_SP) == NotWritten);
     }
 }

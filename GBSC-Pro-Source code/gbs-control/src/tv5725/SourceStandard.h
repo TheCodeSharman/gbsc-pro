@@ -5,31 +5,23 @@
 
 namespace Tv5725 {
 
-// The settings Mode Detect's classification of the source implies and no
-// measurement supplies: the ADC's analog filter, and how the input formatter
-// and the video processor handle a line of that shape. Everything derivable
-// from the source belongs to the geometry engine instead.
+// The one register pair a classification of the source still decides: where the
+// sync processor looks for vertical sync inside composite sync. Everything else
+// it used to write is derived from something the engine measures.
 //
-// **NOT THE ADC PLL GROUP.** Adc::applySampleRate() owns the divider, the
-// crossover row, the VCO gain and the clock tap, and derives all four from the
-// clock the engine's divider and measured line rate make between them. A
-// literal here is a second derivation of the same thing against a post divider
-// nobody measured.
+// **THIS CLASS IS THE VIDEO STANDARD CONCEPT AND IS BEING RETIRED.** The window
+// belongs to Tv5725::SourceTiming, whose published rasters already state where
+// vertical sync sits in a frame. docs/video-source-acquisition.md
 class SourceStandard {
 public:
-    SourceStandard(uint8_t videoStandardInput, bool inputIsYpBpR);
+    explicit SourceStandard(uint8_t videoStandardInput);
 
     void apply() const;
 
 private:
     bool isProgressive() const;  // 3, 4, 8 and 9
-    bool isHd() const;           // 5, 6 and 7, reached through the HD bypass switch
-
-    void applyProgressive() const;
-    void applyHd() const;
 
     uint8_t standard_;
-    bool inputIsYpBpR_;
 };
 
 }  // namespace Tv5725
