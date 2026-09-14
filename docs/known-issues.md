@@ -42,6 +42,33 @@ reaches the picture -- at a clamp inside active video the greys take the colour
 beside them. `SyncProcessor::acquireClampWindow()`'s fractions are the fault and
 it is general, not a composite-sync quirk.
 
+### The sampling-phase sweep scores on exact equality, and the count dithers by one
+
+`Adc::acquirePhase()` scores a phase clean only when all twenty of its
+`measureLineSamples()` reads equal `PLLAD_MD` EXACTLY, and refuses the whole
+search unless seventeen of the thirty-four phases score clean. The gate in front
+of it, `SourceMeasurement::dividerLatched()`, allows a tolerance of **8**. The
+sweep allows none.
+
+Measured on the bench RiscPC at 320x256@50, acquired with a clean picture,
+`ms=25` over 15 s from inside `loop()`: `STATUS_SYNC_PROC_HTOTAL` equals the
+divider in **410 of 556 samples** and sits one count either side in the other
+146. At a per-read mismatch of 26% a phase clears twenty reads about twice in a
+thousand, so no phase ever scores clean and the search refuses every time --
+`sampling phase: no clean window, oversample 4`, seven attempts per solve,
+at 320x256 and at 640x480 alike.
+
+What that leaves is not a chosen phase: `PA_ADC_S` stays at the 16 nothing
+chose, and `PA_SP_S` is wherever the sweep's walk stopped, which moves run to
+run -- 20, then 0, then 20 across three solves. **The Wii at 480p is the
+contrast**: the search succeeds there and `PA_ADC_S` reads the 0 a successful
+4x search picks.
+
+**A tolerance is not obviously the fix.** Accepting +/-1 would make every phase
+clean, `worstScore` zero, and the answer `MidField` regardless -- which is where
+the phase already sits. Whether the sweep should tolerate the counter's own
+dither while still discriminating between phases wants a bench sweep behind it.
+
 ### `HPERIOD_IF` rails, and the recovery ladder is not certain
 
 Long-standing and documented in `../CLAUDE.md` and
@@ -53,6 +80,26 @@ leaving 511/255 with `STATUS_IF_HT_OK` 0, and a second round trip restoring 431
 in 4 of 4 samples.
 
 ## Fixed, kept here until the next session has seen them
+
+### The ADC sampling phase was chosen against the oversampling ASKED FOR
+
+**FIXED.** `rto->osr` carries the REQUEST -- `Adc::OversampleAsClockAllows`,
+which is 8 -- and `Adc::applySampleRate()` clamps it to the ADC PLL's crossover
+row and returns what it installed. That return value was discarded, so nothing
+held the ratio in force and `Adc::acquirePhase()` saw the 8: both of its
+`choosePhaseAdc()` arms test `oversample == 4`, which an 8 never satisfies, so
+the half-sample offset they exist to apply could not run on the engine's path.
+
+`Adc::oversampleInForce()` holds it now, and the console says what the search
+was given and what came of it. Measured after: `sampling phase: no clean window,
+oversample 4` on the bench source against `rto->osr` 8.
+
+**It reaches the picture only where the search succeeds**, which on this bench
+is the Wii. Photographed at both phases on both sources with the same state shot
+twice as the control, the two are indistinguishable: PM5544's finest grating
+gives 45.13 / 45.56 at the new phase against 45.00 / 45.55 at the old, and the
+Wii's text 2.16 / 2.02 against 2.05 / 2.02 -- the control's own repeat spans the
+whole difference in both.
 
 ### Composite sync re-solved every two to four seconds, and the sink dropped it
 
