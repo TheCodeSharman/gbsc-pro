@@ -34,6 +34,38 @@ video at 80%. The raster match itself is right -- sync duty 11.50% against DMT's
 fault is in what the capture window is solved to, not in which raster was
 matched.
 
+### Composite sync re-solves every two to four seconds, and the sink drops it
+
+On the bench RiscPC at 320x256@50 with `SYNC 1`, the sync processor's count
+alternates 308/309. Each change is a real source move as far as
+`VideoPath::sourceMoved()` is concerned, so it arms a solve, which runs a
+1000 ms `own V sync` probe and a re-solve, and the cycle repeats:
+
+```
+57.82  source moved: count (309 lines, solved 308)
+59.06  own V sync: no after 1001ms
+59.67  sampling: 308 lines x 50.56 Hz -> line rate 15625
+59.87  source moved: count (309 lines, solved 308)
+61.11  own V sync: no after 1000ms
+```
+
+The sink reports no signal throughout, while every register reads healthy --
+`SP_CS_CLP_ST` 14, `SP_CS_CLP_SP` 76, `HPERIOD_IF` 431,
+`STATUS_SYNC_PROC_HTOTAL` 2050, PLL locked. The separate-sync leg on the same
+source, mode and cable is stable at 311 with a clean picture.
+
+**It is not always like this.** The same leg carried a picture earlier in the
+same session, before the unit had been flashed, with identical clamp and coast
+windows. What separates a csync leg that works from one that does not is open;
+an OTA flash before it is the one difference so far, and `/sc?~` on the
+separate-sync leg is what recovers the unit afterwards.
+
+The steadiness run is what should absorb a one-count alternation, and on the
+interlaced Wii it correctly refuses to call such a source acquired at all.
+Here the count settles enough to solve and then moves again, which is the
+opposite end of the same mechanism.
+`../CLAUDE.md`, the mode-detect and steadiness-run notes.
+
 ### The clamp window sits inside the sync pulse, on both sync branches
 
 Two instances: 320x256 on composite sync, clamp 14..76 against a 144-sample
