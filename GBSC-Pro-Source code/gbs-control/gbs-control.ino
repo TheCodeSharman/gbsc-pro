@@ -1963,22 +1963,6 @@ uint8_t detectAndSwitchToActiveInput()
                             decodeSuccess, ownVsync ? "yes" : "no",
                             Tv5725::SyncMeasurement::isCsync() ? "csync" : "separate H/V");
 
-                        for (uint8_t i = 0; i < 16; i++) {
-
-                            uint8_t innerVideoMode = getVideoMode();
-                            if (innerVideoMode == 8) {
-                                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                                rto->medResLineCount = GBS::MD_HD1250P_CNTRL::read();
-                                // SerialMprintln(F("med res"));
-
-                                return 1;
-                            }
-
-                            GBS::MD_HD1250P_CNTRL::write(GBS::MD_HD1250P_CNTRL::read() + 1);
-
-                            delay(30);
-                        }
-
                         holdStandard(Tv5725::PresetLoad::BypassRgbhv);
                         applyPresets(Tv5725::PresetLoad::BypassRgbhv);
                         delay(100);
@@ -1998,10 +1982,9 @@ uint8_t detectAndSwitchToActiveInput()
                     timeOutStart = millis();
                     while ((millis() - timeOutStart) < 6000) {
                         delay(2);
-                        if (getVideoMode() > 0) {
-                            if (getVideoMode() != 8) { 
-                                return 1;
-                            }
+                        if (Tv5725::SourceMeasurement::countIsSource(
+                                Tv5725::SourceMeasurement::measureSourceLines())) {
+                            return 1;
                         }
                         testCycle++;
                         
@@ -2017,21 +2000,6 @@ uint8_t detectAndSwitchToActiveInput()
                             setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
                         }
 
-                        
-                        if (getVideoMode() == 8) {
-                            Tv5725::SyncOnGreen::choose(13);
-                            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-                            rto->medResLineCount = GBS::MD_HD1250P_CNTRL::read();
-                            ; // SerialMprintln(F("med res"));
-                            return 1;
-                        }
-
-                        uint8_t currentMedResLineCount = GBS::MD_HD1250P_CNTRL::read();
-                        if (currentMedResLineCount < 0x3c) {
-                            GBS::MD_HD1250P_CNTRL::write(currentMedResLineCount + 1);
-                        } else {
-                            GBS::MD_HD1250P_CNTRL::write(0x33);
-                        }
                     }
                     return 1;
                 }
