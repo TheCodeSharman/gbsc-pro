@@ -767,3 +767,121 @@ TEST_CASE("only an RGBHV source reads its line count at all")
         CHECK(Adc::PLLAD_FS::read() == fs);
     }
 }
+
+// The channel emits the pulse it is programmed with, and the sink expects it
+// the way round the SOURCE sends it. The pair is held rather than read back:
+// two registers cannot say which of the values in them is the start, and the
+// arms and the computed path write different pairs.
+
+static Tv5725::HdBypass::SourceSyncEdges edges(bool hFound, bool hPositive,
+                                               bool vFound, bool vPositive)
+{
+    Tv5725::HdBypass::SourceSyncEdges e;
+    e.hsyncFound = hFound;
+    e.hsyncPositive = hPositive;
+    e.vsyncFound = vFound;
+    e.vsyncPositive = vPositive;
+    return e;
+}
+
+TEST_CASE("a positive source hsync puts the channel's pulse start first")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879);
+
+    HdBypass::applyChannelSyncEdges(edges(true, true, false, false));
+
+    CHECK(HdBypass::HD_HS_ST::read() == 40);
+    CHECK(HdBypass::HD_HS_SP::read() == 164);
+    CHECK(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 0);
+}
+
+TEST_CASE("a negative source hsync puts the channel's pulse stop first")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879);
+
+    HdBypass::applyChannelSyncEdges(edges(true, false, false, false));
+
+    CHECK(HdBypass::HD_HS_ST::read() == 164);
+    CHECK(HdBypass::HD_HS_SP::read() == 40);
+    CHECK(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
+}
+
+TEST_CASE("the polarity orders the pair the arm wrote, whichever pair that is")
+{
+    // applySd() writes 0x80 / 0x00, which is already stop-first. A positive
+    // source turns that pair round rather than replacing it with the computed
+    // path's, because the pulse is the arm's and only its ORDER is in question.
+    applyForStandard(1);
+
+    HdBypass::applyChannelSyncEdges(edges(true, true, false, false));
+
+    CHECK(HdBypass::HD_HS_ST::read() == 0);
+    CHECK(HdBypass::HD_HS_SP::read() == 128);
+}
+
+TEST_CASE("an hsync the sync processor cannot see leaves the pulse alone")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879);
+    Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::write(1);
+
+    HdBypass::applyChannelSyncEdges(edges(false, false, false, false));
+
+    CHECK(HdBypass::HD_HS_ST::read() == 40);
+    CHECK(HdBypass::HD_HS_SP::read() == 164);
+    CHECK(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
+}
+
+TEST_CASE("a positive source vsync puts the channel's vertical start first")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879);
+
+    HdBypass::applyChannelSyncEdges(edges(false, false, true, true));
+
+    CHECK(HdBypass::HD_VS_ST::read() == 2);
+    CHECK(HdBypass::HD_VS_SP::read() == 7);
+}
+
+TEST_CASE("a negative source vsync puts the channel's vertical stop first")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879);
+
+    HdBypass::applyChannelSyncEdges(edges(false, false, true, false));
+
+    CHECK(HdBypass::HD_VS_ST::read() == 7);
+    CHECK(HdBypass::HD_VS_SP::read() == 2);
+}
+
+TEST_CASE("a vsync the sync processor cannot see leaves the vertical pair alone")
+{
+    // Which is also the composite-sync case: STATUS_SYNC_PROC_VSACT reads 0 on
+    // the csync path, so the found bit answers the same question the sync type
+    // was being asked. ../CLAUDE.md
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2039, 37879);
+    HdBypass::applyChannelSyncEdges(edges(false, false, true, false));
+
+    HdBypass::applyChannelSyncEdges(edges(false, false, false, true));
+
+    CHECK(HdBypass::HD_VS_ST::read() == 7);
+    CHECK(HdBypass::HD_VS_SP::read() == 2);
+}
+
+TEST_CASE("the resting pulses are what a polarity finds before any source does")
+{
+    // Nothing has entered the channel, so the pair the block came up with is
+    // what there is to order.
+    Wire.reset();
+    HdBypass::enable();
+
+    HdBypass::applyChannelSyncEdges(edges(true, false, true, false));
+
+    CHECK(HdBypass::HD_HS_ST::read() == 124);
+    CHECK(HdBypass::HD_HS_SP::read() == 0);
+    CHECK(HdBypass::HD_VS_ST::read() == 7);
+    CHECK(HdBypass::HD_VS_SP::read() == 2);
+}

@@ -222,6 +222,34 @@ public:
         uint16_t divider, uint32_t lineRateHz,
         uint8_t oversample = Adc::OversampleAsClockAllows);
 
+    // What the sync processor reports about the SOURCE's sync edges: the two
+    // polarities and, beside each, whether an edge was found to take one from.
+    // An unfound edge leaves that pulse where it is, because a polarity read
+    // off a status the processor cannot fill is a coin toss.
+    struct SourceSyncEdges {
+        bool hsyncFound;
+        bool hsyncPositive;
+        bool vsyncFound;
+        bool vsyncPositive;
+    };
+
+    // Emit the channel's sync pulses the way round the source sends them.
+    //
+    // Only the ORDER is in question: the pulse itself belongs to whichever arm
+    // wrote it, and the arms and the computed path write different pairs. So
+    // the pair is HELD rather than read back -- two registers cannot say which
+    // of the values in them is the start, and a swap driven off the read-back
+    // is the engine taking a register as an input.
+    //
+    // SP_HS2PLL_INV_REG follows the horizontal polarity, written whether or not
+    // the pair moved: it is the same fact, and left behind it disagrees with
+    // the pulse beside it after an SD arm has set it.
+    //
+    // The vertical half needs no sync-type gate. STATUS_SYNC_PROC_VSACT reads 0
+    // on the composite-sync path, so `vsyncFound` already answers the question
+    // asking the sync type was a proxy for. ../../../../CLAUDE.md
+    static void applyChannelSyncEdges(const SourceSyncEdges &edges);
+
     // Which colour path the bypassed sample takes, and the ONE thing bypass has
     // to know about the source. A component input needs the matrix; an RGB one
     // needs it and the dynamic range converter out of the way. It follows the
@@ -245,6 +273,17 @@ private:
     // YPbPr passed through, which is more than a sampling group: the component
     // patches, the coast pair and the sync-type hold come with it.
     static void applyComponent(void (*applyRgbPatches)());
+
+    // The channel's two sync pulses as the last writer left them, smaller value
+    // first. Order is what applyChannelSyncEdges() decides, so what has to
+    // survive between the two calls is the pair rather than its arrangement.
+    static uint16_t hsyncLow_;
+    static uint16_t hsyncHigh_;
+    static uint16_t vsyncLow_;
+    static uint16_t vsyncHigh_;
+
+    static void holdHsyncPulse(uint16_t a, uint16_t b);
+    static void holdVsyncPulse(uint16_t a, uint16_t b);
 
     // The ADC PLL's crossover row and VCO gain for an RGBHV source, which is
     // the one thing here that no standard can carry: it follows the source's

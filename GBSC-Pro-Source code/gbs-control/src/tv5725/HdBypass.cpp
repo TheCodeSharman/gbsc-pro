@@ -42,6 +42,11 @@ const uint16_t ChannelVsyncStop = 7;
 
 }  // namespace
 
+uint16_t HdBypass::hsyncLow_ = 0;
+uint16_t HdBypass::hsyncHigh_ = SyncPulseWidth;
+uint16_t HdBypass::vsyncLow_ = ChannelVsyncStart;
+uint16_t HdBypass::vsyncHigh_ = ChannelVsyncStop;
+
 void HdBypass::init()
 {
     hold();
@@ -86,12 +91,11 @@ void HdBypass::enable()
     HD_INI_ST::write(0);                         // s1_39[10:0]
     HD_HB_ST::write(3976);                       // s1_3b[11:0]
     HD_HB_SP::write(208);                        // s1_3d[11:0]
-    HD_HS_ST::write(0);                          // s1_3f[11:0]
-    HD_HS_SP::write(124);                        // s1_41[11:0]
+    holdHsyncPulse(0, SyncPulseWidth);           // s1_3f, s1_41
     HD_VB_ST::write(0);                          // s1_43[11:0]
     HD_VB_SP::write(20);                         // s1_45[11:0]
-    HD_VS_ST::write(ChannelVsyncStart);          // s1_47[11:0]
-    HD_VS_SP::write(ChannelVsyncStop);           // s1_49[11:0]
+    holdVsyncPulse(ChannelVsyncStart,            // s1_47, s1_49
+                   ChannelVsyncStop);
 
     HD_EXT_VB_ST::write(0);                      // s1_4b[11:0]
     HD_EXT_VB_SP::write(6);                      // s1_4d[11:0]
@@ -174,10 +178,8 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
 
     applyHorizontalFromChannelLine(divider);
 
-    HD_HS_ST::write(ChannelSyncDelay);
-    HD_HS_SP::write(ChannelSyncDelay + SyncPulseWidth);
-    HD_VS_ST::write(ChannelVsyncStart);
-    HD_VS_SP::write(ChannelVsyncStop);
+    holdHsyncPulse(ChannelSyncDelay, ChannelSyncDelay + SyncPulseWidth);
+    holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);
 }
 
 void HdBypass::applySd(uint8_t standard)
@@ -195,8 +197,7 @@ void HdBypass::applySd(uint8_t standard)
     HD_HSYNC_RST::write((Adc::PLLAD_MD::read() / 2) + RasterGuardSamples);
     HD_HB_ST::write(Adc::PLLAD_MD::read() * ActiveFraction);
     HD_HB_SP::write(BlankEndSamples);
-    HD_HS_ST::write(0x80);
-    HD_HS_SP::write(0x00);
+    holdHsyncPulse(0x80, 0x00);
 
     SyncProcessor::SP_CS_HS_ST::write(0xA0);
     SyncProcessor::SP_CS_HS_SP::write(0x00);
@@ -204,14 +205,12 @@ void HdBypass::applySd(uint8_t standard)
     if (standard == 1) {
         SyncProcessor::writeSdVsyncStart(250);
         SyncProcessor::writeSdVsyncStop(1);
-        HD_VS_ST::write(3);
-        HD_VS_SP::write(522);
+        holdVsyncPulse(3, 522);
     }
     if (standard == 2) {
         SyncProcessor::writeSdVsyncStart(301);
         SyncProcessor::writeSdVsyncStop(5);
-        HD_VS_ST::write(1);
-        HD_VS_SP::write(621);
+        holdVsyncPulse(1, 621);
     }
 }
 
@@ -220,8 +219,7 @@ void HdBypass::applyProgressive(uint8_t standard, uint16_t divider,
 {
     applyPassThroughSampling(divider, lineRateHz);
 
-    HD_VS_ST::write(0x06);
-    HD_VS_SP::write(0x00);
+    holdVsyncPulse(0x06, 0x00);
     if (standard == 3) {
         SyncProcessor::writeSdVsyncStart(525 - 5);
         SyncProcessor::writeSdVsyncStop(525 - 3);
@@ -250,6 +248,35 @@ void HdBypass::applyComponent(void (*applyRgbPatches)())
     Adc::PLLAD_MD::write(512);
 
     applyRgbhvPll(SourceMeasurement::measureSourceLines());
+}
+
+void HdBypass::holdHsyncPulse(uint16_t a, uint16_t b)
+{
+    hsyncLow_ = a < b ? a : b;
+    hsyncHigh_ = a < b ? b : a;
+    HD_HS_ST::write(a);
+    HD_HS_SP::write(b);
+}
+
+void HdBypass::holdVsyncPulse(uint16_t a, uint16_t b)
+{
+    vsyncLow_ = a < b ? a : b;
+    vsyncHigh_ = a < b ? b : a;
+    HD_VS_ST::write(a);
+    HD_VS_SP::write(b);
+}
+
+void HdBypass::applyChannelSyncEdges(const SourceSyncEdges &edges)
+{
+    if (edges.hsyncFound) {
+        holdHsyncPulse(edges.hsyncPositive ? hsyncLow_ : hsyncHigh_,
+                       edges.hsyncPositive ? hsyncHigh_ : hsyncLow_);
+        SyncProcessor::SP_HS2PLL_INV_REG::write(edges.hsyncPositive ? 0 : 1);
+    }
+
+    if (edges.vsyncFound)
+        holdVsyncPulse(edges.vsyncPositive ? vsyncLow_ : vsyncHigh_,
+                       edges.vsyncPositive ? vsyncHigh_ : vsyncLow_);
 }
 
 void HdBypass::applyColourPath(bool inputIsYpBpR)

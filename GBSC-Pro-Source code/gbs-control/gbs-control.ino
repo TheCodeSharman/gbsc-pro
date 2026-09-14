@@ -1593,72 +1593,17 @@ void setAdcParametersGainAndOffset()
     Tv5725::Adc::applyGain(0x7B, 0x7B, 0x7B);
 }
 
-void updateHVSyncEdge()
+// What the sync processor reports about the source's sync edges, by name. The
+// polarity bits are only meaningful beside their ACT bit, which is why the pair
+// travels together.
+static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
 {
-    static uint8_t printHS = 0, printVS = 0;
-    uint16_t temp = 0;
-
-    if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-        Tv5725::Interrupts::acknowledgeSogBad();
-        return;
-    }
-
-    uint8_t syncStatus = GBS::STATUS_16::read();
-    if (Tv5725::SyncMeasurement::isCsync()) {
-        if ((syncStatus & 0x02) != 0x02)
-            return;
-    } else {
-        if ((syncStatus & 0x0a) != 0x0a)
-            return;
-    }
-
-    if ((syncStatus & 0x02) != 0x02) {
-    } else {
-        if ((syncStatus & 0x01) == 0x00) {
-
-            printHS = 1;
-
-            temp = GBS::HD_HS_SP::read();
-            if (GBS::HD_HS_ST::read() < temp) {
-                GBS::HD_HS_SP::write(GBS::HD_HS_ST::read());
-                GBS::HD_HS_ST::write(temp);
-                GBS::SP_HS2PLL_INV_REG::write(1);
-            }
-        } else {
-            printHS = 2;
-
-            temp = GBS::HD_HS_SP::read();
-            if (GBS::HD_HS_ST::read() > temp) {
-                GBS::HD_HS_SP::write(GBS::HD_HS_ST::read());
-                GBS::HD_HS_ST::write(temp);
-                GBS::SP_HS2PLL_INV_REG::write(0);
-            }
-        }
-
-        if (Tv5725::SyncMeasurement::isCsync() == false) {
-            if ((syncStatus & 0x08) != 0x08) {
-                Serial.println(F("VS can't detect sync edge"));
-            } else {
-                if ((syncStatus & 0x04) == 0x00) {
-                    printVS = 1;
-
-                    temp = GBS::HD_VS_SP::read();
-                    if (GBS::HD_VS_ST::read() < temp) {
-                        GBS::HD_VS_SP::write(GBS::HD_VS_ST::read());
-                        GBS::HD_VS_ST::write(temp);
-                    }
-                } else {
-                    printVS = 2;
-
-                    temp = GBS::HD_VS_SP::read();
-                    if (GBS::HD_VS_ST::read() > temp) {
-                        GBS::HD_VS_SP::write(GBS::HD_VS_ST::read());
-                        GBS::HD_VS_ST::write(temp);
-                    }
-                }
-            }
-        }
-    }
+    Tv5725::HdBypass::SourceSyncEdges edges;
+    edges.hsyncFound = GBS::STATUS_SYNC_PROC_HSACT::read() == 1;
+    edges.hsyncPositive = GBS::STATUS_SYNC_PROC_HSPOL::read() == 1;
+    edges.vsyncFound = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
+    edges.vsyncPositive = GBS::STATUS_SYNC_PROC_VSPOL::read() == 1;
+    return edges;
 }
 
 void prepareSyncProcessor() 
@@ -4166,8 +4111,11 @@ void runSyncWatcher() //
 
         static unsigned long lastTimeSogAndPllRateCheck = millis();
         if ((millis() - lastTimeSogAndPllRateCheck) > 900) {
-            if (rgbhvBypass()) {
-                updateHVSyncEdge();
+            // The channel's own emitted sync, so the question is whether the
+            // channel is in circuit rather than what the source is called.
+            if (Tv5725::VideoRoute::isHdBypassChannel()
+                && GBS::STATUS_INT_SOG_BAD::read() == 0) {
+                Tv5725::HdBypass::applyChannelSyncEdges(sourceSyncEdges());
                 delay(100);
             }
 
