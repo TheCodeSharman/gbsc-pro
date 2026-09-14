@@ -37,7 +37,6 @@ extern void setOutModeHdBypass(bool bypass);
 extern void saveUserPrefs();
 extern float getOutputFrameRate();
 extern void loadDefaultUserOptions();
-extern uint8_t getVideoMode();
 extern void ChangeAvModeOption(uint8_t num);
 extern void ChangeSvModeOption(uint8_t num);
 
@@ -756,7 +755,6 @@ bool Adv7391TvModeSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMe
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
 
     TVMODE_PresetPreference preset = TVMODE_PresetPreference::MT_MODE_AUTO;
 
@@ -840,7 +838,6 @@ bool InputSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
 
     INPUT_PresetPreference preset = INPUT_PresetPreference::MT_RGBs;
 
@@ -924,7 +921,6 @@ bool SettingHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
     SETTING_PresetPreference preset = SETTING_PresetPreference::MT_7391_1X;
 
     // MT_7391_1X    ,
