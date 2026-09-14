@@ -922,20 +922,26 @@ byte out -- and it is now measured rather than asserted. Steps 9 and 10 are
 part-landed in that `Deinterlacer`, `OutputChoice` and `RgbhvOutput` all exist
 and the sketch still steers them.
 
-**AND THE TWO RECOVERY LADDERS CANNOT YET BE MERGED, WHICH IS WHAT THE
-SCALING-RGBHV ARM IS STILL FOR.** `VideoPath::prepareToMeasure()` applies the
-reference sampling clock unconditionally -- right when the sampling in force
-cannot measure the source, wrong when it can. On the pass-through route the chip
-samples at the CHANNEL's divider, `HdBypass::dividerFor()` capped at 2039, while
-the engine holds the reference at 1124 progressive and nothing puts the
-channel's value back after a measurement. Removing the `!rgbhvBypass()` gate so
-`SyncRecovery` reaches pass-through was tried and measured: every rung ends in a
-re-measure, and 800x600 came back at `PLLAD_MD` 1124 against `HD_HSYNC_RST`
-2047, left third of the panel black and the right cut off. The gate and
-`RGBHVNoSyncCounter` are load bearing until `prepareToMeasure()` asks two
-questions it does not ask -- whether the picture is intact, and whose divider is
-in force. That is a change to the measurement path, not to this branch.
+**THE DIVIDER CLOBBER THAT BLOCKED THIS IS FIXED.**
+`VideoPath::prepareToMeasure()` used to apply the reference sampling clock
+unconditionally -- right when the sampling in force cannot measure the source,
+wrong when it can. On the pass-through route the chip samples at the CHANNEL's
+divider, `HdBypass::dividerFor()` capped at 2039, and nothing put that back
+after a measurement: 800x600 came back at `PLLAD_MD` 1124 against
+`HD_HSYNC_RST` 2047, left third of the panel black. It now returns before the
+reference when the output is passed through, and `configurePassThrough()` holds
+the channel's divider so the engine and the chip agree. Measured across a
+1024x768 change taken while passed through, the divider holds at 2039 and the
+picture is full screen.
 `investigations/the-reference-clock-is-applied-to-a-working-picture.md`.
+
+**WHETHER THE LADDERS CAN NOW MERGE IS UNTESTED, AND THE REPRODUCTION IS WHAT
+COSTS.** The recorded reason the `!rgbhvBypass()` gate and `RGBHVNoSyncCounter`
+are load bearing was the clobber, which is gone -- but removing either is a
+change to the no-sync branch, and *The bar* below requires an input with
+genuinely no signal for that. **That needs the Wii unplugged**: selecting `rgbs`
+while it is powered comes back acquired on the Wii's own signature, so a session
+that assumes `rgbs` is empty is testing the Wii.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.

@@ -1,5 +1,11 @@
 # The reference sampling clock is applied whether or not the picture is intact
 
+**THE PASS-THROUGH HALF IS FIXED.** `prepareToMeasure()` returns before
+`applyReferenceSampling()` when the output is passed through, and
+`configurePassThrough()` holds `HdBypass::dividerFor(heldLineRateHz())` so the
+engine's held divider is the channel's. What follows is what the fault was and
+how it was measured; the scaling half below did not reproduce.
+
 `VideoPath::prepareToMeasure()` applies the engine's reference sampling clock
 before every measurement:
 
@@ -55,6 +61,26 @@ separate watch that covers it. Removing the exclusion lets `SyncRecovery` reach
 pass-through, every rung ends in a re-measure, and the divider is clobbered on
 the next pass.
 
+## The fix, measured
+
+RiscPC on `vga` via ModeServ, `preferScalingRgbhv` off, entered at 800x600 and
+then moved to 1024x768 -- which also passes through, so the switch does NOT
+re-run and `prepareToMeasure()` is the only thing touching the sampling clock:
+
+    source moved: count (805 lines, solved 627)
+    source acquired: 805 lines, 2039 samples against divider 2039
+    sampling: 805 lines x 60.68 Hz -> line rate 48913
+
+| | `DAC_RGBS_BYPS2DAC` | `PLLAD_MD` | `HD_HSYNC_RST` |
+|---|---|---|---|
+| at the entry | 1 | 2039 | 2047 |
+| after a re-measure | 1 | **2039** | 2047 |
+
+Photographed full screen and coherent. `2039 samples against divider 2039` is
+the second half proving out -- before it the engine held whatever the last
+scaling solve chose, so `dividerLatched()` compared the counted line against a
+clock that was not delivering it and a passed-through source read as unlocked.
+
 ## Scaling: a re-arm is not proof the picture moved
 
 `sourceMoved()` reports `interrupt` as well as `count` and `rate`, and the
@@ -69,13 +95,28 @@ source moved: interrupt (627 lines, solved 627)
 unchanged count re-installs the reference clock on a picture that was correct,
 which is a visible disturbance for no measurement gained.
 
-## What the fix has to separate
+**IT DID NOT REPRODUCE, AND THE RECORDED EXAMPLE MAY NOT BE THIS PATH.** On the
+settled bench source, 95 s of console carried no engine line at all -- no
+interrupt, no re-arm, no solve. A 320x256 to 640x480 change converged in two
+solves and two sync-type probes and then went quiet. The 627 lines in the line
+above is 800x600, which is a pass-through candidate, so that observation may
+have been the channel's half seen from the other side.
+
+**DO NOT CONSUME THE LATCH TO FIX IT.** The interrupt re-arms are the retry loop
+that lets the sync-type probe converge: removing them leaves the unit on the
+csync path indefinitely, measured at 74 s with `SP_VTOTAL` 97. Any change here
+needs a reproduction first, and there is not one.
+
+## What is left
 
 The reference clock is the right first move when the sampling in force cannot
-measure the source, and the wrong one when it can. The discriminator already
-exists in the values `sourceMoved()` carries, and on the pass-through route the
-channel's divider is already held by `HdBypass`. What is missing is that
-`prepareToMeasure()` asks neither question.
+measure the source, and the wrong one when it can. `prepareToMeasure()` now asks
+which route is carrying the video, which is the question that had an answer.
 
-Until it does, the `!rgbhvBypass()` gate and `RGBHVNoSyncCounter` are load
-bearing and removing either one breaks pass-through.
+**WHETHER THE TWO RECOVERY LADDERS CAN NOW MERGE IS UNTESTED.** The divider is
+no longer clobbered by a rung that ends in a re-measure, which was the recorded
+reason the `!rgbhvBypass()` gate and `RGBHVNoSyncCounter` are load bearing --
+but removing either one is a change to the no-sync branch, and the reproduction
+that demands is an input with genuinely no signal. That needs the Wii
+unplugged: selecting `rgbs` while it is powered comes back acquired on the
+Wii's own signature. `../bench-sources.md`.
