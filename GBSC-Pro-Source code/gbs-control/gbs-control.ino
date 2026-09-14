@@ -5364,7 +5364,7 @@ void loop()
                 Tv5725::SyncProcessor::releaseClamp();
             }
 
-            if (rto->extClockGenDetected && !scalingRgbhv()) {
+            if (rto->extClockGenDetected) {
                 if (!Tv5725::VideoRoute::isHdBypassChannel())
                     handDisplayClockToGenerator();
                 externalClockGenSyncInOutRate();
