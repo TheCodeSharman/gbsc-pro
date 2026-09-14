@@ -1170,3 +1170,64 @@ TEST_CASE("a count that moves by more than one is still a mode change")
 
     CHECK(g_probeCalls == 2);
 }
+
+TEST_CASE("a source the sync processor is counting is not searching")
+{
+    seedBenchSource();
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    CHECK_FALSE(unit.acquisition.sourceIsSearching());
+}
+
+TEST_CASE("a source that has stopped counting is searching")
+{
+    seedBenchSource();
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    seedSourceLines(0);
+    unit.poll();
+
+    CHECK(unit.acquisition.sourceIsSearching());
+}
+
+TEST_CASE("a live count stops the search on a source the run has given up on")
+{
+    // The sweep this gates walks a source off its settings, and an unlocked
+    // source is still a source. Being wrong the other way costs one pass.
+    seedBenchSource();
+    seedLineSamples(3250);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+
+    REQUIRE_FALSE(unit.acquisition.sourceIsPresent());
+    CHECK_FALSE(unit.acquisition.sourceIsSearching());
+}
+
+TEST_CASE("the run stops the search across a count the sync processor lost")
+{
+    // One bad read is not a source going away, and the count is read live here
+    // rather than off the run.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.sourceIsPresent());
+
+    seedSourceLines(0);
+
+    CHECK_FALSE(unit.acquisition.sourceIsSearching());
+}

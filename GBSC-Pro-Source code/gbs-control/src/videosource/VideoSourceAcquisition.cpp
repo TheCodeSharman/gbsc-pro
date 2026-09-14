@@ -94,6 +94,13 @@ bool VideoSourceAcquisition::sourceIsPresent() const
     return sourceState_ == SourceAcquired && !videoPath_.changing();
 }
 
+bool VideoSourceAcquisition::sourceIsSearching() const
+{
+    return !Tv5725::SourceMeasurement::countIsSource(
+               Tv5725::SourceMeasurement::measureSourceLines())
+           && !sourceIsPresent();
+}
+
 void VideoSourceAcquisition::sourceInterrupted() { sourceInterrupted_ = true; }
 
 bool VideoSourceAcquisition::runAdvanced() const { return runAdvanced_; }

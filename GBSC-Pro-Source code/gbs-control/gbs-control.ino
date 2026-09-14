@@ -3282,15 +3282,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         return;
     }
 
-    // Two independent negatives, as it has always taken: sweeping a source that
-    // is actually there walks it off its settings and the picture goes black
-    // with every register correct. What changed is that both are measurements --
-    // the classifier's readout was the term that had to be qualified.
-    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
-    const bool searching =
-        !Tv5725::SourceMeasurement::countIsSource(
-            Tv5725::SourceMeasurement::measureSourceLines())
-        && !inputAcquisition.sourceIsPresent();
+    const bool searching = inputAcquisition.sourceIsSearching();
 
     if (!standardIsHeld() && searching) {
         Tv5725::SyncProcessor::applyPulseWidthDifference();
@@ -3329,11 +3321,8 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 
 void updateClampPosition() // Update Clamp Position
 {
-    if (!standardIsHeld() || !rto->boardHasPower || rto->sourceDisconnected) {
-        return;
-    }
-
-    if (getVideoMode() == 0) {
+    if (!standardIsHeld() || !rto->boardHasPower || rto->sourceDisconnected
+        || inputAcquisition.sourceIsSearching()) {
         return;
     }
 

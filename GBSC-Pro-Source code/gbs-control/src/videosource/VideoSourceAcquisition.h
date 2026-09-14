@@ -99,6 +99,18 @@ public:
     // mode change in flight leaves the verdict taken before the source moved.
     bool sourceIsPresent() const;
 
+    // Neither a live count nor the run says a source is there. TWO
+    // INDEPENDENT NEGATIVES, because either alone is wrong in one direction:
+    // countIsSource() only asks whether a count falls in range and an unlocked
+    // sync processor produces garbage inside it, while the run is still
+    // re-earning itself across a mode change.
+    //
+    // **WHAT THIS GATES IS A SWEEP OR A TWEAK, NEVER RECOVERY.** Being wrong
+    // costs one pass here; withholding recovery on the same question
+    // suppressed it for 80 s on a genuinely unlocked source.
+    // docs/investigations/the-sketch-hunts-while-the-engine-is-locked.md
+    bool sourceIsSearching() const;
+
     // Whether the pass just run advanced the run. Everything keyed on the count
     // has to happen once per count, so this is what the maintenance a caller
     // still owns is gated on -- a timer of its own beside this one drifts, and
