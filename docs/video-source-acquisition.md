@@ -862,6 +862,13 @@ Landed so far:
 - the Mode Detect threshold dither is deleted
 - both of `updateSpDynamic()`'s hunt branches read one `searching` value, so
   neither fires on a source the sync processor is counting
+- **the question those branches ask is the acquisition layer's**, published as
+  `VideoSourceAcquisition::sourceIsSearching()`, and the clamp placer reads it
+  too. `updateClampPosition()` was the last live-loop gate on the classifier,
+  and on an RGBHV source that gate was the trap the classifier's own entry
+  describes: `getVideoMode()` returns the held byte or 0 off two `STATUS_16`
+  bits, so a source the sync processor is counting got no clamp window placed
+  for as long as those bits stayed quiet
 - `VideoSourceAcquisition::sourceIsPresent()` is the no-sync gate, wired
 - no detection path and no live-loop gate reads the classifier. The OLED
   menu's three calls read nothing; the sync-processor, medium-resolution and
@@ -880,9 +887,10 @@ of it is the predicates that hold and compare it -- `heldStandard()`,
 `optimizePhaseSP()`, `doPostPresetLoadSteps()`, `getVideoMode()`,
 `getStatus16SpHsStable()` and `enterHdBypass()`. What is left of `getVideoMode()`
 itself is `applyPresets()`/`doPostPresetLoadSteps()`, `standardForPresetLoad()`,
-`updateClampPosition()`, `printInfo()` and one serial command -- the first two
-die with those functions, and the rest read it as a display or a gate rather
-than to choose a register value.
+`printInfo()` and one serial command -- the first two die with those functions,
+and the rest read it as a display rather than to choose a register value. **No
+gate is left**: `updateClampPosition()` was the last one, and it asks the
+acquisition layer instead.
 
 **Steps 1, 2, 3, 5, 6, 7, 8 and 11 have landed, and with them every bounded
 ownership move.** `SyncOnGreen` owns the separator level and its acquisition,
@@ -1690,6 +1698,18 @@ detection, and its two gates -- `updateCoastPosition()` and `optimizeSogLevel()`
 -- both return early, neutering the separator acquisition on the very input
 being detected. So the readers have to be taken together with what each of them
 actually wanted, which is why this step is the byte and not one predicate.
+
+**`getStatus16SpHsStable()`'S SD TERM IS NOT THE LINE RATE, AND THE OBVIOUS
+SUBSTITUTION IS REFUTED.** It requires `STATUS_SYNC_PROC_HSPOL` clear as well as
+`HSACT` set where the byte holds `NtscInt` or `PalInt`, and those are Mode
+Detect's 50/60 Hz interlaced buckets -- which a 15 kHz progressive source lands
+in too, so the term reads like `sourceLowLineRate()` spelled in the byte. It is
+not. Measured on the bench RiscPC at 320x256@50, a 15 kHz separate-sync RGBHV
+source: `HSPOL` is **1 in 6 of 6 samples** while the source is acquired and the
+picture clean. The byte holds 14 there, so the polarity term does not apply
+today; keyed on the measured rate it would, and the function would report never
+stable on the everyday bench source. Whatever that term is asking about, it is
+not how fast the line is.
 
 **THE UNIT OF REMOVAL IS THE VALUE, NOT THE FIELD.** Deleting the field means
 deleting every reference to every value it ever held, so a change that moves one
