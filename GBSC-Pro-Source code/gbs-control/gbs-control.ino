@@ -659,7 +659,6 @@ static void resetRunTimeDefaults()
     rto->boardHasPower = true;
     Tv5725::SyncMeasurement::set(false);
     rto->isValidForScalingRGBHV = false;
-    rto->medResLineCount = 0x33;
     rto->osr = 0;
     rto->notRecognizedCounter = 0;
 }
@@ -1408,7 +1407,6 @@ void setResetParameters()
     Tv5725::Deinterlacer::forgetSteering();
     Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
-    rto->medResLineCount = 0x33;
     rto->osr = 0;                  
     rto->notRecognizedCounter = 0; 
 
@@ -2678,7 +2676,6 @@ void doPostPresetLoadSteps()
     Tv5725::ModeDetect::applySyncType(Tv5725::SyncMeasurement::isCsync()
                                           ? Tv5725::ModeDetect::Csync
                                           : Tv5725::ModeDetect::SeparateSync);
-    Tv5725::ModeDetect::applyMedResLineCount(rto->medResLineCount);
 
     // if(Info_sate == 0)
     {

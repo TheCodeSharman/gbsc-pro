@@ -115,7 +115,6 @@ struct runTimeOptions
     uint8_t syncLockFailIgnore;
     uint8_t applyPresetDoneStage;//应用预置完成阶段
     uint8_t presetID;  // PresetID
-    uint8_t medResLineCount;
     uint8_t osr;
     uint8_t notRecognizedCounter;
     bool isInLowPowerMode;

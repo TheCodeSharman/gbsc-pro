@@ -14,11 +14,12 @@ namespace Tv5725 {
 // standard the chip can recognise. The values have no derivation here and are
 // carried as constants, per docs/chip-initialisation.md.
 //
-// Two of the fields init() establishes have runtime writers that override them:
-// MD_SEL_VGA60 follows the sync type and MD_HD1250P_CNTRL the medium-resolution
-// line count. Nothing else moves them: the threshold dither that used to wander
-// twelve of them is deleted, and docs/video-source-acquisition.md says why it is not
-// needed on this board.
+// One field init() establishes has a runtime writer that overrides it:
+// MD_SEL_VGA60 follows the sync type. Nothing else moves any of them -- the
+// threshold dither that used to wander twelve of them is deleted, and so is the
+// medium-resolution override, whose only reader was a search that walked this
+// table to change what the classifier reported.
+// docs/video-source-acquisition.md
 class ModeDetect {
 public:
 
@@ -275,7 +276,6 @@ public:
     static void applySyncType(SyncType type);
 
     // The line count the medium-resolution threshold is set from.
-    static void applyMedResLineCount(uint8_t lines);
 
     // Take the block through its soft reset, so it re-measures the source from
     // nothing. The bit lives in the chip's reset register; the operation is

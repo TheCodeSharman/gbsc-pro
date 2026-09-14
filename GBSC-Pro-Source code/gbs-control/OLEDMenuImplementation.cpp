@@ -542,7 +542,6 @@ static void LoadDefault()
     // file, so this is the change-of-source edge. docs/sync-type-selection.md
     Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;          // 有效缩放
-    rto->medResLineCount = 0x33;                  //
     rto->osr = 0;                                 //
     rto->notRecognizedCounter = 0;                //
 

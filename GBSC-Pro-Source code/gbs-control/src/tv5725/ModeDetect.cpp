@@ -59,7 +59,7 @@ void ModeDetect::init()
     MD_HD1125P_CNTRL::write(140);               // s1_7c[7:0]
     MD_HD2200_1125P_CNTRL::write(98);           // s1_7d[6:0]
     MD_HD2640_1125P_CNTRL::write(118);          // s1_7e[6:0]
-    MD_HD1250P_CNTRL::write(44);                // s1_7f[7:0]
+    MD_HD1250P_CNTRL::write(51);                // s1_7f[7:0]
     MD_USER_DEF_VCNTRL::write(255);             // s1_80[7:0]
     MD_USER_DEF_HCNTRL::write(255);             // s1_81[7:0]
     MD_NOSYNC_DET_EN::write(1);                 // s1_82[0:0]
@@ -78,11 +78,6 @@ void ModeDetect::init()
 void ModeDetect::applySyncType(SyncType type)
 {
     MD_SEL_VGA60::write(type == Csync ? 0 : 1);
-}
-
-void ModeDetect::applyMedResLineCount(uint8_t lines)
-{
-    MD_HD1250P_CNTRL::write(lines);
 }
 
 void ModeDetect::reset()

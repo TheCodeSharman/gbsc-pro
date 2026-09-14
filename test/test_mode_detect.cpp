@@ -73,7 +73,7 @@ TEST_CASE("every mode-detect threshold comes up at its bring-up value")
     CHECK(Wire.field(1, 0x7C, 0,  8) == 140);  // MD_HD1125P_CNTRL
     CHECK(Wire.field(1, 0x7D, 0,  7) ==  98);  // MD_HD2200_1125P_CNTRL
     CHECK(Wire.field(1, 0x7E, 0,  7) == 118);  // MD_HD2640_1125P_CNTRL
-    CHECK(Wire.field(1, 0x7F, 0,  8) ==  44);  // MD_HD1250P_CNTRL
+    CHECK(Wire.field(1, 0x7F, 0,  8) ==  51);  // MD_HD1250P_CNTRL
     CHECK(Wire.field(1, 0x80, 0,  8) == 255);  // MD_USER_DEF_VCNTRL
     CHECK(Wire.field(1, 0x81, 0,  8) == 255);  // MD_USER_DEF_HCNTRL
     CHECK(Wire.field(1, 0x82, 0,  1) ==   1);  // MD_NOSYNC_DET_EN
@@ -103,21 +103,12 @@ TEST_CASE("the sync type selects the VGA 60 Hz discriminator")
     CHECK(Wire.field(1, 0x65, 7, 1) == 1);
 }
 
-TEST_CASE("the medium-resolution line count is carried as a threshold")
-{
-    FreshChip chip;
-
-    ModeDetect::applyMedResLineCount(0x33);
-    CHECK(Wire.field(1, 0x7F, 0, 8) == 0x33);
-}
-
-TEST_CASE("neither runtime field disturbs its neighbours")
+TEST_CASE("the sync type is the only runtime field, and it spares its neighbour")
 {
     // MD_SEL_VGA60 shares s1_65 with MD_VGA_CNTRL, which init() owns.
     FreshChip chip;
 
     ModeDetect::applySyncType(ModeDetect::SeparateSync);
-    ModeDetect::applyMedResLineCount(0x33);
 
     CHECK(Wire.field(1, 0x65, 0, 7) == 62);  // MD_VGA_CNTRL, untouched
 }
