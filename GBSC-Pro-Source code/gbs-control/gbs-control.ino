@@ -1282,7 +1282,7 @@ void zeroAll()
 //
 // It stays a table-shaped number. Whether presetID should survive at all is a
 // separate question from where it comes from.
-static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
+static uint8_t presetIdFor(const Tv5725::OutputMode *mode)
 {
   uint8_t code = 0;
   if (mode == &Tv5725::Mode960p) {
@@ -1294,13 +1294,13 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
   } else if (mode == &Tv5725::Mode480p) {
     code = 0x04;
   } else if (mode == &Tv5725::Mode576p) {
-    // Its own code, not 480p's with the PAL bit: that bit says what the SOURCE
-    // runs at, and either resolution is now selectable at either rate.
+    // Its own code rather than 480p's with a rate bit beside it: the id names
+    // the OUTPUT, and either resolution is selectable at either source rate.
     code = 0x07;
   } else if (mode == &Tv5725::Mode1080p) {
     code = 0x05;
   }
-  return code | (pal ? 0x10 : 0x00);
+  return code;
 }
 
 // The output resolution asked for. Nothing qualifies it: a preference names a
@@ -2631,10 +2631,9 @@ uint32_t getPllRate()
 // caller's, taken before this runs.
 static void changeOutputResolution(uint8_t standard)
 {
-    const bool pal = (standard == 2 || standard == 4);
     const Tv5725::OutputChoice choice = outputChoiceFor();
 
-    rto->presetID = presetIdFor(choice.resolve(), pal);
+    rto->presetID = presetIdFor(choice.resolve());
 
     if (!inputAcquisition.setOutputResolution(choice.resolve())) {
         applyPresets(standard);
@@ -3146,9 +3145,8 @@ void applyPresets(uint8_t result)
         //
         // The id keys on the detection result, as it always has. The raster
         // keys on the rate the engine measures, which is what changed.
-        const bool pal = (result == 2 || result == 4);
         const Tv5725::OutputChoice choice = outputChoiceFor();
-        loadComputedPreset(choice, presetIdFor(choice.resolve(), pal));
+        loadComputedPreset(choice, presetIdFor(choice.resolve()));
     }
 
     holdStandard(result);
