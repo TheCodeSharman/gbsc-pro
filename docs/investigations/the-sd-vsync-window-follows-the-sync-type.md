@@ -87,3 +87,29 @@ frame underneath it.
 
 Both values hold lock on both live paths. Neither is a lock window on these
 sources; the choice between them is placement.
+
+## The bypass path has three writers, and one of them tracks the source
+
+The scaling path settled on one constant. Pass-through has its own set, and they
+are not the same question.
+
+| writer | what it puts there | when |
+|---|---|---|
+| `HdBypass::applyForStandard()`'s computed path | `SyncProcessor::applySdVsyncPosition()`, 14/11 | every source with no arm of its own, at the bypass switch |
+| `HdBypass::applySd()` / `applyProgressive()` | 250/1, 301/5, 520/522, 48/46 | standards 1..4, at the switch |
+| `steerHdBypassVsyncWindow()` | `STATUS_SYNC_PROC_VTOTAL - 9`, or 1 outside 230..340 lines | continuously, 15 kHz sources only, rate limited to one write per 765 ms |
+
+The third is why a register read after a pass-through excursion answers with a
+number no constant in the tree contains. Measured on the bench source left
+scaled after one: `SP_SDCS_VSST_REG_H` 1 with `_L` 46, which is **302** -- the
+311-line RiscPC's count less nine -- against a stop of 11, the constant. Read as
+the low byte alone it is 46 and looks like nothing at all.
+
+**Read the pair as one value.** Each is a low byte plus a three-bit high field
+at a different address, so the high half is easy to leave out and the answer is
+then wrong by a multiple of 256 without looking wrong.
+
+Leaving pass-through does not put it back -- nothing on the leave path writes
+it -- but the next scaled load does, because `prepareSyncProcessor()` runs
+`applySdVsyncPosition()`. Measured across a `/sc?~` and a source mode change
+back to 320x256: 14/11.

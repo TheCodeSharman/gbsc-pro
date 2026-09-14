@@ -1226,6 +1226,62 @@ is not a behaviour that went missing.
 What is left is the standard byte's round trip through `applyPresets()`, which is
 step 12's.
 
+**AND THE HD ARMS ARE GONE.** `HdBypass::applyForStandard()` dispatched 5, 6 and
+7 into `applyHd()`, which froze a divider, a crossover row, a clock tap, a
+decimator pair, a raster and both sync windows per published mode -- the
+computed path's job with constants substituted for the derivation. The constants
+could not be right: `applyHd(5)` wrote `PLLAD_MD` 2474 where `dividerFor()` caps
+at `MaxChannelLine - RasterGuardSamples` = 2039 and the channel counter caps
+`HD_HSYNC_RST` at 2047, so the line was always past what the channel can play
+out. `investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`.
+
+**Deleted by inspection, not by measurement.** The bench has no 720p, 1080i or
+1080p component source -- the Wii tops out at 480p -- so the three arms are
+unreachable here and the argument is the arithmetic rather than an A/B.
+
+Two things the arms wrote that the computed path did not are replaced rather
+than dropped. `HD_VS_ST`/`HD_VS_SP` is one pair of constants beside
+`HD_HS_ST`/`HD_HS_SP`, which is where the horizontal equivalent already lived;
+every arm placed a pulse of five or six lines within ten of the frame's start,
+so there was no raster property behind the differences. And the SD vertical sync
+window, which nothing on this route writes otherwise, is
+`SyncProcessor::applySdVsyncPosition()` -- one value for every source, as the
+scaling path has. Without it a source reaching the computed path inherited
+whatever the last entry left, the defect `enterHdBypass()` already puts the four
+sync polarities back for.
+
+13 keeps its own arm. It runs the component patches, the sync-type hold, the
+coast pair and `SP_DLT_REG` as well as an ADC group, and the crossover row it
+picks off the source's line count folds into it.
+
+**Both live arms of the dispatch now have a bench guard**, so a change to
+`applyPassThroughSampling()` has something to reproduce:
+
+| | the computed path | `applyProgressive(3)` |
+|---|---|---|
+| source | RiscPC 1024x768@60 on `vga` | Wii 480p on `ypbpr` |
+| `OUT_SYNC_SEL` | 1 | 1 |
+| `PLLAD_MD` / `HTOTAL` | 2039 / 2039 | 2039 / 2039 |
+| `HD_HSYNC_RST` | 2047 | 2047 |
+| `HD_HB_ST` / `HD_HB_SP` | 2039 / 144 | 2039 / 144 |
+| `HD_HS_ST` / `HD_HS_SP` | 40 / 164 | 40 / 164 |
+| `HD_VS_ST` / `HD_VS_SP` | 2 / 7 | 6 / 0 |
+| `SP_SDCS_VSST` / `VSSP` | 14 / 11 | 520 / 522 |
+| `HD_VB_SP` | 20 | 20 |
+| `STATUS_SYNC_PROC_VTOTAL` | 805 | 524 |
+| `HPERIOD_IF` | 255, and the IF is out of the path | 214 |
+| picture | clean, full screen | clean, full screen |
+
+2039 is the channel bound and 2047 is `2039 + RasterGuardSamples`. The two arms
+differ only in the vertical pair and the SD window, which is what is left of the
+progressive arm.
+
+**`HD_VB_SP` read 20 on the Wii, not the 36 above.** 20 is `enable()`'s resting
+value, which is what `applyVerticalBlanking(0)` leaves -- so the active start
+line handed in was zero on that entry, taken by changing input from a scaled
+`vga` rather than by a source mode change. Which entries resolve the raster
+match in time is open.
+
 **AND PASS-THROUGH HAS ONE OWNER.** `VideoSourceAcquisition::passSourceThrough()`
 is the only caller that decides it, because it is the only one holding a
 measurement to decide it on. Three others used to: `doPostPresetLoadSteps()`
@@ -1533,7 +1589,7 @@ costs, measured against the tree:
 | 0 | nothing recognised | 7, all but one a write; `standardIsHeld()` is the only reader | a validated measurement replaces the no-sync gate -- step 4 |
 | 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | **done** -- `SourceStandard::applySd()` is deleted, every field it wrote derived instead |
 | 3, 4 | progressive SD, 480p and 576p | 5 | with it |
-| 5, 6, 7 | HD, reached through the HD bypass switch | 3 | **done** -- the bypass entry points have merged; these load the computed preset and the measurement moves the route |
+| 5, 6, 7 | HD, reached through the HD bypass switch | 2 | **done** -- the bypass entry points have merged, these load the computed preset and the measurement moves the route, and `HdBypass`'s three arms for them are deleted; what is left is `optimizePhaseSP()`'s oversampling gate and one coast branch |
 | 8 | medium resolution | 1, `getVideoMode()`'s own `return` | **done** -- the two searches that walked `MD_HD1250P_CNTRL` to reach it are deleted; the value reaches `applyPresets()` beside 1, 3 and 9 and loads the computed preset |
 | 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
 | 13 | the YPbPr arm of that dispatch | 3 | **done** as an oracle -- the component search asks `countIsSource()`; the value itself goes with the dispatch |
