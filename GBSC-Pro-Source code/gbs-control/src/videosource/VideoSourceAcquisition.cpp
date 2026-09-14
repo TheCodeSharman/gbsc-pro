@@ -15,7 +15,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false),
-      unmeasuredPasses_(0), acquiredPasses_(0) {}
+      unmeasuredPasses_(0), acquiredPasses_(0), runAdvanced_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -95,6 +95,8 @@ bool VideoSourceAcquisition::sourceIsPresent() const
 }
 
 void VideoSourceAcquisition::sourceInterrupted() { sourceInterrupted_ = true; }
+
+bool VideoSourceAcquisition::runAdvanced() const { return runAdvanced_; }
 
 bool VideoSourceAcquisition::detectionDue(uint32_t nowMs)
 {
@@ -270,6 +272,7 @@ bool VideoSourceAcquisition::rateMoved()
 
 bool VideoSourceAcquisition::poll(uint32_t nowMs)
 {
+    runAdvanced_ = false;
     if (mayRun_ != 0 && !mayRun_())
         return false;
 
@@ -278,6 +281,7 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
 
     // On the cadence, not per call: loop() polls every time round and the
     // thresholds every reader keys on were tuned against a 20 ms pass.
+    runAdvanced_ = detectionPass;
     if (!detectionPass)
         return solved;
 

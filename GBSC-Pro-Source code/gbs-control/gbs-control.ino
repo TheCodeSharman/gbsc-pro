@@ -81,6 +81,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/SyncMeasurement.h"
+#include "src/videosource/SourceMaintenance.h"
 #include "src/videosource/SyncRecovery.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
@@ -1009,6 +1010,7 @@ Tv5725::Controls geometryControls(geometry, SerialM);
 // directly. It calls down for the scaler's share; the escalation, the input
 // policy and the no-signal report move into it. docs/video-source-acquisition.md
 VideoSourceAcquisition inputAcquisition(sourceSampling, geometry);
+SourceMaintenance sourceMaintenance;
 
 
 #include "framesync.h"
@@ -4018,84 +4020,64 @@ void runSyncWatcher() //
     }
 
     if (inputAcquisition.sourceIsPresent()) {
+        SourceMaintenance::Source run;
+        run.acquiredPasses = stablePasses;
+        run.unmeasuredPasses = unmeasuredPasses;
+        run.samplingPhaseFound = rto->phaseIsSet;
 
-        static boolean doFullRestore = 0;
-        if (unmeasuredPasses >= 150) {
+        const SourceMaintenance::Due due = sourceMaintenance.dueAt(run);
 
-            Tv5725::SyncProcessor::forgetPositions();
+        if (due.restoreAfterLongAbsence) {
             rto->phaseIsSet = false;
             FrameSync::reset(uopt->frameTimeLockMethod);
-            doFullRestore = 1;
         }
 
-        if (stablePasses == 1 && !doFullRestore) {
-            rto->videoIsFrozen = true;
-            Tv5725::FrameBuffer::releaseCapture();
-        }
-
-        if (stablePasses == 2) {
-            updateSpDynamic(0);
-            if (doFullRestore) {
-                delay(20);
-                optimizeSogLevel();
-                doFullRestore = 0;
-            }
-            rto->videoIsFrozen = true;
-            Tv5725::FrameBuffer::releaseCapture();
-        }
-
-        if (stablePasses == 4) {
-        }
-
-        if (!rto->phaseIsSet) {
-            if (stablePasses >= 10 && stablePasses < 61) {
-
-                if ((stablePasses % 10) == 0) {
-                    rto->phaseIsSet = optimizePhaseSP();
-                }
-            }
-        }
-
-        if (stablePasses == 160) {
-            Tv5725::Interrupts::acknowledgeSogBad();
-        }
-
-        if (stablePasses == 45) {
-            GBS::ADC_UNUSED_67::write(0);
-
+        if (due.forgetPositions)
             Tv5725::SyncProcessor::forgetPositions();
-        }
 
-        if (stablePasses == 6 || stablePasses % 31 == 0) {
+        if (due.syncProcessorDynamic)
             updateSpDynamic(0);
+
+        if (due.sogLevel) {
+            delay(20);
+            optimizeSogLevel();
         }
 
-        if (stablePasses >= 3) {
-            if (GBS::STATUS_IF_VT_OK::read() == 1 &&
-                !Tv5725::VideoRoute::isHdBypassChannel() && unmeasuredPasses == 0) {
+        if (due.holdCapture) {
+            rto->videoIsFrozen = true;
+            Tv5725::FrameBuffer::releaseCapture();
+        }
 
-                Tv5725::Deinterlacer::Preferences wanted;
-                wanted.automatic = rto->deinterlaceAutoEnabled;
-                wanted.bob = uopt->deintMode == 1;
-                wanted.scanlines = uopt->wantScanlines;
-                wanted.scanlineStrength = uopt->scanlineStrength;
-                wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
+        if (due.samplingPhase)
+            rto->phaseIsSet = optimizePhaseSP();
 
-                const uint16_t verticalPeriod = GBS::VPERIOD_IF::read();
-                const Tv5725::Deinterlacer::Steering steering =
-                    Tv5725::Deinterlacer::steer(verticalPeriod,
-                                                sourceSampling.scanType(verticalPeriod),
-                                                wanted,
-                                                Tv5725::FrameBuffer::releaseCapture);
+        if (due.acknowledgeSogBad)
+            Tv5725::Interrupts::acknowledgeSogBad();
 
-                if (steering.frameTimingMoved) {
-                    FrameSync::reset(uopt->frameTimeLockMethod);
-                    lastVsyncLock = millis();
-                }
-                if (steering.outputRateSettled) {
-                    delay(10);
-                    externalClockGenSyncInOutRate();
-                }
+        if (due.steerDeinterlacer && GBS::STATUS_IF_VT_OK::read() == 1
+            && !Tv5725::VideoRoute::isHdBypassChannel()) {
+
+            Tv5725::Deinterlacer::Preferences wanted;
+            wanted.automatic = rto->deinterlaceAutoEnabled;
+            wanted.bob = uopt->deintMode == 1;
+            wanted.scanlines = uopt->wantScanlines;
+            wanted.scanlineStrength = uopt->scanlineStrength;
+            wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
+
+            const uint16_t verticalPeriod = GBS::VPERIOD_IF::read();
+            const Tv5725::Deinterlacer::Steering steering =
+                Tv5725::Deinterlacer::steer(verticalPeriod,
+                                            sourceSampling.scanType(verticalPeriod),
+                                            wanted,
+                                            Tv5725::FrameBuffer::releaseCapture);
+
+            if (steering.frameTimingMoved) {
+                FrameSync::reset(uopt->frameTimeLockMethod);
+                lastVsyncLock = millis();
+            }
+            if (steering.outputRateSettled) {
+                delay(10);
+                externalClockGenSyncInOutRate();
             }
         }
     }
@@ -5100,7 +5082,6 @@ void loop()
     static uint8_t registerCurrent = 255;
     static uint8_t inputToogleBit = 0;
     static uint8_t inputStage = 0;
-    static unsigned long lastTimeSyncWatcher = millis();
     static unsigned long lastTimeSourceCheck = 500;
     static unsigned long lastTimeCheck = 500;
     static unsigned long lastTimeInterruptClear = millis();
@@ -5226,9 +5207,12 @@ void loop()
 
     }
 
-    if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
-        runSyncWatcher();                                                                                               
-        lastTimeSyncWatcher = millis();
+    // On the pass that advanced the run, not on a timer of its own: every
+    // threshold below counts in those passes, and two 20 ms cadences beside each
+    // other drift until a count is answered twice or not at all.
+    if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true
+        && inputAcquisition.runAdvanced()) {
+        runSyncWatcher();
 
         if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && standardIsHeld() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.unmeasuredPasses() == 0 && inputAcquisition.acquiredPasses() > 90 && rto->boardHasPower) {
             if (Tv5725::SourceMeasurement::dividerLatched(

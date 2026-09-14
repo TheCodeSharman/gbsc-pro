@@ -99,6 +99,12 @@ public:
     // mode change in flight leaves the verdict taken before the source moved.
     bool sourceIsPresent() const;
 
+    // Whether the pass just run advanced the run. Everything keyed on the count
+    // has to happen once per count, so this is what the maintenance a caller
+    // still owns is gated on -- a timer of its own beside this one drifts, and
+    // then a count is answered twice or not at all.
+    bool runAdvanced() const;
+
     // Tell it the chip latched a disturbance. Arms a re-measure for a source
     // that returns at the same line count and a different field rate.
     void sourceInterrupted();
@@ -162,6 +168,7 @@ private:
     // ladder's cycle rather than left to run, so the cycle stays aligned.
     uint16_t unmeasuredPasses_;
     uint16_t acquiredPasses_;
+    bool runAdvanced_;
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_ACQUISITION_H_

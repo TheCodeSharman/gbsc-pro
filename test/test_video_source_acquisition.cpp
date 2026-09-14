@@ -1027,6 +1027,31 @@ TEST_CASE("the run counts detection passes, not loop passes")
     CHECK(unit.acquisition.acquiredPasses() == settled);
 }
 
+TEST_CASE("the pass that advanced the run is the pass that says so")
+{
+    // The maintenance cadence has to run once per count or its thresholds mean
+    // a different length of time from the one they were tuned against. loop()
+    // used to gate it on a timer of its own beside this one, so the two drifted
+    // and a count could be advanced twice or skipped.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    uint32_t now = unit.nowMs;
+    for (uint8_t i = 0; i < VideoSourceAcquisition::DetectionIntervalMs - 1; ++i) {
+        unit.acquisition.poll(++now);
+        CHECK_FALSE(unit.acquisition.runAdvanced());
+    }
+
+    const uint16_t before = unit.acquisition.acquiredPasses();
+    unit.acquisition.poll(++now);
+    CHECK(unit.acquisition.runAdvanced());
+    CHECK(unit.acquisition.acquiredPasses() == before + 1);
+}
+
 TEST_CASE("counts that never hold still are not a source")
 {
     // The reverted attempt gated the sketch's recovery on the range check

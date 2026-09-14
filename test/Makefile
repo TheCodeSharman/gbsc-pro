@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output clean help
+.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -507,6 +507,17 @@ hd-bypass:
 	  src/tv5725/SyncMeasurement.cpp
 	@"$(OUT)/test_hd_bypass"
 
+## source-maintenance: host unit tests for SourceMaintenance
+#
+# The maintenance cadence over an acquired source, so it links nothing and
+# needs no fake Wire.
+source-maintenance:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_source_maintenance" \
+	  "$(HERE)/test_source_maintenance.cpp" src/videosource/SourceMaintenance.cpp
+	@"$(OUT)/test_source_maintenance"
+
 ## sync-recovery: host unit tests for SyncRecovery
 #
 # Pure arithmetic over the escalation ladder's positions, so it links nothing
@@ -728,7 +739,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
+test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
 all: test
 
 ## clean: remove the compiled test binaries
