@@ -912,9 +912,24 @@ what it meant.
 | the park | 5 | deletable on sight |
 
 **The arm is down to two acts**, the parallel recovery having gone: one
-`updateSpDynamic(1)` at six settled passes, and a 900 ms timer carrying
-`updateHVSyncEdge()` under pass-through, a SOG-bad acknowledgement and a
+`updateSpDynamic(1)` at six settled passes, and a 900 ms timer carrying the
+channel's sync polarity under pass-through, a SOG-bad acknowledgement and a
 `forgetPositions()`.
+
+**The polarity act is placed.** `HdBypass::applyChannelSyncEdges()` owns it, and
+`updateHVSyncEdge()` is deleted. What it was doing is the engine reading a
+register as an input: it compared `HD_HS_ST` against `HD_HS_SP` and swapped
+them, on registers `HdBypass` writes itself, when two registers cannot say which
+of the values in them is the start. Every writer of either pulse now records the
+pair as well as writing it, so the ordering works for the arms' pulses and the
+computed path's alike.
+
+Its gate is `VideoRoute::isHdBypassChannel()` rather than `rgbhvBypass()` --
+these are the CHANNEL's emitted pulses, so whether the channel is in circuit is
+the question. Nothing widens until the arm around it goes, which is what is
+left. And the vertical half needs no sync-type gate, because
+`STATUS_SYNC_PROC_VSACT` reads 0 on the composite-sync path and so already
+answers what `isCsync()` was standing in for there.
 
 **The new-mode branch is gone.** It classified every pass, compared the answer
 against the held byte, counted up, re-read the classifier thirty times to
