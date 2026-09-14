@@ -113,10 +113,10 @@ The reference clock is the right first move when the sampling in force cannot
 measure the source, and the wrong one when it can. `prepareToMeasure()` now asks
 which route is carrying the video, which is the question that had an answer.
 
-**WHETHER THE TWO RECOVERY LADDERS CAN NOW MERGE IS UNTESTED.** The divider is
-no longer clobbered by a rung that ends in a re-measure, which was the recorded
-reason the `!rgbhvBypass()` gate and `RGBHVNoSyncCounter` are load bearing --
-but removing either one is a change to the no-sync branch, and the reproduction
-that demands is an input with genuinely no signal. That needs the Wii
-unplugged: selecting `rgbs` while it is powered comes back acquired on the
-Wii's own signature. `../bench-sources.md`.
+**THE TWO RECOVERY LADDERS HAVE MERGED.** The divider is no longer clobbered by
+a rung that ends in a re-measure, which was the whole reason the
+`!rgbhvBypass()` gate and `RGBHVNoSyncCounter` were load bearing, and both are
+gone. What the empty-input reproduction showed is that the exclusion was also
+costing the rungs entirely: an RGBHV source that was not scaling got
+`RGBHVNoSyncCounter`'s single reset every ~33 s and none of `SyncRecovery`'s
+eleven.

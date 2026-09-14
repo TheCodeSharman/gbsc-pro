@@ -906,10 +906,15 @@ what it meant.
 | part | lines | whose |
 |---|---|---|
 | guards, the interrupt hand-off, the HD bypass vsync window, the sync-on-green tuning | 47 | step 12 for `standardIsHeld()`, nothing else |
-| the no-sync branch | 11 | **landed** -- `!sourceIsPresent()` is the gate |
+| the no-sync branch | 11 | **landed** -- `!sourceIsPresent()` is the gate, for every source |
 | the stable branch | 82 | **landed** -- `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
-| the scaling-RGBHV arm | 76 | **step 10**, and the reference clock below |
+| the scaling-RGBHV arm | 30 | **step 10** |
 | the park | 5 | deletable on sight |
+
+**The arm is down to two acts**, the parallel recovery having gone: one
+`updateSpDynamic(1)` at six settled passes, and a 900 ms timer carrying
+`updateHVSyncEdge()` under pass-through, a SOG-bad acknowledgement and a
+`forgetPositions()`.
 
 **The new-mode branch is gone.** It classified every pass, compared the answer
 against the held byte, counted up, re-read the classifier thirty times to
@@ -935,13 +940,15 @@ the channel's divider so the engine and the chip agree. Measured across a
 picture is full screen.
 `investigations/the-reference-clock-is-applied-to-a-working-picture.md`.
 
-**WHETHER THE LADDERS CAN NOW MERGE IS UNTESTED, AND THE REPRODUCTION IS WHAT
-COSTS.** The recorded reason the `!rgbhvBypass()` gate and `RGBHVNoSyncCounter`
-are load bearing was the clobber, which is gone -- but removing either is a
-change to the no-sync branch, and *The bar* below requires an input with
-genuinely no signal for that. **That needs the Wii unplugged**: selecting `rgbs`
-while it is powered comes back acquired on the Wii's own signature, so a session
-that assumes `rgbs` is empty is testing the Wii.
+**AND THE LADDERS HAVE MERGED.** Both `!rgbhvBypass()` gates are gone and so is
+`RGBHVNoSyncCounter`, so `SyncRecovery`'s eleven rungs are the only recovery
+there is. Measured with the Wii unplugged, which is what the reproduction needs:
+before the change an empty `rgbs` ran `RGBHV limit no sync` every ~33 s and
+**the rungs never ran at all**; after it the ladder walks the separator
+(`SP_SOG_MODE` 1, `ADC_SOGCTRL` 4) and `vga` recovers to acquired in under ten
+seconds. A passed-through 800x600 held `PLLAD_MD` 2039 against `HD_HSYNC_RST`
+2047 for 90 s with the ladder able to reach it, which is the case the exclusion
+protected.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
