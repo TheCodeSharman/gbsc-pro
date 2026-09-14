@@ -4166,11 +4166,15 @@ void runSyncWatcher() //
     if (sourceIsRgbhv()) {
         static uint16_t RGBHVNoSyncCounter = 0;
 
-        // Scaled or passed through is the engine's, from the measurement, both
-        // directions -- VideoPath::passThroughSuitsSource(). What is left here
-        // is the sync-stability watch below, which is about whether there is a
-        // source at all rather than about what to do with it.
-
+        // **THE RECOVERY LADDER MUST NOT REACH A PASSED-THROUGH SOURCE**, which
+        // is why the branch above still excludes it and this counter is still
+        // here. SyncRecovery's rungs end in a re-measure, and a re-measure
+        // reinstalls the engine's REFERENCE sampling clock -- 1124 progressive
+        // -- over the divider HdBypass chose for the channel. Measured at
+        // 800x600: the entry is coherent at PLLAD_MD 2039 against
+        // HD_HSYNC_RST 2047, the ladder runs, and the divider is 1124 with the
+        // channel raster still sized for 2039. The picture keeps roughly half
+        // the line and is pushed off the panel.
         uint16_t limitNoSync = 0;
         uint8_t VSHSStatus = 0;
         boolean stable = 0;
@@ -4181,29 +4185,19 @@ void runSyncWatcher() //
                 delay(10);
                 Tv5725::Interrupts::acknowledgeSogBad();
             } else {
-                stable = 1;
                 VSHSStatus = GBS::STATUS_00::read();
-
                 stable = ((VSHSStatus & 0x04) == 0x04);
             }
             limitNoSync = 200;
         } else {
-            // SYNC_PROC_STATUS_[0]   HS polarity  
-            // SYNC_PROC_STATUS_[1]   HS active
-            // SYNC_PROC_STATUS_[2]   VS polarity  
-            // SYNC_PROC_STATUS_[3]   VS active
-            // SYNC_PROC_STATUS_[7:4] Reserved
             VSHSStatus = GBS::STATUS_16::read();
             stable = ((VSHSStatus & 0x0a) == 0x0a);
             limitNoSync = 300;
         }
-        // printf("0x%02x \n",stable);
         if (!stable) {
-
             RGBHVNoSyncCounter++;
         } else {
             RGBHVNoSyncCounter = 0;
-
             if (stablePasses == 6) {
                 updateSpDynamic(1);
             }
@@ -4211,26 +4205,14 @@ void runSyncWatcher() //
 
         if (RGBHVNoSyncCounter > limitNoSync && unmeasuredPasses < 100) {
             RGBHVNoSyncCounter = 0;
-            // if (!rto->isInLowPowerMode)
             if (!rto->HdmiHoldDetection) {
-                setResetParameters();   
-                prepareSyncProcessor(); 
-                Tv5725::SyncProcessor::reset();   
+                setResetParameters();
+                prepareSyncProcessor();
+                Tv5725::SyncProcessor::reset();
             }
             inputAcquisition.restartRecovery();
             debugPrintf("RGBHV limit no sync\n");
-            // No Signal Out
         }
-
-        // if (RGBHVNoSyncCounter > limitNoSync)
-        // {
-        //   RGBHVNoSyncCounter = 0;
-        //   setResetParameters();
-        //   prepareSyncProcessor();
-        //   Tv5725::SyncProcessor::reset();
-
-        //   Serial.println("RGBHV limit no sync");
-        // }
 
         static unsigned long lastTimeSogAndPllRateCheck = millis();
         if ((millis() - lastTimeSogAndPllRateCheck) > 900) {
@@ -4253,46 +4235,10 @@ void runSyncWatcher() //
 
             Tv5725::Interrupts::acknowledgeSogBad();
 
-            if (scalingRgbhv()) {
-
-                if (uopt->wantScanlines) {
-                    if (!Tv5725::Deinterlacer::scanlinesApplied() && !Tv5725::Deinterlacer::motionAdaptEngaged()) {
-                        if (GBS::IF_LD_RAM_BYPS::read() == 0) {
-                            enableScanlines();
-                        }
-                    } else if (!uopt->wantScanlines && Tv5725::Deinterlacer::scanlinesApplied()) {
-                        disableScanlines();
-                    }
-                }
-            }
-
             Tv5725::SyncProcessor::forgetPositions();
             lastTimeSogAndPllRateCheck = millis();
         }
     }
-
-    // if (((Info == InfoRGBs || Info == InfoRGsB || Info == InfoVGA)))
-    // {
-    //   // Osd_Display(0xFF, "RGB ");
-
-    //   if (GBS::STATUS_SYNC_PROC_VSACT::read())
-    //   {
-    //     if (GBS::STATUS_SYNC_PROC_HSACT::read())
-    //     {
-    //       // Osd_Display(0xFF, "HV   ");
-    //       if( (Info == InfoVGA || Info == InfoRGsB) && rto->HdmiHoldDetection == true)
-    //         {
-    //           rto->HdmiHoldDetection = false;
-    //           printf(" VGA Detection : false\n");
-    //         }
-    //     }
-    //   }
-    //   else if((Info == InfoRGBs )&& rto->HdmiHoldDetection == true)
-    //   {
-    //     rto->HdmiHoldDetection = false;
-    //     printf(" RGBS Detection : false\n");
-    //   }
-    // }
 
     if (runSettled) {
         inputAcquisition.restartRecovery();
