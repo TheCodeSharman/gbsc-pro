@@ -356,6 +356,12 @@ public:
     static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
                                    uint8_t oversample);
 
+    // The oversampling the ADC is actually running, which is the request
+    // reduced to whatever the crossover row can carry. **A CALLER HOLDING THE
+    // REQUEST HOLDS A DIFFERENT NUMBER**: the engine asks for
+    // OversampleAsClockAllows on every source, and the answer is 1, 2 or 4.
+    static uint8_t oversampleInForce();
+
     // The ADC as pass-through wants it: no internal filtering, and the PLL's
     // charge pump. NOT the divider and NOT the VCO gain -- HdBypass::dividerFor()
     // answers the first against the line rate, and applySampleRate() writes both
@@ -384,6 +390,7 @@ private:
     static uint8_t phaseSyncProcessor_;
     static uint8_t phaseAdc_;
     static uint8_t inputSel_;
+    static uint8_t oversampleInForce_;
 
 };
 

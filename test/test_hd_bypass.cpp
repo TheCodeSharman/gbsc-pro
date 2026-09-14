@@ -885,3 +885,15 @@ TEST_CASE("the resting pulses are what a polarity finds before any source does")
     CHECK(HdBypass::HD_VS_ST::read() == 7);
     CHECK(HdBypass::HD_VS_SP::read() == 2);
 }
+
+TEST_CASE("the component arm records the oversampling it leaves the ADC on")
+{
+    // It takes the decimators out of the path, and a caller asking what the ADC
+    // is running has to get 1 rather than whatever the last solve installed.
+    Wire.reset();
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+
+    applyForStandard(13, 524, 2039, 31469);
+
+    CHECK(Adc::oversampleInForce() == 1);
+}

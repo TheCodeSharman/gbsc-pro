@@ -96,6 +96,10 @@ uint8_t Adc::phaseAdc_ = 16;
 // captures RGB until an input is selected.
 uint8_t Adc::inputSel_ = 1;
 
+// Nothing has been installed, so the ratio is one sample a clock -- the same
+// thing a post divider with no room to give reduces every request to.
+uint8_t Adc::oversampleInForce_ = 1;
+
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
 {
     if (phase <= PhaseMax)
@@ -285,6 +289,8 @@ uint8_t Adc::oversampleFor(uint8_t postDivider, uint8_t wanted)
     return ratio;
 }
 
+uint8_t Adc::oversampleInForce() { return oversampleInForce_; }
+
 uint8_t Adc::stepsFor(uint8_t oversample)
 {
     uint8_t steps = 0;
@@ -296,6 +302,7 @@ uint8_t Adc::stepsFor(uint8_t oversample)
 uint8_t Adc::applyOversample(uint8_t postDivider, uint8_t oversample)
 {
     const uint8_t ratio = oversampleFor(postDivider, oversample);
+    oversampleInForce_ = ratio;
 
     PLLAD_CKOS::write((uint8_t)(postDivider - stepsFor(ratio)));
 

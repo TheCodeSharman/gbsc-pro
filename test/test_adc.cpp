@@ -733,3 +733,28 @@ TEST_CASE("bring-up opens the ADC's analog filter as wide as the part offers")
 
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
+
+TEST_CASE("the oversampling in force is what was installed, not what was asked for")
+{
+    // The engine asks for OversampleAsClockAllows on every source and the
+    // crossover row decides what that becomes, so the request is not an answer
+    // to what the ADC is doing. Adc::acquirePhase() reads the ratio.
+    Wire.reset();
+
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+
+    CHECK(Adc::oversampleInForce() == 4);
+}
+
+TEST_CASE("with no line rate there is no tap to install, so the ratio in force stands")
+{
+    // That branch writes the divider and latches it and nothing else -- there
+    // is no crossover row to pick, so the decimators keep describing whatever
+    // the last real call installed.
+    Wire.reset();
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+
+    Adc::applySampleRate(1856, 0, Adc::OversampleAsClockAllows);
+
+    CHECK(Adc::oversampleInForce() == 4);
+}

@@ -240,11 +240,7 @@ void HdBypass::applyComponent(void (*applyRgbPatches)())
     SyncProcessor::SP_VS_PROC_INV_REG::write(0);
 
     Adc::PLLAD_KS::write(0);
-    Adc::PLLAD_CKOS::write(0);
-    Adc::ADC_CLK_ICLK1X::write(0);
-    Adc::ADC_CLK_ICLK2X::write(0);
-    Adc::DEC1_BYPS::write(1);
-    Adc::DEC2_BYPS::write(1);
+    Adc::applyOversample(0, 1);
     Adc::PLLAD_MD::write(512);
 
     applyRgbhvPll(SourceMeasurement::measureSourceLines());

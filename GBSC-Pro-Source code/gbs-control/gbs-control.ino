@@ -1681,6 +1681,11 @@ boolean optimizePhaseSP()
         return 0;
     }
 
+    // What the ADC is RUNNING, not what was asked for: rto->osr carries the
+    // request, which is OversampleAsClockAllows on every source, and the
+    // crossover row decides what that becomes.
+    const uint8_t oversample = Tv5725::Adc::oversampleInForce();
+
     // The one case the oversampling ratio cannot separate: 2 is also what a
     // progressive source and the default ask for. What it wants is the source's
     // line rate, which the engine holds and bypass does not, so the byte stays
@@ -1688,13 +1693,15 @@ boolean optimizePhaseSP()
     const bool hdAtItsOwnOversample =
         rto->videoStandardInput >= Tv5725::PresetLoad::HdFirst
         && rto->videoStandardInput <= Tv5725::PresetLoad::HdOwnOversampleLast
-        && rto->osr == 2;
+        && oversample == 2;
 
-    return Tv5725::Adc::acquirePhase(rto->osr,
-                                     Tv5725::SyncOnGreen::level() > 2,
-                                     hdAtItsOwnOversample,
-                                     Tv5725::SourceMeasurement::measureLineSamples,
-                                     feedWatchdog);
+    const bool found = Tv5725::Adc::acquirePhase(
+        oversample, Tv5725::SyncOnGreen::level() > 2, hdAtItsOwnOversample,
+        Tv5725::SourceMeasurement::measureLineSamples, feedWatchdog);
+
+    debugPrintf("sampling phase: %s, oversample %u\n",
+                found ? "chosen" : "no clean window", (unsigned)oversample);
+    return found;
 }
 
 static uint32_t millisNow() { return (uint32_t)millis(); }
