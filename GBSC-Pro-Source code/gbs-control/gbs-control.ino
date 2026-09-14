@@ -1345,20 +1345,16 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 
   FrameSync::cleanup();
 
-  // What this load implies for the ADC input and the scaling-RGBHV option.
-  // Pure integer logic over rto->, so it lives in Tv5725::PresetLoad and is
-  // checked by test_preset_load.cpp.
-  const Tv5725::PresetLoad load(GBS::ADC_INPUT_SEL::read(),
-                                rto->isValidForScalingRGBHV);
-
   Tv5725::VideoRoute::toScaler();
-  rto->inputIsYpBpR = load.inputIsYpBpR();
 
-  if (load.enableScalingRgbhv())
+  // Which connector is live is held rather than read back: Adc::selectInput()
+  // records what it wrote and is the only writer of ADC_INPUT_SEL.
+  rto->inputIsYpBpR = Tv5725::Adc::inputIsComponent();
+
+  if (rto->isValidForScalingRGBHV)
   {
     Tv5725::RgbhvOutput::chooseScaling();
-    Tv5725::PresetLoad::rememberScalingRgbhv(
-        Tv5725::PresetLoad::SourceLinesUnknown);
+    Tv5725::PresetLoad::rememberScalingRgbhv();
   }
 }
 
