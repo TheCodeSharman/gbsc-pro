@@ -1230,3 +1230,48 @@ So the separate-sync path reads the register correctly, and an apparent
 "csync works, separate sync does not" is the recovery being taken unknowingly.
 Read the mode whose correct value is known, and say which instance a reading
 belongs to.
+
+
+## The BAD flags are not fooled by a steady wrong value
+
+`STATUS_IF_HT_BAD` and `STATUS_IF_VT_BAD` follow the Mode Detect lock counters,
+which are a stability estimate -- so the case that should defeat them is a
+register sitting rock-steady on a wrong value. It does not.
+
+Measured at 640x480@60 on `vga`, 1015 `SamplingLog` samples at 25 ms from inside
+`loop()`:
+
+```
+vperiod_if     1 distinct   118 x1014        due 524
+hperiod_if     2 distinct   212 x643, 213 x371   due 213
+sp_vtotal      1 distinct   524 x1014
+ifbits         1 distinct   9 x1014          HT_OK 1, VT_OK 0, HT_BAD 0, VT_BAD 1
+```
+
+One value in 1014 in-loop samples, wrong by a factor of four, and `VT_BAD` holds
+1 throughout while `HT_BAD` holds 0 beside it on a register that is correct. A
+detector keyed on stability alone would have cleared.
+
+Provoked the other way, with an `/input?src=` excursion to rail the horizontal
+and a mode round trip to clear it:
+
+| state | `HPERIOD_IF` | `HT_OK` | `HT_BAD` |
+|---|---|---|---|
+| after the excursion, 320x256 | 211..511, 9 distinct in 12 | 0 x12 | **1 x12** |
+| 640x480 after the change | 212 x5, 213 x7 (due 213) | 1 x12 | 0 x12 |
+| back at 320x256 | 430 x2, 431 x10 (due 431) | 1 x12 | 0 x12 |
+
+**No false all-clear has been observed**, on either axis, in any state measured.
+So the BAD flags are usable as the gate on whether to believe the register --
+which `*_OK` is not, flickering to 1 inside a railed state in 146 of 5302 reads
+with none of them within 2% of correct.
+
+**What is not yet closed** is the horizontal form of the steady-wrong case. The
+`HPERIOD_IF` 50 at VTOTAL 524 recorded above has never been caught with `HT_BAD`
+sampled beside it, and a mode change into 640x480 recovers the register rather
+than reproducing it. The vertical axis is proven; the horizontal is inferred
+from it.
+
+**Unrelated, from the same capture:** at 640x480@60 the ADC PLL reads unlocked --
+`STATUS_MISC_PLLAD_LOCK` 0 in 1014 of 1014 -- with `STATUS_SYNC_PROC_HTOTAL`
+wandering 1095/1096/1097 against a divider of 1096.
