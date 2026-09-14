@@ -14,7 +14,8 @@ holds what it alone reads, which is the rule the whole page turns on.
 inputAcquisition.poll(millis());
 ```
 
-`VideoPath::poll()` does not survive: it is turned inside out, not moved.
+`VideoPath::poll()` did not survive: it was turned inside out rather than moved,
+and is gone.
 
 ## One job seen from two ends
 
@@ -284,7 +285,7 @@ Applied to `VideoPath`, one field met it:
 | `solvedLines_`, `solvedLineRateHz_` | **moved.** Written by `VideoPath`, read by it never, read by `VideoSourceAcquisition` at nine sites |
 | the raster, both scales, the porch stops, the capturable region | **stays.** Outputs of one solve that only the next solve reads |
 | `framing_`, `framedKey_`, `scanModeApplied_`, `syncTypeProbed_` | **stays.** No reader outside the class |
-| `choice_`, `rasterMode_`, `modePending_`, `solvePending_`, `usableHorizontal_`, `usableVertical_` | **stays.** Published through accessors; the class derives from them |
+| `mode_`, `modePending_`, `solvePending_`, `usableHorizontal_`, `usableVertical_` | **stays.** Published through accessors; the class derives from them |
 
 **Keep the state that describes the video output nearest the class that solves
 it.** Gathering all of it into `VideoSourceAcquisition` does not remove state -- it
@@ -295,7 +296,7 @@ makes the acquisition layer a fresh place to put things: the accretion `rto` is,
 with a new destination. The acquisition layer has no use for a porch stop.
 
 **The fault behind the rule is duplication, and it does not generalise.** Two
-callers advancing one steadiness run leaves `idleRun_` double-advanced and the
+callers advancing one steadiness run leaves `idle_` double-advanced and the
 run no longer over consecutive polls. That argues against two owners of one
 fact, which is what `solvedLines_` was, and says nothing about a solver holding
 what it derived.
@@ -341,10 +342,10 @@ time, as the step that claims each group lands:
 
 | group | goes to |
 |---|---|
-| `noSyncCounter`, `continousStableCounter`, `notRecognizedCounter`, `failRetryAttempts`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `VideoSourceAcquisition` |
-| `videoStandardInput`, `osr`, `presetID`, `presetDisplayClock`, `presetVlineShift`, `presetIsPalForce60`, `applyPresetDoneStage` | the value handed to `VideoPath` |
-| `phaseSP`, `phaseADC`, `phaseIsSet` | `Adc` |
-| `motionAdaptiveDeinterlaceActive`, `deinterlaceAutoEnabled` | `Deinterlacer` |
+| `notRecognizedCounter`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `VideoSourceAcquisition`. The counters it replaces -- `noSyncCounter`, `continousStableCounter`, `failRetryAttempts` -- are gone |
+| `videoStandardInput`, `osr`, `presetID`, `applyPresetDoneStage` | the value handed to `VideoPath`. `presetDisplayClock`, `presetVlineShift` and `presetIsPalForce60` are gone |
+| `phaseIsSet` | `Adc`, which holds both phases; `phaseSP` and `phaseADC` are gone |
+| `deinterlaceAutoEnabled` | `Deinterlacer`, which holds the motion-adaptive state |
 | `medResLineCount` | `ModeDetect`, which already has `applyMedResLineCount()` |
 | `videoIsFrozen` | `FrameBuffer` |
 | `autoBestHtotalEnabled`, `syncLockFailIgnore` | FrameSync, once it has an owner |
@@ -430,7 +431,7 @@ one instead.
 **And the tick belongs to the caller.** `poll()` self-gates on its own
 `DetectionIntervalMs`, so a layer with a cadence of its own puts two clocks in
 the loop -- the ladder's and detection's. That is how `noSyncCounter` and
-`idleRun_` came to count runs of different lengths. Whether the escalation wants
+`idle_` came to count runs of different lengths. Whether the escalation wants
 a slower cadence than detection is a bench question, and asking it at all
 requires one owner of the tick.
 
@@ -548,10 +549,10 @@ So each site needs its replacement chosen by what it gates:
 - **withholding recovery** -- needs a count that is steady AND agrees with what
   the engine last solved against
 
-`VideoPath::sourceIsPresent()` is that second answer and it has landed, with no
-caller, because the gate it is for cannot move until step 7. The rule it follows
-is the one already recorded for `sampleSteady()`: **publish the answer, do not
-recompute it** -- `countHeld()` mutates `idleRun_`, so a second caller
+`VideoSourceAcquisition::sourceIsPresent()` is that second answer, and it is the
+gate both of the sync watcher's surviving branches read. The rule it follows is
+the one already recorded for `sampleSteady()`: **publish the answer, do not
+recompute it** -- `countHeld()` mutates `idle_`, so a second caller
 double-advances the run the first depends on. That gives the sketch three states
 where it has two:
 
@@ -600,7 +601,7 @@ every symptom this fork has chased is a case of it:
   correct.
   `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
 - The steadiness of the source is counted twice, as `rto->noSyncCounter` and
-  `rto->continousStableCounter` in the sketch and as `idleRun_` in the engine,
+  `rto->continousStableCounter` in the sketch and as `idle_` in the engine,
   and the two disagree about whether a source is there.
 
 So the fault is not that the code is old. It is that a second owner of a
@@ -634,10 +635,10 @@ deciding to move a mux on another chip -- the dependency disguised rather than
 removed. It reports *not acquired, and out of what I can do alone*; what that
 means is policy.
 
-**`Tv5725::SyncRecovery` is in the wrong namespace by the same argument.** Ten
-of its eleven rungs are TV5725 operations, which is why it reads as marginal,
-but the eleventh changes the input and the list as a whole is policy about the
-board. It moves out of `Tv5725::` at step 7.
+**`SyncRecovery` is outside `Tv5725::` by the same argument, and moved there at
+step 7.** Ten of its eleven rungs are TV5725 operations, which is why it read as
+marginal, but the eleventh changes the input and the list as a whole is policy
+about the board. It sits in `src/videosource/` beside `VideoSourceAcquisition`.
 
 ## The ladder
 
@@ -679,7 +680,7 @@ only on a genuinely composite one where the timeout is the right answer.
 
 ### The rungs, in the order they are tried
 
-`Tv5725::SyncRecovery::stepAt()` answers which rung a pass is due, and
+`SyncRecovery::stepAt()` answers which rung a pass is due, and
 `runSyncWatcher()`'s no-sync branch dispatches on the answer. Each step fires
 once at its position; the list cycles at 451, because a source that has been
 switched off and on again needs it to.
@@ -834,9 +835,9 @@ re-arms when a settled count differs, so a solve that completed against a
 mid-transition count is corrected rather than left.
 
 **It keeps its own steadiness count, and must.** Reusing
-`sampling_.sampleSteady()` also fills `unmeasurableRun_`, the gate holding
-`recoverDivider()` back, which makes the recovery fire on the first poll of the
-next mode change and infer a divider from a count that was never a measurement.
+`sampling_.sampleSteady()` fills the run the measurement's own gates read, so a
+count taken mid-transition is treated as a measurement on the first poll of the
+next mode change.
 
 ### The chip's own interrupt triggers it
 
@@ -861,18 +862,27 @@ Landed so far:
 - the Mode Detect threshold dither is deleted
 - both of `updateSpDynamic()`'s hunt branches read one `searching` value, so
   neither fires on a source the sync processor is counting
-- `VideoPath::sourceIsPresent()`, the measurement that replaces the
-  classification at the no-sync gate -- the method, not yet the wiring
+- `VideoSourceAcquisition::sourceIsPresent()` is the no-sync gate, wired
+- no detection path and no live-loop gate reads the classifier. The OLED
+  menu's three calls read nothing; the sync-processor, medium-resolution and
+  YPbPr searches ask `SourceMeasurement::countIsSource()` instead; and the
+  medium-resolution one no longer walks `MD_HD1250P_CNTRL` behind
+  16 x `delay(30)` on every RGBHV pass
+- `presetIdFor()`'s PAL bit is gone, so no classification shapes a register
+  value or a preset id
 
 **The count is not the progress**, because what lands is structural. The
 references leave in two blocks, at steps 10 and 12: the byte is deleted LATE,
 once the RGBHV block has moved and nothing reads it, rather than being unpicked
 reference by reference from inside a function that is going anyway. What is left
-of it is two dozen live references spread over thirteen functions --
-`heldStandard()`, `holdStandard()`, `standardIsHeld()`, `sourceIsRgbhv()`,
-`optimizePhaseSP()`, `detectAndSwitchToActiveInput()`, `doPostPresetLoadSteps()`,
-`getVideoMode()`, `getStatus16SpHsStable()`, `updateSpDynamic()`,
-`enterHdBypass()`, `runSyncWatcher()` and `loop()`.
+of it is the predicates that hold and compare it -- `heldStandard()`,
+`holdStandard()`, `standardIsHeld()`, `sourceIsRgbhv()` -- plus
+`optimizePhaseSP()`, `doPostPresetLoadSteps()`, `getVideoMode()`,
+`getStatus16SpHsStable()` and `enterHdBypass()`. What is left of `getVideoMode()`
+itself is `applyPresets()`/`doPostPresetLoadSteps()`, `standardForPresetLoad()`,
+`updateClampPosition()`, `printInfo()` and one serial command -- the first two
+die with those functions, and the rest read it as a display or a gate rather
+than to choose a register value.
 
 **Steps 1, 2, 3, 5, 6, 7, 8 and 11 have landed, and with them every bounded
 ownership move.** `SyncOnGreen` owns the separator level and its acquisition,
@@ -891,15 +901,15 @@ per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
 what it meant.
 
 **Step 13 waits on one part now, and the line counts say which.**
-`runSyncWatcher()` is 284 lines in five:
+`runSyncWatcher()` is 230 lines in five:
 
 | part | lines | whose |
 |---|---|---|
-| guards, the interrupt hand-off, the sync-on-green tuning | 48 | step 12 for `standardIsHeld()`, nothing else |
-| the no-sync branch | 12 | **landed** -- `!sourceIsPresent()` is the gate |
-| the stable branch | 87 | **landed** -- `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
-| the scaling-RGBHV arm | 107 | **step 10** |
-| commented-out HDMI hold detection, and the park | 30 | deletable on sight |
+| guards, the interrupt hand-off, the HD bypass vsync window, the sync-on-green tuning | 47 | step 12 for `standardIsHeld()`, nothing else |
+| the no-sync branch | 11 | **landed** -- `!sourceIsPresent()` is the gate |
+| the stable branch | 82 | **landed** -- `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
+| the scaling-RGBHV arm | 76 | **step 10**, and the reference clock below |
+| the park | 5 | deletable on sight |
 
 **The new-mode branch is gone.** It classified every pass, compared the answer
 against the held byte, counted up, re-read the classifier thirty times to
@@ -911,6 +921,21 @@ so **no part of this function reads the classifier**.
 byte out -- and it is now measured rather than asserted. Steps 9 and 10 are
 part-landed in that `Deinterlacer`, `OutputChoice` and `RgbhvOutput` all exist
 and the sketch still steers them.
+
+**AND THE TWO RECOVERY LADDERS CANNOT YET BE MERGED, WHICH IS WHAT THE
+SCALING-RGBHV ARM IS STILL FOR.** `VideoPath::prepareToMeasure()` applies the
+reference sampling clock unconditionally -- right when the sampling in force
+cannot measure the source, wrong when it can. On the pass-through route the chip
+samples at the CHANNEL's divider, `HdBypass::dividerFor()` capped at 2039, while
+the engine holds the reference at 1124 progressive and nothing puts the
+channel's value back after a measurement. Removing the `!rgbhvBypass()` gate so
+`SyncRecovery` reaches pass-through was tried and measured: every rung ends in a
+re-measure, and 800x600 came back at `PLLAD_MD` 1124 against `HD_HSYNC_RST`
+2047, left third of the panel black and the right cut off. The gate and
+`RGBHVNoSyncCounter` are load bearing until `prepareToMeasure()` asks two
+questions it does not ask -- whether the picture is intact, and whose divider is
+in force. That is a change to the measurement path, not to this branch.
+`investigations/the-reference-clock-is-applied-to-a-working-picture.md`.
 
 Each step below extracts one named operation, merges it into the idle pass, and
 deletes the sketch's copy in the same commit.
@@ -924,8 +949,8 @@ force* — which is why a straight substitution would have been wrong.
 **2. The detection cadence.** *(Landed, and step 7 takes the clock off it again
 -- the cadence has to be a parameter before it can change owner.)* `poll()`
 takes the clock and the idle detection
-pass runs on `VideoPath::DetectionIntervalMs`. The steadiness run is counted in
-detection passes and `loop()` goes round far faster than the sync watcher's
+pass runs on `VideoSourceAcquisition::DetectionIntervalMs`. The steadiness run
+is counted in detection passes and `loop()` goes round far faster than the sync watcher's
 20 ms tick, so without this a run counted per pass is not the same length as one
 counted per tick and every threshold keyed on it means something different.
 Nothing else can read the engine's run until it counts in the units the sketch's
@@ -983,7 +1008,8 @@ because every change holds the sync type constant.
 
 **4. One steadiness run, WHICH IS THE NO-SYNC GATE.** `noSyncCounter`,
 `continousStableCounter` and `RGBHVNoSyncCounter` become reads of the engine's
-own run, and `VideoPath::sourceIsPresent()` replaces the classification at the
+own run, and `VideoSourceAcquisition::sourceIsPresent()` replaces the classification at
+the
 gate. The gate itself is right -- measured, the engine calls the bench source
 present while `getVideoMode()` calls it absent, and the engine is correct.
 
@@ -1087,7 +1113,7 @@ with nothing to do. A deferred retry is a fourth answer: it re-reads no count, s
 there is no run to seed from it.
 
 **THE STEADINESS RUN HAS ONE ADVANCER.** The moment two callers advance it,
-`idleRun_` double-advances and the run both readers depend on is no longer over
+`idle_` double-advances and the run both readers depend on is no longer over
 consecutive polls -- which is the fault `sourceIsPresent()` was written around.
 That is a rule about one field with two owners, and it is why `sampling_` is
 held by the root and passed to both rather than copied.
@@ -1257,23 +1283,20 @@ back that does not depend on the picture: the removed 535-line gate had none.
 
 ### `applyPresets()` is an output selection wearing a preset's name
 
-There are no preset tables. What the function does now is dispatch on the
-standard byte to one of three outcomes -- compute an output and load it, name an
-HD standard and return, or switch to RGBHV bypass -- and every one of those is a
-statement about the OUTPUT. The byte is only how the caller says which.
+There are no preset tables, and the three-way dispatch has collapsed to one row:
 
-    result 1,2,3,4,8,9,14   outputChoiceFor(result) -> loadComputedPreset()
-    result 5,6,7,13         hold the standard, setOutModeHdBypass(false)
-    result 15               bypassModeSwitch_RGBHV()
+    result 15               folded to 14, isValidForScalingRGBHV set
+    result 1..13, 14        outputChoiceFor() -> loadComputedPreset()
 
-`OutputChoice` already carries the first row's answer and `OutputMode::isBypass()`
-already names the sentinel the engine holds for the other two, so the dispatch
-is a third spelling of a fact those two classes own. What the rows do not share
-is WHICH bypass -- HD or RGBHV -- and that is the piece neither class holds.
+Pass-through is not a preset, so a source asking for it loads the scaled path --
+which shows any rate -- and the measurement that follows moves the route. What
+is left is a function that holds a standard, loads a computed output, and calls
+`doPostPresetLoadSteps()`. `OutputChoice` already carries the output and
+`OutputMode::isBypass()` already names the sentinel the engine holds for
+pass-through, so the byte is only how the caller says which.
 
 So this function is not renamed, it is dissolved: once the caller passes an
-output rather than a standard, the first row is `loadComputedPreset()` alone and
-the other two are the bypass switches called directly. It goes with the byte
+output rather than a standard, what is left is `loadComputedPreset()`. It goes with the byte
 rather than before it, because the dispatch is the byte's last real reader.
 
 ### Bypass is ONE output mode, and it picks its own register path
@@ -1316,19 +1339,22 @@ What is still split:
 
 | split | today | belongs to |
 |---|---|---|
-| two entry points | `setOutModeHdBypass()`, `bypassModeSwitch_RGBHV()` | one `apply()` on the mode |
 | the source's classification | `videoStandardInput` 14 | the measured source |
 | the path choice | `applyForStandard()` branching on the standard byte | the measured source |
 
-**THE ROUTE IS ONE.** Both entries drive the HD bypass channel and
+The two entry points have merged: `VideoPath::setOutputMode()` is the one call,
+and `setOutModeHdBypass()` and `bypassModeSwitch_RGBHV()` are gone.
+
+**THE ROUTE IS ONE.** Both former entries drove the HD bypass channel and
 `DAC_RGBS_ADC2DAC` is retired, so what is left above is a refactor over a single
 route rather than a change of route.
 
 **WHICH ROUTE CARRIES THE VIDEO HAS ONE OWNER.** `Tv5725::VideoRoute` holds it
 and `Tv5725::Chip`'s three route methods record what they have just written, so
 the held value and `s0_4b` cannot disagree. What the standard byte still carries
-of this is the SOURCE half -- 14 and 15 say an RGBHV source is scaled or not --
-and `steerableRgbhv()` is that half plus the route.
+of this is the SOURCE half -- 14 says an RGBHV source, and whether it is scaled
+is `rto->isValidForScalingRGBHV` beside the route. 15 no longer reaches the
+byte.
 
 **And the path choice can go entirely, because one route serves both.** The HD
 bypass channel carries an arbitrary RGBHV source -- measured, RISC PC on `vga`
@@ -1342,11 +1368,12 @@ That makes `ADC2DAC` the one to retire rather than the one to generalise: the HD
 channel is the only route with a matrix and a dynamic range converter in
 circuit, so it is the only one that can carry a component source at all.
 
-**The passthrough preference does not reach both halves today, which is the bug
-this shape removes.** `presetPreference == OutputBypass` is read in the sync
-watcher's new-mode block and calls `setOutModeHdBypass()` -- the HD path, always.
-The RGBHV path is reached from the standard byte holding 15 and nowhere else, so
-a user asking for pass-through on an RGBHV source gets the other one.
+**The passthrough preference used to reach only one half, which is the bug this
+shape removed.** `presetPreference == OutputBypass` was read in the sync
+watcher's new-mode block and entered the HD path always, while the RGBHV path
+was reached from the standard byte holding 15 and nowhere else -- so a user
+asking for pass-through on an RGBHV source got the other one. The new-mode block
+is deleted and `VideoSourceAcquisition::passSourceThrough()` decides both.
 
 **And it dissolves `sourceIsRgbhv()`.** That predicate exists mostly to decide
 scaled against bypassed for a source with no preset. Once the user chooses
@@ -1472,34 +1499,36 @@ costs, measured against the tree:
 | 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | **done** -- `SourceStandard::applySd()` is deleted, every field it wrote derived instead |
 | 3, 4 | progressive SD, 480p and 576p | 5 | with it |
 | 5, 6, 7 | HD, reached through the HD bypass switch | 3 | **done** -- the bypass entry points have merged; these load the computed preset and the measurement moves the route |
-| 8 | medium resolution: mode detect answers only once `MD_HD1250P_CNTRL` is walked onto the source | 6, three of them a live search in `inputAndSyncDetect()` | the search has a measurement to answer it, and the 110 MHz filter arm has an owner |
+| 8 | medium resolution | 1, `getVideoMode()`'s own `return` | **done** -- the two searches that walked `MD_HD1250P_CNTRL` to reach it are deleted; the value reaches `applyPresets()` beside 1, 3 and 9 and loads the computed preset |
 | 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
-| 13 | the YPbPr arm of that dispatch | 3 | with the dispatch |
+| 13 | the YPbPr arm of that dispatch | 3 | **done** as an oracle -- the component search asks `countIsSource()`; the value itself goes with the dispatch |
 | 14 | an RGBHV source, which is what `sourceIsRgbhv()` tests | the three predicates and `holdStandard()` | `OutputChoice` answers instead -- step 10 |
 | 15 | `applyPresets()`'s request to pass an RGBHV source through, and never held | 3, all of them calls | **done** -- `applyPresets()` folds it to 14 and lets the measurement decide |
 
-**NEITHER 8 NOR 9 DIES WITH THE DISPATCH, and neither is a `videoStandardInput`
-value.** No site reads the field as 8 or 9 -- which is what makes them look free
--- but both are produced by `getVideoMode()` and both carry register policy that
-has to land somewhere first.
+**9 DOES NOT DIE WITH THE DISPATCH, and it is not a `videoStandardInput` value.**
+No site reads the field as 9 -- which is what makes it look free -- but
+`getVideoMode()` produces it and it carries register policy that has to land
+somewhere first.
 
-8 is a SEARCH, not a classification. `inputAndSyncDetect()` walks
-`MD_HD1250P_CNTRL` upwards until `getVideoMode()` answers 8, keeps the value
-that worked in `rto->medResLineCount`, and `ModeDetect::applyMedResLineCount()`
-replays it on every load. Deleting the value deletes the search's only
-termination condition. What its `SourceStandard` arm did beyond that is gone:
-the analog corner is one value for every source and `PLLAD_ICP` belongs to
-`Adc::applySampleRate()`, so 8 carries a search and nothing else.
+**8 WAS A SEARCH AND NO LONGER IS.** Two arms of `detectAndSwitchToActiveInput()`
+walked `MD_HD1250P_CNTRL` upwards until `getVideoMode()` answered 8, one of them
+behind 16 x `delay(30)`, so every RGBHV source that is not medium-resolution paid
+480 ms per detection pass to reach the line it would have reached anyway. The
+lever was a Mode Detect THRESHOLD, so the walk changed nothing but what the
+classifier reported; both arms' exits returned the same value either way, which
+makes the question "is a source there" and `SourceMeasurement::countIsSource()`
+the answer. `rto->medResLineCount` is now written only to its default of 51 and
+read once -- left in place because `ModeDetect::init()` writes 44 to the same
+register, and choosing which owns it is a separate change.
 
 9 is `getVideoMode()`'s answer for a source it never recognised but which held a
 steady line count for 255 consecutive polls -- the route by which an unknown
 source is scaled rather than abandoned. Its `SourceStandard` arm is gone: the
-octave drop past 650 lines now runs off `sourceIsTall()` alone, which reads
-`SourceMeasurement::measureSourceLines()` twice with a settle between. What put
-the clock outside its crossover row was always the count, so every progressive
-standard gets the divider that fits rather than only the one Mode Detect failed
-to name. `SourceStandard` is down to one reference to the value, in
-`isProgressive()`, and that one goes with the byte.
+octave is `Adc::postDividerFor()`'s, read off RD-5725-1.1's crossover table
+against the clock the engine's divider and measured line rate make between them.
+What put the clock outside its crossover row was always the count, so every
+progressive standard gets the divider that fits rather than only the one Mode
+Detect failed to name.
 
 **No bench source reaches the threshold**, the tallest mode the RISC PC offers
 being 800x600 at 627 lines, so that branch is proven at host level only. What
@@ -1534,14 +1563,13 @@ second job waiting for it.
 The byte goes with the function, and nothing holds a standard afterwards. Two
 things come out with it.
 
-**`SourceMeasurement::adopt()`** is the only place the ENGINE reads `PLLAD_MD`
-as an input. Custom presets are gone and bypass *chooses* 1856 as a literal, so
-it becomes `hold(divider)` -- told, not read.
+**The engine no longer reads `PLLAD_MD` as an input.** `SourceMeasurement::adopt()`
+was the one place it did; it is `holdDivider()` now -- told, not read.
 
-**`HdBypass::applySd()` is the other reader, and it disagrees with its caller
-today.** It derives the channel's line from `PLLAD_MD::read()`, while
-`applyForStandard()` is handed the divider as an argument -- and
-`setOutModeHdBypass()` writes a literal 2345 into the register on its way there,
+**`HdBypass::applySd()` is the reader that is left, and it disagrees with its
+caller.** It derives the channel's line from `PLLAD_MD::read()`, while
+`applyForStandard()` is handed the divider as an argument -- and the entry
+writes a literal 2345 into the register on its way there,
 so the two differ by four hundred counts. Handing the divider in is what made
 the RGBHV arm work at all, and the SD arm has not been moved because no source
 on this bench reaches it: 480p takes the progressive arm and a 15 kHz SD source
@@ -1568,8 +1596,7 @@ measurements are what settled where each piece belongs:
 | `MADPT_Y_DELAY` | `Deinterlacer::applyScanMode()` | the same |
 | `IF_HS_Y_PDELAY`, `VDS_Y_DELAY` | the two `applyScanMode()`s | the doubler and `Adc::inputIsComponent()` |
 | `IF_HS_TAP11_BYPS` | nothing -- deleted | always 0, which `InputFormatter::init()` leaves |
-| `ADC_FLTR` | `Adc::init()` | nothing: one corner for every source |
-| the standard-3 SD vsync window | nothing -- deleted | measured indistinguishable |
+| `ADC_FLTR` | `Adc::init()` on every path but the HD arm | nothing: one corner for every source |
 
 **Which connector is live is held, not measured and not read back.** Nothing on
 the chip reports it, so `Adc::selectInput()` records what it wrote and
@@ -1591,9 +1618,11 @@ measurement rather than by choosing.**
   the control's own repeat spans the whole spread and the order is not
   monotonic. `docs/investigations/the-analog-filter-corner-is-above-nyquist.md`.
 
-What is left in the class is the SD vsync window, which keeps two owners until
-the RGBHV block moves -- `SyncProcessor::applyForScalingRgbhv()` writes 2/0 on
-that path -- and the HD arm, which is the bypass entry points' to take.
+What is left in the class is two arms. `applyProgressive()` is the SD vsync
+window, 14/11, which keeps two owners until the RGBHV block moves --
+`SyncProcessor::applyForScalingRgbhv()` writes 2/0 on that path. `applyHd()` is
+the 110 MHz filter corner, the progressive control bits and the luma delay, and
+it is the bypass entry's to take.
 
 **Where the vsync window belongs is `Tv5725::SourceTiming`**, not a new table:
 it is where the sync processor looks for vertical sync inside composite sync,
@@ -1601,8 +1630,8 @@ measured in lines, and where vertical sync sits in a frame is what that class's
 published rasters already state.
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
-`inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is gone by then,
-so there is one tick in the firmware and one owner of it.
+`inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is already gone, so
+what this leaves is one tick in the firmware and one owner of it.
 
 ## Input selection is the same collapse, one level up
 
@@ -1741,9 +1770,11 @@ reproduction is the whole of the evidence.
   and on an input change rather than periodically, so they are not the watcher;
   they come after it, if at all.
 - The `HPERIOD_IF` railing state, which is its own investigation.
-- `recoverDivider()` and its gates. Measured working, and the trap they escape
-  is real. They come out only when a replacement is shown to clear the same
-  trap.
+- The reference sampling clock, which `VideoPath::prepareToMeasure()` installs
+  so a source can be measured through a divider that is not the last mode's.
+  The trap it escapes is real; what is open is that it installs over a picture
+  that was working, which is what still gates steps 10 and 13.
+  `investigations/the-reference-clock-is-applied-to-a-working-picture.md`.
 
 
 ## The standard bits are vertical-period buckets, not an interlace measurement
