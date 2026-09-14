@@ -1,12 +1,18 @@
 # Why `HPERIOD_IF` goes bad
 
-**Status:** open. The cause is not known, and it is no longer harmless: the
-engine prefers `HPERIOD_IF` to the field rate, so a railed reading reaches the
-output raster and the board emits the wrong frame rate. What to do about it —
-validate against the expected value for the mode, refuse a window
-`STATUS_IF_HT_BAD` flagged, refuse a line rate below 15 kHz — is in
-[`tv5725-chip.md`](../tv5725-chip.md); this page is what has been ruled out, so
-the same ground is not covered again.
+**Status:** open as a fault, closed as a picture consequence. The cause is not
+known. What to do about it — validate against the expected value for the mode,
+refuse a window `STATUS_IF_HT_BAD` flagged, refuse a line rate below 15 kHz — is
+in [`tv5725-chip.md`](../tv5725-chip.md); this page is what has been ruled out,
+so the same ground is not covered again.
+
+**THE RAILED READING NO LONGER REACHES THE RASTER**, which the corroboration
+section below is what changed and this is the measurement of it. Taken on the
+bench RiscPC at 320x256@50 with the counter live and bad, `ms=25` over 15 s from
+inside `loop()`: **556 samples, 511 in 349 of them, and the 431 the mode is due
+in none**. Beside it the engine held `lineRateHz` 15625, solved `VDS_HSYNC_RST`
+1915 — not the 2264 a 13183 Hz reading gives — and the picture was clean and
+full screen. The field rate is what refuses the counter, and it is doing so.
 
 **Do not reach for a wider sampling window.** The counter holds a value for up
 to 90 ms and the firmware's samples are back-to-back, so they agree whatever it
