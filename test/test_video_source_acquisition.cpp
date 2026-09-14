@@ -605,6 +605,43 @@ TEST_CASE("a source that changes under a bypassed output is solved for")
     CHECK(Adc::PLLAD_MD::read() == BenchDivider);
 }
 
+TEST_CASE("a measurement under a bypassed output leaves the channel's divider alone")
+{
+    // prepareToMeasure() installs the engine's REFERENCE sampling clock so a
+    // count is never taken through the last mode's divider. In pass-through the
+    // divider in force is the CHANNEL's -- HdBypass::dividerFor(), which the
+    // entry wrote and which HD_HSYNC_RST is sized for -- so it is already a
+    // known value and the reference buys nothing. Installing it anyway leaves
+    // the channel raster describing a line the ADC no longer delivers.
+    // docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    // What the sketch's switch writes and this fake does not: the channel's
+    // own divider, which HD_HSYNC_RST is then sized for.
+    const uint16_t channelDivider = HdBypass::dividerFor(525 * 60);
+    seed(5, 0x12, 0, 12, channelDivider);
+    seedLineSamples(channelDivider);
+
+    // The chip latches a disturbance. The source has not moved and the picture
+    // is intact, so what a re-measure must not do is move the sampling clock
+    // out from under the raster.
+    unit.acquisition.sourceInterrupted();
+    for (uint8_t i = 0; i < 8; ++i)
+        unit.poll();
+
+    CHECK(unit.path.outputMode()->isBypass());
+    CHECK(Adc::PLLAD_MD::read() == channelDivider);
+}
+
 TEST_CASE("a source counted steadily and sampled at the chosen divider is acquired")
 {
     seedBenchSource();

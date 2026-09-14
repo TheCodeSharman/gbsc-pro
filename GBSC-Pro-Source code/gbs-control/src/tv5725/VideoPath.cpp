@@ -13,6 +13,7 @@
 #include "CaptureWindow.h"
 #include "Deinterlacer.h"
 #include "FrameBuffer.h"
+#include "HdBypass.h"
 #include "InputFormatter.h"
 #include "Memory.h"
 #include "MemoryMap.h"
@@ -275,6 +276,17 @@ void VideoPath::sourceMeasured(const SourceReading &reading)
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
 {
     solveScanMode(sourceLines);
+
+    // The reference clock exists so a count is never taken through the LAST
+    // mode's divider. Pass-through's is not that: HdBypass sized it from the
+    // rate held when the channel was entered and HD_HSYNC_RST is sized for the
+    // same number, so it is already a known value and the reference buys
+    // nothing. Installing it anyway moves the sampling out from under a raster
+    // no solve is going to redo, because bypass does not solve.
+    // ../../../../docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
+    if (passedThrough())
+        return;
+
     sampling_.applyReferenceSampling(modeOversample_);
 }
 
@@ -341,6 +353,13 @@ void VideoPath::configurePassThrough()
     // stored in one field the second destroyed the first and left the way back
     // with nothing to return to.
     mode_ = &ModeBypass;
+
+    // The divider in force is the CHANNEL's from here on, so the engine holds
+    // that rather than whatever the last solve chose. Without it the steadiness
+    // check compares the line the sync processor counts against a clock that is
+    // not delivering it, and a passed-through source reads as unlocked.
+    sampling_.holdDivider(HdBypass::dividerFor(sampling_.heldLineRateHz()));
+
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
 
