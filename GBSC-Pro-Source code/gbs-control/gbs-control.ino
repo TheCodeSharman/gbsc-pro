@@ -4066,7 +4066,7 @@ void runSyncWatcher() //
             Tv5725::SyncProcessor::forgetPositions();
         }
 
-        if (stablePasses % 31 == 0) {
+        if (stablePasses == 6 || stablePasses % 31 == 0) {
             updateSpDynamic(0);
         }
 
@@ -4100,40 +4100,33 @@ void runSyncWatcher() //
         }
     }
 
-    // Scaled or passed through is re-decided from the measurement on every
-    // settled pass, so there is no state a source can be parked in: one route
-    // carries every bypass and which one it is says nothing about why.
-    // docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
-    if (sourceIsRgbhv()) {
-        if (inputAcquisition.sourceIsPresent() && stablePasses == 6) {
-            updateSpDynamic(1);
+    // STATUS_INT_SOG_BAD latches, so it reports NOW only for a reader that
+    // clears it, and both readers of it here want that -- the gate below and the
+    // auto-gain gate in loop(). That is what the cadence is for, and it is no
+    // more RGBHV's than the bit is. The polarity step keeps its own gate: these
+    // are the CHANNEL's emitted pulses, so whether the channel is in circuit is
+    // the question rather than what the source is called.
+    //
+    // **THE SYNC TYPE HAS ONE OWNER, AND STATUS_INT_SOG_BAD IS NOT EVIDENCE
+    // ABOUT IT.** A second route to csync used to sit here, flipping the type
+    // after four 900 ms runs with that bit set. It only ever ran with the type
+    // ALREADY separate -- where the sync separator is out of the sync path and
+    // the bit reports a comparator with nothing to slice, so it is set
+    // permanently. Against the probe, which switches SP_EXT_SYNC_SEL and asks
+    // whether a V sync line arrives, it produced a standoff every 16 s on the
+    // bench RiscPC: "own V sync found while configured for csync -> separate
+    // H/V" answered by "SOG bad for 4 runs -> csync", with no picture between
+    // them. docs/sync-type-selection.md
+    static unsigned long lastSogBadAcknowledge = millis();
+    if ((millis() - lastSogBadAcknowledge) > 900) {
+        if (Tv5725::VideoRoute::isHdBypassChannel()
+            && GBS::STATUS_INT_SOG_BAD::read() == 0) {
+            Tv5725::HdBypass::applyChannelSyncEdges(sourceSyncEdges());
+            delay(100);
         }
 
-        static unsigned long lastTimeSogAndPllRateCheck = millis();
-        if ((millis() - lastTimeSogAndPllRateCheck) > 900) {
-            // The channel's own emitted sync, so the question is whether the
-            // channel is in circuit rather than what the source is called.
-            if (Tv5725::VideoRoute::isHdBypassChannel()
-                && GBS::STATUS_INT_SOG_BAD::read() == 0) {
-                Tv5725::HdBypass::applyChannelSyncEdges(sourceSyncEdges());
-                delay(100);
-            }
-
-            // **THE SYNC TYPE HAS ONE OWNER, AND STATUS_INT_SOG_BAD IS NOT
-            // EVIDENCE ABOUT IT.** A second route to csync used to sit here,
-            // flipping the type after four 900 ms runs with that bit set. It
-            // only ever ran with the type ALREADY separate -- where the sync
-            // separator is out of the sync path and the bit reports a
-            // comparator with nothing to slice, so it is set permanently.
-            // Against the probe, which switches SP_EXT_SYNC_SEL and asks
-            // whether a V sync line arrives, it produced a standoff every 16 s
-            // on the bench RiscPC: "own V sync found while configured for csync
-            // -> separate H/V" answered by "SOG bad for 4 runs -> csync", with
-            // no picture between them. docs/sync-type-selection.md
-
-            Tv5725::Interrupts::acknowledgeSogBad();
-            lastTimeSogAndPllRateCheck = millis();
-        }
+        Tv5725::Interrupts::acknowledgeSogBad();
+        lastSogBadAcknowledge = millis();
     }
 
     if (runSettled) {
