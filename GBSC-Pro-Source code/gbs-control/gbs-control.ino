@@ -1948,7 +1948,7 @@ uint8_t detectAndSwitchToActiveInput()
                         // yields a plausible field rate, and every source above 40 Hz
                         // says yes — so it can never conclude "separate sync" on its
                         // own. A V sync line of its own overrules it.
-                        boolean ownVsync = sourceHasOwnVsync();
+                        boolean ownVsync = syncTypeHasOwnVsync();
 
                         if (decodeSuccess >= 2 && !ownVsync) {
                             // SerialMprintln(F(" (with CSync)"));
@@ -3088,7 +3088,7 @@ void applyPresets(uint8_t result)
                 // "probed once" either way, so a probe suppressed by a stale
                 // answer read exactly like one that ran.
                 const bool measured = !Tv5725::SyncMeasurement::isSet();
-                Tv5725::SyncMeasurement::syncType(sourceHasOwnVsync);
+                Tv5725::SyncMeasurement::syncType(syncTypeHasOwnVsync);
                 debugPrintf("sync type: %s for this source -> %s\n",
                     measured ? "probed" : "already held",
                     Tv5725::SyncMeasurement::isCsync() ? "csync" : "separate H/V");
@@ -3129,7 +3129,7 @@ void applyPresets(uint8_t result)
             // concluded was about a different input and there is nothing to
             // inherit. It runs only when getVideoMode() found nothing at all,
             // not on a mode change.
-            Tv5725::SyncMeasurement::probe(sourceHasOwnVsync);
+            Tv5725::SyncMeasurement::probe(syncTypeHasOwnVsync);
         } else {
             if (detectionMayChangeInput())
                 Tv5725::Adc::selectInput(0);
