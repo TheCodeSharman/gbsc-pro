@@ -1275,3 +1275,34 @@ from it.
 **Unrelated, from the same capture:** at 640x480@60 the ADC PLL reads unlocked --
 `STATUS_MISC_PLLAD_LOCK` 0 in 1014 of 1014 -- with `STATUS_SYNC_PROC_HTOTAL`
 wandering 1095/1096/1097 against a divider of 1096.
+
+
+### What this validates, and the gap it leaves
+
+`SourceMeasurement::measureLineRateFromHPeriod()` already reads
+`STATUS_IF_HT_BAD` beside every `HPERIOD_IF` sample and carries the result into
+the window's judgement, and `counterWasFlagged()` is what separates a flagged
+counter from a run whose samples merely disagree -- a settling source wants
+waiting out, a flagged one wants the recovery. The measurements above are what
+that design rests on, and they hold it up: the flag is 1 through the noisy form,
+1 through a value held steady across 1014 in-loop samples, and 0 on every correct
+reading taken.
+
+**That matters because the sample-agreement run cannot reject the steady form on
+its own.** Three readings within 2 of each other is a test a stuck register
+passes perfectly, so without the flag the window would admit 118 as readily as
+431.
+
+**`VPERIOD_IF` has no equivalent protection, and its one consumer reads the wrong
+flag.** `runSyncWatcher()` gates `Deinterlacer::steer()` on
+`STATUS_IF_VT_OK == 1`. `*_OK` is the flag measured to flicker to 1 inside a bad
+state -- 146 of 5302 reads, none within 2% of correct -- so a gate keyed on it
+opens spuriously, where one keyed on `STATUS_IF_VT_BAD == 0` stays shut for as
+long as the counter is untrustworthy. On the bench source the gate happens to
+hold closed because `VT_OK` reads 0 throughout, so nothing is observably wrong
+today; the flag is the wrong one on the evidence all the same.
+
+**640x480@60 is not a usable control for further work on this.** The ADC PLL
+reads unlocked there in 1014 of 1014 samples, so a measurement taken at that mode
+carries that as well as whatever it was looking for. 1024x768@60 is the taller
+progressive mode to reach for instead.
