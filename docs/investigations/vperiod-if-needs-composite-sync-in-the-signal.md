@@ -47,6 +47,48 @@ and the doubler taken out -- `IF_LD_RAM_BYPS` 0 to 1 and `IF_PRGRSV_CNTRL` 0 to
 1, both read back -- `VT_BAD` stays 1 and `VPERIOD_IF` stays debris across six
 samples, indistinguishable from the six taken with the doubler in.
 
+## The whole of Mode Detect's classification goes with it
+
+`VPERIOD_IF` is not the only casualty, because the classification is derived
+from the same vertical measurement. Measured on the firmware's own configuration
+either side of a `SYNC` change:
+
+| | `VT_OK` | `HVT_OK` | `NTSC_INT` | `NTSC_PRG` | `PAL_INT` | `PAL_PRG` |
+|---|---|---|---|---|---|---|
+| separate | 0 | 0 | 0 | 0 | 0 | 0 |
+| composite | 1 | 1 | 0 | 0 | **1** | 0 |
+
+On separate sync **all four standard bits are clear**: Mode Detect names nothing,
+which is what `PresetLoad::Rgbhv` means rather than a classification in its own
+right, and what `ModeDetect::sourceIsInterlaced()`'s header already states --
+all four clear is "neither answer is available", not "progressive".
+
+And the composite answer is wrong in its own way. The source is a 320x256@50
+PROGRESSIVE RGB mode and the bit that comes up is `INP_PAL_INT`. The bits are
+vertical-period buckets, so a 15 kHz progressive source lands in an interlaced
+standard's bucket. Neither leg gives a usable classification: one gives none and
+the other gives a wrong one.
+
+This is the measurement behind retiring the byte. `docs/video-source-acquisition.md`.
+
+## The fault the witness catches cannot occur where the witness is missing
+
+`countIsSerrations()` needs `VPERIOD_IF` to tell a count of the source's lines
+from a count of the serration and equalisation pulses either side of the
+vertical interval. Those pulses are a composite-sync construct: a separate-sync
+source sends a plain VSync on its own pin and runs HSync straight through the
+vertical interval, so there is nothing for the sync processor to run through and
+miscount.
+
+So the witness is available in exactly the case the fault is possible in.
+`countIsSerrations()` returning false on separate sync -- documented as "not a
+judgement that the count is good" -- is the correct answer there rather than a
+safe default, for this input class.
+
+The scan type does not close the same way. Interlace over separate sync exists
+in principle, and there the alternation would be all there is. This bench has no
+such source.
+
 ## What it costs, which is less than it looks
 
 Nothing reads `VPERIOD_IF` as a rate. RD-5725-1.1 gives it as "input source V
