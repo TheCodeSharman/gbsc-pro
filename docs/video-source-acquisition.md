@@ -1432,6 +1432,26 @@ not refusing the mode -- 576p50 is CEA-861 and the same set takes 640x480 raw.
 And `STATUS_MISC_PLLAD_LOCK` is not the discriminator: it reads 0 at 720x576 on
 the SCALING path too, where the picture is correct.
 
+**AND THE SYNC TYPE IS A SECOND WAY IN, ON ONE MODE, WITH EVERYTHING ELSE HELD.**
+The RISC PC sets its sync type from CMOS, so 640x480@60 can be presented twice
+over one cable with only that moving. Separate sync passes through and fills the
+screen, colours correct and the card's gratings resolved. Composite sync at the
+same mode gives no signal, and the sink says no signal rather than naming a
+stale mode:
+
+| at 640x480@60 in pass-through | separate sync | composite sync |
+|---|---|---|
+| `PLLAD_MD` / `STATUS_SYNC_PROC_HTOTAL` | 2039 / 2039 | 2039 / 2039 |
+| `STATUS_SYNC_PROC_VTOTAL` | 524 | 98, 235, 884, 1852 -- never 524 |
+| `SP_SOG_MODE` | 0 | 1 |
+| the panel | full screen, sharp | no signal |
+
+**The separator level is REFUTED as the cause.** `ADC_SOGCTRL` was held at 13,
+the default, with the sync processor still failing to count and the panel still
+dark -- and the same source at composite sync on the SCALING path displays with
+the level walked to 24. So what fails is the sync processor's count on the
+pass-through route, not the level it is fed at.
+
 **`rateCanBypass()` is a HARD GATE on the whole choice, not half of the
 default.** Passthrough is not offerable where the rate cannot reach the sink,
 and a stored preference is re-checked on apply rather than trusted. `SourceKey`
@@ -1694,10 +1714,26 @@ predicate. `videoStandardInput == 14` means an RGBHV source was DETECTED;
 `VideoSourceSelection::isRgbhv(Info)` means one is SELECTED, and on a
 freshly-selected input with no sync those differ. `rgbhvBypass()` is where that
 bites: `isScaling()` starts false, so the substitution makes it true before
-detection, and its two gates -- `updateCoastPosition()` and `optimizeSogLevel()`
--- both return early, neutering the separator acquisition on the very input
-being detected. So the readers have to be taken together with what each of them
+detection, and a gate that returns early on it neuters the very input being
+detected. So the readers have to be taken together with what each of them
 actually wanted, which is why this step is the byte and not one predicate.
+
+**THREE OF THE FIVE READERS ARE ALREADY SAFE, and one is closed.**
+`updateCoastPosition()`, `applyPresets()` and `loop()`'s coast gate each carry a
+`standardIsHeld()` beside the term, which is false before detection, so the
+whole condition answers the same either way. `optimizeSogLevel()` had no such
+term and is where the hazard was measured; its gate is deleted, because
+`SyncOnGreen::acquire()` refuses the walk on a separator that is not in the sync
+path and that is the same answer for every separate-sync source.
+
+**`getStatus16SpHsStable()` IS THE ONE LEFT, AND IT IS THE WORST PLACE FOR IT.**
+The term picks a whole different stability test -- `STATUS_INT_INP_NO_SYNC`
+rather than `STATUS_16` -- and `detectAndSwitchToActiveInput()` calls the
+function inside its own 450 ms search, so a term that turns true before
+detection changes what detection is measuring with. The route in force answers
+it without the byte, one bypass route carrying every source, and what it costs
+is that a component source in pass-through changes stability test too: that is a
+bench question on the Wii through `/sc?K`, not a substitution.
 
 **`getStatus16SpHsStable()`'S SD TERM IS NOT THE LINE RATE, AND THE OBVIOUS
 SUBSTITUTION IS REFUTED.** It requires `STATUS_SYNC_PROC_HSPOL` clear as well as

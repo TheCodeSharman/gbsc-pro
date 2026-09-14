@@ -26,6 +26,40 @@ The stale quantity is the ADC PLL's crossover row and VCO gain, not the divider:
 throughout.
 `investigations/an-input-change-under-pass-through-never-settles.md`.
 
+### A composite-sync source in pass-through gives no signal
+
+640x480@60 on `vga`, one cable, one mode, the sync type the only thing moving --
+`SYNC 0` against `SYNC 1` on the RISC PC. Separate sync passes through and fills
+the panel, sharp and correctly coloured. Composite sync gives no signal, and the
+sink reports no signal rather than naming a stale mode.
+
+`PLLAD_MD` is 2039 against `STATUS_SYNC_PROC_HTOTAL` 2039 on both, so the
+divider latched. What differs is the vertical count: 524 on separate sync, and
+98 / 235 / 884 / 1852 on composite, never the 524 the mode is due.
+
+**The separator level is refuted.** Held at the default 13 the count still never
+reaches 524 and the panel stays dark, and the same source on composite sync
+displays on the SCALING path with the level walked to 24. So what fails is the
+sync processor's count on the pass-through route, not what the separator is fed
+at.
+
+Would settle it: a `/testbus` sweep on each sync type in pass-through, which
+says which sync-processor stage stops carrying vertical sync.
+
+### A 15 kHz source left in pass-through is not recovered by `/sc?~`
+
+Turning `preferScalingRgbhv` back on does not move the route -- the engine
+re-decides only on a settled measurement, and the source cannot settle -- so
+returning the RISC PC to 320x256@50 while passed through strands it: `state:
+absent`, `STATUS_SYNC_PROC_HTOTAL` 13, `SP_SOG_MODE` 1 on a separate-sync
+source, and a held line rate of 10166 Hz that no correct reading displaces.
+
+`/sc?~` takes the route back to the scaler and finds separate sync again, and is
+**not enough on its own** -- four minutes later the held rate was still 10166 and
+the state still absent. `/input?src=vga` re-acquired in under a minute. So the
+input re-selection is the recovery here, not the one the stuck-divider row of
+`CLAUDE.md` names.
+
 ### 640x480@60 is captured too narrow and magnified to fill
 
 `eh` 623 of `ch` 1023 is 61% of the line where the matched raster puts active
