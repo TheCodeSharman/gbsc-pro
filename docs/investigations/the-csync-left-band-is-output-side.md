@@ -77,8 +77,11 @@ fraction pair to each. The two land in the same place as a fraction of the line
 the clamp inside the sync pulse**, and the separate-sync leg has a clean picture
 doing it.
 
-What the csync branch does carry is the rail. `HPERIOD_IF` read 431 on the csync
-leg and 511 on the separate leg in the same session, and 4 earlier in it. At 4
-the window collapses to 1..2. The register the engine already refuses to measure
-the line rate from is the one this computation trusts.
+What the csync branch does carry is the dependency. `HPERIOD_IF` was observed at
+4, 431 and 511 in one session, and at 4 the window collapses to 1..2. **Which
+sync leg a reading came from does not predict it** -- `SYNC` re-applies the mode,
+so reaching the csync leg performs the mode change that clears the fault, and a
+comparison across legs compares two instances rather than two configurations.
+The register the engine already refuses to measure the line rate from is the one
+this computation trusts.
 [hperiod-if-railing.md](hperiod-if-railing.md)

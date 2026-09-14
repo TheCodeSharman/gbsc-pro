@@ -1120,3 +1120,113 @@ path.
 
 `test/test_source_measurement.cpp` pins four cases: the contradicted reading, the
 60-refusal escape hatch, the unmeasurable field rate, and the budget.
+
+## `VPERIOD_IF` fails separately, and does NOT recover with it
+
+The vertical counter is broken in the same instance, and the clearance that
+fixes the horizontal one leaves it untouched. Watched through a mode round trip
+on `vga`, separate sync, `STATUS_SYNC_PROC_VTOTAL` steady and the PLL locked,
+eight samples at each point:
+
+| mode | `HPERIOD_IF` (due) | `VPERIOD_IF` (due) |
+|---|---|---|
+| 320x256@50 | 430 x1, 431 x7 (431) | 64..118, every sample different (311) |
+| 640x480@60 | 212 x4, 213 x4 (213) | **114 x8** (524) |
+| back at 320x256@50 | 430 x1, 431 x7 (431) | 64..118 again (311) |
+
+`STATUS_IF_HT_OK` reads 1 in all 24 samples and `STATUS_IF_VT_OK` reads 0 in all
+24. So the horizontal counter tracks the mode correctly across the trip while the
+vertical one never reaches its due value in either mode, and shows **both** of
+this page's failure forms on the way -- noise at one mode, a rock-steady wrong
+value at the other.
+
+It is not dead: the Wii at 480p on `ypbpr` reads `VPERIOD_IF` 524, its line
+count, in 6 of 6 reads.
+
+**`SamplingLog` confirms the variation rather than overturning it.** 1111 samples
+at 25 ms from inside `loop()`, every field read in one pass, on a settled
+320x256@50:
+
+```
+hperiod_if     2 distinct   431 x1025, 430 x85
+vperiod_if    60 distinct   71 x85, 72 x85, 73 x79, 74 x72, 75 x57, 70 x56, 113 x38, ...
+sp_vtotal      1 distinct   311 x1110
+ifbits         1 distinct   9 x1110      HT_OK 1, VT_OK 0, HT_BAD 0, VT_BAD 1
+```
+
+So this is not the HTTP artefact that `STATUS_SYNC_PROC_VTOTAL` suffers from --
+the same instrument in the same pass gives one register two values and the other
+sixty. `STATUS_IF_VT_BAD` is reporting a real instability.
+
+**`SP_HD_MODE` does not reach it.** The sync processor's SD/HD switch is the one
+bit whose name pairs it with the vertical extraction, and it is hardwired to 0 in
+`SyncProcessor::init()`. Set to 1 and back across an A/B/A/B/A on `vga`,
+`VPERIOD_IF` stays noise and `STATUS_IF_VT_OK` 0 / `STATUS_IF_VT_BAD` 1 hold in
+all 50 samples.
+
+**What the working source differs in is the line doubler.** Read side by side:
+
+| | `vga` 320x256@50 | Wii 480p |
+|---|---|---|
+| `IF_PRGRSV_CNTRL` | 0 | 1 |
+| `IF_LD_RAM_BYPS` | 0 | 1 |
+| `IF_LD_SEL_PROV` | 0 | 1 |
+| `IF_HS_DEC_FACTOR` | 1 | 0 |
+| `IF_SEL_WEN` | 0 | 1 |
+| `VPERIOD_IF` | 31..116 | 524 x6 |
+
+The source whose vertical period reads correctly is the one whose line doubler is
+bypassed. Whether the doubler is the cause is untested -- the two sources also
+differ in connector, sync type and line rate.
+
+**The consequence is that the deinterlacer is never steered on this source.**
+`runSyncWatcher()` gates `Deinterlacer::steer()` on `STATUS_IF_VT_OK == 1`, and
+it reads the scan type from `VPERIOD_IF`, so the branch cannot run while the
+counter is in this state. That is the right refusal rather than a second bug --
+steering off a value that spans 64 to 118 would be worse.
+
+## `SP_H_PROTECT` freezes both counters
+
+**Nine sync-processor bits do not clear it.** Swept against a live railed
+instance with every write read back and the shipped state repeated as a control
+between every treatment: `SP_H_PULSE_IGNOR` at 255, 2 and 0; the csync coast
+values; `SP_HS_POL_ATO` and `SP_VS_POL_ATO` cleared; `SP_VSIN_INV_REG` set;
+`SP_SYNC_BYPS` set. Every one reads as noise, indistinguishable from the control.
+
+**`SP_H_PROTECT` is the trap.** "H count overflow protect" is the one bit of the
+nine that changes anything, and what it does is freeze both counters at whatever
+they hold rather than make the block measure:
+
+| run | state | `HPERIOD_IF` | `VPERIOD_IF` |
+|---|---|---|---|
+| 1 | protect | 452 x6 | 100 x6 |
+| 1 | protect + `SP_H_PULSE_IGNOR` 2 | 226 x6 | 23 x6 |
+| 2 | protect | 155 x6 | 64 x6 |
+| 2 | protect + coast, + polarity, + vsin invert, + sync bypass | 155 x6 each | 64 x6 each |
+
+The value is not reproducible between runs and never correct. In run 2 every
+variant landed on the same pair despite differing in the sync path, which is a
+frozen counter rather than a measuring one. So the bit manufactures exactly the
+failure this page warns about -- **a rock-steady wrong value that every stability
+check scores as healthy** -- and it must not be reached for as a fix.
+
+## The sync type is not a discriminator
+
+A reading taken on one sync leg and compared against one taken on the other
+compares two *instances* of the fault, not two configurations. `SYNC` on the
+bench source re-applies the mode, so **every sync-type change is also a source
+mode change**, which is this page's cheapest known clearance. A session that
+reaches the csync leg by asking for it has performed the recovery on the way.
+
+Measured with the sync type held at `SYNC 0` throughout:
+
+```
+before, as it had been sitting        255 x2, 258, 263, 271, 511 x3
+after MODE X640 Y480 C256 F60         212 x5, 213 x3      due 213
+after MODE X320 Y256 C256 F50         431 x7, 430 x1      due 431
+```
+
+So the separate-sync path reads the register correctly, and an apparent
+"csync works, separate sync does not" is the recovery being taken unknowingly.
+Read the mode whose correct value is known, and say which instance a reading
+belongs to.
