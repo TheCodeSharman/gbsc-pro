@@ -1208,10 +1208,17 @@ source's own screen dimming, so it is not a safe default for the channel.
 preset's bucket ran thirty byte-identical lines each, so every register in that
 sequence had two writers. The sync processor's share is
 `SyncProcessor::applyForScalingRgbhv()` and the ADC's is
-`Adc::applyScalingChargePump()`; what is still spelled out is the option bit,
-the line counter's start, the standard byte's round trip through
-`applyPresets()`, and the external clock generator. Those are the four this step
-still has to place, and the standard byte's is step 12's.
+`Adc::applyScalingChargePump()`. **Neither has a caller**: both were extracted
+from `loadScalingRgbhvPreset()`, which went with the preset tables, so what they
+do happens nowhere -- and whether each was a put-back that dies with the tables
+or a behaviour to restore is undecided.
+
+What is still spelled out is the line counter's start and the standard byte's
+round trip through `applyPresets()`. The option bit is placed, in
+`loadComputedPreset()`, and **the external clock generator is placed**: the
+`!scalingRgbhv()` exclusion in `loop()`'s handoff stood in front of nobody once
+`loadScalingRgbhvPreset()` was deleted, and is gone. The standard byte's round
+trip is step 12's.
 
 **AND PASS-THROUGH HAS ONE OWNER.** `VideoSourceAcquisition::passSourceThrough()`
 is the only caller that decides it, because it is the only one holding a
@@ -1678,23 +1685,27 @@ The test had recorded the conflict rather than catching it: 5, 6 and 7 were
 excluded from the three loops asserting that no standard writes what the scan
 mode decides. They are in those loops now.
 
-**What is left is one arm and one register pair.** `applyProgressive()` opens
-the SD vsync window at 14/11 for standards 3, 4, 8 and 9 -- the last register a
-classification decides. It has four owners on the scaling path today:
-`prepareSyncProcessor()` writes 4/1, this writes 14/11 over it later in the same
-`doPostPresetLoadSteps()`, `SyncProcessor::applyForScalingRgbhv()` writes 2/0,
-and a serial command writes whatever it is given.
+**`SourceStandard` IS DELETED.** What was left of it opened the SD vsync window
+at 14/11 for standards 3, 4, 8 and 9, over `prepareSyncProcessor()`'s 4/1 earlier
+in the same `doPostPresetLoadSteps()`. `SyncProcessor::applySdVsyncPosition()`
+writes one value for every source now, and the class, its test and its Makefile
+target are gone.
 
-**IT IS REACHABLE, AND ONLY ON THE Wii.** `getVideoMode()` opens with
-`sourceIsRgbhv()`, so no `vga` timing produces 3; the Wii at 480p is standard 3
-and reads 14/11 on the part. So deleting the arm outright leaves
-`prepareSyncProcessor()`'s 4/1 in force on the one path that reaches it, which
-is a measurement to take rather than a deletion to make.
+**The measurement said it is not a raster property.** `SP_SDCS_VSST` is where the
+block asserts the vertical sync it regenerates out of composite sync, so it is
+where the captured frame begins -- and it is a vertical pan, linear at one source
+line per count from 4 to 84 with no saturation, with the capture window the
+engine solves unmoved beside it. It reaches the picture only where `SP_SOG_MODE`
+is 1, so the byte was selecting on a fact the register does not ask about: a
+composite-sync RGBHV source kept 4 with the window live while a component 480p
+source got 14.
 
-**Where the vsync window belongs is `Tv5725::SourceTiming`**, not a new table:
-it is where the sync processor looks for vertical sync inside composite sync,
-measured in lines, and where vertical sync sits in a frame is what that class's
-published rasters already state.
+So it does not belong in `SourceTiming`, which an earlier revision of this list
+proposed: there is no published raster fact to derive, and a second vertical
+placement the engine cannot see only puts its model and the picture out of step.
+The constraint that survives is a bound, not a target -- the value must land
+inside the source's vertical blanking, 45 lines being the shortest here.
+`docs/investigations/the-sd-vsync-window-follows-the-sync-type.md`
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
 `inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is already gone, so
