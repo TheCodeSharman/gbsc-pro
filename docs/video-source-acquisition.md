@@ -346,7 +346,7 @@ time, as the step that claims each group lands:
 | `videoStandardInput`, `osr`, `presetID`, `applyPresetDoneStage` | the value handed to `VideoPath`. `presetDisplayClock`, `presetVlineShift` and `presetIsPalForce60` are gone |
 | `phaseIsSet` | `Adc`, which holds both phases; `phaseSP` and `phaseADC` are gone |
 | `deinterlaceAutoEnabled` | `Deinterlacer`, which holds the motion-adaptive state |
-| `medResLineCount` | `ModeDetect`, which already has `applyMedResLineCount()` |
+| `medResLineCount` | **gone.** `ModeDetect::init()` owns the threshold, at the 51 that was in force |
 | `videoIsFrozen` | `FrameBuffer` |
 | `autoBestHtotalEnabled`, `syncLockFailIgnore` | FrameSync, once it has an owner |
 | `inputIsYpBpR` | `VideoSourceSelection` |
@@ -1263,10 +1263,19 @@ apply.
 
 **The user overrides it per mode, and the override is stored the way the framing
 is** -- same `SourceKey`, same record, same lifecycle, found at the moment the
-decision is needed. `preferScalingRgbhv` is the interim stand-in for it, off by
-default and no longer the decision; it goes with the policy it encoded, because
-a global boolean cannot express a per-source choice and neither of its two
-answers is right for every source.
+decision is needed. `preferScalingRgbhv` is the interim stand-in for it; it goes
+with the policy it encoded, because a global boolean cannot express a per-source
+choice and neither of its two answers is right for every source.
+
+**AND IT IS NOT RGBHV-SPECIFIC, WHICH THE NAME SAYS AND THE WIRING DENIES.**
+`inputAcquisition.allowPassThrough(!uopt->preferScalingRgbhv)` is one gate in
+front of `passThroughSuitsSource()`, ahead of both measurement gates, so it
+refuses pass-through for EVERY source. Measured on the Wii at 480p, which is
+component rather than RGBHV: 524 lines at 59.8 Hz clears `bypassSuitsCount()`
+(not line-doubled, 31335 Hz against `BypassMinLineRateHz` 26000) and clears
+`rateCanBypass()` at a held 31395 -- and it is scaled, because the boolean is
+stored as 1. `loadDefaultUserOptions()` writes 0, so a unit that has never been
+toggled behaves the other way; byte 10 of `/preferencesv2.txt` is which.
 
 **The reason is not preference, it is what the capture can carry.** The write
 limit bounds a window at about 1024 IF units however it is placed, so a source
@@ -1517,9 +1526,17 @@ behind 16 x `delay(30)`, so every RGBHV source that is not medium-resolution pai
 lever was a Mode Detect THRESHOLD, so the walk changed nothing but what the
 classifier reported; both arms' exits returned the same value either way, which
 makes the question "is a source there" and `SourceMeasurement::countIsSource()`
-the answer. `rto->medResLineCount` is now written only to its default of 51 and
-read once -- left in place because `ModeDetect::init()` writes 44 to the same
-register, and choosing which owns it is a separate change.
+the answer. `rto->medResLineCount` and `ModeDetect::applyMedResLineCount()` are
+deleted with it: `init()` owns the threshold and writes the 51 the override was
+putting there on every load, so the register does not move. `MD_SEL_VGA60` is
+now the only field `init()` establishes that anything overrides.
+
+**AND NOTHING DISTINGUISHES 8 FROM 9 ANY MORE**, so the threshold no longer
+selects behaviour. The three sites that name either value --
+`SourceStandard::isProgressive()`, `applyPresets()`'s reset gate and its
+dispatch -- treat them identically; what it still decides is only how fast a
+1250-line source is named, 8 at once against 9 once `notRecognizedCounter`
+reaches 255.
 
 9 is `getVideoMode()`'s answer for a source it never recognised but which held a
 steady line count for 255 consecutive polls -- the route by which an unknown
@@ -1554,9 +1571,23 @@ is the thing being retired; the field is only how that idea is spelled. Its
 instance half -- `enableScalingRgbhv()` and `inputIsYpBpR()` -- is constructed
 at exactly one site in the firmware, and the first goes with the byte while
 `inputIsYpBpR()` is `adcInputSel == 0` and belongs to `VideoSourceSelection`
-beside the rest of that table. Its static half -- the
-scaling RGBHV state and the two line-count buckets -- is engine state and an
-output question, so it goes to `VideoPath` and `OutputChoice`. The class was
+beside the rest of that table.
+
+**NOTHING IN IT READS AN OUTPUT RESOLUTION OR A FRAMING**, which is the thing
+the name now suggests and never did: `OutputChoice` answers the resolution and
+the framing table is the root's. What the class actually holds is four unrelated
+things, and it is named after none of them:
+
+| | |
+|---|---|
+| the standard byte's vocabulary | `NtscInt` .. `Rgbhv`, `BypassRgbhv` -- the byte itself, spelled as constants |
+| scaling RGBHV state | `scalingRgbhvInForce()`, `rememberScalingRgbhv()`, `forgetScalingRgbhv()` -- engine mode state, `VideoPath`'s |
+| one input predicate | `inputIsYpBpR()`, which is `adcInputSel == 0` |
+| **dead** | `rgbhvPresetStandard()` and `rgbhvStandardFor()` -- the 280/380 line buckets that chose WHICH pal_*/ntsc_* table a scaling RGBHV source wanted. Zero firmware callers; held alive by their own tests alone |
+
+So the class is not renamed either. The dead pair goes with the tables it
+selected between, the state goes to `VideoPath`, the predicate to
+`VideoSourceSelection`, and the constants go with the byte. The class was
 extracted so mode state would outlive the preset tables; it has, and there is no
 second job waiting for it.
 
@@ -1581,10 +1612,9 @@ cannot be trusted even about what was written: a reserved bit beside a field
 stores a 1 and the hardware ignores it.
 `investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`
 
-**`Tv5725::SourceStandard` is down to two arms**, and what is left of it is the
-HD bypass path plus one literal. `doPostPresetLoadSteps()` constructs it from the
-byte and calls `apply()`; the SD arm is gone entirely, so 1 and 2 are values no
-register follows.
+**`Tv5725::SourceStandard` is down to one arm and one register pair.**
+`doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
+writes nothing at all for 1, 2, 5, 6, 7, 13 and 14.
 
 Everything it used to write is now derived from something measured, and the
 measurements are what settled where each piece belongs:
@@ -1596,7 +1626,8 @@ measurements are what settled where each piece belongs:
 | `MADPT_Y_DELAY` | `Deinterlacer::applyScanMode()` | the same |
 | `IF_HS_Y_PDELAY`, `VDS_Y_DELAY` | the two `applyScanMode()`s | the doubler and `Adc::inputIsComponent()` |
 | `IF_HS_TAP11_BYPS` | nothing -- deleted | always 0, which `InputFormatter::init()` leaves |
-| `ADC_FLTR` | `Adc::init()` on every path but the HD arm | nothing: one corner for every source |
+| `ADC_FLTR` | `Adc::init()` | nothing: one corner for every source |
+| `IF_PRGRSV_CNTRL`, `IF_HS_DEC_FACTOR`, s1_02 | the two `applyScanMode()`s | the line doubler, which the engine measures |
 
 **Which connector is live is held, not measured and not read back.** Nothing on
 the chip reports it, so `Adc::selectInput()` records what it wrote and
@@ -1618,11 +1649,32 @@ measurement rather than by choosing.**
   the control's own repeat spans the whole spread and the order is not
   monotonic. `docs/investigations/the-analog-filter-corner-is-above-nyquist.md`.
 
-What is left in the class is two arms. `applyProgressive()` is the SD vsync
-window, 14/11, which keeps two owners until the RGBHV block moves --
-`SyncProcessor::applyForScalingRgbhv()` writes 2/0 on that path. `applyHd()` is
-the 110 MHz filter corner, the progressive control bits and the luma delay, and
-it is the bypass entry's to take.
+**THE HD ARM HAS GONE, AND WHAT IT COST WAS A SECOND OWNER.** It wrote
+`ADC_FLTR`, `IF_PRGRSV_CNTRL`, `IF_HS_DEC_FACTOR`, `VDS_Y_DELAY` and a whole-byte
+0x74 into s1_02, every one of which has an owner: the first is `Adc::init()`'s
+one corner and the next three are what the two `applyScanMode()`s already write
+for a progressive source, identically. The byte was the one that disagreed --
+`IF_SEL_WEN` 0 against `applyScanMode()`'s 1, and `IF_HS_TAP11_BYPS` 1 where
+`InputFormatter::init()` leaves 0 -- and which owner won was an ordering
+accident, because `solveScanMode()` early-returns unless the line doubling moved
+and only a source mode change clears `scanModeApplied_`.
+
+The test had recorded the conflict rather than catching it: 5, 6 and 7 were
+excluded from the three loops asserting that no standard writes what the scan
+mode decides. They are in those loops now.
+
+**What is left is one arm and one register pair.** `applyProgressive()` opens
+the SD vsync window at 14/11 for standards 3, 4, 8 and 9 -- the last register a
+classification decides. It has four owners on the scaling path today:
+`prepareSyncProcessor()` writes 4/1, this writes 14/11 over it later in the same
+`doPostPresetLoadSteps()`, `SyncProcessor::applyForScalingRgbhv()` writes 2/0,
+and a serial command writes whatever it is given.
+
+**IT IS REACHABLE, AND ONLY ON THE Wii.** `getVideoMode()` opens with
+`sourceIsRgbhv()`, so no `vga` timing produces 3; the Wii at 480p is standard 3
+and reads 14/11 on the part. So deleting the arm outright leaves
+`prepareSyncProcessor()`'s 4/1 in force on the one path that reaches it, which
+is a measurement to take rather than a deletion to make.
 
 **Where the vsync window belongs is `Tv5725::SourceTiming`**, not a new table:
 it is where the sync processor looks for vertical sync inside composite sync,
