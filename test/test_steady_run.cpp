@@ -130,3 +130,25 @@ TEST_CASE("a run can be handed a value already settled")
     CHECK(run.sample(311));
     CHECK_FALSE(run.alternated());
 }
+
+// The rule sample() applies, exposed so a caller comparing a fresh count
+// against a settled one applies the same one rather than ==.
+TEST_CASE("two counts agree when they are equal or one apart")
+{
+    CHECK(SteadyRun::agree(311, 311));
+    CHECK(SteadyRun::agree(311, 312));
+    CHECK(SteadyRun::agree(312, 311));
+
+    CHECK_FALSE(SteadyRun::agree(311, 313));
+    CHECK_FALSE(SteadyRun::agree(311, 524));
+    CHECK_FALSE(SteadyRun::agree(311, 97));
+}
+
+TEST_CASE("agreement at zero does not wrap")
+{
+    // A count of 0 is what an unmeasured source reads, and it must not agree
+    // with 65535 through an underflow.
+    CHECK_FALSE(SteadyRun::agree(0, 65535));
+    CHECK(SteadyRun::agree(0, 1));
+    CHECK(SteadyRun::agree(0, 0));
+}

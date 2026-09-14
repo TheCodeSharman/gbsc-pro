@@ -7,6 +7,11 @@ SteadyRun::SteadyRun(uint8_t samples)
 {
 }
 
+bool SteadyRun::agree(uint16_t a, uint16_t b)
+{
+    return (a > b ? a - b : b - a) <= 1;
+}
+
 void SteadyRun::restart(uint16_t value)
 {
     high_ = value;
@@ -30,9 +35,7 @@ bool SteadyRun::alternated() const { return run_ >= samples_ && low_ != high_; }
 bool SteadyRun::sample(uint16_t value)
 {
     if (value != high_ && value != low_) {
-        const bool widensByOne =
-            run_ > 0 && low_ == high_
-            && (value == (uint16_t)(high_ + 1) || (uint16_t)(value + 1) == high_);
+        const bool widensByOne = run_ > 0 && low_ == high_ && agree(value, high_);
         if (!widensByOne) {
             high_ = value;
             low_ = value;

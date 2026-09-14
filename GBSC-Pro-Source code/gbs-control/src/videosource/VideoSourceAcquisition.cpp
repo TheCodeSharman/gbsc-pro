@@ -217,7 +217,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // self-consistent.
     const bool interrupted = sourceInterrupted_;
     sourceInterrupted_ = false;
-    const bool countMoved = lines != solvedLines_;
+    const bool countMoved = !Tv5725::SteadyRun::agree(lines, solvedLines_);
     if (!interrupted && !countMoved && !rateMoved())
         return false;
 

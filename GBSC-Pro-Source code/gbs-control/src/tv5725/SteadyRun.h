@@ -22,6 +22,16 @@ class SteadyRun {
 public:
     explicit SteadyRun(uint8_t samples);
 
+    // Whether two counts are the same measurement: equal, or the pair an
+    // interlaced field alternates between.
+    //
+    // **THE ONE DEFINITION**, shared with sample() and with anything comparing
+    // a fresh count against a settled one. A caller using == instead re-arms a
+    // mode change on every field of an alternating source, and each one costs a
+    // sync-type probe and a re-solve.
+    // ../../../../docs/known-issues.md
+    static bool agree(uint16_t a, uint16_t b);
+
     // Take one sample. True once enough have agreed, and on every sample that
     // keeps agreeing after that.
     bool sample(uint16_t value);

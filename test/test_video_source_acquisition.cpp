@@ -1091,3 +1091,57 @@ TEST_CASE("nothing has been solved, so no source is present")
     CHECK_FALSE(unit.acquisition.sourceIsPresent());
 }
 
+
+TEST_CASE("a count alternating by one is the same source, not a mode change")
+{
+    // SteadyRun treats a pair differing by one as agreeing, because an
+    // interlaced field carries a half line and a run demanding identical
+    // samples never completes on one. The source event compared a RAW sample
+    // against the solve's raw sample instead, so on any source whose count
+    // alternates the two disagreed on half the polls and each disagreement
+    // armed a whole mode change -- a sync-type probe, a re-measure and a
+    // re-solve, for ever.
+    //
+    // Measured on the bench RiscPC under composite sync, counting 308/309:
+    // `source moved: count (309 lines, solved 308)` followed by
+    // `own V sync: no after 1001ms` every two to four seconds, with the sink
+    // reporting no signal throughout.
+    // ../docs/known-issues.md
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(g_probeCalls == 1);
+
+    for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i) {
+        seedSourceLines(i % 2 == 0 ? 311 : 312);
+        unit.poll();
+    }
+
+    CHECK(g_probeCalls == 1);
+}
+
+TEST_CASE("a count that moves by more than one is still a mode change")
+{
+    // The tolerance is one count, not a licence to ignore the count. 311 to 524
+    // is a real mode change and has to arm one.
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = true;
+    g_probeCalls = 0;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(g_probeCalls == 1);
+
+    seedSourceLines(524);
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        unit.poll();
+
+    CHECK(g_probeCalls == 2);
+}
