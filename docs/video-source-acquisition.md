@@ -1573,23 +1573,25 @@ at exactly one site in the firmware, and the first goes with the byte while
 `inputIsYpBpR()` is `adcInputSel == 0` and belongs to `VideoSourceSelection`
 beside the rest of that table.
 
-**NOTHING IN IT READS AN OUTPUT RESOLUTION OR A FRAMING**, which is the thing
-the name now suggests and never did: `OutputChoice` answers the resolution and
-the framing table is the root's. What the class actually holds is four unrelated
-things, and it is named after none of them:
+**NOTHING IN IT READS AN OUTPUT RESOLUTION OR A FRAMING**, which is what the
+name now suggests and never was: `OutputChoice` answers the resolution and the
+framing table is the root's.
+
+**It is down to the byte's constants and one flag**, and the rest went in one
+pass because none of it was load bearing:
 
 | | |
 |---|---|
+| the 280/380 line buckets | **deleted.** `rgbhvPresetStandard()` and `rgbhvStandardFor()` chose WHICH pal_*/ntsc_* table a scaling RGBHV source wanted. Zero firmware callers; their own tests were what kept them compiling |
+| the count a preset was chosen for | **deleted** with them -- it was read only there, and the one caller of `rememberScalingRgbhv()` always passed `SourceLinesUnknown` |
+| the instance half | **deleted.** `enableScalingRgbhv()` returned its constructor argument, and `inputIsYpBpR()` was `ADC_INPUT_SEL::read() == 0` where `Adc::inputIsComponent()` already answers from held state |
+| scaling RGBHV state | `scalingRgbhvInForce()` and its two setters, four readers. Engine mode state, `VideoPath`'s. **Not `RgbhvOutput::isScaling()`** -- that says what the source is entitled to, this says what the last load enabled, and the bypass-refused path sets them opposite |
 | the standard byte's vocabulary | `NtscInt` .. `Rgbhv`, `BypassRgbhv` -- the byte itself, spelled as constants |
-| scaling RGBHV state | `scalingRgbhvInForce()`, `rememberScalingRgbhv()`, `forgetScalingRgbhv()` -- engine mode state, `VideoPath`'s |
-| one input predicate | `inputIsYpBpR()`, which is `adcInputSel == 0` |
-| **dead** | `rgbhvPresetStandard()` and `rgbhvStandardFor()` -- the 280/380 line buckets that chose WHICH pal_*/ntsc_* table a scaling RGBHV source wanted. Zero firmware callers; held alive by their own tests alone |
 
-So the class is not renamed either. The dead pair goes with the tables it
-selected between, the state goes to `VideoPath`, the predicate to
-`VideoSourceSelection`, and the constants go with the byte. The class was
-extracted so mode state would outlive the preset tables; it has, and there is no
-second job waiting for it.
+So the class is not renamed either: the flag goes to `VideoPath` and the
+constants go with the byte at step 12, which is the whole of what is left. It
+was extracted so mode state would outlive the preset tables; it has, and there
+is no second job waiting for it.
 
 The byte goes with the function, and nothing holds a standard afterwards. Two
 things come out with it.
