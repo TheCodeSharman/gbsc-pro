@@ -797,3 +797,19 @@ TEST_CASE("the bring-up establishes the rest of the block the sketch used to wri
     CHECK(SyncProcessor::SYNC_PROC_5_23::read() == 0x00);
     CHECK(SyncProcessor::SYNC_PROC_5_5D::read() == 0x02);
 }
+
+TEST_CASE("the SD vertical sync position is one value for every source")
+{
+    // It is a vertical pan of the captured frame, one source line per count,
+    // and it reaches the picture only where the sync processor separates V out
+    // of composite sync. Nothing about a source's standard bears on it, and the
+    // engine already owns vertical placement.
+    // docs/investigations/the-sd-vsync-window-follows-the-sync-type.md
+    Wire.reset();
+    SyncProcessor::applySdVsyncPosition();
+
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
+    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 14);
+    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
+    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 11);
+}

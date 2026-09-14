@@ -48,6 +48,12 @@ void SyncProcessor::writeSdVsyncStop(uint16_t stop)
     SP_SDCS_VSSP_REG_L::write(stop & 0xff);
 }
 
+void SyncProcessor::applySdVsyncPosition()
+{
+    writeSdVsyncStart(SdVsyncStart);
+    writeSdVsyncStop(SdVsyncStop);
+}
+
 void SyncProcessor::holdClamp()
 {
     SP_NO_CLAMP_REG::write(1);

@@ -260,9 +260,8 @@ public:
     static void writeLineCounterStart(uint16_t pixels);
 
     // The horizontal scaling-down path every load starts from. Not in init():
-    // SourceStandard selects the interpolator beside it for the progressive
-    // standards, so a value written only at bring-up would be left behind by
-    // whichever source ran last.
+    // applyScanMode() selects the interpolator beside it, so a value written
+    // only at bring-up would be left behind by whichever source ran last.
     static void applyDefaultHorizontalScalePath();
 
     // The auto offset adjuster off and its detection range zeroed: what the ADC

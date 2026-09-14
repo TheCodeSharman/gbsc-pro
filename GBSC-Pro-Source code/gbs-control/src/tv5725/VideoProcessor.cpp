@@ -41,9 +41,9 @@ void VideoProcessor::init()
     // source leaving one of them keeps theirs.
     VDS_V_DELAY::write(0x0);                     // s3_24[2:2]
 
-    // Nothing else writes 2: SourceStandard writes 3, for YPbPr and the
-    // progressive standards, and still overrides this -- a standard is applied
-    // during the load and a bring-up only at an arm.
+    // applyScanMode() writes 3 for a progressive source and for YPbPr, and
+    // still overrides this -- the scan mode is applied during the load and a
+    // bring-up only at an arm.
     VDS_Y_DELAY::write(0x2);                     // s3_24[5:4]
     VDS_WEN_DELAY::write(0x2);                   // s3_24[7:6]
     VDS_D_SP::write(0x3);                        // s3_25[9:0]

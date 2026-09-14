@@ -403,6 +403,21 @@ public:
     static void writeSdVsyncStart(uint16_t start);
     static void writeSdVsyncStop(uint16_t stop);
 
+    // Where the sync processor asserts the vertical sync it regenerates out of
+    // composite sync, and so where the frame the capture sees begins. Inert on
+    // a source with its own V sync, because nothing is being regenerated.
+    //
+    // ONE VALUE FOR EVERY SOURCE. It is a vertical pan of the captured frame,
+    // one source line per count and linear across the range, so there is no
+    // raster property to derive it from and the engine's capture window is the
+    // only thing that should place the picture. The constraint is a bound
+    // rather than a target: it has to land inside the source's vertical
+    // blanking, and the shortest on this bench is 45 lines.
+    // docs/investigations/the-sd-vsync-window-follows-the-sync-type.md
+    static const uint16_t SdVsyncStart = 14;
+    static const uint16_t SdVsyncStop = 11;
+    static void applySdVsyncPosition();
+
     // Where H and V come from: 0 the dedicated pins, 1 composite or
     // sync-on-green. It travels with the input choice, not with the sync type.
     static void selectExternalSync(uint8_t sel);

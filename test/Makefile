@@ -12,7 +12,7 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard video-route rgbhv-output clean help
+.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -50,7 +50,7 @@ GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\
 	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp \
 	src/videosource/SyncRecovery.cpp
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|SourceStandard|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -679,19 +679,6 @@ adc:
 	  "$(HERE)/test_adc.cpp" src/tv5725/Adc.cpp
 	@"$(OUT)/test_adc"
 
-## source-standard: what a video standard implies, and nothing else
-#
-# Every register here has other writers, so the run is repeated under
-# complementary poisons: a field the two disagree about was never written by
-# this, whatever it reads.
-source-standard:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_source_standard" \
-	  "$(HERE)/test_source_standard.cpp" src/tv5725/SourceStandard.cpp \
-	  $(SAMPLING_SRC)
-	@"$(OUT)/test_source_standard"
-
 ## sampling-log: host unit tests for Tv5725::SamplingLog
 #
 # It drives PLLAD_MD itself, so what matters is the ceiling and the restore --
@@ -741,7 +728,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc source-standard sampling-log video-route rgbhv-output
+test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
 all: test
 
 ## clean: remove the compiled test binaries

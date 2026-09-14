@@ -79,7 +79,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/ModeDetect.h"
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SourceMeasurement.h"
-#include "src/tv5725/SourceStandard.h"
 #include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/videosource/SyncRecovery.h"
@@ -1674,8 +1673,7 @@ void prepareSyncProcessor()
 
     GBS::SP_H_TOTAL_EQ_THD::write(3);
 
-    Tv5725::SyncProcessor::writeSdVsyncStart(4);
-    Tv5725::SyncProcessor::writeSdVsyncStop(1);
+    Tv5725::SyncProcessor::applySdVsyncPosition();
 
     GBS::SP_CS_HS_ST::write(0x10);
     GBS::SP_CS_HS_SP::write(0x00);
@@ -2751,7 +2749,6 @@ void doPostPresetLoadSteps()
         Tv5725::InputFormatter::writeLineCounterStart(0);
         Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
 
-        Tv5725::SourceStandard(rto->videoStandardInput).apply();
 
         // The most the clock can carry, for every source: the decimators undo
         // the faster tap so the same samples a line reach the pipeline either
