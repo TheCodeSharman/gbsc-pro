@@ -955,6 +955,12 @@ the channel's divider so the engine and the chip agree. Measured across a
 picture is full screen.
 `investigations/the-reference-clock-is-applied-to-a-working-picture.md`.
 
+**AND A COUNT ALTERNATING BY ONE IS NO LONGER A MODE CHANGE.** `SteadyRun`
+treats a pair differing by one as agreeing -- an interlaced field carries a half
+line -- and `countMoved` compared raw reads instead, so a source counting
+308/309 armed a mode change, a probe and a re-solve on half its polls, for ever.
+`SteadyRun::agree()` is that rule made public and both callers use it.
+
 **AND THE LADDERS HAVE MERGED.** Both `!rgbhvBypass()` gates are gone and so is
 `RGBHVNoSyncCounter`, so `SyncRecovery`'s eleven rungs are the only recovery
 there is. Measured with the Wii unplugged, which is what the reproduction needs:
