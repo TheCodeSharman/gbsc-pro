@@ -3683,53 +3683,6 @@ void startWire()
 }
 
 
-// Bypass solves no raster, so the sync processor's vertical window is steered
-// from the source's own line count. 15 kHz only -- above that the window the
-// bypass switch wrote already fits -- and rate limited, because each adjustment
-// costs 150 ms with the picture live.
-//
-// The count is held between passes rather than re-derived, so a mode change has
-// to say it is stale: forgetHdBypassLineCount().
-static uint16_t hdBypassLineCount = 0;
-static unsigned long hdBypassLastMeasure = millis();
-
-static void forgetHdBypassLineCount() { hdBypassLineCount = 0; }
-
-static void steerHdBypassVsyncWindow(boolean syncStable)
-{
-    if (!Tv5725::VideoRoute::isHdBypassChannel() || !syncStable || !sourceLowLineRate())
-        return;
-    if (millis() - hdBypassLastMeasure <= 765)
-        return;
-
-    uint16_t lines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    for (uint8_t i = 0; i < 3; i++) {
-        delay(2);
-        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() < (lines - 3) ||
-            GBS::STATUS_SYNC_PROC_VTOTAL::read() > (lines + 3)) {
-            lines = 0;
-            break;
-        }
-    }
-
-    if (lines != 0) {
-        if (lines < (hdBypassLineCount - 3) || lines > (hdBypassLineCount + 3)) {
-            hdBypassLineCount = lines;
-            if (hdBypassLineCount < 230 || hdBypassLineCount > 340) {
-                Tv5725::SyncProcessor::writeSdVsyncStart(1);
-                if (getCsVsStop() == 1) {
-                    Tv5725::SyncProcessor::writeSdVsyncStop(2);
-                }
-                Tv5725::ModeDetect::nudge();
-            } else {
-                Tv5725::SyncProcessor::writeSdVsyncStart(lines - 9);
-            }
-            delay(150);
-        }
-    }
-    hdBypassLastMeasure = millis();
-}
-
 #if GBS_DEBUG
 // The whole ADC sampling group, applied the way the firmware applies it, so an
 // experiment over it costs a request rather than a flash.
@@ -3966,10 +3919,6 @@ void runSyncWatcher() //
     bool runSettled = false;
     const uint16_t unmeasuredPasses = inputAcquisition.unmeasuredPasses();
     const uint16_t stablePasses = inputAcquisition.acquiredPasses();
-    boolean status16SpHsStable = getStatus16SpHsStable();
-
-    steerHdBypassVsyncWindow(status16SpHsStable);
-
     // A source that returns at the SAME line count and a different field rate is
     // invisible to VideoPath::sourceMoved(), which has only the count to go on, so
     // the engine holds a rate the source no longer runs at and nothing re-arms it.

@@ -822,6 +822,34 @@ TEST_CASE("only a rate a display accepts may be bypassed")
     }
 }
 
+TEST_CASE("a source that can be passed through is never a slow-line source")
+{
+    // The two thresholds are disjoint, with 6 kHz between them, and code has
+    // been written that only acts where both hold -- an HD bypass vsync steer
+    // gated on lowLineRate(), which no source reaching the channel could ever
+    // satisfy. Bringing the floors together again would revive that shape
+    // silently, so the gap is asserted rather than left to be read off two
+    // constants in different parts of the header.
+    SourceMeasurement measurement;
+
+    SUBCASE("the slowest rate that may bypass is well clear of the slow-line split") {
+        // 640x512@50, VTOTAL 533 -- the measured floor.
+        seedSourceLines(533);
+        g_fieldRate = 50.0f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK(measurement.rateCanBypass());
+        CHECK_FALSE(measurement.lowLineRate());
+    }
+
+    SUBCASE("a 15.6 kHz line is slow and cannot bypass") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK(measurement.lowLineRate());
+        CHECK_FALSE(measurement.rateCanBypass());
+    }
+}
+
 TEST_CASE("a source at 640x480 or above is passed through, and anything below is scaled")
 {
     // A sink that takes HDMI takes 640x480 and up, so a source at least that
