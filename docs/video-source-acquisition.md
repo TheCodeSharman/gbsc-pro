@@ -901,12 +901,12 @@ per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
 what it meant.
 
 **Step 13 waits on nothing. `runSyncWatcher()` has no arm**, and what is left
-is 101 lines in four, every one of them gated on the engine's run rather than on
+is 99 lines in four, every one of them gated on the engine's run rather than on
 what the source is called:
 
 | part | whose |
 |---|---|
-| guards, the interrupt hand-off, the HD bypass vsync window, the sync-on-green tuning | step 12 for `standardIsHeld()`, nothing else |
+| guards, the interrupt hand-off, the sync-on-green tuning | step 12 for `standardIsHeld()`, nothing else |
 | the no-sync branch | `!sourceIsPresent()` is the gate, for every source |
 | the stable branch | `sourceIsPresent()` is the gate; `SourceMaintenance` holds its cadence |
 | the 900 ms channel sync polarity and SOG-bad acknowledgement | `isHdBypassChannel()` is the gate |
@@ -926,8 +926,30 @@ reachable only through a window of one detection interval.
 `VideoSourceAcquisition::runAdvanced()` says which pass advanced the run, and
 that is the gate.
 
-**One act did not survive the move**, and it is recorded because a reader will
-look for it: `ADC_UNUSED_67::write(0)` at forty-five passes. It is s5 0x67, 16
+**THE HD BYPASS VSYNC STEER IS DELETED, BECAUSE ITS TWO GATES ARE MUTUALLY
+EXCLUSIVE.** It placed the sync separator's regenerated vsync from the source's
+own line count -- bypass solves no raster to take it from -- and required
+`isHdBypassChannel()` and `sourceLowLineRate()` together. Every route onto the
+channel is gated on `rateCanBypass()`, **26000 Hz**: the engine's own
+`passThroughSuitsSource()`, and both manual entries through
+`bypassCanBeDisplayed()`. `lowLineRate()` is **below 20000 Hz**. Six kilohertz
+apart, so no source reaching the channel can satisfy it.
+
+The floors were not always apart. `BypassMinLineRateHz` is measured, bracketed
+between 21.8 kHz giving no signal and 26.6 kHz locking, and before it existed a
+15 kHz source could reach the channel and did need the steer. Nothing went back
+for it when the floor closed that off. **The disjointness is asserted in
+`test_source_measurement.cpp`**, because bringing the floors together would
+revive the shape silently.
+
+**And a slow source could not be carried anyway.** CEA-861's 240p and 288p modes
+exist only pixel-repeated, to clear HDMI's TMDS clock floor; bypass hands the
+encoder the source's analog timing with nothing in the path to repeat pixels,
+and no way to ask for it -- the MS9288A configures itself from mask ROM with its
+I2C pins unconnected. `docs/rgbhv-bypass-trap.md`.
+
+**One further act did not survive the move**, and it is recorded because a reader
+will look for it: `ADC_UNUSED_67::write(0)` at forty-five passes. It is s5 0x67, 16
 bits undescribed in RD-5725-1.1, written in three places and read in none --
 unlike `ADC_UNUSED_69`, which `checkBoardPower()` round trips. The other two
 writers clear 0x64..0x67 together; this one cleared 0x67 alone.
