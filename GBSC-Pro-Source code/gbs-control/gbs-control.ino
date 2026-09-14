@@ -4132,8 +4132,6 @@ void runSyncWatcher() //
             // no picture between them. docs/sync-type-selection.md
 
             Tv5725::Interrupts::acknowledgeSogBad();
-
-            Tv5725::SyncProcessor::forgetPositions();
             lastTimeSogAndPllRateCheck = millis();
         }
     }
