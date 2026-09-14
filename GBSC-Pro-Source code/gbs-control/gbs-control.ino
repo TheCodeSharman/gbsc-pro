@@ -4057,7 +4057,13 @@ void runSyncWatcher() //
             rto->phaseIsSet = 0;
     }
 
-    if (!inputAcquisition.sourceIsPresent() && !rgbhvBypass()) {
+    // **ONE LADDER, EVERY SOURCE.** The exclusion here was the divider clobber:
+    // a rung ends in a re-measure, and prepareToMeasure() used to install the
+    // engine's reference sampling clock over the one HdBypass chose for the
+    // channel. It no longer does, so a passed-through source is recovered the
+    // same way as any other and RGBHVNoSyncCounter's parallel watch is gone.
+    // docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
+    if (!inputAcquisition.sourceIsPresent()) {
         lastVsyncLock = millis();
         if (unmeasuredPasses == 1) {
             // freezeVideo(); 
@@ -4069,7 +4075,7 @@ void runSyncWatcher() //
         runSettled = runRecoveryStep(inputAcquisition.recoveryDue(), true);
     }
 
-    if (inputAcquisition.sourceIsPresent() && !rgbhvBypass()) {
+    if (inputAcquisition.sourceIsPresent()) {
 
         static boolean doFullRestore = 0;
         if (unmeasuredPasses >= 150) {
@@ -4157,54 +4163,8 @@ void runSyncWatcher() //
     // carries every bypass and which one it is says nothing about why.
     // docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
     if (sourceIsRgbhv()) {
-        static uint16_t RGBHVNoSyncCounter = 0;
-
-        // **THE RECOVERY LADDER MUST NOT REACH A PASSED-THROUGH SOURCE**, which
-        // is why the branch above still excludes it and this counter is still
-        // here. SyncRecovery's rungs end in a re-measure, and a re-measure
-        // reinstalls the engine's REFERENCE sampling clock -- 1124 progressive
-        // -- over the divider HdBypass chose for the channel. Measured at
-        // 800x600: the entry is coherent at PLLAD_MD 2039 against
-        // HD_HSYNC_RST 2047, the ladder runs, and the divider is 1124 with the
-        // channel raster still sized for 2039. The picture keeps roughly half
-        // the line and is pushed off the panel.
-        uint16_t limitNoSync = 0;
-        uint8_t VSHSStatus = 0;
-        boolean stable = 0;
-        if (Tv5725::SyncMeasurement::isCsync() == true) {
-            if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-                Tv5725::ModeDetect::reset();
-                stable = 0;
-                delay(10);
-                Tv5725::Interrupts::acknowledgeSogBad();
-            } else {
-                VSHSStatus = GBS::STATUS_00::read();
-                stable = ((VSHSStatus & 0x04) == 0x04);
-            }
-            limitNoSync = 200;
-        } else {
-            VSHSStatus = GBS::STATUS_16::read();
-            stable = ((VSHSStatus & 0x0a) == 0x0a);
-            limitNoSync = 300;
-        }
-        if (!stable) {
-            RGBHVNoSyncCounter++;
-        } else {
-            RGBHVNoSyncCounter = 0;
-            if (stablePasses == 6) {
-                updateSpDynamic(1);
-            }
-        }
-
-        if (RGBHVNoSyncCounter > limitNoSync && unmeasuredPasses < 100) {
-            RGBHVNoSyncCounter = 0;
-            if (!rto->HdmiHoldDetection) {
-                setResetParameters();
-                prepareSyncProcessor();
-                Tv5725::SyncProcessor::reset();
-            }
-            inputAcquisition.restartRecovery();
-            debugPrintf("RGBHV limit no sync\n");
+        if (inputAcquisition.sourceIsPresent() && stablePasses == 6) {
+            updateSpDynamic(1);
         }
 
         static unsigned long lastTimeSogAndPllRateCheck = millis();
