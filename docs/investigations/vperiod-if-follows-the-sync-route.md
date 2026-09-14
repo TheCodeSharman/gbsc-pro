@@ -1,4 +1,4 @@
-# Why `VPERIOD_IF` never completes a measurement on RGBHV
+# `VPERIOD_IF` follows the sync route, not RGBHV
 
 **Status:** CLOSED. **The discriminator is the SYNC ROUTE, not the video
 standard and not RGBHV as such**: `VPERIOD_IF` is valid whenever the sync

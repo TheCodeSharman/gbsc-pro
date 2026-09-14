@@ -493,7 +493,7 @@ Measured on one input, one cable, one mode, moving only the RISC PC's sync type:
 with `VT_BAD` 0 in 53 of 53 on composite. Everything below was measured on the
 separate-sync default and stands; the heading used to name RGBHV because that is
 the only separate-sync source on this bench.
-`docs/investigations/vperiod-if-on-rgbhv.md`, `docs/sync-type-selection.md`.
+`docs/investigations/vperiod-if-follows-the-sync-route.md`, `docs/sync-type-selection.md`.
 
 Measured on the bench RISC PC at 320×256 (VTOTAL 311), RGBHV **scaling**, firmware
 unfrozen, picture correct:
@@ -542,13 +542,21 @@ on RGBHV is guarded:
 | `getVideoMode` HD branch | | gated on `STATUS_04` bits |
 | console print | | prints `v:----` when `STATUS_IF_VT_BAD` is set |
 
-**The axis is the input standard, not scaling.** `VPERIOD_IF` is trustworthy in
-the SD and HD modes that traverse the IF — the deinterlace code keys *exact
-equality* on 522/524/526/622/624/626 for field parity, which only works if it is
-accurate to the line — and untrustworthy on RGBHV whether bypassed or scaled.
+**The axis is the SYNC ROUTE**, as the heading above says — not the input
+standard and not RGBHV. The same RGBHV source on one cable and one mode reads
+623 with `VT_BAD` 0 on composite sync and debris with `VT_BAD` 1 on separate,
+so RGBHV is trustworthy or not according to which sync type it is sent with.
+Where the separator is in the path the value is accurate to the line, which is
+what lets the deinterlace code key *exact equality* on
+522/524/526/622/624/626 for field parity.
 
-Why is hypothesised but not established. See
-[investigations/vperiod-if-on-rgbhv.md](investigations/vperiod-if-on-rgbhv.md).
+**The bit is a property of the source AND the path together, so it reads GOOD
+in only one of the four combinations** — separator in the path with composite
+sync to separate. That makes `STATUS_IF_VT_BAD` a one-directional alarm: on the
+composite leg a GOOD→BAD transition says the separator stopped finding vertical
+timing, and on the separate leg it is pinned BAD and says nothing at all. The
+two mismatched combinations have not been measured.
+[investigations/vperiod-if-follows-the-sync-route.md](investigations/vperiod-if-follows-the-sync-route.md).
 
 ## Mode Detect classifies, it does not measure
 
@@ -622,7 +630,7 @@ startup detection.
 
 - [investigations/hperiod-if-railing.md](investigations/hperiod-if-railing.md) —
   why `HPERIOD_IF` goes bad, and the hypotheses already refuted
-- [investigations/vperiod-if-on-rgbhv.md](investigations/vperiod-if-on-rgbhv.md) —
+- [investigations/vperiod-if-follows-the-sync-route.md](investigations/vperiod-if-follows-the-sync-route.md) —
   why the vertical counter never completes, and the experiment that would settle it
 - [riscpc-game-modes.md](investigations/riscpc-game-modes.md) — where these facts were established, and what is still open
 - [gbs-control-debug-interface.md](gbs-control-debug-interface.md) — the `/sc?`, `/getreg` and `/setreg` surface

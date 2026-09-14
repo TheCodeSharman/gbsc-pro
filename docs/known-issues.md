@@ -86,20 +86,15 @@ in 4 of 4 samples.
 
 ## Measured wrong, no picture consequence found yet
 
-### `VPERIOD_IF` is never correct on the RISC PC
+### `Deinterlacer::steer()` gates on `STATUS_IF_VT_OK`
 
-In either mode or sync type, and the mode round trip that recovers `HPERIOD_IF`
-does not touch it. It reads 524 correctly on the Wii. The working source is the
-one whose line doubler is bypassed, but the two also differ in connector and in
-sync type, so nothing is isolated. 1024x768@60 is the mode to test it with --
-not 640x480@60, where the ADC PLL reads unlocked in 1014 of 1014 samples.
-
-### `Deinterlacer::steer()` gates on the wrong flag
-
-It gates on `STATUS_IF_VT_OK == 1`, the flag measured to flicker to 1 inside a
-bad state; `STATUS_IF_VT_BAD == 0` matches the evidence. Nothing is observably
-wrong because `VT_OK` reads 0 on the bench source and the gate holds shut, so
-the deinterlacer has never run here.
+`STATUS_IF_VT_BAD == 0` was proposed as matching the evidence better. The two
+are complementary on this bench -- `VT_OK` 1 / `VT_BAD` 0 in 8 of 8 on composite
+sync, `VT_OK` 0 / `VT_BAD` 1 in 5 of 5 on separate -- so neither is the wrong
+gate on these readings, and the flicker the proposal rested on has not been
+reproduced. Open only in that nothing has exercised the gate: the bench RISC PC
+is progressive, so the deinterlacer has nothing to engage for even on the
+composite leg where the flag lets it through.
 
 ### `DAC_RGBS_ADC2DAC` reads 0 in pass-through
 

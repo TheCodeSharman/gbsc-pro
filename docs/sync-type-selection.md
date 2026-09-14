@@ -173,7 +173,7 @@ the firmware in three places and never 1.
 
 **AND THE SEPARATOR IS WHAT THE INPUT FORMATTER MEASURES VERTICAL TIMING FROM.**
 `VPERIOD_IF` and `STATUS_IF_VT_BAD` follow the same bit, which settles the open
-question in `docs/investigations/vperiod-if-on-rgbhv.md`: the discriminator is
+question in `docs/investigations/vperiod-if-follows-the-sync-route.md`: the discriminator is
 the sync route, not the video standard and not RGBHV. A separate-sync source
 leaves the separator with nothing to extract, so the IF never completes a
 vertical measurement while the sync processor counts happily off the VSync pin.

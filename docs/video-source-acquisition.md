@@ -190,7 +190,7 @@ What each step can answer, measured:
 lines, so interlace is invisible to it and it answers on every source.
 `VPERIOD_IF` answers only where the IF completes a vertical measurement, which
 RGBHV never does -- structural and reproducible,
-`docs/investigations/vperiod-if-on-rgbhv.md`.
+`docs/investigations/vperiod-if-follows-the-sync-route.md`.
 
 **The recognised modes are read first, the user slot second, and both arrive in
 the same burst.** `IF_STATUS_` carries the whole table -- SD, VGA, SVGA, XGA,
@@ -505,7 +505,7 @@ IS the reading, and it needs no table of broadcast totals.
 What bounds it is the sync route rather than the raster: `VPERIOD_IF` is a
 measurement only with the sync separator in the path, so on separate sync the
 scan type has no source. That is what stops the key carrying interlace for every
-source. `docs/investigations/vperiod-if-on-rgbhv.md`, `docs/bench-sources.md`.
+source. `docs/investigations/vperiod-if-follows-the-sync-route.md`, `docs/bench-sources.md`.
 
 **`sourceIsRgbhv()` is circular if defined over the output.** It also answers
 *is this source RGBHV at all*, which detection establishes before any output is

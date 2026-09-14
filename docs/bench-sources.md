@@ -211,7 +211,7 @@ real 576i, and `VPERIOD_IF` counts half-lines so the two read 623 against 624
 **with the RISC PC on composite sync**. On separate sync it reads debris and
 `STATUS_IF_VT_OK` 0 -- the measurement needs the sync separator in the path, so
 a reading taken on `SYNC 0` is not a contradiction of the 623.
-`docs/investigations/vperiod-if-on-rgbhv.md`.
+`docs/investigations/vperiod-if-follows-the-sync-route.md`.
 
 The full classification burst, `s0_00..s0_05` in one read, with the RISC PC
 progressive on composite sync beside the Wii genuinely interlaced:
