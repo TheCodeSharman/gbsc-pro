@@ -900,21 +900,38 @@ every reader reads those. The run advances on the detection cadence rather than
 per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
 what it meant.
 
-**Step 13 waits on one part now, and the line counts say which.**
-`runSyncWatcher()` is 230 lines in five:
+**Step 13 waits on nothing. `runSyncWatcher()` has no arm**, and what is left
+is 118 lines in four, every one of them gated on the engine's run rather than on
+what the source is called:
 
-| part | lines | whose |
-|---|---|---|
-| guards, the interrupt hand-off, the HD bypass vsync window, the sync-on-green tuning | 47 | step 12 for `standardIsHeld()`, nothing else |
-| the no-sync branch | 11 | **landed** -- `!sourceIsPresent()` is the gate, for every source |
-| the stable branch | 82 | **landed** -- `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
-| the scaling-RGBHV arm | 30 | **step 10** |
-| the park | 5 | deletable on sight |
+| part | whose |
+|---|---|
+| guards, the interrupt hand-off, the HD bypass vsync window, the sync-on-green tuning | step 12 for `standardIsHeld()`, nothing else |
+| the no-sync branch | `!sourceIsPresent()` is the gate, for every source |
+| the stable branch | `sourceIsPresent()` is the gate; step 9 took the deinterlacer out of it |
+| the 900 ms channel sync polarity and SOG-bad acknowledgement | `isHdBypassChannel()` is the gate |
 
-**The arm is down to two acts**, the parallel recovery having gone: one
-`updateSpDynamic(1)` at six settled passes, and a 900 ms timer carrying the
-channel's sync polarity under pass-through, a SOG-bad acknowledgement and a
-`forgetPositions()`.
+**THE ARM IS RETIRED, AND NEITHER OF ITS ACTS WAS RGBHV'S.**
+
+`updateSpDynamic(1)` at six settled passes could not reach the branch the `1`
+selects: that branch requires `searching`, which requires `!sourceIsPresent()`,
+and the call site required `sourceIsPresent()`. It was therefore the same act as
+the `updateSpDynamic(0)` the stable branch already runs, and it joins that
+branch's cadence.
+
+The 900 ms pair moved out whole. **The acknowledgement is the polarity step's
+freshener** -- `STATUS_INT_SOG_BAD` latches, so it reports NOW only for a reader
+that clears it, and both readers here want that: the polarity gate beside it and
+the auto-gain gate in `loop()`. Neither is RGBHV's, and on YPbPr, where the
+sync-on-green tuning is skipped, nothing else clears the bit repeatedly at all.
+
+**The widening is measurable on the Wii.** The arm kept the polarity step off a
+YPbPr source, so the channel's hsync pair stayed as `applyComponent()` wrote it.
+It is now ordered from the measured polarity like every other channel source --
+`HD_HS_ST` 164 / `HD_HS_SP` 40 with `SP_HS2PLL_INV_REG` 1 against a negative
+`STATUS_SYNC_PROC_HSPOL`, steady in 12 of 12 samples over 30 s, picture clean and
+full screen. There is no host seam for the sketch's watcher, so the guards below
+are what this rests on.
 
 **The polarity act is placed.** `HdBypass::applyChannelSyncEdges()` owns it, and
 `updateHVSyncEdge()` is deleted. What it was doing is the engine reading a
@@ -926,8 +943,7 @@ computed path's alike.
 
 Its gate is `VideoRoute::isHdBypassChannel()` rather than `rgbhvBypass()` --
 these are the CHANNEL's emitted pulses, so whether the channel is in circuit is
-the question. Nothing widens until the arm around it goes, which is what is
-left. And the vertical half needs no sync-type gate, because
+the question. And the vertical half needs no sync-type gate, because
 `STATUS_SYNC_PROC_VSACT` reads 0 on the composite-sync path and so already
 answers what `isCsync()` was standing in for there.
 
@@ -937,8 +953,7 @@ confirm, and called `applyPresets()` -- all of it a second detector beside
 `VideoPath::sourceMoved()`. Both surviving branches gate on the engine's run,
 so **no part of this function reads the classifier**.
 
-**Step 10's arm is what is left**, so deleting the function needs it first. That is the order this list already states -- 8 to 13 follow the
-byte out -- and it is now measured rather than asserted. Steps 9 and 10 are
+**Step 10's arm is gone, so step 13 is unblocked.** Steps 9 and 10 are
 part-landed in that `Deinterlacer`, `OutputChoice` and `RgbhvOutput` all exist
 and the sketch still steers them.
 
@@ -1285,7 +1300,7 @@ picks off the source's line count folds into it.
 | `PLLAD_MD` / `HTOTAL` | 2039 / 2039 | 2039 / 2039 |
 | `HD_HSYNC_RST` | 2047 | 2047 |
 | `HD_HB_ST` / `HD_HB_SP` | 2039 / 144 | 2039 / 144 |
-| `HD_HS_ST` / `HD_HS_SP` | 40 / 164 | 40 / 164 |
+| `HD_HS_ST` / `HD_HS_SP` | 40 / 164 | **164 / 40**, `SP_HS2PLL_INV_REG` 1 |
 | `HD_VS_ST` / `HD_VS_SP` | 2 / 7 | 6 / 0 |
 | `SP_SDCS_VSST` / `VSSP` | 14 / 11 | 520 / 522 |
 | `HD_VB_SP` | 20 | 20 |
@@ -1296,6 +1311,14 @@ picks off the source's line count folds into it.
 2039 is the channel bound and 2047 is `2039 + RasterGuardSamples`. The two arms
 differ only in the vertical pair and the SD window, which is what is left of the
 progressive arm.
+
+**The Wii's hsync pair is ordered rather than as written, and the polarity is
+why.** `STATUS_SYNC_PROC_HSPOL` reads negative there, so
+`applyChannelSyncEdges()` hands the channel the held pair the other way round and
+raises `SP_HS2PLL_INV_REG`. It reads as a difference between the arms and is not
+one: the computed path's source has a positive hsync, and the same step runs on
+both. While `runSyncWatcher()`'s scaling-RGBHV arm existed the step never reached
+a YPbPr source at all, so this column used to read 40 / 164.
 
 **`HD_VB_SP` read 20 on the Wii, not the 36 above.** 20 is `enable()`'s resting
 value, which is what `applyVerticalBlanking(0)` leaves -- so the active start
