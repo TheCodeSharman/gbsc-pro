@@ -138,6 +138,33 @@ undecided. `applyForScalingRgbhv()` overlaps `applyForSyncType()` on
 `SP_SOG_MODE` and the overflow protect, so wiring it back as-is would put two
 owners on those.
 
+### `RgbhvOutput` reports bypass on a unit that is scaling
+
+Measured on the bench RiscPC at 320x256@50 on `vga`, scaled, `OUT_SYNC_SEL` 0
+with a clean full-screen picture: `printInfo()` reports `m:15`, which is
+`BypassRgbhv`. `getVideoMode()` returns `heldStandard()` for an RGBHV source and
+that picks the bypass spelling when `RgbhvOutput::isScaling()` is false, so the
+class is holding the opposite of what the output is doing.
+
+The sequence writes it twice and the second write loses. `detectAndSwitchToActiveInput()`
+calls `holdStandard(BypassRgbhv)` -- which is `chooseBypass()` -- then
+`applyPresets(BypassRgbhv)`, which converts its argument to `Rgbhv` and ends in
+`holdStandard(Rgbhv)`, so `chooseScaling()` runs. It then returns 3, and the
+caller's `syncFound == 3` branch runs `holdStandard(BypassRgbhv)` again, putting
+it back to bypass after the load settled it.
+
+**The blast radius is small and that is why it has survived.** `rgbhvBypass()`
+reads true on a scaling unit, and its two gates are `updateCoastPosition()` and
+`optimizeSogLevel()` -- but the coast window is placed by another route, measured
+0/0 on separate sync and 7/3 on composite, which is correct for each. And
+`getVideoMode()`'s 15 round-trips back to `Rgbhv` inside `applyPresets()`. So
+nothing observable is wrong with the picture.
+
+It is recorded because it is the shape step 12 removes rather than a bug to
+patch: one fact -- what an RGBHV source's output is -- stored where two writers
+can disagree, with no check that they do not.
+`docs/video-source-acquisition.md`.
+
 ## Untried experiments with a known payoff
 
 ### The display clock could ask for 129.6 MHz rather than 108
