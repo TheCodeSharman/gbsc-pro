@@ -1830,7 +1830,7 @@ uint8_t detectAndSwitchToActiveInput()
         bootLogPrintf("DETECT: enter t=%lums ADCsel=%u S16=0x%02x srcVT=%u "
                       "HPERIOD=%u videoStd=%u\n",
                       (unsigned long)millis(), (unsigned)GBS::ADC_INPUT_SEL::read(),
-                      (unsigned)GBS::STATUS_16::read(),
+                      (unsigned)GBS::read(0x00, 0x16),
                       (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
                       (unsigned)GBS::HPERIOD_IF::read(),
                       (unsigned)rto->videoStandardInput);

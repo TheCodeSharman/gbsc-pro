@@ -319,8 +319,6 @@ public:
     // The four bits below are the whole of s0_16 that is not reserved, so read
     // them by name. This whole-byte form is for a raw trace only, where the
     // reserved bits 7-4 are part of what is being recorded.
-    typedef UReg<0x00, 0x16, 0, 8> STATUS_16;                         // SYNC_PROC_STATUS_00. RD-5725-1.1 names bits 3-0
-                                                                      // individually and marks 7-4 reserved.
 
     typedef UReg<0x00, 0x16, 0, 1> STATUS_SYNC_PROC_HSPOL;            // HS polarity. When =0, input H-sync is low active;
                                                                       // when =1, high active [datasheet: SYNC_PROC_STATUS_[0]]
@@ -366,7 +364,6 @@ public:
     typedef UReg<0x00, 0x2E, 0, 16> TEST_BUS;                         // Part of TEST_BUS_, which RD-5725-1.1 documents as one
                                                                       // 24-bit block at s0_2E rather than field by field.
 
-    typedef UReg<0x00, 0x2E, 0, 8> TEST_BUS_2E;
 
 
     typedef UReg<0x00, 0x2F, 0, 8> TEST_BUS_2F;                       // Part of TEST_BUS_, which RD-5725-1.1 documents as one
@@ -375,7 +372,6 @@ public:
 // INPUT FORMATTER REGISTERS
 
 
-    typedef UReg<0x01, 0x02, 0, 8> INPUT_FORMATTER_02;
 
 
 
@@ -437,10 +433,8 @@ public:
     typedef UReg<0x00, 0x45, 6, 2> CKT_FF_CNTRL;                      // CKT used to control FIFO
 
 
-    typedef UReg<0x00, 0x46, 0, 8> RESET_CONTROL_0x46;
 
 
-    typedef UReg<0x00, 0x47, 0, 8> RESET_CONTROL_0x47;
 
 
     typedef UReg<0x00, 0x4D, 0, 5> TEST_BUS_SEL;                      // Test bus selection Test bus enable
@@ -685,7 +679,6 @@ public:
                                                                       // by horizontal sync, else write enable is not used
 
 
-    typedef UReg<0x05, 0x1F, 0, 8> DEC_5_1F;
 
                                                                       // space convert module bypass
 

@@ -201,7 +201,6 @@ public:
                                                                       // different frame size
 
 
-    typedef UReg<0x03, 0x24, 0, 8> VDS_3_24;
 
     typedef UReg<0x03, 0x24, 0, 1> VDS_UV_FLIP;                       // 422 to 444 conversion UV flip control This bit is used to
                                                                       // flip UV, when this bit is 1, UV position will be flipped
