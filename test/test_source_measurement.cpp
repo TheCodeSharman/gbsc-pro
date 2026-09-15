@@ -603,7 +603,7 @@ TEST_CASE("a mode change abandons the field rate it had agreed on")
     SourceMeasurement measurement;
     REQUIRE(measurePastGate(measurement) == SourceMeasurement::Settling);
 
-    measurement.resetSteadiness();
+    measurement.modeChanged();
 
     CHECK(measurePastGate(measurement) == SourceMeasurement::Settling);
 }
@@ -625,7 +625,7 @@ TEST_CASE("a mode change abandons the run rather than counting through it")
     SourceMeasurement measurement;
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
-    measurement.resetSteadiness();
+    measurement.modeChanged();
     CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
@@ -1199,7 +1199,7 @@ TEST_CASE("a good count clears a serration verdict")
     // A completed run at the new count is what clears it. The verdict stands
     // while the run is still re-gathering, because that is the state the coast
     // was widened for and one good sample does not undo it.
-    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
         reading = measurement.measure();
 
@@ -1457,7 +1457,7 @@ TEST_CASE("the scan type of the held source uses the doubling in force")
 static bool settleAlternating(SourceMeasurement &measurement, uint16_t low,
                               uint8_t samples)
 {
-    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
     for (uint8_t i = 0; i < samples; ++i) {
         seedSourceLines(i % 2 ? (uint16_t)(low + 1) : low);
         reading = measurement.measure();
@@ -1565,7 +1565,7 @@ TEST_CASE("one call measures the source, and every reading comes from that pass"
     sampling.holdDivider(BenchDivider);
     g_fieldRate = 50.08f;
 
-    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
     for (uint8_t pass = 0; pass < 16 && reading != SourceMeasurement::Measured; ++pass)
         reading = sampling.measure();
 
@@ -1601,7 +1601,7 @@ TEST_CASE("a count that read the serrations is reported apart from an unsettled 
     seedHPeriod(431);
     sampling.holdDivider(BenchDivider);
 
-    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
     for (uint8_t pass = 0; pass < 16 && reading != SourceMeasurement::Serrations; ++pass)
         reading = sampling.measure();
 
@@ -1618,7 +1618,7 @@ TEST_CASE("a rate that has not repeated yet is settling rather than measured")
     sampling.holdDivider(BenchDivider);
     g_fieldRate = 50.08f;
 
-    SourceMeasurement::Reading first = SourceMeasurement::NotSteady;
+    SourceMeasurement::MeasurementStatus first = SourceMeasurement::NotSteady;
     for (uint8_t pass = 0; pass < 16 && first == SourceMeasurement::NotSteady; ++pass)
         first = sampling.measure();
 

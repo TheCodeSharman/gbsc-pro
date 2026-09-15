@@ -118,7 +118,7 @@ public:
     // The hsync pulse, taken by the layer that measures and handed over. THE
     // ENGINE READS NOTHING BACK: every window it solves, now and on every
     // framing press until the next reading arrives, comes off this.
-    void sourceMeasured(const SourceReading &reading);
+    void sourceMeasured(const HsyncPulse &reading);
 
     // Establish the scan mode and a known sampling clock from the count just
     // read, so that what the caller measures next means something. Measures
@@ -264,7 +264,7 @@ private:
 
     // The last pulse handed over. What every solve runs off, so a framing press
     // costs no read of the chip.
-    SourceReading reading_;
+    HsyncPulse reading_;
 
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.
     // Zero means there is none, which is what bypass looks like.

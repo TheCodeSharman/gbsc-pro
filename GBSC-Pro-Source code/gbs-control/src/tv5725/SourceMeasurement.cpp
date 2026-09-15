@@ -157,11 +157,17 @@ bool SourceMeasurement::sampleSteady()
     return true;
 }
 
-void SourceMeasurement::resetSteadiness()
+void SourceMeasurement::modeChanged()
 {
     steady_.reset();
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
+}
+
+void SourceMeasurement::forgetHeldRate()
+{
+    goodLines_ = 0;
+    goodLineRateHz_ = 0;
 }
 
 bool SourceMeasurement::rateSettled()
@@ -241,7 +247,7 @@ bool SourceMeasurement::measureLineRate()
     return lineRateHz_ != 0;
 }
 
-SourceMeasurement::Reading SourceMeasurement::measure()
+SourceMeasurement::MeasurementStatus SourceMeasurement::measure()
 {
     if (!sampleSteady())
         return countWasSerrations() ? Serrations : NotSteady;
@@ -256,7 +262,7 @@ SourceMeasurement::Reading SourceMeasurement::measure()
     return rateSettled() ? Measured : Settling;
 }
 
-SourceReading SourceMeasurement::hsync() const { return hsync_; }
+HsyncPulse SourceMeasurement::hsync() const { return hsync_; }
 
 bool SourceMeasurement::usable() const { return divider_ != 0; }
 
@@ -269,13 +275,13 @@ uint16_t SourceMeasurement::readSourceLines() const
     return measureSourceLinesCorrected(divider_);
 }
 
-SourceReading SourceMeasurement::readSource() const
+HsyncPulse SourceMeasurement::readSource() const
 {
     // The duty rather than the register, because the divider this was counted
-    // against is about to move. SourceReading.h.
+    // against is about to move. HsyncPulse.h.
     const float duty = divider_ > 0
         ? (float)measureHsyncLow() / (float)divider_ : 0.0f;
-    return SourceReading(duty, measureHsyncPositive());
+    return HsyncPulse(duty, measureHsyncPositive());
 }
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
@@ -373,12 +379,6 @@ uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
             htBadSeen = true;
     }
     return lineRateFromHPeriod(hperiod, HPeriodSamples, lines, htBadSeen);
-}
-
-void SourceMeasurement::forgetHeldRate()
-{
-    goodLines_ = 0;
-    goodLineRateHz_ = 0;
 }
 
 

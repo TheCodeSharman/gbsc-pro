@@ -438,7 +438,7 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // Seeded against the REFERENCE sampling clock, because that is the one in
     // force when the layer that measures reads the pulse. The register counts
     // ADC samples, so on the part it scales with the divider and the duty is the
-    // same either side; the fake holds whatever was seeded. SourceReading.h
+    // same either side; the fake holds whatever was seeded. HsyncPulse.h
     const uint16_t Divider = referenceDividerFor(false);
     const uint16_t HsyncLow = (uint16_t)(Divider * 96 / 800);
     SolvedEngine solved(524, 59.94f, HsyncLow, &Tv5725::Mode1080p, false);

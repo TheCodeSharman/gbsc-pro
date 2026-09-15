@@ -11,10 +11,10 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 
-inline Tv5725::SourceMeasurement::Reading
+inline Tv5725::SourceMeasurement::MeasurementStatus
 measurePastGate(Tv5725::SourceMeasurement &sampling)
 {
-    Tv5725::SourceMeasurement::Reading reading
+    Tv5725::SourceMeasurement::MeasurementStatus reading
         = Tv5725::SourceMeasurement::NotSteady;
     for (uint8_t pass = 0;
          pass < 2 * Tv5725::SourceMeasurement::SteadySamples; ++pass) {
@@ -27,7 +27,7 @@ measurePastGate(Tv5725::SourceMeasurement &sampling)
 
 // A rate was measured, whether or not it has repeated often enough to size a
 // raster from.
-inline bool rateMeasured(Tv5725::SourceMeasurement::Reading reading)
+inline bool rateMeasured(Tv5725::SourceMeasurement::MeasurementStatus reading)
 {
     return reading == Tv5725::SourceMeasurement::Settling
         || reading == Tv5725::SourceMeasurement::Measured;

@@ -203,7 +203,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
-    sampling_.resetSteadiness();
+    sampling_.modeChanged();
 
     // The sampling clock, BEFORE anything tries to measure. A load leaves the
     // ADC PLL on the bring-up's crossover row, and the sync processor counts in
@@ -264,7 +264,7 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     return solveWindows();
 }
 
-void VideoPath::sourceMeasured(const SourceReading &reading)
+void VideoPath::sourceMeasured(const HsyncPulse &reading)
 {
     reading_ = reading;
     timing_ = SourceTiming::matching(sampling_.sourceLines(), sampling_.fieldRateHz(),

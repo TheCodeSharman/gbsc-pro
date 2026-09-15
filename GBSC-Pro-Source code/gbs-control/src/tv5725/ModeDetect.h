@@ -246,16 +246,14 @@ public:
                                                                       // value
 
     // Every static register of this subsystem, in address order.
-    // Whether the source's vertical interval carries the half-line structure
-    // that makes a field and a frame different lengths. Mode Detect measures
-    // this and publishes it in STATUS_00; nothing needs to infer it from a
-    // period, and inferring it is what read a correct 480p count as a fault.
+    // Whether the source could have had its line count doubled by the
+    // serrations, which only an interlaced source can. A COARSE gate rather
+    // than the scan type: the two STATUS_00 bits behind it read byte-identical
+    // across a real interlace change, so they carry a vertical-period family
+    // and not the scan. SourceMeasurement::scanType() is the measurement.
     //
-    // **A LINE COUNT CAN ONLY DOUBLE ON AN INTERLACED SOURCE.** What doubles it
-    // is the sync processor running through the equalisation and serration
-    // pulses and counting the FRAME where a covered coast counts the FIELD. A
-    // progressive source has no such distinction, so there is nothing to
-    // double. docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    // It cannot be replaced by that measurement, and the reason is circular --
+    // docs/investigations/interlaced-source-measurement.md.
     static bool sourceIsInterlaced();
 
     // The other half, and not the negation of it: all four bits are clear for a

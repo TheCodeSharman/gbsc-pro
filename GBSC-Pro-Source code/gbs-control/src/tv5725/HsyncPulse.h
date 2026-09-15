@@ -1,5 +1,5 @@
-#ifndef TV5725_SOURCE_READING_H_
-#define TV5725_SOURCE_READING_H_
+#ifndef TV5725_HSYNC_PULSE_H_
+#define TV5725_HSYNC_PULSE_H_
 
 // The shape of the source's hsync pulse, which is what places picture inside
 // the line.
@@ -19,10 +19,10 @@
 
 namespace Tv5725 {
 
-class SourceReading {
+class HsyncPulse {
 public:
-    SourceReading();
-    SourceReading(float syncDuty, bool syncAtHead);
+    HsyncPulse();
+    HsyncPulse(float syncDuty, bool syncAtHead);
 
     float syncDuty() const;
 
@@ -37,4 +37,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_SOURCE_READING_H_
+#endif  // TV5725_HSYNC_PULSE_H_

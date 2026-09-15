@@ -8,7 +8,7 @@
 #include "OutputRaster.h"
 #include "ActiveImage.h"
 #include "SourceMeasurement.h"
-#include "SourceReading.h"
+#include "HsyncPulse.h"
 #include "SourceTiming.h"
 #include "BlankingTiming.h"
 
@@ -52,7 +52,7 @@ public:
     // resolved here: the three values that identify it are all measured, and a
     // path that plays the source out rather than scaling it never reaches this
     // call at all. docs/video-source-acquisition.md
-    bool readRasters(const SourceMeasurement &source, const SourceReading &reading,
+    bool readRasters(const SourceMeasurement &source, const HsyncPulse &reading,
                      const SourceTiming &timing);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to

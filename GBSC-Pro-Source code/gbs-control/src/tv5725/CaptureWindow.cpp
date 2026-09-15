@@ -11,7 +11,7 @@ CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
 bool CaptureWindow::readRasters(const SourceMeasurement &source,
-                                const SourceReading &reading,
+                                const HsyncPulse &reading,
                                 const SourceTiming &timing)
 {
     const uint16_t sourceLines = source.sourceLines();

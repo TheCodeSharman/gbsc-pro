@@ -4,7 +4,7 @@
 #include <Arduino.h>   // `boolean`
 #include <stdint.h>
 
-#include "SourceReading.h"
+#include "HsyncPulse.h"
 #include "SteadyRun.h"
 #include "TestBusRateMeasurement.h"
 #include "Tv5725Log.h"
@@ -29,7 +29,7 @@ class SourceMeasurement {
 public:
     SourceMeasurement();
 
-    enum Reading {
+    enum MeasurementStatus {
         NotSteady,     // the count is still gathering samples
         Serrations,    // the settled count read the serrations, not the source
         Unmeasurable,  // nothing could speak for a line rate
@@ -47,20 +47,21 @@ public:
     // Note this will corrupt the picture.
     void applyReferenceSampling();
 
-    // A mode change is about to move the count and the rate, so the run so far
-    // and the rate agreed on mean nothing.
-    void resetSteadiness();
+    // The source is about to move, so the steadiness run and the rate agreed
+    // on mean nothing.
+    void modeChanged();
 
-    // Drops the held rate, so the next measurement has nothing to be rejected
-    // against -- which is what a re-solve was armed for.
+    // Drops the rate HELD, which a mode change deliberately does not: that rate
+    // is what refuses a settling transient, and a confirmed rate change is the
+    // only thing that makes it the obstacle instead.
     void forgetHeldRate();
 
     // Measure the video source timings, holding them as state. Asked on every
     // pass. applyReferenceSampling() must be in force first.
-    Reading measure();
+    MeasurementStatus measure();
 
     // --- what the last measure() found ---------------------------------------
-    SourceReading hsync() const;
+    HsyncPulse hsync() const;
     uint16_t sourceLines() const;
     float fieldRateHz() const;
 
@@ -160,7 +161,7 @@ private:
     bool countWasSerrations() const;
     bool measureLineRate();
     bool rateSettled();
-    SourceReading readSource() const;
+    HsyncPulse readSource() const;
 
     // --- what the pass reads and judges --------------------------------------
 
@@ -169,9 +170,10 @@ private:
     static uint16_t measureSourceLinesCorrected(uint16_t divider);
 
     // Whether the sync processor counted the source's lines or the serration
-    // and equalisation pulses either side of the vertical interval. `interlaced`
-    // is measured rather than inferred: the half-line witness alone cannot
-    // separate the two, because a correct 480p count sits exactly on the total.
+    // and equalisation pulses either side of the vertical interval. Only an
+    // interlaced source can have its count doubled, and the half-line witness
+    // alone cannot separate the two: a correct 480p count sits exactly on the
+    // total and reads identically to a doubled one.
     static bool countIsSerrations(uint16_t lines, uint16_t halfLines,
                                   bool interlaced);
 
@@ -228,7 +230,7 @@ private:
     uint8_t rateRejections_;
     bool lineDoubled_;
 
-    SourceReading hsync_;
+    HsyncPulse hsync_;
     SteadyRun steady_;
     uint8_t rateAttempts_;
     bool serrationsSeen_;  // the last completed steadiness run read the serrations
