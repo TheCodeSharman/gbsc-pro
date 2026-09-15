@@ -588,6 +588,57 @@ tables above railed without it.
 The experiment this unlocks, in order: reproduce, pull mains and USB for a
 measured interval, read `HPERIOD_IF` before touching the source.
 
+## Bisecting the provocation, 2026-09-15
+
+`/sc?~` provokes reliably, so the provocation can be taken apart. Each arm on
+the bench RiscPC at 320x256@50, separate sync, the counter verified healthy at
+431 before each trial and cleared with a mode round trip after a failure:
+
+| what was done | railed |
+|---|---|
+| `/sc?~` -- low power, then detection | **3 of 3** |
+| `/input?src=vga` -- detection, NO low-power reset | **3 of 3** |
+| `ADC_INPUT_SEL` to 0 for 400 ms and back, automation frozen, nothing else | **4 of 4** |
+| `IF_HSYNC_RST` 0x3FF for 400 ms and back, frozen -- what `setResetParameters()` does to the IF | **0 of 6**, against 0 of 6 for a do-nothing control |
+
+**So the low-power reset is not needed and neither is detection**: taking the
+ADC's input away and giving it back is enough on its own, with the engine frozen
+and no other write in the window. That is the same action the section below
+records as a CLEARANCE, which is consistent rather than contradictory -- a sync
+discontinuity restarts the counter and the restart lands either way.
+
+Two cautions on those numbers. The bounce-only arm cleared between trials
+without re-verifying the clear, so its starting states are unverified and 4 of 4
+overstates what one trial proves; and the bounce is recorded below as railing
+only 1 of 6 modes in an earlier run, so the rate is not stable across sessions.
+
+**`IF_HSYNC_RST` is the first TRANSIENT to be ruled out.** Every earlier negative
+was a state difference, applied from a dump comparison -- which cannot see a
+register the reset writes and the next solve restores. This one was chosen for
+exactly that reason and does not reproduce the fault.
+
+**And the mode round trip clears it probabilistically, not reliably**: on the
+same source and pair of modes it took three round trips, the first two leaving
+511s and the third restoring 431 in 8 of 8.
+
+### Protect held across the provocation: 3 of 3 against 0 of 3, and confounded
+
+| arm | provocation | railed |
+|---|---|---|
+| separate sync, `SP_H_PROTECT` 0 | `/sc?~` | **3 of 3** |
+| csync, `SP_H_PROTECT` 1 | `/sc?~` | **0 of 3** |
+
+Striking, and it attributes nothing: the arms differ in the sync type as well as
+the bit, because the only way the firmware holds protect through the reset is
+the csync path -- `applyForSyncType(false)` writes it 0 on a separate-sync
+source, inside the very reset under test.
+
+**The test that would settle it needs separate sync with protect held**, which
+needs the firmware to stop forcing it to 0 there -- a `GBS_DEBUG` override on
+`applyForSyncType()`, then the same paired arms. If protect does prevent it, the
+detector question below lands first: the noise is what the engine's
+three-samples-within-2 test rejects, so a steadied mislock passes.
+
 ## An ADC input-select bounce clears it -- and can also cause it
 
 Every previously known clearance required the **source** to do something: a mode
