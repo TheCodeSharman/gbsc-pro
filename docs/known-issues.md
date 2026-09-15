@@ -299,6 +299,15 @@ reverse change is 2.89 s.
 and back both spend it, which is why a switch that `CLAUDE.md` times at about
 15 s can need several rounds of polling before `/geometry` reports acquired.
 
+**THE SLOW DIRECTION IS THE OTHER ONE, measured end to end.** The 5.0 s above
+is time spent inside the field-rate spin, not time to re-solve, and the two do
+not rank the same way. Timed from the source mode change to the engine holding
+the correct line rate, 311 -> 524 takes about 2.1 s every run, while
+524 -> 311 took 3.9 to 18 s and rolled the picture throughout -- a separate
+fault, the stale-divider deadlock, now fixed and bounded to about 5 s.
+`investigations/hperiod-if-railing.md`. Reach for this entry for the spin;
+reach for that one for a change into a SHORTER frame.
+
 A bounded *poll until `STATUS_IF_HT_BAD` clears* is the candidate replacement:
 `HT_BAD` re-locks within 25 ms measured and 1.4 ms nominal, against a 20 ms
 blocking spin for the fallback. **The bound is essential** -- on the
