@@ -293,6 +293,25 @@ public:
     // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
     static void applyForSearch(bool csync);
 
+    // What the separator is configured for pass by pass, as against the static
+    // half init() writes and the per-sync-type half applyForSyncType() writes.
+    //
+    // Every fact is handed in: where the source is selected and what the engine
+    // measured are not this block's to read, and `serrated` has one definition
+    // above this layer. `pathSource` is a source whose sync carries no
+    // broadcast vertical interval -- the RGBHV connector, or a component source
+    // through the channel.
+    struct Dynamic {
+        bool searching;
+        bool present;
+        bool hunting;
+        bool csync;
+        bool pathSource;
+        bool serrated;
+    };
+
+    static void applyDynamic(const Dynamic &source);
+
     // Where in the line to coast, back at the value every path starts over
     // from. It says WHERE, not how long: the coast lengths around the vertical
     // interval follow the sync type and are applyForSyncType()'s.

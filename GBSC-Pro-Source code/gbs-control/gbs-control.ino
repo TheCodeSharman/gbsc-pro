@@ -3280,41 +3280,21 @@ void setAndLatchPhaseADC()
 }
 
 
-void updateSpDynamic(boolean withCurrentVideoModeCheck)
+void updateSpDynamic(boolean hunting)
 {
     if (!rto->boardHasPower || rto->sourceDisconnected) {
         return;
     }
 
-    const bool searching = inputAcquisition.sourceIsSearching();
+    Tv5725::SyncProcessor::Dynamic source;
+    source.searching = inputAcquisition.sourceIsSearching();
+    source.present = inputAcquisition.sourceIsPresent();
+    source.hunting = hunting;
+    source.csync = Tv5725::SyncMeasurement::isCsync();
+    source.pathSource = sourceIsRgbhv() || Tv5725::VideoRoute::isHdBypassChannel();
+    source.serrated = sourceHasSerratedSync();
 
-    // What told these apart was whether the byte had ever named a standard,
-    // and the engine keeps no such fact: a source it is not counting is
-    // searching whatever it was called before. What is left is the caller's
-    // request for the hunt configuration. docs/video-source-acquisition.md
-    if (searching) {
-        if (withCurrentVideoModeCheck)
-            Tv5725::SyncProcessor::applyForSearch(Tv5725::SyncMeasurement::isCsync());
-        else
-            Tv5725::SyncProcessor::applyPulseWidthDifference();
-        return;
-    }
-
-    if (Tv5725::SyncMeasurement::isCsync()) {
-        Tv5725::SyncProcessor::setCoastInvert(false);
-    }
-
-    // A source whose sync carries no broadcast vertical interval, which the
-    // byte spelled as a value naming a PATH rather than a format: the connector
-    // for an RGBHV source and the route for a component one passed through.
-    if (sourceIsRgbhv() || Tv5725::VideoRoute::isHdBypassChannel()) {
-        Tv5725::SyncProcessor::applySeparationThresholds(
-            Tv5725::SyncMeasurement::isCsync());
-    } else if (inputAcquisition.sourceIsPresent()) {
-        Tv5725::SyncProcessor::applyPulseWidthDifference();
-        Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncMeasurement::isCsync(),
-                                                sourceHasSerratedSync());
-    }
+    Tv5725::SyncProcessor::applyDynamic(source);
 }
 
 void updateCoastPosition(boolean autoCoast) // Updated coastal locations

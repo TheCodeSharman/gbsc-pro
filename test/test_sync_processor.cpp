@@ -813,3 +813,133 @@ TEST_CASE("the SD vertical sync position is one value for every source")
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 11);
 }
+
+// The dynamic configuration: what the separator is set to pass by pass, as
+// against the static half init() writes and the per-sync-type half
+// applyForSyncType() writes. Every fact comes in, because where the source is
+// selected and what the engine measured are not this block's to read.
+
+static SyncProcessor::Dynamic settled()
+{
+    SyncProcessor::Dynamic source;
+    source.searching = false;
+    source.present = true;
+    source.hunting = false;
+    source.csync = false;
+    source.pathSource = false;
+    source.serrated = false;
+    return source;
+}
+
+template <typename Field>
+static bool dynamicWrites(const SyncProcessor::Dynamic &source)
+{
+    uint32_t under[2];
+    for (int i = 0; i < 2; ++i) {
+        Wire.reset();
+        Wire.poison(Poisons[i]);
+        SyncProcessor::applyDynamic(source);
+        under[i] = Field::read();
+    }
+    return under[0] == under[1];
+}
+
+TEST_CASE("a source being hunted for gets the search configuration")
+{
+    SyncProcessor::Dynamic source = settled();
+    source.searching = true;
+    source.present = false;
+    source.hunting = true;
+
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyDynamic(source);
+
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x02);
+    CHECK(SyncProcessor::SP_H_TIMER_VAL::read() == 0x3a);
+    CHECK(SyncProcessor::SP_H_COAST::read() == 0);
+    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
+}
+
+TEST_CASE("a source being searched for without the hunt asked gets neither")
+{
+    // The caller that wants the hunt configuration says so. What is left is the
+    // one value every source takes, so a separator mid-search is not left
+    // configured for the source before it.
+    SyncProcessor::Dynamic source = settled();
+    source.searching = true;
+    source.present = false;
+
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyDynamic(source);
+
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
+    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_H_TIMER_VAL>(source));
+}
+
+TEST_CASE("a source whose sync carries no vertical interval gets the thresholds")
+{
+    SyncProcessor::Dynamic source = settled();
+    source.pathSource = true;
+    source.csync = true;
+
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyDynamic(source);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
+}
+
+TEST_CASE("a settled source on the scaling path is read, not separated for")
+{
+    // The coast lengths are applyForSyncType()'s, and a second writer of them
+    // closes a loop: the coast changes the measured line count, a changed count
+    // arms a solve, and a solve applies the sync type.
+    SyncProcessor::Dynamic source = settled();
+    source.csync = true;
+    source.serrated = true;
+
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyDynamic(source);
+
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 0x6b);
+    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_PRE_COAST>(source));
+}
+
+TEST_CASE("a source neither searched for nor acquired is left alone")
+{
+    // Between the two: a live count in range with the run not earned back. The
+    // thresholds want a settled line length to be right about, so nothing is
+    // written until the run says there is one.
+    SyncProcessor::Dynamic source = settled();
+    source.present = false;
+
+    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_DLT_REG>(source));
+    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_H_PULSE_IGNOR>(source));
+}
+
+TEST_CASE("the coast inversion is cleared for a settled composite-sync source")
+{
+    // applyForSearch() sets it, so a source that locks after a search has it
+    // standing.
+    SyncProcessor::Dynamic source = settled();
+    source.csync = true;
+
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyDynamic(source);
+
+    CHECK(SyncProcessor::SP_COAST_INV_REG::read() == 0);
+}
+
+TEST_CASE("a separate-sync source's coast inversion is not touched")
+{
+    SyncProcessor::Dynamic source = settled();
+
+    CHECK_FALSE(dynamicWrites<SyncProcessor::SP_COAST_INV_REG>(source));
+}

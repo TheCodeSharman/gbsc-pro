@@ -138,6 +138,27 @@ void SyncProcessor::applyForSearch(bool csync)
     forgetPositions();
 }
 
+void SyncProcessor::applyDynamic(const Dynamic &source)
+{
+    if (source.searching) {
+        if (source.hunting)
+            applyForSearch(source.csync);
+        else
+            applyPulseWidthDifference();
+        return;
+    }
+
+    if (source.csync)
+        setCoastInvert(false);
+
+    if (source.pathSource) {
+        applySeparationThresholds(source.csync);
+    } else if (source.present) {
+        applyPulseWidthDifference();
+        applyPulseIgnore(source.csync, source.serrated);
+    }
+}
+
 void SyncProcessor::applyDefaultCoastWindow()
 {
     SP_H_CST_ST::write(0x10);
