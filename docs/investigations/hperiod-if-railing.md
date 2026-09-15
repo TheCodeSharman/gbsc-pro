@@ -18,6 +18,37 @@ full screen. The field rate is what refuses the counter, and it is doing so.
 to 90 ms and the firmware's samples are back-to-back, so they agree whatever it
 is doing. The measurement is below.
 
+## Where the fault sits: the IF's lock to the line, not the signal
+
+**Two blocks read the same incoming line and only one of them fails.** In the
+railed state the sync processor counts a steady 311 with
+`STATUS_SYNC_PROC_HTOTAL` echoing the divider, and the ADC, the capture and the
+playback deliver a complete clean picture from that same signal -- while
+`STATUS_IF_HT_OK` reads 0 and `HPERIOD_IF` rails. So what arrives at the chip is
+good, and what fails is what the input formatter makes of it.
+
+**It is not independent of the input either**, which is what a plain "the block
+is broken" reading misses:
+
+- which mode the source lands IN predicts it -- 44% at `SP_VTOTAL` 524, 24-28%
+  at 363 and 533, 0-4% everywhere else
+- no register write reproduces it, over 79 differing registers applied
+  individually, and no reset in either clock domain clears it
+- every clearance ever measured is an interruption of the incoming line -- a
+  source mode change, or an `ADC_INPUT_SEL` bounce -- which is HSync taken away
+  and given back rather than anything written
+
+So the shape is latched state inside the IF's measurement, entered and left on
+the line's TRANSITIONS rather than on its content. That is consistent with the
+2026-09-15 pair where both of those clearances failed in turn: if the lever were
+the interruption alone, a round trip would always work, and it does not.
+
+One further path is ruled out from the sync side: `SP_SYNC_BYPS`, which takes
+the sync processor's retimed HS out of the path to the decimator, changes
+nothing -- same picture, same test-bus selectors, same counters. The register was
+already railed when it was tried, so the IF's own measurement could not testify.
+`docs/tv5725-chip.md`.
+
 ## It follows the source, not the preset
 
 
