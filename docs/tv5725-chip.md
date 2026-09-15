@@ -72,15 +72,18 @@ documented, and it fits the path -- the IF measures the sync it receives, which
 is the processor's retimed HS and VS, so a processor bit that holds that count
 holds what the IF can measure.
 
-**Set against a railed counter it produces a steady value for the DOUBLED
-line**, not the source's. On the bench RiscPC at 320x256@50, line-doubled
-(`IF_HS_DEC_FACTOR` 1, `IF_LD_RAM_BYPS` 0), two cycles of set and release:
-`HPERIOD_IF` reads 214 / 214 / 214 / 211 with `STATUS_IF_HT_OK` **1** while
-protect stands, against the 431 the source's line is due -- and 431 = 2 x 214 +
-3, with 214 being the value 31.4 kHz gives, which is what `IF_HSYNC_RST` 1103
-against `PLLAD_MD` 2206 says the IF itself runs. Releasing the bit returns the
-noise. So the bit must not be reached for as a fix: it manufactures the one
-failure shape every stability check scores as healthy.
+**It steadies the counter rather than freezing it.** Held across two source mode
+changes with the divider unchanged, it tracked the source to within a count --
+214 railed at 320x256@50, 190/191 at 800x600@56 against the 192 due, then 431
+back at 320x256@50 -- so a steady reading under protect is a measurement and not
+a held value.
+
+What that buys is a legible fault: **a railed counter steadied reads exactly
+half the source period**, 214 against 431, and half is the doubled line this
+source runs (`IF_HSYNC_RST` 1103 against `PLLAD_MD` 2206). On a healthy counter
+the same bit reports 431, so the bit does not choose the line -- the fault does.
+It still must not be reached for as a fix, because on a mislocked counter it
+manufactures the one failure shape every stability check scores as healthy.
 `docs/investigations/hperiod-if-railing.md`.
 
 ### `SP_SYNC_BYPS` does nothing measurable on a separate-sync source

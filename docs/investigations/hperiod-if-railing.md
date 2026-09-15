@@ -1261,20 +1261,42 @@ The value is not reproducible between runs and never correct. In run 2 every
 variant landed on the same pair despite differing in the sync path, which is a
 frozen counter rather than a measuring one.
 
-**RELEASING IT DOES NOT CLEAR THE RAILING, and what it holds is the DOUBLED
-line.** Two set-and-release cycles against a live railed instance, 2026-09-15,
-automation frozen: railed at 255/471/511/511/297/468/479/229 with
-`STATUS_IF_HT_OK` 0, then **214/214/214/211 with `HT_OK` 1** while protect
-stands, then straight back to 511/510/218/511/212/474/510/255 on release, both
-cycles. 214 is not a frozen arbitrary value: 431 = 2 x 214 + 3, and 214 is what
-31.4 kHz gives -- the rate `IF_HSYNC_RST` 1103 against `PLLAD_MD` 2206 says the
-IF runs on this line-doubled source, against the source's own 15625.
+**IT STEADIES THE COUNTER RATHER THAN FREEZING IT, AND THE STEADIED FAULT IS
+EXACTLY HALF THE PERIOD.** Measured 2026-09-15 with the bit HELD across two
+source mode changes, automation frozen so no preset load or divider change
+accompanied them (`PLLAD_MD` 2206 and `IF_HSYNC_RST` 1103 throughout):
 
-So the two periods available in the path differ by exactly the doubling, the
-railed values cluster around both of them and the rail (511, ~470, ~255, ~214),
-and a bit that holds the count reports the IF's line rather than the source's.
-That is a shape worth testing against: what the counter should report is the
-SOURCE line, and the doubled line is present in the same block. So the bit manufactures exactly the
+| source | `HPERIOD_IF` under protect | due | `HT_OK` |
+|---|---|---|---|
+| 320x256@50, railed | **214** x6 | 431 | 1 |
+| 800x600@56 | **190/191** x12 | 192 | 1 |
+| 320x256@50 again | **431** x6 | 431 | 1 |
+
+**So it measures.** It tracked a mode change to within a count and back, which
+refutes reading the steady value as a frozen one -- the earlier runs above saw
+two different steady values and concluded the counter had stopped, and it has
+not. What protect removes is the NOISE.
+
+Steadied, the fault's shape is legible: **214 is half of 431** (431 = 2 x 214 +
+3), and half the source period is the doubled line this source runs --
+`IF_HSYNC_RST` 1103 against `PLLAD_MD` 2206, `IF_HS_DEC_FACTOR` 1,
+`IF_LD_RAM_BYPS` 0. The same bit on a HEALTHY counter reports 431, not 214, so
+protect does not select which line is reported. **The fault does: a railed
+counter is locked to the doubled line rather than to the source's.** That is
+the first mechanism this page has been able to state, and it predicts the
+railed values seen without protect, which cluster on the rail and on both
+periods -- 511, ~470, ~255, ~214.
+
+**AND THE RAILING CLEARED DURING THAT SEQUENCE**, staying clear through
+releasing the bit and unfreezing automation: 431 in 6 of 6 with `HT_OK` 1 and
+the engine solving. It is confounded three ways against the round trip that
+failed an hour earlier, so it is a candidate and not a recovery: protect was
+held, automation was frozen, and the intermediate mode was 800x600@56 rather
+than 640x480@60. **Holding `SP_H_PROTECT` across a source mode change is the
+experiment to run next**, on its own and against a live instance.
+
+`VPERIOD_IF` did not recover with it -- 68..117 against the ~311 the mode is
+due -- which is the separate failure the page records below. So the bit manufactures exactly the
 failure this page warns about -- **a rock-steady wrong value that every stability
 check scores as healthy** -- and it must not be reached for as a fix.
 
