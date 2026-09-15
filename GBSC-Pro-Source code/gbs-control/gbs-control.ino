@@ -3238,21 +3238,16 @@ boolean getSyncPresent() //
 }
 
 
+// One path for both routes. Pass-through does not take the sync processor out
+// of the video path, so it keeps counting and this keeps answering: measured on
+// a passed-through source, HSACT 1 in 489 of 489 samples with
+// STATUS_SYNC_PROC_VTOTAL holding the count the mode is due in all of them.
+//
+// The pass-through branch this used to open with asked STATUS_INT_INP_NO_SYNC
+// instead, and that bit never latches -- 0 of 1486 samples across a real sync
+// loss -- so the branch could only ever return true. docs/known-issues.md
 boolean getStatus16SpHsStable()
 {
-
-    // printf("rto->videoStandardInput = %d \n",rto->videoStandardInput);
-    if (rgbhvBypass()) {
-        if (GBS::STATUS_INT_INP_NO_SYNC::read() == 0) {
-            // printf("\n stable from \n");
-            return true;
-        } else {
-            Tv5725::Interrupts::acknowledgeNoHsync();
-            // printf("\n false from 1\n");
-            return false;
-        }
-    }
-
     // Tied, because the two are read as a pair: sampled separately they can
     // straddle a sync change and describe two different states.
     GBS::STATUS_SYNC_PROC_HSACT::Value hsyncActive;
