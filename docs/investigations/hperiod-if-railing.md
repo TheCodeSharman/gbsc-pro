@@ -317,6 +317,111 @@ something off the TV5725 bus entirely — the Si5351 is the obvious one, since i
 appears in no register trace and `/freeze` does not gate FrameSync steering it.
 
 
+## A STALE divider does cause it, which is not what the sweep tested
+
+The sweep below moved the divider on a SETTLED source and found nothing. That
+is a different question from a divider left behind by a source that has since
+moved, and the second one reproduces on demand.
+
+Measured across 640x480@60 (524 lines) and 320x256@50 (311 lines) on `vga`,
+both directions, with `SamplingLog` at 25 ms:
+
+| | divider during | PLL unlocked for | railed |
+|---|---|---|---|
+| 524 -> 311 | **1096 held 17 s**, 2206 due | 17 s | 2 of 4 runs |
+| 311 -> 524 | moved 2206 -> 1124 -> 1096 in ~0.5 s | ~1 s | **0 of 4 runs** |
+
+The chain is: a divider that does not match the arriving line, held for
+seconds, then the counter goes bad about three seconds in. It is not WHICH
+divider -- every value in the sweep is fine on a source it suits.
+
+### The PLL lock is neither the cause nor the cure
+
+Both halves are measured in the same window, which is what makes them
+comparable:
+
+- **Unlocked and correct.** Through t=3,4,5 of a 524 -> 311 change the PLL
+  reads 0 and `HPERIOD_IF` reads the new mode's 431 in 95 of 99 samples.
+- **Locked and still railed.** At t=21..22 the PLL relocks and
+  `STATUS_SYNC_PROC_VTOTAL` is back to 311, and `HPERIOD_IF` stays at 511.
+
+What tracks the fault exactly is the IF's own pair: `STATUS_IF_HT_OK` 1 -> 0
+and `STATUS_IF_HT_BAD` 0 -> 1, flipping on the sample the railing starts and
+never flipping back inside the window. So do not reach for `PLLAD_LOCK` as the
+discriminator; the block that owns the measurement says so itself.
+
+## The value is right immediately after the change, and not for a bounded time
+
+This matters because the engine only needs one good reading to size the
+divider. Over 12 transitions rotating 320x256@50, 640x480@60 and 800x600@60:
+
+- the first sample carrying the new mode's value is correct in **12 of 12**,
+  arriving ~2.07 s into a capture whose mode command fires at 2.0 s -- that is,
+  within about 100 ms of the new line reaching the part, and *before* ModeServ
+  has even replied
+- but the run of correct samples before something else appears is **6 samples
+  (~150 ms) at worst** and 451 at best, and the short ones are all transitions
+  into 800x600
+
+**So "read it early" is safe and "believe it for a while" is not.** Two of the
+twelve carried genuinely intermediate values during settling -- `211, 255, 311,
+351, 418` and `150, 169, 206, 255, 276` -- and 206 against a correct 213 is the
+stable-and-plausible shape that no range check rejects.
+
+A caveat on that run: it took no settle between transitions, so a 16 s window
+can hold the tail of the previous change. The arrival time is solid; the
+distribution during settling is indicative rather than clean.
+
+## What the stall costs the picture, and it is not a register
+
+Through a 524 -> 311 stall the output keeps the previous mode's raster: the
+picture rolls and tears, and a band of stale frame buffer grows leftward from
+the right-hand edge over about fifteen seconds until the sink drops the signal
+altogether.
+
+**Nothing is being written while that happens.** Polled through the stall, 242
+samples over 20 s, every one of these holds a single value:
+
+    RFF_WFF_OFFSET 0   RFF_FETCH_NUM 1   PB_CAP_OFFSET 275
+    WFF_SAFE_GUARD_A/B 335872   CAP_SAFE_GUARD_A 2097151
+    RFF_WFF_STA_ADDR_A/B 0/1   IF_HSYNC_RST 1096   IF_HBIN_SP 2
+    VDS_DIS_HB_ST 1577   VDS_HSCALE 438   PLLAD_MD 1096
+
+and the engine emits no `sol,` line at all between the change and the eventual
+solve. So the growing band is not a capture window being resized and not any
+register walking -- it is the read and write pointers drifting apart in
+hardware, capture writing a 15.6 kHz line into a layout laid out for 31.4 kHz,
+the mismatch accumulating every frame.
+
+`HPERIOD_IF` in that stall read 4..16 rather than 511, which is the noisy form
+rather than the rail -- the two faults under one name, again.
+
+## The deadlock that held the stale divider there, and what fixed it
+
+`VideoSourceAcquisition::sourceMoved()` gated every arm behind a steady line
+count. The stale divider makes the sync processor retime against a window sized
+for the wrong line, so `STATUS_SYNC_PROC_VTOTAL` wandered 191..292 -- inside the
+source bounds on every sample and steady on none. The unusable-count arm needs
+the count OUT of range; the interrupt, count and rate arms all sat behind
+`if (!held) return false`. So nothing armed, `prepareToMeasure()` was never
+reached, and the divider causing the wandering was never rewritten.
+
+The only escape was the chip's latched interrupt firing once the garbage count
+happened to hold, which is luck: **3.9, 5.4, 5.5, 9.9, 14.5 and 18 s** across
+runs.
+
+A plausible count that never settles is now itself an arm. Arming only opens a
+re-measure -- the count must still be steady and the rate repeated before
+anything is solved -- and the same six transitions then take **2.57, 4.25,
+4.27, 4.96, 5.08, 5.08 s**, five of them through the new arm. The residue is
+the arm's own threshold rather than a race.
+
+**A recovery-ladder rung that re-installed the reference sampling clock was
+tried first and does not work.** It fixed half the runs and left the rest on the
+interrupt, because installing the divider does not make the count settle within
+the pass that installs it. The fault is a detection gap, and it is fixed at the
+detector.
+
 ## It does not depend on the divider, over the whole reachable range
 
 The earlier form of this claim rested on one write from 2269 to 2500 -- both
