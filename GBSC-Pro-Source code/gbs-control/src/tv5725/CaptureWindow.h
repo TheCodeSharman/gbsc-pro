@@ -53,7 +53,7 @@ public:
     // path that plays the source out rather than scaling it never reaches this
     // call at all. docs/video-source-acquisition.md
     bool readRasters(const SourceMeasurement &source, const HsyncPulse &reading,
-                     const SourceTiming &timing);
+                     const SourceTiming &timing, bool lineDoubled);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.

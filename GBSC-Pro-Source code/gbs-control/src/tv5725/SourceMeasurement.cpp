@@ -84,7 +84,7 @@ const uint8_t SourceMeasurement::RateAgreementAttempts;
 SourceMeasurement::SourceMeasurement()
     : lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
-      rateRejections_(0), lineDoubled_(true), verticalPeriod_(0),
+      rateRejections_(0), verticalPeriod_(0),
       steady_(SteadySamples), rateAttempts_(0), serrationsSeen_(false),
       referenceRateHz_(0)
 {
@@ -126,18 +126,20 @@ SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeri
 
 bool SourceMeasurement::countAlternated() const { return steady_.alternated(); }
 
-SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPeriod) const
+SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPeriod,
+                                                           bool lineDoubled,
+                                                           bool countAlternated)
 {
-    const ScanType measured = scanTypeFor(verticalPeriod, lineDoubled_);
+    const ScanType measured = scanTypeFor(verticalPeriod, lineDoubled);
     if (measured != ScanUnknown)
         return measured;
-    return countAlternated() ? ScanInterlaced : ScanUnknown;
+    return countAlternated ? ScanInterlaced : ScanUnknown;
 }
 
-SourceMeasurement::ScanType SourceMeasurement::measureScanType()
+SourceMeasurement::ScanType SourceMeasurement::measureScanType(bool lineDoubled)
 {
     verticalPeriod_ = InputFormatter::verticalPeriod();
-    return scanTypeFrom(verticalPeriod_);
+    return scanTypeFrom(verticalPeriod_, lineDoubled, countAlternated());
 }
 
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
@@ -295,9 +297,9 @@ uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
-uint16_t SourceMeasurement::ifLine() const
+uint16_t SourceMeasurement::ifLine(bool lineDoubled) const
 {
-    return InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled_);
+    return InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled);
 }
 
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
@@ -324,18 +326,14 @@ bool SourceMeasurement::lowLineRate() const
     return lineRateHz() != 0 && lineRateHz() < LowLineRateBelowHz;
 }
 
-void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }
-
-bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
-
 uint16_t SourceMeasurement::retimeStop() const
 {
     return SyncProcessor::retimeStopFor(Adc::dividerInForce());
 }
 
-void SourceMeasurement::applyReferenceSampling()
+void SourceMeasurement::applyReferenceSampling(bool lineDoubled)
 {
-    const uint16_t reference = referenceDivider(lineDoubled_);
+    const uint16_t reference = referenceDivider(lineDoubled);
     const uint32_t estimate = estimatedLineRateHz();
 
     // Unconditional, ahead of the return below. The reference divider is a
@@ -353,7 +351,7 @@ void SourceMeasurement::applyReferenceSampling()
     // The most the clock allows, rather than whatever the output mode is
     // running: a reference that follows a picture setting is not a reference.
     Adc::applySampleRate(reference, estimate, Adc::OversampleAsClockAllows);
-    InputFormatter::writeLineCounter(ifLine());
+    InputFormatter::writeLineCounter(ifLine(lineDoubled));
     SyncProcessor::writeRetimeStop(retimeStop());
 }
 

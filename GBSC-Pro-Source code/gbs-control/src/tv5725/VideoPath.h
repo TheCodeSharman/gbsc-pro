@@ -169,6 +169,13 @@ public:
     // been solved; ModeBypass -- isBypass() -- while video routes around the VDS.
     const OutputMode *outputMode() const;
 
+    // Whether the line doubler is in the capture path. Decided here, because
+    // what decides it is whether the doubled frame fits the raster -- and
+    // written to three blocks, InputFormatter, VideoProcessor and Deinterlacer,
+    // so no one of them can hold it. Everything counting IF units has to match:
+    // the IF counts half-lines with the doubler in.
+    bool lineDoubled() const;
+
 private:
 
     // The raster is the held one, never a read-back.
@@ -250,6 +257,7 @@ private:
     SourceTiming timing_;
     SourceMeasurement &sampling_;
     bool scanModeApplied_;
+    bool lineDoubled_;
     bool syncTypeProbed_;
     bool (*syncProbe_)();
     SourceKey framedKey_;

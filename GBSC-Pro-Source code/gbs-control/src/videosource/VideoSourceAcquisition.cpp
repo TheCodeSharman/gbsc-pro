@@ -113,7 +113,7 @@ bool VideoSourceAcquisition::resolveFromSource()
     // The same reference the poll pass takes, and for the same reason: a window
     // solved for a taller mode strands the block the rate is timed off, and a
     // count taken through the previous mode's divider is not the source's.
-    sampling_.applyReferenceSampling();
+    sampling_.applyReferenceSampling(videoPath_.lineDoubled());
 
     if (sampling_.measure() != Tv5725::SourceMeasurement::Measured)
         return videoPath_.deferSolve();
@@ -793,7 +793,7 @@ void VideoSourceAcquisition::maintainSource()
 
     // Measured here rather than held: the deinterlacer steers on the
     // maintenance cadence, and a settled source runs no measure() pass at all.
-    const Tv5725::SourceMeasurement::ScanType scan = sampling_.measureScanType();
+    const Tv5725::SourceMeasurement::ScanType scan = sampling_.measureScanType(videoPath_.lineDoubled());
     if (sampling_.verticalPeriod() == 0)
         return;
     const Tv5725::Deinterlacer::Steering steering = Tv5725::Deinterlacer::steer(

@@ -44,11 +44,11 @@ void tv5725Log(const char *message) { g_log = message; }
 
 // What VideoPath does on a solve, which SourceMeasurement no longer does for
 // itself: choose a divider within the three blocks' bounds, then hold it.
-static bool solveSampling(SourceMeasurement &sampling, uint32_t lineRateHz,
-                          uint8_t oversample)
+static bool solveSampling(uint32_t lineRateHz, uint8_t oversample,
+                          bool lineDoubled = true)
 {
     const uint16_t divider = SamplingClock::recommendedDivider(
-        lineRateHz, oversample, sampling.lineDoubled());
+        lineRateHz, oversample, lineDoubled);
     if (divider == 0)
         return false;
     Adc::applyDivider(divider);
@@ -111,9 +111,8 @@ static SourceMeasurement::ScanType scanTypeWithDoubling(uint16_t verticalPeriod,
                                                         bool lineDoubled)
 {
     SourceMeasurement measurement;
-    measurement.holdLineDoubling(lineDoubled);
     seedSourceHalfLines(verticalPeriod);
-    return measurement.measureScanType();
+    return measurement.measureScanType(lineDoubled);
 }
 
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
@@ -354,14 +353,14 @@ TEST_CASE("a solved divider is held, and every register follows from it")
     Adc::applyResetParameters();
     CHECK(Adc::dividerInForce() == 0);
 
-    REQUIRE(solveSampling(sampling, BenchLineRate, 4));
+    REQUIRE(solveSampling(BenchLineRate, 4));
     CHECK(Adc::dividerInForce() != 0);
 
     const uint16_t chosen = Adc::dividerInForce();
     CHECK(chosen == SamplingClock::recommendedDivider(BenchLineRate, 4, true));
 
     SUBCASE("the derived values come from the held divider") {
-        CHECK(sampling.ifLine() == InputFormatter::lineCounterFor(chosen, true));
+        CHECK(sampling.ifLine(true) == InputFormatter::lineCounterFor(chosen, true));
         CHECK(sampling.retimeStop() == SyncProcessor::retimeStopFor(chosen));
     }
 }
@@ -370,14 +369,14 @@ TEST_CASE("an unmeasurable line rate leaves the previous choice alone")
 {
     Wire.reset();
     SourceMeasurement sampling;
-    REQUIRE(solveSampling(sampling, BenchLineRate, 4));
+    REQUIRE(solveSampling(BenchLineRate, 4));
     const uint16_t chosen = Adc::dividerInForce();
 
     // getSourceFieldRate() reports 0 with no lock, and that reaches here. A
     // divider written from a measurement that did not happen is how the screen
     // goes green -- and it takes the sync processor with it, so there is no
     // picture left to diagnose from.
-    CHECK_FALSE(solveSampling(sampling, 0, 4));
+    CHECK_FALSE(solveSampling(0, 4));
     CHECK(Adc::dividerInForce() == chosen);
 }
 
@@ -1180,14 +1179,13 @@ TEST_CASE("the reference puts the chip on a divider this class chose")
     // the reference goes on BEFORE anything measures.
     Wire.reset();
     SourceMeasurement sampling;
-    sampling.holdLineDoubling(false);
     Adc::applyDivider(1234);
 
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(false);
 
     CHECK(Adc::dividerInForce() == referenceDividerFor(false));
     CHECK(dividerInForce() == referenceDividerFor(false));
-    CHECK(lineCounterInForce() == sampling.ifLine());
+    CHECK(lineCounterInForce() == sampling.ifLine(false));
     CHECK(retimeStopInForce() == sampling.retimeStop());
 }
 
@@ -1198,9 +1196,8 @@ TEST_CASE("the reference samples at what the clock allows, not at the mode's cho
 {
     Wire.reset();
     SourceMeasurement sampling;
-    sampling.holdLineDoubling(false);
 
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(false);
 
     CHECK(Adc::oversampleInForce() ==
           Adc::oversampleFor(Adc::PLLAD_KS::read(), Adc::OversampleAsClockAllows));
@@ -1212,9 +1209,8 @@ TEST_CASE("the reference for a line-doubled source is its own")
     // is a function of the scan mode and not a constant.
     Wire.reset();
     SourceMeasurement sampling;
-    sampling.holdLineDoubling(true);
 
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(true);
 
     CHECK(Adc::dividerInForce() == referenceDividerFor(true));
     CHECK(Adc::dividerInForce() != referenceDividerFor(false));
@@ -1236,12 +1232,12 @@ TEST_CASE("a reference already in force is not written again")
     Wire.reset();
     SourceMeasurement sampling;
     settleAt(sampling, 311);
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(false);
     REQUIRE(Wire.touched[5][0x12]);
 
     Wire.reset();
     settleAt(sampling, 311);
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(false);
 
     CHECK_FALSE(Wire.touched[5][0x12]);
 }
@@ -1256,12 +1252,12 @@ TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
     Wire.reset();
     SourceMeasurement sampling;
     settleAt(sampling, 700);
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(false);
     const uint16_t divider = Adc::dividerInForce();
 
     Wire.reset();
     settleAt(sampling, 311);
-    sampling.applyReferenceSampling();
+    sampling.applyReferenceSampling(false);
 
     CHECK(Adc::dividerInForce() == divider);   // the reference itself has not moved
     CHECK(Wire.touched[5][0x12]);           // and it was written anyway
@@ -1397,11 +1393,8 @@ TEST_CASE("the scan type of the held source uses the doubling in force")
     seedSourceLines(311);
     seedSourceHalfLines(524);
 
-    sampling.holdLineDoubling(true);
-    CHECK(sampling.measureScanType() == SourceMeasurement::ScanInterlaced);
-
-    sampling.holdLineDoubling(false);
-    CHECK(sampling.measureScanType() == SourceMeasurement::ScanProgressive);
+    CHECK(sampling.measureScanType(true) == SourceMeasurement::ScanInterlaced);
+    CHECK(sampling.measureScanType(false) == SourceMeasurement::ScanProgressive);
 }
 
 // --- an interlaced count never holds still, and that IS the measurement ------
@@ -1451,18 +1444,17 @@ TEST_CASE("a count alternating by one reads as interlaced where the period canno
     SourceMeasurement measurement;
     REQUIRE(settleAlternating(measurement, 311, 8));
 
-    CHECK(measurement.measureScanType() == SourceMeasurement::ScanInterlaced);
+    CHECK(measurement.measureScanType(true) == SourceMeasurement::ScanInterlaced);
 }
 
 TEST_CASE("a measured period still outranks the alternation")
 {
     SourceMeasurement measurement;
-    measurement.holdLineDoubling(true);
     REQUIRE(settleAlternating(measurement, 311, 8));
 
     // 623 doubled is progressive, whatever the count did.
     seedSourceHalfLines(623);
-    CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
+    CHECK(measurement.measureScanType(true) == SourceMeasurement::ScanProgressive);
 }
 
 TEST_CASE("a steady count claims nothing about the scan type on its own")
@@ -1474,7 +1466,7 @@ TEST_CASE("a steady count claims nothing about the scan type on its own")
     SourceMeasurement measurement;
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
-    CHECK(measurement.measureScanType() == SourceMeasurement::ScanUnknown);
+    CHECK(measurement.measureScanType(true) == SourceMeasurement::ScanUnknown);
 }
 
 TEST_CASE("a count that moves by more than one still starts the run again")

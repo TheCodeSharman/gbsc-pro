@@ -12,10 +12,10 @@ CaptureWindow::CaptureWindow()
 
 bool CaptureWindow::readRasters(const SourceMeasurement &source,
                                 const HsyncPulse &reading,
-                                const SourceTiming &timing)
+                                const SourceTiming &timing, bool lineDoubled)
 {
     const uint16_t sourceLines = source.sourceLines();
-    const uint16_t horizontalWrap = source.ifLine() + 1;
+    const uint16_t horizontalWrap = source.ifLine(lineDoubled) + 1;
 
     if (horizontalWrap < 64)
         return false;
@@ -37,16 +37,16 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     // is counted from, EXCEPT where the line doubler is in circuit: IF_HBIN_SP
     // is that FIFO's own line reset and places the picture itself.
     // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
-    const uint16_t lagUnits = source.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits;
+    const uint16_t lagUnits = lineDoubled ? 0 : VideoSourceLine::CaptureLagUnits;
 
     horizontalLine_ = VideoSourceLine::forDuty(horizontalWrap, reading.syncDuty(),
-                                               source.lineDoubled(), lagUnits,
+                                               lineDoubled, lagUnits,
                                                reading.syncAtHead());
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and
     // whole source lines otherwise. docs/scaler-geometry-model.md
-    verticalLine_ = VideoSourceLine(source.lineDoubled() ? 2 * (sourceLines + 1)
+    verticalLine_ = VideoSourceLine(lineDoubled ? 2 * (sourceLines + 1)
                                                    : sourceLines + 1);
 
     timing_ = timing;

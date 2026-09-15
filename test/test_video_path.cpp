@@ -332,7 +332,7 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
     REQUIRE(pollUntilSolved(acquisition));
 
     CHECK(dividerInForce() == Adc::dividerInForce());
-    CHECK(lineCounterInForce() == sampling.ifLine());
+    CHECK(lineCounterInForce() == sampling.ifLine(engine.lineDoubled()));
     CHECK(retimeStopInForce() == sampling.retimeStop());
 }
 

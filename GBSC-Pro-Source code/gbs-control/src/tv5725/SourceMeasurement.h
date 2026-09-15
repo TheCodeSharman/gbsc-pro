@@ -31,7 +31,7 @@ public:
 
     // Put the chip on the reference divider needed for a valid measurement to be taken.
     // Note this will corrupt the picture.
-    void applyReferenceSampling();
+    void applyReferenceSampling(bool lineDoubled);
 
     // The source is about to move, so the steadiness run and the rate agreed
     // on mean nothing.
@@ -63,7 +63,7 @@ public:
     // The scan type, from the half line an interlaced field carries. Takes its
     // own reading, because an interlace change need not move the line count and
     // so need not arm a mode change -- a held one would be the last mode's.
-    ScanType measureScanType();
+    ScanType measureScanType(bool lineDoubled);
 
     // Measure the source's line count, corrected for a divider the ADC PLL
     // could not lock to. The first of the two measurement moments: the scan
@@ -97,14 +97,7 @@ public:
     // whether the vertical interval is serrated.
     bool lowLineRate() const;
 
-    // Whether the line doubler is in the capture path. Held rather than read
-    // back: InputFormatter::applyLineDoubling() owns the register and this owns
-    // the arithmetic that has to match it -- the IF counts half-lines with the
-    // doubler in, which is what the scan type's parity turns on.
-    void holdLineDoubling(bool lineDoubled);
-
-    bool lineDoubled() const;
-    uint16_t ifLine() const;
+    uint16_t ifLine(bool lineDoubled) const;
     uint16_t retimeStop() const;
 
     // --- the bounds the contract is stated in ---------------------------------
@@ -146,7 +139,8 @@ private:
                                   bool interlaced);
 
     static ScanType scanTypeFor(uint16_t verticalPeriod, bool lineDoubled);
-    ScanType scanTypeFrom(uint16_t verticalPeriod) const;
+    static ScanType scanTypeFrom(uint16_t verticalPeriod, bool lineDoubled,
+                                 bool countAlternated);
     bool countAlternated() const;
 
     // The line rate one HPERIOD_IF reading states, and the rate a RUN of them
@@ -200,7 +194,6 @@ private:
     uint16_t goodLines_;
     uint32_t goodLineRateHz_;
     uint8_t rateRejections_;
-    bool lineDoubled_;
 
     HsyncPulse hsync_;
     uint16_t verticalPeriod_;

@@ -34,7 +34,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       usableHorizontal_(0), usableVertical_(0), activeStartLine_(0),
       timing_(0.0f),
       sampling_(sampling),
-      scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
+      scanModeApplied_(false), lineDoubled_(true),
+      syncTypeProbed_(false), syncProbe_(0),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       mode_(0),
@@ -245,13 +246,13 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     if (modePending_)
         return false;
 
-    const bool wasDoubled = sampling_.lineDoubled();
+    const bool wasDoubled = lineDoubled_;
     solveLineDoubling(sampling_.sourceLines());
 
     // Only where the doubling moved. The divider derives from it and from the
     // line rate already held -- so it is re-DERIVED, never re-measured -- and
     // writing it re-latches the ADC PLL, which is a relock nothing asked for.
-    if (sampling_.lineDoubled() != wasDoubled
+    if (lineDoubled_ != wasDoubled
         && !solveSampling(modeOversample_))
         return false;
 
@@ -286,7 +287,7 @@ void VideoPath::prepareToMeasure(uint16_t sourceLines)
     if (passedThrough())
         return;
 
-    sampling_.applyReferenceSampling();
+    sampling_.applyReferenceSampling(lineDoubled_);
 }
 
 VideoPath::PollOutcome VideoPath::solveFromMeasurement()
@@ -434,17 +435,19 @@ void VideoPath::solveLineDoubling(uint16_t lines)
         mode_ && !mode_->isBypass()
             ? AxisVertical.maximumCapture(mode_->frameLines(), 0) : 0;
     const bool doubled = InputFormatter::shouldDoubleLine(lines, showable);
-    if (scanModeApplied_ && doubled == sampling_.lineDoubled())
+    if (scanModeApplied_ && doubled == lineDoubled_)
         return;
 
     const bool component = Adc::inputIsComponent();
 
-    sampling_.holdLineDoubling(doubled);
+    lineDoubled_ = doubled;
     InputFormatter::applyLineDoubling(doubled, component);
     VideoProcessor::applyLineDoubling(doubled, component);
     Deinterlacer::applyLineDoubling(doubled);
     scanModeApplied_ = true;
 }
+
+bool VideoPath::lineDoubled() const { return lineDoubled_; }
 
 void VideoPath::applySampling(uint16_t divider)
 {
@@ -452,7 +455,7 @@ void VideoPath::applySampling(uint16_t divider)
         return;
 
     Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
-    InputFormatter::writeLineCounter(sampling_.ifLine());
+    InputFormatter::writeLineCounter(sampling_.ifLine(lineDoubled_));
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
 
@@ -460,11 +463,11 @@ bool VideoPath::solveSampling(uint8_t oversample)
 {
     const uint16_t framable = VideoSourceLine::framableIfLine(
         reading_.syncDuty(),
-        sampling_.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits,
-        reading_.syncAtHead(), sampling_.lineDoubled());
+        lineDoubled_ ? 0 : VideoSourceLine::CaptureLagUnits,
+        reading_.syncAtHead(), lineDoubled_);
 
     const uint16_t divider = SamplingClock::recommendedDivider(
-        sampling_.lineRateHz(), oversample, sampling_.lineDoubled(), framable);
+        sampling_.lineRateHz(), oversample, lineDoubled_, framable);
     applySampling(divider);
     return divider != 0;
 }
@@ -509,7 +512,7 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
                        activeLinesStop_);
-    if (!capture.readRasters(sampling_, reading_, timing_)) {
+    if (!capture.readRasters(sampling_, reading_, timing_, lineDoubled_)) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {
             solvePending_ = false;
