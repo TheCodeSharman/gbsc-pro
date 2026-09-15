@@ -12219,10 +12219,20 @@ void OSD_selectOption()
             Osd_Display(0xFF, "No Input");
         }
 #if 1
-        static uint8_t S0_Read_Resolution;
+        static GBS::STATUS_IF_INP_SD::Value inputIsSd;
+        static GBS::STATUS_IF_INP_PAL_PRG::Value inputIsPalPrg;
+        static GBS::STATUS_IF_INP_PAL_INT::Value inputIsPalInt;
+        static GBS::STATUS_IF_INP_NTSC_PRG::Value inputIsNtscPrg;
+        static GBS::STATUS_IF_INP_NTSC_INT::Value inputIsNtscInt;
         static unsigned long Tim_info = 0;
         if ((millis() - Tim_info) >= 1000) {
-            S0_Read_Resolution = GBS::STATUS_00::read();
+            // One transaction, so the five describe the same instant.
+            GBS::Tie<GBS::STATUS_IF_INP_SD,
+                     GBS::STATUS_IF_INP_PAL_PRG,
+                     GBS::STATUS_IF_INP_PAL_INT,
+                     GBS::STATUS_IF_INP_NTSC_PRG,
+                     GBS::STATUS_IF_INP_NTSC_INT>::read(
+                inputIsSd, inputIsPalPrg, inputIsPalInt, inputIsNtscPrg, inputIsNtscInt);
 
             // GBS::IF_LD_RAM_BYPS::write(1);
             // printf( "Scanning method: %d\n",GBS::STATUS_SYNC_PROC_VTOTAL::read() );   // 0x%02x
@@ -12233,24 +12243,24 @@ void OSD_selectOption()
             Tim_info = millis();
         }
 
-        if (S0_Read_Resolution & 0x80) 
+        if (inputIsSd)
         {
-            if (S0_Read_Resolution & 0x40) 
+            if (inputIsPalPrg)
             {
                 Osd_Display(0xFF, "   576p");
             } 
-            else if (S0_Read_Resolution & 0x20) 
+            else if (inputIsPalInt)
             {
                 if( abs(GBS::STATUS_SYNC_PROC_VTOTAL::read() - 312) <= 10)
                   Osd_Display(0xFF, "   288p");
                 else  
                   Osd_Display(0xFF, "   576i");
             } 
-            else if (S0_Read_Resolution & 0x10) 
+            else if (inputIsNtscPrg)
             {
                 Osd_Display(0xFF, "   480p");
             } 
-            else if (S0_Read_Resolution & 0x08)   
+            else if (inputIsNtscInt)
             {
                 if( abs(GBS::STATUS_SYNC_PROC_VTOTAL::read() - 262) <= 10)
                   Osd_Display(0xFF, "   240p");
