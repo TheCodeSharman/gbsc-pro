@@ -390,7 +390,15 @@ correct 213 in three separate modes, so 50 is a stable WRONG value and it is
 intermittent.
 
 So the round trip clears it, and the first leg alone does not: the fault goes
-noisy -> stable wrong -> correct. What that costs is the obvious shortcut --
+noisy -> stable wrong -> correct.
+
+**IT DOES NOT ALWAYS CLEAR IT.** A 2026-09-15 round trip over the same pair of
+modes, 320x256@50 -> 640x480@60 -> back, left it railed: `HPERIOD_IF` 511 / 105
+/ 263 with `STATUS_IF_HT_OK` 0 against the 431 the mode is due, while
+`STATUS_SYNC_PROC_VTOTAL` held a steady 311 at divider 2206 and the picture on
+the panel stayed complete and clean. The engine's held line rate stayed at the
+correct 15625, so nothing adopted the bad reading -- which is what makes the
+railing survivable rather than a fault that reaches the picture every time. What that costs is the obvious shortcut --
 changing mode once and reading the new mode's value proves nothing, because the
 new mode has its own wrong answer available. **Return to the mode whose correct
 value is known, and check against that.**
