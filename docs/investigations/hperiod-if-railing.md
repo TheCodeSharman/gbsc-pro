@@ -780,6 +780,19 @@ fault, not a technique: a sync discontinuity restarts the counter, and the
 restart can land either way. Bouncing before every measurement would introduce
 the failure it is meant to avoid.
 
+### No automatic recovery is installed, and the reason is the picture
+
+Taking the input away turns the whole screen green for as long as it is gone --
+photographed at 400 ms, on the modes that rail -- so an automatic bounce is a
+visible flash rather than a repair.
+
+It buys accuracy and nothing else. A refused `HPERIOD_IF` window already falls
+back to the field rate measured off the test bus, and the raster solved from
+that comes out right; the counter's advantage over it is precision, not
+correctness. Against a flash on every railing, and against the run above where
+the bounce railed a mode that read correctly six times beforehand, that is not a
+trade worth making blind. Install one only with something better than a bounce.
+
 ## The expected value is the thing most likely to be wrong
 
 The advice on this page is to validate `HPERIOD_IF` against the value the mode is
