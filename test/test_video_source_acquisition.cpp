@@ -772,6 +772,33 @@ TEST_CASE("a count that never settles re-installs the reference sampling clock")
     CHECK(Adc::PLLAD_MD::read() == referenceDividerFor(true));
 }
 
+TEST_CASE("the deadlock on a count that never settles breaks in under a second")
+{
+    // The arm above IS the remaining cost of the 640x480 -> 320x256 leg: at 150
+    // polls of DetectionIntervalMs it is 3.0 s, and the leg measures 3.1 s. For
+    // the whole of it the input formatter is reading the new mode correctly and
+    // only the divider is the old mode's.
+    //
+    // What the arm has to clear is ordinary noise. One disagreeing sample costs
+    // a full idle run to recover, so the bound is a few of those -- nothing it
+    // must sit through takes seconds.
+    // docs/investigations/the-count-is-unstable-while-the-divider-describes-the-last-mode.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
+
+    const uint16_t polls = 1000 / VideoSourceAcquisition::DetectionIntervalMs;
+    for (uint16_t i = 0; i < polls; ++i) {
+        seedSourceLines((uint16_t)(191 + (i % 64)));
+        unit.poll();
+    }
+
+    CHECK(Adc::PLLAD_MD::read() == referenceDividerFor(true));
+}
+
 TEST_CASE("a count no source runs re-establishes the sync type")
 {
     // The wrong sync path counts 97..137 on a 311-line source, held for twenty

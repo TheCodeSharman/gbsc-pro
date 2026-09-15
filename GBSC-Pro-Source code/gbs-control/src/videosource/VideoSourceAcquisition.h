@@ -316,10 +316,15 @@ private:
     bool sourceInterrupted_;
 
     // Consecutive detection passes whose line count was inside the source
-    // bounds and never settled. A mode change is normally held within a few
-    // passes, so this clears one comfortably and still fires well inside the
-    // seconds the deadlock otherwise costs.
-    static const uint16_t UnsettledArmPasses = 150;
+    // bounds and never settled. What it has to sit through is noise: one
+    // disagreeing sample restarts the idle run, so a single glitch costs a
+    // whole run to recover and this clears four of them back to back.
+    //
+    // It is the whole remaining cost of the deadlock, paid at
+    // DetectionIntervalMs a pass, so it is derived rather than chosen: at 150
+    // it was 3.0 s against a leg that measured 3.1 s.
+    static const uint16_t UnsettledArmPasses =
+        4 * Tv5725::SourceMeasurement::SteadySamples;
 
     uint16_t unsettledPasses_;
     bool unsettledArmed_;
