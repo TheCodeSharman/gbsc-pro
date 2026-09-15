@@ -40,6 +40,38 @@ for the screen" — it can only be wrong about the source.
 **Each half has its own horizontal coordinate space, and they share no origin.**
 This is the single most expensive thing to learn the hard way. See below.
 
+### The decimator is the ADC's digital back end, and the datasheet never draws it
+
+DS-5725-3.2 contains the word nowhere. It comes from two bit descriptions in
+RD-5725-1.1 -- `DEC1_BYPS`, "the 4x to 2x decimator bypass enable", and
+`DEC2_BYPS`, "the 2x to 1x decimator bypass enable" -- so it is a two-stage
+downsampler at the ADC's output, each stage bypassable, and not a block of its
+own on the diagram. It exists because the ADC can run oversampled: `PLLAD_CKOS`
+picks which tap of the ADC clock feeds the pipeline and the decimators undo in
+the digital domain what that tap added, which is why `Adc::applySampleRate()`
+writes all five of those registers together.
+
+The sync fields naming it -- `SP_SYNC_BYPS` "external sync bypass to decimator",
+`SP_HS_PROC_INV_REG` and `SP_VS_PROC_INV_REG` "HS/VS to decimator invert" --
+therefore describe the sync travelling with the samples at the ADC's output,
+before the Input Formatter.
+
+### `SP_SYNC_BYPS` does nothing measurable on a separate-sync source
+
+The firmware writes it 0 on both sync paths and nothing else touches it, so it
+has never been in force. Set to 1 on the bench RiscPC at 320x256@50, separate
+sync, scaling, with automation frozen, **nothing observable changes**: the
+picture is identical in framing and position, `STATUS_SYNC_PROC_VTOTAL` holds
+311 against divider 2206, and a full `/testbus` sweep at `IF_TEST_SEL` 0 carries
+the same selectors either side -- 0, 5, 6, 7, 12, 14, 15, 16 and 18 within
+run-to-run variation, every silent selector still silent.
+
+`HPERIOD_IF` was railing throughout, so the IF's own measurement could not
+testify; the picture and the test bus could, and neither moved. **A read-back of
+1 is not proof the hardware acted**, so what this establishes is that the bit is
+not a lever on this source rather than what it does. The case where the
+separator is actually extracting V from one stream is untested.
+
 ## The analog inputs, and which one this board uses
 
 The chip has **three RGB channels but only two external sync positions**, and the
