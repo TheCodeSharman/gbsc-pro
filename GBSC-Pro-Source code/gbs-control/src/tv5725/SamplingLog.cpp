@@ -98,25 +98,22 @@ void readSolve(uint16_t (&into)[SamplingLog::SolveFields])
 
 char SamplingLog::lastWhat_[SamplingLog::BranchNameMax] = {0};
 uint16_t SamplingLog::lastLines_ = 0;
-uint8_t SamplingLog::lastStandard_ = 0;
 bool SamplingLog::lastValid_ = false;
 
-void SamplingLog::event(uint32_t nowMs, const char *what, uint16_t lines,
-                        uint8_t videoStandardInput)
+void SamplingLog::event(uint32_t nowMs, const char *what, uint16_t lines)
 {
-    if (lastValid_ && lines == lastLines_ && videoStandardInput == lastStandard_
+    if (lastValid_ && lines == lastLines_
         && strncmp(what, lastWhat_, BranchNameMax - 1) == 0)
         return;
 
     strncpy(lastWhat_, what, BranchNameMax - 1);
     lastWhat_[BranchNameMax - 1] = '\0';
     lastLines_ = lines;
-    lastStandard_ = videoStandardInput;
     lastValid_ = true;
 
     char line[96];
-    snprintf(line, sizeof(line), "evt,%lu,%s,%u,%u", (unsigned long)nowMs, what,
-             (unsigned)lines, (unsigned)videoStandardInput);
+    snprintf(line, sizeof(line), "evt,%lu,%s,%u", (unsigned long)nowMs, what,
+             (unsigned)lines);
     tv5725Log(line);
 }
 

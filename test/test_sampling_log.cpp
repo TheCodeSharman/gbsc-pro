@@ -132,18 +132,18 @@ TEST_CASE("an event names the branch a decision took, with the count it took it 
     // choice, so the choice has to say so as it is made.
     g_lastLine.clear();
 
-    SamplingLog::event(1234, "rgbhv-bypass", 627, 15);
+    SamplingLog::event(1234, "rgbhv-bypass", 627);
 
-    CHECK(g_lastLine == "evt,1234,rgbhv-bypass,627,15");
+    CHECK(g_lastLine == "evt,1234,rgbhv-bypass,627");
 }
 
 TEST_CASE("an event is one line whatever the caller passes")
 {
     g_lastLine.clear();
 
-    SamplingLog::event(0, "rgbhv-scale", 311, 14);
+    SamplingLog::event(0, "rgbhv-scale", 311);
 
-    CHECK(g_lastLine == "evt,0,rgbhv-scale,311,14");
+    CHECK(g_lastLine == "evt,0,rgbhv-scale,311");
 }
 
 TEST_CASE("the walk clocks the ADC from the rate it is handed, not from HPERIOD_IF")
@@ -194,20 +194,20 @@ TEST_CASE("a decision repeated is not news, so only a change is emitted")
     // says nothing the first line did not. A branch that holds shows as a gap
     // between timestamps; how often it is re-entered inside that gap is what a
     // monitor run answers.
-    SamplingLog::event(10, "held", 311, 14);
+    SamplingLog::event(10, "held", 311);
     g_lastLine.clear();
 
-    SamplingLog::event(20, "held", 311, 14);
+    SamplingLog::event(20, "held", 311);
     CHECK(g_lastLine.empty());
 
     SUBCASE("a different branch is news") {
-        SamplingLog::event(30, "moved", 311, 14);
-        CHECK(g_lastLine == "evt,30,moved,311,14");
+        SamplingLog::event(30, "moved", 311);
+        CHECK(g_lastLine == "evt,30,moved,311");
     }
 
     SUBCASE("the same branch on a different count is news") {
-        SamplingLog::event(30, "held", 312, 14);
-        CHECK(g_lastLine == "evt,30,held,312,14");
+        SamplingLog::event(30, "held", 312);
+        CHECK(g_lastLine == "evt,30,held,312");
     }
 }
 

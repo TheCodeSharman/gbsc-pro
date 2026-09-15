@@ -54,8 +54,7 @@ public:
     // HTTP read can see it -- a dump afterwards shows where the firmware
     // arrived, never why. Nothing is read from the chip here: the caller passes
     // what it decided on, because that is the value the branch actually used.
-    static void event(uint32_t nowMs, const char *what, uint16_t lines,
-                      uint8_t videoStandardInput);
+    static void event(uint32_t nowMs, const char *what, uint16_t lines);
 
     // The longest branch name the sketch passes, plus room. A name that does
     // not fit is truncated for the comparison only, so two long names sharing a
@@ -124,7 +123,6 @@ private:
     // lines a second on a locked source.
     static char lastWhat_[BranchNameMax];
     static uint16_t lastLines_;
-    static uint8_t lastStandard_;
     static bool lastValid_;
 };
 

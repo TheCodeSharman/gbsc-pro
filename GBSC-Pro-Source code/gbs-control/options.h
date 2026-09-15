@@ -95,28 +95,14 @@ struct userOptions
 // runTimeOptions holds system variables
 struct runTimeOptions
 {
-    // The output resolution THIS preset load asks for, chosen in applyPresets()
-    // where the detection result is still in scope and read back in
-    // doPostPresetLoadSteps().
-    //
-    // It cannot be re-derived at the far end: rto->videoStandardInput is
-    // rewritten by PresetLoad::videoStandardInputAfterLoad(), which returns 14
-    // whenever scaling RGBHV is on -- so by the time the raster is solved the
-    // value the choice was made from is gone.
-    //
-    // A choice naming no resolution -- a custom preset, whose saved bytes are
-    // the mode, or bypass -- leaves the raster alone.
-
     // The display clock, which the engine steers from the raster it solved and
     // the frame time lock walks away from that on every correction. It lives
     // here because both reach it; Tv5725::VideoPath is handed a reference.
     Tv5725::DisplayClock displayClock;
-    uint8_t videoStandardInput; // 0 - unknown, 1 - NTSC like, 2 - PAL like, 3 480p NTSC, 4 576p PAL
     uint8_t syncLockFailIgnore;
     uint8_t applyPresetDoneStage;//应用预置完成阶段
     uint8_t presetID;  // PresetID
     uint8_t osr;
-    uint8_t notRecognizedCounter;
     bool isInLowPowerMode;
 
     // Whether the composite-vs-separate sync choice has been made for THIS

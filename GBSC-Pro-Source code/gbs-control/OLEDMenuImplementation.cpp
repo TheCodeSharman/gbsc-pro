@@ -31,8 +31,7 @@ extern uint8_t RGB_Com;
 #define Ypbpr_Sync 3
 
 extern bool scalingRgbhv();
-extern void applyPresets(uint8_t videoMode);
-extern uint8_t standardForPresetLoad();
+extern void applyPresets();
 extern void saveUserPrefs();
 extern float getOutputFrameRate();
 extern void loadDefaultUserOptions();
@@ -115,7 +114,6 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = standardForPresetLoad();
     PresetPreference preset = PresetPreference::Output1080P;
     switch (item->tag)
     {
@@ -148,14 +146,13 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
         }
         else
         {
-            applyPresets(videoMode);
+            applyPresets();
         }
     }
     else
     {
         // setOutModeHdBypass(false);
         // uopt->presetPreference = preset;
-        // if (rto->videoStandardInput != 15)
         // {
         //     rto->autoBestHtotalEnabled = 0;
         //     if (rto->applyPresetDoneStage == 11)
@@ -542,9 +539,7 @@ static void LoadDefault()
     Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;          // 有效缩放
     rto->osr = 0;                                 //
-    rto->notRecognizedCounter = 0;                //
 
-    rto->videoStandardInput = 0;    // 视频标准输入
     Tv5725::VideoRoute::toScaler();   //
     rto->videoIsFrozen = true;      //
     rto->sourceDisconnected = true; //
