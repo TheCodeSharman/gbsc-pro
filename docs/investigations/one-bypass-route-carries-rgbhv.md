@@ -310,19 +310,30 @@ That leaves the route as a real choice, but a one-line one taken from the input
 selection rather than from a classification -- the same `rto->inputIsYpBpR` that
 `HdBypass::applyColourPath()` already keys on.
 
-## Testing YPbPr pass-through on this bench
+## YPbPr through the channel is measured, and it works
 
-The mechanism is settled by the `VDS_CONVT_BYPS` measurement above, which needs
-no component source. What is still unphotographed is a real YPbPr signal through
-`ADC2DAC`.
+A Wii at 480p over component -- Settings -> Screen -> TV Resolution ->
+EDTV/HDTV, 31.5 kHz progressive, which the bench display shows -- entered
+through `/sc?K`:
 
-The Wii at 576i cannot be bypassed here: 15 kHz, which the bench display refuses,
-and `bypassCanBeDisplayed()` correctly declines it.
+    DAC_RGBS_BYPS2DAC            1
+    OUT_SYNC_SEL                 1
+    PLLAD_MD                  2039
+    STATUS_SYNC_PROC_HTOTAL   2039   the divider latched
+    STATUS_SYNC_PROC_VTOTAL    524   steady in 489 of 489 samples
 
-**A Wii set to 480p can.** Settings -> Screen -> TV Resolution -> EDTV/HDTV over
-the same component cable gives 31.5 kHz progressive, which the display shows.
-That reaches standard 3, whose `applyProgressive()` arm already carries real
-480p values, and `/sc?K` routes it through `setOutModeHdBypass()` to the HD
-channel with `applyColourPath(true)` writing `HD_MATRIX_BYPS` 0. So the
-YPbPr bypass path becomes exercisable end to end, which no source on this
-bench has previously allowed.
+full screen, sharp and correctly coloured, and **fuller than the same source
+scaled**, which leaves bars. Photographed. So the colour path argument above is
+not only mechanism: a real component signal reaches the panel through the HD
+channel with `applyColourPath(true)`.
+
+**The sync processor keeps counting on this route**, which is what makes
+`STATUS_16` usable in pass-through as well as scaling --
+`docs/video-source-acquisition.md`, step 12.
+
+The Wii at 576i still cannot be bypassed here: 15 kHz, which the bench display
+refuses, and `bypassCanBeDisplayed()` correctly declines it.
+
+**`ADC2DAC` remains unphotographed with a component source**, and cannot be:
+that route has no YUV-to-RGB converter in the path, which is the whole reason it
+is retired.

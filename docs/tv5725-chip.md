@@ -352,6 +352,35 @@ guards comparing the two are self-satisfying.
 nothing in the PLLAD path can feed a setting back into it. It is a genuine
 measurement, and it is the one to trust when the IF disagrees.
 
+### `HSACT` and `VSACT` report PRESENCE, not the sync level
+
+RD-5725-1.1 documents s0_16 as *SYNC PROC STATUS 00* with a row per bit -- HS
+polarity, HS active, VS polarity, VS active, and 7-4 reserved -- but the two
+"active" rows have no `When =` text at all, and the name reads as though the bit
+might follow the pulse.
+
+**It does not.** Sampled at random phase against line rates of 15.6 and 31.4 kHz,
+`STATUS_SYNC_PROC_HSACT` is 1 in **2190 of 2190** samples while a source is
+locked, across two sources, both the scaling and the pass-through routes, and the
+switch between them. A bit following the pulse would be high only for the sync
+duty, which is about 7% here (`HLOW_LEN` 181/2553), so ~150 zeros would have
+appeared. It reads 0 when sync is genuinely lost, and 1 again when it returns.
+
+The same argument settles `VSACT` the other way round: a vsync pulse is nearer 1%
+of the frame, so a level-follower would read 1 almost never, and it reads 1 in
+150 of 150 on a locked separate-sync source.
+
+**Direct confirmation is reachable for `VSACT` and not for `HSACT`.** The I2C bus
+runs at 400 kHz and one field read is a segment aim plus a register read, about
+200 us, so sampling tops out near 5 kHz -- far inside a 20 ms field, far outside
+a 64 us line. `known-issues.md` carries that as an untried experiment.
+
+**Consequence:** these are the right bits to ask "is there sync", and the sync
+processor keeps answering on the pass-through route, because pass-through does
+not take it out of the video path. Measured on a passed-through source, `HSACT`
+1 in 489 of 489 with `STATUS_SYNC_PROC_VTOTAL` holding the count the mode is due
+in all of them.
+
 ## `HPERIOD_IF`, the one measurement of the source
 
 The datasheet defines it as *"source H total measurement result. The value =
