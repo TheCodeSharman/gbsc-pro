@@ -334,6 +334,31 @@ A reader who stops after the first sentence should know whether this is the
 class they want. **If that sentence cannot be written, the class does more than
 one thing** — which is a finding about the code, not a problem with the comment.
 
+**A HEADER IS A LIST OF METHODS, AND A COMMENT PER METHOD DESTROYS THAT.** The
+question a reader brings to a header is *what can this class do* — answered by
+running an eye down the declarations. Ten lines of prose above each one turns a
+surface that fits on a screen into several pages, so nobody scans it and nobody
+finds the method they wanted. The cost is paid by every reader, not just the one
+the comment was written for.
+
+**The class's own comment may be longer; a method's is one small paragraph.**
+The class comment is read once, to decide whether this is the class you want, so
+it can afford to say what the thing is for and what constrains it. A method's
+comment is passed over dozens of times by readers looking for something else, so
+it states the **contract** and stops: what it does, and what the caller must do
+first.
+
+```cpp
+// Measure the video source timings, holding them as state. Asked on every
+// pass. applyReferenceSampling() must be in force first.
+Reading measure();
+```
+
+The measurements, the traps and the reasoning that settled the design are worth
+keeping and do not go here — they go in `docs/`, cited by name where the
+declaration needs it. A `.cpp` may say *how* where the mechanism is genuinely
+surprising, and the first move is always to simplify it instead.
+
 **Do not list who else uses it.** *The frame time lock, auto gain and the sync
 watcher all drive this pin* is true the day it is written and a maintenance
 burden thereafter, because the next caller will not update it. State the rule
