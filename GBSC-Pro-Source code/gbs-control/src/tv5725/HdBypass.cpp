@@ -32,6 +32,10 @@ const uint16_t SyncPulseWidth = 124;
 const uint16_t ChannelVsyncStart = 2;
 const uint16_t ChannelVsyncStop = 7;
 
+// What a component source wants forced into the channel's horizontal blanking
+// on luma. RD-5725-1.1 gives no scale for it; 5 is what every table shipped.
+const uint8_t ComponentBlankLuma = 5;
+
 }  // namespace
 
 uint16_t HdBypass::hsyncLow_ = 0;
@@ -188,6 +192,13 @@ void HdBypass::applyChannelSyncEdges(const SourceSyncEdges &edges)
     if (edges.vsyncFound)
         holdVsyncPulse(edges.vsyncPositive ? vsyncLow_ : vsyncHigh_,
                        edges.vsyncPositive ? vsyncHigh_ : vsyncLow_);
+}
+
+void HdBypass::applyBlankLevel(bool component)
+{
+    HD_BLK_GY_DATA::write(component ? ComponentBlankLuma : 0);
+    HD_BLK_BU_DATA::write(0);
+    HD_BLK_RV_DATA::write(0);
 }
 
 void HdBypass::applyColourPath(bool inputIsYpBpR)

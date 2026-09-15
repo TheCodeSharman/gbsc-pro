@@ -2551,7 +2551,7 @@ void doPostPresetLoadSteps()
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::setCoastInvert(false);
         if (!Tv5725::VideoRoute::isHdBypassChannel() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
-            updateSpDynamic(0);
+            inputAcquisition.applySyncProcessorDynamic(0);
         }
 
         Tv5725::SyncProcessor::holdClamp();
@@ -2661,8 +2661,8 @@ void doPostPresetLoadSteps()
         // true here -- the mode change was armed a hundred lines above -- so
         // waiting for it to become so is the acquisition layer's.
         delay(30);
-        updateCoastPosition(0);
-        updateClampPosition();
+        inputAcquisition.placeCoastWindow(0);
+        inputAcquisition.placeClampWindow();
 
 
         Tv5725::VideoProcessor::applyFrameSequencing();
@@ -2742,7 +2742,7 @@ void doPostPresetLoadSteps()
             while ((!Tv5725::SyncProcessor::hsyncActive()) && (millis() - timeout < 2002)) {
                 delay(4);
                 handleWiFi(0);
-                updateSpDynamic(0);
+                inputAcquisition.applySyncProcessorDynamic(0);
             }
             timeout = millis() - timeout;
             if (timeout >= 1500) {
@@ -2753,14 +2753,14 @@ void doPostPresetLoadSteps()
             }
         }
 
-        updateClampPosition();
+        inputAcquisition.placeClampWindow();
         if (Tv5725::SyncProcessor::clampPlaced()) {
             if (Tv5725::SyncProcessor::clampHeld()) {
                 Tv5725::SyncProcessor::releaseClamp();
             }
         }
 
-        updateSpDynamic(0);
+        inputAcquisition.applySyncProcessorDynamic(0);
 
         if (!rto->syncWatcherEnabled) {
             Tv5725::SyncProcessor::releaseClamp();
@@ -2815,7 +2815,7 @@ void applyPresets()
             // is circular -- VSACT only reports correctly once the sync type is
             // already right, so the choice latches to whatever the chip happens
             // to be configured for. Landing in the wrong basin has
-            // updateSpDynamic() write the separate-sync quadruple (SP_PRE_COAST
+            // applySyncProcessorDynamic() write the separate-sync quadruple (SP_PRE_COAST
             // 0, SP_POST_COAST 0, SP_DLT_REG 0, SP_H_PULSE_IGNOR 0xFF) onto a
             // source with no separate sync. docs/sync-type-selection.md
             //
@@ -2989,61 +2989,6 @@ void setAndLatchPhaseADC()
     Tv5725::Adc::applyPhaseAdc(Tv5725::Adc::phaseAdc());
 }
 
-
-void updateSpDynamic(boolean hunting)
-{
-    if (!Tv5725::Chip::hasPower() || rto->sourceDisconnected) {
-        return;
-    }
-
-    Tv5725::SyncProcessor::Dynamic source;
-    source.searching = inputAcquisition.sourceIsSearching();
-    source.present = inputAcquisition.sourceIsPresent();
-    source.hunting = hunting;
-    source.csync = Tv5725::SyncMeasurement::isCsync();
-    source.pathSource = sourceIsRgbhv() || Tv5725::VideoRoute::isHdBypassChannel();
-    source.serrated = sourceHasSerratedSync();
-
-    Tv5725::SyncProcessor::applyDynamic(source);
-}
-
-void updateCoastPosition(boolean autoCoast) // Updated coastal locations
-{
-    if (inputAcquisition.sourceIsSearching() || rgbhvBypass()
-        || !Tv5725::Chip::hasPower() || rto->sourceDisconnected) {
-        return;
-    }
-
-    Tv5725::SyncProcessor::acquireCoastWindow(autoCoast);
-}
-
-void updateClampPosition() // Update Clamp Position
-{
-    if (!Tv5725::Chip::hasPower() || rto->sourceDisconnected
-        || inputAcquisition.sourceIsSearching()) {
-        return;
-    }
-
-    GBS::SP_CLAMP_MANUAL::write(rto->inputIsYpBpR ? 0 : 1);
-
-    uint16_t offset = 0;
-    if (rto->inputIsYpBpR && Tv5725::VideoRoute::isHdBypassChannel() && sourceLowLineRate()) {
-        offset = 0x60;
-    }
-
-    if (!Tv5725::SyncProcessor::acquireClampWindow(Tv5725::SyncMeasurement::isCsync(),
-                                                   rto->inputIsYpBpR, offset)) {
-        return;
-    }
-
-    if (rto->inputIsYpBpR && Tv5725::VideoRoute::isHdBypassChannel()) {
-        GBS::HD_BLK_GY_DATA::write(0x05);
-        GBS::HD_BLK_BU_DATA::write(0x00);
-        GBS::HD_BLK_RV_DATA::write(0x00);
-    }
-
-    Tv5725::SyncProcessor::adoptClampPlacement();
-}
 
 // Restart the blocks a bypass switch has just reconfigured, then load what it
 // chose.
@@ -3527,7 +3472,7 @@ static bool runRecoveryStep(SyncRecovery::Step step, bool modeSettled)
         break;
 
     case SyncRecovery::SyncProcessorDynamic:
-        updateSpDynamic(1);
+        inputAcquisition.applySyncProcessorDynamic(1);
         break;
 
     case SyncRecovery::ReleaseCapture:
@@ -3555,7 +3500,7 @@ static bool runRecoveryStep(SyncRecovery::Step step, bool modeSettled)
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::applyDefaultCoastWindow();
         Tv5725::SyncProcessor::applyDefaultClampWindow();
-        updateSpDynamic(1);
+        inputAcquisition.applySyncProcessorDynamic(1);
         Tv5725::ModeDetect::nudge();
         delay(80);
         Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce, false);
@@ -3626,7 +3571,7 @@ void runSyncWatcher() //
         if (tuning.sourceUnsettled)
             lastVsyncLock = millis();
         if (tuning.levelMoved)
-            updateSpDynamic(0);
+            inputAcquisition.applySyncProcessorDynamic(0);
         if (tuning.phaseStale)
             rto->phaseIsSet = 0;
     }
@@ -3666,7 +3611,7 @@ void runSyncWatcher() //
             Tv5725::SyncProcessor::forgetPositions();
 
         if (due.syncProcessorDynamic)
-            updateSpDynamic(0);
+            inputAcquisition.applySyncProcessorDynamic(0);
 
         if (due.sogLevel) {
             delay(20);
@@ -4875,7 +4820,7 @@ void loop()
         && !Tv5725::SyncProcessor::coastPlaced()) {
         if (inputAcquisition.acquiredPasses() >= 7) {
             if (inputAcquisition.sourceIsPresent()) {
-                updateCoastPosition(0);
+                inputAcquisition.placeCoastWindow(0);
                 if (Tv5725::SyncProcessor::coastPlaced()) {
                     if (sourceHasSerratedSync()) 
                     {
@@ -4890,7 +4835,7 @@ void loop()
 
     if (inputAcquisition.sourceIsPresent() && (inputAcquisition.acquiredPasses() >= 4) &&
         !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
-        updateClampPosition();
+        inputAcquisition.placeClampWindow();
         if (Tv5725::SyncProcessor::clampPlaced()) {
             if (Tv5725::SyncProcessor::clampHeld()) {
                 Tv5725::SyncProcessor::releaseClamp();
@@ -4906,7 +4851,7 @@ void loop()
 
             GBS::DAC_RGBS_PWDNZ::write(1); 
             if (!rto->syncWatcherEnabled) {
-                updateClampPosition();
+                inputAcquisition.placeClampWindow();
                 Tv5725::SyncProcessor::releaseClamp();
             }
 
@@ -5315,8 +5260,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         GBS::IF_LINE_ST::write(Tv5725::CaptureWindow::ProgressiveStart);
                         GBS::IF_LINE_SP::write(Tv5725::CaptureWindow::ProgressiveStart
                             + ((pll_divider / 2) + 1));
-                        updateClampPosition();
-                        updateCoastPosition(0);
+                        inputAcquisition.placeClampWindow();
+                        inputAcquisition.placeCoastWindow(0);
                     } else {
                         debugPrintf("PLLAD_MD %u refused, left at %u\n",
                             pll_divider, GBS::PLLAD_MD::read());

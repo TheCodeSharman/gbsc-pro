@@ -406,6 +406,11 @@ void SyncProcessor::setSubCoast(bool wanted)
     SP_DIS_SUB_COAST::write(wanted ? 0 : 1);
 }
 
+void SyncProcessor::clampManually(bool manual)
+{
+    SP_CLAMP_MANUAL::write(manual ? 1 : 0);
+}
+
 void SyncProcessor::selectExternalSync(uint8_t sel)
 {
     SP_EXT_SYNC_SEL::write(sel);

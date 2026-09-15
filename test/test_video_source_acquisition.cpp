@@ -40,6 +40,10 @@ static void seedBenchSource()
     seed(5, 0x12, 0, 12, 2553);
     seed(0, 0x1B, 0, 11, 311);
     seed(0, 0x16, 0, 1, 1);              // STATUS_SYNC_PROC_HSPOL, positive-going
+
+    // A bus that answers. Nothing per-source is written to a board that may
+    // not be there, so every case below needs this established first.
+    Chip::holdPower(true);
 }
 
 // A field written straight into the fake's banks, so seeding an INPUT does not
@@ -1298,4 +1302,78 @@ TEST_CASE("a starved separator gets the mid of the field rather than a sweep")
     CHECK(unit.acquisition.acquireSamplingPhase());
     CHECK(Adc::phaseSyncProcessor() == 16);
     CHECK(g_watchdogFeeds == 0);
+}
+
+// The sync processor's three per-source writes. Each was a sketch wrapper
+// around a Tv5725::SyncProcessor call, gathering its facts from this class and
+// gating on rto->sourceDisconnected -- which is sourceIsSearching() spelled a
+// second time, and the one that does not follow the measurement.
+
+TEST_CASE("a source nothing is counting gets no window placed")
+{
+    // A window measured off a line nobody is sending clamps to picture or
+    // coasts over the wrong part of the line, and the placement is what a live
+    // count is the precondition for.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    seedSourceLines(0);
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples + 2; ++i)
+        unit.poll();
+    REQUIRE(unit.acquisition.sourceIsSearching());
+
+    SyncProcessor::forgetPositions();
+    unit.acquisition.placeCoastWindow(false);
+    unit.acquisition.placeClampWindow();
+
+    CHECK_FALSE(SyncProcessor::coastPlaced());
+    CHECK_FALSE(SyncProcessor::clampPlaced());
+}
+
+TEST_CASE("a counted source gets both windows placed on its own line")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    // The coast window is measured from the line HPERIOD_IF reports and the
+    // clamp from what the sync processor counts, so both readings have to be
+    // there before either can be placed.
+    GBS::HPERIOD_IF::write(431);
+    seedField(0, 0x16, 1, 1, 1);          // STATUS_SYNC_PROC_HSACT
+    SyncProcessor::forgetPositions();
+    unit.acquisition.placeCoastWindow(false);
+    unit.acquisition.placeClampWindow();
+
+    CHECK(SyncProcessor::coastPlaced());
+    CHECK(SyncProcessor::clampPlaced());
+}
+
+TEST_CASE("an unpowered board gets no window and no dynamic write")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    SyncProcessor::forgetPositions();
+    Chip::holdPower(false);
+
+    unit.acquisition.placeCoastWindow(false);
+    unit.acquisition.placeClampWindow();
+    const uint32_t before = SyncProcessor::SP_H_PULSE_IGNOR::read();
+    SyncProcessor::SP_H_PULSE_IGNOR::write(before ^ 0xff);
+    unit.acquisition.applySyncProcessorDynamic(false);
+
+    CHECK_FALSE(SyncProcessor::coastPlaced());
+    CHECK_FALSE(SyncProcessor::clampPlaced());
+    CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == (before ^ 0xff));
+
+    Chip::holdPower(true);
 }

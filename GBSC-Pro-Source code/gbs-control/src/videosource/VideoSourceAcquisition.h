@@ -55,6 +55,20 @@ public:
     // take: this asks whether a sweep is worth running at all.
     bool acquireSamplingPhase();
 
+    // The sync processor's three per-source writes, each gated on the same
+    // question: a window measured off a line nobody is sending clamps to
+    // picture or coasts over the wrong part of it, and a dynamic write made
+    // while nothing is counted configures the block for a source that is not
+    // there. sourceIsSearching() is that question and this class holds it.
+    //
+    // `autoCoast` brackets the sync tip rather than spanning the line, which is
+    // what a source with its own vertical sync wants.
+    void placeCoastWindow(bool autoCoast);
+    void placeClampWindow();
+
+    // `hunting` asks for the search configuration rather than the settled one.
+    void applySyncProcessorDynamic(bool hunting);
+
     // Whether pass-through is offerable at all. The interim stand-in for a
     // per-source override -- a single boolean cannot express one.
     // docs/video-source-acquisition.md
@@ -173,6 +187,10 @@ private:
 
     Tv5725::SourceMeasurement &sampling_;
     Tv5725::VideoPath &videoPath_;
+    // Whether a per-source write is worth making at all: something to write to,
+    // and a source being counted to measure it against.
+    bool mayWriteForSource() const;
+
     bool (*mayRun_)();
     void (*passThroughSwitch_)();
     void (*feedWatchdog_)();

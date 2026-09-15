@@ -2,7 +2,15 @@
 
 #include <stdio.h>
 
+#include "../tv5725/Adc.h"
+#include "../tv5725/Chip.h"
+#include "../tv5725/HdBypass.h"
 #include "../tv5725/OutputMode.h"
+#include "../tv5725/RgbhvOutput.h"
+#include "../tv5725/SyncMeasurement.h"
+#include "../tv5725/SyncOnGreen.h"
+#include "../tv5725/VideoRoute.h"
+#include "VideoSourceSelection.h"
 #include "../tv5725/SyncProcessor.h"
 #include "../tv5725/Tv5725Log.h"
 
@@ -445,4 +453,65 @@ bool VideoSourceAcquisition::measureSource(bool &settling)
     // good, because nothing re-solves it.
     settling = !sampling_.rateSettled();
     return !settling;
+}
+
+bool VideoSourceAcquisition::mayWriteForSource() const
+{
+    return Tv5725::Chip::hasPower() && !sourceIsSearching();
+}
+
+void VideoSourceAcquisition::placeCoastWindow(bool autoCoast)
+{
+    // Bypass is excluded because the sync processor's window is the SCALING
+    // path's: the channel plays out the source's own timing.
+    const bool passedThroughRgbhv =
+        VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
+        && !Tv5725::RgbhvOutput::isScaling();
+
+    if (!mayWriteForSource() || passedThroughRgbhv)
+        return;
+
+    Tv5725::SyncProcessor::acquireCoastWindow(autoCoast);
+}
+
+void VideoSourceAcquisition::placeClampWindow()
+{
+    if (!mayWriteForSource())
+        return;
+
+    const bool component = Tv5725::Adc::inputIsComponent();
+    Tv5725::SyncProcessor::clampManually(!component);
+
+    // A component source on the channel at a 15 kHz line clamps later still:
+    // the sync tip it has to clear is longer against that line.
+    const uint16_t offset =
+        component && Tv5725::VideoRoute::isHdBypassChannel() && sampling_.lowLineRate()
+            ? Tv5725::SyncProcessor::ChannelComponentClampOffset : 0;
+
+    if (!Tv5725::SyncProcessor::acquireClampWindow(
+            Tv5725::SyncMeasurement::isCsync(), component, offset))
+        return;
+
+    if (Tv5725::VideoRoute::isHdBypassChannel())
+        Tv5725::HdBypass::applyBlankLevel(component);
+
+    Tv5725::SyncProcessor::adoptClampPlacement();
+}
+
+void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
+{
+    if (!Tv5725::Chip::hasPower())
+        return;
+
+    Tv5725::SyncProcessor::Dynamic source;
+    source.searching = sourceIsSearching();
+    source.present = sourceIsPresent();
+    source.hunting = hunting;
+    source.csync = Tv5725::SyncMeasurement::isCsync();
+    source.pathSource =
+        VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
+        || Tv5725::VideoRoute::isHdBypassChannel();
+    source.serrated = sampling_.lowLineRate() && Tv5725::SyncMeasurement::isCsync();
+
+    Tv5725::SyncProcessor::applyDynamic(source);
 }

@@ -252,6 +252,13 @@ public:
     // INPUT SELECTION, not any classification of the timing.
     static void applyColourPath(bool inputIsYpBpR);
 
+    // What the channel forces into its own horizontal blanking. A component
+    // source wants black on luma rather than zero, which RD-5725-1.1 gives no
+    // scale for -- 5 is what every table shipped. Written on both paths, so a
+    // channel that carried a component source before this one does not keep its
+    // level. Placed beside the clamp, which is where the level is chosen.
+    static void applyBlankLevel(bool component);
+
 private:
     // The played-out line derived from the divider the source was sampled at.
     // Shared, because a raster frozen per standard is what left an RGBHV source

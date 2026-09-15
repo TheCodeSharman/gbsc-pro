@@ -420,6 +420,17 @@ public:
     // False means nothing was written.
     static bool acquireClampWindow(bool csync, bool component, uint16_t offset);
 
+    // Whether the clamp is driven from the window above or left to the block's
+    // own detection. A component source clamps on its own sync tip, so it is
+    // the one input the automatic path suits.
+    static void clampManually(bool manual);
+
+    // How much later a component source clamps on the pass-through channel at a
+    // 15 kHz line: the sync tip it has to clear is longer against that line.
+    // The caller decides whether it applies, because which route is in circuit
+    // is not this block's to know.
+    static const uint16_t ChannelComponentClampOffset = 0x60;
+
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as
     // halves they drift -- a path setting only the low byte leaves whatever a
