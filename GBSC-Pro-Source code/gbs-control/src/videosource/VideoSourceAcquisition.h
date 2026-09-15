@@ -315,6 +315,15 @@ private:
     uint8_t rateRun_;
     bool sourceInterrupted_;
 
+    // Consecutive detection passes whose line count was inside the source
+    // bounds and never settled. A mode change is normally held within a few
+    // passes, so this clears one comfortably and still fires well inside the
+    // seconds the deadlock otherwise costs.
+    static const uint16_t UnsettledArmPasses = 150;
+
+    uint16_t unsettledPasses_;
+    bool unsettledArmed_;
+
     // Consecutive passes that did not reach an acquired source. Wrapped at the
     // ladder's cycle rather than left to run, so the cycle stays aligned.
     uint16_t unmeasuredPasses_;

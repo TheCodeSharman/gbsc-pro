@@ -28,6 +28,7 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       idle_(Tv5725::SourceMeasurement::SteadySamples),
       unusableCountArmed_(false), sourceState_(SourceAbsent),
       candidateRateHz_(0), rateRun_(0), sourceInterrupted_(false),
+      unsettledPasses_(0), unsettledArmed_(false),
       unmeasuredPasses_(0), acquiredPasses_(0), runAdvanced_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
@@ -283,8 +284,29 @@ bool VideoSourceAcquisition::sourceMoved()
     }
 
     unusableCountArmed_ = false;
-    if (!held)
-        return false;
+
+    // A count inside the source bounds that never SETTLES had no arm at all:
+    // the unusable-count arm above needs the count out of range, and everything
+    // below needs it held. A divider left behind by a mode change makes the
+    // sync processor retime against a window sized for the wrong line, so the
+    // count wanders 191..292 -- plausible every sample, steady on none -- and
+    // nothing rewrites the divider that causes it, because prepareToMeasure()
+    // is only reached once this arms.
+    //
+    // Arming only opens a re-measure. measureSource() still has to find the
+    // count steady and the rate repeated before anything is solved.
+    // docs/investigations/hperiod-if-railing.md
+    if (!held) {
+        if (unsettledPasses_ < UnsettledArmPasses)
+            ++unsettledPasses_;
+        if (unsettledPasses_ < UnsettledArmPasses || unsettledArmed_)
+            return false;
+        unsettledArmed_ = true;
+        logSourceMoved("unsettled count", lines, solvedLines_);
+        return true;
+    }
+    unsettledPasses_ = 0;
+    unsettledArmed_ = false;
 
     // The rate and the interrupt each say the source moved where the count
     // cannot: the same number of lines at a different field rate, which is what

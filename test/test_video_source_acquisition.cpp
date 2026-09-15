@@ -744,6 +744,33 @@ TEST_CASE("a count no source runs is absent whatever the sampling says")
 // held value never fires.
 // docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md
 
+TEST_CASE("a count that never settles re-installs the reference sampling clock")
+{
+    // The 640x480 -> 320x256 deadlock, measured on the bench: the divider is
+    // still the previous mode's, so the sync processor retimes against a window
+    // sized for a line half as long and STATUS_SYNC_PROC_VTOTAL wanders
+    // 191..255 without ever holding. countHeld() gates the whole mode-change
+    // event, so nothing arms, prepareToMeasure() is never reached, and the
+    // divider that causes the wandering is never rewritten.
+    //
+    // The escape on the bench is the chip's latched interrupt firing once the
+    // garbage count happens to hold, which took 3.9 to 18 s across runs.
+    // docs/investigations/hperiod-if-railing.md
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(Adc::PLLAD_MD::read() == BenchDivider);
+
+    for (uint16_t i = 0; i < 2 * SyncRecovery::CycleLength; ++i) {
+        seedSourceLines((uint16_t)(191 + (i % 64)));
+        unit.poll();
+    }
+
+    CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
+}
+
 TEST_CASE("a count no source runs re-establishes the sync type")
 {
     // The wrong sync path counts 97..137 on a 311-line source, held for twenty
