@@ -340,6 +340,21 @@ public:
     // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
     // counter wrapping at half the samples arriving repeats the picture.
     static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
+
+    // What this block measures of the source. The vertical is 0 unless
+    // STATUS_IF_VT_OK says the measurement completed, which it does not on
+    // separate sync -- VPERIOD_IF holds debris there rather than a period.
+    static uint16_t verticalPeriod();
+
+    // The line period against the chip's own 27 MHz, so it does not move with
+    // PLLAD_MD. **IT RAILS TO A VALUE THAT IS WRONG AND STEADY**, and nothing
+    // here judges it -- one reading is not evidence.
+    // ../../../docs/investigations/hperiod-if-railing.md
+    static uint16_t linePeriod();
+
+    // STATUS_IF_HT_BAD, a ONE-SIDED gate on the reading above: it never sets on
+    // a healthy one, so set means refuse -- but clear does not mean good.
+    static bool lineCounterFlagged();
 };
 
 }  // namespace Tv5725

@@ -293,3 +293,24 @@ TEST_CASE("a source is not doubled into an output that cannot show the result")
         CHECK_FALSE(InputFormatter::shouldDoubleLine(524, 0));
     }
 }
+
+// The input formatter's own vertical measurement. It has one owner because two
+// blocks measure the frame and only this one is gated on the measurement
+// completing.
+TEST_CASE("the vertical period is zero until the measurement completes")
+{
+    Wire.reset();
+    Wire.bank[0][0x07] = (uint8_t)((624 & 0x7F) << 1);
+    Wire.bank[0][0x08] = (uint8_t)((624 >> 7) & 0x0F);
+    Wire.bank[0][0x00] |= 0x01;   // STATUS_IF_VT_OK
+
+    CHECK(InputFormatter::verticalPeriod() == 624);
+
+    SUBCASE("and a measurement that did not complete claims nothing") {
+        // VPERIOD_IF is debris on a separate-sync source, where it reads values
+        // like 20 against a true 311 -- so the register's value is not the
+        // thing to judge it by.
+        Wire.bank[0][0x00] &= (uint8_t)~0x01;
+        CHECK(InputFormatter::verticalPeriod() == 0);
+    }
+}

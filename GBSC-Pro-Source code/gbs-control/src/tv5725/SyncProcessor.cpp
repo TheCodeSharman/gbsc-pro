@@ -215,6 +215,26 @@ bool SyncProcessor::hsyncActive()
     return GBS::STATUS_SYNC_PROC_HSACT::read() == 1;
 }
 
+uint16_t SyncProcessor::lineCount()
+{
+    return GBS::STATUS_SYNC_PROC_VTOTAL::read();
+}
+
+uint16_t SyncProcessor::lineSamples()
+{
+    return GBS::STATUS_SYNC_PROC_HTOTAL::read();
+}
+
+uint16_t SyncProcessor::hsyncLowSamples()
+{
+    return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
+}
+
+bool SyncProcessor::hsyncPositive()
+{
+    return GBS::STATUS_SYNC_PROC_HSPOL::read() != 0;
+}
+
 namespace {
 
 // The line length HPERIOD_IF reports, in 27 MHz counts, or 0 when the readings

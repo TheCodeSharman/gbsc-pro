@@ -70,7 +70,7 @@ const uint8_t LatchSamples = 8;
 bool VideoSourceAcquisition::acquireSamplingPhase()
 {
     if (!Tv5725::SourceMeasurement::dividerLatched(
-            Tv5725::SourceMeasurement::measureLineSamples(),
+            Tv5725::SyncProcessor::lineSamples(),
             Tv5725::Adc::PLLAD_MD::read(), LatchSamples))
         return false;
 
@@ -81,7 +81,7 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
 
     const bool found = Tv5725::Adc::acquirePhase(
         oversample, Tv5725::SyncOnGreen::level() > Tv5725::SyncOnGreen::StarvedLevel,
-        Tv5725::SourceMeasurement::measureLineSamples,
+        Tv5725::SyncProcessor::lineSamples,
         watchdog_);
 
     char line[48];
@@ -168,7 +168,7 @@ bool VideoSourceAcquisition::sourceIsPresent() const
 bool VideoSourceAcquisition::sourceIsSearching() const
 {
     return !Tv5725::VideoSignal::countIsSource(
-               Tv5725::SourceMeasurement::measureSourceLines())
+               Tv5725::SyncProcessor::lineCount())
            && !sourceIsPresent();
 }
 
@@ -246,7 +246,7 @@ bool VideoSourceAcquisition::sourceMoved()
         return false;
     }
 
-    const uint16_t lines = Tv5725::SourceMeasurement::measureSourceLines();
+    const uint16_t lines = Tv5725::SyncProcessor::lineCount();
 
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
     // caller double-advances it and the steadiness both readers depend on is
@@ -257,7 +257,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // The horizontal half, and it is not a second steadiness run: the divider
     // is held state the engine chose, so one reading of what the sync processor
     // counts against it is the whole test.
-    const uint16_t lineSamples = Tv5725::SourceMeasurement::measureLineSamples();
+    const uint16_t lineSamples = Tv5725::SyncProcessor::lineSamples();
     const SourceState was = sourceState_;
     sourceState_ = !(plausible && held) ? SourceAbsent
                    : Tv5725::SourceMeasurement::dividerLatched(lineSamples,

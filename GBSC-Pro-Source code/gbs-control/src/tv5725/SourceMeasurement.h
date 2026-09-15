@@ -112,26 +112,11 @@ public:
     static bool dividerLatched(uint16_t lineSamples, uint16_t divider,
                                uint16_t tolerance = LatchedSamplesTolerance);
 
-    // --- single register reads, for a caller with no measurement to hold ------
-    //
-    // The only reads of STATUS_SYNC_PROC_* anywhere: nothing else on the board
-    // can supply them, and every other quantity the engine needs it computed.
-
-    static uint16_t measureSourceLines();
-
-    // The line in ADC samples, which is what STATUS_SYNC_PROC_HTOTAL counts.
-    // Read to decide whether a count can be believed, never to derive a
-    // register from.
-    static uint16_t measureLineSamples();
-
-    // The input formatter's own measurement of the frame, or 0 where
-    // STATUS_IF_VT_OK says it did not complete -- which is the separate-sync
-    // case, and leaves VPERIOD_IF holding debris rather than a period.
-    static uint16_t measureVerticalPeriod();
-
-    // The line rate from HPERIOD_IF alone, or 0 where the run does not stand up
-    // to the line count. No vsync spin, so it is affordable on the idle path --
-    // which is what lets a rate change at an unchanged count be seen at all.
+    // The line rate a RUN of the input formatter's line period implies, or 0
+    // where the run does not stand up to the line count. No vsync spin, so it
+    // is affordable on the idle path -- which is what lets a rate change at an
+    // unchanged count be seen at all. The judgement is here because one reading
+    // of a register that rails is not evidence.
     static uint32_t measureLineRateFromHPeriod(uint16_t lines);
 
     // --- the bounds the contract is stated in ---------------------------------
@@ -154,10 +139,6 @@ public:
     // been measured.
     static const uint8_t NominalFieldRateHz = 60;
 
-    // The 15.7 kHz broadcast line, split from the 31.5 kHz VGA one clear of
-    // both and of the ~21.8 kHz a programmable source reaches between them.
-    static const uint32_t LowLineRateBelowHz = 20000;
-
 private:
     // --- the one pass, in the order it takes them ----------------------------
 
@@ -169,8 +150,6 @@ private:
 
     // --- what the pass reads and judges --------------------------------------
 
-    static uint16_t measureHsyncLow();
-    static bool measureHsyncPositive();
     static uint16_t measureSourceLinesCorrected(uint16_t divider);
 
     // Whether the sync processor counted the source's lines or the serration
@@ -223,6 +202,10 @@ private:
     static const uint8_t HPeriodSamples = 8;
     static const uint32_t LineRateFloorHz = 15000;
     static const uint16_t RateAgreementPerMille = 1;
+
+    // The 15.7 kHz broadcast line, split from the 31.5 kHz VGA one clear of
+    // both and of the ~21.8 kHz a programmable source reaches between them.
+    static const uint32_t LowLineRateBelowHz = 20000;
     static const uint8_t LinesPerCountMax = 4;
 
     uint16_t divider_;

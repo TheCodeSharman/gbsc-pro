@@ -353,6 +353,22 @@ public:
     // docs/video-source-acquisition.md
     static bool hsyncActive();
 
+    // What this block counts of the source. The only reads of these registers
+    // anywhere: nothing else on the board can supply them, and every other
+    // quantity the engine needs it computed itself.
+    //
+    // The two counts are in DIFFERENT units -- lines per field, and ADC samples
+    // per line -- because the sync processor counts hsync edges vertically and
+    // ADC clocks horizontally.
+    static uint16_t lineCount();
+    static uint16_t lineSamples();
+
+    // The hsync low time in ADC samples, and whether the pulse is
+    // positive-going -- which says which end of the line the sync interval
+    // sits at.
+    static uint16_t hsyncLowSamples();
+    static bool hsyncPositive();
+
     // Place that window on the line the source is actually sending, measured
     // from HPERIOD_IF against the chip's own 27 MHz. `autoCoast` brackets the
     // sync tip instead of spanning the line, which is what a source with its

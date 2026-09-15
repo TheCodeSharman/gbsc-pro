@@ -1,5 +1,7 @@
 #include "InputFormatter.h"
 
+#include "../../gbs_types.h"
+
 namespace Tv5725 {
 
 const uint16_t InputFormatter::LineCounterMax;
@@ -8,6 +10,23 @@ const uint16_t InputFormatter::DoubleBelowLines;
 uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
 {
     return lineDoubled ? (uint16_t)(divider / 2) : divider;
+}
+
+uint16_t InputFormatter::verticalPeriod()
+{
+    if (!GBS::STATUS_IF_VT_OK::read())
+        return 0;
+    return GBS::VPERIOD_IF::read();
+}
+
+uint16_t InputFormatter::linePeriod()
+{
+    return GBS::HPERIOD_IF::read();
+}
+
+bool InputFormatter::lineCounterFlagged()
+{
+    return GBS::STATUS_IF_HT_BAD::read() == 1;
 }
 
 bool InputFormatter::shouldDoubleLine(uint16_t sourceLines,

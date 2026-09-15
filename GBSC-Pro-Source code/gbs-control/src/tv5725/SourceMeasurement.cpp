@@ -8,7 +8,6 @@
 #include "ModeDetect.h"   // whether the source is interlaced, which it measures
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
-#include "../../gbs_types.h"
 
 namespace Tv5725 {
 
@@ -138,7 +137,7 @@ SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPer
 
 SourceMeasurement::ScanType SourceMeasurement::measureScanType()
 {
-    verticalPeriod_ = measureVerticalPeriod();
+    verticalPeriod_ = InputFormatter::verticalPeriod();
     return scanTypeFrom(verticalPeriod_);
 }
 
@@ -146,7 +145,7 @@ uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 bool SourceMeasurement::sampleSteady()
 {
-    uint16_t lines = measureSourceLines();
+    uint16_t lines = SyncProcessor::lineCount();
 
     if (!VideoSignal::countIsSource(lines)) {
         steady_.restart(lines);
@@ -156,7 +155,7 @@ bool SourceMeasurement::sampleSteady()
     if (!steady_.sample(lines))
         return false;
 
-    verticalPeriod_ = measureVerticalPeriod();
+    verticalPeriod_ = InputFormatter::verticalPeriod();
     if (countIsSerrations(lines, verticalPeriod_,
                           ModeDetect::sourceIsInterlaced())) {
         serrationsSeen_ = true;
@@ -210,7 +209,7 @@ bool SourceMeasurement::rateSettled()
 // fault. docs/firmware-geometry-engine.md
 bool SourceMeasurement::measureLineRate()
 {
-    sourceLines_ = measureSourceLines();
+    sourceLines_ = SyncProcessor::lineCount();
 
     // HPERIOD_IF states the line rate for the cost of a register read, where
     // TestBusRateMeasurement::sourceFieldRateHz() spins for vsync edges. It also rails to a value that
@@ -290,8 +289,8 @@ HsyncPulse SourceMeasurement::readSource() const
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.
     const float duty = divider_ > 0
-        ? (float)measureHsyncLow() / (float)divider_ : 0.0f;
-    return HsyncPulse(duty, measureHsyncPositive());
+        ? (float)SyncProcessor::hsyncLowSamples() / (float)divider_ : 0.0f;
+    return HsyncPulse(duty, SyncProcessor::hsyncPositive());
 }
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
@@ -366,35 +365,18 @@ void SourceMeasurement::applyReferenceSampling()
     SyncProcessor::writeRetimeStop(retimeStop());
 }
 
-uint16_t SourceMeasurement::measureSourceLines()
-{
-    return GBS::STATUS_SYNC_PROC_VTOTAL::read();
-}
-
-uint16_t SourceMeasurement::measureVerticalPeriod()
-{
-    if (!GBS::STATUS_IF_VT_OK::read())
-        return 0;
-    return GBS::VPERIOD_IF::read();
-}
-
 uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
 {
     uint16_t hperiod[HPeriodSamples];
     bool htBadSeen = false;
     for (uint8_t i = 0; i < HPeriodSamples; ++i) {
-        hperiod[i] = GBS::HPERIOD_IF::read();
-        if (GBS::STATUS_IF_HT_BAD::read() == 1)
+        hperiod[i] = InputFormatter::linePeriod();
+        if (InputFormatter::lineCounterFlagged())
             htBadSeen = true;
     }
     return lineRateFromHPeriod(hperiod, HPeriodSamples, lines, htBadSeen);
 }
 
-
-uint16_t SourceMeasurement::measureLineSamples()
-{
-    return GBS::STATUS_SYNC_PROC_HTOTAL::read();
-}
 
 bool SourceMeasurement::dividerLatched(uint16_t lineSamples, uint16_t divider,
                                        uint16_t tolerance)
@@ -409,16 +391,16 @@ bool SourceMeasurement::dividerLatched(uint16_t lineSamples, uint16_t divider,
 
 bool SourceMeasurement::dividerLatched() const
 {
-    return dividerLatched(measureLineSamples(), divider_);
+    return dividerLatched(SyncProcessor::lineSamples(), divider_);
 }
 
 uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
 {
-    const uint16_t lines = measureSourceLines();
+    const uint16_t lines = SyncProcessor::lineCount();
     if (VideoSignal::countIsSource(lines))
         return lines;
 
-    const uint8_t multiple = linesPerCount(measureLineSamples(), divider);
+    const uint8_t multiple = linesPerCount(SyncProcessor::lineSamples(), divider);
     if (multiple == 0)
         return lines;
 
@@ -439,19 +421,6 @@ uint8_t SourceMeasurement::linesPerCount(uint16_t lineSamples, uint16_t divider)
             return lines;
     }
     return 0;
-}
-
-// How much of the line the hsync pulse takes, in ADC samples -- the same space
-// the divider is in, which is why the denominator is the divider and never
-// STATUS_SYNC_PROC_HTOTAL, that being an echo of PLLAD_MD.
-uint16_t SourceMeasurement::measureHsyncLow()
-{
-    return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-}
-
-bool SourceMeasurement::measureHsyncPositive()
-{
-    return GBS::STATUS_SYNC_PROC_HSPOL::read() != 0;
 }
 
 }  // namespace Tv5725

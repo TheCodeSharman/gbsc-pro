@@ -1798,7 +1798,7 @@ uint8_t detectAndSwitchToActiveInput()
                     while ((millis() - timeOutStart) < 6000) {
                         delay(2);
                         if (Tv5725::VideoSignal::countIsSource(
-                                Tv5725::SourceMeasurement::measureSourceLines())) {
+                                Tv5725::SyncProcessor::lineCount())) {
                             return 1;
                         }
                         testCycle++;
@@ -1834,7 +1834,7 @@ uint8_t detectAndSwitchToActiveInput()
                 while ((millis() - timeOutStart) < 6000) {
                     delay(2);
                     if (Tv5725::VideoSignal::countIsSource(
-                            Tv5725::SourceMeasurement::measureSourceLines())) {
+                            Tv5725::SyncProcessor::lineCount())) {
                         return 2;
                     }
 
@@ -3017,7 +3017,7 @@ void enableMotionAdaptDeinterlace() //
 {
     const uint8_t verticalTap =
         Tv5725::Deinterlacer::verticalTapFor(
-            Tv5725::SourceMeasurement::measureVerticalPeriod());
+            Tv5725::InputFormatter::verticalPeriod());
 
     Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
                                             Tv5725::FrameBuffer::releaseCapture);
@@ -4279,7 +4279,7 @@ void loop()
         inputAcquisition.acquiredPasses() > 20 &&
         inputAcquisition.unmeasuredPasses() == 0) {
         if (Tv5725::SourceMeasurement::dividerLatched(
-                Tv5725::SourceMeasurement::measureLineSamples(),
+                Tv5725::SyncProcessor::lineSamples(),
                 GBS::PLLAD_MD::read())) {
             fsDebugPrintf("running frame sync, clock gen enabled = %d\n", rto->extClockGenDetected);
 
@@ -4372,7 +4372,7 @@ void loop()
         && inputAcquisition.runAdvanced()) {
         if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
             if (Tv5725::SourceMeasurement::dividerLatched(
-                    Tv5725::SourceMeasurement::measureLineSamples(),
+                    Tv5725::SyncProcessor::lineSamples(),
                     GBS::PLLAD_MD::read())) {
                 uint8_t debugRegBackup = 0, debugPinBackup = 0;
                 debugPinBackup = GBS::PAD_BOUT_EN::read();
@@ -4397,7 +4397,7 @@ void loop()
             FrameSync::quietFor(500)) {
             if ((inputAcquisition.acquiredPasses() % 5) == 0) {
                 if (Tv5725::SourceMeasurement::dividerLatched(
-                        Tv5725::SourceMeasurement::measureLineSamples(),
+                        Tv5725::SyncProcessor::lineSamples(),
                         GBS::PLLAD_MD::read()))
                     FrameSync::init();
             }
