@@ -1,4 +1,4 @@
-"""How long a source mode change takes to reach `acquired`, per destination.
+"""How long a source mode change takes to reach `acquired`, per ORDERED leg.
 
     python3 mode_change_bench.py --host <ip> --source <riscpc> --repeat 3
 
@@ -14,16 +14,23 @@ and VIDC20 has moved ~70 ms after the register write, so a clock started at the
 reply has already missed the transition -- and the engine often acquires inside
 that call. That is why the sampler starts before the command is sent.
 
-**The destination predicts the cost, not the origin**, so runs are keyed on
-where the source lands. Each is preceded by a settle in a fixed mode, which
-makes the transition itself comparable between destinations.
+**A LEG IS ORDERED AND BOTH DIRECTIONS ARE WALKED.** The cost is not symmetric:
+640x480 -> 320x256 pays for a divider that still describes the mode that left
+and its reverse does not, so a table keyed on the destination alone averages the
+two together and hides the finding. Every ordered pair of distinct modes is
+walked, chained into one tour so each leg departs where the previous landed.
 
 **A run ends when the engine is acquired on a raster it was not on before**, not
 when it is merely acquired. `/geometry` reports the last thing solved, so for
 the first moments after the command it answers about the mode that just left --
 and a run timed against that reports the HTTP round trip, tenths of a second,
-as the acquisition. The destination equal to the settle mode has no new raster
-to wait for and is timed from the state alone.
+as the acquisition.
+
+**AND A LEG IS NOT TIMED UNTIL ITS DEPARTURE RASTER HAS BEEN HELD.** One
+`acquired` reading is not a settle: the engine keeps re-solving for about three
+seconds afterwards, and a leg started on that first reading measures the
+previous leg's churn. Timed that way the 640x480 -> 320x256 leg reported 0.27 s
+against a measured 1.35 s.
 
 `/geometry` answers from the network callback off held state and touches no
 register, so polling it does not queue into loop() and does not starve the
@@ -135,27 +142,77 @@ def signature(at):
     return tuple(at.get(k) for k in SIGNATURE) if at else None
 
 
-def solved_new_mode(at, before, same_mode=False):
-    """Whether `at` is the destination solved, given what preceded it."""
-    if not at or at.get("state") != "acquired":
-        return False
-    return True if same_mode else signature(at) != signature(before)
+def unbroken_since(samples):
+    """When the run of acquired samples ending `samples` started, or None.
 
-
-def wait_for_acquired(host, deadline_s, before=None, same_mode=False,
-                      interval=0.05):
-    """Seconds until the engine is acquired on a raster it was not on, or None.
-
-    `before` is the reading taken before the source was asked to move. Without
-    it this waits only for the state, which is what the stale answer satisfies.
+    A settle is a HOLD rather than one reading. The engine keeps re-solving for
+    about three seconds after it first answers `acquired` -- the console carries
+    a further sampling phase and clock steer -- so a leg started on that first
+    reading times the PREVIOUS leg's churn and reports tenths of a second.
     """
-    start = time.time()
-    while time.time() - start < deadline_s:
+    if not samples:
+        return None
+    t_last, last = samples[-1]
+    if last.get("state") != "acquired":
+        return None
+    want = signature(last)
+    start = t_last
+    for t, at in reversed(samples):
+        if at.get("state") != "acquired" or signature(at) != want:
+            break
+        start = t
+    return start
+
+
+def settle(host, dwell_s, deadline_s, interval=0.05):
+    """Wait until one raster has been held acquired for `dwell_s`. True if it was."""
+    samples = []
+    deadline = time.time() + deadline_s
+    while time.time() < deadline:
         at = geometry(host)
-        if solved_new_mode(at, before, same_mode):
-            return time.time() - start
+        if at:
+            samples.append((time.time(), at))
+        held = unbroken_since(samples)
+        if held is not None and time.time() - held >= dwell_s:
+            return True
         time.sleep(interval)
-    return None
+    return False
+
+
+SHORT = re.compile(r"MODE\s+X(\d+)\s+Y(\d+).*?F(\d+)")
+
+
+def short(mode):
+    """`MODE X640 Y480 C256 F60` as `640x480@60`."""
+    m = SHORT.match(mode)
+    return f"{m.group(1)}x{m.group(2)}@{m.group(3)}" if m else mode
+
+
+def leg(departs, lands):
+    """What a timing is recorded under. ORDERED: the cost is not symmetric --
+    640x480 -> 320x256 pays for a divider that describes the mode that left,
+    and the reverse does not."""
+    return f"{short(departs)} -> {short(lands)}"
+
+
+def legs(modes):
+    """Every ordered pair of distinct modes, chained so each departs where the
+    previous landed.
+
+    Both directions are walked because they are different transitions. Chaining
+    them into one tour means a leg's departure is the previous leg's arrival,
+    so the walk pays for one mode change per leg rather than two.
+    """
+    remaining = {m: [x for x in modes if x != m] for m in modes}
+    tour, stack = [], [modes[0]]
+    while stack:
+        at = stack[-1]
+        if remaining[at]:
+            stack.append(remaining[at].pop(0))
+        else:
+            tour.append(stack.pop())
+    tour.reverse()
+    return list(zip(tour, tour[1:]))
 
 
 @dataclass
@@ -165,16 +222,13 @@ class Transition:
     interval: float
 
 
-def analyse(samples, t_cmd, before, same_mode=False):
+def analyse(samples, t_cmd, before):
     """When the source moved and when the engine was acquired on the new raster.
 
     `samples` are (t, geometry) taken right across the command, because
     mode_serv() blocks until the source has changed mode AND repainted: the
     engine often acquires inside that call, so a clock started at the reply has
     already missed the transition it meant to time.
-
-    A mode re-entered from itself has no new signature to arrive at, so
-    `same_mode` accepts lock regained on the departure raster as the arrival.
     """
     want = signature(before)
     moved = done = None
@@ -187,7 +241,7 @@ def analyse(samples, t_cmd, before, same_mode=False):
             if acquired and not differs:
                 continue
             moved = t
-        if acquired and (differs or same_mode):
+        if acquired and differs:
             done = t
             break
     interval = None if (moved is None or done is None) else done - moved
@@ -203,7 +257,7 @@ def watch(host, samples, stop, interval=0.05):
         time.sleep(interval)
 
 
-def run_one(host, source, mode, deadline_s, same_mode=False):
+def run_one(host, source, mode, deadline_s):
     before = geometry(host)
     samples, stop = [], threading.Event()
     watcher = threading.Thread(target=watch, args=(host, samples, stop), daemon=True)
@@ -213,13 +267,13 @@ def run_one(host, source, mode, deadline_s, same_mode=False):
     reply = mode_serv(source, mode)
     deadline = time.time() + deadline_s
     while True:
-        transition = analyse(samples, t_cmd, before, same_mode)
+        transition = analyse(samples, t_cmd, before)
         if transition.acquired is not None or time.time() >= deadline:
             break
         time.sleep(0.05)
     stop.set()
     watcher.join(timeout=2)
-    return reply, transition, before
+    return reply, transition
 
 
 def why_missed(tr):
@@ -231,55 +285,95 @@ def why_missed(tr):
     return ""
 
 
+def opposed(name):
+    """The leg `name` reverses."""
+    there, back = name.split(" -> ")
+    return f"{back} -> {there}"
+
+
+def asymmetry(summaries):
+    """Each pair of opposed legs, slower first, with the gap between them.
+
+    Reported as a pair because the pair is the finding: one direction pays for a
+    divider still describing the mode that left and the other does not, and a
+    table keyed on the destination alone cannot show it.
+    """
+    out, seen = [], set()
+    for name, there in summaries.items():
+        back = summaries.get(opposed(name))
+        if back is None or name in seen:
+            continue
+        seen.add(name)
+        seen.add(opposed(name))
+        if there.median is None or back.median is None:
+            continue
+        slow, fast = ((name, there), (opposed(name), back))
+        if back.median > there.median:
+            slow, fast = fast, slow
+        out.append((slow, fast, slow[1].median - fast[1].median))
+    return sorted(out, key=lambda row: -row[2])
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--host", default="192.168.88.108")
     p.add_argument("--source", default="192.168.88.10")
-    p.add_argument("--repeat", type=int, default=3)
+    p.add_argument("--repeat", type=int, default=1,
+                   help="times to walk the whole tour")
     p.add_argument("--deadline", type=float, default=30.0,
                    help="seconds to wait for acquired before recording a miss")
-    p.add_argument("--settle", default="MODE X320 Y256 C256 F50",
-                   help="the mode every run departs from")
+    p.add_argument("--dwell", type=float, default=4.0,
+                   help="seconds one raster must be held before a leg is timed")
     p.add_argument("--modes", nargs="*", default=[
         "MODE X320 Y256 C256 F50",
         "MODE X640 Y480 C256 F60",
         "MODE X800 Y600 C256 F60",
-        "MODE X1024 Y768 C256 F60",
-        "MODE X640 Y240 C256 F60",
         "MODE X720 Y576 C256 F50",
     ])
     args = p.parse_args()
 
+    tour = legs(args.modes)
     console = gbs_unit.Console(args.host)
     time.sleep(1.0)
 
-    results = {}
-    for mode in args.modes:
-        samples = []
-        for n in range(args.repeat):
-            same = mode == args.settle
-            if not same:
-                at = geometry(args.host)
-                mode_serv(args.source, args.settle)
-                wait_for_acquired(args.host, args.deadline, at)
-            console.drain()
-            reply, tr, _ = run_one(args.host, args.source, mode,
-                                   args.deadline, same)
-            reports = [r for r in (parse_sampling(x) for x in console.lines) if r]
-            samples.append(tr.interval)
-            shown = f"{tr.interval:6.2f}s" if tr.interval is not None else "   MISS"
-            print(f"  {mode:28} run {n + 1}  {shown}  {why_missed(tr):18} "
-                  f"first={reports[0] if reports else None}")
-        results[mode] = summarise(samples)
+    print(f"{len(tour)} legs x {args.repeat}, departing from {short(tour[0][0])}")
+    mode_serv(args.source, tour[0][0])
 
-    print(f"\n{'destination':30} {'median':>8} {'fastest':>8} {'slowest':>8}   acquired")
-    for mode, s in sorted(results.items(), key=lambda kv: (kv[1].median is None,
-                                                          kv[1].median or 0)):
-        if s.median is None:
-            print(f"{mode:30} {'-':>8} {'-':>8} {'-':>8}   0/{s.attempts}")
+    runs = {}
+    for n in range(args.repeat):
+        for departs, lands in tour:
+            name = leg(departs, lands)
+            if not settle(args.host, args.dwell, args.deadline):
+                print(f"  {name:26} run {n + 1}   NO SETTLE at the departure")
+                runs.setdefault(name, []).append(None)
+                mode_serv(args.source, lands)
+                continue
+            console.drain()
+            reply, tr = run_one(args.host, args.source, lands, args.deadline)
+            reports = [r for r in (parse_sampling(x) for x in console.lines) if r]
+            runs.setdefault(name, []).append(tr.interval)
+            shown = f"{tr.interval:6.2f}s" if tr.interval is not None else "   MISS"
+            print(f"  {name:26} run {n + 1}  {shown}  {why_missed(tr):18} "
+                  f"first={reports[0] if reports else None}"
+                  f"{'' if reply else '   (no ModeServ reply)'}")
+
+    summaries = {name: summarise(v) for name, v in runs.items()}
+
+    print(f"\n{'leg':28} {'median':>8} {'fastest':>8} {'slowest':>8}   acquired")
+    for name, st in sorted(summaries.items(),
+                           key=lambda kv: (kv[1].median is None, kv[1].median or 0)):
+        if st.median is None:
+            print(f"{name:28} {'-':>8} {'-':>8} {'-':>8}   0/{st.attempts}")
         else:
-            print(f"{mode:30} {s.median:8.2f} {s.fastest:8.2f} {s.slowest:8.2f}"
-                  f"   {s.acquired}/{s.attempts}")
+            print(f"{name:28} {st.median:8.2f} {st.fastest:8.2f} {st.slowest:8.2f}"
+                  f"   {st.acquired}/{st.attempts}")
+
+    rows = asymmetry(summaries)
+    if rows:
+        print("\nopposed legs, slower first")
+        for (slow, s_st), (fast, f_st), gap in rows:
+            print(f"  {slow:28} {s_st.median:6.2f}   "
+                  f"{fast:28} {f_st.median:6.2f}   gap {gap:6.2f}")
     console.close()
 
 

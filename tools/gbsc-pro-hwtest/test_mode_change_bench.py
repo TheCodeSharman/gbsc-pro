@@ -39,32 +39,6 @@ def test_a_line_that_is_not_a_sampling_report_parses_to_nothing():
     assert b.parse_sampling("own V sync: yes after 2ms") is None
 
 
-def test_acquired_on_the_old_signature_is_stale_not_a_result():
-    # The engine reports the state it last solved. Reading it before the source
-    # move has registered says "acquired" about the mode that just left.
-    before = {"state": "acquired", "lineRateHz": 15625, "cv": 311}
-    assert not b.solved_new_mode(before, before)
-
-
-def test_acquired_on_a_new_signature_is_the_result():
-    before = {"state": "acquired", "lineRateHz": 15625, "cv": 311}
-    after = {"state": "acquired", "lineRateHz": 31690, "cv": 524}
-    assert b.solved_new_mode(after, before)
-
-
-def test_a_new_signature_that_is_not_acquired_yet_is_not_the_result():
-    before = {"state": "acquired", "lineRateHz": 15625, "cv": 311}
-    after = {"state": "unlocked", "lineRateHz": 31690, "cv": 524}
-    assert not b.solved_new_mode(after, before)
-
-
-def test_a_mode_re_entered_from_itself_has_no_new_signature_to_wait_for():
-    # Nothing distinguishes the destination from the origin, so the run cannot
-    # be timed and must say so rather than return zero.
-    before = {"state": "acquired", "lineRateHz": 15625, "cv": 311}
-    assert b.solved_new_mode(before, before, same_mode=True)
-
-
 # --- watching across the command, because the command itself blocks ----------
 
 def _s(t, state, rate, cv):
@@ -111,10 +85,91 @@ def test_samples_before_the_command_are_not_counted_as_the_move():
     assert r.moved == 3.0 and r.acquired == 4.0
 
 
-def test_a_mode_re_entered_from_itself_is_timed_from_the_loss_of_lock():
-    # The destination signature is the departure signature, so the only
-    # evidence of a transition is that lock was lost and regained.
-    samples = [_s(0.0, "acquired", 15625, 311), _s(2.0, "absent", 0, 0),
-               _s(4.0, "acquired", 15625, 311)]
-    r = b.analyse(samples, t_cmd=0.5, before=OLD, same_mode=True)
-    assert r.moved == 2.0 and r.acquired == 4.0 and r.interval == 2.0
+# --- a settle is a HOLD, not one acquired reading -----------------------------
+
+def test_one_acquired_reading_is_not_a_settle():
+    # The unit keeps solving for ~3 s after it first reports acquired, and a run
+    # started on that reading times the previous leg's churn.
+    samples = [_s(0.0, "absent", 0, 0), _s(1.0, "acquired", 31690, 524)]
+    assert b.unbroken_since(samples) == 1.0
+
+
+def test_a_run_of_agreeing_acquired_samples_dates_from_its_first():
+    samples = [_s(0.0, "absent", 0, 0), _s(1.0, "acquired", 31690, 524),
+               _s(2.0, "acquired", 31690, 524), _s(3.0, "acquired", 31690, 524)]
+    assert b.unbroken_since(samples) == 1.0
+
+
+def test_a_signature_that_moved_restarts_the_hold():
+    samples = [_s(0.0, "acquired", 15625, 311), _s(1.0, "acquired", 31690, 524),
+               _s(2.0, "acquired", 31690, 524)]
+    assert b.unbroken_since(samples) == 1.0
+
+
+def test_a_source_not_acquired_is_holding_nothing():
+    samples = [_s(0.0, "acquired", 31690, 524), _s(1.0, "absent", 0, 0)]
+    assert b.unbroken_since(samples) is None
+    assert b.unbroken_since([]) is None
+
+
+def test_a_drop_out_mid_run_restarts_the_hold():
+    samples = [_s(0.0, "acquired", 31690, 524), _s(1.0, "absent", 0, 0),
+               _s(2.0, "acquired", 31690, 524)]
+    assert b.unbroken_since(samples) == 2.0
+
+
+# --- a transition is an ordered pair ------------------------------------------
+
+def test_a_leg_is_named_by_both_ends_because_the_cost_is_not_symmetric():
+    assert b.leg("MODE X640 Y480 C256 F60", "MODE X320 Y256 C256 F50") != \
+           b.leg("MODE X320 Y256 C256 F50", "MODE X640 Y480 C256 F60")
+
+
+def test_every_ordered_pair_is_walked_and_no_mode_transitions_to_itself():
+    legs = b.legs(["A", "B", "C"])
+    assert set(legs) == {("A", "B"), ("A", "C"), ("B", "A"),
+                         ("B", "C"), ("C", "A"), ("C", "B")}
+
+
+def test_the_walk_departs_from_where_the_previous_leg_landed():
+    # Re-settling costs a whole mode change, so a walk that chains arrivals to
+    # departures pays for one rather than two.
+    legs = b.legs(["A", "B", "C"])
+    for (_, landed), (departs, _) in zip(legs, legs[1:]):
+        assert landed == departs
+
+
+# --- reporting the asymmetry, which is the point of walking both ways ---------
+
+def _sum(vals):
+    return b.summarise(vals)
+
+
+def test_opposed_legs_are_reported_as_a_pair_slower_first():
+    s = {"640x480@60 -> 320x256@50": _sum([3.0]),
+         "320x256@50 -> 640x480@60": _sum([1.0])}
+    (slow, _), (fast, _), gap = b.asymmetry(s)[0]
+    assert slow == "640x480@60 -> 320x256@50"
+    assert fast == "320x256@50 -> 640x480@60"
+    assert gap == 2.0
+
+
+def test_a_leg_whose_reverse_was_not_walked_has_no_pair_to_report():
+    assert b.asymmetry({"A@1 -> B@2": _sum([3.0])}) == []
+
+
+def test_a_pair_is_reported_once_rather_than_from_each_end():
+    s = {"640x480@60 -> 320x256@50": _sum([3.0]),
+         "320x256@50 -> 640x480@60": _sum([1.0])}
+    assert len(b.asymmetry(s)) == 1
+
+
+def test_a_pair_with_a_direction_that_never_acquired_is_not_a_gap():
+    s = {"640x480@60 -> 320x256@50": _sum([None]),
+         "320x256@50 -> 640x480@60": _sum([1.0])}
+    assert b.asymmetry(s) == []
+
+
+def test_a_mode_name_is_shortened_to_what_distinguishes_it():
+    assert b.short("MODE X640 Y480 C256 F60") == "640x480@60"
+    assert b.short("PATTERN PM5544") == "PATTERN PM5544"
