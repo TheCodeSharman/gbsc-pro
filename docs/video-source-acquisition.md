@@ -904,11 +904,12 @@ and the rest read it as a display rather than to choose a register value. **No
 gate is left**: `updateClampPosition()` was the last one, and it asks the
 acquisition layer instead.
 
-**Steps 1, 2, 3, 5, 6, 7, 8 and 11 have landed, and with them every bounded
-ownership move.** `SyncOnGreen` owns the separator level and its acquisition,
+**Steps 1 to 9 and 11 have landed, and with them every bounded ownership
+move.** `SyncOnGreen` owns the separator level and its acquisition,
 `SyncProcessor` the coast and clamp windows, `Adc` the sampling phase and the
-ADC PLL band, `FrameBuffer` freeze and unfreeze, and
-`VideoSourceAcquisition` the escalation ladder, with `SyncSearch` beside it
+ADC PLL band, `FrameBuffer` freeze and unfreeze, `Deinterlacer` the filtered
+scan type and the motion-adaptive engage, and `VideoSourceAcquisition` the
+escalation ladder, with `SyncSearch` beside it
 under `src/videosource/`. What is left in front of them is
 `optimizePhaseSP()`'s HD range, which is the byte's and goes at step 12.
 
