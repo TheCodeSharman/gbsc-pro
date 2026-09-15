@@ -2706,13 +2706,11 @@ void doPostPresetLoadSteps()
 
         resetDebugPort();
 
-        boolean avoidAutoBest = 0;
         if (Tv5725::SyncMeasurement::isCsync()) {
             if (GBS::TEST_BUS_2F::read() == 0) {
                 delay(4);
                 if (GBS::TEST_BUS_2F::read() == 0) {
                     optimizeSogLevel();
-                    avoidAutoBest = 1;
                     delay(4);
                 }
             }
@@ -2755,57 +2753,17 @@ void doPostPresetLoadSteps()
 
         Tv5725::VideoProcessor::applyFreeRunTiming();
 
-        // No autoBestHtotalEnabled term: it was assigned from the route ninety
-        // lines above and nothing between touches either.
-        if (!Tv5725::VideoRoute::isHdBypassChannel() &&
-            !Tv5725::PresetLoad::scalingRgbhvInForce() && !avoidAutoBest &&
-            rto->videoStandardInput >= Tv5725::PresetLoad::SdFirst
-            && rto->videoStandardInput <= Tv5725::PresetLoad::SdLast) {
-
-            updateCoastPosition(0);
-            delay(1);
-            Tv5725::Interrupts::acknowledgeNoHsync();
-            Tv5725::Interrupts::acknowledgeSogBad();
-            delay(10);
-
-            delay(70);
-
-            for (uint8_t i = 0; i < 4; i++) {
-                if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-                    optimizeSogLevel();
-                    Tv5725::Interrupts::acknowledgeSogBad();
-                    delay(40);
-                } else if (Tv5725::SyncProcessor::hsyncActive() && Tv5725::SyncProcessor::hsyncActive()) {
-                    delay(1);
-                    if (getVideoMode() == rto->videoStandardInput) {
-                        boolean ok = 0;
-                        float sfr = getSourceFieldRate(0);
-
-                        if (rto->videoStandardInput == Tv5725::PresetLoad::NtscInt
-                            || rto->videoStandardInput == Tv5725::PresetLoad::NtscPrg) {
-                            if (sfr > 58.6f && sfr < 61.4f)
-                                ok = 1;
-                        } else if (rto->videoStandardInput == Tv5725::PresetLoad::PalInt
-                                   || rto->videoStandardInput == Tv5725::PresetLoad::PalPrg) {
-                            if (sfr > 49.1f && sfr < 51.1f)
-                                ok = 1;
-                        }
-                        if (ok) {
-                            delay(1);
-                            break;
-                        }
-                    }
-                }
-                delay(10);
-            }
-        } else {
-
-            delay(10);
-
-            delay(20);
-            updateCoastPosition(0);
-            updateClampPosition();
-        }
+        // ONE SETTLE FOR EVERY SOURCE. A second one sat here for the four SD
+        // standards: it spun up to four times waiting for getVideoMode() to
+        // agree with the byte and for getSourceFieldRate() to land inside a
+        // window named per standard -- a rate hard-coded against a
+        // classification, taken through a call that blocks for vsync edges,
+        // inside a preset load that has just told the engine the source is
+        // about to change mode. Nothing measurable is true yet at this point
+        // and the acquisition layer is what waits for it to become so.
+        delay(30);
+        updateCoastPosition(0);
+        updateClampPosition();
 
 
         Tv5725::VideoProcessor::applyFrameSequencing();
@@ -2887,14 +2845,7 @@ void doPostPresetLoadSteps()
                 handleWiFi(0);
                 updateSpDynamic(0);
             }
-            while ((getVideoMode() == 0) && (millis() - timeout < 1505)) {
-                delay(4);
-                handleWiFi(0);
-                updateSpDynamic(0);
-            }
             timeout = millis() - timeout;
-            if (timeout > 1000) {
-            }
             if (timeout >= 1500) {
                 if (Tv5725::SyncOnGreen::level() >= 7) {
                     optimizeSogLevel();
