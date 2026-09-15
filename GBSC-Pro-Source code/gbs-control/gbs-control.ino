@@ -3016,7 +3016,8 @@ void disableScanlines()
 void enableMotionAdaptDeinterlace() //
 {
     const uint8_t verticalTap =
-        Tv5725::Deinterlacer::verticalTapFor(GBS::VPERIOD_IF::read());
+        Tv5725::Deinterlacer::verticalTapFor(
+            Tv5725::SourceMeasurement::measureVerticalPeriod());
 
     Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
                                             Tv5725::FrameBuffer::releaseCapture);

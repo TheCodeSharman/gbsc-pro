@@ -790,11 +790,14 @@ void VideoSourceAcquisition::maintainSource()
     if (due.acknowledgeSogBad)
         Tv5725::Interrupts::acknowledgeSogBad();
 
-    if (!due.steerDeinterlacer || GBS::STATUS_IF_VT_OK::read() != 1
-        || Tv5725::VideoRoute::isHdBypassChannel())
+    if (!due.steerDeinterlacer || Tv5725::VideoRoute::isHdBypassChannel())
         return;
 
-    const uint16_t verticalPeriod = GBS::VPERIOD_IF::read();
+    // Measured here rather than held: the deinterlacer steers on the
+    // maintenance cadence, and a settled source runs no measure() pass at all.
+    const uint16_t verticalPeriod = Tv5725::SourceMeasurement::measureVerticalPeriod();
+    if (verticalPeriod == 0)
+        return;
     const Tv5725::Deinterlacer::Steering steering = Tv5725::Deinterlacer::steer(
         verticalPeriod, sampling_.scanType(verticalPeriod),
         Tv5725::FrameBuffer::releaseCapture);

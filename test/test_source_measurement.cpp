@@ -1524,6 +1524,23 @@ TEST_CASE("a count that moves by more than one still starts the run again")
     CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
+// The input formatter's vertical measurement has one owner, because two blocks
+// measure the frame and only this one is gated on the measurement completing.
+TEST_CASE("the vertical period is zero until the measurement completes")
+{
+    seedSourceLines(311);
+    seedSourceHalfLines(624);
+    CHECK(SourceMeasurement::measureVerticalPeriod() == 624);
+
+    SUBCASE("and a measurement that did not complete claims nothing") {
+        // STATUS_IF_VT_OK clear. VPERIOD_IF is debris on a separate-sync
+        // source, where it reads values like 20 against a true 311 -- so the
+        // register's value is not the thing to judge it by.
+        Wire.bank[0][0x00] &= (uint8_t)~0x01;
+        CHECK(SourceMeasurement::measureVerticalPeriod() == 0);
+    }
+}
+
 // --- one pass, every reading ------------------------------------------------
 
 // The hsync pulse, as the sync processor reports it: the low time in ADC

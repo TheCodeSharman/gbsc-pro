@@ -147,7 +147,7 @@ bool SourceMeasurement::sampleSteady()
     if (!steady_.sample(lines))
         return false;
 
-    if (countIsSerrations(lines, measureSourceHalfLines(),
+    if (countIsSerrations(lines, measureVerticalPeriod(),
                           ModeDetect::sourceIsInterlaced())) {
         serrationsSeen_ = true;
         steady_.restart(lines);
@@ -356,7 +356,7 @@ uint16_t SourceMeasurement::measureSourceLines()
     return GBS::STATUS_SYNC_PROC_VTOTAL::read();
 }
 
-uint16_t SourceMeasurement::measureSourceHalfLines()
+uint16_t SourceMeasurement::measureVerticalPeriod()
 {
     if (!GBS::STATUS_IF_VT_OK::read())
         return 0;

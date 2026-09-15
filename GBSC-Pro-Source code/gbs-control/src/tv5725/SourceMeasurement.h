@@ -59,10 +59,7 @@ public:
     // pass. applyReferenceSampling() must be in force first.
     Reading measure();
 
-
-
     // --- what the last measure() found ---------------------------------------
-
     SourceReading hsync() const;
     uint16_t sourceLines() const;
     float fieldRateHz() const;
@@ -122,6 +119,11 @@ public:
     // register from.
     static uint16_t measureLineSamples();
 
+    // The input formatter's own measurement of the frame, or 0 where
+    // STATUS_IF_VT_OK says it did not complete -- which is the separate-sync
+    // case, and leaves VPERIOD_IF holding debris rather than a period.
+    static uint16_t measureVerticalPeriod();
+
     // The line rate from HPERIOD_IF alone, or 0 where the run does not stand up
     // to the line count. No vsync spin, so it is affordable on the idle path --
     // which is what lets a rate change at an unchanged count be seen at all.
@@ -162,7 +164,6 @@ private:
 
     // --- what the pass reads and judges --------------------------------------
 
-    static uint16_t measureSourceHalfLines();
     static uint16_t measureHsyncLow();
     static bool measureHsyncPositive();
     static uint16_t measureSourceLinesCorrected(uint16_t divider);
