@@ -1371,7 +1371,7 @@ void setResetParameters()
     // the RGB pins with nothing to put it back until the next reboot.
     Tv5725::Adc::selectInput(selectedAdcInput());
     GBS::ADC_POWDZ::write(1);
-    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+    Tv5725::SyncOnGreen::putInForce();
     Tv5725::BringUp::holdAllBlocks();
     GBS::GPIO_CONTROL_00::write(0x67);
     GBS::GPIO_CONTROL_01::write(0x00);
@@ -1577,14 +1577,6 @@ void prepareSyncProcessor()
     GBS::SP_VS_PROC_INV_REG::write(0);
 }
 
-void setAndUpdateSogLevel(uint8_t level)
-{
-    Tv5725::SyncOnGreen::apply(level);
-    setAndLatchPhaseSP();
-    setAndLatchPhaseADC();
-    latchPLLAD();
-    Tv5725::Interrupts::acknowledgeAll();
-}
 void goLowPowerWithInputDetection()
 {
     // The dark-boot state, recorded at the moment it is entered. This powers the
@@ -1607,34 +1599,6 @@ void goLowPowerWithInputDetection()
 static void feedWatchdog() { ESP.wdtFeed(); }
 
 static uint32_t millisNow() { return (uint32_t)millis(); }
-
-// Putting a level in force latches the sampling phases and the ADC PLL, which
-// the sync separator does not own.
-static void putSogLevelInForce()
-{
-    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-}
-
-// No bypass term. Tv5725::SyncOnGreen::acquire() refuses the walk and chooses
-// the default whenever the separator is not in the sync path, which is every
-// separate-sync source on either route, so the term only reached a
-// composite-sync source in pass-through -- where the separator IS what the sync
-// processor reads and the walk is what tunes it.
-void optimizeSogLevel()
-{
-    if (!Tv5725::Chip::hasPower()) {
-        Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::DefaultLevel);
-        return;
-    }
-
-    if (Info_sate == 0) {
-        Tv5725::SyncOnGreen::choose(rto->inputIsYpBpR
-                                        ? 14
-                                        : Tv5725::SyncOnGreen::DefaultLevel);
-    }
-
-    Tv5725::SyncOnGreen::acquire(millisNow, putSogLevelInForce);
-}
 
 // What the engine probes with. The connector settles the sync type on every
 // input but VGA, and measuring one that is already settled gets it wrong:
@@ -1757,7 +1721,7 @@ uint8_t detectAndSwitchToActiveInput()
                 boolean vsyncActive = 0;
                 rto->inputIsYpBpR = false; // declare for MD
                 Tv5725::SyncOnGreen::choose(13); //
-                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                Tv5725::SyncOnGreen::putInForce();
 
                 unsigned long timeOutStart = millis();
                 // vsync test
@@ -1849,7 +1813,7 @@ uint8_t detectAndSwitchToActiveInput()
                             if (Tv5725::SyncOnGreen::level() >= 15) {
                                 Tv5725::SyncOnGreen::choose(1);
                             }
-                            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                            Tv5725::SyncOnGreen::putInForce();
                         }
 
                     }
@@ -1885,19 +1849,19 @@ uint8_t detectAndSwitchToActiveInput()
                         if (Tv5725::SyncOnGreen::level() >= 16) {
                             Tv5725::SyncOnGreen::choose(1);
                         }
-                        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                        Tv5725::SyncOnGreen::putInForce();
                     }
                 }
 
                 Tv5725::SyncOnGreen::choose(14);
-                setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+                Tv5725::SyncOnGreen::putInForce();
 
                 return 2;
             }
 
             ; // SerialMprintln(" lost..");
             Tv5725::SyncOnGreen::choose(2);
-            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+            Tv5725::SyncOnGreen::putInForce();
         }
 
         if (detectionMayChangeInput()) {
@@ -2582,7 +2546,7 @@ void doPostPresetLoadSteps()
             Tv5725::SyncOnGreen::choose(13);
         }
 
-        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+        Tv5725::SyncOnGreen::putInForce();
 
 
         setAdcParametersGainAndOffset();
@@ -2614,7 +2578,7 @@ void doPostPresetLoadSteps()
             if (GBS::TEST_BUS_2F::read() == 0) {
                 delay(4);
                 if (GBS::TEST_BUS_2F::read() == 0) {
-                    optimizeSogLevel();
+                    inputAcquisition.acquireSeparatorLevel();
                     delay(4);
                 }
             }
@@ -2703,7 +2667,7 @@ void doPostPresetLoadSteps()
             ResetSDRAM();
         }
 
-        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+        Tv5725::SyncOnGreen::putInForce();
 
         Tv5725::InputFormatter::applyVerticalTiming(
             Tv5725::InputFormatter::VcrTiming);
@@ -2747,7 +2711,7 @@ void doPostPresetLoadSteps()
             timeout = millis() - timeout;
             if (timeout >= 1500) {
                 if (Tv5725::SyncOnGreen::level() >= 7) {
-                    optimizeSogLevel();
+                    inputAcquisition.acquireSeparatorLevel();
                     delay(300);
                 }
             }
@@ -2766,7 +2730,7 @@ void doPostPresetLoadSteps()
             Tv5725::SyncProcessor::releaseClamp();
         }
 
-        setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+        Tv5725::SyncOnGreen::putInForce();
 
         Tv5725::Interrupts::enableEverySource();
         Tv5725::Interrupts::acknowledgeAll();
@@ -3109,7 +3073,7 @@ void enterHdBypass()
     restartAfterBypassSwitch();
 
     applyStoredAdcGain();
-    setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+    Tv5725::SyncOnGreen::putInForce();
 
     rto->presetID = PresetHdBypass;
 
@@ -3429,109 +3393,6 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t ifSel)
 }
 #endif
 
-// The other ADC input, kept only if something locks there quickly. True when
-// something did, which ends the run.
-static bool tryOtherAdcInput()
-{
-    const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
-    delay(40);
-
-    unsigned long timeout = millis();
-    while (millis() - timeout <= 210) {
-        if (Tv5725::SyncProcessor::hsyncActive()) {
-            debugPrintf("recovery: locked on the other ADC input\n");
-            return true;
-        }
-        handleWiFi(0);
-        delay(1);
-    }
-
-    Tv5725::Adc::selectInput(previousInput);
-    return false;
-}
-
-// One rung of the escalation ladder. Which rung is SyncRecovery's; the
-// conditions here are facts about the source rather than about the position, so
-// a rung whose precondition fails costs its turn and the list moves on.
-static bool runRecoveryStep(SyncRecovery::Step step, bool modeSettled)
-{
-    switch (step) {
-    case SyncRecovery::None:
-        break;
-
-    case SyncRecovery::LiftSogFloor:
-        if (modeSettled && sourceHasSerratedSync())
-            Tv5725::SyncOnGreen::liftOffFloor(putSogLevelInForce);
-        break;
-
-    case SyncRecovery::CoastWindow:
-        Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        if (sourceHasSerratedSync())
-            Tv5725::SyncProcessor::widenCoastForSerration();
-        Tv5725::SyncProcessor::forgetPositions();
-        break;
-
-    case SyncRecovery::SyncProcessorDynamic:
-        inputAcquisition.applySyncProcessorDynamic(1);
-        break;
-
-    case SyncRecovery::ReleaseCapture:
-        if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1)
-            Tv5725::FrameBuffer::releaseCapture();
-        break;
-
-    case SyncRecovery::HoldClamp:
-        if (rto->inputIsYpBpR && Info_sate == 0) {
-            Tv5725::SyncProcessor::holdClamp();
-            Tv5725::SyncProcessor::forgetPositions();
-        }
-        break;
-
-    case SyncRecovery::NudgeModeDetect:
-        Tv5725::ModeDetect::nudge();
-        break;
-
-    case SyncRecovery::HsyncOverflowProtect:
-        if (Tv5725::SyncMeasurement::isCsync())
-            Tv5725::SyncProcessor::toggleHsyncOverflowProtect();
-        break;
-
-    case SyncRecovery::FullReset:
-        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-        Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        Tv5725::SyncProcessor::applyDefaultClampWindow();
-        inputAcquisition.applySyncProcessorDynamic(1);
-        Tv5725::ModeDetect::nudge();
-        delay(80);
-        Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce, false);
-        Tv5725::SyncProcessor::reset();
-        delay(8);
-        Tv5725::ModeDetect::reset();
-        delay(8);
-        break;
-
-    case SyncRecovery::ReprobeSyncType:
-        printInfo();
-        // A V sync arriving is proof of a source, so the run restarts rather
-        // than escalating on to the input toggle.
-        if (!geometry.reacquireSyncType()) {
-            debugPrintf("recovery: no V sync, the run is exhausted\n");
-            return true;
-        }
-        break;
-
-    case SyncRecovery::ToggleInput:
-        if (detectionMayChangeInput())
-            return tryOtherAdcInput();
-        break;
-
-    case SyncRecovery::ReopenSogSeparator:
-        Tv5725::SyncOnGreen::reacquire(optimizeSogLevel, putSogLevelInForce, true);
-        break;
-    }
-    return false;
-}
-
 void runSyncWatcher() // 
 {
     // Frozen: docs/gbs-control-debug-interface.md
@@ -3567,7 +3428,8 @@ void runSyncWatcher() //
     if (!rto->inputIsYpBpR) {
         const Tv5725::SyncOnGreen::Tuning tuning = Tv5725::SyncOnGreen::tune(
             sourceDisturbed, inputAcquisition.sourceIsPresent(), millisNow,
-            putSogLevelInForce, optimizeSogLevel);
+            Tv5725::SyncOnGreen::putInForce,
+            VideoSourceAcquisition::acquireSeparatorLevel);
         if (tuning.sourceUnsettled)
             lastVsyncLock = millis();
         if (tuning.levelMoved)
@@ -3591,7 +3453,7 @@ void runSyncWatcher() //
 
         rto->phaseIsSet = 0;
 
-        runSettled = runRecoveryStep(inputAcquisition.recoveryDue(), true);
+        runSettled = inputAcquisition.runRecovery(inputAcquisition.recoveryDue(), true);
     }
 
     if (inputAcquisition.sourceIsPresent()) {
@@ -3615,7 +3477,7 @@ void runSyncWatcher() //
 
         if (due.sogLevel) {
             delay(20);
-            optimizeSogLevel();
+            inputAcquisition.acquireSeparatorLevel();
         }
 
         if (due.holdCapture) {
@@ -4062,6 +3924,7 @@ void setup()
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
     inputAcquisition.usePassThroughSwitch(enterHdBypass);
     inputAcquisition.useWatchdogFeed(feedWatchdog);
+    inputAcquisition.useClock(millisNow);
     applyPassThroughPreference();
 
     // The freeze, on the tick rather than inside the engine: loop() reaches the
@@ -5641,7 +5504,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         ; // SerialMprint(" ");
                         ; // SerialMprintln(value);
                         if (what.equals("sog")) {
-                            setAndUpdateSogLevel(value);
+                            Tv5725::SyncOnGreen::choose(value);
+                            Tv5725::SyncOnGreen::putInForce();
                         } else if (what.equals("ifini")) {
                             Tv5725::InputFormatter::writeLineCounterStart(value);
                         } else if (what.equals("vsstc")) {
@@ -6101,7 +5965,7 @@ void handleType2Command(char argument)
             } else {
                 Tv5725::SyncOnGreen::choose(16);
             }
-            setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
+            Tv5725::SyncOnGreen::putInForce();
             inputAcquisition.acquireSamplingPhase();
             ; // SerialMprint("Phase: ");
             ; // SerialMprint(" SOG: ");

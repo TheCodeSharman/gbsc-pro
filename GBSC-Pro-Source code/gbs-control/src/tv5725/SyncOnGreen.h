@@ -38,6 +38,10 @@ public:
     // field is the whole of the answer.
     static const uint8_t StarvedLevel = 2;
 
+    // Where the walk starts on a component source. Sync on green is weaker
+    // there than a dedicated sync line, so it starts one step wider.
+    static const uint8_t ComponentLevel = 14;
+
     // Where a separator whose output does not move at all is parked. The walk
     // needs a reading that changes to work from, so there is nothing to search
     // and a mid level is the whole of the answer.
@@ -67,6 +71,13 @@ public:
 
     // Put the chosen level in force, for a caller that did not choose it.
     static void apply();
+
+    // The same, plus what moving the separator costs elsewhere: both sampling
+    // phases and the ADC PLL have to be relatched, and the interrupts the move
+    // sets have to be acknowledged or they report the move rather than the
+    // source. Neither is this block's, which is why every caller used to be
+    // handed the pair to do afterwards.
+    static void putInForce();
 
     static uint8_t level();
 

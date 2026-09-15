@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 #include "../tv5725/Adc.h"
+#include "../tv5725/FrameBuffer.h"
+#include "../tv5725/ModeDetect.h"
 #include "../tv5725/Chip.h"
 #include "../tv5725/HdBypass.h"
 #include "../tv5725/OutputMode.h"
@@ -17,7 +19,7 @@
 VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0),
-      passThroughSwitch_(0), feedWatchdog_(0), passThroughAllowed_(false), resolution_(0),
+      passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
@@ -29,11 +31,30 @@ void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
 void VideoSourceAcquisition::usePassThroughSwitch(void (*enter)()) { passThroughSwitch_ = enter; }
 
-void VideoSourceAcquisition::useWatchdogFeed(void (*feed)()) { feedWatchdog_ = feed; }
-
 namespace {
 
+// The platform, which is one fact for the whole firmware. Unset, each is a
+// harmless stand-in rather than a crash: a host test that does not need the
+// clock must not have to supply one.
+uint32_t noClock() { return 0; }
 void noWatchdog() {}
+
+uint32_t (*clock_)() = noClock;
+void (*watchdog_)() = noWatchdog;
+
+}  // namespace
+
+void VideoSourceAcquisition::useWatchdogFeed(void (*feed)())
+{
+    watchdog_ = feed != 0 ? feed : noWatchdog;
+}
+
+void VideoSourceAcquisition::useClock(uint32_t (*nowMs)())
+{
+    clock_ = nowMs != 0 ? nowMs : noClock;
+}
+
+namespace {
 
 // How many agreeing readings say the divider is latched.
 const uint8_t LatchSamples = 8;
@@ -55,7 +76,7 @@ bool VideoSourceAcquisition::acquireSamplingPhase()
     const bool found = Tv5725::Adc::acquirePhase(
         oversample, Tv5725::SyncOnGreen::level() > Tv5725::SyncOnGreen::StarvedLevel,
         Tv5725::SourceMeasurement::measureLineSamples,
-        feedWatchdog_ != 0 ? feedWatchdog_ : noWatchdog);
+        watchdog_);
 
     char line[48];
     snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",
@@ -514,4 +535,132 @@ void VideoSourceAcquisition::applySyncProcessorDynamic(bool hunting)
     source.serrated = sampling_.lowLineRate() && Tv5725::SyncMeasurement::isCsync();
 
     Tv5725::SyncProcessor::applyDynamic(source);
+}
+
+bool VideoSourceAcquisition::sourceHasSerratedSync() const
+{
+    return sampling_.lowLineRate() && Tv5725::SyncMeasurement::isCsync();
+}
+
+bool VideoSourceAcquisition::mayChangeInput()
+{
+    return !VideoSourceSelection::chosen(VideoSourceSelection::selected());
+}
+
+void VideoSourceAcquisition::acquireSeparatorLevel()
+{
+    if (!Tv5725::Chip::hasPower()) {
+        Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::DefaultLevel);
+        return;
+    }
+
+    Tv5725::SyncOnGreen::choose(Tv5725::Adc::inputIsComponent()
+                                    ? Tv5725::SyncOnGreen::ComponentLevel
+                                    : Tv5725::SyncOnGreen::DefaultLevel);
+    Tv5725::SyncOnGreen::acquire(clock_, Tv5725::SyncOnGreen::putInForce);
+}
+
+void VideoSourceAcquisition::reacquireSeparator(bool reopen)
+{
+    Tv5725::SyncOnGreen::reacquire(acquireSeparatorLevel,
+                                   Tv5725::SyncOnGreen::putInForce, reopen);
+}
+
+bool VideoSourceAcquisition::tryOtherAdcInput()
+{
+    const uint8_t previousInput = Tv5725::Adc::selectOtherInput();
+    delay(40);
+
+    // Counted rather than clocked: the wait is a millisecond a pass, so the
+    // count IS the time, and a rung that hangs when nobody supplied a clock is
+    // worse than one that waits a little long.
+    for (uint16_t waited = 0; waited < OtherInputLockMs; ++waited) {
+        if (Tv5725::SyncProcessor::hsyncActive()) {
+            tv5725Log("recovery: locked on the other ADC input");
+            return true;
+        }
+        watchdog_();
+        delay(1);
+    }
+
+    Tv5725::Adc::selectInput(previousInput);
+    return false;
+}
+
+bool VideoSourceAcquisition::runRecovery(SyncRecovery::Step step, bool modeSettled)
+{
+    switch (step) {
+    case SyncRecovery::None:
+        break;
+
+    case SyncRecovery::LiftSogFloor:
+        if (modeSettled && sourceHasSerratedSync())
+            Tv5725::SyncOnGreen::liftOffFloor(Tv5725::SyncOnGreen::putInForce);
+        break;
+
+    case SyncRecovery::CoastWindow:
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
+        if (sourceHasSerratedSync())
+            Tv5725::SyncProcessor::widenCoastForSerration();
+        Tv5725::SyncProcessor::forgetPositions();
+        break;
+
+    case SyncRecovery::SyncProcessorDynamic:
+        applySyncProcessorDynamic(true);
+        break;
+
+    case SyncRecovery::ReleaseCapture:
+        if (Tv5725::SyncProcessor::hsyncActive())
+            Tv5725::FrameBuffer::releaseCapture();
+        break;
+
+    case SyncRecovery::HoldClamp:
+        if (Tv5725::Adc::inputIsComponent()) {
+            Tv5725::SyncProcessor::holdClamp();
+            Tv5725::SyncProcessor::forgetPositions();
+        }
+        break;
+
+    case SyncRecovery::NudgeModeDetect:
+        Tv5725::ModeDetect::nudge();
+        break;
+
+    case SyncRecovery::HsyncOverflowProtect:
+        if (Tv5725::SyncMeasurement::isCsync())
+            Tv5725::SyncProcessor::toggleHsyncOverflowProtect();
+        break;
+
+    case SyncRecovery::FullReset:
+        Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
+        Tv5725::SyncProcessor::applyDefaultClampWindow();
+        applySyncProcessorDynamic(true);
+        Tv5725::ModeDetect::nudge();
+        delay(80);
+        reacquireSeparator(false);
+        Tv5725::SyncProcessor::reset();
+        delay(8);
+        Tv5725::ModeDetect::reset();
+        delay(8);
+        break;
+
+    case SyncRecovery::ReprobeSyncType:
+        // A V sync arriving is proof of a source, so the run restarts rather
+        // than escalating on to the input toggle.
+        if (!videoPath_.reacquireSyncType()) {
+            tv5725Log("recovery: no V sync, the run is exhausted");
+            return true;
+        }
+        break;
+
+    case SyncRecovery::ToggleInput:
+        if (mayChangeInput())
+            return tryOtherAdcInput();
+        break;
+
+    case SyncRecovery::ReopenSogSeparator:
+        reacquireSeparator(true);
+        break;
+    }
+    return false;
 }

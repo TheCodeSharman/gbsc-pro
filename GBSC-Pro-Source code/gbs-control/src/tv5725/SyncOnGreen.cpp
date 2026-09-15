@@ -169,6 +169,14 @@ void SyncOnGreen::apply(uint8_t level)
 
 void SyncOnGreen::apply() { ADC_SOGCTRL::write(level_); }
 
+void SyncOnGreen::putInForce()
+{
+    apply();
+    Adc::applyPhases();
+    Adc::latch();
+    Interrupts::acknowledgeAll();
+}
+
 uint8_t SyncOnGreen::level() { return level_; }
 
 bool SyncOnGreen::inSyncPath() { return SyncMeasurement::isCsync(); }

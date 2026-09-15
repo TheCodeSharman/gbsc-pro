@@ -38,11 +38,20 @@ public:
     // moving the route is a chip-wide switch the sketch still owns.
     void usePassThroughSwitch(void (*enter)());
 
+    // The platform's clock, for the blocking walks below: they wait out
+    // settling windows a poll's tick cannot express, so they need a reading
+    // taken as they run rather than the one the pass started with.
+    //
+    // The platform is one fact for the whole firmware rather than one per
+    // instance, which is what lets the separator walk below be handed to
+    // Tv5725::SyncOnGreen as a plain function.
+    static void useClock(uint32_t (*nowMs)());
+
     // The platform's watchdog feed. The sampling-phase search latches and
     // scores 34 phases with twenty readings each, which is long enough to be
     // reset out of; a file here reaching for ESP.wdtFeed() is a design signal
     // rather than a dependency to admit.
-    void useWatchdogFeed(void (*feed)());
+    static void useWatchdogFeed(void (*feed)());
 
     // Choose both sampling phases for the source in force, and put them in
     // force. False means nothing was worth choosing and neither phase moved.
@@ -68,6 +77,32 @@ public:
 
     // `hunting` asks for the search configuration rather than the settled one.
     void applySyncProcessorDynamic(bool hunting);
+
+    // Walk the sync separator's level for the source in force, starting from
+    // what the input is due: a component source runs sync on green, which is
+    // weaker than a dedicated sync line, so it starts one step wider. Nothing
+    // is walked on a board that may not be there.
+    static void acquireSeparatorLevel();
+
+    // Run one rung of the escalation ladder. True means the rung SETTLED the
+    // question rather than advancing it -- a lock found on the other ADC input,
+    // or a sync-type re-probe that found no V sync -- so the run restarts
+    // rather than escalating.
+    //
+    // Which rung is SyncRecovery's. The conditions here are facts about the
+    // source rather than about the position, so a rung whose precondition fails
+    // costs its turn and the list moves on.
+    bool runRecovery(SyncRecovery::Step step, bool modeSettled);
+
+    // Whether the source's vertical interval carries serrations, which is a
+    // property of composite sync at a 15 kHz line and not of either alone.
+    // docs/investigations/serrated-sync-is-not-line-rate.md
+    bool sourceHasSerratedSync() const;
+
+    // Whether detection may cross to the other connector. An explicit
+    // selection is a command: a chosen input is selected whether it has a
+    // signal or not, so there is nowhere to promote to.
+    static bool mayChangeInput();
 
     // Whether pass-through is offerable at all. The interim stand-in for a
     // per-source override -- a single boolean cannot express one.
@@ -193,7 +228,17 @@ private:
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();
-    void (*feedWatchdog_)();
+    // How long a lock is waited for on the other ADC input before it is given
+    // back. Long enough for the sync processor to report an hsync, short
+    // enough that a sweep of both inputs is not a visible stall.
+    static const uint16_t OtherInputLockMs = 210;
+
+    // The other ADC input, kept only if something locks there quickly.
+    static bool tryOtherAdcInput();
+
+    // The separator walk, reopened. `reopen` takes the walk's place with the
+    // separator fully open, for a caller that has run out of walks.
+    static void reacquireSeparator(bool reopen);
     bool passThroughAllowed_;
     const Tv5725::OutputMode *resolution_;
     uint32_t detectedMs_;
