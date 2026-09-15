@@ -699,7 +699,7 @@ bool VideoSourceAcquisition::runRecovery(SyncRecovery::Step step, bool modeSettl
         // A V sync arriving is proof of a source, so the run restarts rather
         // than escalating on to the input toggle.
         if (!videoPath_.reacquireSyncType()) {
-            tv5725Log("recovery: no V sync, the run is exhausted");
+            tv5725Log("recovery: own V sync found, the run restarts");
             return true;
         }
         break;
