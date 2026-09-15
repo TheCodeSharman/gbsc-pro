@@ -357,13 +357,9 @@ public:
     typedef UReg<0x00, 0x23, 0, 8> CRC_REGOUT_PB_;                    // Reserved
 
 
-    typedef UReg<0x00, 0x2E, 0, 16> TEST_BUS;                         // Part of TEST_BUS_, which RD-5725-1.1 documents as one
-                                                                      // 24-bit block at s0_2E rather than field by field.
 
 
 
-    typedef UReg<0x00, 0x2F, 0, 8> TEST_BUS_2F;                       // Part of TEST_BUS_, which RD-5725-1.1 documents as one
-                                                                      // 24-bit block at s0_2E rather than field by field.
 
 // INPUT FORMATTER REGISTERS
 
@@ -433,9 +429,7 @@ public:
 
 
 
-    typedef UReg<0x00, 0x4D, 0, 5> TEST_BUS_SEL;                      // Test bus selection Test bus enable
 
-    typedef UReg<0x00, 0x4D, 5, 1> TEST_BUS_EN;                       // When = 0, disable test bus output
 
 
     typedef UReg<0x00, 0x4E, 0, 1> DIGOUT_BYPS2PAD;                   // HD bypass channel to digital output control When = 0,
@@ -692,7 +686,6 @@ public:
     typedef UReg<0x05, 0x62, 0, 8> ADC_UNUSED_62;
 
 
-    typedef UReg<0x05, 0x63, 0, 8> TEST_BUS_SP_SEL;
 
 
     typedef UReg<0x05, 0x64, 0, 8> ADC_UNUSED_64;

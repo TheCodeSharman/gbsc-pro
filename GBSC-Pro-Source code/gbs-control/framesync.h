@@ -23,7 +23,7 @@
 #include "src/clock/ClockGen.h"
 #include "src/clock/RateAgreement.h"
 #include "src/tv5725/DisplayClock.h"
-#include "src/tv5725/TestBusRateMeasurement.h"
+#include "src/tv5725/TestBus.h"
 #include "src/tv5725/VideoRoute.h"
 
 // FS_DEBUG:      full verbose debug over serial
@@ -180,14 +180,12 @@ private:
         // the HTotal search use. If none of them move it, the fault is the pin
         // or the net, not the selection.
         const uint8_t selectors[] = {0x0, 0x2, 0xa};
-        const uint8_t selBackup = GBS::TEST_BUS_SEL::read();
-        const uint8_t enBackup = GBS::TEST_BUS_EN::read();
-
-        GBS::TEST_BUS_EN::write(1);
+        const uint8_t selBackup = Tv5725::TestBus::selected();
+        const bool enBackup = Tv5725::TestBus::enabled();
 
         for (uint8_t i = 0; i < sizeof(selectors); i++)
         {
-            GBS::TEST_BUS_SEL::write(selectors[i]);
+            Tv5725::TestBus::select(selectors[i]);
             delay(1); // let the mux settle before counting
 
             int level = digitalRead(DEBUG_IN_PIN);
@@ -215,8 +213,8 @@ private:
                 selectors[i], transitions, (unsigned)FS_PROBE_MS, first, level, spins);
         }
 
-        GBS::TEST_BUS_SEL::write(selBackup);
-        GBS::TEST_BUS_EN::write(enBackup);
+        Tv5725::TestBus::select(selBackup);
+        Tv5725::TestBus::enable(enBackup);
     }
 #endif
 
@@ -224,7 +222,7 @@ private:
     // difference in microseconds
     static bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput, int32_t *phase)
     {
-        Tv5725::TestBusRateMeasurement::select(Tv5725::TestBusRateMeasurement::InputVsync);
+        Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
 
         uint32_t inStart, inStop, outStart, outStop;
         uint32_t inPeriod, outPeriod, diff;
@@ -238,7 +236,7 @@ private:
             return false;
         }
 
-        Tv5725::TestBusRateMeasurement::select(Tv5725::TestBusRateMeasurement::OutputVsync);   // measure VDS vblank (VB ST/SP)
+        Tv5725::TestBus::select(Tv5725::TestBus::OutputVsync);   // measure VDS vblank (VB ST/SP)
         inPeriod = (inStop - inStart); //>> 1;
         if (!sampleVsyncPeriod(&outStart, &outStop))
         {
@@ -436,7 +434,8 @@ public:
     }
 
     // Measures whatever DEBUG_IN_PIN is already carrying: the CALLER selects the
-    // bus. Tv5725::TestBusRateMeasurement selects the VDS bus before calling this, so
+    // bus. Tv5725::TestBusRateMeasurement selects the VDS bus before calling this,
+    // so
     // choosing one here would answer with the input rate under an output name.
     static uint32_t getPulseTicks()
     {
@@ -680,7 +679,7 @@ public:
 
             uint32_t periodInput2;
             {
-                Tv5725::TestBusRateMeasurement::select(Tv5725::TestBusRateMeasurement::InputVsync);
+                Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
                 periodInput2 = getPulseTicks();
             }
             if (periodInput2 == 0)

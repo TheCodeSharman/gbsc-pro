@@ -9,6 +9,12 @@
 
 namespace Tv5725 {
 
+void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)
+{
+    Tv5725::Tie<SP_TEST_EN, SP_TEST_MODULE, SP_TEST_SIGNAL_SEL>::write(1, module,
+                                                                       signal);
+}
+
 namespace {
 
 // How many lines either side of the vertical interval a serrated source is

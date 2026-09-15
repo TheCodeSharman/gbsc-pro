@@ -6,6 +6,7 @@
 #include "InputFormatter.h"
 #include "SyncMeasurement.h"
 #include "SyncProcessor.h"
+#include "TestBus.h"
 #include "Tv5725.h"
 
 // The ESP's edge counter on the debug pin, defined by the sketch the way
@@ -17,22 +18,10 @@ uint32_t debugPinTicksPerSecond();
 
 namespace Tv5725 {
 
-// Which of the sync processor's own stages reaches the test bus. Three fields
-// of s5_63, tied so one transaction sets them and bit 7 -- RESERVED, which a
-// byte write would clear -- is left alone.
-typedef Tv5725::Tie<SyncProcessor::SP_TEST_EN,
-                    SyncProcessor::SP_TEST_MODULE,
-                    SyncProcessor::SP_TEST_SIGNAL_SEL> SyncProcessorStage;
-
 // RD-5725-1.1 tabulates SP_TEST_MODULE's values and says nothing about
 // SP_TEST_SIGNAL_SEL's, so the stage is named and the signal is not.
 const uint8_t StageSignalFirst = 0;
 const uint8_t CsSepSignal = 6;
-
-void TestBusRateMeasurement::select(uint8_t signal)
-{
-    Tv5725::TEST_BUS_SEL::write(signal);
-}
 
 float TestBusRateMeasurement::rateFrom(uint32_t ticks)
 {
@@ -63,11 +52,12 @@ float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus)
     InputFormatter::IF_TEST_SEL::write(3);
 
     if (useSyncProcessorBus) {
-        select(SyncMeasurement::isCsync() ? SyncProcessorBus : InputVsync);
-        SyncProcessorStage::write(1, SyncProcessor::TestModuleOutProc,
-                                  StageSignalFirst);
+        TestBus::select(SyncMeasurement::isCsync() ? TestBus::SyncProcessor
+                                                   : TestBus::InputVsync);
+        SyncProcessor::driveTestBus(SyncProcessor::TestModuleOutProc,
+                                    StageSignalFirst);
     } else {
-        select(InputVsync);
+        TestBus::select(TestBus::InputVsync);
     }
 
     return measureRateHz();
@@ -76,22 +66,22 @@ float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus)
 float TestBusRateMeasurement::outputFrameRateHz()
 {
     Chip::PAD_BOUT_EN::write(1);
-    select(OutputVsync);
+    TestBus::select(TestBus::OutputVsync);
 
     return measureRateHz();
 }
 
 uint32_t TestBusRateMeasurement::pllRateHz()
 {
-    select(SyncProcessorBus);
+    TestBus::select(TestBus::SyncProcessor);
 
     // The composite path watches the sync separator; the separate path watches
     // vertical sync activity, which on a composite source is not there to see.
     if (SyncMeasurement::isCsync())
-        SyncProcessorStage::write(1, SyncProcessor::TestModuleCsSep, CsSepSignal);
+        SyncProcessor::driveTestBus(SyncProcessor::TestModuleCsSep, CsSepSignal);
     else
-        SyncProcessorStage::write(1, SyncProcessor::TestModuleVsActDet,
-                                  StageSignalFirst);
+        SyncProcessor::driveTestBus(SyncProcessor::TestModuleVsActDet,
+                                    StageSignalFirst);
 
     Chip::PAD_BOUT_EN::write(1);
     delayMicroseconds(200);

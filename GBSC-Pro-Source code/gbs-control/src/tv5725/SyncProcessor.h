@@ -197,6 +197,10 @@ public:
 
     typedef UReg<0x05, 0x63, 0, 1> SP_TEST_EN;                        // Test control Test bus enable
 
+    // Put one of this block's own stages on the test bus. Three fields of
+    // s5_63 written together, so bit 7 -- RESERVED -- is left as found.
+    static void driveTestBus(uint8_t module, uint8_t signal);
+
     // SP_TEST_MODULE's values, from RD-5725-1.1's own table. Only the stages
     // something selects are named.
     static const uint8_t TestModuleVsActDet = 4;

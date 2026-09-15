@@ -44,6 +44,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 # declare them link wherever it does.
 SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/SourceReading.cpp \
 	src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp \
+	src/tv5725/TestBus.cpp \
 	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
 	src/tv5725/ModeDetect.cpp
@@ -79,7 +80,8 @@ test-bus-rate-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_test_bus_rate_measurement" \
 	  "$(HERE)/test_test_bus_rate_measurement.cpp" \
-	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp
+	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp \
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_test_bus_rate_measurement"
 
 ## sync-on-green: host unit tests for Tv5725::SyncOnGreen
@@ -91,7 +93,8 @@ sync-on-green:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_on_green" \
 	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp src/tv5725/Interrupts.cpp \
-	  src/tv5725/SyncMeasurement.cpp src/tv5725/Adc.cpp
+	  src/tv5725/SyncMeasurement.cpp src/tv5725/Adc.cpp \
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis, and its --dump

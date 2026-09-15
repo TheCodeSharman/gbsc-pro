@@ -5,6 +5,8 @@
 #include "Adc.h"
 #include "Interrupts.h"
 #include "SyncMeasurement.h"
+#include "SyncProcessor.h"
+#include "TestBus.h"
 
 namespace Tv5725 {
 
@@ -24,31 +26,19 @@ const uint16_t EdgeWindowMs = 60;
 // is put back: the console, the auto-gain routine and getSyncPresent() drive
 // the same two registers for other things.
 struct SeparatorBus {
-    uint8_t sel, spSel;
+    uint8_t sel;
 
-    SeparatorBus()
-        : sel(Tv5725::TEST_BUS_SEL::read()), spSel(Tv5725::TEST_BUS_SP_SEL::read())
+    SeparatorBus() : sel(TestBus::selected())
     {
-        if (sel != 0xa) {
-            Tv5725::TEST_BUS_SEL::write(0xa);
-            delay(1);
-        }
-        if (spSel != 0x0f) {
-            Tv5725::TEST_BUS_SP_SEL::write(0x0f);
-            delay(1);
-        }
-        Tv5725::TEST_BUS_EN::write(1);
+        TestBus::select(TestBus::SyncProcessor);
+        delay(1);
+        SyncProcessor::driveTestBus(SyncProcessor::TestModuleOutProc, 0);
+        delay(1);
     }
 
-    ~SeparatorBus()
-    {
-        if (sel != 0xa)
-            Tv5725::TEST_BUS_SEL::write(sel);
-        if (spSel != 0x0f)
-            Tv5725::TEST_BUS_SP_SEL::write(spSel);
-    }
+    ~SeparatorBus() { TestBus::select(sel); }
 
-    uint8_t read() const { return Tv5725::TEST_BUS_2F::read(); }
+    uint8_t read() const { return TestBus::readHigh(); }
 };
 
 bool edgesHeld(uint32_t (*nowMs)())

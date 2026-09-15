@@ -14,16 +14,13 @@ FakeTwoWire Wire;
 
 #include "DebugPinStub.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/TestBusRateMeasurement.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Tv5725.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/TestBus.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 
 void tv5725Log(const char *) {}
 
 using namespace Tv5725;
-
-// The class and the namespace share a name, which `using` makes ambiguous.
-typedef ::Tv5725::Tv5725 Registers;
 
 static float g_sourceRate = 0.0f;
 static unsigned g_samples = 0;
@@ -90,11 +87,11 @@ TEST_CASE("the pin is left carrying what was measured")
     // Nothing is put back. Every reader of the pin selects its own signal
     // before reading, so restoring bought an invariant nobody depended on.
     given(50.08f);
-    Registers::TEST_BUS_SEL::write(0x1F);
+    TestBus::select(0x1F);
 
     TestBusRateMeasurement::sourceFieldRateHz(false);
 
-    CHECK(Registers::TEST_BUS_SEL::read() == (uint8_t)TestBusRateMeasurement::InputVsync);
+    CHECK(TestBus::selected() == (uint8_t)TestBus::InputVsync);
 }
 
 TEST_CASE("a composite-sync PLL is timed off the sync separator")

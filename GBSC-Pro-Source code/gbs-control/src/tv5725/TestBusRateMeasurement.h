@@ -9,14 +9,6 @@ namespace Tv5725 {
 // carries, count its edges, convert to Hz.
 class TestBusRateMeasurement {
 public:
-    static const uint8_t InputVsync = 0x0;
-    static const uint8_t OutputVsync = 0x2;    // the VDS bus
-    static const uint8_t SyncProcessorBus = 0xa;
-
-    // Which signal the debug pin carries. It stays where the last measurement
-    // left it, so anything reading the pin selects before it reads.
-    static void select(uint8_t signal);
-
     // The source's field rate, timed off the sync processor's bus or the input
     // formatter's. 0 where no pulse arrives, which is also the no-lock answer.
     static float sourceFieldRateHz(bool useSyncProcessorBus);
