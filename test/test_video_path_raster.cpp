@@ -24,15 +24,15 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 #include "RegistersWritten.h"
+#include "DebugPinStub.h"
 
 using namespace Tv5725;
 
 // The source field rate the engine will measure. The sketch defines this for
 // real; here it is the test's to set, which is the point.
 static float g_fieldRate = 50.08f;
-float getSourceFieldRate(boolean) { return g_fieldRate; }
+uint32_t debugPinPulseTicks() { return ticksForHz(g_fieldRate); }
 void tv5725Log(const char *) {}
-uint32_t getPllRate() { return 0; }
 
 // STATUS_SYNC_PROC_VTOTAL, s0_1B[10:0] -- the source's line count.
 static void setSourceLines(uint16_t lines)

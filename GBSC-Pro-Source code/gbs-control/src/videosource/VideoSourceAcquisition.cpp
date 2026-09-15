@@ -357,7 +357,7 @@ bool VideoSourceAcquisition::rateMoved()
     // vsync spin, which is what the cheap gate exists to avoid -- affordable
     // only because a corroborated disagreement is rare.
     const uint32_t confirmed = Tv5725::SourceMeasurement::lineRateFrom(
-        solvedLines_, getSourceFieldRate(0));
+        solvedLines_, Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false));
     if (confirmed == 0 || !Tv5725::SourceMeasurement::ratesAgree(rate, confirmed))
         return false;
 

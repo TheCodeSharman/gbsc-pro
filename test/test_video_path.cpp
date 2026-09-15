@@ -32,6 +32,7 @@ FakeTwoWire Wire;
 
 #include "FrameAt.h"
 #include "RegistersWritten.h"
+#include "DebugPinStub.h"
 
 using namespace Tv5725;
 
@@ -51,17 +52,16 @@ static uint16_t g_dividerWhenSampled = 0;
 // off this block, and a window whose start lies beyond the frame never fires.
 static uint16_t g_blankStartWhenSampled = 0;
 
-float getSourceFieldRate(boolean)
+uint32_t debugPinPulseTicks()
 {
     ++g_fieldRateCalls;
     g_dividerWhenSampled = (uint16_t)(Wire.bank[5][0x12] |
                                       ((Wire.bank[5][0x13] & 0x0F) << 8));
     g_blankStartWhenSampled = (uint16_t)(Wire.bank[1][0x1C] |
                                          ((Wire.bank[1][0x1D] & 0x07) << 8));
-    return g_fieldRate;
+    return ticksForHz(g_fieldRate);
 }
 void tv5725Log(const char *) {}
-uint32_t getPllRate() { return 0; }
 
 // Neither a preset table's value nor the firmware's, so a read-back
 // distinguishes a fresh write from a leftover.
@@ -153,6 +153,11 @@ static void seedSourceHalfLines(uint16_t halfLines)
 }
 
 static const OutputMode *benchMode() { return &Mode1080p; }
+
+// The one quantity in its three registers: PLLAD_MD, IF_HSYNC_RST, SP_RT_HS_SP.
+static uint16_t dividerInForce() { return (uint16_t)Wire.field(5, 0x12, 0, 12); }
+static uint16_t lineCounterInForce() { return (uint16_t)Wire.field(1, 0x0E, 0, 11); }
+static uint16_t retimeStopInForce() { return (uint16_t)Wire.field(5, 0x4B, 0, 12); }
 
 // --- what a whole solve puts on the chip -------------------------------------
 
@@ -267,7 +272,16 @@ static void checkBenchGeometry()
     // The two DAC selects share s0_4b; the head blanking window is 12 bits
     // apiece over s1_24/s1_25 and s1_26/s1_27. s1_02, s3_24 and s2_17 are the
     // 422/444 conversion delays, which follow the scan mode the engine measures.
-    CHECK(registersWritten() == 71);
+    CHECK(registersWritten() == 74);
+
+    // Three of those are the measurement rather than the geometry: timing the
+    // field rate selects what the debug pin carries. The sync processor's own
+    // stage selector is not among them -- this rate is timed off the input
+    // formatter's bus, which does not go through it.
+    CHECK(Wire.touched[0][0x4D]);   // TEST_BUS_SEL
+    CHECK(Wire.touched[1][0x28]);   // IF_TEST_SEL
+    CHECK(Wire.touched[0][0x48]);   // PAD_BOUT_EN
+    CHECK_FALSE(Wire.touched[5][0x63]);
 }
 
 // One pass of the whole acquisition path. The engine no longer drives itself:
@@ -299,6 +313,45 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 // inside -- sampling, raster, clock, windows -- is the engine's, and what these
 // pin is that it lands on the same chip state whichever way the source behaves
 // on the way there.
+
+TEST_CASE("a solve puts all three registers of the one quantity on the chip")
+{
+    // A divider that moves without the other two leaves the sync processor
+    // retiming a line that is not arriving, and the input formatter counting
+    // one that is not the length it thinks.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+
+    CHECK(dividerInForce() == sampling.divider());
+    CHECK(lineCounterInForce() == sampling.ifLine());
+    CHECK(retimeStopInForce() == sampling.retimeStop());
+}
+
+TEST_CASE("a measurement that solved nothing puts no divider on the chip")
+{
+    // Writing a divider of zero stops the ADC clocking the line at all, and
+    // every register downstream is then sized for a line that never arrives.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+
+    REQUIRE_FALSE(sampling.usable());
+    Wire.reset();
+    engine.inputTimingsChanged(4);
+
+    CHECK_FALSE(Wire.touched[5][0x12]);
+    CHECK_FALSE(Wire.touched[1][0x0E]);
+}
 
 TEST_CASE("a settled source is solved on the first poll that can measure it")
 {

@@ -8,6 +8,7 @@
 #include <doctest/doctest.h>
 
 #include "Si5351Stubs.h"
+#include "DebugPinStub.h"
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;
@@ -26,12 +27,11 @@ static float g_fieldRate = 50.08f;
 // front of it and why a quiet source must not reach it at all.
 static unsigned g_fieldRateCalls = 0;
 
-float getSourceFieldRate(boolean)
+uint32_t debugPinPulseTicks()
 {
     ++g_fieldRateCalls;
-    return g_fieldRate;
+    return ticksForHz(g_fieldRate);
 }
-uint32_t getPllRate() { return 0; }
 void tv5725Log(const char *) {}
 
 // Chosen field by field rather than for looking unlikely. The binding

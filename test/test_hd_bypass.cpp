@@ -15,7 +15,8 @@
 // ladder is handed -- counted, so standard 13's coverage can assert them.
 static int rgbPatchCalls = 0;
 static void countRgbPatches() { ++rgbPatchCalls; }
-float getSourceFieldRate(boolean) { return 50.0f; }
+#include "DebugPinStub.h"
+uint32_t debugPinPulseTicks() { return ticksForHz(50.0f); }
 void tv5725Log(const char *) {}
 
 FakeTwoWire Wire;

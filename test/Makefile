@@ -12,7 +12,11 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output clean help
+# One binary per target and nothing shared between them, so the suite is
+# embarrassingly parallel: measured 3m26s serial against 34s here.
+MAKEFLAGS += -j$(shell nproc)
+
+.PHONY: all test test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -39,6 +43,7 @@ CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 # IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
 # declare them link wherever it does.
 SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/SourceReading.cpp \
+	src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp \
 	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
 	src/tv5725/ModeDetect.cpp
@@ -64,6 +69,18 @@ define geometry_unit
 	  "$(HERE)/$(1).cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/$(1)"
 endef
+
+## test-bus-rate-measurement: host unit tests for Tv5725::TestBusRateMeasurement
+#
+# What the debug pin carries and how fast it is pulsing. The edge count is
+# stubbed, so this covers the selection around it and the arithmetic after it.
+test-bus-rate-measurement:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_test_bus_rate_measurement" \
+	  "$(HERE)/test_test_bus_rate_measurement.cpp" \
+	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp
+	@"$(OUT)/test_test_bus_rate_measurement"
 
 ## sync-on-green: host unit tests for Tv5725::SyncOnGreen
 #
@@ -488,8 +505,7 @@ chip:
 	  src/tv5725/VideoRoute.cpp \
 	  src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  $(SAMPLING_SRC) \
-	  src/tv5725/SyncMeasurement.cpp
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_chip"
 
 ## hd-bypass: host unit tests for Tv5725::HdBypass
@@ -504,8 +520,7 @@ hd-bypass:
 	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
 	  src/tv5725/Chip.cpp src/tv5725/VideoRoute.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  $(SAMPLING_SRC) \
-	  src/tv5725/SyncMeasurement.cpp
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_hd_bypass"
 
 ## source-maintenance: host unit tests for SourceMaintenance
@@ -741,7 +756,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
+test: test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
 all: test
 
 ## clean: remove the compiled test binaries

@@ -30,7 +30,8 @@ void tv5725Log(const char *line) { g_lastLine = line; g_lines.push_back(line); }
 
 // SourceMeasurement.h declares the two the sketch supplies; nothing here spins
 // for a field rate.
-float getSourceFieldRate(boolean) { return 0.0f; }
+#include "DebugPinStub.h"
+uint32_t debugPinPulseTicks() { return ticksForHz(0.0f); }
 
 using namespace Tv5725;
 

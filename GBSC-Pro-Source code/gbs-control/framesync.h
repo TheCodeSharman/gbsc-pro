@@ -23,6 +23,7 @@
 #include "src/clock/ClockGen.h"
 #include "src/clock/RateAgreement.h"
 #include "src/tv5725/DisplayClock.h"
+#include "src/tv5725/TestBusRateMeasurement.h"
 #include "src/tv5725/VideoRoute.h"
 
 // FS_DEBUG:      full verbose debug over serial
@@ -155,30 +156,6 @@ private:
     /// Reset with syncLastCorrection.
     static float maybeFreqExt_per_videoFps;
 
-    // Which signal DEBUG_IN_PIN is carrying, for as long as this object lives.
-    //
-    // The pin is shared: the sync watcher and auto gain select their own bus and
-    // put back what they found, so a sampler that does not select its own reads
-    // whatever ran last. Restoring in a destructor covers every early return.
-    class TestBus
-    {
-    public:
-        static const uint8_t InputVsync = 0x0;
-        static const uint8_t OutputVsync = 0x2;   // VDS, t3t50t4
-
-        explicit TestBus(uint8_t signal) : restore_(GBS::TEST_BUS_SEL::read())
-        {
-            GBS::TEST_BUS_SEL::write(signal);
-        }
-
-        ~TestBus() { GBS::TEST_BUS_SEL::write(restore_); }
-
-        void select(uint8_t signal) { GBS::TEST_BUS_SEL::write(signal); }
-
-    private:
-        uint8_t restore_;
-    };
-
 
 #if GBS_DEBUG
     /// Poll DEBUG_IN_PIN and report whether it moves at all.
@@ -247,7 +224,7 @@ private:
     // difference in microseconds
     static bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput, int32_t *phase)
     {
-        TestBus bus(TestBus::InputVsync);
+        Tv5725::TestBusRateMeasurement::select(Tv5725::TestBusRateMeasurement::InputVsync);
 
         uint32_t inStart, inStop, outStart, outStop;
         uint32_t inPeriod, outPeriod, diff;
@@ -261,7 +238,7 @@ private:
             return false;
         }
 
-        bus.select(TestBus::OutputVsync);   // measure VDS vblank (VB ST/SP)
+        Tv5725::TestBusRateMeasurement::select(Tv5725::TestBusRateMeasurement::OutputVsync);   // measure VDS vblank (VB ST/SP)
         inPeriod = (inStop - inStart); //>> 1;
         if (!sampleVsyncPeriod(&outStart, &outStop))
         {
@@ -459,7 +436,7 @@ public:
     }
 
     // Measures whatever DEBUG_IN_PIN is already carrying: the CALLER selects the
-    // bus. getOutputFrameRate() selects the VDS bus before calling this, so
+    // bus. Tv5725::TestBusRateMeasurement selects the VDS bus before calling this, so
     // choosing one here would answer with the input rate under an output name.
     static uint32_t getPulseTicks()
     {
@@ -703,7 +680,7 @@ public:
 
             uint32_t periodInput2;
             {
-                TestBus bus(TestBus::InputVsync);
+                Tv5725::TestBusRateMeasurement::select(Tv5725::TestBusRateMeasurement::InputVsync);
                 periodInput2 = getPulseTicks();
             }
             if (periodInput2 == 0)

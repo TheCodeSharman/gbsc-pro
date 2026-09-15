@@ -9,6 +9,7 @@
 #include "src/WebSocketsServer.h"
 #include "fonts.h"
 #include "src/tv5725/Adc.h"
+#include "src/tv5725/TestBusRateMeasurement.h"
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SyncProcessor.h"
 #include "src/tv5725/SyncMeasurement.h"
@@ -33,7 +34,6 @@ extern uint8_t RGB_Com;
 extern bool scalingRgbhv();
 extern void applyPresets();
 extern void saveUserPrefs();
-extern float getOutputFrameRate();
 extern void loadDefaultUserOptions();
 extern void ChangeAvModeOption(uint8_t num);
 extern void ChangeSvModeOption(uint8_t num);
@@ -339,7 +339,7 @@ bool currentSettingHandler(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav
         // TODO translations
         boolean vsyncActive = 0;
         boolean hsyncActive = 0;
-        float ofr = getOutputFrameRate();
+        float ofr = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
         uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
 
         display.setFont(URW_Gothic_L_Book_20);

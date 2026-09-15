@@ -196,6 +196,12 @@ private:
     // of the divider and it.
     bool solveSampling(uint8_t oversample);
 
+    // Put the chip on the divider the measurement holds, in all three of the
+    // registers that carry it. The divider goes first because Adc latches it,
+    // and the latch loads KS, CKOS and ICP with it -- so anything setting those
+    // must already have run. A measurement that solved nothing writes nothing.
+    void applySampling();
+
     // **Before solveSampling(), because the divider derives from it**: the
     // capture write limit doubles with the line doubler, so the two describe one
     // decision and the wrong order sizes the divider for the previous source.

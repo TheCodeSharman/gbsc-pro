@@ -14,7 +14,8 @@ FakeTwoWire Wire;
 
 // The two the sketch supplies. The key only reaches SourceMeasurement for the
 // bounds on a count and a rate, so neither is ever called.
-float getSourceFieldRate(bool) { return 0.0f; }
+#include "DebugPinStub.h"
+uint32_t debugPinPulseTicks() { return ticksForHz(0.0f); }
 void tv5725Log(const char *) {}
 
 using namespace Tv5725;

@@ -13,7 +13,8 @@
 #include "fake/Wire.h"
 
 // SourceMeasurement links in behind HdBypass and wants these from the sketch.
-float getSourceFieldRate(boolean) { return 50.0f; }
+#include "DebugPinStub.h"
+uint32_t debugPinPulseTicks() { return ticksForHz(50.0f); }
 void tv5725Log(const char *) {}
 
 FakeTwoWire Wire;

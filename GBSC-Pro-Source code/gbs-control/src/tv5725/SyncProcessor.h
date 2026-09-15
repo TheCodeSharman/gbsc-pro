@@ -197,6 +197,12 @@ public:
 
     typedef UReg<0x05, 0x63, 0, 1> SP_TEST_EN;                        // Test control Test bus enable
 
+    // SP_TEST_MODULE's values, from RD-5725-1.1's own table. Only the stages
+    // something selects are named.
+    static const uint8_t TestModuleVsActDet = 4;
+    static const uint8_t TestModuleCsSep = 5;
+    static const uint8_t TestModuleOutProc = 7;
+
     typedef UReg<0x05, 0x63, 1, 3> SP_TEST_MODULE;                    // Test control test module select # 0 none # 1 hs_pol_det
                                                                       // module # 2 hs_act_det module # 3 vs_pol_det module # 4
                                                                       // vs_act_det module # 5 cs_sep module # 6 retiming module #

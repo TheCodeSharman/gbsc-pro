@@ -1,0 +1,105 @@
+#include "TestBusRateMeasurement.h"
+
+#include <Arduino.h>   // delayMicroseconds(), a hardware settling time
+
+#include "Chip.h"
+#include "InputFormatter.h"
+#include "SyncMeasurement.h"
+#include "SyncProcessor.h"
+#include "Tv5725.h"
+
+// The ESP's edge counter on the debug pin, defined by the sketch the way
+// tv5725Log() is: the count comes from two ISRs reading the CPU's cycle
+// counter, which this layer can neither reach nor host-compile. 0 ticks means
+// no pulse arrived.
+uint32_t debugPinPulseTicks();
+uint32_t debugPinTicksPerSecond();
+
+namespace Tv5725 {
+
+// Which of the sync processor's own stages reaches the test bus. Three fields
+// of s5_63, tied so one transaction sets them and bit 7 -- RESERVED, which a
+// byte write would clear -- is left alone.
+typedef Tv5725::Tie<SyncProcessor::SP_TEST_EN,
+                    SyncProcessor::SP_TEST_MODULE,
+                    SyncProcessor::SP_TEST_SIGNAL_SEL> SyncProcessorStage;
+
+// RD-5725-1.1 tabulates SP_TEST_MODULE's values and says nothing about
+// SP_TEST_SIGNAL_SEL's, so the stage is named and the signal is not.
+const uint8_t StageSignalFirst = 0;
+const uint8_t CsSepSignal = 6;
+
+void TestBusRateMeasurement::select(uint8_t signal)
+{
+    Tv5725::TEST_BUS_SEL::write(signal);
+}
+
+float TestBusRateMeasurement::rateFrom(uint32_t ticks)
+{
+    if (ticks == 0)
+        return 0;
+    return (float)((double)debugPinTicksPerSecond() / (double)ticks);
+}
+
+// A sample that reports no ticks timed out rather than measuring 0 Hz, so it is
+// worth one more. What the rate is worth afterwards is the caller's to judge:
+// SourceMeasurement cross-checks it against the line count and requires two
+// readings to agree, which is a test a second sample here cannot do.
+float TestBusRateMeasurement::measureRateHz()
+{
+    uint32_t period = debugPinPulseTicks();
+    if (period == 0)
+        period = debugPinPulseTicks();
+
+    return rateFrom(period);
+}
+
+float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus)
+{
+    // VB_[7:0] is test_out_[7:0], so this is the pad the selected signal leaves
+    // the chip on -- not a colour channel, whatever the name reads like. With
+    // it off the pin carries nothing and every rate here is 0.
+    Chip::PAD_BOUT_EN::write(1);
+    InputFormatter::IF_TEST_SEL::write(3);
+
+    if (useSyncProcessorBus) {
+        select(SyncMeasurement::isCsync() ? SyncProcessorBus : InputVsync);
+        SyncProcessorStage::write(1, SyncProcessor::TestModuleOutProc,
+                                  StageSignalFirst);
+    } else {
+        select(InputVsync);
+    }
+
+    return measureRateHz();
+}
+
+float TestBusRateMeasurement::outputFrameRateHz()
+{
+    Chip::PAD_BOUT_EN::write(1);
+    select(OutputVsync);
+
+    return measureRateHz();
+}
+
+uint32_t TestBusRateMeasurement::pllRateHz()
+{
+    select(SyncProcessorBus);
+
+    // The composite path watches the sync separator; the separate path watches
+    // vertical sync activity, which on a composite source is not there to see.
+    if (SyncMeasurement::isCsync())
+        SyncProcessorStage::write(1, SyncProcessor::TestModuleCsSep, CsSepSignal);
+    else
+        SyncProcessorStage::write(1, SyncProcessor::TestModuleVsActDet,
+                                  StageSignalFirst);
+
+    Chip::PAD_BOUT_EN::write(1);
+    delayMicroseconds(200);
+
+    // Integer division, where the rates above are floats: this one is in MHz,
+    // where a float's mantissa has already run out.
+    const uint32_t period = debugPinPulseTicks();
+    return period != 0 ? debugPinTicksPerSecond() / period : 0;
+}
+
+}  // namespace Tv5725

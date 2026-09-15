@@ -22,6 +22,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
+#include "DebugPinStub.h"
 
 using namespace Tv5725;
 
@@ -33,7 +34,7 @@ using namespace Tv5725;
 // able to use the answer.
 static float g_fieldRate = 50.08f;
 static unsigned g_fieldRateCalls = 0;
-float getSourceFieldRate(boolean) { ++g_fieldRateCalls; return g_fieldRate; }
+uint32_t debugPinPulseTicks() { ++g_fieldRateCalls; return ticksForHz(g_fieldRate); }
 
 static std::string g_log;
 void tv5725Log(const char *message) { g_log = message; }
@@ -1394,36 +1395,6 @@ static uint16_t dividerInForce() { return (uint16_t)Wire.field(5, 0x12, 0, 12); 
 static uint16_t lineCounterInForce() { return (uint16_t)Wire.field(1, 0x0E, 0, 11); }
 static uint16_t retimeStopInForce() { return (uint16_t)Wire.field(5, 0x4B, 0, 12); }
 
-TEST_CASE("applying the sampling writes all three registers of the one quantity")
-{
-    Wire.reset();
-    SourceMeasurement sampling;
-    seedSourceLines(311);
-    g_fieldRate = 50.08f;
-    REQUIRE(sampling.measureLineRate());
-    REQUIRE(sampling.solve(sampling.lineRateHz(), 4));
-
-    sampling.applySampling(4);
-
-    CHECK(dividerInForce() == sampling.divider());
-    CHECK(lineCounterInForce() == sampling.ifLine());
-    CHECK(retimeStopInForce() == sampling.retimeStop());
-}
-
-TEST_CASE("a measurement that solved nothing puts nothing on the chip")
-{
-    // Writing a divider of zero stops the ADC clocking the line at all, and
-    // every register downstream is then sized for a line that never arrives.
-    Wire.reset();
-    SourceMeasurement sampling;
-
-    REQUIRE_FALSE(sampling.usable());
-    sampling.applySampling(4);
-
-    CHECK_FALSE(Wire.touched[5][0x12]);
-    CHECK_FALSE(Wire.touched[1][0x0E]);
-}
-
 TEST_CASE("the reference puts the chip on a divider this class chose")
 {
     // A count taken through the previous mode's divider is not the source's, so
@@ -1438,6 +1409,7 @@ TEST_CASE("the reference puts the chip on a divider this class chose")
     CHECK(sampling.divider() == SourceMeasurement::referenceDivider(false));
     CHECK(dividerInForce() == SourceMeasurement::referenceDivider(false));
     CHECK(lineCounterInForce() == sampling.ifLine());
+    CHECK(retimeStopInForce() == sampling.retimeStop());
 }
 
 TEST_CASE("the reference for a line-doubled source is its own")

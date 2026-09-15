@@ -80,6 +80,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/tv5725/ColourSpace.h"
 #include "src/tv5725/SyncMeasurement.h"
+#include "src/tv5725/TestBusRateMeasurement.h"
 #include "src/videosource/SourceMaintenance.h"
 #include "src/videosource/SyncRecovery.h"
 #include "src/tv5725/DisplayClock.h"
@@ -716,7 +717,7 @@ boolean CheckInputFrequency()
 {
     unsigned char freq = 0;
     static unsigned char freq_last;
-    freq = getOutputFrameRate();
+    freq = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
     if ((abs(freq_last - freq) < 9) || (freq_last == 0)) {
         freq_last = freq;
         return 0;
@@ -1027,7 +1028,7 @@ void externalClockGenResetClock()
     FrameSync::clearFrequency();
 }
 
-float sourceFieldRateOffIfBus() { return getSourceFieldRate(0); }
+float sourceFieldRateOffIfBus() { return Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false); }
 
 // A rate two consecutive measurements agree on, or 0 when they never do. Each
 // measurement spins for up to a vsync period, so the attempts are few.
@@ -1076,7 +1077,7 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
-    float ofr = agreedRate(getOutputFrameRate);
+    float ofr = agreedRate(Tv5725::TestBusRateMeasurement::outputFrameRateHz);
     if (ofr == 0.0f) {
         return;
     }
@@ -1092,7 +1093,7 @@ void externalClockGenSyncInOutRate()
     // ;//SerialMprint(F("source Hz: "));
     // ;//SerialMprint(sfr, 5);
     // ;//SerialMprint(F(" new out: "));
-    // ;//SerialMprint(getOutputFrameRate(), 5);
+    // ;//SerialMprint(Tv5725::TestBusRateMeasurement::outputFrameRateHz(), 5);
     // ;//SerialMprint(F(" clock: "));
     // ;//SerialMprint(F(" ("));
     // ;//SerialMprint(diff >= 0 ? "+" : "");
@@ -1751,7 +1752,7 @@ uint8_t detectAndSwitchToActiveInput()
                         for (int i = 0; i < 3; i++) {
                             
                             Tv5725::SyncMeasurement::set(1); // temporary for test
-                            float sfr = getSourceFieldRate(1);
+                            float sfr = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(true);
                             Tv5725::SyncMeasurement::set(0); // undo
                             if (sfr > 40.0f)
                                 decodeSuccess++; 
@@ -2289,139 +2290,20 @@ static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
 // reaching for SerialM -- which lives above it and does not host-compile.
 void tv5725Log(const char *message) { fsDebugPrintf("%s\n", message); }
 
-float getSourceFieldRate(boolean useSPBus)
+
+
+
+// The ESP's half of Tv5725::TestBusRateMeasurement: count the edges of whatever the chip has
+// selected onto the debug pin, and say what one tick is worth. The yield and
+// the watchdog feed stay on this side -- src/tv5725/ calls neither.
+uint32_t debugPinPulseTicks()
 {
-    double esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
-    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-    uint8_t spBusSelBackup = GBS::TEST_BUS_SP_SEL::read();
-    uint8_t ifBusSelBackup = GBS::IF_TEST_SEL::read();
-    uint8_t debugPinBackup = GBS::PAD_BOUT_EN::read();
-
-    if (debugPinBackup != 1)
-        GBS::PAD_BOUT_EN::write(1);
-
-    if (ifBusSelBackup != 3)
-        GBS::IF_TEST_SEL::write(3);
-
-    if (useSPBus) {
-        if (Tv5725::SyncMeasurement::isCsync()) {
-
-            if (testBusSelBackup != 0xa)
-                GBS::TEST_BUS_SEL::write(0xa);
-        } else {
-
-            if (testBusSelBackup != 0x0)
-                GBS::TEST_BUS_SEL::write(0x0);
-        }
-        if (spBusSelBackup != 0x0f)
-            GBS::TEST_BUS_SP_SEL::write(0x0f);
-    } else {
-        if (testBusSelBackup != 0)
-            GBS::TEST_BUS_SEL::write(0);
-    }
-
-    float retVal = 0;
-
-    uint32_t fieldTimeTicks = FrameSync::getPulseTicks();
-    if (fieldTimeTicks == 0) {
-
-        fieldTimeTicks = FrameSync::getPulseTicks();
-    }
-
-    if (fieldTimeTicks > 0) {
-        retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-        if (retVal < 47.0f || retVal > 86.0f) {
-
-            fieldTimeTicks = FrameSync::getPulseTicks();
-            if (fieldTimeTicks > 0) {
-                retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-            }
-        }
-    }
-
-    GBS::TEST_BUS_SEL::write(testBusSelBackup);
-    GBS::PAD_BOUT_EN::write(debugPinBackup);
-    if (spBusSelBackup != 0x0f)
-        GBS::TEST_BUS_SP_SEL::write(spBusSelBackup);
-    if (ifBusSelBackup != 3)
-        GBS::IF_TEST_SEL::write(ifBusSelBackup);
-
-    return retVal;
-}
-
-float getOutputFrameRate()
-{
-    double esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
-    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-    uint8_t debugPinBackup = GBS::PAD_BOUT_EN::read();
-
-    if (debugPinBackup != 1)
-        GBS::PAD_BOUT_EN::write(1);
-
-    if (testBusSelBackup != 2)
-        GBS::TEST_BUS_SEL::write(2);
-
-    float retVal = 0;
-
-    uint32_t fieldTimeTicks = FrameSync::getPulseTicks();
-    if (fieldTimeTicks == 0) {
-
-        fieldTimeTicks = FrameSync::getPulseTicks();
-    }
-
-    if (fieldTimeTicks > 0) {
-        retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-        if (retVal < 47.0f || retVal > 86.0f) {
-
-            fieldTimeTicks = FrameSync::getPulseTicks();
-            if (fieldTimeTicks > 0) {
-                retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-            }
-        }
-    }
-
-    GBS::TEST_BUS_SEL::write(testBusSelBackup);
-    GBS::PAD_BOUT_EN::write(debugPinBackup);
-
-    return retVal;
-}
-
-uint32_t getPllRate()
-{
-    uint32_t esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
-    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-    uint8_t spBusSelBackup = GBS::TEST_BUS_SP_SEL::read();
-    uint8_t debugPinBackup = GBS::PAD_BOUT_EN::read();
-
-    if (testBusSelBackup != 0xa) {
-        GBS::TEST_BUS_SEL::write(0xa);
-    }
-    if (Tv5725::SyncMeasurement::isCsync()) {
-        if (spBusSelBackup != 0x6b)
-            GBS::TEST_BUS_SP_SEL::write(0x6b);
-    } else {
-        if (spBusSelBackup != 0x09)
-            GBS::TEST_BUS_SP_SEL::write(0x09);
-    }
-    GBS::PAD_BOUT_EN::write(1);
     yield();
     ESP.wdtFeed();
-    delayMicroseconds(200);
-    uint32_t ticks = FrameSync::getPulseTicks();
-
-    GBS::PAD_BOUT_EN::write(debugPinBackup);
-    if (testBusSelBackup != 0xa) {
-        GBS::TEST_BUS_SEL::write(testBusSelBackup);
-    }
-    GBS::TEST_BUS_SP_SEL::write(spBusSelBackup);
-
-    uint32_t retVal = 0;
-    if (ticks > 0) {
-        retVal = esp8266_clock_freq / ticks;
-    }
-
-    return retVal;
+    return FrameSync::getPulseTicks();
 }
+
+uint32_t debugPinTicksPerSecond() { return ESP.getCpuFreqMHz() * 1000000; }
 
 #define AUTO_GAIN_INIT 0x48
 
@@ -4918,9 +4800,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case '!':
                     Serial.print(F("sfr: "));
-                    Serial.println(getSourceFieldRate(1));
+                    Serial.println(Tv5725::TestBusRateMeasurement::sourceFieldRateHz(true));
                     Serial.print(F("pll: "));
-                    Serial.println(getPllRate());
+                    Serial.println(Tv5725::TestBusRateMeasurement::pllRateHz());
                     break;
                 case '$': {
 
@@ -11294,7 +11176,7 @@ void OSD_selectOption()
 
         boolean vsyncActive = 0;
         boolean hsyncActive = 0;
-        float ofr = getOutputFrameRate();
+        float ofr = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
         uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
 
         colour1 = yellow;

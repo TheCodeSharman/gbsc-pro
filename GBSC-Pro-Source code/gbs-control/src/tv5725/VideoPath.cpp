@@ -211,7 +211,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // ADC clocks -- so every measurement is garbage until this runs, the
     // steadiness gate never passes, and the pass that would have fixed the
     // clock never arrives.
-    sampling_.applySampling(modeOversample_);
+    applySampling();
 }
 
 bool VideoPath::passedThrough() const
@@ -455,6 +455,17 @@ void VideoPath::solveScanMode(uint16_t lines)
     scanModeApplied_ = true;
 }
 
+void VideoPath::applySampling()
+{
+    if (!sampling_.usable())
+        return;
+
+    Adc::applySampleRate(sampling_.divider(), sampling_.lineRateHz(),
+                         modeOversample_);
+    InputFormatter::writeLineCounter(sampling_.ifLine());
+    SyncProcessor::writeRetimeStop(sampling_.retimeStop());
+}
+
 bool VideoPath::solveSampling(uint8_t oversample)
 {
     const uint16_t framable = VideoSourceLine::framableIfLine(
@@ -464,7 +475,7 @@ bool VideoPath::solveSampling(uint8_t oversample)
 
     if (!sampling_.solve(sampling_.lineRateHz(), oversample, framable))
         return false;
-    sampling_.applySampling(modeOversample_);
+    applySampling();
     return true;
 }
 

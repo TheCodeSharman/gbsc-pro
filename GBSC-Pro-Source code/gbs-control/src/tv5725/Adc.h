@@ -3,11 +3,6 @@
 
 #include "Tv5725.h"
 
-// Declared here and defined outside this layer, which can reach neither: the
-// ADC PLL's rate is counted off the debug pin through FrameSync at the ESP's
-// clock. It costs a bus-select save and restore plus 200 us a sample.
-uint32_t getPllRate();
-
 namespace Tv5725 {
 
 // The ADC and its PLL: power, trim, test paths and the auto-offset that is

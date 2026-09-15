@@ -73,7 +73,7 @@ uint16_t SourceMeasurement::maxDivider(uint32_t lineRateHz, uint8_t oversample)
     // refuses, and the row is chosen from the same clock this is bounding.
     // docs/capture-limits.md
     //
-    // getSourceFieldRate() reports 0 with no lock and that reaches here as a
+    // TestBusRateMeasurement::sourceFieldRateHz() reports 0 with no lock and that reaches here as a
     // line rate, so the divide is guarded above. Everything below is integer:
     // the ESP8266 has no FPU and this runs on every solve.
     uint32_t perLine = lineRateHz * atLeastOne(Adc::oversampleFor(
@@ -341,7 +341,7 @@ bool SourceMeasurement::measureLineRate()
     sourceLines_ = measureSourceLines();
 
     // HPERIOD_IF states the line rate for the cost of a register read, where
-    // getSourceFieldRate() spins for vsync edges. It also rails to a value that
+    // TestBusRateMeasurement::sourceFieldRateHz() spins for vsync edges. It also rails to a value that
     // is WRONG AND STABLE, and every test lineRateFromHPeriod() applies is
     // passed by one -- so it is believed only where something corroborates it.
     // docs/investigations/hperiod-if-railing.md
@@ -365,7 +365,7 @@ bool SourceMeasurement::measureLineRate()
         // counter. It answers where the counter disagrees, and where it cannot
         // be measured NOTHING is -- a reading nothing can speak to is the one
         // form the window's tests cannot judge.
-        fieldRateHz_ = getSourceFieldRate(0);
+        fieldRateHz_ = TestBusRateMeasurement::sourceFieldRateHz(false);
         lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
         if (fromCounter != 0 && lineRateHz_ != 0
             && ratesAgree(fromCounter, lineRateHz_))
@@ -499,16 +499,6 @@ void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = line
 bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
 
 uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
-
-void SourceMeasurement::applySampling(uint8_t oversample)
-{
-    if (!usable())
-        return;
-
-    Adc::applySampleRate(divider_, lineRateHz_, oversample);
-    InputFormatter::writeLineCounter(ifLine());
-    SyncProcessor::writeRetimeStop(retimeStop());
-}
 
 void SourceMeasurement::applyReferenceSampling(uint8_t oversample)
 {

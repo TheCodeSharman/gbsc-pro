@@ -1,43 +1,32 @@
 #ifndef TV5725_SOURCE_MEASUREMENT_H_
 #define TV5725_SOURCE_MEASUREMENT_H_
 
-// How finely the incoming line is sampled, and what the input formatter's line
-// counter must be set to as a result.
-//
-// **PLLAD_MD, IF_HSYNC_RST and SP_RT_HS_SP are ONE quantity in THREE
-// registers.** All three come off one held value; moving one without the others
-// is what a fault here looks like.
-//
-// **THE REGISTER IS NOT THE SOURCE OF TRUTH.** PLLAD_MD is loaded into the ADC
-// PLL by a rising edge on PLLAD_LAT, so between the write and the latch read()
-// returns the NEW value while the ADC still clocks at the OLD one -- a solid
-// green screen behind self-consistent registers, with nothing to diagnose from.
-// STATUS_SYNC_PROC_HTOTAL is the one witness, counting real ADC clocks per line.
-//
-// So the divider is HELD and handed out, never read back. Beating against the
-// source's pixel clock is not decidable here -- the chip sees sync edges, not
-// pixels. This computes a ceiling and a starting point; the last word is the
-// user's, from the screen.
+// Measures the timing from the video source.
 
 #include <Arduino.h>   // `boolean`
 #include <stdint.h>
 
-// Declared here and defined outside this layer, which can reach neither: the
-// field rate is counted off the debug pin through FrameSync at the ESP's clock,
-// and the log goes to the web console.
-//
-// getSourceFieldRate() spins for vsync edges with no yield() -- framesync.h
-// says why -- so it costs up to FS_SAMPLE_TIMEOUT_MS a pulse. measureLineRate()
-// below is its one call site here, and everything downstream takes the rate
-// from what that held rather than measuring again.
-float getSourceFieldRate(boolean useSPBus);
-
 #include "SourceReading.h"
 #include "SteadyRun.h"
+#include "TestBusRateMeasurement.h"
 #include "Tv5725Log.h"
 
 namespace Tv5725 {
 
+// Measures the timing from the video source: the line count, the line rate,
+// the hsync pulse and the scan type.
+//
+// Some of the registers it reads are unreliable: HPERIOD_IF rails to a value
+// that is wrong and steady, so no caller can judge a reading by looking at it.
+// Returning one that can be trusted is this class's job, by the cheapest route
+// that works -- a register read where a run of them stands up, a vsync spin
+// where it does not.
+//
+// Measuring needs a sampling clock of its own: every measurement is counted
+// through the ADC clock, so applyReferenceSampling() puts the chip on a divider
+// this class chose before the source is measured -- a reading taken through the
+// previous mode's is not the source's. solve() then chooses the divider the
+// source is captured at and hands it out, for VideoPath to install.
 class SourceMeasurement {
 public:
     // DS-5725-3.2, front page: "Maximum analog sampling rate up to 162MSPS".
@@ -287,7 +276,7 @@ public:
     static const uint32_t LineRateFloorHz = 15000;
 
     // The line rate a RUN of HPERIOD_IF readings implies, or 0 when the run
-    // cannot be believed. One register read against getSourceFieldRate()'s
+    // cannot be believed. One register read against the field rate's
     // vsync spin, but it rails with nothing to say so -- STATUS_IF_HT_OK reads
     // 1 either way -- so the run and the line count are the judgement: readings
     // that disagree are railing, and a steady one implying a field rate no
@@ -438,7 +427,7 @@ public:
     uint16_t ifLine() const;
 
     // The field rate the ADC's crossover row is picked against before one has
-    // been measured. The top of the band getSourceFieldRate() accepts.
+    // been measured. The top of the band TestBusRateMeasurement accepts a field rate in.
     static const uint8_t NominalFieldRateHz = 60;
 
     // The sampling state every measurement is taken from. The field rate is
@@ -451,12 +440,6 @@ public:
 
     // Take a divider that was chosen rather than solved.
     void holdDivider(uint16_t divider);
-
-    // Put the chip on the divider held, in all three of the registers that
-    // carry it. The divider goes first because Adc latches it, and the latch
-    // loads KS, CKOS and ICP with it -- so anything setting those must already
-    // have run. A measurement that solved nothing writes nothing.
-    void applySampling(uint8_t oversample);
 
     // Take the reference divider for the scan mode and put the chip on it, so
     // what is measured next is counted through a divider this class chose
