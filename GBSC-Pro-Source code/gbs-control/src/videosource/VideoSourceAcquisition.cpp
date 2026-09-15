@@ -9,7 +9,7 @@
 VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0),
-      passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
+      passThroughSwitch_(0), feedWatchdog_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
@@ -20,6 +20,41 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
 void VideoSourceAcquisition::usePassThroughSwitch(void (*enter)()) { passThroughSwitch_ = enter; }
+
+void VideoSourceAcquisition::useWatchdogFeed(void (*feed)()) { feedWatchdog_ = feed; }
+
+namespace {
+
+void noWatchdog() {}
+
+// How many agreeing readings say the divider is latched.
+const uint8_t LatchSamples = 8;
+
+}  // namespace
+
+bool VideoSourceAcquisition::acquireSamplingPhase()
+{
+    if (!Tv5725::SourceMeasurement::dividerLatched(
+            Tv5725::SourceMeasurement::measureLineSamples(),
+            Tv5725::Adc::PLLAD_MD::read(), LatchSamples))
+        return false;
+
+    // What the ADC is RUNNING, not what was asked for: the request is
+    // OversampleAsClockAllows on every source and the crossover row decides
+    // what that becomes.
+    const uint8_t oversample = Tv5725::Adc::oversampleInForce();
+
+    const bool found = Tv5725::Adc::acquirePhase(
+        oversample, Tv5725::SyncOnGreen::level() > Tv5725::SyncOnGreen::StarvedLevel,
+        Tv5725::SourceMeasurement::measureLineSamples,
+        feedWatchdog_ != 0 ? feedWatchdog_ : noWatchdog);
+
+    char line[48];
+    snprintf(line, sizeof(line), "sampling phase: %s, oversample %u",
+             found ? "chosen" : "no clean window", (unsigned)oversample);
+    tv5725Log(line);
+    return found;
+}
 
 void VideoSourceAcquisition::allowPassThrough(bool allowed) { passThroughAllowed_ = allowed; }
 

@@ -15,6 +15,7 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/SyncRecovery.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
@@ -1230,4 +1231,71 @@ TEST_CASE("the run stops the search across a count the sync processor lost")
     seedSourceLines(0);
 
     CHECK_FALSE(unit.acquisition.sourceIsSearching());
+}
+
+// The sampling phase, which belongs here because its GATE does: the search is
+// only worth running once the divider the sync processor counts against is the
+// one the engine chose, and this is the class holding that measurement.
+// Tv5725::Adc owns the two adjusters and needs no SourceMeasurement to do it.
+
+static unsigned g_watchdogFeeds = 0;
+static void countWatchdogFeed() { ++g_watchdogFeeds; }
+
+TEST_CASE("an unlatched divider is not worth searching the phase for")
+{
+    // What the sync processor counts is what the ADC is RUNNING, and PLLAD_MD
+    // reports what was last WRITTEN -- the two differ between a write and the
+    // latch that loads it. Scored through the wrong clock every phase reads bad
+    // and the search picks noise.
+    seedBenchSource();
+    seedLineSamples(BenchDivider + 40);
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    Adc::choosePhaseSyncProcessor(9);
+    Adc::choosePhaseAdc(24);
+    g_watchdogFeeds = 0;
+
+    CHECK_FALSE(unit.acquisition.acquireSamplingPhase());
+    CHECK(Adc::phaseSyncProcessor() == 9);
+    CHECK(Adc::phaseAdc() == 24);
+    CHECK(g_watchdogFeeds == 0);
+}
+
+TEST_CASE("a latched divider gets the search, and the watchdog is fed through it")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    SyncOnGreen::choose(SyncOnGreen::DefaultLevel);
+    g_watchdogFeeds = 0;
+
+    CHECK(unit.acquisition.acquireSamplingPhase());
+    CHECK(g_watchdogFeeds > 0);
+}
+
+TEST_CASE("a starved separator gets the mid of the field rather than a sweep")
+{
+    // The sweep scores phases by the sync processor's count, and a starved
+    // separator makes that noise -- so there is nothing worth 34 steps of it.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.useWatchdogFeed(countWatchdogFeed);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    SyncOnGreen::choose(SyncOnGreen::StarvedLevel);
+    Adc::choosePhaseSyncProcessor(3);
+    g_watchdogFeeds = 0;
+
+    CHECK(unit.acquisition.acquireSamplingPhase());
+    CHECK(Adc::phaseSyncProcessor() == 16);
+    CHECK(g_watchdogFeeds == 0);
 }

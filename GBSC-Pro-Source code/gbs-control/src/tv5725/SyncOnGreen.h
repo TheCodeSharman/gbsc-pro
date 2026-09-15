@@ -33,6 +33,11 @@ public:
     // returns when it reaches the floor without finding a level that works.
     static const uint8_t DefaultLevel = 13;
 
+    // At or below this the separator is too starved for a sampling-phase sweep
+    // to mean anything: every score comes back noise, and the mid of the ADC's
+    // field is the whole of the answer.
+    static const uint8_t StarvedLevel = 2;
+
     // Where a separator whose output does not move at all is parked. The walk
     // needs a reading that changes to work from, so there is nothing to search
     // and a mid level is the whole of the answer.

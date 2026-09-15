@@ -1607,30 +1607,6 @@ void goLowPowerWithInputDetection()
 
 static void feedWatchdog() { ESP.wdtFeed(); }
 
-boolean optimizePhaseSP()
-{
-    // Eight samples rather than the two the other sites use: this asks whether
-    // a phase sweep is worth running, not whether the divider was latched.
-    if (!Tv5725::SourceMeasurement::dividerLatched(
-            Tv5725::SourceMeasurement::measureLineSamples(),
-            GBS::PLLAD_MD::read(), 8)) {
-        return 0;
-    }
-
-    // What the ADC is RUNNING, not what was asked for: rto->osr carries the
-    // request, which is OversampleAsClockAllows on every source, and the
-    // crossover row decides what that becomes.
-    const uint8_t oversample = Tv5725::Adc::oversampleInForce();
-
-    const bool found = Tv5725::Adc::acquirePhase(
-        oversample, Tv5725::SyncOnGreen::level() > 2,
-        Tv5725::SourceMeasurement::measureLineSamples, feedWatchdog);
-
-    debugPrintf("sampling phase: %s, oversample %u\n",
-                found ? "chosen" : "no clean window", (unsigned)oversample);
-    return found;
-}
-
 static uint32_t millisNow() { return (uint32_t)millis(); }
 
 // Putting a level in force latches the sampling phases and the ADC PLL, which
@@ -3206,7 +3182,7 @@ void enterHdBypass()
 
     // The only phase search on this route: the stable branch of
     // runSyncWatcher() is skipped while a source is bypassed.
-    optimizePhaseSP();
+    inputAcquisition.acquireSamplingPhase();
 }
 
 void runAutoGain() //
@@ -3704,7 +3680,7 @@ void runSyncWatcher() //
         }
 
         if (due.samplingPhase)
-            rto->phaseIsSet = optimizePhaseSP();
+            rto->phaseIsSet = inputAcquisition.acquireSamplingPhase();
 
         if (due.acknowledgeSogBad)
             Tv5725::Interrupts::acknowledgeSogBad();
@@ -4145,6 +4121,7 @@ void setup()
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
     inputAcquisition.usePassThroughSwitch(enterHdBypass);
+    inputAcquisition.useWatchdogFeed(feedWatchdog);
     applyPassThroughPreference();
 
     // The freeze, on the tick rather than inside the engine: loop() reaches the
@@ -5509,7 +5486,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     rto->osr = Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
                     latchPLLAD();
                     delay(4);
-                    optimizePhaseSP();
+                    inputAcquisition.acquireSamplingPhase();
                     ; // SerialMprint("OSR ");
                     ; // SerialMprint(rto->osr);
                     ; // SerialMprintln("x");
@@ -6189,7 +6166,7 @@ void handleType2Command(char argument)
                 Tv5725::SyncOnGreen::choose(16);
             }
             setAndUpdateSogLevel(Tv5725::SyncOnGreen::level());
-            optimizePhaseSP();
+            inputAcquisition.acquireSamplingPhase();
             ; // SerialMprint("Phase: ");
             ; // SerialMprint(" SOG: ");
             ; // SerialMprint(Tv5725::SyncOnGreen::level());

@@ -38,6 +38,23 @@ public:
     // moving the route is a chip-wide switch the sketch still owns.
     void usePassThroughSwitch(void (*enter)());
 
+    // The platform's watchdog feed. The sampling-phase search latches and
+    // scores 34 phases with twenty readings each, which is long enough to be
+    // reset out of; a file here reaching for ESP.wdtFeed() is a design signal
+    // rather than a dependency to admit.
+    void useWatchdogFeed(void (*feed)());
+
+    // Choose both sampling phases for the source in force, and put them in
+    // force. False means nothing was worth choosing and neither phase moved.
+    //
+    // **THE GATE IS THE REASON THIS IS HERE.** The search scores each phase by
+    // how steadily the sync processor counts the line, and what it counts is
+    // what the ADC is RUNNING -- which is the LATCHED divider, not the one
+    // PLLAD_MD reports. Run against an unlatched one, every phase reads bad and
+    // the search picks noise. Eight samples rather than the two the other sites
+    // take: this asks whether a sweep is worth running at all.
+    bool acquireSamplingPhase();
+
     // Whether pass-through is offerable at all. The interim stand-in for a
     // per-source override -- a single boolean cannot express one.
     // docs/video-source-acquisition.md
@@ -158,6 +175,7 @@ private:
     Tv5725::VideoPath &videoPath_;
     bool (*mayRun_)();
     void (*passThroughSwitch_)();
+    void (*feedWatchdog_)();
     bool passThroughAllowed_;
     const Tv5725::OutputMode *resolution_;
     uint32_t detectedMs_;
