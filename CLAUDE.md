@@ -261,6 +261,14 @@ adjacently in one pass, which is what makes two of them comparable to each other
 `SamplingLog::event()` logs a decision as the branch takes it, which no dump
 afterwards can show.
 
+**QUEUE IT FROM THE PROCESS THAT HOLDS THE WEBSOCKET.** The log prints to the
+console, so a capture has to be listening before it starts -- and queuing from a
+shell while a separate capture process starts up races both ways: the request
+answers `{"error":"already running"}` against a previous run, or the log finishes
+before the socket is attached. Either gives an empty capture, which reads as a
+dead route rather than as a missed window. Open the socket, poll the route until
+it answers `queued`, then read until `smp,done`.
+
 **A `sol,` line says where the engine SOLVED**, emitted when it moves rather
 than per sample: the raster, both scales, both display windows, both output
 sync pulses, `IF_HSYNC_RST` and `IF_HBIN_SP`. That is the set two runs are
