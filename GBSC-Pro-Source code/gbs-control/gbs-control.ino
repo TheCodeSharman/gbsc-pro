@@ -3304,7 +3304,10 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
         Tv5725::SyncProcessor::setCoastInvert(false);
     }
 
-    if (rto->videoStandardInput >= Tv5725::PresetLoad::PathFirst) {
+    // A source whose sync carries no broadcast vertical interval, which the
+    // byte spelled as a value naming a PATH rather than a format: the connector
+    // for an RGBHV source and the route for a component one passed through.
+    if (sourceIsRgbhv() || Tv5725::VideoRoute::isHdBypassChannel()) {
         Tv5725::SyncProcessor::applySeparationThresholds(
             Tv5725::SyncMeasurement::isCsync());
     } else if (inputAcquisition.sourceIsPresent()) {
