@@ -109,17 +109,17 @@ bool lineLengthMoves()
     return false;
 }
 
-uint16_t countBadSamples(bool sourceClassified)
+uint16_t countBadSamples(bool sourceAcquired)
 {
     uint16_t counted = 0;
     for (uint8_t i = 0; i < SamplesPerPass; ++i) {
         if (separatorReportsTrouble()) {
             Interrupts::acknowledgeSogBad();
 
-            // With no standard detected there is no settled line length to
+            // With no source acquired there is no settled line length to
             // compare against, so trouble counts on its own rather than waiting
             // for evidence that cannot arrive.
-            if (!sourceClassified || lineLengthMoves())
+            if (!sourceAcquired || lineLengthMoves())
                 ++counted;
         }
         delay((i % 3) == 0 ? 1 : 0);
@@ -308,7 +308,7 @@ bool SyncOnGreen::stepOnEvidence(void (*putInForce)(), void (*escalate)())
     return moved;
 }
 
-SyncOnGreen::Tuning SyncOnGreen::tune(bool sourceDisturbed, bool sourceClassified,
+SyncOnGreen::Tuning SyncOnGreen::tune(bool sourceDisturbed, bool sourceAcquired,
                                       uint32_t (*nowMs)(), void (*putInForce)(),
                                       void (*escalate)())
 {
@@ -328,7 +328,7 @@ SyncOnGreen::Tuning SyncOnGreen::tune(bool sourceDisturbed, bool sourceClassifie
         return outcome;
     }
 
-    const uint16_t counted = countBadSamples(sourceClassified);
+    const uint16_t counted = countBadSamples(sourceAcquired);
     badSamples_ += counted;
     if (counted != 0)
         outcome.sourceUnsettled = true;

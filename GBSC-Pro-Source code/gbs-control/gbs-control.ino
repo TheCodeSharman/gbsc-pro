@@ -1216,16 +1216,6 @@ static void holdStandard(uint8_t standard)
     rto->videoStandardInput = standard;
 }
 
-// Whether the byte names a standard at all. NOT a signal-present test, however
-// it reads at the sites below: it says only that something was recognised and
-// nothing has cleared it, which is why a source the sync processor is counting
-// can sit here with the byte at 0. The measurement that answers the other
-// question is VideoSourceAcquisition::sourceIsPresent(). docs/video-source-acquisition.md
-static bool standardIsHeld()
-{
-    return rto->videoStandardInput != Tv5725::PresetLoad::NoStandard;
-}
-
 // Whether the source runs a 15 kHz line. One reader, on every path: the held
 // rate survives a bypass switch, so bypass is not a special case.
 // docs/video-source-acquisition.md
@@ -2636,7 +2626,7 @@ void doPostPresetLoadSteps()
 
     // if(Info_sate == 0)
     {
-        if (!standardIsHeld()) {
+        if (rto->videoStandardInput == Tv5725::PresetLoad::NoStandard) {
             uint8_t videoMode = getVideoMode();
             if (videoMode > 0) {
                 holdStandard(videoMode);
@@ -3018,7 +3008,8 @@ void applyPresets(uint8_t result)
     }
 
     boolean waitExtra = 0;
-    if (Tv5725::VideoRoute::isHdBypassChannel() || rgbhvBypass() || !standardIsHeld()) {
+    if (Tv5725::VideoRoute::isHdBypassChannel() || rgbhvBypass()
+        || !inputAcquisition.sourceIsPresent()) {
         waitExtra = 1;
         if (result <= 4 || result == Tv5725::PresetLoad::Rgbhv || result == 8
             || result == 9) {
@@ -3297,13 +3288,15 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
     const bool searching = inputAcquisition.sourceIsSearching();
 
-    if (!standardIsHeld() && searching) {
-        Tv5725::SyncProcessor::applyPulseWidthDifference();
-        return;
-    }
-
-    if (withCurrentVideoModeCheck && searching) {
-        Tv5725::SyncProcessor::applyForSearch(Tv5725::SyncMeasurement::isCsync());
+    // What told these apart was whether the byte had ever named a standard,
+    // and the engine keeps no such fact: a source it is not counting is
+    // searching whatever it was called before. What is left is the caller's
+    // request for the hunt configuration. docs/video-source-acquisition.md
+    if (searching) {
+        if (withCurrentVideoModeCheck)
+            Tv5725::SyncProcessor::applyForSearch(Tv5725::SyncMeasurement::isCsync());
+        else
+            Tv5725::SyncProcessor::applyPulseWidthDifference();
         return;
     }
 
@@ -3314,7 +3307,7 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
     if (rto->videoStandardInput >= Tv5725::PresetLoad::PathFirst) {
         Tv5725::SyncProcessor::applySeparationThresholds(
             Tv5725::SyncMeasurement::isCsync());
-    } else if (standardIsHeld()) {
+    } else if (inputAcquisition.sourceIsPresent()) {
         Tv5725::SyncProcessor::applyPulseWidthDifference();
         Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncMeasurement::isCsync(),
                                                 sourceHasSerratedSync());
@@ -3323,8 +3316,8 @@ void updateSpDynamic(boolean withCurrentVideoModeCheck)
 
 void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 {
-    if ((!standardIsHeld() || rgbhvBypass()) ||
-        !rto->boardHasPower || rto->sourceDisconnected) {
+    if (inputAcquisition.sourceIsSearching() || rgbhvBypass()
+        || !rto->boardHasPower || rto->sourceDisconnected) {
         return;
     }
 
@@ -3334,7 +3327,7 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 
 void updateClampPosition() // Update Clamp Position
 {
-    if (!standardIsHeld() || !rto->boardHasPower || rto->sourceDisconnected
+    if (!rto->boardHasPower || rto->sourceDisconnected
         || inputAcquisition.sourceIsSearching()) {
         return;
     }
@@ -3942,7 +3935,7 @@ void runSyncWatcher() //
     // walk it off.
     if (!rto->inputIsYpBpR) {
         const Tv5725::SyncOnGreen::Tuning tuning = Tv5725::SyncOnGreen::tune(
-            sourceDisturbed, standardIsHeld(), millisNow,
+            sourceDisturbed, inputAcquisition.sourceIsPresent(), millisNow,
             putSogLevelInForce, optimizeSogLevel);
         if (tuning.sourceUnsettled)
             lastVsyncLock = millis();
@@ -5165,7 +5158,7 @@ void loop()
         && inputAcquisition.runAdvanced()) {
         runSyncWatcher();
 
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && standardIsHeld() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.unmeasuredPasses() == 0 && inputAcquisition.acquiredPasses() > 90 && rto->boardHasPower) {
+        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && rto->boardHasPower) {
             if (Tv5725::SourceMeasurement::dividerLatched(
                     Tv5725::SourceMeasurement::measureLineSamples(),
                     GBS::PLLAD_MD::read())) {
@@ -5199,8 +5192,8 @@ void loop()
         }
     }
 
-    if ((!rgbhvBypass() && standardIsHeld()) &&
-        rto->syncWatcherEnabled && !Tv5725::SyncProcessor::coastPlaced()) {
+    if (!rgbhvBypass() && rto->syncWatcherEnabled
+        && !Tv5725::SyncProcessor::coastPlaced()) {
         if (inputAcquisition.acquiredPasses() >= 7) {
             if (inputAcquisition.sourceIsPresent()) {
                 updateCoastPosition(0);
@@ -5216,7 +5209,7 @@ void loop()
         }
     }
 
-    if (standardIsHeld() && (inputAcquisition.acquiredPasses() >= 4) &&
+    if (inputAcquisition.sourceIsPresent() && (inputAcquisition.acquiredPasses() >= 4) &&
         !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
         updateClampPosition();
         if (Tv5725::SyncProcessor::clampPlaced()) {

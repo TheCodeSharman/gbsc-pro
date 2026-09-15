@@ -118,9 +118,9 @@ public:
     // Nothing measures the sync amplitude, so the evidence is a run of
     // bad-hsync samples inside a window and the response is one step down.
     //
-    // `sourceClassified` false counts every sample bad: with no standard
-    // detected there is nothing to compare a line length against, so the pass
-    // stops waiting for evidence it cannot get.
+    // `sourceAcquired` false counts every sample bad: with no source acquired
+    // there is no settled line length to compare against, so the pass stops
+    // waiting for evidence it cannot get.
     //
     // The window and the bad-sample count are held across passes, so a mode
     // change has to say they are stale: forgetWindow().
@@ -130,7 +130,7 @@ public:
     // the walk is called faster than a source can lock, and it pins the level
     // at the floor -- measured at 2, where a separate-sync source then never
     // acquires at all and no restart recovers it.
-    static Tuning tune(bool sourceDisturbed, bool sourceClassified,
+    static Tuning tune(bool sourceDisturbed, bool sourceAcquired,
                        uint32_t (*nowMs)(), void (*putInForce)(),
                        void (*escalate)());
 
