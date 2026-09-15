@@ -34,19 +34,20 @@ is broken" reading misses:
   at 363 and 533, 0-4% everywhere else
 - no register write reproduces it, over 79 differing registers applied
   individually, and no reset in either clock domain clears it
-- every clearance ever measured is an interruption of the incoming line -- a
-  source mode change, or an `ADC_INPUT_SEL` bounce -- which is HSync taken away
-  and given back rather than anything written
+- every clearance measured works by interrupting the line into the ADC rather
+  than by resetting anything -- a source mode change, which is the source's
+  doing, and an `ADC_INPUT_SEL` bounce, which IS a register write from this end
+  and is the one that does clear it
 
 So the shape is latched state inside the IF's measurement, entered and left on
 the line's TRANSITIONS rather than on its content. That is consistent with the
 2026-09-15 pair where both of those clearances failed in turn: if the lever were
 the interruption alone, a round trip would always work, and it does not.
 
-One further path is ruled out from the sync side: `SP_SYNC_BYPS`, which takes
-the sync processor's retimed HS out of the path to the decimator, changes
-nothing -- same picture, same test-bus selectors, same counters. The register was
-already railed when it was tried, so the IF's own measurement could not testify.
+`SP_SYNC_BYPS` is in the nine-bit sweep below and reads as noise there. What is
+added since is that it changes nothing on a WORKING picture either -- same
+framing, same counters, and the same test-bus selectors carrying either side --
+so it is not a lever on this source at all rather than merely not a clearance.
 `docs/tv5725-chip.md`.
 
 ## It follows the source, not the preset
@@ -366,8 +367,13 @@ legitimately follow the divider. The state is saved whole as
 | ESP reset: firmware reboot, full chip re-initialisation over I2C | no |
 | cold boot, mains and USB | **yes** -- 91/91 samples back at 431 |
 
-So the state lives somewhere no register write reaches. A full re-initialisation
-rewrote the chip and did not move it; removing the rails cleared it at once.
+So the state reaches no RESET, of any block or either clock domain: a full
+re-initialisation rewrote the chip and did not move it, and removing the rails
+cleared it at once. **It is not beyond every register write**, which an earlier
+form of this sentence claimed -- the `ADC_INPUT_SEL` bounce below is a write to
+s5 0x02 and it clears the fault. What separates the two is what the write does:
+the bounce takes the line away from the ADC and gives it back, where a reset
+re-initialises a block that is not holding the fault.
 
 **The caveat, and it is load-bearing.** The two rows marked above were taken with
 a script that ignored `Probe.write_field()`'s return value, and that function
@@ -435,8 +441,10 @@ new mode has its own wrong answer available. **Return to the mode whose correct
 value is known, and check against that.**
 
 What the fault is in is the input formatter's lock to the incoming line, and
-what shifts it is a real interruption of that line -- which no register write
-supplies, and which the firmware cannot generate for itself.
+what shifts it is a real interruption of that line. The firmware cannot generate
+one for itself from the source, but it can from this end: an `ADC_INPUT_SEL`
+bounce takes the line away from the ADC, and that is a register write rather
+than a source change.
 
 **What this does not settle is whether a cold boot clears it.** One cold boot,
 mains and USB pulled, left `HPERIOD_IF` railed, and the mode change above is what
