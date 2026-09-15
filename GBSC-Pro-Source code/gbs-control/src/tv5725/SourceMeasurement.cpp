@@ -112,15 +112,11 @@ const uint8_t SourceMeasurement::SteadySamples;
 const uint16_t SourceMeasurement::RateAgreementPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 
-bool SourceMeasurement::counterFlagged_ = false;
-void (*SourceMeasurement::counterRecovery_)() = 0;
-
 SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
       rateRejections_(0), lineDoubled_(true), steady_(SteadySamples),
-      rateAttempts_(0), recoveryTried_(false), serrationsSeen_(false),
-      referenceRateHz_(0)
+      rateAttempts_(0), serrationsSeen_(false), referenceRateHz_(0)
 {
 }
 
@@ -240,17 +236,7 @@ bool SourceMeasurement::measureLineRate()
     // is WRONG AND STABLE, and every test lineRateFromHPeriod() applies is
     // passed by one -- so it is believed only where something corroborates it.
     // docs/investigations/hperiod-if-railing.md
-    uint32_t fromCounter = measureLineRateFromHPeriod(sourceLines_);
-
-    // A flagged counter is not a settling source, and the bounce is the only
-    // thing measured to clear one without the source moving. Once per source
-    // event: it causes the fault about as readily as it clears it.
-    if (fromCounter == 0 && counterWasFlagged() && counterRecovery_ != 0
-        && !recoveryTried_) {
-        recoveryTried_ = true;
-        counterRecovery_();
-        fromCounter = measureLineRateFromHPeriod(sourceLines_);
-    }
+    const uint32_t fromCounter = measureLineRateFromHPeriod(sourceLines_);
 
     if (fromCounter != 0 && heldRateCorroborates(fromCounter)) {
         // Free, and the settled case: the rate already held stands behind it.
@@ -288,6 +274,23 @@ bool SourceMeasurement::measureLineRate()
 
     return lineRateHz_ != 0;
 }
+
+SourceMeasurement::Reading SourceMeasurement::measure()
+{
+    if (!sampleSteady())
+        return countWasSerrations() ? Serrations : NotSteady;
+
+    if (!measureLineRate())
+        return Unmeasurable;
+
+    // Last, because the duty is counted against the divider and the divider is
+    // what the readings above were taken through.
+    hsync_ = readSource();
+
+    return rateSettled() ? Measured : Settling;
+}
+
+SourceReading SourceMeasurement::hsync() const { return hsync_; }
 
 bool SourceMeasurement::usable() const { return divider_ != 0; }
 
@@ -418,22 +421,13 @@ uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
         if (GBS::STATUS_IF_HT_BAD::read() == 1)
             htBadSeen = true;
     }
-    counterFlagged_ = htBadSeen;
     return lineRateFromHPeriod(hperiod, HPeriodSamples, lines, htBadSeen);
-}
-
-bool SourceMeasurement::counterWasFlagged() { return counterFlagged_; }
-
-void SourceMeasurement::useCounterRecovery(void (*recover)())
-{
-    counterRecovery_ = recover;
 }
 
 void SourceMeasurement::forgetHeldRate()
 {
     goodLines_ = 0;
     goodLineRateHz_ = 0;
-    recoveryTried_ = false;
 }
 
 

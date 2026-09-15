@@ -116,10 +116,10 @@ bool VideoSourceAcquisition::resolveFromSource()
     // count taken through the previous mode's divider is not the source's.
     sampling_.applyReferenceSampling(videoPath_.oversample());
 
-    if (!sampling_.measureLineRate())
+    if (sampling_.measure() != Tv5725::SourceMeasurement::Measured)
         return videoPath_.deferSolve();
 
-    videoPath_.sourceMeasured(sampling_.readSource());
+    videoPath_.sourceMeasured(sampling_.hsync());
     return videoPath_.resolve();
 }
 
@@ -492,10 +492,9 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
         return false;
     }
 
-    // The hsync pulse, now that the reference sampling clock it is counted
-    // against is in force and locked. The engine solves every window from this
-    // and reads nothing back itself.
-    videoPath_.sourceMeasured(sampling_.readSource());
+    // Taken in the same pass as the count and the rate above, so every window
+    // the engine solves describes one state of the source.
+    videoPath_.sourceMeasured(sampling_.hsync());
 
     // What the output should do, from the measurement just taken. Pass-through
     // is a statement about what the SOURCE is -- a raster the panel can take
@@ -523,31 +522,30 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
 
 bool VideoSourceAcquisition::measureSource(bool &settling)
 {
-    // The cheap gate. Everything below this line measures, and the field rate
-    // costs up to 250 ms a vsync pulse. The reference sampling clock is what
-    // opens it: a count taken through the previous mode's divider is not the
-    // source's.
-    if (!sampling_.sampleSteady()) {
-        // The count settled on the serrations, so the coast pair in force is
-        // not covering them. Margin over the default rather than a search for
-        // the lowest pair that works: which pairs measure a source is not
-        // reproducible between runs.
+    switch (sampling_.measure()) {
+    case Tv5725::SourceMeasurement::Serrations:
+        // The coast pair in force is not covering the serrations. Margin over
+        // the default rather than a search for the lowest pair that works:
+        // which pairs measure a source is not reproducible between runs.
         // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-        if (sampling_.countWasSerrations())
-            Tv5725::SyncProcessor::widenCoast();
+        Tv5725::SyncProcessor::widenCoast();
+        return false;
+
+    case Tv5725::SourceMeasurement::Settling:
+        // A rate is worth sizing a raster from once it has REPEATED. The
+        // cross-check inside bounds the rate against the line count, which
+        // catches a settling source off by tens of percent and passes one off
+        // by tenths -- and the raster is out by whatever fraction the rate is,
+        // for good, because nothing re-solves it.
+        settling = true;
+        return false;
+
+    case Tv5725::SourceMeasurement::Measured:
+        return true;
+
+    default:
         return false;
     }
-
-    if (!sampling_.measureLineRate())
-        return false;
-
-    // A rate is worth sizing a raster from once it has REPEATED. The cross-check
-    // inside measureLineRate() bounds the rate against the line count, which
-    // catches a settling source off by tens of percent and passes one off by
-    // tenths -- and the raster is out by whatever fraction the rate is, for
-    // good, because nothing re-solves it.
-    settling = !sampling_.rateSettled();
-    return !settling;
 }
 
 bool VideoSourceAcquisition::mayWriteForSource() const

@@ -25,6 +25,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "DebugPinStub.h"
+#include "MeasuredSource.h"
 
 using namespace Tv5725;
 
@@ -441,6 +442,7 @@ TEST_CASE("the divider ceiling follows the decimation too")
 
 // --- the line rate, measured off the chip ------------------------------------
 
+
 TEST_CASE("the line rate is measured rather than handed in")
 {
     // Field rate x source lines, the two quantities the divider is a function
@@ -449,7 +451,7 @@ TEST_CASE("the line rate is measured rather than handed in")
     g_fieldRate = 50.08f;
 
     SourceMeasurement measurement;
-    CHECK(measurement.measureLineRate());
+    CHECK(rateMeasured(measurePastGate(measurement)));
     CHECK(measurement.sourceLines() == 311);
     CHECK(measurement.lineRateHz() == 15624u);
 
@@ -473,10 +475,10 @@ TEST_CASE("a rate that moves without the line count is refused, and says so")
     g_fieldRate = 50.08f;
 
     SourceMeasurement measurement;
-    REQUIRE(measurement.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(measurement)));
 
     g_fieldRate = 57.9f;
-    CHECK_FALSE(measurement.measureLineRate());
+    CHECK(measurement.measure() == SourceMeasurement::Unmeasurable);
     CHECK(measurement.lineRateHz() == 0u);
 
     SUBCASE("and reports what it saw, both halves") {
@@ -486,14 +488,14 @@ TEST_CASE("a rate that moves without the line count is refused, and says so")
 
     SUBCASE("an unmeasurable field rate is refused the same way") {
         g_fieldRate = 0.0f;
-        CHECK_FALSE(measurement.measureLineRate());
+        CHECK(measurement.measure() == SourceMeasurement::Unmeasurable);
         CHECK(measurement.lineRateHz() == 0u);
     }
 
     SUBCASE("so is the 97 lines a preset load leaves behind") {
         seedSourceLines(97);
         g_fieldRate = 50.08f;
-        CHECK_FALSE(measurement.measureLineRate());
+        CHECK_FALSE(rateMeasured(measurePastGate(measurement)));
     }
 }
 
@@ -507,14 +509,16 @@ TEST_CASE("the line count has to hold still before the field rate is worth payin
     seedSourceLines(311);
     SourceMeasurement measurement;
 
+    g_fieldRateCalls = 0;
     for (uint8_t i = 1; i < SourceMeasurement::SteadySamples; ++i) {
         CAPTURE(i);
-        CHECK_FALSE(measurement.sampleSteady());
+        CHECK(measurement.measure() == SourceMeasurement::NotSteady);
     }
-    CHECK(measurement.sampleSteady());
+    CHECK(g_fieldRateCalls == 0);
+    CHECK(measurement.measure() != SourceMeasurement::NotSteady);
 
     SUBCASE("and stays steady while the count does") {
-        CHECK(measurement.sampleSteady());
+        CHECK(measurement.measure() != SourceMeasurement::NotSteady);
     }
 }
 
@@ -522,14 +526,12 @@ TEST_CASE("a count that moves starts the run again")
 {
     seedSourceLines(311);
     SourceMeasurement measurement;
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-    REQUIRE(measurement.sampleSteady());
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
     // Mid-change. A one-sample blip is normal; what matters is that it does not
     // report steady on the strength of the run before it.
     seedSourceLines(97);
-    CHECK_FALSE(measurement.sampleSteady());
+    CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
 TEST_CASE("the field rate has to REPEAT before anything is sized from it")
@@ -548,13 +550,11 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
     g_fieldRate = 50.26f;
 
     SourceMeasurement measurement;
-    REQUIRE(measurement.measureLineRate());
-    CHECK_FALSE(measurement.rateSettled());
+    REQUIRE(measurePastGate(measurement) == SourceMeasurement::Settling);
 
     SUBCASE("a rate that lands somewhere else has not repeated either") {
         g_fieldRate = 49.92f;
-        REQUIRE(measurement.measureLineRate());
-        CHECK_FALSE(measurement.rateSettled());
+        CHECK(measurement.measure() == SourceMeasurement::Settling);
     }
 
     SUBCASE("but a rate that never repeats is taken as it stands rather than "
@@ -569,17 +569,14 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
         for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
             CAPTURE(i);
             g_fieldRate = 50.0f + (float)i * 0.1f;
-            REQUIRE(measurement.measureLineRate());
-            CHECK_FALSE(measurement.rateSettled());
+            CHECK(measurement.measure() == SourceMeasurement::Settling);
         }
         g_fieldRate = 49.5f;
-        REQUIRE(measurement.measureLineRate());
-        CHECK(measurement.rateSettled());
+        CHECK(measurement.measure() == SourceMeasurement::Measured);
     }
 
     SUBCASE("the same rate twice is the source holding still") {
-        REQUIRE(measurement.measureLineRate());
-        CHECK(measurement.rateSettled());
+        CHECK(measurement.measure() == SourceMeasurement::Measured);
     }
 
     SUBCASE("and the reading noise of a settled source is not a change") {
@@ -587,8 +584,7 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
         // in the last place. The band is a tenth of a percent: ten times that
         // noise, and a third of the smallest settling error seen.
         g_fieldRate = 50.26f * 1.0005f;
-        REQUIRE(measurement.measureLineRate());
-        CHECK(measurement.rateSettled());
+        CHECK(measurement.measure() == SourceMeasurement::Measured);
     }
 }
 
@@ -600,13 +596,11 @@ TEST_CASE("a mode change abandons the field rate it had agreed on")
     g_fieldRate = 50.08f;
 
     SourceMeasurement measurement;
-    REQUIRE(measurement.measureLineRate());
-    REQUIRE_FALSE(measurement.rateSettled());
+    REQUIRE(measurePastGate(measurement) == SourceMeasurement::Settling);
 
     measurement.resetSteadiness();
 
-    REQUIRE(measurement.measureLineRate());
-    CHECK_FALSE(measurement.rateSettled());
+    CHECK(measurePastGate(measurement) == SourceMeasurement::Settling);
 }
 
 TEST_CASE("a count outside what any source runs never settles")
@@ -617,19 +611,17 @@ TEST_CASE("a count outside what any source runs never settles")
     SourceMeasurement measurement;
 
     for (uint8_t i = 0; i < 3 * SourceMeasurement::SteadySamples; ++i)
-        CHECK_FALSE(measurement.sampleSteady());
+        CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
 TEST_CASE("a mode change abandons the run rather than counting through it")
 {
     seedSourceLines(311);
     SourceMeasurement measurement;
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-    REQUIRE(measurement.sampleSteady());
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
     measurement.resetSteadiness();
-    CHECK_FALSE(measurement.sampleSteady());
+    CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
 // --- was the divider actually latched? ---------------------------------------
@@ -755,32 +747,32 @@ TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
     SUBCASE("a 15.6 kHz line is one") {
         seedSourceLines(311);
         g_fieldRate = 50.08f;
-        CHECK(measurement.measureLineRate());
+        CHECK(rateMeasured(measurePastGate(measurement)));
         CHECK(measurement.lowLineRate());
     }
 
     SUBCASE("576p at twice the rate is not") {
         seedSourceLines(625);
         g_fieldRate = 50.0f;
-        CHECK(measurement.measureLineRate());
+        CHECK(rateMeasured(measurePastGate(measurement)));
         CHECK_FALSE(measurement.lowLineRate());
     }
 
     SUBCASE("it survives a sync loss, because that is when its readers run") {
         seedSourceLines(311);
         g_fieldRate = 50.08f;
-        CHECK(measurement.measureLineRate());
+        CHECK(rateMeasured(measurePastGate(measurement)));
         seedSourceLines(0);
-        CHECK_FALSE(measurement.measureLineRate());
+        CHECK_FALSE(rateMeasured(measurePastGate(measurement)));
         CHECK(measurement.lowLineRate());
     }
 
     SUBCASE("the rate it answers from is the one reported, across that loss") {
         seedSourceLines(311);
         g_fieldRate = 50.08f;
-        CHECK(measurement.measureLineRate());
+        CHECK(rateMeasured(measurePastGate(measurement)));
         seedSourceLines(0);
-        CHECK_FALSE(measurement.measureLineRate());
+        CHECK_FALSE(rateMeasured(measurePastGate(measurement)));
         CHECK(measurement.heldLineRateHz() == 15624u);
     }
 }
@@ -869,7 +861,7 @@ TEST_CASE("the field rate is derived over the same frame the line rate assumed")
     seedHPeriod(431);
 
     SourceMeasurement sampling;
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
 
     CHECK(sampling.lineRateHz() == 15625u);
     CHECK(sampling.fieldRateHz() > 50.0f);
@@ -885,11 +877,11 @@ TEST_CASE("a corroborated HPERIOD_IF run measures the line rate without a vsync 
 
     // The first reading has nothing held to check it against, so it is paid
     // for once.
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
     CHECK(sampling.lineRateHz() == 15625u);
 
     g_fieldRateCalls = 0;
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
     CHECK(sampling.lineRateHz() == 15625u);
 
     // The cost is the point: the held rate corroborates the reading, so nothing
@@ -907,7 +899,7 @@ TEST_CASE("a refused HPERIOD_IF run falls back to the field rate")
     g_fieldRate = 60.0f;
     g_fieldRateCalls = 0;
 
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
     CHECK(g_fieldRateCalls > 0);
     // 525 x 60: VTOTAL is zero based and 640x480@60 is a 525-line frame, so
     // the count of 524 is the standard's own number less one.
@@ -951,7 +943,7 @@ TEST_CASE("a railed reading is refused where the field rate contradicts it")
     seedHPeriod(272);
     g_fieldRate = 50.08f;
 
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
 
     // 50.08 x 312, which is what the source runs at, not the 24725 the counter
     // states.
@@ -969,12 +961,12 @@ TEST_CASE("a railed reading never becomes the held rate")
     seedSourceLines(311);
     seedHPeriod(431);
     g_fieldRate = 50.08f;
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
     REQUIRE(sampling.heldLineRateHz() == 15625u);
 
     seedHPeriod(272);
     for (unsigned i = 0; i < 2u * SourceMeasurement::HeldRateRejectionLimit; ++i)
-        sampling.measureLineRate();
+        sampling.measure();
 
     CHECK(sampling.heldLineRateHz() == 15624u);
 }
@@ -995,7 +987,7 @@ TEST_CASE("a reading nothing can corroborate is refused, not adopted")
     seedHPeriod(431);
     g_fieldRate = 0.0f;
 
-    CHECK_FALSE(sampling.measureLineRate());
+    CHECK_FALSE(rateMeasured(measurePastGate(sampling)));
     CHECK(sampling.heldLineRateHz() == 0u);
 }
 
@@ -1009,13 +1001,13 @@ TEST_CASE("a refusal does not spend the rejection budget")
     seedSourceLines(311);
     seedHPeriod(431);
     g_fieldRate = 50.08f;
-    REQUIRE(sampling.measureLineRate());
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
     REQUIRE(sampling.heldLineRateHz() == 15625u);
 
     g_fieldRate = 0.0f;
     seedHPeriod(272);
     for (unsigned i = 0; i < 2u * SourceMeasurement::HeldRateRejectionLimit; ++i)
-        CHECK_FALSE(sampling.measureLineRate());
+        CHECK_FALSE(rateMeasured(measurePastGate(sampling)));
 
     CHECK(sampling.heldLineRateHz() == 15625u);
 }
@@ -1135,7 +1127,7 @@ TEST_CASE("a serration count never goes steady, however still it holds")
 
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples * 3; ++i) {
         CAPTURE(i);
-        CHECK_FALSE(measurement.sampleSteady());
+        CHECK_FALSE(rateMeasured(measurement.measure()));
     }
 }
 
@@ -1145,10 +1137,7 @@ TEST_CASE("a field count goes steady with the witness live")
     seedSourceHalfLines(624);
     SourceMeasurement measurement;
 
-    for (uint8_t i = 1; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-
-    CHECK(measurement.sampleSteady());
+    CHECK(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 }
 
 TEST_CASE("the reason a serration count was refused is available to the caller")
@@ -1160,10 +1149,7 @@ TEST_CASE("the reason a serration count was refused is available to the caller")
     seedInterlaced();
     SourceMeasurement measurement;
 
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-
-    CHECK(measurement.countWasSerrations());
+    CHECK(measurePastGate(measurement) == SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a count still gathering samples is not reported as serrations")
@@ -1172,9 +1158,7 @@ TEST_CASE("a count still gathering samples is not reported as serrations")
     seedSourceHalfLines(624);
     SourceMeasurement measurement;
 
-    measurement.sampleSteady();
-
-    CHECK_FALSE(measurement.countWasSerrations());
+    CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
 TEST_CASE("a good count clears a serration verdict")
@@ -1183,17 +1167,20 @@ TEST_CASE("a good count clears a serration verdict")
     seedSourceHalfLines(624);
     seedInterlaced();
     SourceMeasurement measurement;
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-    REQUIRE(measurement.countWasSerrations());
+    REQUIRE(measurePastGate(measurement) == SourceMeasurement::Serrations);
 
     seedSourceLines(310);
     seedSourceHalfLines(624);
     seedInterlaced();
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
 
-    CHECK_FALSE(measurement.countWasSerrations());
+    // A completed run at the new count is what clears it. The verdict stands
+    // while the run is still re-gathering, because that is the state the coast
+    // was widened for and one good sample does not undo it.
+    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
+        reading = measurement.measure();
+
+    CHECK(reading != SourceMeasurement::Serrations);
 }
 
 // --- putting the chip on the sampling clock ---------------------------------
@@ -1244,7 +1231,7 @@ static void settleAt(SourceMeasurement &sampling, uint16_t lines)
 {
     seedSourceLines(lines);
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
-        sampling.sampleSteady();
+        sampling.measure();
 }
 
 TEST_CASE("a reference already in force is not written again")
@@ -1432,12 +1419,12 @@ TEST_CASE("the scan type of the held source uses the doubling in force")
 static bool settleAlternating(SourceMeasurement &measurement, uint16_t low,
                               uint8_t samples)
 {
-    bool steady = false;
+    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
     for (uint8_t i = 0; i < samples; ++i) {
         seedSourceLines(i % 2 ? (uint16_t)(low + 1) : low);
-        steady = measurement.sampleSteady();
+        reading = measurement.measure();
     }
-    return steady;
+    return reading != SourceMeasurement::NotSteady;
 }
 
 TEST_CASE("a count alternating by one settles instead of running for ever")
@@ -1484,9 +1471,7 @@ TEST_CASE("a steady count claims nothing about the scan type on its own")
     // evidence of a progressive source.
     seedSourceLines(310);
     SourceMeasurement measurement;
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-    REQUIRE(measurement.sampleSteady());
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
     CHECK(measurement.scanType(57) == SourceMeasurement::ScanUnknown);
 }
@@ -1495,10 +1480,92 @@ TEST_CASE("a count that moves by more than one still starts the run again")
 {
     seedSourceLines(311);
     SourceMeasurement measurement;
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
-        measurement.sampleSteady();
-    REQUIRE(measurement.sampleSteady());
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
     seedSourceLines(313);
-    CHECK_FALSE(measurement.sampleSteady());
+    CHECK(measurement.measure() == SourceMeasurement::NotSteady);
+}
+
+// --- one pass, every reading ------------------------------------------------
+
+// The hsync pulse, as the sync processor reports it: the low time in ADC
+// samples and the polarity. Call AFTER seedSourceLines(), which resets the bus.
+static void seedHsync(uint16_t hlowLen, bool positive)
+{
+    Wire.bank[0][0x19] = (uint8_t)(hlowLen & 0xFF);
+    Wire.bank[0][0x1A] = (uint8_t)((hlowLen >> 8) & 0x0F);
+    if (positive)
+        Wire.bank[0][0x16] |= 0x01;
+}
+
+// Every quantity the engine solves from is read in ONE pass, because a capture
+// taken on one solve and a window taken on another describe different states
+// and the discrepancy between them looks like a fault in the arithmetic.
+TEST_CASE("one call measures the source, and every reading comes from that pass")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    seedHsync(181, false);
+    sampling.holdDivider(BenchDivider);
+    g_fieldRate = 50.08f;
+
+    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    for (uint8_t pass = 0; pass < 16 && reading != SourceMeasurement::Measured; ++pass)
+        reading = sampling.measure();
+
+    REQUIRE(reading == SourceMeasurement::Measured);
+    CHECK(sampling.sourceLines() == 311);
+    CHECK(sampling.lineRateHz() == 15625u);
+    CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
+    CHECK_FALSE(sampling.hsync().syncAtHead());
+}
+
+// The cheap gate is INSIDE the one call, so a caller that asks every pass does
+// not pay the vsync spin until the count has settled.
+TEST_CASE("a count still gathering samples costs no field rate measurement")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    sampling.holdDivider(BenchDivider);
+    g_fieldRateCalls = 0;
+
+    CHECK(sampling.measure() == SourceMeasurement::NotSteady);
+    CHECK(g_fieldRateCalls == 0);
+}
+
+// The caller widens the coast on this, so it has to be distinguishable from a
+// run that is merely still gathering.
+TEST_CASE("a count that read the serrations is reported apart from an unsettled one")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(622);
+    seedSourceHalfLines(622);
+    seedInterlaced();
+    seedHPeriod(431);
+    sampling.holdDivider(BenchDivider);
+
+    SourceMeasurement::Reading reading = SourceMeasurement::NotSteady;
+    for (uint8_t pass = 0; pass < 16 && reading != SourceMeasurement::Serrations; ++pass)
+        reading = sampling.measure();
+
+    CHECK(reading == SourceMeasurement::Serrations);
+}
+
+// A rate is not worth sizing a raster from until it has repeated, and the
+// caller treats that differently from a source it cannot read at all.
+TEST_CASE("a rate that has not repeated yet is settling rather than measured")
+{
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    sampling.holdDivider(BenchDivider);
+    g_fieldRate = 50.08f;
+
+    SourceMeasurement::Reading first = SourceMeasurement::NotSteady;
+    for (uint8_t pass = 0; pass < 16 && first == SourceMeasurement::NotSteady; ++pass)
+        first = sampling.measure();
+
+    CHECK(first == SourceMeasurement::Settling);
 }

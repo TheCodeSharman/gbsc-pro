@@ -45,6 +45,33 @@ public:
     // zero it would go on to write.
     SourceMeasurement();
 
+    enum Reading {
+        NotSteady,     // the count is still gathering samples
+        Serrations,    // the settled count read the serrations, not the source
+        Unmeasurable,  // nothing could speak for a line rate
+        Settling,      // a rate, which has not repeated yet
+        Measured,
+    };
+
+    // Every quantity a solve needs, in ONE pass: the line count, the line rate
+    // and the hsync pulse, held as state for the caller to read back. A capture
+    // taken on one solve against a window taken on another describes two states
+    // and the difference between them reads as a fault in the arithmetic.
+    //
+    // Asked on every pass. The cheap gate is inside it, so the field rate's
+    // vsync spin -- up to 250 ms a pulse -- is not paid for until the count has
+    // settled.
+    //
+    // **THE REFERENCE SAMPLING CLOCK MUST ALREADY BE IN FORCE.** Every reading
+    // here is counted through the ADC clock, and one taken through the previous
+    // mode's divider is not this source's. The count that CHOOSES that clock is
+    // the one reading that cannot come from this pass -- readSourceLines().
+    Reading measure();
+
+    // The hsync pulse from the last measure(). The engine solves every window
+    // from this and reads nothing back.
+    SourceReading hsync() const;
+
     // Read the line rate off the chip and hold both inputs, because the
     // cross-check inside can say the two disagree but never which of them was
     // wrong. False when it is unmeasurable. HPERIOD_IF answers when a run of it
@@ -110,13 +137,6 @@ public:
     // field can make it do.
     bool countAlternated() const;
 
-    // Whether the last steadiness run ended on a count that reads as the
-    // serrations rather than the source. The return of sampleSteady() cannot
-    // say this: a run still gathering samples and a run that gathered them and
-    // rejected the result both read false, and only the second is a fault to
-    // act on.
-    bool countWasSerrations() const;
-
     // The source's line count, corrected for a divider the ADC PLL cannot lock
     // to. The sync processor counts in ADC clocks, so on too small a divider the
     // PLL locks to every Nth hsync: it reports a count N times too low and N
@@ -129,18 +149,6 @@ public:
     // corrupted them.
     static uint16_t measureSourceLinesCorrected(uint16_t divider);
 
-    // Take ONE line-count sample and say whether enough consecutive ones have
-    // agreed. A single register read, so a caller can ask on every pass;
-    // measureLineRate() spins for up to 250 ms a vsync pulse and cannot be
-    // asked speculatively.
-    //
-    // An OPTIMISATION rather than the correctness guard. What rejects a
-    // settling source is lineRateFrom()'s cross-check of the rate against the
-    // count, so letting one through early costs a measurement, not a wrong
-    // answer. A count outside what any source runs never settles, because the
-    // 97 a preset load leaves behind is perfectly steady.
-    bool sampleSteady();
-
     // The count the steadiness gate has settled on. Meaningful only when
     // sampleSteady() has returned true; before that it is whatever arrived last.
     uint16_t steadyLines() const;
@@ -148,8 +156,6 @@ public:
     // A mode change is about to move the count and the rate, so the run so far
     // and the rate agreed on mean nothing.
     void resetSteadiness();
-
-    bool measureLineRate();
 
     // A gross sanity net on the measured field rate, not a classification: the
     // rate is whatever the source runs at, and 50 and 60 are not special.
@@ -240,24 +246,10 @@ public:
     // open -- a raster a fraction of a percent wrong is the better failure.
     static const uint8_t RateAgreementAttempts = 8;
 
-    // Whether the rate measureLineRate() just took is worth sizing a raster
-    // from -- either because it repeated, or because it has been asked
-    // RateAgreementAttempts times. **THE RASTER MUST NOT BE SOLVED FIRST.**
-    //
-    // lineRateFrom()'s 2% cross-check is a gross-error net and passes a rate
-    // read across a preset load, which is out by tenths of a percent -- and
-    // horizontalTotal = clock / rate / lines, so the raster is out by the same
-    // fraction and nothing re-solves it. docs/firmware-geometry-engine.md
-    bool rateSettled();
-
     // The source's line count, against the divider held. Read BEFORE the
     // reference sampling clock, because the scan mode is judged from it and the
     // clock follows the scan mode.
     uint16_t readSourceLines() const;
-
-    // The hsync pulse, against the divider held. The engine is handed this and
-    // calculates from it, reading nothing back.
-    SourceReading readSource() const;
 
     // The source, as the sync processor counts it. These are the only reads of
     // STATUS_SYNC_PROC_* anywhere: nothing else on the board can supply them,
@@ -293,25 +285,6 @@ public:
     // on the idle path -- which is what lets a rate change at an unchanged
     // count be seen at all.
     static uint32_t measureLineRateFromHPeriod(uint16_t lines);
-
-    // Whether the last HPERIOD window was refused because the input formatter
-    // flagged the counter, rather than because the samples disagreed. A
-    // settling source disagrees and wants waiting out; a flagged counter wants
-    // the recovery below, and bouncing the first would manufacture the second.
-    static bool counterWasFlagged();
-
-    // The recovery for a flagged counter: takes the ADC's input away and gives
-    // it back so the input formatter re-acquires the line. Tried once per source
-    // event, and only where STATUS_IF_HT_BAD flagged the counter.
-    //
-    // **NOTHING INSTALLS ONE, AND THE REASON IS THE PICTURE.** Adc::bounceInput()
-    // is the only thing measured to clear a railed counter from this end, and
-    // taking the input away turns the whole screen green for as long as it is
-    // gone -- photographed at 400 ms, on the modes that rail, which is a visible
-    // flash rather than a repair. It buys accuracy and nothing else: a refused
-    // window already falls back to the field rate and the raster comes out
-    // right. Install one only with something better than a blind bounce.
-    static void useCounterRecovery(void (*recover)());
 
     // The line in ADC samples, which is what STATUS_SYNC_PROC_HTOTAL counts.
     // Read to decide whether the other two can be believed at all, never to
@@ -409,6 +382,43 @@ public:
     uint16_t retimeStop() const;
 
 private:
+    // Reached only through measure(), which is the one pass every reading comes
+    // from.
+    // Take ONE line-count sample and say whether enough consecutive ones have
+    // agreed. A single register read, so a caller can ask on every pass;
+    // measureLineRate() spins for up to 250 ms a vsync pulse and cannot be
+    // asked speculatively.
+    //
+    // An OPTIMISATION rather than the correctness guard. What rejects a
+    // settling source is lineRateFrom()'s cross-check of the rate against the
+    // count, so letting one through early costs a measurement, not a wrong
+    // answer. A count outside what any source runs never settles, because the
+    // 97 a preset load leaves behind is perfectly steady.
+    bool sampleSteady();
+
+    // Whether the last steadiness run ended on a count that reads as the
+    // serrations rather than the source. The return of sampleSteady() cannot
+    // say this: a run still gathering samples and a run that gathered them and
+    // rejected the result both read false, and only the second is a fault to
+    // act on.
+    bool countWasSerrations() const;
+
+    bool measureLineRate();
+
+    // Whether the rate measureLineRate() just took is worth sizing a raster
+    // from -- either because it repeated, or because it has been asked
+    // RateAgreementAttempts times. **THE RASTER MUST NOT BE SOLVED FIRST.**
+    //
+    // lineRateFrom()'s 2% cross-check is a gross-error net and passes a rate
+    // read across a preset load, which is out by tenths of a percent -- and
+    // horizontalTotal = clock / rate / lines, so the raster is out by the same
+    // fraction and nothing re-solves it. docs/firmware-geometry-engine.md
+    bool rateSettled();
+
+    // The hsync pulse, against the divider held. The engine is handed this and
+    // calculates from it, reading nothing back.
+    SourceReading readSource() const;
+
     // Whether the rate already held stands behind a new reading. Free, where
     // asking the field rate costs a vsync spin.
     bool heldRateCorroborates(uint32_t lineRateHz) const;
@@ -425,14 +435,11 @@ private:
     uint8_t rateRejections_;
     bool lineDoubled_;
 
+    SourceReading hsync_;
     SteadyRun steady_;
     uint8_t rateAttempts_;
-    bool recoveryTried_;   // the flagged-counter recovery, once per source event
     bool serrationsSeen_;  // the last completed steadiness run read the serrations
     uint32_t referenceRateHz_;  // the estimate the reference sample rate was sized from
-
-    static bool counterFlagged_;
-    static void (*counterRecovery_)();
 };
 
 }  // namespace Tv5725
