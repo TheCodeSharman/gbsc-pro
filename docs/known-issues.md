@@ -407,11 +407,22 @@ writers, contradictory values, on a field the investigation settled as following
 the sync type.
 
 **The cost is not measured where it would hurt.** On the separate-sync bench
-source 0x02 is harmless: written onto a locked source it leaves
-`STATUS_SYNC_PROC_VTOTAL` at 311 in 10 of 10 samples over 9 s with `HSACT` 1,
-and 0xFF restores identically. The table says the serrated case is where it
-bites, four to six lines high and perfectly steady, which no steadiness run can
-see — and that case has not been provoked through the ladder.
+source the two values are indistinguishable: 0x02 written onto a locked source
+leaves `STATUS_SYNC_PROC_VTOTAL` at 311 in 10 of 10 samples over 9 s with
+`HSACT` 1, and 0xFF restores identically. RD-5725-1.1 says why — the counter
+"is start when sync large different", so the ignore applies while the separator
+is telling pulse widths apart inside one composite stream, which is not what a
+source with its own V sync line presents. The table says the serrated case is
+where it bites, four to six lines high and perfectly steady, which no steadiness
+run can see, and that case has not been provoked through the ladder.
+
+**SERRATION IS A COMPOSITE-SYNC PROPERTY, so there are three states and not
+four.** A serrated vertical interval is one chopped by continued line-rate
+pulses so an H oscillator stays locked through it; a source with a dedicated H
+line never stops sending them, so there is nothing to serrate and no pulse
+widths for the separator to resolve. `applyPulseIgnore()` already encodes that —
+`serrated` is read only under `csync` — and so does
+`sourceHasSerratedSync()`.
 
 **What it is not**: this does NOT explain a unit that comes back from a flash
 searching with 0x02 standing, `STATUS_SYNC_PROC_VTOTAL` 0 and `HSACT` 1. That

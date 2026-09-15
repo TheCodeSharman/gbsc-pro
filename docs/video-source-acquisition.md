@@ -956,14 +956,21 @@ serrations, 0x6B for serrated composite -- and `applyForSearch()` writes 0x02
 whatever the sync type says. The hunt therefore looks for every source as though
 it were unserrated composite.
 
-**What that costs is measured only where it is harmless.** 0x02 written onto the
-locked 15 kHz separate-sync bench source leaves `STATUS_SYNC_PROC_VTOTAL` at a
-steady 311 in 10 of 10 samples over 9 s, with `HSACT` 1 throughout and 0xFF
-restoring identically -- so the wrong-by-the-table value costs that source
-nothing, and the collapse above is safe on both bench inputs. The serrated case
-is where the table says it bites: 0x02 on the Wii's 576i counts 315/316 against
-the 310 the source runs, four to six lines high and perfectly steady, which no
-steadiness run can see.
+**What that costs is measured only where the two values are
+indistinguishable.** 0x02 written onto the locked 15 kHz separate-sync bench
+source leaves `STATUS_SYNC_PROC_VTOTAL` at a steady 311 in 10 of 10 samples over
+9 s, with `HSACT` 1 throughout and 0xFF restoring identically -- which
+RD-5725-1.1's wording explains, the counter starting "when sync large different"
+and so applying where the separator tells pulse widths apart inside one
+composite stream. The serrated case is where the table says it bites: 0x02 on
+the Wii's 576i counts 315/316 against the 310 the source runs, four to six lines
+high and perfectly steady, which no steadiness run can see.
+
+**There are three arrangements, not four**, because serration is a property of
+composite sync: a dedicated H line keeps sending line syncs through the vertical
+interval, so nothing needs chopping and no widths need resolving. The firmware
+already reads `serrated` only under `csync`, so what the search has to establish
+is two answers rather than three.
 
 **The resolution is the derivation, not a fourth constant.** The value was once
 computed from two measurements -- `HPERIOD_IF` for the line and
