@@ -447,6 +447,37 @@ Two things to know when writing an assertion:
   shared `CHECK_NEAR(got, want, tol)` macro in `test/CheckNear.h`, over
   `CHECK_MESSAGE`.
 
+## The test suite drives the public interface
+
+**Nothing is public because a test wants to reach it.** The public interface is
+what a collaborator calls; a member no collaborator calls is private, whatever
+the suite does with it.
+
+A private method is covered through the public one that calls it. Reaching past
+that surface asserts on mechanism rather than behaviour, so the test breaks on a
+rename and stays silent on the thing it was written for -- and a class keeps a
+wide surface nobody outside it needs, which reads to the next caller as an
+invitation.
+
+The seam that makes this affordable is `test/fake/Wire.h`. A register-level
+behaviour is driven by seeding the bus and calling the public method, so a helper
+that takes a register's value as an argument needs no separate entry point:
+
+```cpp
+// The behaviour, through the interface the engine uses.
+seedSourceLines(311);
+seedHPeriod(431);
+CHECK(measurement.measureLineRate());
+CHECK(measurement.lineRateHz() == 15625u);
+```
+
+**A method that is hard to reach through the public interface is the signal that
+the class does too much.** Split it, and the new class's public interface is the
+seam the test wanted -- which is a design improvement rather than a concession.
+
+A member nothing calls at all is deleted rather than made private. Registers are
+the one exception, above.
+
 ## Prove a refactor changed nothing
 
 A behaviour-preserving change must be **shown** to be behaviour-preserving, not
