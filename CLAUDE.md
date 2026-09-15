@@ -113,7 +113,11 @@ nothing; a nameless mode is still reachable by `MODE`. `docs/bench-sources.md`.
 
 `MODE` replies with the mode read back from the hardware, never with the
 request, so a monitor definition that cannot do what was asked does not look
-like a fault in the scaler. **It repaints the card too**, because the default
+like a fault in the scaler. **THE REPLY IS NOT WHEN THE TIMING CHANGED** --
+VIDC20 changes on a register write and the scaler sees the source leave within
+~70 ms, while the reply waits on the repaint. Timing a transition from the reply
+charges the source for two thirds of a mode change that is entirely the
+engine's; measure from the console instead. **It repaints the card too**, because the default
 signal after a mode change is black with a flashing cursor, which reads from
 here as a scaler with no output and has been diagnosed as one. **A session can therefore change the source without
 anyone at the bench**, which is what makes the mode-change recovery below usable
