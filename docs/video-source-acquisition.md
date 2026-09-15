@@ -1726,14 +1726,35 @@ term and is where the hazard was measured; its gate is deleted, because
 `SyncOnGreen::acquire()` refuses the walk on a separator that is not in the sync
 path and that is the same answer for every separate-sync source.
 
-**`getStatus16SpHsStable()` IS THE ONE LEFT, AND IT IS THE WORST PLACE FOR IT.**
-The term picks a whole different stability test -- `STATUS_INT_INP_NO_SYNC`
-rather than `STATUS_16` -- and `detectAndSwitchToActiveInput()` calls the
-function inside its own 450 ms search, so a term that turns true before
-detection changes what detection is measuring with. The route in force answers
-it without the byte, one bypass route carrying every source, and what it costs
-is that a component source in pass-through changes stability test too: that is a
-bench question on the Wii through `/sc?K`, not a substitution.
+**`getStatus16SpHsStable()` IS THE ONE LEFT, AND THE ROUTE MUST NOT BE
+SUBSTITUTED INTO IT.** The term picks a whole different stability test --
+`STATUS_INT_INP_NO_SYNC` rather than `STATUS_16` -- and
+`detectAndSwitchToActiveInput()` calls the function inside its own 450 ms
+search. `VideoRoute::isHdBypassChannel()` answers from the route in force and is
+false before detection, which is what made it look like the replacement.
+
+**It is refuted, because that branch cannot fail.**
+`STATUS_INT_INP_NO_SYNC` does not latch on this board: measured across a genuine
+sync loss with the source passed through, **0 of 1486 samples**, with
+`INT_ENABLE4` 1 and neither acknowledge site running, while its neighbours latch
+freely in the same window -- `STATUS_INT_INP_HSYNC` and `STATUS_INT_INP_CSYNC`
+give `s0_0F` values of 168, 160, 136 and 128, none of which has bit 4. So the
+bypass branch returns true whatever the source does, and substituting the route
+would put every component source in pass-through onto a stability test that is
+stuck true, inside detection's own search.
+
+The one disagreement the window did contain is in that direction: at the sync
+loss `STATUS_16` read not-stable with `STATUS_SYNC_PROC_VTOTAL` 97, while the
+interrupt branch still said stable.
+
+Elsewhere the two agree because neither ever goes false -- 2190 samples on the
+Wii at 480p, scaling and pass-through and across the switch, `HSACT` 1 in every
+one and bit 4 set in none. **Agreement measured only where both say stable is
+not evidence**, which is why the sync loss had to be provoked.
+
+So this reader wants a measurement, not a route. What it is really asking is
+whether the sync processor is counting, which `STATUS_16` answers on both routes
+and the interrupt does not answer at all.
 
 **`getStatus16SpHsStable()`'S SD TERM IS NOT THE LINE RATE, AND THE OBVIOUS
 SUBSTITUTION IS REFUTED.** It requires `STATUS_SYNC_PROC_HSPOL` clear as well as

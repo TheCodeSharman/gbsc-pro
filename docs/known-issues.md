@@ -26,6 +26,41 @@ The stale quantity is the ADC PLL's crossover row and VCO gain, not the divider:
 throughout.
 `investigations/an-input-change-under-pass-through-never-settles.md`.
 
+### `getStatus16SpHsStable()`'s bypass branch is a stability test that cannot fail
+
+With the source passed through, the function answers on
+`STATUS_INT_INP_NO_SYNC` rather than `STATUS_16`. **That bit does not latch on
+this board.** Measured across a genuine sync loss with the Wii passed through
+and the input then switched away: 0 of 1486 samples with bit 4 set, while
+`INT_ENABLE4` reads 1, neither of the two acknowledge sites ran, and the
+neighbouring bits latch freely in the same window -- `s0_0F` takes the values
+168, 160, 136 and 128, every one of them `INT_INP_HSYNC` and `INT_INP_CSYNC`
+and none of them bit 4.
+
+So the branch returns true whatever the source is doing. The one sample where
+the two tests disagree is in that direction: `STATUS_16` read not-stable with
+`STATUS_SYNC_PROC_VTOTAL` 97 while the interrupt branch still said stable.
+
+It reaches detection, which calls the function inside its own 450 ms search, so
+an RGBHV source in pass-through is searched against a test that always passes.
+
+Would settle it: whether `STATUS_16` alone is right on both routes -- it counts
+in the sync processor, which pass-through does not take out of the path
+(`STATUS_SYNC_PROC_VTOTAL` held 524 in 489 of 489 samples on the Wii in
+pass-through).
+
+### The encoder re-places the picture after a pass-through round trip
+
+~150 photo columns left, on the bench panel, with the scaler's own solve
+unchanged either side -- `VDS_HSYNC_RST` 1915, display window 110..1899,
+`VDS_HSCALE` 546, `/geometry` `oh 51, eh 954, ov 38, ev 582`. Measured as a
+translation rather than a scale change: the lit width is 892, 953 and 968
+columns across three frames while the left edge moves 159 -> 5.
+
+Neither a `PAD_SYNC_OUT_ENZ` toggle nor a source mode round trip re-centres it,
+though the toggle does make the sink re-acquire and report the mode afresh
+(1920x1080/50Hz). A power cycle is what is left, and it needs the bench.
+
 ### A composite-sync source in pass-through gives no signal
 
 640x480@60 on `vga`, one cable, one mode, the sync type the only thing moving --
