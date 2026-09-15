@@ -60,22 +60,25 @@ public:
     // pass. applyReferenceSampling() must be in force first.
     MeasurementStatus measure();
 
+    // The scan type, from the half line an interlaced field carries. Takes its
+    // own reading, because an interlace change need not move the line count and
+    // so need not arm a mode change -- a held one would be the last mode's.
+    ScanType measureScanType();
+
     // --- what the last measure() found ---------------------------------------
     HsyncPulse hsync() const;
     uint16_t sourceLines() const;
     float fieldRateHz() const;
 
-    // The last rate that passed the cross-check against the line count, which
-    // a refusal leaves standing -- so a reader that has to survive a sync loss
-    // gets the last one believed rather than a zero.
+    // A refusal leaves the last believed rate standing rather than zeroing it.
     uint32_t lineRateHz() const;
 
     // The count the steadiness gate settled on, which is not the last sample.
     uint16_t steadyLines() const;
 
-    // The scan type, from the half line an interlaced field carries.
-    // `verticalPeriod` is VPERIOD_IF.
-    ScanType scanType(uint16_t verticalPeriod) const;
+    // The vertical period the last reading came from, or 0 where it did not
+    // complete. verticalTapFor() and the relock want the period itself.
+    uint16_t verticalPeriod() const;
 
     // Whether the source runs the 15.7 kHz broadcast line. Not on its own
     // whether the vertical interval is serrated.
@@ -178,6 +181,7 @@ private:
                                   bool interlaced);
 
     static ScanType scanTypeFor(uint16_t verticalPeriod, bool lineDoubled);
+    ScanType scanTypeFrom(uint16_t verticalPeriod) const;
     bool countAlternated() const;
 
     // The line rate one HPERIOD_IF reading states, and the rate a RUN of them
@@ -231,6 +235,7 @@ private:
     bool lineDoubled_;
 
     HsyncPulse hsync_;
+    uint16_t verticalPeriod_;
     SteadyRun steady_;
     uint8_t rateAttempts_;
     bool serrationsSeen_;  // the last completed steadiness run read the serrations

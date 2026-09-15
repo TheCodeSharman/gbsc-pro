@@ -87,7 +87,8 @@ SourceMeasurement::SourceMeasurement()
     : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
       rateRejections_(0), lineDoubled_(true), steady_(SteadySamples),
-      rateAttempts_(0), serrationsSeen_(false), referenceRateHz_(0)
+      verticalPeriod_(0), rateAttempts_(0), serrationsSeen_(false),
+      referenceRateHz_(0)
 {
 }
 
@@ -127,13 +128,21 @@ SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeri
 
 bool SourceMeasurement::countAlternated() const { return steady_.alternated(); }
 
-SourceMeasurement::ScanType SourceMeasurement::scanType(uint16_t verticalPeriod) const
+SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPeriod) const
 {
     const ScanType measured = scanTypeFor(verticalPeriod, lineDoubled_);
     if (measured != ScanUnknown)
         return measured;
     return countAlternated() ? ScanInterlaced : ScanUnknown;
 }
+
+SourceMeasurement::ScanType SourceMeasurement::measureScanType()
+{
+    verticalPeriod_ = measureVerticalPeriod();
+    return scanTypeFrom(verticalPeriod_);
+}
+
+uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 bool SourceMeasurement::sampleSteady()
 {
@@ -147,7 +156,8 @@ bool SourceMeasurement::sampleSteady()
     if (!steady_.sample(lines))
         return false;
 
-    if (countIsSerrations(lines, measureVerticalPeriod(),
+    verticalPeriod_ = measureVerticalPeriod();
+    if (countIsSerrations(lines, verticalPeriod_,
                           ModeDetect::sourceIsInterlaced())) {
         serrationsSeen_ = true;
         steady_.restart(lines);

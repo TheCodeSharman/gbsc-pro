@@ -795,12 +795,11 @@ void VideoSourceAcquisition::maintainSource()
 
     // Measured here rather than held: the deinterlacer steers on the
     // maintenance cadence, and a settled source runs no measure() pass at all.
-    const uint16_t verticalPeriod = Tv5725::SourceMeasurement::measureVerticalPeriod();
-    if (verticalPeriod == 0)
+    const Tv5725::SourceMeasurement::ScanType scan = sampling_.measureScanType();
+    if (sampling_.verticalPeriod() == 0)
         return;
     const Tv5725::Deinterlacer::Steering steering = Tv5725::Deinterlacer::steer(
-        verticalPeriod, sampling_.scanType(verticalPeriod),
-        Tv5725::FrameBuffer::releaseCapture);
+        sampling_.verticalPeriod(), scan, Tv5725::FrameBuffer::releaseCapture);
 
     if (steering.frameTimingMoved) {
         report_.frameTimingMoved = true;

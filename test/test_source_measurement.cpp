@@ -115,7 +115,8 @@ static SourceMeasurement::ScanType scanTypeWithDoubling(uint16_t verticalPeriod,
 {
     SourceMeasurement measurement;
     measurement.holdLineDoubling(lineDoubled);
-    return measurement.scanType(verticalPeriod);
+    seedSourceHalfLines(verticalPeriod);
+    return measurement.measureScanType();
 }
 
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
@@ -1433,13 +1434,18 @@ TEST_CASE("a period too short to be a vertical one answers nothing")
 
 TEST_CASE("the scan type of the held source uses the doubling in force")
 {
+    // One period, two answers: 524 is a doubled interlaced field and an
+    // undoubled progressive frame, which is why the Wii reads 524 at 480i and
+    // at 480p alike.
     SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedSourceHalfLines(524);
 
     sampling.holdLineDoubling(true);
-    CHECK(sampling.scanType(524) == SourceMeasurement::ScanInterlaced);
+    CHECK(sampling.measureScanType() == SourceMeasurement::ScanInterlaced);
 
     sampling.holdLineDoubling(false);
-    CHECK(sampling.scanType(524) == SourceMeasurement::ScanProgressive);
+    CHECK(sampling.measureScanType() == SourceMeasurement::ScanProgressive);
 }
 
 // --- an interlaced count never holds still, and that IS the measurement ------
@@ -1489,7 +1495,7 @@ TEST_CASE("a count alternating by one reads as interlaced where the period canno
     SourceMeasurement measurement;
     REQUIRE(settleAlternating(measurement, 311, 8));
 
-    CHECK(measurement.scanType(57) == SourceMeasurement::ScanInterlaced);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanInterlaced);
 }
 
 TEST_CASE("a measured period still outranks the alternation")
@@ -1499,7 +1505,8 @@ TEST_CASE("a measured period still outranks the alternation")
     REQUIRE(settleAlternating(measurement, 311, 8));
 
     // 623 doubled is progressive, whatever the count did.
-    CHECK(measurement.scanType(623) == SourceMeasurement::ScanProgressive);
+    seedSourceHalfLines(623);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
 }
 
 TEST_CASE("a steady count claims nothing about the scan type on its own")
@@ -1511,7 +1518,7 @@ TEST_CASE("a steady count claims nothing about the scan type on its own")
     SourceMeasurement measurement;
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
-    CHECK(measurement.scanType(57) == SourceMeasurement::ScanUnknown);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanUnknown);
 }
 
 TEST_CASE("a count that moves by more than one still starts the run again")
