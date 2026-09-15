@@ -191,6 +191,38 @@ on a second attempt** -- measured this way round, a round trip and a bounce both
 leaving 511/255 with `STATUS_IF_HT_OK` 0, and a second round trip restoring 431
 in 4 of 4 samples.
 
+### A separate-sync source parks the recovery ladder, so nothing on the unit clears the post-flash state
+
+Every OTA flash lands `vga` here: `/geometry` all zeroes, `DAC_RGBS_PWDNZ` 0,
+`STATUS_SYNC_PROC_VTOTAL` and `STATUS_SYNC_PROC_HTOTAL` 0,
+`STATUS_MISC_PLLAD_LOCK` 0, `PLLAD_MD` at 1792 against the 2206 the source
+wants, while `STATUS_SYNC_PROC_HSACT` reads 1 and the source is sending.
+
+**The ladder cannot leave it.** `SyncRecovery::ReprobeSyncType` restarts the run
+whenever the source has its own V sync -- deliberately, because a V sync
+arriving is proof of a source and the next rung would toggle the input away from
+it -- so a separate-sync source cycles rungs 0..151 every ~7 s for ever and
+never reaches `ToggleInput` or `ReopenSogSeparator`. The console is
+
+    own V sync: yes after 2ms
+    recovery: own V sync found, the run restarts
+    No Signal Out
+
+repeating on that cadence with nothing changing. `/sc?~` does not clear it.
+
+**Every escape is external.** Re-selecting the input and round-tripping the
+source mode clears it in about 4 s; a bare source mode change clears it on its
+own some of the time and not others. The engine has no rung that reaches it,
+which is why a unit that has just been flashed needs a source touched before it
+can be judged.
+
+**A reflash appears to fix it, and that reading is a trap in a second way.** A
+flash resets the ESP, so putting a known-good image on and watching the picture
+return tests the reset and the image at once. A change cannot be attributed from
+that comparison; re-flashing the suspect image is what separates them, and a
+suspect image that acquires in under a second on the second attempt was never
+the cause.
+
 ## Fixed, kept here until the next session has seen them
 
 ### The ADC sampling phase was chosen against the oversampling ASKED FOR
