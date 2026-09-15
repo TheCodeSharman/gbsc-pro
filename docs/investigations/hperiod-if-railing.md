@@ -1277,15 +1277,15 @@ refutes reading the steady value as a frozen one -- the earlier runs above saw
 two different steady values and concluded the counter had stopped, and it has
 not. What protect removes is the NOISE.
 
-Steadied, the fault's shape is legible: **214 is half of 431** (431 = 2 x 214 +
-3), and half the source period is the doubled line this source runs --
-`IF_HSYNC_RST` 1103 against `PLLAD_MD` 2206, `IF_HS_DEC_FACTOR` 1,
-`IF_LD_RAM_BYPS` 0. The same bit on a HEALTHY counter reports 431, not 214, so
-protect does not select which line is reported. **The fault does: a railed
-counter is locked to the doubled line rather than to the source's.** That is
-the first mechanism this page has been able to state, and it predicts the
-railed values seen without protect, which cluster on the rail and on both
-periods -- 511, ~470, ~255, ~214.
+**WHAT IT STEADIES AT IS NOT SYSTEMATIC, AND THE HALVING WAS ONE INSTANCE.**
+The first railed instance read 214 x6 with `HT_OK` 1, which is half of 431 to
+within a count and was written up here as the counter locking to the doubled
+line. A second instance, provoked with `/sc?~` an hour later on the same source
+and mode, reads **8 x8 with `HT_OK` 0**. Two steady values, one of them nothing
+like half, so the bit steadies whatever the counter holds and no mechanism
+follows from the value. The doubled-line reading is **refuted**, and it is
+recorded because it was convincing: one instance, arithmetic that fitted to a
+count, and a plausible mechanism behind it.
 
 **AND THE RAILING CLEARED DURING THAT SEQUENCE**, staying clear through
 releasing the bit and unfreezing automation: 431 in 6 of 6 with `HT_OK` 1 and

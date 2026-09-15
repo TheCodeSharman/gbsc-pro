@@ -78,12 +78,12 @@ changes with the divider unchanged, it tracked the source to within a count --
 back at 320x256@50 -- so a steady reading under protect is a measurement and not
 a held value.
 
-What that buys is a legible fault: **a railed counter steadied reads exactly
-half the source period**, 214 against 431, and half is the doubled line this
-source runs (`IF_HSYNC_RST` 1103 against `PLLAD_MD` 2206). On a healthy counter
-the same bit reports 431, so the bit does not choose the line -- the fault does.
-It still must not be reached for as a fix, because on a mislocked counter it
-manufactures the one failure shape every stability check scores as healthy.
+On a mislocked counter it steadies whatever is held, and **the value is not
+systematic**: two instances on the same source and mode read 214 (half the
+source period, `HT_OK` 1) and 8 (`HT_OK` 0). So the bit must not be reached for
+as a fix or as a reading -- on a mislocked counter it manufactures the one
+failure shape every stability check scores as healthy, and nothing about the
+steadied value says what the counter is doing.
 `docs/investigations/hperiod-if-railing.md`.
 
 ### `SP_SYNC_BYPS` does nothing measurable on a separate-sync source
