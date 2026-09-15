@@ -388,3 +388,41 @@ The table is read from flash at boot behind the same guard as the preferences,
 so a first solve that runs before the read has nothing to restore from. Not
 established: whether that is the mechanism, and whether a short read of
 `/framing.txt` is silent the way a short `/preferencesv2.txt` read is.
+
+### The search configuration writes a threshold the sync type owns
+
+`SP_H_PULSE_IGNOR` — s5 0x37, the width in ADC samples below which a horizontal
+pulse is ignored — has one value per sync arrangement, each measured:
+
+| the source's sync | value | evidence |
+|---|---|---|
+| its own V sync line | 0xFF | the bench RiscPC counts a steady 311; on the Wii the same value reads 97, no lock |
+| composite, unserrated | 0x02 | the Wii at 480p runs on it |
+| composite, serrated | 0x6B | the Wii's 576i counts 310, where 0x02 gives 315/316 and 0x90 gives noise |
+
+`SyncProcessor::applyForSearch()` writes **0x02 whatever the sync type says**, so
+the escalation ladder hunts every source as though it were unserrated composite,
+against `applyPulseIgnore()` writing one of the three from the sync type. Two
+writers, contradictory values, on a field the investigation settled as following
+the sync type.
+
+**The cost is not measured where it would hurt.** On the separate-sync bench
+source 0x02 is harmless: written onto a locked source it leaves
+`STATUS_SYNC_PROC_VTOTAL` at 311 in 10 of 10 samples over 9 s with `HSACT` 1,
+and 0xFF restores identically. The table says the serrated case is where it
+bites, four to six lines high and perfectly steady, which no steadiness run can
+see — and that case has not been provoked through the ladder.
+
+**What it is not**: this does NOT explain a unit that comes back from a flash
+searching with 0x02 standing, `STATUS_SYNC_PROC_VTOTAL` 0 and `HSACT` 1. That
+was diagnosed here as the threshold and the diagnosis is refuted by the
+measurement above; the state matches the documented post-flash one, and `/sc?~`
+cleared it.
+
+The resolution is the derivation the field once had: `HPERIOD_IF` for the line
+and `STATUS_SYNC_PROC_HLOW_LEN` against `HTOTAL` for the sync duty, which is
+what produced the 0x6B in force on the Wii, with `SyncMeasurement::probe()`
+answering separate against composite. All three arrangements are on this bench —
+`SYNC 0` and `SYNC 1` on the RiscPC, 480p and 576i on the Wii — so a derived
+value can be checked against all three.
+`docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.

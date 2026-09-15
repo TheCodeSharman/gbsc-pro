@@ -888,7 +888,8 @@ Landed so far:
   whether the byte had ever named a standard, and the engine keeps no such fact;
   what is left is the caller's request for the hunt configuration, so
   `applyForSearch()` reaches a source that was never named -- the case it exists
-  for
+  for. What that changes is measured harmless on both bench inputs, and the
+  threshold question it raises is below
 
 **The count is not the progress**, because what lands is structural. The
 references leave in two blocks, at steps 10 and 12: the byte is deleted LATE,
@@ -947,6 +948,32 @@ answered twice or not at all, which is why the long-absence restore was
 reachable only through a window of one detection interval.
 `VideoSourceAcquisition::runAdvanced()` says which pass advanced the run, and
 that is the gate.
+
+**THE SEARCH CONFIGURATION PICKS ONE OF THE THREE SYNC ARRANGEMENTS AND DOES
+NOT ASK.** `SP_H_PULSE_IGNOR` follows what the source's sync carries -- 0xFF
+where there is a V sync line of its own, 0x02 for composite sync without
+serrations, 0x6B for serrated composite -- and `applyForSearch()` writes 0x02
+whatever the sync type says. The hunt therefore looks for every source as though
+it were unserrated composite.
+
+**What that costs is measured only where it is harmless.** 0x02 written onto the
+locked 15 kHz separate-sync bench source leaves `STATUS_SYNC_PROC_VTOTAL` at a
+steady 311 in 10 of 10 samples over 9 s, with `HSACT` 1 throughout and 0xFF
+restoring identically -- so the wrong-by-the-table value costs that source
+nothing, and the collapse above is safe on both bench inputs. The serrated case
+is where the table says it bites: 0x02 on the Wii's 576i counts 315/316 against
+the 310 the source runs, four to six lines high and perfectly steady, which no
+steadiness run can see.
+
+**The resolution is the derivation, not a fourth constant.** The value was once
+computed from two measurements -- `HPERIOD_IF` for the line and
+`STATUS_SYNC_PROC_HLOW_LEN` against `HTOTAL` for the sync duty -- and that
+computation is what produced the 0x6B the Wii needs; the per-standard fixed
+bytes that replaced it are guesses. So the search wants the same three-way
+answer a settled source gets: the sync type from `SyncMeasurement::probe()`,
+which is 2-3 ms, and the serration from the duty rather than from
+`sourceLowLineRate()`, which infers it from the line being slow.
+`docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md`.
 
 **THE HD BYPASS VSYNC STEER IS DELETED, BECAUSE ITS TWO GATES ARE MUTUALLY
 EXCLUSIVE.** It placed the sync separator's regenerated vsync from the source's
@@ -1966,13 +1993,15 @@ inside the source's vertical blanking, 45 lines being the shortest here.
 `docs/investigations/the-sd-vsync-window-follows-the-sync-type.md`
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
-`inputAcquisition.poll(millis())` alone. `VideoPath::poll()` is already gone, so
+`inputAcquisition.poll(millis())` alone. *(Started.)* `VideoPath::poll()` is already gone, so
 what this leaves is one tick in the firmware and one owner of it.
 
 **The tick is already one tick**, and the cadence and the escalation ladder are
 both classes, so what is left of the function is the ACTS -- and every one of
-them is still a sketch function: `updateSpDynamic()`, `optimizePhaseSP()`,
-`optimizeSogLevel()`, `runRecoveryStep()`, `steerHdBypassVsyncWindow()`. Moving
+them is still a sketch function: `optimizePhaseSP()`, `optimizeSogLevel()` and
+`runRecoveryStep()`. `steerHdBypassVsyncWindow()` is deleted, and
+`updateSpDynamic()` is down to its guards and the facts it gathers --
+`SyncProcessor::applyDynamic()` holds the policy. Moving
 the loop that calls them without moving them first only relocates the problem,
 and moving them by handing the engine a callback per act is the shape this
 refactor exists to remove -- the sketch only shrinks. So each act joins the class
