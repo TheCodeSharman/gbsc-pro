@@ -611,7 +611,7 @@ TEST_CASE("the sampling phase is swept for the window furthest from the worst")
     Adc::choosePhaseSyncProcessor(16);
     Adc::choosePhaseAdc(16);
 
-    CHECK(Adc::acquirePhase(2, true, false, lineSamplesAtPhase, countFeed));
+    CHECK(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
 
     SUBCASE("the phase lands opposite the worst window") {
         CHECK(Adc::phaseSyncProcessor() == 21);
@@ -639,7 +639,7 @@ TEST_CASE("a sweep that finds no steady phase chooses none")
     Adc::choosePhaseSyncProcessor(9);
     Adc::choosePhaseAdc(24);
 
-    CHECK_FALSE(Adc::acquirePhase(2, true, false, lineSamplesAtPhase, countFeed));
+    CHECK_FALSE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
 
     // The ADC's phase is untouched, because only the search writes it.
     CHECK(Adc::phaseAdc() == 24);
@@ -667,15 +667,73 @@ TEST_CASE("a separator too starved to judge by skips the search")
     Adc::choosePhaseSyncProcessor(3);
     Adc::choosePhaseAdc(3);
 
-    CHECK(Adc::acquirePhase(2, false, false, lineSamplesAtPhase, countFeed));
+    CHECK(Adc::acquirePhase(2, false, lineSamplesAtPhase, countFeed));
 
     CHECK(Adc::phaseSyncProcessor() == 16);
     CHECK(Adc::phaseAdc() == 16);
     CHECK(g_feeds == 0);
+}
 
-    SUBCASE("four times oversampling asks for half a sample more on the ADC") {
-        Adc::acquirePhase(4, false, false, lineSamplesAtPhase, countFeed);
-        CHECK(Adc::phaseAdc() == 0);   // 16 + 16, round the five-bit field
+TEST_CASE("the ADC's phase follows the oversampling, whichever exit the search takes")
+{
+    // One rule, three exits. The sweep scores the SYNC PROCESSOR's phase; the
+    // ADC's is not searched at all, so it is the oversampling that places it
+    // and there is nothing else to derive it from.
+    //
+    // A fourth answer used to sit in the worst-window exit alone: standards 5,
+    // 6 and 7 at oversample 2 took half a sample as well. It was
+    // rto->videoStandardInput naming HD, with no measurement behind the choice
+    // between the two points of a 32-step field, and the arms that made those
+    // standards reachable are deleted. docs/video-source-acquisition.md
+    Wire.reset();
+    Adc::PLLAD_MD::write(2230);
+    g_sweepDivider = 2230;
+    g_feeds = 0;
+
+    SUBCASE("twice, with a worst window found") {
+        g_badFrom = 4; g_badTo = 6;
+        Adc::choosePhaseSyncProcessor(16);
+        Adc::choosePhaseAdc(3);
+        REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+        CHECK(Adc::phaseAdc() == 16);
+    }
+
+    SUBCASE("twice, with every phase clean") {
+        g_badFrom = 1; g_badTo = 0;
+        Adc::choosePhaseSyncProcessor(16);
+        Adc::choosePhaseAdc(3);
+        REQUIRE(Adc::acquirePhase(2, true, lineSamplesAtPhase, countFeed));
+        CHECK(Adc::phaseAdc() == 16);
+    }
+
+    SUBCASE("twice, with no search to run") {
+        g_badFrom = 1; g_badTo = 0;
+        Adc::choosePhaseAdc(3);
+        REQUIRE(Adc::acquirePhase(2, false, lineSamplesAtPhase, countFeed));
+        CHECK(Adc::phaseAdc() == 16);
+    }
+
+    SUBCASE("four times, with a worst window found") {
+        g_badFrom = 4; g_badTo = 6;
+        Adc::choosePhaseSyncProcessor(16);
+        Adc::choosePhaseAdc(3);
+        REQUIRE(Adc::acquirePhase(4, true, lineSamplesAtPhase, countFeed));
+        CHECK(Adc::phaseAdc() == 0);
+    }
+
+    SUBCASE("four times, with every phase clean") {
+        g_badFrom = 1; g_badTo = 0;
+        Adc::choosePhaseSyncProcessor(16);
+        Adc::choosePhaseAdc(3);
+        REQUIRE(Adc::acquirePhase(4, true, lineSamplesAtPhase, countFeed));
+        CHECK(Adc::phaseAdc() == 0);
+    }
+
+    SUBCASE("four times, with no search to run") {
+        g_badFrom = 1; g_badTo = 0;
+        Adc::choosePhaseAdc(3);
+        REQUIRE(Adc::acquirePhase(4, false, lineSamplesAtPhase, countFeed));
+        CHECK(Adc::phaseAdc() == 0);
     }
 }
 

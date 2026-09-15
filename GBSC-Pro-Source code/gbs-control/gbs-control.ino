@@ -1625,11 +1625,15 @@ void prepareSyncProcessor()
         Tv5725::SyncProcessor::holdClamp();
         GBS::SP_SOG_MODE::write(1);
         Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        Tv5725::SyncProcessor::setSubCoast(true);
         Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
         GBS::SP_HCST_AUTO_EN::write(0);
         GBS::SP_NO_COAST_REG::write(0);
     }
+
+    // The sub coast covers the equalising pulses, so serration is the whole of
+    // what it asks about -- and it is asked on every route, because a path that
+    // does not write it inherits whatever the last source left.
+    Tv5725::SyncProcessor::setSubCoast(sourceHasSerratedSync());
 
     GBS::SP_HS_REG::write(1);
     GBS::SP_HS_PROC_INV_REG::write(0);
@@ -1680,17 +1684,8 @@ boolean optimizePhaseSP()
     // crossover row decides what that becomes.
     const uint8_t oversample = Tv5725::Adc::oversampleInForce();
 
-    // The one case the oversampling ratio cannot separate: 2 is also what a
-    // progressive source and the default ask for. What it wants is the source's
-    // line rate, which the engine holds and bypass does not, so the byte stays
-    // until it leaves with its branch. docs/video-source-acquisition.md
-    const bool hdAtItsOwnOversample =
-        rto->videoStandardInput >= Tv5725::PresetLoad::HdFirst
-        && rto->videoStandardInput <= Tv5725::PresetLoad::HdOwnOversampleLast
-        && oversample == 2;
-
     const bool found = Tv5725::Adc::acquirePhase(
-        oversample, Tv5725::SyncOnGreen::level() > 2, hdAtItsOwnOversample,
+        oversample, Tv5725::SyncOnGreen::level() > 2,
         Tv5725::SourceMeasurement::measureLineSamples, feedWatchdog);
 
     debugPrintf("sampling phase: %s, oversample %u\n",
@@ -2866,9 +2861,6 @@ void doPostPresetLoadSteps()
 
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-        if (rto->videoStandardInput >= Tv5725::PresetLoad::HdFirst) {
-            Tv5725::SyncProcessor::setSubCoast(false);
-        }
 
         if (Tv5725::SyncMeasurement::isCsync()) {
             Tv5725::SyncProcessor::selectExternalSync(1);

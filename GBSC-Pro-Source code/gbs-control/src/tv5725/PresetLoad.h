@@ -51,11 +51,6 @@ public:
     static const uint8_t SdFirst = NtscInt;
     static const uint8_t SdLast = PalPrg;
 
-    // Everything above SD. The first three run the ADC at their own
-    // oversampling.
-    static const uint8_t HdFirst = 5;
-    static const uint8_t HdOwnOversampleLast = 7;
-
     // The lowest value that names a PATH rather than a source format.
     static const uint8_t PathFirst = 13;
 

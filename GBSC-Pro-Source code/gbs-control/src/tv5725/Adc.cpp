@@ -142,7 +142,6 @@ const uint8_t SamplesPerPhase = 20;
 }  // namespace
 
 bool Adc::acquirePhase(uint8_t oversample, bool sweep,
-                       bool halfSampleAtOversampleTwo,
                        uint16_t (*lineSamples)(), void (*feedWatchdog)())
 {
     // What the sync processor should be counting, whoever wrote it: bypass puts
@@ -197,12 +196,10 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
 
     if (worstScore != 0) {
         choosePhaseSyncProcessor(halfSampleOn(worstPhase));
-        choosePhaseAdc(oversample == 4 || halfSampleAtOversampleTwo
-                           ? halfSampleOn(MidField) : MidField);
     } else {
         choosePhaseSyncProcessor(MidField);
-        choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
     }
+    choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
 
     applyPhaseSyncProcessor(phaseSyncProcessor());
     delay(1);

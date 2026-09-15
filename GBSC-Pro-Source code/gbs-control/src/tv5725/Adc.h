@@ -268,16 +268,14 @@ public:
     // for the search to mean anything; a starved one makes every score noise,
     // and the mid of the field is then the whole of the answer.
     //
-    // `halfSampleAtOversampleTwo` is the one case the oversampling ratio cannot
-    // separate on its own, and it applies only where the search found a worst
-    // window -- the two shortcut arms take the ratio alone.
+    // The ADC's phase follows the oversampling alone, at every exit. Only the
+    // sync processor's is searched.
     //
     // `lineSamples` is the sync processor's count per line and `feedWatchdog`
     // is the platform's. Both are handed IN: the count is another block's
     // register, and a file here reaching for ESP.wdtFeed() is a design signal
     // rather than a dependency to admit. docs/video-source-acquisition.md
     static bool acquirePhase(uint8_t oversample, bool sweep,
-                             bool halfSampleAtOversampleTwo,
                              uint16_t (*lineSamples)(),
                              void (*feedWatchdog)());
 
