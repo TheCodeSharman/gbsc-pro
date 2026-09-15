@@ -29,20 +29,6 @@ class SourceMeasurement {
 public:
     SourceMeasurement();
 
-    enum MeasurementStatus {
-        NotSteady,     // the count is still gathering samples
-        Serrations,    // the settled count read the serrations, not the source
-        Unmeasurable,  // nothing could speak for a line rate
-        Settling,      // a rate, which has not repeated yet
-        Measured,
-    };
-
-    enum ScanType {
-        ScanUnknown,
-        ScanProgressive,
-        ScanInterlaced,
-    };
-
     // Put the chip on the reference divider needed for a valid measurement to be taken.
     // Note this will corrupt the picture.
     void applyReferenceSampling();
@@ -56,14 +42,34 @@ public:
     // only thing that makes it the obstacle instead.
     void forgetHeldRate();
 
+    enum MeasurementStatus {
+        NotSteady,     // the count is still gathering samples
+        Serrations,    // the settled count read the serrations, not the source
+        Unmeasurable,  // nothing could speak for a line rate
+        Settling,      // a rate, which has not repeated yet
+        Measured,
+    };
+
     // Measure the video source timings, holding them as state. Asked on every
     // pass. applyReferenceSampling() must be in force first.
     MeasurementStatus measure();
+
+    enum ScanType {
+        ScanUnknown,
+        ScanProgressive,
+        ScanInterlaced,
+    };
 
     // The scan type, from the half line an interlaced field carries. Takes its
     // own reading, because an interlace change need not move the line count and
     // so need not arm a mode change -- a held one would be the last mode's.
     ScanType measureScanType();
+
+    // Measure the source's line count, corrected for a divider the ADC PLL
+    // could not lock to. The first of the two measurement moments: the scan
+    // mode is judged from this count and the reference sampling clock follows
+    // the scan mode, so it is taken BEFORE that clock and measure() after it.
+    uint16_t readSourceLines() const;
 
     // --- what the last measure() found ---------------------------------------
     HsyncPulse hsync() const;
@@ -84,13 +90,7 @@ public:
     // whether the vertical interval is serrated.
     bool lowLineRate() const;
 
-    // The count, corrected for a divider the ADC PLL could not lock to. Read
-    // BEFORE the reference sampling clock: the scan mode is judged from it and
-    // the clock follows the scan mode, so it is the one reading that cannot
-    // come from a measure() pass.
-    uint16_t readSourceLines() const;
-
-
+    // --- the sampling clock every reading is counted through ------------------
 
     // Take a divider that was chosen rather than solved.
     void holdDivider(uint16_t divider);
