@@ -1,8 +1,11 @@
 # The count is unstable while the divider still describes the mode that left
 
-The 640x480@60 -> 320x256@50 leg of a mode change costs seconds that no rung of
-the escalation ladder is paying for, and the instrument that could measure the
-source is reading correctly throughout.
+The 640x480@60 -> 320x256@50 leg of a mode change cost seconds that no rung of
+the escalation ladder was paying for, while the instrument that could measure
+the source read correctly throughout. **Fixed** -- the cost was
+`UnsettledArmPasses`, and the leg is now 1.36 s. What follows is the
+measurement, one refuted fix that is still the trap to avoid, and the fix that
+holds.
 
 ## What was measured
 
@@ -62,9 +65,64 @@ cannot lock to it.
 crossover row from.** Any future attempt has to establish that first, and the
 bench is the only place that settles it.
 
+## The fix: the arm was the cost, and it was 3.0 s
+
+`UnsettledArmPasses` is the escape from the deadlock -- the one thing that opens
+a re-measure on a count that is plausible every sample and steady on none, and
+so the one thing that reaches `prepareToMeasure()` and rewrites the divider. At
+150 polls of `DetectionIntervalMs` it was 3.0 s against a leg measuring 3.1 s.
+**The arm WAS the remaining cost.**
+
+What it has to sit through is noise, not seconds: one disagreeing sample
+restarts the idle run, so a single glitch costs a whole run of `SteadySamples`
+to recover. It is derived as four of those back to back. The arm is one-shot per
+unsettled episode either way, so a source that genuinely never settles -- the
+Wii in 480i -- still arms exactly once.
+
+Measured on `vga`, RiscPC via ModeServ, 640x480@60 -> 320x256@50:
+
+```
+11.93  source absent: 122 lines, 1458 samples against divider 1096
+12.46  source moved: unsettled count (246 lines, solved 524)
+13.26  sampling: 311 lines x 50.08 Hz -> line rate 15625
+```
+
+The arm fires 0.53 s after the source is seen absent, and the correct rate is
+measured 1.33 s after. The per-pass grind above is gone from the console
+entirely.
+
+| leg | before | after |
+|---|---|---|
+| 640x480@60 -> 320x256@50 | 3.11, 5.23 s | 1.34, 1.38 s |
+| 320x256@50 -> 640x480@60 | 1.26, 1.33 s | 1.02, 1.10 s |
+
+## The asymmetry is real, and it is the scan mode
+
+The open question was whether the instability is the divider alone, given that
+the slow leg is also the leg that changes the scan mode. Walked in both
+directions over four modes, two passes each, 24 of 24 acquired:
+
+| opposed pair | slower | faster | gap |
+|---|---|---|---|
+| 800x600@60 <-> 320x256@50 | **1.56** | 1.18 | 0.38 |
+| 640x480@60 <-> 320x256@50 | **1.36** | 1.06 | 0.30 |
+| 720x576@50 <-> 320x256@50 | **1.38** | 1.16 | 0.22 |
+| 640x480@60 <-> 800x600@60 | **1.20** | 1.07 | 0.13 |
+| 720x576@50 <-> 640x480@60 | **1.09** | 1.04 | 0.06 |
+| 800x600@60 <-> 720x576@50 | **1.12** | 1.11 | 0.02 |
+
+**Every leg landing on 320x256@50 is the slower of its pair**, and those are the
+three largest gaps. 320x256@50 is the only line-doubled mode of the four, so the
+legs that pay are the legs that change the scan mode -- which is what the
+reference divider is a function of. Among the progressive modes, which share a
+scan mode, the gaps fall to 0.02 to 0.13 s.
+
+The cost is no longer seconds, so what is left is an ordering question rather
+than a deadlock: arriving in a line-doubled mode costs about 0.3 s more than
+leaving one.
+
 ## What is not yet known
 
-Whether the instability is the divider alone. The reference divider is a
-function of the scan mode, and 640x480 progressive and 320x256 line-doubled do
-not share one -- so the leg that is slow is also the leg that changes it, and
-those two have not been separated.
+What the ~1.0 s floor common to every leg is spent on. It is now the dominant
+term and nothing here separates it into the source's own settling, the sync-type
+probe, and the engine's solve.
