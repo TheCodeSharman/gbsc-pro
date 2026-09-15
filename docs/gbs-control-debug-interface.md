@@ -98,8 +98,8 @@ curl 'http://<ip>/freeze?on=0'
 ```
 
 Frozen, the ESP writes **no** TV5725 register unless you ask. Five guards, on
-`applyPresets()`, `runSyncWatcher()`, `detectAndSwitchToActiveInput()`,
-`runAutoGain()` and `runSourceRecovery()` —
+`applyPresets()`, the acquisition tick's run gate,
+`detectAndSwitchToActiveInput()`, `runAutoGain()` and `runSourceRecovery()` —
 `applyPresets()` alone covers nine call sites, but not FrameSync steering the
 Si5351, which `syncWatcherEnabled` does not gate either.
 
@@ -116,7 +116,7 @@ Si5351, which `syncWatcherEnabled` does not gate either.
   state you cannot drive is one power cycle from usable.
 - **The recovery-path leak is FIXED — the sixth guard is what fixed it.** Worth
   knowing because it invalidated the documented recovery for months. `loop()`
-  called `inputAndSyncDetect()` *directly*, not through `runSyncWatcher()`, so
+  called `inputAndSyncDetect()` *directly*, not through the acquisition tick, so
   that guard never saw it, and the `ADC_SOGCTRL` ratchet beside it ran
   regardless. Measured 2026-08-13 with `/freeze` reporting `{"frozen":true}`:
 

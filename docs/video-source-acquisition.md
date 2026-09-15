@@ -2,8 +2,7 @@
 
 Goal: `runSyncWatcher()` and `rto->videoStandardInput` are both deleted, and the
 responsibility they share -- keep video coming, and know what is coming -- has
-one owner instead of none. **The byte is gone**; the watcher is down to its
-last three acts.
+one owner instead of none. **Both are gone.**
 
 **`VideoSourceAcquisition`** sits ABOVE `Tv5725::`. It owns the tick, coordinates the
 measurement and decides. `Tv5725::SourceMeasurement` reads the source for it and
@@ -43,10 +42,8 @@ Three parties, one direction of flow. Each holds what it alone reads.
 | `Tv5725::SourceMeasurement` | called by it. Reads the source off the chip -- the only thing that does |
 | `Tv5725::VideoPath` | told what changed. Solves raster, clock, windows and scales, and writes them, holding what one solve leaves for the next. Decides nothing |
 
-**The table is the TARGET, not the tree.** `VideoSourceAcquisition` reads the
-divider today only to log it and to check the latch; the ladder is still
-`runSyncWatcher()`'s. What each party holds is settled; where the code is
-against it is the list of steps below.
+**The table is the shape the code now has**, and the list of steps below is what
+it took to get there.
 
 ### `VideoPath` does not poll, it is told
 
@@ -119,8 +116,8 @@ the scan mode -- so the acquisition layer has to ASK before it decides. A query,
 the way `outputMode()` already is, not shared state.
 
 **"The engine" is the new code, all of it.** The word names one axis and only
-one: the classes under `src/` against the legacy sketch -- `runSyncWatcher()`,
-`rto` and the globals. `VideoSourceAcquisition` is engine, and so is every `Tv5725::`
+one: the classes under `src/` against the legacy sketch -- `rto` and the
+globals. `VideoSourceAcquisition` is engine, and so is every `Tv5725::`
 class; a move between them is internal and says nothing about the axis.
 
 **Every step below moves a responsibility INTO the engine, and nothing ever
@@ -581,10 +578,10 @@ their timings and a console can carry whatever it carries. What the deletion
 costs is therefore testable rather than theoretical: a YPbPr source exercises
 the branch directly.
 
-## Why the watcher has to go rather than be tidied
+## Why the watcher had to go rather than be tidied
 
-`runSyncWatcher()` keeps a **parallel model of the source**, and calls into the
-engine once (`geometry.sourceInterrupted()`). Two owners of one model is the register problem one level up, and
+`runSyncWatcher()` kept a **parallel model of the source** and called into the
+engine once. Two owners of one model is the register problem one level up, and
 every symptom this fork has chased is a case of it:
 
 - `SP_H_PULSE_IGNOR` had two owners. `SyncProcessor::applyForSyncType(false)`
@@ -601,23 +598,23 @@ every symptom this fork has chased is a case of it:
   PLL left unlocked shows as a scrambled picture with every config register
   correct.
   `docs/investigations/the-no-sync-branch-is-the-only-escape.md`
-- The steadiness of the source is counted twice, as `rto->noSyncCounter` and
-  `rto->continousStableCounter` in the sketch and as `idle_` in the engine,
-  and the two disagree about whether a source is there.
+- The steadiness of the source was counted twice, as `rto->noSyncCounter` and
+  `rto->continousStableCounter` in the sketch and as `idle_` in the engine, and
+  the two disagreed about whether a source was there.
 
-So the fault is not that the code is old. It is that a second owner of a
+So the fault was not that the code was old. It is that a second owner of a
 register cannot be made correct by improving either owner.
 
 ## The shape
 
-**The engine currently DEPENDS on the watcher**, which is why it cannot simply
-be deleted. Each row is a step: the engine takes the job over and the sketch's
+**The engine DEPENDED on the watcher**, which is why it could not simply be
+deleted. Each row was a step: the engine takes the job over and the sketch's
 copy goes.
 
-| the engine needs | the sketch supplies |
+| the engine needed | the sketch supplied |
 |---|---|
 | to be told a preset load happened | `applyPresets()` calls `modeChanged()` |
-| the latched source disturbance | `runSyncWatcher()` calls `sourceInterrupted()` |
+| the latched source disturbance | the watcher called `sourceInterrupted()` |
 | a sync type probe | `useSyncTypeProbe(sourceHasOwnVsync)` |
 | a source acquired well enough to measure | the SOG, coast and clamp routines |
 
@@ -682,7 +679,7 @@ only on a genuinely composite one where the timeout is the right answer.
 ### The rungs, in the order they are tried
 
 `SyncRecovery::stepAt()` answers which rung a pass is due, and
-`runSyncWatcher()`'s no-sync branch dispatches on the answer. Each step fires
+`VideoSourceAcquisition::runRecovery()` dispatches on the answer. Each step fires
 once at its position; the list cycles at 451, because a source that has been
 switched off and on again needs it to.
 
@@ -915,16 +912,15 @@ a 20 ms pass meaning what it meant. `sourceIsPresent()` and
 `sourceIsSearching()` are what the window placers, the tuning window and the
 auto-gain, coast and clamp gates ask, so no gate compares a held standard.
 
-**Step 13 waits on nothing. `runSyncWatcher()` has no arm**, and what is left
-is 99 lines in four, every one of them gated on the engine's run rather than on
-what the source is called:
+**The watcher had no arm left by the time it went**, and its four parts are
+gated on the engine's run rather than on what the source is called:
 
 | part | whose |
 |---|---|
-| guards, the interrupt hand-off, the sync-on-green tuning | nothing: every one of them reads the engine's run |
+| the interrupt hand-off, the sync-on-green tuning | nothing: every one of them reads the engine's run |
 | the no-sync branch | `!sourceIsPresent()` is the gate, for every source |
 | the stable branch | `sourceIsPresent()` is the gate; `SourceMaintenance` holds its cadence |
-| the 900 ms channel sync polarity and SOG-bad acknowledgement | `isHdBypassChannel()` is the gate |
+| the channel sync polarity and SOG-bad acknowledgement | `isHdBypassChannel()` is the gate |
 
 **THE CADENCE IS A CLASS, AND THE TICK IS ONE TICK.** `SourceMaintenance` names
 what a settled source is due -- the capture hold, the dynamic sync-processor
@@ -934,8 +930,8 @@ acknowledgement, the deinterlacer steer -- and performs none of it, the shape
 pass counts inside the stable branch, where the cadence could only be read by
 collecting them.
 
-And it runs **once per count**. `loop()` gated the watcher on a 20 ms timer of
-its own beside the acquisition tick's, so the two drifted: a count could be
+And it runs **once per count**. `loop()` used to gate the watcher on a 20 ms
+timer of its own beside the acquisition tick's, so the two drifted: a count could be
 answered twice or not at all, which is why the long-absence restore was
 reachable only through a window of one detection interval.
 `VideoSourceAcquisition::runAdvanced()` says which pass advanced the run, and
@@ -1200,12 +1196,10 @@ of the call, so `Adc` needs no `SourceMeasurement`. The half-sample nudge for
 exit of the search, because the ADC's phase is not what the sweep scores.
 
 **7. `VideoSourceAcquisition`, and the escalation list it holds.** The ordered set of
-named recoveries has replaced `% 27`, `% 32`, `== 38`, `% 150` and `% 413`;
-`runSyncWatcher()` dispatches on `SyncRecovery::stepAt()` and each step fires
-once per cycle. What is left is the OWNER: the list belongs above `Tv5725::`
-with the class that holds the tick, and `SyncRecovery` moves out of `Tv5725::`
-with it. **Step 4 waits on this**, because wiring the gate is what lets the
-branch advance far enough to reach these.
+named recoveries has replaced `% 27`, `% 32`, `== 38`, `% 150` and `% 413`, and
+the list lives above `Tv5725::` with the class that holds the tick. **Step 4
+waited on this**, because wiring the gate is what lets the branch advance far
+enough to reach these.
 
 **THE BENCH CANNOT REACH THE LADDER ABOVE POSITION 8**, so the upper rungs are
 covered by host tests for which step fires and by inspection for what it does.
@@ -1433,8 +1427,8 @@ why.** `STATUS_SYNC_PROC_HSPOL` reads negative there, so
 `applyChannelSyncEdges()` hands the channel the held pair the other way round and
 raises `SP_HS2PLL_INV_REG`. It reads as a difference between the arms and is not
 one: the computed path's source has a positive hsync, and the same step runs on
-both. While `runSyncWatcher()`'s scaling-RGBHV arm existed the step never reached
-a YPbPr source at all, so this column used to read 40 / 164.
+both. While the watcher's scaling-RGBHV arm existed the step never reached a
+YPbPr source at all, so this column used to read 40 / 164.
 
 **`HD_VB_SP` read 20 on the Wii, not the 36 above.** 20 is `enable()`'s resting
 value, which is what `applyVerticalBlanking(0)` leaves -- so the active start
@@ -1446,7 +1440,7 @@ match in time is open.
 is the only caller that decides it, because it is the only one holding a
 measurement to decide it on. Three others used to: `doPostPresetLoadSteps()`
 armed a deferred switch whenever `uopt->preferScalingRgbhv` was clear,
-`runSyncWatcher()`'s new-mode branch chose on the same preference, and
+the watcher's new-mode branch chose on the same preference, and
 `applyPresets()` chose on the standard byte for results 5/6/7/13 and for
 `BypassRgbhv`. Each entered the channel before the new source had been
 measured, so the channel raster was sized from one divider against a count and
@@ -1891,20 +1885,56 @@ survives is a bound, not a target: the value must land inside the source's
 vertical blanking, 45 lines being the shortest here.
 `docs/investigations/the-sd-vsync-window-follows-the-sync-type.md`
 
-**13. Delete `runSyncWatcher()`**, and `loop()` calls
-`inputAcquisition.poll(millis())` alone. *(Started.)* `VideoPath::poll()` is already gone, so
-what this leaves is one tick in the firmware and one owner of it.
+**13. Delete `runSyncWatcher()`.** *(Landed.)* What was left of it is
+`VideoSourceAcquisition::keepSourceComing()`, beside the run the whole of it
+counts in.
 
-**The tick is already one tick**, and the cadence and the escalation ladder are
-both classes, so what is left of the function is the ACTS -- and every one of
-them is still a sketch function: `optimizePhaseSP()`, `optimizeSogLevel()` and
-`runRecoveryStep()`. `steerHdBypassVsyncWindow()` is deleted, and
-`updateSpDynamic()` is down to its guards and the facts it gathers --
-`SyncProcessor::applyDynamic()` holds the policy. Moving
-the loop that calls them without moving them first only relocates the problem,
-and moving them by handing the engine a callback per act is the shape this
-refactor exists to remove -- the sketch only shrinks. So each act joins the class
-that owns its registers, and the function empties as the last one leaves.
+**THE TICK IS ONE TICK.** It runs on the pass that advanced the run rather than
+on a timer of its own: two 20 ms cadences beside each other drift until a count
+is answered twice or not at all, which is what made the long-absence restore
+reachable only through a window of one detection interval.
+
+**Each act joined the class that owns its registers**, rather than the loop
+being moved with a callback handed back per act -- the sketch only shrinks.
+`optimizePhaseSP()` is `acquireSamplingPhase()`, `optimizeSogLevel()` is
+`acquireSeparatorLevel()`, `runRecoveryStep()` is `runRecovery()`,
+`setAndUpdateSogLevel()` is `SyncOnGreen::putInForce()`, and
+`updateSpDynamic()`, `updateCoastPosition()` and `updateClampPosition()` are
+`applySyncProcessorDynamic()`, `placeCoastWindow()` and `placeClampWindow()`.
+`steerHdBypassVsyncWindow()` was deleted outright.
+
+**What each act needed from the sketch is a peer's answer now.** Which source
+is selected is `VideoSourceSelection`'s -- it cannot be measured, because half
+the input path is the HC32F460's analog switches and those cannot be read back.
+Whether there is anything to write to is `Chip::hasPower()`, one scratch byte
+round-tripped and recorded. Whether the input is component is
+`Adc::inputIsComponent()`, whether the phase search found anything is
+`Adc::phaseFound()`, and what the user asked of the deinterlacer is held by
+`Deinterlacer` rather than handed in on every pass.
+
+**THREE ACTS ARE REPORTED RATHER THAN DONE.** The frame time lock and the
+external clock generator live above this layer, and two flags are the rest of
+the sketch's, so `poll()` leaves a `Report` behind -- cleared at the start of
+every pass, so a caller reading it once a pass sees each decision once. That is
+the shape `Deinterlacer::steer()` already used.
+
+**`frameTimingMoved` AND `vsyncLockStale` ARE NOT THE SAME FIELD.** Collapsed
+into one they reset the frame time lock on every pass a source is unsettled, so
+it never establishes at all: measured, a clean acquire at 15625 Hz with every
+output register correct and a black panel. The reset is the deinterlacer's act
+and the long-absence restore's; the stamp is what the separator tuning and the
+recovery branch leave.
+
+**The two outer gates are `allowMaintenance()`.** Off while a source is
+disconnected, because detection owns the input then and runs a heavier search of
+its own, and off while the user has the automatic path switched off. Told every
+pass rather than at every writer, so neither can go stale.
+
+**WHAT IS LEFT IN `loop()` IS THE PLATFORM.** `FrameSync` and the Si5351 are
+above `Tv5725::` and the sketch still owns them, so `loop()` calls
+`inputAcquisition.poll(millis())` and acts on the report. Collapsing that last
+block needs the frame time lock and the clock generator under the engine, which
+is where step 11's rate is already waiting.
 
 ## Input selection is the same collapse, one level up
 
