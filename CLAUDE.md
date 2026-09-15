@@ -200,22 +200,22 @@ as a healthy engine reporting a correct measurement, over and over.
 | `source moved: interrupt \| count \| rate (N lines, solved M)` | why a solve was armed. `interrupt` with `N == M` means the source did not move at all and something else armed it |
 | `own V sync: yes\|no after Nms` | the sync type probe ran. **It writes `SP_EXT_SYNC_SEL`, and the chip latches that as a SOG switch**, so a probe arms the next `source moved: interrupt` by itself |
 | `no INPUT vsync` / `no OUTPUT vsync` | which FrameSync sample timed out. Do not infer which — it says |
-| `h:%4u … m:%hu … u:%3x s:%2x S:%2d` | `printInfo()`. `h:` is `HPERIOD_IF`, `m:` is `getVideoMode()`, **`u:` is `noSyncCounter` IN HEX**, `s:` is `continousStableCounter`, `S:` is the SOG level |
+| `h:%4u … ht:%4d vt:%4d … u:%3x s:%2x S:%2d` | `printInfo()`. `h:` is `HPERIOD_IF`, `ht:`/`vt:` are `STATUS_SYNC_PROC_HTOTAL`/`VTOTAL`, **`u:` is `VideoSourceAcquisition::unmeasuredPasses()` IN HEX**, `s:` is `acquiredPasses()`, `S:` is the SOG level |
 
-**`m:0` with `s: 0` is a diagnosis on its own.** `getVideoMode()` returning 0
-puts `runSyncWatcher()` in its no-sync branch on every pass and
-`continousStableCounter` never leaves 0, so the stable branch — which is where
-scaling RGBHV re-arms itself — is unreachable. `u:` then pinned at `96` is that
-branch cycling its 150-pass recovery, roughly every five seconds, for ever.
-`docs/investigations/scaling-rgbhv-standard-latches-the-no-sync-branch.md`.
+**`u:` climbing with `s: 0` is a diagnosis on its own.** One of the two is always
+zero: `u:` counts the passes since the engine could last measure the source and
+`s:` the unbroken run since it could. `u:` pinned in the nineties is the ladder
+cycling its recovery on a source it never acquires, roughly every five seconds,
+for ever. `vt:` beside it says whether the sync processor is counting at all,
+which separates a dead sync path from a source the engine is refusing.
 
 **`printf()` IN THE SKETCH DOES NOT REACH THE CONSOLE. `debugPrintf()` DOES.**
 The console mirror is `SerialM`, and `debugPrintf` is
 `SerialM.printf_P(PSTR(fmt), ...)`; a bare `printf` goes to stdout and is
 invisible over the websocket. Several existing messages are bare `printf` --
-`noSyncCounter max2` and `noSyncCounter max1` among them -- so **a missing line
-is not evidence the branch did not run**, and a new diagnostic written with
-`printf` produces a silent route that answers 200.
+the colour-offset readback among them -- so **a missing line is not evidence the
+branch did not run**, and a new diagnostic written with `printf` produces a
+silent route that answers 200.
 
 **A quiet console is not a quiet firmware.** Silence with a live HTTP stack
 means the loop is not running, or the heap gate is shut — read `/bootlog`'s
@@ -460,20 +460,17 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   cold-boot both ends first — it is one minute against an evening.
   Paired artefacts are in the archive: `CLEAN-*-2026-08-15` and
   `glitching-2026-08-14`.
-- **A preset load turns a 15 kHz RGBHV source PROGRESSIVE, and the picture
-  survives it.** Measured: one `/sc?)` on the bench RiscPC moves
-  `IF_PRGRSV_CNTRL` 0 -> 1, `IF_LD_RAM_BYPS` 0 -> 1, `IF_HS_DEC_FACTOR` 1 -> 0,
-  `PLLAD_MD` 2250 -> 1124, and `SP_VTOTAL` collapses from 311 to noise. The
-  chain: `preferScalingRgbhv` defaults to 1, `runSyncWatcher()` sets
-  `isValidForScalingRGBHV` for any RGBHV source, and
-  `PresetLoad::videoStandardInputAfterLoad()` then forces `videoStandardInput`
-  to `ScalingRgbhvStandard`, which is **3** -- and `doPostPresetLoadSteps()`
-  branches `3 || 4 || 8 || 9` straight into `applyScanMode(Progressive)`. So a
-  source that qualifies for scaling RGBHV and also needs the line doubler gets
-  the wrong one, because one number carries both facts. The divider that follows
-  is arithmetically right for the wrong premise, so every register reads
-  self-consistent. `pytest test_geometry_pads.py --source` reaches it in about
-  four and a half minutes and is the reproduction.
+- **THE LINE DOUBLER FOLLOWS THE MEASURED COUNT, AND MUST STAY THAT WAY.** A
+  preset load used to turn a 15 kHz RGBHV source progressive -- `IF_PRGRSV_CNTRL`
+  0 -> 1, `IF_LD_RAM_BYPS` 0 -> 1, `IF_HS_DEC_FACTOR` 1 -> 0, `PLLAD_MD`
+  2250 -> 1124, `SP_VTOTAL` collapsing from 311 to noise -- because one number
+  carried two facts: the standard byte was forced to 3 for a scaling RGBHV
+  source, and 3 also meant progressive SD. The divider that followed was
+  arithmetically right for the wrong premise, so every register read
+  self-consistent. `SourceMeasurement::lineDoublingFor()` answers off the count
+  now and nothing classifies, but **anything that re-introduces a value carrying
+  both the source's scan and the output chosen for it brings this back**, and a
+  register dump cannot see it.
 - **THE TWO RECOVERIES ARE NOT INTERCHANGEABLE, and each fails at the other's
   fault.** Measured, both directions:
 
@@ -571,7 +568,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   `RegisterQueue`, so a read blocks for as long as `loop()` is busy, while the
   plain-JSON routes keep answering from the network callback. Intermittent empty
   `/getreg` replies with ping at 2 ms therefore mean the firmware is *inside*
-  one of detection's long searches — the 6000 ms `getVideoMode()` sweeps in
+  one of detection's long searches — the two 6000 ms line-count waits in
   `detectAndSwitchToActiveInput()`. Used exactly that way on 2026-08-13 to tell
   "unit wedged" from "unit hunting", which are opposite diagnoses.
 - **What is attached is worth KNOWING, not closing.**
@@ -912,9 +909,8 @@ twelve tables while they existed, which is what `BringUp` was built from.
   dump, minus the divider-derived differences.**
   `docs/investigations/preset-abandonment-audit.md`.
 - **`/uc?h` does not clear Mode Detect.** It sets `presetPreference =
-  Output480P` — a persistent user preference — and force-calls `applyPresets()`,
-  falling back to the remembered standard when `getVideoMode()` returns 0. It
-  appears to "fix" railing by reloading a preset. The actual Mode Detect reset is
+  Output480P` — a persistent user preference — and force-calls `applyPresets()`.
+  It appears to "fix" railing by reloading a preset. The actual Mode Detect reset is
   `resetModeDetect()` (`SFTRST_MODE_RSTZ`, s0 `0x47` bit 1), reachable via
   `/setreg` — but it does **not** recover a bypassed IF, and nothing in the
   firmware resets Mode Detect while sync is present.
