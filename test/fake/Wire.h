@@ -63,6 +63,7 @@ public:
                 drifting[s][r] = false;
             }
         segment = 0;
+        refusing_ = false;
         trace.clear();
         tx_.clear();
         rx_.clear();
@@ -83,6 +84,12 @@ public:
     }
 
     void drift(uint8_t seg, uint8_t reg) { drifting[seg][reg] = true; }
+
+    // A bus that acknowledges writes and stores none of them, which is what an
+    // unpowered board looks like from this end: the segment select still lands,
+    // because the code under test cannot tell a lost select from a lost write
+    // and the round trip it is judged on is the payload's.
+    void refuseWrites(bool refuse) { refusing_ = refuse; }
 
     // A field, decoded the way the chip lays one out: little-endian across
     // consecutive registers, then shifted and masked.
@@ -124,7 +131,7 @@ public:
                 uint8_t reg = static_cast<uint8_t>(offset + (i - 1));
                 if (reg == SegmentRegister)
                     segment = tx_[i] < Segments ? tx_[i] : segment;
-                else {
+                else if (!refusing_) {
                     bank[segment][reg] = tx_[i];
                     touched[segment][reg] = true;
                     Traced t = {segment, reg, tx_[i]};
@@ -159,6 +166,7 @@ public:
     }
 
 private:
+    bool refusing_ = false;
     std::vector<uint8_t> tx_;
     std::vector<uint8_t> rx_;
     size_t rxNext_ = 0;

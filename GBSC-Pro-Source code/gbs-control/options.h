@@ -129,7 +129,6 @@ struct runTimeOptions
     bool autoBestHtotalEnabled;
     bool videoIsFrozen;
     bool deinterlaceAutoEnabled;
-    bool boardHasPower;
     bool isValidForScalingRGBHV;
     bool extClockGenDetected;
     bool HdmiHoldDetection;

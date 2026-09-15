@@ -231,3 +231,28 @@ void Chip::init()
 }
 
 }  // namespace Tv5725
+
+namespace Tv5725 {
+
+namespace {
+
+// Neither 0x00 nor 0xff, so a bus that answers with either says nothing.
+const uint8_t PowerProbe = 0x6a;
+
+bool hasPower_ = false;
+
+}  // namespace
+
+bool Chip::checkPower()
+{
+    Chip::POWER_PROBE_SCRATCH::write(PowerProbe);
+    hasPower_ = Chip::POWER_PROBE_SCRATCH::read() == PowerProbe;
+    Chip::POWER_PROBE_SCRATCH::write(0);
+    return hasPower_;
+}
+
+bool Chip::hasPower() { return hasPower_; }
+
+void Chip::holdPower(bool powered) { hasPower_ = powered; }
+
+}  // namespace Tv5725

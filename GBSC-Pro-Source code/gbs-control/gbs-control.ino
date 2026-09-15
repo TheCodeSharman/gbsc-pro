@@ -638,7 +638,7 @@ static void resetRunTimeDefaults()
     rto->deinterlaceAutoEnabled = true;
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::Deinterlacer::forgetSteering();
-    rto->boardHasPower = true;
+    Tv5725::Chip::holdPower(true);
     Tv5725::SyncMeasurement::set(false);
     rto->isValidForScalingRGBHV = false;
     rto->osr = 0;
@@ -1622,7 +1622,7 @@ static void putSogLevelInForce()
 // processor reads and the walk is what tunes it.
 void optimizeSogLevel()
 {
-    if (rto->boardHasPower == false) {
+    if (!Tv5725::Chip::hasPower()) {
         Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::DefaultLevel);
         return;
     }
@@ -2596,7 +2596,7 @@ void doPostPresetLoadSteps()
         Tv5725::Deinterlacer::forgetSteering();
         rto->videoIsFrozen = true;
         rto->sourceDisconnected = false;
-        rto->boardHasPower = true;
+        Tv5725::Chip::holdPower(true);
 
         Tv5725::InputFormatter::writeLineCounterStart(0);
         Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
@@ -2799,7 +2799,7 @@ void applyPresets()
     }
 
     // printf("result %d \n", result);
-    if (!rto->boardHasPower) {
+    if (!Tv5725::Chip::hasPower()) {
         return;
     }
 
@@ -2992,7 +2992,7 @@ void setAndLatchPhaseADC()
 
 void updateSpDynamic(boolean hunting)
 {
-    if (!rto->boardHasPower || rto->sourceDisconnected) {
+    if (!Tv5725::Chip::hasPower() || rto->sourceDisconnected) {
         return;
     }
 
@@ -3010,7 +3010,7 @@ void updateSpDynamic(boolean hunting)
 void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 {
     if (inputAcquisition.sourceIsSearching() || rgbhvBypass()
-        || !rto->boardHasPower || rto->sourceDisconnected) {
+        || !Tv5725::Chip::hasPower() || rto->sourceDisconnected) {
         return;
     }
 
@@ -3019,7 +3019,7 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
 
 void updateClampPosition() // Update Clamp Position
 {
-    if (!rto->boardHasPower || rto->sourceDisconnected
+    if (!Tv5725::Chip::hasPower() || rto->sourceDisconnected
         || inputAcquisition.sourceIsSearching()) {
         return;
     }
@@ -3093,7 +3093,7 @@ static void applyPassThroughPreference()
 
 void enterHdBypass()
 {
-    if (!rto->boardHasPower) {
+    if (!Tv5725::Chip::hasPower()) {
         return;
     }
 
@@ -3593,7 +3593,7 @@ void runSyncWatcher() //
     if (AUTOMATION_FROZEN()) {
         return;
     }
-    if (!rto->boardHasPower) {
+    if (!Tv5725::Chip::hasPower()) {
         return;
     }
 
@@ -3750,17 +3750,13 @@ void runSyncWatcher() //
 
 boolean checkBoardPower()
 {
-    GBS::ADC_UNUSED_69::write(0x6a);
-    if (GBS::ADC_UNUSED_69::read() == 0x6a) {
-        GBS::ADC_UNUSED_69::write(0);
+    const bool was = Tv5725::Chip::hasPower();
+    if (Tv5725::Chip::checkPower())
         return 1;
-    }
 
-    GBS::ADC_UNUSED_69::write(0);
-    if (rto->boardHasPower == true) {
+    if (was) {
         Serial.println(F("! power / i2c lost !"));
     }
-
     return 0;
 }
 
@@ -4094,9 +4090,9 @@ void handleWiFi(boolean instant)
 }
 
 
-// The acquisition path's entry gate. **THE FREEZE ONLY**: rto->boardHasPower is a latched
-// failure rather than a live reading, and it stays false through the whole
-// recovery -- exactly when the engine has to solve.
+// The acquisition path's entry gate. **THE FREEZE ONLY**: board power is a
+// latched failure rather than a live reading, and it stays false through the
+// whole recovery -- exactly when the engine has to solve.
 // docs/video-source-acquisition.md
 static bool engineMayRun()
 {
@@ -4555,11 +4551,9 @@ void setup()
         if (!checkBoardPower()) {
             stopWire();
             powerOrWireIssue = 1;
-            rto->boardHasPower = false;
             rto->syncWatcherEnabled = false;
         } else {
             rto->syncWatcherEnabled = true;
-            rto->boardHasPower = true;
             ; // SerialMprintln(F("recovered"));
         }
     }
@@ -4647,7 +4641,6 @@ void runSourceRecovery(unsigned long &lastTimeSourceCheck)
     if (checkBoardPower()) {
         inputAndSyncDetect();
     } else {
-        rto->boardHasPower = false;
         rto->syncWatcherEnabled = false;
     }
     lastTimeSourceCheck = millis();
@@ -4801,7 +4794,7 @@ void loop()
     }
 
           
-    if (rto->syncWatcherEnabled && rto->boardHasPower) {
+    if (rto->syncWatcherEnabled && Tv5725::Chip::hasPower()) {
         if ((millis() - lastTimeInterruptClear) > 3000) {
             Tv5725::Interrupts::acknowledgeAllButSogBad();
             lastTimeInterruptClear = millis();
@@ -4844,7 +4837,7 @@ void loop()
         && inputAcquisition.runAdvanced()) {
         runSyncWatcher();
 
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && rto->boardHasPower) {
+        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
             if (Tv5725::SourceMeasurement::dividerLatched(
                     Tv5725::SourceMeasurement::measureLineSamples(),
                     GBS::PLLAD_MD::read())) {
@@ -4933,9 +4926,9 @@ void loop()
         rto->applyPresetDoneStage = 0;
     }
 
-    if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && rto->boardHasPower) {
+    if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && Tv5725::Chip::hasPower()) {
         runSourceRecovery(lastTimeSourceCheck);
-    } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && rto->boardHasPower)) {
+    } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && Tv5725::Chip::hasPower())) {
         if ((millis() - lastTimeSourceCheck) >= 500) {
             // if (CheckInputFrequency() && rto->HdmiHoldDetection)
             if (CheckInputFrequency()) {
@@ -4958,13 +4951,12 @@ void loop()
     // A run this long with nothing measured is worth one I2C probe to tell a
     // source that went away from a board that lost its rails. One position
     // rather than two: the pair existed so the second could be latched out.
-    if (inputAcquisition.unmeasuredPasses() == BoardPowerCheckPass && rto->boardHasPower
+    if (inputAcquisition.unmeasuredPasses() == BoardPowerCheckPass && Tv5725::Chip::hasPower()
         && !checkBoardPower()) {
-        rto->boardHasPower = false;
         stopWire();
     }
 
-    if (!rto->boardHasPower && rto->syncWatcherEnabled) 
+    if (!Tv5725::Chip::hasPower() && rto->syncWatcherEnabled) 
     {
         if (digitalRead(SCL) && digitalRead(SDA)) {
             delay(50);
@@ -4981,7 +4973,7 @@ void loop()
                     GBS::STATUS_00::read();
                 }
                 rto->syncWatcherEnabled = true;
-                rto->boardHasPower = true;
+                Tv5725::Chip::holdPower(true);
                 delay(100);
                 goLowPowerWithInputDetection();
             }
@@ -11806,8 +11798,8 @@ void OSD_selectOption()
         number_stroca = stroca2;
 
         Osd_Display(0xFF, " ");
-        // if (( rto->sourceDisconnected || !rto->boardHasPower || Info_sate == 1) && rto->HdmiHoldDetection)
-        if ((rto->sourceDisconnected || !rto->boardHasPower || Info_sate == 1)) {
+        // if (( rto->sourceDisconnected || !Tv5725::Chip::hasPower() || Info_sate == 1) && rto->HdmiHoldDetection)
+        if ((rto->sourceDisconnected || !Tv5725::Chip::hasPower() || Info_sate == 1)) {
             Osd_Display(0xFF, "No Input");
         } else if (((currentInput == 1) || (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB || VideoSourceSelection::selected() == InfoVGA))) {
             OSD_c2(B, P16, blue_fill);
@@ -12035,7 +12027,7 @@ void OSD_IR()
         decode_flag = 1;
         if (results.value == IRKeyMenu) {
             Tim_menuItem = millis();
-            if (rto->sourceDisconnected || !rto->boardHasPower || GBS::PAD_CKIN_ENZ::read()) // || !GBS::STATUS_MISC_VSYNC::read()
+            if (rto->sourceDisconnected || !Tv5725::Chip::hasPower() || GBS::PAD_CKIN_ENZ::read()) // || !GBS::STATUS_MISC_VSYNC::read()
             {
 
                 NEW_OLED_MENU = false;

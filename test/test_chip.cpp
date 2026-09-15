@@ -258,3 +258,37 @@ TEST_CASE("the scaling path restarts the memory blocks between the two ends, not
     CHECK(everHeld<Chip::SFTRST_MEM_RSTZ>());
     CHECK(everHeld<Chip::SFTRST_DEINT_RSTZ>());
 }
+
+// WHETHER THE BOARD IS POWERED IS A BUS QUESTION, so the chip asks it and holds
+// the answer. It was a bare flag in the sketch, which put "is there anything to
+// write to" out of reach of every class that writes.
+
+TEST_CASE("a bus that round-trips a scratch byte is a powered board")
+{
+    Wire.reset();
+
+    CHECK(Chip::checkPower());
+    CHECK(Chip::hasPower());
+}
+
+TEST_CASE("the scratch byte is put back, so the probe leaves nothing behind")
+{
+    Wire.reset();
+    Chip::checkPower();
+
+    CHECK(Chip::POWER_PROBE_SCRATCH::read() == 0);
+}
+
+TEST_CASE("a bus that will not hold a byte is a board with no power")
+{
+    // The fake answers reads from a bank the writes never reach, which is what
+    // a dead bus looks like from here.
+    Wire.reset();
+    Chip::holdPower(true);
+    Wire.refuseWrites(true);
+
+    CHECK_FALSE(Chip::checkPower());
+    CHECK_FALSE(Chip::hasPower());
+
+    Wire.refuseWrites(false);
+}

@@ -324,7 +324,7 @@ bool currentSettingHandler(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav
     display.clear();
     display.setColor(OLEDDISPLAY_COLOR::WHITE);
     display.setFont(ArialMT_Plain_16);
-    if (rto->sourceDisconnected || !rto->boardHasPower)
+    if (rto->sourceDisconnected || !Tv5725::Chip::hasPower())
     {
         if (millis() - oledMenuFreezeStartTime >= oledMenuFreezeTimeoutInMS)
         {
@@ -526,7 +526,7 @@ static void LoadDefault()
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::Deinterlacer::forgetSteering();
-    rto->boardHasPower = true;                    // 板有电源
+    Tv5725::Chip::holdPower(true);                    // 板有电源
     Tv5725::SyncMeasurement::set(false);                   // 同步类型
 
     // **AND FORGET THAT IT WAS EVER MEASURED.** set() deliberately does not mark

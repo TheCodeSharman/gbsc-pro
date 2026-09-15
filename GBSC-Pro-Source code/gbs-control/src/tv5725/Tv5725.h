@@ -706,8 +706,6 @@ public:
 
     typedef UReg<0x05, 0x67, 0, 16> ADC_UNUSED_67;
 
-
-    typedef UReg<0x05, 0x69, 0, 8> ADC_UNUSED_69;
 };
 
 } // namespace Tv5725

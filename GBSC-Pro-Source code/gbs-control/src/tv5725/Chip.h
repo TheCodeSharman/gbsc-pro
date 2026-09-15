@@ -219,6 +219,24 @@ public:
     // with it and belongs to Tv5725::MemoryBus, which is why this calls rather
     // than writes it.
     static void enterHdBypass();
+
+    // s5 0x69, 8 bits RD-5725-1.1 does not describe. Nothing behind it, which
+    // is exactly what makes it the scratch byte checkPower() round-trips.
+    typedef UReg<0x05, 0x69, 0, 8> POWER_PROBE_SCRATCH;
+
+    // **WHETHER THERE IS ANYTHING TO WRITE TO.** A scratch byte written and read
+    // back: the bus acknowledges either way, so only the round trip separates a
+    // powered board from an unpowered one, and the byte is put back afterwards.
+    // Records the answer, and returns it.
+    static bool checkPower();
+
+    // The answer the last probe recorded. Held rather than re-probed, because
+    // every writer would otherwise pay a round trip to ask.
+    static bool hasPower();
+
+    // For a caller that knows the board is up without probing -- a preset load
+    // that has just written a hundred registers successfully.
+    static void holdPower(bool powered);
 };
 
 }  // namespace Tv5725
