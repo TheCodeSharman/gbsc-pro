@@ -6,7 +6,6 @@ extern unsigned long OledUpdataTime;
 // import machine
 static uint8_t Info_sate = 0;
 static bool decode_flag = 0;
-static unsigned long lastVsyncLock = millis();
 #define digitalRead(x) ((GPIO_REG_READ(GPIO_IN_ADDRESS) >> x) & 1)
 #define DEBUG_IN_PIN D6 
 // LED_BUILTIN    15
@@ -4402,7 +4401,7 @@ void loop()
         rto->autoBestHtotalEnabled &&
         rto->syncWatcherEnabled &&
         FrameSync::ready() &&
-        millis() - lastVsyncLock > FrameSyncAttrs::lockInterval &&
+        FrameSync::quietFor(FrameSyncAttrs::lockInterval) &&
         inputAcquisition.acquiredPasses() > 20 &&
         inputAcquisition.unmeasuredPasses() == 0) {
         if (Tv5725::SourceMeasurement::dividerLatched(
@@ -4422,7 +4421,7 @@ void loop()
             }
         }
 
-        lastVsyncLock = millis();
+        FrameSync::defer();
     }
 
           
@@ -4487,7 +4486,7 @@ void loop()
         if (report.frameTimingMoved)
             FrameSync::reset(uopt->frameTimeLockMethod);
         if (report.vsyncLockStale)
-            lastVsyncLock = millis();
+            FrameSync::defer();
         if (report.outputRateSettled)
             externalClockGenSyncInOutRate();
     }
@@ -4521,7 +4520,7 @@ void loop()
     // with the divider latched, which STATUS_SYNC_PROC_HTOTAL is the witness for.
     if (rto->autoBestHtotalEnabled && !FrameSync::ready() && rto->syncWatcherEnabled) {
         if (inputAcquisition.acquiredPasses() >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
-            ((millis() - lastVsyncLock) > 500)) {
+            FrameSync::quietFor(500)) {
             if ((inputAcquisition.acquiredPasses() % 5) == 0) {
                 if (Tv5725::SourceMeasurement::dividerLatched(
                         Tv5725::SourceMeasurement::measureLineSamples(),
@@ -5417,7 +5416,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
             delay(1);
 
-            lastVsyncLock = millis();
+            FrameSync::defer();
 
             if (!Serial.available()) {
 
@@ -5475,7 +5474,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
             handleType2Command(userCommand);
             userCommand = '@';
-            lastVsyncLock = millis();
+            FrameSync::defer();
             handleWiFi(1);
 
             // printf("uopt->presetSlot %d  \n", uopt->presetSlot);

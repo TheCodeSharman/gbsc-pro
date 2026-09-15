@@ -147,6 +147,10 @@ private:
     static uint8_t delayLock;
     static int16_t syncLastCorrection;
 
+    // When the lock was last run, or last disturbed by something that makes a
+    // correction taken against the old state worthless.
+    static uint32_t disturbedMs;
+
     /// Set to -1 if uninitialized.
     /// Reset with syncLastCorrection.
     static float maybeFreqExt_per_videoFps;
@@ -311,6 +315,16 @@ private:
     }
 
 public:
+    // The lock was run, or something disturbed it: a source that is not steady
+    // enough to correct against, a mode change, or a user command that moved
+    // the output. Either way a correction measured before now is worthless.
+    static void defer() { disturbedMs = millis(); }
+
+    // Nothing has disturbed the lock for this long. Both callers ask it of
+    // their own interval -- running a correction is due less often than arming
+    // one -- so the interval is the caller's rather than fixed here.
+    static bool quietFor(uint32_t ms) { return millis() - disturbedMs > ms; }
+
     // Time one period of whatever signal the debug pin currently carries.
     //
     // Which signal that is belongs to the caller: TEST_BUS_SEL selects it, and
@@ -803,4 +817,7 @@ bool FrameSyncManager<GBS, Attrs>::syncLockReady;
 
 template <class GBS, class Attrs>
 int32_t FrameSyncManager<GBS, Attrs>::syncTargetPhase = Attrs::syncTargetPhase;
+
+template <class GBS, class Attrs>
+uint32_t FrameSyncManager<GBS, Attrs>::disturbedMs;
 #endif
