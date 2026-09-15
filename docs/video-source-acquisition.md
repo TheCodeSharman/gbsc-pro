@@ -1709,52 +1709,43 @@ only the RGBs input makes it look like a bug and it is not.
 chain proving the two spellings agree, so the selection can answer this without
 the byte.
 
-**WHAT STOPS IT BEING A ONE-LINE MOVE** is that the two are not the same
-predicate. `videoStandardInput == 14` means an RGBHV source was DETECTED;
-`VideoSourceSelection::isRgbhv(Info)` means one is SELECTED, and on a
-freshly-selected input with no sync those differ. `rgbhvBypass()` is where that
-bites: `isScaling()` starts false, so the substitution makes it true before
-detection, and a gate that returns early on it neuters the very input being
-detected. So the readers have to be taken together with what each of them
-actually wanted, which is why this step is the byte and not one predicate.
+**THE SUBSTITUTION HAS LANDED.** `sourceIsRgbhv()` is
+`VideoSourceSelection::isRgbhv(Info)` -- `sharesPort(id, Vga)`, named for the
+connector rather than the sync type, because composite sync and sync-on-green on
+those pins are in it.
 
-**THREE OF THE FIVE READERS ARE ALREADY SAFE, and one is closed.**
-`updateCoastPosition()`, `applyPresets()` and `loop()`'s coast gate each carry a
-`standardIsHeld()` beside the term, which is false before detection, so the
-whole condition answers the same either way. `optimizeSogLevel()` had no such
-term and is where the hazard was measured; its gate is deleted, because
-`SyncOnGreen::acquire()` refuses the walk on a separator that is not in the sync
-path and that is the same answer for every separate-sync source.
+**The two predicates are not identical, which is what made it more than a
+rename.** The byte said an RGBHV source had been DETECTED; the selection says one
+is SELECTED, and on a freshly chosen input with no sync they differ.
+`rgbhvBypass()` is where that bit, since `RgbhvOutput::isScaling()` starts false,
+so the substitution makes it true before detection. Each reader was taken with
+what it actually wanted:
 
-**`getStatus16SpHsStable()` IS THE ONE LEFT, AND THE ROUTE MUST NOT BE
-SUBSTITUTED INTO IT.** The term picks a whole different stability test --
-`STATUS_INT_INP_NO_SYNC` rather than `STATUS_16` -- and
-`detectAndSwitchToActiveInput()` calls the function inside its own 450 ms
-search. `VideoRoute::isHdBypassChannel()` answers from the route in force and is
-false before detection, which is what made it look like the replacement.
+| reader | why it is safe |
+|---|---|
+| `updateCoastPosition()`, `applyPresets()`, `loop()`'s coast gate | a `standardIsHeld()` sits beside the term and is false before detection, so the condition answers the same either way |
+| `prepareSyncProcessor()` | runs from a preset load, after the output has been chosen |
+| `optimizeSogLevel()` | gate deleted -- `SyncOnGreen::acquire()` already refuses a separator that is not in the sync path |
+| `getStatus16SpHsStable()` | branch deleted -- see below |
 
-**It is refuted, because that branch cannot fail.**
-`STATUS_INT_INP_NO_SYNC` does not latch on this board: measured across a genuine
-sync loss with the source passed through, **0 of 1486 samples**, with
-`INT_ENABLE4` 1 and neither acknowledge site running, while its neighbours latch
-freely in the same window -- `STATUS_INT_INP_HSYNC` and `STATUS_INT_INP_CSYNC`
-give `s0_0F` values of 168, 160, 136 and 128, none of which has bit 4. So the
-bypass branch returns true whatever the source does, and substituting the route
-would put every component source in pass-through onto a stability test that is
-stuck true, inside detection's own search.
+**`getStatus16SpHsStable()`'s pass-through branch could not fail, and the route
+was NOT the replacement.** It answered on `STATUS_INT_INP_NO_SYNC`, and that bit
+does not latch on this board: **0 of 1486 samples** across a real sync loss with
+the source passed through, `INT_ENABLE4` reading 1, neither acknowledge site
+running, and the neighbouring bits latching freely in the same window --
+`s0_0F` takes 168, 160, 136 and 128, none of them bit 4. So it returned true
+whatever the source did, inside `detectAndSwitchToActiveInput()`'s own 450 ms
+search. `VideoRoute::isHdBypassChannel()` would have moved every component source
+in pass-through onto that.
 
-The one disagreement the window did contain is in that direction: at the sync
-loss `STATUS_16` read not-stable with `STATUS_SYNC_PROC_VTOTAL` 97, while the
-interrupt branch still said stable.
+The branch is deleted instead, because `STATUS_16` answers on both routes:
+pass-through does not take the sync processor out of the video path, and on a
+passed-through source `HSACT` reads 1 in **489 of 489** samples with
+`STATUS_SYNC_PROC_VTOTAL` holding the count the mode is due in all of them.
 
-Elsewhere the two agree because neither ever goes false -- 2190 samples on the
-Wii at 480p, scaling and pass-through and across the switch, `HSACT` 1 in every
-one and bit 4 set in none. **Agreement measured only where both say stable is
-not evidence**, which is why the sync loss had to be provoked.
-
-So this reader wants a measurement, not a route. What it is really asking is
-whether the sync processor is counting, which `STATUS_16` answers on both routes
-and the interrupt does not answer at all.
+Agreement measured where both say stable is not evidence -- 2190 samples on the
+Wii across both routes and the switch have `HSACT` 1 in every one and bit 4 set
+in none -- which is why the sync loss had to be provoked.
 
 **`getStatus16SpHsStable()`'S SD TERM IS NOT THE LINE RATE, AND THE OBVIOUS
 SUBSTITUTION IS REFUTED.** It requires `STATUS_SYNC_PROC_HSPOL` clear as well as
@@ -1784,7 +1775,7 @@ costs, measured against the tree:
 | 8 | medium resolution | 1, `getVideoMode()`'s own `return` | **done** -- the two searches that walked `MD_HD1250P_CNTRL` to reach it are deleted; the value reaches `applyPresets()` beside 1, 3 and 9 and loads the computed preset |
 | 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
 | 13 | the YPbPr arm of that dispatch | 3 | **done** as an oracle -- the component search asks `countIsSource()`; the value itself goes with the dispatch |
-| 14 | an RGBHV source, which is what `sourceIsRgbhv()` tests | the three predicates and `holdStandard()` | `OutputChoice` answers instead -- step 10 |
+| 14 | an RGBHV source, which is what `sourceIsRgbhv()` tests | `holdStandard()` and `heldStandard()` | **done as a predicate** -- `sourceIsRgbhv()` is `VideoSourceSelection::isRgbhv(Info)`, so no reader tests the byte for 14 any more; the two writers go with the byte |
 | 15 | `applyPresets()`'s request to pass an RGBHV source through, and never held | 3, all of them calls | **done** -- `applyPresets()` folds it to 14 and lets the measurement decide |
 
 **9 DOES NOT DIE WITH THE DISPATCH, and it is not a `videoStandardInput` value.**
