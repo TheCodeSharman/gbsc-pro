@@ -365,3 +365,26 @@ holds on its own terms: it rested on the zoom floor landing exactly on the
 default framing at `scaleMin` 500, and the floor is now `raster / 4`, leaving
 315 units of travel rather than none. 129.6 MHz is already measured as working
 and sharp, and buys a third more horizontal resolution. Not tried.
+
+### A source's first solve after a boot can miss its stored framing
+
+`/framing.txt` holds a framing per source keyed on the measured pair, and the
+Wii at 480p has one: `524@60 = 1769 6090 669 9178`. Two boots of the same build
+family, the same source and the same measurement -- `PLLAD_MD` 1096 against
+`STATUS_SYNC_PROC_HTOTAL` 1096, `HPERIOD_IF` 214, `VTOTAL` 524 -- landed on
+different framings for the FIRST acquisition after the boot:
+
+| | `/geometry` | the framing applied |
+|---|---|---|
+| one boot | `oh 181, eh 623, ov 35, ev 480` | the stored entry, `poh 1769 peh 6090` |
+| the next | `oh 47, eh 948, ov 32, ev 489` | the computed default, `poh 459 peh 9267` |
+
+Both pictures are clean; the default shows more of the source than the stored
+entry, which crops the Wii menu's right column. Every input switch AFTER the
+first restores the stored entry, twice in a row on each of two round trips, so
+what is intermittent is the first solve rather than the restore.
+
+The table is read from flash at boot behind the same guard as the preferences,
+so a first solve that runs before the read has nothing to restore from. Not
+established: whether that is the mechanism, and whether a short read of
+`/framing.txt` is silent the way a short `/preferencesv2.txt` read is.
