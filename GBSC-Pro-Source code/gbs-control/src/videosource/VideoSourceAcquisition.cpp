@@ -351,7 +351,7 @@ const VideoSourceAcquisition::Report &VideoSourceAcquisition::report() const { r
 bool VideoSourceAcquisition::poll(uint32_t nowMs)
 {
     runAdvanced_ = false;
-    const Report nothing = {false, false, false, false, false};
+    const Report nothing = {false, false, false, false};
     report_ = nothing;
 
     if (mayRun_ != 0 && !mayRun_())
@@ -759,10 +759,8 @@ void VideoSourceAcquisition::maintainSource()
         acquireSeparatorLevel();
     }
 
-    if (due.holdCapture) {
+    if (due.holdCapture)
         Tv5725::FrameBuffer::releaseCapture();
-        report_.captureHeld = true;
-    }
 
     if (due.samplingPhase)
         acquireSamplingPhase();

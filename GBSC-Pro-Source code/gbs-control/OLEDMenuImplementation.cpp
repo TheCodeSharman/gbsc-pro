@@ -540,7 +540,6 @@ static void LoadDefault()
     rto->osr = 0;                                 //
 
     Tv5725::VideoRoute::toScaler();   //
-    rto->videoIsFrozen = true;      //
     rto->sourceDisconnected = true; //
     // rto->isInLowPowerMode = false; //
     rto->applyPresetDoneStage = 0; //

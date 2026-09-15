@@ -16,8 +16,8 @@ class VideoSourceAcquisition {
 public:
     // What a pass decided that this layer cannot carry out. Each act is above
     // Tv5725:: -- the frame time lock and the external clock generator are the
-    // sketch's, and the two flags are user-facing state -- so they are
-    // REPORTED, the shape Tv5725::Deinterlacer::steer() already uses.
+    // sketch's, and noSignalOut is user-facing state -- so they are REPORTED,
+    // the shape Tv5725::Deinterlacer::steer() already uses.
     struct Report {
         // The output frame time moved, so anything locked to it has to start
         // again. **NOT the same as the stamp below**: resetting the lock on
@@ -37,9 +37,6 @@ public:
         // source. A report of state rather than a terminus: nothing stops
         // looking.
         bool noSignalOut;
-
-        // Capture was taken and held, so whatever tracks the freeze must agree.
-        bool captureHeld;
     };
     // Three answers, not two. A steady line count is the vertical half only: a
     // source can hold a correct count while the ADC samples a line it is not

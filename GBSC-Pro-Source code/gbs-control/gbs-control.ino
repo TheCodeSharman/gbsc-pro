@@ -651,7 +651,6 @@ static void LoadDefault()
     resetRunTimeDefaults();
 
     Tv5725::VideoRoute::toScaler();   
-    rto->videoIsFrozen = true;      
     rto->sourceDisconnected = true; 
     // rto->isInLowPowerMode = false;
     rto->applyPresetDoneStage = 0; //
@@ -1321,7 +1320,6 @@ static uint8_t selectedAdcInput()
 
 void setResetParameters()
 {
-    rto->videoIsFrozen = false; 
     rto->applyPresetDoneStage = 0;
     rto->sourceDisconnected = true; 
     Tv5725::VideoRoute::toScaler();       
@@ -2558,7 +2556,6 @@ void doPostPresetLoadSteps()
         Tv5725::Deinterlacer::disableMotionAdapt();
         Tv5725::Deinterlacer::forgetScanlines();
         Tv5725::Deinterlacer::forgetSteering();
-        rto->videoIsFrozen = true;
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 
@@ -3839,7 +3836,6 @@ void setup()
 
     rto->inputIsYpBpR = false;   
     Tv5725::VideoRoute::toScaler();
-    rto->videoIsFrozen = false;  
     if (!rto->webServerEnabled)
         rto->webServerStarted = false;
     rto->printInfos = false;          
@@ -4491,10 +4487,10 @@ void loop()
 
     }
 
-    // The three acts a pass decided on that live above the acquisition layer:
-    // the frame time lock, the external clock generator, and the two flags the
-    // rest of the sketch reads. Reported rather than injected, which is what
-    // keeps the layer free of uopt and of FrameSync.
+    // What a pass decided that lives above the acquisition layer: the frame
+    // time lock, the external clock generator, and the flag the rest of the
+    // sketch reads. Reported rather than injected, which is what keeps the
+    // layer free of uopt and of FrameSync.
     {
         const VideoSourceAcquisition::Report &report = inputAcquisition.report();
         if (report.frameTimingMoved)
@@ -4503,8 +4499,6 @@ void loop()
             lastVsyncLock = millis();
         if (report.outputRateSettled)
             externalClockGenSyncInOutRate();
-        if (report.captureHeld)
-            rto->videoIsFrozen = true;
         if (report.noSignalOut)
             rto->HdmiHoldDetection = true;
     }
@@ -5027,9 +5021,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'm':; // SerialMprint(F("syncwatcher "));
                     if (rto->syncWatcherEnabled == true) {
                         rto->syncWatcherEnabled = false;
-                        if (rto->videoIsFrozen) {
-                            Tv5725::FrameBuffer::releaseCapture();
-                        }; // SerialMprintln("off");
+                        Tv5725::FrameBuffer::releaseCapture();; // SerialMprintln("off");
                     } else {
                         rto->syncWatcherEnabled = true;
                         ; // SerialMprintln("on");

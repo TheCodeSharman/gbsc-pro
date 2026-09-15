@@ -126,7 +126,6 @@ struct runTimeOptions
     bool allowUpdatesOTA;
     bool enableDebugPings;
     bool autoBestHtotalEnabled;
-    bool videoIsFrozen;
     bool deinterlaceAutoEnabled;
     bool isValidForScalingRGBHV;
     bool extClockGenDetected;
