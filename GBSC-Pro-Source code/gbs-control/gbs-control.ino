@@ -3114,8 +3114,11 @@ uint8_t getVideoMode()
     // already held -- in the vocabulary every caller of this compares against
     // and passes on.
     if (sourceIsRgbhv()) {
-        detectedMode = GBS::STATUS_16::read();
-        return (detectedMode & 0x0a) > 0 ? heldStandard() : 0;
+        GBS::STATUS_SYNC_PROC_HSACT::Value hsyncActive;
+        GBS::STATUS_SYNC_PROC_VSACT::Value vsyncActive;
+        GBS::Tie<GBS::STATUS_SYNC_PROC_HSACT,
+                 GBS::STATUS_SYNC_PROC_VSACT>::read(hsyncActive, vsyncActive);
+        return (hsyncActive || vsyncActive) ? heldStandard() : 0;
     }
 
     detectedMode = GBS::STATUS_00::read();
@@ -3173,8 +3176,7 @@ uint8_t getVideoMode()
 
     detectedMode = GBS::STATUS_00::read();
     if ((detectedMode & 0x2F) == 0x07) {
-        detectedMode = GBS::STATUS_16::read();
-        if ((detectedMode & 0x02) == 0x02) {
+        if (GBS::STATUS_SYNC_PROC_HSACT::read()) {
             uint16_t lineCount = GBS::STATUS_SYNC_PROC_VTOTAL::read();
             for (uint8_t i = 0; i < 2; i++) {
                 delay(2);
@@ -3251,22 +3253,22 @@ boolean getStatus16SpHsStable()
         }
     }
 
-    uint8_t status16 = GBS::STATUS_16::read();
-    if ((status16 & 0x02) == 0x02) {
-        if (rto->videoStandardInput == Tv5725::PresetLoad::NtscInt
-            || rto->videoStandardInput == Tv5725::PresetLoad::PalInt) {
-            if ((status16 & 0x01) != 0x01) {
-                // printf("\n stable from 1\n");
-                return true;
-            }
-        } else {
-            // printf("\n stable from 2\n");
-            return true;
-        }
+    // Tied, because the two are read as a pair: sampled separately they can
+    // straddle a sync change and describe two different states.
+    GBS::STATUS_SYNC_PROC_HSACT::Value hsyncActive;
+    GBS::STATUS_SYNC_PROC_HSPOL::Value hsyncPolarity;
+    GBS::Tie<GBS::STATUS_SYNC_PROC_HSACT,
+             GBS::STATUS_SYNC_PROC_HSPOL>::read(hsyncActive, hsyncPolarity);
+
+    if (!hsyncActive)
+        return false;
+
+    if (rto->videoStandardInput == Tv5725::PresetLoad::NtscInt
+        || rto->videoStandardInput == Tv5725::PresetLoad::PalInt) {
+        return hsyncPolarity == 0;
     }
 
-    // printf("\n false from 2\n");
-    return false;
+    return true;
 }
 
 

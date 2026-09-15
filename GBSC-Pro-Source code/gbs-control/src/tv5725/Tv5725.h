@@ -316,20 +316,27 @@ public:
                                                                       // [datasheet: DEINT_STATUS_[7]]
 
 
-    typedef UReg<0x00, 0x16, 0, 8> STATUS_16;                         // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    // The four bits below are the whole of s0_16 that is not reserved, so read
+    // them by name. This whole-byte form is for a raw trace only, where the
+    // reserved bits 7-4 are part of what is being recorded.
+    typedef UReg<0x00, 0x16, 0, 8> STATUS_16;                         // SYNC_PROC_STATUS_00. RD-5725-1.1 names bits 3-0
+                                                                      // individually and marks 7-4 reserved.
 
-    typedef UReg<0x00, 0x16, 0, 1> STATUS_SYNC_PROC_HSPOL;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    typedef UReg<0x00, 0x16, 0, 1> STATUS_SYNC_PROC_HSPOL;            // HS polarity. When =0, input H-sync is low active;
+                                                                      // when =1, high active [datasheet: SYNC_PROC_STATUS_[0]]
 
-    typedef UReg<0x00, 0x16, 1, 1> STATUS_SYNC_PROC_HSACT;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    // "HS active" is all RD-5725-1.1 says, and it reads as though it might
+    // follow the pulse. It does not: sampled at 25 ms against line rates of
+    // 15.6 and 31.4 kHz it is 1 in 2190 of 2190 while a source is locked, where
+    // a pulse-following bit would be high for the sync duty of about 7%, and it
+    // goes to 0 when sync is lost. It reports that sync activity is PRESENT.
+    typedef UReg<0x00, 0x16, 1, 1> STATUS_SYNC_PROC_HSACT;            // HS active [datasheet: SYNC_PROC_STATUS_[1]]
 
-    typedef UReg<0x00, 0x16, 2, 1> STATUS_SYNC_PROC_VSPOL;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    typedef UReg<0x00, 0x16, 2, 1> STATUS_SYNC_PROC_VSPOL;            // VS polarity. When =0, input V-sync is low active;
+                                                                      // when =1, high active [datasheet: SYNC_PROC_STATUS_[2]]
 
-    typedef UReg<0x00, 0x16, 3, 1> STATUS_SYNC_PROC_VSACT;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    // Presence, not level, for the reason HSACT above is. docs/tv5725-chip.md
+    typedef UReg<0x00, 0x16, 3, 1> STATUS_SYNC_PROC_VSACT;            // VS active [datasheet: SYNC_PROC_STATUS_[3]]
 
 
     typedef UReg<0x00, 0x17, 0, 12> STATUS_SYNC_PROC_HTOTAL;          // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
