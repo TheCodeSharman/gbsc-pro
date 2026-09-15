@@ -14,6 +14,7 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "CheckNear.h"
+#include "MeasuredSource.h"
 #include "SolvedEngine.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
@@ -209,7 +210,7 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     // through: a divider sized for the write limit alone, which every scan mode
     // shares and no source's measurement is needed to compute.
     SolvedEngine solved;
-    const uint16_t reference = SourceMeasurement::referenceDivider(true);
+    const uint16_t reference = referenceDividerFor(true);
 
     g_fieldRate = 0.0f;
     solved.engine.setOutputMode(&Tv5725::Mode1080p);
@@ -438,7 +439,7 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // force when the layer that measures reads the pulse. The register counts
     // ADC samples, so on the part it scales with the divider and the duty is the
     // same either side; the fake holds whatever was seeded. SourceReading.h
-    const uint16_t Divider = Tv5725::SourceMeasurement::referenceDivider(false);
+    const uint16_t Divider = referenceDividerFor(false);
     const uint16_t HsyncLow = (uint16_t)(Divider * 96 / 800);
     SolvedEngine solved(524, 59.94f, HsyncLow, &Tv5725::Mode1080p, false);
 

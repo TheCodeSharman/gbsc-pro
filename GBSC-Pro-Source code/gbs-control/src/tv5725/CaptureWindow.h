@@ -26,11 +26,6 @@ class CaptureWindow {
 public:
     CaptureWindow();
 
-    // A 97/98 reading mid-preset-change is a measurement in progress, not a
-    // mode: the smallest real ones the VDS scales are 262 and 312.
-    static const uint16_t SourceVerticalTotalMin = 200;
-    static const uint16_t SourceVerticalTotalMax = 1300;
-
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 

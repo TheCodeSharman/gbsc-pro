@@ -12,6 +12,7 @@
 #include <doctest/doctest.h>
 
 #include "CheckNear.h"
+#include "MeasuredSource.h"
 #include "Si5351Stubs.h"
 #include "fake/Wire.h"
 
@@ -446,7 +447,7 @@ TEST_CASE("a line count outside what any source runs is never measured against")
     // derived from 97: a count is only a measurement once the ADC is running at
     // a divider this pass chose, so refusing to touch it leaves the refusal
     // depending on the state that caused it.
-    CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
+    CHECK(Adc::PLLAD_MD::read() == referenceDividerFor(true));
 }
 
 TEST_CASE("entering bypass leaves nothing to solve")
@@ -1202,11 +1203,11 @@ TEST_CASE("bypass keeps the line rate it last measured")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
     REQUIRE(sampling.lowLineRate());
-    const uint32_t measured = sampling.heldLineRateHz();
+    const uint32_t measured = sampling.lineRateHz();
     REQUIRE(measured != 0);
 
     engine.setOutputMode(&ModeBypass);
-    CHECK(sampling.heldLineRateHz() == measured);
+    CHECK(sampling.lineRateHz() == measured);
     CHECK(sampling.lowLineRate());
 }
 
@@ -1234,7 +1235,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         engine.setOutputMode(benchMode());
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(acquisition));
-        CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(true));
+        CHECK(g_dividerWhenSampled == referenceDividerFor(true));
     }
 
     SUBCASE("a progressive source is sampled at the write limit itself") {
@@ -1244,7 +1245,7 @@ TEST_CASE("the source is measured through a known divider, not the last mode's")
         engine.setOutputMode(benchMode());
         engine.inputTimingsChanged(4);
         REQUIRE(pollUntilSolved(acquisition));
-        CHECK(g_dividerWhenSampled == SourceMeasurement::referenceDivider(false));
+        CHECK(g_dividerWhenSampled == referenceDividerFor(false));
     }
 
     SUBCASE("the divider the previous mode left is not what it is sampled through") {
@@ -1343,7 +1344,7 @@ TEST_CASE("a divider from another mode does not stop the source being counted")
     for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
         pollOnce(acquisition);
 
-    CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
+    CHECK(Adc::PLLAD_MD::read() == referenceDividerFor(true));
 }
 
 TEST_CASE("the reference is re-applied when the count it was sized from moves")

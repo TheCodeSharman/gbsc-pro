@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 
-#include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
 #include "VideoSourceLine.h"   // the capture write limit, likewise
 #include "Adc.h"             // the sample rate, which the divider is half of
 #include "InputFormatter.h"   // the line counter, in the units the divider sets
@@ -16,26 +15,6 @@ namespace Tv5725 {
 const uint16_t SourceMeasurement::LatchedSamplesTolerance;
 const uint8_t SourceMeasurement::LinesPerCountMax;
 
-// A dropped read of ADC_CLK_ICLK1X/2X arrives as 0. Treating that as "no
-// oversampling" keeps the ceiling honest; treating it as a divisor would make
-// the limit infinite, which is the wrong way to be wrong about a rating.
-static uint8_t atLeastOne(uint8_t oversample)
-{
-    return oversample == 0 ? 1 : oversample;
-}
-
-uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
-{
-    if (!countIsSource(sourceLines))
-        return 0;
-
-    if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
-        return 0;
-
-    // VTOTAL is zero based: the frame is one line longer than it counts.
-    return (uint32_t)(fieldRateHz * (float)(sourceLines + 1));
-}
-
 bool SourceMeasurement::heldRateJudges(uint16_t lines, uint16_t heldLines,
                                        uint32_t heldLineRateHz)
 {
@@ -44,7 +23,7 @@ bool SourceMeasurement::heldRateJudges(uint16_t lines, uint16_t heldLines,
 
 // The counter's reading, with the field rate derived back out of it so both
 // halves describe the same frame. Over the frame, not the count: VTOTAL is zero
-// based, and this is the inverse of what lineRateFrom() does.
+// based, and this is the inverse of what VideoSignal::lineRateFor() does.
 void SourceMeasurement::takeCounterRate(uint32_t lineRateHz)
 {
     lineRateHz_ = lineRateHz;
@@ -54,7 +33,7 @@ void SourceMeasurement::takeCounterRate(uint32_t lineRateHz)
 bool SourceMeasurement::heldRateCorroborates(uint32_t lineRateHz) const
 {
     return heldRateJudges(sourceLines_, goodLines_, goodLineRateHz_)
-           && ratesAgree(lineRateHz, goodLineRateHz_);
+           && VideoSignal::ratesAgree(lineRateHz, goodLineRateHz_);
 }
 
 bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
@@ -63,14 +42,7 @@ bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
     if (lineRateHz == 0 || !heldRateJudges(lines, heldLines, heldLineRateHz))
         return true;
 
-    return ratesAgree(lineRateHz, heldLineRateHz);
-}
-
-bool SourceMeasurement::ratesAgree(uint32_t a, uint32_t b)
-{
-    const uint32_t larger = a > b ? a : b;
-    const uint32_t smaller = a > b ? b : a;
-    return (larger - smaller) * 1000u <= (uint32_t)HeldRateTolerancePerMille * smaller;
+    return VideoSignal::ratesAgree(lineRateHz, heldLineRateHz);
 }
 
 uint32_t SourceMeasurement::lineRateForHPeriod(uint16_t hperiod)
@@ -81,7 +53,7 @@ uint32_t SourceMeasurement::lineRateForHPeriod(uint16_t hperiod)
 uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
                                                 uint16_t lines, bool htBadSeen)
 {
-    if (samples == nullptr || count < 2 || !countIsSource(lines) || htBadSeen)
+    if (samples == nullptr || count < 2 || !VideoSignal::countIsSource(lines) || htBadSeen)
         return 0;
 
     uint16_t low = samples[0];
@@ -99,8 +71,7 @@ uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t
     if (rate < LineRateFloorHz)
         return 0;
 
-    const float fieldRateHz = (float)rate / (float)(lines + 1);
-    if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
+    if (!VideoSignal::fieldRateIsSource((float)rate / (float)(lines + 1)))
         return 0;
     return rate;
 }
@@ -120,12 +91,6 @@ SourceMeasurement::SourceMeasurement()
 {
 }
 
-bool SourceMeasurement::countIsSource(uint16_t lines)
-{
-    return lines >= CaptureWindow::SourceVerticalTotalMin
-        && lines <= CaptureWindow::SourceVerticalTotalMax;
-}
-
 bool SourceMeasurement::countWasSerrations() const
 {
     return serrationsSeen_;
@@ -138,7 +103,7 @@ bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
         return false;
 
     const uint16_t frameLines = (uint16_t)(halfLines / 2);
-    if (!countIsSource(frameLines))
+    if (!VideoSignal::countIsSource(frameLines))
         return false;
 
     const int32_t toHalfLines = (int32_t)lines - (int32_t)halfLines;
@@ -153,7 +118,7 @@ SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeri
 {
     const uint16_t lines = lineDoubled ? (uint16_t)(verticalPeriod / 2)
                                        : verticalPeriod;
-    if (!countIsSource(lines))
+    if (!VideoSignal::countIsSource(lines))
         return ScanUnknown;
 
     const bool carriesHalfLine = (verticalPeriod % 2 != 0) != lineDoubled;
@@ -174,7 +139,7 @@ bool SourceMeasurement::sampleSteady()
 {
     uint16_t lines = measureSourceLines();
 
-    if (!countIsSource(lines)) {
+    if (!VideoSignal::countIsSource(lines)) {
         steady_.restart(lines);
         return false;
     }
@@ -247,9 +212,10 @@ bool SourceMeasurement::measureLineRate()
         // be measured NOTHING is -- a reading nothing can speak to is the one
         // form the window's tests cannot judge.
         fieldRateHz_ = TestBusRateMeasurement::sourceFieldRateHz(false);
-        lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
+        lineRateHz_ = VideoSignal::isVideo(sourceLines_, fieldRateHz_)
+            ? VideoSignal::lineRateFor(sourceLines_, fieldRateHz_) : 0;
         if (fromCounter != 0 && lineRateHz_ != 0
-            && ratesAgree(fromCounter, lineRateHz_))
+            && VideoSignal::ratesAgree(fromCounter, lineRateHz_))
             takeCounterRate(fromCounter);
     }
 
@@ -296,7 +262,7 @@ bool SourceMeasurement::usable() const { return divider_ != 0; }
 
 uint16_t SourceMeasurement::divider() const { return divider_; }
 
-uint32_t SourceMeasurement::lineRateHz() const { return lineRateHz_; }
+uint32_t SourceMeasurement::lineRateHz() const { return goodLineRateHz_; }
 
 uint16_t SourceMeasurement::readSourceLines() const
 {
@@ -346,11 +312,9 @@ uint32_t SourceMeasurement::estimatedLineRateHz() const
     return goodLineRateHz_;
 }
 
-uint32_t SourceMeasurement::heldLineRateHz() const { return goodLineRateHz_; }
-
 bool SourceMeasurement::lowLineRate() const
 {
-    return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
+    return lineRateHz() != 0 && lineRateHz() < LowLineRateBelowHz;
 }
 
 void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }
@@ -386,18 +350,6 @@ void SourceMeasurement::applyReferenceSampling(uint8_t oversample)
     Adc::applySampleRate(reference, estimate, oversample);
     InputFormatter::writeLineCounter(ifLine());
     SyncProcessor::writeRetimeStop(retimeStop());
-}
-
-uint16_t SourceMeasurement::countHeldStill(uint16_t lines)
-{
-    uint16_t sample = lines;
-    for (uint8_t i = 0; i < HoldSamples; ++i) {
-        sample = measureSourceLines();
-        if (sample < lines - HoldAgreement || sample > lines + HoldAgreement)
-            return 0;
-        delay(HoldIntervalMs);
-    }
-    return sample;
 }
 
 uint16_t SourceMeasurement::measureSourceLines()
@@ -455,7 +407,7 @@ bool SourceMeasurement::dividerLatched() const
 uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
 {
     const uint16_t lines = measureSourceLines();
-    if (countIsSource(lines))
+    if (VideoSignal::countIsSource(lines))
         return lines;
 
     const uint8_t multiple = linesPerCount(measureLineSamples(), divider);
@@ -463,7 +415,7 @@ uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
         return lines;
 
     const uint32_t corrected = (uint32_t)lines * multiple;
-    return countIsSource(corrected) ? (uint16_t)corrected : lines;
+    return VideoSignal::countIsSource(corrected) ? (uint16_t)corrected : lines;
 }
 
 uint8_t SourceMeasurement::linesPerCount(uint16_t lineSamples, uint16_t divider)

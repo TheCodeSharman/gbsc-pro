@@ -81,6 +81,43 @@ static void seedInterlaced()
     Wire.bank[0][0x00] |= 0x20;   // STATUS_IF_INP_PAL_INT
 }
 
+// The input formatter's flag on its own line counter. A ONE-SIDED gate: it
+// never sets on a healthy reading, so set means refuse.
+static void seedCounterFlagged()
+{
+    Wire.bank[0][0x05] |= 0x04;   // STATUS_IF_HT_BAD
+}
+
+static void seedHPeriod(uint16_t hperiod)
+{
+    Wire.bank[0][0x06] = (uint8_t)(hperiod & 0xFF);
+    Wire.bank[0][0x07] = (uint8_t)((hperiod >> 8) & 0x01);
+}
+
+// The three source-side reads at once, plus the divider held over from the
+// mode before. seedSourceLines() resets the bus, so the order matters.
+static void seedSource(SourceMeasurement &sampling, uint16_t lines,
+                       uint16_t lineSamples, uint16_t divider)
+{
+    seedSourceLines(lines);
+    Wire.bank[0][0x17] = (uint8_t)(lineSamples & 0xFF);
+    Wire.bank[0][0x18] = (uint8_t)((lineSamples >> 8) & 0x0F);
+    Wire.bank[5][0x12] = (uint8_t)(divider & 0xFF);
+    Wire.bank[5][0x13] = (uint8_t)((divider >> 8) & 0x0F);
+    sampling.holdDivider(divider);
+}
+
+// The scan type as a fresh measurement reads it, with the doubling held. The
+// class takes the doubling from its own state rather than as an argument,
+// because InputFormatter::applyScanMode() owns the registers it has to match.
+static SourceMeasurement::ScanType scanTypeWithDoubling(uint16_t verticalPeriod,
+                                                        bool lineDoubled)
+{
+    SourceMeasurement measurement;
+    measurement.holdLineDoubling(lineDoubled);
+    return measurement.scanType(verticalPeriod);
+}
+
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
 static const uint32_t BenchLineRate = 15550;
@@ -346,73 +383,37 @@ TEST_CASE("an unmeasurable line rate leaves the previous choice alone")
     CHECK(sampling.usable());
 }
 
-TEST_CASE("a field rate that disagrees with the line count is refused")
-{
-    // A source locked at 311 lines / 50.08 Hz yields PLLAD_MD 2204 against the
-    // 2548 due when the solve sees the ~57.9 Hz transient a preset load leaves,
-    // which a bare 40..100 Hz check passes. The line count is reliable where the
-    // period measurement is not, so it says which rate is plausible.
-    // solveRaster() refuses the same way.
-    // STATUS_SYNC_PROC_VTOTAL is zero based, so the frame is one line longer
-    // than it counts and the line rate is the field rate times VTOTAL + 1. Two
-    // instruments settle it: HPERIOD_IF reads this source at 15625 Hz, and
-    // 15625/312 is the 50.08 the field rate measures where 15625/311 is 50.24,
-    // which it does not.
-    CHECK(SourceMeasurement::lineRateFrom(311, 50.08f) == 15624u);
-
-    SUBCASE("the line count does not decide what the rate may be") {
-        // 311 lines runs at 50 Hz here and 60 Hz elsewhere, and 262 the other
-        // way about. Both are real sources, so both are measurements rather
-        // than errors.
-        CHECK(SourceMeasurement::lineRateFrom(311, 60.0f) != 0u);
-        CHECK(SourceMeasurement::lineRateFrom(312, 50.0f) != 0u);
-        CHECK(SourceMeasurement::lineRateFrom(262, 50.0f) != 0u);
-        CHECK(SourceMeasurement::lineRateFrom(262, 59.94f) != 0u);
-    }
-
-    SUBCASE("the 97/98 a preset load leaves behind is refused outright") {
-        // Documented as normal for a moment after a load, and the reason
-        // solveRaster() defers rather than solving. Below SourceVerticalTotalMin, so
-        // it never reaches the rate check at all.
-        CHECK(SourceMeasurement::lineRateFrom(97, 50.0f) == 0u);
-        CHECK(SourceMeasurement::lineRateFrom(98, 50.0f) == 0u);
-    }
-
-    SUBCASE("a field rate that is neither 50 nor 60 is still a field rate") {
-        // 640x480@75 on the VGA input: 499 lines, measured 75.088 Hz. Rejecting
-        // it leaves the previous mode's raster and clock in place, so the output
-        // runs at a rate no display locks to and the screen goes blank.
-        CHECK(SourceMeasurement::lineRateFrom(499, 75.088f) != 0u);
-    }
-
-    SUBCASE("a rate no video source runs at is still refused") {
-        CHECK(SourceMeasurement::lineRateFrom(311, 4.0f) == 0u);
-        CHECK(SourceMeasurement::lineRateFrom(311, 400.0f) == 0u);
-    }
-}
-
+// A rate that moved while the line count did not is a reading taken while the
+// source was still settling, not a new mode. The bench transient: locked at 311
+// lines / 50.08 Hz, a solve run across a preset load reads 57.9 Hz and sizes
+// PLLAD_MD 2204 where 2548 is due. The count is the reliable half.
 TEST_CASE("a rate that moves while the line count does not is a settling reading")
 {
-    // The bench transient: locked at 311 lines / 50.08 Hz, a solve run across a
-    // preset load reads 57.9 Hz and sizes PLLAD_MD 2204 where 2548 is due. The
-    // count is the reliable half, so a rate that moves alone is refused.
-    const uint32_t held = SourceMeasurement::lineRateFrom(311, 50.08f);
+    seedSourceLines(311);
+    g_fieldRate = 50.08f;
+    SourceMeasurement measurement;
+    REQUIRE(rateMeasured(measurePastGate(measurement)));
 
-    CHECK_FALSE(SourceMeasurement::rateFollowsCount(
-        311, SourceMeasurement::lineRateFrom(311, 57.9f), 311, held));
+    SUBCASE("nothing held yet cannot contradict anything") {
+        SourceMeasurement fresh;
+        g_fieldRate = 57.9f;
+        CHECK(rateMeasured(measurePastGate(fresh)));
+    }
 
     SUBCASE("a real mode change moves the count, so any rate is accepted") {
-        CHECK(SourceMeasurement::rateFollowsCount(
-            499, SourceMeasurement::lineRateFrom(499, 75.088f), 311, held));
+        seedSourceLines(499);
+        g_fieldRate = 75.088f;
+        CHECK(rateMeasured(measurePastGate(measurement)));
     }
 
     SUBCASE("the same source drifting is not a change") {
-        CHECK(SourceMeasurement::rateFollowsCount(
-            311, SourceMeasurement::lineRateFrom(311, 50.5f), 311, held));
+        g_fieldRate = 50.5f;
+        CHECK(rateMeasured(measurePastGate(measurement)));
     }
 
-    SUBCASE("nothing held yet cannot contradict anything") {
-        CHECK(SourceMeasurement::rateFollowsCount(311, held, 0, 0));
+    SUBCASE("but a rate that moved alone is refused") {
+        g_fieldRate = 57.9f;
+        CHECK(measurement.measure() == SourceMeasurement::Unmeasurable);
     }
 }
 
@@ -479,7 +480,11 @@ TEST_CASE("a rate that moves without the line count is refused, and says so")
 
     g_fieldRate = 57.9f;
     CHECK(measurement.measure() == SourceMeasurement::Unmeasurable);
-    CHECK(measurement.lineRateHz() == 0u);
+
+    // The refusal is the return value, not a zeroed rate: the last rate that
+    // passed the cross-check stands, so a reader through a sync loss gets the
+    // last one believed.
+    CHECK(measurement.lineRateHz() == 15624u);
 
     SUBCASE("and reports what it saw, both halves") {
         CHECK(measurement.sourceLines() == 311);
@@ -489,7 +494,7 @@ TEST_CASE("a rate that moves without the line count is refused, and says so")
     SUBCASE("an unmeasurable field rate is refused the same way") {
         g_fieldRate = 0.0f;
         CHECK(measurement.measure() == SourceMeasurement::Unmeasurable);
-        CHECK(measurement.lineRateHz() == 0u);
+        CHECK(measurement.lineRateHz() == 15624u);
     }
 
     SUBCASE("so is the 97 lines a preset load leaves behind") {
@@ -663,64 +668,73 @@ TEST_CASE("a latched divider is the one the sync processor counts")
 
 TEST_CASE("a near-integer multiple of the divider is a PLL counting several lines")
 {
-    // The trap's signature: the count is twice the divider because the PLL
-    // locked to every other hsync, so one line is counted per two sent.
-    CHECK(SourceMeasurement::linesPerCount(2249, 1124) == 2);
-    CHECK(SourceMeasurement::linesPerCount(4500, 1125) == 4);
+    // The trap's signature: the sync processor reports a count too low and the
+    // samples per line too high, because the PLL locked to every other hsync
+    // and counts one line per two sent. The count alone cannot show it -- 155
+    // is simply not a source -- so the sample count against the divider is what
+    // recovers the real 310.
+    SourceMeasurement sampling;
 
-    SUBCASE("a latched divider is not a multiple of itself") {
-        CHECK(SourceMeasurement::linesPerCount(2250, 2250) == 0);
+    seedSource(sampling, 155, 2249, 1124);
+    CHECK(sampling.readSourceLines() == 310);
+
+    SUBCASE("and four lines to a count likewise") {
+        // STATUS_SYNC_PROC_HTOTAL is 12 bits, so four lines to a count is only
+        // reachable on a divider small enough for the product to fit.
+        seedSource(sampling, 78, 4000, 1000);
+        CHECK(sampling.readSourceLines() == 312);
     }
 
-    SUBCASE("an unlocked sync processor is not one either") {
-        // 2558 against 2553 is a five-sample offset, which is arithmetically
-        // incapable of looking like a multiple: the nearest is 5106.
-        CHECK(SourceMeasurement::linesPerCount(2558, 2553) == 0);
+    SUBCASE("a count that is already a source is taken as it stands") {
+        seedSource(sampling, 311, 2553, 2553);
+        CHECK(sampling.readSourceLines() == 311);
+    }
 
-        // And a reading that is simply unrelated to the divider -- 2400 with
-        // the sync processor unconfigured -- is unrelated to every multiple.
-        CHECK(SourceMeasurement::linesPerCount(2400, 2553) == 0);
+    SUBCASE("an unlocked sync processor is not a multiple of anything") {
+        // 2558 against 2553 is a five-sample offset, arithmetically incapable
+        // of looking like a multiple: the nearest is 5106. So nothing corrects
+        // the count and it comes back as read.
+        seedSource(sampling, 97, 2558, 2553);
+        CHECK(sampling.readSourceLines() == 97);
+    }
+
+    SUBCASE("nor is a reading simply unrelated to the divider") {
+        // 2400 with the sync processor unconfigured.
+        seedSource(sampling, 97, 2400, 2553);
+        CHECK(sampling.readSourceLines() == 97);
     }
 
     SUBCASE("beyond the multiples any offset can be made to fit one") {
-        CHECK(SourceMeasurement::linesPerCount(5620, 1124) == 0);
+        seedSource(sampling, 155, 5620, 1124);
+        CHECK(sampling.readSourceLines() == 155);
     }
 
     SUBCASE("and nothing is a multiple of nothing") {
-        CHECK(SourceMeasurement::linesPerCount(0, 1124) == 0);
-        CHECK(SourceMeasurement::linesPerCount(2249, 0) == 0);
-        CHECK(SourceMeasurement::linesPerCount(0, 0) == 0);
+        seedSource(sampling, 155, 0, 1124);
+        CHECK(sampling.readSourceLines() == 155);
+        seedSource(sampling, 155, 2249, 0);
+        CHECK(sampling.readSourceLines() == 155);
     }
 }
 
 // --- escaping a divider the source cannot lock to ----------------------------
-
-// The three source-side reads at once, plus the divider held over from the
-// mode before. seedSourceLines() resets the bus, so the order matters.
-static void seedSource(SourceMeasurement &sampling, uint16_t lines,
-                       uint16_t lineSamples, uint16_t divider)
-{
-    seedSourceLines(lines);
-    Wire.bank[0][0x17] = (uint8_t)(lineSamples & 0xFF);
-    Wire.bank[0][0x18] = (uint8_t)((lineSamples >> 8) & 0x0F);
-    Wire.bank[5][0x12] = (uint8_t)(divider & 0xFF);
-    Wire.bank[5][0x13] = (uint8_t)((divider >> 8) & 0x0F);
-    sampling.holdDivider(divider);
-}
 
 TEST_CASE("the multiple tolerates the jitter of every line it counts")
 {
     // One counted line carries the jitter of k source lines, so the window
     // scales with k rather than being the latch check's fixed two samples.
     // Measured: 2251 against a divider of 1124, where twice is 2248.
-    CHECK(SourceMeasurement::linesPerCount(2251, 1124) == 2);
-    CHECK(SourceMeasurement::linesPerCount(2247, 1124) == 2);
+    SourceMeasurement sampling;
+
+    seedSource(sampling, 155, 2251, 1124);
+    CHECK(sampling.readSourceLines() == 310);
+
+    seedSource(sampling, 155, 2247, 1124);
+    CHECK(sampling.readSourceLines() == 310);
 
     SUBCASE("and widening it does not reach the readings that are not multiples") {
-        // 2558 against 2553 is 2548 away from twice the divider, so no
-        // plausible widening makes it one.
-        CHECK(SourceMeasurement::linesPerCount(2558, 2553) == 0);
-        CHECK(SourceMeasurement::linesPerCount(2400, 2553) == 0);
+        seedSource(sampling, 97, 2558, 2553);
+        CHECK(sampling.readSourceLines() == 97);
     }
 }
 
@@ -773,7 +787,7 @@ TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
         CHECK(rateMeasured(measurePastGate(measurement)));
         seedSourceLines(0);
         CHECK_FALSE(rateMeasured(measurePastGate(measurement)));
-        CHECK(measurement.heldLineRateHz() == 15624u);
+        CHECK(measurement.lineRateHz() == 15624u);
     }
 }
 
@@ -787,13 +801,13 @@ TEST_CASE("the reference divider is even, like every divider the solver picks")
     //
     // WriteLimitUnits is 1125 and only the line-doubled reference doubles it,
     // so it is the progressive one that lands odd.
-    CHECK((SourceMeasurement::referenceDivider(false) & 1u) == 0);
-    CHECK((SourceMeasurement::referenceDivider(true) & 1u) == 0);
+    CHECK((referenceDividerFor(false) & 1u) == 0);
+    CHECK((referenceDividerFor(true) & 1u) == 0);
 
     SUBCASE("and it is still the write limit, rounded down to reach it") {
-        CHECK(SourceMeasurement::referenceDivider(false) <= VideoSourceLine::WriteLimitUnits);
-        CHECK(SourceMeasurement::referenceDivider(true) <= 2 * VideoSourceLine::WriteLimitUnits);
-        CHECK(SourceMeasurement::referenceDivider(false) >= VideoSourceLine::WriteLimitUnits - 1);
+        CHECK(referenceDividerFor(false) <= VideoSourceLine::WriteLimitUnits);
+        CHECK(referenceDividerFor(true) <= 2 * VideoSourceLine::WriteLimitUnits);
+        CHECK(referenceDividerFor(false) >= VideoSourceLine::WriteLimitUnits - 1);
     }
 }
 
@@ -806,50 +820,53 @@ TEST_CASE("the reference divider is even, like every divider the solver picks")
 // docs/investigations/hperiod-if-railing.md
 TEST_CASE("a run of agreeing HPERIOD_IF readings gives the source's line rate")
 {
-    const uint16_t settled[] = {431, 431, 430};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311, false) == 15625u);
+    // 27 MHz / ((431 + 1) * 4) = 15625 on the bench source, and the run is
+    // believed without a vsync spin.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRate = 50.08f;
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+    CHECK(sampling.lineRateHz() == 15625u);
 
-    const uint16_t progressive[] = {165, 165, 165};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(progressive, 3, 679, false) == 40662u);
+    SUBCASE("a progressive 800x600 line likewise") {
+        SourceMeasurement other;
+        seedSourceLines(679);
+        seedHPeriod(165);
+        g_fieldRate = 59.8f;
+        REQUIRE(rateMeasured(measurePastGate(other)));
+        CHECK(other.lineRateHz() == 40662u);
+    }
 
-    const uint16_t seventy[] = {308, 307, 308};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(seventy, 3, 311, false) == 21844u);
+    SUBCASE("and a 70 Hz one") {
+        SourceMeasurement other;
+        seedSourceLines(311);
+        seedHPeriod(308);
+        g_fieldRate = 70.0f;
+        REQUIRE(rateMeasured(measurePastGate(other)));
+        CHECK(other.lineRateHz() == 21844u);
+    }
 }
 
 TEST_CASE("readings that disagree are refused, which is what railing looks like")
 {
-    const uint16_t railed[] = {511, 255, 16, 509};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(railed, 4, 311, false) == 0u);
+    // The railed form is noisy rather than stuck, so the window sees several
+    // values. Refused, the field rate answers instead -- which is the point:
+    // it is measured a different way and does not rail with the counter.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(511);
+    Wire.drift(0x00, 0x06);   // HPERIOD_IF advances on every read
+    g_fieldRate = 50.08f;
+    g_fieldRateCalls = 0;
 
-    const uint16_t noisy[] = {511, 510, 429, 436};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(noisy, 4, 311, false) == 0u);
-}
-
-TEST_CASE("a steady reading implying a field rate no source runs at is refused")
-{
-    // 50 against a 524-line source is 132 kHz, a 252 Hz field rate. Perfectly
-    // steady, so agreement alone cannot reject it.
-    const uint16_t stableWrong[] = {50, 50, 50, 50};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(stableWrong, 4, 524, false) == 0u);
-}
-
-TEST_CASE("one reading is not a run, and a line count that is not a source is refused")
-{
-    const uint16_t one[] = {431};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(one, 1, 311, false) == 0u);
-
-    const uint16_t settled[] = {431, 431, 431};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 0, false) == 0u);
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+    CHECK(g_fieldRateCalls > 0);
+    CHECK(sampling.lineRateHz() == 15624u);
 }
 
 // HPERIOD_IF is seeded the way the chip presents it: segment 0, register 0x06,
 // nine bits.
-static void seedHPeriod(uint16_t hperiod)
-{
-    Wire.bank[0][0x06] = (uint8_t)(hperiod & 0xFF);
-    Wire.bank[0][0x07] = (uint8_t)((hperiod >> 8) & 0x01);
-}
-
 TEST_CASE("the field rate is derived over the same frame the line rate assumed")
 {
     // Both paths have to agree what the frame is. HPERIOD_IF gives the line
@@ -906,27 +923,23 @@ TEST_CASE("a refused HPERIOD_IF run falls back to the field rate")
     CHECK(sampling.lineRateHz() == 31500u);
 }
 
-TEST_CASE("a stuck reading is refused even where it implies a plausible rate")
-{
-    // 511 on a 311-line source is 13183 Hz, a 42.38 Hz field rate -- inside any
-    // band that admits a 24 or 25 Hz source, so plausibility cannot reject it.
-    // Agreement cannot either: a STUCK register repeats perfectly while a live
-    // one varies, so the run test prefers the fault to the truth.
-    //
-    // What separates them is STATUS_IF_HT_BAD, measured 15 of 20 samples on a
-    // live instance and 0 of 20 once cleared. Left accepted, the raster is
-    // solved 2264 wide where 1916 is due and the sink reports 42 Hz.
-    const uint16_t stuck[] = {511, 511, 511};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(stuck, 3, 311, true) == 0u);
-}
-
 TEST_CASE("a flagged window is refused however good the readings look")
 {
     // The flag is about the counter, not the number: it never set on a healthy
     // reading across 91 recorded samples plus 20 measured, so a window carrying
-    // it is not a window to take a rate from.
-    const uint16_t settled[] = {431, 431, 430};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(settled, 3, 311, true) == 0u);
+    // it is not a window to take a rate from -- even one reading 431, which is
+    // exactly what this source is due.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    seedCounterFlagged();
+    g_fieldRate = 50.08f;
+    g_fieldRateCalls = 0;
+
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+    CHECK(g_fieldRateCalls > 0);
+    // The field rate's answer, not the counter's 15625.
+    CHECK(sampling.lineRateHz() == 15624u);
 }
 
 // The window's three tests all pass a value that is railed AND plausible: 272
@@ -962,13 +975,13 @@ TEST_CASE("a railed reading never becomes the held rate")
     seedHPeriod(431);
     g_fieldRate = 50.08f;
     REQUIRE(rateMeasured(measurePastGate(sampling)));
-    REQUIRE(sampling.heldLineRateHz() == 15625u);
+    REQUIRE(sampling.lineRateHz() == 15625u);
 
     seedHPeriod(272);
     for (unsigned i = 0; i < 2u * SourceMeasurement::HeldRateRejectionLimit; ++i)
         sampling.measure();
 
-    CHECK(sampling.heldLineRateHz() == 15624u);
+    CHECK(sampling.lineRateHz() == 15624u);
 }
 
 TEST_CASE("a reading nothing can corroborate is refused, not adopted")
@@ -988,7 +1001,7 @@ TEST_CASE("a reading nothing can corroborate is refused, not adopted")
     g_fieldRate = 0.0f;
 
     CHECK_FALSE(rateMeasured(measurePastGate(sampling)));
-    CHECK(sampling.heldLineRateHz() == 0u);
+    CHECK(sampling.lineRateHz() == 0u);
 }
 
 TEST_CASE("a refusal does not spend the rejection budget")
@@ -1002,70 +1015,59 @@ TEST_CASE("a refusal does not spend the rejection budget")
     seedHPeriod(431);
     g_fieldRate = 50.08f;
     REQUIRE(rateMeasured(measurePastGate(sampling)));
-    REQUIRE(sampling.heldLineRateHz() == 15625u);
+    REQUIRE(sampling.lineRateHz() == 15625u);
 
     g_fieldRate = 0.0f;
     seedHPeriod(272);
     for (unsigned i = 0; i < 2u * SourceMeasurement::HeldRateRejectionLimit; ++i)
         CHECK_FALSE(rateMeasured(measurePastGate(sampling)));
 
-    CHECK(sampling.heldLineRateHz() == 15625u);
+    CHECK(sampling.lineRateHz() == 15625u);
 }
 
 TEST_CASE("a reading implying a line no television generates is refused")
 {
-    // The railed values sit below the floor: 511 is 13.2 kHz and 510 is 13.2,
-    // against 15625 for the 431 this source is due. Nothing legitimate is lost
-    // -- the slowest line here is 15.625 kHz.
-    const uint16_t slow[] = {511, 511, 511};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(slow, 3, 311, false) == 0u);
+    // The railed values sit below the floor: 511 on a 311-line source is
+    // 13.2 kHz against the 15625 the 431 it is due gives. Nothing legitimate is
+    // lost -- the slowest line here is 15.625 kHz. Refused, the field rate is
+    // what answers instead.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(511);
+    g_fieldRate = 50.08f;
+    g_fieldRateCalls = 0;
 
-    const uint16_t justUnder[] = {510, 510, 509};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(justUnder, 3, 311, false) == 0u);
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+    CHECK(g_fieldRateCalls > 0);
+    CHECK(sampling.lineRateHz() == 15624u);
 
-    const uint16_t bench[] = {431, 431, 430};
-    CHECK(SourceMeasurement::lineRateFromHPeriod(bench, 3, 311, false) == 15625u);
+    SUBCASE("and one just under the floor likewise") {
+        SourceMeasurement other;
+        seedSourceLines(311);
+        seedHPeriod(510);
+        g_fieldRateCalls = 0;
+        REQUIRE(rateMeasured(measurePastGate(other)));
+        CHECK(g_fieldRateCalls > 0);
+    }
 }
 
 TEST_CASE("the line rate comes off HPERIOD_IF against the chip's own 27 MHz")
 {
-    CHECK(SourceMeasurement::lineRateForHPeriod(431) == 15625u);
+    // 27 MHz / ((431 + 1) * 4) = 15625, and it is the chip's own clock rather
+    // than the ADC's, so the reading does not move with PLLAD_MD. Believed
+    // without a vsync spin, which is the whole reason the counter is preferred.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRate = 50.08f;
+
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+    CHECK(sampling.lineRateHz() == 15625u);
 }
 
 // The wait in front of a preset load. A load is expensive and a source
 // mid-change gives a count that is wrong and steady for a few samples, so the
 // run is long rather than the four SteadySamples an idle pass uses.
-
-TEST_CASE("a count that holds across the run comes back")
-{
-    seedSourceLines(627);
-
-    CHECK(SourceMeasurement::countHeldStill(627) == 627);
-}
-
-TEST_CASE("a count that moves during the run refuses")
-{
-    // 0 rather than a flag: no count is a count no source runs at, so the
-    // caller cannot use it by accident.
-    seedSourceLines(627);
-    Wire.drift(0x00, 0x1C);
-
-    CHECK(SourceMeasurement::countHeldStill(627) == 0);
-}
-
-TEST_CASE("a count within the agreement window still holds")
-{
-    seedSourceLines(629);
-
-    CHECK(SourceMeasurement::countHeldStill(627) == 629);
-}
-
-TEST_CASE("a count outside the agreement window does not")
-{
-    seedSourceLines(631);
-
-    CHECK(SourceMeasurement::countHeldStill(627) == 0);
-}
 
 // Telling the source's lines from the serrations either side of its vertical
 // interval. The sync processor counts through the coast, so a coast that does
@@ -1075,12 +1077,24 @@ TEST_CASE("a count outside the agreement window does not")
 
 TEST_CASE("a field count against the frame in half-lines is the source's lines")
 {
-    CHECK_FALSE(SourceMeasurement::countIsSerrations(310, 624, true));
+    // 310 against a 624 half-line frame is the source's own count, nearer half
+    // the witness than the whole of it.
+    SourceMeasurement measurement;
+    seedSourceLines(310);
+    seedSourceHalfLines(624);
+    seedInterlaced();
+
+    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a count as large as the half-line total is the serrations")
 {
-    CHECK(SourceMeasurement::countIsSerrations(607, 624, true));
+    SourceMeasurement measurement;
+    seedSourceLines(607);
+    seedSourceHalfLines(624);
+    seedInterlaced();
+
+    CHECK(measurePastGate(measurement) == SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a progressive source whose frame the witness counts in lines is not serrations")
@@ -1088,23 +1102,27 @@ TEST_CASE("a progressive source whose frame the witness counts in lines is not s
     // 480p on YPbPr, measured on the bench: SP_VTOTAL 524 with VPERIOD_IF 524,
     // steady, STATUS_IF_VT_OK set. The witness is not reporting half-lines
     // here, so the count sits exactly ON it -- which reads identically to a
-    // doubled count and rejects a source that is entirely correct.
+    // doubled count. Judged on the witness alone this source is rejected on
+    // every pass, no solve ever runs, and the sync pads stay blanked for ever.
     //
-    // HPERIOD_IF 214 gives 31395 Hz, and 31395 / 525 is 59.8 Hz. A doubled
-    // count would imply half of that, and no television runs at half a field
-    // rate: that is what separates the two, and the witness alone cannot.
-    CHECK_FALSE(SourceMeasurement::countIsSerrations(524, 524, false));
+    // The source not being interlaced is what separates them, and it is
+    // measured rather than inferred.
+    SourceMeasurement measurement;
+    seedSourceLines(524);
+    seedSourceHalfLines(524);
+
+    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a progressive source cannot have counted the serrations")
 {
-    // The count doubles because the sync processor runs through the half-line
-    // structure and counts the FRAME where a covered coast counts the FIELD.
-    // Progressive sources have no such distinction, so the witness comparison
-    // must not even be reached -- these are the serration numbers, and they
-    // still answer false.
-    CHECK(SourceMeasurement::countIsSerrations(607, 624, true));
-    CHECK_FALSE(SourceMeasurement::countIsSerrations(607, 624, false));
+    // A progressive source has no field and frame to differ, so nothing can
+    // double its count however the witness reads.
+    SourceMeasurement measurement;
+    seedSourceLines(607);
+    seedSourceHalfLines(624);
+
+    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a half-line total that measures nothing refuses to judge the count")
@@ -1112,7 +1130,12 @@ TEST_CASE("a half-line total that measures nothing refuses to judge the count")
     // VPERIOD_IF is debris on a separate-sync source, where it reads values
     // like 20 against a true 311. Judged against that, any count at all looks
     // nearer the total than half of it.
-    CHECK_FALSE(SourceMeasurement::countIsSerrations(311, 20, true));
+    SourceMeasurement measurement;
+    seedSourceLines(311);
+    seedSourceHalfLines(20);
+    seedInterlaced();
+
+    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a serration count never goes steady, however still it holds")
@@ -1205,8 +1228,8 @@ TEST_CASE("the reference puts the chip on a divider this class chose")
 
     sampling.applyReferenceSampling(4);
 
-    CHECK(sampling.divider() == SourceMeasurement::referenceDivider(false));
-    CHECK(dividerInForce() == SourceMeasurement::referenceDivider(false));
+    CHECK(sampling.divider() == referenceDividerFor(false));
+    CHECK(dividerInForce() == referenceDividerFor(false));
     CHECK(lineCounterInForce() == sampling.ifLine());
     CHECK(retimeStopInForce() == sampling.retimeStop());
 }
@@ -1221,8 +1244,8 @@ TEST_CASE("the reference for a line-doubled source is its own")
 
     sampling.applyReferenceSampling(4);
 
-    CHECK(sampling.divider() == SourceMeasurement::referenceDivider(true));
-    CHECK(sampling.divider() != SourceMeasurement::referenceDivider(false));
+    CHECK(sampling.divider() == referenceDividerFor(true));
+    CHECK(sampling.divider() != referenceDividerFor(false));
 }
 
 // The estimate the reference is sized from comes off the steadiness run, not off
@@ -1352,21 +1375,21 @@ TEST_CASE("the scan type is the half line in VPERIOD_IF")
 {
     SUBCASE("a doubled count carries the half line as an even period") {
         // RiscPC 320x256@50 and 640x200@60, composite sync, 519 and 534 samples.
-        CHECK(SourceMeasurement::scanTypeFor(623, true)
+        CHECK(scanTypeWithDoubling(623, true)
               == SourceMeasurement::ScanProgressive);
-        CHECK(SourceMeasurement::scanTypeFor(624, true)
+        CHECK(scanTypeWithDoubling(624, true)
               == SourceMeasurement::ScanInterlaced);
-        CHECK(SourceMeasurement::scanTypeFor(523, true)
+        CHECK(scanTypeWithDoubling(523, true)
               == SourceMeasurement::ScanProgressive);
-        CHECK(SourceMeasurement::scanTypeFor(524, true)
+        CHECK(scanTypeWithDoubling(524, true)
               == SourceMeasurement::ScanInterlaced);
     }
 
     SUBCASE("an undoubled count carries it as an odd one") {
         // RiscPC 640x480@60, 31690 Hz, IF_HS_DEC_FACTOR 0, 526 and 529 samples.
-        CHECK(SourceMeasurement::scanTypeFor(524, false)
+        CHECK(scanTypeWithDoubling(524, false)
               == SourceMeasurement::ScanProgressive);
-        CHECK(SourceMeasurement::scanTypeFor(525, false)
+        CHECK(scanTypeWithDoubling(525, false)
               == SourceMeasurement::ScanInterlaced);
     }
 }
@@ -1375,9 +1398,9 @@ TEST_CASE("the scan type is the half line in VPERIOD_IF")
 // parity alone separates them. The doubling does, and it is held state.
 TEST_CASE("the two scan types of one source can share a period")
 {
-    CHECK(SourceMeasurement::scanTypeFor(524, true)
+    CHECK(scanTypeWithDoubling(524, true)
           == SourceMeasurement::ScanInterlaced);
-    CHECK(SourceMeasurement::scanTypeFor(524, false)
+    CHECK(scanTypeWithDoubling(524, false)
           == SourceMeasurement::ScanProgressive);
 }
 
@@ -1385,11 +1408,11 @@ TEST_CASE("the two scan types of one source can share a period")
 // on the bench source, with STATUS_IF_VT_OK reading 0 beside it.
 TEST_CASE("a period too short to be a vertical one answers nothing")
 {
-    CHECK(SourceMeasurement::scanTypeFor(57, true)
+    CHECK(scanTypeWithDoubling(57, true)
           == SourceMeasurement::ScanUnknown);
-    CHECK(SourceMeasurement::scanTypeFor(101, true)
+    CHECK(scanTypeWithDoubling(101, true)
           == SourceMeasurement::ScanUnknown);
-    CHECK(SourceMeasurement::scanTypeFor(0, false)
+    CHECK(scanTypeWithDoubling(0, false)
           == SourceMeasurement::ScanUnknown);
 }
 

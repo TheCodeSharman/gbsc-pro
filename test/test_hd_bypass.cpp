@@ -654,14 +654,14 @@ TEST_CASE("only a rate a display accepts may be bypassed")
     SourceMeasurement measurement;
 
     SUBCASE("nothing measured yet cannot be bypassed") {
-        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 
     SUBCASE("a 15.6 kHz line cannot") {
         seedSourceLines(311);
         g_fieldRate = 50.08f;
         CHECK(rateMeasured(measurePastGate(measurement)));
-        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 
     SUBCASE("the 31.4 kHz VGA line can") {
@@ -669,7 +669,7 @@ TEST_CASE("only a rate a display accepts may be bypassed")
         seedSourceLines(524);
         g_fieldRate = 60.0f;
         CHECK(rateMeasured(measurePastGate(measurement)));
-        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 
     SUBCASE("26.6 kHz can, which is under the VGA line") {
@@ -678,7 +678,7 @@ TEST_CASE("only a rate a display accepts may be bypassed")
         seedSourceLines(533);
         g_fieldRate = 50.0f;
         CHECK(rateMeasured(measurePastGate(measurement)));
-        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 
     SUBCASE("21.8 kHz cannot, measured") {
@@ -689,7 +689,7 @@ TEST_CASE("only a rate a display accepts may be bypassed")
         g_fieldRate = 60.0f;
         CHECK(rateMeasured(measurePastGate(measurement)));
         CHECK_FALSE(measurement.lowLineRate());
-        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 }
 TEST_CASE("a source that can be passed through is never a slow-line source")
@@ -707,7 +707,7 @@ TEST_CASE("a source that can be passed through is never a slow-line source")
         seedSourceLines(533);
         g_fieldRate = 50.0f;
         REQUIRE(rateMeasured(measurePastGate(measurement)));
-        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK(HdBypass::suitsLineRate(measurement.lineRateHz()));
         CHECK_FALSE(measurement.lowLineRate());
     }
 
@@ -716,7 +716,7 @@ TEST_CASE("a source that can be passed through is never a slow-line source")
         g_fieldRate = 50.08f;
         REQUIRE(rateMeasured(measurePastGate(measurement)));
         CHECK(measurement.lowLineRate());
-        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 }
 TEST_CASE("a source at 640x480 or above is passed through, and anything below is scaled")
@@ -771,13 +771,13 @@ TEST_CASE("a source already bypassed is judged on a count taken now")
     seedSourceLines(524);
     g_fieldRate = 60.0f;
     CHECK(rateMeasured(measurePastGate(measurement)));
-    CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    CHECK(HdBypass::suitsLineRate(measurement.lineRateHz()));
 
     SUBCASE("the held rate outlives the mode it was measured on") {
         // 320x256@50 arrives while bypassed. Nothing re-measures, so the held
         // rate is still the 31.4 kHz line of the mode before it.
         seedSourceLines(311);
-        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK(HdBypass::suitsLineRate(measurement.lineRateHz()));
     }
 
     SUBCASE("the count is what has moved, and it refuses") {

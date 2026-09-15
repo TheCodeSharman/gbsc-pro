@@ -2,20 +2,20 @@
 
 #include <math.h>
 
-#include "SourceMeasurement.h"
+#include "VideoSignal.h"
 
 namespace Tv5725 {
 
-const uint16_t RateTolerancePerMille = SourceMeasurement::HeldRateTolerancePerMille;
+const uint16_t RateTolerancePerMille = VideoSignal::RateTolerancePerMille;
 
 // Identity may be wider than movement but never narrower. See SourceKey.h.
-static_assert(RateTolerancePerMille >= SourceMeasurement::HeldRateTolerancePerMille,
+static_assert(RateTolerancePerMille >= VideoSignal::RateTolerancePerMille,
               "a rate change that moves the key must also arm a mode change");
 
 namespace {
 
-// Mirrors SourceMeasurement::ratesAgree(), which asks the same question of the
-// line rate rather than the field rate.
+// Mirrors VideoSignal::ratesAgree(), which asks the same question of the line
+// rate rather than the field rate.
 bool ratesWithinTolerance(float a, float b)
 {
     const float larger = a > b ? a : b;
@@ -32,8 +32,7 @@ SourceKey::SourceKey() : lines_(0), rateHz_(0.0f) {}
 SourceKey::SourceKey(uint16_t sourceLines, float fieldRateHz)
     : lines_(0), rateHz_(0.0f)
 {
-    // The one owner of both bounds already, on the count and the rate together.
-    if (SourceMeasurement::lineRateFrom(sourceLines, fieldRateHz) == 0)
+    if (!VideoSignal::isVideo(sourceLines, fieldRateHz))
         return;
     lines_ = sourceLines;
     rateHz_ = fieldRateHz;

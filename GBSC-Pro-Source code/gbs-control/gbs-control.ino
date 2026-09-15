@@ -1174,7 +1174,7 @@ static boolean sourceLowLineRate()
 // broken scaler rather than as a refused mode. docs/rgbhv-bypass-trap.md
 static boolean bypassCanBeDisplayed()
 {
-    return Tv5725::HdBypass::suitsLineRate(sourceSampling.heldLineRateHz());
+    return Tv5725::HdBypass::suitsLineRate(sourceSampling.lineRateHz());
 }
 
 // A 15 kHz line whose vertical interval carries equalisation and serration
@@ -1797,7 +1797,7 @@ uint8_t detectAndSwitchToActiveInput()
                     timeOutStart = millis();
                     while ((millis() - timeOutStart) < 6000) {
                         delay(2);
-                        if (Tv5725::SourceMeasurement::countIsSource(
+                        if (Tv5725::VideoSignal::countIsSource(
                                 Tv5725::SourceMeasurement::measureSourceLines())) {
                             return 1;
                         }
@@ -1833,7 +1833,7 @@ uint8_t detectAndSwitchToActiveInput()
                 unsigned long timeOutStart = millis();
                 while ((millis() - timeOutStart) < 6000) {
                     delay(2);
-                    if (Tv5725::SourceMeasurement::countIsSource(
+                    if (Tv5725::VideoSignal::countIsSource(
                             Tv5725::SourceMeasurement::measureSourceLines())) {
                         return 2;
                     }
@@ -2924,8 +2924,8 @@ void enterHdBypass()
     // writer of PLLAD_MD on this path, and last of the group because it
     // installs the sampling the played-out raster is derived from.
     Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(
-                                         sourceSampling.heldLineRateHz()),
-                                     sourceSampling.heldLineRateHz(),
+                                         sourceSampling.lineRateHz()),
+                                     sourceSampling.lineRateHz(),
                                      geometry.sourceActiveStartLine());
 
     Tv5725::Chip::dacsFollowInput();
@@ -3173,7 +3173,7 @@ static void applyPassThroughSampleClock(bool apply, uint16_t divider,
         return;
     }
 
-    const uint32_t lineRateHz = sourceSampling.heldLineRateHz();
+    const uint32_t lineRateHz = sourceSampling.lineRateHz();
     const uint16_t wanted =
         divider != 0 ? divider : Tv5725::HdBypass::dividerFor(lineRateHz);
     const uint8_t ratio =

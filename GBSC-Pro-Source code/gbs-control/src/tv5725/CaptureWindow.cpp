@@ -5,8 +5,6 @@
 
 namespace Tv5725 {
 
-const uint16_t CaptureWindow::SourceVerticalTotalMin;
-const uint16_t CaptureWindow::SourceVerticalTotalMax;
 const uint16_t CaptureWindow::ProgressiveStart;
 
 CaptureWindow::CaptureWindow()
@@ -30,9 +28,9 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     // vertical window for a frame the source is not sending. Having SUCCEEDED it
     // is never revisited.
     //
-    // lineRateFrom() is the one owner of the bounds already, on both the count
-    // and the rate.
-    if (SourceMeasurement::lineRateFrom(sourceLines, source.fieldRateHz()) == 0)
+    // VideoSignal is the one owner of the bounds, on both the count and the
+    // rate.
+    if (!VideoSignal::isVideo(sourceLines, source.fieldRateHz()))
         return false;
 
     // The capture path delivers video a fixed lag after the sync edge the line

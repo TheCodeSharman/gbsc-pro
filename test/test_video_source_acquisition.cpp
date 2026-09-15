@@ -10,6 +10,7 @@
 #include <doctest/doctest.h>
 
 #include "SolvedEngine.h"
+#include "MeasuredSource.h"
 #include "RegistersWritten.h"
 
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
@@ -190,7 +191,7 @@ TEST_CASE("the layer reports what the source is running")
     unit.start();
     REQUIRE(unit.pollUntilSolved());
 
-    CHECK(unit.acquisition.sourceLineRateHz() == unit.sampling.heldLineRateHz());
+    CHECK(unit.acquisition.sourceLineRateHz() == unit.sampling.lineRateHz());
     CHECK(unit.acquisition.sourceLineRateHz() != 0);
     CHECK(unit.acquisition.sourceFieldRateHz() == doctest::Approx(50.08f));
 
@@ -768,7 +769,7 @@ TEST_CASE("a count that never settles re-installs the reference sampling clock")
         unit.poll();
     }
 
-    CHECK(Adc::PLLAD_MD::read() == SourceMeasurement::referenceDivider(true));
+    CHECK(Adc::PLLAD_MD::read() == referenceDividerFor(true));
 }
 
 TEST_CASE("a count no source runs re-establishes the sync type")

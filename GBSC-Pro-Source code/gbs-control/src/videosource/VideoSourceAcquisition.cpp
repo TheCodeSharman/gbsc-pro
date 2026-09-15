@@ -134,7 +134,7 @@ bool VideoSourceAcquisition::passThroughSuitsSource() const
     return passThroughAllowed_
            && Tv5725::HdBypass::suitsSource(sampling_.sourceLines(),
                                   sampling_.fieldRateHz())
-           && Tv5725::HdBypass::suitsLineRate(sampling_.heldLineRateHz());
+           && Tv5725::HdBypass::suitsLineRate(sampling_.lineRateHz());
 }
 
 bool VideoSourceAcquisition::passSourceThrough()
@@ -154,7 +154,7 @@ bool VideoSourceAcquisition::passSourceThrough()
 
 float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }
 
-uint32_t VideoSourceAcquisition::sourceLineRateHz() const { return sampling_.heldLineRateHz(); }
+uint32_t VideoSourceAcquisition::sourceLineRateHz() const { return sampling_.lineRateHz(); }
 
 bool VideoSourceAcquisition::sourceLowLineRate() const { return sampling_.lowLineRate(); }
 
@@ -167,7 +167,7 @@ bool VideoSourceAcquisition::sourceIsPresent() const
 
 bool VideoSourceAcquisition::sourceIsSearching() const
 {
-    return !Tv5725::SourceMeasurement::countIsSource(
+    return !Tv5725::VideoSignal::countIsSource(
                Tv5725::SourceMeasurement::measureSourceLines())
            && !sourceIsPresent();
 }
@@ -251,7 +251,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
     // caller double-advances it and the steadiness both readers depend on is
     // no longer over consecutive polls.
-    const bool plausible = Tv5725::SourceMeasurement::countIsSource(lines);
+    const bool plausible = Tv5725::VideoSignal::countIsSource(lines);
     const bool held = countHeld(lines);
 
     // The horizontal half, and it is not a second steadiness run: the divider
@@ -332,14 +332,14 @@ bool VideoSourceAcquisition::rateMoved()
 {
     const uint32_t rate = Tv5725::SourceMeasurement::measureLineRateFromHPeriod(solvedLines_);
     if (rate == 0 || solvedLineRateHz_ == 0
-        || Tv5725::SourceMeasurement::ratesAgree(rate, solvedLineRateHz_)) {
+        || Tv5725::VideoSignal::ratesAgree(rate, solvedLineRateHz_)) {
         candidateRateHz_ = 0;
         rateRun_ = 0;
         return false;
     }
 
     if (candidateRateHz_ == 0
-        || !Tv5725::SourceMeasurement::ratesAgree(rate, candidateRateHz_)) {
+        || !Tv5725::VideoSignal::ratesAgree(rate, candidateRateHz_)) {
         candidateRateHz_ = rate;
         rateRun_ = 1;
         return false;
@@ -357,9 +357,11 @@ bool VideoSourceAcquisition::rateMoved()
     // rate is measured a different way and does not rail with it. It costs a
     // vsync spin, which is what the cheap gate exists to avoid -- affordable
     // only because a corroborated disagreement is rare.
-    const uint32_t confirmed = Tv5725::SourceMeasurement::lineRateFrom(
-        solvedLines_, Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false));
-    if (confirmed == 0 || !Tv5725::SourceMeasurement::ratesAgree(rate, confirmed))
+    const float fieldRateHz = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false);
+    if (!Tv5725::VideoSignal::isVideo(solvedLines_, fieldRateHz))
+        return false;
+    if (!Tv5725::VideoSignal::ratesAgree(
+            rate, Tv5725::VideoSignal::lineRateFor(solvedLines_, fieldRateHz)))
         return false;
 
     // The held rate is what moved, and measureLineRate() rejects a rate that

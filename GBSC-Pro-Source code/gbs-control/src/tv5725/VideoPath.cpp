@@ -359,7 +359,7 @@ void VideoPath::configurePassThrough()
     // that rather than whatever the last solve chose. Without it the steadiness
     // check compares the line the sync processor counts against a clock that is
     // not delivering it, and a passed-through source reads as unlocked.
-    sampling_.holdDivider(HdBypass::dividerFor(sampling_.heldLineRateHz()));
+    sampling_.holdDivider(HdBypass::dividerFor(sampling_.lineRateHz()));
 
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
@@ -430,7 +430,7 @@ void VideoPath::establishSyncType()
 
 void VideoPath::solveScanMode(uint16_t lines)
 {
-    if (!SourceMeasurement::countIsSource(lines))
+    if (!VideoSignal::countIsSource(lines))
         return;
 
     // Against the mode ASKED FOR rather than the raster last solved: this runs

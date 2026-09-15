@@ -24,6 +24,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
 #include "RegistersWritten.h"
+#include "MeasuredSource.h"
 #include "DebugPinStub.h"
 
 using namespace Tv5725;
@@ -228,7 +229,7 @@ TEST_CASE("an unmeasurable line rate is retried, not settled for")
     settled.engine.inputTimingsChanged(4);
     REQUIRE_FALSE(pollUntilSolved(settled.acquisition));
     CHECK(Wire.field(5, 0x12, 0, 12) ==
-          Tv5725::SourceMeasurement::referenceDivider(true));
+          referenceDividerFor(true));
 
     SUBCASE("and the poll that can measure it computes one") {
         g_fieldRate = 50.08f;
