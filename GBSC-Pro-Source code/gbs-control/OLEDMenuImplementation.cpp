@@ -92,7 +92,6 @@ extern uint8_t SeleInputSource;
 extern uint8_t BriorCon;
 
 // 屏显
-extern uint8_t Info;
 // 解析菜单处理程序
 bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, bool isFirstTime)
 {
@@ -168,7 +167,7 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
         // {
         //     rto->applyPresetDoneStage = 1;
         // }
-      // if(Info == InfoVGA)
+      // if(selected() == InfoVGA)
       // {
       //     uopt->preferScalingRgbhv = false;
       // }
@@ -605,7 +604,7 @@ void applyInputSelection(VideoSourceSelection::Id id)
     const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(id);
 
     SeleInputSource = settings.legacySource;
-    Info = id;
+    VideoSourceSelection::select(id);
     resetSyncProcessor();
     applyInputRegisters(settings);
     BriorCon = settings.brightnessSet;
@@ -646,7 +645,7 @@ void InputNULL(void)
 {
     sender.send(Ypbpr);
     SeleInputSource = S_YUV;
-    // Info = InfoYUV;
+    // select(InfoYUV);
     resetSyncProcessor();
     rto->sourceDisconnected = true;
 }
@@ -664,7 +663,7 @@ void InputINFO(void)
 {
     sender.send(INFO);
     SeleInputSource = S_YUV;
-    // Info = InfoSV;
+    // select(InfoSV);
     resetSyncProcessor();
     applyInputRegisters(VideoSourceSelection::settingsFor(VideoSourceSelection::Composite));
     BriorCon = 2;
@@ -795,9 +794,9 @@ switch (item->tag) {
 
     // 更新后的条件处理逻辑
 // if (preset == TVMODE_PresetPreference::MT_MODE_AUTO) {  
-    if (Info == InfoAV) ChangeAvModeOption(0);
-    else if (Info == InfoSV) ChangeSvModeOption(0);
-    if (Info == InfoSV || Info == InfoAV) {
+    if (VideoSourceSelection::selected() == InfoAV) ChangeAvModeOption(0);
+    else if (VideoSourceSelection::selected() == InfoSV) ChangeSvModeOption(0);
+    if (VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
         TvMode[3] = modes[preset];  // 0x04
         sender.send(TvMode);
     }

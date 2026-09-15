@@ -105,6 +105,21 @@ public:
     // refusing.
     static Id fromName(const char *name);
     static const char *name(Id id);
+
+    // **WHICH SOURCE IS SELECTED, HELD HERE.** It is not measurable: nothing on
+    // the chip reports which of the six is connected, because half the path is
+    // the HC32F460's analog switches and those cannot be read back at all. So
+    // the selection is recorded as it is made and every reader asks this.
+    static void select(Id id);
+
+    // The same, from a stored byte: anything naming none of the six selects
+    // nothing, which is what makes detection sweep.
+    static void selectStored(uint8_t info);
+
+    static Id selected();
+
+    // A different unit, as far as anything reading the selection is concerned.
+    static void forgetSelection();
 };
 
 #endif  // VIDEOSOURCE_VIDEO_SOURCE_SELECTION_H_

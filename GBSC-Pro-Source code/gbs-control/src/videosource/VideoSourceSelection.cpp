@@ -94,3 +94,17 @@ const char *VideoSourceSelection::name(Id id)
             return Rows[i].name;
     return "";
 }
+
+namespace {
+
+VideoSourceSelection::Id selected_ = VideoSourceSelection::None;
+
+}  // namespace
+
+void VideoSourceSelection::select(Id id) { selected_ = id; }
+
+void VideoSourceSelection::selectStored(uint8_t info) { selected_ = fromStored(info); }
+
+VideoSourceSelection::Id VideoSourceSelection::selected() { return selected_; }
+
+void VideoSourceSelection::forgetSelection() { selected_ = None; }

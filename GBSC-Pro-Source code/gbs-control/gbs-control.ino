@@ -441,7 +441,6 @@ volatile uint8_t rotaryIsrID = 0;
 uint8_t syncFound = 0;
 // uint8_t InCurrent = 0;
 uint8_t BriorCon = 0;
-uint8_t Info = 0;
 // uint8_t InputChanged = 0;
 uint8_t SeleInputSource = 0;
 
@@ -1151,7 +1150,7 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
 // known earlier and without a detection pass. docs/video-source-acquisition.md
 bool sourceIsRgbhv()
 {
-    return VideoSourceSelection::isRgbhv((VideoSourceSelection::Id)Info);
+    return VideoSourceSelection::isRgbhv(VideoSourceSelection::selected());
 }
 bool scalingRgbhv() { return sourceIsRgbhv() && Tv5725::RgbhvOutput::isScaling(); }
 bool rgbhvBypass() { return sourceIsRgbhv() && !Tv5725::RgbhvOutput::isScaling(); }
@@ -1314,7 +1313,7 @@ void activeFrameTimeLockInitialSteps()
 // is where a sweep starts looking.
 static uint8_t selectedAdcInput()
 {
-    const VideoSourceSelection::Id chosen = VideoSourceSelection::fromStored(Info);
+    const VideoSourceSelection::Id chosen = VideoSourceSelection::selected();
     if (chosen == VideoSourceSelection::None)
         return 1;
     return VideoSourceSelection::settingsFor(chosen).adcInputSel;
@@ -1644,7 +1643,7 @@ void optimizeSogLevel()
 // connector to ask, so the measurement stands.
 boolean syncTypeHasOwnVsync()
 {
-    const VideoSourceSelection::Id id = (VideoSourceSelection::Id)Info;
+    const VideoSourceSelection::Id id = VideoSourceSelection::selected();
     if (VideoSourceSelection::chosen(id) && !VideoSourceSelection::syncTypeMustBeMeasured(id))
         return false;
     return sourceHasOwnVsync();
@@ -1661,7 +1660,7 @@ boolean sourceHasOwnVsync()
 // detectAndSwitchToActiveInput()'s sweep, which alternates 0/1 from wherever it
 // started.
 //
-// **KEYED ON `Info`, NOT `SeleInputSource`.** `Info` carries all six inputs;
+// **KEYED ON THE SELECTION, NOT `SeleInputSource`.** It carries all six inputs;
 // `SeleInputSource` carries three, so a restore keyed on it sends RGsB the RGBs
 // frame, S-Video and composite the YPbPr frame, and VGA a frame without the low
 // nibble that raises asw_01.
@@ -1680,19 +1679,19 @@ boolean sourceHasOwnVsync()
 // does, and that is what a choice refuses.
 static bool detectionMayChangeInput()
 {
-    return !VideoSourceSelection::chosen(Info);
+    return !VideoSourceSelection::chosen(VideoSourceSelection::selected());
 }
 
 void applySavedInputSource()
 {
-    const VideoSourceSelection::Id saved = VideoSourceSelection::fromStored(Info);
+    const VideoSourceSelection::Id saved = VideoSourceSelection::selected();
     if (saved == VideoSourceSelection::None) {
         // Nothing chosen, so leave the muxes alone and let detection sweep.
         // Only ADC_INPUT_SEL 0 and 1 carry video -- 2 is written solely by
         // calibrateAdcOffset() as a calibration reference -- which is what
         // makes that 0/1 sweep complete.
-        bootLogPrintf("INPUT: nothing stored, Info=%u t=%lums\n",
-                      (unsigned)Info, (unsigned long)millis());
+        bootLogPrintf("INPUT: nothing stored, selection=%u t=%lums\n",
+                      (unsigned)VideoSourceSelection::selected(), (unsigned long)millis());
         return;
     }
 
@@ -1715,7 +1714,7 @@ static_assert(SyncSearch::SourceRgbs == S_RGBs, "SyncSearch::SourceRgbs drifted 
 static_assert(SyncSearch::SourceVga == S_VGA, "SyncSearch::SourceVga drifted from S_VGA");
 static_assert(SyncSearch::SourceYuv == S_YUV, "SyncSearch::SourceYuv drifted from S_YUV");
 
-// VideoSourceSelection::Id IS the stored `Info` byte, which is what lets the boot restore
+// VideoSourceSelection::Id IS the stored byte, which is what lets the boot restore
 // reconstruct all six. Nothing else checks the two spellings agree.
 static_assert(VideoSourceSelection::Rgbs == InfoRGBs, "VideoSourceSelection::Rgbs drifted from InfoRGBs");
 static_assert(VideoSourceSelection::RgsB == InfoRGsB, "VideoSourceSelection::RgsB drifted from InfoRGsB");
@@ -1934,7 +1933,7 @@ uint8_t inputAndSyncDetect()
         rto->isInLowPowerMode = false; 
         resetDebugPort();
         applyRGBPatches();
-        if (Info == InfoRGBs || Info == InfoRGsB) {
+        if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
             // printf("\n RGBS HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
             rto->HdmiHoldDetection = false;
         }
@@ -1949,7 +1948,7 @@ uint8_t inputAndSyncDetect()
         applyYuvPatches();
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
-        if (Info == InfoYUV || Info == InfoSV || Info == InfoAV) {
+        if (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
             // printf("\n YUV HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
             rto->HdmiHoldDetection = false;
         }
@@ -1963,7 +1962,7 @@ uint8_t inputAndSyncDetect()
         Tv5725::RgbhvOutput::chooseBypass();
         resetDebugPort();
 
-        if (Info == InfoVGA && rto->HdmiHoldDetection) {
+        if (VideoSourceSelection::selected() == InfoVGA && rto->HdmiHoldDetection) {
             // printf("\n VGA HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
             rto->HdmiHoldDetection = false;
         }
@@ -4454,7 +4453,7 @@ void setup()
             if (BriorCon > 2)
                 BriorCon = 1;
 
-            Info = (uint8_t)(f.read() - '0');
+            VideoSourceSelection::selectStored((uint8_t)(f.read() - '0'));
 
             RGB_Com = (uint8_t)(f.read() - '0');
             if (RGB_Com > 1)
@@ -7615,7 +7614,7 @@ void saveUserPrefs()
     f.write(SmoothOption + '0');
     f.write(LineOption + '0');
     f.write(BriorCon + '0'); // 27
-    f.write(Info + '0');     // 28
+    f.write(VideoSourceSelection::selected() + '0');     // 28
     f.write(RGB_Com + '0');
 
     f.write((Bright / 100) + '0');
@@ -8361,7 +8360,7 @@ void OSD_selectOption()
                 //     break;
                 case IRKeyOk:
                     // tentative = uopt->presetPreference;
-                    // if(Info == InfoVGA)
+                    // if(selected() == InfoVGA)
                     // {
                     //     uopt->preferScalingRgbhv = false;
                     // }
@@ -11083,7 +11082,7 @@ void OSD_selectOption()
             decode_flag = 1;
             switch (results.value) {
                 case IRKeyOk:
-                    if (Info == InfoSV || Info == InfoAV) {
+                    if (VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
                         COl_L = 1;
                         OSD_menu_F(OSD_CROSS_TOP);
                         OSD_menu_F('^');
@@ -11735,14 +11734,14 @@ void OSD_selectOption()
             OSD_c1(n0, P14, blue_fill);
         }
 
-        if (Info == InfoRGBs) {
+        if (VideoSourceSelection::selected() == InfoRGBs) {
             // OSD_writeString(17,1," RGBs");
             OSD_c1(r, P17, blue_fill);
             OSD_c1(R, P18, main0);
             OSD_c1(G, P19, main0);
             OSD_c1(B, P20, main0);
             OSD_c1(s, P21, main0);
-        } else if (Info == InfoRGsB) {
+        } else if (VideoSourceSelection::selected() == InfoRGsB) {
             // OSD_writeString(17,1," RGsB ");
             OSD_c1(r, P17, blue_fill);
             OSD_c1(R, P18, main0);
@@ -11750,7 +11749,7 @@ void OSD_selectOption()
             OSD_c1(s, P20, main0);
             OSD_c1(B, P21, main0);
             OSD_c1(B, P22, blue_fill);
-        } else if (Info == InfoVGA) {
+        } else if (VideoSourceSelection::selected() == InfoVGA) {
             // OSD_writeString(17,1," VGA  ");
             OSD_c1(r, P17, blue_fill);
             OSD_c1(V, P18, main0);
@@ -11758,21 +11757,21 @@ void OSD_selectOption()
             OSD_c1(A, P20, main0);
             OSD_c1(B, P21, blue_fill);
             OSD_c1(B, P22, blue_fill);
-        } else if (Info == InfoYUV) {
+        } else if (VideoSourceSelection::selected() == InfoYUV) {
             OSD_c1(r, P17, blue_fill);
             OSD_c1(Y, P18, main0);
             OSD_c1(P, P19, main0);
             OSD_c1(B, P20, main0);
             OSD_c1(P, P21, main0);
             OSD_c1(R, P22, main0);
-        } else if (Info == InfoSV) {
+        } else if (VideoSourceSelection::selected() == InfoSV) {
             OSD_c1(r, P17, blue_fill);
             OSD_c1(Y, P18, blue_fill);
             OSD_c1(S, P19, main0);
             OSD_c1(V, P20, main0);
             OSD_c1(B, P21, blue_fill);
             OSD_c1(B, P22, blue_fill);
-        } else if (Info == InfoAV) {
+        } else if (VideoSourceSelection::selected() == InfoAV) {
             OSD_c1(r, P17, blue_fill);
             OSD_c1(Y, P18, blue_fill);
             OSD_c1(A, P19, main0);
@@ -11810,7 +11809,7 @@ void OSD_selectOption()
         // if (( rto->sourceDisconnected || !rto->boardHasPower || Info_sate == 1) && rto->HdmiHoldDetection)
         if ((rto->sourceDisconnected || !rto->boardHasPower || Info_sate == 1)) {
             Osd_Display(0xFF, "No Input");
-        } else if (((currentInput == 1) || (Info == InfoRGBs || Info == InfoRGsB || Info == InfoVGA))) {
+        } else if (((currentInput == 1) || (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB || VideoSourceSelection::selected() == InfoVGA))) {
             OSD_c2(B, P16, blue_fill);
             Osd_Display(0xFF, "RGB ");
             vsyncActive = GBS::STATUS_SYNC_PROC_VSACT::read();
@@ -11820,17 +11819,17 @@ void OSD_selectOption()
                 if (hsyncActive) {
                     Osd_Display(0xFF, "HV   ");
                 }
-            } else if ((Info == InfoVGA) && ((!vsyncActive || !hsyncActive))) {
+            } else if ((VideoSourceSelection::selected() == InfoVGA) && ((!vsyncActive || !hsyncActive))) {
                 OSD_c2(B, P11, blue_fill);
                 Osd_Display(0x09, "No Input");
             }
-        } else if ((inputAcquisition.acquiredPasses() > 35 || currentInput != 1) || (Info == InfoYUV || Info == InfoSV || Info == InfoAV)) {
+        } else if ((inputAcquisition.acquiredPasses() > 35 || currentInput != 1) || (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV)) {
             OSD_c2(B, P16, blue_fill);
-            if (Info == InfoYUV)
+            if (VideoSourceSelection::selected() == InfoYUV)
                 Osd_Display(0xFF, "  YPBPR  ");
-            else if (Info == InfoSV)
+            else if (VideoSourceSelection::selected() == InfoSV)
                 Osd_Display(0xFF, "   SV    ");
-            else if (Info == InfoAV)
+            else if (VideoSourceSelection::selected() == InfoAV)
                 Osd_Display(0xFF, "   AV    ");
         } else {
             Osd_Display(0xFF, "No Input");
@@ -12925,7 +12924,7 @@ void handle_h(void)
 void handle_i(void)
 {
     if (COl_L == 1) {
-        if ((Info != InfoSV) && (Info != InfoAV)) {
+        if ((VideoSourceSelection::selected() != InfoSV) && (VideoSourceSelection::selected() != InfoAV)) {
             A1_yellow = 0X14;
         } else {
             A1_yellow = yellowT;

@@ -229,3 +229,38 @@ TEST_CASE("only VGA leaves the sync type open to measurement")
     // Nothing chosen is not an invitation to probe.
     CHECK_FALSE(VideoSourceSelection::syncTypeMustBeMeasured(VideoSourceSelection::None));
 }
+
+// WHICH SOURCE IS SELECTED IS HELD HERE. It was a bare global in the sketch,
+// which put it out of reach of everything below it -- so the two questions the
+// acquisition layer asks about a selection, whether it is an RGBHV connector
+// and whether the user chose it, had to be asked through the sketch.
+
+TEST_CASE("nothing is selected until something is")
+{
+    VideoSourceSelection::forgetSelection();
+
+    CHECK(VideoSourceSelection::selected() == VideoSourceSelection::None);
+    CHECK_FALSE(VideoSourceSelection::chosen(VideoSourceSelection::selected()));
+}
+
+TEST_CASE("selecting a source is what the rest of the firmware reads back")
+{
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+    CHECK(VideoSourceSelection::selected() == VideoSourceSelection::Vga);
+    CHECK(VideoSourceSelection::isRgbhv(VideoSourceSelection::selected()));
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    CHECK(VideoSourceSelection::selected() == VideoSourceSelection::Ypbpr);
+    CHECK_FALSE(VideoSourceSelection::isRgbhv(VideoSourceSelection::selected()));
+}
+
+TEST_CASE("a stored byte naming none of the six selects nothing")
+{
+    // A value nobody wrote must not read as a choice: nothing chosen is what
+    // makes detection sweep, and a choice is what it must obey instead.
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+
+    VideoSourceSelection::selectStored(7);
+
+    CHECK(VideoSourceSelection::selected() == VideoSourceSelection::None);
+}
