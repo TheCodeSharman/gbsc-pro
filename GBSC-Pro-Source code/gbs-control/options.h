@@ -129,7 +129,6 @@ struct runTimeOptions
     bool deinterlaceAutoEnabled;
     bool isValidForScalingRGBHV;
     bool extClockGenDetected;
-    bool HdmiHoldDetection;
 };
 // remember adc options across presets
 struct adcOptions

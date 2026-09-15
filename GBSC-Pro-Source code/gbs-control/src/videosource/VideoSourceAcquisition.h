@@ -14,10 +14,9 @@
 
 class VideoSourceAcquisition {
 public:
-    // What a pass decided that this layer cannot carry out. Each act is above
-    // Tv5725:: -- the frame time lock and the external clock generator are the
-    // sketch's, and noSignalOut is user-facing state -- so they are REPORTED,
-    // the shape Tv5725::Deinterlacer::steer() already uses.
+    // What a pass decided that this layer cannot carry out. The frame time
+    // lock and the external clock generator are the sketch's, so they are
+    // REPORTED, the shape Tv5725::Deinterlacer::steer() already uses.
     struct Report {
         // The output frame time moved, so anything locked to it has to start
         // again. **NOT the same as the stamp below**: resetting the lock on
@@ -32,11 +31,6 @@ public:
         // The output settled at a new rate, so the external clock generator can
         // be re-matched to it.
         bool outputRateSettled;
-
-        // The escalation ladder went the whole way round without finding a
-        // source. A report of state rather than a terminus: nothing stops
-        // looking.
-        bool noSignalOut;
     };
     // Three answers, not two. A steady line count is the vertical half only: a
     // source can hold a correct count while the ADC samples a line it is not

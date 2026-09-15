@@ -1896,8 +1896,6 @@ uint8_t inputAndSyncDetect()
         resetDebugPort();
         applyRGBPatches();
         if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
-            // printf("\n RGBS HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
-            rto->HdmiHoldDetection = false;
         }
 
         return 1;
@@ -1911,8 +1909,6 @@ uint8_t inputAndSyncDetect()
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
         if (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
-            // printf("\n YUV HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
-            rto->HdmiHoldDetection = false;
         }
 
         return 2;
@@ -1924,10 +1920,6 @@ uint8_t inputAndSyncDetect()
         Tv5725::RgbhvOutput::chooseBypass();
         resetDebugPort();
 
-        if (VideoSourceSelection::selected() == InfoVGA && rto->HdmiHoldDetection) {
-            // printf("\n VGA HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
-            rto->HdmiHoldDetection = false;
-        }
         return 3;
     }
 
@@ -4488,9 +4480,8 @@ void loop()
     }
 
     // What a pass decided that lives above the acquisition layer: the frame
-    // time lock, the external clock generator, and the flag the rest of the
-    // sketch reads. Reported rather than injected, which is what keeps the
-    // layer free of uopt and of FrameSync.
+    // time lock and the external clock generator. Reported rather than
+    // injected, which is what keeps the layer free of uopt and of FrameSync.
     {
         const VideoSourceAcquisition::Report &report = inputAcquisition.report();
         if (report.frameTimingMoved)
@@ -4499,8 +4490,6 @@ void loop()
             lastVsyncLock = millis();
         if (report.outputRateSettled)
             externalClockGenSyncInOutRate();
-        if (report.noSignalOut)
-            rto->HdmiHoldDetection = true;
     }
 
     // On the pass that advanced the run, not on a timer of its own: every
@@ -4601,7 +4590,6 @@ void loop()
         runSourceRecovery(lastTimeSourceCheck);
     } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && Tv5725::Chip::hasPower())) {
         if ((millis() - lastTimeSourceCheck) >= 500) {
-            // if (CheckInputFrequency() && rto->HdmiHoldDetection)
             if (CheckInputFrequency()) {
                 // Every branch here re-decides the output mode, and none of
                 // them is about HD bypass. A source that changes mode under it
@@ -11468,7 +11456,6 @@ void OSD_selectOption()
         number_stroca = stroca2;
 
         Osd_Display(0xFF, " ");
-        // if (( rto->sourceDisconnected || !Tv5725::Chip::hasPower() || Info_sate == 1) && rto->HdmiHoldDetection)
         if ((rto->sourceDisconnected || !Tv5725::Chip::hasPower() || Info_sate == 1)) {
             Osd_Display(0xFF, "No Input");
         } else if (((currentInput == 1) || (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB || VideoSourceSelection::selected() == InfoVGA))) {
