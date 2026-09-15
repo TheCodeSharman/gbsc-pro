@@ -5,25 +5,24 @@ namespace Tv5725 {
 const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
 
-uint16_t InputFormatter::lineCounterFor(uint16_t divider, ScanMode mode)
+uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
 {
-    return mode == LineDoubled ? (uint16_t)(divider / 2) : divider;
+    return lineDoubled ? (uint16_t)(divider / 2) : divider;
 }
 
-InputFormatter::ScanMode InputFormatter::scanModeFor(uint16_t sourceLines,
-                                                    uint16_t showableUnits)
+bool InputFormatter::shouldDoubleLine(uint16_t sourceLines,
+                                      uint16_t showableUnits)
 {
     if (sourceLines == 0)
-        return LineDoubled;
+        return true;
     if (sourceLines >= DoubleBelowLines)
-        return Progressive;
+        return false;
     if (showableUnits == 0)
-        return LineDoubled;
+        return true;
 
     // The IF counts half-lines with the doubler in, so the doubled frame asks
     // for twice the source's own count.
-    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits ? LineDoubled
-                                                              : Progressive;
+    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits;
 }
 
 void InputFormatter::init()
@@ -86,11 +85,11 @@ void InputFormatter::init()
     IF_HB_ST::write(2);                          // s1_10[10:0]
     IF_HB_SP::write(72);                         // s1_12[10:0]
 
-    // applyScanMode() owns this from here on; what it needs before the first
+    // applyLineDoubling() owns this from here on; what it needs before the first
     // scan mode is decided is a value that is not 0, which blanks the whole line.
     IF_HBIN_SP::write(LineDoubleReset);          // s1_26[11:0]
 
-    // Its start. applyScanMode() owns this from here on too; what it needs
+    // Its start. applyLineDoubling() owns this from here on too; what it needs
     // before the first scan mode is decided is a defined value, because the
     // part keeps its registers across an ESP reset.
     IF_HBIN_ST::write(HeadBlankingStart);        // s1_24[11:0]
@@ -135,9 +134,9 @@ void InputFormatter::applyVerticalTiming(VerticalTiming timing)
     IF_VS_FLIP::write(1);
 }
 
-void InputFormatter::applyScanMode(ScanMode mode, bool component)
+void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
 {
-    const bool progressive = mode == Progressive;
+    const bool progressive = !lineDoubled;
 
     IF_HS_DEC_FACTOR::write(progressive ? 0 : 1);
     IF_LD_SEL_PROV::write(progressive ? 1 : 0);

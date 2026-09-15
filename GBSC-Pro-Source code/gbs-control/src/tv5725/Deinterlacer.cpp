@@ -393,7 +393,7 @@ Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
     return steering;
 }
 
-void Deinterlacer::applyScanMode(bool lineDoubled)
+void Deinterlacer::applyLineDoubling(bool lineDoubled)
 {
     MADPT_Y_DELAY::write(lineDoubled ? 0 : 1);
 }

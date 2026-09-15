@@ -41,7 +41,7 @@ void VideoProcessor::init()
     // source leaving one of them keeps theirs.
     VDS_V_DELAY::write(0x0);                     // s3_24[2:2]
 
-    // applyScanMode() writes 3 for a progressive source and for YPbPr, and
+    // applyLineDoubling() writes 3 for a progressive source and for YPbPr, and
     // still overrides this -- the scan mode is applied during the load and a
     // bring-up only at an arm.
     VDS_Y_DELAY::write(0x2);                     // s3_24[5:4]
@@ -182,7 +182,7 @@ void VideoProcessor::clockInputOnFallingEdge()
     VDS_IN_DREG_BYPS::write(0);
 }
 
-void VideoProcessor::applyScanMode(bool lineDoubled, bool component)
+void VideoProcessor::applyLineDoubling(bool lineDoubled, bool component)
 {
     VDS_V_DELAY::write(lineDoubled ? 0 : 1);
     VDS_Y_DELAY::write(lineDoubled && !component ? 2 : 3);

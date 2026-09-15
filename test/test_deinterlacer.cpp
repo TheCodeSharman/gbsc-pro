@@ -440,10 +440,10 @@ TEST_CASE("the luma delay pipe follows the scan mode")
     // Measured: 0 on the 15 kHz RGBHV bench raster, 1 on component 480p.
     Wire.reset();
     Wire.poison(Poison);
-    Deinterlacer::applyScanMode(false);
+    Deinterlacer::applyLineDoubling(false);
     CHECK(Wire.field(2, 0x17, 0, 4) == 1);
 
-    Deinterlacer::applyScanMode(true);
+    Deinterlacer::applyLineDoubling(true);
     CHECK(Wire.field(2, 0x17, 0, 4) == 0);
 }
 
@@ -452,7 +452,7 @@ TEST_CASE("the chroma delay pipe beside it is left alone")
     // MADPT_UV_DELAY shares the byte and has its own owner in init().
     Wire.reset();
     Wire.poison(Poison);
-    Deinterlacer::applyScanMode(false);
+    Deinterlacer::applyLineDoubling(false);
 
     CHECK(Wire.field(2, 0x17, 4, 4) == ((Poison >> 4) & 0xF));
 }

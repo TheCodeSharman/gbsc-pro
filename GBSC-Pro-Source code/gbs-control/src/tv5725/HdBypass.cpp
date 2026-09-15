@@ -22,7 +22,7 @@ bool HdBypass::suitsSource(uint16_t sourceLines, float fieldRateHz)
 {
     if (sourceLines == 0)
         return false;
-    if (InputFormatter::scanModeFor(sourceLines) != InputFormatter::Progressive)
+    if (InputFormatter::shouldDoubleLine(sourceLines))
         return false;
 
     const float rate = fieldRateHz > 0.0f

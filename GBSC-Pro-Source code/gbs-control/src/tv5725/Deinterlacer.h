@@ -537,8 +537,8 @@ public:
     static void disableMotionAdapt();
 
     // The block's share of the 422/444 conversion delays, beside
-    // InputFormatter::applyScanMode() and VideoProcessor::applyScanMode().
-    static void applyScanMode(bool lineDoubled);
+    // InputFormatter::applyLineDoubling() and VideoProcessor::applyLineDoubling().
+    static void applyLineDoubling(bool lineDoubled);
 
     // Whether the motion-adaptive path is running, owned here because this is
     // what writes the registers that make it so. A caller keeping its own copy

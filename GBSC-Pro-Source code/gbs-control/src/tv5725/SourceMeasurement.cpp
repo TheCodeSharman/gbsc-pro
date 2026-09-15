@@ -303,8 +303,7 @@ float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 uint16_t SourceMeasurement::ifLine() const
 {
     return InputFormatter::lineCounterFor(
-        divider_, lineDoubled_ ? InputFormatter::LineDoubled
-                               : InputFormatter::Progressive);
+        divider_, lineDoubled_);
 }
 
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)

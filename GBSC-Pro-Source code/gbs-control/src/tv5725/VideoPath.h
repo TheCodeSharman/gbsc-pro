@@ -204,7 +204,7 @@ private:
     // **Before solveSampling(), because the divider derives from it**: the
     // capture write limit doubles with the line doubler, so the two describe one
     // decision and the wrong order sizes the divider for the previous source.
-    void solveScanMode(uint16_t lines);
+    void solveLineDoubling(uint16_t lines);
 
     // Whether video routes around the VDS. The mode in force says it, so there
     // is nothing to hold separately.

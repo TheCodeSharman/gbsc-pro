@@ -109,7 +109,7 @@ static void seedSource(SourceMeasurement &sampling, uint16_t lines,
 
 // The scan type as a fresh measurement reads it, with the doubling held. The
 // class takes the doubling from its own state rather than as an argument,
-// because InputFormatter::applyScanMode() owns the registers it has to match.
+// because InputFormatter::applyLineDoubling() owns the registers it has to match.
 static SourceMeasurement::ScanType scanTypeWithDoubling(uint16_t verticalPeriod,
                                                         bool lineDoubled)
 {
@@ -128,13 +128,13 @@ TEST_CASE("the IF line follows the divider, because they are one quantity")
 {
     // Measured on the unit: PLLAD_MD 2553, IF_HSYNC_RST 1276. The IF counts the
     // ADC line after decimation by two.
-    CHECK(InputFormatter::lineCounterFor(BenchDivider, InputFormatter::LineDoubled) == 1276);
+    CHECK(InputFormatter::lineCounterFor(BenchDivider, true) == 1276);
 
     SUBCASE("and it follows a divider that changes") {
         // The whole point: an IF_HSYNC_RST that does not follow PLLAD_MD leaves
         // the IF counting to the end of a line that is not arriving.
-        CHECK(InputFormatter::lineCounterFor(1276, InputFormatter::LineDoubled) == 638);
-        CHECK(InputFormatter::lineCounterFor(512, InputFormatter::LineDoubled) == 256);
+        CHECK(InputFormatter::lineCounterFor(1276, true) == 638);
+        CHECK(InputFormatter::lineCounterFor(512, true) == 256);
     }
 }
 
@@ -281,7 +281,7 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         // buys capturing the whole of it, and no table's divider does.
         uint16_t chosen = SamplingClock::recommendedDivider(BenchLine, Oversample, true);
         CHECK(chosen < 2269);
-        CHECK(InputFormatter::lineCounterFor(chosen, InputFormatter::LineDoubled) <= VideoSourceLine::WriteLimitUnits);
+        CHECK(InputFormatter::lineCounterFor(chosen, true) <= VideoSourceLine::WriteLimitUnits);
         CHECK(Adc::withinLimit(chosen, BenchLine, Oversample));
     }
 
@@ -301,7 +301,7 @@ TEST_CASE("the divider is capped so the whole line stays inside the write limit"
     // docs/capture-limits.md
     uint16_t chosen = SamplingClock::recommendedDivider(BenchLineRate, 4, true);
 
-    CHECK(InputFormatter::lineCounterFor(chosen, InputFormatter::LineDoubled) <= VideoSourceLine::WriteLimitUnits);
+    CHECK(InputFormatter::lineCounterFor(chosen, true) <= VideoSourceLine::WriteLimitUnits);
 
     SUBCASE("and the ADC rating still binds where it is the tighter of the two") {
         // 90 kHz has room for 1764 under the rating, inside the write limit.
@@ -363,7 +363,7 @@ TEST_CASE("a solved divider is held, and every register follows from it")
     CHECK(chosen == SamplingClock::recommendedDivider(BenchLineRate, 4, true));
 
     SUBCASE("the derived values come from the held divider") {
-        CHECK(sampling.ifLine() == InputFormatter::lineCounterFor(chosen, InputFormatter::LineDoubled));
+        CHECK(sampling.ifLine() == InputFormatter::lineCounterFor(chosen, true));
         CHECK(sampling.retimeStop() == SyncProcessor::retimeStopFor(chosen));
     }
 }
@@ -426,8 +426,8 @@ TEST_CASE("the IF line follows the decimation the scan mode applies")
     // line-doubled path halves, the progressive path does not -- and an IF
     // counter wrapping at half the samples the ADC delivers shows the picture
     // twice across the screen, the second copy colour-shifted.
-    CHECK(InputFormatter::lineCounterFor(2120, InputFormatter::LineDoubled) == 1060u);
-    CHECK(InputFormatter::lineCounterFor(2120, InputFormatter::Progressive) == 2120u);
+    CHECK(InputFormatter::lineCounterFor(2120, true) == 1060u);
+    CHECK(InputFormatter::lineCounterFor(2120, false) == 2120u);
 }
 
 TEST_CASE("the divider ceiling follows the decimation too")
@@ -438,8 +438,8 @@ TEST_CASE("the divider ceiling follows the decimation too")
     const uint16_t doubled = SamplingClock::recommendedDivider(15574u, 4, true);
     const uint16_t progressive = SamplingClock::recommendedDivider(37469u, 4, false);
 
-    CHECK(InputFormatter::lineCounterFor(doubled, InputFormatter::LineDoubled) <= VideoSourceLine::WriteLimitUnits);
-    CHECK(InputFormatter::lineCounterFor(progressive, InputFormatter::Progressive) <= VideoSourceLine::WriteLimitUnits);
+    CHECK(InputFormatter::lineCounterFor(doubled, true) <= VideoSourceLine::WriteLimitUnits);
+    CHECK(InputFormatter::lineCounterFor(progressive, false) <= VideoSourceLine::WriteLimitUnits);
 }
 
 // --- the line rate, measured off the chip ------------------------------------
@@ -1343,7 +1343,7 @@ TEST_CASE("the divider is bounded so one window can span the whole line")
         // 2048 -- with the picture destroyed and nothing reporting a fault.
         const uint16_t chosen =
             SamplingClock::recommendedDivider(20000, 1, false, 3000);
-        CHECK(InputFormatter::lineCounterFor(chosen, InputFormatter::Progressive)
+        CHECK(InputFormatter::lineCounterFor(chosen, false)
               <= InputFormatter::LineCounterMax);
     }
 }

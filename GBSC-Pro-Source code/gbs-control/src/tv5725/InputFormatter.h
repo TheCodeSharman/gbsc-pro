@@ -15,7 +15,7 @@ namespace Tv5725 {
 // the ADC rather than the digital port, and the piecewise H-sync rate correction
 // is off. What moves per mode -- IF_HB_* and IF_LINE_SP -- is the engine's,
 // which computes the capture window rather than transcribing it; IF_HBIN_SP
-// moves with the scan mode instead, and applyScanMode() says why.
+// moves with the line doubler instead, and applyLineDoubling() says why.
 //
 // IF_LD_ST shares s1_0c with IF_LD_RAM_BYPS (bit 0) and IF_INI_ST (bits 7-5),
 // both written by doPostPresetLoadSteps(). Three owners in one byte is safe only
@@ -260,7 +260,7 @@ public:
     static void writeLineCounterStart(uint16_t pixels);
 
     // The horizontal scaling-down path every load starts from. Not in init():
-    // applyScanMode() selects the interpolator beside it, so a value written
+    // applyLineDoubling() selects the interpolator beside it, so a value written
     // only at bring-up would be left behind by whichever source ran last.
     static void applyDefaultHorizontalScalePath();
 
@@ -278,12 +278,6 @@ public:
 
     static void applyVerticalTiming(VerticalTiming timing);
 
-    // Whether the line doubler is in the capture path.
-    enum ScanMode {
-        LineDoubled,   // 15 kHz source, doubled to the output line rate
-        Progressive,   // already at line rate, doubler bypassed
-    };
-
     // IF_HBIN_SP is two things, and which one depends on the scan mode. With the
     // line-double FIFO in circuit it is that FIFO's line reset and moving it pans
     // the whole picture; with the FIFO bypassed it is a blanking edge in the
@@ -298,7 +292,7 @@ public:
     // IF_HBIN_SP's start, and the other thing this window does: raising it
     // blanks the tail of the captured line, without panning, from about 32 up
     // on a 1103-unit line. So a value inherited across a mode change is not
-    // harmless, and applyScanMode() owns it alongside the stop.
+    // harmless, and applyLineDoubling() owns it alongside the stop.
     // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
     static const uint16_t HeadBlankingStart = 0;
 
@@ -306,11 +300,11 @@ public:
     // shipped 136..272 and this is the one the bench picture is right on.
     static const uint16_t LineDoubleReset = 272;
 
-    // Put every register that decides the scan mode into one of the two states.
+    // Put every register the line doubler decides into one of the two states.
     // The colour path comes with it because the luma delay needs both: only a
     // component source arrives with luma and chroma separated, and only the
     // line doubler puts them out.
-    static void applyScanMode(ScanMode mode, bool component);
+    static void applyLineDoubling(bool lineDoubled, bool component);
 
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
@@ -329,9 +323,9 @@ public:
     // `showableUnits` is what the output can display: the part cannot minify,
     // so a doubled frame with no room to be shown would only be cropped. Zero
     // asks the source alone, which is bypass and every caller with no raster
-    // yet. An unmeasured count comes back LineDoubled -- what a short source
-    // needs, and the one a wrong guess leaves short.
-    static ScanMode scanModeFor(uint16_t sourceLines, uint16_t showableUnits = 0);
+    // yet. An unmeasured count comes back doubled -- what a short source needs,
+    // and the one a wrong guess leaves short.
+    static bool shouldDoubleLine(uint16_t sourceLines, uint16_t showableUnits = 0);
 
     // The longest line the geometry registers can hold. IF_HSYNC_RST, IF_HB_ST2
     // and IF_HB_SP2 are all [10:0], and a line past this wraps rather than
@@ -342,11 +336,10 @@ public:
     static const uint16_t LineCounterMax = 2047;
 
     // What the line counter must be set to for a given ADC divider. The
-    // horizontal decimation is what relates them, and only the line-doubled
-    // scan mode applies it: PLLAD_MD 2553 against 1276 line-doubled, 2553
-    // against 2553 not. A counter wrapping at half the samples arriving
-    // repeats the picture.
-    static uint16_t lineCounterFor(uint16_t divider, ScanMode mode);
+    // horizontal decimation is what relates them, and only the line doubler
+    // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
+    // counter wrapping at half the samples arriving repeats the picture.
+    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
 };
 
 }  // namespace Tv5725

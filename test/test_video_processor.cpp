@@ -100,10 +100,10 @@ TEST_CASE("the chroma conversion delay follows the scan mode")
     // 0 on the 15 kHz RGBHV bench raster, 1 on component 480p.
     Wire.reset();
     Wire.poison(Poisons[0]);
-    VideoProcessor::applyScanMode(false, false);
+    VideoProcessor::applyLineDoubling(false, false);
     CHECK(Wire.field(3, 0x24, 2, 1) == 1);
 
-    VideoProcessor::applyScanMode(true, false);
+    VideoProcessor::applyLineDoubling(true, false);
     CHECK(Wire.field(3, 0x24, 2, 1) == 0);
 }
 
@@ -115,12 +115,12 @@ TEST_CASE("only a line-doubled RGB source shortens the luma delay")
     Wire.reset();
     Wire.poison(Poisons[0]);
 
-    VideoProcessor::applyScanMode(true, false);
+    VideoProcessor::applyLineDoubling(true, false);
     CHECK(Wire.field(3, 0x24, 4, 2) == 2);
 
-    VideoProcessor::applyScanMode(true, true);
+    VideoProcessor::applyLineDoubling(true, true);
     CHECK(Wire.field(3, 0x24, 4, 2) == 3);
 
-    VideoProcessor::applyScanMode(false, false);
+    VideoProcessor::applyLineDoubling(false, false);
     CHECK(Wire.field(3, 0x24, 4, 2) == 3);
 }

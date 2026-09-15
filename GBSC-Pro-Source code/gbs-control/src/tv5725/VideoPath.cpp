@@ -227,7 +227,7 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
 
     const bool leaving = passedThrough();
 
-    // Held before solveScanMode(), which judges the line doubler against it.
+    // Held before solveLineDoubling(), which judges the doubler against it.
     // **THE LINE DOUBLER IS A PROPERTY OF THE OUTPUT AS MUCH AS OF THE SOURCE**:
     // what decides it is whether the doubled frame fits the raster, so a shorter
     // raster strands a doubling that fitted the taller one.
@@ -246,7 +246,7 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
         return false;
 
     const bool wasDoubled = sampling_.lineDoubled();
-    solveScanMode(sampling_.sourceLines());
+    solveLineDoubling(sampling_.sourceLines());
 
     // Only where the doubling moved. The divider derives from it and from the
     // line rate already held -- so it is re-DERIVED, never re-measured -- and
@@ -274,7 +274,7 @@ void VideoPath::sourceMeasured(const HsyncPulse &reading)
 
 void VideoPath::prepareToMeasure(uint16_t sourceLines)
 {
-    solveScanMode(sourceLines);
+    solveLineDoubling(sourceLines);
 
     // The reference clock exists so a count is never taken through the LAST
     // mode's divider. Pass-through's is not that: HdBypass sized it from the
@@ -426,7 +426,7 @@ void VideoPath::establishSyncType()
     delay(SyncProcessor::PathSettleMs);
 }
 
-void VideoPath::solveScanMode(uint16_t lines)
+void VideoPath::solveLineDoubling(uint16_t lines)
 {
     if (!VideoSignal::countIsSource(lines))
         return;
@@ -439,19 +439,16 @@ void VideoPath::solveScanMode(uint16_t lines)
     const uint16_t showable =
         mode_ && !mode_->isBypass()
             ? AxisVertical.maximumCapture(mode_->frameLines(), 0) : 0;
-    const bool doubled = InputFormatter::scanModeFor(lines, showable) ==
-                        InputFormatter::LineDoubled;
+    const bool doubled = InputFormatter::shouldDoubleLine(lines, showable);
     if (scanModeApplied_ && doubled == sampling_.lineDoubled())
         return;
 
     const bool component = Adc::inputIsComponent();
 
     sampling_.holdLineDoubling(doubled);
-    InputFormatter::applyScanMode(doubled ? InputFormatter::LineDoubled
-                                          : InputFormatter::Progressive,
-                                  component);
-    VideoProcessor::applyScanMode(doubled, component);
-    Deinterlacer::applyScanMode(doubled);
+    InputFormatter::applyLineDoubling(doubled, component);
+    VideoProcessor::applyLineDoubling(doubled, component);
+    Deinterlacer::applyLineDoubling(doubled);
     scanModeApplied_ = true;
 }
 

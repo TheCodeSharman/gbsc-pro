@@ -188,7 +188,7 @@ TEST_CASE("a preset load computes the divider it uses")
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
 
     CHECK(Wire.field(5, 0x12, 0, 12) == wanted);
-    CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, InputFormatter::LineDoubled));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, true));
     CHECK(Wire.field(5, 0x4B, 0, 12) == SyncProcessor::retimeStopFor(wanted));
 
     SUBCASE("and the solve that follows uses it") {
@@ -196,7 +196,7 @@ TEST_CASE("a preset load computes the divider it uses")
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
         REQUIRE(solved.engine.resolve());
-        CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, InputFormatter::LineDoubled));
+        CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, true));
     }
 }
 
@@ -216,7 +216,7 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     solved.engine.setOutputMode(&Tv5725::Mode1080p);
     solved.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(solved.acquisition));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(reference, InputFormatter::LineDoubled));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(reference, true));
 
     SUBCASE("and a later refusal lands on the same reference, not on nothing") {
         g_fieldRate = 50.08f;

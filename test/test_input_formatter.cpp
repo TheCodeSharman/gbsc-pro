@@ -102,8 +102,8 @@ TEST_CASE("a line-doubled source undoes every progressive setting")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyLineDoubling(false, false);
+    InputFormatter::applyLineDoubling(true, false);
 
     CHECK(Wire.field(1, 0x0B, 4, 2) == 1);  // IF_HS_DEC_FACTOR
     CHECK(Wire.field(1, 0x0B, 7, 1) == 0);  // IF_LD_SEL_PROV
@@ -115,8 +115,8 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyLineDoubling(true, false);
+    InputFormatter::applyLineDoubling(false, false);
 
     CHECK(Wire.field(1, 0x0B, 4, 2) == 0);  // IF_HS_DEC_FACTOR
     CHECK(Wire.field(1, 0x0B, 7, 1) == 1);  // IF_LD_SEL_PROV
@@ -127,14 +127,14 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
 TEST_CASE("the line doubler's write enable follows the scan mode")
 {
     // IF_SEL_WEN is the write enable FOR the line double, so which way it goes
-    // is the same fact applyScanMode() is already given. Measured on both bench
+    // is the same fact applyLineDoubling() is already given. Measured on both bench
     // sources: 0 on the 15 kHz RGBHV raster, 1 on component 480p.
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyLineDoubling(false, false);
     CHECK(Wire.field(1, 0x02, 0, 1) == 1);  // IF_SEL_WEN
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x02, 0, 1) == 0);
 }
 
@@ -142,10 +142,10 @@ TEST_CASE("the horizontal low-pass follows the scan mode the other way")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyLineDoubling(false, false);
     CHECK(Wire.field(1, 0x02, 1, 1) == 0);  // IF_HS_SEL_LPF
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x02, 1, 1) == 1);
 }
 
@@ -156,13 +156,13 @@ TEST_CASE("a line-doubled component source takes a shorter luma delay")
     // line doubler adds the stage that puts them out.
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, true);
+    InputFormatter::applyLineDoubling(true, true);
     CHECK(Wire.field(1, 0x02, 5, 2) == 2);  // IF_HS_Y_PDELAY
 
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x02, 5, 2) == 3);
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, true);
+    InputFormatter::applyLineDoubling(false, true);
     CHECK(Wire.field(1, 0x02, 5, 2) == 3);
 }
 
@@ -170,7 +170,7 @@ TEST_CASE("a progressive source blanks nothing at the head of the captured line"
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyLineDoubling(false, false);
 
     // With the line-double FIFO bypassed IF_HBIN_SP is a blanking edge in the
     // capture window's own units, so anything it holds is a second left crop
@@ -182,8 +182,8 @@ TEST_CASE("a line-doubled source keeps the line-double FIFO's reset position")
 {
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyLineDoubling(false, false);
+    InputFormatter::applyLineDoubling(true, false);
 
     CHECK(Wire.field(1, 0x26, 0, 12) == 272);
 }
@@ -197,11 +197,11 @@ TEST_CASE("a scan mode change re-establishes the head blanking's start")
     FreshChip chip;
 
     Wire.bank[1][0x24] = 50;
-    InputFormatter::applyScanMode(InputFormatter::LineDoubled, false);
+    InputFormatter::applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x24, 0, 12) == 0);
 
     Wire.bank[1][0x24] = 50;
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyLineDoubling(false, false);
     CHECK(Wire.field(1, 0x24, 0, 12) == 0);
 }
 
@@ -210,10 +210,10 @@ TEST_CASE("a scan mode change re-establishes the head blanking's start")
 TEST_CASE("the vertical timing leaves the scan mode alone")
 {
     // IF_VS_SEL is bit 5 of s1_00 and IF_PRGRSV_CNTRL is bit 6 of the same byte,
-    // written by applyScanMode() from a different caller at a different time.
+    // written by applyLineDoubling() from a different caller at a different time.
     FreshChip chip;
 
-    InputFormatter::applyScanMode(InputFormatter::Progressive, false);
+    InputFormatter::applyLineDoubling(false, false);
     InputFormatter::applyVerticalTiming(InputFormatter::VcrTiming);
 
     CHECK(Wire.field(1, 0x00, 5, 1) == 0);  // IF_VS_SEL
@@ -255,21 +255,21 @@ TEST_CASE("line doubling is decided by the source line count")
     // captured doubled; 448, 524, 533 and 627 are not. The boundary sits in
     // that gap. It is reproduced rather than derived, so that moving it is a
     // deliberate change with its own acceptance test.
-    CHECK(InputFormatter::scanModeFor(261) == InputFormatter::LineDoubled);
-    CHECK(InputFormatter::scanModeFor(311) == InputFormatter::LineDoubled);
-    CHECK(InputFormatter::scanModeFor(363) == InputFormatter::LineDoubled);
-    CHECK(InputFormatter::scanModeFor(448) == InputFormatter::Progressive);
-    CHECK(InputFormatter::scanModeFor(524) == InputFormatter::Progressive);
-    CHECK(InputFormatter::scanModeFor(533) == InputFormatter::Progressive);
-    CHECK(InputFormatter::scanModeFor(627) == InputFormatter::Progressive);
+    CHECK(InputFormatter::shouldDoubleLine(261));
+    CHECK(InputFormatter::shouldDoubleLine(311));
+    CHECK(InputFormatter::shouldDoubleLine(363));
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(448));
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(524));
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(533));
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(627));
 
     // An interlaced PAL frame is 625 lines, which is plenty. What it needs is
     // DEINTERLACING, which is a separate register and a separate decision.
-    CHECK(InputFormatter::scanModeFor(625) == InputFormatter::Progressive);
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(625));
 
     // No measurement yet. The default is the one a low-line-count source needs,
     // because that is the source a wrong guess leaves without enough lines.
-    CHECK(InputFormatter::scanModeFor(0) == InputFormatter::LineDoubled);
+    CHECK(InputFormatter::shouldDoubleLine(0));
 }
 TEST_CASE("a source is not doubled into an output that cannot show the result")
 {
@@ -277,19 +277,19 @@ TEST_CASE("a source is not doubled into an output that cannot show the result")
     // minify: an output with less room than that shows the top of the doubled
     // frame and nothing else, with the control dead in both directions. So the
     // question is not only how many lines arrive, but how many can be shown.
-    CHECK(InputFormatter::scanModeFor(311, showableIn(1125)) == InputFormatter::LineDoubled);  // 1080p
-    CHECK(InputFormatter::scanModeFor(311, showableIn(750)) == InputFormatter::LineDoubled);   // 720p
-    CHECK(InputFormatter::scanModeFor(311, showableIn(525)) == InputFormatter::Progressive);  // 480p
-    CHECK(InputFormatter::scanModeFor(311, showableIn(625)) == InputFormatter::Progressive);  // 576p
+    CHECK(InputFormatter::shouldDoubleLine(311, showableIn(1125)));  // 1080p
+    CHECK(InputFormatter::shouldDoubleLine(311, showableIn(750)));   // 720p
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(311, showableIn(525)));  // 480p
+    CHECK_FALSE(InputFormatter::shouldDoubleLine(311, showableIn(625)));  // 576p
 
     SUBCASE("a shorter source still doubles into the same output") {
         // 288 lines doubled is 578, which a 625-line frame holds.
-        CHECK(InputFormatter::scanModeFor(288, showableIn(625)) == InputFormatter::LineDoubled);
+        CHECK(InputFormatter::shouldDoubleLine(288, showableIn(625)));
     }
 
     SUBCASE("no output raster asks the source alone") {
         // Bypass, and every caller that has not solved a raster yet.
-        CHECK(InputFormatter::scanModeFor(311, 0) == InputFormatter::LineDoubled);
-        CHECK(InputFormatter::scanModeFor(524, 0) == InputFormatter::Progressive);
+        CHECK(InputFormatter::shouldDoubleLine(311, 0));
+        CHECK_FALSE(InputFormatter::shouldDoubleLine(524, 0));
     }
 }

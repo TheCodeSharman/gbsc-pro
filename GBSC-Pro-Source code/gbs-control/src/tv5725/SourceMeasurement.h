@@ -95,9 +95,10 @@ public:
     // Take a divider that was chosen rather than solved.
     void holdDivider(uint16_t divider);
 
-    // Whether the line doubler is in the capture path, which the scan mode
-    // decides. Held rather than read back: InputFormatter::applyScanMode() owns
-    // the registers and this owns the arithmetic that has to match them.
+    // Whether the line doubler is in the capture path. Held rather than read
+    // back: InputFormatter::applyLineDoubling() owns the register and this owns
+    // the arithmetic that has to match it -- the IF counts half-lines with the
+    // doubler in, which is what the scan type's parity turns on.
     void holdLineDoubling(bool lineDoubled);
 
     bool usable() const;
