@@ -877,13 +877,25 @@ Landed so far:
   16 x `delay(30)` on every RGBHV pass
 - `presetIdFor()`'s PAL bit is gone, so no classification shapes a register
   value or a preset id
+- **every gate on whether a standard is HELD is gone with `standardIsHeld()`.**
+  The window placers ask one question between them -- `sourceIsSearching()`,
+  which is the placement's own rule that a live count is enough -- while the
+  extra wait on a preset load, the sync-on-green tuning window, the settled arm
+  of `updateSpDynamic()` and the clamp placement gate ask `sourceIsPresent()`.
+  The auto-gain gate and `loop()`'s coast gate lost the term outright:
+  `acquiredPasses()` above a threshold already says the run is unbroken
+- **`updateSpDynamic()`'s two hunt branches are one.** What told them apart was
+  whether the byte had ever named a standard, and the engine keeps no such fact;
+  what is left is the caller's request for the hunt configuration, so
+  `applyForSearch()` reaches a source that was never named -- the case it exists
+  for
 
 **The count is not the progress**, because what lands is structural. The
 references leave in two blocks, at steps 10 and 12: the byte is deleted LATE,
 once the RGBHV block has moved and nothing reads it, rather than being unpicked
 reference by reference from inside a function that is going anyway. What is left
 of it is the predicates that hold and compare it -- `heldStandard()`,
-`holdStandard()`, `standardIsHeld()`, `sourceIsRgbhv()` -- plus
+`holdStandard()` -- plus
 `optimizePhaseSP()`, `doPostPresetLoadSteps()`, `getVideoMode()`,
 `getStatus16SpHsStable()` and `enterHdBypass()`. What is left of `getVideoMode()`
 itself is `applyPresets()`/`doPostPresetLoadSteps()`, `standardForPresetLoad()`,
@@ -897,16 +909,17 @@ ownership move.** `SyncOnGreen` owns the separator level and its acquisition,
 `SyncProcessor` the coast and clamp windows, `Adc` the sampling phase and the
 ADC PLL band, `FrameBuffer` freeze and unfreeze, and
 `VideoSourceAcquisition` the escalation ladder, with `SyncSearch` beside it
-under `src/videosource/`. That leaves `updateCoastPosition()`,
-`updateClampPosition()` and `optimizePhaseSP()` as the GATES in front of them,
-which is step 4's to replace.
+under `src/videosource/`. What is left in front of them is
+`optimizePhaseSP()`'s HD range, which is the byte's and goes at step 12.
 
-**Step 4 has landed.** `rto->noSyncCounter` and `rto->continousStableCounter`
-are gone; `VideoSourceAcquisition` counts both halves of the run --
-`acquiredPasses()` and `unmeasuredPasses()`, one of them always zero -- and
-every reader reads those. The run advances on the detection cadence rather than
-per poll, which is what keeps every threshold tuned against a 20 ms pass meaning
-what it meant.
+**Step 4 has landed, gates included.** `rto->noSyncCounter` and
+`rto->continousStableCounter` are gone; `VideoSourceAcquisition` counts both
+halves of the run -- `acquiredPasses()` and `unmeasuredPasses()`, one of them
+always zero -- and every reader reads those. The run advances on the detection
+cadence rather than per poll, which is what keeps every threshold tuned against
+a 20 ms pass meaning what it meant. `sourceIsPresent()` and
+`sourceIsSearching()` are what the window placers, the tuning window and the
+auto-gain, coast and clamp gates ask, so no gate compares a held standard.
 
 **Step 13 waits on nothing. `runSyncWatcher()` has no arm**, and what is left
 is 99 lines in four, every one of them gated on the engine's run rather than on
@@ -914,7 +927,7 @@ what the source is called:
 
 | part | whose |
 |---|---|
-| guards, the interrupt hand-off, the sync-on-green tuning | step 12 for `standardIsHeld()`, nothing else |
+| guards, the interrupt hand-off, the sync-on-green tuning | nothing: every one of them reads the engine's run |
 | the no-sync branch | `!sourceIsPresent()` is the gate, for every source |
 | the stable branch | `sourceIsPresent()` is the gate; `SourceMaintenance` holds its cadence |
 | the 900 ms channel sync polarity and SOG-bad acknowledgement | `isHdBypassChannel()` is the gate |
@@ -1130,9 +1143,9 @@ the run.
 **5. Acquire the coast and clamp windows**, to `SyncProcessor`. *(Landed.)*
 `SyncProcessor::acquireCoastWindow()`, `acquireClampWindow()` and
 `adoptClampPlacement()` own them, and the ADC PLL writes were deleted rather
-than moved because `Adc` owns that group. What is left in the sketch is the
-GATING -- `standardIsHeld()`, `getVideoMode()`, `rgbhvBypass()` -- which is step
-4's to replace, and an `if` whose body is empty.
+than moved because `Adc` owns that group. What is left in the sketch is an `if`
+whose body is empty: the gating asks the acquisition layer, `rgbhvBypass()`
+excepted, and that term is the route rather than a classification.
 
 **6. Acquire the sampling phase**, to `Adc`. *(Landed.)* `Adc` holds both
 phases, refuses one past the five-bit field, and runs the search.
@@ -1723,7 +1736,7 @@ what it actually wanted:
 
 | reader | why it is safe |
 |---|---|
-| `updateCoastPosition()`, `applyPresets()`, `loop()`'s coast gate | a `standardIsHeld()` sits beside the term and is false before detection, so the condition answers the same either way |
+| `updateCoastPosition()`, `applyPresets()`, `loop()`'s coast gate | the engine's own answer sits beside the term and says the same thing before detection -- `sourceIsSearching()` is true and `sourceIsPresent()` false until a source is counted, so no condition turns on the RGBHV term alone |
 | `prepareSyncProcessor()` | runs from a preset load, after the output has been chosen |
 | `optimizeSogLevel()` | gate deleted -- `SyncOnGreen::acquire()` already refuses a separator that is not in the sync path |
 | `getStatus16SpHsStable()` | branch deleted -- see below |
@@ -1768,7 +1781,7 @@ costs, measured against the tree:
 
 | value | means | sites | goes when |
 |---|---|---|---|
-| 0 | nothing recognised | 7, all but one a write; `standardIsHeld()` is the only reader | a validated measurement replaces the no-sync gate -- step 4 |
+| 0 | nothing recognised | 6, every one a write | **done** -- `standardIsHeld()` is deleted and each of its ten gates reads the engine's run instead; what is left compares the byte to fill it in |
 | 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | **done** -- `SourceStandard::applySd()` is deleted, every field it wrote derived instead |
 | 3, 4 | progressive SD, 480p and 576p | 5 | with it |
 | 5, 6, 7 | HD, reached through the HD bypass switch | 2 | **done** -- the bypass entry points have merged, these load the computed preset and the measurement moves the route, and `HdBypass`'s three arms for them are deleted; what is left is `optimizePhaseSP()`'s oversampling gate and one coast branch |
