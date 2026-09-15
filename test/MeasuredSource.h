@@ -7,9 +7,29 @@
 // inside it needs SteadySamples agreeing counts before anything else is read at
 // all. A case about what was MEASURED therefore has to get past the gate first,
 // which is several passes rather than one call.
+//
+// Settling is passed through too: the rate a later reading is judged against is
+// only ever a SETTLED one, so a case that wants a held rate has to reach
+// Measured rather than stop at the first reading.
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
+
+// The FIRST reading past the gate, whether or not the rate has repeated. For a
+// case about the settling itself.
+inline Tv5725::SourceMeasurement::MeasurementStatus
+measureToFirstReading(Tv5725::SourceMeasurement &sampling)
+{
+    Tv5725::SourceMeasurement::MeasurementStatus reading
+        = Tv5725::SourceMeasurement::NotSteady;
+    for (uint8_t pass = 0;
+         pass < 2 * Tv5725::SourceMeasurement::SteadySamples; ++pass) {
+        reading = sampling.measure();
+        if (reading != Tv5725::SourceMeasurement::NotSteady)
+            return reading;
+    }
+    return reading;
+}
 
 inline Tv5725::SourceMeasurement::MeasurementStatus
 measurePastGate(Tv5725::SourceMeasurement &sampling)
@@ -19,7 +39,8 @@ measurePastGate(Tv5725::SourceMeasurement &sampling)
     for (uint8_t pass = 0;
          pass < 2 * Tv5725::SourceMeasurement::SteadySamples; ++pass) {
         reading = sampling.measure();
-        if (reading != Tv5725::SourceMeasurement::NotSteady)
+        if (reading != Tv5725::SourceMeasurement::NotSteady
+            && reading != Tv5725::SourceMeasurement::Settling)
             return reading;
     }
     return reading;

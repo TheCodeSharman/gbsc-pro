@@ -30,8 +30,8 @@ void SourceMeasurement::takeCounterRate(uint32_t lineRateHz)
 
 bool SourceMeasurement::heldRateCorroborates(uint32_t lineRateHz) const
 {
-    return heldRateJudges(sourceLines_, goodLines_, goodLineRateHz_)
-           && VideoSignal::ratesAgree(lineRateHz, goodLineRateHz_);
+    return heldRateJudges(sourceLines_, judgedLines_, judgedRateHz_)
+           && VideoSignal::ratesAgree(lineRateHz, judgedRateHz_);
 }
 
 bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
@@ -83,7 +83,7 @@ const uint8_t SourceMeasurement::RateAgreementAttempts;
 
 SourceMeasurement::SourceMeasurement()
     : lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
-      agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
+      agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), verticalPeriod_(0),
       steady_(SteadySamples), rateAttempts_(0), serrationsSeen_(false),
       referenceRateHz_(0)
@@ -174,9 +174,24 @@ void SourceMeasurement::modeChanged()
     rateAttempts_ = 0;
 }
 
+// **WHAT A LATER READING IS JUDGED AGAINST MUST NOT ITSELF BE A TRANSIENT.**
+// rateFollowsCount() accepts anything at a moved count, because a moved count
+// IS a mode change -- so a mid-change reading admitted there can become the
+// rate every correct one afterwards is refused against. Measured on the bench,
+// 320x256@50 -> 640x480@60: `524 lines x 45.98 Hz` was taken, and the 59
+// readings of the real 60.36 Hz that followed were all refused, 2.28 s of them,
+// until HeldRateRejectionLimit drained.
+void SourceMeasurement::takeJudgedRate()
+{
+    judgedLines_ = sourceLines_;
+    judgedRateHz_ = lineRateHz_;
+    rateRejections_ = 0;
+}
+
 void SourceMeasurement::forgetHeldRate()
 {
-    goodLines_ = 0;
+    judgedLines_ = 0;
+    judgedRateHz_ = 0;
     goodLineRateHz_ = 0;
 }
 
@@ -237,16 +252,13 @@ bool SourceMeasurement::measureLineRate()
 
     // Against the last reading that was GOOD, not the last one taken: a refusal
     // that cleared the held rate would disarm this for the pass after it.
-    if (!rateFollowsCount(sourceLines_, lineRateHz_, goodLines_, goodLineRateHz_)
+    if (!rateFollowsCount(sourceLines_, lineRateHz_, judgedLines_, judgedRateHz_)
         && ++rateRejections_ < HeldRateRejectionLimit) {
         lineRateHz_ = 0;
     }
 
-    if (lineRateHz_ != 0) {
-        goodLines_ = sourceLines_;
+    if (lineRateHz_ != 0)
         goodLineRateHz_ = lineRateHz_;
-        rateRejections_ = 0;
-    }
 
     char line[72];
     snprintf(line, sizeof(line), "sampling: %u lines x %u.%02u Hz -> line rate %u",
@@ -269,7 +281,12 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measure()
     // what the readings above were taken through.
     hsync_ = readSource();
 
-    return rateSettled() ? Measured : Settling;
+    if (!rateSettled())
+        return Settling;
+
+    if (lineRateHz_ != 0)
+        takeJudgedRate();
+    return Measured;
 }
 
 HsyncPulse SourceMeasurement::hsync() const { return hsync_; }

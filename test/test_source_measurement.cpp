@@ -561,7 +561,7 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
     g_fieldRate = 50.26f;
 
     SourceMeasurement measurement;
-    REQUIRE(measurePastGate(measurement) == SourceMeasurement::Settling);
+    REQUIRE(measureToFirstReading(measurement) == SourceMeasurement::Settling);
 
     SUBCASE("a rate that lands somewhere else has not repeated either") {
         g_fieldRate = 49.92f;
@@ -607,11 +607,11 @@ TEST_CASE("a mode change abandons the field rate it had agreed on")
     g_fieldRate = 50.08f;
 
     SourceMeasurement measurement;
-    REQUIRE(measurePastGate(measurement) == SourceMeasurement::Settling);
+    REQUIRE(measureToFirstReading(measurement) == SourceMeasurement::Settling);
 
     measurement.modeChanged();
 
-    CHECK(measurePastGate(measurement) == SourceMeasurement::Settling);
+    CHECK(measureToFirstReading(measurement) == SourceMeasurement::Settling);
 }
 
 TEST_CASE("a count outside what any source runs never settles")
@@ -1570,4 +1570,43 @@ TEST_CASE("a rate that has not repeated yet is settling rather than measured")
         first = sampling.measure();
 
     CHECK(first == SourceMeasurement::Settling);
+}
+
+// --- a transient caught as the count moves must not become the held rate -----
+
+TEST_CASE("a transient rate caught as the count changes does not refuse the real one")
+{
+    // Measured on the bench, 320x256@50 -> 640x480@60. The first reading after
+    // the count moved was `524 lines x 45.98 Hz -> line rate 24142`, a
+    // mid-change transient -- and rateFollowsCount() accepts anything when the
+    // count moved, because a count change IS a mode change. It then became the
+    // rate every correct 60.36 Hz reading was measured against: 59 refusals over
+    // 2.28 s, until HeldRateRejectionLimit drained.
+    //
+    // The held rate is what refuses a settling transient, so it must not be one.
+    seedSourceLines(311);
+    seedHPeriod(431);
+    g_fieldRate = 50.08f;
+    SourceMeasurement sampling;
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+    const uint32_t settled = sampling.lineRateHz();
+    REQUIRE(settled == 15625u);
+
+    // The source changes mode. One pass sees the new count through a rate that
+    // is still moving.
+    sampling.modeChanged();
+    seedSourceLines(524);
+    seedHPeriod(511);            // the counter cannot speak for it either
+    g_fieldRate = 45.98f;
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        sampling.measure();
+
+    // The real rate arrives. It must be taken, not refused against a transient.
+    g_fieldRate = 60.36f;
+    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
+    for (uint8_t pass = 0; pass < 4; ++pass)
+        reading = sampling.measure();
+
+    CHECK(rateMeasured(reading));
+    CHECK(sampling.lineRateHz() == 31689u);
 }

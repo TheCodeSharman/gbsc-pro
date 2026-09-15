@@ -122,6 +122,7 @@ private:
     bool countWasSerrations() const;
     bool measureLineRate();
     bool rateSettled();
+    void takeJudgedRate();
     HsyncPulse readSource() const;
 
     // --- what the pass reads and judges --------------------------------------
@@ -189,7 +190,10 @@ private:
     uint16_t sourceLines_;
     float fieldRateHz_;
     float agreedRateHz_;
-    uint16_t goodLines_;
+    // The settled pair a later reading is judged against, and the last rate
+    // accepted, which is what lineRateHz() reports.
+    uint16_t judgedLines_;
+    uint32_t judgedRateHz_;
     uint32_t goodLineRateHz_;
     uint8_t rateRejections_;
 
