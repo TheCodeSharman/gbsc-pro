@@ -292,154 +292,81 @@ static const uint16_t DividerBeforeLadder = 2345;
 // crossover row. Only the RGBHV arm reads it.
 static const uint32_t BenchLineRateHz = 37879;
 
-static void applyForActiveStart(uint8_t standard, uint16_t activeStartLine,
-                                uint16_t divider = 2039,
-                                uint32_t lineRateHz = 31469)
+static void applyForSource(uint16_t divider = DividerBeforeLadder,
+                           uint32_t lineRateHz = BenchLineRateHz,
+                           uint16_t activeStartLine = 0)
 {
     Wire.reset();
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
-    rgbPatchCalls = 0;
-    HdBypass::applyForStandard(standard, divider, lineRateHz, activeStartLine,
-                               countRgbPatches);
+    HdBypass::applyForSource(divider, lineRateHz, activeStartLine);
 }
 
-static void applyForStandard(uint8_t standard, uint16_t sourceLines = 311,
-                             uint16_t divider = DividerBeforeLadder,
-                             uint32_t lineRateHz = BenchLineRateHz)
+// ONE PATH FOR EVERY SOURCE. This dispatched on rto->videoStandardInput into
+// four arms: interlaced SD, progressive SD, component, and the computed path
+// everything else took. Each of the first three froze part of the sampling
+// group or the channel raster per standard, and the values could not be right
+// for any source but the one they were fitted to.
+//
+// ../docs/video-source-acquisition.md, step 12.
+
+TEST_CASE("the channel raster is sized from the divider the engine holds")
 {
-    Wire.reset();
-    Wire.poison(Poison);
-    Adc::PLLAD_MD::write(DividerBeforeLadder);
-    Tv5725::Tv5725::STATUS_SYNC_PROC_VTOTAL::write(sourceLines);
-    rgbPatchCalls = 0;
-    HdBypass::applyForStandard(standard, divider, lineRateHz,
-                               0, countRgbPatches);
-}
-
-TEST_CASE("interlaced SD plays out a raster derived from the divider")
-{
-    applyForStandard(1);
-
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 1180);  // MD / 2 + 8
-    CHECK(HdBypass::HD_HB_ST::read() == 2216);      // 0.945 of MD
-    CHECK(HdBypass::HD_HB_SP::read() == 144);
-    CHECK(HdBypass::HD_HS_ST::read() == 128);
-    CHECK(HdBypass::HD_HS_SP::read() == 0);
-}
-
-TEST_CASE("interlaced SD inverts the three sync polarities and flips detection")
-{
-    applyForStandard(2);
-
-    CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
-    CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 1);
-    CHECK(SyncProcessor::SP_HS_PROC_INV_REG::read() == 1);
-    CHECK(ModeDetect::MD_HS_FLIP::read() == 1);
-    CHECK(ModeDetect::MD_VS_FLIP::read() == 1);
-    CHECK(Chip::OUT_SYNC_SEL::read() == 2);
-    CHECK(SyncProcessor::SP_HS_LOOP_SEL::read() == 0);
-    CHECK(Adc::ADC_FLTR::read() == 3);  // the 40 MHz corner
-    CHECK(SyncProcessor::SP_CS_HS_ST::read() == 160);
-    CHECK(SyncProcessor::SP_CS_HS_SP::read() == 0);
-}
-
-TEST_CASE("the two SD field rates differ only in where vertical sync sits")
-{
-    applyForStandard(1);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 250);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 1);
-    CHECK(HdBypass::HD_VS_ST::read() == 3);
-    CHECK(HdBypass::HD_VS_SP::read() == 522);
-
-    applyForStandard(2);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 1);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 45);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 5);
-    CHECK(HdBypass::HD_VS_ST::read() == 1);
-    CHECK(HdBypass::HD_VS_SP::read() == 621);
-}
-
-TEST_CASE("progressive SD sizes its raster from the divider the engine holds")
-{
-    // The 0x864 blanking start it carried was sized for the 2345 the bypass
-    // switch used to write into PLLAD_MD on the way in. That literal is gone,
-    // so the constant outran the line and the picture came out blanked.
-    applyForStandard(3, 524, 2039, 31469);
+    applyForSource(2039, 31469);
 
     CHECK(Adc::PLLAD_MD::read() == 2039);
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 2047);
-    CHECK(HdBypass::HD_HB_ST::read() == 2039);
+    CHECK(HdBypass::HD_HSYNC_RST::read() == 2047);   // + RasterGuardSamples
+    CHECK(HdBypass::HD_HB_ST::read() == 2039);       // the line's end
     CHECK(HdBypass::HD_HB_SP::read() == 144);
 }
 
-TEST_CASE("progressive SD places vertical sync where the standard puts it")
+TEST_CASE("the blanking start stays inside the line at every divider")
 {
-    applyForStandard(3, 524, 2039, 31469);
+    // Above HD_HSYNC_RST that edge never fires, so the only blanking left in
+    // the line is HD_HB_SP's and it reads as a black bar down the left of the
+    // picture.
+    const uint16_t dividers[] = {512, 1124, 1856, 2039};
 
-    CHECK(HdBypass::HD_VS_ST::read() == 6);
-    CHECK(HdBypass::HD_VS_SP::read() == 0);
-}
+    for (unsigned i = 0; i < sizeof(dividers) / sizeof(dividers[0]); i++) {
+        CAPTURE(dividers[i]);
+        applyForSource(dividers[i], 31469);
 
-TEST_CASE("the two progressive standards differ in the vsync window alone")
-{
-    applyForStandard(3, 524, 2039, 31469);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 2);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 8);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 2);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 10);
-
-    applyForStandard(4, 524, 2039, 31469);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 48);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 46);
-}
-
-TEST_CASE("the HD standards sample off the measurement, not off a frozen literal")
-{
-    // 720p, 1080i and 1080p each carried a divider, a crossover row, a clock
-    // tap and a decimator pair chosen for one raster. 720p's PLLAD_MD 2474 is
-    // past MaxChannelLine - RasterGuardSamples, so the channel could never play
-    // the line out whatever the source did.
-    // ../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
-    for (uint8_t standard : {5, 6, 7}) {
-        CAPTURE(standard);
-        applyForStandard(standard, 524, 2039, 31469);
-
-        CHECK(Adc::PLLAD_MD::read() == 2039);
-        CHECK(HdBypass::HD_HSYNC_RST::read() == 2047);
-        CHECK(HdBypass::HD_HB_ST::read() == 2039);
-        CHECK(HdBypass::HD_HS_ST::read() == 40);
-        CHECK(HdBypass::HD_HS_SP::read() == 164);
+        CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
     }
 }
 
-TEST_CASE("the computed path plays out a vertical sync pulse of its own")
+TEST_CASE("the channel's sync is delayed to match the delay it adds to the sample")
 {
-    // The arms each wrote one and the computed path did not, so it ran on
-    // whatever enable() last rested at. The pulse belongs beside the horizontal
-    // one, which is already the computed path's.
-    Wire.reset();
-    Wire.poison(Poison);
+    // Left at the counter's origin the pulse leads the video it belongs to, and
+    // the sink opens its window early on a band of the source's back porch.
+    // Measured at 800x600@60 and again at 640x480@60 -- different back porches,
+    // same correction -- so it is the channel's delay and not the source's.
+    // ../docs/investigations/one-bypass-route-carries-rgbhv.md
+    applyForSource(1856, BenchLineRateHz);
 
-    HdBypass::applyPassThroughSampling(2039, 37879);
+    CHECK(HdBypass::HD_HS_ST::read() == 40);
+    CHECK(HdBypass::HD_HS_SP::read() == 164);
+}
+
+TEST_CASE("the channel plays out a vertical sync pulse of its own")
+{
+    // Three of the four arms wrote one of their own -- 3/522, 1/621, 6/0 --
+    // and every one of them was five or six lines within ten of the frame's
+    // start, so there was no raster property behind the differences.
+    applyForSource(2039, 31469);
 
     CHECK(HdBypass::HD_VS_ST::read() == 2);
     CHECK(HdBypass::HD_VS_SP::read() == 7);
 }
 
-TEST_CASE("a source with no arm of its own is given the SD vertical sync position")
+TEST_CASE("the SD vertical sync position is one value for every source")
 {
+    // The arms named it per standard -- 250/1, 301/5, 520/522, 48/46 -- and
+    // 576p's 48 lands in active video rather than in the vertical interval.
     // Nothing on this route writes the pair otherwise, so a source reaching it
-    // inherits whatever the last entry left -- the same defect the four sync
-    // polarities the bypass switch puts back already had. One value for every
-    // source, as the scaling path has.
+    // inherits whatever the last entry left.
     // ../docs/investigations/the-sd-vsync-window-follows-the-sync-type.md
-    applyForStandard(14, 311, 1856);
+    applyForSource(2039, 31469);
 
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
     CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 14);
@@ -447,126 +374,68 @@ TEST_CASE("a source with no arm of its own is given the SD vertical sync positio
     CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 11);
 }
 
-TEST_CASE("an RGBHV source plays out the line the CHANNEL sees, not the ADC line")
-{
-    // The channel is fed the decimated sample stream, so its line is the
-    // divider over the oversampling ratio. Derived from the ADC line instead,
-    // HD_HB_ST lands beyond the end of the channel's line and the blank
-    // generator never fires at all -- which is what left a bar of the source's
-    // own back porch down the left and clipped the right.
-    // docs/investigations/one-bypass-route-carries-rgbhv.md
-    for (uint8_t standard : {14, 15}) {
-        CAPTURE(standard);
-        applyForStandard(standard, 311, 1856);
-
-        CHECK(HdBypass::HD_HSYNC_RST::read() == 1864);  // 1856 + 8
-        CHECK(HdBypass::HD_HB_ST::read() == 1856);      // the line's end
-        CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
-    }
-}
-
-TEST_CASE("an RGBHV source delays its sync to match the channel's own delay")
-{
-    // Video passes THROUGH the channel on this route and around it on the
-    // ADC-to-DAC one, but the sync the block emits is the same either way. Left
-    // at the counter's origin it leads the video it belongs to, and the sink
-    // opens its window early on a band of the source's back porch.
-    //
-    // Measured at 800x600@60 and again at 640x480@60 -- different back porches,
-    // same correction -- so it is the channel's delay and not the source's.
-    // docs/investigations/one-bypass-route-carries-rgbhv.md
-    applyForStandard(14, 311, 1856);
-
-    CHECK(HdBypass::HD_HS_ST::read() == 40);
-    CHECK(HdBypass::HD_HS_SP::read() == 164);
-}
-
-TEST_CASE("a source with no standard samples off its own clock")
+TEST_CASE("the sampling group follows the clock the divider and the rate make")
 {
     // 1856 samples on a 37879 Hz line is CKO 70.3 MHz, which the crossover
-    // table takes at post divider one and so runs the VCO at 140.6 MHz -- above
-    // the gain threshold the bench sweep put at 130.
-    applyForStandard(14, 311, 1856);
+    // table takes at post divider one and so runs the VCO at 140.6 MHz --
+    // above the gain threshold the bench sweep put at 130.
+    applyForSource(1856, BenchLineRateHz);
 
     CHECK(Adc::PLLAD_MD::read() == 1856);
     CHECK(Adc::PLLAD_KS::read() == 1);
     CHECK(Adc::PLLAD_ICP::read() == 4);
     CHECK(Adc::PLLAD_FS::read() == 1);
+}
+
+TEST_CASE("the analog corner is left as wide as the part offers")
+{
+    // The interlaced SD arm narrowed it to 40 MHz and inverted four sync
+    // polarities, which on a 480p component source is why it never locked.
+    // ../docs/investigations/the-analog-filter-corner-is-above-nyquist.md
+    applyForSource(1124, 31469);
+
     CHECK(Adc::ADC_FLTR::read() == 0);
 }
 
-TEST_CASE("the channel blanks the lines before active video, whatever the standard")
+TEST_CASE("the sync polarities are not this block's to invert")
 {
-    // 720x480p is 525 lines with active starting at 36. Every arm carried a
-    // constant instead -- the progressive one 0x40, which is 64, so 28 lines of
-    // picture came off the top. STATUS_SYNC_PROC_VTOTAL counts from zero, hence
-    // 524 for a 525-line frame.
-    applyForActiveStart(3, 36);
-
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
-    CHECK(HdBypass::HD_VB_SP::read() == 36);
-}
-
-TEST_CASE("a source running no published raster keeps the window it had")
-{
-    // No raster means no line to trust, and blanking a guessed count costs
-    // picture. Leaving the window alone is the one answer that cannot.
+    // The interlaced SD arm flipped three of them and Mode Detect's two, and
+    // nothing put them back for the source after it -- which is what the
+    // bypass entry now has to do on the way in. Nothing here touches them.
     Wire.reset();
-    Wire.poison(Poison);
-    HdBypass::HD_VB_SP::write(64);
+    SyncProcessor::SP_HS2PLL_INV_REG::write(1);
+    SyncProcessor::SP_CS_P_SWAP::write(1);
+    SyncProcessor::SP_HS_PROC_INV_REG::write(1);
+    ModeDetect::MD_HS_FLIP::write(1);
+    ModeDetect::MD_VS_FLIP::write(1);
 
-    HdBypass::applyForStandard(0, 2039, 31469, 0, countRgbPatches);
+    HdBypass::applyForSource(2039, 31469, 0);
 
-    CHECK(HdBypass::HD_VB_SP::read() == 64);
+    CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
+    CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 1);
+    CHECK(SyncProcessor::SP_HS_PROC_INV_REG::read() == 1);
+    CHECK(ModeDetect::MD_HS_FLIP::read() == 1);
+    CHECK(ModeDetect::MD_VS_FLIP::read() == 1);
 }
 
-TEST_CASE("every arm leaves the blanking start inside the line")
+TEST_CASE("the coast lengths are not written here")
 {
-    // Above HD_HSYNC_RST that edge never fires, so the only blanking left in
-    // the line is HD_HB_SP's and it reads as a black bar down the left of the
-    // picture. applyHorizontalFromChannelLine() states the rule; the arms that
-    // freeze a raster per standard were sized for a divider literal that no
-    // longer exists.
-    // 13 is left out: it writes neither register, so it inherits the channel
-    // raster from whatever entered bypass before it. That is a different
-    // defect and it has no bench source.
-    const uint8_t standards[] = {0, 3, 4, 5, 6, 7, 14};
+    // The component arm wrote 4/4 over what applyForSyncType() had just
+    // established, and SP_DLT_REG 0x70 over applyPulseWidthDifference()'s.
+    // A second writer of the coast closes a loop: the coast changes the
+    // measured line count, a changed count arms a solve, and a solve applies
+    // the sync type -- which writes the coast again.
+    // ../docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    Wire.reset();
+    SyncProcessor::SP_PRE_COAST::write(7);
+    SyncProcessor::SP_POST_COAST::write(3);
+    SyncProcessor::SP_DLT_REG::write(0xC0);
 
-    for (unsigned i = 0; i < sizeof(standards); i++) {
-        CAPTURE(standards[i]);
-        applyForStandard(standards[i], 524, 2039, 31469);
+    HdBypass::applyForSource(2039, 31469, 0);
 
-        CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
-    }
-}
-
-TEST_CASE("a source no standard names is passed through, not taken for SD")
-{
-    // 0 is "nothing recognised", not a standard. Taken for SD it gets a channel
-    // line of PLLAD_MD/2 and a blanking start of 0.945 x PLLAD_MD, so blanking
-    // begins past the end of the line, that edge never fires, and the only one
-    // left is HD_HB_SP -- a black bar down the left of the picture. Measured on
-    // the bench with a Wii at 480p on ypbpr: HD_HSYNC_RST 570 against
-    // HD_HB_ST 1062.
-    applyForStandard(0, 524, 1124, 31469);
-
-    CHECK(HdBypass::HD_HB_ST::read() < HdBypass::HD_HSYNC_RST::read());
-}
-
-TEST_CASE("a source no standard names samples off the divider it is handed")
-{
-    applyForStandard(0, 524, 1124, 31469);
-
-    CHECK(Adc::PLLAD_MD::read() == 1124);
-}
-
-TEST_CASE("a source no standard names keeps the widest analog corner")
-{
-    // The SD arm narrows it to 40 MHz and inverts four sync polarities, which
-    // on a 480p component source is why it never locks.
-    applyForStandard(0, 524, 1124, 31469);
-
-    CHECK(Adc::ADC_FLTR::read() == 0);
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+    CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
 }
 
 TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all")
@@ -576,7 +445,7 @@ TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all"
     // it. Measured: at ratio two with the raster halved the picture fills half
     // the screen through an encoder that has re-acquired, and putting the
     // raster back to the divider restores it whole.
-    // docs/investigations/the-decimators-filter.md
+    // ../docs/investigations/the-decimators-filter.md
 
     SUBCASE("the played-out line is the divider, not the divider over the ratio") {
         Wire.reset();
@@ -597,175 +466,45 @@ TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all"
 
         CHECK(HdBypass::HD_HSYNC_RST::read() == undecimated);
     }
-
-    SUBCASE("asking for more than the row carries takes what it has") {
-        // A doubling costs a step of PLLAD_KS headroom and there is no tap
-        // above the top row, so the ceiling is 2^postDivider.
-        Wire.reset();
-        CHECK(Adc::applySampleRate(2039, 37879, Adc::OversampleAsClockAllows) == 2);
-        CHECK(Adc::PLLAD_KS::read() == 1);
-
-        Wire.reset();
-        CHECK(Adc::applySampleRate(2039, 60000, Adc::OversampleAsClockAllows) == 1);
-        CHECK(Adc::PLLAD_KS::read() == 0);
-    }
 }
 
-TEST_CASE("the pass-through divider is as dense as the channel and the PLL allow")
+TEST_CASE("the channel blanks the lines before active video")
 {
-    // PLLAD_MD is samples per line, and pass-through writes nothing to memory,
-    // so the capture's write limit does not bound it. Two other things do.
+    // 720x480p is 525 lines with active starting at 36. Every arm carried a
+    // constant instead -- the progressive one 0x40, which is 64, so 28 lines
+    // of picture came off the top.
+    applyForSource(2039, 31469, 36);
 
-    SUBCASE("the channel's own counter binds it at a bench line rate") {
-        // HD_HSYNC_RST is eleven bits and the counter ignores the twelfth the
-        // register stores, so the played-out line stops at 2047 -- the divider
-        // plus the guard the generator needs past it.
-        CHECK(HdBypass::dividerFor(37879) == 2039);
-    }
-
-    SUBCASE("the PLL's top row binds it on a fast line") {
-        // RD-5725-1.1's rows stop at 162 MHz and there is nothing above, so a
-        // fast enough source runs out of clock before it runs out of counter.
-        CHECK(HdBypass::dividerFor(100000) == 1620);
-    }
-
-    SUBCASE("nothing measured asks for nothing") {
-        // A divider of 0 leaves the block at its resting timing rather than
-        // playing out a raster derived from a zero.
-        CHECK(HdBypass::dividerFor(0) == 0);
-    }
+    CHECK(HdBypass::HD_VB_ST::read() == 0);
+    CHECK(HdBypass::HD_VB_SP::read() == 36);
 }
 
-TEST_CASE("an RGBHV source takes the crossover row its own clock lands in")
+TEST_CASE("a source running no published raster keeps the window it had")
 {
-    // The row is not a property of pass-through, it is a property of the
-    // frequency the divider and the line rate make between them -- and a row
-    // left on the wrong band takes the PLL out of lock, measured, with the
-    // divider never latching and STATUS_SYNC_PROC_HTOTAL reading neither value.
-
-    SUBCASE("a 70 MHz clock is the second row") {
-        applyForStandard(14, 311, 1856, 37879);
-        CHECK(Adc::PLLAD_KS::read() == 1);
-    }
-
-    SUBCASE("the same divider on a 15 kHz line is 29 MHz and the third") {
-        applyForStandard(14, 311, 1856, 15625);
-        CHECK(Adc::PLLAD_KS::read() == 2);
-    }
-
-    SUBCASE("a divider past the second row's ceiling takes the first") {
-        applyForStandard(14, 311, 2400, 37879);
-        CHECK(Adc::PLLAD_KS::read() == 0);
-    }
-}
-
-TEST_CASE("an RGBHV source samples at the divider it is handed, not the literal")
-{
-    // The switch writes a literal into PLLAD_MD on its way here, so a raster
-    // read back off the register is a raster for that literal. Measured on the
-    // bench: derived from the switch's 2345 against a source measured at 1124,
-    // the sink reports no signal.
+    // No raster means no line to trust, and blanking a guessed count costs
+    // picture. Leaving the window alone is the one answer that cannot.
     Wire.reset();
     Wire.poison(Poison);
-    Adc::PLLAD_MD::write(DividerBeforeLadder);
+    HdBypass::HD_VB_SP::write(64);
 
-    HdBypass::applyForStandard(14, 1124, BenchLineRateHz,
-                               0, countRgbPatches);
+    HdBypass::applyForSource(2039, 31469, 0);
 
-    CHECK(Adc::PLLAD_MD::read() == 1124);
-    CHECK(HdBypass::HD_HSYNC_RST::read() == 1132);  // 1124 + 8
-    CHECK(HdBypass::HD_HB_ST::read() == 1124);      // the line's end
+    CHECK(HdBypass::HD_VB_SP::read() == 64);
 }
 
-TEST_CASE("an unmeasured source leaves the bypass raster alone")
+TEST_CASE("no divider means no sampling to install and no raster to size")
 {
-    // Nothing solved yet. Deriving from a zero would play out a raster of no
-    // width at all, where the resting timing at least leaves the block in the
-    // state the switch built.
+    // A rate with no divider behind it is a source that has not been measured,
+    // and a raster sized from nothing is worse than the resting one.
     Wire.reset();
-    Wire.poison(Poison);
     HdBypass::enable();
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForStandard(14, 0, BenchLineRateHz,
-                               0, countRgbPatches);
+    HdBypass::applyForSource(0, BenchLineRateHz, 0);
 
     CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1023);
     CHECK(HdBypass::HD_HB_ST::read() == 3976);
-}
-
-TEST_CASE("RGBHV patches the RGB path and coasts on its own pair")
-{
-    // The colour path is NOT this arm's: it follows the input selection, which
-    // is where whether the source is component is known.
-    applyForStandard(13);
-
-    CHECK(rgbPatchCalls == 1);
-    CHECK(SyncMeasurement::isCsync());
-    CHECK(SyncProcessor::SP_PRE_COAST::read() == 4);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 4);
-    CHECK(SyncProcessor::SP_DLT_REG::read() == 0x70);
-    CHECK(SyncProcessor::SP_VS_PROC_INV_REG::read() == 0);
-}
-
-TEST_CASE("RGBHV samples the line undecimated")
-{
-    applyForStandard(13);
-
-    CHECK(Adc::PLLAD_MD::read() == 512);
-    CHECK(Adc::PLLAD_CKOS::read() == 0);
-    CHECK(Adc::ADC_CLK_ICLK1X::read() == 0);
-    CHECK(Adc::ADC_CLK_ICLK2X::read() == 0);
-    CHECK(Adc::DEC1_BYPS::read() == 1);
-    CHECK(Adc::DEC2_BYPS::read() == 1);
-}
-
-TEST_CASE("an RGBHV source picks its PLL row off its own line count")
-{
-    // The only quantity in the ladder that no standard can carry. It follows
-    // STATUS_SYNC_PROC_VTOTAL, which is a measurement of the source and so one
-    // of the reads the engine is allowed.
-    applyForStandard(13, 311);
-    CHECK(Adc::PLLAD_KS::read() == 3);
-    CHECK(Adc::PLLAD_FS::read() == 1);
-
-    applyForStandard(13, 627);
-    CHECK(Adc::PLLAD_KS::read() == 2);
-    CHECK(Adc::PLLAD_FS::read() == 0);
-
-    applyForStandard(13, 1125);
-    CHECK(Adc::PLLAD_KS::read() == 2);
-    CHECK(Adc::PLLAD_FS::read() == 1);
-}
-
-TEST_CASE("the boundaries between the three PLL rows")
-{
-    applyForStandard(13, 531);
-    CHECK(Adc::PLLAD_KS::read() == 3);
-    applyForStandard(13, 532);
-    CHECK(Adc::PLLAD_KS::read() == 2);
-    CHECK(Adc::PLLAD_FS::read() == 0);
-    applyForStandard(13, 809);
-    CHECK(Adc::PLLAD_FS::read() == 0);
-    applyForStandard(13, 810);
-    CHECK(Adc::PLLAD_FS::read() == 1);
-}
-
-TEST_CASE("only an RGBHV source reads its line count at all")
-{
-    // Every other standard's values are fixed, so a ladder that consulted the
-    // measurement for one of them would move with the source.
-    for (uint8_t standard = 1; standard <= 7; ++standard) {
-        CAPTURE(standard);
-        applyForStandard(standard, 311);
-        const uint16_t ks = Adc::PLLAD_KS::read();
-        const uint16_t fs = Adc::PLLAD_FS::read();
-
-        applyForStandard(standard, 1125);
-        CHECK(Adc::PLLAD_KS::read() == ks);
-        CHECK(Adc::PLLAD_FS::read() == fs);
-    }
 }
 
 // The channel emits the pulse it is programmed with, and the sink expects it
@@ -806,19 +545,6 @@ TEST_CASE("a negative source hsync puts the channel's pulse stop first")
     CHECK(HdBypass::HD_HS_ST::read() == 164);
     CHECK(HdBypass::HD_HS_SP::read() == 40);
     CHECK(Tv5725::SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
-}
-
-TEST_CASE("the polarity orders the pair the arm wrote, whichever pair that is")
-{
-    // applySd() writes 0x80 / 0x00, which is already stop-first. A positive
-    // source turns that pair round rather than replacing it with the computed
-    // path's, because the pulse is the arm's and only its ORDER is in question.
-    applyForStandard(1);
-
-    HdBypass::applyChannelSyncEdges(edges(true, true, false, false));
-
-    CHECK(HdBypass::HD_HS_ST::read() == 0);
-    CHECK(HdBypass::HD_HS_SP::read() == 128);
 }
 
 TEST_CASE("an hsync the sync processor cannot see leaves the pulse alone")
@@ -886,14 +612,16 @@ TEST_CASE("the resting pulses are what a polarity finds before any source does")
     CHECK(HdBypass::HD_VS_SP::read() == 2);
 }
 
-TEST_CASE("the component arm records the oversampling it leaves the ADC on")
+TEST_CASE("the channel's entry records the oversampling it leaves the ADC on")
 {
-    // It takes the decimators out of the path, and a caller asking what the ADC
-    // is running has to get 1 rather than whatever the last solve installed.
+    // A caller asking what the ADC is running has to get what this installed
+    // rather than whatever the last solve did.
     Wire.reset();
     REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
 
-    applyForStandard(13, 524, 2039, 31469);
+    HdBypass::applyForSource(2039, 31469, 0);
 
-    CHECK(Adc::oversampleInForce() == 1);
+    // 2039 samples on a 31469 Hz line is CKO 64.2 MHz, which the crossover
+    // table takes at post divider one -- so two is all the tap can carry.
+    CHECK(Adc::oversampleInForce() == 2);
 }

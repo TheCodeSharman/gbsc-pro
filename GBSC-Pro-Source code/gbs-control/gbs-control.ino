@@ -3286,9 +3286,6 @@ static void restartAfterBypassSwitch()
 // fields written below have no owner there, so the next scaled load claims
 // them back by bringing the chip up again.
 //
-// The caller holds the standard first, because HdBypass::applyForStandard()
-// dispatches on it and an RGBHV source holds PresetLoad::BypassRgbhv.
-//
 // docs/investigations/one-bypass-route-carries-rgbhv.md
 // The engine decides pass-through and this is the user's veto, so it has to
 // reach the engine every time it changes rather than being read from uopt where
@@ -3347,8 +3344,8 @@ void enterHdBypass()
     Tv5725::SyncProcessor::setSubCoast(false);
     GBS::SP_SOG_P_ATO::write(1);
 
-    // The four polarities applySd() inverts, put back for everything else. A
-    // path that never brings the chip up inherits whatever the last entry left.
+    // The sync polarities, put back rather than inherited: a path that never
+    // brings the chip up keeps whatever the last entry left.
     GBS::SP_HS_PROC_INV_REG::write(0);
     GBS::SP_VS_PROC_INV_REG::write(0);
     GBS::SP_CS_P_SWAP::write(0);
@@ -3360,12 +3357,10 @@ void enterHdBypass()
     // The whole ADC sampling group, from the rate the engine measured: the one
     // writer of PLLAD_MD on this path, and last of the group because it
     // installs the sampling the played-out raster is derived from.
-    Tv5725::HdBypass::applyForStandard(rto->videoStandardInput,
-                                       Tv5725::HdBypass::dividerFor(
-                                           sourceSampling.heldLineRateHz()),
-                                       sourceSampling.heldLineRateHz(),
-                                       geometry.sourceActiveStartLine(),
-                                       applyRGBPatches);
+    Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(
+                                         sourceSampling.heldLineRateHz()),
+                                     sourceSampling.heldLineRateHz(),
+                                     geometry.sourceActiveStartLine());
 
     Tv5725::Chip::dacsFollowInput();
     GBS::OUT_SYNC_CNTRL::write(1);

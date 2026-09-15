@@ -12,17 +12,9 @@ namespace Tv5725 {
 
 namespace {
 
-// The narrowest of RD-5725-1.1's four corners for ADC_FLTR.
-const uint8_t AnalogFilter40MHz = 3;
-
-// The two line counts at which an RGBHV source's ADC PLL changes crossover row.
-const uint16_t RgbhvShortLines = 532;
-const uint16_t RgbhvTallLines = 810;
-
 // The played-out line as a function of the line the CHANNEL sees.
 // docs/investigations/one-bypass-route-carries-rgbhv.md
 const uint16_t RasterGuardSamples = 8;
-const float ActiveFraction = 0.945f;
 const uint16_t BlankEndSamples = 0x90;
 
 // How far the sample lags the sync the block emits beside it, in channel
@@ -107,24 +99,11 @@ void HdBypass::enable()
     HD_BLK_RV_DATA::write(0);                    // s1_55[7:0]
 }
 
-void HdBypass::applyForStandard(uint8_t standard, uint16_t divider,
-                                uint32_t lineRateHz,
-                                uint16_t activeStartLine,
-                                void (*applyRgbPatches)())
+void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,
+                              uint16_t activeStartLine)
 {
-    // Everything with no arm of its own is sampled from the divider the engine
-    // holds, 0 included: it is "nothing recognised" rather than a standard.
-    if (standard == 1 || standard == 2)
-        applySd(standard);
-    else if (standard == 3 || standard == 4)
-        applyProgressive(standard, divider, lineRateHz);
-    else if (standard == 13)
-        applyComponent(applyRgbPatches);
-    else {
-        applyPassThroughSampling(divider, lineRateHz);
-        SyncProcessor::applySdVsyncPosition();
-    }
-
+    applyPassThroughSampling(divider, lineRateHz);
+    SyncProcessor::applySdVsyncPosition();
     applyVerticalBlanking(activeStartLine);
 }
 
@@ -182,70 +161,6 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);
 }
 
-void HdBypass::applySd(uint8_t standard)
-{
-    SyncProcessor::SP_HS2PLL_INV_REG::write(1);
-    SyncProcessor::SP_CS_P_SWAP::write(1);
-    SyncProcessor::SP_HS_PROC_INV_REG::write(1);
-
-    ModeDetect::MD_HS_FLIP::write(1);
-    ModeDetect::MD_VS_FLIP::write(1);
-    Chip::OUT_SYNC_SEL::write(2);
-    SyncProcessor::SP_HS_LOOP_SEL::write(0);
-    Adc::ADC_FLTR::write(AnalogFilter40MHz);
-
-    HD_HSYNC_RST::write((Adc::PLLAD_MD::read() / 2) + RasterGuardSamples);
-    HD_HB_ST::write(Adc::PLLAD_MD::read() * ActiveFraction);
-    HD_HB_SP::write(BlankEndSamples);
-    holdHsyncPulse(0x80, 0x00);
-
-    SyncProcessor::SP_CS_HS_ST::write(0xA0);
-    SyncProcessor::SP_CS_HS_SP::write(0x00);
-
-    if (standard == 1) {
-        SyncProcessor::writeSdVsyncStart(250);
-        SyncProcessor::writeSdVsyncStop(1);
-        holdVsyncPulse(3, 522);
-    }
-    if (standard == 2) {
-        SyncProcessor::writeSdVsyncStart(301);
-        SyncProcessor::writeSdVsyncStop(5);
-        holdVsyncPulse(1, 621);
-    }
-}
-
-void HdBypass::applyProgressive(uint8_t standard, uint16_t divider,
-                                uint32_t lineRateHz)
-{
-    applyPassThroughSampling(divider, lineRateHz);
-
-    holdVsyncPulse(0x06, 0x00);
-    if (standard == 3) {
-        SyncProcessor::writeSdVsyncStart(525 - 5);
-        SyncProcessor::writeSdVsyncStop(525 - 3);
-    }
-    if (standard == 4) {
-        SyncProcessor::writeSdVsyncStart(48);
-        SyncProcessor::writeSdVsyncStop(46);
-    }
-}
-
-void HdBypass::applyComponent(void (*applyRgbPatches)())
-{
-    applyRgbPatches();
-    SyncMeasurement::set(true);
-    SyncProcessor::SP_PRE_COAST::write(4);
-    SyncProcessor::SP_POST_COAST::write(4);
-    SyncProcessor::SP_DLT_REG::write(0x70);
-    SyncProcessor::SP_VS_PROC_INV_REG::write(0);
-
-    Adc::PLLAD_KS::write(0);
-    Adc::applyOversample(0, 1);
-    Adc::PLLAD_MD::write(512);
-
-    applyRgbhvPll(SourceMeasurement::measureSourceLines());
-}
-
 void HdBypass::holdHsyncPulse(uint16_t a, uint16_t b)
 {
     hsyncLow_ = a < b ? a : b;
@@ -282,18 +197,5 @@ void HdBypass::applyColourPath(bool inputIsYpBpR)
     HD_DYN_BYPS::write(inputIsYpBpR ? 0 : 1);
 }
 
-void HdBypass::applyRgbhvPll(uint16_t sourceLines)
-{
-    if (sourceLines < RgbhvShortLines) {
-        Adc::PLLAD_KS::write(3);
-        Adc::PLLAD_FS::write(1);
-    } else if (sourceLines < RgbhvTallLines) {
-        Adc::PLLAD_FS::write(0);
-        Adc::PLLAD_KS::write(2);
-    } else {
-        Adc::PLLAD_KS::write(2);
-        Adc::PLLAD_FS::write(1);
-    }
-}
 
 }  // namespace Tv5725

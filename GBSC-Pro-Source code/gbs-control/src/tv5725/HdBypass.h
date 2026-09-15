@@ -176,23 +176,19 @@ public:
     // and there is no row above it.
     static const uint32_t MaxSampleClockHz = 162000000;
 
-    // What the source's standard implies for the block: the raster it plays
-    // out, both blanking windows, the polarities the sync processor needs
-    // behind them, and the ADC's sampling. Runs AFTER enable(), whose resting
-    // timing it overwrites.
+    // The whole of what the measurement implies for the block: the ADC's
+    // sampling, the raster it plays out, both sync pulses and both blanking
+    // windows. Runs AFTER enable(), whose resting timing it overwrites.
     //
-    // An RGBHV source additionally gets the RGB patches, which are the sketch's
-    // because they need the user options and its own R/G/B round trip.
+    // ONE PATH FOR EVERY SOURCE. docs/video-source-acquisition.md.
     //
     // `divider` is the sampling divider and `lineRateHz` the rate it multiplies,
     // both handed in rather than read back: the switch writes a literal into
     // PLLAD_MD on its way here, so the register answers for that literal and not
     // for the source. The two together are the ADC clock, which is what chooses
     // the PLL's crossover row -- so neither can be left out.
-    static void applyForStandard(uint8_t standard, uint16_t divider,
-                                 uint32_t lineRateHz,
-                                 uint16_t activeStartLine,
-                                 void (*applyRgbPatches)());
+    static void applyForSource(uint16_t divider, uint32_t lineRateHz,
+                               uint16_t activeStartLine);
 
     // Blank the lines before active video and nothing else. Where active video
     // starts is not measurable -- a border is black active video, electrically
@@ -266,14 +262,6 @@ private:
     // that never opens.
     static void applyHorizontalFromChannelLine(uint16_t channelLine);
 
-    static void applySd(uint8_t standard);
-    static void applyProgressive(uint8_t standard, uint16_t divider,
-                                 uint32_t lineRateHz);
-
-    // YPbPr passed through, which is more than a sampling group: the component
-    // patches, the coast pair and the sync-type hold come with it.
-    static void applyComponent(void (*applyRgbPatches)());
-
     // The channel's two sync pulses as the last writer left them, smaller value
     // first. Order is what applyChannelSyncEdges() decides, so what has to
     // survive between the two calls is the pair rather than its arrangement.
@@ -284,11 +272,6 @@ private:
 
     static void holdHsyncPulse(uint16_t a, uint16_t b);
     static void holdVsyncPulse(uint16_t a, uint16_t b);
-
-    // The ADC PLL's crossover row and VCO gain for an RGBHV source, which is
-    // the one thing here that no standard can carry: it follows the source's
-    // line count, and only a measurement has that.
-    static void applyRgbhvPll(uint16_t sourceLines);
 };
 
 }  // namespace Tv5725
