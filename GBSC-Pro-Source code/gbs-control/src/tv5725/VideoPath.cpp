@@ -79,8 +79,6 @@ bool VideoPath::resolve()
     return solveWindows();
 }
 
-uint8_t VideoPath::oversample() const { return modeOversample_; }
-
 bool VideoPath::deferSolve() { return fail(); }
 
 bool VideoPath::solveDeferred() const { return solvePending_; }
@@ -288,7 +286,7 @@ void VideoPath::prepareToMeasure(uint16_t sourceLines)
     if (passedThrough())
         return;
 
-    sampling_.applyReferenceSampling(modeOversample_);
+    sampling_.applyReferenceSampling();
 }
 
 VideoPath::PollOutcome VideoPath::solveFromMeasurement()

@@ -102,7 +102,6 @@ public:
     // The oversampling the last source event asked for. The reference sampling
     // clock is applied at it, by the layer that takes the measurement it exists
     // to make meaningful.
-    uint8_t oversample() const;
 
     // A solve was refused against what it was given, so it is worth trying again
     // once the source settles. False, so a caller can return it.

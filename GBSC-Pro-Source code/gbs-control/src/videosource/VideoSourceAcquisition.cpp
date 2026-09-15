@@ -114,7 +114,7 @@ bool VideoSourceAcquisition::resolveFromSource()
     // The same reference the poll pass takes, and for the same reason: a window
     // solved for a taller mode strands the block the rate is timed off, and a
     // count taken through the previous mode's divider is not the source's.
-    sampling_.applyReferenceSampling(videoPath_.oversample());
+    sampling_.applyReferenceSampling();
 
     if (sampling_.measure() != Tv5725::SourceMeasurement::Measured)
         return videoPath_.deferSolve();

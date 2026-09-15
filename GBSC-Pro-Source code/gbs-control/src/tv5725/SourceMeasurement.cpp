@@ -326,7 +326,7 @@ uint16_t SourceMeasurement::retimeStop() const
     return SyncProcessor::retimeStopFor(divider_);
 }
 
-void SourceMeasurement::applyReferenceSampling(uint8_t oversample)
+void SourceMeasurement::applyReferenceSampling()
 {
     const uint16_t reference = referenceDivider(lineDoubled_);
     const uint32_t estimate = estimatedLineRateHz();
@@ -344,10 +344,9 @@ void SourceMeasurement::applyReferenceSampling(uint8_t oversample)
     referenceRateHz_ = estimate;
     holdDivider(reference);
 
-    // The oversampling stays as the mode asks for it: PLLAD_CKOS and the
-    // decimators describe one ratio between them, and the IF's units come off
-    // the decimated clock. Only the divider is being moved to a known value.
-    Adc::applySampleRate(reference, estimate, oversample);
+    // The most the clock allows, rather than whatever the output mode is
+    // running: a reference that follows a picture setting is not a reference.
+    Adc::applySampleRate(reference, estimate, Adc::OversampleAsClockAllows);
     InputFormatter::writeLineCounter(ifLine());
     SyncProcessor::writeRetimeStop(retimeStop());
 }

@@ -45,7 +45,7 @@ public:
 
     // Put the chip on the reference divider needed for a valid measurement to be taken.
     // Note this will corrupt the picture.
-    void applyReferenceSampling(uint8_t oversample);
+    void applyReferenceSampling();
 
     // A mode change is about to move the count and the rate, so the run so far
     // and the rate agreed on mean nothing.

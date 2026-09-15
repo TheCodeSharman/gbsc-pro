@@ -1226,12 +1226,27 @@ TEST_CASE("the reference puts the chip on a divider this class chose")
     sampling.holdLineDoubling(false);
     sampling.holdDivider(1234);
 
-    sampling.applyReferenceSampling(4);
+    sampling.applyReferenceSampling();
 
     CHECK(sampling.divider() == referenceDividerFor(false));
     CHECK(dividerInForce() == referenceDividerFor(false));
     CHECK(lineCounterInForce() == sampling.ifLine());
     CHECK(retimeStopInForce() == sampling.retimeStop());
+}
+
+// The reference is a FIXED state, so it does not follow whatever oversampling
+// the output mode happens to be running: it asks for the most the clock allows
+// and takes what it gets, the same way on every source.
+TEST_CASE("the reference samples at what the clock allows, not at the mode's choice")
+{
+    Wire.reset();
+    SourceMeasurement sampling;
+    sampling.holdLineDoubling(false);
+
+    sampling.applyReferenceSampling();
+
+    CHECK(Adc::oversampleInForce() ==
+          Adc::oversampleFor(Adc::PLLAD_KS::read(), Adc::OversampleAsClockAllows));
 }
 
 TEST_CASE("the reference for a line-doubled source is its own")
@@ -1242,7 +1257,7 @@ TEST_CASE("the reference for a line-doubled source is its own")
     SourceMeasurement sampling;
     sampling.holdLineDoubling(true);
 
-    sampling.applyReferenceSampling(4);
+    sampling.applyReferenceSampling();
 
     CHECK(sampling.divider() == referenceDividerFor(true));
     CHECK(sampling.divider() != referenceDividerFor(false));
@@ -1264,12 +1279,12 @@ TEST_CASE("a reference already in force is not written again")
     Wire.reset();
     SourceMeasurement sampling;
     settleAt(sampling, 311);
-    sampling.applyReferenceSampling(4);
+    sampling.applyReferenceSampling();
     REQUIRE(Wire.touched[5][0x12]);
 
     Wire.reset();
     settleAt(sampling, 311);
-    sampling.applyReferenceSampling(4);
+    sampling.applyReferenceSampling();
 
     CHECK_FALSE(Wire.touched[5][0x12]);
 }
@@ -1284,12 +1299,12 @@ TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
     Wire.reset();
     SourceMeasurement sampling;
     settleAt(sampling, 700);
-    sampling.applyReferenceSampling(4);
+    sampling.applyReferenceSampling();
     const uint16_t divider = sampling.divider();
 
     Wire.reset();
     settleAt(sampling, 311);
-    sampling.applyReferenceSampling(4);
+    sampling.applyReferenceSampling();
 
     CHECK(sampling.divider() == divider);   // the reference itself has not moved
     CHECK(Wire.touched[5][0x12]);           // and it was written anyway
