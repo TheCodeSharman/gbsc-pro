@@ -320,6 +320,26 @@ against a broken picture for a whole evening.
 between the lines is what stops it being read at a glance. Prefer extracting a
 well-named function over explaining an unnamed one.
 
+**Open with what it does.** The first sentence of a class or function comment
+states its purpose, in the present tense: *Measures the timing from the video
+source*. *Drives one chosen signal out of the chip on the debug pin.* Everything
+else comes after it. Two openings that look like purpose and are not:
+
+| reads as purpose | is actually |
+|---|---|
+| *The line count, the line rate, the hsync pulse and the scan type.* | an inventory of what the class holds |
+| *The chip routes one signal onto the pin and the ESP counts its edges.* | mechanism, before the reader knows why they care |
+
+A reader who stops after the first sentence should know whether this is the
+class they want. **If that sentence cannot be written, the class does more than
+one thing** — which is a finding about the code, not a problem with the comment.
+
+**Do not list who else uses it.** *The frame time lock, auto gain and the sync
+watcher all drive this pin* is true the day it is written and a maintenance
+burden thereafter, because the next caller will not update it. State the rule
+the caller must follow instead — *no selection survives another caller* — which
+stays true however many there are.
+
 **Scope decides where context lives:**
 
 | the context is | it belongs |
