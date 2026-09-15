@@ -306,6 +306,33 @@ can disagree, with no check that they do not.
 
 ## Untried experiments with a known payoff
 
+### Sample VSACT fast enough to see whether it follows the pulse
+
+`STATUS_SYNC_PROC_HSACT` and `_VSACT` are read as presence flags -- sync activity
+is there -- rather than as the instantaneous sync level, and the evidence is
+statistical rather than direct: at random phase HSACT is 1 in **2190 of 2190**
+samples across two sources and both routes, where a level-follower would be high
+only for the sync duty of about 7%, and it goes to 0 when sync is lost.
+
+The direct form is reachable for VSACT and not for HSACT. The I2C bus runs at
+**400 kHz** (`Wire.setClock` in `setup()`; the core remembers it across the
+`Wire.begin()` in `startWire()`, so the bus-recovery paths do not drop to 100
+kHz). One field read is a segment aim plus a register read, about 200 us, so
+sampling tops out near 5 kHz: far inside a 20 ms field, far outside a 64 us line.
+
+So a burst of back-to-back s0_16 reads inside one `loop()` pass, reported as a
+value histogram, would settle VSACT directly. `SamplingLog` cannot do it -- its
+floor is one sample per loop pass -- so it wants a small `GBS_DEBUG` route of its
+own.
+
+### The nine bus-exercise reads want a name
+
+`GBS::STATUS_00::read();` appears three times in a row with the result dropped,
+after `startWire()`, in four places. The register's content is never used; any
+readable register would serve. What the block wants is a name for what it is
+doing -- prove the bus answers -- and it currently reads as a status check that
+forgot to check anything. `whole-byte-convenience-names.md`.
+
 ### The display clock could ask for 129.6 MHz rather than 108
 
 `OutputMode::EngineCeilingHz` is 108 MHz on a usability argument that no longer
