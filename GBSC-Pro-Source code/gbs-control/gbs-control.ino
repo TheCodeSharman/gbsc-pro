@@ -1187,11 +1187,15 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
         GBS::write(lastSegment, slaveRegister, values, numValues);
 }
 
-// An RGBHV source is not a standard. The byte has no room for "Mode Detect
-// named nothing", so such a source borrows the top of its range -- and what it
-// GETS is a separate question with a separate owner, so that one value does not
-// have to carry both. docs/rgbhv-bypass-trap.md
-bool sourceIsRgbhv() { return rto->videoStandardInput == Tv5725::PresetLoad::Rgbhv; }
+// Which connector the source is on, which the input selection knows without the
+// classifier. The standard byte carried this as its top value because Mode
+// Detect names an RGBHV source nothing, and that value was only ever reached for
+// the three inputs sharing the RGB port -- so the selection is the same fact,
+// known earlier and without a detection pass. docs/video-source-acquisition.md
+bool sourceIsRgbhv()
+{
+    return VideoSourceSelection::isRgbhv((VideoSourceSelection::Id)Info);
+}
 bool scalingRgbhv() { return sourceIsRgbhv() && Tv5725::RgbhvOutput::isScaling(); }
 bool rgbhvBypass() { return sourceIsRgbhv() && !Tv5725::RgbhvOutput::isScaling(); }
 

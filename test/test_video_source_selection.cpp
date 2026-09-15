@@ -132,6 +132,30 @@ TEST_CASE("the RGB inputs are sync variants of one connector, not three inputs")
     }
 }
 
+TEST_CASE("the three sync variants of the RGB connector are what the firmware calls RGBHV")
+{
+    // Named for the connector rather than for the sync type, which is why RGBs
+    // and RGsB are in it: they are composite sync and sync-on-green on the same
+    // pins, and the standard byte this replaces reached its RGBHV value for all
+    // three. docs/video-source-acquisition.md
+    CHECK(VideoSourceSelection::isRgbhv(VideoSourceSelection::Rgbs));
+    CHECK(VideoSourceSelection::isRgbhv(VideoSourceSelection::RgsB));
+    CHECK(VideoSourceSelection::isRgbhv(VideoSourceSelection::Vga));
+
+    SUBCASE("and the other port is not") {
+        CHECK_FALSE(VideoSourceSelection::isRgbhv(VideoSourceSelection::Ypbpr));
+        CHECK_FALSE(VideoSourceSelection::isRgbhv(VideoSourceSelection::SVideo));
+        CHECK_FALSE(VideoSourceSelection::isRgbhv(VideoSourceSelection::Composite));
+    }
+
+    SUBCASE("and nothing chosen is not") {
+        // The whole hazard of replacing the byte: it said an RGBHV source was
+        // DETECTED, this says one is SELECTED, and an id nobody set must not
+        // answer yes to either.
+        CHECK_FALSE(VideoSourceSelection::isRgbhv(VideoSourceSelection::None));
+    }
+}
+
 TEST_CASE("an input can be named, so a request can carry one")
 {
     CHECK(VideoSourceSelection::fromName("vga") == VideoSourceSelection::Vga);

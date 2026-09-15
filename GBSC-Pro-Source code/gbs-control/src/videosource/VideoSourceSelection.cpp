@@ -66,6 +66,11 @@ bool VideoSourceSelection::sharesPort(Id a, Id b)
     return chosen(a) && chosen(b) && port(a) == port(b);
 }
 
+bool VideoSourceSelection::isRgbhv(Id id)
+{
+    return sharesPort(id, Vga);
+}
+
 VideoSourceSelection::Id VideoSourceSelection::fromStored(uint8_t info)
 {
     return chosen(info) ? (Id)info : None;

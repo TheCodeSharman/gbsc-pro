@@ -85,6 +85,15 @@ public:
     static uint8_t port(Id id);
     static bool sharesPort(Id a, Id b);
 
+    // The three sync variants of the RGB connector, which is what the firmware
+    // means by RGBHV -- the connector, not the sync type, so composite sync and
+    // sync-on-green on those pins are in it.
+    //
+    // This says an RGBHV source is SELECTED. The standard byte it replaces said
+    // one had been DETECTED, and on a freshly chosen input with no sync yet the
+    // two differ. docs/video-source-acquisition.md
+    static bool isRgbhv(Id id);
+
     // For the boot restore, which reads `Info` from the preferences. That byte
     // carries all six; `SeleInputSource` carries three, so a restore keyed on
     // the legacy value cannot tell RGsB from RGBs and sends the wrong frame for
