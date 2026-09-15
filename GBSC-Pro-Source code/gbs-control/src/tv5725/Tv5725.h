@@ -316,18 +316,14 @@ public:
                                                                       // [datasheet: DEINT_STATUS_[7]]
 
 
-    // The four bits below are the whole of s0_16 that is not reserved, so read
-    // them by name. This whole-byte form is for a raw trace only, where the
-    // reserved bits 7-4 are part of what is being recorded.
-
+    // s0_16 is SYNC PROC STATUS 00: these four bits and nothing else, 7-4 being
+    // reserved. Tie them where a decision needs more than one, so the pair
+    // describes one instant without a byte-wide read to mask.
     typedef UReg<0x00, 0x16, 0, 1> STATUS_SYNC_PROC_HSPOL;            // HS polarity. When =0, input H-sync is low active;
                                                                       // when =1, high active [datasheet: SYNC_PROC_STATUS_[0]]
 
-    // "HS active" is all RD-5725-1.1 says, and it reads as though it might
-    // follow the pulse. It does not: sampled at 25 ms against line rates of
-    // 15.6 and 31.4 kHz it is 1 in 2190 of 2190 while a source is locked, where
-    // a pulse-following bit would be high for the sync duty of about 7%, and it
-    // goes to 0 when sync is lost. It reports that sync activity is PRESENT.
+    // Presence, not the sync level, which the bare datasheet wording does not
+    // settle. docs/tv5725-chip.md
     typedef UReg<0x00, 0x16, 1, 1> STATUS_SYNC_PROC_HSACT;            // HS active [datasheet: SYNC_PROC_STATUS_[1]]
 
     typedef UReg<0x00, 0x16, 2, 1> STATUS_SYNC_PROC_VSPOL;            // VS polarity. When =0, input V-sync is low active;
