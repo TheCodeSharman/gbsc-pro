@@ -1912,11 +1912,17 @@ round-tripped and recorded. Whether the input is component is
 `Adc::phaseFound()`, and what the user asked of the deinterlacer is held by
 `Deinterlacer` rather than handed in on every pass.
 
-**THREE ACTS ARE REPORTED RATHER THAN DONE.** The frame time lock and the
-external clock generator live above this layer, and two flags are the rest of
-the sketch's, so `poll()` leaves a `Report` behind -- cleared at the start of
-every pass, so a caller reading it once a pass sees each decision once. That is
-the shape `Deinterlacer::steer()` already used.
+**WHAT IS REPORTED RATHER THAN DONE IS THE FRAME TIME LOCK AND THE EXTERNAL
+CLOCK GENERATOR.** Both live above this layer, so `poll()` leaves a `Report`
+behind -- cleared at the start of every pass, so a caller reading it once a pass
+sees each decision once. That is the shape `Deinterlacer::steer()` already used.
+
+**Nothing user-facing is reported any more.** Two flags were, and neither had a
+reader that acted on it: `rto->videoIsFrozen` is set true by every writer at the
+point capture is ENABLED and its one reader guarded an idempotent release, and
+`rto->HdmiHoldDetection` was read only to gate its own clearing. What the ladder
+wrapping actually produces is the console's `No Signal Out`, emitted from the
+layer.
 
 **`frameTimingMoved` AND `vsyncLockStale` ARE NOT THE SAME FIELD.** Collapsed
 into one they reset the frame time lock on every pass a source is unsettled, so
@@ -1935,6 +1941,22 @@ above `Tv5725::` and the sketch still owns them, so `loop()` calls
 `inputAcquisition.poll(millis())` and acts on the report. Collapsing that last
 block needs the frame time lock and the clock generator under the engine, which
 is where step 11's rate is already waiting.
+
+**What blocks it is the platform, not the shape.** `framesync.h` includes
+`ESP8266WiFi.h` and reaches the platform in 49 places across ten APIs --
+`DEBUG_IN_PIN` and `digitalRead` for the vsync edges, `ESP.getCycleCount` and
+`ESP.getCpuFreqMHz` for the period, `ESP.wdtFeed`, `yield`, `millis`, `delay`,
+`WiFi` and `SerialM` -- and the host tests compile `VideoSourceAcquisition.cpp`
+without any of them. So the move is a split rather than a rename: the vsync
+sampler is genuinely ESP-side and stays, and the lock logic above it is what
+comes under the engine. `useClock()` and `useWatchdogFeed()` on this class are
+the shape the seam already takes.
+
+`lastVsyncLock` has gone ahead of that split. It was a file-scope static in the
+sketch stamped from four places and compared in two, all of them asking when the
+lock last ran or was last disturbed, and it is `FrameSync::defer()` and
+`FrameSync::quietFor()` now -- so the split has one class to move rather than a
+class and a loose static.
 
 ## Input selection is the same collapse, one level up
 
