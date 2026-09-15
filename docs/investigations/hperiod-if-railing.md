@@ -1296,7 +1296,32 @@ than 640x480@60. **Holding `SP_H_PROTECT` across a source mode change is the
 experiment to run next**, on its own and against a live instance.
 
 `VPERIOD_IF` did not recover with it -- 68..117 against the ~311 the mode is
-due -- which is the separate failure the page records below. So the bit manufactures exactly the
+due -- which is the separate failure the page records below.
+
+**ON A HEALTHY COUNTER THE BIT CHANGES NOTHING, so it is a diagnostic and not a
+better instrument.** Swept across the modes the RISC PC allows, automation
+frozen, protect cleared and set at each one with five samples of each:
+
+| source | `VTOTAL` | protect off | protect on |
+|---|---|---|---|
+| 320x256@50 | 311 | 431 x5 | 431, 431, 431, 430, 431 |
+| 640x480@60 | 524 | 212, 212, 213, 212, 213 | 212 x4, 213 |
+| 800x600@56 | 624 | 191 x5 | 191, 190, 190, 190, 191 |
+| 320x256@50 again | 311 | 431 x5 | 431, 430, 431, 431, 430 |
+
+Indistinguishable within a count, in every mode. So reading the counter under
+protect buys nothing while it is working, and what it does is convert the fault
+from unreadable noise into a clean signature. **Using it as the line-rate source
+would therefore be a trap unless the x2 is rejected**: the engine's validity
+test is three samples agreeing within 2, which the steadied fault passes
+perfectly at half the true rate, and that is the one failure shape every health
+check here scores as healthy. What makes it safe is the cross-check that already
+exists -- `rateFollowsCount()`, against the line count and the field rate -- and
+what would make it useful is more instances of the halving than the one measured.
+
+`SP_H_PROTECT` is not exotic on this board: `applyForSyncType()` writes it 1 for
+every composite-sync source, so the steadied counter is already the normal state
+on half the bench. So the bit manufactures exactly the
 failure this page warns about -- **a rock-steady wrong value that every stability
 check scores as healthy** -- and it must not be reached for as a fix.
 
