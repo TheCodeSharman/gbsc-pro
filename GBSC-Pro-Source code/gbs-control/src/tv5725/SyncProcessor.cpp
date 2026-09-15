@@ -9,6 +9,13 @@
 
 namespace Tv5725 {
 
+const uint16_t SyncProcessor::RetimeStopPercent;
+
+uint16_t SyncProcessor::retimeStopFor(uint16_t divider)
+{
+    return (uint16_t)(((uint32_t)divider * RetimeStopPercent) / 100);
+}
+
 void SyncProcessor::driveTestBus(uint8_t module, uint8_t signal)
 {
     Tv5725::Tie<SP_TEST_EN, SP_TEST_MODULE, SP_TEST_SIGNAL_SEL>::write(1, module,

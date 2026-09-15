@@ -16,6 +16,7 @@
 #include "HdBypass.h"
 #include "InputFormatter.h"
 #include "Memory.h"
+#include "SamplingClock.h"
 #include "MemoryMap.h"
 #include "OutputMode.h"
 #include "ModeDetect.h"
@@ -474,8 +475,11 @@ bool VideoPath::solveSampling(uint8_t oversample)
         sampling_.lineDoubled() ? 0 : VideoSourceLine::CaptureLagUnits,
         reading_.syncAtHead(), sampling_.lineDoubled());
 
-    if (!sampling_.solve(sampling_.lineRateHz(), oversample, framable))
+    const uint16_t divider = SamplingClock::recommendedDivider(
+        sampling_.lineRateHz(), oversample, sampling_.lineDoubled(), framable);
+    if (divider == 0)
         return false;
+    sampling_.holdDivider(divider);
     applySampling();
     return true;
 }

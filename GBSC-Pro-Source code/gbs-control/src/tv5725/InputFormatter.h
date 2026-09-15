@@ -332,6 +332,21 @@ public:
     // yet. An unmeasured count comes back LineDoubled -- what a short source
     // needs, and the one a wrong guess leaves short.
     static ScanMode scanModeFor(uint16_t sourceLines, uint16_t showableUnits = 0);
+
+    // The longest line the geometry registers can hold. IF_HSYNC_RST, IF_HB_ST2
+    // and IF_HB_SP2 are all [10:0], and a line past this wraps rather than
+    // failing: PLLAD_MD 2094 was accepted, latched and read back correctly at
+    // STATUS_SYNC_PROC_HTOTAL while IF_HSYNC_RST held 46, with the picture
+    // destroyed and nothing reporting a fault.
+    // ../../../docs/investigations/tail-green.md
+    static const uint16_t LineCounterMax = 2047;
+
+    // What the line counter must be set to for a given ADC divider. The
+    // horizontal decimation is what relates them, and only the line-doubled
+    // scan mode applies it: PLLAD_MD 2553 against 1276 line-doubled, 2553
+    // against 2553 not. A counter wrapping at half the samples arriving
+    // repeats the picture.
+    static uint16_t lineCounterFor(uint16_t divider, ScanMode mode);
 };
 
 }  // namespace Tv5725

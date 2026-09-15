@@ -201,6 +201,16 @@ public:
     // s5_63 written together, so bit 7 -- RESERVED -- is left as found.
     static void driveTestBus(uint8_t module, uint8_t signal);
 
+    // How far along the line hsync retiming stops, in percent. Upstream's,
+    // unexplained and unmeasured here; what matters is that it follows the
+    // divider.
+    static const uint16_t RetimeStopPercent = 93;
+
+    // The retime window's stop for a given ADC divider. It counts in ADC
+    // samples, so a divider that moves without it leaves the sync processor
+    // retiming a line that is not arriving.
+    static uint16_t retimeStopFor(uint16_t divider);
+
     // SP_TEST_MODULE's values, from RD-5725-1.1's own table. Only the stages
     // something selects are named.
     static const uint8_t TestModuleVsActDet = 4;

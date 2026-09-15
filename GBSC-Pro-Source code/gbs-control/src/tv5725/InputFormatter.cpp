@@ -2,6 +2,14 @@
 
 namespace Tv5725 {
 
+const uint16_t InputFormatter::LineCounterMax;
+const uint16_t InputFormatter::DoubleBelowLines;
+
+uint16_t InputFormatter::lineCounterFor(uint16_t divider, ScanMode mode)
+{
+    return mode == LineDoubled ? (uint16_t)(divider / 2) : divider;
+}
+
 InputFormatter::ScanMode InputFormatter::scanModeFor(uint16_t sourceLines,
                                                     uint16_t showableUnits)
 {

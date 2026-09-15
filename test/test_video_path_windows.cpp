@@ -16,6 +16,7 @@
 #include "CheckNear.h"
 #include "SolvedEngine.h"
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
 
 using namespace Tv5725;
@@ -180,21 +181,21 @@ TEST_CASE("a preset load computes the divider it uses")
     // Bounded so one window still spans the line: the bench pulse is
     // positive-going, so the head guard is the sync interval and 1115 IF units
     // is what is left inside CaptureWidthLimitUnits.
-    const uint16_t wanted = SourceMeasurement::recommendedDivider(
+    const uint16_t wanted = SamplingClock::recommendedDivider(
         15550, 4, true,
         VideoSourceLine::framableIfLine(181.0f / 2250.0f, 0, true, true));
     CHECK(wanted != 2553);   // or this test proves nothing about computing it
 
     CHECK(Wire.field(5, 0x12, 0, 12) == wanted);
-    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted, true));
-    CHECK(Wire.field(5, 0x4B, 0, 12) == SourceMeasurement::retimeStopFor(wanted));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, InputFormatter::LineDoubled));
+    CHECK(Wire.field(5, 0x4B, 0, 12) == SyncProcessor::retimeStopFor(wanted));
 
     SUBCASE("and the solve that follows uses it") {
         // The seeded IF_HSYNC_RST was 1276 for a 2553 divider. If the engine
         // were still reading rasters back it would mix the new divider with the
         // old wrap; it takes both from the same held value.
         REQUIRE(solved.engine.resolve());
-        CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(wanted, true));
+        CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(wanted, InputFormatter::LineDoubled));
     }
 }
 
@@ -214,7 +215,7 @@ TEST_CASE("an unmeasurable source never leaves the engine without a divider")
     solved.engine.setOutputMode(&Tv5725::Mode1080p);
     solved.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(solved.acquisition));
-    CHECK(Wire.field(1, 0x0E, 0, 11) == SourceMeasurement::ifLineFor(reference, true));
+    CHECK(Wire.field(1, 0x0E, 0, 11) == InputFormatter::lineCounterFor(reference, InputFormatter::LineDoubled));
 
     SUBCASE("and a later refusal lands on the same reference, not on nothing") {
         g_fieldRate = 50.08f;

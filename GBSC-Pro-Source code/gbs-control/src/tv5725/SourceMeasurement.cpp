@@ -13,11 +13,6 @@
 
 namespace Tv5725 {
 
-const uint32_t SourceMeasurement::MaxSampleRateHz;
-const uint16_t SourceMeasurement::DividerMax;
-const uint16_t SourceMeasurement::IfLineUnitsMax;
-const uint16_t SourceMeasurement::RecommendedPercent;
-const uint16_t SourceMeasurement::RetimeStopPercent;
 const uint16_t SourceMeasurement::LatchedSamplesTolerance;
 const uint8_t SourceMeasurement::LinesPerCountMax;
 
@@ -27,61 +22,6 @@ const uint8_t SourceMeasurement::LinesPerCountMax;
 static uint8_t atLeastOne(uint8_t oversample)
 {
     return oversample == 0 ? 1 : oversample;
-}
-
-uint16_t SourceMeasurement::ifLineFor(uint16_t divider, bool lineDoubled)
-{
-    return lineDoubled ? (uint16_t)(divider / 2) : divider;
-}
-
-// Integer, because the ESP8266 has no FPU and this runs on every solve. The
-// float form it replaces truncated too, and 4095 x 93 is well inside 32 bits.
-uint16_t SourceMeasurement::retimeStopFor(uint16_t divider)
-{
-    return (uint16_t)(((uint32_t)divider * RetimeStopPercent) / 100);
-}
-
-uint32_t SourceMeasurement::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
-                                uint8_t oversample)
-{
-    return (uint32_t)divider * lineRateHz * atLeastOne(oversample);
-}
-
-bool SourceMeasurement::withinLimit(uint16_t divider, uint32_t lineRateHz,
-                           uint8_t oversample)
-{
-    if (lineRateHz == 0)
-        return false;
-
-    // At the oversampling the crossover row will actually install for this
-    // divider, which is what the part converts at. Asking at the requested
-    // ratio answers a question about a load the chip refuses to take.
-    const uint32_t cko = (uint32_t)divider * lineRateHz;
-    return sampleRateHz(divider, lineRateHz,
-                        Adc::oversampleFor(Adc::postDividerFor(cko), oversample))
-           <= MaxSampleRateHz;
-}
-
-uint16_t SourceMeasurement::maxDivider(uint32_t lineRateHz, uint8_t oversample)
-{
-    if (lineRateHz == 0)
-        return 0;
-
-    // At the oversampling the crossover row carries AT THE CEILING, never at
-    // the one asked for: Adc::oversampleFor() reduces a request the row
-    // refuses, and the row is chosen from the same clock this is bounding.
-    // docs/capture-limits.md
-    //
-    // TestBusRateMeasurement::sourceFieldRateHz() reports 0 with no lock and that reaches here as a
-    // line rate, so the divide is guarded above. Everything below is integer:
-    // the ESP8266 has no FPU and this runs on every solve.
-    uint32_t perLine = lineRateHz * atLeastOne(Adc::oversampleFor(
-        Adc::postDividerFor(MaxSampleRateHz), oversample));
-    uint32_t largest = MaxSampleRateHz / perLine;
-
-    if (largest > DividerMax)
-        return DividerMax;
-    return (uint16_t)largest;
 }
 
 uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
@@ -163,50 +103,6 @@ uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t
     if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
         return 0;
     return rate;
-}
-
-namespace {
-
-// A divider held under a bound expressed in IF units. Formed wide because the
-// product can exceed what a divider is allowed to hold.
-uint16_t capAgainst(uint16_t divider, uint32_t unitBound, uint16_t samplesPerUnit)
-{
-    const uint32_t allowed = unitBound * samplesPerUnit;
-    if (allowed >= SourceMeasurement::DividerMax)
-        return divider;
-    return divider > (uint16_t)allowed ? (uint16_t)allowed : divider;
-}
-
-}  // namespace
-
-uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
-                                               bool lineDoubled, uint16_t maxIfLineUnits)
-{
-    uint16_t ceiling = maxDivider(lineRateHz, oversample);
-    if (ceiling == 0)
-        return 0;
-
-    uint16_t backed = (uint16_t)(((uint32_t)ceiling * RecommendedPercent) / 100);
-
-    // ADC samples to one IF unit, which is what turns a bound on the IF line
-    // into a bound on the divider.
-    const uint16_t samplesPerUnit = lineDoubled ? 2 : 1;
-
-    // The write bound: the capture path writes CaptureWidthLimitUnits from
-    // wherever the window starts, so a line whose capturable span runs past
-    // that has ends no single window can hold at once.
-    // docs/investigations/tail-green.md
-    uint16_t backedForWrite = capAgainst(
-        backed,
-        maxIfLineUnits > 0 ? maxIfLineUnits : VideoSourceLine::WriteLimitUnits,
-        samplesPerUnit);
-
-    // The wall above both, and it wraps rather than failing.
-    backedForWrite = capAgainst(backedForWrite, IfLineUnitsMax, samplesPerUnit);
-
-    // Even, so ifLineFor() divides exactly. An odd divider leaves the IF half a
-    // sample out from the line the ADC is delivering.
-    return (uint16_t)(backedForWrite & ~1u);
 }
 
 // --- the chosen divider, held ----------------------------------------------
@@ -393,17 +289,6 @@ bool SourceMeasurement::measureLineRate()
     return lineRateHz_ != 0;
 }
 
-bool SourceMeasurement::solve(uint32_t lineRateHz, uint8_t oversample,
-                              uint16_t maxIfLineUnits)
-{
-    uint16_t chosen = recommendedDivider(lineRateHz, oversample, lineDoubled_,
-                                         maxIfLineUnits);
-    if (chosen == 0)
-        return false;
-    divider_ = chosen;
-    return true;
-}
-
 bool SourceMeasurement::usable() const { return divider_ != 0; }
 
 uint16_t SourceMeasurement::divider() const { return divider_; }
@@ -430,13 +315,19 @@ uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
-uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoubled_); }
+uint16_t SourceMeasurement::ifLine() const
+{
+    return InputFormatter::lineCounterFor(
+        divider_, lineDoubled_ ? InputFormatter::LineDoubled
+                               : InputFormatter::Progressive);
+}
 
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
 {
     const uint16_t limit = lineDoubled ? (uint16_t)(2 * VideoSourceLine::WriteLimitUnits)
                                        : VideoSourceLine::WriteLimitUnits;
-    // Even, for the reason recommendedDivider() masks: an odd divider leaves
+    // Even, for the reason SamplingClock::recommendedDivider() masks: an odd
+    // divider leaves
     // the input formatter half a sample out from the line the ADC delivers, and
     // the rate is timed off that block. WriteLimitUnits is odd, so only the
     // progressive reference needs it.
@@ -463,7 +354,10 @@ void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = line
 
 bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
 
-uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
+uint16_t SourceMeasurement::retimeStop() const
+{
+    return SyncProcessor::retimeStopFor(divider_);
+}
 
 void SourceMeasurement::applyReferenceSampling(uint8_t oversample)
 {

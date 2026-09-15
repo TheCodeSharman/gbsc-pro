@@ -359,6 +359,24 @@ public:
     static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
                                    uint8_t oversample);
 
+    // DS-5725-3.2, front page: "Maximum analog sampling rate up to 162MSPS".
+    static const uint32_t MaxSampleRateHz = 162000000u;
+
+    // PLLAD_MD is twelve bits.
+    static const uint16_t DividerMax = 4095;
+
+    // What the ADC is actually asked to do, in samples per second.
+    static uint32_t sampleRateHz(uint16_t divider, uint32_t lineRateHz,
+                                 uint8_t oversample);
+
+    static bool withinLimit(uint16_t divider, uint32_t lineRateHz,
+                            uint8_t oversample);
+
+    // The largest divider this line rate can carry, or 0 if none can -- which
+    // is a case the caller must handle rather than a value it can use. A line
+    // rate of 0 (no lock) is also 0.
+    static uint16_t maxDivider(uint32_t lineRateHz, uint8_t oversample);
+
     // The oversampling the ADC is actually running, which is the request
     // reduced to whatever the crossover row can carry. **A CALLER HOLDING THE
     // REQUEST HOLDS A DIFFERENT NUMBER**: the engine asks for

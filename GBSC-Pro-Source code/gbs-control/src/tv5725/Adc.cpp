@@ -4,6 +4,57 @@
 
 namespace Tv5725 {
 
+const uint32_t Adc::MaxSampleRateHz;
+const uint16_t Adc::DividerMax;
+
+namespace {
+uint8_t atLeastOneOversample(uint8_t oversample)
+{
+    return oversample == 0 ? 1 : oversample;
+}
+}  // namespace
+
+uint32_t Adc::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
+                           uint8_t oversample)
+{
+    return (uint32_t)divider * lineRateHz * atLeastOneOversample(oversample);
+}
+
+bool Adc::withinLimit(uint16_t divider, uint32_t lineRateHz, uint8_t oversample)
+{
+    if (lineRateHz == 0)
+        return false;
+
+    // At the oversampling the crossover row will actually install for this
+    // divider, which is what the part converts at. Asking at the requested
+    // ratio answers a question about a load the chip refuses to take.
+    const uint32_t cko = (uint32_t)divider * lineRateHz;
+    return sampleRateHz(divider, lineRateHz,
+                        oversampleFor(postDividerFor(cko), oversample))
+           <= MaxSampleRateHz;
+}
+
+uint16_t Adc::maxDivider(uint32_t lineRateHz, uint8_t oversample)
+{
+    if (lineRateHz == 0)
+        return 0;
+
+    // At the oversampling the crossover row carries AT THE CEILING, never at
+    // the one asked for: oversampleFor() reduces a request the row refuses,
+    // and the row is chosen from the same clock this is bounding.
+    // ../../../docs/capture-limits.md
+    //
+    // Everything below is integer: the ESP8266 has no FPU and this runs on
+    // every solve.
+    uint32_t perLine = lineRateHz * atLeastOneOversample(
+        oversampleFor(postDividerFor(MaxSampleRateHz), oversample));
+    uint32_t largest = MaxSampleRateHz / perLine;
+
+    if (largest > DividerMax)
+        return DividerMax;
+    return (uint16_t)largest;
+}
+
 namespace {
 
 // ADC_INPUT_SEL 0 is the pair carrying Pb and Pr beside Y.
