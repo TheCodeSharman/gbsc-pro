@@ -97,8 +97,6 @@ public:
     // whether the vertical interval is serrated.
     bool lowLineRate() const;
 
-    uint16_t ifLine(bool lineDoubled) const;
-    uint16_t retimeStop() const;
 
     // --- the bounds the contract is stated in ---------------------------------
 

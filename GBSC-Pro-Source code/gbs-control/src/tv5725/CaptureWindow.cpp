@@ -1,6 +1,8 @@
 #include "CaptureWindow.h"
 
 #include "../../gbs_types.h"
+#include "Adc.h"
+#include "InputFormatter.h"
 #include "MemoryMap.h"
 
 namespace Tv5725 {
@@ -15,7 +17,7 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
                                 const SourceTiming &timing, bool lineDoubled)
 {
     const uint16_t sourceLines = source.sourceLines();
-    const uint16_t horizontalWrap = source.ifLine(lineDoubled) + 1;
+    const uint16_t horizontalWrap = InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled) + 1;
 
     if (horizontalWrap < 64)
         return false;

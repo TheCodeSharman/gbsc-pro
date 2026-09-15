@@ -297,11 +297,6 @@ uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
-uint16_t SourceMeasurement::ifLine(bool lineDoubled) const
-{
-    return InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled);
-}
-
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
 {
     const uint16_t limit = lineDoubled ? (uint16_t)(2 * VideoSourceLine::WriteLimitUnits)
@@ -326,11 +321,6 @@ bool SourceMeasurement::lowLineRate() const
     return lineRateHz() != 0 && lineRateHz() < LowLineRateBelowHz;
 }
 
-uint16_t SourceMeasurement::retimeStop() const
-{
-    return SyncProcessor::retimeStopFor(Adc::dividerInForce());
-}
-
 void SourceMeasurement::applyReferenceSampling(bool lineDoubled)
 {
     const uint16_t reference = referenceDivider(lineDoubled);
@@ -351,8 +341,9 @@ void SourceMeasurement::applyReferenceSampling(bool lineDoubled)
     // The most the clock allows, rather than whatever the output mode is
     // running: a reference that follows a picture setting is not a reference.
     Adc::applySampleRate(reference, estimate, Adc::OversampleAsClockAllows);
-    InputFormatter::writeLineCounter(ifLine(lineDoubled));
-    SyncProcessor::writeRetimeStop(retimeStop());
+    InputFormatter::writeLineCounter(
+        InputFormatter::lineCounterFor(reference, lineDoubled));
+    SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(reference));
 }
 
 uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)

@@ -115,6 +115,20 @@ static SourceMeasurement::ScanType scanTypeWithDoubling(uint16_t verticalPeriod,
     return measurement.measureScanType(lineDoubled);
 }
 
+static uint16_t lineCounterInForce()
+{
+    return (uint16_t)Wire.field(1, InputFormatter::IF_HSYNC_RST::byteOffset,
+                                InputFormatter::IF_HSYNC_RST::bitOffset,
+                                InputFormatter::IF_HSYNC_RST::bitWidth);
+}
+
+static uint16_t retimeStopInForce()
+{
+    return (uint16_t)Wire.field(5, SyncProcessor::SP_RT_HS_SP::byteOffset,
+                                SyncProcessor::SP_RT_HS_SP::bitOffset,
+                                SyncProcessor::SP_RT_HS_SP::bitWidth);
+}
+
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
 static const uint32_t BenchLineRate = 15550;
@@ -358,11 +372,6 @@ TEST_CASE("a solved divider is held, and every register follows from it")
 
     const uint16_t chosen = Adc::dividerInForce();
     CHECK(chosen == SamplingClock::recommendedDivider(BenchLineRate, 4, true));
-
-    SUBCASE("the derived values come from the held divider") {
-        CHECK(sampling.ifLine(true) == InputFormatter::lineCounterFor(chosen, true));
-        CHECK(sampling.retimeStop() == SyncProcessor::retimeStopFor(chosen));
-    }
 }
 
 TEST_CASE("an unmeasurable line rate leaves the previous choice alone")
@@ -1170,8 +1179,6 @@ TEST_CASE("a good count clears a serration verdict")
 // ADC is not delivering, which is a solid green display with sync still stable.
 
 static uint16_t dividerInForce() { return (uint16_t)Wire.field(5, 0x12, 0, 12); }
-static uint16_t lineCounterInForce() { return (uint16_t)Wire.field(1, 0x0E, 0, 11); }
-static uint16_t retimeStopInForce() { return (uint16_t)Wire.field(5, 0x4B, 0, 12); }
 
 TEST_CASE("the reference puts the chip on a divider this class chose")
 {
@@ -1185,8 +1192,10 @@ TEST_CASE("the reference puts the chip on a divider this class chose")
 
     CHECK(Adc::dividerInForce() == referenceDividerFor(false));
     CHECK(dividerInForce() == referenceDividerFor(false));
-    CHECK(lineCounterInForce() == sampling.ifLine(false));
-    CHECK(retimeStopInForce() == sampling.retimeStop());
+    CHECK(lineCounterInForce() == InputFormatter::lineCounterFor(
+                                     Adc::dividerInForce(), false));
+    CHECK(retimeStopInForce()
+          == SyncProcessor::retimeStopFor(Adc::dividerInForce()));
 }
 
 // The reference is a FIXED state, so it does not follow whatever oversampling

@@ -332,8 +332,10 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
     REQUIRE(pollUntilSolved(acquisition));
 
     CHECK(dividerInForce() == Adc::dividerInForce());
-    CHECK(lineCounterInForce() == sampling.ifLine(engine.lineDoubled()));
-    CHECK(retimeStopInForce() == sampling.retimeStop());
+    CHECK(lineCounterInForce() == InputFormatter::lineCounterFor(
+                                     Adc::dividerInForce(), engine.lineDoubled()));
+    CHECK(retimeStopInForce()
+          == SyncProcessor::retimeStopFor(Adc::dividerInForce()));
 }
 
 TEST_CASE("a measurement that solved nothing puts no divider on the chip")

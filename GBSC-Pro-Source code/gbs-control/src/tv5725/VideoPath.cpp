@@ -455,8 +455,9 @@ void VideoPath::applySampling(uint16_t divider)
         return;
 
     Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
-    InputFormatter::writeLineCounter(sampling_.ifLine(lineDoubled_));
-    SyncProcessor::writeRetimeStop(sampling_.retimeStop());
+    InputFormatter::writeLineCounter(
+        InputFormatter::lineCounterFor(divider, lineDoubled_));
+    SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
 }
 
 bool VideoPath::solveSampling(uint8_t oversample)
