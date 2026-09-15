@@ -84,6 +84,26 @@ move, covering the 928 addresses a config dump leaves out.
 
 Neither a `PAD_SYNC_OUT_ENZ` toggle nor a source mode round trip re-centres it.
 
+### `/sc?~` recovers the picture but leaves the engine calling the source absent
+
+Measured on `vga` at 320x256@50, twice, on two builds: after
+`goLowPowerWithInputDetection()` the chip is fully correct -- `PLLAD_MD` 2206
+against `STATUS_SYNC_PROC_HTOTAL` 2206, `STATUS_SYNC_PROC_VTOTAL` 311,
+`STATUS_SYNC_PROC_HSACT` 1, `SP_SOG_MODE` 0, `SP_CLAMP_MANUAL` 1,
+`DAC_RGBS_PWDNZ` 1 -- and the panel shows a clean, complete PM5544. `/geometry`
+nonetheless reports `present: false, state: absent`, and stays there across ten
+polling rounds.
+
+So the recovery works and the engine's acquisition state does not follow it.
+What that gates is maintenance rather than the picture: the clamp re-place, the
+sampling phase and the deinterlacer steer all key off an acquired run.
+
+**Not the step-12 predicate substitution.** The A/B was run deliberately --
+`sourceIsRgbhv()` reverted to the standard byte, rebuilt, reflashed -- and the
+byte build behaves identically.
+
+`/input?src=vga` clears it.
+
 ### A composite-sync source in pass-through gives no signal
 
 640x480@60 on `vga`, one cable, one mode, the sync type the only thing moving --
