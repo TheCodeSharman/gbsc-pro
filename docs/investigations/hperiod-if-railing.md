@@ -1321,7 +1321,33 @@ what would make it useful is more instances of the halving than the one measured
 
 `SP_H_PROTECT` is not exotic on this board: `applyForSyncType()` writes it 1 for
 every composite-sync source, so the steadied counter is already the normal state
-on half the bench. So the bit manufactures exactly the
+on half the bench.
+
+**DOES HOLDING IT SUPPRESS THE FAULT? THE QUESTION IS OPEN, AND A CLEAN SOAK IS
+NOT EVIDENCE WITHOUT A LIVE BASELINE.** Asked on 2026-09-15 and answered
+uninformatively, which is the useful part:
+
+| arm | transitions | landings on `VTOTAL` 524 | failures |
+|---|---|---|---|
+| csync, firmware holding protect 1, automation live | 24 | 12 | 0 |
+| separate sync, frozen, protect 1 held across each change | 12 | 6 | 0 |
+| separate sync, frozen, **protect 0** -- the shipped behaviour | 12 | 6 | 0 |
+
+The first arm read as strong suppression -- 12 clean landings against a
+destination measured at 44% is about 0.08% likely -- **and the control refutes
+that reading entirely**: protect off is equally clean. What the arms establish is
+that the fault's rate today is near zero, not that anything suppressed it, and
+the 44% figure belongs to the session it was measured in.
+
+So the design this needs is a PAIRED comparison inside one bad epoch, alternating
+the arms as above so a rate that drifts affects both. Without a live baseline a
+clean run says only that the fault is currently absent, and this page's
+*Not reproducible across settled states* section is the reason to expect that.
+
+**And holding it permanently would still cost the detector.** The noise is what
+the engine's three-samples-within-2 test rejects; steadied, a mislocked counter
+reports half the rate and passes. So even a proven suppression would want the x2
+cross-check against the count landing first. So the bit manufactures exactly the
 failure this page warns about -- **a rock-steady wrong value that every stability
 check scores as healthy** -- and it must not be reached for as a fix.
 
