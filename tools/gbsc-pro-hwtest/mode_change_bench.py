@@ -2,10 +2,17 @@
 
     python3 mode_change_bench.py --host <ip> --source <riscpc> --repeat 3
 
-Times the whole acquisition from the far end: the clock starts when ModeServ
-says the source is in the new mode and stops when the engine reports
-`state: acquired`. What sits between is VideoSourceAcquisition's escalation, so
-the spread across destinations is what says which rung is being paid for.
+Times the whole acquisition from the far end: `/geometry` is sampled by a
+thread running right across the command, the clock starts at the sample where
+the departure raster was lost and stops where the engine reports
+`state: acquired` on the destination. What sits between is
+VideoSourceAcquisition's escalation, so the spread across destinations is what
+says which rung is being paid for.
+
+**ModeServ's reply is not when the timing changed.** It waits on the repaint,
+and VIDC20 has moved ~70 ms after the register write, so a clock started at the
+reply has already missed the transition -- and the engine often acquires inside
+that call. That is why the sampler starts before the command is sent.
 
 **The destination predicts the cost, not the origin**, so runs are keyed on
 where the source lands. Each is preceded by a settle in a fixed mode, which
@@ -27,6 +34,7 @@ import json
 import re
 import socket
 import statistics
+import threading
 import time
 from dataclasses import dataclass
 
@@ -150,11 +158,77 @@ def wait_for_acquired(host, deadline_s, before=None, same_mode=False,
     return None
 
 
+@dataclass
+class Transition:
+    moved: float
+    acquired: float
+    interval: float
+
+
+def analyse(samples, t_cmd, before, same_mode=False):
+    """When the source moved and when the engine was acquired on the new raster.
+
+    `samples` are (t, geometry) taken right across the command, because
+    mode_serv() blocks until the source has changed mode AND repainted: the
+    engine often acquires inside that call, so a clock started at the reply has
+    already missed the transition it meant to time.
+
+    A mode re-entered from itself has no new signature to arrive at, so
+    `same_mode` accepts lock regained on the departure raster as the arrival.
+    """
+    want = signature(before)
+    moved = done = None
+    for t, at in samples:
+        if t < t_cmd:
+            continue
+        acquired = at.get("state") == "acquired"
+        differs = signature(at) != want
+        if moved is None:
+            if acquired and not differs:
+                continue
+            moved = t
+        if acquired and (differs or same_mode):
+            done = t
+            break
+    interval = None if (moved is None or done is None) else done - moved
+    return Transition(moved, done, interval)
+
+
+def watch(host, samples, stop, interval=0.05):
+    """Poll /geometry into `samples` until `stop` is set."""
+    while not stop.is_set():
+        at = geometry(host)
+        if at:
+            samples.append((time.time(), at))
+        time.sleep(interval)
+
+
 def run_one(host, source, mode, deadline_s, same_mode=False):
     before = geometry(host)
+    samples, stop = [], threading.Event()
+    watcher = threading.Thread(target=watch, args=(host, samples, stop), daemon=True)
+    watcher.start()
+    time.sleep(0.3)
+    t_cmd = time.time()
     reply = mode_serv(source, mode)
-    took = wait_for_acquired(host, deadline_s, before, same_mode)
-    return reply, took, before
+    deadline = time.time() + deadline_s
+    while True:
+        transition = analyse(samples, t_cmd, before, same_mode)
+        if transition.acquired is not None or time.time() >= deadline:
+            break
+        time.sleep(0.05)
+    stop.set()
+    watcher.join(timeout=2)
+    return reply, transition, before
+
+
+def why_missed(tr):
+    """Which half of the transition went unseen, for a run that has no interval."""
+    if tr.moved is None:
+        return "(no move seen)"
+    if tr.acquired is None:
+        return "(never reacquired)"
+    return ""
 
 
 def main():
@@ -189,16 +263,13 @@ def main():
                 mode_serv(args.source, args.settle)
                 wait_for_acquired(args.host, args.deadline, at)
             console.drain()
-            reply, took, _ = run_one(args.host, args.source, mode,
-                                     args.deadline, same)
-            reports = [parse_sampling(x) for x in console.lines]
-            reports = [r for r in reports if r]
-            samples.append(took)
-            shown = f"{took:6.2f}s" if took is not None else "   MISS"
-            first = reports[0] if reports else None
-            print(f"  {mode:28} run {n + 1}  {shown}   "
-                  f"reply={reply.splitlines()[0] if reply else '?':22} "
-                  f"first={first}")
+            reply, tr, _ = run_one(args.host, args.source, mode,
+                                   args.deadline, same)
+            reports = [r for r in (parse_sampling(x) for x in console.lines) if r]
+            samples.append(tr.interval)
+            shown = f"{tr.interval:6.2f}s" if tr.interval is not None else "   MISS"
+            print(f"  {mode:28} run {n + 1}  {shown}  {why_missed(tr):18} "
+                  f"first={reports[0] if reports else None}")
         results[mode] = summarise(samples)
 
     print(f"\n{'destination':30} {'median':>8} {'fastest':>8} {'slowest':>8}   acquired")
