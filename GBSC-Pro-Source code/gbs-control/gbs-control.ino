@@ -1840,7 +1840,7 @@ uint8_t detectAndSwitchToActiveInput()
         delay(10);
         handleWiFi(0);
 
-        boolean stable = getStatus16SpHsStable();
+        boolean stable = Tv5725::SyncProcessor::hsyncActive();
         // printf("stable = %d \n",stable);
         if (stable) {
             currentInput = GBS::ADC_INPUT_SEL::read();
@@ -2196,7 +2196,7 @@ bool writePllAdMdChecked(uint16_t wanted)
     while ((int32_t)(millis() - deadline) < 0) {
         handleWiFi(0); // the whole point is staying reachable while we wait
         delay(10);
-        if (getStatus16SpHsStable()) {
+        if (Tv5725::SyncProcessor::hsyncActive()) {
             return true;
         }
     }
@@ -2780,7 +2780,7 @@ void doPostPresetLoadSteps()
                     optimizeSogLevel();
                     Tv5725::Interrupts::acknowledgeSogBad();
                     delay(40);
-                } else if (getStatus16SpHsStable() && getStatus16SpHsStable()) {
+                } else if (Tv5725::SyncProcessor::hsyncActive() && Tv5725::SyncProcessor::hsyncActive()) {
                     delay(1);
                     if (getVideoMode() == rto->videoStandardInput) {
                         boolean ok = 0;
@@ -2890,7 +2890,7 @@ void doPostPresetLoadSteps()
 
         if (!Tv5725::PresetLoad::scalingRgbhvInForce()) {
             unsigned long timeout = millis();
-            while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
+            while ((!Tv5725::SyncProcessor::hsyncActive()) && (millis() - timeout < 2002)) {
                 delay(4);
                 handleWiFi(0);
                 updateSpDynamic(0);
@@ -3233,35 +3233,6 @@ boolean getSyncPresent() //
 }
 
 
-// One path for both routes. Pass-through does not take the sync processor out
-// of the video path, so it keeps counting and this keeps answering: measured on
-// a passed-through source, HSACT 1 in 489 of 489 samples with
-// STATUS_SYNC_PROC_VTOTAL holding the count the mode is due in all of them.
-//
-// The pass-through branch this used to open with asked STATUS_INT_INP_NO_SYNC
-// instead, and that bit never latches -- 0 of 1486 samples across a real sync
-// loss -- so the branch could only ever return true. docs/known-issues.md
-boolean getStatus16SpHsStable()
-{
-    // Tied, because the two are read as a pair: sampled separately they can
-    // straddle a sync change and describe two different states.
-    GBS::STATUS_SYNC_PROC_HSACT::Value hsyncActive;
-    GBS::STATUS_SYNC_PROC_HSPOL::Value hsyncPolarity;
-    GBS::Tie<GBS::STATUS_SYNC_PROC_HSACT,
-             GBS::STATUS_SYNC_PROC_HSPOL>::read(hsyncActive, hsyncPolarity);
-
-    if (!hsyncActive)
-        return false;
-
-    if (rto->videoStandardInput == Tv5725::PresetLoad::NtscInt
-        || rto->videoStandardInput == Tv5725::PresetLoad::PalInt) {
-        return hsyncPolarity == 0;
-    }
-
-    return true;
-}
-
-
 void advancePhase()
 {
     Tv5725::Adc::nudgePhaseAdc();
@@ -3304,8 +3275,7 @@ void updateCoastPosition(boolean autoCoast) // Updated coastal locations
         return;
     }
 
-    if (Tv5725::SyncProcessor::acquireCoastWindow(autoCoast, getStatus16SpHsStable)) {
-    }
+    Tv5725::SyncProcessor::acquireCoastWindow(autoCoast);
 }
 
 void updateClampPosition() // Update Clamp Position
@@ -3323,8 +3293,7 @@ void updateClampPosition() // Update Clamp Position
     }
 
     if (!Tv5725::SyncProcessor::acquireClampWindow(Tv5725::SyncMeasurement::isCsync(),
-                                                   rto->inputIsYpBpR, offset,
-                                                   getStatus16SpHsStable)) {
+                                                   rto->inputIsYpBpR, offset)) {
         return;
     }
 
@@ -3506,7 +3475,7 @@ void runAutoGain() //
         greenValue = GBS::TEST_BUS_2F::read();
 
         if (greenValue == 0x7f) {
-            if (getStatus16SpHsStable() && (GBS::STATUS_00::read() == status00reg)) {
+            if (Tv5725::SyncProcessor::hsyncActive() && (GBS::STATUS_00::read() == status00reg)) {
                 limit_found++;
             } else
                 return;
@@ -3790,7 +3759,7 @@ static bool tryOtherAdcInput()
 
     unsigned long timeout = millis();
     while (millis() - timeout <= 210) {
-        if (getStatus16SpHsStable()) {
+        if (Tv5725::SyncProcessor::hsyncActive()) {
             debugPrintf("recovery: locked on the other ADC input\n");
             return true;
         }

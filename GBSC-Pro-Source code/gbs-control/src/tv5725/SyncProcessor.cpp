@@ -197,12 +197,17 @@ void SyncProcessor::applyForSyncType(bool csync)
     }
 }
 
+bool SyncProcessor::hsyncActive()
+{
+    return GBS::STATUS_SYNC_PROC_HSACT::read() == 1;
+}
+
 namespace {
 
 // The line length HPERIOD_IF reports, in 27 MHz counts, or 0 when the readings
 // will not agree. The register holds a quarter of the count less one, so the
 // mean is scaled back up rather than the samples.
-uint32_t measuredLineLength(bool (*stable)())
+uint32_t measuredLineLength()
 {
     uint32_t accumulated = 0;
     uint16_t previous = GBS::HPERIOD_IF::read();
@@ -211,7 +216,7 @@ uint32_t measuredLineLength(bool (*stable)())
         if (sample <= previous - SyncProcessor::CoastAgreement
             || sample >= previous + SyncProcessor::CoastAgreement)
             return 0;
-        if (stable != nullptr && !stable())
+        if (!SyncProcessor::hsyncActive())
             return 0;
         accumulated += sample;
         previous = sample;
@@ -239,7 +244,7 @@ namespace {
 // The line the clamp is placed on, or 0 when the readings will not agree.
 // Unlike the coast window's this is a mean of the samples as read, because the
 // fractions below were fitted to each path's own units.
-uint32_t clampLineLength(bool csync, bool (*stable)())
+uint32_t clampLineLength(bool csync)
 {
     uint32_t accumulated = 0;
     uint16_t previous = csync ? GBS::HPERIOD_IF::read()
@@ -250,7 +255,7 @@ uint32_t clampLineLength(bool csync, bool (*stable)())
         if (sample <= previous - SyncProcessor::CoastAgreement
             || sample >= previous + SyncProcessor::CoastAgreement)
             return 0;
-        if (stable != nullptr && !stable())
+        if (!SyncProcessor::hsyncActive())
             return 0;
         accumulated += sample;
         previous = sample;
@@ -280,9 +285,9 @@ const uint32_t ClampLineCeiling = 4095;
 }  // namespace
 
 bool SyncProcessor::acquireClampWindow(bool csync, bool component,
-                                       uint16_t offset, bool (*stable)())
+                                       uint16_t offset)
 {
-    const uint32_t lineLength = clampLineLength(csync, stable);
+    const uint32_t lineLength = clampLineLength(csync);
     if (lineLength == 0 || lineLength > ClampLineCeiling)
         return false;
 
@@ -310,9 +315,9 @@ bool SyncProcessor::acquireClampWindow(bool csync, bool component,
     return true;
 }
 
-bool SyncProcessor::acquireCoastWindow(bool autoCoast, bool (*stable)())
+bool SyncProcessor::acquireCoastWindow(bool autoCoast)
 {
-    uint32_t lineLength = measuredLineLength(stable);
+    uint32_t lineLength = measuredLineLength();
     if (lineLength == 0)
         return false;
 

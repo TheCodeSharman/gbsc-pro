@@ -323,6 +323,16 @@ public:
     static const uint8_t CoastSamples = 8;
     static const uint16_t CoastAgreement = 3;
 
+    // Whether the block is counting a horizontal sync. One register bit, and
+    // the only question a window placement asks between readings: a window
+    // placed across a source that stopped mid-run is placed on two lines.
+    //
+    // The polarity bit beside it is NOT part of the answer. It says which way
+    // the source's pulse goes, which no measurement here depends on, and the
+    // term that once read it was gated on the standard byte.
+    // docs/video-source-acquisition.md
+    static bool hsyncActive();
+
     // Place that window on the line the source is actually sending, measured
     // from HPERIOD_IF against the chip's own 27 MHz. `autoCoast` brackets the
     // sync tip instead of spanning the line, which is what a source with its
@@ -332,11 +342,7 @@ public:
     // an error: the readings have to hold still across the run, and HPERIOD_IF
     // rails on the scaling path with a perfect picture.
     // docs/investigations/hperiod-if-railing.md
-    //
-    // `stable` is the sketch's sync-processor stability check, which this block
-    // cannot reach. It is asked after every reading, because a window placed
-    // across a source that moved mid-run is placed on two different lines.
-    static bool acquireCoastWindow(bool autoCoast, bool (*stable)());
+    static bool acquireCoastWindow(bool autoCoast);
 
     // Whether each window has been placed for the source in force. State rather
     // than a register: nothing on the chip distinguishes a window measured for
@@ -412,8 +418,7 @@ public:
     // A window already within a unit of where it belongs is left alone: this
     // runs on a schedule, and the write would cost the bus a pass for nothing.
     // False means nothing was written.
-    static bool acquireClampWindow(bool csync, bool component, uint16_t offset,
-                                   bool (*stable)());
+    static bool acquireClampWindow(bool csync, bool component, uint16_t offset);
 
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as

@@ -292,17 +292,12 @@ TEST_CASE("toggling the H counter's overflow protection flips it and flips back"
 // from the source's own line length. HPERIOD_IF counts against the chip's 27 MHz
 // and the window is placed as a fraction of it.
 
-static bool g_stable = true;
-static unsigned g_stableCalls = 0;
-static bool stableStub() { ++g_stableCalls; return g_stable; }
-
-// A source holding a 15625 Hz line still. HPERIOD_IF 431 is what that mode reads
-// when the register is behaving.
+// A source holding a 15625 Hz line still, with the sync processor counting it.
+// HPERIOD_IF 431 is what that mode reads when the register is behaving.
 static void steadyLine(uint16_t hperiod)
 {
     Wire.reset();
-    g_stable = true;
-    g_stableCalls = 0;
+    GBS::STATUS_SYNC_PROC_HSACT::write(1);
     GBS::HPERIOD_IF::write(hperiod);
 }
 
@@ -310,7 +305,7 @@ TEST_CASE("the coast window is placed as a fraction of the source's own line")
 {
     steadyLine(431);
 
-    CHECK(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK(SyncProcessor::acquireCoastWindow(false));
     CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 1668);
     CHECK(SyncProcessor::SP_HCST_AUTO_EN::read() == 0);
@@ -320,7 +315,7 @@ TEST_CASE("the automatic window brackets the sync rather than spanning the line"
 {
     steadyLine(431);
 
-    CHECK(SyncProcessor::acquireCoastWindow(true, stableStub));
+    CHECK(SyncProcessor::acquireCoastWindow(true));
     CHECK(SyncProcessor::SP_H_CST_ST::read() == 96);
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 267);
     CHECK(SyncProcessor::SP_HCST_AUTO_EN::read() == 1);
@@ -334,7 +329,7 @@ TEST_CASE("a line length that will not hold still leaves the window alone")
     steadyLine(431);
     Wire.drift(0x00, 0x07);
 
-    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false));
     CHECK_FALSE(Wire.touched[0x05][0x4D]);
     CHECK_FALSE(Wire.touched[0x05][0x4F]);
 }
@@ -342,9 +337,9 @@ TEST_CASE("a line length that will not hold still leaves the window alone")
 TEST_CASE("an unstable sync processor leaves the window alone")
 {
     steadyLine(431);
-    g_stable = false;
+    GBS::STATUS_SYNC_PROC_HSACT::write(0);
 
-    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false));
     CHECK_FALSE(Wire.touched[0x05][0x4D]);
     CHECK_FALSE(Wire.touched[0x05][0x4F]);
 }
@@ -357,7 +352,7 @@ TEST_CASE("a line too short to place a window in writes nothing")
     steadyLine(4);
     GBS::STATUS_SYNC_PROC_VTOTAL::write(400);
 
-    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false));
     CHECK_FALSE(Wire.touched[0x05][0x4D]);
 }
 
@@ -369,7 +364,7 @@ TEST_CASE("a collapsed line under a countable source is treated as a long one")
     steadyLine(4);
     GBS::STATUS_SYNC_PROC_VTOTAL::write(311);
 
-    CHECK(SyncProcessor::acquireCoastWindow(false, stableStub));
+    CHECK(SyncProcessor::acquireCoastWindow(false));
     CHECK(SyncProcessor::SP_H_CST_SP::read() == 1936);
 }
 
@@ -384,7 +379,7 @@ TEST_CASE("the clamp sits in the back porch of a separate-sync line")
     steadyLine(431);
     GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
 
-    CHECK(SyncProcessor::acquireClampWindow(false, false, 0, stableStub));
+    CHECK(SyncProcessor::acquireClampWindow(false, false, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 23);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 132);
 }
@@ -395,7 +390,7 @@ TEST_CASE("a composite source is measured in its own units")
     // the same window is a different fraction of a different number.
     steadyLine(431);
 
-    CHECK(SyncProcessor::acquireClampWindow(true, false, 0, stableStub));
+    CHECK(SyncProcessor::acquireClampWindow(true, false, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 14);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 76);
 }
@@ -405,7 +400,7 @@ TEST_CASE("a component source clamps later, and stops where the others do")
     steadyLine(431);
     GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
 
-    CHECK(SyncProcessor::acquireClampWindow(false, true, 0, stableStub));
+    CHECK(SyncProcessor::acquireClampWindow(false, true, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 73);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 132);
 }
@@ -415,7 +410,7 @@ TEST_CASE("an offset moves the whole window later")
     steadyLine(431);
     GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
 
-    CHECK(SyncProcessor::acquireClampWindow(false, true, 0x60, stableStub));
+    CHECK(SyncProcessor::acquireClampWindow(false, true, 0x60));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 73 + 0x60);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 132 + 0x60);
 }
@@ -429,7 +424,7 @@ TEST_CASE("a window already within a unit of where it belongs is not rewritten")
     SyncProcessor::SP_CS_CLP_ST::write(24);
     SyncProcessor::SP_CS_CLP_SP::write(133);
 
-    CHECK(SyncProcessor::acquireClampWindow(false, false, 0, stableStub));
+    CHECK(SyncProcessor::acquireClampWindow(false, false, 0));
     CHECK(SyncProcessor::SP_CS_CLP_ST::read() == 24);
     CHECK(SyncProcessor::SP_CS_CLP_SP::read() == 133);
 }
@@ -440,7 +435,7 @@ TEST_CASE("a line length that will not hold still leaves the clamp alone")
     GBS::STATUS_SYNC_PROC_HTOTAL::write(2250);
     Wire.drift(0x00, 0x18);
 
-    CHECK_FALSE(SyncProcessor::acquireClampWindow(false, false, 0, stableStub));
+    CHECK_FALSE(SyncProcessor::acquireClampWindow(false, false, 0));
     CHECK_FALSE(Wire.touched[0x05][0x41]);
     CHECK_FALSE(Wire.touched[0x05][0x43]);
 }
@@ -617,7 +612,7 @@ TEST_CASE("placing the coast window records that it is placed")
     SyncProcessor::forgetPositions();
     REQUIRE_FALSE(SyncProcessor::coastPlaced());
 
-    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::acquireCoastWindow(false));
 
     CHECK(SyncProcessor::coastPlaced());
 }
@@ -625,10 +620,10 @@ TEST_CASE("placing the coast window records that it is placed")
 TEST_CASE("a window that could not be measured is not recorded as placed")
 {
     steadyLine(431);
-    g_stable = false;
+    GBS::STATUS_SYNC_PROC_HSACT::write(0);
     SyncProcessor::forgetPositions();
 
-    REQUIRE_FALSE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE_FALSE(SyncProcessor::acquireCoastWindow(false));
 
     CHECK_FALSE(SyncProcessor::coastPlaced());
 }
@@ -637,7 +632,7 @@ TEST_CASE("a new source forgets both windows")
 {
     steadyLine(431);
     SyncProcessor::forgetPositions();
-    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::acquireCoastWindow(false));
     REQUIRE(SyncProcessor::coastPlaced());
 
     SyncProcessor::forgetPositions();
@@ -716,7 +711,7 @@ TEST_CASE("the search forgets where the windows were placed")
 {
     steadyLine(431);
     SyncProcessor::forgetPositions();
-    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::acquireCoastWindow(false));
     REQUIRE(SyncProcessor::coastPlaced());
 
     SyncProcessor::applyForSearch(false);
@@ -753,7 +748,7 @@ TEST_CASE("a scaling RGBHV source is a new source, so neither window is placed")
 {
     steadyLine(431);
     SyncProcessor::forgetPositions();
-    REQUIRE(SyncProcessor::acquireCoastWindow(false, stableStub));
+    REQUIRE(SyncProcessor::acquireCoastWindow(false));
     REQUIRE(SyncProcessor::coastPlaced());
 
     SyncProcessor::applyForScalingRgbhv(false);
@@ -942,4 +937,32 @@ TEST_CASE("a separate-sync source's coast inversion is not touched")
     SyncProcessor::Dynamic source = settled();
 
     CHECK_FALSE(dynamicWrites<SyncProcessor::SP_COAST_INV_REG>(source));
+}
+
+// Whether the block is counting a horizontal sync. Its one register bit, and
+// nothing else: the polarity beside it says which way the pulse goes, which is
+// a property of the source rather than of whether it is being counted.
+
+TEST_CASE("an active horizontal sync is reported however the pulse goes")
+{
+    Wire.reset();
+    GBS::STATUS_SYNC_PROC_HSACT::write(1);
+
+    GBS::STATUS_SYNC_PROC_HSPOL::write(0);
+    CHECK(SyncProcessor::hsyncActive());
+
+    GBS::STATUS_SYNC_PROC_HSPOL::write(1);
+    CHECK(SyncProcessor::hsyncActive());
+}
+
+TEST_CASE("no horizontal sync is reported however the pulse goes")
+{
+    Wire.reset();
+    GBS::STATUS_SYNC_PROC_HSACT::write(0);
+
+    GBS::STATUS_SYNC_PROC_HSPOL::write(0);
+    CHECK_FALSE(SyncProcessor::hsyncActive());
+
+    GBS::STATUS_SYNC_PROC_HSPOL::write(1);
+    CHECK_FALSE(SyncProcessor::hsyncActive());
 }
