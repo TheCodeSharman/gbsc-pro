@@ -2,7 +2,8 @@
 
 Goal: `runSyncWatcher()` and `rto->videoStandardInput` are both deleted, and the
 responsibility they share -- keep video coming, and know what is coming -- has
-one owner instead of none.
+one owner instead of none. **The byte is gone**; the watcher is down to its
+last three acts.
 
 **`VideoSourceAcquisition`** sits ABOVE `Tv5725::`. It owns the tick, coordinates the
 measurement and decides. `Tv5725::SourceMeasurement` reads the source for it and
@@ -343,7 +344,7 @@ time, as the step that claims each group lands:
 | group | goes to |
 |---|---|
 | `notRecognizedCounter`, `sourceDisconnected`, `syncWatcherEnabled`, `isValidForScalingRGBHV`, `HdmiHoldDetection` | `VideoSourceAcquisition`. The counters it replaces -- `noSyncCounter`, `continousStableCounter`, `failRetryAttempts` -- are gone |
-| `videoStandardInput`, `osr`, `presetID`, `applyPresetDoneStage` | the value handed to `VideoPath`. `presetDisplayClock`, `presetVlineShift` and `presetIsPalForce60` are gone |
+| `osr`, `presetID`, `applyPresetDoneStage` | the value handed to `VideoPath`. `videoStandardInput`, `presetDisplayClock`, `presetVlineShift` and `presetIsPalForce60` are gone |
 | `phaseIsSet` | `Adc`, which holds both phases; `phaseSP` and `phaseADC` are gone |
 | `deinterlaceAutoEnabled` | `Deinterlacer`, which holds the motion-adaptive state |
 | `medResLineCount` | **gone.** `ModeDetect::init()` owns the threshold, at the 51 that was in force |
@@ -435,10 +436,10 @@ the loop -- the ladder's and detection's. That is how `noSyncCounter` and
 a slower cadence than detection is a bench question, and asking it at all
 requires one owner of the tick.
 
-## Why the classification goes
+## Why the classification went
 
 gbs-control was written for retro consoles, where the source is one of a short
-list of known standards, and `videoStandardInput` is that list. A machine that
+list of known standards, and `videoStandardInput` was that list. A machine that
 programs arbitrary modes -- a RISC PC does, over a monitor definition -- does not
 fit it, and the failures show up as a source filed under a standard whose branch
 configures the chip for something else. The chip's own Mode Detect block is no
@@ -521,7 +522,7 @@ So the input half needs a home BEFORE the byte can stop carrying 14.
 |---|---|---|
 | `== 0` / `> 0`, is there a signal | ~11 | a VALIDATED measurement -- see the warning below |
 | `== rto->videoStandardInput`, has it moved | 2 | `VideoPath::sourceMoved()`, which holds the solved count and rate |
-| the held-standard fallback | 1, was 3 | `standardForPresetLoad()` |
+| the held-standard fallback | was 3 | nothing: no caller names a standard to load |
 | selects a preset | 3 | `SourceKey` and `OutputChoice` |
 | a label to print | 5 | the measured pair |
 
@@ -891,19 +892,10 @@ Landed so far:
   for. What that changes is measured harmless on both bench inputs, and the
   threshold question it raises is below
 
-**The count is not the progress**, because what lands is structural. The
-references leave in two blocks, at steps 10 and 12: the byte is deleted LATE,
-once the RGBHV block has moved and nothing reads it, rather than being unpicked
-reference by reference from inside a function that is going anyway. What is left
-of it is the predicates that hold and compare it -- `heldStandard()`,
-`holdStandard()` -- plus
-`optimizePhaseSP()`, `doPostPresetLoadSteps()`, `getVideoMode()`,
-`getStatus16SpHsStable()` and `enterHdBypass()`. What is left of `getVideoMode()`
-itself is `applyPresets()`/`doPostPresetLoadSteps()`, `standardForPresetLoad()`,
-`printInfo()` and one serial command -- the first two die with those functions,
-and the rest read it as a display rather than to choose a register value. **No
-gate is left**: `updateClampPosition()` was the last one, and it asks the
-acquisition layer instead.
+**The count was not the progress**, because what landed is structural. The
+references left in two blocks, at steps 10 and 12: the byte was deleted LATE,
+once the RGBHV block had moved and nothing read it, rather than being unpicked
+reference by reference from inside a function that was going anyway.
 
 **Steps 1 to 9 and 11 have landed, and with them every bounded ownership
 move.** `SyncOnGreen` owns the separator level and its acquisition,
@@ -1202,11 +1194,10 @@ on from where it started. Preserved rather than repaired, and the test says so:
 a failed search leaving the phase somewhere nobody chose wants a bench reading
 behind the fix, not a move.
 
-What the sketch keeps is not leftover. The divider-latched gate stays in front
-of the call, so `Adc` needs no `SourceMeasurement`; and
-`videoStandardInput >= 5 && <= 7 && osr == 2` stays, because the ratio cannot
-separate that case from a progressive source and what it wants is the line rate.
-That one leaves with its branch at step 10.
+What the sketch keeps is not leftover: the divider-latched gate stays in front
+of the call, so `Adc` needs no `SourceMeasurement`. The half-sample nudge for
+`videoStandardInput >= 5 && <= 7 && osr == 2` is deleted -- one rule at every
+exit of the search, because the ADC's phase is not what the sweep scores.
 
 **7. `VideoSourceAcquisition`, and the escalation list it holds.** The ordered set of
 named recoveries has replaced `% 27`, `% 32`, `== 38`, `% 150` and `% 413`;
@@ -1319,7 +1310,7 @@ and release, the scanlines and the re-lock in flight. The two acts outside
 already do unguarded. One report, one response.
 
 **10. The RGBHV block**, to `PresetLoad` and `OutputChoice`, with the preset load
-becoming an injected action. The largest single piece, and the one that carries
+becoming an injected action. The largest single piece, and the one that carried
 most of the standard byte.
 
 **THE RASTER A SOURCE IS RUNNING HAS TO BE ESTABLISHED BY THE MEASUREMENT, NOT
@@ -1358,21 +1349,47 @@ the picture's left edge sits at photo column 93, 93, 93, 92, which is the
 camera's own spread. So the load's one value for every source stands and the 16
 is not a behaviour that went missing.
 
-What is left is the standard byte's round trip through `applyPresets()`, which is
-step 12's.
+The standard byte's round trip through `applyPresets()` went with step 12.
 
-**AND THE HD ARMS ARE GONE.** `HdBypass::applyForStandard()` dispatched 5, 6 and
-7 into `applyHd()`, which froze a divider, a crossover row, a clock tap, a
-decimator pair, a raster and both sync windows per published mode -- the
-computed path's job with constants substituted for the derivation. The constants
-could not be right: `applyHd(5)` wrote `PLLAD_MD` 2474 where `dividerFor()` caps
-at `MaxChannelLine - RasterGuardSamples` = 2039 and the channel counter caps
+**AND THE ARMS ARE ALL GONE.** `HdBypass::applyForSource()` is the whole of the
+entry: the sampling group from the divider and rate the engine holds, the SD
+vertical sync position, and the channel's vertical blanking from the raster the
+measurement matched.
+
+`applyHd()` froze a divider, a crossover row, a clock tap, a decimator pair, a
+raster and both sync windows per published mode -- the computed path's job with
+constants substituted for the derivation. The constants could not be right:
+`applyHd(5)` wrote `PLLAD_MD` 2474 where `dividerFor()` caps at
+`MaxChannelLine - RasterGuardSamples` = 2039 and the channel counter caps
 `HD_HSYNC_RST` at 2047, so the line was always past what the channel can play
 out. `investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`.
 
-**Deleted by inspection, not by measurement.** The bench has no 720p, 1080i or
-1080p component source -- the Wii tops out at 480p -- so the three arms are
-unreachable here and the argument is the arithmetic rather than an A/B.
+**`applySd()` COULD NOT BE ENTERED.** Every route onto the channel is gated on
+`rateCanBypass()` at 26000 Hz and interlaced SD runs 15.6 kHz -- the same
+disjointness `test_source_measurement.cpp` asserts for the retired vsync steer.
+It also narrowed the analog corner to 40 MHz and inverted three sync polarities
+and Mode Detect's two, with nothing putting them back for the source after it.
+
+**`applyProgressive()` DIFFERED IN TWO PAIRS.** The channel's own vsync pulse
+was 6/0 against the computed path's 2/7 -- both five or six lines within ten of
+the frame's start, which is the argument that retired the HD arms' pulses -- and
+it named `SP_SDCS_VSST`/`VSSP` per standard, 520/522 for 480p and 48/46 for
+576p, where 48 lands in active video rather than the vertical interval.
+
+**`applyComponent()` WAS SECOND OWNERS THROUGHOUT.** It wrote `SP_PRE_COAST` and
+`SP_POST_COAST` 4/4 over what `applyForSyncType()` had established a few lines
+earlier, and `SP_DLT_REG` 0x70 over `applyPulseWidthDifference()`'s. It held the
+sync type csync AFTER the sync processor had been configured from the held
+answer, and it called the RGB patches on a COMPONENT source, undoing the YUV
+patches the bypass entry had just applied. Its sampling was `PLLAD_MD` 512 with
+the crossover row picked off the line count, in place of the derivation.
+
+**The HD arms went by inspection, the rest by measurement.** The bench has no
+720p, 1080i or 1080p component source -- the Wii tops out at 480p -- so those
+three are unreachable here and the argument is the arithmetic. The progressive
+arm was A/B'd on the Wii at 480p in pass-through: every other register identical
+either side, `HD_VS_ST`/`SP` 6/0 to 2/7 and `SP_SDCS_VSST`/`VSSP` 520/522 to
+14/11, picture clean and full screen both ways.
 
 Two things the arms wrote that the computed path did not are replaced rather
 than dropped. `HD_VS_ST`/`HD_VS_SP` is one pair of constants beside
@@ -1591,10 +1608,8 @@ the thresholds came from is unrecorded.
 
 What is still split:
 
-| split | today | belongs to |
-|---|---|---|
-| the source's classification | `videoStandardInput` 14 | the measured source |
-| the path choice | `applyForStandard()` branching on the standard byte | the measured source |
+Nothing is split any more: the classification and the path choice were both the
+standard byte, and `HdBypass::applyForSource()` is one path for every source.
 
 The two entry points have merged: `VideoPath::setOutputMode()` is the one call,
 and `setOutModeHdBypass()` and `bypassModeSwitch_RGBHV()` are gone.
@@ -1605,17 +1620,13 @@ route rather than a change of route.
 
 **WHICH ROUTE CARRIES THE VIDEO HAS ONE OWNER.** `Tv5725::VideoRoute` holds it
 and `Tv5725::Chip`'s three route methods record what they have just written, so
-the held value and `s0_4b` cannot disagree. What the standard byte still carries
-of this is the SOURCE half -- 14 says an RGBHV source, and whether it is scaled
-is `rto->isValidForScalingRGBHV` beside the route. 15 no longer reaches the
-byte.
+the held value and `s0_4b` cannot disagree. Which SOURCE is on it is
+`VideoSourceSelection::isRgbhv(Info)`, the connector.
 
-**And the path choice can go entirely, because one route serves both.** The HD
-bypass channel carries an arbitrary RGBHV source -- measured, RISC PC on `vga`
-at 800x600@60 -- once its raster is derived from the divider the engine holds
-rather than frozen per standard. Entering that route on such a source today
-gives no signal, because `applyForStandard()` has no arm for 14 or 15 and the
-block keeps `enable()`'s resting timing.
+**The path choice went entirely, because one route serves both.** The HD bypass
+channel carries an arbitrary RGBHV source -- measured, RISC PC on `vga` at
+800x600@60 -- with its raster derived from the divider the engine holds rather
+than frozen per standard.
 `docs/investigations/one-bypass-route-carries-rgbhv.md`.
 
 That makes `ADC2DAC` the one to retire rather than the one to generalise: the HD
@@ -1705,7 +1716,6 @@ Of its 53 lines most are already `Tv5725::` calls. Four clusters pin it:
 
 | blocker | where | clears with |
 |---|---|---|
-| `rto->videoStandardInput` | `applyForStandard()`, `optimizePhaseSP()` | step 12 |
 | `FrameSync::cleanup()`, `externalClockGenResetClock()` | the display clock and the Si5351 | step 11 |
 | `adco->r/g/b`, `uopt->enableAutoGain`, `uopt->wantOutputComponent` | `applyStoredAdcGain()`, `applyRGBPatches()` | ADC gain ownership |
 | `rto->boardHasPower`, `autoBestHtotalEnabled`, `presetID` | guards and flags | with their branches |
@@ -1736,202 +1746,103 @@ the test bus and counts pulse ticks with FrameSync, which the engine has no
 route to. So the sketch measures and the class decides, and the measurement
 lands wherever FrameSync does.
 
-**12. Delete `getVideoMode()` and `videoStandardInput`**, which by then have
-no readers. *What the byte conflates* above has what each of its fifteen values
-carried and what replaced it.
+**12. Delete `getVideoMode()` and `videoStandardInput`.** *(Landed.)* With them
+go `heldStandard()`, `holdStandard()`, `standardForPresetLoad()`,
+`rto->notRecognizedCounter` and `applyPresets()`'s argument. Nothing holds a
+standard.
 
-**VALUE 14 IS THE INPUT SELECTION, AND THAT IS MEASURED.** The byte reaches 14
-in exactly one place -- `detectAndSwitchToActiveInput()`, gated on
-`currentInput == 1 && (SeleInputSource == S_VGA || SeleInputSource == S_RGBs)`
--- and everything after is circular, because `getVideoMode()` returns
-`heldStandard()` once `sourceIsRgbhv()` is true. Bench: `vga` reports `m:15`,
-the Wii on `ypbpr` reports `m:3`.
+**THE UNIT OF REMOVAL WAS THE VALUE, NOT THE FIELD.** A change that moved one
+value to another -- 3 to 14, say -- would have entrenched the byte rather than
+retiring it, because every reference to every value has to go. What each value
+decided, and what decides it now:
 
-**`S_RGBs` COVERS RGsB TOO, so that gate omits nothing.** `SeleInputSource` is
-the legacy three-value encoding -- `S_RGBs` 1, `S_VGA` 2, `S_YUV` 3 -- and
-`VideoSourceSelection`'s table gives `Rgbs` and `RgsB` the same `legacySource`
-of 1. All three connector-sharing inputs are in. Reading the constant as naming
-only the RGBs input makes it look like a bug and it is not.
+| value | meant | decided by |
+|---|---|---|
+| 0 | nothing recognised | `SyncProcessor::hsyncActive()`, and the engine's run at the gates |
+| 1, 2 | interlaced SD | nothing: the channel's floor excludes 15.6 kHz, and the scan mode is derived |
+| 3, 4 | progressive SD | nothing: the two pairs that differed collapsed into the computed path |
+| 5, 6, 7 | HD | nothing: the three frozen arms, `optimizePhaseSP()`'s half-sample and the sub-coast gate are all gone |
+| 8, 9 | medium resolution, and unrecognised but steady | `Adc::postDividerFor()` off the clock the divider and measured rate make |
+| 13 | YPbPr passed through | `VideoRoute::isHdBypassChannel()` for the route, `Adc::inputIsComponent()` for the colour path |
+| 14 | an RGBHV source | `VideoSourceSelection::isRgbhv(Info)` -- the connector, known before any detection pass |
+| 15 | pass RGBHV through | `VideoSourceAcquisition::passSourceThrough()`, from the measurement |
 
-`Info` is the full six-value `VideoSourceSelection::Id`, with a static_assert
-chain proving the two spellings agree, so the selection can answer this without
-the byte.
+**THE TWO PREDICATES WERE NOT IDENTICAL, which is what made 14 more than a
+rename.** The byte said an RGBHV source had been DETECTED; the selection says
+one is SELECTED, and on a freshly chosen input with no sync they differ.
+`rgbhvBypass()` is where that bites, since `RgbhvOutput::isScaling()` starts
+false. Every reader was taken with what it actually wanted: the engine's own
+answer sits beside the term at `updateCoastPosition()`, `applyPresets()` and
+`loop()`'s coast gate and says the same thing before detection;
+`prepareSyncProcessor()` runs after the output has been chosen; and
+`optimizeSogLevel()`'s gate is deleted, because `SyncOnGreen::acquire()` already
+refuses a separator that is not in the sync path.
 
-**THE SUBSTITUTION HAS LANDED.** `sourceIsRgbhv()` is
-`VideoSourceSelection::isRgbhv(Info)` -- `sharesPort(id, Vga)`, named for the
-connector rather than the sync type, because composite sync and sync-on-green on
-those pins are in it.
+**`getStatus16SpHsStable()` IS `SyncProcessor::hsyncActive()`, one register
+bit.** Its pass-through branch answered `STATUS_INT_INP_NO_SYNC`, which does not
+latch on this board -- 0 of 1486 samples across a real sync loss, with
+`INT_ENABLE4` reading 1 and the neighbouring bits latching freely in the same
+window -- so it returned true whatever the source did. `STATUS_16` answers on
+both routes instead: pass-through does not take the sync processor out of the
+video path, and on a passed-through source `HSACT` reads 1 in 489 of 489 samples
+with `STATUS_SYNC_PROC_VTOTAL` holding the count the mode is due in all of them.
 
-**The two predicates are not identical, which is what made it more than a
-rename.** The byte said an RGBHV source had been DETECTED; the selection says one
-is SELECTED, and on a freshly chosen input with no sync they differ.
-`rgbhvBypass()` is where that bit, since `RgbhvOutput::isScaling()` starts false,
-so the substitution makes it true before detection. Each reader was taken with
-what it actually wanted:
+Its other term required `STATUS_SYNC_PROC_HSPOL` clear where the byte held
+`NtscInt` or `PalInt`. **The obvious substitution is refuted**: those are Mode
+Detect's 50/60 Hz interlaced buckets, which a 15 kHz progressive source lands in
+too, so the term reads like `sourceLowLineRate()` spelled in the byte and is
+not. Measured on the bench RiscPC at 320x256@50, `HSPOL` is 1 in 6 of 6 samples
+while the source is acquired and the picture clean, so keyed on the measured
+rate the function would report never stable on the everyday bench source. What
+the term withheld on any source that could reach it is nothing: every source in
+those buckets sends a negative-going hsync.
 
-| reader | why it is safe |
-|---|---|
-| `updateCoastPosition()`, `applyPresets()`, `loop()`'s coast gate | the engine's own answer sits beside the term and says the same thing before detection -- `sourceIsSearching()` is true and `sourceIsPresent()` false until a source is counted, so no condition turns on the RGBHV term alone |
-| `prepareSyncProcessor()` | runs from a preset load, after the output has been chosen |
-| `optimizeSogLevel()` | gate deleted -- `SyncOnGreen::acquire()` already refuses a separator that is not in the sync path |
-| `getStatus16SpHsStable()` | branch deleted -- see below |
+**A PRESET LOAD SETTLES ONCE.** The SD branch spun up to four times waiting for
+`getVideoMode()` to agree with the byte and for `getSourceFieldRate()` to land
+inside a window named per standard. It ran at the end of a load that has already
+told the engine the source is about to change mode, so nothing measurable about
+the source is true yet and the acquisition layer is what waits for it. A second
+wait below it asked `getVideoMode()` to name something within 1505 ms of the
+same start as the horizontal-sync wait above it, which on an RGBHV source is
+that line re-asked.
 
-**`getStatus16SpHsStable()`'s pass-through branch could not fail, and the route
-was NOT the replacement.** It answered on `STATUS_INT_INP_NO_SYNC`, and that bit
-does not latch on this board: **0 of 1486 samples** across a real sync loss with
-the source passed through, `INT_ENABLE4` reading 1, neither acknowledge site
-running, and the neighbouring bits latching freely in the same window --
-`s0_0F` takes 168, 160, 136 and 128, none of them bit 4. So it returned true
-whatever the source did, inside `detectAndSwitchToActiveInput()`'s own 450 ms
-search. `VideoRoute::isHdBypassChannel()` would have moved every component source
-in pass-through onto that.
+**`applyPresets()` TAKES NO ARGUMENT.** Four decisions were keyed on it. The
+sync-type probe ran where the byte arrived as 14 and was skipped where it
+arrived as 15 -- the same source with a different output chosen for it -- so a
+source passed through never had its sync type established there. The three soft
+resets were withheld for 5, 6, 7, 13 and 15, which are exactly the values that
+used to be routed to the channel from there, and a block left held shows nothing
+whatever the preset writes. The 0 branch is "no horizontal sync". And the load
+sat behind a dispatch on eleven of the fifteen values, which after the other two
+folds covered everything that could reach it.
 
-The branch is deleted instead, because `STATUS_16` answers on both routes:
-pass-through does not take the sync processor out of the video path, and on a
-passed-through source `HSACT` reads 1 in **489 of 489** samples with
-`STATUS_SYNC_PROC_VTOTAL` holding the count the mode is due in all of them.
+What `holdStandard()` did beside writing the byte was steer
+`Tv5725::RgbhvOutput`, so its call sites take `chooseBypass()` or
+`chooseScaling()` directly.
 
-Agreement measured where both say stable is not evidence -- 2190 samples on the
-Wii across both routes and the switch have `HSACT` 1 in every one and bit 4 set
-in none -- which is why the sync loss had to be provoked.
+**THE REGISTER-WRITE TRACE WENT WITH IT.** `/trace/standard` forced a standard
+so a per-standard branch could be diffed on a bench with no source for it, and
+there are no per-standard branches left. `docs/testing.md` keeps what the
+facility learnt that is true of any trace comparison.
 
-**`getStatus16SpHsStable()`'S SD TERM IS NOT THE LINE RATE, AND THE OBVIOUS
-SUBSTITUTION IS REFUTED.** It requires `STATUS_SYNC_PROC_HSPOL` clear as well as
-`HSACT` set where the byte holds `NtscInt` or `PalInt`, and those are Mode
-Detect's 50/60 Hz interlaced buckets -- which a 15 kHz progressive source lands
-in too, so the term reads like `sourceLowLineRate()` spelled in the byte. It is
-not. Measured on the bench RiscPC at 320x256@50, a 15 kHz separate-sync RGBHV
-source: `HSPOL` is **1 in 6 of 6 samples** while the source is acquired and the
-picture clean. The byte holds 14 there, so the polarity term does not apply
-today; keyed on the measured rate it would, and the function would report never
-stable on the everyday bench source. Whatever that term is asking about, it is
-not how fast the line is.
+**`Tv5725::PresetLoad` DID NOT SURVIVE AS A CONCEPT**, only as one flag. Keeping
+it with a byte-free signature would have preserved the idea that a load is
+chosen by classifying the source, which is the thing being retired. What is left
+is `scalingRgbhvInForce()` and its two setters -- engine mode state that belongs
+to `VideoPath`, and **not** `RgbhvOutput::isScaling()`, which says what the
+source is entitled to where this says what the last load enabled; the
+bypass-refused path sets them opposite. The 280/380 line buckets, the count a
+preset was chosen for and the instance half went earlier, none of them load
+bearing.
 
-**THE UNIT OF REMOVAL IS THE VALUE, NOT THE FIELD.** Deleting the field means
-deleting every reference to every value it ever held, so a change that moves one
-value to another -- 3 to 14, say, to close the window
-`docs/investigations/two-spellings-of-scaling-rgbhv.md` describes -- entrenches
-the byte rather than retiring it, and is undone by this step. What each value
-costs, measured against the tree:
-
-| value | means | sites | goes when |
-|---|---|---|---|
-| 0 | nothing recognised | 6, every one a write | **done** -- `standardIsHeld()` is deleted and each of its ten gates reads the engine's run instead; what is left compares the byte to fill it in |
-| 1, 2 | interlaced SD, NTSC-like and PAL-like | 5 | **done** -- `SourceStandard::applySd()` is deleted, every field it wrote derived instead |
-| 3, 4 | progressive SD, 480p and 576p | 5 | with it |
-| 5, 6, 7 | HD, reached through the HD bypass switch | 2 | **done** -- the bypass entry points have merged, these load the computed preset and the measurement moves the route, and `HdBypass`'s three arms for them are deleted; what is left is `optimizePhaseSP()`'s oversampling gate and one coast branch |
-| 8 | medium resolution | 1, `getVideoMode()`'s own `return` | **done** -- the two searches that walked `MD_HD1250P_CNTRL` to reach it are deleted; the value reaches `applyPresets()` beside 1, 3 and 9 and loads the computed preset |
-| 9 | stable but unrecognised -- `notRecognizedCounter` reaching 255 | 5, one its own `return` in `getVideoMode()` | `SourceStandard` is deleted; its arm already measures |
-| 13 | the YPbPr arm of that dispatch | 3 | **done** as an oracle -- the component search asks `countIsSource()`; the value itself goes with the dispatch |
-| 14 | an RGBHV source, which is what `sourceIsRgbhv()` tests | `holdStandard()` and `heldStandard()` | **done as a predicate** -- `sourceIsRgbhv()` is `VideoSourceSelection::isRgbhv(Info)`, so no reader tests the byte for 14 any more; the two writers go with the byte |
-| 15 | `applyPresets()`'s request to pass an RGBHV source through, and never held | 3, all of them calls | **done** -- `applyPresets()` folds it to 14 and lets the measurement decide |
-
-**9 DOES NOT DIE WITH THE DISPATCH, and it is not a `videoStandardInput` value.**
-No site reads the field as 9 -- which is what makes it look free -- but
-`getVideoMode()` produces it and it carries register policy that has to land
-somewhere first.
-
-**8 WAS A SEARCH AND NO LONGER IS.** Two arms of `detectAndSwitchToActiveInput()`
-walked `MD_HD1250P_CNTRL` upwards until `getVideoMode()` answered 8, one of them
-behind 16 x `delay(30)`, so every RGBHV source that is not medium-resolution paid
-480 ms per detection pass to reach the line it would have reached anyway. The
-lever was a Mode Detect THRESHOLD, so the walk changed nothing but what the
-classifier reported; both arms' exits returned the same value either way, which
-makes the question "is a source there" and `SourceMeasurement::countIsSource()`
-the answer. `rto->medResLineCount` and `ModeDetect::applyMedResLineCount()` are
-deleted with it: `init()` owns the threshold and writes the 51 the override was
-putting there on every load, so the register does not move. `MD_SEL_VGA60` is
-now the only field `init()` establishes that anything overrides.
-
-**AND NOTHING DISTINGUISHES 8 FROM 9 ANY MORE**, so the threshold no longer
-selects behaviour. The three sites that name either value --
-`SourceStandard::isProgressive()`, `applyPresets()`'s reset gate and its
-dispatch -- treat them identically; what it still decides is only how fast a
-1250-line source is named, 8 at once against 9 once `notRecognizedCounter`
-reaches 255.
-
-9 is `getVideoMode()`'s answer for a source it never recognised but which held a
-steady line count for 255 consecutive polls -- the route by which an unknown
-source is scaled rather than abandoned. Its `SourceStandard` arm is gone: the
-octave is `Adc::postDividerFor()`'s, read off RD-5725-1.1's crossover table
-against the clock the engine's divider and measured line rate make between them.
-What put the clock outside its crossover row was always the count, so every
-progressive standard gets the divider that fits rather than only the one Mode
-Detect failed to name.
-
-**No bench source reaches the threshold**, the tallest mode the RISC PC offers
-being 800x600 at 627 lines, so that branch is proven at host level only. What
-the bench does prove is the other side: on 320x256@50 the divider, the crossover
-row, the analog corner and the whole capture window are unchanged across it.
-
-**A value carrying two meanings is the one that bites.** 3 is 480p NTSC *and*
-the standard a scaling RGBHV load is chosen under, so such a source takes
-`SourceStandard`'s progressive arm for the length of a load, and it cannot be
-retired by choosing a different number for it.
-
-**14 AND 15 NO LONGER DO THAT.** 14 says the source is RGBHV, which detection
-establishes before any output has been chosen; `Tv5725::RgbhvOutput` says
-whether a scaled mode is established for it. 15 never reaches the byte at all --
-it is what a caller passes `applyPresets()` to ask for pass-through, translated
-on the way in by `holdStandard()` and reconstructed by `heldStandard()` for the
-callers that compare a detection answer against what is held.
-
-**`Tv5725::PresetLoad` does not survive this step, and it goes with the CONCEPT
-rather than with the field.** Keeping it and giving it a byte-free signature
-would preserve the idea that a load is chosen by classifying the source, which
-is the thing being retired; the field is only how that idea is spelled. Its
-instance half -- `enableScalingRgbhv()` and `inputIsYpBpR()` -- is constructed
-at exactly one site in the firmware, and the first goes with the byte while
-`inputIsYpBpR()` is `adcInputSel == 0` and belongs to `VideoSourceSelection`
-beside the rest of that table.
-
-**NOTHING IN IT READS AN OUTPUT RESOLUTION OR A FRAMING**, which is what the
-name now suggests and never was: `OutputChoice` answers the resolution and the
-framing table is the root's.
-
-**It is down to the byte's constants and one flag**, and the rest went in one
-pass because none of it was load bearing:
-
-| | |
-|---|---|
-| the 280/380 line buckets | **deleted.** `rgbhvPresetStandard()` and `rgbhvStandardFor()` chose WHICH pal_*/ntsc_* table a scaling RGBHV source wanted. Zero firmware callers; their own tests were what kept them compiling |
-| the count a preset was chosen for | **deleted** with them -- it was read only there, and the one caller of `rememberScalingRgbhv()` always passed `SourceLinesUnknown` |
-| the instance half | **deleted.** `enableScalingRgbhv()` returned its constructor argument, and `inputIsYpBpR()` was `ADC_INPUT_SEL::read() == 0` where `Adc::inputIsComponent()` already answers from held state |
-| scaling RGBHV state | `scalingRgbhvInForce()` and its two setters, four readers. Engine mode state, `VideoPath`'s. **Not `RgbhvOutput::isScaling()`** -- that says what the source is entitled to, this says what the last load enabled, and the bypass-refused path sets them opposite |
-| the standard byte's vocabulary | `NtscInt` .. `Rgbhv`, `BypassRgbhv` -- the byte itself, spelled as constants |
-
-So the class is not renamed either: the flag goes to `VideoPath` and the
-constants go with the byte at step 12, which is the whole of what is left. It
-was extracted so mode state would outlive the preset tables; it has, and there
-is no second job waiting for it.
-
-The byte goes with the function, and nothing holds a standard afterwards. Two
-things come out with it.
-
-**The engine no longer reads `PLLAD_MD` as an input.** `SourceMeasurement::adopt()`
-was the one place it did; it is `holdDivider()` now -- told, not read.
-
-**`HdBypass::applySd()` is the reader that is left, and it disagrees with its
-caller.** It derives the channel's line from `PLLAD_MD::read()`, while
-`applyForStandard()` is handed the divider as an argument -- and the entry
-writes a literal 2345 into the register on its way there,
-so the two differ by four hundred counts. Handing the divider in is what made
-the RGBHV arm work at all, and the SD arm has not been moved because no source
-on this bench reaches it: 480p takes the progressive arm and a 15 kHz SD source
-cannot be bypassed to a display that refuses the rate.
-
-**Registers are not storage.** A value the firmware needs to know is held, and a
-register is where it is written to -- never where it is kept. The read-back
-cannot be trusted even about what was written: a reserved bit beside a field
-stores a 1 and the hardware ignores it.
+**The engine no longer reads `PLLAD_MD` as an input.**
+`SourceMeasurement::adopt()` was the one place it did; it is `holdDivider()`
+now -- told, not read. Registers are not storage: a value the firmware needs to
+know is held, and a register is where it is written to.
 `investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`
 
-**`Tv5725::SourceStandard` is down to one arm and one register pair.**
-`doPostPresetLoadSteps()` constructs it from the byte and calls `apply()`, which
-writes nothing at all for 1, 2, 5, 6, 7, 13 and 14.
-
-Everything it used to write is now derived from something measured, and the
-measurements are what settled where each piece belongs:
+**`Tv5725::SourceStandard` IS DELETED.** Everything it wrote is derived from
+something measured:
 
 | what it wrote | owner now | derived from |
 |---|---|---|
@@ -1941,62 +1852,43 @@ measurements are what settled where each piece belongs:
 | `IF_HS_Y_PDELAY`, `VDS_Y_DELAY` | the two `applyScanMode()`s | the doubler and `Adc::inputIsComponent()` |
 | `IF_HS_TAP11_BYPS` | nothing -- deleted | always 0, which `InputFormatter::init()` leaves |
 | `ADC_FLTR` | `Adc::init()` | nothing: one corner for every source |
-| `IF_PRGRSV_CNTRL`, `IF_HS_DEC_FACTOR`, s1_02 | the two `applyScanMode()`s | the line doubler, which the engine measures |
+| `IF_PRGRSV_CNTRL`, `IF_HS_DEC_FACTOR`, s1_02 | the two `applyScanMode()`s | the line doubler |
+| `SP_SDCS_VSST`/`VSSP` | `SyncProcessor::applySdVsyncPosition()` | nothing: one value for every source |
 
-**Which connector is live is held, not measured and not read back.** Nothing on
-the chip reports it, so `Adc::selectInput()` records what it wrote and
-`Adc::inputIsComponent()` answers from that. Every writer of `ADC_INPUT_SEL`
-goes through it, which is what makes the held value trustworthy.
+**The two policy questions it was waiting on were settled by measurement rather
+than by choosing.** The wanted oversample is `Adc::OversampleAsClockAllows` on
+every path, so the arms' 4-on-interlaced-SD and 2-on-progressive had nothing to
+replace. And the analog filter corner is one value opened widest by
+`Adc::init()`: `ADC_FLTR` is an anti-alias low-pass in front of the sampler and
+so does work only below Nyquist, which the narrowest corner the part offers is
+never at -- 40 MHz against a Nyquist of 17.3 MHz on the bench's 15 kHz source
+and 38.6 MHz on its fastest. Swept across all four corners at both clocks,
+measuring grating modulation on PM5544 with the same corner shot twice as the
+control, the control's own repeat spans the whole spread and the order is not
+monotonic. `docs/investigations/the-analog-filter-corner-is-above-nyquist.md`.
 
-**The two policy questions this step was waiting on are both settled, by
-measurement rather than by choosing.**
+**THE HD ARM COST A SECOND OWNER.** It wrote `ADC_FLTR`, `IF_PRGRSV_CNTRL`,
+`IF_HS_DEC_FACTOR`, `VDS_Y_DELAY` and a whole-byte 0x74 into s1_02, every one of
+which has an owner. The byte was the one that disagreed -- `IF_SEL_WEN` 0 against
+`applyScanMode()`'s 1, `IF_HS_TAP11_BYPS` 1 where `InputFormatter::init()`
+leaves 0 -- and which owner won was an ordering accident, because
+`solveScanMode()` early-returns unless the line doubling moved and only a source
+mode change clears `scanModeApplied_`. The test had recorded the conflict rather
+than catching it: 5, 6 and 7 were excluded from the three loops asserting that
+no standard writes what the scan mode decides.
 
-- **The wanted oversample** is `Adc::OversampleAsClockAllows` on every path
-  already, so the arms' 4-on-interlaced-SD and 2-on-progressive are gone with
-  nothing to replace.
-- **The analog filter corner** is one value, opened widest by `Adc::init()`.
-  `ADC_FLTR` is an anti-alias low-pass in front of the sampler and so does work
-  only below Nyquist, which the narrowest corner the part offers is never at:
-  40 MHz against a Nyquist of 17.3 MHz on the bench's 15 kHz source and 38.6 MHz
-  on its fastest. Swept across all four corners at both clocks, measuring
-  grating modulation on PM5544 with the same corner shot twice as the control,
-  the control's own repeat spans the whole spread and the order is not
-  monotonic. `docs/investigations/the-analog-filter-corner-is-above-nyquist.md`.
-
-**THE HD ARM HAS GONE, AND WHAT IT COST WAS A SECOND OWNER.** It wrote
-`ADC_FLTR`, `IF_PRGRSV_CNTRL`, `IF_HS_DEC_FACTOR`, `VDS_Y_DELAY` and a whole-byte
-0x74 into s1_02, every one of which has an owner: the first is `Adc::init()`'s
-one corner and the next three are what the two `applyScanMode()`s already write
-for a progressive source, identically. The byte was the one that disagreed --
-`IF_SEL_WEN` 0 against `applyScanMode()`'s 1, and `IF_HS_TAP11_BYPS` 1 where
-`InputFormatter::init()` leaves 0 -- and which owner won was an ordering
-accident, because `solveScanMode()` early-returns unless the line doubling moved
-and only a source mode change clears `scanModeApplied_`.
-
-The test had recorded the conflict rather than catching it: 5, 6 and 7 were
-excluded from the three loops asserting that no standard writes what the scan
-mode decides. They are in those loops now.
-
-**`SourceStandard` IS DELETED.** What was left of it opened the SD vsync window
-at 14/11 for standards 3, 4, 8 and 9, over `prepareSyncProcessor()`'s 4/1 earlier
-in the same `doPostPresetLoadSteps()`. `SyncProcessor::applySdVsyncPosition()`
-writes one value for every source now, and the class, its test and its Makefile
-target are gone.
-
-**The measurement said it is not a raster property.** `SP_SDCS_VSST` is where the
-block asserts the vertical sync it regenerates out of composite sync, so it is
-where the captured frame begins -- and it is a vertical pan, linear at one source
+**THE SD VERTICAL SYNC POSITION IS NOT A RASTER PROPERTY.** `SP_SDCS_VSST` is
+where the block asserts the vertical sync it regenerates out of composite sync,
+so it is where the captured frame begins -- a vertical pan, linear at one source
 line per count from 4 to 84 with no saturation, with the capture window the
 engine solves unmoved beside it. It reaches the picture only where `SP_SOG_MODE`
 is 1, so the byte was selecting on a fact the register does not ask about: a
 composite-sync RGBHV source kept 4 with the window live while a component 480p
-source got 14.
-
-So it does not belong in `SourceTiming`, which an earlier revision of this list
-proposed: there is no published raster fact to derive, and a second vertical
-placement the engine cannot see only puts its model and the picture out of step.
-The constraint that survives is a bound, not a target -- the value must land
-inside the source's vertical blanking, 45 lines being the shortest here.
+source got 14. It does not belong in `SourceTiming` either -- there is no
+published raster fact to derive, and a second vertical placement the engine
+cannot see only puts its model and the picture out of step. The constraint that
+survives is a bound, not a target: the value must land inside the source's
+vertical blanking, 45 lines being the shortest here.
 `docs/investigations/the-sd-vsync-window-follows-the-sync-type.md`
 
 **13. Delete `runSyncWatcher()`**, and `loop()` calls
