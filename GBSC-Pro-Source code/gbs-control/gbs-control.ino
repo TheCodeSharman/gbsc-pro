@@ -1873,7 +1873,15 @@ uint8_t detectAndSwitchToActiveInput()
 
 uint8_t inputAndSyncDetect() 
 {
+    // **DETECTION BLOCKS loop(), so what it costs is invisible from the
+    // console except as silence.** Its two line-count waits run 6000 ms each
+    // and exit early only on a source count, so the duration says which
+    // happened and nothing else can.
+    // docs/investigations/detection-blocks-the-loop.md
+    const unsigned long detectAt = millis();
     uint8_t syncFound = detectAndSwitchToActiveInput();
+    debugPrintf("DETECT: %lums, syncFound %u\n",
+                (unsigned long)(millis() - detectAt), (unsigned)syncFound);
     // printf(" syncFound = %d \n",syncFound);
     if (syncFound == 0) {
         if (!getSyncPresent()) 
