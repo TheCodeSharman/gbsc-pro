@@ -49,17 +49,40 @@ in the sync processor, which pass-through does not take out of the path
 (`STATUS_SYNC_PROC_VTOTAL` held 524 in 489 of 489 samples on the Wii in
 pass-through).
 
-### The encoder re-places the picture after a pass-through round trip
+### The picture sits ~150 columns left after a pass-through round trip
 
-~150 photo columns left, on the bench panel, with the scaler's own solve
-unchanged either side -- `VDS_HSYNC_RST` 1915, display window 110..1899,
-`VDS_HSCALE` 546, `/geometry` `oh 51, eh 954, ov 38, ev 582`. Measured as a
-translation rather than a scale change: the lit width is 892, 953 and 968
-columns across three frames while the left edge moves 159 -> 5.
+Measured on the bench panel as a translation rather than a scale change: the lit
+width is 892, 953 and 968 columns across three frames while the left edge moves
+159 -> 5.
 
-Neither a `PAD_SYNC_OUT_ENZ` toggle nor a source mode round trip re-centres it,
-though the toggle does make the sink re-acquire and report the mode afresh
-(1920x1080/50Hz). A power cycle is what is left, and it needs the bench.
+**What has been checked is the solve, and it is unchanged** -- `VDS_HSYNC_RST`
+1915, `VDS_VSYNC_RST` 1124, `VDS_HSCALE` 546, display window 110..1899,
+`/geometry` `oh 51, eh 954, ov 38, ev 582`. `VDS_HS_ST` 0 / `VDS_HS_SP` 32 is
+the correct derivation for this raster, `syncNs x clockHz` giving
+296.30 ns x 108.03 MHz = 32, so the output sync placement has not drifted either.
+
+**It must not be filed against the HDMI encoder.** Nothing on this board can
+read or configure the MS9288A, so that attribution cannot be tested and closes
+the question instead of advancing it; the round-trip form of it is already
+refuted in
+`investigations/leaving-bypass-needs-a-count-the-divider-cannot-give.md`. **The
+position of a picture is a register.**
+
+**The hypothesis is the sampling clock, and it has evidence.** `PLLAD_MD` takes
+different values on one unchanged source -- 2250 and 2206 both measured on the
+RiscPC at 320x256@50 -- and `IF_HSYNC_RST` tracks it, 1125 against 1103. The
+capture's framing constants do not: `IF_HBIN_SP` 272, `IF_HB_SP` 72 and
+`IF_HB_ST` 2 read identical across both. So a capture positioned at a fixed
+count of IF units begins at a different fraction of the source line depending on
+the divider, and the framing arithmetic is not equivalent across two clock
+settings and two output rasters -- 2022 x `VDS_HSCALE` 526 against 1915 x 546
+here.
+
+What has NOT been compared is a full dump either side of one round trip -- only
+the fifteen fields above -- so `snapdiff.py --save` before and after is the next
+move, covering the 928 addresses a config dump leaves out.
+
+Neither a `PAD_SYNC_OUT_ENZ` toggle nor a source mode round trip re-centres it.
 
 ### A composite-sync source in pass-through gives no signal
 
