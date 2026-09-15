@@ -279,6 +279,16 @@ public:
                              uint16_t (*lineSamples)(),
                              void (*feedWatchdog)());
 
+    // Whether the search above found a phase worth having. Recorded by
+    // acquirePhase() rather than by its caller: the answer is about the two
+    // adjusters this class owns, and a second copy of it goes stale the moment
+    // anything reloads them.
+    static bool phaseFound();
+
+    // A different source, or a load that moved the sampling: whatever was found
+    // was found against something else.
+    static void forgetPhase();
+
     // Take both adjusters through their bypass and back, which is what makes a
     // newly latched phase take effect.
     static void restartPhaseAdjusters();
@@ -389,6 +399,7 @@ private:
     static uint8_t phaseAdc_;
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
+    static bool phaseFound_;
 
 };
 

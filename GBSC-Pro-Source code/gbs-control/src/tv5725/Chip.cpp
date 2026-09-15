@@ -126,10 +126,9 @@ void Chip::init()
     // The parts that do not change with the clock chosen; the rest is
     // Tv5725::DisplayClock's. PLL_ADS = 1 takes the input clock from the crystal
     // rather than the digital video input port, which this board does not drive.
-    // Nothing on the scaling path clears PLL_VCORST -- setResetParameters() and
-    // runSyncWatcher() both assert it and the preset table was the only thing
-    // that put it back, so held it means no output clock, no picture, and every
-    // register reading correct.
+    // Nothing on the scaling path clears PLL_VCORST -- the reset path asserts it
+    // and the preset table was the only thing that put it back, so held it means
+    // no output clock, no picture, and every register reading correct.
     GBS::PLL_DIVBY2Z::write(0x0);                     // s0_40[1:1]
     GBS::PLL_IS::write(0x1);                          // s0_40[2:2]
     GBS::PLL_ADS::write(0x1);                         // s0_40[3:3]

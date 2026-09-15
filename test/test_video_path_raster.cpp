@@ -19,6 +19,7 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -54,6 +55,11 @@ static void poisonChip()
     Wire.poison(Poison);
     Wire.bank[0][0x06] = 0;                       // HPERIOD_IF low eight
     Wire.bank[0][0x07] &= 0xFE;                   // and its ninth bit
+
+    // A bus that answers, and a quiet interrupt byte: the poison sets every
+    // latched bit, including the one that arms a re-measure on every pass.
+    Tv5725::Chip::holdPower(true);
+    Wire.bank[0][0x0F] = 0;
 }
 
 static uint32_t horizontalTotalUnwritten()

@@ -44,6 +44,10 @@ static void seedBenchSource()
     // A bus that answers. Nothing per-source is written to a board that may
     // not be there, so every case below needs this established first.
     Chip::holdPower(true);
+
+    // A quiet interrupt byte. The poison sets every latched bit, and the
+    // sync-separator one arms a re-measure on every pass.
+    seed(0, 0x0F, 0, 8, 0);
 }
 
 // A field written straight into the fake's banks, so seeding an INPUT does not

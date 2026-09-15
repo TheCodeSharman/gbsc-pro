@@ -181,6 +181,16 @@ void HdBypass::holdVsyncPulse(uint16_t a, uint16_t b)
     HD_VS_SP::write(b);
 }
 
+HdBypass::SourceSyncEdges HdBypass::readSourceSyncEdges()
+{
+    SourceSyncEdges edges;
+    edges.hsyncFound = Tv5725::STATUS_SYNC_PROC_HSACT::read() == 1;
+    edges.hsyncPositive = Tv5725::STATUS_SYNC_PROC_HSPOL::read() == 1;
+    edges.vsyncFound = Tv5725::STATUS_SYNC_PROC_VSACT::read() == 1;
+    edges.vsyncPositive = Tv5725::STATUS_SYNC_PROC_VSPOL::read() == 1;
+    return edges;
+}
+
 void HdBypass::applyChannelSyncEdges(const SourceSyncEdges &edges)
 {
     if (edges.hsyncFound) {

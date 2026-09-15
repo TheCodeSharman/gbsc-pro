@@ -127,6 +127,11 @@ static void seedBenchSource()
     seedField(1, 0x0E, 0, 11, 1125);   // IF_HSYNC_RST, capture wrap - 1
     seedField(5, 0x12, 0, 12, 2250);   // PLLAD_MD
     seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
+
+    // A bus that answers, and a quiet interrupt byte: the poison sets every
+    // latched bit, including the one that arms a re-measure on every pass.
+    Chip::holdPower(true);
+    seedField(0, 0x0F, 0, 8, 0);
     seedSourceMeasurement();
 }
 

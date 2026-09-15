@@ -589,8 +589,14 @@ public:
     // needs.
     static Steering steer(uint16_t verticalPeriod,
                           SourceMeasurement::ScanType scan,
-                          const Preferences &wanted,
                           void (*releaseCapture)());
+
+    // What the user asked for, held here rather than handed in on every pass:
+    // the steering runs on a cadence and the preferences change when someone
+    // presses a key, so passing them per pass makes every caller carry a copy
+    // of the whole set to get one of them right.
+    static void choose(const Preferences &wanted);
+    static const Preferences &chosen();
 
     // The chip's deinterlacer state was torn down, so the filtered run and any
     // re-lock in flight describe a configuration that is gone.

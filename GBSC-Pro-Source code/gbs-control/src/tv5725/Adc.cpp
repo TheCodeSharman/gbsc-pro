@@ -99,6 +99,7 @@ uint8_t Adc::inputSel_ = 1;
 // Nothing has been installed, so the ratio is one sample a clock -- the same
 // thing a post divider with no room to give reduces every request to.
 uint8_t Adc::oversampleInForce_ = 1;
+bool Adc::phaseFound_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
 {
@@ -141,9 +142,15 @@ const uint8_t SamplesPerPhase = 20;
 
 }  // namespace
 
+bool Adc::phaseFound() { return phaseFound_; }
+
+void Adc::forgetPhase() { phaseFound_ = false; }
+
 bool Adc::acquirePhase(uint8_t oversample, bool sweep,
                        uint16_t (*lineSamples)(), void (*feedWatchdog)())
 {
+    phaseFound_ = false;
+
     // What the sync processor should be counting, whoever wrote it: bypass puts
     // its own divider here without going through a measurement.
     const uint16_t perLine = PLLAD_MD::read();
@@ -153,6 +160,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
         choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
         delay(8);
         applyPhases();
+        phaseFound_ = true;
         return true;
     }
 
@@ -204,6 +212,7 @@ bool Adc::acquirePhase(uint8_t oversample, bool sweep,
     applyPhaseSyncProcessor(phaseSyncProcessor());
     delay(1);
     applyPhaseAdc(phaseAdc());
+    phaseFound_ = true;
     return true;
 }
 

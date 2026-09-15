@@ -486,11 +486,14 @@ struct AtRest {
     }
 };
 
+// The preferences are held rather than handed in, so a pass chooses them and
+// then steers -- which is what the firmware does, one press apart.
 static Deinterlacer::Steering pass(uint16_t verticalPeriod,
                                    SourceMeasurement::ScanType scan,
                                    const Deinterlacer::Preferences &wanted)
 {
-    return Deinterlacer::steer(verticalPeriod, scan, wanted, releaseStub);
+    Deinterlacer::choose(wanted);
+    return Deinterlacer::steer(verticalPeriod, scan, releaseStub);
 }
 
 TEST_CASE("one interlaced reading is not enough to engage the motion-adaptive path")

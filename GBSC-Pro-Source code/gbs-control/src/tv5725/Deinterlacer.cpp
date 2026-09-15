@@ -18,6 +18,9 @@ uint8_t interlacedRun_ = 0;
 uint8_t progressiveRun_ = 0;
 uint16_t lastPeriod_ = 0;
 bool periodKnown_ = false;
+
+// What the user asked for, until they ask for something else.
+Deinterlacer::Preferences wanted_ = {false, false, false, 0, false};
 uint8_t relockDelay_ = 0;
 uint8_t relockParity_ = 0;
 
@@ -319,11 +322,15 @@ void Deinterlacer::forgetSteering()
     relockDelay_ = 0;
 }
 
+void Deinterlacer::choose(const Preferences &wanted) { wanted_ = wanted; }
+
+const Deinterlacer::Preferences &Deinterlacer::chosen() { return wanted_; }
+
 Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
                                            SourceMeasurement::ScanType scan,
-                                           const Preferences &wanted,
                                            void (*releaseCapture)())
 {
+    const Preferences &wanted = wanted_;
     Steering steering = {false, false};
     bool reconfiguring = false;
 

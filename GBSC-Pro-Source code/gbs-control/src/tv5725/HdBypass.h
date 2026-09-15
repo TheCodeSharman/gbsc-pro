@@ -229,6 +229,10 @@ public:
         bool vsyncPositive;
     };
 
+    // Read from the sync processor's four status bits, which are measurements
+    // of the source and so among the reads the engine is allowed.
+    static SourceSyncEdges readSourceSyncEdges();
+
     // Emit the channel's sync pulses the way round the source sends them.
     //
     // Only the ORDER is in question: the pulse itself belongs to whichever arm

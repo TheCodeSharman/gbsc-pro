@@ -13,6 +13,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 
@@ -113,6 +114,12 @@ struct SolvedEngine {
         Wire.reset();
         poisonChip();
         g_fieldRate = fieldRateHz;
+
+        // A bus that answers, and a quiet interrupt byte. Nothing per-source is
+        // written to a board that may not be there, and the poison sets every
+        // latched interrupt bit -- including the one that arms a re-measure.
+        Tv5725::Chip::holdPower(true);
+        seed(0, 0x0F, 0, 8, 0);
 
         seed(3, 0x01, 0, 12, 1915);          // VDS_HSYNC_RST, output line - 1
         seed(3, 0x02, 4, 11, 1124);          // VDS_VSYNC_RST, output frame - 1

@@ -3,7 +3,9 @@
 #include <stdio.h>
 
 #include "../tv5725/Adc.h"
+#include "../tv5725/Deinterlacer.h"
 #include "../tv5725/FrameBuffer.h"
+#include "../tv5725/Interrupts.h"
 #include "../tv5725/ModeDetect.h"
 #include "../tv5725/Chip.h"
 #include "../tv5725/HdBypass.h"
@@ -19,7 +21,8 @@
 VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
     : sampling_(sampling), videoPath_(videoPath), mayRun_(0),
-      passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
+      passThroughSwitch_(0), maintenanceAllowed_(false),
+      channelSyncServicedEver_(false), channelSyncServicedMs_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
@@ -48,6 +51,8 @@ void VideoSourceAcquisition::useWatchdogFeed(void (*feed)())
 {
     watchdog_ = feed != 0 ? feed : noWatchdog;
 }
+
+void VideoSourceAcquisition::allowMaintenance(bool allowed) { maintenanceAllowed_ = allowed; }
 
 void VideoSourceAcquisition::useClock(uint32_t (*nowMs)())
 {
@@ -341,10 +346,18 @@ bool VideoSourceAcquisition::rateMoved()
     return true;
 }
 
+const VideoSourceAcquisition::Report &VideoSourceAcquisition::report() const { return report_; }
+
 bool VideoSourceAcquisition::poll(uint32_t nowMs)
 {
     runAdvanced_ = false;
+    const Report nothing = {false, false, false, false, false};
+    report_ = nothing;
+
     if (mayRun_ != 0 && !mayRun_())
+        return false;
+
+    if (!Tv5725::Chip::hasPower())
         return false;
 
     bool detectionPass = false;
@@ -365,7 +378,45 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         unmeasuredPasses_ = (uint16_t)((unmeasuredPasses_ + 1) % SyncRecovery::CycleLength);
     }
 
+    if (maintenanceAllowed_)
+        keepSourceComing(nowMs);
+
     return solved;
+}
+
+void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
+{
+    // ONE CLAIMANT PER LATCHED BIT. Reading STATUS_INT_SOG_SW claims it, and
+    // the pre-emptive separator adjustment below wants the same event, so it is
+    // sampled here and nowhere else and both are handed the answer. A source
+    // that returns at the SAME line count and a different field rate is
+    // invisible to VideoPath::sourceMoved(), which has only the count to go on;
+    // the chip latches the disturbance instead, and without it a wrong rate
+    // solved against a correct count survives indefinitely.
+    const bool disturbed = Tv5725::Interrupts::takeSourceDisturbed();
+    if (disturbed)
+        sourceInterrupted();
+
+    // Not on a component source: it chooses its own separator level and this
+    // would walk it off.
+    if (!Tv5725::Adc::inputIsComponent()) {
+        const Tv5725::SyncOnGreen::Tuning tuning = Tv5725::SyncOnGreen::tune(
+            disturbed, sourceIsPresent(), clock_,
+            Tv5725::SyncOnGreen::putInForce, acquireSeparatorLevel);
+        if (tuning.sourceUnsettled)
+            report_.vsyncLockStale = true;
+        if (tuning.levelMoved)
+            applySyncProcessorDynamic(false);
+        if (tuning.phaseStale)
+            Tv5725::Adc::forgetPhase();
+    }
+
+    if (!sourceIsPresent())
+        recoverSource();
+    else
+        maintainSource();
+
+    serviceChannelSync(nowMs);
 }
 
 SyncRecovery::Step VideoSourceAcquisition::recoveryDue() const
@@ -663,4 +714,105 @@ bool VideoSourceAcquisition::runRecovery(SyncRecovery::Step step, bool modeSettl
         break;
     }
     return false;
+}
+
+void VideoSourceAcquisition::recoverSource()
+{
+    report_.vsyncLockStale = true;
+
+    // The first pass without a measurement is a dropped reading rather than a
+    // source going away.
+    if (unmeasuredPasses_ == 1)
+        return;
+
+    Tv5725::Adc::forgetPhase();
+
+    if (runRecovery(recoveryDue(), true)) {
+        restartRecovery();
+        tv5725Log("No Signal Out");
+        report_.noSignalOut = true;
+    }
+}
+
+void VideoSourceAcquisition::maintainSource()
+{
+    SourceMaintenance::Source run;
+    run.acquiredPasses = acquiredPasses_;
+    run.unmeasuredPasses = unmeasuredPasses_;
+    run.samplingPhaseFound = Tv5725::Adc::phaseFound();
+
+    const SourceMaintenance::Due due = maintenance_.dueAt(run);
+
+    if (due.restoreAfterLongAbsence) {
+        Tv5725::Adc::forgetPhase();
+        report_.frameTimingMoved = true;
+    }
+
+    if (due.forgetPositions)
+        Tv5725::SyncProcessor::forgetPositions();
+
+    if (due.syncProcessorDynamic)
+        applySyncProcessorDynamic(false);
+
+    if (due.sogLevel) {
+        delay(20);
+        acquireSeparatorLevel();
+    }
+
+    if (due.holdCapture) {
+        Tv5725::FrameBuffer::releaseCapture();
+        report_.captureHeld = true;
+    }
+
+    if (due.samplingPhase)
+        acquireSamplingPhase();
+
+    if (due.acknowledgeSogBad)
+        Tv5725::Interrupts::acknowledgeSogBad();
+
+    if (!due.steerDeinterlacer || GBS::STATUS_IF_VT_OK::read() != 1
+        || Tv5725::VideoRoute::isHdBypassChannel())
+        return;
+
+    const uint16_t verticalPeriod = GBS::VPERIOD_IF::read();
+    const Tv5725::Deinterlacer::Steering steering = Tv5725::Deinterlacer::steer(
+        verticalPeriod, sampling_.scanType(verticalPeriod),
+        Tv5725::FrameBuffer::releaseCapture);
+
+    if (steering.frameTimingMoved) {
+        report_.frameTimingMoved = true;
+        report_.vsyncLockStale = true;
+    }
+    if (steering.outputRateSettled) {
+        delay(10);
+        report_.outputRateSettled = true;
+    }
+}
+
+void VideoSourceAcquisition::serviceChannelSync(uint32_t nowMs)
+{
+    // STATUS_INT_SOG_BAD latches, so it reports NOW only for a reader that
+    // clears it -- and two readers want that: the polarity step below and the
+    // auto-gain gate above this layer. The polarity step's own gate is whether
+    // the CHANNEL is in circuit, because these are the pulses it emits.
+    //
+    // **THE SYNC TYPE HAS ONE OWNER, AND STATUS_INT_SOG_BAD IS NOT EVIDENCE
+    // ABOUT IT.** A second route to csync used to sit here, flipping the type
+    // after four runs with that bit set. It only ever ran with the type ALREADY
+    // separate -- where the separator is out of the sync path and the bit
+    // reports a comparator with nothing to slice, so it is set permanently.
+    // docs/sync-type-selection.md
+    if (channelSyncServicedEver_ && nowMs - channelSyncServicedMs_ <= ChannelSyncIntervalMs)
+        return;
+
+    channelSyncServicedEver_ = true;
+    channelSyncServicedMs_ = nowMs;
+
+    if (Tv5725::VideoRoute::isHdBypassChannel()
+        && GBS::STATUS_INT_SOG_BAD::read() == 0) {
+        Tv5725::HdBypass::applyChannelSyncEdges(Tv5725::HdBypass::readSourceSyncEdges());
+        delay(100);
+    }
+
+    Tv5725::Interrupts::acknowledgeSogBad();
 }

@@ -9,10 +9,38 @@
 
 #include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/VideoPath.h"
+#include "SourceMaintenance.h"
 #include "SyncRecovery.h"
 
 class VideoSourceAcquisition {
 public:
+    // What a pass decided that this layer cannot carry out. Each act is above
+    // Tv5725:: -- the frame time lock and the external clock generator are the
+    // sketch's, and the two flags are user-facing state -- so they are
+    // REPORTED, the shape Tv5725::Deinterlacer::steer() already uses.
+    struct Report {
+        // The output frame time moved, so anything locked to it has to start
+        // again. **NOT the same as the stamp below**: resetting the lock on
+        // every pass a source is unsettled means it never establishes at all,
+        // and the picture goes dark with every register reading correct.
+        bool frameTimingMoved;
+
+        // The source is not steady enough to arm a frame time lock against, so
+        // the moment it was last worth trying is now. A timestamp, not an act.
+        bool vsyncLockStale;
+
+        // The output settled at a new rate, so the external clock generator can
+        // be re-matched to it.
+        bool outputRateSettled;
+
+        // The escalation ladder went the whole way round without finding a
+        // source. A report of state rather than a terminus: nothing stops
+        // looking.
+        bool noSignalOut;
+
+        // Capture was taken and held, so whatever tracks the freeze must agree.
+        bool captureHeld;
+    };
     // Three answers, not two. A steady line count is the vertical half only: a
     // source can hold a correct count while the ADC samples a line it is not
     // locked to. Absent and Unlocked both want recovery, but only Unlocked is
@@ -28,6 +56,11 @@ public:
 
     // One pass, from loop(). True when a mode change completes.
     bool poll(uint32_t nowMs);
+
+    // What the last pass decided that the caller has to carry out. Cleared at
+    // the start of every pass, so a caller that reads it once a pass sees each
+    // decision exactly once.
+    const Report &report() const;
 
     // Stop the pass running at all, for a bench measurement that has frozen
     // automation. An outstanding mode change survives the gate shutting.
@@ -103,6 +136,12 @@ public:
     // selection is a command: a chosen input is selected whether it has a
     // signal or not, so there is nowhere to promote to.
     static bool mayChangeInput();
+
+    // Whether keeping the source coming is wanted at all. Off while detection
+    // owns the input -- it runs a heavier search of its own -- and while the
+    // user has the automatic path switched off. Told rather than measured,
+    // because neither is this layer's fact yet.
+    void allowMaintenance(bool allowed);
 
     // Whether pass-through is offerable at all. The interim stand-in for a
     // per-source override -- a single boolean cannot express one.
@@ -225,6 +264,34 @@ private:
     // Whether a per-source write is worth making at all: something to write to,
     // and a source being counted to measure it against.
     bool mayWriteForSource() const;
+
+    // What a settled source is due, and when. Holds its own cadence.
+    SourceMaintenance maintenance_;
+    Report report_;
+    bool maintenanceAllowed_;
+
+    // Everything a pass does beyond measuring and solving: the pre-emptive
+    // separator tuning, the maintenance a settled source is due, the ladder a
+    // lost one is, and the channel's sync service.
+    void keepSourceComing(uint32_t nowMs);
+
+    // The maintenance a settled source is due, and the ladder a lost one is.
+    void maintainSource();
+    void recoverSource();
+
+    // The channel's emitted sync polarity, and the latched bit that freshens
+    // it. Both are due on a wall-clock cadence of their own rather than on the
+    // run, because the bit latches and reports NOW only for a reader clearing
+    // it.
+    void serviceChannelSync(uint32_t nowMs);
+
+    // How often the channel's sync polarity is re-ordered and the latched
+    // SOG-bad bit freshened. A wall-clock cadence rather than the run's,
+    // because the bit is about the separator and not about the measurement.
+    static const uint32_t ChannelSyncIntervalMs = 900;
+
+    bool channelSyncServicedEver_;
+    uint32_t channelSyncServicedMs_;
 
     bool (*mayRun_)();
     void (*passThroughSwitch_)();

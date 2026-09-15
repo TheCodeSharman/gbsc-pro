@@ -1327,7 +1327,7 @@ void setResetParameters()
     Tv5725::VideoRoute::toScaler();       
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
-    rto->phaseIsSet = 0;
+    Tv5725::Adc::forgetPhase();
 
     rto->isInLowPowerMode = false;  
     Tv5725::SyncOnGreen::choose(5);       
@@ -1423,7 +1423,7 @@ void setResetParameters()
     Tv5725::Interrupts::acknowledgeAll();
     Tv5725::SyncProcessor::forgetPositions();
     Tv5725::SyncMeasurement::forget();
-    rto->phaseIsSet = 0;
+    Tv5725::Adc::forgetPhase();
     serialCommand = '@';
     userCommand = '@';
 }
@@ -2554,7 +2554,7 @@ void doPostPresetLoadSteps()
         GBS::GPIO_CONTROL_00::write(0x67);
         GBS::GPIO_CONTROL_01::write(0x00);
         Tv5725::SyncProcessor::forgetPositions();
-        rto->phaseIsSet = 0;
+        Tv5725::Adc::forgetPhase();
         Tv5725::Deinterlacer::disableMotionAdapt();
         Tv5725::Deinterlacer::forgetScanlines();
         Tv5725::Deinterlacer::forgetSteering();
@@ -2794,9 +2794,8 @@ void applyPresets()
             // may now be attached -- the resets, the low-power entry, and
             // LoadDefault() on the input handlers. Six OTHER sites clear those
             // two flags and deliberately do NOT forget, because they are mode
-            // changes on the source already attached: twice in this function,
-            // twice in runSyncWatcher()'s scaling-RGBHV arm, and the serial
-            // clock-generator command. Reading the flags as the rule re-probes
+            // changes on the source already attached: twice in this function
+            // and in the serial clock-generator command. Reading the flags as the rule re-probes
             // on every preset load and costs 500 ms a time.
             //
             // **IT CANNOT BE LEFT TO inputAndSyncDetect() ALONE.** Its probe
@@ -3088,8 +3087,8 @@ void enterHdBypass()
 
     delay(200);
 
-    // The only phase search on this route: the stable branch of
-    // runSyncWatcher() is skipped while a source is bypassed.
+    // The only phase search on this route: nothing maintains a source while it
+    // is passed through, because there is no scaled path to maintain.
     inputAcquisition.acquireSamplingPhase();
 }
 
@@ -3392,168 +3391,6 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t ifSel)
     debugPrintf("tb,done\n");
 }
 #endif
-
-void runSyncWatcher() // 
-{
-    // Frozen: docs/gbs-control-debug-interface.md
-    if (AUTOMATION_FROZEN()) {
-        return;
-    }
-    if (!Tv5725::Chip::hasPower()) {
-        return;
-    }
-
-    bool runSettled = false;
-    const uint16_t unmeasuredPasses = inputAcquisition.unmeasuredPasses();
-    const uint16_t stablePasses = inputAcquisition.acquiredPasses();
-    // A source that returns at the SAME line count and a different field rate is
-    // invisible to VideoPath::sourceMoved(), which has only the count to go on, so
-    // the engine holds a rate the source no longer runs at and nothing re-arms it.
-    // The chip latches the disturbance instead. Measured: a wrong rate solved
-    // against a correct count survives indefinitely and takes /sc?~ to clear.
-    //
-    // ONE CLAIMANT PER LATCHED BIT. Reading STATUS_INT_SOG_SW claims it, and the
-    // pre-emptive SOG adjustment below wants the same event, so it is sampled
-    // here and nowhere else and both are handed the answer. That is what gives
-    // every sync path the re-measure, and there is no cheaper signal to give
-    // them: getSourceFieldRate() blocks spinning for vsync edges, and
-    // HPERIOD_IF rails. The engine waits behind its own steadiness run before
-    // measuring, so arming on arrival does not read the source mid-transition.
-    const bool sourceDisturbed = Tv5725::Interrupts::takeSourceDisturbed();
-    if (sourceDisturbed)
-        inputAcquisition.sourceInterrupted();
-
-    // Not on YPbPr: the component path chooses its own level and this would
-    // walk it off.
-    if (!rto->inputIsYpBpR) {
-        const Tv5725::SyncOnGreen::Tuning tuning = Tv5725::SyncOnGreen::tune(
-            sourceDisturbed, inputAcquisition.sourceIsPresent(), millisNow,
-            Tv5725::SyncOnGreen::putInForce,
-            VideoSourceAcquisition::acquireSeparatorLevel);
-        if (tuning.sourceUnsettled)
-            lastVsyncLock = millis();
-        if (tuning.levelMoved)
-            inputAcquisition.applySyncProcessorDynamic(0);
-        if (tuning.phaseStale)
-            rto->phaseIsSet = 0;
-    }
-
-    // **ONE LADDER, EVERY SOURCE.** The exclusion here was the divider clobber:
-    // a rung ends in a re-measure, and prepareToMeasure() used to install the
-    // engine's reference sampling clock over the one HdBypass chose for the
-    // channel. It no longer does, so a passed-through source is recovered the
-    // same way as any other and RGBHVNoSyncCounter's parallel watch is gone.
-    // docs/investigations/the-reference-clock-is-applied-to-a-working-picture.md
-    if (!inputAcquisition.sourceIsPresent()) {
-        lastVsyncLock = millis();
-        if (unmeasuredPasses == 1) {
-            // freezeVideo(); 
-            return;
-        }
-
-        rto->phaseIsSet = 0;
-
-        runSettled = inputAcquisition.runRecovery(inputAcquisition.recoveryDue(), true);
-    }
-
-    if (inputAcquisition.sourceIsPresent()) {
-        SourceMaintenance::Source run;
-        run.acquiredPasses = stablePasses;
-        run.unmeasuredPasses = unmeasuredPasses;
-        run.samplingPhaseFound = rto->phaseIsSet;
-
-        const SourceMaintenance::Due due = sourceMaintenance.dueAt(run);
-
-        if (due.restoreAfterLongAbsence) {
-            rto->phaseIsSet = false;
-            FrameSync::reset(uopt->frameTimeLockMethod);
-        }
-
-        if (due.forgetPositions)
-            Tv5725::SyncProcessor::forgetPositions();
-
-        if (due.syncProcessorDynamic)
-            inputAcquisition.applySyncProcessorDynamic(0);
-
-        if (due.sogLevel) {
-            delay(20);
-            inputAcquisition.acquireSeparatorLevel();
-        }
-
-        if (due.holdCapture) {
-            rto->videoIsFrozen = true;
-            Tv5725::FrameBuffer::releaseCapture();
-        }
-
-        if (due.samplingPhase)
-            rto->phaseIsSet = inputAcquisition.acquireSamplingPhase();
-
-        if (due.acknowledgeSogBad)
-            Tv5725::Interrupts::acknowledgeSogBad();
-
-        if (due.steerDeinterlacer && GBS::STATUS_IF_VT_OK::read() == 1
-            && !Tv5725::VideoRoute::isHdBypassChannel()) {
-
-            Tv5725::Deinterlacer::Preferences wanted;
-            wanted.automatic = rto->deinterlaceAutoEnabled;
-            wanted.bob = uopt->deintMode == 1;
-            wanted.scanlines = uopt->wantScanlines;
-            wanted.scanlineStrength = uopt->scanlineStrength;
-            wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
-
-            const uint16_t verticalPeriod = GBS::VPERIOD_IF::read();
-            const Tv5725::Deinterlacer::Steering steering =
-                Tv5725::Deinterlacer::steer(verticalPeriod,
-                                            sourceSampling.scanType(verticalPeriod),
-                                            wanted,
-                                            Tv5725::FrameBuffer::releaseCapture);
-
-            if (steering.frameTimingMoved) {
-                FrameSync::reset(uopt->frameTimeLockMethod);
-                lastVsyncLock = millis();
-            }
-            if (steering.outputRateSettled) {
-                delay(10);
-                externalClockGenSyncInOutRate();
-            }
-        }
-    }
-
-    // STATUS_INT_SOG_BAD latches, so it reports NOW only for a reader that
-    // clears it, and both readers of it here want that -- the gate below and the
-    // auto-gain gate in loop(). That is what the cadence is for, and it is no
-    // more RGBHV's than the bit is. The polarity step keeps its own gate: these
-    // are the CHANNEL's emitted pulses, so whether the channel is in circuit is
-    // the question rather than what the source is called.
-    //
-    // **THE SYNC TYPE HAS ONE OWNER, AND STATUS_INT_SOG_BAD IS NOT EVIDENCE
-    // ABOUT IT.** A second route to csync used to sit here, flipping the type
-    // after four 900 ms runs with that bit set. It only ever ran with the type
-    // ALREADY separate -- where the sync separator is out of the sync path and
-    // the bit reports a comparator with nothing to slice, so it is set
-    // permanently. Against the probe, which switches SP_EXT_SYNC_SEL and asks
-    // whether a V sync line arrives, it produced a standoff every 16 s on the
-    // bench RiscPC: "own V sync found while configured for csync -> separate
-    // H/V" answered by "SOG bad for 4 runs -> csync", with no picture between
-    // them. docs/sync-type-selection.md
-    static unsigned long lastSogBadAcknowledge = millis();
-    if ((millis() - lastSogBadAcknowledge) > 900) {
-        if (Tv5725::VideoRoute::isHdBypassChannel()
-            && GBS::STATUS_INT_SOG_BAD::read() == 0) {
-            Tv5725::HdBypass::applyChannelSyncEdges(sourceSyncEdges());
-            delay(100);
-        }
-
-        Tv5725::Interrupts::acknowledgeSogBad();
-        lastSogBadAcknowledge = millis();
-    }
-
-    if (runSettled) {
-        inputAcquisition.restartRecovery();
-        debugPrintf("No Signal Out\n");
-        rto->HdmiHoldDetection = true;
-    }
-}
 
 boolean checkBoardPower()
 {
@@ -3927,8 +3764,7 @@ void setup()
     inputAcquisition.useClock(millisNow);
     applyPassThroughPreference();
 
-    // The freeze, on the tick rather than inside the engine: loop() reaches the
-    // acquisition path directly rather than through runSyncWatcher()'s gate.
+    // The freeze, on the tick rather than inside the engine.
     // docs/gbs-control-debug-interface.md
     inputAcquisition.useRunGate(engineMayRun);
 
@@ -4429,7 +4265,7 @@ void setup()
 // re-run detection every 500 ms and step the SOG slice level down, sweeping for
 // a level that finds sync.
 //
-// loop() reaches this directly rather than through runSyncWatcher(), so the
+// loop() reaches this directly rather than through the acquisition tick, so the
 // freeze has to be checked here as well. Guarding detectAndSwitchToActiveInput()
 // instead does not work: frozen it returns 0, which is what tells
 // inputAndSyncDetect() nothing is plugged in.
@@ -4628,6 +4464,23 @@ void loop()
 
     pollFramingSave(millis());
 
+    // What the acquisition layer is told rather than measures: the user's
+    // deinterlacer preferences, and whether keeping the source coming is wanted
+    // at all -- detection owns the input while a source is disconnected, and
+    // the automatic path can be switched off. Told every pass rather than at
+    // every writer, so neither can go stale.
+    inputAcquisition.allowMaintenance(!rto->sourceDisconnected
+                                      && rto->syncWatcherEnabled);
+    {
+        Tv5725::Deinterlacer::Preferences wanted;
+        wanted.automatic = rto->deinterlaceAutoEnabled;
+        wanted.bob = uopt->deintMode == 1;
+        wanted.scanlines = uopt->wantScanlines;
+        wanted.scanlineStrength = uopt->scanlineStrength;
+        wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
+        Tv5725::Deinterlacer::choose(wanted);
+    }
+
     if (inputAcquisition.poll(millis())) {
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
@@ -4638,13 +4491,29 @@ void loop()
 
     }
 
+    // The three acts a pass decided on that live above the acquisition layer:
+    // the frame time lock, the external clock generator, and the two flags the
+    // rest of the sketch reads. Reported rather than injected, which is what
+    // keeps the layer free of uopt and of FrameSync.
+    {
+        const VideoSourceAcquisition::Report &report = inputAcquisition.report();
+        if (report.frameTimingMoved)
+            FrameSync::reset(uopt->frameTimeLockMethod);
+        if (report.vsyncLockStale)
+            lastVsyncLock = millis();
+        if (report.outputRateSettled)
+            externalClockGenSyncInOutRate();
+        if (report.captureHeld)
+            rto->videoIsFrozen = true;
+        if (report.noSignalOut)
+            rto->HdmiHoldDetection = true;
+    }
+
     // On the pass that advanced the run, not on a timer of its own: every
     // threshold below counts in those passes, and two 20 ms cadences beside each
     // other drift until a count is answered twice or not at all.
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true
         && inputAcquisition.runAdvanced()) {
-        runSyncWatcher();
-
         if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
             if (Tv5725::SourceMeasurement::dividerLatched(
                     Tv5725::SourceMeasurement::measureLineSamples(),
@@ -5289,7 +5158,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     ; // SerialMprint("OSR ");
                     ; // SerialMprint(rto->osr);
                     ; // SerialMprintln("x");
-                    rto->phaseIsSet = 0;
+                    Tv5725::Adc::forgetPhase();
                 } break;
                 case 'g':
                     inputStage++;

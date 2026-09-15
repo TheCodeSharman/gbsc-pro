@@ -89,8 +89,8 @@ bool DisplayClock::driving() const { return generator_ != 0; }
 
 void DisplayClock::select()
 {
-    // setResetParameters() and runSyncWatcher() both assert PLL_VCORST, and
-    // choosing the clock is the moment it has to come back: held, there is no
+    // The reset path asserts PLL_VCORST, and choosing the clock is the moment
+    // it has to come back: held, there is no
     // output clock and the picture tears while every register reads correct.
     GBS::PLL_VCORST::write(0);
     GBS::PLL_IS::write(1);
