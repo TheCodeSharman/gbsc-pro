@@ -1257,14 +1257,24 @@ one the same way; the rules below are each a wasted session.
   absence of data. Establish that there IS picture under the window before
   reading anything as a floor — force the magnification if need be.
 - **A MAPPING FROM PHOTO COLUMNS TO OUTPUT PIXELS DOES NOT SURVIVE AN OUTPUT MODE
-  CHANGE.** Measured 57 columns adrift — a fifth of the picture — after a
-  1080p/960p/1080p round trip with the raster registers identical either side:
-  the encoder re-acquires and where it puts the picture on the panel is its
-  choice. Calibrate by differencing a frame at one `VDS_DIS_?B_ST` against
-  frames at others, so the difference IS the strip the register blanked, and
-  **re-calibrate after anything that re-locks the encoder**. Read against a stale
-  mapping, a correct far edge reads as 110 px of overshoot and the line's repeat
-  reads as the picture.
+  CHANGE.** Measured twice: 57 columns adrift after a 1080p/960p/1080p round
+  trip, and ~150 columns after a pass-through round trip, each with the raster
+  registers read identical either side. Calibrate by differencing a frame at one
+  `VDS_DIS_?B_ST` against frames at others, so the difference IS the strip the
+  register blanked, and **re-calibrate after any output excursion**. Read against
+  a stale mapping, a correct far edge reads as 110 px of overshoot and the
+  line's repeat reads as the picture.
+
+  **DO NOT FILE THIS AGAINST THE HDMI ENCODER.** *"The encoder re-acquires and
+  where it puts the picture is its choice"* is a hypothesis nothing on this board
+  can test — the MS9288A is on no I²C bus — and it has twice been reached for as
+  an explanation rather than measured. **The position of a picture is a
+  register.** What "the raster registers are identical" has actually covered is
+  about fifteen fields; a config dump leaves 928 addresses outside the
+  comparison, so `snapdiff.py --save` either side is the check that has not been
+  done. The one encoder behaviour that IS measured is the stale-timing lock
+  above, which drops signal and clears on a `PAD_SYNC_OUT_ENZ` toggle — that is
+  a different symptom and does not license the attribution here.
 - **Separate what the board must emit from what one display happens to show.**
   The MS9288A consumes the scaler's analog blanking and generates HDMI blanking
   of its own, so the minimum the scaler must emit is a board property, measured
