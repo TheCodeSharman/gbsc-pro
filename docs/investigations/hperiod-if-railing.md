@@ -1259,7 +1259,22 @@ they hold rather than make the block measure:
 
 The value is not reproducible between runs and never correct. In run 2 every
 variant landed on the same pair despite differing in the sync path, which is a
-frozen counter rather than a measuring one. So the bit manufactures exactly the
+frozen counter rather than a measuring one.
+
+**RELEASING IT DOES NOT CLEAR THE RAILING, and what it holds is the DOUBLED
+line.** Two set-and-release cycles against a live railed instance, 2026-09-15,
+automation frozen: railed at 255/471/511/511/297/468/479/229 with
+`STATUS_IF_HT_OK` 0, then **214/214/214/211 with `HT_OK` 1** while protect
+stands, then straight back to 511/510/218/511/212/474/510/255 on release, both
+cycles. 214 is not a frozen arbitrary value: 431 = 2 x 214 + 3, and 214 is what
+31.4 kHz gives -- the rate `IF_HSYNC_RST` 1103 against `PLLAD_MD` 2206 says the
+IF runs on this line-doubled source, against the source's own 15625.
+
+So the two periods available in the path differ by exactly the doubling, the
+railed values cluster around both of them and the rail (511, ~470, ~255, ~214),
+and a bit that holds the count reports the IF's line rather than the source's.
+That is a shape worth testing against: what the counter should report is the
+SOURCE line, and the doubled line is present in the same block. So the bit manufactures exactly the
 failure this page warns about -- **a rock-steady wrong value that every stability
 check scores as healthy** -- and it must not be reached for as a fix.
 

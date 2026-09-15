@@ -56,6 +56,33 @@ The sync fields naming it -- `SP_SYNC_BYPS` "external sync bypass to decimator",
 therefore describe the sync travelling with the samples at the ADC's output,
 before the Input Formatter.
 
+### The period counters are the IF's, published in segment 0, and a segment 5 bit freezes them
+
+`HPERIOD_IF` is s0 0x06 [8:0] and `VPERIOD_IF` is s0 0x07 [11:1], and
+RD-5725-1.1 documents both inside `IF_STATUS_`, one 45-bit block at s0_00 that
+also carries `STATUS_IF_HT_OK`, `VT_OK`, `HT_BAD` and the rest. **Segment 0 is
+where the chip publishes status whoever produced it** -- `STATUS_SYNC_PROC_*`
+lives there too -- so the segment says "measurement result" and the prefix says
+which block measured it. The IF's own configuration is segment 1 and the sync
+processor's is segment 5.
+
+Which makes `SP_H_PROTECT` look misplaced and it is not: s5 0x3E bit 4, "H count
+overflow protect", freezes **both IF counters**. That is measured rather than
+documented, and it fits the path -- the IF measures the sync it receives, which
+is the processor's retimed HS and VS, so a processor bit that holds that count
+holds what the IF can measure.
+
+**Set against a railed counter it produces a steady value for the DOUBLED
+line**, not the source's. On the bench RiscPC at 320x256@50, line-doubled
+(`IF_HS_DEC_FACTOR` 1, `IF_LD_RAM_BYPS` 0), two cycles of set and release:
+`HPERIOD_IF` reads 214 / 214 / 214 / 211 with `STATUS_IF_HT_OK` **1** while
+protect stands, against the 431 the source's line is due -- and 431 = 2 x 214 +
+3, with 214 being the value 31.4 kHz gives, which is what `IF_HSYNC_RST` 1103
+against `PLLAD_MD` 2206 says the IF itself runs. Releasing the bit returns the
+noise. So the bit must not be reached for as a fix: it manufactures the one
+failure shape every stability check scores as healthy.
+`docs/investigations/hperiod-if-railing.md`.
+
 ### `SP_SYNC_BYPS` does nothing measurable on a separate-sync source
 
 The firmware writes it 0 on both sync paths and nothing else touches it, so it
