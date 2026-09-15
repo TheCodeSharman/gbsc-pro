@@ -51,7 +51,7 @@ static bool solveSampling(SourceMeasurement &sampling, uint32_t lineRateHz,
         lineRateHz, oversample, sampling.lineDoubled());
     if (divider == 0)
         return false;
-    sampling.holdDivider(divider);
+    Adc::applyDivider(divider);
     return true;
 }
 
@@ -96,15 +96,12 @@ static void seedHPeriod(uint16_t hperiod)
 
 // The three source-side reads at once, plus the divider held over from the
 // mode before. seedSourceLines() resets the bus, so the order matters.
-static void seedSource(SourceMeasurement &sampling, uint16_t lines,
-                       uint16_t lineSamples, uint16_t divider)
+static void seedSource(uint16_t lines, uint16_t lineSamples, uint16_t divider)
 {
     seedSourceLines(lines);
     Wire.bank[0][0x17] = (uint8_t)(lineSamples & 0xFF);
     Wire.bank[0][0x18] = (uint8_t)((lineSamples >> 8) & 0x0F);
-    Wire.bank[5][0x12] = (uint8_t)(divider & 0xFF);
-    Wire.bank[5][0x13] = (uint8_t)((divider >> 8) & 0x0F);
-    sampling.holdDivider(divider);
+    Adc::applyDivider(divider);
 }
 
 // The scan type as a fresh measurement reads it, with the doubling held. The
@@ -354,12 +351,13 @@ TEST_CASE("a solved divider is held, and every register follows from it")
 
     // Nothing chosen yet is a state a caller must be able to see, not a zero it
     // silently writes.
-    CHECK_FALSE(sampling.usable());
+    Adc::applyResetParameters();
+    CHECK(Adc::dividerInForce() == 0);
 
     REQUIRE(solveSampling(sampling, BenchLineRate, 4));
-    CHECK(sampling.usable());
+    CHECK(Adc::dividerInForce() != 0);
 
-    const uint16_t chosen = sampling.divider();
+    const uint16_t chosen = Adc::dividerInForce();
     CHECK(chosen == SamplingClock::recommendedDivider(BenchLineRate, 4, true));
 
     SUBCASE("the derived values come from the held divider") {
@@ -373,15 +371,14 @@ TEST_CASE("an unmeasurable line rate leaves the previous choice alone")
     Wire.reset();
     SourceMeasurement sampling;
     REQUIRE(solveSampling(sampling, BenchLineRate, 4));
-    const uint16_t chosen = sampling.divider();
+    const uint16_t chosen = Adc::dividerInForce();
 
     // getSourceFieldRate() reports 0 with no lock, and that reaches here. A
     // divider written from a measurement that did not happen is how the screen
     // goes green -- and it takes the sync processor with it, so there is no
     // picture left to diagnose from.
     CHECK_FALSE(solveSampling(sampling, 0, 4));
-    CHECK(sampling.divider() == chosen);
-    CHECK(sampling.usable());
+    CHECK(Adc::dividerInForce() == chosen);
 }
 
 // A rate that moved while the line count did not is a reading taken while the
@@ -630,43 +627,6 @@ TEST_CASE("a mode change abandons the run rather than counting through it")
     CHECK(measurement.measure() == SourceMeasurement::NotSteady);
 }
 
-// --- was the divider actually latched? ---------------------------------------
-
-TEST_CASE("a latched divider is the one the sync processor counts")
-{
-    // STATUS_SYNC_PROC_HTOTAL counts real ADC clocks per line, so with the PLL
-    // locked at the ratio the divider asked for it EQUALS the divider. That
-    // makes it the only witness on the board to a divider that was written but
-    // never loaded -- PLLAD_MD reads back the new value either way.
-    CHECK(SourceMeasurement::dividerLatched(2250, 2250));
-
-    SUBCASE("and it wobbles by a sample either way") {
-        CHECK(SourceMeasurement::dividerLatched(2252, 2250));
-        CHECK(SourceMeasurement::dividerLatched(2248, 2250));
-        CHECK_FALSE(SourceMeasurement::dividerLatched(2253, 2250));
-        CHECK_FALSE(SourceMeasurement::dividerLatched(2247, 2250));
-    }
-
-    SUBCASE("an unlocked sync processor reads steady and wrong") {
-        // 2558 against 2553 held over 22 samples while SP_VTOTAL sat at 97.
-        CHECK_FALSE(SourceMeasurement::dividerLatched(2558, 2553));
-    }
-
-    SUBCASE("and a PLL locked to every other hsync counts twice the line") {
-        CHECK_FALSE(SourceMeasurement::dividerLatched(2249, 1124));
-    }
-
-    SUBCASE("a divider of zero was never latched, whatever the count reads") {
-        CHECK_FALSE(SourceMeasurement::dividerLatched(0, 0));
-    }
-
-    SUBCASE("the tolerance is the caller's, because the question differs") {
-        // A phase sweep asks whether it is worth running at all, and answers it
-        // eight samples wide.
-        CHECK(SourceMeasurement::dividerLatched(2558, 2553, 8));
-    }
-}
-
 TEST_CASE("a near-integer multiple of the divider is a PLL counting several lines")
 {
     // The trap's signature: the sync processor reports a count too low and the
@@ -676,18 +636,18 @@ TEST_CASE("a near-integer multiple of the divider is a PLL counting several line
     // recovers the real 310.
     SourceMeasurement sampling;
 
-    seedSource(sampling, 155, 2249, 1124);
+    seedSource(155, 2249, 1124);
     CHECK(sampling.readSourceLines() == 310);
 
     SUBCASE("and four lines to a count likewise") {
         // STATUS_SYNC_PROC_HTOTAL is 12 bits, so four lines to a count is only
         // reachable on a divider small enough for the product to fit.
-        seedSource(sampling, 78, 4000, 1000);
+        seedSource(78, 4000, 1000);
         CHECK(sampling.readSourceLines() == 312);
     }
 
     SUBCASE("a count that is already a source is taken as it stands") {
-        seedSource(sampling, 311, 2553, 2553);
+        seedSource(311, 2553, 2553);
         CHECK(sampling.readSourceLines() == 311);
     }
 
@@ -695,25 +655,25 @@ TEST_CASE("a near-integer multiple of the divider is a PLL counting several line
         // 2558 against 2553 is a five-sample offset, arithmetically incapable
         // of looking like a multiple: the nearest is 5106. So nothing corrects
         // the count and it comes back as read.
-        seedSource(sampling, 97, 2558, 2553);
+        seedSource(97, 2558, 2553);
         CHECK(sampling.readSourceLines() == 97);
     }
 
     SUBCASE("nor is a reading simply unrelated to the divider") {
         // 2400 with the sync processor unconfigured.
-        seedSource(sampling, 97, 2400, 2553);
+        seedSource(97, 2400, 2553);
         CHECK(sampling.readSourceLines() == 97);
     }
 
     SUBCASE("beyond the multiples any offset can be made to fit one") {
-        seedSource(sampling, 155, 5620, 1124);
+        seedSource(155, 5620, 1124);
         CHECK(sampling.readSourceLines() == 155);
     }
 
     SUBCASE("and nothing is a multiple of nothing") {
-        seedSource(sampling, 155, 0, 1124);
+        seedSource(155, 0, 1124);
         CHECK(sampling.readSourceLines() == 155);
-        seedSource(sampling, 155, 2249, 0);
+        seedSource(155, 2249, 0);
         CHECK(sampling.readSourceLines() == 155);
     }
 }
@@ -727,24 +687,20 @@ TEST_CASE("the multiple tolerates the jitter of every line it counts")
     // Measured: 2251 against a divider of 1124, where twice is 2248.
     SourceMeasurement sampling;
 
-    seedSource(sampling, 155, 2251, 1124);
+    seedSource(155, 2251, 1124);
     CHECK(sampling.readSourceLines() == 310);
 
-    seedSource(sampling, 155, 2247, 1124);
+    seedSource(155, 2247, 1124);
     CHECK(sampling.readSourceLines() == 310);
 
     SUBCASE("and widening it does not reach the readings that are not multiples") {
-        seedSource(sampling, 97, 2558, 2553);
+        seedSource(97, 2558, 2553);
         CHECK(sampling.readSourceLines() == 97);
     }
 }
 
 // What an output frame of this many lines can display, which is the question
 // the doubling asks: the part cannot minify, so this is the ceiling.
-static uint16_t showableIn(uint16_t frameLines)
-{
-    return Tv5725::AxisVertical.maximumCapture(frameLines, 0);
-}
 
 TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
 {
@@ -1225,11 +1181,11 @@ TEST_CASE("the reference puts the chip on a divider this class chose")
     Wire.reset();
     SourceMeasurement sampling;
     sampling.holdLineDoubling(false);
-    sampling.holdDivider(1234);
+    Adc::applyDivider(1234);
 
     sampling.applyReferenceSampling();
 
-    CHECK(sampling.divider() == referenceDividerFor(false));
+    CHECK(Adc::dividerInForce() == referenceDividerFor(false));
     CHECK(dividerInForce() == referenceDividerFor(false));
     CHECK(lineCounterInForce() == sampling.ifLine());
     CHECK(retimeStopInForce() == sampling.retimeStop());
@@ -1260,8 +1216,8 @@ TEST_CASE("the reference for a line-doubled source is its own")
 
     sampling.applyReferenceSampling();
 
-    CHECK(sampling.divider() == referenceDividerFor(true));
-    CHECK(sampling.divider() != referenceDividerFor(false));
+    CHECK(Adc::dividerInForce() == referenceDividerFor(true));
+    CHECK(Adc::dividerInForce() != referenceDividerFor(false));
 }
 
 // The estimate the reference is sized from comes off the steadiness run, not off
@@ -1301,13 +1257,13 @@ TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
     SourceMeasurement sampling;
     settleAt(sampling, 700);
     sampling.applyReferenceSampling();
-    const uint16_t divider = sampling.divider();
+    const uint16_t divider = Adc::dividerInForce();
 
     Wire.reset();
     settleAt(sampling, 311);
     sampling.applyReferenceSampling();
 
-    CHECK(sampling.divider() == divider);   // the reference itself has not moved
+    CHECK(Adc::dividerInForce() == divider);   // the reference itself has not moved
     CHECK(Wire.touched[5][0x12]);           // and it was written anyway
 }
 
@@ -1552,7 +1508,7 @@ TEST_CASE("one call measures the source, and every reading comes from that pass"
     seedSourceLines(311);
     seedHPeriod(431);
     seedHsync(181, false);
-    sampling.holdDivider(BenchDivider);
+    Adc::applyDivider(BenchDivider);
     g_fieldRate = 50.08f;
 
     SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
@@ -1573,7 +1529,7 @@ TEST_CASE("a count still gathering samples costs no field rate measurement")
     SourceMeasurement sampling;
     seedSourceLines(311);
     seedHPeriod(431);
-    sampling.holdDivider(BenchDivider);
+    Adc::applyDivider(BenchDivider);
     g_fieldRateCalls = 0;
 
     CHECK(sampling.measure() == SourceMeasurement::NotSteady);
@@ -1589,7 +1545,7 @@ TEST_CASE("a count that read the serrations is reported apart from an unsettled 
     seedSourceHalfLines(622);
     seedInterlaced();
     seedHPeriod(431);
-    sampling.holdDivider(BenchDivider);
+    Adc::applyDivider(BenchDivider);
 
     SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
     for (uint8_t pass = 0; pass < 16 && reading != SourceMeasurement::Serrations; ++pass)
@@ -1605,7 +1561,7 @@ TEST_CASE("a rate that has not repeated yet is settling rather than measured")
     SourceMeasurement sampling;
     seedSourceLines(311);
     seedHPeriod(431);
-    sampling.holdDivider(BenchDivider);
+    Adc::applyDivider(BenchDivider);
     g_fieldRate = 50.08f;
 
     SourceMeasurement::MeasurementStatus first = SourceMeasurement::NotSteady;

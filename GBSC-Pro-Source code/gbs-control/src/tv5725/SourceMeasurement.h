@@ -71,6 +71,13 @@ public:
     // the scan mode, so it is taken BEFORE that clock and measure() after it.
     uint16_t readSourceLines() const;
 
+    // The line rate a RUN of the input formatter's line period implies, or 0
+    // where the run does not stand up to the line count. No vsync spin, so it
+    // is affordable on the idle path -- which is what lets a rate change at an
+    // unchanged count be seen at all. The judgement is here because one reading
+    // of a register that rails is not evidence.
+    static uint32_t measureLineRateFromHPeriod(uint16_t lines);
+
     // --- what the last measure() found ---------------------------------------
     HsyncPulse hsync() const;
     uint16_t sourceLines() const;
@@ -90,34 +97,15 @@ public:
     // whether the vertical interval is serrated.
     bool lowLineRate() const;
 
-    // --- the sampling clock every reading is counted through ------------------
-
-    // Take a divider that was chosen rather than solved.
-    void holdDivider(uint16_t divider);
-
     // Whether the line doubler is in the capture path. Held rather than read
     // back: InputFormatter::applyLineDoubling() owns the register and this owns
     // the arithmetic that has to match it -- the IF counts half-lines with the
     // doubler in, which is what the scan type's parity turns on.
     void holdLineDoubling(bool lineDoubled);
 
-    bool usable() const;
-    uint16_t divider() const;
     bool lineDoubled() const;
     uint16_t ifLine() const;
     uint16_t retimeStop() const;
-
-    // Whether the ADC PLL is running at the ratio the divider asked for.
-    bool dividerLatched() const;
-    static bool dividerLatched(uint16_t lineSamples, uint16_t divider,
-                               uint16_t tolerance = LatchedSamplesTolerance);
-
-    // The line rate a RUN of the input formatter's line period implies, or 0
-    // where the run does not stand up to the line count. No vsync spin, so it
-    // is affordable on the idle path -- which is what lets a rate change at an
-    // unchanged count be seen at all. The judgement is here because one reading
-    // of a register that rails is not evidence.
-    static uint32_t measureLineRateFromHPeriod(uint16_t lines);
 
     // --- the bounds the contract is stated in ---------------------------------
 
@@ -131,9 +119,6 @@ public:
     static const uint8_t RateAgreementAttempts = 8;
     static const uint8_t HeldRateRejectionLimit = 60;
 
-    // How far the count may sit from the divider and still be the same
-    // quantity. The register wobbles by a sample either way when locked.
-    static const uint16_t LatchedSamplesTolerance = 2;
 
     // The field rate the ADC's crossover row is picked against before one has
     // been measured.
@@ -208,7 +193,6 @@ private:
     static const uint32_t LowLineRateBelowHz = 20000;
     static const uint8_t LinesPerCountMax = 4;
 
-    uint16_t divider_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;
     float fieldRateHz_;

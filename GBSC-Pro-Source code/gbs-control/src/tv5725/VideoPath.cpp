@@ -34,8 +34,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       usableHorizontal_(0), usableVertical_(0), activeStartLine_(0),
       timing_(0.0f),
       sampling_(sampling),
-      framings_(framings),
       scanModeApplied_(false), syncTypeProbed_(false), syncProbe_(0),
+      framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       mode_(0),
       rasterLinePx_(0), rasterFrameLines_(0), activeStop_(0),
@@ -210,7 +210,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // ADC clocks -- so every measurement is garbage until this runs, the
     // steadiness gate never passes, and the pass that would have fixed the
     // clock never arrives.
-    applySampling();
+    applySampling(Adc::dividerInForce());
 }
 
 bool VideoPath::passedThrough() const
@@ -353,12 +353,6 @@ void VideoPath::configurePassThrough()
     // with nothing to return to.
     mode_ = &ModeBypass;
 
-    // The divider in force is the CHANNEL's from here on, so the engine holds
-    // that rather than whatever the last solve chose. Without it the steadiness
-    // check compares the line the sync processor counts against a clock that is
-    // not delivering it, and a passed-through source reads as unlocked.
-    sampling_.holdDivider(HdBypass::dividerFor(sampling_.lineRateHz()));
-
     rasterLinePx_ = 0;
     rasterFrameLines_ = 0;
 
@@ -452,13 +446,12 @@ void VideoPath::solveLineDoubling(uint16_t lines)
     scanModeApplied_ = true;
 }
 
-void VideoPath::applySampling()
+void VideoPath::applySampling(uint16_t divider)
 {
-    if (!sampling_.usable())
+    if (divider == 0)
         return;
 
-    Adc::applySampleRate(sampling_.divider(), sampling_.lineRateHz(),
-                         modeOversample_);
+    Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
     InputFormatter::writeLineCounter(sampling_.ifLine());
     SyncProcessor::writeRetimeStop(sampling_.retimeStop());
 }
@@ -472,11 +465,8 @@ bool VideoPath::solveSampling(uint8_t oversample)
 
     const uint16_t divider = SamplingClock::recommendedDivider(
         sampling_.lineRateHz(), oversample, sampling_.lineDoubled(), framable);
-    if (divider == 0)
-        return false;
-    sampling_.holdDivider(divider);
-    applySampling();
-    return true;
+    applySampling(divider);
+    return divider != 0;
 }
 
 int16_t VideoPath::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis)

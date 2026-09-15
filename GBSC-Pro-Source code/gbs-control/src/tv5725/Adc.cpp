@@ -6,6 +6,8 @@ namespace Tv5725 {
 
 const uint32_t Adc::MaxSampleRateHz;
 const uint16_t Adc::DividerMax;
+const uint16_t Adc::ParkedDivider;
+const uint16_t Adc::LatchedSamplesTolerance;
 
 namespace {
 uint8_t atLeastOneOversample(uint8_t oversample)
@@ -150,6 +152,7 @@ uint8_t Adc::inputSel_ = 1;
 // Nothing has been installed, so the ratio is one sample a clock -- the same
 // thing a post divider with no room to give reduces every request to.
 uint8_t Adc::oversampleInForce_ = 1;
+uint16_t Adc::dividerInForce_ = 0;
 bool Adc::phaseFound_ = false;
 
 void Adc::choosePhaseSyncProcessor(uint8_t phase)
@@ -348,6 +351,37 @@ uint8_t Adc::oversampleFor(uint8_t postDivider, uint8_t wanted)
 
 uint8_t Adc::oversampleInForce() { return oversampleInForce_; }
 
+uint16_t Adc::dividerInForce() { return dividerInForce_; }
+
+void Adc::applyDivider(uint16_t divider)
+{
+    dividerInForce_ = divider;
+    PLLAD_MD::write(divider);
+    latch();
+}
+
+void Adc::applyResetParameters()
+{
+    PLLAD_ICP::write(0);
+    PLLAD_FS::write(0);
+    PLLAD_5_16::write(0x1f);
+    PLLAD_MD::write(ParkedDivider);
+
+    // Not the parking value: the pulse on VCORST/PDZ that follows holds the PLL
+    // in reset, so no divider is in force at all until one is applied.
+    dividerInForce_ = 0;
+}
+
+bool Adc::dividerLatched(uint16_t lineSamples, uint16_t tolerance)
+{
+    if (dividerInForce_ == 0)
+        return false;
+
+    const uint16_t larger = lineSamples > dividerInForce_ ? lineSamples : dividerInForce_;
+    const uint16_t smaller = lineSamples > dividerInForce_ ? dividerInForce_ : lineSamples;
+    return (uint16_t)(larger - smaller) <= tolerance;
+}
+
 uint8_t Adc::stepsFor(uint8_t oversample)
 {
     uint8_t steps = 0;
@@ -415,6 +449,8 @@ void Adc::applyScalingChargePump()
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
                              uint8_t oversample)
 {
+    dividerInForce_ = divider;
+
     if (lineRateHz == 0) {
         // No CKO, so no row to read the crossover table against. The divider is
         // the caller's own and still goes in; picking a row by arithmetic on a

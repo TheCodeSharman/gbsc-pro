@@ -20,9 +20,9 @@
 
 VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampling,
                                    Tv5725::VideoPath &videoPath)
-    : sampling_(sampling), videoPath_(videoPath), mayRun_(0),
-      passThroughSwitch_(0), maintenanceAllowed_(false),
-      channelSyncServicedEver_(false), channelSyncServicedMs_(0), passThroughAllowed_(false), resolution_(0),
+    : sampling_(sampling), videoPath_(videoPath), maintenanceAllowed_(false),
+      channelSyncServicedEver_(false), channelSyncServicedMs_(0),
+      mayRun_(0), passThroughSwitch_(0), passThroughAllowed_(false), resolution_(0),
       detectedMs_(0),
       detectedEver_(false), solvedLines_(0), solvedLineRateHz_(0),
       idle_(Tv5725::SourceMeasurement::SteadySamples),
@@ -69,9 +69,8 @@ const uint8_t LatchSamples = 8;
 
 bool VideoSourceAcquisition::acquireSamplingPhase()
 {
-    if (!Tv5725::SourceMeasurement::dividerLatched(
-            Tv5725::SyncProcessor::lineSamples(),
-            Tv5725::Adc::PLLAD_MD::read(), LatchSamples))
+    if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples(),
+                                     LatchSamples))
         return false;
 
     // What the ADC is RUNNING, not what was asked for: the request is
@@ -260,8 +259,7 @@ bool VideoSourceAcquisition::sourceMoved()
     const uint16_t lineSamples = Tv5725::SyncProcessor::lineSamples();
     const SourceState was = sourceState_;
     sourceState_ = !(plausible && held) ? SourceAbsent
-                   : Tv5725::SourceMeasurement::dividerLatched(lineSamples,
-                                                       sampling_.divider())
+                   : Tv5725::Adc::dividerLatched(lineSamples)
                        ? SourceAcquired
                        : SourceUnlocked;
 
@@ -269,7 +267,7 @@ bool VideoSourceAcquisition::sourceMoved()
     // INTERMITTENT and a poll fast enough to catch it changes what the unit
     // does. This costs no bus traffic the answer did not already need.
     if (sourceState_ != was)
-        logSourceState(sourceState_, lines, lineSamples, sampling_.divider());
+        logSourceState(sourceState_, lines, lineSamples, Tv5725::Adc::dividerInForce());
 
     // A count no source runs is the wrong sync path's signature -- 97..137 on a
     // 311-line source, measured -- and a mode change is the only thing that

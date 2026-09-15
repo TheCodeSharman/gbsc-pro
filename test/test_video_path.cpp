@@ -331,7 +331,7 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(dividerInForce() == sampling.divider());
+    CHECK(dividerInForce() == Adc::dividerInForce());
     CHECK(lineCounterInForce() == sampling.ifLine());
     CHECK(retimeStopInForce() == sampling.retimeStop());
 }
@@ -346,7 +346,9 @@ TEST_CASE("a measurement that solved nothing puts no divider on the chip")
     FramingTable framings;
     VideoPath engine(clock, sampling, framings);
 
-    REQUIRE_FALSE(sampling.usable());
+    // Nothing has solved a divider, which is what the chip reset leaves.
+    Adc::applyResetParameters();
+    REQUIRE(Adc::dividerInForce() == 0);
     Wire.reset();
     engine.inputTimingsChanged(4);
 

@@ -383,6 +383,40 @@ public:
     // OversampleAsClockAllows on every source, and the answer is 1, 2 or 4.
     static uint8_t oversampleInForce();
 
+    // The divider setResetParameters() parks in PLLAD_MD. Nothing measured it
+    // and no source is being sampled at it -- it is what the register holds
+    // while the PLL is held in reset.
+    static const uint16_t ParkedDivider = 0x700;
+
+    // The divider alone, latched. NOT the crossover row -- applySampleRate() is
+    // what writes the group, and a caller here is holding the rest itself.
+    static void applyDivider(uint16_t divider);
+
+    // The ADC PLL as the chip reset leaves it: no charge pump, the low VCO
+    // gain, and the parked divider. The pulse on VCORST/PDZ that follows is the
+    // caller's -- this is the state it latches. Leaves no divider in force,
+    // because a PLL held in reset is running none.
+    static void applyResetParameters();
+
+    // Whether the PLL is running the divider in force, against the sync
+    // processor's line total -- which counts in ADC clocks and so reports the
+    // LATCHED divider, the one witness on the board that a write reached the
+    // PLL. The count is passed in because measuring the source is not the ADC's
+    // job. ../../../docs/tv5725-chip.md
+    static bool dividerLatched(uint16_t lineSamples,
+                               uint16_t tolerance = LatchedSamplesTolerance);
+
+    // How far the sync processor's count may sit from the divider and still be
+    // the same quantity. The register wobbles by a sample either way when
+    // locked.
+    static const uint16_t LatchedSamplesTolerance = 2;
+
+    // The divider PLLAD_MD is holding. Reading the register back cannot answer
+    // this: PLLAD_LAT loads it on a rising edge, so between a write and that
+    // edge the register reports the new value while the PLL still runs the old
+    // one. ../../../docs/investigations/hperiod-if-railing.md
+    static uint16_t dividerInForce();
+
     // The ADC as pass-through wants it: no internal filtering, and the PLL's
     // charge pump. NOT the divider and NOT the VCO gain -- HdBypass::dividerFor()
     // answers the first against the line rate, and applySampleRate() writes both
@@ -412,6 +446,7 @@ private:
     static uint8_t phaseAdc_;
     static uint8_t inputSel_;
     static uint8_t oversampleInForce_;
+    static uint16_t dividerInForce_;
     static bool phaseFound_;
 
 };

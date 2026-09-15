@@ -816,3 +816,112 @@ TEST_CASE("with no line rate there is no tap to install, so the ratio in force s
 
     CHECK(Adc::oversampleInForce() == 4);
 }
+
+TEST_CASE("the divider in force is whatever last reached the PLL, rate or no rate")
+{
+    // PLLAD_MD is declared here, so the value behind it is this block's to
+    // hold. Both branches of applySampleRate() write the register, so both
+    // move the answer -- the rate-less one writes the divider and latches it
+    // and nothing else.
+    Wire.reset();
+
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+    CHECK(Adc::dividerInForce() == 2250);
+
+    Adc::applySampleRate(1856, 0, Adc::OversampleAsClockAllows);
+    CHECK(Adc::dividerInForce() == 1856);
+}
+
+TEST_CASE("the reset parameters park the divider, and the held value follows")
+{
+    // setResetParameters() used to write PLLAD_MD itself, which left the held
+    // divider describing whatever the last source solved while the chip sat on
+    // the parking value. Every question asked of the ADC in between -- above
+    // all whether the divider is latched -- was then answered against a
+    // divider the PLL was not running.
+    Wire.reset();
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+    REQUIRE(Adc::dividerInForce() == 2250);
+
+    Adc::applyResetParameters();
+
+    CHECK(Wire.field(5, Adc::PLLAD_MD::byteOffset, Adc::PLLAD_MD::bitOffset,
+                     Adc::PLLAD_MD::bitWidth) == Adc::ParkedDivider);
+
+    // Not the parking value: the PLL is about to be held in reset, so nothing
+    // is in force and every question asked of the divider says so.
+    CHECK(Adc::dividerInForce() == 0);
+    CHECK(Wire.field(5, Adc::PLLAD_ICP::byteOffset, Adc::PLLAD_ICP::bitOffset,
+                     Adc::PLLAD_ICP::bitWidth) == 0);
+    CHECK(Wire.field(5, Adc::PLLAD_FS::byteOffset, Adc::PLLAD_FS::bitOffset,
+                     Adc::PLLAD_FS::bitWidth) == 0);
+}
+
+TEST_CASE("a latched divider is the one the sync processor counts")
+{
+    // STATUS_SYNC_PROC_HTOTAL counts real ADC clocks per line, so with the PLL
+    // locked at the ratio the divider asked for it EQUALS the divider in force.
+    // That makes it the only witness on the board to a divider that was written
+    // but never loaded -- PLLAD_MD reads back the new value either way, which
+    // is why the count is the argument and the divider is not.
+    Wire.reset();
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+
+    CHECK(Adc::dividerLatched(2250));
+
+    SUBCASE("and it wobbles by a sample either way") {
+        CHECK(Adc::dividerLatched(2252));
+        CHECK(Adc::dividerLatched(2248));
+        CHECK_FALSE(Adc::dividerLatched(2253));
+        CHECK_FALSE(Adc::dividerLatched(2247));
+    }
+
+    SUBCASE("an unlocked sync processor reads steady and wrong") {
+        // 2558 against 2553 held over 22 samples while SP_VTOTAL sat at 97.
+        Adc::applySampleRate(2553, 15574, Adc::OversampleAsClockAllows);
+        CHECK_FALSE(Adc::dividerLatched(2558));
+    }
+
+    SUBCASE("and a PLL locked to every other hsync counts twice the line") {
+        Adc::applySampleRate(1124, 31469, Adc::OversampleAsClockAllows);
+        CHECK_FALSE(Adc::dividerLatched(2249));
+    }
+
+    SUBCASE("a divider of zero was never latched, whatever the count reads") {
+        Adc::applySampleRate(0, 0, Adc::OversampleAsClockAllows);
+        CHECK_FALSE(Adc::dividerLatched(0));
+    }
+
+    SUBCASE("the tolerance is the caller's, because the question differs") {
+        // A phase sweep asks whether it is worth running at all, and answers it
+        // eight samples wide.
+        Adc::applySampleRate(2553, 15574, Adc::OversampleAsClockAllows);
+        CHECK(Adc::dividerLatched(2558, 8));
+    }
+
+    SUBCASE("a PLL held in reset has latched nothing, whatever the count reads") {
+        Adc::applyResetParameters();
+        CHECK_FALSE(Adc::dividerLatched(2250));
+        CHECK_FALSE(Adc::dividerLatched(Adc::ParkedDivider));
+    }
+}
+
+TEST_CASE("the divider on its own is latched, and the held value follows it")
+{
+    // For a caller nudging the divider while holding the rest of the group
+    // itself. The crossover row is deliberately untouched -- applySampleRate()
+    // is what writes the group -- but the latch is not optional: PLLAD_LAT is
+    // what loads MD, so a write without the edge leaves the PLL on the old
+    // divider with the register reading back correct.
+    Wire.reset();
+    REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
+
+    Wire.reset();
+    Adc::applyDivider(2251);
+
+    CHECK(Adc::dividerInForce() == 2251);
+    CHECK(Wire.field(5, Adc::PLLAD_MD::byteOffset, Adc::PLLAD_MD::bitOffset,
+                     Adc::PLLAD_MD::bitWidth) == 2251);
+    CHECK(lastWriteOf<Adc::PLLAD_MD>() < latchRisingEdge());
+    CHECK_FALSE(Wire.touched[5][Adc::PLLAD_KS::byteOffset]);
+}

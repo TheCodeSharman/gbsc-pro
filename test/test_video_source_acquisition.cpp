@@ -638,7 +638,7 @@ TEST_CASE("a measurement under a bypassed output leaves the channel's divider al
     // What the sketch's switch writes and this fake does not: the channel's
     // own divider, which HD_HSYNC_RST is then sized for.
     const uint16_t channelDivider = HdBypass::dividerFor(525 * 60);
-    seed(5, 0x12, 0, 12, channelDivider);
+    Adc::applyDivider(channelDivider);
     seedLineSamples(channelDivider);
 
     // The chip latches a disturbance. The source has not moved and the picture

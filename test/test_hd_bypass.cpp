@@ -13,8 +13,6 @@
 
 // The two the linked classes need from the sketch, plus the RGB patches the
 // ladder is handed -- counted, so standard 13's coverage can assert them.
-static int rgbPatchCalls = 0;
-static void countRgbPatches() { ++rgbPatchCalls; }
 #include "DebugPinStub.h"
 #include "MeasuredSource.h"
 

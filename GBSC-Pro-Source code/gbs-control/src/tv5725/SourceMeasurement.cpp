@@ -11,7 +11,6 @@
 
 namespace Tv5725 {
 
-const uint16_t SourceMeasurement::LatchedSamplesTolerance;
 const uint8_t SourceMeasurement::LinesPerCountMax;
 
 bool SourceMeasurement::heldRateJudges(uint16_t lines, uint16_t heldLines,
@@ -83,10 +82,10 @@ const uint16_t SourceMeasurement::RateAgreementPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 
 SourceMeasurement::SourceMeasurement()
-    : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
+    : lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
-      rateRejections_(0), lineDoubled_(true), steady_(SteadySamples),
-      verticalPeriod_(0), rateAttempts_(0), serrationsSeen_(false),
+      rateRejections_(0), lineDoubled_(true), verticalPeriod_(0),
+      steady_(SteadySamples), rateAttempts_(0), serrationsSeen_(false),
       referenceRateHz_(0)
 {
 }
@@ -273,23 +272,20 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measure()
 
 HsyncPulse SourceMeasurement::hsync() const { return hsync_; }
 
-bool SourceMeasurement::usable() const { return divider_ != 0; }
-
-uint16_t SourceMeasurement::divider() const { return divider_; }
-
 uint32_t SourceMeasurement::lineRateHz() const { return goodLineRateHz_; }
 
 uint16_t SourceMeasurement::readSourceLines() const
 {
-    return measureSourceLinesCorrected(divider_);
+    return measureSourceLinesCorrected(Adc::dividerInForce());
 }
 
 HsyncPulse SourceMeasurement::readSource() const
 {
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.
-    const float duty = divider_ > 0
-        ? (float)SyncProcessor::hsyncLowSamples() / (float)divider_ : 0.0f;
+    const uint16_t divider = Adc::dividerInForce();
+    const float duty = divider > 0
+        ? (float)SyncProcessor::hsyncLowSamples() / (float)divider : 0.0f;
     return HsyncPulse(duty, SyncProcessor::hsyncPositive());
 }
 
@@ -301,8 +297,7 @@ float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
 uint16_t SourceMeasurement::ifLine() const
 {
-    return InputFormatter::lineCounterFor(
-        divider_, lineDoubled_);
+    return InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled_);
 }
 
 uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
@@ -316,8 +311,6 @@ uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
     // progressive reference needs it.
     return (uint16_t)(limit & ~1u);
 }
-
-void SourceMeasurement::holdDivider(uint16_t divider) { divider_ = divider; }
 
 uint32_t SourceMeasurement::estimatedLineRateHz() const
 {
@@ -337,7 +330,7 @@ bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
 
 uint16_t SourceMeasurement::retimeStop() const
 {
-    return SyncProcessor::retimeStopFor(divider_);
+    return SyncProcessor::retimeStopFor(Adc::dividerInForce());
 }
 
 void SourceMeasurement::applyReferenceSampling()
@@ -352,11 +345,10 @@ void SourceMeasurement::applyReferenceSampling()
     // the thing they are stopping.
     InputFormatter::writeReferenceVerticalBlank();
 
-    if (divider_ == reference && estimate == referenceRateHz_)
+    if (Adc::dividerInForce() == reference && estimate == referenceRateHz_)
         return;
 
     referenceRateHz_ = estimate;
-    holdDivider(reference);
 
     // The most the clock allows, rather than whatever the output mode is
     // running: a reference that follows a picture setting is not a reference.
@@ -377,22 +369,6 @@ uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
     return lineRateFromHPeriod(hperiod, HPeriodSamples, lines, htBadSeen);
 }
 
-
-bool SourceMeasurement::dividerLatched(uint16_t lineSamples, uint16_t divider,
-                                       uint16_t tolerance)
-{
-    if (divider == 0)
-        return false;
-
-    uint16_t larger = lineSamples > divider ? lineSamples : divider;
-    uint16_t smaller = lineSamples > divider ? divider : lineSamples;
-    return (uint16_t)(larger - smaller) <= tolerance;
-}
-
-bool SourceMeasurement::dividerLatched() const
-{
-    return dividerLatched(SyncProcessor::lineSamples(), divider_);
-}
 
 uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
 {
@@ -417,7 +393,7 @@ uint8_t SourceMeasurement::linesPerCount(uint16_t lineSamples, uint16_t divider)
         uint32_t wanted = (uint32_t)divider * lines;
         uint32_t apart = lineSamples > wanted ? lineSamples - wanted
                                               : wanted - lineSamples;
-        if (apart <= (uint32_t)LatchedSamplesTolerance * lines)
+        if (apart <= (uint32_t)Adc::LatchedSamplesTolerance * lines)
             return lines;
     }
     return 0;

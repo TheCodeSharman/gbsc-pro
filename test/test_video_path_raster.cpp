@@ -283,13 +283,6 @@ TEST_CASE("a board with no generator gets the seed's own internal divider")
 // VDS_VSYNC_RST, s3_02[14:4] -- the output frame the engine writes.
 static uint16_t frameLinesWritten() { return Wire.field(3, 0x02, 4, 11) + 1; }
 
-static bool pollUntilResolved(VideoSourceAcquisition &acquisition)
-{
-    for (uint8_t i = 0; i < 16 * SourceMeasurement::SteadySamples; ++i)
-        if (pollOnce(acquisition))
-            return true;
-    return false;
-}
 
 static void forgetWrites()
 {

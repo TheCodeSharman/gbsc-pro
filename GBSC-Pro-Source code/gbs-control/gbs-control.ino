@@ -1395,10 +1395,7 @@ void setResetParameters()
     GBS::SP_SOG_SRC_SEL::write(0);  
     Tv5725::SyncProcessor::selectExternalSync(0);
     Tv5725::SyncProcessor::holdClamp();
-    GBS::PLLAD_ICP::write(0);       
-    GBS::PLLAD_FS::write(0);        
-    GBS::PLLAD_5_16::write(0x1f);
-    GBS::PLLAD_MD::write(0x700);
+    Tv5725::Adc::applyResetParameters();
     resetPLL();
     delay(2);
     resetPLLAD();
@@ -2043,13 +2040,11 @@ bool writePllAdMdChecked(uint16_t wanted)
         return true;
     }
 
-    GBS::PLLAD_MD::write(wanted);
-    latchPLLAD();
+    Tv5725::Adc::applyDivider(wanted);
 
     if (GBS::PLLAD_MD::read() != wanted) {
         debugPrintf("PLLAD_MD: write of %u did not take, restoring %u\n", wanted, previous);
-        GBS::PLLAD_MD::write(previous);
-        latchPLLAD();
+        Tv5725::Adc::applyDivider(previous);
         return false;
     }
 
@@ -2063,8 +2058,7 @@ bool writePllAdMdChecked(uint16_t wanted)
     }
 
     debugPrintf("PLLAD_MD: %u lost sync, restoring %u\n", wanted, previous);
-    GBS::PLLAD_MD::write(previous);
-    latchPLLAD();
+    Tv5725::Adc::applyDivider(previous);
     return false;
 }
 
@@ -4278,9 +4272,7 @@ void loop()
         FrameSync::quietFor(FrameSyncAttrs::lockInterval) &&
         inputAcquisition.acquiredPasses() > 20 &&
         inputAcquisition.unmeasuredPasses() == 0) {
-        if (Tv5725::SourceMeasurement::dividerLatched(
-                Tv5725::SyncProcessor::lineSamples(),
-                GBS::PLLAD_MD::read())) {
+        if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
             fsDebugPrintf("running frame sync, clock gen enabled = %d\n", rto->extClockGenDetected);
 
             bool success = rto->extClockGenDetected ? FrameSync::runFrequency() : FrameSync::runVsync(uopt->frameTimeLockMethod);
@@ -4371,9 +4363,7 @@ void loop()
     if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true
         && inputAcquisition.runAdvanced()) {
         if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
-            if (Tv5725::SourceMeasurement::dividerLatched(
-                    Tv5725::SyncProcessor::lineSamples(),
-                    GBS::PLLAD_MD::read())) {
+            if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
                 uint8_t debugRegBackup = 0, debugPinBackup = 0;
                 debugPinBackup = GBS::PAD_BOUT_EN::read();
                 debugRegBackup = Tv5725::TestBus::selected();
@@ -4396,9 +4386,7 @@ void loop()
         if (inputAcquisition.acquiredPasses() >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
             FrameSync::quietFor(500)) {
             if ((inputAcquisition.acquiredPasses() % 5) == 0) {
-                if (Tv5725::SourceMeasurement::dividerLatched(
-                        Tv5725::SyncProcessor::lineSamples(),
-                        GBS::PLLAD_MD::read()))
+                if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
                     FrameSync::init();
             }
         }

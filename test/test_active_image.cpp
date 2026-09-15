@@ -37,7 +37,7 @@ using namespace Tv5725;
 // it, which is what a press does.
 static Tv5725::ActiveImage framed(const Tv5725::VideoSourceLine &line, float rate,
                                   const Tv5725::Axis &axis, int16_t zoomUnits,
-                                  int16_t panUnits, uint16_t raster = 0)
+                                  int16_t panUnits, uint16_t = 0)
 {
     Tv5725::ActiveImage f;
     if (zoomUnits != 0)
