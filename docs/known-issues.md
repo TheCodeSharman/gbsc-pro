@@ -262,6 +262,11 @@ is a blocking spin with no `yield()`, one field period nominal and up to
 3 x 250 ms on retries, and `agreedRate()` wraps that in three more attempts. The
 reverse change is 2.89 s.
 
+**An input change between the two bench sources is the same transition**, since
+`vga` at 320x256@50 is 311 lines and the Wii at 480p is 524. `/input?src=ypbpr`
+and back both spend it, which is why a switch that `CLAUDE.md` times at about
+15 s can need several rounds of polling before `/geometry` reports acquired.
+
 A bounded *poll until `STATUS_IF_HT_BAD` clears* is the candidate replacement:
 `HT_BAD` re-locks within 25 ms measured and 1.4 ms nominal, against a 20 ms
 blocking spin for the fallback. **The bound is essential** -- on the
