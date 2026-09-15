@@ -142,6 +142,25 @@ the path. On separate sync the register holds debris -- 33 to 101 on the bench
 source -- and `STATUS_IF_VT_OK` reads 0 beside it, which is the gate the caller
 gives it. There the scan type has no source at all.
 
+### The measured scan type cannot replace the classification here, and the reason is circular
+
+The obvious cleanup -- feed `countIsSerrations()` the measured scan type
+instead of the STATUS_00 bits -- does not work, and it fails in the direction
+that matters.
+
+`scanTypeFor()` needs the line doubling, and the doubling is solved from the
+line count. On a count the serrations have doubled, the scan mode is solved for
+that corrupted count and comes out undoubled; the parity rule then reads the
+period as progressive, and a progressive source cannot have doubled -- so the
+check that exists to catch the doubling disables itself on exactly the source it
+was written for. Measured: a 607-line count against a 624 period stops widening
+the coast, and the source never comes up.
+
+The gate has to be independent of the count under suspicion, and the
+classification bits are. They do not answer the scan type -- nothing here
+retracts that -- but they are not derived from the count, which is the property
+this use needs.
+
 **`SourceMeasurement::countIsSerrations()` still takes the classification**, and
 it is the second consumer of the same unreliable bit. It asks whether a count
 could have doubled, which only an interlaced source can do. On every state
