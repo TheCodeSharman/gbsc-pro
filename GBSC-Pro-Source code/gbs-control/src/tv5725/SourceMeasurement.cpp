@@ -20,7 +20,6 @@ const uint16_t SourceMeasurement::RecommendedPercent;
 const uint16_t SourceMeasurement::RetimeStopPercent;
 const uint16_t SourceMeasurement::LatchedSamplesTolerance;
 const uint8_t SourceMeasurement::LinesPerCountMax;
-const uint16_t SourceMeasurement::LineDoubleBelowLines;
 
 // A dropped read of ADC_CLK_ICLK1X/2X arrives as 0. Treating that as "no
 // oversampling" keeps the ceiling honest; treating it as a divisor would make
@@ -455,43 +454,9 @@ uint32_t SourceMeasurement::estimatedLineRateHz() const
 
 uint32_t SourceMeasurement::heldLineRateHz() const { return goodLineRateHz_; }
 
-bool SourceMeasurement::rateCanBypass() const
-{
-    return heldLineRateHz() >= BypassMinLineRateHz;
-}
-
-bool SourceMeasurement::countCanBypass(uint16_t lines) const
-{
-    if (lines == 0)
-        return false;
-    const float rate =
-        fieldRateHz_ > 0.0f ? fieldRateHz_ : (float)NominalFieldRateHz;
-    return (uint32_t)((float)lines * rate) >= BypassMinLineRateHz;
-}
-
 bool SourceMeasurement::lowLineRate() const
 {
     return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
-}
-
-bool SourceMeasurement::bypassSuitsCount(uint16_t lines) const
-{
-    return !lineDoublingFor(lines) && countCanBypass(lines);
-}
-
-bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines,
-                                       uint16_t showableUnits)
-{
-    if (sourceLines == 0)
-        return true;
-    if (sourceLines >= LineDoubleBelowLines)
-        return false;
-    if (showableUnits == 0)
-        return true;
-
-    // The IF counts half-lines with the doubler in, so the doubled frame asks
-    // for twice the source's own count.
-    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits;
 }
 
 void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }

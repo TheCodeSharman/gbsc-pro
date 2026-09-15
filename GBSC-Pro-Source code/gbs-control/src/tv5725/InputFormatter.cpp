@@ -2,6 +2,22 @@
 
 namespace Tv5725 {
 
+InputFormatter::ScanMode InputFormatter::scanModeFor(uint16_t sourceLines,
+                                                    uint16_t showableUnits)
+{
+    if (sourceLines == 0)
+        return LineDoubled;
+    if (sourceLines >= DoubleBelowLines)
+        return Progressive;
+    if (showableUnits == 0)
+        return LineDoubled;
+
+    // The IF counts half-lines with the doubler in, so the doubled frame asks
+    // for twice the source's own count.
+    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits ? LineDoubled
+                                                              : Progressive;
+}
+
 void InputFormatter::init()
 {
     IF_IN_DREG_BYPS::write(0x0);                 // s1_00[0:0]

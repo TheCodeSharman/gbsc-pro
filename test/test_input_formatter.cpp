@@ -12,8 +12,15 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 
 using Tv5725::InputFormatter;
+
+// What the output can display, in the units the capture is counted in.
+static uint16_t showableIn(uint16_t frameLines)
+{
+    return Tv5725::AxisVertical.maximumCapture(frameLines, 0);
+}
 
 // Leaves IF_LD_ST reading 1, which is neither the 5 this writes nor the 3 the
 // NTSC tables carry, so the assertion below can fail.
@@ -234,4 +241,55 @@ TEST_CASE("disabling the auto offset leaves the rest of its bytes alone")
     CHECK(Wire.field(1, 0x29, 1, 1) == 0);  // IF_AUTO_OFST_PRD
     CHECK(Wire.field(1, 0x2A, 0, 8) == 0);  // both detection ranges
     CHECK(Wire.field(1, 0x29, 2, 6) == ((Poison >> 2) & 0x3F));
+}
+
+// Which scan mode a source of a given line count is captured in.
+
+TEST_CASE("line doubling is decided by the source line count")
+{
+    // Line doubling exists so there are enough lines for the rest of the chain
+    // to reach the output resolution. That is a question about how many lines
+    // arrive, not how fast they arrive.
+    //
+    // Measured over the RISC PC's modes: 261, 311 and 363 total lines are
+    // captured doubled; 448, 524, 533 and 627 are not. The boundary sits in
+    // that gap. It is reproduced rather than derived, so that moving it is a
+    // deliberate change with its own acceptance test.
+    CHECK(InputFormatter::scanModeFor(261) == InputFormatter::LineDoubled);
+    CHECK(InputFormatter::scanModeFor(311) == InputFormatter::LineDoubled);
+    CHECK(InputFormatter::scanModeFor(363) == InputFormatter::LineDoubled);
+    CHECK(InputFormatter::scanModeFor(448) == InputFormatter::Progressive);
+    CHECK(InputFormatter::scanModeFor(524) == InputFormatter::Progressive);
+    CHECK(InputFormatter::scanModeFor(533) == InputFormatter::Progressive);
+    CHECK(InputFormatter::scanModeFor(627) == InputFormatter::Progressive);
+
+    // An interlaced PAL frame is 625 lines, which is plenty. What it needs is
+    // DEINTERLACING, which is a separate register and a separate decision.
+    CHECK(InputFormatter::scanModeFor(625) == InputFormatter::Progressive);
+
+    // No measurement yet. The default is the one a low-line-count source needs,
+    // because that is the source a wrong guess leaves without enough lines.
+    CHECK(InputFormatter::scanModeFor(0) == InputFormatter::LineDoubled);
+}
+TEST_CASE("a source is not doubled into an output that cannot show the result")
+{
+    // Doubling turns a 311-line source into 624 units, and the part cannot
+    // minify: an output with less room than that shows the top of the doubled
+    // frame and nothing else, with the control dead in both directions. So the
+    // question is not only how many lines arrive, but how many can be shown.
+    CHECK(InputFormatter::scanModeFor(311, showableIn(1125)) == InputFormatter::LineDoubled);  // 1080p
+    CHECK(InputFormatter::scanModeFor(311, showableIn(750)) == InputFormatter::LineDoubled);   // 720p
+    CHECK(InputFormatter::scanModeFor(311, showableIn(525)) == InputFormatter::Progressive);  // 480p
+    CHECK(InputFormatter::scanModeFor(311, showableIn(625)) == InputFormatter::Progressive);  // 576p
+
+    SUBCASE("a shorter source still doubles into the same output") {
+        // 288 lines doubled is 578, which a 625-line frame holds.
+        CHECK(InputFormatter::scanModeFor(288, showableIn(625)) == InputFormatter::LineDoubled);
+    }
+
+    SUBCASE("no output raster asks the source alone") {
+        // Bypass, and every caller that has not solved a raster yet.
+        CHECK(InputFormatter::scanModeFor(311, 0) == InputFormatter::LineDoubled);
+        CHECK(InputFormatter::scanModeFor(524, 0) == InputFormatter::Progressive);
+    }
 }

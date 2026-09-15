@@ -311,6 +311,27 @@ public:
     // component source arrives with luma and chroma separated, and only the
     // line doubler puts them out.
     static void applyScanMode(ScanMode mode, bool component);
+
+    // Below this many total source lines the capture is line-doubled, so the
+    // rest of the chain has enough lines to reach the output resolution.
+    // Measured rather than derived: 363 lines are doubled and 448 are not, and
+    // no hardware limit produces the boundary between them.
+    // ../../../docs/investigations/hperiod-if-railing.md has the sweep.
+    static const uint16_t DoubleBelowLines = 400;
+
+    // Which scan mode a source of this many total lines is captured in.
+    //
+    // **Line doubling is not deinterlacing.** This asks whether enough lines
+    // arrive; whether they arrive as fields is a separate fact with its own
+    // register. An interlaced 625-line frame has lines to spare and wants
+    // deinterlacing, not doubling.
+    //
+    // `showableUnits` is what the output can display: the part cannot minify,
+    // so a doubled frame with no room to be shown would only be cropped. Zero
+    // asks the source alone, which is bypass and every caller with no raster
+    // yet. An unmeasured count comes back LineDoubled -- what a short source
+    // needs, and the one a wrong guess leaves short.
+    static ScanMode scanModeFor(uint16_t sourceLines, uint16_t showableUnits = 0);
 };
 
 }  // namespace Tv5725

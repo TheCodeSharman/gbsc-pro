@@ -132,8 +132,9 @@ bool VideoSourceAcquisition::outputIsPassedThrough() const
 bool VideoSourceAcquisition::passThroughSuitsSource() const
 {
     return passThroughAllowed_
-           && sampling_.bypassSuitsCount(sampling_.sourceLines())
-           && sampling_.rateCanBypass();
+           && Tv5725::HdBypass::suitsSource(sampling_.sourceLines(),
+                                  sampling_.fieldRateHz())
+           && Tv5725::HdBypass::suitsLineRate(sampling_.heldLineRateHz());
 }
 
 bool VideoSourceAcquisition::passSourceThrough()

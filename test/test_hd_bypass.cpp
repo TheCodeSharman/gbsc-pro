@@ -16,7 +16,11 @@
 static int rgbPatchCalls = 0;
 static void countRgbPatches() { ++rgbPatchCalls; }
 #include "DebugPinStub.h"
-uint32_t debugPinPulseTicks() { return ticksForHz(50.0f); }
+
+// Driveable, because the bypass decisions below are taken against a measured
+// source and the rate is half of what they weigh.
+static float g_fieldRate = 50.0f;
+uint32_t debugPinPulseTicks() { return ticksForHz(g_fieldRate); }
 void tv5725Log(const char *) {}
 
 FakeTwoWire Wire;
@@ -32,6 +36,15 @@ FakeTwoWire Wire;
 
 using Tv5725::ColourSpace;
 using Tv5725::HdBypass;
+using Tv5725::SourceMeasurement;
+
+// The source's line count as the sync processor reports it.
+static void seedSourceLines(uint16_t lines)
+{
+    Wire.reset();
+    Wire.bank[0][0x1B] = (uint8_t)(lines & 0xFF);
+    Wire.bank[0][0x1C] = (uint8_t)((lines >> 8) & 0x07);
+}
 
 // Neither a gain of 128 nor an offset of 0, so a field left at the poison is
 // reported rather than mistaken for a write.
@@ -625,4 +638,156 @@ TEST_CASE("the channel's entry records the oversampling it leaves the ADC on")
     // 2039 samples on a 31469 Hz line is CKO 64.2 MHz, which the crossover
     // table takes at post divider one -- so two is all the tap can carry.
     CHECK(Adc::oversampleInForce() == 2);
+}
+
+// Whether a measured source should be passed through at all, which is a
+// question about this block rather than about the measurement.
+
+TEST_CASE("only a rate a display accepts may be bypassed")
+{
+    // Bypass hands the source's own timing to the encoder, so it works only
+    // where the DISPLAY can show that timing. Refusing falls back to the
+    // scaling path, which shows any rate; accepting wrongly puts torn,
+    // sheared content on the panel that reads as a broken scaler.
+    // docs/rgbhv-bypass-trap.md
+    SourceMeasurement measurement;
+
+    SUBCASE("nothing measured yet cannot be bypassed") {
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+
+    SUBCASE("a 15.6 kHz line cannot") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+
+    SUBCASE("the 31.4 kHz VGA line can") {
+        // 640x480@60, VTOTAL 524. Measured locking.
+        seedSourceLines(524);
+        g_fieldRate = 60.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+
+    SUBCASE("26.6 kHz can, which is under the VGA line") {
+        // 640x512@50, VTOTAL 533. Measured locking, which is why the floor is
+        // bracketed rather than taken from the VGA standard.
+        seedSourceLines(533);
+        g_fieldRate = 50.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+
+    SUBCASE("21.8 kHz cannot, measured") {
+        // 640x352@60, VTOTAL 363. Measured: the sink reports no signal, and
+        // this rate clears LowLineRateBelowHz -- so that constant is not the
+        // one to ask.
+        seedSourceLines(363);
+        g_fieldRate = 60.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(measurement.lowLineRate());
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+}
+TEST_CASE("a source that can be passed through is never a slow-line source")
+{
+    // The two thresholds are disjoint, with 6 kHz between them, and code has
+    // been written that only acts where both hold -- an HD bypass vsync steer
+    // gated on lowLineRate(), which no source reaching the channel could ever
+    // satisfy. Bringing the floors together again would revive that shape
+    // silently, so the gap is asserted rather than left to be read off two
+    // constants in different parts of the header.
+    SourceMeasurement measurement;
+
+    SUBCASE("the slowest rate that may bypass is well clear of the slow-line split") {
+        // 640x512@50, VTOTAL 533 -- the measured floor.
+        seedSourceLines(533);
+        g_fieldRate = 50.0f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+        CHECK_FALSE(measurement.lowLineRate());
+    }
+
+    SUBCASE("a 15.6 kHz line is slow and cannot bypass") {
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        REQUIRE(measurement.measureLineRate());
+        CHECK(measurement.lowLineRate());
+        CHECK_FALSE(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+}
+TEST_CASE("a source at 640x480 or above is passed through, and anything below is scaled")
+{
+    // A sink that takes HDMI takes 640x480 and up, so a source at least that
+    // big reaches the panel intact by being handed over untouched -- and the
+    // scaling path cannot carry it well anyway, the capture's write limit
+    // bounding a line at about 1024 IF units however it is placed.
+    // ../capture-limits.md
+    SourceMeasurement measurement;
+
+    SUBCASE("640x480 is the smallest that goes through") {
+        // VTOTAL 524 at 60 Hz -- a 31.5 kHz line, which no sink taking HDMI
+        // may refuse.
+        seedSourceLines(524);
+        g_fieldRate = 60.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK(HdBypass::suitsSource(524, measurement.fieldRateHz()));
+    }
+
+    SUBCASE("a source the line doubler is needed for is scaled") {
+        // 320x256@50: 311 lines is short of a frame, so the capture doubles it
+        // and there is nothing to hand over.
+        seedSourceLines(311);
+        g_fieldRate = 50.08f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(HdBypass::suitsSource(311, measurement.fieldRateHz()));
+    }
+
+    SUBCASE("a rate the sink refuses is scaled however tall the source") {
+        // 448 lines at 50 Hz is a 22.4 kHz line: tall enough to need no
+        // doubling and still under the floor the bench display locks at.
+        seedSourceLines(448);
+        g_fieldRate = 50.0f;
+        CHECK(measurement.measureLineRate());
+        CHECK_FALSE(HdBypass::suitsSource(448, measurement.fieldRateHz()));
+    }
+
+    SUBCASE("nothing counted is scaled") {
+        CHECK_FALSE(HdBypass::suitsSource(0, measurement.fieldRateHz()));
+    }
+}
+TEST_CASE("a source already bypassed is judged on a count taken now")
+{
+    // **THE HELD RATE CANNOT ANSWER THIS.** Bypass measures nothing, so what is
+    // held still names the mode bypass was entered on -- a source that slows
+    // underneath it keeps reading as displayable, the branch that would leave
+    // never fires, and the panel stays blank for ever.
+    // docs/rgbhv-bypass-trap.md
+    SourceMeasurement measurement;
+
+    seedSourceLines(524);
+    g_fieldRate = 60.0f;
+    CHECK(measurement.measureLineRate());
+    CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+
+    SUBCASE("the held rate outlives the mode it was measured on") {
+        // 320x256@50 arrives while bypassed. Nothing re-measures, so the held
+        // rate is still the 31.4 kHz line of the mode before it.
+        seedSourceLines(311);
+        CHECK(HdBypass::suitsLineRate(measurement.heldLineRateHz()));
+    }
+
+    SUBCASE("the count is what has moved, and it refuses") {
+        CHECK_FALSE(HdBypass::suitsLineRate((uint32_t)(311 * measurement.fieldRateHz())));
+    }
+
+    SUBCASE("a count the display still takes stays bypassed") {
+        CHECK(HdBypass::suitsLineRate((uint32_t)(524 * measurement.fieldRateHz())));
+    }
+
+    SUBCASE("nothing counted decides nothing") {
+        CHECK_FALSE(HdBypass::suitsLineRate((uint32_t)(0 * measurement.fieldRateHz())));
+    }
 }

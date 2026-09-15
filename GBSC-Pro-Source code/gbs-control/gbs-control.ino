@@ -1174,7 +1174,7 @@ static boolean sourceLowLineRate()
 // broken scaler rather than as a refused mode. docs/rgbhv-bypass-trap.md
 static boolean bypassCanBeDisplayed()
 {
-    return sourceSampling.rateCanBypass();
+    return Tv5725::HdBypass::suitsLineRate(sourceSampling.heldLineRateHz());
 }
 
 // A 15 kHz line whose vertical interval carries equalisation and serration

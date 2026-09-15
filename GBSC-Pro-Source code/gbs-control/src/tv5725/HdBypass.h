@@ -172,6 +172,41 @@ public:
     // whichever is reached first. A rate of nothing asks for nothing.
     static uint16_t dividerFor(uint32_t lineRateHz);
 
+    // The lowest line the bench display accepts, bracketed by measurement
+    // rather than taken from the VGA standard: 26650 Hz locks and 21780 Hz
+    // gives no signal, so the floor sits between them and admits every rate
+    // proven to work while refusing every rate proven not to. 22..26 kHz is
+    // untested and refused, which costs a scaled picture rather than a blank
+    // panel. ../../../docs/rgbhv-bypass-trap.md
+    static const uint32_t MinLineRateHz = 26000;
+
+    // Whether bypass would reach the panel at all. It hands the source's own
+    // timing to the encoder, so an unmeasured or slow source has to stay on
+    // the scaling path -- which shows any rate -- rather than put torn content
+    // on the panel that reads as a broken scaler.
+    static bool suitsLineRate(uint32_t lineRateHz);
+
+    // Whether passing this source through is the right output for it.
+    //
+    // A sink that takes HDMI takes 640x480 and up, so a source at least that
+    // big reaches the panel intact by being handed over untouched -- and the
+    // scaling path cannot carry it well anyway: the capture's write limit
+    // bounds a line at about 1024 IF units however it is placed, so sampling
+    // density falls away exactly as the source gains detail.
+    // ../../../docs/capture-limits.md
+    //
+    // In what the board can measure that is a source the line doubler is not
+    // needed for, whose line rate reaches the sink. Everything below -- 240p,
+    // 288p, 480i, 576i -- is scaled, and so is anything unmeasured.
+    //
+    // Asked of a COUNT and a field rate, never of a held line rate: bypass
+    // measures nothing, so a held rate still names the mode bypass was entered
+    // on, and a source that slows underneath would keep reading as displayable
+    // for ever. The count is live; a mode change moves it and usually leaves
+    // the field rate where it was. A source changing both at once is the one
+    // case this cannot see.
+    static bool suitsSource(uint16_t sourceLines, float fieldRateHz);
+
     // The top of RD-5725-1.1's crossover table: its first row is 162..80 MHz
     // and there is no row above it.
     static const uint32_t MaxSampleClockHz = 162000000;

@@ -717,213 +717,11 @@ TEST_CASE("the multiple tolerates the jitter of every line it counts")
     }
 }
 
-TEST_CASE("line doubling is decided by the source line count")
-{
-    // Line doubling exists so there are enough lines for the rest of the chain
-    // to reach the output resolution. That is a question about how many lines
-    // arrive, not how fast they arrive.
-    //
-    // Measured over the RISC PC's modes: 261, 311 and 363 total lines are
-    // captured doubled; 448, 524, 533 and 627 are not. The boundary sits in
-    // that gap. It is reproduced rather than derived, so that moving it is a
-    // deliberate change with its own acceptance test.
-    CHECK(SourceMeasurement::lineDoublingFor(261) == true);
-    CHECK(SourceMeasurement::lineDoublingFor(311) == true);
-    CHECK(SourceMeasurement::lineDoublingFor(363) == true);
-    CHECK(SourceMeasurement::lineDoublingFor(448) == false);
-    CHECK(SourceMeasurement::lineDoublingFor(524) == false);
-    CHECK(SourceMeasurement::lineDoublingFor(533) == false);
-    CHECK(SourceMeasurement::lineDoublingFor(627) == false);
-
-    // An interlaced PAL frame is 625 lines, which is plenty. What it needs is
-    // DEINTERLACING, which is a separate register and a separate decision.
-    CHECK(SourceMeasurement::lineDoublingFor(625) == false);
-
-    // No measurement yet. The default is the one a low-line-count source needs,
-    // because that is the source a wrong guess leaves without enough lines.
-    CHECK(SourceMeasurement::lineDoublingFor(0) == true);
-}
-
 // What an output frame of this many lines can display, which is the question
 // the doubling asks: the part cannot minify, so this is the ceiling.
 static uint16_t showableIn(uint16_t frameLines)
 {
     return Tv5725::AxisVertical.maximumCapture(frameLines, 0);
-}
-
-TEST_CASE("a source is not doubled into an output that cannot show the result")
-{
-    // Doubling turns a 311-line source into 624 units, and the part cannot
-    // minify: an output with less room than that shows the top of the doubled
-    // frame and nothing else, with the control dead in both directions. So the
-    // question is not only how many lines arrive, but how many can be shown.
-    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(1125)) == true);  // 1080p
-    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(750)) == true);   // 720p
-    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(525)) == false);  // 480p
-    CHECK(SourceMeasurement::lineDoublingFor(311, showableIn(625)) == false);  // 576p
-
-    SUBCASE("a shorter source still doubles into the same output") {
-        // 288 lines doubled is 578, which a 625-line frame holds.
-        CHECK(SourceMeasurement::lineDoublingFor(288, showableIn(625)) == true);
-    }
-
-    SUBCASE("no output raster asks the source alone") {
-        // Bypass, and every caller that has not solved a raster yet.
-        CHECK(SourceMeasurement::lineDoublingFor(311, 0) == true);
-        CHECK(SourceMeasurement::lineDoublingFor(524, 0) == false);
-    }
-}
-
-TEST_CASE("only a rate a display accepts may be bypassed")
-{
-    // Bypass hands the source's own timing to the encoder, so it works only
-    // where the DISPLAY can show that timing. Refusing falls back to the
-    // scaling path, which shows any rate; accepting wrongly puts torn,
-    // sheared content on the panel that reads as a broken scaler.
-    // docs/rgbhv-bypass-trap.md
-    SourceMeasurement measurement;
-
-    SUBCASE("nothing measured yet cannot be bypassed") {
-        CHECK_FALSE(measurement.rateCanBypass());
-    }
-
-    SUBCASE("a 15.6 kHz line cannot") {
-        seedSourceLines(311);
-        g_fieldRate = 50.08f;
-        CHECK(measurement.measureLineRate());
-        CHECK_FALSE(measurement.rateCanBypass());
-    }
-
-    SUBCASE("the 31.4 kHz VGA line can") {
-        // 640x480@60, VTOTAL 524. Measured locking.
-        seedSourceLines(524);
-        g_fieldRate = 60.0f;
-        CHECK(measurement.measureLineRate());
-        CHECK(measurement.rateCanBypass());
-    }
-
-    SUBCASE("26.6 kHz can, which is under the VGA line") {
-        // 640x512@50, VTOTAL 533. Measured locking, which is why the floor is
-        // bracketed rather than taken from the VGA standard.
-        seedSourceLines(533);
-        g_fieldRate = 50.0f;
-        CHECK(measurement.measureLineRate());
-        CHECK(measurement.rateCanBypass());
-    }
-
-    SUBCASE("21.8 kHz cannot, measured") {
-        // 640x352@60, VTOTAL 363. Measured: the sink reports no signal, and
-        // this rate clears LowLineRateBelowHz -- so that constant is not the
-        // one to ask.
-        seedSourceLines(363);
-        g_fieldRate = 60.0f;
-        CHECK(measurement.measureLineRate());
-        CHECK_FALSE(measurement.lowLineRate());
-        CHECK_FALSE(measurement.rateCanBypass());
-    }
-}
-
-TEST_CASE("a source that can be passed through is never a slow-line source")
-{
-    // The two thresholds are disjoint, with 6 kHz between them, and code has
-    // been written that only acts where both hold -- an HD bypass vsync steer
-    // gated on lowLineRate(), which no source reaching the channel could ever
-    // satisfy. Bringing the floors together again would revive that shape
-    // silently, so the gap is asserted rather than left to be read off two
-    // constants in different parts of the header.
-    SourceMeasurement measurement;
-
-    SUBCASE("the slowest rate that may bypass is well clear of the slow-line split") {
-        // 640x512@50, VTOTAL 533 -- the measured floor.
-        seedSourceLines(533);
-        g_fieldRate = 50.0f;
-        REQUIRE(measurement.measureLineRate());
-        CHECK(measurement.rateCanBypass());
-        CHECK_FALSE(measurement.lowLineRate());
-    }
-
-    SUBCASE("a 15.6 kHz line is slow and cannot bypass") {
-        seedSourceLines(311);
-        g_fieldRate = 50.08f;
-        REQUIRE(measurement.measureLineRate());
-        CHECK(measurement.lowLineRate());
-        CHECK_FALSE(measurement.rateCanBypass());
-    }
-}
-
-TEST_CASE("a source at 640x480 or above is passed through, and anything below is scaled")
-{
-    // A sink that takes HDMI takes 640x480 and up, so a source at least that
-    // big reaches the panel intact by being handed over untouched -- and the
-    // scaling path cannot carry it well anyway, the capture's write limit
-    // bounding a line at about 1024 IF units however it is placed.
-    // ../capture-limits.md
-    SourceMeasurement measurement;
-
-    SUBCASE("640x480 is the smallest that goes through") {
-        // VTOTAL 524 at 60 Hz -- a 31.5 kHz line, which no sink taking HDMI
-        // may refuse.
-        seedSourceLines(524);
-        g_fieldRate = 60.0f;
-        CHECK(measurement.measureLineRate());
-        CHECK(measurement.bypassSuitsCount(524));
-    }
-
-    SUBCASE("a source the line doubler is needed for is scaled") {
-        // 320x256@50: 311 lines is short of a frame, so the capture doubles it
-        // and there is nothing to hand over.
-        seedSourceLines(311);
-        g_fieldRate = 50.08f;
-        CHECK(measurement.measureLineRate());
-        CHECK_FALSE(measurement.bypassSuitsCount(311));
-    }
-
-    SUBCASE("a rate the sink refuses is scaled however tall the source") {
-        // 448 lines at 50 Hz is a 22.4 kHz line: tall enough to need no
-        // doubling and still under the floor the bench display locks at.
-        seedSourceLines(448);
-        g_fieldRate = 50.0f;
-        CHECK(measurement.measureLineRate());
-        CHECK_FALSE(measurement.bypassSuitsCount(448));
-    }
-
-    SUBCASE("nothing counted is scaled") {
-        CHECK_FALSE(measurement.bypassSuitsCount(0));
-    }
-}
-
-TEST_CASE("a source already bypassed is judged on a count taken now")
-{
-    // **THE HELD RATE CANNOT ANSWER THIS.** Bypass measures nothing, so what is
-    // held still names the mode bypass was entered on -- a source that slows
-    // underneath it keeps reading as displayable, the branch that would leave
-    // never fires, and the panel stays blank for ever.
-    // docs/rgbhv-bypass-trap.md
-    SourceMeasurement measurement;
-
-    seedSourceLines(524);
-    g_fieldRate = 60.0f;
-    CHECK(measurement.measureLineRate());
-    CHECK(measurement.rateCanBypass());
-
-    SUBCASE("the held rate outlives the mode it was measured on") {
-        // 320x256@50 arrives while bypassed. Nothing re-measures, so the held
-        // rate is still the 31.4 kHz line of the mode before it.
-        seedSourceLines(311);
-        CHECK(measurement.rateCanBypass());
-    }
-
-    SUBCASE("the count is what has moved, and it refuses") {
-        CHECK_FALSE(measurement.countCanBypass(311));
-    }
-
-    SUBCASE("a count the display still takes stays bypassed") {
-        CHECK(measurement.countCanBypass(524));
-    }
-
-    SUBCASE("nothing counted decides nothing") {
-        CHECK_FALSE(measurement.countCanBypass(0));
-    }
 }
 
 TEST_CASE("a 15 kHz line is recognised by its rate, not by a standard's number")
@@ -1310,7 +1108,6 @@ TEST_CASE("a half-line total that measures nothing refuses to judge the count")
     CHECK_FALSE(SourceMeasurement::countIsSerrations(311, 20, true));
 }
 
-
 TEST_CASE("a serration count never goes steady, however still it holds")
 {
     // The coast is not covering the equalisation pulses, so the sync processor
@@ -1473,7 +1270,6 @@ TEST_CASE("a reference is re-applied when the estimate it was sized from moves")
     CHECK(Wire.touched[5][0x12]);           // and it was written anyway
 }
 
-
 TEST_CASE("the divider is bounded so one window can span the whole line")
 {
     // The capture path writes CaptureWidthLimitUnits from wherever the window
@@ -1537,7 +1333,6 @@ TEST_CASE("the sampling budget is spent at the rate the ADC actually converts at
         }
     }
 }
-
 
 // --- the scan type ----------------------------------------------------------
 //
@@ -1606,7 +1401,6 @@ TEST_CASE("the scan type of the held source uses the doubling in force")
     sampling.holdLineDoubling(false);
     CHECK(sampling.scanType(524) == SourceMeasurement::ScanProgressive);
 }
-
 
 // --- an interlaced count never holds still, and that IS the measurement ------
 //

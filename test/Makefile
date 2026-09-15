@@ -493,7 +493,10 @@ input-formatter:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_input_formatter" \
-	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp
+	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp \
+	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/AxisSolution.cpp \
+	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp \
+	  src/tv5725/BlankingTiming.cpp src/tv5725/VideoSourceLine.cpp
 	@"$(OUT)/test_input_formatter"
 
 ## chip: host unit tests for Tv5725::Chip

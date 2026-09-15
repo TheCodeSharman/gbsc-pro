@@ -1,5 +1,8 @@
 #include "HdBypass.h"
 
+#include "InputFormatter.h"
+#include "SourceMeasurement.h"
+
 #include "Adc.h"
 #include "Chip.h"
 #include "ColourSpace.h"
@@ -9,6 +12,24 @@
 #include "SyncMeasurement.h"
 
 namespace Tv5725 {
+
+bool HdBypass::suitsLineRate(uint32_t lineRateHz)
+{
+    return lineRateHz >= MinLineRateHz;
+}
+
+bool HdBypass::suitsSource(uint16_t sourceLines, float fieldRateHz)
+{
+    if (sourceLines == 0)
+        return false;
+    if (InputFormatter::scanModeFor(sourceLines) != InputFormatter::Progressive)
+        return false;
+
+    const float rate = fieldRateHz > 0.0f
+                           ? fieldRateHz
+                           : (float)SourceMeasurement::NominalFieldRateHz;
+    return suitsLineRate((uint32_t)((float)sourceLines * rate));
+}
 
 namespace {
 

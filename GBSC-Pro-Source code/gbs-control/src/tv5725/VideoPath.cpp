@@ -440,7 +440,8 @@ void VideoPath::solveScanMode(uint16_t lines)
     const uint16_t showable =
         mode_ && !mode_->isBypass()
             ? AxisVertical.maximumCapture(mode_->frameLines(), 0) : 0;
-    const bool doubled = SourceMeasurement::lineDoublingFor(lines, showable);
+    const bool doubled = InputFormatter::scanModeFor(lines, showable) ==
+                        InputFormatter::LineDoubled;
     if (scanModeApplied_ && doubled == sampling_.lineDoubled())
         return;
 
