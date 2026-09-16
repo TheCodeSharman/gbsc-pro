@@ -329,6 +329,7 @@ private:
     uint16_t unsettledPasses_;
     bool unsettledArmed_;
 
+
     // Consecutive passes that did not reach an acquired source. Wrapped at the
     // ladder's cycle rather than left to run, so the cycle stays aligned.
     uint16_t unmeasuredPasses_;

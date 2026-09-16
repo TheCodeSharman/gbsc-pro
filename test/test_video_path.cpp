@@ -273,7 +273,10 @@ static void checkBenchGeometry()
     // The two DAC selects share s0_4b; the head blanking window is 12 bits
     // apiece over s1_24/s1_25 and s1_26/s1_27. s1_02, s3_24 and s2_17 are the
     // 422/444 conversion delays, which follow the scan mode the engine measures.
-    CHECK(registersWritten() == 74);
+    // s0_49 is the output sync pad, taken away when the change was detected and
+    // given back by the solve that ends it.
+    CHECK(registersWritten() == 75);
+    CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the
     // field rate selects what the debug pin carries. The sync processor's own
@@ -485,10 +488,13 @@ TEST_CASE("entering bypass leaves nothing to solve")
     for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
-    // Capture, and nothing else: bypass has no solve coming, so releasing it is
-    // the only thing left to do.
-    CHECK(registersWritten() == 1);
-    CHECK(Wire.touched[4][0x21]);
+    // Capture and the output sync, and nothing else: bypass has no solve coming,
+    // so giving those two back is the whole of ending the change. The sync
+    // matters as much as the capture -- the change took it away, and a
+    // pass-through left without it shows nothing at all.
+    CHECK(registersWritten() == 2);
+    CHECK(Wire.touched[4][0x21]);   // CAPTURE_ENABLE
+    CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 }
 
 TEST_CASE("a mode with no timings is given up on, not asked about forever")

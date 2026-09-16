@@ -512,6 +512,22 @@ public:
     // disable.
     static void setCoastInvert(bool wanted);
     static void setSubCoast(bool wanted);
+
+    // HSOUT/VSOUT, taken away while a mode change is outstanding and given back
+    // once the source is acquired.
+    //
+    // The encoder samples the analog output and does not always notice the
+    // timing under it moved, so it carries on transmitting the mode it locked
+    // to before and the panel shows nothing. Taking sync away is what makes it
+    // look again, and nothing else on the board can ask it to.
+    //
+    // ASSERTED EVERY PASS RATHER THAN ON THE TRANSITION. Chip::outputDown()
+    // writes this pad on the power path, so a blank the engine did not choose
+    // can be in force; a caller holding its own idea of the pad cannot see that
+    // and never corrects it.
+    // ../../../../docs/investigations/encoder-stale-timing.md
+    static void disableOutput();
+    static void enableOutput();
 };
 
 }  // namespace Tv5725

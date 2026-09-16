@@ -68,7 +68,6 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SlotText.h"
 #include "src/tv5725/VideoPath.h"
 #include "src/tv5725/FramingSaveTimer.h"
-#include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/ControlSteps.h"
 #include "src/tv5725/PresetLoad.h"
@@ -959,7 +958,6 @@ static const char SlotFramingFilePath[] = "/slots.txt";
 // nothing to debounce -- only the same read guard.
 static bool slotFramingIsSuspect = true;
 
-Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
 
 // The acquisition path, which owns the tick loop() used to hand the engine
@@ -4317,11 +4315,6 @@ void loop()
     // The engine decides when the source has settled into a new mode, because
     // it owns the measurements that decide it. Cheap on every pass, and
     // expensive only while a change is outstanding.
-    // Blanked while the engine has a change outstanding, so the measuring and
-    // solving happen behind it and absorb the encoder's relock time rather than
-    // being followed by it. src/tv5725/SyncOutput.h
-    if (!uopt->wantOutputComponent)
-        syncOutput.poll(geometry.changing(), millis());
 
     pollFramingSave(millis());
 
@@ -5496,7 +5489,7 @@ void handleType2Command(char argument)
         case 'L': {
             // Before anything writes an output register: the blank belongs to
             // the whole change, and the press is the start of it.
-            syncOutput.blankNow(millis());
+            Tv5725::SyncProcessor::disableOutput();
 
             if (argument == 'f')
                 uopt->presetPreference = Output960P; //Output960P; // 1280x960

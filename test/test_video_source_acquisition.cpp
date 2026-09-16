@@ -1436,3 +1436,54 @@ TEST_CASE("an unpowered board gets no window and no dynamic write")
 
     Chip::holdPower(true);
 }
+
+// --- the output sync across a mode change ------------------------------------
+//
+// The encoder samples the analog output and does not always notice the timing
+// under it moved: it carries on transmitting the mode it locked to before and
+// the panel shows nothing. Taking sync away is what makes it look again.
+// Measured with the blank removed, a 320x256 -> 640x480 change left the panel
+// dark for the whole 20 s it was watched, the TV locked and painting black with
+// every scaler register correct.
+// docs/investigations/encoder-stale-timing.md
+
+static bool outputBlanked() { return Chip::PAD_SYNC_OUT_ENZ::read() == 1; }
+
+TEST_CASE("a mode change takes the output sync away")
+{
+    seedBenchSource();
+    Acquiring unit;
+    unit.start();
+    unit.poll();
+    CHECK(outputBlanked());
+}
+
+TEST_CASE("the output sync comes back once the source is acquired")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    unit.poll();
+    CHECK_FALSE(outputBlanked());
+}
+
+TEST_CASE("a re-arm takes the output sync away again")
+{
+    // The blank belongs to whatever change is outstanding, so a second change
+    // arriving after a solve gets its own. The sync-type probe latches an
+    // interrupt of its own, so this fires on a source that never moved --
+    // measured as `source moved: interrupt (311 lines, solved 311)`.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    unit.poll();
+    REQUIRE_FALSE(outputBlanked());
+
+    unit.path.inputTimingsChanged(4);
+    unit.poll();
+    CHECK(outputBlanked());
+}

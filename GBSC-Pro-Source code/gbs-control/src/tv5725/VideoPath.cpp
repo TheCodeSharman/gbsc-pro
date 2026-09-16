@@ -196,6 +196,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // mode; until then the previous mode's geometry is what the new source
     // would be shown through.
     FrameBuffer::freezeCapture();
+    SyncProcessor::disableOutput();
 
     modePending_ = true;
     modeOversample_ = oversample;
@@ -306,6 +307,7 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
         // would pay for a field rate measurement to reach the same answer.
         modePending_ = false;
         FrameBuffer::releaseCapture();
+        SyncProcessor::enableOutput();
         return PollIdle;
     }
 
@@ -316,6 +318,7 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
 
     modePending_ = false;
     FrameBuffer::releaseCapture();
+    SyncProcessor::enableOutput();
     return PollSolved;
 }
 
@@ -347,6 +350,7 @@ void VideoPath::configurePassThrough()
 
     modePending_ = false;
     FrameBuffer::releaseCapture();
+    SyncProcessor::enableOutput();
 
     // The resolution the user asked for is NOT touched here, because it is not
     // held here: pass-through is a different fact about the same output, and

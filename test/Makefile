@@ -269,17 +269,6 @@ memory:
 	  "$(HERE)/test_memory.cpp" src/tv5725/Memory.cpp
 	@"$(OUT)/test_memory"
 
-## sync-output: host unit tests for the encoder's blank across a mode change
-#
-# The encoder locks to the analog output and keeps the old timing unless sync
-# goes away, so the blank is derived from whether a change is outstanding.
-sync-output:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_sync_output" \
-	  "$(HERE)/test_sync_output.cpp" src/tv5725/SyncOutput.cpp
-	@"$(OUT)/test_sync_output"
-
 ## hold-ramp: host unit tests for the IR hold-to-accelerate ramp
 hold-ramp:
 	@mkdir -p "$(OUT)"
@@ -775,7 +764,7 @@ register-queue:
 	@"$(OUT)/test_register_queue"
 
 ## test: every host unit test
-test: video-signal test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
+test: video-signal test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output
 all: test
 
 ## clean: remove the compiled test binaries

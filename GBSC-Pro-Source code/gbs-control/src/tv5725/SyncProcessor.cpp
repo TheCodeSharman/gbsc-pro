@@ -500,4 +500,8 @@ void SyncProcessor::writeRetimeStop(uint16_t samples)
     SP_RT_HS_SP::write(samples);
 }
 
+void SyncProcessor::disableOutput() { Chip::PAD_SYNC_OUT_ENZ::write(1); }
+
+void SyncProcessor::enableOutput() { Chip::PAD_SYNC_OUT_ENZ::write(0); }
+
 }  // namespace Tv5725
