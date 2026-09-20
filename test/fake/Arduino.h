@@ -1,6 +1,6 @@
 // The whole of Arduino.h that src/tv5725/ actually needs.
 //
-// Geometry.h includes <Arduino.h> for `boolean` alone, and that single include
+// VideoPath.h includes <Arduino.h> for `boolean` alone, and that single include
 // is half of what kept the engine out of the host build; test/fake/Wire.h is the
 // other half.
 //

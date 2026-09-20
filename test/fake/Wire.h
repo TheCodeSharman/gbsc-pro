@@ -30,6 +30,11 @@ public:
     // supplied by the blob and looks fine.
     bool touched[Segments][256];
 
+    // A register whose value moves under the reader, for code that judges a
+    // measurement by whether it changes rather than by what it reads. Set with
+    // drift(); the stored byte advances by one on every read.
+    bool drifting[Segments][256];
+
     // The slave's own pointer. Nothing outside the bus may cache this and
     // expect it to stay true -- that assumption is the defect under test.
     uint8_t segment;
@@ -55,8 +60,12 @@ public:
             for (int r = 0; r < 256; ++r) {
                 bank[s][r] = 0;
                 touched[s][r] = false;
+                drifting[s][r] = false;
             }
         segment = 0;
+        refusing_ = false;
+        hsyncModelled_ = false;
+        syncProcessorLocked_ = false;
         trace.clear();
         tx_.clear();
         rx_.clear();
@@ -75,6 +84,53 @@ public:
                 touched[s][r] = false;
             }
     }
+
+    void drift(uint8_t seg, uint8_t reg) { drifting[seg][reg] = true; }
+
+    // A sync processor counting the same line the ADC is clocking, which is
+    // what locked means: STATUS_SYNC_PROC_HTOTAL counts real ADC clocks per
+    // line, so it reports PLLAD_MD back.
+    //
+    // Modelled rather than seeded because the engine moves the divider between
+    // passes -- it puts the chip on the reference clock before every
+    // measurement -- so a seeded byte describes whichever divider was in force
+    // when the fixture ran, and reads as an unlocked processor from the next
+    // pass onward.
+    // False models the processor counting a line the ADC is not clocking --
+    // the PLL locked to every other hsync, or the block not yet re-counted
+    // after the divider moved.
+    void lockSyncProcessor(bool locked = true) { syncProcessorLocked_ = locked; }
+
+    // The source's hsync, as the sync processor counts it.
+    //
+    // RD-5725-1.1 S0_19 defines STATUS_SYNC_PROC_HLOW_LEN as the INPUT H-sync's
+    // "low active pulse length (for H-sync polarity detection)", so it is the
+    // pulse on a low-active source and the whole line MINUS the pulse on a
+    // high-active one. SP_HS_INV_REG (s5_55[3]) inverts the sync ahead of the
+    // counter and flips which of the two is reported; the other three inversion
+    // fields do not reach it. Measured on the bench, RiscPC 320x256@50 on vga:
+    // 2330 of 2506 with the bit clear, 177 with it set.
+    //
+    // Modelled rather than seeded because the behaviour under test is that the
+    // engine corrects the polarity BEFORE it reads the count. A seeded byte
+    // cannot tell that apart from reading first and correcting afterwards.
+    void sourceHsync(uint16_t pulseSamples, uint16_t lineSamples, bool positive)
+    {
+        hsyncPulse_ = pulseSamples;
+        hsyncLine_ = lineSamples;
+        hsyncPositive_ = positive;
+        hsyncModelled_ = true;
+        // Bit 1 is HS active: a source sending a pulse gives the processor an
+        // edge to take the polarity from, and bit 0 is that polarity.
+        bank[0][0x16] = (uint8_t)((bank[0][0x16] & ~0x03) | 0x02
+                                  | (positive ? 0x01 : 0x00));
+    }
+
+    // A bus that acknowledges writes and stores none of them, which is what an
+    // unpowered board looks like from this end: the segment select still lands,
+    // because the code under test cannot tell a lost select from a lost write
+    // and the round trip it is judged on is the payload's.
+    void refuseWrites(bool refuse) { refusing_ = refuse; }
 
     // A field, decoded the way the chip lays one out: little-endian across
     // consecutive registers, then shifted and masked.
@@ -116,7 +172,7 @@ public:
                 uint8_t reg = static_cast<uint8_t>(offset + (i - 1));
                 if (reg == SegmentRegister)
                     segment = tx_[i] < Segments ? tx_[i] : segment;
-                else {
+                else if (!refusing_) {
                     bank[segment][reg] = tx_[i];
                     touched[segment][reg] = true;
                     Traced t = {segment, reg, tx_[i]};
@@ -130,11 +186,17 @@ public:
 
     uint8_t requestFrom(uint8_t, uint8_t size, uint8_t)
     {
+        if (hsyncModelled_)
+            refreshHsyncLowCount();
+        if (syncProcessorLocked_)
+            echoLineSamples();
         rx_.clear();
         rxNext_ = 0;
         for (uint8_t i = 0; i < size; ++i) {
             uint8_t reg = static_cast<uint8_t>(readOffset_ + i);
             rx_.push_back(reg == SegmentRegister ? segment : bank[segment][reg]);
+            if (reg != SegmentRegister && drifting[segment][reg])
+                ++bank[segment][reg];
         }
         return size;
     }
@@ -149,6 +211,34 @@ public:
     }
 
 private:
+    // SP_HS_INV_REG inverts the sync ahead of the counter, so a set bit makes
+    // the low time the pulse on a high-active source and the complement on a
+    // low-active one.
+    void refreshHsyncLowCount()
+    {
+        const bool inverted = (bank[5][0x55] & 0x08) != 0;
+        const uint16_t low = (hsyncPositive_ != inverted)
+                                 ? (uint16_t)(hsyncLine_ - hsyncPulse_)
+                                 : hsyncPulse_;
+        bank[0][0x19] = (uint8_t)(low & 0xFF);
+        bank[0][0x1A] = (uint8_t)((low >> 8) & 0x0F);
+    }
+
+    void echoLineSamples()
+    {
+        const uint16_t divider
+            = (uint16_t)(bank[5][0x12] | ((uint16_t)(bank[5][0x13] & 0x0F) << 8));
+        bank[0][0x17] = (uint8_t)(divider & 0xFF);
+        bank[0][0x18] = (uint8_t)((divider >> 8) & 0x0F);
+    }
+
+    bool syncProcessorLocked_ = false;
+    bool hsyncModelled_ = false;
+    uint16_t hsyncPulse_ = 0;
+    uint16_t hsyncLine_ = 0;
+    bool hsyncPositive_ = false;
+
+    bool refusing_ = false;
     std::vector<uint8_t> tx_;
     std::vector<uint8_t> rx_;
     size_t rxNext_ = 0;

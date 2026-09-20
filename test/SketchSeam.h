@@ -14,14 +14,14 @@
 
 #include <Arduino.h>
 
+#include "LoggedLines.h"
 #include "Si5351Stubs.h"
+#include "DebugPinStub.h"
 
-float getSourceFieldRate(boolean) { return 50.08f; }
-void tv5725Log(const char *) {}
+uint32_t debugPinPulseTicks() { return ticksForHz(50.08f); }
 
 // The ADC PLL rate, which only the standard-8 branch reads. Zero is outside
 // the band that branch acts on, so a suite not driving it sees no effect.
-uint32_t getPllRate() { return 0; }
 
 
 #endif  // TEST_SKETCH_SEAM_H_

@@ -11,9 +11,9 @@
 
 #include <doctest/doctest.h>
 
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Geometry.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 
-static void frameAt(Tv5725::Geometry &engine, int16_t zh, int16_t zv,
+static void frameAt(Tv5725::VideoPath &engine, int16_t zh, int16_t zv,
                     int16_t ph, int16_t pv)
 {
     using namespace Tv5725;
@@ -24,10 +24,9 @@ static void frameAt(Tv5725::Geometry &engine, int16_t zh, int16_t zv,
         const int16_t zoom = vertical ? zv : zh;
         const int16_t pan = vertical ? pv : ph;
 
-        // Zoom keeps the window centred, so it takes half of what the extent
-        // loses with it -- the same arithmetic the control applies.
+        // The two controls are orthogonal, so each target is reached on its own.
         const long wantExtent = (long)engine.extentUnitsOn(axis) - zoom;
-        const long wantOrigin = (long)engine.originUnitsOn(axis) + pan + zoom / 2;
+        const long wantOrigin = (long)engine.originUnitsOn(axis) + pan;
 
         for (;;) {
             const long at = engine.extentUnitsOn(axis);

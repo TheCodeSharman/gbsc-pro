@@ -12,7 +12,11 @@ OUT    := $(HERE)/output
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 
-.PHONY: all test sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard clean help
+# One binary per target and nothing shared between them, so the suite is
+# embarrassingly parallel: measured 3m26s serial against 34s here.
+MAKEFLAGS += -j$(shell nproc)
+
+.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -35,9 +39,26 @@ help:
 # that links DisplayClock.cpp links the clock with it.
 CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
 
-GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') $(CLOCK_SRC)
+# Tv5725::SourceMeasurement holds one quantity in three registers -- PLLAD_MD,
+# IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
+# declare them link wherever it does.
+SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
+  src/tv5725/VideoSignal.cpp \
+	src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp \
+	src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/SamplingClock.cpp \
+	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
+	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
+	src/tv5725/ModeDetect.cpp
 
-HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls|FrameBuffer|MemoryBus|InputFormatter|Chip|Gpio|HdBypass|Interrupts|Adc|SamplingLog|SourceStandard|SyncProcessor|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
+# The engine no longer drives itself -- its stages are named calls the
+# acquisition path makes in order -- so a case that wants a solve links the
+# layer with it.
+GEOMETRY_RASTER_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Controls)\.cpp$$') \
+	$(CLOCK_SRC) src/videosource/VideoSourceAcquisition.cpp \
+	src/videosource/SyncRecovery.cpp src/videosource/VideoSourceSelection.cpp \
+	src/videosource/SourceMaintenance.cpp
+
+HOST_GEOMETRY_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls|FrameBuffer|MemoryBus|Chip|Gpio|HdBypass|SamplingLog|VideoProcessor|BringUp)\.cpp$$') $(CLOCK_SRC)
 
 # One target per class the geometry is built from. The eleven bench readings
 # from 2026-08-05 are the acceptance criteria across them.
@@ -50,6 +71,43 @@ define geometry_unit
 	  "$(HERE)/$(1).cpp" $(HOST_GEOMETRY_SRC)
 	@"$(OUT)/$(1)"
 endef
+
+## test-bus: host unit tests for Tv5725::TestBus
+#
+# Selecting a signal onto the shared debug pin, and what "driven" takes: the
+# bus enable and the pad the signal leaves the chip on.
+test-bus:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_test_bus" \
+	  "$(HERE)/test_test_bus.cpp" src/tv5725/TestBus.cpp
+	@"$(OUT)/test_test_bus"
+
+## test-bus-rate-measurement: host unit tests for Tv5725::TestBusRateMeasurement
+#
+# What the debug pin carries and how fast it is pulsing. The edge count is
+# stubbed, so this covers the selection around it and the arithmetic after it.
+test-bus-rate-measurement:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_test_bus_rate_measurement" \
+	  "$(HERE)/test_test_bus_rate_measurement.cpp" \
+	  src/tv5725/TestBusRateMeasurement.cpp src/tv5725/SyncMeasurement.cpp src/tv5725/Interrupts.cpp \
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
+	@"$(OUT)/test_test_bus_rate_measurement"
+
+## sync-on-green: host unit tests for Tv5725::SyncOnGreen
+#
+# The sync separator level for the source's own sync: held rather than read
+# back, and refused rather than truncated when a caller asks past the field.
+sync-on-green:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sync_on_green" \
+	  "$(HERE)/test_sync_on_green.cpp" src/tv5725/SyncOnGreen.cpp src/tv5725/Interrupts.cpp \
+	  src/tv5725/SyncMeasurement.cpp src/tv5725/Adc.cpp \
+	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
+	@"$(OUT)/test_sync_on_green"
 
 ## axis: host unit tests for Tv5725::Axis, and its --dump
 #
@@ -75,7 +133,7 @@ source-key:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_key" \
 	  "$(HERE)/test_source_key.cpp" src/tv5725/SourceKey.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/InputLine.cpp
+	  $(SAMPLING_SRC) src/tv5725/VideoSourceLine.cpp
 	@"$(OUT)/test_source_key"
 
 ## source-timing: host unit tests for Tv5725::SourceTiming
@@ -87,8 +145,8 @@ source-timing:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_timing" \
 	  "$(HERE)/test_source_timing.cpp" src/tv5725/SourceTiming.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/InputLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
 	@"$(OUT)/test_source_timing"
@@ -103,8 +161,8 @@ framing-table:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_framing_table" \
 	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -120,8 +178,8 @@ slot-table:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_slot_table" \
 	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -138,7 +196,7 @@ framing-text:
 	  "$(HERE)/test_framing_text.cpp" src/tv5725/FramingText.cpp \
 	  src/tv5725/FramingLine.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/SourceKey.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/InputLine.cpp \
+	  $(SAMPLING_SRC) src/tv5725/VideoSourceLine.cpp \
 	  src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/AxisSolution.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
@@ -154,19 +212,19 @@ slot-text:
 	  -o "$(OUT)/test_slot_text" \
 	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
 	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
-	  src/tv5725/SourceKey.cpp src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/InputLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
 	@"$(OUT)/test_slot_text"
 
-## input-line: host unit tests for Tv5725::InputLine
+## video-source-line: host unit tests for Tv5725::VideoSourceLine
 #
 # What of a line arrives intact: the hsync pulse at the head, and the write
 # limit past which nothing is captured at all. docs/capture-limits.md.
-input-line:
-	$(call geometry_unit,test_input_line)
+video-source-line:
+	$(call geometry_unit,test_video_source_line)
 
 ## active-image: host unit tests for Tv5725::ActiveImage, and its --dump
 #
@@ -184,19 +242,37 @@ active-image:
 video-processor-timings:
 	$(call geometry_unit,test_video_processor_timings)
 
+## video-signal: host unit tests for what counts as a video signal
+#
+# The bounds on a line count and a field rate, and the line rate the two imply.
+# Every class that has to refuse a reading asks here, so a bound that moves
+# moves in one place.
+video-signal:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_video_signal" \
+	  "$(HERE)/test_video_signal.cpp" src/tv5725/VideoSignal.cpp
+	@"$(OUT)/test_video_signal"
+
 ## source-measurement: host unit tests for the ADC sampling divider and the IF line
 #
 # PLLAD_MD and IF_HSYNC_RST are one quantity in two registers, and every fault
 # here has been something moving one without the other. Pure arithmetic, so it
 # costs a second to check.
+#
+#     ./output/test_source_measurement --table
+#
+# prints the divider each input mode lands on and the options it was chosen
+# from. docs/sampling-table.md
 source-measurement:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_measurement" \
-	  "$(HERE)/test_source_measurement.cpp" src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/InputLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+	  "$(HERE)/test_source_measurement.cpp" $(SAMPLING_SRC) \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
-	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
+	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp \
+	 
 	@"$(OUT)/test_source_measurement"
 
 ## memory: host unit tests for the playback burst structure
@@ -208,17 +284,6 @@ memory:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_memory" \
 	  "$(HERE)/test_memory.cpp" src/tv5725/Memory.cpp
 	@"$(OUT)/test_memory"
-
-## sync-output: host unit tests for the encoder's blank across a mode change
-#
-# The encoder locks to the analog output and keeps the old timing unless sync
-# goes away, so the blank is derived from whether a change is outstanding.
-sync-output:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_sync_output" \
-	  "$(HERE)/test_sync_output.cpp" src/tv5725/SyncOutput.cpp
-	@"$(OUT)/test_sync_output"
 
 ## hold-ramp: host unit tests for the IR hold-to-accelerate ramp
 hold-ramp:
@@ -299,17 +364,17 @@ rate-agreement:
 	  "$(HERE)/test_rate_agreement.cpp" src/clock/RateAgreement.cpp
 	@"$(OUT)/test_rate_agreement"
 
-## input-source: host unit tests for the six inputs the OLED offers
+## video-source-selection: host unit tests for the six inputs the OLED offers
 #
 # The frame byte, the sync routing and what the preferences file keeps, as one
 # table. VGA's low nibble is the whole reason it exists: sent as 0x60 the HC32
 # leaves HS_IN on sync-on-green and a VGA source never locks.
-input-source:
+video-source-selection:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) \
-	  -o "$(OUT)/test_input_source" \
-	  "$(HERE)/test_input_source.cpp" src/input/InputSource.cpp
-	@"$(OUT)/test_input_source"
+	  -o "$(OUT)/test_video_source_selection" \
+	  "$(HERE)/test_video_source_selection.cpp" src/videosource/VideoSourceSelection.cpp
+	@"$(OUT)/test_video_source_selection"
 
 ## sync-search: host unit tests for which sync search a saved input selects
 #
@@ -320,7 +385,7 @@ input-source:
 sync-search:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_sync_search" \
-	  "$(HERE)/test_sync_search.cpp" src/input/SyncSearch.cpp
+	  "$(HERE)/test_sync_search.cpp" src/videosource/SyncSearch.cpp
 	@"$(OUT)/test_sync_search"
 
 ## preset-load: host unit tests for the mode state a preset load decides
@@ -334,6 +399,27 @@ preset-load:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_preset_load" \
 	  "$(HERE)/test_preset_load.cpp" src/tv5725/PresetLoad.cpp
 	@"$(OUT)/test_preset_load"
+
+## video-route: host unit tests for Tv5725::VideoRoute
+#
+# Which route carries the video to the DAC, and that taking one releases the
+# others -- the two bypass switches are mutually exclusive in the chip, and
+# nothing held that.
+video-route:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_video_route" \
+	  "$(HERE)/test_video_route.cpp" src/tv5725/VideoRoute.cpp
+	@"$(OUT)/test_video_route"
+
+## rgbhv-output: host unit tests for Tv5725::RgbhvOutput
+#
+# Whether a scaled mode is established for a source Mode Detect names nothing
+# for -- an output question, and not the same as a scaling preset being loaded.
+rgbhv-output:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_rgbhv_output" \
+	  "$(HERE)/test_rgbhv_output.cpp" src/tv5725/RgbhvOutput.cpp
+	@"$(OUT)/test_rgbhv_output"
 
 ## memory-map: host unit tests for the SDRAM layout and the capture capacity
 #
@@ -389,12 +475,12 @@ memory-bus:
 # they hold are configured, which is a constraint BETWEEN classes that no
 # per-class view can see.
 #
-# GLOBBED, never written out, for the reason the geometry target gives: a
+# GLOBBED, never written out, for the reason the video-path target gives: a
 # hand-written source list drifted within an hour of being written. Controls.cpp
-# and Geometry.cpp are the only exclusions -- the first needs more of Arduino than
+# and VideoPath.cpp are the only exclusions -- the first needs more of Arduino than
 # the fake provides, the second calls getSourceFieldRate(), which lives in the
 # sketch and not in src/.
-BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(Geometry|Controls)\.cpp$$') $(CLOCK_SRC)
+BRINGUP_SRC = $$(ls src/tv5725/*.cpp | grep -vE '^src/tv5725/(VideoPath|Controls)\.cpp$$') $(CLOCK_SRC)
 
 bringup:
 	@mkdir -p "$(OUT)"
@@ -425,7 +511,10 @@ input-formatter:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_input_formatter" \
-	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp
+	  "$(HERE)/test_input_formatter.cpp" src/tv5725/InputFormatter.cpp \
+	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/AxisSolution.cpp \
+	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp \
+	  src/tv5725/BlankingTiming.cpp src/tv5725/VideoSourceLine.cpp
 	@"$(OUT)/test_input_formatter"
 
 ## chip: host unit tests for Tv5725::Chip
@@ -437,10 +526,10 @@ chip:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_chip" \
 	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
-	  src/tv5725/Adc.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  src/tv5725/VideoRoute.cpp \
+	  src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp \
-	  src/tv5725/SyncType.cpp
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_chip"
 
 ## hd-bypass: host unit tests for Tv5725::HdBypass
@@ -452,12 +541,33 @@ hd-bypass:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
-	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/Chip.cpp src/tv5725/ColourSpace.cpp src/tv5725/ModeDetect.cpp \
+	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
+	  src/tv5725/Chip.cpp src/tv5725/VideoRoute.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  src/tv5725/SourceMeasurement.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/SyncType.cpp
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_hd_bypass"
+
+## source-maintenance: host unit tests for SourceMaintenance
+#
+# The maintenance cadence over an acquired source, so it links nothing and
+# needs no fake Wire.
+source-maintenance:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_source_maintenance" \
+	  "$(HERE)/test_source_maintenance.cpp" src/videosource/SourceMaintenance.cpp
+	@"$(OUT)/test_source_maintenance"
+
+## sync-recovery: host unit tests for SyncRecovery
+#
+# Pure arithmetic over the escalation ladder's positions, so it links nothing
+# and needs no fake Wire.
+sync-recovery:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_sync_recovery" \
+	  "$(HERE)/test_sync_recovery.cpp" src/videosource/SyncRecovery.cpp
+	@"$(OUT)/test_sync_recovery"
 
 ## mode-detect: host unit tests for Tv5725::ModeDetect
 #
@@ -496,16 +606,17 @@ sync-processor:
 	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_processor"
 
-## sync-type: host unit tests for Tv5725::SyncType
+## sync-measurement: host unit tests for Tv5725::SyncMeasurement
 #
 # The probe costs ~500 ms and must run once per SOURCE. Reading the type back is
 # circular -- docs/sync-type-selection.md.
-sync-type:
+sync-measurement:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_sync_type" \
-	  "$(HERE)/test_sync_type.cpp" src/tv5725/SyncType.cpp
-	@"$(OUT)/test_sync_type"
+	  -o "$(OUT)/test_sync_measurement" \
+	  "$(HERE)/test_sync_measurement.cpp" src/tv5725/SyncMeasurement.cpp \
+	  src/tv5725/SyncProcessor.cpp src/tv5725/Interrupts.cpp
+	@"$(OUT)/test_sync_measurement"
 
 ## colour-space: host unit tests for Tv5725::ColourSpace
 #
@@ -548,6 +659,16 @@ interrupts:
 	  "$(HERE)/test_interrupts.cpp" src/tv5725/Interrupts.cpp
 	@"$(OUT)/test_interrupts"
 
+## steady-run: host unit tests for Tv5725::SteadyRun
+#
+# One definition of "settled" for the two runs over the same register read.
+steady-run:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_steady_run" \
+	  "$(HERE)/test_steady_run.cpp" src/tv5725/SteadyRun.cpp
+	@"$(OUT)/test_steady_run"
+
 ## deinterlacer: host unit tests for Tv5725::Deinterlacer
 #
 # The whole of segment 2, asserted as a byte image against the table it
@@ -556,34 +677,34 @@ deinterlacer:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_deinterlacer" \
-	  "$(HERE)/test_deinterlacer.cpp" src/tv5725/Deinterlacer.cpp
+	  "$(HERE)/test_deinterlacer.cpp" src/tv5725/Deinterlacer.cpp src/tv5725/ModeDetect.cpp
 	@"$(OUT)/test_deinterlacer"
 
-## geometry-raster: host unit tests for what the engine does while the source is unsettled
+## video-path-raster: host unit tests for what the engine does while the source is unsettled
 #
-# The geometry engine, off the board. Geometry.cpp was excluded from every host
+# The engine, off the board. VideoPath.cpp was excluded from every host
 # build for touching GBS:: and including <Arduino.h>; fake/Wire.h covered the
 # first and fake/Arduino.h -- three lines, for `boolean` -- covers the second.
 # getSourceFieldRate() is the sketch's, and the test supplies its own, which is
 # what makes the source measurement holdable still.
-geometry-raster:
+video-path-raster:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry_raster" \
-	  "$(HERE)/test_geometry_raster.cpp" $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_geometry_raster"
+	  -o "$(OUT)/test_video_path_raster" \
+	  "$(HERE)/test_video_path_raster.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_path_raster"
 
-## geometry-windows: host unit tests for the registers one solve writes
+## video-path-windows: host unit tests for the registers one solve writes
 #
 # The net under deleting doPostPresetLoadSteps()'s geometry writes. Those all sit
 # behind videoStandardInput 1-4, 8 or 9, and the bench source comes up as 14, so
-# no bench test can reach them -- see the header of test_geometry_windows.cpp.
-geometry-windows:
+# no bench test can reach them -- see the header of test_video_path_windows.cpp.
+video-path-windows:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry_windows" \
-	  "$(HERE)/test_geometry_windows.cpp" $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_geometry_windows"
+	  -o "$(OUT)/test_video_path_windows" \
+	  "$(HERE)/test_video_path_windows.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_path_windows"
 
 ## controls: host unit tests for the OSD and IR control surface
 #
@@ -594,7 +715,9 @@ controls:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_controls" \
-	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC)
+	  "$(HERE)/test_controls.cpp" $$(ls src/tv5725/*.cpp) $(CLOCK_SRC) \
+	  src/videosource/VideoSourceAcquisition.cpp src/videosource/SyncRecovery.cpp \
+	  src/videosource/VideoSourceSelection.cpp src/videosource/SourceMaintenance.cpp
 	@"$(OUT)/test_controls"
 
 ## adc: host unit tests for the ADC PLL's divider and latch
@@ -608,19 +731,6 @@ adc:
 	  "$(HERE)/test_adc.cpp" src/tv5725/Adc.cpp
 	@"$(OUT)/test_adc"
 
-## source-standard: what a video standard implies, and nothing else
-#
-# Every register here has other writers, so the run is repeated under
-# complementary poisons: a field the two disagree about was never written by
-# this, whatever it reads.
-source-standard:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_source_standard" \
-	  "$(HERE)/test_source_standard.cpp" src/tv5725/SourceStandard.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp
-	@"$(OUT)/test_source_standard"
-
 ## sampling-log: host unit tests for Tv5725::SamplingLog
 #
 # It drives PLLAD_MD itself, so what matters is the ceiling and the restore --
@@ -629,23 +739,34 @@ sampling-log:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sampling_log" \
-	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp src/tv5725/Adc.cpp \
-	  src/tv5725/SourceMeasurement.cpp src/tv5725/SyncProcessor.cpp
+	  "$(HERE)/test_sampling_log.cpp" src/tv5725/SamplingLog.cpp \
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_sampling_log"
 
-## geometry: the registers each Tv5725::Geometry entry point writes
+## video-path: the registers each Tv5725::VideoPath entry point writes
 #
-# Each case drives Geometry at the top and reads the chip back through the
+# Each case drives VideoPath at the top and reads the chip back through the
 # firmware's own register declarations -- InputFormatter::IF_HSYNC_RST and the
 # rest -- so a failure names the field and prints both values, and every number
 # is checkable against docs/scaler-geometry-model.md. The count of registers
 # written is asserted alongside, so a stray write fails too.
-geometry:
+video-path:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
-	  -o "$(OUT)/test_geometry" \
-	  "$(HERE)/test_geometry.cpp" $(GEOMETRY_RASTER_SRC)
-	@"$(OUT)/test_geometry"
+	  -o "$(OUT)/test_video_path" \
+	  "$(HERE)/test_video_path.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_path"
+
+## video-source-acquisition: the layer that owns the tick and calls down
+#
+# Driven at the top, asserting the solved registers rather than that a call was
+# forwarded. Links the whole engine because the outcome is the engine's.
+video-source-acquisition:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_video_source_acquisition" \
+	  "$(HERE)/test_video_source_acquisition.cpp" $(GEOMETRY_RASTER_SRC)
+	@"$(OUT)/test_video_source_acquisition"
 
 ## register-queue: host unit tests for the deferred register queue
 #
@@ -658,8 +779,16 @@ register-queue:
 	  "$(HERE)/test_register_queue.cpp" src/net/RegisterQueue.cpp src/net/FieldRequest.cpp
 	@"$(OUT)/test_register_queue"
 
+## write-trace: the register write sequence recorded, and issued back at bus speed
+write-trace:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_write_trace" \
+	  "$(HERE)/test_write_trace.cpp" src/tv5725/WriteTrace.cpp
+	@"$(OUT)/test_write_trace"
+
 ## test: every host unit test
-test: axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-output sync-processor video-processor input-line active-image video-processor-timings geometry source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search input-source segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass mode-detect deinterlacer interrupts field-request geometry-raster geometry-windows controls adc source-standard sampling-log
+test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries
