@@ -112,7 +112,7 @@ generated artefact first, because `webui_html.h` is checked in and makes an
 80-line web UI change read as 6400.
 
 Evidence is not lost by squashing — it lives in the `docs/` page, not the commit
-sequence. `docs/investigations/hscale-tearing-characterisation.md` still carries
+sequence. `docs/investigations/horizontal-scale-corruption.md` still carries
 every refuted model after its commits are folded. Move detail to the doc
 *before* folding.
 

@@ -10,156 +10,6 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The write floor's artefact is graded, and it has three terms
-
-**Not a binary fault with exceptions.** 78 framings swept on the fixed build,
-`VDS_HSCALE` 344 down to 256 on `X720 Y576 C256 F50`, one photograph each,
-scored on how far the frequency wedge's duty cycle wanders between neighbouring
-bar pairs. That measure orders every framing an eye has judged -- 0.117 at the
-clean 320, 0.165 where the bars showed occasional splits, 0.216 where they
-split throughout -- so it stands in for the verdict on the markers a camera can
-resolve.
-
-| term | size | evidence |
-|---|---|---|
-| **magnification** | `duty = 0.111 x mag - 0.174` | 60 points at gcd <= 4, r = 0.763 |
-| **the write floor itself** | about **-0.034** above it | 8 points, every one below the floor's trend |
-| **the interpolation phase period** | up to **-0.148** | residual falls monotonically as the period shortens |
-
-The phase repeats every `1024 / gcd(VDS_HSCALE, 1024)` output pixels, and the
-residual after the magnification trend is removed follows it:
-
-| gcd | period | n | residual |
-|---|---|---|---|
-| 1 | 1024 | 30 | +0.000 |
-| 2 | 512 | 20 | +0.002 |
-| 4 | 256 | 10 | -0.006 |
-| 8 | 128 | 5 | -0.014 |
-| 16 | 64 | 2 | -0.008 |
-| 32 | 32 | 1 | -0.039 |
-| 64 | 16 | 1 | -0.050 |
-| 256 | 4 | 1 | -0.148 |
-
-**So "clean only at the multiples of 64" was a binary reading of a gradient.**
-320 and 256 stood out because they carry the two largest phase corrections, not
-because everything else is broken: 256 scores 0.121 at magnification 4.0 where
-its neighbours score 0.240 and 0.212, which is the whole of the effect that
-made the scale-clamped zone look like a clean island. The three top gcd rows
-are one point each.
-
-**And the old evidence for that rule was contaminated.** Every mark below
-`VDS_HSCALE` 308 was taken with `Memory::FetchFloor` pinning the fetch at 150,
-so the playback artefact was in the picture as well -- it takes the same
-measure to 0.32.
-
-**The floor term is still confounded with magnification.** All eight
-above-clamp points lie between magnification 2.98 and 3.05, which is where the
-clamp falls on this source, so a step at the clamp and a kink in the curve at
-3.05 fit them equally. `Geometry::solveRaster()` sizes the raster per source,
-so another source mode puts the clamp at a different magnification and
-separates them. That is the measurement this entry now waits on.
-
-**It is a defect, not the source running out of detail.** Correct
-interpolation of a magnified source gives a blurry but CONSISTENT upscale: bars
-of equal source width come out equal, and an edge lands within half an output
-pixel of where it belongs. What the photographs show is bars dividing into two
-hairlines and neighbours of equal source width coming out visibly unequal,
-which is a sample dropped or repeated. So every term here is wrong sample
-SELECTION, including the magnification one.
-
-**Where the wrong samples do NOT come from: the end of the line.** Against the
-residual, the distance of `produced` from a whole number gives r = +0.068 and
-the samples left unused when the played-out line has consumed what it needs
-r = +0.060 -- nothing either way, over 70 points. The phase period gives
-r = +0.490. So the line has the samples it needs and the fault is in which one
-is chosen, not in running out.
-
-**The damage does not accumulate along the line.** Rounding that builds up
-per output pixel has to do more harm at the right-hand end than the left. The
-wedge scored in six bins across the line, each bin taken against the same bin
-on the framings that resample most nearly exactly, gives a departure of +0.088,
-+0.141, +0.163, +0.116, +0.113, +0.083 from left to right -- a hump in the
-middle and, against bin index, **r = -0.271** over 70 framings. If anything the
-left is worse. So an accumulating phase error is refuted and what is left is a
-per-phase one: particular phase values pick the wrong sample, and a longer
-period visits more of them.
-
-Two limits on that: the reference is only the three framings with gcd 32 or
-more, and the wedge's own bar width changes across the line, so the metric is
-not equally sensitive in every bin. The absence of a left-to-right ramp is
-robust to both; the middle hump is not.
-
-**And there is no phase-step count that explains it.** A phase with N steps
-would make every scale divisible by N exact and leave the rest rounding, so the
-improvement would stop once N is passed. It does not: the mean residual keeps
-falling through N = 8, 16, 32 and 64, and those sets are nested, so what looks
-like a threshold is the same gradient restated. Only three scales in the band
-divide by 32 at all.
-
-`Scale::Min` is clean for the phase reason and not because it is the end of the
-travel. Once the scale pins at 256 the magnification is exactly 4.0 for every
-further press: measured across eight of them, corner residual and overrun
-+0.000 at every one while the capture shrank 423 -> 409. That zone is also why
-zooming there PANS instead of magnifying -- the scale cannot move, so only the
-capture does.
-
-**The corner is refuted from both ends.** `VDS_DIS_HB_SP` was jogged alone at
-two write-floor framings with `VDS_HB_SP` pinned at 8: at scale 320 and capture
-534, where the write origin is exactly 143, the picture is clean at every value
-from 139 to 146; at scale 316, where the origin is 144.0127, it is corrupt at
-every value from 144 to 150. An exact framing survives the corner moving four
-units off the origin and a fractional one is rescued by no corner value at all.
-`sessions/creep_corner-2026092*.json` has the 24 marks.
-
-**`produced` is refuted too.** Capture 534 at scale 320 parts it from the
-corner -- corner exactly 143, `produced` 1708.8, memory window odd so the
-parity rule is not in play -- and that state is clean.
-
-**Backing the window off the floor does not clear it**, but the jog is not an
-above-clamp solve: `VDS_HB_SP` and the corner moved together from 8 to 16 at
-scale 316, corrupt at all 12 marks, while a full diff of a floor solve against
-an above-clamp one differs in seven fields with the capture and the scale among
-them.
-
-**A corrupt verdict is several features of the card at once.** These five are
-the easily located ones rather than the whole set, and they are instances of
-one thing, so scoring any one of the three a camera resolves stands for the
-verdict:
-
-| feature | where | a camera can score it |
-|---|---|---|
-| a yellow curve | before the colour blocks, on the circle | yes |
-| a grey curve | before the frequency wedge starts | yes |
-| the wedge | bars split and wander in width | yes |
-| vertical black lines | through the label text | **no** |
-| a thin vertical line | down the right-hand orange/cyan bracket | **no** |
-
-**The camera under-samples the last two.** `tv-snap` rectifies to 1600 px
-across a 1920 px picture, so a feature one or two output pixels wide is below
-what it resolves -- the label text reads as broken at a framing marked clean
-and at one marked corrupt alike.
-
-**Temporal measurement is at the camera's noise floor.** Forty frames at each
-of a clean and a corrupt framing give per-pixel standard deviations that do not
-separate -- median 0.51 against 0.50, 7501 pixels over 4 levels against 8062 --
-and the map of what moves highlights every edge in both.
-
-**FIXED by bounding the zoom at 3.0x.** `Scale::Min` is 342 -- `1024 / 3` is
-341.33, so 342 is the largest magnification at or under 3.0 -- and both axes
-read it. Nothing can now solve a scale that pins the memory window at the write
-floor, which both sources entered at `VDS_HSCALE` 334.
-
-The rationale is what the zoom is FOR: bringing a source's active picture up to
-full screen. That is reached well inside 3.0x, and the range beyond it only
-crops further into the source. Measured across the whole zoom, `produced` holds
-near 1715 of a 1920 raster from the default framing down to the clamp -- the
-picture does not grow, the capture shrinks -- so the bound costs no picture
-size, only crop depth.
-
-**It gives up the clean 4.0x zone**, which measures 0.121 and 0.124 on the two
-sources because it carries the largest phase correction there is. That zone is
-reachable only through the damaged span, so keeping it means keeping the span.
-
 ### `Memory::FetchFloor` drives the playback ratio off the bottom of its band
 
 `Memory::fetchFor()` is `max(FetchFloor, ceil(captureWidth / RequestsPerLine))`
@@ -182,7 +32,7 @@ capture 456, `PB_CAP_OFFSET` 442, automation frozen:
 
 So the band has a floor as well as the ceiling already measured -- clean to
 4.04, tearing from 4.28 in
-`investigations/hscale-tearing-characterisation.md` -- and it is roughly
+`investigations/horizontal-scale-corruption.md` -- and it is roughly
 **3.4 to 4.04**. The low side had never been measured, which the constant's own
 comment says: it stops "where the measurement stops".
 
@@ -296,34 +146,13 @@ because `Axis::minimumCapture()` stops the zoom where the scale REACHES its
 floor, so no press can now solve a framing inside the clamped zone at all. It is
 reachable only by a framing restored from the table -- the entry two above.
 
-### Wrong sample selection has TWO regimes, and a rule from one says nothing about the other
-
-Both are about the scaler picking the wrong source sample, and they are
-separate findings governing disjoint ranges. Reading a mark by the wrong one
-looks like a refutation that never happened, which is why `shear.py` carries the
-split as `WidthRule` and `FloorScaleRule` rather than one predicate.
-
-| regime | where | the rule |
-|---|---|---|
-| above the clamp, the whole reachable zoom | `VDS_HB_SP` off its floor | the memory window's width parity, below |
-| on the write floor | `VDS_HB_SP` pinned at 8 | graded with magnification, the write floor and the phase period `1024 / gcd(VDS_HSCALE, 1024)` |
-
-**Only the first is reachable now.** `Scale::Min` is 342 -- `1024 / 3` is
-341.33, so 342 is the largest magnification at or under 3.0x -- and
-`Axis::minimumCapture()` stops the zoom where the scale reaches its floor, so no
-press can solve a framing inside the clamped zone at all. The gcd material
-describes a range the control cannot enter, and a framing restored from the
-table is the only way back into it. **Do not apply the multiple-of-64 reading to
-an ordinary solve**, and note that the entry above retracts its binary form
-anyway: it was a binary reading of a gradient.
-
 ### Why an even memory window shears is not known
 
 The zoom shear itself is fixed: `Axis::solve()` biases the memory window to an
 odd width, because an EVEN `VDS_HB_ST - VDS_HB_SP` shears the picture and an odd
 one is clean. That width is `floor(originOffset + produced)`, so what reaches the
 picture is the produced width's parity rather than any register.
-`investigations/the-shear-follows-the-produced-widths-parity.md` has the
+`investigations/horizontal-scale-corruption.md` has the
 measurements and the two refuted rules, which must not be reinstated.
 
 **The bias is a bias, not a cure.** Nothing explains why an even width shears, so
@@ -336,7 +165,7 @@ divider held, `VDS_HSYNC_RST` alternates the picture clean/corrupt on six
 consecutive values, and a state with an odd memory window is corrupt at every
 even one. `OutputMode::horizontalTotalFor()` therefore rounds the total up to
 even, so the register lands odd.
-`investigations/the-raster-total-decides-which-samples-play-out.md` -- and it is
+`investigations/horizontal-scale-corruption.md` -- and it is
 measured at one framing on one mode, so the sense is not established elsewhere.
 
 - **One input and one axis.** The bias holds on every source mode tried -- 640

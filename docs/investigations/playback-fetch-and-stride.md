@@ -94,7 +94,7 @@ from the green rather than observed.
 **Combing at the zoom-out extreme.** No value of `PB_CAP_OFFSET` clears it, so it
 is not the stride. It is separate from the green band, and it is not established
 to be the same artefact as the 493-framing dataset in
-[`hscale-tearing-characterisation.md`](hscale-tearing-characterisation.md) —
+`horizontal-scale-corruption.md` —
 that identification was made once without evidence and withdrawn.
 
 **Is `VDS_HSCALE` an offset-by-one field?** If 1023 means 1024 then unity is

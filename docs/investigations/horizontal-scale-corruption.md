@@ -1,6 +1,56 @@
-# The HSCALE tearing, characterised
+# Horizontal scale corruption
 
-## FOUND: `PB_FETCH_NUM`, 2026-08-09
+Everything measured about the scaler putting the wrong thing on a line. Four
+separate findings live here because they present almost identically -- the
+frequency wedge's bars splitting and wandering, the test card's curves going
+ragged, black bars through the label text -- and a rule from one says nothing
+about the others. This is the one page to read before diagnosing any of them.
+
+## Which one am I looking at
+
+| what the screen shows | it is | section |
+|---|---|---|
+| bars split into hairlines, curves ragged, black bars in text, the whole line affected | wrong sample SELECTION | the parity sections below |
+| blocks of other content through flat colour, magenta the source never sent, worst at the start of the line and decaying across it | the playback/capture beat on the memory bus | [the playback beat](#the-playback-beat-bars-bands-and-magenta-the-source-does-not-contain) |
+| one column of junk hard against the right-hand edge | the aperture open past the interpolator's reach | [the width parity](#the-memory-windows-width-parity) |
+| one column of black where the picture should reach the edge | the width bias stepping the wrong way | [the width parity](#the-memory-windows-width-parity) |
+
+**A register dump cannot tell any of them apart**, and neither can a still that
+misses the feature: score the wedge, the curve before it and the gold segment's
+curve together, because they are one verdict.
+
+## What the engine ships, and what each thing is for
+
+| rule | where | against |
+|---|---|---|
+| the memory window's width is ODD, biased forward | `Axis::solve()` | the zoom shear |
+| the aperture closes on the last captured column, one short of the memory window | `Axis::solve()` | the junk column |
+| the output raster total is EVEN, so `VDS_HSYNC_RST` is odd | `OutputMode::horizontalTotalFor()` | wrong samples at an even total |
+| `PB_FETCH_NUM = ceil(capture / 4)`, no floors | `Memory::fetchFor()` | the playback beat |
+| `Scale::Min` 342, magnification at or under 3.0x | `Scale.h` | the write floor's graded artefact |
+
+Every one of them is a **bias or a bound rather than an explanation**. None of
+the mechanisms is known, so anything that later explains one should be expected
+to replace it rather than build on it.
+
+## Rules that are REFUTED and must not be reinstated
+
+- `VDS_HB_SP` parity alone -- 17/34 on whole solves, chance.
+- `VDS_HB_SP + floor(produced)` -- fits the jog, fails the sweep.
+- Any modulus of capture width, `VDS_HSCALE`, capture start or produced against
+  the playback beat: **996 partitions, not one consistent.**
+- "Clean only at the multiples of 64" as a binary rule -- it is a gradient, and
+  it belongs to a regime the zoom can no longer enter.
+- The corner, `VDS_DIS_HB_SP`, jogged either side of an exact write origin.
+- A ratio threshold in `our raster / the standard's`, for the SD modes' short
+  active window.
+
+
+---
+
+## The playback beat: bars, bands and magenta the source does not contain
+
+### FOUND: `PB_FETCH_NUM`, 2026-08-09
 
 **`PB_FETCH_NUM` 256 -> 200 clears the fault completely.** Photographed at
 `zh` 250, 28 units inside the 66-unit torn band:
@@ -25,7 +75,7 @@ the hypotheses before it:
 | irregular bands, 1 to 66 units wide | where the beat lands inside the visible region |
 | magenta the source does not contain | data fetched from the wrong address |
 
-### The `PB_FETCH_NUM` = 100 photo is a TRAP, and the test card caught it
+#### The `PB_FETCH_NUM` = 100 photo is a TRAP, and the test card caught it
 
 The first value tried was 100, and it looked clean —
 `snapshots/pb-fetch-num-100-clears-the-interference-2026-08-09.jpeg`. It was
@@ -39,7 +89,7 @@ At 200 the counts are 3/2/4/1 with one circle and one `BAND 8`: the correct
 image *and* no interference. **Without a test card that carries its own key,
 100 would have been recorded as the fix.**
 
-### `PB_FETCH_NUM` is inherited, never computed
+#### `PB_FETCH_NUM` is inherited, never computed
 
 `grep` the tree: **the firmware never writes `PB_FETCH_NUM` anywhere.** It
 comes from the preset table and nothing has ever questioned it. 256 is an
@@ -59,7 +109,7 @@ Gated on standards 3/4, which this source is not, so that invariant has never
 run here. The unit is currently fetch 200, offset 254; the firmware's own rule
 would make it 204.
 
-### The working configuration, 2026-08-09
+#### The working configuration, 2026-08-09
 
 `snapshots/pb-tuned-working-2026-08-09.json`. Four registers off their
 inherited values, no crop:
@@ -97,7 +147,7 @@ output and re-locks to it — the wedge-with-perfect-registers failure mode.
 **None of this survives a preset load.** The firmware writes none of these four
 except `PB_CAP_OFFSET`, and that only for `videoStandardInput` 3/4.
 
-### AND YET IT HAS TO BE A CONSTANT: the register cannot be rewritten live
+#### AND YET IT HAS TO BE A CONSTANT: the register cannot be rewritten live
 
 Settled 2026-08-09 by building it. `Geometry::write()` recomputed
 `PB_FETCH_NUM` per framing and **the picture flickered on every pad press** --
@@ -130,7 +180,7 @@ blanking interval, anything that varies with the framing flickers.
 see the section below, because the difference between 200 and 204 is the
 difference between a measurement and a leftover.
 
-### The shipped constant is 204, not 200
+#### The shipped constant is 204, not 200
 
 The glitch clears as soon as `PB_FETCH_NUM` reaches 204. Read back off the unit
 the same evening: `s4 r0x39 = 0xcc`.
@@ -159,7 +209,7 @@ here was taken in — and requires one press to clear it. The first test alone
 would pass against a register nobody wrote, which is the fault that survived
 three sessions.
 
-### NO SINGLE CONSTANT CAN BE CLEAN AT EVERY ZOOM
+#### NO SINGLE CONSTANT CAN BE CLEAN AT EVERY ZOOM
 
 After tuning, the glitch returns on a few creeps of zoom, and that is structural
 rather than a tuning failure. The write rate tracks the
@@ -186,7 +236,7 @@ modulus. Either produces a fix rather than a pass/fail. A variant of
 `sweep_zoom.py` that steps `PB_FETCH_NUM` instead of the framing, with the same
 one-key verdict, is the tool for it and is not yet written.
 
-### What it IS, mechanically
+#### What it IS, mechanically
 
 The TV5725 scales through SDRAM, and two independent periodic request streams
 share that bus:
@@ -231,7 +281,7 @@ banded non-monotonic thresholds deterministically. If that is what they were,
 the numbers are facts about the **preset tables**, not the board, and the fix
 generalises rather than being unit-specific.
 
-### The left residual has a SECOND handle, and it is a phase not a duration
+#### The left residual has a SECOND handle, and it is a phase not a duration
 
 `PB_FETCH_NUM` 200 left roughly 4 px of residual at the extreme left — the
 worst case, first burst of the line, FIFO emptiest. **`VDS_HS_SP` = 56 clears
@@ -252,7 +302,7 @@ the non-monotonic left-edge banding, which nothing has modelled.
 **No crop is needed.** Blanking the first 4 px was considered and is not
 required, which is the better outcome: those pixels are real picture.
 
-### What 200 did not settle
+#### What 200 did not settle
 
 Clearing came at **one** framing. The previously-torn band was `zh` 222..287, 66
 units wide, and the fault has always come in bands, so a value that clears one
@@ -285,7 +335,7 @@ tools/gbsc-pro-hwtest/snapshots/hscale-*.jpeg  .mov
 python3 tools/gbsc-pro-hwtest/characterise.py --table
 ```
 
-## What is being characterised
+### What is being characterised
 
 A picture fault that appears at some scales and not others. It has been in three
 handovers as "the interference patterns at some HSCALEs" and has never been
@@ -298,7 +348,7 @@ uniform down the frame. This is many pixels, ragged, and has structure down the
 frame. Merging the two is a mistake that has already been made once; see
 CLAUDE.md, "The zigzag is NOT HSCALE-banded, and that is measured."
 
-## Method, and why each part of it is there
+### Method, and why each part of it is there
 
 - **The verdict comes from the screen.** Nothing scores the picture
   automatically. The faults are things you look at, and a checker that guessed
@@ -323,7 +373,7 @@ CLAUDE.md, "The zigzag is NOT HSCALE-banded, and that is measured."
   than ending it — they may be the band structure the old headroom note saw, and
   discarding them would mean sweeping again to get them back.
 
-## The shape of the fault
+### The shape of the fault
 
 From `onset-1`, and unchanged in character at `peak-1`:
 
@@ -345,7 +395,7 @@ From `onset-1`, and unchanged in character at `peak-1`:
 straight lines. Something drifts by a fixed amount every line and the point
 where it goes wrong walks across the picture, drawing the boundary.
 
-## The envelope's phase DOES move with HSCALE
+### The envelope's phase DOES move with HSCALE
 
 This section previously said the opposite, on the strength of the shape looking
 identical between HSCALE 619 and 652. That was over-claimed twice over: a few
@@ -358,7 +408,7 @@ worst part of section 2. So the vertical envelope's phase advances as HSCALE
 does, and the "sections" are simply where its peaks land inside the visible
 frame.
 
-## The fault is CONTINUOUS, and only its visibility is banded
+### The fault is CONTINUOUS, and only its visibility is banded
 
 The other half of the same message, and it reframes three handovers' worth of
 notes: *"there was a minimal amount of tearing the entire way to onset 2."*
@@ -372,7 +422,7 @@ headroom note and the left-edge corruption note both assume. It is one
 continuously present error whose amplitude is modulated, and the bands are
 contours of visibility, not of existence.
 
-## The fault has two independent factors
+### The fault has two independent factors
 
 That refutation is worth more than the hypothesis was, because it separates the
 fault into two things that can be chased apart:
@@ -404,7 +454,7 @@ zoom only and watch the gap.**
     rates rather than to any scaling, and the search moves to what is fixed
     about the frame.
 
-## The amplitude is largest at the START of each line
+### The amplitude is largest at the START of each line
 
 `almost-1` is one press above `end-1` -- **one press is one HSCALE unit**, 652 to
 653, so every boundary here is resolved to a single unit. The transition is
@@ -438,7 +488,7 @@ If the corruption stays glued to the PICTURE's left edge as it moves, it is
 line-relative and this holds. If it stays at the SCREEN's left edge while the
 picture slides past it, it is raster-relative and this is wrong.
 
-## SETTLED: the pattern is static
+### SETTLED: the pattern is static
 
 Watched on the screen, 2026-08-09: **the pattern is static.**
 
@@ -470,7 +520,7 @@ Candidate registers that set a per-line phase, now recorded in every row:
   * `IF_LD_ST`   -- the line double's write reset generation start position
   * `MADPT_SEL_PHASE_INI` -- the motion-adaptive block's initial phase
 
-## Readings
+### Readings
 
 Eleven rows, 2026-08-09. Vertical geometry constant throughout: VSCALE 483,
 capture 48..576 half-lines, output raster 1445 x 1126.
@@ -501,7 +551,7 @@ one HSCALE unit and most gaps between rows are five to thirty units, so it is
 aliased by construction. Only 690..694 is contiguous. Every pattern found and
 then refuted came from stitching across those gaps.
 
-## The dense sweep: one key a step
+### The dense sweep: one key a step
 
 `sweep_zoom.py` exists because of the paragraph above it. Recording a row by
 hand is a press on the OSD pad and then a command line typed with the picture
@@ -539,14 +589,14 @@ Two things it reports that a hand-typed row could not:
 `--axis v` sweeps the vertical zoom instead, which is the other experiment
 listed below.
 
-## THE DENSE RUN: 493 framings, and what it settles
+### THE DENSE RUN: 493 framings, and what it settles
 
 2026-08-09, late. `sweep_zoom.py`, one press a unit, nothing skipped. 342
 readings widening from `zh` 165 out to the framing clamp, then 156 narrowing
 from `zh` 173 to 311. Capture width is exactly `1009 - zh` throughout, so every
 earlier reading converts and sits in the same axis.
 
-### SETTLED: the fault is not a function of VDS_HSCALE
+#### SETTLED: the fault is not a function of VDS_HSCALE
 
 ```
 zh 220   HSCALE 652   capture width 789   TORN
@@ -562,7 +612,7 @@ capture flip the fault, and therefore **neither of them is the variable.**
 This is what the aliased dataset could never have shown. The pair is one unit
 apart; every earlier gap was five to thirty.
 
-### There is a THIRD input, and it is on the output side
+#### There is a THIRD input, and it is on the output side
 
 Changing `VDS_HS_ST` and `VDS_HS_SP` affects it too, 2026-08-09.
 The output hsync pulse position and width flip the fault as
@@ -594,7 +644,7 @@ So "three quantities flip it" is about the *relationship*, not about three
 available fixes. Do not read either negative as "that register is irrelevant",
 and do not re-run either sweep expecting a clean setting to fall out.
 
-### Tried at `zh` 250, frozen, and did NOT clear it
+#### Tried at `zh` 250, frozen, and did NOT clear it
 
 The state: capture 304..1063 (width 759), `VDS_HSCALE` 629, 28 units inside the
 66-unit torn band — the deepest torn territory measured, and deliberately so.
@@ -616,7 +666,7 @@ edge, so these are negatives about this state, not about the register.
 | **`MADPT_Y_DELAY_UV_DELAY`** | **s2, both delay nibbles** | **moves them right** |
 | **`MADPT_UV_DELAY`** | **s2, UV pipeline delay** | **mild, on the reds only** |
 
-### SEGMENT 2 IS EXHAUSTED, and here is the rule that says so
+#### SEGMENT 2 IS EXHAUSTED, and here is the rule that says so
 
 Seven negatives and three positives, and they are all explained by one thing —
 **a segment-2 field is live only if its sub-block's gate is open, and the delay
@@ -654,7 +704,7 @@ way to reach a read/write phase. CLAUDE.md records it at 1667, one of the three
 values that proved the sync processor counts in ADC samples rather than IF
 units.
 
-### RETRACTED, within the hour: "segment 2 is inert"
+#### RETRACTED, within the hour: "segment 2 is inert"
 
 The section below was written after four segment-2 registers did nothing, and
 it concluded that the remaining fifty could be skipped. **`MADPT_Y_DELAY` then
@@ -667,7 +717,7 @@ those is switched off.
 Read the section below as "the motion-adaptive block is off", which it is and
 which is measured. Do not read it as "segment 2 does nothing".
 
-### POSITIVE: `MADPT_Y_DELAY` moves the glitches
+#### POSITIVE: `MADPT_Y_DELAY` moves the glitches
 
 The first register anyone has found that reaches the fault without destroying
 the picture. RD-5725, S2_17:
@@ -725,7 +775,7 @@ Open, and cheap:
   glitch further at `zh` 250 than at a band edge, the delay is being scaled,
   which ties it to the magnification that the sweep says matters.
 
-### MEASURED: the motion-adaptive block is off on this unit
+#### MEASURED: the motion-adaptive block is off on this unit
 
 The other three are all in segment 2, and none of them changed the picture —
 including `MAPDT_VT_SEL_PRGV`, which reads like a progressive/interlace switch
@@ -751,7 +801,7 @@ The parts of the path where a change can still reach the picture:
 - **segment 3**, the VDS — but downstream of the fetch, and the corruption is
   *fetched* wrong (magenta the source does not contain), not displayed wrong
 
-### So the deinterlacer hypothesis is dead
+#### So the deinterlacer hypothesis is dead
 
 It was a good hypothesis and it is worth stating plainly that it is finished,
 because "maybe it's the deinterlacer" is the kind of idea that returns. Four
@@ -759,7 +809,7 @@ segment-2 registers do nothing, the block's own enables are all off, and the
 only stage in that family still running is the input formatter's line-double
 FIFO — which is in segment 1, and which destroys the picture when removed.
 
-### SETTLED: no recorded quantity separates torn from clean
+#### SETTLED: no recorded quantity separates torn from clean
 
 80 torn, 413 clean, 493 distinct framings. Every quantity in the row overlaps:
 
@@ -772,7 +822,7 @@ FIFO — which is in segment 1, and which destroys the picture when removed.
 | display window | 1229..1242 | 1226..1262 |
 | frac(produced) | 0.02..0.99 | 0.00..1.00 |
 
-### SETTLED: the modular family is dead
+#### SETTLED: the modular family is dead
 
 Every modulus from 2 to 250, against capture width, HSCALE, capture start and
 produced: **not one of the 996 partitions is consistent.** No residue class is
@@ -783,7 +833,7 @@ That closes out an entire line of attack. "Periodic in HSCALE at ~34 units",
 HSCALE unit" were four separate attempts at the same shape, each fitted to
 eight or fewer rows. The shape does not exist.
 
-### The band structure, measured
+#### The band structure, measured
 
 ```
    TORN   zh 155..155    1 wide
@@ -803,7 +853,7 @@ Irregular. Bands of 1, 5, 6, 66 torn against 1, 3, 24, 42, 343 clean, in no
 progression. And **the wide side is clean for 343 consecutive units** — the
 fault has a hard upper edge at width 854/855 and nothing above it.
 
-### The produced sawtooth
+#### The produced sawtooth
 
 One press narrower normally *raises* produced by ~0.32 px, because HSCALE drops
 a unit and more than compensates the unit lost from the capture. Every seventh
@@ -812,7 +862,7 @@ input unit at this magnification. `zh` 220 -> 221 is one of those, which is why
 that pair exists at all. Any future model has to live with the fact that the
 swept quantity does not move monotonically.
 
-## The deinterlacer is already off, and that is measured
+### The deinterlacer is already off, and that is measured
 
 Dumped 2026-08-09 while the fault was live, in case the tearing was a
 misconfigured deinterlacer. It is not, because there is nothing running:
@@ -846,7 +896,7 @@ the honest values (`gbs-control.ino`) for `videoStandardInput`
 at all (`STATUS_00` = 0x02 fails the `& 0x07 == 0x07` gate), so they were left
 at the preset table's.
 
-### Bypassing the line doubler destroys the picture
+#### Bypassing the line doubler destroys the picture
 
 Tested frozen at `zh` 250, deep inside the 66-unit torn band:
 `IF_LD_RAM_BYPS` 0 -> 1. The picture collapsed into horizontal bands of
@@ -869,7 +919,7 @@ mechanism; if the picture is unchanged, the hypothesis is dead and should be
 recorded as dead. `IF_LD_ST` crept one unit off 5 is the same quantity from the
 write side.
 
-## Still to do
+### Still to do
 
 - **`IF_LD_SEL_PROV` = 1**, above. One field, frozen, reversible.
 - **The vertical axis.** Every one of the 493 readings changed the horizontal
@@ -881,3 +931,395 @@ write side.
 - Raise the `picture_wider_than_display` threshold above the engine's standing
   2 px so the warning means something. Every row tonight flagged YES on a 2 px
   overrun, so the warning currently means nothing.
+
+---
+
+## The memory window's width parity
+
+Zooming horizontally used to shear the picture on about half the steps: step in,
+it shears; step again, it clears; step again, it shears. `Axis::solve()` now
+biases the memory window to an odd width and the artefact does not appear.
+
+### What the quantity is
+
+`Axis::solve()` writes the memory window as
+
+    VDS_HB_ST = floor(VDS_HB_SP + originOffset + produced)
+    memory    = (VDS_HB_SP, VDS_HB_ST)
+
+so its width is `floor(originOffset + produced)` and **`VDS_HB_SP` cancels**.
+Checked against every engine-solved mark on record it holds in 131 of 134, the
+three exceptions off by one, which is the rounding tolerance of the fitted origin
+constants.
+
+So the parity that reaches the picture is the **produced picture's width in
+output pixels**. An even one shears, an odd one is clean. The memory window is
+where it becomes visible, not where it comes from — which is why stepping the
+zoom alternates arbitrarily, `produced` moving continuously while the floor of it
+flips.
+
+**That identity no longer holds exactly, and the rule is the register.** The far
+edge now stops one capture unit short of the write end for the interpolator's
+reach, so the width is `floor(originOffset + produced - magnification)`. Which of
+the two the part responds to is not separable from the marks: `produced` cannot
+be moved without moving the capture or the scale, and walking the scale to reach
+a parity moves it by tens of counts before the floor flips, which is picture size
+paid for a parity. So the bias stays on the register the solve can set.
+
+### How it was separated from the register
+
+Two earlier rules fitted well and were wrong, each refuted by the dataset it was
+not fitted to:
+
+| rule | jog, one solve | sweep, whole solves |
+|---|---|---|
+| `VDS_HB_SP` odd shears | 24/24 | 17/34, chance |
+| `VDS_HB_SP + floor(produced)` even shears | 34/35 | 77/104 |
+
+Anything of the form `VDS_HB_SP + floor(origin + ...)` fits better still, 93/104,
+and is **degenerate**: `origin` already contains `VDS_HB_SP`, so the two cancel
+mod 2 and the rule reduces to a function of the zoom with no register dependence
+at all, which the jog disproves directly.
+
+What separated them is that the width and the register can be moved
+independently. `creep_memory_width.py` does both, and the two rules predict
+opposite outcomes on each:
+
+| motion | marks | `VDS_HB_SP` | width | measured |
+|---|---|---|---|---|
+| far edge alone | 23 | **fixed at 33** | every integer 1810..1825 | alternates clean/shear, 23 of 23 |
+| both edges about the centre | 8 | **walks 34..40** | parity held | verdict never changes |
+
+The width rule called **38 of 38** across that session, each mark predicted before
+it was taken. On the marks it was originally fitted to it calls 189 of 189 of
+those the eye judged consistently — the seven exceptions there are register states
+that were marked both ways on separate visits, 8 of 21 revisited states having
+been, so the artefact is marginal near a boundary and a single mark carries less
+than it appears to.
+
+### What scoring it wrong looks like
+
+Scored across the whole dataset the rule reads 218 of 255 and appears to be a
+candidate with 36 misses hiding a second variable. Thirty-one of those sit below
+the near edge's clamp, where the picture is broken whatever the width — 51 marks,
+49 sheared. Splitting there is what turns the rule from a candidate into a
+finding, and `shear.clamped()` is the split.
+
+### The fix, and what it is not
+
+`solve()` biases the width by a unit where it comes out even, so every solve
+lands on an odd one. It is a **bias, not a cure** — why an even width shears is
+not known. Anything that later explains the mechanism should be expected to
+replace it rather than build on it.
+
+**The unit goes FORWARD, and only the memory window takes it.** The bias used to
+step back, because opening the window past where the write ends shows memory the
+playback stage walks and nothing wrote. Two things have changed since:
+
+- the far edge now closes one capture unit short of the write end, for the
+  interpolator's reach, so there is a reserve to step into that stepping back
+  does not use;
+- stepping back blanks a written pixel, which is a black column down the right
+  where the picture should reach the edge of the screen.
+
+So the memory window takes the unit and the **aperture does not follow it**.
+Moving `VDS_DIS_HB_ST` with `VDS_HB_ST` puts the last shown column one past the
+interpolator's reach, which is a column of junk down the right-hand edge —
+measured on the bench the moment the forward bias was flashed. Blanking that
+column costs no picture, because it was never captured.
+
+The two windows therefore differ at the far end by the bias, with the MEMORY one
+wider. That is the safe direction: the fetch covers every column the aperture
+shows. The reverse would show a column the fetch never filled.
+
+Horizontal only. `VDS_VB_SP` has never been crept, so the vertical axis is
+unmeasured rather than known to be unaffected.
+
+**And the width is not the only parity that reaches the picture.** The output
+raster total carries one of its own, measured with the capture, the scale and
+both windows held:
+`horizontal-scale-corruption.md`.
+A state can satisfy this rule and still be corrupt through that one, which is
+what made a bisect necessary to tell them apart.
+
+### What the bench says after it
+
+Flashed to the unit, RiscPC at 320x256@50 on `vga`:
+
+- 120 consecutive zoom solves across `VDS_HSCALE` 441..563, **no even width**.
+- Six consecutive zoom steps photographed, all clean, where the same steps
+  previously alternated. The markers are the test card's curved edges — the gold
+  segment's curve and the curve before the finest grating — the frequency wedge's
+  regularity, and the text labels, which carry vertical black bars when it shears.
+
+The marks are under `tools/gbsc-pro-hwtest/sessions/`, each carrying the sixteen
+registers it was taken at and the prediction made before it.
+
+### Measuring this again
+
+The artefact is visible in a photograph, but only against a control. A camera
+capture of an unchanging screen differs from the next by about 2.2 grey levels,
+and a written state differs from an unwritten one by the same, so that figure is
+the camera's noise floor and not a picture that moves. Averaging several aligned
+frames per state is what makes a marginal width callable.
+
+Two automated metrics were tried and both failed. Sub-pixel row-to-row
+displacement tracks MAGNIFICATION rather than the artefact — a clean zoomed frame
+scores 0.30-0.37 against 0.06-0.08 clean at the default framing, and 0.31 for a
+grossly sheared one. A spectral test on the same sequence gives no ordering at
+all. The eye is the instrument, and `creep_memory_width.py` is built around that.
+
+---
+
+## The output raster total's parity
+
+The output raster total reaches the picture. At one framing, with the capture,
+the scale, both windows and the sampling divider all held, stepping
+`VDS_HSYNC_RST` by one alternates the picture between clean and corrupt.
+
+`OutputMode::horizontalTotalFor()` therefore rounds its floored total up to the
+next even value, because `VideoPath` writes `horizontalTotal - 1` into the
+register.
+
+### What was measured
+
+Bench RiscPC at 320x256@50 on `vga`, output 1024p, engine solve untouched, one
+register written by hand between shots:
+
+| `VDS_HSYNC_RST` | | picture |
+|---|---|---|
+| 2025 | odd | clean |
+| 2024 | even | **corrupt** |
+| 2023 | odd | clean |
+| 2022 | even | **corrupt** |
+| 2021 | odd | clean |
+| 2020 | even | **corrupt** |
+
+Six consecutive values, no exceptions. The corrupt verdict is the set
+`docs/known-issues.md` lists as one artefact -- the wedge's bars splitting into
+hairlines and wandering in width, the yellow curve and the grey curve before the
+wedge going ragged, black bars through the label text.
+
+### How it was found, and why nothing else can account for it
+
+A bisect over the eight commits of one session. `cade823ea` and `5a521465d`
+clean, `44ad4e433` corrupt, and the registers either side of that boundary are
+identical in everything the geometry engine solves:
+
+| build | `VDS_HSCALE` | capture | `VDS_HB_SP` | `VDS_HB_ST` | `PLLAD_MD` | `VDS_HSYNC_RST` | picture |
+|---|---|---|---|---|---|---|---|
+| `5a521465d` | 460 | 689 | 249 | 1890 | 2200 | **2025** | clean |
+| `44ad4e433` | 460 | 689 | 249 | 1890 | 2200 | **2022** | corrupt |
+
+Same capture, same scale, same produced width, same memory window, same
+divider. `44ad4e433` quantises the source key's field rate to hundredths of a
+hertz rather than whole hertz, which is correct and stays -- it moved the solved
+total by three pixels, and three pixels was enough.
+
+**So `produced` is refuted as the quantity here, and so is the memory window's
+width.** Both are identical across that pair, and the memory window is odd in
+both. Whatever the mechanism, it has a term on the output raster that neither
+covers.
+
+Writing 2025 back into the corrupt build by hand, with nothing else touched and
+no reflash, cleans the picture completely. That is the same experiment as the
+creep above and it is what makes the bisect a cause rather than a correlation.
+
+### Which direction the bias goes, and what it costs
+
+**Up.** The total is a clock budget floored -- `clock / (fieldRate x frameLines)`
+-- so raising it by one asks for a line one pixel longer than the budget affords.
+The frame time lock steers the display clock continuously, so a pixel of budget
+is not a quantity that has to be exact; a pixel of raster is picture, and the
+alternative loses it. Every mode gains at most one pixel of raster.
+
+### What is not established
+
+**It has been measured at one framing, on one output mode, on one source.** The
+parity held across six consecutive values there, which is strong for that state
+and says nothing about whether the parity is the same sense at another
+magnification. The cross-mode comparison cannot settle it either, because the
+scale, the capture and the divider all move between modes: at the framing the
+session opened on, 480p ran an even total and looked clean while 576p ran an odd
+one and looked notched.
+
+**Nor is the mechanism known.** It is the same shape as the memory window's
+width parity -- a one-unit change to an integer flipping which samples play out,
+with no account of why -- and the same caution applies: anything that later
+explains it should be expected to replace this rather than build on it.
+
+The measurement that would settle the sense is a zoom sweep at a fixed total
+repeated at the total plus one, on more than one output mode. Two columns, the
+same shape the width rule was separated from the register with.
+
+---
+
+## The write floor, which the zoom can no longer reach
+
+Below about `VDS_HSCALE` 334 the scaler picked wrong samples: the frequency
+wedge's bars split into hairlines and neighbours of equal source width came out
+visibly unequal. `Scale::Min` is **342** -- `1024 / 3` is 341.33, so 342 is the
+largest magnification at or under 3.0x -- and `Axis::minimumCapture()` stops the
+zoom where the scale reaches its floor, so no press can solve a framing inside
+that zone at all. It is reachable only by a framing restored from the table.
+
+**So the gcd material below describes a range the control cannot enter.** That
+matters for reading marks rather than for the picture: applying it to an
+ordinary solve is reading a mark by the wrong rule, and the two regimes are
+disjoint.
+
+| regime | where | the rule |
+|---|---|---|
+| above the clamp, the whole reachable zoom | `VDS_HB_SP` off its floor | the memory window's width parity, `horizontal-scale-corruption.md` |
+| on the write floor | `VDS_HB_SP` pinned at 8 | graded with magnification, the write floor and the phase period, below |
+
+`shear.py` carries the split as `WidthRule` and `FloorScaleRule` rather than one
+predicate, for the same reason.
+
+**Not a binary fault with exceptions.** 78 framings swept on the fixed build,
+`VDS_HSCALE` 344 down to 256 on `X720 Y576 C256 F50`, one photograph each,
+scored on how far the frequency wedge's duty cycle wanders between neighbouring
+bar pairs. That measure orders every framing an eye has judged -- 0.117 at the
+clean 320, 0.165 where the bars showed occasional splits, 0.216 where they
+split throughout -- so it stands in for the verdict on the markers a camera can
+resolve.
+
+| term | size | evidence |
+|---|---|---|
+| **magnification** | `duty = 0.111 x mag - 0.174` | 60 points at gcd <= 4, r = 0.763 |
+| **the write floor itself** | about **-0.034** above it | 8 points, every one below the floor's trend |
+| **the interpolation phase period** | up to **-0.148** | residual falls monotonically as the period shortens |
+
+The phase repeats every `1024 / gcd(VDS_HSCALE, 1024)` output pixels, and the
+residual after the magnification trend is removed follows it:
+
+| gcd | period | n | residual |
+|---|---|---|---|
+| 1 | 1024 | 30 | +0.000 |
+| 2 | 512 | 20 | +0.002 |
+| 4 | 256 | 10 | -0.006 |
+| 8 | 128 | 5 | -0.014 |
+| 16 | 64 | 2 | -0.008 |
+| 32 | 32 | 1 | -0.039 |
+| 64 | 16 | 1 | -0.050 |
+| 256 | 4 | 1 | -0.148 |
+
+**So "clean only at the multiples of 64" was a binary reading of a gradient.**
+320 and 256 stood out because they carry the two largest phase corrections, not
+because everything else is broken: 256 scores 0.121 at magnification 4.0 where
+its neighbours score 0.240 and 0.212, which is the whole of the effect that
+made the scale-clamped zone look like a clean island. The three top gcd rows
+are one point each.
+
+**And the old evidence for that rule was contaminated.** Every mark below
+`VDS_HSCALE` 308 was taken with `Memory::FetchFloor` pinning the fetch at 150,
+so the playback artefact was in the picture as well -- it takes the same
+measure to 0.32.
+
+**The floor term is still confounded with magnification.** All eight
+above-clamp points lie between magnification 2.98 and 3.05, which is where the
+clamp falls on this source, so a step at the clamp and a kink in the curve at
+3.05 fit them equally. `Geometry::solveRaster()` sizes the raster per source,
+so another source mode puts the clamp at a different magnification and
+separates them. That is the measurement this entry now waits on.
+
+**It is a defect, not the source running out of detail.** Correct
+interpolation of a magnified source gives a blurry but CONSISTENT upscale: bars
+of equal source width come out equal, and an edge lands within half an output
+pixel of where it belongs. What the photographs show is bars dividing into two
+hairlines and neighbours of equal source width coming out visibly unequal,
+which is a sample dropped or repeated. So every term here is wrong sample
+SELECTION, including the magnification one.
+
+**Where the wrong samples do NOT come from: the end of the line.** Against the
+residual, the distance of `produced` from a whole number gives r = +0.068 and
+the samples left unused when the played-out line has consumed what it needs
+r = +0.060 -- nothing either way, over 70 points. The phase period gives
+r = +0.490. So the line has the samples it needs and the fault is in which one
+is chosen, not in running out.
+
+**The damage does not accumulate along the line.** Rounding that builds up
+per output pixel has to do more harm at the right-hand end than the left. The
+wedge scored in six bins across the line, each bin taken against the same bin
+on the framings that resample most nearly exactly, gives a departure of +0.088,
++0.141, +0.163, +0.116, +0.113, +0.083 from left to right -- a hump in the
+middle and, against bin index, **r = -0.271** over 70 framings. If anything the
+left is worse. So an accumulating phase error is refuted and what is left is a
+per-phase one: particular phase values pick the wrong sample, and a longer
+period visits more of them.
+
+Two limits on that: the reference is only the three framings with gcd 32 or
+more, and the wedge's own bar width changes across the line, so the metric is
+not equally sensitive in every bin. The absence of a left-to-right ramp is
+robust to both; the middle hump is not.
+
+**And there is no phase-step count that explains it.** A phase with N steps
+would make every scale divisible by N exact and leave the rest rounding, so the
+improvement would stop once N is passed. It does not: the mean residual keeps
+falling through N = 8, 16, 32 and 64, and those sets are nested, so what looks
+like a threshold is the same gradient restated. Only three scales in the band
+divide by 32 at all.
+
+`Scale::Min` is clean for the phase reason and not because it is the end of the
+travel. Once the scale pins at 256 the magnification is exactly 4.0 for every
+further press: measured across eight of them, corner residual and overrun
++0.000 at every one while the capture shrank 423 -> 409. That zone is also why
+zooming there PANS instead of magnifying -- the scale cannot move, so only the
+capture does.
+
+**The corner is refuted from both ends.** `VDS_DIS_HB_SP` was jogged alone at
+two write-floor framings with `VDS_HB_SP` pinned at 8: at scale 320 and capture
+534, where the write origin is exactly 143, the picture is clean at every value
+from 139 to 146; at scale 316, where the origin is 144.0127, it is corrupt at
+every value from 144 to 150. An exact framing survives the corner moving four
+units off the origin and a fractional one is rescued by no corner value at all.
+`sessions/creep_corner-2026092*.json` has the 24 marks.
+
+**`produced` is refuted too.** Capture 534 at scale 320 parts it from the
+corner -- corner exactly 143, `produced` 1708.8, memory window odd so the
+parity rule is not in play -- and that state is clean.
+
+**Backing the window off the floor does not clear it**, but the jog is not an
+above-clamp solve: `VDS_HB_SP` and the corner moved together from 8 to 16 at
+scale 316, corrupt at all 12 marks, while a full diff of a floor solve against
+an above-clamp one differs in seven fields with the capture and the scale among
+them.
+
+**A corrupt verdict is several features of the card at once.** These five are
+the easily located ones rather than the whole set, and they are instances of
+one thing, so scoring any one of the three a camera resolves stands for the
+verdict:
+
+| feature | where | a camera can score it |
+|---|---|---|
+| a yellow curve | before the colour blocks, on the circle | yes |
+| a grey curve | before the frequency wedge starts | yes |
+| the wedge | bars split and wander in width | yes |
+| vertical black lines | through the label text | **no** |
+| a thin vertical line | down the right-hand orange/cyan bracket | **no** |
+
+**The camera under-samples the last two.** `tv-snap` rectifies to 1600 px
+across a 1920 px picture, so a feature one or two output pixels wide is below
+what it resolves -- the label text reads as broken at a framing marked clean
+and at one marked corrupt alike.
+
+**Temporal measurement is at the camera's noise floor.** Forty frames at each
+of a clean and a corrupt framing give per-pixel standard deviations that do not
+separate -- median 0.51 against 0.50, 7501 pixels over 4 levels against 8062 --
+and the map of what moves highlights every edge in both.
+
+**FIXED by bounding the zoom at 3.0x.** `Scale::Min` is 342 -- `1024 / 3` is
+341.33, so 342 is the largest magnification at or under 3.0 -- and both axes
+read it. Nothing can now solve a scale that pins the memory window at the write
+floor, which both sources entered at `VDS_HSCALE` 334.
+
+The rationale is what the zoom is FOR: bringing a source's active picture up to
+full screen. That is reached well inside 3.0x, and the range beyond it only
+crops further into the source. Measured across the whole zoom, `produced` holds
+near 1715 of a 1920 raster from the default framing down to the clamp -- the
+picture does not grow, the capture shrinks -- so the bound costs no picture
+size, only crop depth.
+
+**It gives up the clean 4.0x zone**, which measures 0.121 and 0.124 on the two
+sources because it carries the largest phase correction there is. That zone is
+reachable only through the damaged span, so keeping it means keeping the span.
