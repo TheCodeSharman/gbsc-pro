@@ -5092,19 +5092,24 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 // Vertical zoom. The scale is computed, not set, so there is
                 // nothing to clamp.
+                //
+                // Carries its own magnitude like the four pads: without it the
+                // only step is ControlSteps::Zoom, which stepUnits() scales by
+                // the magnification, so which capture widths are reachable
+                // depends on the OUTPUT resolution.
                 case '4':
-                    geometryControls.verticalZoom(-Tv5725::ControlSteps::Zoom);
+                    geometryControls.verticalZoom(-pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
                     break;
                 case '5':
-                    geometryControls.verticalZoom(+Tv5725::ControlSteps::Zoom);
+                    geometryControls.verticalZoom(+pressStep(pressPixels, Tv5725::ControlSteps::Zoom));
                     break;
                 // Move: one path for every source, the same geometryPan
                 // the pads use. docs/firmware-geometry-engine.md
                 case '6':
-                    geometryControls.horizontalPan(-Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(-pressStep(pressPixels, Tv5725::ControlSteps::Pan));
                     break;
                 case '7':
-                    geometryControls.horizontalPan(+Tv5725::ControlSteps::Pan);
+                    geometryControls.horizontalPan(+pressStep(pressPixels, Tv5725::ControlSteps::Pan));
                     break;
                 case '8':
 
