@@ -1,4 +1,4 @@
-# The aperture reads one capture unit past the write
+# The aperture is inset one capture unit at each end
 
 The scaler interpolates between two capture units, so an output unit landing at
 source position `s` reads units `floor(s)` and `floor(s) + 1`. The last unit the
@@ -82,3 +82,59 @@ A register dump cannot see this. Every value is self-consistent under the old
 arithmetic, and `produced` really is `capture x 1024 / scale` with no loss term
 -- `docs/scaler-geometry-model.md` measures it that way, and it stays true. The
 picture extent and the *usable* picture extent are different lengths.
+
+## The near end needs the same unit, for a different reason
+
+The far end is the interpolator reaching forward. The near end has no backward
+reach -- the first output unit sits at source position 0 and reads units 0 and 1,
+both written -- so a margin there needs a different mechanism, and it has one.
+
+**The write origin marks where content first APPEARS, which is the first unit the
+capture only PARTLY filled.** `moving-write-origin.md` measured it by creeping
+until the picture started, so the fit is systematically one capture unit early.
+An aperture opening on the origin therefore shows a unit carrying whatever the
+previous mode left in that memory: a thin static line down the left edge, on the
+modes where the fractional part falls the wrong way.
+
+Crept on the bench with automation frozen, `VDS_DIS_HB_SP` raised one unit at a
+time until the line cleared, the source's flashing border separating written from
+stale:
+
+| source | magnification | write origin | first clean corner | `ceil(origin) + 1` | `ceil(origin + mag)` |
+|---|---|---|---|---|---|
+| 1024x768@60 | 1.133 | 140.32 | **142** | 142 | 142 |
+| 800x600@60 | 1.168 | 140.19 | **142** | 142 | 142 |
+| 800x600@60, zoomed | 2.165 | 140.12 | **143** | 142 | 143 |
+
+The third framing is what makes it a capture unit rather than an output pixel: a
+fixed one-pixel margin predicts 142 there and the line is still visible. The
+zoom was taken on one source with everything else held, so the magnification is
+the only quantity that moved between the second row and the third.
+
+So `Axis::solve()` opens the display window at
+`ceil(windowStop + originOffset + magnification)`, and the memory window still
+opens where the write does -- it is the DISPLAY that must not show the unit,
+because opening the fetch late moves the picture instead.
+
+**This is not the deleted `nearMargin`.** That was 72 OUTPUT PIXELS, fitted at
+one magnification on a 2300 px raster at 129.6 MHz, covering a wide green run-up
+band; `display-window-opens-early.md` deleted it because it is needed at no clock
+the engine selects, and because an absolute pixel count is a different fraction
+of every raster. This is one CAPTURE unit, so it is scale-invariant by
+construction and costs the same fraction of the source at every raster and every
+zoom.
+
+## Vertically the near end exposes nothing
+
+Measured: with the vertical aperture opened **eleven rows** before the write
+starts, the top edge stays clean, where eleven columns at the horizontal near end
+is a plain band of stale memory. Reading before the first written COLUMN of a
+line reaches the previous line's storage, which holds real data; reading before
+the first written LINE reaches past the start of the frame, which does not come
+back as picture.
+
+The inset is applied on both axes even so. It is the same statement about the
+same model -- the origin is where content starts, not where the first whole unit
+lands -- and the axes differ only in whether the consequence is visible. Two rows
+at the top of a raster the picture overscans anyway is not worth an exception
+that the next reader has to re-derive.

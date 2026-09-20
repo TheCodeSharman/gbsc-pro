@@ -331,6 +331,15 @@ Two further cautions, both paid for:
   fetching and the line repeats, so there are several bright blocks and only the
   first is the picture. Anchor the search to the block containing the peak.
 
+## A one-unit inset at the near end is a different quantity, and it is needed
+
+`Axis::solve()` opens the display window one CAPTURE unit past the modelled
+origin. That is not this constant returning: the origin marks where content
+first appears, so the unit it lands on is only partly written and shows stale
+memory as a thin line down the left edge. Crept at three magnifications, and
+scale-invariant rather than an absolute pixel count.
+[the-aperture-is-inset-one-capture-unit-at-each-end.md](the-aperture-is-inset-one-capture-unit-at-each-end.md).
+
 ## What the code does about it: nothing, any more
 
 `Axis` carried two constants for this — `nearMargin` 72 px and `margin` 84 px,
