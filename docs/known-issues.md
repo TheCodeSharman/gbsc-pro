@@ -261,6 +261,69 @@ What is left is the form of the two constants, and one source cannot settle it:
 
 `docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`.
 
+### `IF_VB_ST` does not bound the capture on the scaling path
+
+**Measured on both scan modes, and the register is inert in both.** With
+automation frozen at 1080p on the bench source, `IF_VB_ST` was taken from 575 to
+515 and then to 300 -- a capture less than half the height the engine believes
+-- and the picture is unchanged, every row within 0.8 grey levels of the full
+capture over a thousand columns. At 576p, undoubled, 120 units off the stop
+leaves the card complete with its corners in the panel's corners.
+
+So the vertical capture's far end reaches the picture through nothing. What
+bounds the picture vertically is the scale and the two output windows:
+`produced` is `capture x 1024 / VDS_VSCALE`, and the playback fetch reads that
+many rows from the write origin, so a write that runs longer than the fetch is
+simply not read. `IF_VB_SP` IS live -- the vertical creeps in
+`the-transmitted-window-is-a-per-mode-fraction.md` move the picture one for one
+off it.
+
+**What this invalidates:** any reasoning that treats the vertical capture as
+bounded at `IF_VB_ST`, including reading `ev` off `/geometry` as the number of
+source lines the chip is writing. The engine's `ev` is what it SOLVED for, and
+the scale is derived from it, so the picture is the right height -- but the
+write is not being stopped where the register says.
+
+**What is not established:** what does stop it, and whether the rows written
+past the fetch cost anything. The horizontal equivalent is live
+(`IF_HB_ST2` bounds the line), so this is not a property the two axes share.
+
+### The pass-through window's near edge is a constant, so bypass shows the source's border
+
+**`HdBypass::BlankEndSamples` is `0x90`, 144 samples, and nothing derives it.**
+`applyHorizontalFromChannelLine()` writes it into `HD_HB_SP` whatever the source
+is, where the far edge is the measured channel line.
+
+Measured in bypass with the RiscPC at `MODE X800 Y600 C256 F60`, whose mode file
+states `h_timings:128,48,40,800,40,0` on a 1056 pixel line:
+
+| | |
+|---|---|
+| `HD_HSYNC_RST` | 2047, so the played-out line is 2048 samples |
+| `HD_HB_SP` | 144, which is 7.0% of the line -- source pixel 74 |
+| where the source's active video starts | pixel 216, sync 128 + porch 48 + border 40 |
+
+So the window opens 142 source pixels before active video and paints the tail of
+the sync pulse, the whole back porch and the whole 40-pixel border. On screen
+that is a cyan band about 75 photo columns wide down the left, 4.9% of the
+panel, which is the border's 40 of 800 to within the reading.
+
+**It is a count of SAMPLES against a divider that moves per source**, so the
+fraction of the line it hides is whatever `dividerFor()` last chose. That is why
+the same bypass framing looks different after a change that moved the divider,
+with nothing in the bypass path itself having been touched.
+
+**Deriving it is not simply the source's active start.** Set by hand to 419 --
+pixel 216 at this divider -- the band narrows to about 20 photo columns and a
+black bar appears to the left of it, so the blanking generator and the video are
+offset by something of their own, unmeasured. Creeping `HD_HB_SP` a unit at a
+time against the border's own edge is what would measure it.
+
+**And the general bound stands:** blanking cannot be auto-detected, because a
+border is black active video electrically identical to back porch. What can be
+derived is sync plus a porch allowance; the border is the user's to crop, and
+bypass has no framing control to crop it with.
+
 ### The output sync pad is raised only on a source-state transition, so it latches down
 
 Measured on the bench after an OTA flash: no picture at all, with
