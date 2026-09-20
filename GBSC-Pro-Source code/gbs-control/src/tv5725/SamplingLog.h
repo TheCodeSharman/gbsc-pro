@@ -36,27 +36,72 @@ public:
     // the settling is in the record. The divider held on entry goes back at the
     // end, however the walk ends.
     //
-    // The line rate the post divider is picked from comes from HPERIOD_IF,
-    // which is the point: it is measured against the chip's own 27 MHz and does
-    // not move with PLLAD_MD, so a sweep of PLLAD_MD cannot corrupt the one
-    // input it needs. docs/tv5725-chip.md
+    // `lineRateHz` is the caller's HELD measurement, which is what picks the
+    // post divider at each step. HPERIOD_IF cannot supply it: it rails on the
+    // scaling path with a perfect picture, and in the unlocked state this walk
+    // exists to interrogate it reads 10 -- a 613 kHz line, which puts the post
+    // divider at 0 and collapses the oversampling, so the walk would move the
+    // whole clock group instead of PLLAD_MD alone.
+    // docs/investigations/hperiod-if-railing.md
+    //
+    // A rate of 0 means nothing is held, and each step then writes the divider
+    // and latches, touching nothing else.
     void sweep(uint32_t nowMs, uint16_t low, uint16_t high, uint16_t step,
-               uint16_t dwellMs, uint8_t oversample);
+               uint16_t dwellMs, uint8_t oversample, uint32_t lineRateHz);
 
     // A decision, as it is taken. The sync watcher chooses between scaling and
     // bypass on a line count, inside loop(), and the choice is over before any
     // HTTP read can see it -- a dump afterwards shows where the firmware
     // arrived, never why. Nothing is read from the chip here: the caller passes
     // what it decided on, because that is the value the branch actually used.
-    static void event(uint32_t nowMs, const char *what, uint16_t lines,
-                      uint8_t videoStandardInput);
+    static void event(uint32_t nowMs, const char *what, uint16_t lines);
+
+    // The longest branch name the sketch passes, plus room. A name that does
+    // not fit is truncated for the comparison only, so two long names sharing a
+    // prefix would read as one decision -- none do.
+    static const uint8_t BranchNameMax = 24;
+
+    // How many registers the solved output carries.
+    static const uint8_t SolveFields = 22;
+
+    // How many of them a change is judged on. The rest are measurements the
+    // solve was derived FROM, reported so a line carries its own cause, and
+    // left out of the comparison because they dither.
+    static const uint8_t SolveTriggerFields = SolveFields - 1;
+
+    // How often a monitor run compares the solved output. The engine re-solves
+    // on a source event, seconds apart, so this is far slower than the sample
+    // interval: fourteen reads at the sample cadence would more than double
+    // what the run costs the bus it is measuring through.
+    static const uint16_t SolveIntervalMs = 250;
 
     bool active() const;
+
+    // Whether the DIVIDER WALK is running, which is not the same question as
+    // active(). The walk writes PLLAD_MD, which the engine owns and re-derives
+    // from held state, so the two must not both be writing it -- while a
+    // monitor run only reads, and watching a live engine is the point of it.
+    bool sweeping() const;
     void poll(uint32_t nowMs);
 
 private:
     void applyStep(uint32_t nowMs);
     void emit(uint32_t nowMs);
+
+    // Where the engine solved, emitted when it moves. The comparison one run is
+    // judged against another on, and the one a register dump over HTTP cannot
+    // take without changing what it measures.
+    //
+    // **A SET THIS IS MISSING A TERM FROM ANSWERS THE WRONG QUESTION.** Every
+    // register in it reading the same is taken to mean the output did not move,
+    // so anything left out is attributed to the encoder instead -- which is a
+    // conclusion nothing on the board can check. It carries the memory window
+    // as well as the display window, because the strip between them shows
+    // whatever the playback stage fetches; and the capture window with the
+    // measured sync pulse, because the framing is a proportion expanded against
+    // a live measurement that moves a unit either way.
+    // docs/investigations/framing-is-anchored-to-a-measured-pulse.md
+    void reportSolve(uint32_t nowMs);
     void finish(uint32_t nowMs);
 
     enum Mode : uint8_t { Idle, Monitoring, Sweeping };
@@ -68,6 +113,17 @@ private:
     uint8_t oversample_;
     uint32_t durationMs_;
     uint32_t startedMs_, stepStartedMs_, lastSampleMs_;
+
+    uint16_t solve_[SolveFields];
+    uint32_t lastSolveMs_;
+    bool solveValid_;
+
+    // What the last emitted event said. A decision the branch takes again is
+    // not news, and repeating it drowns the console: measured at 37 identical
+    // lines a second on a locked source.
+    static char lastWhat_[BranchNameMax];
+    static uint16_t lastLines_;
+    static bool lastValid_;
 };
 
 }  // namespace Tv5725
