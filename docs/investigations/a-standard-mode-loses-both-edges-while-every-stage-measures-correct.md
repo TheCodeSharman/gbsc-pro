@@ -351,6 +351,14 @@ window overruns the panel, a small clip is entirely off-panel and changes
 nothing visible, so the clip has to land inside the painted area to say
 anything at all.
 
+**THE RATIO IS REFUTED AND THE FRACTION IS STABLE.** Measured against the panel
+on all six modes, and on both SD modes at a second raster: the transmitted
+window starts exactly at `activeStart` everywhere, the deficit is entirely at
+the right, and it does not diminish when the raster ratio is taken to 1.50x and
+1.80x. What the chain takes is a fixed fraction of the line, held to 0.3% across
+a 33% change of raster -- it is simply not the standard's fraction on the two SD
+modes. `the-transmitted-window-is-a-per-mode-fraction.md`.
+
 Nothing on the board can measure what the encoder transmits -- the MS9288A is on
 no MCU's I²C bus and EDID is unreachable -- but the fraction does not have to be
 explained to be solved for: it is measurable from the panel per output mode, and
