@@ -240,17 +240,29 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     if (apertureStart > memoryStart)
         apertureStart = memoryStart;
 
-    // The near end mirrors the far one. The write origin marks where content
-    // first appears, which is the first unit the capture only PARTLY filled --
-    // it was measured by creeping until the picture started. One capture unit
-    // later is the first unit fully written, and an aperture opening before it
-    // shows memory the previous mode left behind.
+    // The near end mirrors the far one, HORIZONTALLY. The write origin marks
+    // where content first appears, which is the first unit the capture only
+    // PARTLY filled -- it was measured by creeping until the picture started.
+    // One capture unit later is the first unit fully written, and an aperture
+    // opening before it shows memory the previous mode left behind.
     // docs/investigations/moving-write-origin.md
-    int32_t displayStop = (int32_t)ceilf((float)placed.windowStop()
-                                         + originOffset(scale.magnification())
-                                         + scale.magnification());
-    if (displayStop < placed.corner())
-        displayStop = placed.corner();
+    //
+    // Vertically the aperture opens ON the picture. Reading before the first
+    // written LINE reaches past the start of the frame and comes back as
+    // nothing, where reading before the first written COLUMN reaches the
+    // previous line's storage -- so the unit buys nothing here, and the picture
+    // is placed on the output mode's first active line, which is the first line
+    // the panel paints. An inset there is a black bar across the top of the
+    // screen rather than overscan.
+    // docs/investigations/the-aperture-is-inset-one-capture-unit-at-each-end.md
+    int32_t displayStop = placed.corner();
+    if (!vertical()) {
+        displayStop = (int32_t)ceilf((float)placed.windowStop()
+                                     + originOffset(scale.magnification())
+                                     + scale.magnification());
+        if (displayStop < placed.corner())
+            displayStop = placed.corner();
+    }
     if (displayStop > apertureStart)
         displayStop = apertureStart;
 

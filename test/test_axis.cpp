@@ -840,6 +840,10 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
 //
 // The third is what makes it a capture unit rather than an output pixel: a
 // fixed one-pixel margin predicts 142 there.
+//
+// Horizontal only. The vertical near end reads past the start of the frame,
+// which comes back as nothing, so the unit buys no picture there and costs a
+// black bar across the top -- the test below holds that end.
 static float firstCaptureUnitRead(const Axis &axis, Scale scale,
                                   const AxisSolution &solved)
 {
@@ -869,19 +873,53 @@ TEST_CASE("the aperture's first unit is interpolated from captured memory")
               >= 1.0f - UnitSlack);
     }
 
-    SUBCASE("across the zoom range on both axes") {
+    SUBCASE("across the zoom range") {
         for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
             const Scale scale(reg);
-
-            const AxisSolution v = AxisVertical.solve(582, scale, 1124);
-            if (v.usable())
-                REQUIRE(firstCaptureUnitRead(AxisVertical, scale, v)
-                        >= 1.0f - UnitSlack);
-
             const AxisSolution h = AxisHorizontal.solve(998, scale, 1919);
             if (h.usable())
                 REQUIRE(firstCaptureUnitRead(AxisHorizontal, scale, h)
                         >= 1.0f - UnitSlack);
+        }
+    }
+}
+
+TEST_CASE("the vertical aperture opens on the picture, not a capture unit later")
+{
+    // The picture is placed on the output mode's first active line, which is
+    // the first line the panel paints, so an inset there is a black bar across
+    // the top of the screen rather than overscan. Reading before the first
+    // written LINE reaches past the start of the frame and comes back as
+    // nothing: measured clean with the vertical aperture opened eleven rows
+    // before the write starts.
+    // docs/investigations/the-aperture-is-inset-one-capture-unit-at-each-end.md
+    SUBCASE("at 1080p") {
+        const uint16_t Raster = 1125, ActiveStart = 41, ActiveStop = 1121;
+        const uint16_t Capture = 512;
+        const Scale scale(486);
+        const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster,
+                                                       ActiveStart, ActiveStop);
+        CHECK(solved.display().stop() == ActiveStart);
+    }
+
+    SUBCASE("at 576p") {
+        const uint16_t Raster = 625, ActiveStart = 44, ActiveStop = 620;
+        const uint16_t Capture = 312;
+        const Scale scale(455);
+        const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster,
+                                                       ActiveStart, ActiveStop);
+        CHECK(solved.display().stop() == ActiveStart);
+    }
+
+    SUBCASE("across the zoom range") {
+        for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
+            const Scale scale(reg);
+            const AxisSolution v = AxisVertical.solve(582, scale, 1125, 41, 1121);
+            if (!v.usable())
+                continue;
+            const PictureOrigin placed = AxisVertical.placePicture(
+                scale.produced(582), 1125, scale.magnification(), 41);
+            REQUIRE(v.display().stop() == placed.corner());
         }
     }
 }
