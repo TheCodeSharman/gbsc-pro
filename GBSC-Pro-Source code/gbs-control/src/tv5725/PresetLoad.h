@@ -5,53 +5,27 @@
 
 namespace Tv5725 {
 
-// The mode state a preset load decides, separated from the bytes it writes.
+// One flag: whether the output in force is scaling RGBHV.
 //
-// writeProgramArrayNew() does two unrelated jobs: it copies 432 bytes out of a
-// preset table, and it settles mode state the table has no say in. The second
-// has to outlive the first, or it goes when the tables do.
+// **NOTHING HERE READS AN OUTPUT RESOLUTION OR A FRAMING, WHICH THE NAME
+// SUGGESTS.** OutputChoice answers the resolution, and the standard byte's
+// vocabulary that was the rest of this class is gone with the byte. The flag
+// is engine mode state and belongs to Tv5725::VideoPath.
+// docs/video-source-acquisition.md
 //
 // Plain integers, no registers and no rto->, so it host-compiles.
-//
-// Two values of videoStandardInput matter, not one: the sentinel is cleared
-// before the table is written because the byte loop reads the value while it
-// runs, and scaling RGBHV moves it again afterwards.
 class PresetLoad {
 public:
-    // adcInputSel is GBS::ADC_INPUT_SEL, the TV5725's own input mux.
-    // validForScalingRgbhv is rto->isValidForScalingRGBHV; preferScalingRgbhv
-    // is the user option.
-    PresetLoad(uint8_t videoStandardInput, uint8_t adcInputSel,
-               bool preferScalingRgbhv, bool validForScalingRgbhv);
+    // Whether the output in force is scaling RGBHV. State rather than a chip
+    // register: it lived in s1_2c, an address RD-5725-1.1 does not document,
+    // and every reader had to be ordered against the load that cleared it.
+    static bool scalingRgbhvInForce();
 
-    // What the table write should see: 15, the "no valid mode" sentinel,
-    // normalised to 0.
-    uint8_t videoStandardInput() const;
+    // A scaling RGBHV preset is loaded.
+    static void rememberScalingRgbhv();
 
-    // What to leave behind once the table is written.
-    uint8_t videoStandardInputAfterLoad() const;
-
-    // ADC mux 0 is the YPbPr input. Only half the input path -- whether the
-    // HC32F460 connected anything to it is ASW_01..04 and unreadable.
-    bool inputIsYpBpR() const;
-
-    bool enableScalingRgbhv() const;
-
-    // Which standard's preset a scaled RGBHV source of this many lines wants,
-    // against the count the loaded preset was chosen for. 0 keeps that preset.
-    // The buckets are measured, not derived: 280 and 380 lines.
-    static uint8_t rgbhvPresetStandard(uint16_t sourceLines, uint16_t loadedLines);
-
-    // The sentinel writeProgramArrayNew() clears on every load.
-    static const uint8_t NoValidMode = 15;
-
-    // The standard that scaling RGBHV runs as.
-    static const uint8_t ScalingRgbhvStandard = 3;
-
-private:
-    uint8_t videoStandardInput_;
-    bool inputIsYpBpR_;
-    bool enableScalingRgbhv_;
+    // A load is starting, and what the last one enabled says nothing about it.
+    static void forgetScalingRgbhv();
 };
 
 } // namespace Tv5725

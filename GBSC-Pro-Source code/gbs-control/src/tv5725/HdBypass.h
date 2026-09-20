@@ -1,6 +1,7 @@
 #ifndef TV5725_HD_BYPASS_H
 #define TV5725_HD_BYPASS_H
 
+#include "Adc.h"
 #include "Tv5725.h"
 
 namespace Tv5725 {
@@ -150,28 +151,179 @@ public:
 
     // Whether the block is out of reset. Read from the chip because it is the
     // only thing that knows: a caller clearing the whole of s0_47 and putting
-    // back what it found cannot get this from rto->outModeHdBypass, which is
-    // the sketch's intent rather than the block's state.
+    // back what it found cannot get this from Tv5725::VideoRoute, which is which
+    // route was selected rather than whether the block is configurable.
     static bool enabled();
 
-    // What the source's standard implies for the block: the raster it plays
-    // out, both blanking windows, the polarities the sync processor needs
-    // behind them, and the ADC's sampling. Runs AFTER enable(), whose resting
-    // timing it overwrites.
+    // The widest line this block can play out, in its own clocks. HD_HSYNC_RST
+    // is ELEVEN bits and the counter ignores the twelfth the register stores,
+    // so a longer line wraps and the sink drops the mode -- measured, a line of
+    // 2040 displays and one of 2056 gives no signal, 0.8% apart.
+    // ../../../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
+    static const uint16_t MaxChannelLine = 2047;
+
+    // The densest sampling pass-through can ask for at this line rate.
     //
-    // An RGBHV source additionally gets the RGB patches, which are the sketch's
-    // because they need the user options and its own R/G/B round trip.
-    static void applyForStandard(uint8_t standard, void (*applyRgbPatches)());
+    // PLLAD_MD is samples per line and nothing is written to memory here, so
+    // the capture's write limit does not bound it and denser is simply better:
+    // scaling loses detail exactly where the source has most, which is why a
+    // source is passed through at all. Two other things bound it -- the line
+    // this block can play out, and the top of the ADC PLL's crossover table,
+    // whichever is reached first. A rate of nothing asks for nothing.
+    static uint16_t dividerFor(uint32_t lineRateHz);
+
+    // The lowest line the bench display accepts, bracketed by measurement
+    // rather than taken from the VGA standard: 26650 Hz locks and 21780 Hz
+    // gives no signal, so the floor sits between them and admits every rate
+    // proven to work while refusing every rate proven not to. 22..26 kHz is
+    // untested and refused, which costs a scaled picture rather than a blank
+    // panel. ../../../docs/rgbhv-bypass-trap.md
+    static const uint32_t MinLineRateHz = 26000;
+
+
+    // Whether bypass would reach the panel at all. It hands the source's own
+    // timing to the encoder, so an unmeasured or slow source has to stay on
+    // the scaling path -- which shows any rate -- rather than put torn content
+    // on the panel that reads as a broken scaler.
+    static bool suitsLineRate(uint32_t lineRateHz);
+
+    // Whether passing this source through is the right output for it.
+    //
+    // A sink that takes HDMI takes 640x480 and up, so a source at least that
+    // big reaches the panel intact by being handed over untouched -- and the
+    // scaling path cannot carry it well anyway: the capture's write limit
+    // bounds a line at about 1024 IF units however it is placed, so sampling
+    // density falls away exactly as the source gains detail.
+    // ../../../docs/capture-limits.md
+    //
+    // In what the board can measure that is a source the line doubler is not
+    // needed for, whose line rate reaches the sink. Everything below -- 240p,
+    // 288p, 480i, 576i -- is scaled, and so is anything unmeasured.
+    //
+    // Asked of a COUNT and a field rate, never of a held line rate: bypass
+    // measures nothing, so a held rate still names the mode bypass was entered
+    // on, and a source that slows underneath would keep reading as displayable
+    // for ever. The count is live; a mode change moves it and usually leaves
+    // the field rate where it was. A source changing both at once is the one
+    // case this cannot see.
+    //
+    // NEITHER READING IS STOOD IN FOR. An unmeasured rate is refused rather
+    // than guessed at, and nothing is stranded by that: the route is decided
+    // only on a pass whose measurement completed, so an unmeasured source
+    // neither enters pass-through nor leaves it.
+    static bool suitsSource(uint16_t sourceLines, float fieldRateHz);
+
+    // The top of RD-5725-1.1's crossover table: its first row is 162..80 MHz
+    // and there is no row above it.
+    static const uint32_t MaxSampleClockHz = 162000000;
+
+    // The whole of what the measurement implies for the block: the ADC's
+    // sampling, the raster it plays out, both sync pulses and both blanking
+    // windows. Runs AFTER enable(), whose resting timing it overwrites.
+    //
+    // ONE PATH FOR EVERY SOURCE. docs/video-source-acquisition.md.
+    //
+    // `divider` is the sampling divider and `lineRateHz` the rate it multiplies,
+    // both handed in rather than read back: the switch writes a literal into
+    // PLLAD_MD on its way here, so the register answers for that literal and not
+    // for the source. The two together are the ADC clock, which is what chooses
+    // the PLL's crossover row -- so neither can be left out.
+    static void applyForSource(uint16_t divider, uint32_t lineRateHz,
+                               uint16_t activeStartLine);
+
+    // Blank the lines before active video and nothing else. Where active video
+    // starts is not measurable -- a border is black active video, electrically
+    // identical to back porch -- so the caller derives it from the raster its
+    // measurement matched and hands the line in. Zero blanks nothing, which is
+    // what a source matching no published raster gets: its own porches are
+    // already black, the argument applyHorizontalFromChannelLine() makes for
+    // the other axis.
+    static void applyVerticalBlanking(uint16_t activeStartLine);
+
+    // The sampling and the played-out raster for a source with no standard of
+    // its own, which are one operation.
+    //
+    // The played-out line is the DIVIDER, not the divider over the oversampling
+    // ratio: the decimators undo the faster tap, so PLLAD_MD samples a line
+    // reach the channel whatever the ratio. Measured -- at ratio two with the
+    // raster halved the picture fills half the screen and the rest is black,
+    // through an encoder that has re-acquired, and putting the raster back to
+    // the divider restores it whole.
+    // ../../../docs/investigations/the-decimators-filter.md
+    //
+    // Public because it is what an experiment varies. The ADC PLL group latches
+    // together and its loop filter has to suit the tap, so writing part of it by
+    // hand unlocks the PLL -- Adc::applySampleRate() underneath is the only
+    // thing that writes all of it.
+    static void applyPassThroughSampling(
+        uint16_t divider, uint32_t lineRateHz,
+        uint8_t oversample = Adc::OversampleAsClockAllows);
+
+    // What the sync processor reports about the SOURCE's sync edges: the two
+    // polarities and, beside each, whether an edge was found to take one from.
+    // An unfound edge leaves that pulse where it is, because a polarity read
+    // off a status the processor cannot fill is a coin toss.
+    struct SourceSyncEdges {
+        bool hsyncFound;
+        bool hsyncPositive;
+        bool vsyncFound;
+        bool vsyncPositive;
+    };
+
+    // Read from the sync processor's four status bits, which are measurements
+    // of the source and so among the reads the engine is allowed.
+    static SourceSyncEdges readSourceSyncEdges();
+
+    // Emit the channel's sync pulses the way round the source sends them.
+    //
+    // Only the ORDER is in question: the pulse itself belongs to whichever arm
+    // wrote it, and the arms and the computed path write different pairs. So
+    // the pair is HELD rather than read back -- two registers cannot say which
+    // of the values in them is the start, and a swap driven off the read-back
+    // is the engine taking a register as an input.
+    //
+    // SP_HS2PLL_INV_REG follows the horizontal polarity, written whether or not
+    // the pair moved: it is the same fact, and left behind it disagrees with
+    // the pulse beside it after an SD arm has set it.
+    //
+    // The vertical half needs no sync-type gate. STATUS_SYNC_PROC_VSACT reads 0
+    // on the composite-sync path, so `vsyncFound` already answers the question
+    // asking the sync type was a proxy for. ../../../../CLAUDE.md
+    static void applyChannelSyncEdges(const SourceSyncEdges &edges);
+
+    // Which colour path the bypassed sample takes, and the ONE thing bypass has
+    // to know about the source. A component input needs the matrix; an RGB one
+    // needs it and the dynamic range converter out of the way. It follows the
+    // INPUT SELECTION, not any classification of the timing.
+    static void applyColourPath(bool inputIsYpBpR);
+
+    // What the channel forces into its own horizontal blanking. A component
+    // source wants black on luma rather than zero, which RD-5725-1.1 gives no
+    // scale for -- 5 is what every table shipped. Written on both paths, so a
+    // channel that carried a component source before this one does not keep its
+    // level. Placed beside the clamp, which is where the level is chosen.
+    static void applyBlankLevel(bool component);
 
 private:
-    static void applySd(uint8_t standard);
-    static void applyProgressive(uint8_t standard);
-    static void applyHd(uint8_t standard, void (*applyRgbPatches)());
+    // The played-out line derived from the divider the source was sampled at.
+    // Shared, because a raster frozen per standard is what left an RGBHV source
+    // with a raster for no source.
+    // The played-out line, from the line the CHANNEL is fed rather than from
+    // the divider. HD_HB_ST beyond the end of that line leaves the blank
+    // generator inert, which is not a blank window that never closes but one
+    // that never opens.
+    static void applyHorizontalFromChannelLine(uint16_t channelLine);
 
-    // The ADC PLL's crossover row and VCO gain for an RGBHV source, which is
-    // the one thing here that no standard can carry: it follows the source's
-    // line count, and only a measurement has that.
-    static void applyRgbhvPll(uint16_t sourceLines);
+    // The channel's two sync pulses as the last writer left them, smaller value
+    // first. Order is what applyChannelSyncEdges() decides, so what has to
+    // survive between the two calls is the pair rather than its arrangement.
+    static uint16_t hsyncLow_;
+    static uint16_t hsyncHigh_;
+    static uint16_t vsyncLow_;
+    static uint16_t vsyncHigh_;
+
+    static void holdHsyncPulse(uint16_t a, uint16_t b);
+    static void holdVsyncPulse(uint16_t a, uint16_t b);
 };
 
 }  // namespace Tv5725
