@@ -313,19 +313,43 @@ of the display window, the content neither moved nor changed size and the
 blanked strip's edge tracked the register linearly at 0.930 photo px per output
 pixel. It clips, and nothing more.
 
-What reaches the panel, per mode, against the panel's painted area taken from an
-800x600 pass-through at the same camera position:
+**THE MODEL IS RIGHT FOR FOUR OUTPUTS AND WRONG FOR THE TWO SD ONES.** Swept
+across every mode, against the panel's painted area taken from an 800x600
+pass-through at the same camera position (photo 51.7..1564.3). The painted
+span is found by differencing: clip `VDS_DIS_HB_ST` to two values inside the
+painted area, take the blanked strip's edge in each, and the line through them
+gives where the panel's edge falls in output pixels.
 
-| mode | total | display window | what the panel shows | implied `totalPx` | the standard's |
-|---|---|---|---|---|---|
-| 1080p | 1920 | 143..1809 | all of it, 21 photo px to spare | 2182 | 2200 |
-| 576p | 2073 | 319..2040 | 94.5 photo px over at the right | 913 | 864 |
-| 480p | 2057 | 246..1967 | 15.0 over left, 71.9 over right | 910 | 858 |
+| mode | our total | standard's | ratio | painted fraction | `activePx/totalPx` | measured / standard |
+|---|---|---|---|---|---|---|
+| 1080p | 1920 | 2200 | 0.87 | 0.8726 | 0.8727 | **0.9999** |
+| 1024p | 2026 | 1688 | 1.20 | 0.7574 | 0.7583 | **0.9988** |
+| 960p | 2160 | 1800 | 1.20 | 0.7105 | 0.7111 | **0.9991** |
+| 720p | 2160 | 1650 | 1.31 | 0.7753 | 0.7758 | **0.9994** |
+| 480p | 2057 | 858 | 2.40 | 0.7997 | 0.8392 | **0.9529** |
+| 576p | 2073 | 864 | 2.40 | 0.7807 | 0.8333 | **0.9368** |
 
-So `Geometry::solveRaster()` sizes the two short rasters against a fraction the
-chain does not use: both want a total near 2175 where they solve 2057 and 2073,
-and 1080p is right. Steps of +-100 blank the sink either way, because the clock
-is held and the field rate goes with the total, so a sweep has to move both.
+So the standard's fraction is exactly what the chain takes wherever our raster
+is within about 1.3x of the standard's, and 5 to 6 percent less at the 2.4x the
+two SD modes run. The two SD errors are NOT the same size -- 4.7% against 6.3%
+-- so no single constant expresses it and no explanation of the boundary has
+been found. What is established is that the fraction is a property of the mode,
+measurable per mode from the panel, and that four of the six need nothing.
+
+Applied by hand, the corrected fraction brings both SD modes to the size 1080p
+paints: `VDS_HSCALE` 725 -> 766 with the window at 1953 fits 576p at 0.992 of
+the 1080p frame against 1.061 before, and 697 -> 739 with the window at 1869
+fits 480p at 0.990 against 1.050. `HSCALE` and both windows follow from the
+fraction, so nothing about the raster or the display clock moves.
+
+**TWO TRAPS IN MEASURING IT.** Clipping the display window far enough in
+disturbs the PICTURE rather than just blanking it -- an interference pattern of
+the kind a capture offset against the fetch produces -- so a differencing pair
+is only valid where the frames still correlate left of the strip. At 1080p and
+576p a 300 px clip fails that and a 150 px one passes. And on a mode whose
+window overruns the panel, a small clip is entirely off-panel and changes
+nothing visible, so the clip has to land inside the painted area to say
+anything at all.
 
 Nothing on the board can measure what the encoder transmits -- the MS9288A is on
 no MCU's I²C bus and EDID is unreachable -- but the fraction does not have to be
