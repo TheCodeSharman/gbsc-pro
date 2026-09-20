@@ -509,6 +509,33 @@ def test_a_press_moves_by_the_pixels_it_is_given(host, probe, framed):
         f"{fine}, so a press with no magnitude is no longer the coarse one")
 
 
+def test_a_vertical_zoom_press_moves_by_the_pixels_it_is_given(host, probe, framed):
+    """The vertical zoom carries its own magnitude, like the four pads.
+
+    Without it the only step is ControlSteps::Zoom, which stepUnits() scales by
+    the magnification -- so which capture widths are reachable depends on the
+    OUTPUT resolution, and a framing tuned at one lands between the grid points
+    of another. Measured at 1080p the coarse step is four units, and no press
+    sequence reaches the width one unit below where it started.
+
+    The OSD already taps at ControlSteps::Fine, so the remote can reach every
+    unit. This is the same reach from outside.
+    """
+    before = framing(host)["ev"]
+    press(host, probe, "5", pixels=1)
+    fine = before - framing(host)["ev"]
+    assert fine == GRANULE["vertical"], (
+        f"a one-pixel vertical zoom moved {fine} units, not one granule "
+        f"({GRANULE['vertical']}): the magnitude did not reach the control")
+
+    at = framing(host)["ev"]
+    press(host, probe, "5")
+    default = at - framing(host)["ev"]
+    assert default > fine, (
+        f"the pad's own step moved {default} units against the fine press's "
+        f"{fine}, so a press with no magnitude is no longer the coarse one")
+
+
 def test_a_zoom_press_leaves_the_windows_following_the_capture(host, probe, framed):
     """End to end: press the pad, read the registers back, and check every
     output window still follows the capture the unit holds."""
