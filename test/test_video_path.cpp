@@ -1371,6 +1371,36 @@ TEST_CASE("the hsync duty is counted against the divider the source is left on")
           == doctest::Approx(181.0f / (float)Adc::dividerInForce()).epsilon(0.001));
 }
 
+TEST_CASE("an output change re-derives the divider even where the doubling holds")
+{
+    // The divider is bounded by the CAPTURE THE RASTER CAN SHOW, and the raster
+    // is the output's -- so two outputs that agree about the doubling still want
+    // different dividers. 480p affords 1880 units and 576p 1954, both undoubled
+    // from a 311 line source.
+    //
+    // Measured on the bench, both directions: switching between the two left
+    // PLLAD_MD on whichever was arrived from, with VDS_HSCALE stranded to match.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(&Mode480p);
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(dividerInForce() == 1880);
+
+    // The output alone. Nothing tells the engine the source moved, because it
+    // has not -- which is the whole of what /uc?<key> does.
+    engine.setOutputMode(&Mode576p);
+    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
+        pollOnce(acquisition);
+
+    CHECK(dividerInForce() == 1954);
+}
+
 TEST_CASE("the source is measured through a known divider, not the last mode's")
 {
     // The field rate is timed at DEBUG_IN_PIN off the input formatter's test

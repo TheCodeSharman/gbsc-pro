@@ -157,7 +157,10 @@ public:
     // ratio between them. One install per mode change, where a reference clock
     // ahead of the measurement and the operating one after it cost two latches
     // and two settles.
-    bool installSampling();
+    // A divider derived from a measurement that wanders may be suppressed by
+    // the tolerance the two are compared on; one the output asked for may not.
+    enum SamplingReason { SamplingFollowsMeasurement, SamplingFollowsOutput };
+    bool installSampling(SamplingReason reason);
 
     // Solve every register from the measurement the caller has just taken.
     PollOutcome solveFromMeasurement();

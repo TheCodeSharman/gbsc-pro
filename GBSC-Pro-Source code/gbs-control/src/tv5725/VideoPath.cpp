@@ -163,7 +163,7 @@ uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
 // fresh reading, or whose previous solve was refused against the one it had.
 bool VideoPath::resolve()
 {
-    if (!installSampling())
+    if (!installSampling(SamplingFollowsMeasurement))
         return fail();
     return solveWindows();
 }
@@ -340,6 +340,7 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
         return true;
     }
 
+    const OutputMode *const previous = mode_;
     const bool leaving = passedThrough();
 
     // Held before solveLineDoubling(), which judges the doubler against it.
@@ -363,10 +364,13 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     const bool wasDoubled = lineDoubled_;
     solveLineDoubling(sampling_.sourceLines());
 
-    // Only where the doubling moved. The divider derives from it and from the
-    // line rate already held -- so it is re-DERIVED, never re-measured -- and
-    // writing it re-latches the ADC PLL, which is a relock nothing asked for.
-    if (lineDoubled_ != wasDoubled && !installSampling())
+    // The divider is bounded by the capture the RASTER can show, so the output
+    // moves it as much as the doubling does -- 480p affords 1880 ADC samples of
+    // this source's line and 576p 1954, both undoubled. Only where one of the
+    // two moved: the divider is re-DERIVED from the rate already held, never
+    // re-measured, and writing it re-latches the ADC PLL.
+    if ((mode != previous || lineDoubled_ != wasDoubled)
+        && !installSampling(SamplingFollowsOutput))
         return false;
 
     if (!solveRaster())
@@ -402,7 +406,7 @@ void VideoPath::prepareToMeasure(uint16_t sourceLines)
     InputFormatter::writeReferenceVerticalBlank();
 }
 
-bool VideoPath::installSampling()
+bool VideoPath::installSampling(SamplingReason reason)
 {
     // Pass-through's divider is HdBypass's, sized from the rate held when the
     // channel was entered, and HD_HSYNC_RST is sized for the same number -- so
@@ -429,11 +433,20 @@ bool VideoPath::installSampling()
     // is the post divider row and the VCO gain, which are a function of the
     // divider TIMES the rate -- so a divider that did not move can still want a
     // different row.
+    //
+    // IT IS A TOLERANCE ON A MEASUREMENT AND NOTHING ELSE. The OUTPUT is a
+    // choice and carries no jitter, so a divider sized for one is compared
+    // exactly: 480p's 1880 and 576p's 1954 are 3.9% apart, inside the tolerance
+    // and no part of it noise, and forgiven there the two SD modes share
+    // whichever clock was arrived from.
     const uint32_t rate = sampling_.lineRateHz();
     const uint16_t inForce = Adc::dividerInForce();
-    if (inForce != 0
-        && VideoSignal::ratesAgree(divider, inForce)
-        && VideoSignal::ratesAgree(rate, installedRateHz_))
+    const bool alreadyInForce =
+        reason == SamplingFollowsOutput
+            ? divider == inForce
+            : VideoSignal::ratesAgree(divider, inForce)
+                  && VideoSignal::ratesAgree(rate, installedRateHz_);
+    if (inForce != 0 && alreadyInForce)
         return true;
 
     installedRateHz_ = rate;
@@ -452,7 +465,7 @@ VideoPath::PollOutcome VideoPath::solveFromMeasurement()
     if (!modePending_)
         return PollIdle;
 
-    if (!installSampling())
+    if (!installSampling(SamplingFollowsMeasurement))
         return PollIdle;
 
     // Before the raster, which is generated from the key rather than from the

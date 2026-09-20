@@ -636,7 +636,7 @@ bool VideoSourceAcquisition::measureSource(bool &settling)
     // between them. The engine owns the choice because it depends on the output
     // mode; a divider already in force for this rate is left alone, because
     // writing it re-latches the ADC PLL.
-    if (!videoPath_.installSampling())
+    if (!videoPath_.installSampling(Tv5725::VideoPath::SamplingFollowsMeasurement))
         return false;
 
     return reading(sampling_.measureDuty(), settling);
