@@ -49,9 +49,16 @@ public:
     // capture below which the scale is already at its floor, so a tighter crop
     // is a smaller picture rather than a closer one. 0 asks for no stop, which
     // is what a caller with no output raster to measure it against has.
+    // `reach` is the last unit of `usable` the window may occupy, which is not
+    // the end of the line: the capture path excludes a head and the last two
+    // units. Each control gives back at that bound in its OWN quantity -- a pan
+    // stops moving and a zoom stops widening -- which is why the bound is here
+    // and not in the placement, where nothing knows which control ran. 0 asks
+    // for the whole line.
     void zoomBy(const Axis &axis, int16_t units, uint16_t usable,
-                uint16_t narrowest = 0);
-    void panBy(const Axis &axis, int16_t units, uint16_t usable);
+                uint16_t reach = 0, uint16_t narrowest = 0);
+    void panBy(const Axis &axis, int16_t units, uint16_t usable,
+               uint16_t reach = 0);
 
     // A mode change has no framing worth keeping, only the previous mode's.
     void reset();
@@ -81,8 +88,9 @@ private:
     // extent and has nothing to do with which axis those belong to. A seeded
     // pair has no control behind it, so its extent is bounded by the whole
     // region and the origin gives way.
-    static void clampOrigin(AxisFraming &framing);
-    static void clampExtent(AxisFraming &framing);
+    static void clampOrigin(AxisFraming &framing, float limit = 1.0f);
+    static void clampExtent(AxisFraming &framing, float limit = 1.0f);
+    static float limitFor(uint16_t reach, uint16_t usable);
     static void clampSeed(AxisFraming &framing);
 
     AxisFraming horizontal_, vertical_;

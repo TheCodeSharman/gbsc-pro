@@ -618,7 +618,7 @@ TEST_CASE("the divider is bounded by the line the output raster can show")
     const uint16_t showable = AxisHorizontal.maximumCapture(raster, 0);
 
     REQUIRE(showable > 0);
-    CHECK(solved.engine.capturableOn(AxisHorizontal) <= showable);
+    CHECK(solved.engine.lineUnitsOn(AxisHorizontal) <= showable);
 
     SUBCASE("so zooming all the way out never asks the scaler to minify") {
         for (int press = 0; press < 40; ++press)
@@ -641,15 +641,21 @@ TEST_CASE("a forced full framing captures everything the source offers")
     // Framed somewhere else first, so the override has something to override.
     REQUIRE(solved.engine.zoom(80, 40));
     REQUIRE(solved.engine.extentUnitsOn(AxisHorizontal)
-            < solved.engine.capturableOn(AxisHorizontal));
+            < solved.engine.lineUnitsOn(AxisHorizontal));
 
     solved.engine.forceFullFraming(true);
     REQUIRE(resolveUntilSolved(solved.acquisition));
 
-    CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
-          == solved.engine.capturableOn(AxisHorizontal));
-    CHECK(solved.engine.extentUnitsOn(AxisVertical)
-          == solved.engine.capturableOn(AxisVertical));
+    // Everything the capture path can open on, which is the whole line less
+    // its own head and tail exclusions -- the framing asks for all of it and
+    // the placement gives back what cannot be reached.
+    for (int vertical = 0; vertical < 2; ++vertical) {
+        const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
+        CAPTURE(vertical);
+        CHECK(solved.engine.originUnitsOn(axis) == solved.engine.firstUnitOn(axis));
+        CHECK(solved.engine.originUnitsOn(axis) + solved.engine.extentUnitsOn(axis)
+              == solved.engine.reachOn(axis));
+    }
 
     SUBCASE("and the scaler still magnifies rather than clamping at unity") {
         CHECK(Wire.field(3, 0x16, 0, 10) <= Scale::Max);
@@ -665,7 +671,7 @@ TEST_CASE("a forced full framing captures everything the source offers")
         solved.engine.forceFullFraming(false);
         REQUIRE(solved.engine.zoom(80, 0));
         CHECK(solved.engine.extentUnitsOn(AxisHorizontal)
-              < solved.engine.capturableOn(AxisHorizontal));
+              < solved.engine.lineUnitsOn(AxisHorizontal));
     }
 }
 

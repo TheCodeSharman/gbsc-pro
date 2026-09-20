@@ -19,7 +19,7 @@ static void frameAt(Tv5725::VideoPath &engine, int16_t zh, int16_t zv,
     using namespace Tv5725;
     for (int vertical = 0; vertical < 2; ++vertical) {
         const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
-        REQUIRE(engine.capturableOn(axis) > 0);
+        REQUIRE(engine.lineUnitsOn(axis) > 0);
 
         const int16_t zoom = vertical ? zv : zh;
         const int16_t pan = vertical ? pv : ph;

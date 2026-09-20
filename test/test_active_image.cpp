@@ -44,9 +44,9 @@ static void press(Tv5725::ActiveImage &f, const Tv5725::VideoSourceLine &line,
         f.clampToLine(line, timing, axis);
     Tv5725::PanAndZoom moved = f.framing();
     if (zoomUnits != 0)
-        moved.zoomBy(axis, zoomUnits, line.capturable());
+        moved.zoomBy(axis, zoomUnits, line.units(), line.lastCapture());
     if (panUnits != 0)
-        moved.panBy(axis, panUnits, line.capturable());
+        moved.panBy(axis, panUnits, line.units(), line.lastCapture());
     f.setFraming(moved);
 }
 
@@ -559,20 +559,47 @@ TEST_CASE("a framing survives a round trip through a coarser capture grid")
     //
     // Measured on the bench before this held: 1080p ev 513, 480p ev 255, and
     // 1080p ev 512 on the way back. One unit lost per excursion.
-    const VideoSourceLine doubled(624);      // capturable 621
-    const VideoSourceLine single(312);       // capturable 309
+    const VideoSourceLine doubled(624);      // half-lines
+    const VideoSourceLine single(312);       // whole source lines
 
     ActiveImage image;
-    image.setFraming(PanAndZoom(0.0f, 1.0f, 62.0f / 621.0f, 513.0f / 621.0f));
+    image.setFraming(PanAndZoom(0.0f, 1.0f, 62.0f / 624.0f, 513.0f / 624.0f));
 
     const BlankingTiming fine = image.capture(doubled, 50.0f, AxisVertical);
     CHECK(fine.start() - fine.stop() == 513);
 
     image.clampToLine(single, 50.0f, AxisVertical);
     const BlankingTiming coarse = image.capture(single, 50.0f, AxisVertical);
-    CHECK(coarse.start() - coarse.stop() == 255);
+    CHECK(coarse.start() - coarse.stop() == 256);   // 513 half-lines is 256.5
 
     image.clampToLine(doubled, 50.0f, AxisVertical);
     const BlankingTiming back = image.capture(doubled, 50.0f, AxisVertical);
     CHECK(back.start() - back.stop() == 513);
+}
+
+TEST_CASE("one framing names the same part of the line in either scan mode")
+{
+    // The capture path excludes DoubledHeadBlankingUnits at the head of a
+    // doubled line and CaptureLagUnits at the head of an undoubled one, and
+    // counts the sync pulse in units of different size. So what is left to
+    // capture is not the same span of source in the two modes -- 9.2%..99.8%
+    // of the line doubled against 11.0%..99.9% undoubled on the bench source.
+    //
+    // A framing anchored to that span therefore names a different part of the
+    // picture in each: photographed at one framing, 480p fitted at 0.980 of
+    // the 1080p frame horizontally and 576p at 0.962. Anchored to the LINE it
+    // names the same part, because the line is the same either way.
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, 0.0718f, true, true);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1881, 0.0718f, false, true);
+
+    ActiveImage image;
+    image.setFraming(PanAndZoom(0.2036f, 0.6245f, 0.0f, 1.0f));
+
+    const BlankingTiming fine = image.capture(doubled, 50.0f, AxisHorizontal);
+    const BlankingTiming coarse = image.capture(single, 50.0f, AxisHorizontal);
+
+    CHECK(coarse.stop() / 1881.0
+          == doctest::Approx(fine.stop() / 1100.0).epsilon(0.004));
+    CHECK((coarse.start() - coarse.stop()) / 1881.0
+          == doctest::Approx((fine.start() - fine.stop()) / 1100.0).epsilon(0.004));
 }

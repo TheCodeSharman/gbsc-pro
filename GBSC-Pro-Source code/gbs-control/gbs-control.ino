@@ -6587,8 +6587,8 @@ void startWebserver()
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
             geometry.originUnitsOn(Tv5725::AxisVertical),
             geometry.extentUnitsOn(Tv5725::AxisVertical),
-            geometry.capturableOn(Tv5725::AxisHorizontal),
-            geometry.capturableOn(Tv5725::AxisVertical),
+            geometry.lineUnitsOn(Tv5725::AxisHorizontal),
+            geometry.lineUnitsOn(Tv5725::AxisVertical),
             // The proportion itself, in ten-thousandths: the ESP's printf has
             // no %f, and this is the state the framing table stores.
             (int)lrintf(geometry.framing().originOn(Tv5725::AxisHorizontal) * 10000.0f),

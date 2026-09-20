@@ -72,7 +72,15 @@ public:
 
     // The capturable region this axis offers, which is the denominator the
     // framing's proportions are taken against.
-    uint16_t capturableOn(const Axis &axis) const;
+    // The span the framing is a proportion of: the WHOLE line, which is the
+    // same part of the source in either scan mode. What the capture path can
+    // actually reach inside it is VideoSourceLine's own business.
+    uint16_t lineUnitsOn(const Axis &axis) const;
+
+    // The first and last units of the line a capture window may occupy. What
+    // lies outside them is the capture path's own exclusion, not the framing's.
+    uint16_t firstUnitOn(const Axis &axis) const;
+    uint16_t reachOn(const Axis &axis) const;
 
     uint16_t linePx() const;
     uint16_t frameLines() const;

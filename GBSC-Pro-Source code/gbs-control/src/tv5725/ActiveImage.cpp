@@ -34,15 +34,14 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
                                           const SourceTiming &timing,
                                           const Axis &axis) const
 {
-    uint16_t usable = line.capturable();
+    uint16_t usable = line.units();
     long width, start;
 
     long wanted;
     if (framing_.tunedOn(axis) && usable > 0) {
         wanted = lrintf(framing_.extentOn(axis) * (float)usable);
         width = clampWidth(wanted, line);
-        start = (long)line.firstCapture()
-              + lrintf(framing_.originOn(axis) * (float)usable);
+        start = lrintf(framing_.originOn(axis) * (float)usable);
     } else {
         // Nothing has framed this axis yet, so the computed default stands in
         // until the first solve seeds it. clampToLine() is where that happens.
@@ -55,13 +54,22 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
         start = line.videoAt(from);
     }
 
-    const long asked = start;
+    // The near edge is the pan's and the far edge is the zoom's, so each is
+    // given back by the control that owns it: a window running past the end of
+    // the line gives up WIDTH and leaves the start where the pan put it. Moving
+    // the start instead shifts the picture on a zoom, which the zoom must never
+    // do. The start still stops short of the end, or a pan far enough right
+    // would leave no window at all.
+    const long asked = start, wide = width;
     if (start < (long)line.firstCapture())
         start = line.firstCapture();
-    if (start > (long)line.lastCapture() - width)
-        start = (long)line.lastCapture() - width;
+    if (start > (long)line.lastCapture() - (long)MinimumCapture)
+        start = (long)line.lastCapture() - (long)MinimumCapture;
+    if (start + width > (long)line.lastCapture())
+        width = (long)line.lastCapture() - start;
 
-    Placement placed = {width, start, width != wanted || start != asked};
+    Placement placed = {width, start, width != wanted || width != wide
+                                      || start != asked};
     return placed;
 }
 
@@ -92,7 +100,7 @@ void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &t
     if (line.units() == 0)
         return;
 
-    uint16_t usable = line.capturable();
+    uint16_t usable = line.units();
     if (usable == 0)
         return;
 
@@ -104,8 +112,7 @@ void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &t
     Placement placed = place(line, timing, axis);
     if (framing_.tunedOn(axis) && !placed.clamped)
         return;
-    framing_.seedOn(axis,
-                    (float)(placed.start - (long)line.firstCapture()) / (float)usable,
+    framing_.seedOn(axis, (float)placed.start / (float)usable,
                     (float)placed.width / (float)usable);
 }
 

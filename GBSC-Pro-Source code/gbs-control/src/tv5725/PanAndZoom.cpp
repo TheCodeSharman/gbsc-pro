@@ -57,15 +57,22 @@ float PanAndZoom::moved(float value, int16_t units, uint16_t usable)
     return (float)onGrid / (float)usable;
 }
 
+float PanAndZoom::limitFor(uint16_t reach, uint16_t usable)
+{
+    if (reach == 0 || usable == 0 || reach >= usable)
+        return 1.0f;
+    return (float)reach / (float)usable;
+}
+
 void PanAndZoom::zoomBy(const Axis &axis, int16_t units, uint16_t usable,
-                        uint16_t narrowest)
+                        uint16_t reach, uint16_t narrowest)
 {
     if (units == 0)
         return;
     AxisFraming &framing = on(axis);
     const float before = framing.extent;
     framing.extent = moved(framing.extent, (int16_t)-units, usable);
-    clampExtent(framing);
+    clampExtent(framing, limitFor(reach, usable));
 
     if (narrowest == 0 || usable == 0)
         return;
@@ -77,18 +84,19 @@ void PanAndZoom::zoomBy(const Axis &axis, int16_t units, uint16_t usable,
         framing.extent = before < least ? before : least;
 }
 
-void PanAndZoom::panBy(const Axis &axis, int16_t units, uint16_t usable)
+void PanAndZoom::panBy(const Axis &axis, int16_t units, uint16_t usable,
+                       uint16_t reach)
 {
     if (units == 0)
         return;
     AxisFraming &framing = on(axis);
     framing.origin = moved(framing.origin, units, usable);
-    clampOrigin(framing);
+    clampOrigin(framing, limitFor(reach, usable));
 }
 
-void PanAndZoom::clampOrigin(AxisFraming &framing)
+void PanAndZoom::clampOrigin(AxisFraming &framing, float limit)
 {
-    const float furthest = 1.0f - framing.extent;
+    const float furthest = limit - framing.extent;
 
     if (framing.origin > furthest)
         framing.origin = furthest;
@@ -96,9 +104,9 @@ void PanAndZoom::clampOrigin(AxisFraming &framing)
         framing.origin = 0.0f;
 }
 
-void PanAndZoom::clampExtent(AxisFraming &framing)
+void PanAndZoom::clampExtent(AxisFraming &framing, float limit)
 {
-    const float widest = 1.0f - framing.origin;
+    const float widest = limit - framing.origin;
 
     if (framing.extent > widest)
         framing.extent = widest;

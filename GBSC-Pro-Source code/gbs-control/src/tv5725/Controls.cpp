@@ -48,10 +48,10 @@ void Controls::report(const char *control, int16_t pixels) const
                       control, (int)pixels,
                       engine_.originUnitsOn(AxisHorizontal),
                       engine_.extentUnitsOn(AxisHorizontal),
-                      engine_.capturableOn(AxisHorizontal),
+                      engine_.lineUnitsOn(AxisHorizontal),
                       engine_.originUnitsOn(AxisVertical),
                       engine_.extentUnitsOn(AxisVertical),
-                      engine_.capturableOn(AxisVertical),
+                      engine_.lineUnitsOn(AxisVertical),
                       GBS::IF_HB_SP2::read(), GBS::IF_HB_ST2::read(),
                       GBS::IF_VB_SP::read(), GBS::IF_VB_ST::read(),
                       GBS::VDS_HSCALE::read(), GBS::VDS_VSCALE::read());

@@ -37,7 +37,9 @@ public:
 
     // The capturable region the last solve ran against, which is the
     // denominator the framing's proportions are taken against.
-    uint16_t capturableOn(const Axis &axis) const;
+    uint16_t lineUnitsOn(const Axis &axis) const;
+    uint16_t firstUnitOn(const Axis &axis) const;
+    uint16_t reachOn(const Axis &axis) const;
 
     // The source line active video starts on, for a path that plays the
     // source's raster out rather than scaling it. Zero where the measurement
@@ -347,6 +349,8 @@ private:
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;
+    uint16_t reachHorizontal_, reachVertical_;
+    uint16_t firstHorizontal_, firstVertical_;
     uint16_t activeStartLine_;
     SourceTiming timing_;
     SourceMeasurement &sampling_;

@@ -787,7 +787,7 @@ TEST_CASE("changing the output keeps the framing the user tuned")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    const float unit = 1.0f / (float)engine.capturableOn(AxisVertical);
+    const float unit = 1.0f / (float)engine.lineUnitsOn(AxisVertical);
     CHECK_NEAR(engine.framing().originOn(AxisHorizontal),
                tuned.originOn(AxisHorizontal), unit);
     CHECK_NEAR(engine.framing().extentOn(AxisHorizontal),
@@ -819,7 +819,7 @@ TEST_CASE("a framing tuned on one output resolution is not rewritten by another"
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    const uint16_t usable = engine.capturableOn(AxisHorizontal);
+    const uint16_t usable = engine.lineUnitsOn(AxisHorizontal);
     REQUIRE(usable > 300);
     REQUIRE(engine.applyFraming(PanAndZoom(engine.framing().originOn(AxisHorizontal),
                                            300.0f / (float)usable,
@@ -832,7 +832,7 @@ TEST_CASE("a framing tuned on one output resolution is not rewritten by another"
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    const float unit = 1.0f / (float)engine.capturableOn(AxisHorizontal);
+    const float unit = 1.0f / (float)engine.lineUnitsOn(AxisHorizontal);
     CHECK_NEAR(engine.framing().extentOn(AxisHorizontal),
                tuned.extentOn(AxisHorizontal), unit);
     CHECK_NEAR(engine.framing().originOn(AxisHorizontal),
@@ -928,6 +928,26 @@ TEST_CASE("a source nobody has framed gets the computed default")
     CHECK(engine.framing() != other);
 }
 
+// Where a stored proportion lands on this line: that fraction of the whole
+// line, brought inside the units the capture path can actually open on. The
+// proportion itself is untouched by a solve, so only these bounds move it.
+static long askedOrigin(const Tv5725::VideoPath &engine,
+                        const Tv5725::PanAndZoom &stored, const Tv5725::Axis &axis)
+{
+    const long first = engine.firstUnitOn(axis);
+    const long asked = lrintf(stored.originOn(axis) * (float)engine.lineUnitsOn(axis));
+    return asked < first ? first : asked;
+}
+
+static long askedExtent(const Tv5725::VideoPath &engine,
+                        const Tv5725::PanAndZoom &stored, const Tv5725::Axis &axis)
+{
+    const long origin = askedOrigin(engine, stored, axis);
+    const long asked = lrintf(stored.extentOn(axis) * (float)engine.lineUnitsOn(axis));
+    const long room = (long)engine.reachOn(axis) - origin;
+    return asked > room ? room : asked;
+}
+
 TEST_CASE("a framing restored from the file is applied when its source arrives")
 {
     // Boot: the file is read before anything has been measured, so the entry
@@ -947,17 +967,13 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    // The WINDOW, not the float. A solve re-grids the proportions onto the
-    // capturable region it just measured, which is what carries a framing
-    // across a mode change at all -- so the stored float does not come back
-    // bit-identical and is not meant to. docs/framing-presets.md
+    // The framing is a proportion of the LINE, so the units it lands on are
+    // that proportion of this line, clamped into what the capture path can
+    // open on. docs/framing-presets.md
     for (int vertical = 0; vertical < 2; ++vertical) {
         const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
-        const uint16_t usable = engine.capturableOn(axis);
-        CHECK(engine.originUnitsOn(axis)
-              == lrintf(stored.originOn(axis) * (float)usable));
-        CHECK(engine.extentUnitsOn(axis)
-              == lrintf(stored.extentOn(axis) * (float)usable));
+        CHECK(engine.originUnitsOn(axis) == askedOrigin(engine, stored, axis));
+        CHECK(engine.extentUnitsOn(axis) == askedExtent(engine, stored, axis));
     }
 }
 
@@ -1580,12 +1596,9 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     for (int vertical = 0; vertical < 2; ++vertical) {
         const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
-        const uint16_t usable = engine.capturableOn(axis);
         CAPTURE(vertical);
-        CHECK(engine.originUnitsOn(axis)
-              == lrintf(stored.originOn(axis) * (float)usable));
-        CHECK(engine.extentUnitsOn(axis)
-              == lrintf(stored.extentOn(axis) * (float)usable));
+        CHECK(engine.originUnitsOn(axis) == askedOrigin(engine, stored, axis));
+        CHECK(engine.extentUnitsOn(axis) == askedExtent(engine, stored, axis));
     }
 
     SUBCASE("and the source is left framed that way for next time") {
@@ -1866,7 +1879,7 @@ TEST_CASE("a framing press solves from the reading handed in, not from the chip"
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    const uint16_t capturable = engine.capturableOn(AxisHorizontal);
+    const uint16_t capturable = engine.lineUnitsOn(AxisHorizontal);
     REQUIRE(capturable > 0);
 
     // A sync low nothing measured, three times what the source runs.
@@ -1874,7 +1887,7 @@ TEST_CASE("a framing press solves from the reading handed in, not from the chip"
 
     REQUIRE(engine.pan(-16, 0));
 
-    CHECK(engine.capturableOn(AxisHorizontal) == capturable);
+    CHECK(engine.lineUnitsOn(AxisHorizontal) == capturable);
 }
 
 TEST_CASE("an undoubled source is sampled up to the measured ceiling")

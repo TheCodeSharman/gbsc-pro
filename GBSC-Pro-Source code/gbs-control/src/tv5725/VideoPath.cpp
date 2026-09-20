@@ -32,7 +32,9 @@ namespace Tv5725 {
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
                      FramingTable &framings)
     : displayClock_(displayClock),
-      usableHorizontal_(0), usableVertical_(0), activeStartLine_(0),
+      usableHorizontal_(0), usableVertical_(0),
+      reachHorizontal_(0), reachVertical_(0),
+      firstHorizontal_(0), firstVertical_(0), activeStartLine_(0),
       timing_(0.0f),
       sampling_(sampling),
       scanModeApplied_(false), lineDoubled_(true),
@@ -123,21 +125,31 @@ bool VideoPath::changing() const { return modePending_ || solvePending_; }
 
 bool VideoPath::changingMode() const { return modePending_; }
 
-uint16_t VideoPath::capturableOn(const Axis &axis) const
+uint16_t VideoPath::lineUnitsOn(const Axis &axis) const
 {
     return axis.vertical() ? usableVertical_ : usableHorizontal_;
+}
+
+uint16_t VideoPath::firstUnitOn(const Axis &axis) const
+{
+    return axis.vertical() ? firstVertical_ : firstHorizontal_;
+}
+
+uint16_t VideoPath::reachOn(const Axis &axis) const
+{
+    return axis.vertical() ? reachVertical_ : reachHorizontal_;
 }
 
 uint16_t VideoPath::sourceActiveStartLine() const { return activeStartLine_; }
 
 uint16_t VideoPath::originUnitsOn(const Axis &axis) const
 {
-    return (uint16_t)lrintf(framing_.originOn(axis) * (float)capturableOn(axis));
+    return (uint16_t)lrintf(framing_.originOn(axis) * (float)lineUnitsOn(axis));
 }
 
 uint16_t VideoPath::extentUnitsOn(const Axis &axis) const
 {
-    return (uint16_t)lrintf(framing_.extentOn(axis) * (float)capturableOn(axis));
+    return (uint16_t)lrintf(framing_.extentOn(axis) * (float)lineUnitsOn(axis));
 }
 
 // Solve every register from what is held. A caller that has only moved the
@@ -712,9 +724,9 @@ bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)
 {
     PanAndZoom wanted = framing_;
     wanted.panBy(AxisHorizontal, unitsFor(dxPixels, horizontalScale_, AxisHorizontal),
-                 usableHorizontal_);
+                 usableHorizontal_, reachHorizontal_);
     wanted.panBy(AxisVertical, unitsFor(dyPixels, verticalScale_, AxisVertical),
-                 usableVertical_);
+                 usableVertical_, reachVertical_);
     return step(wanted);
 }
 
@@ -733,9 +745,11 @@ bool VideoPath::zoom(int16_t dhPixels, int16_t dvPixels)
 {
     PanAndZoom wanted = framing_;
     wanted.zoomBy(AxisHorizontal, unitsFor(dhPixels, horizontalScale_, AxisHorizontal),
-                  usableHorizontal_, narrowestCaptureOn(AxisHorizontal));
+                  usableHorizontal_, reachHorizontal_,
+                  narrowestCaptureOn(AxisHorizontal));
     wanted.zoomBy(AxisVertical, unitsFor(dvPixels, verticalScale_, AxisVertical),
-                  usableVertical_, narrowestCaptureOn(AxisVertical));
+                  usableVertical_, reachVertical_,
+                  narrowestCaptureOn(AxisVertical));
     return step(wanted);
 }
 
@@ -787,8 +801,12 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     // no source change can put the bench rule back where it was.
     capture.setFraming(fullFraming_ ? PanAndZoom(0.0f, 1.0f, 0.0f, 1.0f) : framing_);
     framing_ = capture.framing();
-    usableHorizontal_ = capture.capturableOn(AxisHorizontal);
-    usableVertical_ = capture.capturableOn(AxisVertical);
+    usableHorizontal_ = capture.lineUnitsOn(AxisHorizontal);
+    usableVertical_ = capture.lineUnitsOn(AxisVertical);
+    reachHorizontal_ = capture.reachOn(AxisHorizontal);
+    reachVertical_ = capture.reachOn(AxisVertical);
+    firstHorizontal_ = capture.firstUnitOn(AxisHorizontal);
+    firstVertical_ = capture.firstUnitOn(AxisVertical);
     return capture.usable() ? true : fail();
 }
 
