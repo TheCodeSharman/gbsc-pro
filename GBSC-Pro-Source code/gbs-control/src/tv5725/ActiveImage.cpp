@@ -41,7 +41,7 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
     if (framing_.tunedOn(axis) && usable > 0) {
         wanted = lrintf(framing_.extentOn(axis) * (float)usable);
         width = clampWidth(wanted, line);
-        start = lrintf(framing_.originOn(axis) * (float)usable);
+        start = line.videoAt(framing_.originOn(axis));
     } else {
         // Nothing has framed this axis yet, so the computed default stands in
         // until the first solve seeds it. clampToLine() is where that happens.
@@ -112,7 +112,7 @@ void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &t
     Placement placed = place(line, timing, axis);
     if (framing_.tunedOn(axis) && !placed.clamped)
         return;
-    framing_.seedOn(axis, (float)placed.start / (float)usable,
+    framing_.seedOn(axis, line.fractionAt((uint16_t)placed.start),
                     (float)placed.width / (float)usable);
 }
 

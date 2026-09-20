@@ -474,7 +474,11 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // is counted from the trailing edge with the pulse already behind it.
     const long sync = (long)std::ceil((double)line * (double)HsyncLow / (double)Divider);
 
-    CHECK_NEAR(stop, 0.180 * line - sync, 2);
+    // Plus the lag, which is how far behind the counter's origin the capture
+    // path delivers video: a window placed where the standard states without
+    // it captures the picture's left edge as blanking.
+    const long lag = solved.engine.videoLagOn(AxisHorizontal);
+    CHECK_NEAR(stop, 0.180 * line - sync + lag, 2);
     CHECK_NEAR(start - stop, 0.800 * line, 2);
 }
 
@@ -649,12 +653,19 @@ TEST_CASE("a forced full framing captures everything the source offers")
     // Everything the capture path can open on, which is the whole line less
     // its own head and tail exclusions -- the framing asks for all of it and
     // the placement gives back what cannot be reached.
+    // The window opens on the floor and runs to the last unit before the
+    // counter wraps. Those are positions in the COUNTER, so they are read off
+    // the registers; the framing is a proportion of the SOURCE, and the two
+    // meet through the lag.
+    CHECK(Wire.field(1, 0x1A, 0, 11) == solved.engine.firstUnitOn(AxisHorizontal));
+    CHECK(Wire.field(1, 0x1E, 0, 11) == solved.engine.firstUnitOn(AxisVertical));
+
     for (int vertical = 0; vertical < 2; ++vertical) {
         const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
         CAPTURE(vertical);
-        CHECK(solved.engine.originUnitsOn(axis) == solved.engine.firstUnitOn(axis));
-        CHECK(solved.engine.originUnitsOn(axis) + solved.engine.extentUnitsOn(axis)
-              == solved.engine.reachOn(axis));
+        CHECK(solved.engine.extentUnitsOn(axis)
+              == solved.engine.reachOn(axis) + solved.engine.videoLagOn(axis)
+                 - solved.engine.firstUnitOn(axis));
     }
 
     SUBCASE("and the scaler still magnifies rather than clamping at unity") {

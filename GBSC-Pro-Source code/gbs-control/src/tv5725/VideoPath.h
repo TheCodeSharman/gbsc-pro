@@ -38,8 +38,15 @@ public:
     // The capturable region the last solve ran against, which is the
     // denominator the framing's proportions are taken against.
     uint16_t lineUnitsOn(const Axis &axis) const;
+
+    // THESE TWO ARE IN DIFFERENT DOMAINS AND videoLagOn() IS WHAT JOINS THEM.
+    // A framing names a position in the SOURCE and a window register is a
+    // position in the COUNTER, which the capture path delivers video behind.
+    // reachOn() bounds a framing, so it is in the source's units; firstUnitOn()
+    // is the earliest the window may open, so it is in the counter's.
     uint16_t firstUnitOn(const Axis &axis) const;
     uint16_t reachOn(const Axis &axis) const;
+    uint16_t videoLagOn(const Axis &axis) const;
 
     // The source line active video starts on, for a path that plays the
     // source's raster out rather than scaling it. Zero where the measurement
@@ -350,6 +357,7 @@ private:
     // denominator a press converts its units into a proportion with.
     uint16_t usableHorizontal_, usableVertical_;
     uint16_t reachHorizontal_, reachVertical_;
+    uint16_t lagHorizontal_, lagVertical_;
     uint16_t firstHorizontal_, firstVertical_;
     uint16_t activeStartLine_;
     SourceTiming timing_;

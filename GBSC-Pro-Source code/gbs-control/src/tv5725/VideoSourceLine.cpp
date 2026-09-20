@@ -9,7 +9,7 @@ namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
 const uint16_t VideoSourceLine::FirstCapturableUnit;
-const uint16_t VideoSourceLine::CaptureLagUnits;
+const float VideoSourceLine::CaptureLagFraction = 0.0640f;
 
 namespace {
 
@@ -38,12 +38,15 @@ VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits)
 VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits,
                                  uint16_t headBlankingUnits, bool syncAtHead)
     : units_(units), syncUnits_(syncUnits),
-      lagUnits_(headBlankingUnits ? 0 : CaptureLagUnits),
+      lagUnits_(headBlankingUnits ? 0
+                                  : (uint16_t)lrintf(units * CaptureLagFraction)),
       headBlankingUnits_(headBlankingUnits), syncAtHead_(syncAtHead) {}
 
 uint16_t VideoSourceLine::units() const { return units_; }
 
 uint16_t VideoSourceLine::syncUnits() const { return syncUnits_; }
+
+uint16_t VideoSourceLine::videoLag() const { return lagUnits_; }
 
 uint16_t VideoSourceLine::progressiveStop(uint16_t start) const
 {
@@ -69,10 +72,19 @@ uint16_t VideoSourceLine::maxCaptureWidth() const
 uint16_t VideoSourceLine::videoAt(float lineFraction) const
 {
     long at = lrintf(lineFraction * (float)units_)
-            - (syncAtHead_ ? 0L : (long)syncUnits_);
+            - (syncAtHead_ ? 0L : (long)syncUnits_) + (long)lagUnits_;
     if (at < 0)
         at = 0;
     return at > (long)units_ ? units_ : (uint16_t)at;
+}
+
+float VideoSourceLine::fractionAt(uint16_t position) const
+{
+    if (units_ == 0)
+        return 0.0f;
+    const long at = (long)position + (syncAtHead_ ? 0L : (long)syncUnits_)
+                  - (long)lagUnits_;
+    return at < 0 ? 0.0f : (float)at / (float)units_;
 }
 
 uint16_t VideoSourceLine::lastCapture() const
@@ -88,6 +100,12 @@ uint16_t VideoSourceLine::lastCapture() const
     // goes with it. What arrives there is bounded by the wrap, not by the
     // pulse. docs/known-issues.md
     return units_ < 2 ? 0 : units_ - 2;
+}
+
+uint16_t VideoSourceLine::lastReachable() const
+{
+    const long at = (long)lastCapture() - (long)lagUnits_;
+    return at < 0 ? 0 : (uint16_t)at;
 }
 
 uint16_t VideoSourceLine::capturable() const

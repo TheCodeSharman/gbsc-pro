@@ -934,7 +934,10 @@ TEST_CASE("a source nobody has framed gets the computed default")
 static long askedOrigin(const Tv5725::VideoPath &engine,
                         const Tv5725::PanAndZoom &stored, const Tv5725::Axis &axis)
 {
-    const long first = engine.firstUnitOn(axis);
+    // A framing names a position in the SOURCE and firstUnitOn() is a position
+    // in the COUNTER, so the floor has to come back through the lag before the
+    // two can be compared.
+    const long first = (long)engine.firstUnitOn(axis) - engine.videoLagOn(axis);
     const long asked = lrintf(stored.originOn(axis) * (float)engine.lineUnitsOn(axis));
     return asked < first ? first : asked;
 }

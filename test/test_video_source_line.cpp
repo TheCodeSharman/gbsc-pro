@@ -180,13 +180,13 @@ TEST_CASE("the capture starts where the sync pulse ends")
     const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
 
     SUBCASE("a positive pulse sits at the head and the floor clears it") {
-        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, true).firstCapture()
-              == 137 + VideoSourceLine::CaptureLagUnits);
+        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
+        CHECK(line.firstCapture() == 137 + line.videoLag());
     }
 
     SUBCASE("an inverted pulse is behind the origin, leaving only the lag") {
-        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, false).firstCapture()
-              == VideoSourceLine::CaptureLagUnits);
+        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+        CHECK(line.firstCapture() == line.videoLag());
     }
 
     SUBCASE("an inverted pulse keeps the span the head guard would take") {
@@ -239,17 +239,18 @@ TEST_CASE("a position in the source's line maps onto where video lands in this o
     const float ActiveStart = 216.0f / 1056.0f;
 
     SUBCASE("a positive pulse shares the standard's own origin") {
-        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, true)
-                  .videoAt(ActiveStart) == 230);
+        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
+        CHECK(line.videoAt(ActiveStart) == 230 + line.videoLag());
     }
 
     SUBCASE("an inverted pulse moves it back by the sync interval as well") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
-        CHECK(line.videoAt(ActiveStart) == 230 - line.syncUnits());
+        CHECK(line.videoAt(ActiveStart)
+              == 230 - line.syncUnits() + line.videoLag());
     }
 
-    SUBCASE("a line placed by something else maps one to one") {
-        // The vertical axis, and the doubled horizontal one.
+    SUBCASE("a line nothing has measured maps one to one") {
+        // The vertical axis: no pulse, no scan mode, so no displacement.
         CHECK(VideoSourceLine(624).videoAt(0.5f) == 312);
     }
 }
@@ -308,13 +309,13 @@ TEST_CASE("the capture floor hides the sync pulse and nothing else")
     // 640x480@60 on the bench at PLLAD_MD 1494, HLOW_LEN 172.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     SUBCASE("a low-active source has the pulse behind the origin already") {
-        CHECK(VideoSourceLine::measured(Units, HsyncLow, AdcLine, false)
-                  .firstCapture() == VideoSourceLine::CaptureLagUnits);
+        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+        CHECK(line.firstCapture() == line.videoLag());
     }
 
     SUBCASE("a high-active source has it at the head, so the floor clears it") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
-        CHECK(line.firstCapture() == line.syncUnits() + VideoSourceLine::CaptureLagUnits);
+        CHECK(line.firstCapture() == line.syncUnits() + line.videoLag());
     }
 }
 
@@ -344,7 +345,7 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
     // 640x480@60 at PLLAD_MD 1494, low-active: the pulse is at the tail.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
-    const uint16_t Lag = VideoSourceLine::CaptureLagUnits;
+    const uint16_t Lag = line.videoLag();
 
     SUBCASE("the floor is where the sync ends, a lag later") {
         CHECK(line.firstCapture() == Lag);

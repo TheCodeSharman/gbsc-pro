@@ -44,9 +44,9 @@ static void press(Tv5725::ActiveImage &f, const Tv5725::VideoSourceLine &line,
         f.clampToLine(line, timing, axis);
     Tv5725::PanAndZoom moved = f.framing();
     if (zoomUnits != 0)
-        moved.zoomBy(axis, zoomUnits, line.units(), line.lastCapture());
+        moved.zoomBy(axis, zoomUnits, line.units(), line.lastReachable());
     if (panUnits != 0)
-        moved.panBy(axis, panUnits, line.units(), line.lastCapture());
+        moved.panBy(axis, panUnits, line.units(), line.lastReachable());
     f.setFraming(moved);
 }
 
@@ -577,7 +577,7 @@ TEST_CASE("a framing survives a round trip through a coarser capture grid")
     CHECK(back.start() - back.stop() == 513);
 }
 
-TEST_CASE("one framing names the same part of the line in either scan mode")
+TEST_CASE("one framing takes the same span of the line in either scan mode")
 {
     // The capture path excludes DoubledHeadBlankingUnits at the head of a
     // doubled line and CaptureLagUnits at the head of an undoubled one, and
@@ -598,8 +598,35 @@ TEST_CASE("one framing names the same part of the line in either scan mode")
     const BlankingTiming fine = image.capture(doubled, 50.0f, AxisHorizontal);
     const BlankingTiming coarse = image.capture(single, 50.0f, AxisHorizontal);
 
-    CHECK(coarse.stop() / 1881.0
-          == doctest::Approx(fine.stop() / 1100.0).epsilon(0.004));
     CHECK((coarse.start() - coarse.stop()) / 1881.0
           == doctest::Approx((fine.start() - fine.stop()) / 1100.0).epsilon(0.004));
+}
+
+// A PROPORTION NAMES A POSITION IN THE SOURCE'S VIDEO, AND THE TWO SCAN MODES
+// PUT THAT VIDEO IN DIFFERENT PLACES IN THE COUNTER. Anchoring the proportion
+// to units() makes the two scales agree; it does nothing about the origins,
+// and the origins differ because the capture path delivers video a lag behind
+// the counter on an undoubled line and IF_HBIN_SP's FIFO reset places it ahead
+// of the counter on a doubled one.
+//
+// Measured on the bench source at one stored framing: the same source content
+// sits at counter fraction 0.2046 with the doubler in and 0.2674 with it
+// bypassed, 6.28% of a line apart. Panning 480p right by exactly those 118
+// units collapsed the fitted displacement against the 1080p frame from
+// +130.7 photo px to -26.2, and left the fitted scale untouched at 1.048.
+TEST_CASE("one framing names the same source video in either scan mode")
+{
+    // 1080p doubles the bench source at PLLAD_MD 2200; 480p cannot fit the
+    // doubled frame and captures it whole at 1880.
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, 0.0718f, true, true);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1880, 0.0718f, false, true);
+
+    ActiveImage image;
+    image.setFraming(PanAndZoom(0.2036f, 0.6245f, 0.0f, 1.0f));
+
+    const uint16_t fine = image.capture(doubled, 50.0f, AxisHorizontal).stop();
+    const uint16_t coarse = image.capture(single, 50.0f, AxisHorizontal).stop();
+
+    CHECK(single.fractionAt(coarse)
+          == doctest::Approx(doubled.fractionAt(fine)).epsilon(0.001));
 }
