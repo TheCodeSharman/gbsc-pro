@@ -23,6 +23,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
 
 #include "RegistersWritten.h"
 #include "MeasuredSource.h"
@@ -609,10 +610,16 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
         // whole unit and one unit of VDS_HSCALE is produced / scale of picture,
         // three output pixels at this magnification. A tolerance of a pixel
         // pins the framing rather than the rule.
+        //
+        // The porch left is wider than the mode's by the interpolator's reach:
+        // the aperture closes one capture unit's worth of output short of the
+        // picture, because the unit it would otherwise show reads past the last
+        // unit captured.
         const long wanted = raster.horizontalTotal - raster.activeStop;
         const long step = 1 + (stop - start) / Wire.field(3, 0x16, 0, 10);  // VDS_HSCALE
+        const long reach = 1 + Scale::Unity / Wire.field(3, 0x16, 0, 10);
         CHECK(total - stop >= wanted - step);
-        CHECK(total - stop <= wanted + step);
+        CHECK(total - stop <= wanted + step + reach);
     }
 
     // One unit of scale is several output lines at any magnification worth the
@@ -623,7 +630,8 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     SUBCASE("vertically too, within the line the scale can actually resolve") {
         const long lines = Wire.field(3, 0x13, 0, 11) - Wire.field(3, 0x14, 4, 11);
         const long wanted = raster.activeLinesStop - raster.activeLinesStart;
-        CHECK(lines >= wanted - 1);
+        const long reach = 1 + Scale::Unity / Wire.field(3, 0x17, 4, 10);
+        CHECK(lines >= wanted - 1 - reach);
         CHECK(lines <= wanted);
     }
 }

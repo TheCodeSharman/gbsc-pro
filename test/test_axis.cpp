@@ -8,6 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
@@ -320,7 +321,8 @@ TEST_CASE("the solver places every output register")
     // line, so centred puts the corner at 94. It cannot go there -- at x1.575
     // the write start is 94.4 px after VDS_HB_SP, needing the register below its
     // floor of 8 -- so the picture is pushed right to 102.
-    AxisSolution solved = AxisHorizontal.solve(798, Scale(650), 1445);
+    const Scale scale(650);
+    AxisSolution solved = AxisHorizontal.solve(798, scale, 1445);
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
         // The MEMORY window opens where the write does; the display window
@@ -342,10 +344,14 @@ TEST_CASE("the solver places every output register")
     SUBCASE("the display window hugs the picture") {
         // A window sized for a different picture blanks where tearing shows,
         // so a headroom measurement taken through one is worthless. It gives
-        // back a margin at each end -- the model's residual at the far edge,
-        // and the write origin's at the near one.
-        CHECK(solved.display().start()
-              == solved.display().stop() + (int32_t)solved.produced());
+        // back a margin at each end -- the write origin's at the near one, and
+        // at the far one the capture unit the scaler interpolates past the last
+        // one written, plus the unit flooring costs.
+        const int32_t picture =
+            solved.display().stop() + (int32_t)solved.produced();
+        CHECK(solved.display().start() <= picture);
+        CHECK((float)(picture - solved.display().start())
+              <= scale.magnification() + 1.0f);
     }
 
     SUBCASE("the solver corrects the thirteen pixel offset seen on the bench") {
@@ -651,8 +657,11 @@ TEST_CASE("the display window is the picture, at both ends")
         scale.produced(Capture), Raster, scale.magnification());
 
     CHECK(solved.display().stop() == placed.corner());
-    CHECK(solved.display().start()
-          == placed.corner() + (int32_t)solved.produced());
+
+    const int32_t picture = placed.corner() + (int32_t)solved.produced();
+    CHECK(solved.display().start() <= picture);
+    CHECK((float)(picture - solved.display().start())
+          <= scale.magnification() + 1.0f);
 }
 
 // The capture stop is what the pan walks toward the end of the line, and past
@@ -718,3 +727,57 @@ int main(int argc, char **argv)
     return doctest::Context(argc, argv).run();
 }
 
+
+// The scaler interpolates between two capture units, so an output unit landing
+// at source position s reads units floor(s) and floor(s) + 1. The last unit the
+// capture wrote is capture - 1, so an aperture whose final unit reaches past it
+// shows memory nothing wrote -- which the playback stage fetches as whatever the
+// previous mode left in it.
+//
+// Measured at 320x256@50 on vga, capture 582 at VDS_VSCALE 552 in a 1124-line
+// raster: the last line of the picture is a static line of stale memory, it
+// clears when the capture takes one more line, and it grows to a forty-line
+// band that does NOT flash while the source's border does when the capture
+// takes forty fewer.
+static float lastCaptureUnitRead(const Axis &axis, Scale scale,
+                                 const AxisSolution &solved)
+{
+    const float lastUnit = (float)solved.display().start() - 1.0f;
+    const float pos = (lastUnit - (float)solved.memory().stop()
+                       - axis.originOffset(scale.magnification()))
+                    * (float)scale.reg() / (float)Scale::Unity;
+    return floorf(pos) + 1.0f;
+}
+
+TEST_CASE("the aperture's last unit is interpolated from captured memory")
+{
+    SUBCASE("vertically, at the bench 320x256@50 framing") {
+        const uint16_t Raster = 1124, Capture = 582;
+        const Scale scale(552);
+        const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster);
+        CHECK(lastCaptureUnitRead(AxisVertical, scale, solved)
+              <= (float)Capture - 1.0f);
+    }
+
+    SUBCASE("horizontally, at the bench 320x256@50 framing") {
+        const uint16_t Raster = 1919, Capture = 998;
+        const Scale scale(568);
+        const AxisSolution solved = AxisHorizontal.solve(Capture, scale, Raster);
+        CHECK(lastCaptureUnitRead(AxisHorizontal, scale, solved)
+              <= (float)Capture - 1.0f);
+    }
+
+    SUBCASE("across the zoom range on both axes") {
+        for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
+            const Scale scale(reg);
+
+            const AxisSolution v = AxisVertical.solve(582, scale, 1124);
+            if (v.usable())
+                REQUIRE(lastCaptureUnitRead(AxisVertical, scale, v) <= 581.0f);
+
+            const AxisSolution h = AxisHorizontal.solve(998, scale, 1919);
+            if (h.usable())
+                REQUIRE(lastCaptureUnitRead(AxisHorizontal, scale, h) <= 997.0f);
+        }
+    }
+}

@@ -237,8 +237,12 @@ static void checkBenchGeometry()
     // playback never walks past the written picture.
     CHECK(VideoProcessor::VDS_HB_ST::read() == VideoProcessor::VDS_DIS_HB_ST::read());
     CHECK(VideoProcessor::VDS_VB_ST::read() == VideoProcessor::VDS_DIS_VB_ST::read());
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1853);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1120);
+    // Two units short of where the picture ends on each axis: the scaler
+    // interpolates between two capture units, so the last unit an aperture
+    // closing on the picture would show reads the unit after the last one
+    // captured, which is memory the previous mode left behind.
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1851);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears. 1854 would be 1814 wide.

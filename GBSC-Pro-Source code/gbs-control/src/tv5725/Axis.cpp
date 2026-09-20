@@ -204,8 +204,14 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     // of them fractional. Flooring the length and adding a corner rounded on
     // its own lands up to a whole unit past the write, leaving the last unit of
     // the aperture showing memory nothing wrote.
+    //
+    // The write is usable one capture unit's worth of output short of where it
+    // ends: the scaler interpolates between two capture units, so the output
+    // unit landing on the last one written reads the one after it, which no
+    // capture filled. docs/known-issues.md
     const float writeEnds = (float)placed.windowStop()
-                          + originOffset(scale.magnification()) + solved.produced_;
+                          + originOffset(scale.magnification())
+                          + solved.produced_ - scale.magnification();
     int32_t displayStart = (int32_t)floorf(writeEnds);
     if (displayStart < placed.corner())
         displayStart = placed.corner();
