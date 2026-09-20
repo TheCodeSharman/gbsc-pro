@@ -102,22 +102,76 @@ That is what makes a measured per-mode fraction safe to ship where it was not
 before: the quantity is stable against the one thing the engine varies
 underneath it.
 
+## The mechanism: the SD rasters are transmitted as VESA PC modes
+
+The sink names the format it receives, and on the two SD modes it does not name
+an SD format:
+
+| our raster | the sink reports |
+|---|---|
+| 525 lines at 50 Hz | **640 x 480 @ 50 Hz** |
+| 625 lines at 50 Hz | **800 x 600 @ 50 Hz** |
+
+So the encoder does not carry a 50 Hz 525- or 625-line raster as CEA 480p or
+576p. It matches the line count against a table, finds VESA DMT's 640x480 and
+800x600, and transmits those -- 640 and 800 active pixels where the standard's
+720 was assumed, which is 0.800 and 0.781 of DMT's own line totals against the
+0.804 and 0.786 measured here. That closes the fraction: it is the VESA mode's
+active width, not a defect.
+
+It also predicts the vertical, and the prediction holds.
+
+## The vertical window is the VESA mode's too, and CEA's leaves a black bar
+
+Measured on the bench, RiscPC 320x256@50 on `vga`, automation frozen, the
+vertical window stepped in ten-line increments with its span held and the
+picture's own edges read off each photograph. A span that reaches both panel
+edges is what makes the pinning visible:
+
+| picture start (raster line) | top edge (photo row) | bottom edge |
+|---|---|---|
+| 4 | 37 (pinned) | 812 |
+| 14 | 37 (pinned) | 827 |
+| 24 | 37 (pinned) | 841 |
+| 34 | 50 | 855 |
+| 44 | 64 | 869 |
+
+The bottom tracks 1.407 photo rows per raster line throughout, so the raster to
+panel mapping is linear and one to one -- this is not a set letterboxing the
+picture. The top is pinned until the start passes **24.8**, and the same
+arithmetic puts the last painted line at **624.6**. So the chain paints raster
+lines 25..624: **600 of the 625, from 24 lines of blanking**, which is DMT
+800x600@56's vertical window exactly.
+
+CEA 576p states 576 lines from line 44. Placing the picture there left **19
+lines of the painted area black across the top of the screen** and 4 unused at
+the bottom, which is what the mode looked wrong for.
+
+The same sweep at 480p pins at 35.2 and 514.7, against DMT 640x480's 35 and 515
+and CEA 480p's 36 and 516 -- the two windows agree to within a line, which is
+why that mode never showed a bar and why the vertical was not suspected sooner.
+
+**Only where the picture may go changed.** The emitted vsync pulse stays at
+CEA's five lines: the chain locks to it as it is, and lengthening or shortening
+it was never the fault. `Mode576p` now states 600 active lines with 19 lines of
+back porch and 1 of front, which is still 625.
+
 ## What is still open
 
-**Whether the fraction belongs to the encoder or to this television.** The left
-edge rules out symmetric overscan, but not a set that crops one end, and nothing
-on the board can see what the MS9288A transmits -- it is on no MCU's I2C bus and
-EDID is unreachable. A second display is what separates them, and until one is
-attached a per-mode fraction taken from this panel may be this panel's number.
-`docs/known-issues.md` states the general form of that trap.
+**Whether these windows belong to the encoder or to this television.** The sink
+reporting `800x600@50` is evidence about the ENCODER -- a mode name on an info
+panel is the HDMI timing received, where overscan would be the set's own choice
+about how to paint it -- so the identification is the board's behaviour and
+portable. What a second display would still settle is the horizontal fraction's
+last fraction of a percent, and whether any set crops one end.
 
-**The mechanism.** 0.804 and 0.786 correspond to 690 and 679 active pixels
-against the standard's 720, or to the encoder stopping 2.90 and 1.90
-microseconds before the end of the line. Neither is a round number, neither
-matches a front porch or a blanking interval, and the two SD modes differ by
-three times more than their standards do. Refuted along the way: a fixed pixel
-count, a fixed time, a fixed fraction shared between modes, and the raster
-ratio.
+**Why the horizontal does not follow the same table.** Vertically the chain uses
+DMT's blanking; horizontally it does not. Crept at 576p, the panel's first
+painted column is raster 321 against our `activeStart` of 317, where DMT
+800x600@56's 72 + 128 of blanking would put it at 404. The encoder cannot know
+our pixel clock, so it has to find the line's active region by measurement while
+the line COUNT is exact and can be looked up -- which is consistent with both
+halves, and is not established.
 
 ## The instruments
 
