@@ -1,0 +1,1027 @@
+{
+  "tool": "creep_zoom",
+  "host": "192.168.88.108",
+  "started": "2026-09-19T21:56:00",
+  "marks": [
+    {
+      "value": 33,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 496,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 189,
+        "IF_HB_ST2": 1020,
+        "PB_FETCH_NUM": 208,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 831,
+        "magnification": 2.064516129032258,
+        "produced": 1715.6129032258063,
+        "offset": 106.61290322580645,
+        "origin": 139.61290322580646,
+        "phase": 0.3870967741935374
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 495,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 190,
+        "IF_HB_ST2": 1019,
+        "PB_FETCH_NUM": 208,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 829,
+        "magnification": 2.0686868686868687,
+        "produced": 1714.941414141414,
+        "offset": 106.71717171717171,
+        "origin": 139.7171717171717,
+        "phase": 0.28282828282829087
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 494,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 191,
+        "IF_HB_ST2": 1018,
+        "PB_FETCH_NUM": 207,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 827,
+        "magnification": 2.0728744939271255,
+        "produced": 1714.2672064777328,
+        "offset": 106.82186234817814,
+        "origin": 139.82186234817814,
+        "phase": 0.17813765182185648
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1853,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1853,
+        "VDS_HSCALE": 493,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 192,
+        "IF_HB_ST2": 1017,
+        "PB_FETCH_NUM": 207,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 825,
+        "magnification": 2.077079107505071,
+        "produced": 1713.5902636916835,
+        "offset": 106.92697768762677,
+        "origin": 139.9269776876268,
+        "phase": 0.07302231237321166
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 491,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 193,
+        "IF_HB_ST2": 1016,
+        "PB_FETCH_NUM": 206,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 823,
+        "magnification": 2.085539714867617,
+        "produced": 1716.3991853360487,
+        "offset": 107.13849287169043,
+        "origin": 140.13849287169043,
+        "phase": -0.13849287169043123
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 491,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 193,
+        "IF_HB_ST2": 1016,
+        "PB_FETCH_NUM": 206,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 823,
+        "magnification": 2.085539714867617,
+        "produced": 1716.3991853360487,
+        "offset": 107.13849287169043,
+        "origin": 140.13849287169043,
+        "phase": -0.13849287169043123
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 490,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 194,
+        "IF_HB_ST2": 1015,
+        "PB_FETCH_NUM": 206,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 821,
+        "magnification": 2.089795918367347,
+        "produced": 1715.722448979592,
+        "offset": 107.24489795918367,
+        "origin": 140.24489795918367,
+        "phase": -0.24489795918367463
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 489,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 195,
+        "IF_HB_ST2": 1014,
+        "PB_FETCH_NUM": 205,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 819,
+        "magnification": 2.094069529652352,
+        "produced": 1715.0429447852762,
+        "offset": 107.3517382413088,
+        "origin": 140.3517382413088,
+        "phase": -0.3517382413087944
+      }
+    },
+    {
+      "value": 33,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 33,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 488,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 196,
+        "IF_HB_ST2": 1013,
+        "PB_FETCH_NUM": 205,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 817,
+        "magnification": 2.098360655737705,
+        "produced": 1714.360655737705,
+        "offset": 107.45901639344262,
+        "origin": 140.45901639344262,
+        "phase": -0.45901639344262435
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1853,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1853,
+        "VDS_HSCALE": 487,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 197,
+        "IF_HB_ST2": 1012,
+        "PB_FETCH_NUM": 204,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 815,
+        "magnification": 2.102669404517454,
+        "produced": 1713.6755646817248,
+        "offset": 107.56673511293636,
+        "origin": 139.56673511293636,
+        "phase": 0.4332648870636433
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 485,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 198,
+        "IF_HB_ST2": 1011,
+        "PB_FETCH_NUM": 204,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 813,
+        "magnification": 2.111340206185567,
+        "produced": 1716.519587628866,
+        "offset": 107.78350515463919,
+        "origin": 139.7835051546392,
+        "phase": 0.21649484536081331
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 484,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 199,
+        "IF_HB_ST2": 1010,
+        "PB_FETCH_NUM": 203,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 811,
+        "magnification": 2.115702479338843,
+        "produced": 1715.8347107438017,
+        "offset": 107.89256198347107,
+        "origin": 139.89256198347107,
+        "phase": 0.10743801652893126
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 483,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 200,
+        "IF_HB_ST2": 1009,
+        "PB_FETCH_NUM": 203,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 809,
+        "magnification": 2.12008281573499,
+        "produced": 1715.1469979296066,
+        "offset": 108.00207039337474,
+        "origin": 140.00207039337474,
+        "phase": -0.002070393374737023
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 482,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 201,
+        "IF_HB_ST2": 1008,
+        "PB_FETCH_NUM": 202,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 807,
+        "magnification": 2.12448132780083,
+        "produced": 1714.4564315352698,
+        "offset": 108.11203319502076,
+        "origin": 140.11203319502076,
+        "phase": -0.11203319502075715
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1853,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1853,
+        "VDS_HSCALE": 481,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 202,
+        "IF_HB_ST2": 1007,
+        "PB_FETCH_NUM": 202,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 805,
+        "magnification": 2.128898128898129,
+        "produced": 1713.7629937629938,
+        "offset": 108.22245322245323,
+        "origin": 140.22245322245323,
+        "phase": -0.2224532224532254
+      }
+    },
+    {
+      "value": 32,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 32,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 479,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 203,
+        "IF_HB_ST2": 1006,
+        "PB_FETCH_NUM": 201,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 803,
+        "magnification": 2.137787056367432,
+        "produced": 1716.643006263048,
+        "offset": 108.4446764091858,
+        "origin": 140.4446764091858,
+        "phase": -0.44467640918580287
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 478,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 204,
+        "IF_HB_ST2": 1005,
+        "PB_FETCH_NUM": 201,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 801,
+        "magnification": 2.1422594142259412,
+        "produced": 1715.949790794979,
+        "offset": 108.55648535564853,
+        "origin": 139.55648535564853,
+        "phase": 0.4435146443514668
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 477,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 205,
+        "IF_HB_ST2": 1004,
+        "PB_FETCH_NUM": 200,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 799,
+        "magnification": 2.146750524109015,
+        "produced": 1715.2536687631027,
+        "offset": 108.66876310272536,
+        "origin": 139.66876310272536,
+        "phase": 0.33123689727463557
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 476,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 206,
+        "IF_HB_ST2": 1003,
+        "PB_FETCH_NUM": 200,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 797,
+        "magnification": 2.1512605042016806,
+        "produced": 1714.5546218487393,
+        "offset": 108.78151260504202,
+        "origin": 139.78151260504202,
+        "phase": 0.2184873949579753
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1853,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1853,
+        "VDS_HSCALE": 475,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 207,
+        "IF_HB_ST2": 1002,
+        "PB_FETCH_NUM": 199,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 795,
+        "magnification": 2.1557894736842105,
+        "produced": 1713.8526315789472,
+        "offset": 108.89473684210526,
+        "origin": 139.89473684210526,
+        "phase": 0.10526315789473983
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 473,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 208,
+        "IF_HB_ST2": 1001,
+        "PB_FETCH_NUM": 199,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 793,
+        "magnification": 2.1649048625792813,
+        "produced": 1716.76955602537,
+        "offset": 109.12262156448203,
+        "origin": 140.12262156448202,
+        "phase": -0.12262156448201722
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 472,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 209,
+        "IF_HB_ST2": 1000,
+        "PB_FETCH_NUM": 198,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 791,
+        "magnification": 2.169491525423729,
+        "produced": 1716.0677966101696,
+        "offset": 109.23728813559322,
+        "origin": 140.23728813559322,
+        "phase": -0.23728813559321793
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 471,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 210,
+        "IF_HB_ST2": 999,
+        "PB_FETCH_NUM": 198,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 789,
+        "magnification": 2.1740976645435244,
+        "produced": 1715.3630573248408,
+        "offset": 109.35244161358811,
+        "origin": 140.3524416135881,
+        "phase": -0.35244161358809833
+      }
+    },
+    {
+      "value": 31,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 31,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 470,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 211,
+        "IF_HB_ST2": 998,
+        "PB_FETCH_NUM": 197,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 787,
+        "magnification": 2.178723404255319,
+        "produced": 1714.655319148936,
+        "offset": 109.46808510638297,
+        "origin": 140.46808510638297,
+        "phase": -0.46808510638297207
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1853,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1853,
+        "VDS_HSCALE": 469,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 212,
+        "IF_HB_ST2": 997,
+        "PB_FETCH_NUM": 197,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 785,
+        "magnification": 2.183368869936034,
+        "produced": 1713.9445628997867,
+        "offset": 109.58422174840085,
+        "origin": 139.58422174840086,
+        "phase": 0.41577825159913573
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 467,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 213,
+        "IF_HB_ST2": 996,
+        "PB_FETCH_NUM": 196,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 783,
+        "magnification": 2.1927194860813706,
+        "produced": 1716.899357601713,
+        "offset": 109.81798715203426,
+        "origin": 139.81798715203428,
+        "phase": 0.1820128479657228
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1856,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1856,
+        "VDS_HSCALE": 466,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 214,
+        "IF_HB_ST2": 995,
+        "PB_FETCH_NUM": 196,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 781,
+        "magnification": 2.1974248927038627,
+        "produced": 1716.1888412017167,
+        "offset": 109.93562231759657,
+        "origin": 139.93562231759657,
+        "phase": 0.06437768240343189
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 465,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 215,
+        "IF_HB_ST2": 994,
+        "PB_FETCH_NUM": 195,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 779,
+        "magnification": 2.2021505376344086,
+        "produced": 1715.4752688172043,
+        "offset": 110.05376344086022,
+        "origin": 140.05376344086022,
+        "phase": -0.053763440860223
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 464,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 216,
+        "IF_HB_ST2": 993,
+        "PB_FETCH_NUM": 195,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 777,
+        "magnification": 2.206896551724138,
+        "produced": 1714.7586206896551,
+        "offset": 110.17241379310344,
+        "origin": 140.17241379310343,
+        "phase": -0.17241379310343063
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 463,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 217,
+        "IF_HB_ST2": 992,
+        "PB_FETCH_NUM": 194,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 775,
+        "magnification": 2.2116630669546438,
+        "produced": 1714.038876889849,
+        "offset": 110.2915766738661,
+        "origin": 140.2915766738661,
+        "phase": -0.2915766738661034
+      }
+    },
+    {
+      "value": 30,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 30,
+        "VDS_HB_ST": 1853,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1853,
+        "VDS_HSCALE": 462,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 218,
+        "IF_HB_ST2": 991,
+        "PB_FETCH_NUM": 194,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 773,
+        "magnification": 2.2164502164502164,
+        "produced": 1713.3160173160172,
+        "offset": 110.41125541125541,
+        "origin": 140.4112554112554,
+        "phase": -0.41125541125541076
+      }
+    },
+    {
+      "value": 29,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 29,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 460,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 219,
+        "IF_HB_ST2": 990,
+        "PB_FETCH_NUM": 193,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 771,
+        "magnification": 2.226086956521739,
+        "produced": 1716.3130434782609,
+        "offset": 110.65217391304347,
+        "origin": 139.65217391304347,
+        "phase": 0.3478260869565304
+      }
+    },
+    {
+      "value": 29,
+      "verdict": "corrupt",
+      "registers": {
+        "VDS_HB_SP": 29,
+        "VDS_HB_ST": 1855,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1855,
+        "VDS_HSCALE": 459,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 220,
+        "IF_HB_ST2": 989,
+        "PB_FETCH_NUM": 193,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 769,
+        "magnification": 2.2309368191721135,
+        "produced": 1715.5904139433553,
+        "offset": 110.77342047930284,
+        "origin": 139.77342047930284,
+        "phase": 0.22657952069715748
+      }
+    },
+    {
+      "value": 29,
+      "verdict": "clean",
+      "registers": {
+        "VDS_HB_SP": 29,
+        "VDS_HB_ST": 1854,
+        "VDS_DIS_HB_SP": 140,
+        "VDS_DIS_HB_ST": 1854,
+        "VDS_HSCALE": 458,
+        "VDS_VSCALE": 552,
+        "VDS_HSYNC_RST": 1919,
+        "VDS_VSYNC_RST": 1124,
+        "VDS_HS_ST": 13,
+        "VDS_HS_SP": 32,
+        "IF_HB_SP2": 221,
+        "IF_HB_ST2": 988,
+        "PB_FETCH_NUM": 192,
+        "PB_CAP_OFFSET": 276,
+        "PLLAD_MD": 2200,
+        "IF_HSYNC_RST": 1100
+      },
+      "derived": {
+        "capture": 767,
+        "magnification": 2.2358078602620086,
+        "produced": 1714.8646288209607,
+        "offset": 110.8951965065502,
+        "origin": 139.8951965065502,
+        "phase": 0.10480349344979345
+      }
+    }
+  ]
+}

@@ -31,14 +31,16 @@ from gbs_unit import (GEOMETRY_GATED, field_from, framing_to, get_json,
                       read_segment)
 import creep_window
 
-# What lastCapture() clamps against, mirrored from InputLine.h so a mark says
-# which of the two bounds it was against. docs/capture-limits.md
-WRITE_LIMIT_UNITS = 1125
-
-
 def clamp_state(state):
     """Where the capture window sits, and what the pan has left before the
-    stop meets lastCapture()."""
+    stop meets lastCapture().
+
+    The line's own wrap is the only bound. VideoSourceLine::lastCapture() is
+    `units - 2` and nothing else: the capture carries the whole line at every
+    divider, and the band at the end of it is the VDS line filter downstream of
+    the capture rather than a limit on it.
+    docs/investigations/the-tail-green-is-the-vds-line-filter.md
+    """
     hsync_rst = state.get("IF_HSYNC_RST")
     stop = state.get("IF_HB_ST2")
     if hsync_rst is None or stop is None:
@@ -46,8 +48,7 @@ def clamp_state(state):
                 "stop": stop, "clearance": None}
 
     line_units = hsync_rst + 1
-    wrap = line_units - 2 if line_units >= 2 else 0
-    last_capture = min(wrap, WRITE_LIMIT_UNITS)
+    last_capture = line_units - 2 if line_units >= 2 else 0
     return {"line_units": line_units, "last_capture": last_capture,
             "stop": stop, "clearance": last_capture - stop}
 

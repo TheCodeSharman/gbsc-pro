@@ -83,8 +83,9 @@ WORKING_CEILING_HZ = 129_600_000
 # So for a 320-pixel source the two limits bracket each other around 130-160 MHz,
 # and 129.6 MHz / 2301 px is the best measured state.
 #
-# **THE FIRMWARE'S FLOOR IS DERIVED, NOT THIS 500** -- Axis::scaleMin() is
-# Scale::Unity / maxMagnification. docs/firmware-geometry-engine.md.
+# **THE FIRMWARE'S FLOOR IS NOT THIS 500** -- the zoom stops at
+# Axis::minimumCapture(), the room the raster offers over Scale::Min.
+# docs/firmware-geometry-engine.md.
 HSCALE_FLOOR = 500
 MAX_MAGNIFICATION = 1024 / HSCALE_FLOOR
 

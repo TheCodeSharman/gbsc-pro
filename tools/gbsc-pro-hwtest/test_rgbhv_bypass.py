@@ -34,7 +34,7 @@ BYPASS_DIVIDER = 1856
 
 # ADC2DAC and OUT_SYNC_SEL are 1 in bypass and 0 on the scaling path. The scale
 # registers are NOT the tell: bypass leaves them on the last scaled load's.
-PATH = ("DAC_RGBS_ADC2DAC", "OUT_SYNC_SEL", "GBS_OPTION_SCALING_RGBHV",
+PATH = ("DAC_RGBS_ADC2DAC", "OUT_SYNC_SEL",
         "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL", "PLLAD_MD")
 
 
@@ -66,8 +66,12 @@ def in_bypass(at):
 
 
 def scaling(at):
-    return (at["DAC_RGBS_ADC2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
-            and at["GBS_OPTION_SCALING_RGBHV"] == 1)
+    # Whether scaling RGBHV is in force is FIRMWARE state, held in PresetLoad.
+    # It used to be a bit at s1_2c, and asserting that bit here outlived the
+    # firmware writing it: every one of these tests failed on the marker alone
+    # while the route bits read correct. What the chip can still answer is which
+    # route the video takes, which is the question these tests ask.
+    return at["DAC_RGBS_ADC2DAC"] == 0 and at["OUT_SYNC_SEL"] == 0
 
 
 def at_mode(host, where, command, lines):
@@ -139,3 +143,30 @@ def test_the_preference_still_reaches_bypass_and_still_leaves_it(
     back = settled(host)
     assert scaling(back), (
         f"a {TALL_LINES}-line source could not leave bypass: {back}")
+
+
+@pytest.mark.source_mode
+def test_a_bypassed_source_that_slows_leaves_bypass_on_its_own(
+        request, host, preset_save, tall_source):
+    """A source that drops below the floor WHILE BYPASSED has to be let go.
+
+    The rate is measured on the way into bypass and nothing measures again
+    there, so a re-ask that consults the held rate keeps answering with the mode
+    bypass was entered on. The source then slows to 15 kHz underneath it, the
+    branch that would leave never fires, and the panel shows no signal at all --
+    with every register self-consistent and the count plainly reading 311.
+    """
+    where = request.config.getoption("--modeserv")
+    get(host, "/uc?x")
+    try:
+        assert in_bypass(settled(host)), (
+            "the preference did not reach bypass, so the slowing half is untested")
+
+        at = at_mode(host, where, BENCH_MODE, BENCH_LINES)
+        assert scaling(at), (
+            f"a bypassed source that slowed to {BENCH_LINES} lines stayed in "
+            f"bypass, which the display shows as no signal: {at}")
+    finally:
+        get(host, "/uc?x")
+        mode_serv(where, BENCH_MODE)
+        time.sleep(SETTLE_SECONDS)

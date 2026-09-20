@@ -71,12 +71,6 @@ GEOMETRY_FIELDS = [
 PAN_STEP_PX = 8
 ZOOM_STEP_PX = 8
 
-# InputLine::WriteLimitUnits. Past it the capture path writes blanking rather
-# than video, so it bounds the tail of the capture window and, through
-# SourceMeasurement::recommendedDivider(), the divider itself. docs/capture-limits.md
-WRITE_LIMIT_UNITS = 1125
-
-
 # The smallest change of capture POSITION each axis's hardware acts on. Mirrors
 # Tv5725::Axis::captureGranularity. Horizontally 2: the low bit of IF_HB_SP2 does
 # nothing, measured 2026-08-17 by toggling the capture start and watching the
@@ -354,8 +348,9 @@ def press(host, probe, command, pixels=None, timeout=6.0):
 
 
 # How many presses it can take to walk a control from wherever a test found it
-# to its stop. Not a property of the control: the zoom floor is raster / 4 and
-# the raster is COMPUTED, so the travel moves when the output does. High enough
+# to its stop. Not a property of the control: the zoom floor is the room the
+# raster offers over Scale::Min, and the raster is COMPUTED, so the travel moves
+# when the output does. High enough
 # that saturating is what ends the loop, and asserted at each call so a limit
 # which has fallen behind fails loudly instead of testing a half-zoomed picture.
 ZOOM_PRESSES_TO_A_STOP = 120
@@ -370,9 +365,9 @@ def press_until_saturated(host, probe, command, limit=24):
     a finite range and reaching it is correct behaviour, not a fault.
 
     That range is not a constant, which is why this counts rather than assuming.
-    AxisHorizontal magnifies at most Scale::Unity / Scale::Min, so the smallest
-    capture that fills the raster is ceil(raster / that). The raster is COMPUTED,
-    so a wider one leaves less zoom travel and no press count can be hardcoded.
+    The zoom stops at Axis::minimumCapture(), the room the raster offers over
+    Scale::Min. The raster is COMPUTED, so a wider one leaves less zoom travel
+    and no press count can be hardcoded.
     """
     spec = WATCH[command]
     landed = 0
@@ -825,15 +820,12 @@ def test_a_zoomed_out_capture_takes_the_tail_down_to_whichever_bound_is_lower(
     can be captured -- that is the reach which recovers active video the 0.76
     default active fraction crops -- and stop there.
 
-    Two bounds meet at the tail and the lower one wins. The wrap is units - 2,
-    not units - 1: a stop ON the reset value stops the input formatter producing
-    pixels and freezes the picture, so InputLine stands off by one more. The
-    write limit is the other: past it the capture path writes blanking instead
-    of video, which destroys picture rather than showing it, and SourceMeasurement caps
-    the divider so an ordinary line stays inside it.
+    The wrap is units - 2, not units - 1: a stop ON the reset value stops the
+    input formatter producing pixels and freezes the picture, so InputLine
+    stands off by one more.
     See InputLine::lastCapture() and docs/capture-limits.md."""
     units = framed["IF_HSYNC_RST"] + 1
-    reach = min(units - 2, WRITE_LIMIT_UNITS)
+    reach = units - 2
 
     landed = press_until_saturated(host, probe, "h", limit=ZOOM_PRESSES_TO_A_STOP)
     assert landed < ZOOM_PRESSES_TO_A_STOP, (
@@ -1796,14 +1788,19 @@ SAMPLING_DEC2_BYPS = field_spec("DEC2_BYPS")
 
 
 def _expected_divider(lines, oversample, field_rate):
-    """SourceMeasurement::recommendedDivider(), in Python."""
+    """The crossover row's ceiling at this oversampling, backed off.
+
+    An approximation of SamplingClock::recommendedDivider() rather than a
+    second copy of it: it takes the oversampling the decimators report instead
+    of searching the ratios, and it reads the row ceiling off the rating
+    directly. The caller's tolerance is four percent and the two agree inside
+    one, while the fault this catches is out by twenty-seven.
+    """
     line_rate = int(field_rate * lines)
     largest = min(SAMPLING_MAX_RATE_HZ // (line_rate * oversample),
                   SAMPLING_DIVIDER_MAX)
     backed = (largest * SAMPLING_RECOMMENDED_PERCENT) // 100
-    # The second ceiling: the IF halves the divider, so twice the write limit is
-    # the longest line the capture path writes to the end of.
-    return min(backed, WRITE_LIMIT_UNITS * 2) & ~1
+    return backed & ~1
 
 
 def test_the_sampling_divider_is_solved_from_the_source_not_inherited(host, source):

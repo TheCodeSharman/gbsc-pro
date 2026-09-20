@@ -25,10 +25,12 @@ def test_a_mark_records_how_far_the_stop_is_from_the_clamp():
     assert where["clearance"] == 116
 
 
-def test_the_clamp_is_the_write_bound_when_that_is_lower_than_the_wrap():
+def test_the_line_wrap_is_the_only_bound_however_long_the_line():
+    # A write limit was carried here as a second bound and there is none: the
+    # capture reaches the end of the line at every divider.
     where = creep_pan.clamp_state(a_state(hsync_rst=1300))
 
-    assert where["last_capture"] == creep_pan.WRITE_LIMIT_UNITS
+    assert where["last_capture"] == 1299
 
 
 def test_a_step_waits_for_the_engine_to_re_solve_rather_than_sleeping():
