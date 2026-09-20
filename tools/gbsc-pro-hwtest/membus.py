@@ -3,7 +3,7 @@
 
 The HSCALE tearing is a beat between the capture write bursts and the playback
 read bursts over one SDRAM bus.
-docs/investigations/hscale-tearing-characterisation.md. PB_FETCH_NUM is the
+docs/investigations/horizontal-scale-corruption.md. PB_FETCH_NUM is the
 playback burst SIZE; these are the settings deciding how the bus is shared in the
 first place -- the clock it runs at, who wins an arbitration, and when each side
 asks -- and every one is sitting at whatever an upstream preset table left.

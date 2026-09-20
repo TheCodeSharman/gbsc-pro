@@ -55,7 +55,7 @@ FIELDS = [
     # The OUTPUT hsync pulse: a third quantity that flips the fault. The same
     # pulse clears left-hand corruption that survives everything else, moved from
     # 10 to 62..77.
-    # docs/investigations/hscale-tearing-characterisation.md
+    # docs/investigations/horizontal-scale-corruption.md
     "VDS_HS_ST", "VDS_HS_SP",
     # The line double and memory FIFO parity controls. Present because the fault
     # under investigation alternates line to line, and these are the only
@@ -85,7 +85,7 @@ FIELDS = [
 # runs until the tearing completely stops, and near-misses along the way do not
 # end it. `almost` records them inside the interval, because they may be the band
 # structure the headroom note saw and losing them means sweeping again.
-# docs/investigations/hscale-tearing-characterisation.md
+# docs/investigations/horizontal-scale-corruption.md
 VERDICTS = ("clean", "onset", "almost", "peak", "end", "glitch")
 
 

@@ -5,7 +5,7 @@ An EVEN `VDS_HB_ST - VDS_HB_SP` shears the picture and an odd one is clean, so
 `floor(originOffset + produced)` and carries no dependence on `VDS_HB_SP`, which
 is why stepping the zoom used to shear on about half the steps.
 
-`investigations/the-shear-follows-the-produced-widths-parity.md`
+`investigations/horizontal-scale-corruption.md`
 
 Read-only unless `--source` is given, which adds the zoom sweep. The host suite
 proves the arithmetic; what this proves is that the bias reaches the registers

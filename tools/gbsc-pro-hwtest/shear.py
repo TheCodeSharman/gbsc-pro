@@ -114,9 +114,14 @@ def floor_scale(state):
     multiples of 64 that do not divide 25600, and at 400, which divides 25600
     and is not a multiple of 64.
 
+    The zoom cannot reach this regime any more -- Scale::Min stops it -- so this
+    rule governs restored framings alone.
+    docs/investigations/horizontal-scale-corruption.md
+
     The corner is refuted and must not be reinstated: `VDS_DIS_HB_SP` was jogged
     four units either side of an exact write origin and the picture stayed clean
-    at all 11 marks. docs/known-issues.md
+    at all 11 marks.
+    docs/investigations/horizontal-scale-corruption.md
     """
     scale = state.get("VDS_HSCALE")
     if not scale:

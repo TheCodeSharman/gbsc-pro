@@ -15,7 +15,7 @@ against and what the zoom sweep by construction cannot give.
 ## What it is testing
 
 `PB_FETCH_NUM` 256 -> 200 cleared the tearing on 2026-08-09
-(docs/investigations/hscale-tearing-characterisation.md). The fault is a beat between the
+(docs/investigations/horizontal-scale-corruption.md). The fault is a beat between the
 capture write bursts and the playback read bursts on the SDRAM bus, and no
 single fetch value is clean at every zoom, because the write rate sweeps 70%
 with the capture width while the read rate stays put.
