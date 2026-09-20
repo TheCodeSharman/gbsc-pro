@@ -88,8 +88,8 @@ TEST_CASE("the tolerance is the caller's, and the same pair answers both ways")
     CHECK(VideoSignal::ratesAgree(15625u, 15624u, 1));
     CHECK_FALSE(VideoSignal::ratesAgree(15625u, 18100u, 50));
 
-    // 1880 and 1954 are 480p's divider and 576p's on the bench source: inside
+    // 1876 and 1952 are 480p's divider and 576p's on the bench source: inside
     // the 5% a measurement is forgiven, and not one part of it noise.
-    CHECK(VideoSignal::ratesAgree(1880u, 1954u, 50));
-    CHECK_FALSE(VideoSignal::ratesAgree(1880u, 1954u, 2));
+    CHECK(VideoSignal::ratesAgree(1876u, 1952u, 50));
+    CHECK_FALSE(VideoSignal::ratesAgree(1876u, 1952u, 2));
 }

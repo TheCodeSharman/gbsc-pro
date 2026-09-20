@@ -200,7 +200,7 @@ static const uint16_t VesaDivider = RasterDivider;
 // which is the previous load's.
 static void checkBenchAnchors()
 {
-    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1919);
+    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
     CHECK(Adc::PLLAD_MD::read() == BenchDivider);
     CHECK(InputFormatter::IF_HSYNC_RST::read() == BenchDivider / 2);
 }

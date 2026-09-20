@@ -212,7 +212,7 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 582);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 583);
     CHECK(VideoProcessor::VDS_VSCALE::read() == 552);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
@@ -224,7 +224,7 @@ static void checkBenchGeometry()
     CHECK(VideoProcessor::VDS_SRESET::read() == 1);
 
     // The raster the engine solved, one less than the total on each axis.
-    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1919);
+    CHECK(VideoProcessor::VDS_HSYNC_RST::read() == 1915);
     CHECK(VideoProcessor::VDS_VSYNC_RST::read() == 1124);
     CHECK(VideoProcessor::VDS_HS_ST::read() == 0);
     CHECK(VideoProcessor::VDS_HS_SP::read() == 32);
@@ -241,7 +241,7 @@ static void checkBenchGeometry()
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
     // captured, which is memory the previous mode left behind.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1810);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1808);
     CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
 
     // And the horizontal window is an ODD number of units wide, which is what
@@ -1375,7 +1375,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
 {
     // The divider is bounded by the CAPTURE THE RASTER CAN SHOW, and the raster
     // is the output's -- so two outputs that agree about the doubling still want
-    // different dividers. 480p affords 1880 units and 576p 1954, both undoubled
+    // different dividers. 480p affords 1876 units and 576p 1952, both undoubled
     // from a 311 line source.
     //
     // Measured on the bench, both directions: switching between the two left
@@ -1390,7 +1390,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     engine.setOutputMode(&Mode480p);
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(dividerInForce() == 1880);
+    REQUIRE(dividerInForce() == 1876);
 
     // The output alone. Nothing tells the engine the source moved, because it
     // has not -- which is the whole of what /uc?<key> does.
@@ -1398,7 +1398,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
         pollOnce(acquisition);
 
-    CHECK(dividerInForce() == 1954);
+    CHECK(dividerInForce() == 1952);
 }
 
 TEST_CASE("the source is measured through a known divider, not the last mode's")

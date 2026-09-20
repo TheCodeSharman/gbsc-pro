@@ -365,8 +365,8 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
     solveLineDoubling(sampling_.sourceLines());
 
     // The divider is bounded by the capture the RASTER can show, so the output
-    // moves it as much as the doubling does -- 480p affords 1880 ADC samples of
-    // this source's line and 576p 1954, both undoubled. Only where one of the
+    // moves it as much as the doubling does -- 480p affords 1876 ADC samples of
+    // this source's line and 576p 1952, both undoubled. Only where one of the
     // two moved: the divider is re-DERIVED from the rate already held, never
     // re-measured, and writing it re-latches the ADC PLL.
     if ((mode != previous || lineDoubled_ != wasDoubled)
@@ -436,7 +436,7 @@ bool VideoPath::installSampling(SamplingReason reason)
     //
     // IT IS A TOLERANCE ON A MEASUREMENT AND NOTHING ELSE. The OUTPUT is a
     // choice and carries no jitter, so a divider sized for one is compared
-    // exactly: 480p's 1880 and 576p's 1954 are 3.9% apart, inside the tolerance
+    // exactly: 480p's 1876 and 576p's 1952 are 4.1% apart, inside the tolerance
     // and no part of it noise, and forgiven there the two SD modes share
     // whichever clock was arrived from.
     const uint32_t rate = sampling_.lineRateHz();

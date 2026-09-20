@@ -36,7 +36,8 @@ SourceKey::SourceKey(uint16_t sourceLines, float fieldRateHz)
     if (!VideoSignal::isVideo(sourceLines, fieldRateHz))
         return;
     lines_ = sourceLines;
-    rateHz_ = floorf(fieldRateHz + 0.5f);
+    rateHz_ = floorf(fieldRateHz * (float)RateStepsPerHz + 0.5f)
+              / (float)RateStepsPerHz;
 }
 
 bool SourceKey::valid() const { return lines_ != 0 && rateHz_ > 0.0f; }

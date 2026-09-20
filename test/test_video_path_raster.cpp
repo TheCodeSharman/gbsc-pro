@@ -120,7 +120,7 @@ TEST_CASE("a settled source gets the computed raster, not the table's")
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
-    CHECK(horizontalTotalWritten() == 1920);
+    CHECK(horizontalTotalWritten() == 1916);
 
     // The twelve tables ship 1445 (PAL) and 1602 (NTSC) at this frame height.
     // Landing on either would mean the table won, which is the whole failure
@@ -153,7 +153,7 @@ TEST_CASE("an unsettled line count is waited out, not solved against")
         // on 81.48 MHz to match the wrong one.
         setSourceLines(311);
         REQUIRE(pollUntilSolved(settled.acquisition));
-        CHECK(horizontalTotalWritten() == 1920);
+        CHECK(horizontalTotalWritten() == 1916);
 
         // VDS_VSYN_SIZE1/2 are the vertical totals the frame-rate selector picks
         // between, and VDS_FR_SELECT never alternates, so both are the frame.
@@ -173,7 +173,7 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
-    REQUIRE(horizontalTotalWritten() == 1920);
+    REQUIRE(horizontalTotalWritten() == 1916);
 
     // The same 311-line source now reading 60 Hz is the transient this guard
     // exists for. A raster solved at the wrong rate is out by the ratio of the
@@ -182,12 +182,12 @@ TEST_CASE("a field rate that moves without the line count is waited out too")
     settled.engine.setOutputMode(&Mode1080p);
     settled.engine.inputTimingsChanged(4);
     CHECK_FALSE(pollUntilSolved(settled.acquisition));
-    CHECK(horizontalTotalWritten() == 1920);
+    CHECK(horizontalTotalWritten() == 1916);
 
     SUBCASE("and the poll after the rate returns lands it") {
         g_fieldRate = 50.08f;
         REQUIRE(pollUntilSolved(settled.acquisition));
-        CHECK(horizontalTotalWritten() == 1920);
+        CHECK(horizontalTotalWritten() == 1916);
     }
 }
 
@@ -270,7 +270,7 @@ TEST_CASE("the raster follows the key, not the reading behind it")
     // And it is this source's raster, not the one the engine came in holding.
     // Asserting only that two solves agree is passed by two stale values.
     CHECK(first != 1920);
-    CHECK(first == 1600);
+    CHECK(first == 1589);
 }
 
 TEST_CASE("a solve points the part at the clock source that can serve the raster")
@@ -444,7 +444,7 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
     // Not half of 2508: undoubled, one IF unit is one ADC sample. What binds
     // is the 480p raster -- Axis::maximumCapture of it, rounded even -- and
     // not a constant of the part.
-    CHECK(Wire.field(5, 0x12, 0, 12) == 1880);
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1876);
     CHECK(Wire.field(1, 0x0E, 0, 11) <= InputFormatter::LineCounterMax);
 }
 

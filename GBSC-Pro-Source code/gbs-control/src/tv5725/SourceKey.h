@@ -25,6 +25,20 @@ namespace Tv5725 {
 // The frame time lock steers out what is left.
 extern const uint16_t SourceIdentityPerMille;
 
+// What the stored rate is quantised to, in steps per hertz. The key is what
+// the output raster is generated from, so the quantisation lands in the raster
+// whole: at a whole hertz, 60.317 is stored as 60 and the raster is 0.53%
+// short, which is 11 px of a 2050 px line and went into every absolute
+// geometry measured against it.
+//
+// Quantised at all so the raster is SOLVED ONCE per source, rather than
+// re-solved on a reading that moved in its last digit. How fine that may be is
+// a property of the instrument: measured with SamplingLog::rates(), 250
+// samples a mode, the field rate is repeatable to 0.000% at both 311 x 50 and
+// 627 x 60, so hundredths cost nothing.
+// ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
+const uint16_t RateStepsPerHz = 100;
+
 class SourceKey {
 public:
     SourceKey();

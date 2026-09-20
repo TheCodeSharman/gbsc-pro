@@ -51,15 +51,21 @@ TEST_CASE("readings either side of a whole hertz are still the same source")
     CHECK(SourceKey(627, 60.38f).rateHz() != SourceKey(627, 60.72f).rateHz());
 }
 
-TEST_CASE("the key carries a whole number of hertz, not the reading")
+TEST_CASE("the key is quantised as finely as the instrument is repeatable")
 {
     // The timings are generated FROM the key, so the key is what has to be
-    // repeatable. A measurement carries a wandering fraction -- the bench reads
-    // 800x600@60 at 60.38 and 60.72 across mode changes -- and a raster solved
-    // from it moves by 11 px between two solves of one unchanged source.
-    CHECK(SourceKey(311, 50.08f).rateHz() == 50.0f);
-    CHECK(SourceKey(627, 60.38f).rateHz() == 60.0f);
-    CHECK(SourceKey(524, 59.94f).rateHz() == 60.0f);
+    // repeatable -- and repeatable is all it has to be. Rounding to a whole
+    // hertz bought that at the cost of the raster: 60.317 stored as 60 is
+    // 0.53%, which is 11 px of a 2050 px line, and it went into every absolute
+    // geometry measured against that raster.
+    //
+    // Measured with SamplingLog::rates(), 250 samples a mode: 50.081 Hz and
+    // 60.317 Hz, every reading identical. The instrument is repeatable to
+    // better than 0.002%, so hundredths cost no repeatability at all.
+    // ../docs/investigations/the-rate-tolerance-answered-five-questions.md
+    CHECK(SourceKey(311, 50.081f).rateHz() == doctest::Approx(50.08f));
+    CHECK(SourceKey(627, 60.317f).rateHz() == doctest::Approx(60.32f));
+    CHECK(SourceKey(524, 59.94f).rateHz() == doctest::Approx(59.94f));
 }
 
 TEST_CASE("a rate change too small to be movement does not change identity")
