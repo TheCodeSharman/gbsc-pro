@@ -602,8 +602,11 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     const long start = Wire.field(3, 0x11, 4, 12);         // VDS_DIS_HB_SP
     const long stop = Wire.field(3, 0x10, 0, 12);          // VDS_DIS_HB_ST
 
-    // The back porch is a time, so it is the same count at either raster.
-    CHECK(start == raster.activeStart);
+    // The back porch is a time, so it is the same count at either raster. The
+    // aperture opens one capture unit past it, on the first unit fully written.
+    const long reach = 1 + Scale::Unity / Wire.field(3, 0x16, 0, 10);
+    CHECK(start >= raster.activeStart);
+    CHECK(start <= raster.activeStart + reach);
 
     SUBCASE("and the far edge sits on the mode's front porch, not short of it") {
         // Within ONE SCALE STEP, not one pixel: the window's far edge is a
@@ -630,8 +633,9 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     SUBCASE("vertically too, within the line the scale can actually resolve") {
         const long lines = Wire.field(3, 0x13, 0, 11) - Wire.field(3, 0x14, 4, 11);
         const long wanted = raster.activeLinesStop - raster.activeLinesStart;
+        // Two reaches: the aperture is inset one capture unit at EACH end.
         const long reach = 1 + Scale::Unity / Wire.field(3, 0x17, 4, 10);
-        CHECK(lines >= wanted - 1 - reach);
+        CHECK(lines >= wanted - 1 - 2 * reach);
         CHECK(lines <= wanted);
     }
 }

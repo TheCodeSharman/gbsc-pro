@@ -226,7 +226,21 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
         && displayStart > placed.corner())
         --displayStart;
 
-    solved.display_ = BlankingTiming(placed.corner(), displayStart);
+    // The near end mirrors the far one. The write origin marks where content
+    // first appears, which is the first unit the capture only PARTLY filled --
+    // it was measured by creeping until the picture started. One capture unit
+    // later is the first unit fully written, and an aperture opening before it
+    // shows memory the previous mode left behind.
+    // docs/investigations/moving-write-origin.md
+    int32_t displayStop = (int32_t)ceilf((float)placed.windowStop()
+                                         + originOffset(scale.magnification())
+                                         + scale.magnification());
+    if (displayStop < placed.corner())
+        displayStop = placed.corner();
+    if (displayStop > displayStart)
+        displayStop = displayStart;
+
+    solved.display_ = BlankingTiming(displayStop, displayStart);
 
     // The two windows share a far edge: allocate nothing spare. Memory past the
     // picture is memory the playback stage still walks, and taking the whole

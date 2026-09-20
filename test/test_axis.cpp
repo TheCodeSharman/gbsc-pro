@@ -246,7 +246,12 @@ TEST_CASE("the display window opens after the picture starts, not on it")
     const PictureOrigin placed = AxisHorizontal.placePicture(
         Scale(474).produced(Capture), Raster, Scale(474).magnification());
 
-    CHECK(solved.display().stop() == placed.corner());
+    // One capture unit past the modelled corner: the origin marks where content
+    // first appears, and that unit is only partly written.
+    CHECK(solved.display().stop()
+          > placed.corner());
+    CHECK((float)solved.display().stop()
+          <= (float)placed.corner() + Scale(474).magnification() + 1.0f);
 
     SUBCASE("the memory window still opens where the write does") {
         // It is the DISPLAY that must not show the gap. Opening the memory
@@ -326,9 +331,8 @@ TEST_CASE("the solver places every output register")
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
         // The MEMORY window opens where the write does; the display window
-        // opens a near margin later, because the write origin is modelled and
-        // the model runs short.
-        CHECK(solved.display().stop() == 102);
+        // opens one capture unit later, on the first unit fully written.
+        CHECK(solved.display().stop() == 104);
         CHECK(solved.memory().stop() == AxisHorizontal.windowStopMin());
     }
 
@@ -347,10 +351,11 @@ TEST_CASE("the solver places every output register")
         // back a margin at each end -- the write origin's at the near one, and
         // at the far one the capture unit the scaler interpolates past the last
         // one written, plus the unit flooring costs.
-        const int32_t picture =
-            solved.display().stop() + (int32_t)solved.produced();
-        CHECK(solved.display().start() <= picture);
-        CHECK((float)(picture - solved.display().start())
+        const float picture = (float)solved.memory().stop()
+                            + AxisHorizontal.originOffset(scale.magnification())
+                            + solved.produced();
+        CHECK((float)solved.display().start() <= picture);
+        CHECK(picture - (float)solved.display().start()
               <= scale.magnification() + 1.0f);
     }
 
@@ -656,7 +661,9 @@ TEST_CASE("the display window is the picture, at both ends")
     const PictureOrigin placed = AxisHorizontal.placePicture(
         scale.produced(Capture), Raster, scale.magnification());
 
-    CHECK(solved.display().stop() == placed.corner());
+    CHECK(solved.display().stop() > placed.corner());
+    CHECK((float)solved.display().stop()
+          <= (float)placed.corner() + scale.magnification() + 1.0f);
 
     const int32_t picture = placed.corner() + (int32_t)solved.produced();
     CHECK(solved.display().start() <= picture);
@@ -778,6 +785,67 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
             const AxisSolution h = AxisHorizontal.solve(998, scale, 1919);
             if (h.usable())
                 REQUIRE(lastCaptureUnitRead(AxisHorizontal, scale, h) <= 997.0f);
+        }
+    }
+}
+
+// The write origin marks where content first APPEARS, which is the first unit
+// the capture partly filled -- `docs/investigations/moving-write-origin.md`
+// found it by creeping until the picture started. The first unit fully written
+// is one capture unit later, so an aperture opening on the origin shows a unit
+// carrying whatever the previous mode left in that memory.
+//
+// Crept on the bench at three magnifications, `VDS_DIS_HB_SP` raised one unit
+// at a time until the line down the left edge cleared:
+//
+//   magnification 1.13, write origin 140.32 -> first clean corner 142
+//   magnification 1.17, write origin 140.19 -> first clean corner 142
+//   magnification 2.17, write origin 140.12 -> first clean corner 143
+//
+// The third is what makes it a capture unit rather than an output pixel: a
+// fixed one-pixel margin predicts 142 there.
+static float firstCaptureUnitRead(const Axis &axis, Scale scale,
+                                  const AxisSolution &solved)
+{
+    return ((float)solved.display().stop() - (float)solved.memory().stop()
+            - axis.originOffset(scale.magnification()))
+         * (float)scale.reg() / (float)Scale::Unity;
+}
+
+// The inset lands exactly on one capture unit where the window stop is on its
+// floor, and originOffset() is computed in float, so the equality case loses a
+// ulp. A thousandth of a unit is not a framing defect.
+static const float UnitSlack = 1e-3f;
+
+TEST_CASE("the aperture's first unit is interpolated from captured memory")
+{
+    SUBCASE("horizontally, at the three crept magnifications") {
+        const AxisSolution a = AxisHorizontal.solve(1232, Scale(904), 1600);
+        CHECK(firstCaptureUnitRead(AxisHorizontal, Scale(904), a)
+              >= 1.0f - UnitSlack);
+
+        const AxisSolution b = AxisHorizontal.solve(1195, Scale(877), 1600);
+        CHECK(firstCaptureUnitRead(AxisHorizontal, Scale(877), b)
+              >= 1.0f - UnitSlack);
+
+        const AxisSolution c = AxisHorizontal.solve(917, Scale(473), 1600);
+        CHECK(firstCaptureUnitRead(AxisHorizontal, Scale(473), c)
+              >= 1.0f - UnitSlack);
+    }
+
+    SUBCASE("across the zoom range on both axes") {
+        for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
+            const Scale scale(reg);
+
+            const AxisSolution v = AxisVertical.solve(582, scale, 1124);
+            if (v.usable())
+                REQUIRE(firstCaptureUnitRead(AxisVertical, scale, v)
+                        >= 1.0f - UnitSlack);
+
+            const AxisSolution h = AxisHorizontal.solve(998, scale, 1919);
+            if (h.usable())
+                REQUIRE(firstCaptureUnitRead(AxisHorizontal, scale, h)
+                        >= 1.0f - UnitSlack);
         }
     }
 }

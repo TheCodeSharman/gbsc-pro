@@ -494,8 +494,12 @@ TEST_CASE("a capture the output cannot show is bounded, not cropped")
     const long window = Wire.field(3, 0x13, 0, 11) - Wire.field(3, 0x14, 4, 11);
     const long produced = capture * Scale::Unity / Wire.field(3, 0x17, 4, 10);
 
+    // The aperture is inset one capture unit at each end, so it is that much
+    // narrower than the picture produced.
+    const long reach = 1 + Scale::Unity / Wire.field(3, 0x17, 4, 10);
+
     REQUIRE(window > 0);
-    CHECK(produced <= window + 3);
+    CHECK(produced <= window + 3 + 2 * reach);
 
     SUBCASE("and the control has somewhere to go in both directions") {
         const long before = solved.engine.extentUnitsOn(AxisVertical);
@@ -528,8 +532,12 @@ TEST_CASE("zooming out stops where the raster stops, on the horizontal axis too"
     const long window = Wire.field(3, 0x10, 0, 12) - Wire.field(3, 0x11, 4, 12);
     const long produced = capture * Scale::Unity / Wire.field(3, 0x16, 0, 10);
 
+    // The aperture is inset one capture unit at each end, so it is that much
+    // narrower than the picture produced.
+    const long reach = 1 + Scale::Unity / Wire.field(3, 0x16, 0, 10);
+
     REQUIRE(window > 0);
-    CHECK(produced <= window + 3);
+    CHECK(produced <= window + 3 + 2 * reach);
 
     SUBCASE("and the control has somewhere to go back to") {
         const long before = solved.engine.extentUnitsOn(AxisHorizontal);

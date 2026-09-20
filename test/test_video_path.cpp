@@ -256,8 +256,10 @@ static void checkBenchGeometry()
     // porch. Below 41 the window would open with vsync still asserted.
     CHECK(VideoProcessor::VDS_HB_SP::read() == 40);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 39);
-    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 140);
-    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 41);
+    // One capture unit past the porch on each axis: the write origin marks
+    // where content first appears, and that unit is only partly written.
+    CHECK(VideoProcessor::VDS_DIS_HB_SP::read() == 142);
+    CHECK(VideoProcessor::VDS_DIS_VB_SP::read() == 43);
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VS_SP::read());
 
     // The playback burst, sized from the capture width so the fetch rate does
