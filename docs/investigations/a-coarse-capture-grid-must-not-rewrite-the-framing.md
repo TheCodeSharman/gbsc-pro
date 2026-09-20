@@ -59,7 +59,41 @@ frame, 480p comes out at 0.980 horizontally and 576p at 0.962 -- enough, at a
 framing set tight to the panel, to bring the source's own border on screen at
 one edge and lose a column at the other.
 
-Anchoring the framing to `units()`, the whole source line, would remove it:
-1100 against 1881 horizontally and 624 against 312 vertically are the same span
-of source in both scan modes. It changes what every stored record means, so it
-needs the file versioned and old records converted on load.
+## Anchored to the line instead
+
+The framing is a proportion of `units()` now -- the whole source line, 1100
+against 1881 horizontally and 624 against 312 vertically, which is the same
+span of source in either scan mode. `defaultWidth()` was already anchored
+there, so the tuned path and the untuned one agree.
+
+The reachable window is a subset of what a framing can name, so the bound
+reaches the CONTROLS: each gives back at it in its own quantity, a pan stopping
+where it is and a zoom stopping widening. Nothing in the placement can decide
+that, because it does not know which control ran.
+
+Measured with one framing, 1080p -> 480p -> 576p -> 1080p:
+
+| | capture window, as a fraction of the line |
+|---|---|
+| 1080p | 0.2016..0.8265 horizontally, 0.1010..0.9231 vertically |
+| 480p, 576p | 0.2015..0.8262, 0.1026..0.9231 |
+
+The horizontal agrees to 0.0003 where it was 0.015 adrift. The vertical start
+differs by 0.0016, half a source line, which is what a whole-line grid can
+express.
+
+The stored numbers changed meaning with it -- `framing.txt` and the slots are
+ten-thousandths of the LINE -- and no migration was written, because nothing
+has shipped.
+
+## What is still open, and it is not the capture
+
+With the capture matching, the PICTURE at 480p and 576p is still about 1.3x
+the magnification of 1080p's: photographed at one framing and fitted for scale,
+480p lands at 0.760 of the 1080p frame horizontally and 576p at 0.715. The
+capture is the same part of the source in all three, so this is output-side --
+the same class as the active window being a fraction of the line rather than a
+porch time, and unresolved for these two modes.
+
+What decides it is what the television reports it is receiving at each, which
+is the datum that settled the 1024p case.
