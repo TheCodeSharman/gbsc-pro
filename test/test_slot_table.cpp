@@ -13,7 +13,8 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SlotTable.h"
 
-float getSourceFieldRate(bool) { return 0.0f; }
+#include "DebugPinStub.h"
+uint32_t debugPinPulseTicks() { return ticksForHz(0.0f); }
 void tv5725Log(const char *) {}
 
 using namespace Tv5725;
