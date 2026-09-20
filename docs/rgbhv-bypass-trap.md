@@ -1,10 +1,22 @@
 # RGBHV, scaled or bypassed
 
-**The line count decides nothing. The preference does.** `preferScalingRgbhv`
-on — the default — scales an RGBHV source whatever its height; off puts it in
-bypass. Both directions are covered by
-`tools/gbsc-pro-hwtest/test_rgbhv_bypass.py`, which needs `--modeserv` to drive
-the source across the range.
+**THE MEASUREMENT DECIDES.** `SourceMeasurement::bypassSuitsCount()` passes a
+source through when the line doubler is not needed for it and its line rate
+reaches the sink — 640x480 and up, which is everything a sink taking HDMI is
+required to accept — and scales everything below. The sync watcher's steering
+reads it in both directions, so a source that changes mode across the boundary
+crosses on its own.
+
+**Scaling is what costs the picture, which is why the boundary sits there.** The
+capture's write limit bounds a line at about 1024 IF units however it is placed,
+so the sampling divider has to fall as the line rate rises: a VESA-class source
+is softer scaled than handed over untouched. `capture-limits.md`.
+
+`preferScalingRgbhv` is the user's override, defaulting off, and no longer the
+decision. A global boolean cannot express a per-source choice and it is due to
+be replaced by one stored against the `SourceKey` the framing uses.
+`tools/gbsc-pro-hwtest/test_rgbhv_bypass.py` covers both directions and needs
+`--modeserv` to drive the source across the range.
 
 ## The gate that used to decide, and why it is gone
 
@@ -32,7 +44,6 @@ at 800x600 is **VTOTAL 627** and trapped on every boot.
 | `STATUS_SYNC_PROC_HTOTAL` | 1856 | 1124, so the divider latched |
 | `VDS_HSCALE` / `VDS_VSCALE` | 557 / 533, the last scaled load's | 594 / 549, a solve |
 | `HPERIOD_IF` | 511, garbage — the IF is out of the path | 176, the value 627@60 is due |
-| `GBS_OPTION_SCALING_RGBHV` | 0 | 1 |
 
 Crossing 311 ↔ 627 four times never left the scaling path. The picture is
 visibly finer than the 320x256 the bench usually runs, because it is magnified
@@ -48,7 +59,6 @@ In bypass, with the source at 800x600 and the preference off:
 
 ```
 GBS_PRESET_ID        0x22   = PresetBypassRGBHV
-GBS_OPTION_SCALING_RGBHV 0
 PLLAD_MD             1856          <- hardcoded by bypassModeSwitch_RGBHV()
 VDS_ENABLE           0             <- expected: bypass does not use the VDS
 HPERIOD_IF           garbage       <- expected: the IF is out of the path
@@ -86,14 +96,24 @@ railing fault, and prescribing the railing recovery for it is wasted work — th
 IF simply is not in the path. Establish whether you are in bypass *before*
 reading anything into `HPERIOD_IF`.
 
-**`/geometry` reports `lineRateHz: 0`** for the same reason, so the engine has
-no field rate and the framing values it reports are not a solve.
+**`/geometry` reports the rate held from BEFORE bypass, not `0`.** Bypass
+measures nothing and `VideoPath::setOutputMode()` keeps the last measurement
+deliberately, so the field the engine reports names the mode bypass was entered
+on. Measured: `lineRateHz: 31690` with the source counting 311 lines at 50 Hz,
+thirty seconds after it changed mode. The framing values beside it are the
+previous mode's solve, not this source's.
 
 **`VDS_HSCALE` and `VDS_VSCALE` keep whatever the last scaled load left**, and
 bypass never clears them. They will show plausible scaling values — 636 and 475
 on a unit that was unambiguously in bypass — so **non-unity scale registers are
-not evidence that the VDS is in the path**. Read `DAC_RGBS_ADC2DAC` and
+not evidence that the VDS is in the path**. Read `DAC_RGBS_BYPS2DAC` and
 `OUT_SYNC_SEL` instead: both are 1 in bypass and 0 on the scaling path.
+
+**`DAC_RGBS_ADC2DAC` is not the tell and reads 0 on both paths.** No converter
+sits between the ADC and the DAC on the HD bypass channel, so
+`Chip::routeToHdBypass()` clears it and raises `DAC_RGBS_BYPS2DAC` instead.
+Read as the tell it says "scaling" about a unit in bypass with a full-screen
+picture.
 
 **The Info screen's frame rate is wrong in bypass.** `getOutputFrameRate()`
 selects the VDS test bus (`TEST_BUS_SEL = 2`) and times the vsync pulse on
@@ -102,12 +122,84 @@ measures an idle bus: 39 Hz against a real 60. It checks the result against a
 47..86 Hz plausibility band, retries once, and **returns the out-of-band value
 anyway**, so a number it has already judged impossible is displayed as fact.
 
+## A source that slows while bypassed
+
+Bypass hands the source's own timing to the encoder, so it works only where the
+display can show that timing. `SourceMeasurement::BypassMinLineRateHz` is the
+floor, bracketed by measurement on the bench panel rather than taken from the
+VGA standard — 26650 Hz locks and 21780 Hz gives no signal.
+
+**The question has to be re-asked while bypassed, and it cannot be asked of the
+held rate.** A mode change does not re-enter bypass, so nothing else re-asks;
+and nothing measures in bypass, so the held rate goes on naming the mode bypass
+was entered on however far the source slows. Asked that way the answer never
+changes, the branch that would leave never fires, and the panel stays blank for
+ever.
+
+Reproduced in about thirty seconds, `preferScalingRgbhv` off:
+
+| | |
+|---|---|
+| source at 640x480@60 | 524 lines, 31690 Hz held, bypass entered, picture fine |
+| source to 320x256@50 | 311 lines counted, `DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` still 1 |
+| held rate 30 s later | **31690 Hz**, the mode before it |
+| the panel | *Retro Scaler — No signal* |
+
+Nothing in a register dump distinguishes this from a bypass that is working: the
+sync processor counts the source correctly throughout, the DACs stay powered,
+and the divider is the switch's own 1856 either way. The whole difference is a
+number in ESP RAM that stopped describing the source.
+
+So the re-ask asks the COUNT, which is live — `countCanBypass()`, against the
+held FIELD rate rather than the held line rate, because a mode change moves the
+count and usually leaves the field rate where it was. A source that changes both
+at once is the one case it cannot see, and it costs no vsync spin to be right
+about the rest. The count is confirmed still by `countHeldStill()` before it is
+acted on, because leaving costs a preset load and a source mid-change counts
+anything at all.
+
+`test_a_bypassed_source_that_slows_leaves_bypass_on_its_own` is the
+reproduction, and it needs `--modeserv` because only a source mode change
+reaches it.
+
+## The IF line disagrees with the divider, and that is not a fault
+
+In pass-through the input formatter is out of the path, so its registers hold
+whatever the last scaling solve left. The one that reads as a defect is
+`IF_HSYNC_RST`, because on the scaling path it is `PLLAD_MD` -- halved where the
+line is doubled -- and a disagreement there IS a real fault worth chasing.
+
+Measured on the RiscPC at 640x480@60, the same source and mode either side of
+`/uc?x`:
+
+| | pass-through | scaling |
+|---|---|---|
+| `DAC_RGBS_BYPS2DAC` / `OUT_SYNC_SEL` | 1 / 1 | 0 / 0 |
+| `PLLAD_MD` | 2039 | 1566 |
+| `STATUS_SYNC_PROC_HTOTAL` | 2039 | 1566 |
+| `IF_HSYNC_RST` | **1566** | 1566 |
+| `SP_RT_HS_SP` | **1456** | 1456 |
+| `IF_HB_SP2` / `IF_HB_ST2` | 105 / 1252 | 72 / 1564 |
+| `/geometry` capturable | 1147 | 1493 |
+
+The pass-through column reads as an input formatter wrapping its line 473 ADC
+samples early and capturing three quarters of it. Nothing is wrong: 1566 and
+1456 are the previous scaling solve's, the channel is carrying the source at
+`HD_HSYNC_RST`, and `/geometry`'s capturable describes a path that is not
+running. On the scaling path the three agree and the window spans 95% of the
+line.
+
+**`/geometry` does not say which path is live**, so check
+`DAC_RGBS_BYPS2DAC` before reading anything it reports as a capture. And a
+640x480@60 source reaches pass-through by default -- 524 lines, progressive, a
+rate the panel takes straight -- so this is the state that mode is normally in.
+
 ## Not to be confused with
 
 A **corrupt scaling preset** looks different and is a distinct failure:
 
 ```
-GBS_PRESET_ID        0x15    SCALING_RGBHV 1     <- claims to be scaling
+GBS_PRESET_ID        0x15                        <- claims to be scaling
 VDS_HSCALE           1023    <- railed at the 10-bit maximum
 PLLAD_MD             2553    VDS_HSYNC_RST 1444
 SP_VTOTAL            97      <- nonsense; corrects when geometry is restored

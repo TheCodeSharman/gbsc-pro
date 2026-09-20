@@ -41,9 +41,60 @@ every source, clear every latched condition, clear all but SOG bad -- so the bit
 itself stays: each sequence is one bus write per byte where the decomposition is
 eight, and the write trace is the equivalence oracle for the load they run in.
 
+## The read side was not in this inventory, and is nearly finished
+
+The inventory below is write-side. Six more names cover a status byte whose bits
+are all named, and a READ decomposes with no hazard at all -- nothing is written,
+so there are no reserved bits to zero. Settled:
+
+- **Seven are deleted.** `TEST_BUS_2E`, `RESET_CONTROL_0x46`, `RESET_CONTROL_0x47`,
+  `INPUT_FORMATTER_02`, `DEC_5_1F` and `VDS_3_24` had no callers at all;
+  `STATUS_16`'s one caller, the boot trace, takes `GBS::read(0x00, 0x16)`.
+- **`Tie` is how a decision keeps its atomicity**, and it already exists -- do not
+  add a second facility for it. `Tie<A, B>::read(a, b)` takes several named fields
+  in one transaction, which is the only thing a whole-byte read was buying.
+  `getStatus16SpHsStable()` and the television Info screen use it.
+
+**What is left of the read side is nearly all inside `getVideoMode()`**, lines
+3109-3211 of the sketch: every decision site for `STATUS_03`, `STATUS_04` and
+`STATUS_05`, and most of `STATUS_00`'s. **Step 12 of
+`video-source-acquisition.md` deletes that function**, so converting the tree
+there is work on code already scheduled to go. Leave it.
+
+Outside it every remaining whole-byte read is legitimate, which is the good
+reason the rule allows for:
+
+| site | why the byte |
+|---|---|
+| `printInfo()`'s `S:%02x.%02x.%02x` | a raw dump of three bytes, reserved bits included |
+| auto-gain's capture-and-compare | wants ANY bit to have changed, not a named one |
+| nine discarded `STATUS_00::read()` | bus exercise after `startWire()`; the register's content is never used |
+
+**The nine bus pokes are a naming job, not a bit job.** Three consecutive
+`GBS::STATUS_00::read();` with the result dropped says nothing about intent; what
+it wants is a name for "prove the bus answers", and any readable register serves.
+
 ## The inventory
 
-25 names, almost all used from `gbs-control.ino` alone -- the exceptions are
+Write-side names. The count here has rotted before and will again -- an
+enumeration over the headers gave 28 after the seven deletions above, against the
+25 this section used to claim -- so **count rather than quoting**:
+
+```sh
+python3 - <<'EOF'
+import re, glob, collections
+d=re.compile(r'typedef\s+UReg<\s*(0x[0-9a-fA-F]+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*(\d+)\s*,\s*(\d+)\s*>\s*(\w+)')
+b=collections.defaultdict(list)
+for f in glob.glob('GBSC-Pro-Source code/gbs-control/src/*/*.h'):
+    for l in open(f, errors='surrogateescape'):
+        m=d.search(l)
+        if m: b[(m.group(1),m.group(2))].append((int(m.group(3)),int(m.group(4)),m.group(5)))
+print(sum(1 for k,v in b.items()
+          if any(o==0 and w==8 for o,w,_ in v) and any(not(o==0 and w==8) for o,w,_ in v)))
+EOF
+```
+
+Almost all are used from `gbs-control.ino` alone -- the exceptions are
 `PLL648_CONTROL_01` in `framesync.h` and in `Geometry.cpp`, and the two interrupt
 bytes, which no longer have a call site outside `Interrupts.cpp`.
 

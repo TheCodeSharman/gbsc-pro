@@ -247,18 +247,27 @@ together.
 stay strictly below the total register and wraps rather than clamps, which left a
 front porch of 6 px.
 
-**The reserve is the measured floor and nothing more**, `OutputMode::FrontPorchMinPx`,
-16 px. CEA-861's own minimum front porch is an order of magnitude above it -- 64 px
-at 108 MHz, 77 at 129.6 -- and conforming to it at this end buys nothing, because
-the MS9288A generates its own HDMI blanking from what it samples and never sees
-ours.
+**The line carries the output mode's own front porch, and
+`OutputMode::FrontPorchMinPx` is the floor under it** -- 16 px, the measured
+minimum this part needs at the far end. CEA-861's porch is an order of magnitude
+above it, 64 px at 108 MHz and 77 at 129.6, so the floor binds only where a
+raster has no room for the real one.
 
-**What the reserve costs is picture, not blanking.** It bounds where the produced
-picture may END, so `fitToRaster` sizes the picture to stop there and the far
-margin is then blanked off the end of that. At 1080p on a 2300 px raster, taking
-the reserve from CEA's 77 px to the measured 16 moves the display window's close
-from 2135 to 2196 and `VDS_HSCALE` from 474 to 461 -- 61 px more picture, 2.7% of
-the line.
+**The reading that conforming bought nothing is REFUTED.** It held that the
+MS9288A generates its own HDMI blanking from what it samples and never sees
+ours. It does generate its own blanking, but what it samples is the analog
+signal between `HS_OUT` edges, so our timing is exactly what reaches it -- and
+emitting the porches the mode states stopped the picture landing somewhere
+different on each acquisition, 17 trials within 0.65 photo px against four
+controls at 101 px.
+`investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+
+**What the porch costs is sampling density, not picture.** It bounds where the
+produced picture may END, so `fitToRaster` sizes the picture to stop there; the
+encoder then maps whatever active region it is given onto its own output, so a
+narrower one is sampled more coarsely rather than shown smaller. Measured across
+the change on the bench, the picture is 1336 -> 1346 photo px across -- unchanged
+-- while `PLLAD_MD` falls 1494 -> 1446, 3.2% fewer samples kept per source line.
 
 The floor is measured in PIXELS at one clock, so whether it is really a time is
 untested. Sync and back porch remain times, because they place the pulse the
@@ -328,7 +337,7 @@ syncUnits = ceil(IF line units x duty)
 ```
 
 On the bench RiscPC `181 / 2553` = 0.0709 and `ceil(1277 x 0.0709)` = **91**.
-`Tv5725::InputLine::measured()` computes exactly that, per solve, so a source with
+`Tv5725::VideoSourceLine::measured()` computes exactly that, per solve, so a source with
 a 0.121 duty excludes 155 units instead.
 
 **It also explains `SP_RT_HS_SP`.** `gbs-control.ino` writes `PLLAD_MD x 0.93`.
@@ -357,7 +366,7 @@ artefact the capture does not produce would crop picture for nothing.
 
 ### The last two units of the line are not capture stops
 
-`InputLine::lastCapture()` is `units - 2`, and both excluded units are excluded
+`VideoSourceLine::lastCapture()` is `units - 2`, and both excluded units are excluded
 for their own reason.
 
 `units` is the wrap point — `IF_VB_ST` rolls at `2 x (VTOTAL + 1)` and

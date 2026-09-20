@@ -1,126 +1,141 @@
 # What the board can capture
 
-**One bound decides whether a source arrives intact**, and it is horizontal:
-capture must end before **IF 1125**. Past it the capture path stops writing video
-and writes `Y=U=V=0`, which decodes to a green band, and active picture there is
-destroyed. Nothing enforces it, so the loss is silent.
+**THERE IS NO CAPTURE BOUND.** The green band at the end of the line, which
+every version of this page was built around, is produced by the VDS's one-line
+delay -- `VDS_D_RAM_BYPS`, carried as the picture-quality option
+`uopt->wantVdsLineFilter`, and now defaulted off. It sits downstream of the
+capture, so with the delay bypassed the whole line arrives at every divider up
+to 3200.
+[`investigations/the-tail-green-is-the-vds-line-filter.md`](investigations/the-tail-green-is-the-vds-line-filter.md)
 
-It is measured in `docs/investigations/tail-green.md`, which also records the
-explanations that turned out to be wrong.
+The constants that bounded the divider against it -- `WriteLimitUnits`,
+`CaptureWidthLimitUnits`, `framableIfLine()` and `maxCaptureWidth()` -- are gone
+with it. What remains is the sampling arithmetic, which bounds what a line can
+carry however the divider is chosen, and the three ceilings that are real.
 
-**There is no vertical bound.** This page carried one — a source of more than 535
-lines — and it was a firmware gate, not a property of the part. An RGBHV source
-of 627 lines scales cleanly and full screen with a measured divider and a healthy
-`HPERIOD_IF`; what put it in bypass was a line-count test the sync watcher no
-longer makes. `docs/rgbhv-bypass-trap.md` has what was measured.
+**There is no vertical bound either.** This page carried one -- a source of more
+than 535 lines -- and it was a firmware gate, not a property of the part. An
+RGBHV source of 627 lines scales cleanly and full screen with a measured divider
+and a healthy `HPERIOD_IF`. `docs/rgbhv-bypass-trap.md` has what was measured.
 
-## The horizontal bound is a position, not a width
+## The three ceilings that are real
 
-X = 1125 IF units = 2250 ADC samples, counted from the line start. It does not
-move with the capture start, with the source's border or porch timings, or with
-the memory clock across a 2:1 sweep. Whatever counts, counts samples.
+| | what it is | where |
+|---|---|---|
+| the crossover row | the ADC clock a given oversampling survives | `Adc::maxCkoFor()` |
+| the line counter | eleven bits, so 2047 IF units -- measured on the picture, since the register is wider | `InputFormatter::LineCounterMax` |
+| the divider field | `PLLAD_MD` is twelve bits | `Adc::DividerMax` |
 
-Because it is a position, the usable fraction of any line is `2250 / PLLAD_MD`,
-and the whole line fits only when `PLLAD_MD <= 2250`. That caps the line at 1125
-IF units, which then have to cover every pixel the source puts on it:
+`SamplingClock::recommendedDivider()` takes the most samples the ceilings allow,
+and oversamples only where that costs none of them. The kept count is the only
+thing that carries the source's pixels; oversampling acts on the CONVERSION rate
+and buys freedom from aliasing rather than resolution.
+`docs/sampling-table.md` has what each mode lands on.
+
+**Which ceiling binds depends on the scan mode.** An IF unit is two ADC samples
+on a doubled line and one on an undoubled one, so the line counter reaches
+4094 samples doubled and 2047 undoubled -- which is why 800x600@60 undoubled
+lands on 2006 from the counter while 320x256@50 doubled lands on 2508 from the
+row.
+
+**The rating is read at the oversampling INSTALLED, not the one asked for.**
+`Adc::oversampleFor()` reduces a request the crossover row refuses, and the row
+is chosen from the divider's own clock -- so budgeting for the request is
+circular. `Adc::maxDivider()` answers at the ratio the row will actually
+install; asking at the 162 MHz row, which installs none, returns the register
+maximum and nothing else stops it. Measured: the engine solved 4012 that way and
+the screen was a solid green block.
+
+| clock (`PLLAD_MD` x line rate) | `PLLAD_KS` | oversampling available |
+|---|---|---|
+| >= 80 MHz | 0 | none |
+| 40..80 MHz | 1 | 2x |
+| 20..40 MHz | 2 | 4x |
+| < 20 MHz | 3 | 8x |
+
+So sampling density is bought with conversion quality, one for the other. The
+twelve deleted preset tables all sat at 2553..2559, hard against the 4x row.
+
+**RGBHV bypass runs at 1856 whatever the source**: it writes nothing to memory
+and the IF is out of the path, so none of this reaches it.
+
+**`MemoryMap::captureFits()` bounds the capture against SDRAM**, which is a
+separate and unrelated limit.
+
+## The divider follows the measured line rate
+
+Where the removed cap flattened it, the divider is now a function of the rate:
+about 4 counts per 25 Hz on a 15.6 kHz doubled line. A rate wobble therefore
+rewrites `PLLAD_MD` and re-latches the ADC PLL. **What that costs on a live
+picture is not measured.**
+
+## What one window can carry
+
+The horizontal axis has no native resolution -- the chip sees sync edges, not
+pixels -- so this is the only statement that can be made about a source's
+detail surviving:
 
 ```
-IF units per source pixel = 1125 / htotal
+IF units per source pixel = samples per line / htotal
 ```
 
-So **htotal 1125 is the ceiling** for one sample per source pixel, and 562 for
-two.
+**htotal 1024 is the ceiling for one sample per source pixel at 1024 units, and
+512 for two.** A source wider than about 512 active pixels cannot be sampled
+above Nyquist at a 1024-unit window, which is why fine vertical detail on a
+VESA-class source aliases, and why passing such a source through unscaled is the
+only way to carry it intact.
 
-## Stock AKF50, the bound applied
-
-28 modes. Five cannot be captured whole:
-
-| mode | htotal | VTOTAL | IF units per px | usable |
-|---|---|---|---|---|
-| 1056x250 | 1536 | 312 | 0.73 | 73% |
-| 1056x256 | 1536 | 312 | 0.73 | 73% |
-| 1280x480 | 1600 | 525 | 0.70 | 70% |
-| 1280x480 | 1664 | 520 | 0.68 | 67% |
-| 1280x480 | 1680 | 500 | 0.67 | 66% |
-
-**There is no setting that delivers 1280x480 intact**: at one sample per pixel the
-line runs past IF 1125 and the right third is destroyed, and at a divider low
-enough to fit, every pixel gets two thirds of a sample and the whole line
-aliases.
-
-**Every mode the bound costs is an outlier**, and declining to support them is a
-defensible position rather than a gap. 1056-wide and 1280x480 are unusual
-geometries; so is 896x352, the closest survivor at htotal 1100.
-
-**The ordinary modes all clear it with room.** The tightest is htotal 1024 —
-640x250, 640x256, 768x288, with 640x200 at 1020 — which leaves **101 IF units of
-margin, about 9%**. 640x480 and 640x512 sit further back still at htotal 800..896.
-
-So the bound is real and worth stating, but it is not currently costing a mode
-anyone wants. What makes it worth writing down is that the margin on the
-commonest modes is 9% rather than a factor.
-
-**800x600 at htotal 1024 captures perfectly well** — 1.10 IF units per pixel, and
-measured on the bench at VTOTAL 627 it scales sharp and full screen. It used to
-be excluded by the line-count gate, which is the entry this page carried as the
-vertical bound.
+Of the stock AKF50's 28 modes the widest lines are the ones to watch: 1056x250
+and 1056x256 at htotal 1536, and 1280x480 at htotal 1600, 1664 and 1680. The
+ordinary modes are all at htotal 1024 or below -- 640x250, 640x256 and 768x288
+at 1024, 640x200 at 1020, 640x480 and 640x512 at 800..896 -- so the density they
+get is whatever the divider choice above buys them. This page used to list the
+wide five as uncapturable; they were not, and the cap that made them look so is
+the one that has gone.
 
 ## The divider is a trade, and it has two floors
 
-Lowering `PLLAD_MD` makes each sample cover more of the line, so 2250 of them
-reach further. It costs sampling density and zoom travel, because the zoom ceiling
-is a magnification rather than a width: the narrowest slice that still fills the
-raster is `rasterTotal / maxMagnification`, and fewer IF units per source pixel
-means that slice covers more source.
+Lowering `PLLAD_MD` makes each sample cover more of the line. It costs sampling
+density and zoom travel, because the zoom ceiling is a magnification rather than
+a width: the narrowest slice that still fills the raster is
+`rasterTotal / maxMagnification`, and fewer IF units per source pixel means that
+slice covers more source.
 
-At the bench source — 512 px per line, 320 active, into a 1916 px raster at 4x:
+At the bench source -- 512 px per line, 320 active, into a 1916 px raster at 4x:
 
-| `PLLAD_MD` | IF per px | lost at line end | narrowest slice | zoom range |
-|---|---|---|---|---|
-| 2548 | 2.49 | 150 IF units | 192 source px | 1.67x |
-| 2400 | 2.35 | 76 | 204 px | 1.57x |
-| 2250 | 2.20 | none | 218 px | 1.47x |
-| 2048 | 2.00 | none | 239 px | 1.34x |
+| `PLLAD_MD` | IF per px | narrowest slice | zoom range |
+|---|---|---|---|
+| 2548 | 2.49 | 192 source px | 1.67x |
+| 2400 | 2.35 | 204 px | 1.57x |
+| 2250 | 2.20 | 218 px | 1.47x |
+| 2048 | 2.00 | 239 px | 1.34x |
 
 Two floors bound the trade:
 
 - **Nyquist.** Below 2 IF units per source pixel the source aliases rather than
   softens. For a 512-px line that is `PLLAD_MD` 2048.
 - **The magnification ceiling is a choice, not hardware.** RD-5725-1.1 states no
-  minimum for `VDS_HSCALE`; the field is 10 bits and the formula has no floor. So
-  zoom travel lost to a lower divider is recoverable by raising
-  `maxMagnification`, paid for in interpolation quality, and where that starts to
-  look bad only the picture can say.
+  minimum for `VDS_HSCALE`; the field is 10 bits and the formula has no floor.
+  So zoom travel lost to a lower divider is recoverable by raising
+  `maxMagnification`, paid for in interpolation quality, and where that starts
+  to look bad only the picture can say.
 
-## What enforces the horizontal bound
+## What the choice has not been judged on
 
-Two things, and they compose.
-
-`SourceMeasurement::recommendedDivider()` caps `PLLAD_MD` at 2250, so the line the ADC
-delivers is at most 1125 IF units long and the whole of it is inside the limit.
-This is a **second** ceiling beside the ADC's 162 MSPS rating, and whichever is
-tighter binds. At four-times oversampling the rating is the tighter above about
-17.6 kHz, so the write limit binds only at slow line rates — this bench's
-15.55 kHz among them.
-
-`InputLine::lastCapture()` clamps the far end of the capture window at
-`WriteLimitUnits`. With the divider capped this never fires — it is there for the
-lines the divider did not choose, since `SourceMeasurement::adopt()` takes
-whatever a bypass switch left in the register.
-
-**The clamp is a measured constant and the cap is what keeps it off real
-picture.** X is this board's number; a source whose active picture legitimately
-runs further would be cropped by the clamp silently, where the head guard is
-derived per solve from the hsync duty. Deriving the far end the same way needs to
-know what counts to 2250, and nothing does.
-
-`MemoryMap::captureFits()` bounds the capture against SDRAM, which is a third and
-unrelated limit.
+**No photograph has scored any of it.** The host oracle gives 320x256@50 doubled
+2230 -> 2508 and 800x600@60 undoubled 1250 -> 2006, and a density-against-
+oversampling judgement has to be made on the picture at each row rather than in
+the arithmetic. `docs/known-issues.md` carries it as open.
 
 ## See also
 
-- [`investigations/tail-green.md`](investigations/tail-green.md) — how X was
-  measured and what it is not
-- [`rgbhv-bypass-trap.md`](rgbhv-bypass-trap.md) — the line-count gate that was one, and what replaced it
+- [`investigations/the-tail-green-is-the-vds-line-filter.md`](investigations/the-tail-green-is-the-vds-line-filter.md)
+  — what the band actually is, and the thirteen candidates it is not
+- [`investigations/the-tail-band-is-not-a-capture-width.md`](investigations/the-tail-band-is-not-a-capture-width.md)
+  — why no constant in either unit fitted it
+- [`investigations/tail-green.md`](investigations/tail-green.md) — how the
+  supposed bound was measured
+- [`rgbhv-bypass-trap.md`](rgbhv-bypass-trap.md) — the line-count gate that was
+  one, and what replaced it
 - [`scaler-geometry-model.md`](scaler-geometry-model.md) — the arithmetic from
   capture window to output registers

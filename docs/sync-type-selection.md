@@ -1,6 +1,6 @@
 # The sync type is probed, because reading it back is circular
 
-`Tv5725::SyncType` chooses between composite-sync separation and separate H/V.
+`Tv5725::SyncMeasurement` chooses between composite-sync separation and separate H/V.
 It holds two facts: what the type is (`isCsync()`) and whether that came from a
 measurement (`isSet()`). `set()` deliberately does not mark the type as probed --
 the YPbPr fallback and the temporary flips during detection assert a type without
@@ -44,16 +44,16 @@ occur with a perfect picture, which is exactly why nothing may gate on it.
 | site | how |
 |---|---|
 | `inputAndSyncDetect()` | field-rate probes **and** `sourceHasOwnVsync()` |
-| `applyPresets()`, the mode-14 arm | `SyncType::probeOnce()`, so it measures only if nothing has for this source |
-| `applyPresets()`, the no-mode arm | `SyncType::probe()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
-| `applyPresets()`, the YPbPr fallback | unconditional `SyncType::set(true)` |
+| `applyPresets()`, the mode-14 arm | `SyncMeasurement::syncType()`, so it measures only if nothing has for this source |
+| `applyPresets()`, the no-mode arm | `SyncMeasurement::probe()`, unconditional — this arm has just moved `ADC_INPUT_SEL`, so there is nothing to inherit |
+| `applyPresets()`, the YPbPr fallback | unconditional `SyncMeasurement::set(true)` |
 
 **Only the mode-14 arm reaches `probeOnce()`**, so on a source that classifies as
 SD the gate below never runs at all and the type comes from
 `inputAndSyncDetect()`'s `set()` calls. That is why the gate cannot be exercised
 from a bench source at 320x256@50.
 
-`SourceMeasurement::sourceHasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits
+`SyncMeasurement::hasOwnVsync()` clears `SP_EXT_SYNC_SEL`, waits
 `OwnVsyncSettleMs` for the sync processor to reacquire V, polls for up to
 `OwnVsyncWindowMs`, re-confirms after 10 ms, then restores the register. It logs
 `own V sync: yes after 3ms` each time, which is the only report of how long the
@@ -67,10 +67,33 @@ sync that is not there. Sizing it to the measured maximum leaves the tail
 crossing it. `docs/investigations/own-vsync-probe-window.md` has the
 distribution and what a timeout costs.
 
-**It costs over a second, so it runs once per SOURCE, not once per mode change**,
-and the wait is only ever spent in full on a genuinely composite source, where
-the timeout is the right answer. `SyncType::isSet()` is the gate and
-`SyncType::forget()` re-arms it.
+**IT RUNS PER SOURCE MODE CHANGE, and that is a correctness requirement rather
+than a budget.** A source can change its sync type without the mux moving -- a
+RISC PC sets it from CMOS -- so a mode change is the only signal there is that it
+may have moved, and a probe skipped because the input did not change latches the
+previous source's answer onto the new mode.
+
+That is also how the probe is exercised: ModeServ's `SYNC 0|1|3` moves the RISC
+PC's CMOS value and re-applies the mode, so both answers are reachable on one
+input with nothing else changing. `docs/bench-sources.md`.
+
+The cost does not argue against it. Reacquisition is 2-3 ms on a source with its
+own V sync, measured again from the console as `own V sync: yes after 2ms`, and
+the full window is only ever spent on a genuinely composite source, where the
+timeout is the right answer. An earlier form of this section said "it costs over
+a second, so it runs once per SOURCE" -- that is the sketch's `SyncMeasurement::isSet()`
+gate, and it contradicts the paragraph above it.
+
+`Geometry::useSyncTypeProbe()` is the engine's, per mode change.
+`SyncMeasurement::isSet()` and `SyncMeasurement::forget()` are the sketch's per-source gate,
+described below.
+
+**It currently runs about three times per mode change, not once.** Traced on
+the bench: a mode change lands, the engine solves in about 10 ms, and
+`source moved: interrupt` re-arms it twice more while the source settles -- each
+arm re-running the probe, with the count and the solved count already equal.
+That is the latched disturbance re-arming rather than the cadence being wrong,
+and it is most of what a 2 s mode switch is made of.
 
 **What re-arms it is a change of SOURCE, not a cleared clamp.** `forget()` sits
 beside `coastPositionIsSet` and `clampPositionIsSet` at the five sites that mean a
@@ -122,6 +145,39 @@ Worth knowing before running the hardware suite on a source like this one: it
 can leave the unit without a picture, and the fix is one HTTP call rather than a
 power cycle.
 
+## `SP_SOG_MODE` selects the separator, not sync on green
+
+The name is the datasheet's and is kept, but it describes the wrong thing. The
+bit is 1 whenever the sync separator is in the path, whatever feeds it.
+
+Measured on one input, one cable, one mode, with only the RISC PC's sync type
+moving over ModeServ:
+
+| `vga`, 320x256@50 | separate | composite | separate again |
+|---|---|---|---|
+| `SP_SOG_MODE` | 0 | **1** | 0 |
+| `SP_EXT_SYNC_SEL` | 0 | **1** | 0 |
+| `SP_SOG_SRC_SEL` | 0 | 0 | 0 |
+| `STATUS_IF_VT_BAD` | 1 | **0** | 1 |
+| `VPERIOD_IF` | 43, debris | **623** | 34, debris |
+
+Composite sync arrives on the HSync pin there, with nothing on green, and the
+bit still reads 1. The datasheet uses "SOG" the same way throughout -- the
+`SP_CS_*` positions are documented as "Sync separation control SOG clamp/hs
+positions", and `SP_SOG_SRC_SEL` offers "1: select hs as sog source", which only
+means something if SOG names the separator's input rather than the green
+channel. Its own text for the bit is "Out control 1: SOG mode; 0: normal mode".
+
+`SP_EXT_SYNC_SEL` is what moves alongside it. `SP_SOG_SRC_SEL` is written 0 by
+the firmware in three places and never 1.
+
+**AND THE SEPARATOR IS WHAT THE INPUT FORMATTER MEASURES VERTICAL TIMING FROM.**
+`VPERIOD_IF` and `STATUS_IF_VT_BAD` follow the same bit, which settles the open
+question in `docs/investigations/vperiod-if-follows-the-sync-route.md`: the discriminator is
+the sync route, not the video standard and not RGBHV. A separate-sync source
+leaves the separator with nothing to extract, so the IF never completes a
+vertical measurement while the sync processor counts happily off the VSync pin.
+
 ## What is *not* being claimed
 
 - **This is not the intermittent shear glitch.** That was closed as
@@ -137,6 +193,51 @@ power cycle.
   number in a counter. No artefact has been traced to it.
 
 ## What is still open
+
+**A sync type change arms a re-probe from the V-active bit.** A mode change is
+the signal the probe rides on, and a RISC PC changing its CMOS value changes no
+line count -- 311 at 320x256@50, 524 at 640x480@60, separate or composite -- so
+neither the unusable-count arm nor the unsettled-count arm can see one. 308
+against 311 is inside the source bounds and holds still.
+
+`VideoSourceAcquisition::sourceMoved()` arms on
+`STATUS_SYNC_PROC_VSACT` reading 0 for `VsyncAbsentArmPasses` consecutive passes
+while the held type is separate sync. **The separate-sync answer is what puts the
+separator out, which is the probe's own measuring configuration**, so the bit
+read there reports whether the source drives V rather than which path is
+configured. The circularity above applies to choosing the type from an arbitrary
+state, not to checking a held one from the state that answer created.
+
+Held as composite the arm is off: the separator is then in the path and the bit
+reports the path.
+
+| | `VSACT`, separator out, configuration held |
+|---|---|
+| separate sync, 320x256@50 | 1, every sample |
+| composite sync, 320x256@50 | 0, every sample |
+| separate sync, 640x480@60 | 1, every sample |
+| composite sync, 640x480@60 | 0, every sample |
+
+Live and unfrozen on a healthy separate-sync source, 668 of 668 samples over
+three minutes read 1, so a run of zeros is not something a working source
+produces. The run is sized from `SyncMeasurement::OwnVsyncSettleMs`, which is
+the same reacquisition seen from the other side.
+
+**The line count cannot be that discriminator, and the plausibility reading is
+refuted.** Measured with the sync-processor configuration written by hand and
+only the source moving, `STATUS_SYNC_PROC_VTOTAL` with the separator out reads
+311 against 308 at 320x256@50 -- both plausible -- and **524 against 524** at
+640x480@60. Across four held configurations there is no cell in which an
+implausible count identifies a composite source.
+`investigations/a-sync-type-change-arms-no-probe.md`.
+
+**The ladder is what pays, and it pays at pass 44.** The re-probe sits after the
+cheap sync-processor tweaks and before the rungs that cannot move a sync path,
+which puts the separator in the path 14.9 s into the failure rather than the 56 s
+its old position cost. It could not be moved until `own V sync found` stopped
+restarting the run: a separate-sync source answers yes on every cycle, so the
+re-probe was a ceiling no later rung could get past.
+`investigations/a-sync-type-change-arms-no-probe.md`.
 
 The YPbPr fallback sets `csync = 1` unconditionally rather than probing, and the
 two SD paths above write sync-separation parameters without asking. Neither has

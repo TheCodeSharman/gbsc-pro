@@ -40,6 +40,68 @@ for the screen" — it can only be wrong about the source.
 **Each half has its own horizontal coordinate space, and they share no origin.**
 This is the single most expensive thing to learn the hard way. See below.
 
+### The decimator is the ADC's digital back end, and the datasheet never draws it
+
+DS-5725-3.2 contains the word nowhere. It comes from two bit descriptions in
+RD-5725-1.1 -- `DEC1_BYPS`, "the 4x to 2x decimator bypass enable", and
+`DEC2_BYPS`, "the 2x to 1x decimator bypass enable" -- so it is a two-stage
+downsampler at the ADC's output, each stage bypassable, and not a block of its
+own on the diagram. It exists because the ADC can run oversampled: `PLLAD_CKOS`
+picks which tap of the ADC clock feeds the pipeline and the decimators undo in
+the digital domain what that tap added, which is why `Adc::applySampleRate()`
+writes all five of those registers together.
+
+The sync fields naming it -- `SP_SYNC_BYPS` "external sync bypass to decimator",
+`SP_HS_PROC_INV_REG` and `SP_VS_PROC_INV_REG` "HS/VS to decimator invert" --
+therefore describe the sync travelling with the samples at the ADC's output,
+before the Input Formatter.
+
+### The period counters are the IF's, published in segment 0, and a segment 5 bit freezes them
+
+`HPERIOD_IF` is s0 0x06 [8:0] and `VPERIOD_IF` is s0 0x07 [11:1], and
+RD-5725-1.1 documents both inside `IF_STATUS_`, one 45-bit block at s0_00 that
+also carries `STATUS_IF_HT_OK`, `VT_OK`, `HT_BAD` and the rest. **Segment 0 is
+where the chip publishes status whoever produced it** -- `STATUS_SYNC_PROC_*`
+lives there too -- so the segment says "measurement result" and the prefix says
+which block measured it. The IF's own configuration is segment 1 and the sync
+processor's is segment 5.
+
+Which makes `SP_H_PROTECT` look misplaced and it is not: s5 0x3E bit 4, "H count
+overflow protect", freezes **both IF counters**. That is measured rather than
+documented, and it fits the path -- the IF measures the sync it receives, which
+is the processor's retimed HS and VS, so a processor bit that holds that count
+holds what the IF can measure.
+
+**It steadies the counter rather than freezing it.** Held across two source mode
+changes with the divider unchanged, it tracked the source to within a count --
+214 railed at 320x256@50, 190/191 at 800x600@56 against the 192 due, then 431
+back at 320x256@50 -- so a steady reading under protect is a measurement and not
+a held value.
+
+On a mislocked counter it steadies whatever is held, and **the value is not
+systematic**: two instances on the same source and mode read 214 (half the
+source period, `HT_OK` 1) and 8 (`HT_OK` 0). So the bit must not be reached for
+as a fix or as a reading -- on a mislocked counter it manufactures the one
+failure shape every stability check scores as healthy, and nothing about the
+steadied value says what the counter is doing.
+`docs/investigations/hperiod-if-railing.md`.
+
+### `SP_SYNC_BYPS` does nothing measurable on a separate-sync source
+
+The firmware writes it 0 on both sync paths and nothing else touches it, so it
+has never been in force. Set to 1 on the bench RiscPC at 320x256@50, separate
+sync, scaling, with automation frozen, **nothing observable changes**: the
+picture is identical in framing and position, `STATUS_SYNC_PROC_VTOTAL` holds
+311 against divider 2206, and a full `/testbus` sweep at `IF_TEST_SEL` 0 carries
+the same selectors either side -- 0, 5, 6, 7, 12, 14, 15, 16 and 18 within
+run-to-run variation, every silent selector still silent.
+
+`HPERIOD_IF` was railing throughout, so the IF's own measurement could not
+testify; the picture and the test bus could, and neither moved. **A read-back of
+1 is not proof the hardware acted**, so what this establishes is that the bit is
+not a lever on this source rather than what it does. The case where the
+separator is actually extracting V from one stream is untested.
+
 ## The analog inputs, and which one this board uses
 
 The chip has **three RGB channels but only two external sync positions**, and the
@@ -352,6 +414,55 @@ guards comparing the two are self-satisfying.
 nothing in the PLLAD path can feed a setting back into it. It is a genuine
 measurement, and it is the one to trust when the IF disagrees.
 
+### The two FIFO occupancy registers read nothing
+
+`CAP_FF_STATUS` (s4 `0x23`) and `WFF_FF_STATUS` (s4 `0x43`) are 8-bit counters
+the datasheet documents as the capture and write FIFO occupancy, each valid once
+its select bit is set -- `CAP_STATUS_SEL` and `WFF_FF_STATUS_SEL`. Both read
+**0** with the selects set, across 80 reads at about 60/s, and 0 again with
+`CAP_REQ_FREEZ` holding the capture FIFO's write and read paused. A frozen FIFO
+reporting no occupancy while video is being captured is not a measurement, so
+neither is a usable instrument for what the memory path is doing.
+
+They sit beside flags that DO carry something: `STATUS_MEM_FF_CAP_FIFO_EMPTY`
+reads 1 while `STATUS_MEM_FF_WFF_FIFO_EMPTY` and
+`STATUS_MEM_FF_PLY_FIFO_EMPTY` read 0 on a settled picture, so those three
+disagree with each other rather than all reporting a default. They are one bit
+each and say nothing about depth.
+
+Neither select bit disturbs the picture -- the framing and the captured line tail
+are unmoved either side of both -- so this costs nothing to re-try, and is
+recorded so it is not re-derived as an instrument that only needs enabling.
+
+### `HSACT` and `VSACT` report PRESENCE, not the sync level
+
+RD-5725-1.1 documents s0_16 as *SYNC PROC STATUS 00* with a row per bit -- HS
+polarity, HS active, VS polarity, VS active, and 7-4 reserved -- but the two
+"active" rows have no `When =` text at all, and the name reads as though the bit
+might follow the pulse.
+
+**It does not.** Sampled at random phase against line rates of 15.6 and 31.4 kHz,
+`STATUS_SYNC_PROC_HSACT` is 1 in **2190 of 2190** samples while a source is
+locked, across two sources, both the scaling and the pass-through routes, and the
+switch between them. A bit following the pulse would be high only for the sync
+duty, which is about 7% here (`HLOW_LEN` 181/2553), so ~150 zeros would have
+appeared. It reads 0 when sync is genuinely lost, and 1 again when it returns.
+
+The same argument settles `VSACT` the other way round: a vsync pulse is nearer 1%
+of the frame, so a level-follower would read 1 almost never, and it reads 1 in
+150 of 150 on a locked separate-sync source.
+
+**Direct confirmation is reachable for `VSACT` and not for `HSACT`.** The I2C bus
+runs at 400 kHz and one field read is a segment aim plus a register read, about
+200 us, so sampling tops out near 5 kHz -- far inside a 20 ms field, far outside
+a 64 us line. `known-issues.md` carries that as an untried experiment.
+
+**Consequence:** these are the right bits to ask "is there sync", and the sync
+processor keeps answering on the pass-through route, because pass-through does
+not take it out of the video path. Measured on a passed-through source, `HSACT`
+1 in 489 of 489 with `STATUS_SYNC_PROC_VTOTAL` holding the count the mode is due
+in all of them.
+
 ## `HPERIOD_IF`, the one measurement of the source
 
 The datasheet defines it as *"source H total measurement result. The value =
@@ -483,7 +594,17 @@ reload to recover.
 Why it rails is not established. See
 [investigations/hperiod-if-railing.md](investigations/hperiod-if-railing.md).
 
-## `VPERIOD_IF` is invalid on RGBHV, and the chip says so twice
+## `VPERIOD_IF` is invalid on SEPARATE SYNC, and the chip says so twice
+
+**The discriminator is the sync route, not RGBHV.** The input formatter takes its
+vertical timing from the sync separator, so a source with its own VSync pin
+leaves the separator nothing to extract while the sync processor counts happily.
+Measured on one input, one cable, one mode, moving only the RISC PC's sync type:
+`VPERIOD_IF` 62 with `STATUS_IF_VT_BAD` 1 in 582 of 582 on separate sync, and 623
+with `VT_BAD` 0 in 53 of 53 on composite. Everything below was measured on the
+separate-sync default and stands; the heading used to name RGBHV because that is
+the only separate-sync source on this bench.
+`docs/investigations/vperiod-if-follows-the-sync-route.md`, `docs/sync-type-selection.md`.
 
 Measured on the bench RISC PC at 320×256 (VTOTAL 311), RGBHV **scaling**, firmware
 unfrozen, picture correct:
@@ -499,13 +620,13 @@ unfrozen, picture correct:
 
 Only the vertical half is bad, and the chip flags it on two separate bits.
 
-**It has never worked here, and the archive proves it.** Across 22 snapshots
+**It has never worked on the separate-sync default, and the archive proves it.** Across 22 snapshots
 spanning 2026-08-01 to 08-03, including `SOLVED-*` states captured with a
 confirmed clean full-screen picture: `VT_OK` = 0 and `VT_BAD` = 1 in **22 of 22**,
 `VPERIOD_IF` scattered across 13, 21, 25, 26, 45, 72, 75, 84, 195, 249, 361, 545
 with no relation to the source, and `SP_VTOTAL` correct every time.
 
-**A non-zero `VPERIOD_IF` on RGBHV is debris, not data.** Pulsing Mode Detect
+**A non-zero `VPERIOD_IF` on separate sync is debris, not data.** Pulsing Mode Detect
 (`SFTRST_MODE_RSTZ`, s0 `0x47` bit 1) takes it from 129 to 0, where it stays,
 while `HPERIOD_IF` holds at 431. The counter is not returning a bad measurement —
 it is never completing one, and 129 was latched from an earlier state.
@@ -532,13 +653,21 @@ on RGBHV is guarded:
 | `getVideoMode` HD branch | | gated on `STATUS_04` bits |
 | console print | | prints `v:----` when `STATUS_IF_VT_BAD` is set |
 
-**The axis is the input standard, not scaling.** `VPERIOD_IF` is trustworthy in
-the SD and HD modes that traverse the IF — the deinterlace code keys *exact
-equality* on 522/524/526/622/624/626 for field parity, which only works if it is
-accurate to the line — and untrustworthy on RGBHV whether bypassed or scaled.
+**The axis is the SYNC ROUTE**, as the heading above says — not the input
+standard and not RGBHV. The same RGBHV source on one cable and one mode reads
+623 with `VT_BAD` 0 on composite sync and debris with `VT_BAD` 1 on separate,
+so RGBHV is trustworthy or not according to which sync type it is sent with.
+Where the separator is in the path the value is accurate to the line, which is
+what lets the deinterlace code key *exact equality* on
+522/524/526/622/624/626 for field parity.
 
-Why is hypothesised but not established. See
-[investigations/vperiod-if-on-rgbhv.md](investigations/vperiod-if-on-rgbhv.md).
+**The bit is a property of the source AND the path together, so it reads GOOD
+in only one of the four combinations** — separator in the path with composite
+sync to separate. That makes `STATUS_IF_VT_BAD` a one-directional alarm: on the
+composite leg a GOOD→BAD transition says the separator stopped finding vertical
+timing, and on the separate leg it is pinned BAD and says nothing at all. The
+two mismatched combinations have not been measured.
+[investigations/vperiod-if-follows-the-sync-route.md](investigations/vperiod-if-follows-the-sync-route.md).
 
 ## Mode Detect classifies, it does not measure
 
@@ -612,7 +741,7 @@ startup detection.
 
 - [investigations/hperiod-if-railing.md](investigations/hperiod-if-railing.md) —
   why `HPERIOD_IF` goes bad, and the hypotheses already refuted
-- [investigations/vperiod-if-on-rgbhv.md](investigations/vperiod-if-on-rgbhv.md) —
+- [investigations/vperiod-if-follows-the-sync-route.md](investigations/vperiod-if-follows-the-sync-route.md) —
   why the vertical counter never completes, and the experiment that would settle it
 - [riscpc-game-modes.md](investigations/riscpc-game-modes.md) — where these facts were established, and what is still open
 - [gbs-control-debug-interface.md](gbs-control-debug-interface.md) — the `/sc?`, `/getreg` and `/setreg` surface

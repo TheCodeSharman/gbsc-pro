@@ -15,7 +15,7 @@ behaviour** — never drop to a slower one to dodge wiring up the fast one.
 | **host unit** | `make -C test` | g++ + doctest | ~1 s, all of it |
 | **host tooling** | `pytest tools/gbsc-pro-hwtest/` | nothing | ~11 s |
 | **hardware acceptance** | `pytest tools/gbsc-pro-hwtest/ --host=<ip>` | a running unit | ~1 min |
-| **write trace** | `capture_traces.py` | a unit, USB, a trace build | ~1 min a branch |
+| **write trace** | a `GBS_TRACE_WRITES` build, read over HTTP | a running unit | ~1 min a load |
 | **bench** | by hand, one register at a time | a unit and eyes | slow, and the only judge of a picture |
 
 ```sh
@@ -42,85 +42,71 @@ Tests that would disturb a working picture or write flash are behind flags in
 
 ## The write trace
 
-The equivalence oracle for a branch no bench source can reach. A
-`GBS_TRACE_WRITES` build prints every register write to hardware Serial;
-`/trace/standard` forces a standard and runs a load; `capture_traces.py` collects
-the runs and `trace_oracle.py` turns them into the ordered subsequence common to
-all of them, recording what differed as variable rather than asserting it.
+A `GBS_TRACE_WRITES` build records every register write into memory and serves
+it at `/writetrace` as CSV -- `segment,index,sinceArmMs,reg,length,payload`.
+Writes to 0xF0 aim the segment window rather than becoming entries, so each
+entry carries the segment it was taken under and a slice means something on its
+own.
 
-**IT HAS TO BE USB.** The trace never reaches SerialM, because `broadcastTXT()`
-allocates per frame and the build runs on ~21 KB of free heap.
+```sh
+curl 'http://<ip>/writetrace?arm=1'    # record from here, discarding what is held
+curl 'http://<ip>/writetrace?stat=1'   # held, seen, capacity, overflowed
+curl 'http://<ip>/writetrace'          # the entries, oldest first
+curl 'http://<ip>/writetrace?first=40&last=96'          # issue that slice again
+curl 'http://<ip>/writetrace?first=40&last=96&gaps=1'   # with the recorded spacing
+```
 
-### Which entry is traced decides what the oracle contains
+**IT RECORDS INTO MEMORY RATHER THAN OUT OF A PORT**, and that is the point
+rather than a convenience: `Serial.print()` costs ~90 us a byte inside every I2C
+write, which reorders the very sequence being measured. It costs `Capacity` x 10
+bytes of `.bss` -- 5120 at 512 entries -- so check `/bootlog`'s `free heap:`
+against `CONSOLE_BROADCAST_MIN_HEAP` after flashing one.
 
-| `--via` | runs | reaches |
-|---|---|---|
-| `post` | `doPostPresetLoadSteps()` | the scaled standards |
-| `apply` | `applyPresets()` | both bypass switches, on 15 and on 5/6/7/13 |
-| `bypass` | `setOutModeHdBypass()` | that switch's SD and progressive arms |
+**THE RING DOES NOT WRAP AND THE DUMP DOES NOT SAY SO.** Past `Capacity` it
+keeps the oldest and silently stops. `?stat=1` is the only thing that answers
+it: `seen` above `held` means the tail is missing. Arm immediately before the
+event.
 
-`applyPresets()` hands the HD switch 5, 6, 7 and 13 and nothing else, so its
-1/2 and 3/4 arms are reachable only by calling it directly — the pass-through
-preference is what does that at runtime.
+**512 entries does not hold one transition.** Measured on `vga` at 640x480@60,
+the return leg of a pass-through round trip -- one `/uc?x` -- offers **950 to
+1500** writes, so the default ring keeps the first third and drops the rest. A
+capture that has to span a whole transition needs `Capacity` raised, and that
+comes out of a free heap the console's broadcast gate already sits close to: the
+trace build measures 14000 bytes free at boot against a gate of 8000, dipping to
+**9064** under back-to-back HTTP requests.
 
-**AN ORACLE THAT DOES NOT REACH THE CODE DOES NOT FAIL — IT PASSES.** A trace
-taken through the wrong entry silently contains none of the writes being asked
-about, and the diff comes back empty. Check that the fixture carries a
-fingerprint of the code under test before believing an empty diff.
+**A REPLAY FROM THE HOST IS NOT THE SAME EVENT.** `/setreg` is deferred to
+`loop()` and lands at tens of hertz whatever bytes it carries, which is why
+replay runs on the device. Its limits are real: entries longer than four payload
+bytes are skipped, replay writes whole bytes so it clobbers neighbouring bits
+that have moved since recording, and timestamps are `millis()`, so `gaps=1`
+reproduces spacing no finer than a millisecond and reproduces no pulse width at
+all.
 
-### Comparing two oracles
+**IT IS A READING, NOT AN ORACLE.** A capture-and-compare facility sat here --
+a route that forced `rto->videoStandardInput` so a per-standard branch could be
+reached on a bench with no source for it, a collector, a comparator and 64
+fixtures. It went with the byte: there are no per-standard branches for it to
+reach. What it learnt that is still true of any trace comparison:
 
-**Check the run lengths agree first.** A noisy capture drops writes from its
-longest-common-subsequence, and those then read as "only after" in the diff. A
-baseline with 139 stable writes against an after with 161 produced 20 spurious
-differences that were nothing of the kind.
-
-`compare()` reports `equivalent=False` with EMPTY `onlyBefore`/`onlyAfter` when
-only the ORDER changed. Read the two sequences side by side, not the summary.
-
-**Bracket the code under test.** Where the change is a move, the decidable
-comparison is not the whole trace but the slice between the write that precedes
-the moved code and the one that follows it. That slice is the same length and
-the same values in both, or the move is not faithful; everything outside it is
-the settle loops and the live measurements, which vary by capture.
-
-**Capture in short sessions.** Eight standards in one run drifts: a branch that
-is a steady 1046 writes in a four-standard run came back 1217/1205/1049 in an
-eight-standard one, which is a fixture with no oracle worth having.
-
-**When two captures of the SAME build disagree, that is the answer.** Before
-concluding a change moved something, re-capture the after and diff it against
-itself.
-
-### Tracing with no source attached
-
-The forcing route calls the load directly, so it runs whether or not a signal is
-present, and a before/after pair taken without one is still like-for-like. Two
-things change, and both matter:
-
-- **The traces get longer** — about 700 writes on a scaled standard against 220
-  with a source — because the no-sync retry paths run inside the load.
-- **`ADC_SOGCTRL` (s5_02) becomes session-variable.** `loop()` ratchets the
-  sync-on-green slicer down every 500 ms while the source is disconnected, so
-  its value depends on how long the unit has been up. It is stable with a source
-  and is NOT in `SESSION_VARIABLE`, because ignoring that address blanket would
-  hide `ADC_INPUT_SEL` in the same byte.
-
-**A sourceless pair cannot be compared against the committed fixtures**, which
-were captured with the bench source locked. Compare it against its own before.
-
-- **How many times the retry loop runs varies between captures**, so a branch can
-  come back longer or shorter on the same build. It shows as `equivalent=False`
-  with EMPTY `onlyBefore`/`onlyAfter` -- extra repetitions of the five writes
-  `updateSpDynamic()` makes, and nothing else -- which reads like an ordering
-  change and is not one. Re-capture the branch on the same build before
-  believing it: measured at 713, 738 and 713 writes across three captures of one
-  branch, two of them the same binary.
-- **A short capture is not comparable to the same branch inside a full run.**
-  Every load starts from what the previous standard left, and the writes are
-  read-modify-write, so standard 2 after standard 1 and standard 2 after a boot
-  disagree on real bytes. Re-capture the whole set, or compare only branches
-  whose predecessor is the same.
+- **A trace that does not reach the code does not fail, it passes.** The diff
+  comes back empty either way, so check the capture carries a fingerprint of the
+  code under test before believing one.
+- **Check the run lengths agree first.** A noisy capture drops writes from its
+  longest common subsequence and those read as "only after". A 139-write
+  baseline against a 161-write after produced 20 differences that were nothing
+  of the kind.
+- **Bracket the code under test.** Where the change is a move, what is decidable
+  is the slice between the write before the moved code and the one after it.
+  Everything outside is the settle loops and the live measurements.
+- **Two captures of the same build disagree**, so re-capture the after and diff
+  it against itself before concluding a change moved anything: measured at 713,
+  738 and 713 writes across three captures of one branch, two of them the same
+  binary. `PA_SP_S` is the phase sweep's live output and `PAD_SYNC_OUT_ENZ`
+  follows whatever ran before, so both move between sessions.
+- **Every load starts from what the last one left**, and the writes are
+  read-modify-write, so a load after a boot and the same load after another
+  disagree on real bytes.
 
 ## Host unit tests
 
