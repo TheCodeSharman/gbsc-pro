@@ -209,13 +209,13 @@ only partly written and shows the previous mode's memory --
 320x256@50 that is `VDS_DIS_VB_SP` 43 and `VDS_DIS_VB_ST` 1118, so the default
 framing paints 1075 of 1080.
 
-Vertically the NEAR unit costs two lines for nothing visible: the aperture was
-opened eleven rows before the write starts and the top edge stayed clean, where
-the same test at the horizontal near end gives a plain band of stale memory. It
-is applied on both axes because it is one statement about one model, not because
-the top was measured to need it. **Recovering those two lines means measuring
-whether the vertical near end can be trusted to expose nothing at every framing,
-not simply dropping the inset on that axis.**
+**The vertical near unit is no longer given back**, so the two lines it cost are
+recovered. It bought nothing visible -- the aperture was opened eleven rows
+before the write starts and the top edge stayed clean, where the same test at
+the horizontal near end gives a plain band of stale memory -- and the picture is
+placed on the mode's first active line, so the inset was a black bar across the
+top of the screen rather than overscan. Held by `test_axis.cpp`'s "the vertical
+aperture opens on the picture", which walks the zoom range.
 
 What is left beyond the inset is scale granularity. One unit of `VDS_VSCALE` is
 worth 2.2 to 2.4 output lines at these magnifications, and both the window's far
@@ -231,6 +231,53 @@ save 0.2 -- the default framing solved 1077 of 1080. The guard measures the
 overshoot in whole units now, because `Axis::solve()` closes the display window
 on the floor of where the write ends and a sub-unit overshoot is blanked there.
 The same framing solves `VDS_VSCALE` 455 against 456 and paints 1080 of 1080.
+
+### The capture origin lands later in the video where the line doubler is bypassed
+
+**The same framing does not take the same picture in the undoubled output
+modes.** At 480p and 576p the source's flashing border appears down the right of
+the picture and across the bottom, and the matching content is lost off the left
+and the top; at 1080p, which is line doubled, the same framing shows no border
+on any edge. The border flashes and the card does not, so a clip separates them
+with no calibration: per-pixel temporal sigma over 15 frames flags photo columns
+1536..1563 and rows 864..881 at both SD modes and nothing anywhere at 1080p.
+
+The displacement is measured from both ends, automation frozen, by walking the
+capture window in whole units and watching the saturated border band:
+
+| | vertical origin, source lines | horizontal origin, fraction of the line |
+|---|---|---|
+| 1080p, doubled | 31.5 | 0.2036 |
+| 576p / 480p, undoubled | 32.0 | 0.2038 |
+| what the bench measures | **about 2 lines apart** | **about 0.011 apart** |
+
+Walking the 1080p capture DOWN, the border appears between 2 and 4 source lines
+and reaches what the SD modes show unshifted at 4. Walking the 576p capture UP,
+2 source lines removes it completely. So the arithmetic accounts for half a line
+and a fifty-thousandth of a line, and the bench sees four times and fifty times
+that.
+
+**The framing proportions are not the fault and neither is the output window.**
+`/geometry` reports `poh`/`peh`/`pov`/`pev` byte-identical across the three
+modes, and `oh/ch` at 0.2033 in every one. The vertical creep puts the picture
+inside the panel's painted window at 1080p, so the border is not being hidden
+off-panel there.
+
+**`VideoSourceLine::CaptureLagFraction` is the horizontal half and it is close,
+not wrong.** Removing it entirely is much worse -- a cyan band about 150 photo
+columns wide down the left, exactly the 119 units of the move -- so the video
+really does arrive late on the bypassed line. What is open is the residual
+0.011, against a constant measured as 0.0641 and 0.0628 on two modes.
+
+**Vertically nothing is modelled at all.** `VideoSourceLine` carries the lag for
+the line only, because nothing has measured the vsync equivalent, and this is
+that measurement arriving: the undoubled vertical origin needs about two source
+lines taken off it.
+
+Whether one cause produces both is not established. The two residuals are not
+the same fraction of their axis, and on the doubled path the picture's placement
+comes from `IF_HBIN_SP`'s inherited 272 rather than from a lag at all, so the
+doubled origin is not independently pinned either.
 
 ### The output sync pad is raised only on a source-state transition, so it latches down
 
