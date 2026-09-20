@@ -342,13 +342,29 @@ vertical zoom step each:
 | 1079 | 9 |
 | 1078 | 4 |
 
-What is left is scale granularity alone. One unit of `VDS_VSCALE` is worth 2.2
-to 2.4 output lines at these magnifications, and both the window's far edge and
-the memory window's near edge are whole units, so the write ends a fraction of a
-line early and the display window closes on the floor of it. Nothing can be
-recovered there without either a finer scale or cropping the bottom of the
-picture, and cropping is the worse trade: a black edge is visible and one press
-away, where a cropped one looks like a fault.
+**Those counts predate the aperture's inset and are no longer what the engine
+solves.** The display window now opens one capture unit past the write origin
+and closes one short of where the write ends, because the unit at each end is
+only partly written and shows the previous mode's memory --
+`investigations/the-aperture-is-inset-one-capture-unit-at-each-end.md`. At
+320x256@50 that is `VDS_DIS_VB_SP` 43 and `VDS_DIS_VB_ST` 1118, so the default
+framing paints 1075 of 1080.
+
+Vertically the NEAR unit costs two lines for nothing visible: the aperture was
+opened eleven rows before the write starts and the top edge stayed clean, where
+the same test at the horizontal near end gives a plain band of stale memory. It
+is applied on both axes because it is one statement about one model, not because
+the top was measured to need it. **Recovering those two lines means measuring
+whether the vertical near end can be trusted to expose nothing at every framing,
+not simply dropping the inset on that axis.**
+
+What is left beyond the inset is scale granularity. One unit of `VDS_VSCALE` is
+worth 2.2 to 2.4 output lines at these magnifications, and both the window's far
+edge and the memory window's near edge are whole units, so the write ends a
+fraction of a line early and the display window closes on the floor of it.
+Nothing can be recovered there without either a finer scale or cropping the
+bottom of the picture, and cropping is the worse trade: a black edge is visible
+and one press away, where a cropped one looks like a fault.
 
 **The whole-step loss is closed.** `Axis::fitToRaster()` bumped the scale a
 whole step to clear an overshoot of a fifth of a line, which cost 2.1 lines to
