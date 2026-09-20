@@ -1035,3 +1035,17 @@ framing rather than the change. Diff at the same framing or not at all.
 identity in `/slots.txt`, proportionally, and detection restores it without being
 asked — so a like-for-like diff across a reflash needs the framing saved once
 beforehand, not re-walked afterwards.
+
+## 2026-09 — the scaling baselines, and a pass-through fault state
+
+Three states from the September bench sessions. The two baselines were taken
+BEFORE the display window was inset one capture unit at each end, so a diff
+against either reports `VDS_DIS_?B_SP` and `VDS_?B_ST` moved by a capture unit
+at each end, and that is the expected difference rather than a finding.
+`docs/investigations/the-aperture-is-inset-one-capture-unit-at-each-end.md`.
+
+| snapshot | what it shows |
+|---|---|
+| `bar-and-shift-2026-09-13` | the picture panned left with a blue/green bar at the right, reached by three pass-through round trips on the RiscPC at 320x256@50. A **full 1536-register** capture, so it covers the 928 addresses a config dump leaves out — diff it with `snapdiff.py`, not against a `dump_registers.py` state. The board is exonerated for the displacement itself, measured through the STV9426 overlay; what this carries is the bar beside it, and the cost of reaching it again is three round trips at the bench |
+| `baseline-320x256-50-scaling-2026-09-18` | the bench source on the scaling path at a 100% framing, `vga`, SYNC 0, `preferScalingRgbhv` on. The reference for what a settled 15 kHz solve looks like |
+| `baseline-640x480-60-scaling-2026-09-18` | 640x480@60 on the scaling path at a 100% framing, with the route **verified by `DAC_RGBS_BYPS2DAC` 0** rather than assumed — which is the check `docs/rgbhv-bypass-trap.md` exists for, since a bypassed state reads plausibly on the fields a scaling state is judged by |
