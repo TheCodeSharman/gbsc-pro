@@ -8495,9 +8495,12 @@ void OSD_selectOption()
                     Osd_Display(20, "limit");
                     __(0x0d, _25);
                     break;
+                // The key follows the EDGE THAT MOVES, as Left and Right do: the
+                // picture is pinned at the top of the active region, so growing
+                // it moves the bottom edge down and Down is what grows it.
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    if (!geometryControls.verticalZoom(+Tv5725::ControlSteps::Fine
+                    if (!geometryControls.verticalZoom(-Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
@@ -8513,7 +8516,7 @@ void OSD_selectOption()
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    if (!geometryControls.verticalZoom(-Tv5725::ControlSteps::Fine
+                    if (!geometryControls.verticalZoom(+Tv5725::ControlSteps::Fine
                             * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
