@@ -1101,7 +1101,10 @@ divider being capped by the channel counter is the candidate for the smearing,
 flickers**, so neither is a property of the bypass route. The clipping is the
 open third fault in
 `investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`
--- the produced picture is wider than the encoder transmits.
+-- the emitted active window is wider than what reaches the panel, by 5.3% at
+576p and 5.7% at 480p where 1080p fits with room to spare. `VDS_HSYNC_RST` is
+the lever and the response is one for one, so `Geometry::solveRaster()` sizing
+the two short rasters is where it is fixed.
 
 ### The encoder drops the link with nothing on the board moving
 

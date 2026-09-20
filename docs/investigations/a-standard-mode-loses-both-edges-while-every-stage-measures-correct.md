@@ -9,8 +9,8 @@ and right. The same source in RGBHV bypass shows the card complete.
 | | what it is | state |
 |---|---|---|
 | head blanking | `IF_HBIN_SP` blanks into the capture where the doubler is bypassed | **closed** |
-| the line offset | the IF origin is ~72 units late, and one sync width early where hsync is inverted | **corrected in placement**; the tail past the write limit remains |
-| the transmitted window | the produced picture is wider than the encoder transmits | open |
+| the line offset | the video sits 6.4% of a line behind the counter's origin where the doubler is bypassed, and nothing behind it where it is in | **closed**: the placement translates by it |
+| the transmitted window | the emitted active window is wider than what reaches the panel, on the two short rasters | open; `VDS_HSYNC_RST` is the lever |
 
 ## The source, exactly
 
@@ -103,9 +103,29 @@ resolutions, both hsync polarities and sync widths from 64 to 128 source pixels.
 | 640x480@75 | 3 | 64 | 211.8 | 227.5 | **−15.7** | 85.6 | +69.9 |
 
 All four at `PLLAD_MD` 1124 with the line doubler bypassed, so one IF unit is
-one ADC sample and LAG is ~72 ADC samples. The offset column is what a model
-without the sync term has to explain: it changes sign. The LAG column is what
-one bit of extra state reduces it to.
+one ADC sample. The offset column is what a model without the sync term has to
+explain: it changes sign. The LAG column is what one bit of extra state reduces
+it to.
+
+> **IT IS A FRACTION OF THE LINE, NOT A COUNT OF SAMPLES AND NOT A TIME**, and
+> one divider cannot tell the three apart -- which is why the table above reads
+> as a constant. A second measurement at another divider and another line rate
+> separates them:
+>
+> | | samples | of the line | as time |
+> |---|---|---|---|
+> | 800x600@60, `PLLAD_MD` 1124 | 72 | 0.0641 | 1.69 us |
+> | 320x256@50 at 480p, `PLLAD_MD` 1880 | 118 | 0.0628 | 4.02 us |
+>
+> The fractions agree to 2%; the counts disagree by 64% and the times by 2.4x.
+> `VideoSourceLine::CaptureLagFraction` is 0.0640 and the lag is computed per
+> line from it, so a mode change re-derives it with the divider.
+>
+> **And that settles the doubled path.** The second reading is the whole
+> displacement between the two scan modes, so once the bypassed line accounts
+> for all of it the doubled line's lag is zero -- which `IF_HBIN_SP` placing
+> the picture itself already implied, and which is what keeps a doubled output
+> untouched by any of this.
 
 **The sync term is decided by a bit the chip already reports.**
 `STATUS_SYNC_PROC_HSPOL` reads 1 on AKF50's `sync_pol` 0 and 2 modes and 0 on
@@ -129,11 +149,24 @@ and the picture arrives one sync width sooner.
 
 `VideoSourceLine` carries the lag. `firstCapture()` is
 `lag + headBlanking + syncUnits`, and `videoAt()` maps a position a standard
-states as a fraction of ITS line onto this one by adding the lag alone.
-`ActiveImage::place()` puts an untuned axis through `videoAt()`; placing it at
-the stated fraction of the IF line directly was where the wrong premise lived,
-and correcting `firstCapture()` alone never reaches it because the default start
-sits above that floor. `SourceMeasurement::readSource()` reads `STATUS_SYNC_PROC_HSPOL` to decide the
+states as a fraction of ITS line onto this one by adding the lag.
+`fractionAt()` inverts it, so one mapping joins a position in the SOURCE to a
+position in the counter and every caller goes through it:
+`ActiveImage::place()` puts both a tuned framing and an untuned axis through
+`videoAt()`, and `clampToLine()` seeds back through `fractionAt()`.
+
+**A LAG APPLIED ONLY TO THE FLOOR IS NOT APPLIED AT ALL.** The floor bounds
+where a window may open, and a framing placed above it never meets it -- which
+is the state anchoring the framing to `units()` left behind, `firstCapture()`
+having been the only term carrying the lag into the start. The symptom is the
+source's border down the left of every undoubled output while the doubled one
+looks right, and no register reads wrong.
+
+The control bound moves with the lag too. `CaptureWindow::reachOn()` is
+`lastReachable()`, the last position a framing may NAME, rather than
+`lastCapture()`, the last unit the counter may open on: a framing is a
+proportion of the source and the bound has to be in the same units, or the far
+end of the pan gains a dead zone one lag wide. `SourceMeasurement::readSource()` reads `STATUS_SYNC_PROC_HSPOL` to decide the
 normalisation and nothing else; the polarity reaches no solver.
 
 **The lag is not applied where the line doubler is in circuit.** `IF_HBIN_SP` is
@@ -236,7 +269,7 @@ measurable there is consistent: the outer bands leave the head of the window
 between origin IF 227 and 243, which places the picture start between IF 121 and
 138.
 
-## Fault 3: the produced picture is wider than the encoder transmits
+## Fault 3: the emitted active window is wider than what reaches the panel
 
 Differencing `VDS_DIS_HB_ST` against the panel gives `photo = 0.913 x output -
 106`, and the painted region ends at **output ~1378** — measured twice, at a
@@ -264,11 +297,40 @@ comparison that appeared to rule overscan out: it compared two sources at
 bypass reference does establish is that an 800x600 source passed through
 untouched fills the panel completely, so the panel paints what it is sent.
 
-Nothing on the board can measure the encoder's active window — the MS9288A is on
-no MCU's I²C bus and EDID is unreachable — so the open question is what sets its
-width, and whether `Geometry::solveRaster()` can be made to solve a raster that
-fits inside it. Sweeping the raster total against the painted end would answer
-the first.
+**THE VDS LINE LENGTH IS THE LEVER, AND IT IS OURS.** What reaches the panel is
+a fixed FRACTION of the emitted line rather than a fixed count of emitted
+pixels, so `VDS_HSYNC_RST` sets the picture's size on the panel one for one.
+Measured at 480p by moving it with everything else held, fitted on ten
+colour-bar edges:
+
+| `VDS_HSYNC_RST` | predicted scale, as a fraction of the line | measured |
+|---|---|---|
+| 2057 -> 2097 (+1.94%) | 0.9809 | **0.9803** |
+| 2057 -> 2017 (-1.94%) | 1.0198 | **1.0167** |
+
+**`VDS_DIS_HB_ST` is not the lever.** Walked from 1967 to 1667, a 17% narrowing
+of the display window, the content neither moved nor changed size and the
+blanked strip's edge tracked the register linearly at 0.930 photo px per output
+pixel. It clips, and nothing more.
+
+What reaches the panel, per mode, against the panel's painted area taken from an
+800x600 pass-through at the same camera position:
+
+| mode | total | display window | what the panel shows | implied `totalPx` | the standard's |
+|---|---|---|---|---|---|
+| 1080p | 1920 | 143..1809 | all of it, 21 photo px to spare | 2182 | 2200 |
+| 576p | 2073 | 319..2040 | 94.5 photo px over at the right | 913 | 864 |
+| 480p | 2057 | 246..1967 | 15.0 over left, 71.9 over right | 910 | 858 |
+
+So `Geometry::solveRaster()` sizes the two short rasters against a fraction the
+chain does not use: both want a total near 2175 where they solve 2057 and 2073,
+and 1080p is right. Steps of +-100 blank the sink either way, because the clock
+is held and the field rate goes with the total, so a sweep has to move both.
+
+Nothing on the board can measure what the encoder transmits -- the MS9288A is on
+no MCU's I²C bus and EDID is unreachable -- but the fraction does not have to be
+explained to be solved for: it is measurable from the panel per output mode, and
+the raster is ours to choose.
 
 ## Two measurement traps this cost
 
