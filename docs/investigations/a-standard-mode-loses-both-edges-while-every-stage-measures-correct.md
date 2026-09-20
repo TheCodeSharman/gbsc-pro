@@ -126,6 +126,38 @@ it to.
 > for all of it the doubled line's lag is zero -- which `IF_HBIN_SP` placing
 > the picture itself already implied, and which is what keeps a doubled output
 > untouched by any of this.
+>
+> **THE FRACTION IS 0.0539, AND IT IS MEASURED AS THE DIFFERENCE IT IS USED
+> AS.** The readings above are ABSOLUTE -- a knee against each mode's stated
+> timings -- and the paragraph above presses them into service as the scan-mode
+> difference by assuming the doubled lag is zero. Measured directly, by taking
+> the same feature on the same source in both scan modes, the difference is
+> 0.0539 and not 0.0640. The knee's systematic biases -- the aperture's far-end
+> inset, the interpolation, the edge threshold -- are shared by both readings
+> and fall out of a difference where they do not fall out of an absolute
+> reading; against the mode file each counter is out by a further 0.010 to
+> 0.020 of a line, which is that bias rather than a second finding.
+>
+> **THE FRAME HAS ONE TOO, AND IT IS NEGATIVE.** The undoubled frame delivers
+> video one and a half SOURCE LINES EARLY where the undoubled line delivers it
+> late. The two pipelines are not the same one and nothing requires them to
+> agree in sign. `VideoSourceLine::FrameLagLines`, and
+> `docs/known-issues.md` carries what one source cannot settle about either
+> constant.
+>
+> Measured on the bench, RiscPC X320 Y256 F50, automation frozen, the capture
+> window crept a unit at a time until the source's flashing border entered the
+> picture, with `RetroScaler-Acorn.mdf` naming the feature -- active video at
+> 110..430 of 512 and lines 36..292 of 312:
+>
+> | the card's edge | doubled | undoubled |
+> |---|---|---|
+> | top / bottom, source lines | 30.0 / 288.5 | 28.5 / 287.0 |
+> | right, fraction of the line | 0.8300 | 0.8839 |
+>
+> The symptom it closes: one stored framing took different picture at 480p and
+> 576p than at 1080p, the source's border standing down the right and across the
+> bottom while the matching content fell off the left and the top.
 
 **The sync term is decided by a bit the chip already reports.**
 `STATUS_SYNC_PROC_HSPOL` reads 1 on AKF50's `sync_pol` 0 and 2 modes and 0 on

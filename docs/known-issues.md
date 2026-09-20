@@ -232,52 +232,34 @@ overshoot in whole units now, because `Axis::solve()` closes the display window
 on the floor of where the write ends and a sub-unit overshoot is blanked there.
 The same framing solves `VDS_VSCALE` 455 against 456 and paints 1080 of 1080.
 
-### The capture origin lands later in the video where the line doubler is bypassed
+### The capture origin's scan-mode offset was measured against one source
 
-**The same framing does not take the same picture in the undoubled output
-modes.** At 480p and 576p the source's flashing border appears down the right of
-the picture and across the bottom, and the matching content is lost off the left
-and the top; at 1080p, which is line doubled, the same framing shows no border
-on any edge. The border flashes and the card does not, so a clip separates them
-with no calibration: per-pixel temporal sigma over 15 frames flags photo columns
-1536..1563 and rows 864..881 at both SD modes and nothing anywhere at 1080p.
+**Closed as a defect, open as a constant.** The same framing took different
+picture where the line doubler was bypassed -- the source's flashing border down
+the right and across the bottom at 480p and 576p, none at 1080p. It is fixed:
+`VideoSourceLine::CaptureLagFraction` is 0.0539 rather than 0.0640, and
+`FrameLagLines` is the vertical half, which nothing modelled before. Zero
+flashing columns and rows at all three modes now, against 26 to 28 and 14 to 16
+before.
 
-The displacement is measured from both ends, automation frozen, by walking the
-capture window in whole units and watching the saturated border band:
+What is left is the form of the two constants, and one source cannot settle it:
 
-| | vertical origin, source lines | horizontal origin, fraction of the line |
-|---|---|---|
-| 1080p, doubled | 31.5 | 0.2036 |
-| 576p / 480p, undoubled | 32.0 | 0.2038 |
-| what the bench measures | **about 2 lines apart** | **about 0.011 apart** |
+- **`FrameLagLines` is a COUNT of source lines, not a fraction of the frame.**
+  The unit either side of the doubler is a line and a doubler's latency is
+  stated in them, which is the argument, not a measurement. A second source at
+  another line count separates the two -- the Wii at 480p on `ypbpr` is 524
+  lines and undoubled, so it is reachable without a bench trip, but it carries
+  no border instrument and no tuned framing.
+- **`CaptureLagFraction` now disagrees with the four-mode table it came from.**
+  Those readings were absolute -- a knee against each mode's stated timings --
+  and they are used as the difference between the scan modes, which is what is
+  measured now. Read against the mode file, each counter is out by a further
+  0.010 to 0.020 of a line; that is the knee's own bias, shared by both modes
+  and cancelling out of the difference, rather than a second finding. It does
+  mean 800x600@60 and the other undoubled-only sources move by about 11 units,
+  and nothing has judged those since.
 
-Walking the 1080p capture DOWN, the border appears between 2 and 4 source lines
-and reaches what the SD modes show unshifted at 4. Walking the 576p capture UP,
-2 source lines removes it completely. So the arithmetic accounts for half a line
-and a fifty-thousandth of a line, and the bench sees four times and fifty times
-that.
-
-**The framing proportions are not the fault and neither is the output window.**
-`/geometry` reports `poh`/`peh`/`pov`/`pev` byte-identical across the three
-modes, and `oh/ch` at 0.2033 in every one. The vertical creep puts the picture
-inside the panel's painted window at 1080p, so the border is not being hidden
-off-panel there.
-
-**`VideoSourceLine::CaptureLagFraction` is the horizontal half and it is close,
-not wrong.** Removing it entirely is much worse -- a cyan band about 150 photo
-columns wide down the left, exactly the 119 units of the move -- so the video
-really does arrive late on the bypassed line. What is open is the residual
-0.011, against a constant measured as 0.0641 and 0.0628 on two modes.
-
-**Vertically nothing is modelled at all.** `VideoSourceLine` carries the lag for
-the line only, because nothing has measured the vsync equivalent, and this is
-that measurement arriving: the undoubled vertical origin needs about two source
-lines taken off it.
-
-Whether one cause produces both is not established. The two residuals are not
-the same fraction of their axis, and on the doubled path the picture's placement
-comes from `IF_HBIN_SP`'s inherited 272 rather than from a lag at all, so the
-doubled origin is not independently pinned either.
+`docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`.
 
 ### The output sync pad is raised only on a source-state transition, so it latches down
 
