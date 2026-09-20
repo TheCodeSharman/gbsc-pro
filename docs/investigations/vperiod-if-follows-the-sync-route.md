@@ -1,8 +1,25 @@
-# Why `VPERIOD_IF` never completes a measurement on RGBHV
+# `VPERIOD_IF` follows the sync route, not RGBHV
 
-**Status:** structural and reproducible. **The board-level question is settled:
-`VPERIOD_IF` works here, and the fault is specific to the RGBHV path.** What
-remains open is whether the sync route or the video standard is the discriminator. What the firmware does about it
+**Status:** CLOSED. **The discriminator is the SYNC ROUTE, not the video
+standard and not RGBHV as such**: `VPERIOD_IF` is valid whenever the sync
+separator is in the path and debris when it is not. Measured on one input, one
+cable, one mode, with only the RISC PC's sync type moving --
+
+| `vga`, 320x256@50 | separate | composite |
+|---|---|---|
+| `VPERIOD_IF` | 62, debris | **623** |
+| `STATUS_IF_VT_BAD` | **1** in 582/582 | **0** in 53/53 |
+| `SP_SOG_MODE` | 0 | 1 |
+
+-- which confirms the separator hypothesis below on a stricter test than the
+RGBS experiment it proposed, because that one moved the input port and the video
+standard as well. `docs/sync-type-selection.md` carries the register detail.
+
+**The experiment described at the end is no longer blocked the way it says.**
+ModeServ changes the RISC PC's sync type live over TCP, so no CMOS change and no
+reboot is involved, and the sync route can be moved without touching a cable.
+The RGBS-through-the-Sync-port version remains the only way to separate the
+PORT from the sync route, which nothing so far has needed. What the firmware does about it
 — substitute `STATUS_SYNC_PROC_VTOTAL`, treat a non-zero value as debris — is in
 [`tv5725-chip.md`](../tv5725-chip.md).
 
@@ -179,6 +196,33 @@ so far needed.
 `INTERLACE_PROGRESSIVE_RECOGNIZE` at s0_04[7:6] is a second name for those same
 two bits, which the one-name-per-field rule forbids.
 
+## It survives every failure the sync processor has
+
+Where `VPERIOD_IF` is live it is not merely a second opinion, it is unmoved by
+what breaks the first one. Measured on the Wii while the sync processor was in
+each of its failure modes, `VPERIOD_IF` read **624 with `STATUS_IF_VT_OK` 1 in
+every sample**:
+
+| `STATUS_SYNC_PROC_VTOTAL` | `Geometry::sourceState()` | `VPERIOD_IF` |
+|---|---|---|
+| 310, correct | `acquired` | 624 |
+| 254 / 160 / 149 / 230, wandering | `absent` | 624 |
+| 97, the no-lock value, held 40 s | `absent` | 624 |
+
+So a source the engine calls absent is being measured correctly and continuously
+by the input formatter, with a validity flag saying so. That is the witness the
+coast lengths lack: `SP_PRE_COAST`/`SP_POST_COAST` corrupt the sync processor's
+count and cannot reach this one, so the pair can in principle be steered to make
+the two agree rather than held as a constant.
+`two-owners-of-the-coast-lengths-double-the-count.md`.
+
+**What is not established** is the arithmetic tying them together. The counts are
+in different units -- `VPERIOD_IF` in half-lines of the frame, the sync processor
+in lines of the field -- and the one comparison that would pin the relation, a
+coast parked long enough to force the doubled count while both are read, cannot
+be taken any more: with one owner a hand-written pair is overwritten within
+1.5 s. Forcing it needs the engine held off, not a register write.
+
 ## What this costs the geometry engine
 
 `VPERIOD_IF` measures the FRAME while `STATUS_SYNC_PROC_VTOTAL` measures the
@@ -186,5 +230,85 @@ FIELD, so the two disagreeing by a factor of two is what interlace looks like --
 but it counts half-lines and so does not distinguish interlace by magnitude.
 Being dead on separate sync means it supplies nothing at all there. Combined with
 the status bits above, **no register on this board establishes interlace**.
-`docs/retiring-mode-detect.md`.
+`docs/video-source-acquisition.md`.
 
+## What the scan-type measurement does with it, and why that still works
+
+`VPERIOD_IF` carries the half line an interlaced field adds, and
+`SourceMeasurement::scanType()` reads it against the line doubling the engine
+holds -- doubling is what puts the count in half lines, so which parity means
+interlaced inverts with it. The motion-adaptive path runs off nothing else.
+
+**It is gated on `STATUS_IF_VT_OK`, which is what keeps the debris out.**
+Measured on the two bench sources:
+
+| source | `VPERIOD_IF` | `STATUS_IF_VT_OK` |
+|---|---|---|
+| RISC PC on `vga`, RGBHV, progressive | 0, 33, 57, 101, 112 across runs | 0 |
+| Wii on `ypbpr`, PAL 576i | 624, every sample | 1 |
+
+So the bit separates the two sources exactly, and the measurement never sees a
+period from the RGBHV path at all. A count too short to be a vertical total
+answers `ScanUnknown` behind that gate, and the caller leaves the deinterlacer
+where it is.
+
+**The parity generalises, and the doubling is what makes it do so.** Six states
+on the RISC PC -- three modes either side of the doubling boundary, interlace
+toggled on each -- and both Wii scan types agree with one rule.
+`interlaced-source-measurement.md`.
+
+
+## The test bus reading was taken through an undriven bus
+
+`TEST_BUS_SEL` picks which block drives `DEBUG_IN_PIN`, and `/testbus` counts its
+transitions over 25 ms from inside `loop()`. Swept on the bench RISC PC at
+320x256@50 with only the sync type moving:
+
+| `TEST_BUS_SEL` | separate | composite | |
+|---|---|---|---|
+| `0x00` input vsync | 2 | 4 | field rate on both |
+| `0x02` output vsync | 2 | 2 | field rate on both |
+| **`0x0a`** | **0** | **2** | **field rate on composite only** |
+| `0x05`, `0x06`, `0x07`, `0x0e`, `0x0f`, `0x10`, `0x12` | 1300-3900 | 1300-4400 | line rate on both |
+
+**Vertical sync reaches the chip on separate sync** -- selector `0x00` carries it
+either way, which is the same conclusion `STATUS_SYNC_PROC_VSACT` and a correct
+`STATUS_SYNC_PROC_VTOTAL` already supported. What changes is one bus. `0x0a` is
+recorded in `framesync.h` as the selector the sync watcher and the HTotal search
+use.
+
+That is corroboration for the separator hypothesis rather than proof of it: it
+shows a vertical signal that exists only with the separator in the path, and it
+does not establish that the input formatter's vertical measurement reads that
+particular bus. The next step is a sweep with `SP_TEST_MODULE` and `IF_TEST_SEL`
+set, which `/testbus` takes as parameters.
+
+
+## What is refuted, and what the test bus actually shows
+
+**The retiming vertical window is not the cause.** `SP_RT_VS_ST` is 2 against
+`SP_RT_VS_SP` 0, a window whose stop precedes its start, and both are static
+constants never varied by source -- so it looked like the whole fault. Swept on
+separate sync with the stop at 8, 64, 311 and 1000, every write read back, 1854
+samples: `VPERIOD_IF` never moved off 136 and `STATUS_IF_VT_OK` never left 0.
+
+**The earlier `0x0a` comparison was between two states of a bus nothing was
+driving.** `SP_TEST_MODULE` reads 7, which drives nothing. Point it somewhere
+live and the bus carries traffic -- `sp=5` gives 8522 transitions in 25 ms,
+`sp=6` 664, `sp=4` 48. The same applies to selector `0x00`, read at the time as
+"input vsync": it is the input formatter's test output, and `IF_TEST_SEL`
+changes it completely, from 2 at `if=3` to 8325 at `if=4`. So the reading that
+one bus stops carrying vertical sync on separate sync does not stand.
+
+**Nor is any test-bus stage a scan-type detector.** Swept across a real
+interlace change, three passes per configuration, every apparent difference sits
+inside the pass-to-pass spread of a line-rate count. The one exception is
+`sp=4`, `vs_act_det`, at 46-47 progressive against 48 interlaced -- one
+transition out of 47, which more sampling could erase, and not something to
+build on.
+
+**The fault is narrower than "the IF gets no vertical sync".** Within one
+settled state `VPERIOD_IF` is a rock-steady constant -- 136 in 371 of 371, in
+every window, and unchanged across an interlace change. It takes a different
+constant per acquisition episode. It is stuck, not noisy, which points at the
+counter being held or reset rather than counting rubbish.

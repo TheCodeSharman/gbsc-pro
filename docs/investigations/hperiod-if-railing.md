@@ -1,9 +1,88 @@
 # Why `HPERIOD_IF` goes bad
 
-**Status:** open. The cause is not known. What to do about it — validate against
-the expected value for the mode, read it once just after the preset apply — is in
-[`tv5725-chip.md`](../tv5725-chip.md); this page is what has been ruled out, so
-the same ground is not covered again.
+**Status:** open as a fault, closed as a picture consequence. The cause is not
+known. What to do about it — validate against the expected value for the mode,
+refuse a window `STATUS_IF_HT_BAD` flagged, refuse a line rate below 15 kHz — is
+in [`tv5725-chip.md`](../tv5725-chip.md); this page is what has been ruled out,
+so the same ground is not covered again.
+
+**THE RAILED READING NO LONGER REACHES THE RASTER**, which the corroboration
+section below is what changed and this is the measurement of it. Taken on the
+bench RiscPC at 320x256@50 with the counter live and bad, `ms=25` over 15 s from
+inside `loop()`: **556 samples, 511 in 349 of them, and the 431 the mode is due
+in none**. Beside it the engine held `lineRateHz` 15625, solved `VDS_HSYNC_RST`
+1915 — not the 2264 a 13183 Hz reading gives — and the picture was clean and
+full screen. The field rate is what refuses the counter, and it is doing so.
+
+**Do not reach for a wider sampling window.** The counter holds a value for up
+to 90 ms and the firmware's samples are back-to-back, so they agree whatever it
+is doing. The measurement is below.
+
+## `/sc?~` LEAVES IT RAILED, AND A SOURCE MODE ROUND TRIP CLEARS IT
+
+Thirteen solves on one unchanged 320x256@50 source, alternating the two ways of
+reaching a solve, reading `HPERIOD_IF` twenty seconds after each:
+
+| reached by | n | `HPERIOD_IF` | which measurement answered | line rate | `PLLAD_MD` |
+|---|---|---|---|---|---|
+| source mode round trip | 6 | **431**, every one | line period | 15625 | 2206 |
+| `/sc?~` | 7 | **511** x6, **255** x1 | field rate | 15625 | 2206 |
+
+Perfectly separated, and it sharpens the recovery table in `../../CLAUDE.md`:
+`/sc?~` does not merely fail to clear the railing, it is followed by it every
+time. A mode round trip is followed by a healthy 431 every time.
+
+**THE ENGINE IS NOT HARMED BY IT HERE, AND THAT IS THE POINT OF THE FALLBACK.**
+Every one of the seven railed readings was refused by `lineRateFromHPeriod()`,
+the field rate answered instead, and it produced the same 15625 and the same
+2206 divider as the six healthy readings did. The two paths agreed on this
+source. What the railing costs is the cheap measurement, not the answer.
+
+## The divider varying is NOT reproduced by the rate path
+
+`the-transition-is-mostly-the-encoder.md` recorded `PLLAD_MD` at 2250, 2206 and
+2202 across solves on one unchanged source and proposed that the rate path was
+what moved. Measured directly with the path now named in the sampling line, it
+is not: **2206 in all thirteen**, on both paths, at one rate.
+
+So the mechanism is still open. What the measurement does bound is that the two
+paths do not disagree merely by being different paths -- the fallback derived
+15625 from a measured 50.08 Hz, the same figure the line period gives. The
+divider moves when the MEASURED FIELD RATE moves, and 50.19 Hz was seen to give
+15661; what is unmeasured is what makes the field rate land on 50.19 rather than
+50.08.
+
+## Where the fault sits: the IF's lock to the line, not the signal
+
+**Two blocks read the same incoming line and only one of them fails.** In the
+railed state the sync processor counts a steady 311 with
+`STATUS_SYNC_PROC_HTOTAL` echoing the divider, and the ADC, the capture and the
+playback deliver a complete clean picture from that same signal -- while
+`STATUS_IF_HT_OK` reads 0 and `HPERIOD_IF` rails. So what arrives at the chip is
+good, and what fails is what the input formatter makes of it.
+
+**It is not independent of the input either**, which is what a plain "the block
+is broken" reading misses:
+
+- which mode the source lands IN predicts it -- 44% at `SP_VTOTAL` 524, 24-28%
+  at 363 and 533, 0-4% everywhere else
+- no register write reproduces it, over 79 differing registers applied
+  individually, and no reset in either clock domain clears it
+- every clearance measured works by interrupting the line into the ADC rather
+  than by resetting anything -- a source mode change, which is the source's
+  doing, and an `ADC_INPUT_SEL` bounce, which IS a register write from this end
+  and is the one that does clear it
+
+So the shape is latched state inside the IF's measurement, entered and left on
+the line's TRANSITIONS rather than on its content. That is consistent with the
+2026-09-15 pair where both of those clearances failed in turn: if the lever were
+the interruption alone, a round trip would always work, and it does not.
+
+`SP_SYNC_BYPS` is in the nine-bit sweep below and reads as noise there. What is
+added since is that it changes nothing on a WORKING picture either -- same
+framing, same counters, and the same test-bus selectors carrying either side --
+so it is not a lever on this source at all rather than merely not a clearance.
+`docs/tv5725-chip.md`.
 
 ## It follows the source, not the preset
 
@@ -146,10 +225,15 @@ the horizontal period register is wrong by a factor of four. Anything proposing 
 cause that would stop the block measuring has to explain why the other
 measurement out of it is unaffected.
 
-It also settles what the fault costs, which is not obvious from the register:
-**nothing on the video path**. The geometry solved against the test pin is
-correct at both ends of the round trip, the framing returns to 0,0,0,0 and the
-picture is clean.
+It also settles what the fault costs **on the path that reads the test pin**:
+nothing. The geometry solved against it is correct at both ends of the round
+trip, the framing returns to 0,0,0,0 and the picture is clean.
+
+That is no longer the general answer. `measureLineRate()` now prefers
+`HPERIOD_IF` and only falls back to the test pin when the reading is refused, so
+a railed value that gets through is solved against -- see *The second consumer is
+the output raster* below, where the raster came out 2264 wide against 1916 and
+the sink reported 42 Hz.
 
 The practical consequence is for anyone tempted to read the line rate here
 rather than time it. `HPERIOD_IF` is divider-independent, needs no vsync and
@@ -267,6 +351,111 @@ something off the TV5725 bus entirely — the Si5351 is the obvious one, since i
 appears in no register trace and `/freeze` does not gate FrameSync steering it.
 
 
+## A STALE divider does cause it, which is not what the sweep tested
+
+The sweep below moved the divider on a SETTLED source and found nothing. That
+is a different question from a divider left behind by a source that has since
+moved, and the second one reproduces on demand.
+
+Measured across 640x480@60 (524 lines) and 320x256@50 (311 lines) on `vga`,
+both directions, with `SamplingLog` at 25 ms:
+
+| | divider during | PLL unlocked for | railed |
+|---|---|---|---|
+| 524 -> 311 | **1096 held 17 s**, 2206 due | 17 s | 2 of 4 runs |
+| 311 -> 524 | moved 2206 -> 1124 -> 1096 in ~0.5 s | ~1 s | **0 of 4 runs** |
+
+The chain is: a divider that does not match the arriving line, held for
+seconds, then the counter goes bad about three seconds in. It is not WHICH
+divider -- every value in the sweep is fine on a source it suits.
+
+### The PLL lock is neither the cause nor the cure
+
+Both halves are measured in the same window, which is what makes them
+comparable:
+
+- **Unlocked and correct.** Through t=3,4,5 of a 524 -> 311 change the PLL
+  reads 0 and `HPERIOD_IF` reads the new mode's 431 in 95 of 99 samples.
+- **Locked and still railed.** At t=21..22 the PLL relocks and
+  `STATUS_SYNC_PROC_VTOTAL` is back to 311, and `HPERIOD_IF` stays at 511.
+
+What tracks the fault exactly is the IF's own pair: `STATUS_IF_HT_OK` 1 -> 0
+and `STATUS_IF_HT_BAD` 0 -> 1, flipping on the sample the railing starts and
+never flipping back inside the window. So do not reach for `PLLAD_LOCK` as the
+discriminator; the block that owns the measurement says so itself.
+
+## The value is right immediately after the change, and not for a bounded time
+
+This matters because the engine only needs one good reading to size the
+divider. Over 12 transitions rotating 320x256@50, 640x480@60 and 800x600@60:
+
+- the first sample carrying the new mode's value is correct in **12 of 12**,
+  arriving ~2.07 s into a capture whose mode command fires at 2.0 s -- that is,
+  within about 100 ms of the new line reaching the part, and *before* ModeServ
+  has even replied
+- but the run of correct samples before something else appears is **6 samples
+  (~150 ms) at worst** and 451 at best, and the short ones are all transitions
+  into 800x600
+
+**So "read it early" is safe and "believe it for a while" is not.** Two of the
+twelve carried genuinely intermediate values during settling -- `211, 255, 311,
+351, 418` and `150, 169, 206, 255, 276` -- and 206 against a correct 213 is the
+stable-and-plausible shape that no range check rejects.
+
+A caveat on that run: it took no settle between transitions, so a 16 s window
+can hold the tail of the previous change. The arrival time is solid; the
+distribution during settling is indicative rather than clean.
+
+## What the stall costs the picture, and it is not a register
+
+Through a 524 -> 311 stall the output keeps the previous mode's raster: the
+picture rolls and tears, and a band of stale frame buffer grows leftward from
+the right-hand edge over about fifteen seconds until the sink drops the signal
+altogether.
+
+**Nothing is being written while that happens.** Polled through the stall, 242
+samples over 20 s, every one of these holds a single value:
+
+    RFF_WFF_OFFSET 0   RFF_FETCH_NUM 1   PB_CAP_OFFSET 275
+    WFF_SAFE_GUARD_A/B 335872   CAP_SAFE_GUARD_A 2097151
+    RFF_WFF_STA_ADDR_A/B 0/1   IF_HSYNC_RST 1096   IF_HBIN_SP 2
+    VDS_DIS_HB_ST 1577   VDS_HSCALE 438   PLLAD_MD 1096
+
+and the engine emits no `sol,` line at all between the change and the eventual
+solve. So the growing band is not a capture window being resized and not any
+register walking -- it is the read and write pointers drifting apart in
+hardware, capture writing a 15.6 kHz line into a layout laid out for 31.4 kHz,
+the mismatch accumulating every frame.
+
+`HPERIOD_IF` in that stall read 4..16 rather than 511, which is the noisy form
+rather than the rail -- the two faults under one name, again.
+
+## The deadlock that held the stale divider there, and what fixed it
+
+`VideoSourceAcquisition::sourceMoved()` gated every arm behind a steady line
+count. The stale divider makes the sync processor retime against a window sized
+for the wrong line, so `STATUS_SYNC_PROC_VTOTAL` wandered 191..292 -- inside the
+source bounds on every sample and steady on none. The unusable-count arm needs
+the count OUT of range; the interrupt, count and rate arms all sat behind
+`if (!held) return false`. So nothing armed, `prepareToMeasure()` was never
+reached, and the divider causing the wandering was never rewritten.
+
+The only escape was the chip's latched interrupt firing once the garbage count
+happened to hold, which is luck: **3.9, 5.4, 5.5, 9.9, 14.5 and 18 s** across
+runs.
+
+A plausible count that never settles is now itself an arm. Arming only opens a
+re-measure -- the count must still be steady and the rate repeated before
+anything is solved -- and the same six transitions then take **2.57, 4.25,
+4.27, 4.96, 5.08, 5.08 s**, five of them through the new arm. The residue is
+the arm's own threshold rather than a race.
+
+**A recovery-ladder rung that re-installed the reference sampling clock was
+tried first and does not work.** It fixed half the runs and left the rest on the
+interrupt, because installing the divider does not make the count settle within
+the pass that installs it. The fault is a detection gap, and it is fixed at the
+detector.
+
 ## It does not depend on the divider, over the whole reachable range
 
 The earlier form of this claim rested on one write from 2269 to 2500 -- both
@@ -317,8 +506,13 @@ legitimately follow the divider. The state is saved whole as
 | ESP reset: firmware reboot, full chip re-initialisation over I2C | no |
 | cold boot, mains and USB | **yes** -- 91/91 samples back at 431 |
 
-So the state lives somewhere no register write reaches. A full re-initialisation
-rewrote the chip and did not move it; removing the rails cleared it at once.
+So the state reaches no RESET, of any block or either clock domain: a full
+re-initialisation rewrote the chip and did not move it, and removing the rails
+cleared it at once. **It is not beyond every register write**, which an earlier
+form of this sentence claimed -- the `ADC_INPUT_SEL` bounce below is a write to
+s5 0x02 and it clears the fault. What separates the two is what the write does:
+the bounce takes the line away from the ADC and gives it back, where a reset
+re-initialises a block that is not holding the fault.
 
 **The caveat, and it is load-bearing.** The two rows marked above were taken with
 a script that ignored `Probe.write_field()`'s return value, and that function
@@ -372,14 +566,24 @@ correct 213 in three separate modes, so 50 is a stable WRONG value and it is
 intermittent.
 
 So the round trip clears it, and the first leg alone does not: the fault goes
-noisy -> stable wrong -> correct. What that costs is the obvious shortcut --
+noisy -> stable wrong -> correct.
+
+**IT DOES NOT ALWAYS CLEAR IT.** A 2026-09-15 round trip over the same pair of
+modes, 320x256@50 -> 640x480@60 -> back, left it railed: `HPERIOD_IF` 511 / 105
+/ 263 with `STATUS_IF_HT_OK` 0 against the 431 the mode is due, while
+`STATUS_SYNC_PROC_VTOTAL` held a steady 311 at divider 2206 and the picture on
+the panel stayed complete and clean. The engine's held line rate stayed at the
+correct 15625, so nothing adopted the bad reading -- which is what makes the
+railing survivable rather than a fault that reaches the picture every time. What that costs is the obvious shortcut --
 changing mode once and reading the new mode's value proves nothing, because the
 new mode has its own wrong answer available. **Return to the mode whose correct
 value is known, and check against that.**
 
 What the fault is in is the input formatter's lock to the incoming line, and
-what shifts it is a real interruption of that line -- which no register write
-supplies, and which the firmware cannot generate for itself.
+what shifts it is a real interruption of that line. The firmware cannot generate
+one for itself from the source, but it can from this end: an `ADC_INPUT_SEL`
+bounce takes the line away from the ADC, and that is a register write rather
+than a source change.
 
 **What this does not settle is whether a cold boot clears it.** One cold boot,
 mains and USB pulled, left `HPERIOD_IF` railed, and the mode change above is what
@@ -410,6 +614,29 @@ represented, and every state examined here had them consistent. Whether an
 inconsistent pair rails `HPERIOD_IF` is not known. Inducing one is a picture
 experiment -- a mismatched tap gives a persistent green screen that a detection
 pass repairs -- so it needs the camera and a clip rather than a still.
+
+## The noisy form can be TOTAL, and then the fallback sizes every raster
+
+A dense run on an acquired source with a clean picture, `/samplinglog?ms=25`
+over 30 s, 1109 samples, `STATUS_SYNC_PROC_VTOTAL` reading 311 in 1107 of them:
+
+| `HPERIOD_IF` | samples |
+|---|---|
+| 511 | 685 |
+| 510 | 65 |
+| 255 | 25 |
+| 2..18 | the remainder |
+| **431, which 311 lines at 50 Hz is due** | **0** |
+
+**Not one reading in 1109 is right.** So "noisy" understates it: in this state
+the counter contributes nothing at all, `measureLineRate()` takes the field-rate
+branch on every solve, and the output raster is sized from a vsync spin rather
+than from a counter. What that costs is in
+`two-instruments-decide-one-raster.md` -- the same source solved 1915 and 1922
+across two recoveries.
+
+The picture is correct throughout. A railed counter with a good picture is not a
+contradiction: the field rate covers for it, less precisely.
 
 ## Why the noisy form has no consequence, and the stable form would
 
@@ -500,6 +727,57 @@ tables above railed without it.
 The experiment this unlocks, in order: reproduce, pull mains and USB for a
 measured interval, read `HPERIOD_IF` before touching the source.
 
+## Bisecting the provocation, 2026-09-15
+
+`/sc?~` provokes reliably, so the provocation can be taken apart. Each arm on
+the bench RiscPC at 320x256@50, separate sync, the counter verified healthy at
+431 before each trial and cleared with a mode round trip after a failure:
+
+| what was done | railed |
+|---|---|
+| `/sc?~` -- low power, then detection | **3 of 3** |
+| `/input?src=vga` -- detection, NO low-power reset | **3 of 3** |
+| `ADC_INPUT_SEL` to 0 for 400 ms and back, automation frozen, nothing else | **4 of 4** |
+| `IF_HSYNC_RST` 0x3FF for 400 ms and back, frozen -- what `setResetParameters()` does to the IF | **0 of 6**, against 0 of 6 for a do-nothing control |
+
+**So the low-power reset is not needed and neither is detection**: taking the
+ADC's input away and giving it back is enough on its own, with the engine frozen
+and no other write in the window. That is the same action the section below
+records as a CLEARANCE, which is consistent rather than contradictory -- a sync
+discontinuity restarts the counter and the restart lands either way.
+
+Two cautions on those numbers. The bounce-only arm cleared between trials
+without re-verifying the clear, so its starting states are unverified and 4 of 4
+overstates what one trial proves; and the bounce is recorded below as railing
+only 1 of 6 modes in an earlier run, so the rate is not stable across sessions.
+
+**`IF_HSYNC_RST` is the first TRANSIENT to be ruled out.** Every earlier negative
+was a state difference, applied from a dump comparison -- which cannot see a
+register the reset writes and the next solve restores. This one was chosen for
+exactly that reason and does not reproduce the fault.
+
+**And the mode round trip clears it probabilistically, not reliably**: on the
+same source and pair of modes it took three round trips, the first two leaving
+511s and the third restoring 431 in 8 of 8.
+
+### Protect held across the provocation: 3 of 3 against 0 of 3, and confounded
+
+| arm | provocation | railed |
+|---|---|---|
+| separate sync, `SP_H_PROTECT` 0 | `/sc?~` | **3 of 3** |
+| csync, `SP_H_PROTECT` 1 | `/sc?~` | **0 of 3** |
+
+Striking, and it attributes nothing: the arms differ in the sync type as well as
+the bit, because the only way the firmware holds protect through the reset is
+the csync path -- `applyForSyncType(false)` writes it 0 on a separate-sync
+source, inside the very reset under test.
+
+**The test that would settle it needs separate sync with protect held**, which
+needs the firmware to stop forcing it to 0 there -- a `GBS_DEBUG` override on
+`applyForSyncType()`, then the same paired arms. If protect does prevent it, the
+detector question below lands first: the noise is what the engine's
+three-samples-within-2 test rejects, so a steadied mislock passes.
+
 ## An ADC input-select bounce clears it -- and can also cause it
 
 Every previously known clearance required the **source** to do something: a mode
@@ -535,6 +813,19 @@ So the same action clears the fault and causes it. That is a fact about the
 fault, not a technique: a sync discontinuity restarts the counter, and the
 restart can land either way. Bouncing before every measurement would introduce
 the failure it is meant to avoid.
+
+### No automatic recovery is installed, and the reason is the picture
+
+Taking the input away turns the whole screen green for as long as it is gone --
+photographed at 400 ms, on the modes that rail -- so an automatic bounce is a
+visible flash rather than a repair.
+
+It buys accuracy and nothing else. A refused `HPERIOD_IF` window already falls
+back to the field rate measured off the test bus, and the raster solved from
+that comes out right; the counter's advantage over it is precision, not
+correctness. Against a flash on every railing, and against the run above where
+the bounce railed a mode that read correctly six times beforehand, that is not a
+trade worth making blind. Install one only with something better than a bounce.
 
 ## The expected value is the thing most likely to be wrong
 
@@ -755,6 +1046,133 @@ state above it read **185** against a source of 311/312 lines, while
 the other is load-bearing, not defensive.
 
 
+## The second consumer is the output raster, and it reached the picture
+
+`SourceMeasurement::measureLineRate()` prefers `HPERIOD_IF` to
+`getSourceFieldRate()`, which is right -- it is the more accurate of the two and
+costs no vsync spin -- so a railed reading becomes the line rate the whole solve
+runs on. 511 on a 311-line source is 13183 Hz, a 42.38 Hz field rate against a
+real 50.08, and the raster is solved for it:
+
+```
+                 railed        healthy
+lineRateHz        13183          15625
+VDS_HSYNC_RST      2263           1909
+sink reports      42 Hz          50 Hz
+```
+
+The sink is not confused; the board really is emitting 42 Hz. `108e6 / (2264 x
+1126)` is 42.4.
+
+**And it latches.** Once accepted the bad rate becomes `goodLineRateHz_`, after
+which `rateFollowsCount()` sees an unchanged count with the rates 15% apart
+against a 5% tolerance and zeroes every correct reading. `HeldRateRejectionLimit`
+would eventually let one through, but `rateRejections_` resets each time the bad
+rate is accepted again, so it never counts up. The console shows both:
+
+```
+sampling: 311 lines x 50.08 Hz -> line rate 0       the truth, rejected
+sampling: 311 lines x 42.38 Hz -> line rate 13183   the rail, accepted
+```
+
+What let it in is that the only validity test was self-agreement, and
+**agreement prefers a stuck register to a live one**. The gate now refuses a
+window `STATUS_IF_HT_BAD` flagged, and refuses any reading implying a line rate
+below 15 kHz -- no television generates one, and the railed family is 13.2 kHz.
+Measured with the fault live afterwards: `HPERIOD_IF` 0/16 correct,
+`VDS_HSYNC_RST` a correct 1915, the engine holding 15575 Hz.
+
+## `STATUS_IF_HT_BAD` is state-dependent, and the line-rate floor is what works
+
+The 129/191 recorded above, and a 15/20 measured against one live instance, do
+not generalise. Against a second instance -- railed by `/sc?~` on a 640x256@55
+source, `SP_VTOTAL` a steady 311 -- the flag never set at all:
+
+```
+40 samples   HPERIOD_IF  511x30  255x4  510x2  273  271  262
+             HT_BAD set   0/40
+             HT_OK  set  32/40      set ON the railed samples
+             below 15 kHz 32/40
+```
+
+So the flag is a useful one-sided gate when it fires and carries nothing when it
+does not, and **the 15 kHz line-rate floor is what actually rejected this
+state**. Fourteen consecutive `/sc?~` inductions on that source railed the
+counter every time and the engine held the source's own rate every time --
+17104 Hz against the 17105 the mode is due -- with the flag contributing
+nothing.
+
+`STATUS_IF_HT_OK` is worse than uninformative here: it was set on 32 of 40, the
+same count the floor rejects, so it tracks the fault rather than the health.
+
+**The floor is not airtight either.** Eight of those 40 samples clear it -- 255,
+262, 271 and 273 imply 24.6 to 26.4 kHz, all legitimate lines -- so a window
+landing on one is accepted, and with the 90 ms hold a back-to-back window is
+effectively a single draw. Roughly one solve in ten during this state could
+still take a rate 54% high. `rateFollowsCount()` is the backstop: a rate that
+moved while the count did not is refused.
+
+## The railed register reads all-ones, and holds it for ~90 ms
+
+Two measurements that change what "noisy garbage" means.
+
+**The distribution is bimodal, not scattered.** Raw bytes on a live instance,
+24 reads:
+
+```
+s0_06 low byte   0xff x15   0xfe x4   0x08 x3   0x0f x1   0x00 x1
+s0_07 bit 0      1 in 17 of 24
+combined         511x9 255x6 264x3 510x3 271x1 256x1 254x1
+```
+
+Saturated or near zero, nothing near the 431 the mode is due and almost nothing
+between. A counter measuring the wrong period would cluster somewhere; this one
+is at its ceiling. 511 and 255 are the 9-bit and 8-bit all-ones values, so both
+are the low byte reading `0xff`.
+
+**It holds a value for up to 90 ms.** Sampled at 18 ms intervals, 60 reads, the
+runs of values agreeing within 2 counts were 5, 4, 4, 4, 2, 2, 2, 2, 2, 2, 1, 1.
+
+That kills the obvious defence. `measureLineRateFromHPeriod()` reads
+back-to-back over I2C, roughly 100 us apart, so **eight samples span 2 ms and
+fall inside a single hold** -- they agree whatever the counter is doing, and
+widening the window cannot separate a held wrong value from a settled right one.
+A window would have to span 200 ms to beat the hold, which costs what the vsync
+spin costs. Judge the value, not its repeatability.
+
+## The scan mode is not the mechanism
+
+Tempting, because `431 x 2 = 862` saturates to exactly 511 and the pad-test route
+leaves the input formatter progressive on a 15 kHz source. Measured across a
+`/sc?~` induction, healthy then railed, the group is identical either side:
+
+```
+IF_PRGRSV_CNTRL 0   IF_HS_DEC_FACTOR 1   IF_LD_RAM_BYPS 0   IF_LD_SEL_PROV 0
+IF_HSYNC_RST 1125   PLLAD_MD 2250        STATUS_SYNC_PROC_VTOTAL 311
+```
+
+`HPERIOD_IF` 16/16 correct before, 0/16 after, with every one of those unchanged.
+The line doubler is not in it.
+
+## The display and memory clocks do not clear it either
+
+The ADC side was already closed. The other domain is closed now, each pulsed
+against a live instance with every write read back and restored, 16 samples
+after each:
+
+| tried | cleared it |
+|---|---|
+| `PLL_VCORST` pulsed | no, 0/16 |
+| `SDRAM_RESET_SIGNAL` pulsed | no, 0/16 |
+| `PLL_LEN` off and restored | no, 0/16 |
+| `MEM_CLK_DLY_REG` 4 -> 0 -> 4 | no, 0/16 |
+
+The divider walk is also extended upward, since "a higher divider fixes it" is a
+recollection that keeps resurfacing: `PLLAD_MD` 2000, 2500 and 2800, each
+latched, 0/12 at every point with `STATUS_MISC_PLLAD_LOCK` 1 and `SP_VTOTAL` 311
+throughout. Re-latching at the value already in force is the control and is also
+0/12.
+
 ## The railing has a consumer: the coast stop
 
 `updateCoastPosition()` averages eight `HPERIOD_IF` reads into `accInHlength`
@@ -780,3 +1198,455 @@ one place a railed `HPERIOD_IF` reaches a register that stays written.
 tests that move the divider upward leave it temporarily in bounds; the same test
 run on its own, on a settled unit, fails. Run it against a unit at its solved
 divider or the pass means nothing.
+
+## HTTP does not report the railed register as healthy
+
+The claim that a point read over HTTP shows a steady 431 while the part rails
+does not reproduce. `HPERIOD_IF` read three ways over ONE window on ONE railed
+state, RiscPC 320x256@50 on `vga`, the rail induced by an `/input?src=rgbs`
+excursion and back:
+
+| instrument | n | 431-ish | >= 500 |
+|---|---|---|---|
+| `/samplinglog?ms=25`, on device | 1021 | **0** | 736 (72.1%) |
+| HTTP `read_named()`, 55 Hz | 1767 | **0** | 929 (52.6%) |
+| the same HTTP series at 5 s spacing | 7 | **0** | 2 (28.6%) |
+
+Seven reads five seconds apart returned 255, 511, 6 and 263 -- obviously bad
+values, not a plausible healthy one. The control on a clean state has all three
+at 431 with nothing at 500 or above, so the instruments are not merely reporting
+noise.
+
+**The residual disagreement is the DISTRIBUTION of bad values, not the verdict.**
+HTTP reports 255 where the log reports 511 -- the same low byte with bit 8
+clear -- and holds ~53% at or above 500 against the log's ~72%. Three
+explanations are refuted:
+
+- **a split read across the field's two registers.** `HPERIOD_IF` is nine bits
+  at `s0_06`, so it spans two. `read_field()` fetches one byte per HTTP request
+  and `read_named()` fetches the field in one, and interleaved on the railed
+  state they agree: 76.3% and 72.1% with bit 8 set.
+- **observer load.** HTTP reads ~53% at or above 500 with the sampling log
+  running beside it and ~53% without it.
+- **the transport.** `/getreg` is deferred to `loop()` through `RegisterQueue`,
+  so both instruments read the same field off the same bus from the same loop.
+
+What is left is the phase each samples at, and nothing here settles it. It does
+not reach the healthy/railed verdict, which is what a diagnosis turns on.
+
+**WHAT PRODUCED THE ORIGINAL READING IS A STATE CHANGE BETWEEN THE TWO
+SAMPLES.** An input change or a sync-type round trip re-rails the register, so
+a healthy HTTP sample taken before one and an on-device capture taken after it
+describe two states. Sample both instruments in one window, or say which state
+each belongs to.
+
+
+## `STATUS_IF_HT_BAD` separates the railed STATE, but not a good read inside it
+
+Two measurements that look contradictory and are not.
+
+Within a persistent railed state, the flag selects nothing: 5302 reads with
+`HT_OK` 1 in 146 of them and **0 of those 146 within 2% of the 431 due**, the
+same `HPERIOD_IF` distribution either side of it. That is the survey above.
+
+Across the boundary it separates cleanly. One `SamplingLog` capture at 25 ms
+carrying a railed state, a mode change, and the recovery:
+
+```
+railed     ifbits 0x0c / 0x0d   HT_BAD 1, HT_OK 0   hperiod 511, 18, 2, 17, 9, 8, 262
+recovered  ifbits 0x09          HT_BAD 0, HT_OK 1   hperiod 212 at 640x480@60
+                                                    hperiod 431 at 320x256@50
+```
+
+So it is a **state** indicator, not a per-read validity gate: `HT_BAD` 1 says the
+horizontal measurement is not to be trusted at all, while `HT_OK` 1 on a single
+read says nothing, because it flickers to 1 inside a railed state. Use it to
+decide whether to believe the register, never to pick good samples out of a bad
+run.
+
+It follows the Mode Detect lock/unlock counters --
+`MD_HPERIOD_LOCK_VALUE` 22 stable lines to clear, `MD_HPERIOD_UNLOCK_VALUE` 5
+unstable lines to set -- so it is the chip's own stability estimate rather than a
+second measurement. `docs/video-source-acquisition.md`.
+
+
+## The indicators re-lock in about 150 ms, and only a Mode Detect reset can time it
+
+Whether `STATUS_IF_HT_BAD` and `STATUS_IF_VT_BAD` answer in milliseconds or in
+seconds decides whether they are worth consulting early in acquisition. Nothing
+that moves the SOURCE can measure it: a sync round trip on the bench RISC PC
+costs about twenty seconds of hunting -- `NO_SYNC` toggling, `SP_VTOTAL` at 97
+and then 0 -- so what it times is the firmware re-solving, not the block.
+
+Pulsing `SFTRST_MODE_RSTZ` low and back leaves the source, the sync type and the
+divider exactly where they are, so the recovery is the block's own. Measured on
+composite sync at 320x256@50 with `/samplinglog?ms=25`, eight pulses, 962
+samples:
+
+```
+VT_BAD set for  175, 175, 151, 125, 151, 150, 151, 151 ms
+HT_BAD never set at all
+```
+
+So the vertical indicator is back inside **175 ms at worst**, and that is an
+upper bound: the window includes however long Mode Detect was held in reset
+between two register writes, and the sample interval is 25 ms. The nominal from
+`MD_VPERIOD_LOCK_VALUE` 4 is four frames, 80 ms at 50 Hz.
+
+**The horizontal indicator never flagged across any of the eight**, which puts
+it at or below the 25 ms sample interval -- consistent with
+`MD_HPERIOD_LOCK_VALUE` 22 lines, 1.4 ms.
+
+**A reading taken during a source excursion is not this measurement.** The same
+`ms=25` log across a separate-to-composite change shows `HPERIOD_IF` thrashing
+1, 5, 7, 8, 12, 13, 15, 16, 255, 260, 431, 510, 511 with `HT_BAD` following it
+sample by sample. The separate-sync fault is a measurement that never converges
+rather than a register stuck at a rail, and an indicator tracking that is
+working correctly.
+
+## The stable form is admitted at adoption, and the field rate is what refuses it
+
+`lineRateFromHPeriod()` applies three tests to a window: the readings agree
+within a count, the rate clears `LineRateFloorHz`, and the field rate it implies
+is one some source runs at. **A single stable wrong value passes all three**, and
+that is the form the sections above name as the one to fear.
+
+What rejects it downstream is the rate already held. `rateFollowsCount()` refuses
+a rate that moved while the line count did not, so on a settled source the held
+rate vets every later reading for free. **The gap is where the held rate cannot
+vet it**, which is exactly where a railed value gets in:
+
+| moment | why the held rate cannot judge |
+|---|---|
+| the first measurement of a source event | nothing is held |
+| the count moved | a genuine mode change carries a new rate with it |
+| `HeldRateRejectionLimit` refusals in a row | the escape hatch that stops a source which really did change rate at an unchanged count from holding the mode change open for ever |
+
+The third is the worst of them, because it fires on a source whose held rate is
+*correct*: 60 consecutive railed readings and the bad value is taken as it
+stands. Once held it is never dislodged, since `rateFollowsCount()` then rejects
+every correct reading against it.
+
+The worked case is `HPERIOD_IF` 272 on the bench's 311-line source. It states
+24725 Hz, a 79.25 Hz field rate — above the floor, inside the band, and steady,
+so nothing in the window objects. The source runs at 50.08.
+
+**`getSourceFieldRate()` is measured a different way and does not rail with it**,
+which is what `VideoSourceAcquisition::rateMoved()` already uses to corroborate a
+*changed* rate. `SourceMeasurement::measureLineRate()` does the same at adoption:
+**the counter's reading is used only where something stands behind it** — the
+rate already held, free, or the field rate at the cost of a vsync spin. A reading
+neither can speak to is refused rather than adopted.
+
+Two properties of the shape matter:
+
+- **It costs a vsync spin only where one was affordable anyway.** A corroborated
+  reading is free, which is the settled case and nearly every pass. The spin is
+  paid on the first reading after a source event and whenever the held rate
+  disagrees — and the refused-window path already pays it in both.
+- **A refusal does not spend the rejection budget.** `HeldRateRejectionLimit`
+  exists for a source that genuinely changed rate at an unchanged count. A
+  reading that was never measured is not one, and counting it there spends the
+  escape hatch on nothing.
+
+### An unmeasurable field rate must withhold the reading, not release it
+
+The first shape of this kept the counter's reading where the field rate could not
+be measured, on the argument that the spin reports 0 with no lock and that is the
+composite-sync case the counter exists to serve. **That is the one moment the hole
+is widest**: a spin that cannot answer is what happens on the first measurement
+after a reset, which is also when nothing is held to vet the reading. The railed
+value went in unchallenged.
+
+Measured on the bench after a flash, with the source untouched and steady:
+
+```
+sampling: 311 lines x 50.08 Hz -> line rate 0     x ~60, over five seconds
+sampling: 311 lines x 50.08 Hz -> line rate 15625
+```
+
+The count never moved and the field rate read correctly throughout. That is the
+engine rejecting sixty correct readings against a held rate that was wrong, and
+then taking one because the limit expired.
+
+**Nothing is lost by requiring corroboration**, which is what makes the choice
+safe: the route the counter falls back to when its window refuses is the field
+rate, so a source whose field rate can never be measured never acquired by either
+path.
+
+`test/test_source_measurement.cpp` pins four cases: the contradicted reading, the
+60-refusal escape hatch, the unmeasurable field rate, and the budget.
+
+## `VPERIOD_IF` fails separately, and does NOT recover with it
+
+The vertical counter is broken in the same instance, and the clearance that
+fixes the horizontal one leaves it untouched. Watched through a mode round trip
+on `vga`, separate sync, `STATUS_SYNC_PROC_VTOTAL` steady and the PLL locked,
+eight samples at each point:
+
+| mode | `HPERIOD_IF` (due) | `VPERIOD_IF` (due) |
+|---|---|---|
+| 320x256@50 | 430 x1, 431 x7 (431) | 64..118, every sample different (311) |
+| 640x480@60 | 212 x4, 213 x4 (213) | **114 x8** (524) |
+| back at 320x256@50 | 430 x1, 431 x7 (431) | 64..118 again (311) |
+
+`STATUS_IF_HT_OK` reads 1 in all 24 samples and `STATUS_IF_VT_OK` reads 0 in all
+24. So the horizontal counter tracks the mode correctly across the trip while the
+vertical one never reaches its due value in either mode, and shows **both** of
+this page's failure forms on the way -- noise at one mode, a rock-steady wrong
+value at the other.
+
+It is not dead: the Wii at 480p on `ypbpr` reads `VPERIOD_IF` 524, its line
+count, in 6 of 6 reads.
+
+**`SamplingLog` confirms the variation rather than overturning it.** 1111 samples
+at 25 ms from inside `loop()`, every field read in one pass, on a settled
+320x256@50:
+
+```
+hperiod_if     2 distinct   431 x1025, 430 x85
+vperiod_if    60 distinct   71 x85, 72 x85, 73 x79, 74 x72, 75 x57, 70 x56, 113 x38, ...
+sp_vtotal      1 distinct   311 x1110
+ifbits         1 distinct   9 x1110      HT_OK 1, VT_OK 0, HT_BAD 0, VT_BAD 1
+```
+
+So this is not the HTTP artefact that `STATUS_SYNC_PROC_VTOTAL` suffers from --
+the same instrument in the same pass gives one register two values and the other
+sixty. `STATUS_IF_VT_BAD` is reporting a real instability.
+
+**`SP_HD_MODE` does not reach it.** The sync processor's SD/HD switch is the one
+bit whose name pairs it with the vertical extraction, and it is hardwired to 0 in
+`SyncProcessor::init()`. Set to 1 and back across an A/B/A/B/A on `vga`,
+`VPERIOD_IF` stays noise and `STATUS_IF_VT_OK` 0 / `STATUS_IF_VT_BAD` 1 hold in
+all 50 samples.
+
+**What the working source differs in is the line doubler.** Read side by side:
+
+| | `vga` 320x256@50 | Wii 480p |
+|---|---|---|
+| `IF_PRGRSV_CNTRL` | 0 | 1 |
+| `IF_LD_RAM_BYPS` | 0 | 1 |
+| `IF_LD_SEL_PROV` | 0 | 1 |
+| `IF_HS_DEC_FACTOR` | 1 | 0 |
+| `IF_SEL_WEN` | 0 | 1 |
+| `VPERIOD_IF` | 31..116 | 524 x6 |
+
+The source whose vertical period reads correctly is the one whose line doubler is
+bypassed. Whether the doubler is the cause is untested -- the two sources also
+differ in connector, sync type and line rate.
+
+**The consequence is that the deinterlacer is never steered on this source.**
+`runSyncWatcher()` gates `Deinterlacer::steer()` on `STATUS_IF_VT_OK == 1`, and
+it reads the scan type from `VPERIOD_IF`, so the branch cannot run while the
+counter is in this state. That is the right refusal rather than a second bug --
+steering off a value that spans 64 to 118 would be worse.
+
+## `SP_H_PROTECT` freezes both counters
+
+**Nine sync-processor bits do not clear it.** Swept against a live railed
+instance with every write read back and the shipped state repeated as a control
+between every treatment: `SP_H_PULSE_IGNOR` at 255, 2 and 0; the csync coast
+values; `SP_HS_POL_ATO` and `SP_VS_POL_ATO` cleared; `SP_VSIN_INV_REG` set;
+`SP_SYNC_BYPS` set. Every one reads as noise, indistinguishable from the control.
+
+**`SP_H_PROTECT` is the trap.** "H count overflow protect" is the one bit of the
+nine that changes anything, and what it does is freeze both counters at whatever
+they hold rather than make the block measure:
+
+| run | state | `HPERIOD_IF` | `VPERIOD_IF` |
+|---|---|---|---|
+| 1 | protect | 452 x6 | 100 x6 |
+| 1 | protect + `SP_H_PULSE_IGNOR` 2 | 226 x6 | 23 x6 |
+| 2 | protect | 155 x6 | 64 x6 |
+| 2 | protect + coast, + polarity, + vsin invert, + sync bypass | 155 x6 each | 64 x6 each |
+
+The value is not reproducible between runs and never correct. In run 2 every
+variant landed on the same pair despite differing in the sync path, which is a
+frozen counter rather than a measuring one.
+
+**IT STEADIES THE COUNTER RATHER THAN FREEZING IT, AND THE STEADIED FAULT IS
+EXACTLY HALF THE PERIOD.** Measured 2026-09-15 with the bit HELD across two
+source mode changes, automation frozen so no preset load or divider change
+accompanied them (`PLLAD_MD` 2206 and `IF_HSYNC_RST` 1103 throughout):
+
+| source | `HPERIOD_IF` under protect | due | `HT_OK` |
+|---|---|---|---|
+| 320x256@50, railed | **214** x6 | 431 | 1 |
+| 800x600@56 | **190/191** x12 | 192 | 1 |
+| 320x256@50 again | **431** x6 | 431 | 1 |
+
+**So it measures.** It tracked a mode change to within a count and back, which
+refutes reading the steady value as a frozen one -- the earlier runs above saw
+two different steady values and concluded the counter had stopped, and it has
+not. What protect removes is the NOISE.
+
+**WHAT IT STEADIES AT IS NOT SYSTEMATIC, AND THE HALVING WAS ONE INSTANCE.**
+The first railed instance read 214 x6 with `HT_OK` 1, which is half of 431 to
+within a count and was written up here as the counter locking to the doubled
+line. A second instance, provoked with `/sc?~` an hour later on the same source
+and mode, reads **8 x8 with `HT_OK` 0**. Two steady values, one of them nothing
+like half, so the bit steadies whatever the counter holds and no mechanism
+follows from the value. The doubled-line reading is **refuted**, and it is
+recorded because it was convincing: one instance, arithmetic that fitted to a
+count, and a plausible mechanism behind it.
+
+**AND THE RAILING CLEARED DURING THAT SEQUENCE**, staying clear through
+releasing the bit and unfreezing automation: 431 in 6 of 6 with `HT_OK` 1 and
+the engine solving. It is confounded three ways against the round trip that
+failed an hour earlier, so it is a candidate and not a recovery: protect was
+held, automation was frozen, and the intermediate mode was 800x600@56 rather
+than 640x480@60. **Holding `SP_H_PROTECT` across a source mode change is the
+experiment to run next**, on its own and against a live instance.
+
+`VPERIOD_IF` did not recover with it -- 68..117 against the ~311 the mode is
+due -- which is the separate failure the page records below.
+
+**ON A HEALTHY COUNTER THE BIT CHANGES NOTHING, so it is a diagnostic and not a
+better instrument.** Swept across the modes the RISC PC allows, automation
+frozen, protect cleared and set at each one with five samples of each:
+
+| source | `VTOTAL` | protect off | protect on |
+|---|---|---|---|
+| 320x256@50 | 311 | 431 x5 | 431, 431, 431, 430, 431 |
+| 640x480@60 | 524 | 212, 212, 213, 212, 213 | 212 x4, 213 |
+| 800x600@56 | 624 | 191 x5 | 191, 190, 190, 190, 191 |
+| 320x256@50 again | 311 | 431 x5 | 431, 430, 431, 431, 430 |
+
+Indistinguishable within a count, in every mode. So reading the counter under
+protect buys nothing while it is working, and what it does is convert the fault
+from unreadable noise into a clean signature. **Using it as the line-rate source
+would therefore be a trap unless the x2 is rejected**: the engine's validity
+test is three samples agreeing within 2, which the steadied fault passes
+perfectly at half the true rate, and that is the one failure shape every health
+check here scores as healthy. What makes it safe is the cross-check that already
+exists -- `rateFollowsCount()`, against the line count and the field rate -- and
+what would make it useful is more instances of the halving than the one measured.
+
+`SP_H_PROTECT` is not exotic on this board: `applyForSyncType()` writes it 1 for
+every composite-sync source, so the steadied counter is already the normal state
+on half the bench.
+
+**DOES HOLDING IT SUPPRESS THE FAULT? THE QUESTION IS OPEN, AND A CLEAN SOAK IS
+NOT EVIDENCE WITHOUT A LIVE BASELINE.** Asked on 2026-09-15 and answered
+uninformatively, which is the useful part:
+
+| arm | transitions | landings on `VTOTAL` 524 | failures |
+|---|---|---|---|
+| csync, firmware holding protect 1, automation live | 24 | 12 | 0 |
+| separate sync, frozen, protect 1 held across each change | 12 | 6 | 0 |
+| separate sync, frozen, **protect 0** -- the shipped behaviour | 12 | 6 | 0 |
+
+The first arm read as strong suppression -- 12 clean landings against a
+destination measured at 44% is about 0.08% likely -- **and the control refutes
+that reading entirely**: protect off is equally clean. What the arms establish is
+that the fault's rate today is near zero, not that anything suppressed it, and
+the 44% figure belongs to the session it was measured in.
+
+So the design this needs is a PAIRED comparison inside one bad epoch, alternating
+the arms as above so a rate that drifts affects both. Without a live baseline a
+clean run says only that the fault is currently absent, and this page's
+*Not reproducible across settled states* section is the reason to expect that.
+
+**And holding it permanently would still cost the detector.** The noise is what
+the engine's three-samples-within-2 test rejects; steadied, a mislocked counter
+reports half the rate and passes. So even a proven suppression would want the x2
+cross-check against the count landing first. So the bit manufactures exactly the
+failure this page warns about -- **a rock-steady wrong value that every stability
+check scores as healthy** -- and it must not be reached for as a fix.
+
+## The sync type is not a discriminator
+
+A reading taken on one sync leg and compared against one taken on the other
+compares two *instances* of the fault, not two configurations. `SYNC` on the
+bench source re-applies the mode, so **every sync-type change is also a source
+mode change**, which is this page's cheapest known clearance. A session that
+reaches the csync leg by asking for it has performed the recovery on the way.
+
+Measured with the sync type held at `SYNC 0` throughout:
+
+```
+before, as it had been sitting        255 x2, 258, 263, 271, 511 x3
+after MODE X640 Y480 C256 F60         212 x5, 213 x3      due 213
+after MODE X320 Y256 C256 F50         431 x7, 430 x1      due 431
+```
+
+So the separate-sync path reads the register correctly, and an apparent
+"csync works, separate sync does not" is the recovery being taken unknowingly.
+Read the mode whose correct value is known, and say which instance a reading
+belongs to.
+
+
+## The BAD flags are not fooled by a steady wrong value
+
+`STATUS_IF_HT_BAD` and `STATUS_IF_VT_BAD` follow the Mode Detect lock counters,
+which are a stability estimate -- so the case that should defeat them is a
+register sitting rock-steady on a wrong value. It does not.
+
+Measured at 640x480@60 on `vga`, 1015 `SamplingLog` samples at 25 ms from inside
+`loop()`:
+
+```
+vperiod_if     1 distinct   118 x1014        due 524
+hperiod_if     2 distinct   212 x643, 213 x371   due 213
+sp_vtotal      1 distinct   524 x1014
+ifbits         1 distinct   9 x1014          HT_OK 1, VT_OK 0, HT_BAD 0, VT_BAD 1
+```
+
+One value in 1014 in-loop samples, wrong by a factor of four, and `VT_BAD` holds
+1 throughout while `HT_BAD` holds 0 beside it on a register that is correct. A
+detector keyed on stability alone would have cleared.
+
+Provoked the other way, with an `/input?src=` excursion to rail the horizontal
+and a mode round trip to clear it:
+
+| state | `HPERIOD_IF` | `HT_OK` | `HT_BAD` |
+|---|---|---|---|
+| after the excursion, 320x256 | 211..511, 9 distinct in 12 | 0 x12 | **1 x12** |
+| 640x480 after the change | 212 x5, 213 x7 (due 213) | 1 x12 | 0 x12 |
+| back at 320x256 | 430 x2, 431 x10 (due 431) | 1 x12 | 0 x12 |
+
+**No false all-clear has been observed**, on either axis, in any state measured.
+So the BAD flags are usable as the gate on whether to believe the register --
+which `*_OK` is not, flickering to 1 inside a railed state in 146 of 5302 reads
+with none of them within 2% of correct.
+
+**What is not yet closed** is the horizontal form of the steady-wrong case. The
+`HPERIOD_IF` 50 at VTOTAL 524 recorded above has never been caught with `HT_BAD`
+sampled beside it, and a mode change into 640x480 recovers the register rather
+than reproducing it. The vertical axis is proven; the horizontal is inferred
+from it.
+
+**Unrelated, from the same capture:** at 640x480@60 the ADC PLL reads unlocked --
+`STATUS_MISC_PLLAD_LOCK` 0 in 1014 of 1014 -- with `STATUS_SYNC_PROC_HTOTAL`
+wandering 1095/1096/1097 against a divider of 1096.
+
+
+### What this validates, and the gap it leaves
+
+`SourceMeasurement::measureLineRateFromHPeriod()` already reads
+`STATUS_IF_HT_BAD` beside every `HPERIOD_IF` sample and carries the result into
+the window's judgement, and `counterWasFlagged()` is what separates a flagged
+counter from a run whose samples merely disagree -- a settling source wants
+waiting out, a flagged one wants the recovery. The measurements above are what
+that design rests on, and they hold it up: the flag is 1 through the noisy form,
+1 through a value held steady across 1014 in-loop samples, and 0 on every correct
+reading taken.
+
+**That matters because the sample-agreement run cannot reject the steady form on
+its own.** Three readings within 2 of each other is a test a stuck register
+passes perfectly, so without the flag the window would admit 118 as readily as
+431.
+
+**`VPERIOD_IF` has no equivalent protection, and its one consumer reads the wrong
+flag.** `runSyncWatcher()` gates `Deinterlacer::steer()` on
+`STATUS_IF_VT_OK == 1`. `*_OK` is the flag measured to flicker to 1 inside a bad
+state -- 146 of 5302 reads, none within 2% of correct -- so a gate keyed on it
+opens spuriously, where one keyed on `STATUS_IF_VT_BAD == 0` stays shut for as
+long as the counter is untrustworthy. On the bench source the gate happens to
+hold closed because `VT_OK` reads 0 throughout, so nothing is observably wrong
+today; the flag is the wrong one on the evidence all the same.
+
+**640x480@60 is not a usable control for further work on this.** The ADC PLL
+reads unlocked there in 1014 of 1014 samples, so a measurement taken at that mode
+carries that as well as whatever it was looking for. 1024x768@60 is the taller
+progressive mode to reach for instead.

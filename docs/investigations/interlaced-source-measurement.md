@@ -54,3 +54,177 @@ everything above it sits still. It reads as a deinterlacing fault and is not one
 — it is the framing, and pulling the vertical extent in clears it. The rest of
 the picture is stable throughout, which is the tell: bob judder moves the whole
 image.
+
+
+## NTSC 480i alternates where PAL 576i held steady
+
+The same console, the other output mode, measured 2026-09-12 over 1417 samples:
+
+```
+STATUS_SYNC_PROC_VTOTAL   260 x736, 259 x681   -- two values, near evenly
+VPERIOD_IF                524 x1417
+```
+
+576i reads a single steady 310, so **the half-line is expressed as an
+alternation in one mode and absorbed into a constant undercount in the other**.
+Both are short of the true field: 259.5 against 262.5, and 310 against 312.5.
+
+**The 576i reading survives dense sampling, so the hole is real.** The original
+was a single value taken before the sampling log existed, which invited the
+explanation that it had simply been under-sampled -- this register is known to
+mislead over HTTP, where point reads gave 149, 160, 230 and 299 among the 310s
+that the log reported 1050 times out of 1050. Re-measured on the device:
+
+```
+Wii PAL 576i    STATUS_SYNC_PROC_VTOTAL   310 in 1186 of 1186, 0 changes
+                VPERIOD_IF                624 in 1186 of 1186
+                IF_HS_DEC_FACTOR 1, STATUS_IF_VT_OK 1
+```
+
+**So an alternating count is not an interlace detector.** One interlaced source
+alternates and another does not, which rules out the obvious reading of the
+2026-09-12 measurement. Nor is the ratio `VPERIOD_IF / STATUS_SYNC_PROC_VTOTAL`,
+which is about 2 on both -- and is 2.02 on the progressive RISC PC under
+composite sync as well, because `VPERIOD_IF` counts the doubled IF line rather
+than the source's.
+
+**What it costs is acquisition.** `VideoSourceAcquisition::countHeld()` needs four
+consecutive identical counts, which an alternating field count never supplies, so
+480i never reaches `acquired`: no solve runs for the mode, the output clock is
+never seeded, and the picture rolls while every register reads correct.
+`mode-detect-answers-before-any-measurement.md`.
+
+
+## The scan type is the half line in `VPERIOD_IF`, and line doubling inverts its parity
+
+An interlaced field carries a half line. `VPERIOD_IF` is the only count on the
+board with the resolution to hold one -- and it has that resolution only where
+the input formatter doubles the line, which is what puts the count in half lines.
+So the parity that means interlaced is not fixed: **it inverts with
+`IF_HS_DEC_FACTOR`.**
+
+Measured with `INTERLACE ON|OFF` over ModeServ, one machine, one cable, one
+input, composite sync throughout, only the mode's line rate and the interlace
+flag moving:
+
+| mode | line rate | `IF_HS_DEC_FACTOR` | progressive | interlaced |
+|---|---|---|---|---|
+| 320x256@50 | 15625 | 1 | 623 odd x519 | 624 even x519 |
+| 640x200@60 | 15697 | 1 | 523 odd x534 | 524 even x536 |
+| 640x480@60 | 31690 | **0** | **524 even x526** | **525 odd x529** |
+
+3163 samples, every state unanimous. The Wii on `ypbpr` fits it from the other
+side: 480i is line doubled and reads `VPERIOD_IF` 524 x531, and 480p is not
+doubled and reads 524 as well. **The same period, two scan types** -- which no
+table of broadcast totals and no fixed parity can separate, and which is why the
+480p bench source was read as interlaced.
+
+The rule that holds across all eight states is one line:
+
+    interlaced  <=>  (VPERIOD_IF + lineDoubled) is odd
+
+`SourceMeasurement::scanTypeFor()` is that, and `scanType()` applies it to the
+doubling the engine currently holds. The count must be a plausible vertical
+total first -- doubled counts are halved before that check -- or the answer is
+`ScanUnknown` and the caller leaves the deinterlacer where it is.
+
+**The classification cannot supply this.** `s0_00..05` is byte-identical across
+a real interlace change at 15 kHz and 50 Hz, `a7 00 00 00 40 10` both ways, so
+`STATUS_IF_INP_INT` and `STATUS_IF_INP_PAL_INT` report a vertical-period family
+and nothing about scan. Consulted first, as `Deinterlacer` used to, it engaged
+the motion-adaptive deinterlacer on the progressive RISC PC and held it there
+through a real interlace change in both directions -- measured on the bench,
+`MAPDT_VT_SEL_PRGV` 0 with `WFF_ENABLE` and `RFF_ENABLE` 1 in all three states.
+With the measurement answering, the same three states read off, engaged, off.
+
+**It only works where `VPERIOD_IF` does**, which is with the sync separator in
+the path. On separate sync the register holds debris -- 33 to 101 on the bench
+source -- and `STATUS_IF_VT_OK` reads 0 beside it, which is the gate the caller
+gives it. There the scan type has no source at all.
+
+### The measured scan type cannot replace the classification here, and the reason is circular
+
+The obvious cleanup -- feed `countIsSerrations()` the measured scan type
+instead of the STATUS_00 bits -- does not work, and it fails in the direction
+that matters.
+
+`scanTypeFor()` needs the line doubling, and the doubling is solved from the
+line count. On a count the serrations have doubled, the scan mode is solved for
+that corrupted count and comes out undoubled; the parity rule then reads the
+period as progressive, and a progressive source cannot have doubled -- so the
+check that exists to catch the doubling disables itself on exactly the source it
+was written for. Measured: a 607-line count against a 624 period stops widening
+the coast, and the source never comes up.
+
+The gate has to be independent of the count under suspicion, and the
+classification bits are. They do not answer the scan type -- nothing here
+retracts that -- but they are not derived from the count, which is the property
+this use needs.
+
+**`SourceMeasurement::countIsSerrations()` still takes the classification**, and
+it is the second consumer of the same unreliable bit. It asks whether a count
+could have doubled, which only an interlaced source can do. On every state
+measured here it reaches the same verdict either way, so there is no fault to
+chase -- but the measured scan type is the better input and is now available
+beside it.
+
+
+## The same capture confirms the parity rule on a PAL interlaced source
+
+576i is line doubled and reads `VPERIOD_IF` 624, so `624 + 1` is odd and the
+rule names it interlaced -- correctly, and from a single sample rather than a
+time series. That is the ninth measured state and the first PAL interlaced one.
+
+**It also bounds where the alternation is needed.** Every source on which the
+alternation rule has been shown to fail is a source where `VPERIOD_IF` answers
+correctly, because both are on the separator path. The alternation is only
+needed on separate sync, where `VPERIOD_IF` is dead -- and there it has been
+exact on the one source available, 0 changes in 1486 samples progressive against
+about 1090 in 1478 interlaced, at every coast length.
+
+The risk that survives is precise: **a separate-sync source that absorbs the
+half-line into a steady undercount, as 576i does on SOG, would read
+progressive.** The RISC PC is the only separate-sync source on this bench, so
+nothing here can test it.
+
+
+## On separate sync the count alternates at every raster tried
+
+The alternation is the only scan-type signal that survives separate sync, and it
+had been measured at one raster. A second one, same machine and cable, only the
+mode and the interlace flag moving:
+
+| mode | field | progressive | interlaced |
+|---|---|---|---|
+| 320x256@50 | 312.5 | 311 steady, 0 changes in 372 | 311/312, 271 in 369 |
+| 640x200@60 | 262.5 | 261 steady, 0 changes in 384 | 261/262, 188 in 382 |
+
+Steps are exactly plus or minus one in both, and no progressive sample ever
+moves.
+
+**Set against every interlaced state measured, the hole belongs to the sync
+separator rather than to the raster:**
+
+| sync route | field | interlaced |
+|---|---|---|
+| separate | 312.5 | alternates |
+| separate | 262.5 | alternates |
+| composite, separator in path | 312.5 | steady 309 |
+| composite, separator in path | 262.5 | steady 259 |
+| SOG, Wii 576i | 312.5 | steady 310 |
+| SOG, Wii 480i | 262.5 | alternates 259/260 |
+
+The separator retimes vertical sync and can absorb the half-line into a constant
+undercount; separate sync passes the VSync pin through more directly and the
+half-line reaches the counter. **That puts the hole only where the alternation is
+not needed**, since `VPERIOD_IF` is a measurement wherever the separator is in
+the path.
+
+**What this does NOT test is the signal structure.** Every interlaced state the
+RISC PC can produce comes from `*TV vert,interlace`, which offsets the fields but
+does not synthesise broadcast equalisation and serration pulses. So the raster is
+tested and the vertical interval is not, and a genuinely broadcast-interlaced
+source on separate sync is the one thing this bench cannot make. A mode file does
+not close that gap -- it would match the active area, not the pulse structure.
+The one separator-path source with real serrations, the Wii at 480i, does
+alternate, which is at least not evidence against.

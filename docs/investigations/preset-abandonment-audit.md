@@ -141,7 +141,7 @@ That is not the whole rule.
 
 `doPostPresetLoadSteps()` unquestionably runs on the scaling path, and
 attribution is per FUNCTION — so a field it writes only inside
-`if (rto->outModeHdBypass)`, `if (rto->inputIsYpBpR)` or
+`if (Tv5725::VideoRoute::isHdBypassChannel())`, `if (rto->inputIsYpBpR)` or
 `if (presetID == 0x06 || presetID == 0x16)` reads as owned and is not. **22
 fields were in exactly that state on 2026-08-15**, and `--gap` reported zero the
 whole time. `OUT_SYNC_SEL` is the sharpest: its one write in that function is
@@ -152,7 +152,7 @@ The full list, with who the apparent owner was:
 
 | fields | apparent owner | branch that never runs here |
 |---|---|---|
-| `OUT_SYNC_SEL` | `doPostPresetLoadSteps` | `if (rto->outModeHdBypass)` |
+| `OUT_SYNC_SEL` | `doPostPresetLoadSteps` | the HD bypass channel arm |
 | `SP_HS_POL_ATO`, `SP_VS_POL_ATO` | `doPostPresetLoadSteps` | `if (syncTypeCsync == false)` — and it writes 1 against the tables' 0 |
 | `IF_HS_TAP11_BYPS`, `IF_HS_Y_PDELAY` | `doPostPresetLoadSteps` | `if (inputIsYpBpR)` / standard 3-9 |
 | `IF_HS_DEC_FACTOR`, `IF_HB_ST`, `IF_HB_SP`, `IF_HBIN_SP` | `doPostPresetLoadSteps` | `if (presetID == 0x06 \|\| 0x16)` |

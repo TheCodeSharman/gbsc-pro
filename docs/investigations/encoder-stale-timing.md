@@ -50,8 +50,38 @@ Entering RGBHV bypass recovers it as well, which is the same mechanism reached
 a longer way round: the bypass switch reconfigures the output path outright.
 
 **Try this before pulling the rails.** Whether every case reported as an
-encoder wedge is this one is not established, and the sample for the toggle is
-one — but it costs two register writes against a bench trip.
+encoder wedge is this one is not established — but it costs two register writes
+against a bench trip.
+
+## A firmware flash reaches it too, and nothing in the firmware covers that
+
+Measured 2026-09-08 on the Wii, YPbPr, PAL 576i. An OTA flash while that source
+was selected came back with the television dark and every scaler-side reading
+correct: `STATUS_SYNC_PROC_VTOTAL` 310, `STATUS_SYNC_PROC_HTOTAL` 2250 against a
+2250 divider, `PAD_SYNC_OUT_ENZ` 0, `DAC_RGBS_PWDNZ` 1, a solved raster at
+`VDS_HSYNC_RST` 2010 / `VDS_VSYNC_RST` 1065, and the engine reporting
+`state: acquired`. The toggle brought the picture back at once, and the sink's
+own overlay then named the mode it had acquired -- 1280x1024 at 50 Hz.
+
+**A flash is the case the classification can never catch.** `useHdmiSyncFix` is
+armed inside `doPostPresetLoadSteps()` off a change of input classification, and
+across a flash the input does not change at all -- the source is the same, the
+ESP restarts, and the encoder is left holding a timing from before the reset
+while the scaler re-solves an equivalent one. That is the same argument as the
+section below, from a direction the input classification cannot see even in
+principle.
+
+So the post-flash black screen has TWO recoveries with different causes, and
+reaching for the wrong one costs a detection sweep:
+
+| what is stale | signature | recovery |
+|---|---|---|
+| the chip's sync path, left from before the reset | `SP_SOG_MODE` 1 on a separate-sync source, `SP_VTOTAL` 0 or 97, `/geometry` all zeroes | `/sc?~` |
+| the encoder's timing | every scaler reading correct, `state: acquired`, sync out enabled | the `PAD_SYNC_OUT_ENZ` toggle |
+
+Both were seen in one session on the same unit, an hour apart. The second one's
+registers are the first one's opposite, so the two are told apart by reading
+`STATUS_SYNC_PROC_VTOTAL` before choosing.
 
 ## The firmware already has the mechanism, aimed too narrowly
 

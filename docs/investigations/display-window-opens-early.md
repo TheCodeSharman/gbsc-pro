@@ -298,11 +298,29 @@ lens.
 **The mapping does not survive an output mode change.** Measured 57 columns
 adrift -- a fifth of the picture's width -- after a 1080p / 960p / 1080p round
 trip and a 1080p / 480p / 1080p one, with the raster registers identical either
-side. The encoder samples the analog output and re-acquires, and where it lands
-the picture on the panel is its choice. **Re-measure the mapping after anything
-that re-locks the encoder**, and treat a photographic measurement that straddles
-one as two experiments. Read against a stale mapping, a correct far edge reads as
-110 px of overshoot and a repeat of the line reads as the picture.
+side. **Re-measure the mapping after any output excursion**, and treat a
+photographic measurement that straddles one as two experiments. Read against a
+stale mapping, a correct far edge reads as 110 px of overshoot and a repeat of
+the line reads as the picture.
+
+**The encoder attribution this used to carry is refuted.** *"The raster
+registers are identical either side, therefore the encoder re-acquires and
+places the picture where it likes"* does not follow: the raster registers are
+not a sufficient set, and `PLL648_CONTROL_01` and `IF_HBIN_SP` differ across a
+round trip while every one of them agrees.
+`leaving-bypass-needs-a-count-the-divider-cannot-give.md` has that, and the rule
+it states -- an encoder explanation needs an intervention, not an absence of
+difference -- is why nothing on this board can support the claim.
+
+**The live hypothesis is the sampling clock.** `PLLAD_MD` takes different values
+on one unchanged source -- 2250 and 2206 both measured on the RiscPC at
+320x256@50 -- and `IF_HSYNC_RST` tracks it, 1125 against 1103, while the
+capture's framing constants do not: `IF_HBIN_SP` 272, `IF_HB_SP` 72 and
+`IF_HB_ST` 2 are identical across both. So a capture positioned at a fixed count
+of IF units starts at a different fraction of the source line depending on the
+divider, and the framing arithmetic is not equivalent across two clock settings
+and two output rasters. That is a register mechanism the whole way, which is
+what an explanation here has to be.
 
 Two further cautions, both paid for:
 

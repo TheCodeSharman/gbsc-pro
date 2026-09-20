@@ -54,7 +54,7 @@ nothing of the reading it admits.
 raster change -- `IF_LD_SEL_PROV` and `IF_PRGRSV_CNTRL` both read 1, and only
 `InputFormatter::applyScanMode()` writes the first, so `scanModeChanged(false)`
 ran -- and with line doubling off `recommendedDivider()` clamps to
-`InputLine::WriteLimitUnits & ~1`, which is 1124 exactly.
+`VideoSourceLine::WriteLimitUnits & ~1`, which is 1124 exactly.
 
 `recoverDivider()` identifies the 2:1 multiple correctly and still cannot
 escape: it re-derives through `recommendedDivider()`, which re-applies the same
@@ -124,9 +124,14 @@ The recovery is the source moving again. A count the input formatter can follow
 restores the rate at once, which is consistent with the bus the rate is timed
 from being the one the divider configures.
 
-## What breaks the loop: measure from a reference divider
+## What broke the loop: measure from a reference divider
 
-`Geometry::holdReferenceSampling()` puts the sampling chain into a state the
+**Superseded.** There is no reference divider any more: the count is corrected
+against the divider it was read through, which needs no second clock, and the
+one divider sized from a guess is the bootstrap for a parked ADC.
+`the-reference-divider-was-the-bootstrap.md`.
+
+`Geometry::holdReferenceSampling()` put the sampling chain into a state the
 pass chooses before anything is timed through it, so the reading cannot depend
 on the mode before. The reference is the divider the capture write limit allows
 -- `2 x WriteLimitUnits` line-doubled, `WriteLimitUnits` progressive -- which
@@ -161,3 +166,38 @@ engine notices by the line count moving. A source that changes to the same line
 count at a different field rate is not noticed that way, and the chip's own
 mode-change interrupt (`s0_0F` bits 0 and 1, which fire at ~0.9-1.1 s in both
 directions) is what would catch it.
+
+## How far the dependency actually reaches: measured, and less far than this
+
+The routing above is real -- `TestBusRateMeasurement::sourceFieldRateHz(false)`
+selects `TestBus::InputVsync` and the input formatter's line counter comes from
+the divider -- but **the reading does not fail merely because the divider is
+wrong, and it does not fail while the ADC PLL is unlocked.**
+
+`sourceFieldRateHz()` takes a `useSyncProcessorBus` argument. With `true` it
+routes `TestBus::SyncProcessor` through `SP_TEST_MODULE`, upstream of the input
+formatter; every call in the engine passes `false`. Probed alternately in one
+pass so a drifting source cannot be mistaken for a difference between the two:
+
+| state | sync processor bus | input formatter bus |
+|---|---|---|
+| settled, divider 2506, `PLLAD_LOCK` 1 | 50.08 Hz | 50.08 Hz |
+| `IF_HSYNC_RST` written to 700 against a 1253 line | 50.08 Hz | 50.08 Hz |
+| through a change, divider 2250, `PLLAD_LOCK` **0**, `htotal` 2088..2413 | 50.08 Hz | 50.08 Hz |
+
+Every sample, both buses, including the state where the PLL never locks at all.
+So the field rate is available and correct exactly where it was assumed not to
+be, and the sync-processor bus buys nothing over the one in use.
+
+**Two consequences.** The alternative bus is not worth switching to on this
+evidence. And the field rate is usable *before* a sampling clock is installed,
+which is what lets the clock be sized from a measured rate rather than a nominal
+one -- see
+[`the-duty-is-counted-before-the-processor-relocks.md`](the-duty-is-counted-before-the-processor-relocks.md),
+where a nominal field rate put the PLL on a post-divider row it could not hold.
+
+What this page still describes correctly is the pathological state it was
+written from -- a forced 1080p raster with the PLL locking to every second
+hsync, `IF_HSYNC_RST` equal to `PLLAD_MD` rather than half of it, and the rate
+reading 109.75/110.53/91.56 Hz. That state has not been reproduced since, and
+the readings above do not cover it.

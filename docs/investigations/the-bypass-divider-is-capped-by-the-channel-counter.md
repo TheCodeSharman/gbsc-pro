@@ -1,0 +1,180 @@
+# The pass-through divider is capped by the channel's horizontal counter, not by the PLL
+
+Scaling costs sampling density where the source has most detail, so pass-through
+wants the ADC sampling as densely as the part allows. `Adc::BypassDivider` is
+1856 and follows nothing -- the same literal for a 15 kHz line and a 38 kHz one.
+The obvious move is to raise it. There is room, but far less than the PLL
+suggests, and the bound is in a different block.
+
+## The bound
+
+The HD bypass channel plays out a line of `HD_HSYNC_RST` counts, and
+`HdBypass::applyHorizontalFromChannelLine()` sets it to the divider plus a small
+guard. **`HD_HSYNC_RST` is ELEVEN bits**, so the played-out line cannot exceed
+2047 counts and the divider ceiling at oversample 1 is about 2039 -- roughly 10%
+above the 1856 in use.
+
+That is the whole ceiling. The ADC PLL reaches far higher: `PLLAD_MD` is 12 bits
+and RD-5725-1.1's crossover rows run to 162 MHz, which at a 37.9 kHz line is a
+divider over 4000.
+
+## What made it look like twelve bits
+
+`s1_38` bit 3 is writable and reads back. Written 2120 across the two bytes by
+hand, the pair reads 2120.
+
+**Writable is not used.** The counter ignores the bit, and the pair either side
+of 2048 says so. `PLLAD_MD` left alone and locked at 1856 throughout, so the only
+thing moving is the count:
+
+| `HD_HSYNC_RST` | reads back | picture |
+|---|---|---|
+| 2040 | 2040 | full screen, correct |
+| 2056 | 2056 | **no signal** |
+
+Those two lines differ by 0.8%. Nothing that plays out a line 0.8% longer can
+fail while the shorter one works -- but an eleven-bit counter wraps 2056 to 8,
+the line collapses and the sink drops the mode.
+
+The datasheet's `[10:8]` plus `[7:0]` is right, and it says what the bit is:
+**the rest of `s1_38` is RESERVED.** So the twelfth bit is storage with nothing
+behind it, which is the worst shape a bit can have -- a read-back that confirms
+a write the hardware never acted on. Reserved bits on this part are writable
+elsewhere too; the preset tables put 1s into three of them.
+
+## The trap this leaves
+
+A value past 2047 is stored, reads back correct, and produces a raster nothing
+can display. There is no indicator: `STATUS_MISC_PLLAD_LOCK` stays 1 and
+`STATUS_SYNC_PROC_HTOTAL` goes on reporting the divider, because both describe
+the ADC PLL and neither describes the channel. **The register is not the
+counter.**
+
+Seen once as a rolled picture rather than a dead one: 2120 written through an
+eleven-bit field lands as 72, which is a line the channel plays out at about
+thirty times the source's rate, and the frame arrives displaced rather than
+absent.
+
+## Raising it is not a two-register change
+
+`PLLAD_MD` is one of a group. Measured while raising it by hand: asking for 2112
+at a 37.9 kHz line is 80.0 MHz, which crosses into `PLLAD_KS`'s top row, and
+setting the divider without the row left `STATUS_MISC_PLLAD_LOCK` at 0 with
+`STATUS_SYNC_PROC_HTOTAL` reading 1917 against a written 2112 -- the PLL out of
+lock and the divider never latched.
+
+`Adc::applySampleRate()` already writes the whole group against a measured rate,
+including the crossover row, the charge pump and the decimators that have to
+describe the same oversampling as `PLLAD_CKOS`. Pass-through should reach the
+divider through it rather than through a literal, with the channel's 2047 as the
+clamp.
+
+## Oversampling does not lift it, and cannot
+
+The channel's counter counts the DECIMATED clock -- the played-out line is the
+divider over the oversampling ratio -- so oversampling looks like the way to
+sample faster without a longer line. It is not, because oversampling here is
+bought from the same crossover ladder rather than from a second clock:
+`Adc::applyOversample()` takes a faster tap of the one VCO and each doubling
+costs a step of `PLLAD_KS` headroom, so `oversampleFor()` reduces a ratio the
+row cannot carry.
+
+Asking for two therefore holds the ADC clock under the top row's 80 MHz, and
+what reaches the channel halves with it.
+
+**AND PASS-THROUGH IS ALREADY OVERSAMPLING BY TWO**, whatever the firmware
+asks for. Read on the bench in pass-through: `PLLAD_KS` 1 with `PLLAD_CKOS` 0 --
+one tap faster -- `ADC_CLK_ICLK1X` 1 and `DEC2_BYPS` 0, which is the ADC
+sampling 4078 a line and the 2x-to-1x stage bringing 2039 to the channel.
+`HdBypass::applyRgbhv()` asks for a ratio of one and writes it; watched through
+a bypass entry at one-second sampling, the group reads ratio 1 at 9.8 s and
+ratio 2 at 10.0 s. **Two owners, and the one that loses is the one that meant
+it**: the sketch sets `rto->osr` from its own `applyOversample(1, 2)` before the
+call, and a later re-apply installs that.
+
+So the divider ceiling above is a ceiling on what reaches the CHANNEL, and the
+ADC is already running at twice it. Oversampling is not the unexplored lever it
+looks like -- it is what pass-through has been doing.
+
+**Whether the stages FILTER before they decimate is open**, and it does not
+change what the ceiling is. They are two cascaded stages, each bypassable on its own --
+`DEC1_BYPS` is 4x to 2x and `DEC2_BYPS` is 2x to 1x, so the ratios are 1, 2 and
+4, and `Adc::applyOversample()` writes them with the matching clock dividers
+because the decimators undo in the digital domain what the faster tap added.
+RD-5725-1.1's text for them says nothing either way. **`DEC_WEN_MODE` is not
+evidence about it**: it is not a ratio, and its "decimator will drop data by
+write enable signal generated by horizontal sync" describes that gating rather
+than what the ratio stages do with a sample.
+
+**The experiment that would settle it cannot be run here.** It wants two states
+delivering the same line to the channel and differing only in how fast the ADC
+sampled it. At the counter's own cap that is divider 2039 at ratio 1 against
+4078 at ratio 2, and the second is unreachable: 4078 puts the clock in the top
+row, where `PLLAD_CKOS` would have to be -1. Tried instead at a channel line of
+1024 -- 1024 at ratio 1 against 2048 at ratio 2, both latched and locked with
+`STATUS_SYNC_PROC_HTOTAL` reading 1024 and 2048 as asked -- and the sink reports
+no signal for BOTH, so the pair says nothing about the picture. The band where both ratios reach the
+counter's own cap -- where the doubling would be free -- is below about
+19.6 kHz, and `SourceMeasurement::BypassMinLineRateHz` is 26 kHz: a source slow
+enough for oversampling to cost nothing is too slow to be passed through at all.
+
+## Two decimator bits the firmware sets without a derivation
+
+`doPostPresetLoadSteps()` and the HD bypass switch both write `DEC_IDREG_EN` 1
+and `DEC_WEN_MODE` 1, and neither is derived from anything.
+
+**`DEC_IDREG_EN` is not a decimator control.** RD-5725-1.1 gives it as "Test
+logic output select. DEC_TEST_SEL[0], test logic output enable, when set to 1,
+test logic can output" -- a test-output enable, held on in normal operation on
+every path. What it costs, if anything, is unmeasured; it is flagged here rather
+than changed, because a bit nobody can justify is not a bit to clear on a hunch.
+
+## What the ceiling is worth
+
+1856 to about 2032 is roughly 9.5% more samples per line. It does not reach an
+integer relationship with the source's pixel clock, which is what would remove
+beating outright: 800x600@60 is 1056 pixels a line, so two samples per pixel is
+2112 and out of reach. The board cannot know that number anyway -- the
+horizontal axis has no native resolution here, and 800x600 and 1600x600 present
+identical sync to the scaler, differing only in pixel clock.
+
+**1600x600@60 is the test case.** The AKF50 offers it, and the RISC PC drives it
+at the same 627 total lines and 37.9 kHz line rate as 800x600@60, so the scaler
+cannot tell the two apart and samples both the same. Everything visible between
+them is horizontal resolution.
+
+Measured across the two dividers at 1600x600, the PM5544 wedge resolves further
+at 2039: its leftmost block is stripes where 1856 renders flat grey. Taken off
+the photographs as contrast inside the wedge divided by contrast in the
+colour-bar row of the SAME frame, which divides out the exposure the room moves
+-- 0.819 at 1856 against 0.869 at 2039.
+
+## And 2039 is still short of 1600 active pixels
+
+**The finest wedge block loses its detail entirely** at 1600x600, smearing into
+a slow grey-pink-grey envelope where 800x600 renders it cleanly. **The blocks
+below it are fine** -- no shimmer, a little discolouring at most -- so the
+failure is a boundary rather than a general softening, and the arithmetic puts
+the boundary in the same place.
+
+The channel delivers 2039 samples across the whole line whatever the source's
+pixel clock, and the two modes share a raster, so the same count lands on active
+video in both:
+
+| active pixels | samples on active | finest wedge | samples per cycle |
+|---|---|---|---|
+| 800 | ~1540 | 400 cycles | ~3.9 |
+| 1600 | ~1540 | 800 cycles | ~1.9 |
+
+Just under two samples a cycle is Nyquist, and an alias there beats to near DC:
+the envelope crossing the block IS the beat, which is why the detail does not
+soften but disappears. One block down the frequency halves and two samples a
+cycle become four, which is the margin the rest of the wedge shows.
+
+**Pass-through is far better than scaling and still not transparent much past a
+thousand active pixels**, and no setting on this part lifts that: carrying 800
+cycles wants around 4200 samples a line against a counter that stops at 2047.
+
+The colour in the envelope is the beat reaching the encoder, which re-samples
+the analog output at its own clock and phase rather than ours. Stated as the
+reading it is: the near-Nyquist beat is arithmetic, the colour is not measured.

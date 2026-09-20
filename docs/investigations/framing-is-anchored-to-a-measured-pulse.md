@@ -8,7 +8,7 @@ system is built on.
 
 ## The chain
 
-`InputLine::measured()` derives the hsync pulse width from a live measurement:
+`VideoSourceLine::measured()` derives the hsync pulse width from a live measurement:
 
     syncUnits = ceil(units * hlowLen / adcLine)
 

@@ -46,8 +46,9 @@ sweep). Raising `EngineCeilingHz` to it would make the 1080p raster about
 bar is unknown; the picture is the only instrument that can say.
 
 The usability argument that originally held `EngineCeilingHz` at 108 no longer
-applies: it rested on a `scaleMin` of 500 leaving no horizontal zoom travel at
-the wider raster, and `Scale::Min` has since become `Unity / maxMagnification`.
+applies: it rested on a scale floor of 500 leaving no horizontal zoom travel at
+the wider raster, and the floor the control stops at is `Axis::minimum
+Capture()` now, which follows the raster's own room.
 
 ## The general rule this is an instance of
 

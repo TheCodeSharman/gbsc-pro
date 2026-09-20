@@ -44,6 +44,63 @@ detections either side of the threshold are near the camera's noise floor. It is
 not established whether its departure is a property of the pipeline or of the
 measurement.
 
+## The write begins at a fixed position in the input line
+
+The capture window's START is not honoured below about unit **252** of the IF
+line. The engine sizes both output windows for `IF_HB_ST2 - IF_HB_SP2` and the
+pipeline delivers `IF_HB_ST2 - 252`, so everything the window was opened for
+below 252 is window with nothing under it.
+
+Eight engine-solved framings, bench RiscPC 320x256@50, raster 1920 x 1126, IF
+line 1253 units, `VDS_HB_SP` 8. Each step is one `/sc?I=60` press, so the scale,
+the capture, the fetch and the stride are all the engine's:
+
+| `IF_HB_SP2` | `IF_HB_ST2` | band | delivered units | `ST2 -` delivered | `252 - SP2` |
+|---|---|---|---|---|---|
+| 147 | 1230 | 166.1 | 978.3 | 251.7 | 105 |
+| 165 | 1212 | 141.7 | 959.6 | 252.4 | 87 |
+| 182 | 1195 | 117.4 | 942.3 | 252.7 | 70 |
+| 199 | 1178 | 88.6 | 925.9 | 252.1 | 53 |
+| 215 | 1162 | 59.8 | 910.8 | 251.2 | 37 |
+| 231 | 1146 | 31.0 | 894.2 | 251.8 | 21 |
+| 246 | 1131 | none | -- | -- | 6 |
+| 261 | 1116 | none | -- | -- | 0 |
+
+`ST2 -` delivered holds at **251.2 to 252.7 over six states**, and the lost input
+units are `252 - IF_HB_SP2` in every row. **The band closes where that reaches
+zero**, predicted from the first five rows and confirmed on the last three: it
+is gone by `IF_HB_SP2` 246, where the remaining 6 units are 12 output px and
+under the camera's floor.
+
+`AxisHorizontal` opens the capture at 0.117 of the line, which is 147 units
+here. The pipeline delivers from 0.201 of it. **The whole of the band is that
+disagreement** -- there is no loss term at the far end and no misplaced origin.
+
+## What it is NOT the input formatter's blank-for-scale-down
+
+`IF_HBIN_SP` holds 272 on this source, which is close enough to 252 to look like
+the answer, and it is not. Swept 150, 272 and 400 against a live band, engine
+frozen: the picture **pans and resizes** every time -- the card's edges run
+468.8 / 573.9 / 378.0 -- and the band does not move by a pixel, at 1408..1552 in
+all three. A write gate would have closed the band at 150 and more than doubled
+it at 400.
+
+## What 252 is, is open
+
+One source and one mode. Nothing says whether it is an absolute count of input
+units or the 0.201 of a line it happens to be here, and the two differ by 128
+units at the next mode up.
+
+**800x600 cannot settle it.** There the capture is 340..1899 of an undoubled
+1900-unit line at `VDS_HSCALE` 1023, so `produced` is 1560.6 against a display
+window of 1496: the window is over-filled rather than under-filled, and no zoom
+out is available to reverse that because the scale is already at its ceiling.
+The band is a zoom-OUT artefact and that mode has no zoom-out left.
+
+**`activeStart` is not the lever.** `VideoProcessorTimings` passes 0 for it on
+both axes, but `Axis::placePicture` uses it as an output-side floor on `corner`.
+What is wrong is an input-side start, and no value of `activeStart` reaches it.
+
 ## What it is not
 
 | refuted | how |
@@ -51,6 +108,10 @@ measurement.
 | **captured content near the end of the line** | `IF_HB_ST2` swept 1124 -> 1088, 36 units, with the engine frozen and `VDS_HSCALE` confirmed unmoved. The band does not shift or change width |
 | **stale memory the playback re-reads** | at `VDS_HSCALE` 480 the write covers the region with card content; returning to 596 brings the identical green back, matching the earlier profile to within camera noise. What is in that memory from the previous framing does not survive into the band, so it is regenerated every frame |
 | **the capture path's write limit** | that limit is a position in the input line, so narrowing the capture past it removes it. This band is indifferent to the capture stop and moves with `VDS_DIS_HB_ST` |
+| **the VDS line filter's tail green** | `VDS_D_RAM_BYPS` reads 1, so the filter is out of circuit while the band stands. [the-tail-green-is-the-vds-line-filter.md](the-tail-green-is-the-vds-line-filter.md) |
+| **the playback fetch running out** | `PB_FETCH_NUM` 271 -> 330, a 22% rise over the `ceil(capture / 4)` the engine writes. The band does not move by a pixel, and neither does the picture |
+| **captured content, from the input side** | `IF_HBIN_ST` 300 blanks the whole captured picture to black and the band remains, brighter. `PATTERN CARD` against `PATTERN PM5544` gives the same band to 2 px. `IF_HBIN_SP` 150 / 272 / 400 pans and resizes the picture and leaves the band exactly where it is |
+| **the encoder or the panel** | `VDS_DIS_HB_ST` 1903 -> 1500 turns the band black -- G 72 against a black control of 26. Display blanking reaches nothing downstream of the scaler |
 
 ## Whether there are two artefacts here is open
 
@@ -102,6 +163,24 @@ the arithmetic is host-testable.
   photo rows, so alternating lines average away completely and even and odd rows
   differ by 0.2 of a level. Whether a band is combed is not answerable from this
   camera.
+- **Calibrate photo columns to output pixels by differencing `VDS_DIS_HB_ST`,
+  and take the LEFT edge of the change.** Blanking from a lower value darkens
+  only the columns that carried content, so the change's right edge is where the
+  picture ended and says nothing about the register. Its left edge IS the value
+  written. Four values spanning 600 output px fit
+  `output = 1.1072 x photo + 175.35` with residuals of 0.4 px.
+- **A row band clear of the card's own green is what the band is measured in.**
+  A profile over the full height merges the test card's green colour bar into the
+  region being measured and reports whichever fragment survives a contiguity
+  test, which is neither monotonic in the scale nor repeatable.
+- **A capture window swept by hand is not the capture the pipeline honours.**
+  `IF_HB_SP2` moved with the engine frozen makes the band's left edge track
+  `capture x 1024 / scale` to within 0.9%, which reads as the full window being
+  delivered and contradicts the engine-solved sweep above. `PB_FETCH_NUM` stays
+  sized for the capture the last solve chose throughout, so what that measures is
+  the mismatch. The same applies to `VDS_HB_SP`: moved far enough it closes the
+  band and opens one on the LEFT, which looks like a misplaced origin and is the
+  window being dragged off the write.
 - **Unfreezing does not undo hand-written registers.** The engine writes on
   change, so a state assembled by hand persists until something re-derives it;
   `/sc?U` does. A framing the engine would never solve produces artefacts of its

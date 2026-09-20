@@ -1,9 +1,42 @@
 # The tail green
 
+**THERE ARE TWO CAUSES AND THE SECOND ONE MASKED THE FIRST.**
+
+The VDS's one-line delay, `VDS_D_RAM_BYPS`, destroys the tail of every line with
+the delay in circuit. It is the user option `uopt->wantVdsLineFilter`, it is now
+defaulted off, and it is real.
+[`the-tail-green-is-the-vds-line-filter.md`](the-tail-green-is-the-vds-line-filter.md)
+
+**It was also in circuit for every measurement on this page taken before it was
+found**, which is what makes those readings disagree with each other: the width
+from the window start, the position in the line, and the movement with the
+divider are three answers to a question that had two mechanisms in it.
+
+Measured with the delay BYPASSED, a band is still there, and it is the capture
+path:
+
+| | measured with `VDS_D_RAM_BYPS` 1 |
+|---|---|
+| where it starts | ADC sample **2236..2256** of the line, doubled |
+| what it is fixed to | the LINE. Two capture-window starts 24 units apart and two magnifications put it within 1.5 units of the same place |
+| what it is NOT fixed to | the window. A width from the window start predicted it 33 photo columns away from where it is |
+| undoubled | **no band anywhere**, at IF lines of 1217, 1447 and 1561 -- which rules out any bound expressed in IF units |
+
+So the bound is a count of ADC samples that only a doubled line's divider can
+reach, the doubler halving the divider into IF units and so letting the engine
+ask for twice as many samples. `SamplingClock::DoubledLineSampleLimit` holds the
+line under it at 2200.
+
+**Confirmed on the picture**, 320x256@50 at full framing, divider 2506 -> 2200:
+greenness in the last quarter of the line falls from a peak of 22 over 156 photo
+columns to **zero columns** above the noise, on both card patterns.
+
+What follows is the earlier work. **Every measurement in it was taken with the
+line delay in circuit**, so read a disagreement between two of them as that
+rather than as a moving bound.
+
 A green band appears toward the right of the line, and **active picture that
-reaches it is destroyed** — not overlaid, not blanked, lost. It is a bound on
-usable capture width, and the engine now respects it two ways: see what the
-engine does about it, below.
+reaches it is destroyed** — not overlaid, not blanked, lost.
 
 Measured on a RiscPC with a stock AKF50 mode file, 320x256@50, at `PLLAD_MD`
 2548 and `IF_HSYNC_RST` 1274 — a 1275-unit line.
@@ -26,6 +59,16 @@ costs a session each.
 | **the ADC's black level** | `ADC_ROFCTRL`, `ADC_GOFCTRL` and `ADC_BOFCTRL` are all 64. A per-channel offset error would tint the whole blanking interval |
 | **memory write bandwidth** | `PLL_MS` swept 162 -> 144 -> 108 -> 81 MHz, halving what the write path can absorb per unit time. X does not move by one unit. A fill-versus-drain race cannot survive that |
 | **the blank-insert registers** | `HD_BLK_GY_DATA`/`BU`/`RV` are all 0, which decodes to exactly this green — but writing 128 into the chroma pair changes nothing, so that path is not in circuit for RGB input |
+
+## The colour arithmetic below is REFUTED
+
+Measured inside the band against the picture beside it, the band is **dark where
+the picture is dark** -- mean R 5.5, G 66.6, B 22.3, maximum G 181. Nothing
+decoded from `Y=U=V=0` can fall below G 135, so the zeros are not there. What
+is on screen is the picture with red and blue lost and green kept. The inference
+flagged below as resting on the colour rather than on an observation is the one
+that fails.
+[`the-tail-band-is-not-a-capture-width.md`](the-tail-band-is-not-a-capture-width.md)
 
 ## The colour is arithmetic, and it says the zeros are written
 
@@ -57,14 +100,17 @@ the hsync pulse at IF 0..88.9 — a green band appears on the **left**. Move the
 start clear of the pulse (`114..1114`) and the left edge is clean.
 
 That one is captured content: the sync tip digitised as video. The head never
-shows it in normal use because `InputLine::firstCapture()` returns `syncUnits`,
+shows it in normal use because `VideoSourceLine::firstCapture()` returns `syncUnits`,
 96 in this configuration, and the solver keeps the window clear of it.
 
 ## Where X is
 
-X is the position where video stops being written and the green starts.
-**X = 1125 IF units = 2250 ADC samples**, counted from the line start, and it is
-absolute: `IF_HB_ST2` was crept down one unit at a time to the value where the
+X is the position where the band starts. **X = 1125 IF units = 2250 ADC
+samples** by this measurement; re-measured with the display window filled it is
+**1187** on this source, and on an undoubled 800x600 line it is between 1500 and
+1700 units, so it is not one constant in either unit.
+[`the-tail-band-is-not-a-capture-width.md`](the-tail-band-is-not-a-capture-width.md)
+It is absolute in the sense this page claims: `IF_HB_ST2` was crept down one unit at a time to the value where the
 band exactly vanishes, and the register at that threshold is the reading. The
 capture start was 91 here and 62..263 across an earlier sweep, and X did not
 move.
@@ -159,25 +205,22 @@ capture stop is not new evidence; a creep at a different stop would be.
 
 ## What the engine does about it
 
-Two changes, and they compose: the divider does the work and the clamp is the
-backstop.
+`SamplingClock::recommendedDivider()` caps `PLLAD_MD` at
+`DoubledLineSampleLimit` where the line is doubled, so the LINE ends before the
+onset. The window is not what is bounded: one kept short of the onset would
+still lose the picture past it, because the capture path stops writing where it
+stops writing whatever the window asks for.
 
-`SourceMeasurement::recommendedDivider()` caps `PLLAD_MD` so `ifLineFor()` stays at or
-below `InputLine::WriteLimitUnits` — a divider of 2250, since the IF halves it.
-That is a **second** ceiling alongside the ADC's 162 MSPS rating, with its own
-justification, and the tighter of the two binds. `InputLine::lastCapture()` then clamps the far end of
-the window at the limit, for the lines the divider did not choose — `adopt()`
-takes whatever a custom preset or a bypass switch left behind.
+Nothing is capped on an undoubled line, because nothing has been measured there
+and the divider cannot reach the onset anyway -- the counter's own eleven bits
+stop it at 2047.
 
-**The constant is what to be careful of.** X is one board's number, measured
-once, and a source whose active picture legitimately extends further would be
-cropped by it silently. The head guard is derived —
-`ceil(units × HLOW_LEN / PLLAD_MD)`, recomputed per solve — and the far end
-cannot be, until what counts to 2250 is known. Capping the divider is what keeps
-the clamp off real picture: with the line inside the limit it never fires.
+**The constant is what to be careful of.** It is one board's number, measured
+at one divider, which is why it sits under the low end of the onset rather than
+on it.
 
-The cost is sampling density. At the bench source the divider goes 2548 -> 2250,
-2.49 -> 2.20 IF units per source pixel, against a Nyquist floor of 2.00 for its
+The cost is sampling density. At the bench source the divider goes 2506 -> 2200,
+2.45 -> 2.15 IF units per source pixel, against a Nyquist floor of 2.00 for its
 512 px line. [`../capture-limits.md`](../capture-limits.md) has the trade.
 
 ## Two green bands, and only one of them is X
@@ -187,10 +230,10 @@ told apart by whether it moves with the ZOOM.
 
 | | the write limit | the stride |
 |---|---|---|
-| cause | the capture path stops writing video past IF 1125 | `PB_CAP_OFFSET` below `PB_FETCH_NUM`, so lines overlap and each overwrites its predecessor's tail |
+| cause | the capture path stops writing video past ADC sample 2236 | `PB_CAP_OFFSET` below `PB_FETCH_NUM`, so lines overlap and each overwrites its predecessor's tail |
 | when | the capture window reaches past X | the capture is wide enough that the fetch passes the stride |
 | with the zoom | fixed in the line, so zooming out walks the window INTO it | appears as the picture zooms OUT, because the fetch follows the capture |
-| fix | cap the divider, and clamp `lastCapture()` | size the stride from the whole line |
+| fix | cap the divider on a doubled line | size the stride from the whole line |
 
 The stride one is the trap, because the *fetch* is derived and the stride was a
 constant: at rest the fetch sits well under it and the picture is clean, and the
@@ -215,6 +258,68 @@ Extending the capture window into the source's blanking is a way to *mask* it:
 the IF writes blanking data into the buffer, so playback reads written green
 rather than stale memory. That works and costs capture width, a dependency on the
 source having porch to reach, and a green field instead of a black one.
+
+## It is a WIDTH, counted from the START of the capture window
+
+Neither reading above is right, and both failed the same way: each held the
+capture START fixed and moved the end, where "a position in the line" and "a
+width from the window start" are the same number.
+
+**Measured by creeping `VDS_DIS_HB_ST` onto the band.** The output blanking is a
+register rather than a photographed edge, and moving it does not disturb the
+capture, so the band stays put while it is measured. Counting green columns
+rather than requiring a run of them gives a sharp edge -- 18, 16, 14, 11, 10, 1,
+0 over seven steps.
+
+| line | capture window | green starts at output | in capture units | **from window start** |
+|---|---|---|---|---|
+| undoubled, `PLLAD_MD` 2046 | 491..2042 | 1131 | 1526 | **1035** |
+| undoubled, `PLLAD_MD` 2046 | 560..1973 | 1230 | 1591 | **1031** |
+| doubled, `PLLAD_MD` 2548 | 91..crept | -- | 1125 | **1034** |
+
+The third row is this page's original measurement, re-read: it crept the end to
+1125 from a start of 91, which is a width of 1034.
+
+So **the capture path writes about 1034 units from wherever the window starts
+and then writes blanking**, on both scan modes. Not a position -- 1526 against
+1591 for the same bound. Not an output pixel -- 1131 against 1230. Not a total:
+cutting the captured lines from 600 to 479 at a fixed width does not move the
+band by one column, which takes `CAP_SAFE_GUARD` and every memory-size
+explanation with it.
+
+`VideoSourceLine::CaptureWidthLimitUnits` is 1024 -- under all three readings,
+and what a counter would plausibly stop at. `maxCaptureWidth()` bounds the
+window's WIDTH by it while `capturable()` still spans both ends, because only
+the width is bounded: a window may still be panned to the far end of the line.
+
+**A width sweep cannot find this bound, and the reason is worth knowing.** The
+band only becomes visible once the magnification is low enough to bring it
+inside the encoder's transmitted window, which is about 1378 output pixels.
+Below roughly `VDS_HSCALE` 830 the band exists and is never transmitted, so a
+sweep that watches the picture reports a threshold near 1270 units that is the
+edge of the transmitted window rather than the onset of the band. Two such
+sweeps agreed with each other, on two source modes, and were both wrong.
+
+### Two ceilings found on the way
+
+**The input formatter's line counter is 11 bits**, so the IF line cannot exceed
+2047 units whatever the divider.
+
+**The reading recorded here for it does not hold.** `PLLAD_MD` 2094 leaving
+`IF_HSYNC_RST` at 46 was the firmware's own eleven-bit declaration truncating
+the write before it reached the chip, not the register: written as raw bytes the
+pair stores 2094 and returns it. The counter is eleven bits all the same, and
+[`the-line-counters-are-eleven-bits-measured.md`](the-line-counters-are-eleven-bits-measured.md)
+is the measurement that establishes it.
+
+**The ADC is not what caps a VESA-class source.** At 800x600@60's 37,879 Hz with
+`PLLAD_CKOS` 0, `maxDivider()` allows about 4013 and the sampling budget is a
+quarter used. At the bench's 15,625 Hz the solve runs four times oversampling and
+spends 98% of the 162 MSPS on it, which is what caps that divider at 2540. The
+two trade against one budget: `PLLAD_MD x lineRate x oversample <= 162 MSPS`, so
+four times oversampling at 37,879 Hz would cap the divider at 1069 -- fewer
+samples than it takes today. `postDividerFor()` limits it again, offering at most
+two times once CKO clears 40 MHz.
 
 ## See also
 
