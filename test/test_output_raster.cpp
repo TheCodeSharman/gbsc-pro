@@ -109,23 +109,29 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     }
 }
 
-// The far end of the line reserves what the BOARD needs, which is a property of
-// this part and not of any standard. CEA's own minimum front porch is an order of
-// magnitude above it -- 64 px at 108 MHz, 77 at 129.6 -- and the difference is
-// picture, because the reserve bounds where the produced picture may end.
+// The far end of the line carries the output mode's own front porch, because the
+// board emits a raster a standard names and CEA states one. `FrontPorchMinPx` is
+// a floor under it, not the reserve itself: 16 px is what this part needs at the
+// far end, and every mode's porch is an order of magnitude above it.
 //
-// The encoder generates its own HDMI blanking from what it samples and never sees
-// ours, so conforming to CEA at this end buys nothing.
-// docs/scaler-geometry-model.md "The output front porch"
-TEST_CASE("the far-end reserve is the board's floor, not the standard's porch")
+// The reading this replaces was that the encoder generates its own HDMI blanking
+// from what it samples and never sees ours, so conforming bought nothing. It is
+// refuted: what it samples is the analog signal between HS_OUT edges, and
+// emitting the porches the mode states stopped the picture landing somewhere
+// different on each acquisition -- 17 trials within 0.65 photo px against four
+// controls at 101 px.
+// docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md
+TEST_CASE("the far end carries the output mode's front porch, floored by the board's")
 {
+    // 1080p60's front porch is 88 px of its 148.5 MHz line, 592.59 ns, which is
+    // 64 px at 108 MHz and 77 at 129.6 -- a time, so it survives the clock change.
     OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.activeStop == 1920 - 16);
+    CHECK(at108.activeStop == 1920 - 64);
 
     OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.activeStop == 2304 - 16);
+    CHECK(at1296.activeStop == 2304 - 77);
 
     SUBCASE("and the active window is what lies between the two porches") {
         CHECK(at108.activeWidth() == at108.activeStop - at108.activeStart);
@@ -309,11 +315,12 @@ TEST_CASE("forFrameHeight never answers bypass")
 TEST_CASE("a preference that is not a resolution resolves to no mode")
 {
     // 0 leaves the caller to fall back rather than silently solving the wrong
-    // raster. 6 is cast rather than named because the enumerator no longer
-    // exists: OutputDownscale went with the preset tables. Bypass is NOT one of
-    // these -- it names a mode, and having its own is the point.
+    // raster. Both values are cast rather than named because neither enumerator
+    // exists: 6 was OutputDownscale, which went with the preset tables, and 10
+    // was OutputBypass, which went because handing the source to the panel is
+    // not a resolution.
     CHECK((OutputMode::forPreference((PresetPreference)6) == 0));
-    CHECK((OutputMode::forPreference(OutputBypass) == &ModeBypass));
+    CHECK((OutputMode::forPreference((PresetPreference)10) == 0));
 }
 
 TEST_CASE("a custom preset resolves to no mode, because its bytes are the mode")

@@ -62,7 +62,6 @@ uint8_t OutputMode::clockDividerFor(uint16_t frameLines, float fieldRateHz,
     return best;
 }
 
-const uint16_t OutputMode::PalNtscSplitHz;
 
 const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
 {
@@ -77,17 +76,10 @@ const OutputMode *OutputMode::forPreference(PresetPreference presetPreference)
 
     // 480p and 576p are separate preferences: a preference names a resolution
     // and nothing else, so either is selectable whatever the source runs at.
-    // Choosing between them by field rate is matchPresetSource's job, next to
-    // the 960 against 1024 swap it already makes.
     if (presetPreference == Output480P)
         return &Mode480p;
     if (presetPreference == Output576P)
         return &Mode576p;
-
-    // A resolution choice whose resolution is the source's, so it names a mode
-    // like any other rather than reading as "nothing chosen".
-    if (presetPreference == OutputBypass)
-        return &ModeBypass;
 
     return 0;
 }
@@ -112,11 +104,11 @@ const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
 }
 
 OutputMode::OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
-                       uint16_t vsyncLines, uint16_t vBackPorchLines,
-                       uint16_t vFrontPorchLines)
+                       float frontPorchNs, uint16_t vsyncLines,
+                       uint16_t vBackPorchLines, uint16_t vFrontPorchLines)
     : activeLines_(activeLines), syncNs_(syncNs), backPorchNs_(backPorchNs),
-      vsyncLines_(vsyncLines), vBackPorchLines_(vBackPorchLines),
-      vFrontPorchLines_(vFrontPorchLines) {}
+      frontPorchNs_(frontPorchNs), vsyncLines_(vsyncLines),
+      vBackPorchLines_(vBackPorchLines), vFrontPorchLines_(vFrontPorchLines) {}
 
 uint16_t OutputMode::activeLines() const { return activeLines_; }
 
@@ -161,8 +153,11 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     solved.hsyncStart = 0;
     solved.hsyncStop = (uint16_t)width;
     solved.activeStart = (uint16_t)(width + porch);
-    solved.activeStop = FrontPorchMinPx < horizontalTotal
-                            ? (uint16_t)(horizontalTotal - FrontPorchMinPx)
+    long front = lrintf(frontPorchNs_ * clockHz / 1e9f);
+    if (front < (long)FrontPorchMinPx)
+        front = FrontPorchMinPx;
+    solved.activeStop = front < (long)horizontalTotal
+                            ? (uint16_t)((long)horizontalTotal - front)
                             : solved.activeStart;
 
     solved.vsyncStart = 0;
@@ -179,10 +174,12 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 //   1080p  44 px, 148 px at 148.5 MHz   ->  296.30, 996.63 ns
 //   720p   40 px, 220 px at 74.25 MHz   ->  538.72, 2962.96 ns
 //
-// The front porch is not among them. It is the one the standard varies to absorb
-// the field rate -- 1080p50 runs 528 px against 1080p60's 88 -- and the encoder
-// generates its own HDMI blanking from what it samples, so what the far end of
-// the line needs is the board's own floor, FrontPorchMinPx.
+// The front porch is the one the standard varies to absorb the field rate --
+// 1080p50 runs 528 px against 1080p60's 88 -- so it is stated per mode like the
+// rest, and FrontPorchMinPx is the floor under it rather than the reserve
+// itself. Emitting the porches the mode states is what stopped the encoder
+// choosing a different place to paint the picture on each acquisition.
+// docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md
 //
 // Vertical is in lines, which need no conversion, and is the STANDARD's in full
 // -- active, front porch, sync, back porch:
@@ -205,13 +202,13 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // No active lines and no porches, so frameLines() is 0 and clockDividerFor()
 // finds no divider -- which is what makes solve() fail usable() rather than
 // return a plausible zero raster.
-const OutputMode ModeBypass(0, 0.0f, 0.0f, 0, 0, 0);
+const OutputMode ModeBypass(0, 0.0f, 0.0f, 0.0f, 0, 0, 0);
 
-const OutputMode Mode1080p(1080, 296.2963f, 996.6330f, 5, 36, 4);    // 1125
-const OutputMode Mode1024p(1024, 1037.0370f, 2296.2963f, 3, 38, 1);  // 1066
-const OutputMode Mode960p(960, 1037.0370f, 2888.8889f, 3, 36, 1);    // 1000
-const OutputMode Mode720p(720, 538.7205f, 2962.9630f, 5, 20, 5);     //  750
-const OutputMode Mode576p(576, 2370.3704f, 2518.5185f, 5, 39, 5);    //  625
-const OutputMode Mode480p(480, 2296.2963f, 2222.2222f, 6, 30, 9);    //  525
+const OutputMode Mode1080p(1080, 296.2963f, 996.6330f, 592.5926f, 5, 36, 4);    // 1125
+const OutputMode Mode1024p(1024, 1037.0370f, 2296.2963f, 444.4444f, 3, 38, 1);  // 1066
+const OutputMode Mode960p(960, 1037.0370f, 2888.8889f, 888.8889f, 3, 36, 1);    // 1000
+const OutputMode Mode720p(720, 538.7205f, 2962.9630f, 1481.4815f, 5, 20, 5);     //  750
+const OutputMode Mode576p(576, 2370.3704f, 2518.5185f, 444.4444f, 5, 39, 5);    //  625
+const OutputMode Mode480p(480, 2296.2963f, 2222.2222f, 592.5926f, 6, 30, 9);    //  525
 
 }  // namespace Tv5725

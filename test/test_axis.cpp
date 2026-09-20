@@ -182,7 +182,7 @@ TEST_CASE("the picture is made as big as the raster allows")
         // Not "as big as the room": the write offset costs startPerMag x
         // magnification at both ends. The observable is that nothing more could
         // be claimed -- the memory window lands hard against its floor.
-        CHECK(((fit.scale().reg() >= AxisHorizontal.scaleMin())
+        CHECK(((fit.scale().reg() >= Scale::Min)
                && (fit.scale().reg() <= Scale::Max)));
         PictureOrigin placed = AxisHorizontal.placePicture(fit.produced(), 1445,
                                               fit.scale().magnification());
@@ -214,7 +214,7 @@ TEST_CASE("the picture is made as big as the raster allows")
         // A capture too small to fill the raster is bounded by the axis's
         // scale floor. That is a limit, not a failure.
         RasterFit tiny = AxisHorizontal.fitToRaster(60, 1445);
-        CHECK(tiny.scale().reg() == AxisHorizontal.scaleMin());
+        CHECK(tiny.scale().reg() == Scale::Min);
         CHECK(tiny.produced() < AxisHorizontal.maxDisplayWindow(1445));
     }
 
@@ -285,32 +285,30 @@ TEST_CASE("the scale floor is derived from the magnification, on both axes")
 {
     // Nothing in the part settles the floor -- RD-5725-1.1 states no minimum for
     // VDS_HSCALE -- so it is derived from a magnification chosen deliberately.
-    // A swept constant cannot hold it: Axis::minimumCapture() is raster over
-    // magnification while ActiveImage::defaultWidth() depends on the input line
-    // alone, so widening the raster eats the zoom travel.
-    CHECK(AxisHorizontal.scaleMin() == Scale::Min);
-    CHECK_NEAR(Scale(AxisHorizontal.scaleMin()).magnification(), 4.0, 0.001);
+    // Past 3.0x the solve can no longer centre the picture and pins the memory
+    // window at the write floor, where the scaler picks wrong samples and the
+    // picture breaks up. Measured entering the floor at VDS_HSCALE 334 on two
+    // sources, rasters 1920 and 1280. 1024/3 is 341.33, so 342 is the largest
+    // magnification at or under 3.0. docs/known-issues.md
+    CHECK(Scale(Scale::Min).magnification() <= 3.0f);
+    CHECK_NEAR(Scale(Scale::Min).magnification(), 3.0, 0.01);
 
-    SUBCASE("the VERTICAL keeps the register's own floor") {
-        // The floor belongs to the AXIS rather than to Scale even though the two
-        // agree today: an axis wanting a different magnification should be able
-        // to say so without moving the register's own limit.
-        CHECK(AxisVertical.scaleMin() == Scale::Min);
-        CHECK(AxisVertical.scaleMin() == 256);
+    SUBCASE("the floor clears the scale that enters the write floor") {
+        CHECK(Scale::Min > 334);
     }
 
-    SUBCASE("no capture, however small, is scaled past its axis floor") {
+    SUBCASE("no capture, however small, is scaled past the floor") {
         for (uint16_t capture = 16; capture <= 1126; capture += 7) {
-            CHECK(AxisHorizontal.fitToRaster(capture, 1445).scale() >= AxisHorizontal.scaleMin());
-            CHECK(AxisVertical.fitToRaster(capture, 1126).scale() >= AxisVertical.scaleMin());
+            CHECK(AxisHorizontal.fitToRaster(capture, 1445).scale() >= Scale::Min);
+            CHECK(AxisVertical.fitToRaster(capture, 1126).scale() >= Scale::Min);
         }
     }
 
     SUBCASE("and the zoom stops there rather than shrinking the picture") {
-        // ActiveImage::clampWidth stops the capture where the magnification runs
-        // out, so the picture stays full size and the control simply stops.
-        CHECK(AxisHorizontal.minimumCapture(1445) == 362);
-        CHECK(AxisVertical.minimumCapture(1126) == 282);
+        // VideoPath::zoom() stops the capture where the magnification runs out,
+        // so the picture stays full size and the control simply stops.
+        CHECK(AxisHorizontal.minimumCapture(1445) == 436);
+        CHECK(AxisVertical.minimumCapture(1126) == 375);
     }
 }
 
@@ -449,7 +447,7 @@ TEST_CASE("only the near end pays the write floor")
 
     SUBCASE("a capture too small to fill the raster is still bounded") {
         RasterFit tiny = AxisHorizontal.fitToRaster(60, Raster);
-        CHECK(tiny.scale().reg() == AxisHorizontal.scaleMin());
+        CHECK(tiny.scale().reg() == Scale::Min);
         CHECK(tiny.produced() < AxisHorizontal.maxDisplayWindow(Raster));
     }
 }
@@ -466,25 +464,42 @@ TEST_CASE("the picture stops at the front porch, not at the raster edge")
                                  + AxisHorizontal.startConst()), 0.01);
     }
 
-    SUBCASE("and the picture ends inside the front porch, not past it") {
+    // On the display window rather than on where the write ends: the write is
+    // fractional and the window closes on its floor, so a picture reaching the
+    // porch to within a pixel is emitted blank from the porch.
+    SUBCASE("and the picture fills the line up to the front porch, not past it") {
         RasterFit fit = AxisHorizontal.fitToRaster(Capture, Raster, 0, ActiveStop);
-        PictureOrigin placed = AxisHorizontal.placePicture(
-            fit.produced(), Raster, fit.scale().magnification());
-        float end = placed.corner() + fit.produced();
-        CHECK(end <= (float)ActiveStop);
-        CHECK(end > (float)ActiveStop - 8.0f);
-    }
-
-    SUBCASE("the display window closes by the front porch too") {
-        AxisSolution solved = AxisHorizontal.solve(
-            Capture, AxisHorizontal.fitToRaster(Capture, Raster, 0, ActiveStop).scale(),
-            Raster, 0, ActiveStop);
+        AxisSolution solved = AxisHorizontal.solve(Capture, fit.scale(), Raster,
+                                                   0, ActiveStop);
         CHECK(solved.display().start() <= (int32_t)ActiveStop);
+        CHECK(solved.display().start() > (int32_t)ActiveStop - 8);
     }
 
     SUBCASE("an activeStop of 0 keeps the raster edge, so nothing else moves") {
         CHECK_NEAR(AxisHorizontal.maxDisplayWindow(Raster, 0, 0),
                    AxisHorizontal.maxDisplayWindow(Raster), 0.01);
+    }
+}
+
+TEST_CASE("the scale is not bumped for an overshoot the window already clips")
+{
+    // The bench 1080p vertical at the default framing: 480 captured lines into
+    // the 1080-line active region 41..1121. The ideal scale of 455.11 rounds to
+    // 455 and produces 1080.26, a quarter of a line past the far bound, which
+    // the display window closes on anyway. One unit of VDS_VSCALE is worth 2.37
+    // output lines here, so bumping the scale to clear that quarter line paints
+    // two of them black.
+    const uint16_t Raster = 1125, ActiveStart = 41, ActiveStop = 1121;
+    const uint16_t Capture = 480;
+
+    RasterFit fit = AxisVertical.fitToRaster(Capture, Raster, ActiveStart,
+                                             ActiveStop);
+    CHECK(fit.produced() > (float)(ActiveStop - ActiveStart) - 1.0f);
+
+    SUBCASE("and the display window still closes by the front porch") {
+        AxisSolution solved = AxisVertical.solve(Capture, fit.scale(), Raster,
+                                                 ActiveStart, ActiveStop);
+        CHECK(solved.display().start() <= (int32_t)ActiveStop);
     }
 }
 
@@ -520,26 +535,27 @@ TEST_CASE("the picture starts no earlier than the back porch")
 
 TEST_CASE("horizontal zoom keeps its travel when the raster widens")
 {
-    // The clamp is rasterTotal / maxMagnification: the smallest capture that
-    // still fills the raster once VDS_HSCALE is at its floor. The numerator
+    // The stop is the room the raster offers over maxMagnification: the
+    // smallest capture that still reaches VDS_HSCALE's floor. The numerator
     // moves with the output and the denominator does not, and the default
-    // capture is a property of the INPUT line (1126 x 0.76 x 1.04), so the two
-    // do not track and widening the output raster eats the zoom travel.
+    // capture is a property of the INPUT line, so the two do not track and
+    // widening the output raster eats the zoom travel.
     const uint16_t Raster = 1916;
     const uint16_t DefaultCapture = 890;  // ActiveImage::defaultWidth on this bench
 
     uint16_t floor = AxisHorizontal.minimumCapture(Raster);
 
-    CHECK(floor == Raster / 4);  // 4.0x, the same the vertical axis already uses
-    CHECK(DefaultCapture - floor > 400);
-}
+    CHECK(DefaultCapture > floor);
 
-TEST_CASE("both axes magnify equally far, because nothing in the part says otherwise")
-{
-    // RD-5725-1.1 states no minimum for VDS_HSCALE -- it gives only the ratio,
-    // and the field is 10 bits -- so there is no hardware bound to derive and
-    // the floor is a picture-quality choice.
-    CHECK(AxisHorizontal.scaleMin() == AxisVertical.scaleMin());
+    SUBCASE("and the stop is where the picture stops growing with the crop") {
+        // Above it, cropping magnifies and the picture stays full size; below
+        // it the scale is pinned and every further unit of crop is a unit of
+        // picture lost.
+        const float atStop = AxisHorizontal.fitToRaster(floor, Raster).produced();
+        const float past =
+            AxisHorizontal.fitToRaster((uint16_t)(floor - 20), Raster).produced();
+        CHECK(past < atStop - 10.0f);
+    }
 }
 
 TEST_CASE("a picture too small for the raster is blanked, not left open")
@@ -569,6 +585,63 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
 // recovered as `far - produced` across six magnifications from 1.14 to 2.05,
 // lands on the modelled write origin to 0.35 px. Nothing needs hiding at either.
 // docs/investigations/display-window-opens-early.md
+// VDS_DIS_?B_ST is where blanking STARTS, so an aperture that closes after the
+// write has finished exposes memory nothing wrote, which the playback stage
+// fetches as scratch. Both ends of the write are fractional -- it runs from
+// VDS_?B_SP + originOffset() for produced() -- so the far edge has to be the
+// floor of that sum rather than a separately rounded corner plus a floored
+// length, which can land a whole unit past it.
+TEST_CASE("blanking starts no later than the write ends")
+{
+    // The bench 1080p vertical: 582 captured lines at VDS_VSCALE 533 in a
+    // 1125-line raster. The write ends 1120.88 lines in, and a window closing
+    // at 1121 leaves the last line of the aperture unwritten.
+    const uint16_t Raster = 1125, Capture = 582;
+    const Scale scale(533);
+    const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster);
+
+    const float writeEnds = (float)solved.memory().stop()
+                          + AxisVertical.originOffset(scale.magnification())
+                          + solved.produced();
+    CHECK((float)solved.display().start() <= writeEnds);
+}
+
+TEST_CASE("the horizontal memory window is an odd number of units wide")
+{
+    // An EVEN VDS_HB_ST - VDS_HB_SP shears the picture and an odd one is clean,
+    // measured 38 of 38 calling the mark before it was taken. The width is not a
+    // register -- VDS_HB_ST is floor(VDS_HB_SP + originOffset + produced), so
+    // VDS_HB_SP cancels and the parity belongs to the produced width.
+    // docs/known-issues.md
+    const uint16_t Raster = 1919;
+
+    SUBCASE("at the bench framing that shears") {
+        // RiscPC 320x256@50 at VDS_HSCALE 496: the solve wants 1822, and 1822
+        // is the state photographed sheared.
+        CHECK(AxisHorizontal.solve(831, Scale(496), Raster).memory().width() % 2 == 1);
+    }
+
+    SUBCASE("across the zoom range, where the parity otherwise alternates") {
+        for (uint16_t scale = 280; scale <= 1020; ++scale) {
+            const AxisSolution solved = AxisHorizontal.solve(829, Scale(scale), Raster);
+            if (!solved.usable())
+                continue;
+            REQUIRE(solved.memory().width() % 2 == 1);
+        }
+    }
+
+    SUBCASE("the window never opens past where the write ends") {
+        // Biasing the width must give a unit back, never take one: memory past
+        // the picture is memory the playback stage still walks.
+        const Scale scale(496);
+        const AxisSolution solved = AxisHorizontal.solve(831, scale, Raster);
+        const float writeEnds = (float)solved.memory().stop()
+                              + AxisHorizontal.originOffset(scale.magnification())
+                              + solved.produced();
+        CHECK((float)solved.memory().start() <= writeEnds);
+    }
+}
+
 TEST_CASE("the display window is the picture, at both ends")
 {
     const uint16_t Raster = 1916, Capture = 973;
@@ -583,7 +656,7 @@ TEST_CASE("the display window is the picture, at both ends")
 }
 
 // The capture stop is what the pan walks toward the end of the line, and past
-// InputLine::lastCapture() the input formatter is writing blanking rather than
+// VideoSourceLine::lastCapture() the input formatter is writing blanking rather than
 // video. The control has to stop before that rather than the output hiding it
 
 // `--dump` prints the solved grid for inspection by hand.

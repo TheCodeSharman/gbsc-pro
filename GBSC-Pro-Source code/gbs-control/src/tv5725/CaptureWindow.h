@@ -4,10 +4,11 @@
 // The rectangle grabbed out of the source's, and the thing pan and zoom move.
 #include <stdint.h>
 
-#include "InputLine.h"
+#include "VideoSourceLine.h"
 #include "OutputRaster.h"
 #include "ActiveImage.h"
 #include "SourceMeasurement.h"
+#include "HsyncPulse.h"
 #include "SourceTiming.h"
 #include "BlankingTiming.h"
 
@@ -24,11 +25,6 @@ namespace Tv5725 {
 class CaptureWindow {
 public:
     CaptureWindow();
-
-    // A 97/98 reading mid-preset-change is a measurement in progress, not a
-    // mode: the smallest real ones the VDS scales are 262 and 312.
-    static const uint16_t SourceVerticalTotalMin = 200;
-    static const uint16_t SourceVerticalTotalMax = 1300;
 
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
@@ -47,14 +43,17 @@ public:
     // divider into the ADC PLL, so between a write and the latch the register
     // reports a value the chip is not using.
     //
-    // `hsyncLow` is a parameter because the measurement does not hold it. The
-    // line count and the field rate do come off the measurement, which is what
-    // keeps the two being cross-checked against each other rather than against
-    // a value some caller chose. docs/firmware-geometry-engine.md
+    // The sync duty and polarity arrive in the READING, taken by the layer that
+    // measures. The line count and the field rate come off the measurement,
+    // which is what keeps the two cross-checked against each other rather than
+    // against a value some caller chose. docs/firmware-geometry-engine.md
     //
-    // The three together are also what identifies a published raster, so this
-    // is where the timing an untuned window is placed from is resolved.
-    bool readRasters(const SourceMeasurement &source, uint16_t hsyncLow);
+    // `timing` is the published raster the MEASUREMENT matched. It is not
+    // resolved here: the three values that identify it are all measured, and a
+    // path that plays the source out rather than scaling it never reaches this
+    // call at all. docs/video-source-acquisition.md
+    bool readRasters(const SourceMeasurement &source, const HsyncPulse &reading,
+                     const SourceTiming &timing, bool lineDoubled);
 
     // In RGBHV bypass the VDS is out of the video path and there is nothing to
     // solve; both rasters read back as nearly zero.
@@ -69,7 +68,7 @@ public:
     // The horizontal line knows what the hsync pulse takes off its head; the
     // vertical does not, because nothing has measured the vsync equivalent and
     // a guess there would crop picture rather than blanking.
-    const InputLine &horizontalLine() const;
+    const VideoSourceLine &horizontalLine() const;
 
     // The capturable region this axis offers, which is the denominator the
     // framing's proportions are taken against.
@@ -78,10 +77,20 @@ public:
     uint16_t linePx() const;
     uint16_t frameLines() const;
 
+
     bool usable() const;
 
 private:
-    InputLine horizontalLine_, verticalLine_;
+    // The framing narrowed to what the raster can SHOW. Past that bound the
+    // scaler would have to minify and cannot -- VDS_?SCALE divides 1024 and
+    // pins at Scale::Max -- so every further unit of capture is a unit of
+    // picture with nowhere to go, and the playback is asked for more pixels per
+    // output line than the line has clocks.
+    // ../../../../docs/investigations/the-capture-may-not-outgrow-the-raster.md
+    void clampToRaster(const VideoSourceLine &line, const OutputRaster &raster,
+                       const Axis &axis);
+
+    VideoSourceLine horizontalLine_, verticalLine_;
     SourceTiming timing_;
     OutputRaster line_;       // output raster, horizontal
     OutputRaster frame_;      // output raster, vertical

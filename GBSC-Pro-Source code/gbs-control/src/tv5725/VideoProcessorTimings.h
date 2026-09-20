@@ -13,11 +13,12 @@ namespace Tv5725 {
 // them. The raster they sit inside is OutputTimings.
 class VideoProcessorTimings {
 public:
-    // activeStopH and activeStopV are OutputTimings's, and 0 means the raster's
-    // own edge -- see Axis::farBound.
+    // The bounds are OutputTimings's. 0 for a stop means the raster's own edge
+    // -- see Axis::farBound -- and 0 for a start means the write floor alone.
     VideoProcessorTimings(uint16_t horizontalCapture, uint16_t verticalCapture,
                           uint16_t linePx, uint16_t frameLines,
-                          uint16_t activeStopH = 0, uint16_t activeStopV = 0);
+                          uint16_t activeStopH = 0, uint16_t activeStopV = 0,
+                          uint16_t activeStartH = 0, uint16_t activeStartV = 0);
 
     const MemoryWindow &memory() const;
     const DisplayWindow &display() const;

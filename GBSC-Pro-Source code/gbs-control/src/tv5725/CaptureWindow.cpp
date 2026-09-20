@@ -1,21 +1,23 @@
 #include "CaptureWindow.h"
 
 #include "../../gbs_types.h"
+#include "Adc.h"
+#include "InputFormatter.h"
 #include "MemoryMap.h"
 
 namespace Tv5725 {
 
-const uint16_t CaptureWindow::SourceVerticalTotalMin;
-const uint16_t CaptureWindow::SourceVerticalTotalMax;
 const uint16_t CaptureWindow::ProgressiveStart;
 
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
-bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncLow)
+bool CaptureWindow::readRasters(const SourceMeasurement &source,
+                                const HsyncPulse &reading,
+                                const SourceTiming &timing, bool lineDoubled)
 {
     const uint16_t sourceLines = source.sourceLines();
-    const uint16_t horizontalWrap = source.ifLine() + 1;
+    const uint16_t horizontalWrap = InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled) + 1;
 
     if (horizontalWrap < 64)
         return false;
@@ -28,21 +30,21 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source, uint16_t hsyncL
     // vertical window for a frame the source is not sending. Having SUCCEEDED it
     // is never revisited.
     //
-    // lineRateFrom() is the one owner of the bounds already, on both the count
-    // and the rate.
-    if (SourceMeasurement::lineRateFrom(sourceLines, source.fieldRateHz()) == 0)
+    // VideoSignal is the one owner of the bounds, on both the count and the
+    // rate.
+    if (!VideoSignal::isVideo(sourceLines, source.fieldRateHz()))
         return false;
 
-    horizontalLine_ = InputLine::measured(horizontalWrap, hsyncLow, source.divider());
+    horizontalLine_ = VideoSourceLine::forDuty(horizontalWrap, reading.syncDuty(),
+                                               lineDoubled, reading.syncAtHead());
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and
     // whole source lines otherwise. docs/scaler-geometry-model.md
-    verticalLine_ = InputLine(source.lineDoubled() ? 2 * (sourceLines + 1)
+    verticalLine_ = VideoSourceLine(lineDoubled ? 2 * (sourceLines + 1)
                                                    : sourceLines + 1);
 
-    timing_ = SourceTiming::matching(sourceLines, source.fieldRateHz(),
-                                     (float)hsyncLow / (float)source.divider());
+    timing_ = timing;
     return true;
 }
 
@@ -68,11 +70,14 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted)
     // smaller press back then produces an identical window and is reverted,
     // leaving the control dead in that direction. Only the hold ramp presses
     // that far -- measured pv -51 against a limit of -46, ph -144 against -134.
-    image_.clampToLine(horizontalLine_, timing_, AxisHorizontal, line_);
-    image_.clampToLine(verticalLine_, timing_, AxisVertical, frame_);
+    image_.clampToLine(horizontalLine_, timing_, AxisHorizontal);
+    image_.clampToLine(verticalLine_, timing_, AxisVertical);
 
-    horizontal_ = image_.capture(horizontalLine_, timing_, AxisHorizontal, line_);
-    vertical_ = image_.capture(verticalLine_, timing_, AxisVertical, frame_);
+    clampToRaster(horizontalLine_, line_, AxisHorizontal);
+    clampToRaster(verticalLine_, frame_, AxisVertical);
+
+    horizontal_ = image_.capture(horizontalLine_, timing_, AxisHorizontal);
+    vertical_ = image_.capture(verticalLine_, timing_, AxisVertical);
 
     // A pixel costs one 32-bit word, and a line wide enough to overrun the
     // capture buffer is reachable because the width is in ADC samples and
@@ -85,13 +90,27 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted)
         horizontal_ = BlankingTiming(horizontal_.stop(), horizontal_.stop() + fits);
 }
 
+void CaptureWindow::clampToRaster(const VideoSourceLine &line,
+                                  const OutputRaster &raster, const Axis &axis)
+{
+    const uint16_t usable = line.capturable();
+    if (!raster.solved() || usable == 0)
+        return;
+
+    const uint16_t most = axis.maximumCapture(raster.total(), raster.activeStop());
+    if (most == 0 || most >= usable)
+        return;
+
+    image_.narrowTo(axis, (float)most / (float)usable);
+}
+
 const PanAndZoom &CaptureWindow::framing() const { return image_.framing(); }
 
 const BlankingTiming &CaptureWindow::horizontal() const { return horizontal_; }
 
 const BlankingTiming &CaptureWindow::vertical() const { return vertical_; }
 
-const InputLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
+const VideoSourceLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
 
 uint16_t CaptureWindow::capturableOn(const Axis &axis) const
 {

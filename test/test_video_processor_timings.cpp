@@ -35,8 +35,8 @@ TEST_CASE("nothing is inherited from the registers")
     VideoProcessorTimings s(798, 513, 1445, 1126);
 
     SUBCASE("both scales are computed, not read") {
-        CHECK(((s.horizontalScale() >= AxisHorizontal.scaleMin()) && (s.horizontalScale() <= Scale::Max)));
-        CHECK(((s.verticalScale() >= AxisVertical.scaleMin()) && (s.verticalScale() <= Scale::Max)));
+        CHECK(((s.horizontalScale() >= Scale::Min) && (s.horizontalScale() <= Scale::Max)));
+        CHECK(((s.verticalScale() >= Scale::Min) && (s.verticalScale() <= Scale::Max)));
     }
 
     SUBCASE("both memory windows clear their floor") {

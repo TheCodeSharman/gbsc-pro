@@ -32,7 +32,10 @@ enum PresetPreference : uint8_t {
     Output1080P = 5,
     // 6 was OutputDownscale, which went with the preset tables.
     Output576P = 7,
-    OutputBypass = 10,
+    // 10 was OutputBypass. Handing the source to the panel is not a resolution,
+    // and stored in this field it destroyed the one the user chose -- there was
+    // nowhere else it was kept, so the way back had to invent one.
+    // docs/video-source-acquisition.md
 };
 
 // An output mode: its frame height, and the CEA-861 timings that place the sync
@@ -43,7 +46,7 @@ enum PresetPreference : uint8_t {
 class OutputMode {
 public:
     OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
-               uint16_t vsyncLines, uint16_t vBackPorchLines,
+               float frontPorchNs, uint16_t vsyncLines, uint16_t vBackPorchLines,
                uint16_t vFrontPorchLines);
 
     // Swept on the bench 2026-08-11, RiscPC 320x256@50, judged on the TV:
@@ -94,11 +97,11 @@ public:
     // docs/investigations/720p-edge-corruption.md
     static const uint16_t MaxHorizontalTotal = 2450;
 
-    // What must stay blank at the far end of the line, in pixels. A property of
-    // this part rather than of any standard: the encoder generates its own HDMI
-    // blanking and never sees ours. Measured on a 1916 px raster by creeping the
-    // display window -- good at 1900, wrong at 1910. Measured in pixels at one
-    // clock only, so whether it is really a time is untested.
+    // The FLOOR under the output mode's own front porch, in pixels: what this
+    // part needs blank at the far end whatever the mode states. Measured on a
+    // 1916 px raster by creeping the display window -- good at 1900, wrong at
+    // 1910. Every mode's porch is an order of magnitude above it, so it binds
+    // only where a raster has no room for the real one.
     // docs/scaler-geometry-model.md "The output front porch"
     static const uint16_t FrontPorchMinPx = 16;
 
@@ -127,14 +130,9 @@ public:
     // ModeBypass: it resolves a raster that is on the chip, and bypass has none.
     static const OutputMode *forFrameHeight(uint16_t frameLines);
 
-    // The mode a preference names. NULL for bypass and for a custom preset,
-    // neither of which is a resolution. A preference is one height whatever the
-    // source runs at; matchPresetSource swaps between two of them, and that is
-    // OutputChoice's, because it needs a measured rate.
+    // The mode a preference names. NULL for a custom preset, which is not a
+    // resolution. A preference is one height whatever the source runs at.
     static const OutputMode *forPreference(PresetPreference presetPreference);
-
-    // The threshold that determines when a mode is considered PAL or NTSC.
-    static const uint16_t PalNtscSplitHz = 55;
 
     // Calculates the output timings for the given frame rate. ceilingHz clamps
     // the display clock to usable maximum.
@@ -143,7 +141,7 @@ public:
 
 private:
     uint16_t activeLines_;
-    float syncNs_, backPorchNs_;
+    float syncNs_, backPorchNs_, frontPorchNs_;
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };
 

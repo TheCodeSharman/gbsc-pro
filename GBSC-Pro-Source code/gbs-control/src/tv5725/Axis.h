@@ -13,7 +13,7 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t scaleMin, uint16_t captureGranularity,
+         uint16_t captureGranularity,
          float activeStart, float activeExtent, bool vertical);
 
     // Which axis this is. The one place that knows: callers pass the axis and
@@ -41,16 +41,6 @@ public:
     // nobody has crept it.
     uint16_t windowStopMin() const;
 
-    // How far this axis is willing to magnify, as a VDS_?SCALE floor. DERIVED as
-    // Scale::Unity / max magnification -- 4.0x on both axes -- and it must stay
-    // derived: a fixed horizontal 500 left only 73 units of zoom travel once
-    // solveRaster() widened the raster, because minimumCapture() follows the
-    // raster while PanAndZoom::defaultWidth() follows the input line alone.
-    // Nothing in the part bounds it -- RD-5725-1.1 states no minimum and the
-    // field is 10 bits -- so where interpolation starts to look bad is
-    // perceptual, and the user's to find.
-    uint16_t scaleMin() const;
-
     // The smallest change of capture POSITION this axis's hardware acts on.
     // Horizontally 2 IF units -- the low bit of IF_HB_SP2 does nothing, so a
     // one-unit move leaves the picture where it was. Vertically 1.
@@ -62,10 +52,15 @@ public:
     // of them.
     int16_t stepUnits(int16_t pixels, float magnification) const;
 
-    // The smallest capture that can still fill `rasterTotal` at this axis's full
-    // magnification. Below it cropping cannot be compensated, so the picture
-    // shrinks on screen and the display window closes in around it.
-    uint16_t minimumCapture(uint16_t rasterTotal) const;
+    // The smallest capture that can still fill the room this raster offers, at
+    // this axis's full magnification -- where letterboxing STARTS. Below it the
+    // crop cannot be compensated, so the picture shrinks on screen and the
+    // solve re-centres what is left. Against the ROOM and not the raster total,
+    // because the picture never fills the total: the porch it is placed behind
+    // is a tenth of the line here, and charging it stops the zoom that far
+    // short of the magnification the axis allows.
+    uint16_t minimumCapture(uint16_t rasterTotal, uint16_t activeStart = 0,
+                            uint16_t activeStop = 0) const;
 
     // The largest capture this raster can SHOW. VDS_?SCALE divides 1024 and
     // tops out at Scale::Max, so the least magnification the part can express
@@ -75,6 +70,12 @@ public:
     uint16_t maximumCapture(uint16_t rasterTotal, uint16_t activeStop) const;
 
     float originOffset(float magnification) const;
+
+    // Whether the WRITE FLOOR decides where the picture starts, rather than the
+    // raster's own back porch. The two regimes charge the write origin
+    // differently and both blankingBeforePicture() and minimumCapture() turn on
+    // it, so the comparison lives in one place.
+    bool writeFloorBinds(uint16_t activeStart) const;
 
     // What must stay blank BEFORE the picture, in output units: whichever of the
     // write floor and the raster's own back porch is larger. Nothing can be
@@ -131,7 +132,7 @@ private:
     float placementFloor(float offset, uint16_t activeStart) const;
 
     float startConst_, startPerMag_;
-    uint16_t windowStopMin_, scaleMin_, captureGranularity_;
+    uint16_t windowStopMin_, captureGranularity_;
     float activeStart_, activeExtent_;
     bool vertical_;
 };

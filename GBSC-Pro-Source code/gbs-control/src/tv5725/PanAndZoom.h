@@ -41,9 +41,16 @@ public:
     // input unit exactly and a step with its inverse returns the identical
     // proportion rather than one that happens to land on the same unit.
     //
-    // Zoom in is POSITIVE: it crops. The origin moves by half of what the
-    // extent loses, so the window keeps its centre.
-    void zoomBy(const Axis &axis, int16_t units, uint16_t usable);
+    // The two controls are orthogonal: the pan places the near edge and the
+    // zoom moves the far one, so a framing is found in one pass of each. Zoom
+    // in is POSITIVE: it crops, from the far edge alone.
+    //
+    // `narrowest` is where the zoom STOPS, in the same units as `usable`: the
+    // capture below which the scale is already at its floor, so a tighter crop
+    // is a smaller picture rather than a closer one. 0 asks for no stop, which
+    // is what a caller with no output raster to measure it against has.
+    void zoomBy(const Axis &axis, int16_t units, uint16_t usable,
+                uint16_t narrowest = 0);
     void panBy(const Axis &axis, int16_t units, uint16_t usable);
 
     // A mode change has no framing worth keeping, only the previous mode's.
@@ -53,14 +60,32 @@ public:
     bool operator!=(const PanAndZoom &other) const;
 
 private:
+    // One axis's framing. Selected once and read off, so the arithmetic below
+    // names what it is working on rather than choosing an axis at every term.
+    struct AxisFraming {
+        float origin, extent;
+        bool tuned;
+    };
+
+    AxisFraming &on(const Axis &axis);
+    const AxisFraming &on(const Axis &axis) const;
+    static bool same(const AxisFraming &a, const AxisFraming &b);
+
     // Whole units of `usable`, so every value a control produces sits on that
     // mode's grid and the translation to units lands on an integer.
     static float moved(float value, int16_t units, uint16_t usable);
-    void clampOn(const Axis &axis);
 
-    float horizontalOrigin_, horizontalExtent_;
-    float verticalOrigin_, verticalExtent_;
-    bool horizontalTuned_, verticalTuned_;
+    // Whichever of the pair the control did not move gives way, so a pan never
+    // resizes and a zoom never shifts. They take the framing rather than an
+    // axis because the relationship they hold is between the origin and the
+    // extent and has nothing to do with which axis those belong to. A seeded
+    // pair has no control behind it, so its extent is bounded by the whole
+    // region and the origin gives way.
+    static void clampOrigin(AxisFraming &framing);
+    static void clampExtent(AxisFraming &framing);
+    static void clampSeed(AxisFraming &framing);
+
+    AxisFraming horizontal_, vertical_;
 };
 
 }  // namespace Tv5725

@@ -4,17 +4,18 @@ namespace Tv5725 {
 
 VideoProcessorTimings::VideoProcessorTimings(uint16_t horizontalCapture, uint16_t verticalCapture,
                                              uint16_t linePx, uint16_t frameLines,
-                                             uint16_t activeStopH, uint16_t activeStopV)
+                                             uint16_t activeStopH, uint16_t activeStopV,
+                                             uint16_t activeStartH, uint16_t activeStartV)
 {
-    RasterFit fitH = AxisHorizontal.fitToRaster(horizontalCapture, linePx, 0, activeStopH);
-    RasterFit fitV = AxisVertical.fitToRaster(verticalCapture, frameLines, 0, activeStopV);
+    RasterFit fitH = AxisHorizontal.fitToRaster(horizontalCapture, linePx, activeStartH, activeStopH);
+    RasterFit fitV = AxisVertical.fitToRaster(verticalCapture, frameLines, activeStartV, activeStopV);
     horizontalScale_ = fitH.scale();
     verticalScale_ = fitV.scale();
 
     AxisSolution horizontal =
-        AxisHorizontal.solve(horizontalCapture, horizontalScale_, linePx, 0, activeStopH);
+        AxisHorizontal.solve(horizontalCapture, horizontalScale_, linePx, activeStartH, activeStopH);
     AxisSolution vertical =
-        AxisVertical.solve(verticalCapture, verticalScale_, frameLines, 0, activeStopV);
+        AxisVertical.solve(verticalCapture, verticalScale_, frameLines, activeStartV, activeStopV);
 
     memory_ = MemoryWindow(horizontal.memory(), vertical.memory());
     display_ = DisplayWindow(horizontal.display(), vertical.display());

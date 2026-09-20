@@ -5,10 +5,10 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t scaleMin, uint16_t captureGranularity,
+           uint16_t captureGranularity,
            float activeStart, float activeExtent, bool vertical)
     : startConst_(startConst), startPerMag_(startPerMag),
-      windowStopMin_(windowStopMin), scaleMin_(scaleMin),
+      windowStopMin_(windowStopMin),
       captureGranularity_(captureGranularity),
       activeStart_(activeStart), activeExtent_(activeExtent),
       vertical_(vertical) {}
@@ -24,8 +24,6 @@ float Axis::startConst() const { return startConst_; }
 float Axis::startPerMag() const { return startPerMag_; }
 
 uint16_t Axis::windowStopMin() const { return windowStopMin_; }
-
-uint16_t Axis::scaleMin() const { return scaleMin_; }
 
 uint16_t Axis::captureGranularity() const { return captureGranularity_; }
 
@@ -44,14 +42,23 @@ int16_t Axis::stepUnits(int16_t pixels, float magnification) const
     return pixels < 0 ? (int16_t)-units : (int16_t)units;
 }
 
-uint16_t Axis::minimumCapture(uint16_t rasterTotal) const
+uint16_t Axis::minimumCapture(uint16_t rasterTotal, uint16_t activeStart,
+                              uint16_t activeStop) const
 {
-    // produced = capture * Unity / scale, and the scale bottoms out at
-    // scaleMin(). So the capture that still just fills the raster is
-    // raster * scaleMin / Unity, rounded UP -- one unit short leaves a bar.
-    uint32_t smallest = ((uint32_t)rasterTotal * scaleMin_ + Scale::Unity - 1)
-                        / Scale::Unity;
-    return (uint16_t)smallest;
+    // produced = capture x Unity / scale, and the scale bottoms out at
+    // Scale::Min, so the capture that reaches the floor is room x Min / Unity
+    // -- rounded UP, one unit short leaving a bar.
+    //
+    // Where the WRITE FLOOR binds rather than the porch, fitToRaster takes the
+    // write origin out of that same room -- produced = room x capture /
+    // (capture + startPerMag) -- so the capture reaching the floor is that much
+    // larger. maximumCapture charges it at the other end for the same reason.
+    const float room = maxDisplayWindow(rasterTotal, activeStart, activeStop);
+    if (room <= 0.0f)
+        return 0;
+    const float charged = writeFloorBinds(activeStart) ? startPerMag_ : 0.0f;
+    const float smallest = room * (float)Scale::Min / (float)Scale::Unity - charged;
+    return smallest <= 0.0f ? 0 : (uint16_t)ceilf(smallest);
 }
 
 uint16_t Axis::maximumCapture(uint16_t rasterTotal, uint16_t activeStop) const
@@ -72,10 +79,15 @@ float Axis::originOffset(float magnification) const
     return startConst_ + startPerMag_ * magnification;
 }
 
+bool Axis::writeFloorBinds(uint16_t activeStart) const
+{
+    return (float)activeStart <= (float)windowStopMin_ + startConst_;
+}
+
 float Axis::blankingBeforePicture(uint16_t activeStart) const
 {
-    float floor = windowStopMin_ + startConst_;
-    return (float)activeStart > floor ? (float)activeStart : floor;
+    return writeFloorBinds(activeStart) ? (float)windowStopMin_ + startConst_
+                                        : (float)activeStart;
 }
 
 float Axis::placementFloor(float offset, uint16_t activeStart) const
@@ -105,10 +117,24 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal,
     if (capture == 0 || room <= 0.0f)
         return RasterFit(Scale(Scale::Max), 0.0f);
 
-    float produced = room * capture / (capture + startPerMag_);
+    // Where the picture starts is the LATER of the output mode's back porch and
+    // the write floor plus the origin, and which one binds decides whether the
+    // origin comes out of the picture. On the write floor it does, and the
+    // solve for it is the standing one -- produced + originOffset(produced /
+    // capture) = room. Behind a back porch wide enough to hold the origin it
+    // does NOT: the memory window opens inside the porch, the picture still
+    // starts at activeStart, and charging the origin again leaves the picture
+    // short of the far bound by it.
+    const float onFloor = (farBound(rasterTotal, activeStop)
+                           - (float)windowStopMin_ - startConst_)
+                        * capture / (capture + startPerMag_);
+    const float behindPorch = (float)farBound(rasterTotal, activeStop) - (float)activeStart;
+    float produced = onFloor < behindPorch ? onFloor : behindPorch;
+    if (produced > room)
+        produced = room;
     long scale = lrintf(Scale::Unity * capture / produced);
-    if (scale < (long)scaleMin_)
-        scale = scaleMin_;
+    if (scale < (long)Scale::Min)
+        scale = Scale::Min;
     if (scale > Scale::Max)
         scale = Scale::Max;
     produced = capture * (float)Scale::Unity / scale;
@@ -117,9 +143,15 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal,
     // which would run it off the END of the line. Bounded where placePicture PINS
     // the picture rather than where it centres it: a picture too big to centre
     // lands on the write floor, and that is the placement that can overrun.
+    //
+    // Measured in WHOLE units, because solve() closes the display window on the
+    // floor of where the write ends: an overshoot inside the last unit is
+    // blanked there and shows as nothing. One step of scale is produced / scale
+    // of picture -- 2.37 lines at the bench 1080p framing -- so bumping for a
+    // fraction of a unit pays lines to save a quarter of one.
     while (scale < Scale::Max
-           && placementFloor(originOffset((float)Scale::Unity / scale), activeStart)
-                      + produced
+           && floorf(placementFloor(originOffset((float)Scale::Unity / scale), activeStart)
+                     + produced)
                   > (float)farBound(rasterTotal, activeStop)) {
         ++scale;
         produced = capture * (float)Scale::Unity / scale;
@@ -167,11 +199,27 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     // wrap rather than clamp, and a wrapped VDS_VB_ST rolls the frame.
     int32_t lastUsable = (int32_t)farBound(rasterTotal, activeStop);
 
-    // Floor, never round: VDS_DIS_?B_ST is where blanking STARTS, so
-    // rounding up exposes unwritten memory as a band of scratch.
-    int32_t displayStart = placed.corner() + (int32_t)solved.produced_;
+    // Floor the WRITE, not the length: VDS_DIS_?B_ST is where blanking STARTS,
+    // and the write runs from VDS_?B_SP + originOffset() for produced(), both
+    // of them fractional. Flooring the length and adding a corner rounded on
+    // its own lands up to a whole unit past the write, leaving the last unit of
+    // the aperture showing memory nothing wrote.
+    const float writeEnds = (float)placed.windowStop()
+                          + originOffset(scale.magnification()) + solved.produced_;
+    int32_t displayStart = (int32_t)floorf(writeEnds);
+    if (displayStart < placed.corner())
+        displayStart = placed.corner();
     if (displayStart > lastUsable)
         displayStart = lastUsable;
+
+    // An even memory window shears the picture and an odd one is clean, so give
+    // a unit back rather than take one -- opening the window past the write
+    // shows memory the playback stage walks and nothing wrote. Horizontal only,
+    // because VDS_VB_SP has never been crept. docs/known-issues.md
+    if (!vertical() && (displayStart - placed.windowStop()) % 2 == 0
+        && displayStart > placed.corner())
+        --displayStart;
+
     solved.display_ = BlankingTiming(placed.corner(), displayStart);
 
     // The two windows share a far edge: allocate nothing spare. Memory past the
@@ -182,8 +230,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, Scale::Min, 2, 0.117f, 0.864f, false);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, 0.117f, 0.864f, false);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, Scale::Min, 1, 0.061f, 0.933f, true);
+const Axis AxisVertical(0.2f, 0.8f, 0, 1, 0.061f, 0.933f, true);
 
 }  // namespace Tv5725

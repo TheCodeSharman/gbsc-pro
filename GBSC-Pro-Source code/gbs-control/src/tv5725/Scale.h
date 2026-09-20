@@ -10,10 +10,25 @@ class Scale {
 public:
     static const uint16_t Unity = 1024;
 
-    // The register's own limits. How far an AXIS is willing to magnify is a
-    // picture-quality judgement, so it lives on Axis -- see Axis::scaleMin.
-    static const uint16_t Min = 256;
+    // The 10-bit field's top, and the only one of the two the part states. Below
+    // unity it cannot MINIFY at all: 1024/1023 is a magnification of 1.001.
     static const uint16_t Max = 1023;
+
+    // How far this firmware will magnify. RD-5725-1.1 states NO minimum -- it
+    // gives only HSCALE = 1024 x in / out and the field is 10 bits -- so there
+    // is no hardware bound here to name, and this is a picture-quality choice.
+    //
+    // Past 3.0x the solve can no longer centre the picture and pins the memory
+    // window at the write floor, and there the scaler selects wrong samples --
+    // bars of equal source width come out unequal and split into hairlines,
+    // which no interpolation does. Measured entering the floor at VDS_HSCALE
+    // 334 on two sources with rasters 1920 and 1280, and the damage rising with
+    // magnification from there. 1024/3 is 341.33, so 342 is the largest
+    // magnification at or under 3.0.
+    //
+    // The zoom exists to bring a source's active picture up to full screen, and
+    // that is reached well inside this. docs/known-issues.md
+    static const uint16_t Min = 342;
 
     Scale();
     explicit Scale(uint16_t reg);

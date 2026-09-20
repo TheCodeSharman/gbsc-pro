@@ -48,6 +48,11 @@ public:
     // at a rate nothing can slew. docs/tv5725-chip.md
     static const uint8_t ExternalPclkIn = 0x75;
 
+    // The seed HD bypass runs on. An alias of 0x65 -- hzFor() answers 81 MHz for
+    // both -- and named because the handover to the generator has to leave it
+    // alone: bypass drives the encoder from the source's own timing.
+    static const uint8_t HdBypassSeed = 0x35;
+
     // What the firmware falls back to when no byte names a clock. A GUESS, kept
     // because it is what shipped: a lost divider costs 25% of the line here
     // instead of announcing itself.

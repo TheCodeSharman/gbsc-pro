@@ -9,44 +9,42 @@ namespace Tv5725 {
 
 const uint16_t MinimumCapture = 16;
 
-PanAndZoom::PanAndZoom()
-    : horizontalOrigin_(0.0f), horizontalExtent_(0.0f),
-      verticalOrigin_(0.0f), verticalExtent_(0.0f),
-      horizontalTuned_(false), verticalTuned_(false) {}
+PanAndZoom::PanAndZoom() { reset(); }
 
 PanAndZoom::PanAndZoom(float horizontalOrigin, float horizontalExtent,
                        float verticalOrigin, float verticalExtent)
-    : horizontalOrigin_(horizontalOrigin), horizontalExtent_(horizontalExtent),
-      verticalOrigin_(verticalOrigin), verticalExtent_(verticalExtent),
-      horizontalTuned_(true), verticalTuned_(true) {}
-
-bool PanAndZoom::tunedOn(const Axis &axis) const
 {
-    return axis.vertical() ? verticalTuned_ : horizontalTuned_;
+    horizontal_.origin = horizontalOrigin;
+    horizontal_.extent = horizontalExtent;
+    horizontal_.tuned = true;
+    vertical_.origin = verticalOrigin;
+    vertical_.extent = verticalExtent;
+    vertical_.tuned = true;
 }
+
+PanAndZoom::AxisFraming &PanAndZoom::on(const Axis &axis)
+{
+    return axis.vertical() ? vertical_ : horizontal_;
+}
+
+const PanAndZoom::AxisFraming &PanAndZoom::on(const Axis &axis) const
+{
+    return axis.vertical() ? vertical_ : horizontal_;
+}
+
+bool PanAndZoom::tunedOn(const Axis &axis) const { return on(axis).tuned; }
+
+float PanAndZoom::originOn(const Axis &axis) const { return on(axis).origin; }
+
+float PanAndZoom::extentOn(const Axis &axis) const { return on(axis).extent; }
 
 void PanAndZoom::seedOn(const Axis &axis, float origin, float extent)
 {
-    if (axis.vertical()) {
-        verticalOrigin_ = origin;
-        verticalExtent_ = extent;
-        verticalTuned_ = true;
-    } else {
-        horizontalOrigin_ = origin;
-        horizontalExtent_ = extent;
-        horizontalTuned_ = true;
-    }
-    clampOn(axis);
-}
-
-float PanAndZoom::originOn(const Axis &axis) const
-{
-    return axis.vertical() ? verticalOrigin_ : horizontalOrigin_;
-}
-
-float PanAndZoom::extentOn(const Axis &axis) const
-{
-    return axis.vertical() ? verticalExtent_ : horizontalExtent_;
+    AxisFraming &framing = on(axis);
+    framing.origin = origin;
+    framing.extent = extent;
+    framing.tuned = true;
+    clampSeed(framing);
 }
 
 float PanAndZoom::moved(float value, int16_t units, uint16_t usable)
@@ -59,63 +57,79 @@ float PanAndZoom::moved(float value, int16_t units, uint16_t usable)
     return (float)onGrid / (float)usable;
 }
 
-void PanAndZoom::zoomBy(const Axis &axis, int16_t units, uint16_t usable)
+void PanAndZoom::zoomBy(const Axis &axis, int16_t units, uint16_t usable,
+                        uint16_t narrowest)
 {
     if (units == 0)
         return;
-    // Half of what the extent loses, so the centre stays put.
-    int16_t half = (int16_t)(units / 2);
-    if (axis.vertical()) {
-        verticalExtent_ = moved(verticalExtent_, (int16_t)-units, usable);
-        verticalOrigin_ = moved(verticalOrigin_, half, usable);
-    } else {
-        horizontalExtent_ = moved(horizontalExtent_, (int16_t)-units, usable);
-        horizontalOrigin_ = moved(horizontalOrigin_, half, usable);
-    }
-    clampOn(axis);
+    AxisFraming &framing = on(axis);
+    const float before = framing.extent;
+    framing.extent = moved(framing.extent, (int16_t)-units, usable);
+    clampExtent(framing);
+
+    if (narrowest == 0 || usable == 0)
+        return;
+    // A framing already below the stop -- saved under a narrower raster -- is
+    // left where it is rather than widened, so the press moves nothing instead
+    // of moving the wrong way.
+    const float least = (float)narrowest / (float)usable;
+    if (framing.extent < least)
+        framing.extent = before < least ? before : least;
 }
 
 void PanAndZoom::panBy(const Axis &axis, int16_t units, uint16_t usable)
 {
     if (units == 0)
         return;
-    if (axis.vertical())
-        verticalOrigin_ = moved(verticalOrigin_, units, usable);
-    else
-        horizontalOrigin_ = moved(horizontalOrigin_, units, usable);
-    clampOn(axis);
+    AxisFraming &framing = on(axis);
+    framing.origin = moved(framing.origin, units, usable);
+    clampOrigin(framing);
 }
 
-void PanAndZoom::clampOn(const Axis &axis)
+void PanAndZoom::clampOrigin(AxisFraming &framing)
 {
-    float &origin = axis.vertical() ? verticalOrigin_ : horizontalOrigin_;
-    float &extent = axis.vertical() ? verticalExtent_ : horizontalExtent_;
+    const float furthest = 1.0f - framing.extent;
 
-    if (extent > 1.0f)
-        extent = 1.0f;
-    if (extent < 0.0f)
-        extent = 0.0f;
-    if (origin < 0.0f)
-        origin = 0.0f;
-    if (origin + extent > 1.0f)
-        origin = 1.0f - extent;
+    if (framing.origin > furthest)
+        framing.origin = furthest;
+    if (framing.origin < 0.0f)
+        framing.origin = 0.0f;
+}
+
+void PanAndZoom::clampExtent(AxisFraming &framing)
+{
+    const float widest = 1.0f - framing.origin;
+
+    if (framing.extent > widest)
+        framing.extent = widest;
+    if (framing.extent < 0.0f)
+        framing.extent = 0.0f;
+}
+
+void PanAndZoom::clampSeed(AxisFraming &framing)
+{
+    if (framing.extent > 1.0f)
+        framing.extent = 1.0f;
+    if (framing.extent < 0.0f)
+        framing.extent = 0.0f;
+    clampOrigin(framing);
 }
 
 void PanAndZoom::reset()
 {
-    horizontalOrigin_ = horizontalExtent_ = 0.0f;
-    verticalOrigin_ = verticalExtent_ = 0.0f;
-    horizontalTuned_ = verticalTuned_ = false;
+    horizontal_.origin = horizontal_.extent = 0.0f;
+    vertical_.origin = vertical_.extent = 0.0f;
+    horizontal_.tuned = vertical_.tuned = false;
+}
+
+bool PanAndZoom::same(const AxisFraming &a, const AxisFraming &b)
+{
+    return a.tuned == b.tuned && a.origin == b.origin && a.extent == b.extent;
 }
 
 bool PanAndZoom::operator==(const PanAndZoom &other) const
 {
-    return horizontalTuned_ == other.horizontalTuned_
-        && verticalTuned_ == other.verticalTuned_
-        && horizontalOrigin_ == other.horizontalOrigin_
-        && horizontalExtent_ == other.horizontalExtent_
-        && verticalOrigin_ == other.verticalOrigin_
-        && verticalExtent_ == other.verticalExtent_;
+    return same(horizontal_, other.horizontal_) && same(vertical_, other.vertical_);
 }
 
 bool PanAndZoom::operator!=(const PanAndZoom &other) const

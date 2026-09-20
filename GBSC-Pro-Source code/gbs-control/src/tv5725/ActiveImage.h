@@ -18,8 +18,7 @@
 
 #include "Axis.h"
 #include "BlankingTiming.h"
-#include "InputLine.h"
-#include "OutputRaster.h"
+#include "VideoSourceLine.h"
 #include "PanAndZoom.h"
 #include "SourceTiming.h"
 
@@ -33,15 +32,6 @@ public:
     const PanAndZoom &framing() const;
     void setFraming(const PanAndZoom &framing);
 
-    // Move the framing by whole input units on `line`. An axis nobody has
-    // framed yet is seeded from the default first, so a press always lands on
-    // this mode's grid -- which is what makes one press one unit, and a press
-    // with its inverse return the same framing.
-    void panBy(const InputLine &line, const SourceTiming &timing,
-               const Axis &axis, int16_t units, const OutputRaster &raster);
-    void zoomBy(const InputLine &line, const SourceTiming &timing,
-                const Axis &axis, int16_t units, const OutputRaster &raster);
-
     bool operator==(const ActiveImage &other) const;
     bool operator!=(const ActiveImage &other) const;
 
@@ -51,40 +41,39 @@ public:
     // measure; what the line can actually hold then bounds it. A source running
     // a published raster is not assumed at all: the standard states its active
     // window and it is taken exactly, with no over-capture to add.
-    static uint16_t defaultWidth(const InputLine &line, const SourceTiming &timing,
+    static uint16_t defaultWidth(const VideoSourceLine &line, const SourceTiming &timing,
                                  const Axis &axis);
 
-    // A width wider than the line can hold wraps; one narrower than the minimum
-    // is a dead picture. The floor is whichever is larger: what the control must
-    // not crop past, and what the SCALE can still magnify to fill the raster --
-    // without the second, zooming past the magnification ceiling keeps cropping
-    // and the picture letterboxes instead of the control stopping.
-    //
-    // The ceiling is the raster's, because the part cannot minify: a capture
-    // past Axis::maximumCapture() produces a picture past the room and the far
-    // end is cropped, with the control appearing dead in both directions.
-    static long clampWidth(long width, const InputLine &line, const OutputRaster &raster,
-                           const Axis &axis);
+    // A width wider than the line can hold wraps; one narrower than
+    // MinimumCapture is a dead picture with no press back. Both bounds are the
+    // LINE's, which is what keeps a framing meaning the same part of the source
+    // whatever the output is doing.
+    static long clampWidth(long width, const VideoSourceLine &line);
 
     // Where this lands on `line`. Derived from the framing and the line alone --
     // nothing is read back. At rest this IS the default window, so there is no
     // second definition of it.
-    BlankingTiming capture(const InputLine &line, const SourceTiming &timing,
-                           const Axis &axis, const OutputRaster &raster) const;
+    BlankingTiming capture(const VideoSourceLine &line, const SourceTiming &timing,
+                           const Axis &axis) const;
+
+    // Give up extent, keeping the centre the user placed. The bound passed in
+    // is the OUTPUT raster's, which this class knows nothing about: the line's
+    // own bounds are clampToLine()'s.
+    void narrowTo(const Axis &axis, float extent);
 
     // Bring the framing back to what the line can actually realise. capture()
     // clamps the WINDOW, and a framing left beyond anything reachable kills the
-    // control in that direction -- see Geometry::readCapture().
-    void clampToLine(const InputLine &line, const SourceTiming &timing,
-                     const Axis &axis, const OutputRaster &raster);
+    // control in that direction -- see VideoPath::readCapture().
+    void clampToLine(const VideoSourceLine &line, const SourceTiming &timing,
+                     const Axis &axis);
 
 private:
     // The width and start this lands on, before either becomes a register.
     // capture() and clampToLine() both take it from here, so they cannot
     // disagree: one unit apart is a dead zone one press wide.
     struct Placement { long width, start; };
-    Placement place(const InputLine &line, const SourceTiming &timing,
-                    const Axis &axis, const OutputRaster &raster) const;
+    Placement place(const VideoSourceLine &line, const SourceTiming &timing,
+                    const Axis &axis) const;
 
     PanAndZoom framing_;
 };
