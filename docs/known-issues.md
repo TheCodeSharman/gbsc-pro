@@ -288,41 +288,73 @@ write is not being stopped where the register says.
 past the fetch cost anything. The horizontal equivalent is live
 (`IF_HB_ST2` bounds the line), so this is not a property the two axes share.
 
-### The pass-through window's near edge is a constant, so bypass shows the source's border
+### The vertical aperture's far end needs a row nothing explains
 
-**`HdBypass::BlankEndSamples` is `0x90`, 144 samples, and nothing derives it.**
-`applyHorizontalFromChannelLine()` writes it into `HD_HB_SP` whatever the source
-is, where the far edge is the measured channel line.
+`Axis::solve()` closes the vertical aperture one OUTPUT ROW earlier than the
+write-end arithmetic allows, and the row is measured rather than derived.
+
+Crept on the bench at 1080p, RiscPC 320x256@50 on `vga`, automation frozen,
+scoring the card's bottom castellations -- black blocks against white gaps:
+
+| `VDS_DIS_VB_ST` | 1117 | 1116 | 1115 | 1114 | 1113 |
+|---|---|---|---|---|---|
+| contrast, last row shown | **90** | 205 | 207 | 208 | 208 |
+
+The solved 1117 shows a row the capture never wrote. It reads as mostly white
+with a coloured span or two where the castellations should be, which is what
+memory from another framing looks like.
+
+**What is not established is why.** The same ladder at 576p is clean at the
+solved 620, and that mode is NOT line doubled, so the doubler's last half-line
+never being emitted is the standing candidate. It does not fit cleanly: a
+missing capture unit is two output rows at this magnification and one is
+measured. The other candidate is the vertical write origin, `0.2 + 0.8m`, being
+a fraction of a row out.
+
+**Both capture STOP registers are inert on the scaling path**, which is what
+makes this hard to reason about -- see the entry below. The write's real extent
+is not the one the engine believes, so "the last written unit" is not a quantity
+any register states.
+
+Horizontally nothing is given back, and no column of this kind has been seen.
+
+### Bypass shows the source's border, and nothing on the board can hide it
+
+**The constant is gone and the symptom is not.** `HdBypass` wrote `0x90` into
+`HD_HB_SP` whatever the source was; it is the engine's own envelope now,
+`AxisHorizontal::activeStart()` of the played-out line. That removed a magic
+number and changed no picture, because the constant was INERT.
 
 Measured in bypass with the RiscPC at `MODE X800 Y600 C256 F60`, whose mode file
-states `h_timings:128,48,40,800,40,0` on a 1056 pixel line:
+states `h_timings:128,48,40,800,40,0` on a 1056 pixel line, stepping the
+register against the panel on a 2048 sample line:
 
-| | |
-|---|---|
-| `HD_HSYNC_RST` | 2047, so the played-out line is 2048 samples |
-| `HD_HB_SP` | 144, which is 7.0% of the line -- source pixel 74 |
-| where the source's active video starts | pixel 216, sync 128 + porch 48 + border 40 |
+| `HD_HB_SP` | 144 | 240 | 320 | 400 | 480 | 560 |
+|---|---|---|---|---|---|---|
+| blanked columns | 0 | 0 | 0 | 36 | 117 | 198 |
+| border columns | 78 | 78 | 78 | 40 | 0 | 0 |
 
-So the window opens 142 source pixels before active video and paints the tail of
-the sync pulse, the whole back porch and the whole 40-pixel border. On screen
-that is a cyan band about 75 photo columns wide down the left, 4.9% of the
-panel, which is the border's 40 of 800 to within the reading.
+The panel's own left edge falls at sample **364**, so everything below about 400
+blanks nothing that was visible anyway. The border is in the SIGNAL: bypass
+passes the source's raster through, and this source spends 40 pixels a side on
+border.
 
-**It is a count of SAMPLES against a divider that moves per source**, so the
-fraction of the line it hides is whatever `dividerFor()` last chose. That is why
-the same bypass framing looks different after a change that moved the divider,
-with nothing in the bypass path itself having been touched.
+**Hiding it would crop real picture.** The border clears at about sample 441,
+which is 0.215 of the line, against the envelope's 0.117. Common PC modes spend
+less than that on sync and back porch -- 640x480 is 18.0% and 800x600@60 is
+20.5% -- so a bypass blanking tuned to this source eats their picture, and
+bypass has no framing control to give it back with. **Blanking cannot be
+auto-detected**, because a border is black active video electrically identical
+to back porch, so there is nothing to measure per source either.
 
-**Deriving it is not simply the source's active start.** Set by hand to 419 --
-pixel 216 at this divider -- the band narrows to about 20 photo columns and a
-black bar appears to the left of it, so the blanking generator and the video are
-offset by something of their own, unmeasured. Creeping `HD_HB_SP` a unit at a
-time against the border's own edge is what would measure it.
+**What can actually remove it is the SOURCE.** `RetroScaler-Acorn.mdf` states
+the borders -- 44 pixels a side at 320x256, 40 at 800x600 -- and it is ours. A
+mode file entry with zero borders sends no border to hide.
 
-**And the general bound stands:** blanking cannot be auto-detected, because a
-border is black active video electrically identical to back porch. What can be
-derived is sync plus a porch allowance; the border is the user's to crop, and
-bypass has no framing control to crop it with.
+**The asymmetry is the panel's.** The band appears at the left and not at the
+right because the painted area starts after the line does and ends before it
+does; the right border falls off the end. Do not read it as the scaler placing
+the picture wrongly.
 
 ### The output sync pad is raised only on a source-state transition, so it latches down
 
