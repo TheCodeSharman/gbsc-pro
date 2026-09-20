@@ -222,7 +222,7 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     // width is biased by a unit, FORWARD: the fetch reaching one further costs
     // nothing, where stepping back short-changes it. Horizontal only, because
     // VDS_VB_SP has never been crept.
-    // docs/investigations/the-shear-follows-the-produced-widths-parity.md
+    // docs/investigations/horizontal-scale-corruption.md
     //
     // THE APERTURE DOES NOT FOLLOW IT. Moving both far edges together puts the
     // last shown column one past the interpolator's reach, which is a column of

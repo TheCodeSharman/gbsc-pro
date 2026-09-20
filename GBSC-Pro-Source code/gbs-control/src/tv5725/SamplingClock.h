@@ -54,7 +54,7 @@ public:
     // **A TEARING CEILING MUST NOT BE REINSTATED.** The band it would keep the
     // divider below does not exist: HSCALE was swept across the corrupted state
     // and no value cleared it.
-    // ../../../docs/investigations/hscale-tearing-characterisation.md
+    // ../../../docs/investigations/horizontal-scale-corruption.md
     // `dividerCeiling` is the largest divider whose LINE the output raster can
     // show, or 0 where the caller has no raster to bound it with. Samples past
     // that are cropped, clipped or minified away whichever mechanism handles

@@ -3,7 +3,7 @@
 // The playback stage's burst structure: how much it pulls from SDRAM per
 // request, which sets the read request rate. One side of the beat that tears
 // the picture when PB_FETCH_NUM is left at an upstream table's 256.
-// docs/investigations/hscale-tearing-characterisation.md
+// docs/investigations/horizontal-scale-corruption.md
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>

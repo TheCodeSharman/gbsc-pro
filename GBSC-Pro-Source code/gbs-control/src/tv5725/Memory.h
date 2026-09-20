@@ -17,7 +17,7 @@
 // drives the ratio off the bottom of the band -- measured at capture 456,
 // where the rule's 114 is clean and a floor's 150 puts blocks of other content
 // through flat colour. docs/known-issues.md
-// docs/investigations/hscale-tearing-characterisation.md
+// docs/investigations/horizontal-scale-corruption.md
 
 #include <stdint.h>
 

@@ -101,7 +101,7 @@ void MemoryBus::init()
     // Capture writes, playback reads and the deinterlacer's field store share
     // one SDRAM, and these decide the priority between them. Left exactly as
     // measured; membus.py drives them on a live unit and
-    // docs/investigations/hscale-tearing-characterisation.md is the measurement.
+    // docs/investigations/horizontal-scale-corruption.md is the measurement.
     MEM_REQ_PBH_RFFH::write(0x1);        // s4_15[0:0]
     MEM_REQ_PB_RFF_CAP::write(0x0);      // s4_15[1:1]
     MEM_REQ_WFF_CAP::write(0x1);         // s4_15[2:2]

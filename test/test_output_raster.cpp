@@ -50,7 +50,7 @@ TEST_CASE("the raster total is even, so VDS_HSYNC_RST lands odd")
     // corrupt, 2023 clean, 2022 corrupt, 2021 clean, 2020 corrupt.
     //
     // UP rather than down, so the raster gains a pixel instead of losing one.
-    // docs/investigations/the-raster-total-decides-which-samples-play-out.md
+    // docs/investigations/horizontal-scale-corruption.md
     CHECK(OutputMode::horizontalTotalFor(129600000u, 1126, 50.0f) % 2 == 0);
 
     SUBCASE("across every mode and a band of field rates") {

@@ -37,7 +37,7 @@ uint16_t OutputMode::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
     //
     // UP, so the raster gains a pixel rather than losing one. It costs a pixel
     // of clock budget, which the frame time lock steers out.
-    // docs/investigations/the-raster-total-decides-which-samples-play-out.md
+    // docs/investigations/horizontal-scale-corruption.md
     horizontalTotal += horizontalTotal % 2;
 
     // Refused rather than wrapped: VDS_HSYNC_RST is twelve bits and a wrapped
