@@ -29,6 +29,17 @@ uint16_t OutputMode::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
     // Truncation IS the floor, and the floor is what the budget asks for.
     uint32_t horizontalTotal = (uint32_t)perLine;
 
+    // EVEN, because VideoPath writes horizontalTotal - 1 into VDS_HSYNC_RST and
+    // an even value there plays out the wrong samples -- the wedge's bars split
+    // and the label text carries black bars. Measured at 1024p with one register
+    // moved and nothing else: 2025 clean, 2024 corrupt, 2023 clean, 2022
+    // corrupt, 2021 clean, 2020 corrupt.
+    //
+    // UP, so the raster gains a pixel rather than losing one. It costs a pixel
+    // of clock budget, which the frame time lock steers out.
+    // docs/investigations/the-raster-total-decides-which-samples-play-out.md
+    horizontalTotal += horizontalTotal % 2;
+
     // Refused rather than wrapped: VDS_HSYNC_RST is twelve bits and a wrapped
     // value rolls the picture instead of failing.
     if (horizontalTotal > HorizontalTotalMax)

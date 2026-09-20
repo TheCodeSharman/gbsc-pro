@@ -23,12 +23,14 @@ using namespace Tv5725;
 TEST_CASE("htotal is the frame clock budget over the frame height, floored")
 {
     // A raster needs horizontalTotal x frameLines x fieldRate hertz, so horizontalTotal floors:
-    // rounding up asks the part for a clock above the target.
+    // rounding up asks the part for a clock above the target. The floor is then
+    // raised to the next EVEN total where it lands odd, which is the one pixel
+    // the sample-selection parity costs.
     CHECK(OutputMode::horizontalTotalFor(108000000u, 1126, 50.0f) == 1918);
     CHECK(OutputMode::horizontalTotalFor(108000000u, 1126, 60.0f) == 1598);
     CHECK(OutputMode::horizontalTotalFor(81000000u, 1126, 50.0f) == 1438);
-    CHECK(OutputMode::horizontalTotalFor(129600000u, 1126, 50.0f) == 2301);
-    CHECK(OutputMode::horizontalTotalFor(162000000u, 1126, 50.0f) == 2877);
+    CHECK(OutputMode::horizontalTotalFor(129600000u, 1126, 50.0f) == 2302);
+    CHECK(OutputMode::horizontalTotalFor(162000000u, 1126, 50.0f) == 2878);
 
     SUBCASE("and a raster that will not fit its register is refused") {
         // VDS_HSYNC_RST is twelve bits. Wrapping would roll the picture.
@@ -36,6 +38,33 @@ TEST_CASE("htotal is the frame clock budget over the frame height, floored")
         CHECK(OutputMode::horizontalTotalFor(0u, 1126, 50.0f) == 0);
         CHECK(OutputMode::horizontalTotalFor(108000000u, 0, 50.0f) == 0);
         CHECK(OutputMode::horizontalTotalFor(108000000u, 1126, 0.0f) == 0);
+    }
+}
+
+TEST_CASE("the raster total is even, so VDS_HSYNC_RST lands odd")
+{
+    // VideoPath writes horizontalTotal - 1 into VDS_HSYNC_RST, and an EVEN
+    // register there picks wrong samples: the wedge's bars split into hairlines
+    // and the label text carries black bars. Measured at 1024p on the bench
+    // RiscPC 320x256@50, one register moved and nothing else -- 2025 clean, 2024
+    // corrupt, 2023 clean, 2022 corrupt, 2021 clean, 2020 corrupt.
+    //
+    // UP rather than down, so the raster gains a pixel instead of losing one.
+    // docs/investigations/the-raster-total-decides-which-samples-play-out.md
+    CHECK(OutputMode::horizontalTotalFor(129600000u, 1126, 50.0f) % 2 == 0);
+
+    SUBCASE("across every mode and a band of field rates") {
+        const OutputMode *modes[] = {&Mode1080p, &Mode1024p, &Mode960p,
+                                     &Mode720p, &Mode576p, &Mode480p};
+        for (int i = 0; i < 6; ++i) {
+            for (float rate = 49.0f; rate <= 61.0f; rate += 0.01f) {
+                const OutputTimings solved =
+                    modes[i]->solve(rate, OutputMode::EngineCeilingHz);
+                if (!solved.usable())
+                    continue;
+                REQUIRE(solved.horizontalTotal % 2 == 0);
+            }
+        }
     }
 }
 
@@ -129,8 +158,8 @@ TEST_CASE("the SD modes carry less of the line than their standard states")
     // into. The raster ratio was the standing explanation and is refuted.
     // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
     OutputTimings p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
-    CHECK(p480.horizontalTotal == 2053);
-    CHECK(p480.activeWidth() == 2053 * 690 / 858);
+    CHECK(p480.horizontalTotal == 2054);
+    CHECK(p480.activeWidth() == 2054 * 690 / 858);
 
     OutputTimings p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
     CHECK(p576.horizontalTotal == 2070);

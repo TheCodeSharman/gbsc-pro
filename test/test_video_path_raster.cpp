@@ -270,7 +270,7 @@ TEST_CASE("the raster follows the key, not the reading behind it")
     // And it is this source's raster, not the one the engine came in holding.
     // Asserting only that two solves agree is passed by two stale values.
     CHECK(first != 1920);
-    CHECK(first == 1589);
+    CHECK(first == 1590);
 }
 
 TEST_CASE("a solve points the part at the clock source that can serve the raster")
