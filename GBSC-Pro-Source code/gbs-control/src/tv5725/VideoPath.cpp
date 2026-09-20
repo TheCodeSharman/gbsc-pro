@@ -141,7 +141,7 @@ uint16_t VideoPath::reachOn(const Axis &axis) const
     return axis.vertical() ? reachVertical_ : reachHorizontal_;
 }
 
-uint16_t VideoPath::videoLagOn(const Axis &axis) const
+int16_t VideoPath::videoLagOn(const Axis &axis) const
 {
     return axis.vertical() ? lagVertical_ : lagHorizontal_;
 }

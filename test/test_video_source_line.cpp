@@ -22,6 +22,13 @@ using namespace Tv5725;
 // IF_LINE_ST/SP is the input formatter's PROGRESSIVE line window -- line double
 // timing, so deinterlacing's rather than the picture's -- and it has to span
 // exactly one line from wherever it starts.
+// The lag is fractional -- the frame's is a line and a half -- so it is applied
+// before a position is rounded. A position carries it as whole units.
+static long lagUnits(const VideoSourceLine &line)
+{
+    return lrintf(line.videoLag());
+}
+
 TEST_CASE("the progressive line window spans exactly one line")
 {
     const VideoSourceLine SourceLine = VideoSourceLine::measured(1126, 160, 2250, true);
@@ -181,12 +188,12 @@ TEST_CASE("the capture starts where the sync pulse ends")
 
     SUBCASE("a positive pulse sits at the head and the floor clears it") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
-        CHECK(line.firstCapture() == 137 + line.videoLag());
+        CHECK(line.firstCapture() == 137 + lagUnits(line));
     }
 
     SUBCASE("an inverted pulse is behind the origin, leaving only the lag") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
-        CHECK(line.firstCapture() == line.videoLag());
+        CHECK(line.firstCapture() == lagUnits(line));
     }
 
     SUBCASE("an inverted pulse keeps the span the head guard would take") {
@@ -240,13 +247,13 @@ TEST_CASE("a position in the source's line maps onto where video lands in this o
 
     SUBCASE("a positive pulse shares the standard's own origin") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
-        CHECK(line.videoAt(ActiveStart) == 230 + line.videoLag());
+        CHECK(line.videoAt(ActiveStart) == 230 + lagUnits(line));
     }
 
     SUBCASE("an inverted pulse moves it back by the sync interval as well") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
         CHECK(line.videoAt(ActiveStart)
-              == 230 - line.syncUnits() + line.videoLag());
+              == 230 - line.syncUnits() + lagUnits(line));
     }
 
     SUBCASE("a line nothing has measured maps one to one") {
@@ -310,12 +317,12 @@ TEST_CASE("the capture floor hides the sync pulse and nothing else")
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     SUBCASE("a low-active source has the pulse behind the origin already") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
-        CHECK(line.firstCapture() == line.videoLag());
+        CHECK(line.firstCapture() == lagUnits(line));
     }
 
     SUBCASE("a high-active source has it at the head, so the floor clears it") {
         VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
-        CHECK(line.firstCapture() == line.syncUnits() + line.videoLag());
+        CHECK(line.firstCapture() == line.syncUnits() + lagUnits(line));
     }
 }
 
@@ -345,7 +352,7 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
     // 640x480@60 at PLLAD_MD 1494, low-active: the pulse is at the tail.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
-    const uint16_t Lag = line.videoLag();
+    const long Lag = lagUnits(line);
 
     SUBCASE("the floor is where the sync ends, a lag later") {
         CHECK(line.firstCapture() == Lag);
@@ -361,5 +368,60 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
         VideoSourceLine doubled = VideoSourceLine::measured(1254, 89, 2506, true);
         CHECK(doubled.firstCapture()
               == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
+    }
+}
+
+// ONE FRAMING MUST TAKE THE SAME VIDEO IN BOTH SCAN MODES. The framing names a
+// proportion of the source, so the two counters have to be brought onto one
+// another -- and they do not sit where the model had them.
+//
+// Measured on the bench, RiscPC X320 Y256 F50 on `vga`, automation frozen, the
+// capture window crept a unit at a time until the source's flashing border
+// entered the picture. `RetroScaler-Acorn.mdf` states the mode, so the feature
+// is known: h_timings 36,30,44,320,44,38 puts active video at 110..430 of 512,
+// and v_timings 3,16,17,256,17,3 at lines 36..292 of 312.
+//
+// Where each counter puts the card's own edges:
+//
+//   edge                      doubled        undoubled
+//   top / bottom, lines       30.0 / 288.5   28.5 / 287.0
+//   right, of the line        0.8300         0.8839
+//
+// So the undoubled line delivers video 0.0539 of a line LATE, and the undoubled
+// frame delivers it one and a half lines EARLY. The two pipelines are not the
+// same one and nothing requires them to agree in sign.
+//
+// **THE MEASUREMENT IS RELATIVE, WHICH IS WHY IT IS WORTH MORE THAN THE ONE IT
+// REPLACES.** Both readings take the same feature on the same source with the
+// same edge finder, so the knee's systematic biases -- the aperture's far-end
+// inset, the interpolation, the threshold -- fall out of the difference. Read
+// against the mode file instead, each counter is out by a further 0.010 to
+// 0.020 of a line, which is the bias rather than a second finding.
+TEST_CASE("one framing takes the same video in both scan modes")
+{
+    SUBCASE("along the line") {
+        // The bench source either side of the doubler: PLLAD_MD 2200 on a 1100
+        // unit line doubled, 1852 undoubled, sync 36 of 512.
+        const float Duty = 36.0f / 512.0f;
+        VideoSourceLine doubled = VideoSourceLine::measured(
+            1100, (uint16_t)lrintf(2200 * Duty), 2200, true);
+        VideoSourceLine undoubled = VideoSourceLine::measured(
+            1852, (uint16_t)lrintf(1852 * Duty), 1852, true);
+
+        const float Framing = 0.2036f;
+        const float apart = (float)undoubled.videoAt(Framing) / 1852.0f
+                          - (float)doubled.videoAt(Framing) / 1100.0f;
+        CHECK(apart == doctest::Approx(0.0539f).epsilon(0.02f));
+    }
+
+    SUBCASE("down the frame") {
+        // 311 source lines, so the counter wraps at 312 undoubled and 624
+        // doubled. One source line is two doubled units, and the undoubled
+        // counter runs three of them early.
+        VideoSourceLine doubled = VideoSourceLine::frame(624, true);
+        VideoSourceLine undoubled = VideoSourceLine::frame(312, false);
+
+        const float Framing = 0.1010f;
+        CHECK(doubled.videoAt(Framing) == 2 * undoubled.videoAt(Framing) + 3);
     }
 }

@@ -1,3 +1,4 @@
+#include <math.h>
 #include "CaptureWindow.h"
 
 #include "../../gbs_types.h"
@@ -41,8 +42,9 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and
     // whole source lines otherwise. docs/scaler-geometry-model.md
-    verticalLine_ = VideoSourceLine(lineDoubled ? 2 * (sourceLines + 1)
-                                                   : sourceLines + 1);
+    verticalLine_ = VideoSourceLine::frame(lineDoubled ? 2 * (sourceLines + 1)
+                                                       : sourceLines + 1,
+                                           lineDoubled);
 
     timing_ = timing;
     return true;
@@ -133,10 +135,10 @@ uint16_t CaptureWindow::reachOn(const Axis &axis) const
                            : horizontalLine_.lastReachable();
 }
 
-uint16_t CaptureWindow::videoLagOn(const Axis &axis) const
+int16_t CaptureWindow::videoLagOn(const Axis &axis) const
 {
-    return axis.vertical() ? verticalLine_.videoLag()
-                           : horizontalLine_.videoLag();
+    return (int16_t)lrintf(axis.vertical() ? verticalLine_.videoLag()
+                                           : horizontalLine_.videoLag());
 }
 
 uint16_t CaptureWindow::linePx() const { return line_.total(); }

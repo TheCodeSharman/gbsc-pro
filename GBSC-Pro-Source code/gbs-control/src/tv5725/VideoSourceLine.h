@@ -42,7 +42,8 @@ public:
     // counted from the sync edge the line is counted from. It TRANSLATES a
     // window rather than narrowing it: both ends move, because the video
     // behind them does. Zero on a doubled line, where IF_HBIN_SP is the FIFO's
-    // own reset and places the picture itself.
+    // own reset and places the picture itself -- so what this holds is the
+    // DIFFERENCE between the two scan modes, and it is measured as one.
     //
     // A fraction and not a count of samples, which takes two dividers to tell
     // apart: 72 samples at PLLAD_MD 1124 on 800x600@60 and 118 at 1880 on the
@@ -52,9 +53,23 @@ public:
     // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
     static const float CaptureLagFraction;
 
-    // The whole line is available. Vertical uses this: the exclusion is the
-    // HSYNC pulse and there is no vertical equivalent.
+    // How far the video sits AHEAD of the counter on an undoubled frame, in
+    // source lines. Negative where the line's is positive: the two pipelines
+    // are not the same one and nothing requires them to agree in sign.
+    //
+    // A COUNT of lines rather than a fraction of the frame, because the unit
+    // either side of the doubler is a line and a doubler's latency is stated in
+    // them. One source cannot separate the two forms, so a second source at
+    // another line count is what would settle it.
+    static const float FrameLagLines;
+
+    // The whole line is available. The exclusion is the HSYNC pulse and there
+    // is no vertical equivalent.
     explicit VideoSourceLine(uint16_t units);
+
+    // The frame, which carries the scan mode's own offset and nothing else:
+    // no sync interval to exclude and no head blanking.
+    static VideoSourceLine frame(uint16_t units, bool lineDoubled);
 
     VideoSourceLine(uint16_t units, uint16_t syncUnits);
 
@@ -85,9 +100,11 @@ public:
     // unreachable by exactly the lag, which is a dead zone one press wide.
     uint16_t lastReachable() const;
 
-    // How far the video sits behind the counter's origin on this line, which is
+    // How far the video sits behind the counter's origin on this axis, which is
     // what turns a position in the source into a position in the counter.
-    uint16_t videoLag() const;
+    // Signed: the frame's is negative, and fractional, so it is applied before
+    // a position is rounded rather than after.
+    float videoLag() const;
 
     // The span the framing is a proportion of: everything between the ends.
     uint16_t capturable() const;
@@ -133,7 +150,7 @@ private:
 
     uint16_t units_;
     uint16_t syncUnits_;
-    uint16_t lagUnits_;
+    float lag_;
     uint16_t headBlankingUnits_;
     bool syncAtHead_;
 };
