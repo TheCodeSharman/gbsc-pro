@@ -641,6 +641,42 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
         }
     }
 
+    SUBCASE("the bias costs no picture, because the reach already reserves one") {
+        // The window closes one capture unit short of the write end, so a bias
+        // that steps the far edge FORWARD still lands inside written memory --
+        // and forward is what keeps the picture filling the screen. Back left a
+        // black column at the right on every mode whose width came out even.
+        for (uint16_t scale = 280; scale <= 1020; ++scale) {
+            const AxisSolution solved = AxisHorizontal.solve(829, Scale(scale), Raster);
+            if (!solved.usable())
+                continue;
+            float reach = floorf((float)solved.memory().stop()
+                                 + AxisHorizontal.originOffset(Scale(scale).magnification())
+                                 + solved.produced() - Scale(scale).magnification());
+            const float bound = (float)AxisHorizontal.farBound(Raster, 0);
+            if (reach > bound)
+                reach = bound;
+            REQUIRE((float)solved.memory().start() >= reach);
+        }
+    }
+
+    SUBCASE("and the aperture still closes on the last column the capture filled") {
+        // The memory window may carry the odd unit; the APERTURE may not. One
+        // pixel past the interpolator's reach shows as a column of junk down the
+        // right-hand edge, which is what the forward bias costs if both far
+        // edges move together. Blanking it loses nothing: that column was never
+        // captured.
+        for (uint16_t scale = 280; scale <= 1020; ++scale) {
+            const AxisSolution solved = AxisHorizontal.solve(829, Scale(scale), Raster);
+            if (!solved.usable())
+                continue;
+            const float reach = floorf((float)solved.memory().stop()
+                                       + AxisHorizontal.originOffset(Scale(scale).magnification())
+                                       + solved.produced() - Scale(scale).magnification());
+            REQUIRE((float)solved.display().start() <= reach);
+        }
+    }
+
     SUBCASE("the window never opens past where the write ends") {
         // Biasing the width must give a unit back, never take one: memory past
         // the picture is memory the playback stage still walks.

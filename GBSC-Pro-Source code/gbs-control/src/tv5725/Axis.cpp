@@ -156,9 +156,9 @@ RasterFit Axis::fitToRaster(uint16_t capture, uint16_t rasterTotal,
         ++scale;
         produced = capture * (float)Scale::Unity / scale;
     }
+
     return RasterFit(Scale((uint16_t)scale), produced);
 }
-
 
 PictureOrigin Axis::placePicture(float produced, uint16_t rasterTotal,
                              float magnification, uint16_t activeStart) const
@@ -212,19 +212,33 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     const float writeEnds = (float)placed.windowStop()
                           + originOffset(scale.magnification())
                           + solved.produced_ - scale.magnification();
-    int32_t displayStart = (int32_t)floorf(writeEnds);
-    if (displayStart < placed.corner())
-        displayStart = placed.corner();
-    if (displayStart > lastUsable)
-        displayStart = lastUsable;
+    int32_t apertureStart = (int32_t)floorf(writeEnds);
+    if (apertureStart < placed.corner())
+        apertureStart = placed.corner();
+    if (apertureStart > lastUsable)
+        apertureStart = lastUsable;
 
-    // An even memory window shears the picture and an odd one is clean, so give
-    // a unit back rather than take one -- opening the window past the write
-    // shows memory the playback stage walks and nothing wrote. Horizontal only,
-    // because VDS_VB_SP has never been crept. docs/known-issues.md
-    if (!vertical() && (displayStart - placed.windowStop()) % 2 == 0
-        && displayStart > placed.corner())
-        --displayStart;
+    // An even memory window shears the picture and an odd one is clean, so the
+    // width is biased by a unit, FORWARD: the fetch reaching one further costs
+    // nothing, where stepping back short-changes it. Horizontal only, because
+    // VDS_VB_SP has never been crept.
+    // docs/investigations/the-shear-follows-the-produced-widths-parity.md
+    //
+    // THE APERTURE DOES NOT FOLLOW IT. Moving both far edges together puts the
+    // last shown column one past the interpolator's reach, which is a column of
+    // junk down the right-hand edge; blanking it costs no picture, because that
+    // column was never captured. So the two windows differ at the far end by
+    // the bias, and the memory window is the wider of the two -- the safe
+    // direction, since the fetch then covers every column the aperture shows.
+    int32_t memoryStart = apertureStart;
+    if (!vertical() && (memoryStart - placed.windowStop()) % 2 == 0) {
+        if (memoryStart < lastUsable)
+            ++memoryStart;
+        else if (memoryStart > placed.corner())
+            --memoryStart;
+    }
+    if (apertureStart > memoryStart)
+        apertureStart = memoryStart;
 
     // The near end mirrors the far one. The write origin marks where content
     // first appears, which is the first unit the capture only PARTLY filled --
@@ -237,16 +251,17 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
                                          + scale.magnification());
     if (displayStop < placed.corner())
         displayStop = placed.corner();
-    if (displayStop > displayStart)
-        displayStop = displayStart;
+    if (displayStop > apertureStart)
+        displayStop = apertureStart;
 
-    solved.display_ = BlankingTiming(displayStop, displayStart);
+    solved.display_ = BlankingTiming(displayStop, apertureStart);
 
-    // The two windows share a far edge: allocate nothing spare. Memory past the
-    // picture is memory the playback stage still walks, and taking the whole
-    // raster showed on the bench as artefacts down the LEFT edge. The near edges
-    // differ by the write origin, which is why the windows are not one thing.
-    solved.memory_ = BlankingTiming(placed.windowStop(), displayStart);
+    // Allocate nothing spare beyond the bias: memory past the picture is memory
+    // the playback stage still walks, and taking the whole raster showed on the
+    // bench as artefacts down the LEFT edge. The near edges differ by the write
+    // origin and the far ones by the parity unit, which is why the windows are
+    // not one thing.
+    solved.memory_ = BlankingTiming(placed.windowStop(), memoryStart);
     return solved;
 }
 

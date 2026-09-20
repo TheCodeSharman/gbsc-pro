@@ -102,7 +102,12 @@ TEST_CASE("the horizontal window goes where the geometry puts it")
     for (uint16_t capture = 400; capture <= 1009; capture += 3) {
         VideoProcessorTimings solved(capture, 512, 1445, 1126);
         REQUIRE(solved.usable());
-        CHECK(solved.memory().horizontal().start() == solved.display().horizontal().start());
+        // The far edges part by the parity unit and no more, and the MEMORY one
+        // is the wider: the fetch covers every column the aperture shows.
+        const int32_t spare = solved.memory().horizontal().start()
+                            - solved.display().horizontal().start();
+        CHECK(spare >= 0);
+        CHECK(spare <= 1);
     }
 }
 
@@ -131,8 +136,14 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
     // A property of the memory, not of one axis, so Axis::solve applies it and
     // both axes get it. The artefact was seen horizontally, but a rule holding
     // on one axis only would be a special case nobody measured.
+    //
+    // Horizontally the far edges may part by the parity unit; vertically there
+    // is no bias, so they still meet.
     VideoProcessorTimings solved(749, 512, 1445, 1126);
-    CHECK(solved.memory().horizontal().start() == solved.display().horizontal().start());
+    const int32_t spare = solved.memory().horizontal().start()
+                        - solved.display().horizontal().start();
+    CHECK(spare >= 0);
+    CHECK(spare <= 1);
     CHECK(solved.memory().vertical().start() == solved.display().vertical().start());
 
     SUBCASE("and neither reaches the value that wraps") {
