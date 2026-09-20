@@ -296,6 +296,27 @@ because `Axis::minimumCapture()` stops the zoom where the scale REACHES its
 floor, so no press can now solve a framing inside the clamped zone at all. It is
 reachable only by a framing restored from the table -- the entry two above.
 
+### Wrong sample selection has TWO regimes, and a rule from one says nothing about the other
+
+Both are about the scaler picking the wrong source sample, and they are
+separate findings governing disjoint ranges. Reading a mark by the wrong one
+looks like a refutation that never happened, which is why `shear.py` carries the
+split as `WidthRule` and `FloorScaleRule` rather than one predicate.
+
+| regime | where | the rule |
+|---|---|---|
+| above the clamp, the whole reachable zoom | `VDS_HB_SP` off its floor | the memory window's width parity, below |
+| on the write floor | `VDS_HB_SP` pinned at 8 | graded with magnification, the write floor and the phase period `1024 / gcd(VDS_HSCALE, 1024)` |
+
+**Only the first is reachable now.** `Scale::Min` is 342 -- `1024 / 3` is
+341.33, so 342 is the largest magnification at or under 3.0x -- and
+`Axis::minimumCapture()` stops the zoom where the scale reaches its floor, so no
+press can solve a framing inside the clamped zone at all. The gcd material
+describes a range the control cannot enter, and a framing restored from the
+table is the only way back into it. **Do not apply the multiple-of-64 reading to
+an ordinary solve**, and note that the entry above retracts its binary form
+anyway: it was a binary reading of a gradient.
+
 ### Why an even memory window shears is not known
 
 The zoom shear itself is fixed: `Axis::solve()` biases the memory window to an
@@ -308,6 +329,15 @@ measurements and the two refuted rules, which must not be reinstated.
 **The bias is a bias, not a cure.** Nothing explains why an even width shears, so
 anything that later does should be expected to replace it rather than build on
 it. Two things are open and each is one bench session:
+
+**And an odd width is not sufficient.** The output raster total carries a parity
+of its own: measured at 1024p with the capture, the scale, both windows and the
+divider held, `VDS_HSYNC_RST` alternates the picture clean/corrupt on six
+consecutive values, and a state with an odd memory window is corrupt at every
+even one. `OutputMode::horizontalTotalFor()` therefore rounds the total up to
+even, so the register lands odd.
+`investigations/the-raster-total-decides-which-samples-play-out.md` -- and it is
+measured at one framing on one mode, so the sense is not established elsewhere.
 
 - **One input and one axis.** The bias holds on every source mode tried -- 640
   solves swept across eight, 419 to 768 lines at 50, 60 and 70 Hz, from 320x250

@@ -22,6 +22,14 @@ where it becomes visible, not where it comes from — which is why stepping the
 zoom alternates arbitrarily, `produced` moving continuously while the floor of it
 flips.
 
+**That identity no longer holds exactly, and the rule is the register.** The far
+edge now stops one capture unit short of the write end for the interpolator's
+reach, so the width is `floor(originOffset + produced - magnification)`. Which of
+the two the part responds to is not separable from the marks: `produced` cannot
+be moved without moving the capture or the scale, and walking the scale to reach
+a parity moves it by tens of counts before the floor flips, which is picture size
+paid for a parity. So the bias stays on the register the solve can set.
+
 ## How it was separated from the register
 
 Two earlier rules fitted well and were wrong, each refuted by the dataset it was
@@ -63,17 +71,40 @@ finding, and `shear.clamped()` is the split.
 
 ## The fix, and what it is not
 
-`solve()` gives a unit back where the width comes out even, so every solve lands
-on an odd one. Back rather than forward: opening the window past where the write
-ends shows memory the playback stage walks and nothing wrote, where closing it one
-short blanks a pixel that was written.
+`solve()` biases the width by a unit where it comes out even, so every solve
+lands on an odd one. It is a **bias, not a cure** — why an even width shears is
+not known. Anything that later explains the mechanism should be expected to
+replace it rather than build on it.
 
-It costs one output pixel and it is a **bias, not a cure** — why an even width
-shears is not known. Anything that later explains the mechanism should be
-expected to replace it rather than build on it.
+**The unit goes FORWARD, and only the memory window takes it.** The bias used to
+step back, because opening the window past where the write ends shows memory the
+playback stage walks and nothing wrote. Two things have changed since:
+
+- the far edge now closes one capture unit short of the write end, for the
+  interpolator's reach, so there is a reserve to step into that stepping back
+  does not use;
+- stepping back blanks a written pixel, which is a black column down the right
+  where the picture should reach the edge of the screen.
+
+So the memory window takes the unit and the **aperture does not follow it**.
+Moving `VDS_DIS_HB_ST` with `VDS_HB_ST` puts the last shown column one past the
+interpolator's reach, which is a column of junk down the right-hand edge —
+measured on the bench the moment the forward bias was flashed. Blanking that
+column costs no picture, because it was never captured.
+
+The two windows therefore differ at the far end by the bias, with the MEMORY one
+wider. That is the safe direction: the fetch covers every column the aperture
+shows. The reverse would show a column the fetch never filled.
 
 Horizontal only. `VDS_VB_SP` has never been crept, so the vertical axis is
 unmeasured rather than known to be unaffected.
+
+**And the width is not the only parity that reaches the picture.** The output
+raster total carries one of its own, measured with the capture, the scale and
+both windows held:
+[`the-raster-total-decides-which-samples-play-out.md`](the-raster-total-decides-which-samples-play-out.md).
+A state can satisfy this rule and still be corrupt through that one, which is
+what made a bisect necessary to tell them apart.
 
 ## What the bench says after it
 
