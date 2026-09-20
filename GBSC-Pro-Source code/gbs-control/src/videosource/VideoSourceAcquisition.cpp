@@ -432,7 +432,7 @@ bool VideoSourceAcquisition::rateMoved()
         return false;
     if (Tv5725::VideoSignal::ratesAgree(
             Tv5725::VideoSignal::lineRateFor(solvedLines_, fieldRateHz),
-            solvedLineRateHz_)) {
+            solvedLineRateHz_, RateCorroborationPerMille)) {
         // The register moved and the rate did not, which is the register being
         // unreliable. Adopt what it reads now, so the same disagreement does
         // not buy another spin every pass.

@@ -37,6 +37,14 @@ namespace {
 // the standards it has to tell apart are 4.8 points away from each other.
 const float SyncDutyTolerance = 0.015f;
 
+// How far a real source may sit from the rate the standard states. NOT a
+// measurement tolerance -- the instrument is exact to better than 0.002%, and
+// what this covers is the source itself: the bench RISC PC runs its nominal
+// 50 Hz mode at 50.081, and its 800x600@60 at DMT's 60.317 exactly. A source
+// that names a rate is not obliged to run it.
+// ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
+const uint16_t StandardRateDeviationPerMille = 50;
+
 }  // namespace
 
 SourceTiming::SourceTiming(float fieldRateHz)
@@ -62,7 +70,7 @@ const SourceTiming::Raster *SourceTiming::lookUp(uint16_t sourceLines,
         const Raster &raster = Published[i];
         if (measured.lines() + 1 != raster.totalLines
             || (fabsf(measured.rateHz() - (float)raster.rateHz) * 1000.0f
-                > (float)RateTolerancePerMille * (float)raster.rateHz))
+                > (float)StandardRateDeviationPerMille * (float)raster.rateHz))
             continue;
 
         const float duty = (float)raster.syncPixels / (float)raster.totalPixels;

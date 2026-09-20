@@ -80,11 +80,16 @@ TEST_CASE("the count and the rate can each be asked on their own")
     CHECK_FALSE(VideoSignal::fieldRateIsSource(0.0f));
 }
 
-TEST_CASE("two rates a gross-error net apart are the same measurement")
+TEST_CASE("the tolerance is the caller's, and the same pair answers both ways")
 {
-    // The bench transient is 15.6% out -- 57.9 Hz against a real 50.08 -- and a
-    // settled source drifts by tenths of one part per thousand, so anything
-    // between them separates the two.
-    CHECK(VideoSignal::ratesAgree(15625u, 15624u));
-    CHECK_FALSE(VideoSignal::ratesAgree(15625u, 18100u));
+    // No default: the sites asking this are not asking the same question, and
+    // one number answering all of them is what forgave a deliberate 3.9%
+    // divider change. 15625 against 15624 is 0.06%.
+    CHECK(VideoSignal::ratesAgree(15625u, 15624u, 1));
+    CHECK_FALSE(VideoSignal::ratesAgree(15625u, 18100u, 50));
+
+    // 1880 and 1954 are 480p's divider and 576p's on the bench source: inside
+    // the 5% a measurement is forgiven, and not one part of it noise.
+    CHECK(VideoSignal::ratesAgree(1880u, 1954u, 50));
+    CHECK_FALSE(VideoSignal::ratesAgree(1880u, 1954u, 2));
 }

@@ -50,16 +50,17 @@ public:
     // that question.
     static uint32_t lineRateFor(uint16_t sourceLines, float fieldRateHz);
 
-    // How far a line rate may move while the source line count does not, in
-    // parts per thousand. A gross-error net: the bench transient is 15.6% out
-    // (57.9 Hz against a real 50.08) and a settled source drifts by tenths of
-    // one, so anything between separates them.
-    static const uint16_t RateTolerancePerMille = 50;
-
-    // Whether two line rates are the same measurement -- RateTolerancePerMille
-    // apart, which is what separates a source that moved from one being read
-    // through a settling PLL.
-    static bool ratesAgree(uint32_t a, uint32_t b);
+    // Whether two rates are within `perMille` of each other.
+    //
+    // **THE TOLERANCE IS THE CALLER'S AND THERE IS NO DEFAULT**, because the
+    // sites asking this are not asking the same question: whether a reading is
+    // trustworthy, whether a source moved, whether two measurements are one
+    // source, and whether a source is the standard it claims are four different
+    // quantities with four different spreads. One number answering all of them
+    // was applied to a fifth -- a divider, which is a derived integer carrying
+    // no measurement noise at all -- and forgave a deliberate 3.9% change.
+    // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
+    static bool ratesAgree(uint32_t a, uint32_t b, uint16_t perMille);
 };
 
 }  // namespace Tv5725

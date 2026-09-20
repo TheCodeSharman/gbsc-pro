@@ -26,7 +26,8 @@ bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
     if (lineRateHz == 0 || !heldRateJudges(lines, heldLines, heldLineRateHz))
         return true;
 
-    return VideoSignal::ratesAgree(lineRateHz, heldLineRateHz);
+    return VideoSignal::ratesAgree(lineRateHz, heldLineRateHz,
+                                   RateFollowsCountPerMille);
 }
 
 // HPERIOD_IF IS A CHANGE DETECTOR AND NOTHING ELSE, AND SAYING SO IS THE POINT.
@@ -73,13 +74,15 @@ bool SourceMeasurement::hasLineRateMoved(uint16_t reference)
     if (now == 0)
         return false;
 
-    return !VideoSignal::ratesAgree(now, reference);
+    return !VideoSignal::ratesAgree(now, reference, LinePeriodMovedPerMille);
 }
 
 // --- the chosen divider, held ----------------------------------------------
 
 const uint8_t SourceMeasurement::SteadySamples;
 const uint16_t SourceMeasurement::RateAgreementPerMille;
+const uint16_t SourceMeasurement::RateFollowsCountPerMille;
+const uint16_t SourceMeasurement::LinePeriodMovedPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 const uint8_t SourceMeasurement::LatchSettlePasses;
 

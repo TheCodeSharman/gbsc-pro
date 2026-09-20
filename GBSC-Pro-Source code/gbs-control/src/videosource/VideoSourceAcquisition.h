@@ -15,6 +15,13 @@
 
 class VideoSourceAcquisition {
 public:
+
+    // How far the corroborating field-rate measurement may sit from the solved
+    // line rate before the disagreement is believed. A second reading of the
+    // same quantity by the same instrument, so what it forgives is the
+    // instrument's own spread -- measured at 0.000% over 250 samples a mode.
+    // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
+    static const uint16_t RateCorroborationPerMille = 50;
     // What a pass decided that this layer cannot carry out. The frame time
     // lock and the external clock generator are the sketch's, so they are
     // REPORTED, the shape Tv5725::Deinterlacer::steer() already uses.

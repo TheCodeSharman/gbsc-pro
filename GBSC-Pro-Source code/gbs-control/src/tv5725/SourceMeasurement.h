@@ -27,6 +27,19 @@ namespace Tv5725 {
 // once the caller has installed the clock it sized from it.
 class SourceMeasurement {
 public:
+
+    // How far the line rate may sit from the one held at the SAME line count
+    // before the reading is refused. Measured on a settled source through the
+    // current path, 250 samples a mode: 0.000% spread at both 311 x 50 and
+    // 627 x 60. What it has to reject is 15.6% (57.9 Hz against a real 50.08
+    // after a preset load), and the mid-change readings run to 98% and beyond.
+    //
+    // **THE GAP IS WIDE AND THE MIDDLE IS THE RIGHT PLACE TO SIT.** Tightening
+    // costs genuine movement: a source may change rate at a constant count --
+    // a RISC PC does -- and every such change inside this is refused until
+    // HeldRateRejectionLimit lets it through.
+    // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
+    static const uint16_t RateFollowsCountPerMille = 50;
     SourceMeasurement();
 
     // A sampling clock has just been latched, so nothing counted in ADC samples
@@ -210,6 +223,12 @@ private:
     // --- bounds nothing outside this class states ----------------------------
 
     static const uint16_t RateAgreementPerMille = 1;
+
+
+    // How far settledLinePeriod() must move to count as movement. A different
+    // quantity from the one above: HPERIOD_IF is a change detector read in its
+    // own units, compared only against its own earlier value.
+    static const uint16_t LinePeriodMovedPerMille = 50;
 
     // The 15.7 kHz broadcast line, split from the 31.5 kHz VGA one clear of
     // both and of the ~21.8 kHz a programmable source reaches between them.

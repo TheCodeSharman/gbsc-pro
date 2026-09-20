@@ -23,7 +23,7 @@ namespace Tv5725 {
 // one rate are 364, 449 and 525, and their rates sit 0.01% to 0.3% apart --
 // modes differing only in pixel clock, which this chip cannot separate anyway.
 // The frame time lock steers out what is left.
-extern const uint16_t RateTolerancePerMille;
+extern const uint16_t SourceIdentityPerMille;
 
 class SourceKey {
 public:

@@ -444,8 +444,9 @@ bool VideoPath::installSampling(SamplingReason reason)
     const bool alreadyInForce =
         reason == SamplingFollowsOutput
             ? divider == inForce
-            : VideoSignal::ratesAgree(divider, inForce)
-                  && VideoSignal::ratesAgree(rate, installedRateHz_);
+            : VideoSignal::ratesAgree(divider, inForce, DividerJitterPerMille)
+                  && VideoSignal::ratesAgree(rate, installedRateHz_,
+                                             InstalledRatePerMille);
     if (inForce != 0 && alreadyInForce)
         return true;
 
