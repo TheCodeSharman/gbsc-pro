@@ -247,11 +247,20 @@ together.
 stay strictly below the total register and wraps rather than clamps, which left a
 front porch of 6 px.
 
-**The line carries the output mode's own front porch, and
-`OutputMode::FrontPorchMinPx` is the floor under it** -- 16 px, the measured
-minimum this part needs at the far end. CEA-861's porch is an order of magnitude
-above it, 64 px at 108 MHz and 77 at 129.6, so the floor binds only where a
+**The far end is the output mode's active FRACTION of the line, and
+`OutputMode::FrontPorchMinPx` is the floor under what stays blank** -- 16 px,
+the measured minimum this part needs at the far end. The front porch is never
+stated: the encoder resamples the line into the standard's active pixel count,
+so the picture may run to `horizontalTotal x activePx / totalPx` and what the
+total leaves after that is the porch. It is an order of magnitude above the
+floor, 105 px at 1080p on a 1920 px raster, so the floor binds only where a
 raster has no room for the real one.
+`investigations/the-active-window-is-a-fraction-of-the-line.md`.
+
+A front porch stated as a DURATION is what this replaces, and it made the active
+region a different fraction of the line in every mode -- 89.4% at 1080p against
+CEA's 87.3%, 79.9% at 1024p against DMT's 75.8% -- so a framing set flush at one
+resolution spilled off the right at the other.
 
 **The reading that conforming bought nothing is REFUTED.** It held that the
 MS9288A generates its own HDMI blanking from what it samples and never sees
@@ -271,7 +280,9 @@ the change on the bench, the picture is 1336 -> 1346 photo px across -- unchange
 
 The floor is measured in PIXELS at one clock, so whether it is really a time is
 untested. Sync and back porch remain times, because they place the pulse the
-encoder locks to.
+encoder locks to and the blanking edge it finds active video after -- measured
+within 4 raster px in both modes. The active width is the one quantity of the
+three that is a fraction rather than a duration.
 
 **Measured against bypass, which is the only reference for where the panel's
 active area ends.** An 800x600 source runs straight through and fills the screen;

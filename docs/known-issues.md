@@ -537,6 +537,14 @@ pass-through).
 
 ### The picture sits ~150 columns left after a pass-through round trip
 
+**NOT SEEN SINCE THE RASTER CARRIED THE STANDARD'S TIMINGS.** The landing has
+been stable through every output change measured since, and the mechanism below
+is kept because it is what the measurements rule out rather than because the
+fault is live. Two mode changes into each of 1080p and 1024p land the picture
+within **0 photo px at r = 0.9978**, and four 1080p/1024p round trips solve
+byte-identical rasters. Re-open it on a sighting, not on a doubt.
+
+
 **THE BOARD IS EXONERATED, MEASURED RATHER THAN INFERRED.** The television's
 menu is drawn by the STV9426 from `HS_OUT`/`VS_OUT` and keyed into the video at
 U13, downstream of the VDS, so it rides the sync timebase while the picture
@@ -1718,3 +1726,18 @@ against the encoder's own active window, and
 
 **This is not the scaling path's framing flip**, which moves the picture
 horizontally and is `HPERIOD_IF` quantisation reaching the raster solve.
+
+### 800x600 in bypass shows a coloured band at the left edge
+
+Observed 2026-09-20 while taking a pass-through panel reference, and not
+diagnosed. The card carries a magenta band about 75 photo columns wide hard
+against the left of the panel, inside the painted area and outside the card's
+own black-and-white border. The reference is otherwise good -- the picture fills
+the panel horizontally and the fit against it is what the active-window
+measurement rests on.
+
+What it is not yet separated from: the same magenta appears at the RIGHT of the
+scaled picture at both 1080p and 1024p with the bench framing, which crops 123
+capture units off the near end, so a card drawn with a magenta border at both
+extremes would show exactly this. `PatLib` draws it at the source, so the source
+is where to look first. `RiscPc/tools/video-source/`.
