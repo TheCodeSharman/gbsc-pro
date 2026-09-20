@@ -547,3 +547,32 @@ TEST_CASE("the default capture starts where video lands, not where the standard 
         CHECK(at_head.stop() - behind.stop() == positive.syncUnits());
     }
 }
+
+TEST_CASE("a framing survives a round trip through a coarser capture grid")
+{
+    // An output too short for a doubled frame turns the line doubler off, and
+    // the vertical capture then counts whole source lines where it counted
+    // half-lines -- 621 units becomes 309 on the bench source. The framing is a
+    // proportion, so it carries across; what must not happen is the coarse
+    // grid's quantisation being written back as the user's framing, because
+    // then the fine grid can no longer express what they set.
+    //
+    // Measured on the bench before this held: 1080p ev 513, 480p ev 255, and
+    // 1080p ev 512 on the way back. One unit lost per excursion.
+    const VideoSourceLine doubled(624);      // capturable 621
+    const VideoSourceLine single(312);       // capturable 309
+
+    ActiveImage image;
+    image.setFraming(PanAndZoom(0.0f, 1.0f, 62.0f / 621.0f, 513.0f / 621.0f));
+
+    const BlankingTiming fine = image.capture(doubled, 50.0f, AxisVertical);
+    CHECK(fine.start() - fine.stop() == 513);
+
+    image.clampToLine(single, 50.0f, AxisVertical);
+    const BlankingTiming coarse = image.capture(single, 50.0f, AxisVertical);
+    CHECK(coarse.start() - coarse.stop() == 255);
+
+    image.clampToLine(doubled, 50.0f, AxisVertical);
+    const BlankingTiming back = image.capture(doubled, 50.0f, AxisVertical);
+    CHECK(back.start() - back.stop() == 513);
+}

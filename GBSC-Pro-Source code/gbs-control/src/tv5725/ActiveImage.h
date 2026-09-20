@@ -61,17 +61,26 @@ public:
     // own bounds are clampToLine()'s.
     void narrowTo(const Axis &axis, float extent);
 
-    // Bring the framing back to what the line can actually realise. capture()
-    // clamps the WINDOW, and a framing left beyond anything reachable kills the
-    // control in that direction -- see VideoPath::readCapture().
+    // Seed an axis nobody has framed yet, and bring a framed one back where
+    // this line cannot realise it -- a framing left beyond anything reachable
+    // kills the control in that direction, see VideoPath::readCapture().
+    //
+    // A framing the line CAN realise is left exactly as the user set it. Writing
+    // the placement back unconditionally re-quantises the proportion onto
+    // whatever grid this line happens to offer, and the capture grid halves
+    // when the line doubler goes off, so a trip through a short output used to
+    // cost a unit that the fine grid could never express again.
+    // docs/investigations/a-coarse-capture-grid-must-not-rewrite-the-framing.md
     void clampToLine(const VideoSourceLine &line, const SourceTiming &timing,
                      const Axis &axis);
 
 private:
     // The width and start this lands on, before either becomes a register.
     // capture() and clampToLine() both take it from here, so they cannot
-    // disagree: one unit apart is a dead zone one press wide.
-    struct Placement { long width, start; };
+    // disagree: one unit apart is a dead zone one press wide. `clamped` says a
+    // bound moved it off what the framing asked for, which is the only reason
+    // to overwrite a framing the user set.
+    struct Placement { long width, start; bool clamped; };
     Placement place(const VideoSourceLine &line, const SourceTiming &timing,
                     const Axis &axis) const;
 

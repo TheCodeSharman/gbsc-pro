@@ -37,14 +37,16 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
     uint16_t usable = line.capturable();
     long width, start;
 
+    long wanted;
     if (framing_.tunedOn(axis) && usable > 0) {
-        width = clampWidth(lrintf(framing_.extentOn(axis) * (float)usable), line);
+        wanted = lrintf(framing_.extentOn(axis) * (float)usable);
+        width = clampWidth(wanted, line);
         start = (long)line.firstCapture()
               + lrintf(framing_.originOn(axis) * (float)usable);
     } else {
         // Nothing has framed this axis yet, so the computed default stands in
         // until the first solve seeds it. clampToLine() is where that happens.
-        width = clampWidth((long)defaultWidth(line, timing, axis), line);
+        wanted = width = clampWidth((long)defaultWidth(line, timing, axis), line);
         const float from = timing.published() ? timing.activeStart(axis)
                                               : axis.activeStart();
         // The standard states that position in ITS line. This one is counted
@@ -53,12 +55,13 @@ ActiveImage::Placement ActiveImage::place(const VideoSourceLine &line,
         start = line.videoAt(from);
     }
 
+    const long asked = start;
     if (start < (long)line.firstCapture())
         start = line.firstCapture();
     if (start > (long)line.lastCapture() - width)
         start = (long)line.lastCapture() - width;
 
-    Placement placed = {width, start};
+    Placement placed = {width, start, width != wanted || start != asked};
     return placed;
 }
 
@@ -94,9 +97,13 @@ void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &t
         return;
 
     // Seeds an axis nobody has framed yet from the default it just placed, and
-    // brings a framed one back to what this line can realise. Both are the same
-    // write, because the placement is the answer either way.
+    // brings a framed one back only where a bound moved it. A framing this line
+    // can realise is the user's and is left alone: rewriting it here puts it on
+    // whichever grid the line offers, and that grid halves with the line
+    // doubler.
     Placement placed = place(line, timing, axis);
+    if (framing_.tunedOn(axis) && !placed.clamped)
+        return;
     framing_.seedOn(axis,
                     (float)(placed.start - (long)line.firstCapture()) / (float)usable,
                     (float)placed.width / (float)usable);
