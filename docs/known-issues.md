@@ -1370,7 +1370,7 @@ entries resolve the raster match in time is open.
 `VideoPath::setOutputMode()` returns early where `modePending_` is already set,
 so the output is stored and no divider is derived. The pending solve then runs
 `installSampling()` through the MEASURED path, whose tolerance forgives two
-dividers within 5% -- and 480p's 1880 against 576p's 1954 is 3.9%. The exact
+dividers within 5% -- and 480p's 1876 against 576p's 1952 is 4.1%. The exact
 comparison that makes a deliberate output change take effect is on the
 `SamplingFollowsOutput` path, which this route does not reach.
 
