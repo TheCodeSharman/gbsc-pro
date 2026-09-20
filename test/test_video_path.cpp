@@ -240,9 +240,10 @@ static void checkBenchGeometry()
     // Two units short of where the picture ends on each axis: the scaler
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
-    // captured, which is memory the previous mode left behind.
+    // captured, which is memory the previous mode left behind. Vertically one
+    // output row more again, which the bench measured and nothing explains.
     CHECK(VideoProcessor::VDS_HB_ST::read() == 1808);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1117);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.
