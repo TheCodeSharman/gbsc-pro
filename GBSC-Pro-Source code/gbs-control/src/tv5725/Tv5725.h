@@ -316,20 +316,21 @@ public:
                                                                       // [datasheet: DEINT_STATUS_[7]]
 
 
-    typedef UReg<0x00, 0x16, 0, 8> STATUS_16;                         // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    // s0_16 is SYNC PROC STATUS 00: these four bits and nothing else, 7-4 being
+    // reserved. Tie them where a decision needs more than one, so the pair
+    // describes one instant without a byte-wide read to mask.
+    typedef UReg<0x00, 0x16, 0, 1> STATUS_SYNC_PROC_HSPOL;            // HS polarity. When =0, input H-sync is low active;
+                                                                      // when =1, high active [datasheet: SYNC_PROC_STATUS_[0]]
 
-    typedef UReg<0x00, 0x16, 0, 1> STATUS_SYNC_PROC_HSPOL;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    // Presence, not the sync level, which the bare datasheet wording does not
+    // settle. docs/tv5725-chip.md
+    typedef UReg<0x00, 0x16, 1, 1> STATUS_SYNC_PROC_HSACT;            // HS active [datasheet: SYNC_PROC_STATUS_[1]]
 
-    typedef UReg<0x00, 0x16, 1, 1> STATUS_SYNC_PROC_HSACT;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    typedef UReg<0x00, 0x16, 2, 1> STATUS_SYNC_PROC_VSPOL;            // VS polarity. When =0, input V-sync is low active;
+                                                                      // when =1, high active [datasheet: SYNC_PROC_STATUS_[2]]
 
-    typedef UReg<0x00, 0x16, 2, 1> STATUS_SYNC_PROC_VSPOL;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
-
-    typedef UReg<0x00, 0x16, 3, 1> STATUS_SYNC_PROC_VSACT;            // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
-                                                                      // one 56-bit block at s0_16 rather than field by field.
+    // Presence, not level, for the reason HSACT above is. docs/tv5725-chip.md
+    typedef UReg<0x00, 0x16, 3, 1> STATUS_SYNC_PROC_VSACT;            // VS active [datasheet: SYNC_PROC_STATUS_[3]]
 
 
     typedef UReg<0x00, 0x17, 0, 12> STATUS_SYNC_PROC_HTOTAL;          // Part of SYNC_PROC_STATUS_, which RD-5725-1.1 documents as
@@ -356,27 +357,18 @@ public:
     typedef UReg<0x00, 0x23, 0, 8> CRC_REGOUT_PB_;                    // Reserved
 
 
-    typedef UReg<0x00, 0x2E, 0, 16> TEST_BUS;                         // Part of TEST_BUS_, which RD-5725-1.1 documents as one
-                                                                      // 24-bit block at s0_2E rather than field by field.
-
-    typedef UReg<0x00, 0x2E, 0, 8> TEST_BUS_2E;
 
 
-    typedef UReg<0x00, 0x2F, 0, 8> TEST_BUS_2F;                       // Part of TEST_BUS_, which RD-5725-1.1 documents as one
-                                                                      // 24-bit block at s0_2E rather than field by field.
+
 
 // INPUT FORMATTER REGISTERS
 
 
-    typedef UReg<0x01, 0x02, 0, 8> INPUT_FORMATTER_02;
 
 
 
 
 
-    typedef UReg<0x01, 0x2C, 0, 1> GBS_OPTION_SCANLINES_ENABLED;
-
-    typedef UReg<0x01, 0x2C, 1, 1> GBS_OPTION_SCALING_RGBHV;
 
 
 
@@ -433,15 +425,11 @@ public:
     typedef UReg<0x00, 0x45, 6, 2> CKT_FF_CNTRL;                      // CKT used to control FIFO
 
 
-    typedef UReg<0x00, 0x46, 0, 8> RESET_CONTROL_0x46;
 
 
-    typedef UReg<0x00, 0x47, 0, 8> RESET_CONTROL_0x47;
 
 
-    typedef UReg<0x00, 0x4D, 0, 5> TEST_BUS_SEL;                      // Test bus selection Test bus enable
 
-    typedef UReg<0x00, 0x4D, 5, 1> TEST_BUS_EN;                       // When = 0, disable test bus output
 
 
     typedef UReg<0x00, 0x4E, 0, 1> DIGOUT_BYPS2PAD;                   // HD bypass channel to digital output control When = 0,
@@ -681,7 +669,6 @@ public:
                                                                       // by horizontal sync, else write enable is not used
 
 
-    typedef UReg<0x05, 0x1F, 0, 8> DEC_5_1F;
 
                                                                       // space convert module bypass
 
@@ -699,7 +686,6 @@ public:
     typedef UReg<0x05, 0x62, 0, 8> ADC_UNUSED_62;
 
 
-    typedef UReg<0x05, 0x63, 0, 8> TEST_BUS_SP_SEL;
 
 
     typedef UReg<0x05, 0x64, 0, 8> ADC_UNUSED_64;
@@ -713,59 +699,6 @@ public:
 
     typedef UReg<0x05, 0x67, 0, 16> ADC_UNUSED_67;
 
-
-    typedef UReg<0x05, 0x69, 0, 8> ADC_UNUSED_69;
-
-
-    static const uint8_t OSD_ZOOM_1X = 0;
-    static const uint8_t OSD_ZOOM_2X = 1;
-    static const uint8_t OSD_ZOOM_3X = 2;
-    static const uint8_t OSD_ZOOM_4X = 3;
-    static const uint8_t OSD_ZOOM_5X = 4;
-    static const uint8_t OSD_ZOOM_6X = 5;
-    static const uint8_t OSD_ZOOM_7X = 6;
-    static const uint8_t OSD_ZOOM_8X = 7;
-
-    static const uint8_t OSD_MENU_DISP_STYLE_VERTICAL = 0;
-    static const uint8_t OSD_MENU_DISP_STYLE_HORIZONTAL = 1;
-
-    static const uint8_t OSD_ICON_NONE = 0;
-    static const uint8_t OSD_ICON_BRIGHTNESS = 1;
-    static const uint8_t OSD_ICON_CONTRAST = 2;
-    static const uint8_t OSD_ICON_HUE = 3;
-    static const uint8_t OSD_ICON_SOUND = 4;
-    static const uint8_t OSD_ICON_UP_DOWN = 8;
-    static const uint8_t OSD_ICON_LEFT_RIGHT = 9;
-    static const uint8_t OSD_ICON_VERTICAL_SIZE = 10;
-    static const uint8_t OSD_ICON_HORIZONTAL_SIZE = 11;
-    static const uint8_t OSD_ICON_COUNT = 8;
-
-    static inline uint8_t osdIcon(uint8_t index)
-    {
-        static const uint8_t osdIcons[8] = {
-            OSD_ICON_BRIGHTNESS,
-            OSD_ICON_CONTRAST,
-            OSD_ICON_HUE,
-            OSD_ICON_SOUND,
-            OSD_ICON_UP_DOWN,
-            OSD_ICON_LEFT_RIGHT,
-            OSD_ICON_VERTICAL_SIZE,
-            OSD_ICON_HORIZONTAL_SIZE,
-        };
-        return osdIcons[index];
-    }
-
-    static const uint8_t OSD_COLOR_BLACK = 0;
-    static const uint8_t OSD_COLOR_BLUE = 1;
-    static const uint8_t OSD_COLOR_GREEN = 2;
-    static const uint8_t OSD_COLOR_CYAN = 3;
-    static const uint8_t OSD_COLOR_RED = 4;
-    static const uint8_t OSD_COLOR_MAGENTA = 5;
-    static const uint8_t OSD_COLOR_YELLOW = 6;
-    static const uint8_t OSD_COLOR_WHITE = 7;
-
-    static const uint8_t OSD_FORMAT_YCBCR = 1;
-    static const uint8_t OSD_FORMAT_RGB = 0;
 };
 
 } // namespace Tv5725

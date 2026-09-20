@@ -3,11 +3,6 @@
 
 #include "Tv5725.h"
 
-// Declared here and defined outside this layer, which can reach neither: the
-// ADC PLL's rate is counted off the debug pin through FrameSync at the ESP's
-// clock. It costs a bus-select save and restore plus 200 us a sample.
-uint32_t getPllRate();
-
 namespace Tv5725 {
 
 // The ADC and its PLL: power, trim, test paths and the auto-offset that is
@@ -42,7 +37,6 @@ public:
 
     typedef UReg<0x05, 0x02, 0, 1> ADC_SOGEN;                         // ADC SOG enable When = 0, ADC disable SOG mode
 
-    typedef UReg<0x05, 0x02, 1, 5> ADC_SOGCTRL;                       // When = 1, ADC enable SOG mode SOG control signal ADC
                                                                       // input selection When = 00, R0/G0/B0/SOG0 as input
 
     typedef UReg<0x05, 0x02, 6, 2> ADC_INPUT_SEL;                     // When = 01, R1/G1/B1/SOG1 as input When = 10, R2/G2/B2 as
@@ -210,7 +204,19 @@ public:
     // because the mux is written LAST of the three registers an input choice
     // decides: the sync path is configured before the input is connected to it.
     static void selectInput(uint8_t inputSel);
+
+    // Move to the other of the two RGB inputs and report the one that was in
+    // force, so a caller that does not lock on the new one can put it back. The
+    // escalation a source that will not lock reaches last, where the guess left
+    // is that it is arriving on the other pins.
+    static uint8_t selectOtherInput();
     static void enableSyncOnGreen(uint8_t enable);
+
+    // Whether the selected input carries luma and chroma on separate pins, so
+    // the capture path has to realign them. Answered from what selectInput()
+    // wrote, never read back: a register is where a value is written to, not
+    // where it is kept.
+    static bool inputIsComponent();
 
     static void init();
 
@@ -219,6 +225,91 @@ public:
     // over a 1 loads nothing.
     static void latch();
 
+    // Reset the VCO under the group and reload it afterwards. Applying the
+    // group alone leaves the PLL unlocked at the value written, measured even
+    // where that is the value it already held -- and an unlocked ADC PLL leaves
+    // the sync processor counting nothing, because it counts in ADC clocks.
+    // ../../../docs/investigations/the-ladder-never-restarts-the-adc-pll.md
+    static void restartPll();
+
+    // The widest phase the five-bit field carries.
+    static const uint8_t PhaseMax = 31;
+
+    // Where in the ADC clock the sample is taken, in 32 steps. Two adjusters,
+    // and they are not interchangeable: PA_ADC moves the sample, PA_SP moves
+    // what the sync processor retimes against.
+    //
+    // Each is LATCHED, so the value only reaches the adjuster on a rising edge
+    // of its own latch bit -- the same trap PLLAD_MD has, and the reason these
+    // are one operation rather than a write the caller follows with a latch.
+    //
+    // A phase past the field is refused rather than truncated: masking 32 in
+    // puts 0 there, which is a phase nobody chose.
+    static void applyPhaseSyncProcessor(uint8_t phase);
+    static void applyPhaseAdc(uint8_t phase);
+
+    // The phase in force for each adjuster, HELD. Nothing reads it back: the
+    // value is one this class chose, and PA_ADC_S reports it only once its own
+    // latch has loaded it. docs/video-source-acquisition.md
+    static void choosePhaseSyncProcessor(uint8_t phase);
+    static void choosePhaseAdc(uint8_t phase);
+    static uint8_t phaseSyncProcessor();
+    static uint8_t phaseAdc();
+
+    // Both, in one call, because a caller that moves one usually moves the
+    // other and the two latches are separate edges.
+    static void applyPhases();
+
+    // One step round the ADC's field, for a caller walking it by hand.
+    static void nudgePhaseAdc();
+
+    // Choose both phases for the source now arriving, and put them in force.
+    // False means nothing was worth choosing and neither phase moved.
+    //
+    // `sweep` is whether the sync separator is delivering edges clean enough
+    // for the search to mean anything; a starved one makes every score noise,
+    // and the mid of the field is then the whole of the answer.
+    //
+    // The ADC's phase follows the oversampling alone, at every exit. Only the
+    // sync processor's is searched.
+    //
+    // `lineSamples` is the sync processor's count per line and `feedWatchdog`
+    // is the platform's. Both are handed IN: the count is another block's
+    // register, and a file here reaching for ESP.wdtFeed() is a design signal
+    // rather than a dependency to admit. docs/video-source-acquisition.md
+    static bool acquirePhase(uint8_t oversample, bool sweep,
+                             uint16_t (*lineSamples)(),
+                             void (*feedWatchdog)());
+
+    // Whether the search above found a phase worth having. Recorded by
+    // acquirePhase() rather than by its caller: the answer is about the two
+    // adjusters this class owns, and a second copy of it goes stale the moment
+    // anything reloads them.
+    static bool phaseFound();
+
+    // A different source, or a load that moved the sampling: whatever was found
+    // was found against something else.
+    static void forgetPhase();
+
+    // Take both adjusters through their bypass and back, which is what makes a
+    // newly latched phase take effect.
+    static void restartPhaseAdjusters();
+
+    // Take the ADC's input away and give it back, so the input formatter
+    // re-acquires the line. The one action measured to clear a railed
+    // HPERIOD_IF without touching the source -- 0/16 correct before, 16/16 at
+    // the value the mode is due after, twice.
+    //
+    // **IT ALSO CAUSES THE FAULT**, railing a mode that had read correctly six
+    // times beforehand. It is a recovery for a counter already known bad, never
+    // something to run in front of a measurement.
+    // docs/investigations/hperiod-if-railing.md
+    static void bounceInput();
+
+    // How long the input stays away. Shorter has not been tried; 400 ms is what
+    // the clearance was measured at.
+    static const uint16_t BounceMs = 400;
+
     // The divider and the latch that loads it. Separating them leaves the PLL
     // running the old value with every register reading back correct.
     // The VCO post divider for a CKO frequency, off RD-5725-1.1's own crossover
@@ -226,10 +317,37 @@ public:
     // the oversampled rate the ADC then runs at.
     static uint8_t postDividerFor(uint32_t ckoHz);
 
+    // The VCO gain PLLAD_FS selects, for a VCO frequency. RD-5725-1.1 calls the
+    // bit "0 default, 1 high gain" and gives no band for it, so this is
+    // measured rather than derived: swept at 800x600@60, the PLL locks with
+    // gain 0 up to 136 MHz and fails by 144, and with gain 1 down to 121 MHz
+    // and fails by 106. The threshold sits in that overlap.
+    //
+    // **IT FOLLOWS THE VCO, NOT CKO AND NOT THE DIVIDER.** 143.9 MHz was
+    // reached at two different post dividers -- CKO 72.0 MHz over 2 and 36.0
+    // MHz over 4 -- and both need gain 1.
+    // ../../../docs/investigations/the-vco-gain-follows-the-vco.md
+    static uint8_t vcoGainFor(uint32_t vcoHz);
+
+    static const uint32_t HighVcoGainAboveHz = 130000000;
+
     // The oversampling that post divider can carry. Each doubling takes an
     // output tap one step faster, and there is none above the top, so a ratio
     // the clock cannot give comes back reduced.
     static uint8_t oversampleFor(uint8_t postDivider, uint8_t wanted);
+
+    // Ask for this and get the most the clock can carry, which is 2^postDivider
+    // -- oversampleFor() halves whatever it cannot reach, and RD-5725-1.1's
+    // crossover table has no row below /8, so 8 always lands on the maximum.
+    //
+    // **MORE IS BETTER AND IT IS FREE.** The tap is faster and the decimators
+    // undo it, so the same PLLAD_MD samples a line reach the pipeline either
+    // way, and the decimators FILTER: measured at 1600x600@60 passed through,
+    // doubling the ratio cuts the alias beat on the PM5544 wedge by 17 to 41%
+    // on the blocks where the scaler's sampling is the limit, and changes
+    // nothing on the blocks where the panel is.
+    // ../../../docs/investigations/the-decimators-filter.md
+    static const uint8_t OversampleAsClockAllows = 8;
 
     // The clock tap and the decimators, against a post divider the caller
     // holds. Returns the oversampling actually installed. The latch is not
@@ -248,15 +366,92 @@ public:
     static uint8_t applySampleRate(uint16_t divider, uint32_t lineRateHz,
                                    uint8_t oversample);
 
-    // The ADC as RGBHV bypass wants it: no internal filtering, the PLL's charge
-    // pump and VCO gain, and a divider sized for the bypassed line rather than
-    // for a capture window.
+    // DS-5725-3.2, front page: "Maximum analog sampling rate up to 162MSPS".
+    static const uint32_t MaxSampleRateHz = 162000000u;
+
+    // PLLAD_MD is twelve bits.
+    static const uint16_t DividerMax = 4095;
+
+    // What the ADC is actually asked to do, in samples per second.
+    static uint32_t sampleRateHz(uint16_t divider, uint32_t lineRateHz,
+                                 uint8_t oversample);
+
+    static bool withinLimit(uint16_t divider, uint32_t lineRateHz,
+                            uint8_t oversample);
+
+    // The largest divider this line rate can carry AT THIS OVERSAMPLING, or 0
+    // if none can -- which is a case the caller must handle rather than a value
+    // it can use. A line rate of 0 (no lock) is also 0.
+    static uint16_t maxDivider(uint32_t lineRateHz, uint8_t oversample);
+
+    // The highest CKO whose crossover row still installs `oversample`. Above it
+    // the row halves the ratio instead, so density and oversampling exchange at
+    // a rate this fixes -- each row ceiling is half the one above it, and every
+    // row therefore tops out at the same conversion rate.
+    static uint32_t maxCkoFor(uint8_t oversample);
+
+    // The oversampling the ADC is actually running, which is the request
+    // reduced to whatever the crossover row can carry. **A CALLER HOLDING THE
+    // REQUEST HOLDS A DIFFERENT NUMBER**: the engine asks for
+    // OversampleAsClockAllows on every source, and the answer is 1, 2 or 4.
+    static uint8_t oversampleInForce();
+
+    // THE CLOCK THE CHIP IS RESET INTO, and the one every measurement starts
+    // from. Every divider the engine installs is sized from a measured line
+    // rate, and the source cannot be measured until the ADC is clocking -- so
+    // the reset state has to be a clock that can be measured through, or
+    // nothing is ever able to measure its way out of it.
     //
-    // The divider written here is LOADED BY A LATER RISING EDGE ON PLLAD_LAT,
-    // not by this write. Anything moving this call must keep it before the
-    // latch that follows it, or the register reads the new divider while the
-    // PLL still clocks at the old one -- a solid green screen with every
-    // register self-consistent. SourceMeasurement.h
+    // The pair is a MEASURED WORKING POINT rather than a nominal one: 2506 at
+    // 15625 Hz is CKO 39.2 MHz, which the crossover table puts on post divider
+    // 2 and so a VCO of 156.6 MHz on high gain -- the state the bench unit
+    // locks in. A lower divider would be arithmetically tidier and lands the
+    // VCO at 112 MHz on low gain, where nothing has measured whether the PLL
+    // holds.
+    //
+    // The rate is the LOWEST line the part is expected to carry, so that every
+    // faster source needs the PLL to divide rather than multiply: asked for a
+    // frequency under its lock range it locks to every kth hsync, and
+    // measureSourceLinesCorrected() recovers k up to LinesPerCountMax -- which
+    // reaches 62.5 kHz. Above that the first count is not the source's and the
+    // recovery ladder is what answers.
+    // ../../../docs/investigations/the-reference-divider-was-the-bootstrap.md
+    static const uint16_t BringUpDivider = 2506;
+    static const uint32_t BringUpLineRateHz = 15625;
+
+    // The divider alone, latched. NOT the crossover row -- applySampleRate() is
+    // what writes the group, and a caller here is holding the rest itself.
+    static void applyDivider(uint16_t divider);
+
+    // The ADC PLL as the chip reset leaves it: no charge pump, the low VCO
+    // gain, and the parked divider. The pulse on VCORST/PDZ that follows is the
+    // caller's -- this is the state it latches. Leaves no divider in force,
+    // because a PLL held in reset is running none.
+    static void applyResetParameters();
+
+    // Whether the PLL is running the divider in force, against the sync
+    // processor's line total -- which counts in ADC clocks and so reports the
+    // LATCHED divider, the one witness on the board that a write reached the
+    // PLL. The count is passed in because measuring the source is not the ADC's
+    // job. ../../../docs/tv5725-chip.md
+    static bool dividerLatched(uint16_t lineSamples,
+                               uint16_t tolerance = LatchedSamplesTolerance);
+
+    // How far the sync processor's count may sit from the divider and still be
+    // the same quantity. The register wobbles by a sample either way when
+    // locked.
+    static const uint16_t LatchedSamplesTolerance = 2;
+
+    // The divider PLLAD_MD is holding. Reading the register back cannot answer
+    // this: PLLAD_LAT loads it on a rising edge, so between a write and that
+    // edge the register reports the new value while the PLL still runs the old
+    // one. ../../../docs/investigations/hperiod-if-railing.md
+    static uint16_t dividerInForce();
+
+    // The ADC as pass-through wants it: no internal filtering. NOT the divider,
+    // NOT the VCO gain and NOT the charge pump -- HdBypass::dividerFor() answers
+    // the first against the line rate, and applySampleRate() owns the rest of
+    // the group the latch loads.
     static void applyForBypassRgbhv();
 
     // The analog gain and offset, a triple at a time. Six registers that no
@@ -271,6 +466,13 @@ public:
 private:
     // How many taps above the post divider a ratio asks for: one per doubling.
     static uint8_t stepsFor(uint8_t oversample);
+
+    static uint8_t phaseSyncProcessor_;
+    static uint8_t phaseAdc_;
+    static uint8_t inputSel_;
+    static uint8_t oversampleInForce_;
+    static uint16_t dividerInForce_;
+    static bool phaseFound_;
 
 };
 

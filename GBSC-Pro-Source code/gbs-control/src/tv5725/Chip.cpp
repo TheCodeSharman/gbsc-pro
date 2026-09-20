@@ -1,10 +1,38 @@
 #include "Chip.h"
 
+#include "DisplayClock.h"
+#include "HdBypass.h"
 #include "MemoryBus.h"
+#include "VideoRoute.h"
 
 #include "../../gbs_types.h"
 
 namespace Tv5725 {
+
+namespace {
+
+// The chain between the input formatter and the scaler.
+void holdMemoryBlocks()
+{
+    Chip::SFTRST_DEINT_RSTZ::write(0);
+    Chip::SFTRST_MEM_FF_RSTZ::write(0);
+    Chip::SFTRST_MEM_RSTZ::write(0);
+    Chip::SFTRST_FIFO_RSTZ::write(0);
+    Chip::SFTRST_OSD_RSTZ::write(0);
+}
+
+void releaseVideoBlocks()
+{
+    Chip::SFTRST_IF_RSTZ::write(1);
+    Chip::SFTRST_DEINT_RSTZ::write(1);
+    Chip::SFTRST_MEM_FF_RSTZ::write(1);
+    Chip::SFTRST_MEM_RSTZ::write(1);
+    Chip::SFTRST_FIFO_RSTZ::write(1);
+    Chip::SFTRST_OSD_RSTZ::write(1);
+    Chip::SFTRST_VDS_RSTZ::write(1);
+}
+
+}  // namespace
 
 void Chip::outputDown()
 {
@@ -18,19 +46,24 @@ void Chip::outputUp()
     PAD_SYNC_OUT_ENZ::write(0);
 }
 
-void Chip::enterBypassRgbhv()
+void Chip::dacsFollowInput()
+{
+    DAC_RGBS_R0ENZ::write(1);
+    DAC_RGBS_G0ENZ::write(1);
+    DAC_RGBS_B0ENZ::write(1);
+}
+
+void Chip::enterHdBypass()
 {
     GBS::PLL_CKIS::write(0);
     GBS::PLL_DIVBY2Z::write(0);
-    GBS::PLL_ADS::write(0);
     MemoryBus::useFeedbackClock();
     PAD_TRI_ENZ::write(1);
-    GBS::PLL648_CONTROL_01::write(0x35);
+    GBS::PLL648_CONTROL_01::write(DisplayClock::HdBypassSeed);
     GBS::PLL648_CONTROL_03::write(0x00);
     GBS::PLL_LEN::write(1);
 
-    DAC_RGBS_BYPS2DAC::write(0);
-    DAC_RGBS_ADC2DAC::write(1);
+    routeToHdBypass();
     OUT_SYNC_SEL::write(1);
 }
 
@@ -38,6 +71,8 @@ void Chip::routeToHdBypass()
 {
     DAC_RGBS_ADC2DAC::write(0);
     DAC_RGBS_BYPS2DAC::write(1);
+
+    VideoRoute::toHdBypassChannel();
 }
 
 void Chip::routeToScaler()
@@ -45,6 +80,43 @@ void Chip::routeToScaler()
     DAC_RGBS_BYPS2DAC::write(0x0);
     DAC_RGBS_ADC2DAC::write(0x0);
     OUT_SYNC_SEL::write(0x0);
+
+    VideoRoute::toScaler();
+}
+
+void Chip::resetVideoBlocks()
+{
+    const bool bypassWasRunning = HdBypass::enabled();
+
+    SFTRST_DEC_RSTZ::write(1);
+    SFTRST_MODE_RSTZ::write(1);
+    SFTRST_SYNC_RSTZ::write(1);
+    HdBypass::hold();
+    SFTRST_INT_RSTZ::write(1);
+
+    if (VideoRoute::isHdBypassChannel()) {
+        // The input formatter stays released. It is the only block that puts a
+        // vertical pulse on the test bus, and the field rate is timed off that
+        // pulse -- so held, a passed-through source cannot be measured and the
+        // decision to keep passing it through can never be re-answered.
+        // docs/investigations/pass-through-holds-the-only-field-rate-instrument.md
+        holdMemoryBlocks();
+        SFTRST_VDS_RSTZ::write(0);
+        HdBypass::release();
+        return;
+    }
+
+    // Only the chain BETWEEN the two ends restarts. The input formatter feeds
+    // it and the scaler reads it, and both are configured by the time this
+    // runs, so holding either as well is a reset pulse of a working block.
+    SFTRST_IF_RSTZ::write(1);
+    holdMemoryBlocks();
+    SFTRST_VDS_RSTZ::write(1);
+
+    if (bypassWasRunning)
+        HdBypass::release();
+
+    releaseVideoBlocks();
 }
 
 void Chip::init()
@@ -54,10 +126,9 @@ void Chip::init()
     // The parts that do not change with the clock chosen; the rest is
     // Tv5725::DisplayClock's. PLL_ADS = 1 takes the input clock from the crystal
     // rather than the digital video input port, which this board does not drive.
-    // Nothing on the scaling path clears PLL_VCORST -- setResetParameters() and
-    // runSyncWatcher() both assert it and the preset table was the only thing
-    // that put it back, so held it means no output clock, no picture, and every
-    // register reading correct.
+    // Nothing on the scaling path clears PLL_VCORST -- the reset path asserts it
+    // and the preset table was the only thing that put it back, so held it means
+    // no output clock, no picture, and every register reading correct.
     GBS::PLL_DIVBY2Z::write(0x0);                     // s0_40[1:1]
     GBS::PLL_IS::write(0x1);                          // s0_40[2:2]
     GBS::PLL_ADS::write(0x1);                         // s0_40[3:3]
@@ -119,8 +190,8 @@ void Chip::init()
     // --- what reaches the DACs, and what reaches the digital port ---------
     //
     // All three routes off: the DACs take the scaled video, not the input
-    // register and not the ADC. DAC_RGBS_ADC2DAC = 1 is bypassModeSwitch_RGBHV()
-    // putting the ADC straight on the DACs, and only the table cleared it again.
+    // register and not the ADC. DAC_RGBS_ADC2DAC is retired: no converter sits
+    // in its path, so it can carry RGB and nothing else.
     // DIGOUT_* drive the digital port the pads above have already turned off.
     DAC_RGBS_BYPS_IREG::write(0x0);              // s0_4b[0:0]
     DAC_RGBS_BYPS2DAC::write(0x0);               // s0_4b[1:1]
@@ -157,5 +228,30 @@ void Chip::init()
     GBS::OSD_INT_NG_LAT::write(0x0);                  // s0_94[3:3]
     GBS::OSD_TEST_SEL::write(0x0);                    // s0_94[7:4]
 }
+
+}  // namespace Tv5725
+
+namespace Tv5725 {
+
+namespace {
+
+// Neither 0x00 nor 0xff, so a bus that answers with either says nothing.
+const uint8_t PowerProbe = 0x6a;
+
+bool hasPower_ = false;
+
+}  // namespace
+
+bool Chip::checkPower()
+{
+    Chip::POWER_PROBE_SCRATCH::write(PowerProbe);
+    hasPower_ = Chip::POWER_PROBE_SCRATCH::read() == PowerProbe;
+    Chip::POWER_PROBE_SCRATCH::write(0);
+    return hasPower_;
+}
+
+bool Chip::hasPower() { return hasPower_; }
+
+void Chip::holdPower(bool powered) { hasPower_ = powered; }
 
 }  // namespace Tv5725

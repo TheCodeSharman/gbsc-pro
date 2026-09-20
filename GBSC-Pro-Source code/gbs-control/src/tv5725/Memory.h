@@ -4,13 +4,19 @@
 // The playback stage's burst structure: how much it pulls from SDRAM per
 // request, and where it reads relative to where capture is writing.
 //
-//     PB_FETCH_NUM  = max(FetchFloor, ceil(captureWidth  / RequestsPerLine))
-//     PB_CAP_OFFSET = max(FetchFloor, ceil(lineUnits     / RequestsPerLine))
+//     PB_FETCH_NUM  = ceil(captureWidth / RequestsPerLine)
+//     PB_CAP_OFFSET = ceil(lineUnits    / RequestsPerLine)
 //
 // Deriving the fetch from the capture holds the capture/fetch ratio fixed as
 // the picture zooms, so no framing can walk into a tearing band. The stride
 // takes the WHOLE LINE instead, so it covers the fetch at every framing of it
 // and moves only when the divider does.
+//
+// The ratio is the measured quantity and nothing may clamp it. A constant
+// floor under it holds the VALUE still while the capture keeps falling, which
+// drives the ratio off the bottom of the band -- measured at capture 456,
+// where the rule's 114 is clean and a floor's 150 puts blocks of other content
+// through flat colour. docs/known-issues.md
 // docs/investigations/hscale-tearing-characterisation.md
 
 #include <stdint.h>
@@ -20,12 +26,12 @@ namespace Tv5725 {
 class Memory {
 public:
     // PB_FETCH_NUM and PB_CAP_OFFSET are ten bits each.
-    static const uint16_t FetchMin = 128;
     static const uint16_t FetchMax = 512;
     static const uint16_t OffsetMax = 1023;
 
     // An output raster nobody has swept keeps upstream's value, rather than a
-    // pair tuned for a raster it is not.
+    // pair tuned for a raster it is not. It also answers a capture of zero,
+    // which is a failed read rather than a framing and so has no ratio.
     static const uint16_t DefaultFetch = 256;
 
     // The bench's 1080p output, VDS_HSYNC_RST 1444. Fetch1080p is the anchor
@@ -35,13 +41,10 @@ public:
     static const uint16_t Fetch1080p = 250;
     static const uint16_t Offset1080p = 250;
 
-    // Measured: capture/fetch was clean to 4.04 and tore from 4.28, so 4 sits
-    // on the safe side by about 1%. The one number to tune if this is wrong.
+    // Measured: capture/fetch was clean to 4.04 and tore from 4.28 above, and
+    // 3.56 clean against 3.26 breaking up below, so 4 sits inside the band at
+    // both ends. The one number to tune if this is wrong.
     static const uint16_t RequestsPerLine = 4;
-
-    // capture/4 keeps falling as the zoom goes in, past anything anyone has
-    // run the part at. This stops where the measurement stops.
-    static const uint16_t FetchFloor = 150;
 
     // The burst has to cover the source pixels the line needs, and only the
     // framing knows how many. The output raster is deliberately not a

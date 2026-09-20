@@ -1,6 +1,45 @@
 #include "InputFormatter.h"
 
+#include "../../gbs_types.h"
+
 namespace Tv5725 {
+
+const uint16_t InputFormatter::LineCounterMax;
+const uint16_t InputFormatter::DoubleBelowLines;
+const uint16_t InputFormatter::DoubledTailBlanking;
+
+uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
+{
+    return lineDoubled ? (uint16_t)(divider / 2) : divider;
+}
+
+uint16_t InputFormatter::verticalPeriod()
+{
+    if (!GBS::STATUS_IF_VT_OK::read())
+        return 0;
+    return GBS::VPERIOD_IF::read();
+}
+
+uint16_t InputFormatter::linePeriod()
+{
+    return GBS::HPERIOD_IF::read();
+}
+
+
+bool InputFormatter::shouldDoubleLine(uint16_t sourceLines,
+                                      uint16_t showableUnits)
+{
+    if (sourceLines == 0)
+        return true;
+    if (sourceLines >= DoubleBelowLines)
+        return false;
+    if (showableUnits == 0)
+        return true;
+
+    // The IF counts half-lines with the doubler in, so the doubled frame asks
+    // for twice the source's own count.
+    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits;
+}
 
 void InputFormatter::init()
 {
@@ -54,7 +93,7 @@ void InputFormatter::init()
 
     // Horizontal blanking set 0. The IF module has three sets -- 0 at
     // s1_10/s1_12, 1 at s1_14/s1_16, 2 at s1_18/s1_1a -- with no selector
-    // documented between them; Geometry::write() owns set 2, the capture window
+    // documented between them; VideoPath::write() owns set 2, the capture window
     // and the one that demonstrably moves the picture. Set 1 is deliberately
     // absent, measured inert and asserted absent by test_bringup.cpp
     // (docs/investigations/preset-abandonment-audit.md). Set 0 has not had that
@@ -62,13 +101,13 @@ void InputFormatter::init()
     IF_HB_ST::write(2);                          // s1_10[10:0]
     IF_HB_SP::write(72);                         // s1_12[10:0]
 
-    // The scale-down path's blanking stop, the one field of the six with no
-    // constant across the ten scaling tables (136..272) and no derivation, so
-    // this is inherited rather than computed.
-    IF_HBIN_SP::write(272);                      // s1_26[11:0]
+    // applyLineDoubling() owns this from here on; what it needs before the first
+    // scan mode is decided is a value that is not 0, which blanks the whole line.
+    IF_HBIN_SP::write(LineDoubleReset);          // s1_26[11:0]
 
-    // Its start, which only the progressive standards write, so without a value
-    // here a source leaving one of them keeps theirs.
+    // Its start. applyLineDoubling() owns this from here on too; what it needs
+    // before the first scan mode is decided is a defined value, because the
+    // part keeps its registers across an ESP reset.
     IF_HBIN_ST::write(0);                        // s1_24[11:0]
 
     IF_SEL_ADC_SYNC::write(0x1);                 // s1_28[2:2]
@@ -111,14 +150,19 @@ void InputFormatter::applyVerticalTiming(VerticalTiming timing)
     IF_VS_FLIP::write(1);
 }
 
-void InputFormatter::applyScanMode(ScanMode mode)
+void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
 {
-    const bool progressive = mode == Progressive;
+    const bool progressive = !lineDoubled;
 
     IF_HS_DEC_FACTOR::write(progressive ? 0 : 1);
     IF_LD_SEL_PROV::write(progressive ? 1 : 0);
     IF_PRGRSV_CNTRL::write(progressive ? 1 : 0);
     IF_LD_RAM_BYPS::write(progressive ? 1 : 0);
+    IF_SEL_WEN::write(progressive ? 1 : 0);
+    IF_HS_SEL_LPF::write(progressive ? 0 : 1);
+    IF_HS_Y_PDELAY::write(!progressive && component ? 2 : 3);
+    IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
+    IF_HBIN_ST::write(progressive ? 0 : DoubledTailBlanking);
 }
 
 }  // namespace Tv5725

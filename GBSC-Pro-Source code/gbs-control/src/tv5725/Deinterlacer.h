@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#include "SourceMeasurement.h"
+
 namespace Tv5725 {
 
 // The motion-adaptive deinterlacer and the diagonal bob before it: the whole of
@@ -476,6 +478,136 @@ public:
 
     // Every static register of this subsystem, in address order.
     static void init();
+
+    // Scanlines: the chroma and luma motion-interpolation stages made to drop
+    // alternate lines instead of filling them, at `strength`.
+    //
+    // It needs the deinterlacer RAM out of bypass to have a field to drop from,
+    // and two registers outside this block -- the frame buffer's line flip and
+    // the video processor's white level expansion, reached through their own
+    // typedefs so the addresses stay with their owners.
+    //
+    // Turning it off does NOT clear RFF_YUV_DEINTERLACE. The motion-adaptive
+    // path owns that value and clearing it here would take that path's setting
+    // with it.
+    // Both are idempotent: applied twice, the second call writes nothing.
+    static void enableScanlines(uint8_t strength);
+    static void disableScanlines();
+
+    // Whether those stages are in force. State rather than a register: the chip
+    // has no bit for it, and a copy kept in an undocumented one was cleared by
+    // a preset load behind the second copy's back, so the two guards disagreed
+    // after every load.
+    static bool scanlinesApplied();
+
+    // A preset load rewrote these stages, so whatever was applied is gone. It
+    // writes nothing: the registers are already the load's.
+    static void forgetScanlines();
+
+    // Move the strength of the scanlines already in force, which is the only
+    // part of them a user control changes on its own. Nothing is written when
+    // none are applied.
+    static void applyScanlineStrength(uint8_t strength);
+
+    // How long the buffer is given to fill before the deinterlacer is pointed
+    // at it.
+    static const uint8_t SettleMs = 60;
+
+    // No vertical tap to write. MADPT_VTAP2_COEFF is four bits, so this is
+    // outside the field and cannot be mistaken for one.
+    static const uint8_t KeepVerticalTap = 0xff;
+
+    // The vertical tap the motion-adaptive path runs at for that period: the
+    // two broadcast totals want different coefficients, and a period naming
+    // neither keeps whatever is in force.
+    static uint8_t verticalTapFor(uint16_t verticalPeriod);
+
+    // The motion-adaptive path: two fields in flight, so the frame buffer
+    // fetches a line ahead and the write side is told not to invert its start.
+    //
+    // `releaseCapture` is the caller's unfreeze, injected because the ORDER is
+    // the constraint: the buffer has to be filling before MAPDT_VT_SEL_PRGV is
+    // cleared, or the deinterlacer is shown a buffer nothing is writing.
+    //
+    // `verticalTap` is the motion index's vertical filter coefficient, which
+    // upstream sets for two source standards and for nothing else. A caller
+    // that cannot name one passes KeepVerticalTap rather than having a default
+    // chosen for it.
+    static void enableMotionAdapt(uint8_t verticalTap, void (*releaseCapture)());
+    static void disableMotionAdapt();
+
+    // The block's share of the 422/444 conversion delays, beside
+    // InputFormatter::applyLineDoubling() and VideoProcessor::applyLineDoubling().
+    static void applyLineDoubling(bool lineDoubled);
+
+    // Whether the motion-adaptive path is running, owned here because this is
+    // what writes the registers that make it so. A caller keeping its own copy
+    // is what let the two disagree, after which nothing could turn the path
+    // off again. docs/investigations/the-deinterlacer-had-two-owners.md
+    static bool motionAdaptEngaged();
+
+    // What the user asked the deinterlacer to do. Settings throughout; nothing
+    // here is measured.
+    struct Preferences {
+        // Follow the measured scan type. Off leaves the motion-adaptive path
+        // wherever it was put by hand.
+        bool automatic;
+
+        // Bob rather than motion adapt: drop the second field instead of
+        // interpolating between the two.
+        bool bob;
+
+        bool scanlines;
+        uint8_t scanlineStrength;
+
+        // Whether anything downstream is locked to the output frame time, and
+        // so whether a re-lock is worth arming when the source moves.
+        bool relockable;
+    };
+
+    // What one steering pass decided beyond the registers it wrote itself.
+    // Both acts are outside Tv5725::, so they are reported rather than done.
+    struct Steering {
+        // The deinterlacer changed how many lines it emits, so anything locked
+        // to the output frame time is stale.
+        bool frameTimingMoved;
+
+        // ...and the move has settled, so the generated clock can be resynced
+        // to the new ratio between the rates.
+        bool outputRateSettled;
+    };
+
+    // One maintenance pass over a source that is acquired: engage or release
+    // the motion-adaptive path from the scan type, apply the scanlines asked
+    // for, and say when the output frame timing moved underneath.
+    //
+    // The scan type is filtered over FilteredPasses consecutive readings, and a
+    // vertical period that moves restarts the filter -- a mode still settling
+    // reads as either type before it reads as the right one.
+    //
+    // `releaseCapture` is the caller's unfreeze, for the order enableMotionAdapt()
+    // needs.
+    static Steering steer(uint16_t verticalPeriod,
+                          SourceMeasurement::ScanType scan,
+                          void (*releaseCapture)());
+
+    // What the user asked for, held here rather than handed in on every pass:
+    // the steering runs on a cadence and the preferences change when someone
+    // presses a key, so passing them per pass makes every caller carry a copy
+    // of the whole set to get one of them right.
+    static void choose(const Preferences &wanted);
+    static const Preferences &chosen();
+
+    // The chip's deinterlacer state was torn down, so the filtered run and any
+    // re-lock in flight describe a configuration that is gone.
+    static void forgetSteering();
+
+    // Consecutive readings of one scan type before it is acted on.
+    static const uint8_t FilteredPasses = 2;
+
+    // How long a re-lock waits after the change that armed it, counted in
+    // passes where the field parity matches the one it was armed at.
+    static const uint8_t RelockPasses = 11;
 };
 
 }  // namespace Tv5725

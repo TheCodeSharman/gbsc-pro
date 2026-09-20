@@ -14,11 +14,12 @@ namespace Tv5725 {
 // standard the chip can recognise. The values have no derivation here and are
 // carried as constants, per docs/chip-initialisation.md.
 //
-// Two of the fields init() establishes have runtime writers that override them:
-// MD_SEL_VGA60 follows the sync type and MD_HD1250P_CNTRL the medium-resolution
-// line count. Nothing else moves them: the threshold dither that used to wander
-// twelve of them is deleted, and docs/retiring-mode-detect.md says why it is not
-// needed on this board.
+// One field init() establishes has a runtime writer that overrides it:
+// MD_SEL_VGA60 follows the sync type. Nothing else moves any of them -- the
+// threshold dither that used to wander twelve of them is deleted, and so is the
+// medium-resolution override, whose only reader was a search that walked this
+// table to change what the classifier reported.
+// docs/video-source-acquisition.md
 class ModeDetect {
 public:
 
@@ -245,6 +246,21 @@ public:
                                                                       // value
 
     // Every static register of this subsystem, in address order.
+    // Whether the source could have had its line count doubled by the
+    // serrations, which only an interlaced source can. A COARSE gate rather
+    // than the scan type: the two STATUS_00 bits behind it read byte-identical
+    // across a real interlace change, so they carry a vertical-period family
+    // and not the scan. SourceMeasurement::scanType() is the measurement.
+    //
+    // It cannot be replaced by that measurement, and the reason is circular --
+    // docs/investigations/interlaced-source-measurement.md.
+    static bool sourceIsInterlaced();
+
+    // The other half, and not the negation of it: all four bits are clear for a
+    // source Mode Detect names nothing for, where neither answer is available
+    // and the caller falls back to what it can measure itself.
+    static bool sourceIsProgressive();
+
     static void init();
 
     // Whether the source presents its own H/V sync or a composite one, which
@@ -258,7 +274,16 @@ public:
     static void applySyncType(SyncType type);
 
     // The line count the medium-resolution threshold is set from.
-    static void applyMedResLineCount(uint8_t lines);
+
+    // Take the block through its soft reset, so it re-measures the source from
+    // nothing. The bit lives in the chip's reset register; the operation is
+    // this block's.
+    static void reset();
+
+    // Make the block re-latch without resetting it, by inverting the input
+    // vertical sync and putting it straight back. Cheaper than a reset and it
+    // is what most of the ladder reaches for.
+    static void nudge();
 };
 
 }  // namespace Tv5725

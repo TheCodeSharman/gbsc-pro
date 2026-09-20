@@ -174,10 +174,16 @@ public:
     // raster and the windows.
     static void init();
 
-    // The three DAC routes are ALTERNATIVES, and nothing outside this class
-    // clears any of them, so each one clears the others. Two set at once sums
-    // the paths at the DACs: the black level lifts and the colours desaturate
-    // while every register but s0_4b reads correct.
+    // The DAC routes are ALTERNATIVES, and nothing outside this class clears
+    // any of them, so each one clears the others. Two set at once sums the
+    // paths at the DACs: the black level lifts and the colours desaturate while
+    // every register but s0_4b reads correct.
+    //
+    // DAC_RGBS_ADC2DAC is not one of them. It puts the ADC straight on the DACs
+    // with no converter in circuit at all, so it can carry RGB and nothing
+    // else -- a component source comes out green. Bypass goes through the HD
+    // channel, which has the matrix and the dynamic range converter.
+    // ../../../docs/investigations/one-bypass-route-carries-rgbhv.md
     //
     // Put the DACs and the sync outputs back on the scaler. Bypass moves all
     // three and nothing on the scaling path claimed them, so leaving bypass
@@ -191,16 +197,46 @@ public:
     static void outputDown();
     static void outputUp();
 
+    // The three colour DACs following their input data rather than resting at
+    // their minimum voltage. Every bypass entry wants it, and nothing writes
+    // the bits back the other way: a bulk table load once left B0ENZ clear with
+    // nothing to restore it, which is a yellow-tinted picture with no register
+    // that reads wrong. ../../../docs/preset-load-clobber.md
+    static void dacsFollowInput();
+
     // The DACs on the HD bypass channel. It leaves OUT_SYNC_SEL alone: the
     // switch writes it 1 and then 2 for interlaced SD, so the standard has the
     // last word on it and this would undo that.
     static void routeToHdBypass();
 
-    // Segment 0 as RGBHV bypass wants it: the display PLL off its scaled
-    // settings, the pads that carry a bypassed source, and the ADC put straight
-    // on the DACs. The memory clock travels with it and belongs to
-    // Tv5725::MemoryBus, which is why this calls rather than writes it.
-    static void enterBypassRgbhv();
+    // The video datapath blocks, pulsed through reset and released. On the
+    // bypass channel they are left held: nothing scaled is running, so
+    // releasing them starts blocks with no configuration behind them.
+    static void resetVideoBlocks();
+
+    // Segment 0 as pass-through wants it: the display PLL off its scaled
+    // settings and the DACs on the HD bypass channel. The memory clock travels
+    // with it and belongs to Tv5725::MemoryBus, which is why this calls rather
+    // than writes it.
+    static void enterHdBypass();
+
+    // s5 0x69, 8 bits RD-5725-1.1 does not describe. Nothing behind it, which
+    // is exactly what makes it the scratch byte checkPower() round-trips.
+    typedef UReg<0x05, 0x69, 0, 8> POWER_PROBE_SCRATCH;
+
+    // **WHETHER THERE IS ANYTHING TO WRITE TO.** A scratch byte written and read
+    // back: the bus acknowledges either way, so only the round trip separates a
+    // powered board from an unpowered one, and the byte is put back afterwards.
+    // Records the answer, and returns it.
+    static bool checkPower();
+
+    // The answer the last probe recorded. Held rather than re-probed, because
+    // every writer would otherwise pay a round trip to ask.
+    static bool hasPower();
+
+    // For a caller that knows the board is up without probing -- a preset load
+    // that has just written a hundred registers successfully.
+    static void holdPower(bool powered);
 };
 
 }  // namespace Tv5725

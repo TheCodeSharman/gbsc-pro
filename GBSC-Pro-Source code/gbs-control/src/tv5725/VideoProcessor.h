@@ -12,7 +12,7 @@ namespace Tv5725 {
 // All twelve preset tables agree on every field here and none of it moves with
 // the mode, while RD-5725-1.1 documents what the fields do without offering a
 // right value for a board -- so this is a hundred constants carried for
-// continuity. The geometry, which is what does move, is Geometry's.
+// continuity. The geometry, which is what does move, is VideoPath's.
 //
 // Two absences that look like omissions:
 //
@@ -201,7 +201,6 @@ public:
                                                                       // different frame size
 
 
-    typedef UReg<0x03, 0x24, 0, 8> VDS_3_24;
 
     typedef UReg<0x03, 0x24, 0, 1> VDS_UV_FLIP;                       // 422 to 444 conversion UV flip control This bit is used to
                                                                       // flip UV, when this bit is 1, UV position will be flipped
@@ -859,6 +858,10 @@ public:
 
     // Input data taken on the falling edge of the clock.
     static void clockInputOnFallingEdge();
+
+    // The block's share of the 422/444 conversion delays. The line doubler adds
+    // a stage the chroma path does not take, so the realignment follows it.
+    static void applyLineDoubling(bool lineDoubled, bool component);
 };
 
 }  // namespace Tv5725

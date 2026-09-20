@@ -13,10 +13,17 @@ namespace Tv5725 {
 // source's mode file read in ADC -- 181/2553 = 7.09% against AKF50's 36/512 =
 // 7.03%, where the IF reading gives twice the mode's sync width.
 //
-// What is not here is everything that moves per source: updateSpDynamic() owns
-// the coast and delta quadruple, updateCoastPosition() SP_H_CST_ST/SP,
-// updateClampPosition() the clamp, and Tv5725::SourceMeasurement SP_RT_HS_SP. A static
-// write of any of those would fight a per-source decision.
+// WHAT init() MUST NOT WRITE is everything that moves per source: the pulse
+// width difference and pulse ignore pair, which follow the sync type and what
+// the source's sync carries, and SP_RT_HS_SP, which Tv5725::SourceMeasurement
+// holds off the divider. A static write of either would fight a per-source
+// decision.
+//
+// THE COAST LENGTHS ARE THIS BLOCK'S ALONE. Nothing else may write
+// SP_PRE_COAST or SP_POST_COAST: a second writer closes a loop, because the
+// coast changes the measured line count, a changed count arms a solve, and a
+// solve applies the sync type -- which writes the coast again.
+// docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
 //
 // DO NOT POISON SP_RT_HS_SP TO TEST ANYTHING. Set 1110 against a 2553-sample
 // line, and again at only 100 low, SP_VTOTAL fell to a steady 97/98 through the
@@ -60,6 +67,11 @@ public:
                                                                       // detect
 
     typedef UReg<0x05, 0x33, 0, 8> SP_H_TIMER_VAL;                    // Timer value control H timer value for h detect
+
+    // Two addresses in this block that RD-5725-1.1 names no field at. Carried
+    // at what the sketch's bring-up wrote them, since nothing says what they do.
+    typedef UReg<0x05, 0x23, 0, 8> SYNC_PROC_5_23;
+    typedef UReg<0x05, 0x5D, 0, 8> SYNC_PROC_5_5D;
 
     typedef UReg<0x05, 0x34, 0, 8> SP_V_TIMER_VAL;                    // Timer value control V timer for V detect
 
@@ -139,6 +151,9 @@ public:
 
     typedef UReg<0x05, 0x56, 0, 8> SP_5_56;
 
+    // SOG here is the sync SEPARATOR'S INPUT, not sync on green. This reads 1
+    // for composite sync arriving on the HSync pin with nothing on green, and
+    // SP_EXT_SYNC_SEL moves with it. docs/sync-type-selection.md
     typedef UReg<0x05, 0x56, 0, 1> SP_SOG_MODE;                       // Out control 1: SOG mode; 0: normal mode
 
     typedef UReg<0x05, 0x56, 1, 1> SP_HS2PLL_INV_REG;                 // Out control When =1, HS to PLL invert
@@ -182,6 +197,26 @@ public:
 
     typedef UReg<0x05, 0x63, 0, 1> SP_TEST_EN;                        // Test control Test bus enable
 
+    // Put one of this block's own stages on the test bus. Three fields of
+    // s5_63 written together, so bit 7 -- RESERVED -- is left as found.
+    static void driveTestBus(uint8_t module, uint8_t signal);
+
+    // How far along the line hsync retiming stops, in percent. Upstream's,
+    // unexplained and unmeasured here; what matters is that it follows the
+    // divider.
+    static const uint16_t RetimeStopPercent = 93;
+
+    // The retime window's stop for a given ADC divider. It counts in ADC
+    // samples, so a divider that moves without it leaves the sync processor
+    // retiming a line that is not arriving.
+    static uint16_t retimeStopFor(uint16_t divider);
+
+    // SP_TEST_MODULE's values, from RD-5725-1.1's own table. Only the stages
+    // something selects are named.
+    static const uint8_t TestModuleVsActDet = 4;
+    static const uint8_t TestModuleCsSep = 5;
+    static const uint8_t TestModuleOutProc = 7;
+
     typedef UReg<0x05, 0x63, 1, 3> SP_TEST_MODULE;                    // Test control test module select # 0 none # 1 hs_pol_det
                                                                       // module # 2 hs_act_det module # 3 vs_pol_det module # 4
                                                                       // vs_act_det module # 5 cs_sep module # 6 retiming module #
@@ -220,12 +255,297 @@ public:
     // Where the clamp sits before anything has measured the back porch.
     static void applyDefaultClampWindow();
 
+    // Take the block through its soft reset, so it re-acquires the source from
+    // nothing. The bit lives in the chip's reset register; the operation is
+    // this block's.
+    static void reset();
+
+    // How many lines either side of the vertical interval a composite source is
+    // coasted over. A 625-line source's equalisation pulses sit either side of
+    // the interval at twice line rate; coasted far enough they are skipped and
+    // the count is the source's lines, and coasted too few after it they are
+    // counted and it measures 622.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    static const uint8_t SerratedPreCoastLines = 7;
+    static const uint8_t SerratedPostCoastLines = 3;
+
+    // Coast further, and ignore fewer short pulses, for a serrated source whose
+    // sync has gone. Equalisation pulses sit either side of the vertical
+    // interval, so the coast has to cover more lines than the sync type asked
+    // for and a pulse-ignore wide enough to hide a real pulse has to come down.
+    static void widenCoastForSerration();
+
+    // Coast further either side of the vertical interval, and nothing else.
+    // Margin over the default rather than a searched minimum: the pair that
+    // measures a source is not reproducible between runs, so a value that
+    // measured clean once is not safe to settle on.
+    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
+    static void widenCoast();
+
+    // How different a pulse width must be to read as vertical. ONE value for
+    // every source: a serrated source is miscounted below 0x70 and reads
+    // identically at every value above it, and a separate-sync source is
+    // indifferent across the whole range, so the per-standard tables this
+    // replaces were choosing between values measured to be the same.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    static void applyPulseWidthDifference();
+
+    // How short a horizontal pulse must be to be ignored. Three states, each
+    // measured, and no two interchangeable -- the value that reads a serrated
+    // source stops a high-rate one locking at all, and the one that reads a
+    // high-rate source counts a serrated one's equalisation pulses as lines.
+    //
+    // `serrated` is the source, not the sync type: a composite-sync source at
+    // 40 kHz carries no vertical interval to coast over and wants the narrow
+    // threshold, the same as it would on separate sync.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    static void applyPulseIgnore(bool csync, bool serrated);
+
+    // Configure the separator to HUNT for a source rather than to read one it
+    // has already found: ignore only the shortest pulses, coast on the default
+    // window without the sub coast, and forget both placements so whatever
+    // locks is measured for itself rather than against the source before.
+    //
+    // It separates on the SAME threshold a settled source is read with. The two
+    // values this alternated between are measured identical on a source with
+    // its own vertical sync and four lines apart on a serrated one, where the
+    // lower of them is the wrong answer.
+    // docs/investigations/the-pulse-ignore-value-is-measured-not-chosen.md
+    static void applyForSearch(bool csync);
+
+    // What the separator is configured for pass by pass, as against the static
+    // half init() writes and the per-sync-type half applyForSyncType() writes.
+    //
+    // Every fact is handed in: where the source is selected and what the engine
+    // measured are not this block's to read, and `serrated` has one definition
+    // above this layer. `pathSource` is a source whose sync carries no
+    // broadcast vertical interval -- the RGBHV connector, or a component source
+    // through the channel.
+    struct Dynamic {
+        bool searching;
+        bool present;
+        bool hunting;
+        bool csync;
+        bool pathSource;
+        bool serrated;
+    };
+
+    static void applyDynamic(const Dynamic &source);
+
+    // Where in the line to coast, back at the value every path starts over
+    // from. It says WHERE, not how long: the coast lengths around the vertical
+    // interval follow the sync type and are applyForSyncType()'s.
+    static void applyDefaultCoastWindow();
+
+    // How many readings of the line length must agree before the window is
+    // placed on them, and how far apart two readings may be and still count as
+    // agreeing.
+    static const uint8_t CoastSamples = 8;
+    static const uint16_t CoastAgreement = 3;
+
+    // Whether the block is counting a horizontal sync. One register bit, and
+    // the only question a window placement asks between readings: a window
+    // placed across a source that stopped mid-run is placed on two lines.
+    //
+    // The polarity bit beside it is NOT part of the answer. It says which way
+    // the source's pulse goes, which no measurement here depends on, and the
+    // term that once read it was gated on the standard byte.
+    // docs/video-source-acquisition.md
+    static bool hsyncActive();
+
+    // Whether V is arriving on the source's own pin.
+    //
+    // ONLY MEANINGFUL WITH THE SEPARATOR OUT. In the composite-sync
+    // configuration the bit reports the path rather than the source and reads 0
+    // throughout, which is why nothing may choose the sync type from it. In the
+    // separate-sync configuration the separator is out, and the bit is then a
+    // measurement of the source: 1 on a source driving V, 0 on one that is not.
+    // docs/sync-type-selection.md
+    static bool vsyncActive();
+
+    // What this block counts of the source. The only reads of these registers
+    // anywhere: nothing else on the board can supply them, and every other
+    // quantity the engine needs it computed itself.
+    //
+    // The two counts are in DIFFERENT units -- lines per field, and ADC samples
+    // per line -- because the sync processor counts hsync edges vertically and
+    // ADC clocks horizontally.
+    static uint16_t lineCount();
+    static uint16_t lineSamples();
+
+    // The hsync low time in ADC samples, and whether the pulse is
+    // positive-going -- which says which end of the line the sync interval
+    // sits at.
+    //
+    // **READ hsyncLowSamples() ONLY AFTER normaliseHsyncPolarity(), AND ONLY
+    // WHILE lineSamples() AGREES WITH THE DIVIDER.** The count is the LOW time
+    // of the sync reaching the counter, not the pulse width, so on an
+    // uncorrected high-active source it is the whole line minus the pulse; and
+    // counted before the block re-locks it belongs to a line of another length,
+    // which no later reading can separate from a real one.
+    // docs/sync-type-selection.md
+    static uint16_t hsyncLowSamples();
+    static bool hsyncPositive();
+
+    // Whether an hsync edge was found to take the polarity from. A polarity
+    // read off a status the processor could not fill is a coin toss, which is
+    // why HdBypass gates on the same bit.
+    static bool hsyncFound();
+
+    // Invert the source's hsync ahead of the counter when it is positive-going,
+    // so everything downstream sees one polarity and hsyncLowSamples() is the
+    // pulse on every source. Writes SP_HS_INV_REG and SP_HS2PLL_INV_REG, which
+    // this class owns.
+    //
+    // This is the whole point: a polarity carried into the solve is an input
+    // every later calculation can get wrong, and normalising it here deletes
+    // the variable rather than handling it. `found` false leaves both alone.
+    //
+    // The inversion into the ADC PLL is CLEARED rather than followed, because
+    // the normalisation above has already made the polarity one shape and a
+    // second inversion displaces the picture 94 output px. Only the bypass
+    // channel sets it from the source, because only it does not normalise.
+    // ../../../../docs/investigations/leaving-bypass-leaves-the-sync-path-behind.md
+    static void normaliseHsyncPolarity(bool found, bool positive);
+
+    // The source's line, from the rate the engine solved rather than from
+    // HPERIOD_IF. Two scalings, because the blocks count differently: the coast
+    // window is a fraction of the whole line in the chip's 27 MHz counts, and
+    // the clamp's composite path was fitted to the quarter-count the register
+    // holds. A separate-sync line is counted in ADC samples, so it is the
+    // divider itself.
+    static uint32_t coastLineFor(uint32_t lineRateHz);
+    static uint32_t clampLineFor(bool csync, uint32_t lineRateHz, uint16_t divider);
+
+    // Place the coast window on the line the source is sending. `autoCoast`
+    // brackets the sync tip instead of spanning the line, which is what a
+    // source with its own vertical sync wants.
+    //
+    // False means NOTHING was written: no rate has been solved yet, or the
+    // block is not counting a horizontal sync.
+    static bool acquireCoastWindow(bool autoCoast, uint32_t lineRateHz);
+
+    // Whether each window has been placed for the source in force. State rather
+    // than a register: nothing on the chip distinguishes a window measured for
+    // this source from one left over from the source before, and acting on a
+    // stale one clamps to picture or coasts over the wrong part of the line.
+    //
+    // The acquire operations record their own success, so a window is placed
+    // exactly when the measurement that placed it succeeded.
+    static bool coastPlaced();
+    static bool clampPlaced();
+
+    // A different source: neither window describes it until it is measured
+    // again.
+    static void forgetPositions();
+
+    // Something outside this block placed the clamp, so the acquisition must
+    // not run against it. Bypass is the caller: video routes around the VDS and
+    // the switch configures the clamp itself, so there is no measurement to
+    // record and the placement is adopted rather than derived.
+    static void adoptClampPlacement();
+
+    // Where a scaling RGBHV source on composite sync stops coasting. NARROWER
+    // than applyDefaultCoastWindow()'s 0x100, and the two are not
+    // interchangeable -- there is a test pinning that they differ.
+    static const uint16_t ScalingRgbhvCoastStop = 0x80;
+
+    // Where the SD vertical sync sits on the scaling RGBHV path: at the top of
+    // the frame, because the count the preset was written for is not this
+    // source's.
+    static const uint16_t ScalingRgbhvVsyncStart = 2;
+    static const uint16_t ScalingRgbhvVsyncStop = 0;
+
+    // Put the sync path back for a scaling RGBHV source, after a preset written
+    // for another standard has moved it: the retiming module's auto polarity,
+    // the SD vertical sync, and the sync path itself. A separate-sync source
+    // runs uncoasted and clamps by hand; a composite one coasts on the window
+    // above. Both windows are forgotten, because the preset was chosen for a
+    // count this source does not have.
+    //
+    // The separate-sync arm deliberately leaves the coast window alone, so this
+    // is not the whole of what the RGBHV block does before a preset load -- that
+    // path also drops the ADC and display PLLs, and is not this operation.
+    static void applyForScalingRgbhv(bool csync);
+
+    // How the separator decides a pulse is vertical, for a source whose sync
+    // carries no broadcast vertical interval: the coast lengths either side of
+    // it, the pulse-width difference that reads as vertical, and the width
+    // below which a pulse is ignored.
+    //
+    // The coast lengths are the same pair applyForSyncType() writes, and that
+    // is deliberate rather than a duplicate to fold away: this refreshes on a
+    // schedule, so a register something else moved comes back, and there is a
+    // test pinning that applyForSyncType() does NOT write the other two.
+    static void applySeparationThresholds(bool csync);
+
+    // How many readings the clamp window agrees over. More than the coast
+    // window's, because a clamp landing in active video clamps to picture.
+    static const uint8_t ClampSamples = 16;
+
+    // Where in the line to sample the black level: after the sync pulse and
+    // inside the back porch, as a fraction of the line the source is sending.
+    //
+    // `csync` picks the measurement as well as the fractions -- the two paths
+    // count in different units, HPERIOD_IF against the chip's 27 MHz on a
+    // composite source and STATUS_SYNC_PROC_HTOTAL in ADC samples on a separate
+    // one -- so the fractions are not comparable between them.
+    //
+    // `component` starts the window later, where a YPbPr sync tip ends.
+    // `offset` moves the whole window later, which HD bypass needs on a low
+    // line rate; the decision is the caller's because it is not this block's
+    // to know.
+    //
+    // A window already within a unit of where it belongs is left alone: this
+    // runs on a schedule, and the write would cost the bus a pass for nothing.
+    // False means nothing was written.
+    static bool acquireClampWindow(bool csync, bool component,
+                                   uint32_t lineLength, uint16_t offset);
+
+    // Where the clamp window sits on a line of `lineLength` ADC samples. The
+    // window is a fraction of the line, so it moves with the divider: left
+    // where a previous one put it, the stop reaches past the back porch and the
+    // black level comes off picture instead of off blanking.
+    static uint16_t clampStartFor(uint32_t lineLength, bool csync, bool component);
+    static uint16_t clampStopFor(uint32_t lineLength, bool csync, bool component);
+
+    // Place it from a line the caller already knows, with no measurement. The
+    // engine applies the divider and so knows the line exactly; the sync
+    // processor counts in the same samples.
+    static void placeClampFor(uint32_t lineLength, bool csync, bool component);
+
+    // Whether the clamp is driven from the window above or left to the block's
+    // own detection. A component source clamps on its own sync tip, so it is
+    // the one input the automatic path suits.
+    static void clampManually(bool manual);
+
+    // How much later a component source clamps on the pass-through channel at a
+    // 15 kHz line: the sync tip it has to clear is longer against that line.
+    // The caller decides whether it applies, because which route is in circuit
+    // is not this block's to know.
+    static const uint16_t ChannelComponentClampOffset = 0x60;
+
     // The SD vertical sync positions, each ONE value across two registers: a
     // low byte and a three-bit high field in a different address. Written as
     // halves they drift -- a path setting only the low byte leaves whatever a
     // previous, larger value put in the high field.
     static void writeSdVsyncStart(uint16_t start);
     static void writeSdVsyncStop(uint16_t stop);
+
+    // Where the sync processor asserts the vertical sync it regenerates out of
+    // composite sync, and so where the frame the capture sees begins. Inert on
+    // a source with its own V sync, because nothing is being regenerated.
+    //
+    // ONE VALUE FOR EVERY SOURCE. It is a vertical pan of the captured frame,
+    // one source line per count and linear across the range, so there is no
+    // raster property to derive it from and the engine's capture window is the
+    // only thing that should place the picture. The constraint is a bound
+    // rather than a target: it has to land inside the source's vertical
+    // blanking, and the shortest on this bench is 45 lines.
+    // docs/investigations/the-sd-vsync-window-follows-the-sync-type.md
+    static const uint16_t SdVsyncStart = 14;
+    static const uint16_t SdVsyncStop = 11;
+    static void applySdVsyncPosition();
 
     // Where H and V come from: 0 the dedicated pins, 1 composite or
     // sync-on-green. It travels with the input choice, not with the sync type.
@@ -239,15 +559,35 @@ public:
     // which is what every path here asks for.
     static void clampFromReferenceClock();
 
-    // The H counter's overflow protection.
+    // The H counter's overflow protection. Nothing on the board measures
+    // whether it is helping, so the ladder tries the other setting
+    // periodically -- which is the toggle rather than a read and a write.
     static void setHsyncOverflowProtect(bool wanted);
-    static bool hsyncOverflowProtect();
+    static void toggleHsyncOverflowProtect();
 
     // Whether coast is inverted, and whether the sub coast runs. Each names
     // what is wanted rather than the register, which for the second is a
     // disable.
     static void setCoastInvert(bool wanted);
     static void setSubCoast(bool wanted);
+
+    // HSOUT/VSOUT, taken away while a mode change is outstanding and given back
+    // once the source is acquired.
+    //
+    // The encoder samples the analog output and does not always notice the
+    // timing under it moved, so it carries on transmitting the mode it locked
+    // to before and the panel shows nothing. Taking sync away is what makes it
+    // look again, and nothing else on the board can ask it to.
+    //
+    // **ONE OWNER, AND IT IS Tv5725::VideoPath.** It holds what it last wrote so
+    // a write that changes nothing costs nothing, which means a second writer
+    // leaves it believing a pad it did not set: the engine then never corrects
+    // one left disabled, and the panel says no signal with every other register
+    // correct. Chip::outputDown() is the one exception, on the power path,
+    // where nothing is being shown anyway.
+    // ../../../../docs/investigations/encoder-stale-timing.md
+    static void disableOutput();
+    static void enableOutput();
 };
 
 }  // namespace Tv5725

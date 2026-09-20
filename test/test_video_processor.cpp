@@ -90,3 +90,37 @@ TEST_CASE("each control writes its own register and no other")
     CHECK_FALSE(wasWritten<VideoProcessor::VDS_PK_Y_H_BYPS>(VideoProcessor::setSixTapFilter, true));
     CHECK_FALSE(wasWritten<VideoProcessor::VDS_UV_STEP_BYPS>(VideoProcessor::setSixTapFilter, true));
 }
+
+// --- the 422/444 conversion delays, which follow the scan mode ----------------
+
+TEST_CASE("the chroma conversion delay follows the scan mode")
+{
+    // VDS_V_DELAY realigns V through the 422-to-444 conversion, and how far it
+    // has to move depends on whether the line doubler is in the path. Measured:
+    // 0 on the 15 kHz RGBHV bench raster, 1 on component 480p.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    VideoProcessor::applyLineDoubling(false, false);
+    CHECK(Wire.field(3, 0x24, 2, 1) == 1);
+
+    VideoProcessor::applyLineDoubling(true, false);
+    CHECK(Wire.field(3, 0x24, 2, 1) == 0);
+}
+
+TEST_CASE("only a line-doubled RGB source shortens the luma delay")
+{
+    // VDS_Y_DELAY compensates the filter's own luma delay. A component source
+    // needs the full compensation whatever the scan mode; an RGB source needs
+    // it only where the doubler is out of the path.
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+
+    VideoProcessor::applyLineDoubling(true, false);
+    CHECK(Wire.field(3, 0x24, 4, 2) == 2);
+
+    VideoProcessor::applyLineDoubling(true, true);
+    CHECK(Wire.field(3, 0x24, 4, 2) == 3);
+
+    VideoProcessor::applyLineDoubling(false, false);
+    CHECK(Wire.field(3, 0x24, 4, 2) == 3);
+}

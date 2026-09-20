@@ -1,13 +1,97 @@
 #include "Adc.h"
 
+#include "Tv5725Log.h"
+
 #include <Arduino.h>
+#include <stdio.h>
 
 namespace Tv5725 {
 
+const uint32_t Adc::MaxSampleRateHz;
+const uint16_t Adc::DividerMax;
+const uint16_t Adc::BringUpDivider;
+const uint32_t Adc::BringUpLineRateHz;
+const uint16_t Adc::LatchedSamplesTolerance;
+
+namespace {
+uint8_t atLeastOneOversample(uint8_t oversample)
+{
+    return oversample == 0 ? 1 : oversample;
+}
+
+// The CKO at which the VCO post divider drops a step, off RD-5725-1.1's
+// crossover table. postDividerFor() reads down it and maxCkoFor() reads back up
+// it, so the rows are written once.
+const uint32_t PostDividerRowHz[] = {80000000u, 40000000u, 20000000u};
+const uint8_t PostDividerRows = 3;
+}  // namespace
+
+uint32_t Adc::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
+                           uint8_t oversample)
+{
+    return (uint32_t)divider * lineRateHz * atLeastOneOversample(oversample);
+}
+
+bool Adc::withinLimit(uint16_t divider, uint32_t lineRateHz, uint8_t oversample)
+{
+    if (lineRateHz == 0)
+        return false;
+
+    // At the oversampling the crossover row will actually install for this
+    // divider, which is what the part converts at. Asking at the requested
+    // ratio answers a question about a load the chip refuses to take.
+    const uint32_t cko = (uint32_t)divider * lineRateHz;
+    return sampleRateHz(divider, lineRateHz,
+                        oversampleFor(postDividerFor(cko), oversample))
+           <= MaxSampleRateHz;
+}
+
+uint16_t Adc::maxDivider(uint32_t lineRateHz, uint8_t oversample)
+{
+    if (lineRateHz == 0)
+        return 0;
+
+    // The crossover row bounds this, not the conversion rating: the row is read
+    // against CKO, which is the divider alone, and a divider past the row's top
+    // installs a lower ratio than the one asked about. Answering at the rating
+    // instead describes a configuration the part will not be in.
+    //
+    // Integer throughout: the ESP8266 has no FPU and this runs on every solve.
+    const uint32_t largest = maxCkoFor(oversample) / lineRateHz;
+
+    if (largest > DividerMax)
+        return DividerMax;
+    return (uint16_t)largest;
+}
+
+namespace {
+
+// ADC_INPUT_SEL 0 is the pair carrying Pb and Pr beside Y.
+const uint8_t ComponentInputSel = 0;
+
+// ADC_FLTR 0 is the 150 MHz corner, the widest RD-5725-1.1 offers.
+const uint8_t WidestFilter = 0;
+
+}  // namespace
+
+namespace {
+
+// The ADC PLL's charge pump. One value for every path: measured in
+// pass-through at a 128 MHz VCO, no value the field can hold restores lock, so
+// there is nothing for a path to choose between.
+const uint8_t PllChargePump = 6;
+
+}  // namespace
+
+const uint8_t Adc::OversampleAsClockAllows;
+
 void Adc::selectInput(uint8_t inputSel)
 {
+    inputSel_ = inputSel;
     ADC_INPUT_SEL::write(inputSel);
 }
+
+bool Adc::inputIsComponent() { return inputSel_ == ComponentInputSel; }
 
 void Adc::enableSyncOnGreen(uint8_t enable)
 {
@@ -19,6 +103,12 @@ void Adc::init()
     ADC_CLK_PA::write(0x0);                      // s5_00[1:0]
     ADC_CLK_PLLAD::write(0x0);                   // s5_00[2:2]
     ADC_POWDZ::write(0x1);                       // s5_03[0:0]
+
+    // The anti-alias low-pass in front of the sampler, widest corner. It only
+    // does work below Nyquist, and the narrowest the part offers is above it at
+    // every sample clock this board reaches. Swept on the picture at 34.5 MHz
+    // and 77.2 MHz: all four corners indistinguishable.
+    ADC_FLTR::write(WidestFilter);                 // s5_03[5:4]
     ADC_TR_RSEL::write(0x2);                     // s5_04[1:0]
     ADC_TR_ISEL::write(0x0);                     // s5_04[4:2]
     ADC_TA_EN::write(0x0);                       // s5_05[0:0]
@@ -36,16 +126,15 @@ void Adc::init()
     PLLAD_TEST::write(0x0);                      // s5_11[2:2]
     PLLAD_TS::write(0x0);                        // s5_11[3:3]
 
-    // The ADC PLL's VCO gain and charge pump current, which only bypass ever
-    // wrote: without these the PLL ran on whatever loop current the last bypass
-    // excursion chose. 6/1 is what a preset load installed, and it stays
-    // steppable -- updateCoastPosition() reads ICP >= 5 && FS == 1 before
-    // dropping to 5/0. Neither takes effect until PLLAD_LAT sees a rising edge,
-    // which resetPLLAD() supplies well after BringUp::init().
+    // The ADC PLL's VCO gain and charge pump. applySampleRate() owns both --
+    // the gain derived from the VCO, the pump constant -- so these are only
+    // what the part holds between bring-up and the first solve. Neither takes
+    // effect until PLLAD_LAT sees a rising edge, which resetPLLAD() supplies
+    // well after BringUp::init().
     PLLAD_FS::write(0x1);                        // s5_11[5:5]
     PLLAD_BPS::write(0x0);                       // s5_11[6:6]
     PLLAD_ND::write(0x0);                        // s5_14[11:0]
-    PLLAD_ICP::write(0x6);                       // s5_17[2:0]
+    PLLAD_ICP::write(PllChargePump);             // s5_17[2:0]
     PA_ADC_LOCKOFF::write(0x0);                  // s5_18[6:6]
     PA_SP_LOCKOFF::write(0x0);                   // s5_19[6:6]
 }
@@ -57,15 +146,263 @@ void Adc::latch()
     PLLAD_LAT::write(1);
 }
 
+void Adc::restartPll()
+{
+    PLLAD_VCORST::write(1);
+    PLLAD_PDZ::write(1);
+    latch();
+    PLLAD_VCORST::write(0);
+    delay(1);
+    restartPhaseAdjusters();
+    PLLAD_LEN::write(1);
+    latch();
+}
+
+uint8_t Adc::phaseSyncProcessor_ = 16;
+uint8_t Adc::phaseAdc_ = 16;
+
+// Which of the two the chip comes up on is whatever the last boot left, and no
+// read-back can be trusted to mean the source is component, so the engine
+// captures RGB until an input is selected.
+uint8_t Adc::inputSel_ = 1;
+
+// Nothing has been installed, so the ratio is one sample a clock -- the same
+// thing a post divider with no room to give reduces every request to.
+uint8_t Adc::oversampleInForce_ = 1;
+uint16_t Adc::dividerInForce_ = 0;
+bool Adc::phaseFound_ = false;
+
+void Adc::choosePhaseSyncProcessor(uint8_t phase)
+{
+    if (phase <= PhaseMax)
+        phaseSyncProcessor_ = phase;
+}
+
+void Adc::choosePhaseAdc(uint8_t phase)
+{
+    if (phase <= PhaseMax)
+        phaseAdc_ = phase;
+}
+
+uint8_t Adc::phaseSyncProcessor() { return phaseSyncProcessor_; }
+
+uint8_t Adc::phaseAdc() { return phaseAdc_; }
+
+namespace {
+
+// Half a sample of phase, which is half the five-bit field.
+uint8_t halfSampleOn(uint8_t phase)
+{
+    return (uint8_t)((phase + 16) & Adc::PhaseMax);
+}
+
+// The mid of the field, which is what a caller with nothing to search gets.
+const uint8_t MidField = 16;
+
+// How far the search walks. Two more than the field, so the window either side
+// of the phase it started on is scored with both its neighbours.
+const uint8_t SweepSteps = 34;
+
+// How many of the sweep's samples must be clean before its answer is believed.
+// Half the field plus one: below that the good phases are not a window, they
+// are scatter.
+const uint8_t SweepGoodEnough = 17;
+
+// Samples taken at each phase before it is scored.
+const uint8_t SamplesPerPhase = 20;
+
+// One character per phase, so twenty samples fit in one and the whole field
+// fits in one console line.
+char scanDigit(uint8_t count)
+{
+    if (count > 35)
+        count = 35;
+    return count < 10 ? (char)('0' + count) : (char)('a' + count - 10);
+}
+
+// The scoreboard the walk built, indexed by phase rather than by the step it
+// was reached on. Reported whether or not the search then accepts it: a refusal
+// is the case the counts are wanted for.
+void reportScan(const char *what, const uint8_t *counts)
+{
+    char line[Adc::PhaseMax + 24];
+    int at = snprintf(line, sizeof(line), "%s: ", what);
+    for (uint8_t phase = 0; phase <= Adc::PhaseMax && at < (int)sizeof(line) - 1; ++phase)
+        line[at++] = scanDigit(counts[phase]);
+    line[at] = '\0';
+    tv5725Log(line);
+}
+
+}  // namespace
+
+bool Adc::phaseFound() { return phaseFound_; }
+
+void Adc::forgetPhase() { phaseFound_ = false; }
+
+bool Adc::acquirePhase(uint8_t oversample, bool sweep,
+                       uint16_t (*lineSamples)(), void (*feedWatchdog)())
+{
+    phaseFound_ = false;
+
+    // What the sync processor should be counting, whoever wrote it: bypass puts
+    // its own divider here without going through a measurement.
+    const uint16_t perLine = PLLAD_MD::read();
+
+    if (!sweep) {
+        choosePhaseSyncProcessor(MidField);
+        choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
+        delay(8);
+        applyPhases();
+        phaseFound_ = true;
+        return true;
+    }
+
+    uint8_t worstScore = 0, worstPhase = 0, clean = 0;
+    uint8_t badHere = 0, badBefore = 0, badBeforeThat = 0;
+    uint8_t phase = phaseSyncProcessor();
+
+    // Two phases are walked twice -- the sweep is two steps longer than the
+    // field -- and the second visit is the one kept.
+    uint8_t dither[PhaseMax + 1], far[PhaseMax + 1];
+    for (uint8_t i = 0; i <= PhaseMax; ++i) {
+        dither[i] = 0;
+        far[i] = 0;
+    }
+
+    for (uint8_t step = 0; step < SweepSteps; ++step) {
+        phase = (uint8_t)((phase + 1) & PhaseMax);
+        choosePhaseSyncProcessor(phase);
+        applyPhaseSyncProcessor(phase);
+
+        badHere = 0;
+        uint8_t farHere = 0;
+        feedWatchdog();
+        delayMicroseconds(256);
+        feedWatchdog();
+        for (uint8_t i = 0; i < SamplesPerPhase; ++i) {
+            const uint16_t at = lineSamples();
+            const uint16_t off = at > perLine ? at - perLine : perLine - at;
+            if (off > 1)
+                ++farHere;
+            if (off != 0) {
+                ++badHere;
+                feedWatchdog();
+                delayMicroseconds(384);
+            }
+        }
+        dither[phase] = badHere;
+        far[phase] = farHere;
+
+        // Scored over three neighbours, so one bad phase beside two clean ones
+        // does not out-vote a run of three.
+        const uint8_t window = (uint8_t)(badHere + badBefore + badBeforeThat);
+        if (window > worstScore) {
+            worstScore = window;
+            worstPhase = (uint8_t)((phase - 1) & PhaseMax);
+        }
+        if (badHere == 0)
+            ++clean;
+
+        badBeforeThat = badBefore;
+        badBefore = badHere;
+    }
+
+    reportScan("phase dither", dither);
+    reportScan("phase far", far);
+
+    if (clean < SweepGoodEnough)
+        return false;
+
+    if (worstScore != 0) {
+        choosePhaseSyncProcessor(halfSampleOn(worstPhase));
+    } else {
+        choosePhaseSyncProcessor(MidField);
+    }
+    choosePhaseAdc(oversample == 4 ? halfSampleOn(MidField) : MidField);
+
+    applyPhaseSyncProcessor(phaseSyncProcessor());
+    delay(1);
+    applyPhaseAdc(phaseAdc());
+    phaseFound_ = true;
+    return true;
+}
+
+void Adc::applyPhases()
+{
+    applyPhaseSyncProcessor(phaseSyncProcessor_);
+    applyPhaseAdc(phaseAdc_);
+}
+
+void Adc::nudgePhaseAdc()
+{
+    phaseAdc_ = (uint8_t)((phaseAdc_ + 1) & PhaseMax);
+}
+
+void Adc::applyPhaseSyncProcessor(uint8_t phase)
+{
+    if (phase > PhaseMax)
+        return;
+    PA_SP_LAT::write(0);
+    PA_SP_S::write(phase);
+    PA_SP_LAT::write(1);
+}
+
+void Adc::applyPhaseAdc(uint8_t phase)
+{
+    if (phase > PhaseMax)
+        return;
+    PA_ADC_LAT::write(0);
+    PA_ADC_S::write(phase);
+    PA_ADC_LAT::write(1);
+}
+
+void Adc::restartPhaseAdjusters()
+{
+    PA_SP_BYPSZ::write(0);
+    PA_SP_BYPSZ::write(1);
+    delay(2);
+    PA_ADC_BYPSZ::write(0);
+    PA_ADC_BYPSZ::write(1);
+    delay(2);
+}
+
+uint8_t Adc::selectOtherInput()
+{
+    const uint8_t selected = inputSel_;
+    selectInput(selected == 1 ? 0 : 1);
+    return selected;
+}
+
+void Adc::bounceInput()
+{
+    const uint8_t selected = inputSel_;
+
+    ADC_INPUT_SEL::write(0);
+    delay(BounceMs);
+    selectInput(selected);
+}
+
 uint8_t Adc::postDividerFor(uint32_t ckoHz)
 {
-    if (ckoHz >= 80000000u)
+    for (uint8_t row = 0; row < PostDividerRows; ++row)
+        if (ckoHz >= PostDividerRowHz[row])
+            return row;
+    return PostDividerRows;
+}
+
+uint32_t Adc::maxCkoFor(uint8_t oversample)
+{
+    const uint8_t steps = stepsFor(atLeastOneOversample(oversample));
+    if (steps == 0)
+        return MaxSampleRateHz;
+    if (steps > PostDividerRows)
         return 0;
-    if (ckoHz >= 40000000u)
-        return 1;
-    if (ckoHz >= 20000000u)
-        return 2;
-    return 3;
+    return PostDividerRowHz[steps - 1] - 1;
+}
+
+uint8_t Adc::vcoGainFor(uint32_t vcoHz)
+{
+    return vcoHz >= HighVcoGainAboveHz ? 1 : 0;
 }
 
 uint8_t Adc::oversampleFor(uint8_t postDivider, uint8_t wanted)
@@ -74,6 +411,40 @@ uint8_t Adc::oversampleFor(uint8_t postDivider, uint8_t wanted)
     while (ratio > 1 && stepsFor(ratio) > postDivider)
         ratio /= 2;
     return ratio;
+}
+
+uint8_t Adc::oversampleInForce() { return oversampleInForce_; }
+
+uint16_t Adc::dividerInForce() { return dividerInForce_; }
+
+void Adc::applyDivider(uint16_t divider)
+{
+    dividerInForce_ = divider;
+    PLLAD_MD::write(divider);
+    latch();
+}
+
+void Adc::applyResetParameters()
+{
+    // Before applySampleRate(), which ends in the latch: PLLAD_LAT is what
+    // loads the group, so anything holding part of it has to be written first.
+    PLLAD_5_16::write(0x1f);
+
+    // The whole group, not the divider alone. A divider written without the
+    // crossover row and the VCO gain puts the PLL on a frequency the hardware
+    // will not run, which is a solid green screen with every register
+    // self-consistent.
+    applySampleRate(BringUpDivider, BringUpLineRateHz, OversampleAsClockAllows);
+}
+
+bool Adc::dividerLatched(uint16_t lineSamples, uint16_t tolerance)
+{
+    if (dividerInForce_ == 0)
+        return false;
+
+    const uint16_t larger = lineSamples > dividerInForce_ ? lineSamples : dividerInForce_;
+    const uint16_t smaller = lineSamples > dividerInForce_ ? dividerInForce_ : lineSamples;
+    return (uint16_t)(larger - smaller) <= tolerance;
 }
 
 uint8_t Adc::stepsFor(uint8_t oversample)
@@ -87,6 +458,7 @@ uint8_t Adc::stepsFor(uint8_t oversample)
 uint8_t Adc::applyOversample(uint8_t postDivider, uint8_t oversample)
 {
     const uint8_t ratio = oversampleFor(postDivider, oversample);
+    oversampleInForce_ = ratio;
 
     PLLAD_CKOS::write((uint8_t)(postDivider - stepsFor(ratio)));
 
@@ -122,9 +494,6 @@ void Adc::enableGainMeasurement(bool on)
 void Adc::applyForBypassRgbhv()
 {
     ADC_FLTR::write(0);
-    PLLAD_ICP::write(4);
-    PLLAD_FS::write(0);
-    PLLAD_MD::write(1856);
 
     ADC_TA_05_CTRL::write(0x02);
     ADC_TEST_04::write(0x02);
@@ -134,6 +503,14 @@ void Adc::applyForBypassRgbhv()
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
                              uint8_t oversample)
 {
+    dividerInForce_ = divider;
+
+    // The charge pump is part of the loop the latch loads, so it goes in here
+    // rather than being left to whichever path ran last. One value serves every
+    // path: measured in pass-through at a 128 MHz VCO, no value the field can
+    // hold restores lock, so the pump is not what a path gets to choose.
+    PLLAD_ICP::write(PllChargePump);
+
     if (lineRateHz == 0) {
         // No CKO, so no row to read the crossover table against. The divider is
         // the caller's own and still goes in; picking a row by arithmetic on a
@@ -143,10 +520,17 @@ uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,
         return oversample < 1 ? 1 : oversample;
     }
 
-    uint8_t postDivider = postDividerFor((uint32_t)divider * lineRateHz);
+    const uint32_t ckoHz = (uint32_t)divider * lineRateHz;
+    const uint8_t postDivider = postDividerFor(ckoHz);
 
     PLLAD_MD::write(divider);
     PLLAD_KS::write(postDivider);
+
+    // The post divider sits between the VCO and CKO, so the VCO runs at CKO
+    // shifted up by it -- and the gain follows the VCO rather than either of
+    // the two frequencies the caller handed in.
+    PLLAD_FS::write(vcoGainFor(ckoHz << postDivider));
+
     uint8_t ratio = applyOversample(postDivider, oversample);
 
     latch();

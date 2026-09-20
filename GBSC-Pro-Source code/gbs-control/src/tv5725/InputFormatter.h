@@ -13,8 +13,9 @@ namespace Tv5725 {
 // The static half: IF_SEL24BIT = 1 takes the 24-bit input path, IF_SEL_HSCALE =
 // 1 puts the horizontal scaler in circuit, IF_SEL_ADC_SYNC = 1 takes sync from
 // the ADC rather than the digital port, and the piecewise H-sync rate correction
-// is off. What moves per mode -- IF_HB_*, IF_HBIN_SP, IF_LINE_SP -- is the
-// engine's, which computes the capture window rather than transcribing it.
+// is off. What moves per mode -- IF_HB_* and IF_LINE_SP -- is the engine's,
+// which computes the capture window rather than transcribing it; IF_HBIN_SP
+// moves with the line doubler instead, and applyLineDoubling() says why.
 //
 // IF_LD_ST shares s1_0c with IF_LD_RAM_BYPS (bit 0) and IF_INI_ST (bits 7-5),
 // both written by doPostPresetLoadSteps(). Three owners in one byte is safe only
@@ -259,9 +260,8 @@ public:
     static void writeLineCounterStart(uint16_t pixels);
 
     // The horizontal scaling-down path every load starts from. Not in init():
-    // SourceStandard selects the interpolator beside it for the progressive
-    // standards, so a value written only at bring-up would be left behind by
-    // whichever source ran last.
+    // applyLineDoubling() selects the interpolator beside it, so a value written
+    // only at bring-up would be left behind by whichever source ran last.
     static void applyDefaultHorizontalScalePath();
 
     // The auto offset adjuster off and its detection range zeroed: what the ADC
@@ -278,14 +278,87 @@ public:
 
     static void applyVerticalTiming(VerticalTiming timing);
 
-    // Whether the line doubler is in the capture path.
-    enum ScanMode {
-        LineDoubled,   // 15 kHz source, doubled to the output line rate
-        Progressive,   // already at line rate, doubler bypassed
-    };
+    // IF_HBIN_SP is two things, and which one depends on the scan mode. With the
+    // line-double FIFO in circuit it is that FIFO's line reset and moving it pans
+    // the whole picture; with the FIFO bypassed it is a blanking edge in the
+    // capture window's own units, so any value it holds crops the left of the
+    // picture a second time.
+    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+    //
+    // The smallest window the part accepts: IF_HBIN_ST is 0 and a stop of 0
+    // there blanks the whole line.
+    static const uint16_t NoHeadBlanking = 2;
 
-    // Put every register that decides the scan mode into one of the two states.
-    static void applyScanMode(ScanMode mode);
+    // The other half of that window, in ADC samples: it blanks the tail of the
+    // captured line, which runs past where active video stops and carries the
+    // contamination before the next line's sync pulse. It displaces nothing --
+    // the picture's right edge does not move at any value to 160.
+    //
+    // **A DOUBLED LINE IS THE ONLY PLACE IT MAY BE RAISED.** Against
+    // NoHeadBlanking the part blanks the whole line from 18 up, so the
+    // progressive branch keeps 0 and gets no tail guard at all.
+    //
+    // One measurement sizes it because there is one divider to size it against:
+    // SamplingClock::DoubledLineSampleLimit pins every doubled line to
+    // PLLAD_MD 2200, where the contaminated tail measures 70 samples.
+    // docs/investigations/the-hbin-start-blanks-the-captured-tail.md
+    static const uint16_t DoubledTailBlanking = 96;
+
+    // The reset position, which has no derivation -- the ten scaling tables
+    // shipped 136..272 and this is the one the bench picture is right on.
+    static const uint16_t LineDoubleReset = 272;
+
+    // Put every register the line doubler decides into one of the two states.
+    // The colour path comes with it because the luma delay needs both: only a
+    // component source arrives with luma and chroma separated, and only the
+    // line doubler puts them out.
+    static void applyLineDoubling(bool lineDoubled, bool component);
+
+    // Below this many total source lines the capture is line-doubled, so the
+    // rest of the chain has enough lines to reach the output resolution.
+    // Measured rather than derived: 363 lines are doubled and 448 are not, and
+    // no hardware limit produces the boundary between them.
+    // ../../../docs/investigations/hperiod-if-railing.md has the sweep.
+    static const uint16_t DoubleBelowLines = 400;
+
+    // Which scan mode a source of this many total lines is captured in.
+    //
+    // **Line doubling is not deinterlacing.** This asks whether enough lines
+    // arrive; whether they arrive as fields is a separate fact with its own
+    // register. An interlaced 625-line frame has lines to spare and wants
+    // deinterlacing, not doubling.
+    //
+    // `showableUnits` is what the output can display: the part cannot minify,
+    // so a doubled frame with no room to be shown would only be cropped. Zero
+    // asks the source alone, which is bypass and every caller with no raster
+    // yet. An unmeasured count comes back doubled -- what a short source needs,
+    // and the one a wrong guess leaves short.
+    static bool shouldDoubleLine(uint16_t sourceLines, uint16_t showableUnits = 0);
+
+    // The longest line the counter will play out, and a line past it wraps
+    // rather than failing, with nothing reporting a fault. The REGISTER is
+    // wider -- s1_0F bit 3 stores a 1 and returns it -- so a read-back cannot
+    // test this and no status field reacts to it either.
+    // ../../../docs/investigations/the-line-counters-are-eleven-bits-measured.md
+    static const uint16_t LineCounterMax = 2047;
+
+    // What the line counter must be set to for a given ADC divider. The
+    // horizontal decimation is what relates them, and only the line doubler
+    // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
+    // counter wrapping at half the samples arriving repeats the picture.
+    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
+
+    // What this block measures of the source. The vertical is 0 unless
+    // STATUS_IF_VT_OK says the measurement completed, which it does not on
+    // separate sync -- VPERIOD_IF holds debris there rather than a period.
+    static uint16_t verticalPeriod();
+
+    // The line period against the chip's own 27 MHz, so it does not move with
+    // PLLAD_MD. **IT RAILS TO A VALUE THAT IS WRONG AND STEADY**, and nothing
+    // here judges it -- one reading is not evidence.
+    // ../../../docs/investigations/hperiod-if-railing.md
+    static uint16_t linePeriod();
+
 };
 
 }  // namespace Tv5725

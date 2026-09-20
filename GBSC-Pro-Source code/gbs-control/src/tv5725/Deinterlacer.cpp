@@ -1,6 +1,77 @@
 #include "Deinterlacer.h"
 
+#include <Arduino.h>
+
+#include "FrameBuffer.h"
+#include "VideoProcessor.h"
+
 namespace Tv5725 {
+
+namespace {
+
+bool scanlinesApplied_ = false;
+bool motionAdaptEngaged_ = false;
+
+// The steering's own state: the filtered scan type, the period it was counted
+// against, and a re-lock waiting for the source to settle under it.
+uint8_t interlacedRun_ = 0;
+uint8_t progressiveRun_ = 0;
+uint16_t lastPeriod_ = 0;
+bool periodKnown_ = false;
+
+// What the user asked for, until they ask for something else.
+Deinterlacer::Preferences wanted_ = {false, false, false, 0, false};
+uint8_t relockDelay_ = 0;
+uint8_t relockParity_ = 0;
+
+// Which broadcast family the period sits in, and how far either side of a
+// total still names it. The tap is a family choice, not a scan-type one.
+const uint16_t NtscPeriod = 524;
+const uint16_t PalPeriod = 624;
+const uint16_t PeriodTolerance = 2;
+
+bool namesPeriod(uint16_t verticalPeriod, uint16_t total)
+{
+    return verticalPeriod + PeriodTolerance >= total
+        && verticalPeriod <= total + PeriodTolerance;
+}
+
+void armRelock(uint16_t verticalPeriod)
+{
+    relockDelay_ = Deinterlacer::RelockPasses;
+    relockParity_ = verticalPeriod % 2;
+}
+
+// A second change while one is already waiting cancels it rather than re-arming:
+// the source is still moving, so there is nothing settled to lock to.
+void rearmRelock(uint16_t verticalPeriod)
+{
+    if (relockDelay_ == 0)
+        armRelock(verticalPeriod);
+    else
+        relockDelay_ = 0;
+}
+
+// Counted out on the field the re-lock was armed at, which is what the parity
+// of the period names.
+bool relockCountedOut(uint16_t verticalPeriod)
+{
+    if (relockDelay_ == 0 || (verticalPeriod % 2) != relockParity_)
+        return false;
+
+    return --relockDelay_ == 0;
+}
+
+}  // namespace
+
+uint8_t Deinterlacer::verticalTapFor(uint16_t verticalPeriod)
+{
+    if (namesPeriod(verticalPeriod, NtscPeriod))
+        return 6;
+    if (namesPeriod(verticalPeriod, PalPeriod))
+        return 4;
+    return KeepVerticalTap;
+}
 
 void Deinterlacer::init()
 {
@@ -124,6 +195,207 @@ void Deinterlacer::init()
     MADPT_UV_MI_OFFSET::write(4);                     // s2_3b[6:0]
     MADPT_UV_MI_GAIN::write(15);                      // s2_3c[3:0]
     MADPT_MI_DELAY::write(0);                         // s2_3c[6:4]
+}
+
+
+bool Deinterlacer::scanlinesApplied()
+{
+    return scanlinesApplied_;
+}
+
+void Deinterlacer::forgetScanlines()
+{
+    scanlinesApplied_ = false;
+}
+
+void Deinterlacer::applyScanlineStrength(uint8_t strength)
+{
+    if (!scanlinesApplied_)
+        return;
+
+    MADPT_Y_MI_OFFSET::write(strength);
+    MADPT_UV_MI_OFFSET::write(strength);
+}
+
+void Deinterlacer::enableScanlines(uint8_t strength)
+{
+    if (scanlinesApplied_)
+        return;
+    scanlinesApplied_ = true;
+
+    MADPT_UVDLY_PD_SP::write(0);
+    MADPT_UVDLY_PD_ST::write(0);
+    MADPT_EN_UV_DEINT::write(1);
+    MADPT_UV_MI_DET_BYPS::write(1);
+    MADPT_UV_MI_OFFSET::write(strength);
+    MADPT_MO_ADP_UV_EN::write(1);
+
+    DIAG_BOB_PLDY_RAM_BYPS::write(0);
+    MADPT_PD_RAM_BYPS::write(0);
+    FrameBuffer::RFF_YUV_DEINTERLACE::write(1);
+    MADPT_Y_MI_DET_BYPS::write(1);
+    VideoProcessor::VDS_WLEV_GAIN::write(0x08);
+    VideoProcessor::VDS_W_LEV_BYPS::write(0);
+    MADPT_VIIR_COEF::write(0x08);
+    MADPT_Y_MI_OFFSET::write(strength);
+    MADPT_VIIR_BYPS::write(0);
+    FrameBuffer::RFF_LINE_FLIP::write(1);
+
+    MAPDT_VT_SEL_PRGV::write(0);
+}
+
+void Deinterlacer::disableScanlines()
+{
+    if (!scanlinesApplied_)
+        return;
+    scanlinesApplied_ = false;
+
+    MAPDT_VT_SEL_PRGV::write(1);
+
+    MADPT_UVDLY_PD_SP::write(4);
+    MADPT_UVDLY_PD_ST::write(4);
+    MADPT_EN_UV_DEINT::write(0);
+    MADPT_UV_MI_DET_BYPS::write(0);
+    MADPT_UV_MI_OFFSET::write(4);
+    MADPT_MO_ADP_UV_EN::write(0);
+
+    DIAG_BOB_PLDY_RAM_BYPS::write(1);
+    VideoProcessor::VDS_W_LEV_BYPS::write(1);
+
+    MADPT_Y_MI_OFFSET::write(0xff);
+    MADPT_VIIR_BYPS::write(1);
+    MADPT_PD_RAM_BYPS::write(1);
+    FrameBuffer::RFF_LINE_FLIP::write(0);
+}
+
+
+void Deinterlacer::enableMotionAdapt(uint8_t verticalTap,
+                                     void (*releaseCapture)())
+{
+    DEINT_00::write(0x19);
+    MADPT_Y_MI_OFFSET::write(0x00);
+    MADPT_Y_MI_DET_BYPS::write(0);
+
+    if (verticalTap != KeepVerticalTap)
+        MADPT_VTAP2_COEFF::write(verticalTap);
+
+    FrameBuffer::RFF_ADR_ADD_2::write(1);
+    FrameBuffer::RFF_REQ_SEL::write(3);
+    FrameBuffer::RFF_FETCH_NUM::write(0x80);
+    FrameBuffer::RFF_WFF_OFFSET::write(0x100);
+    FrameBuffer::RFF_YUV_DEINTERLACE::write(0);
+    FrameBuffer::WFF_FF_STA_INV::write(0);
+    FrameBuffer::WFF_ENABLE::write(1);
+    FrameBuffer::RFF_ENABLE::write(1);
+
+    if (releaseCapture != nullptr)
+        releaseCapture();
+    delay(SettleMs);
+    MAPDT_VT_SEL_PRGV::write(0);
+    motionAdaptEngaged_ = true;
+}
+
+bool Deinterlacer::motionAdaptEngaged() { return motionAdaptEngaged_; }
+
+void Deinterlacer::disableMotionAdapt()
+{
+    MAPDT_VT_SEL_PRGV::write(1);
+    DEINT_00::write(0xff);
+
+    FrameBuffer::RFF_FETCH_NUM::write(0x1);
+    FrameBuffer::RFF_WFF_OFFSET::write(1);
+    delay(2);
+    FrameBuffer::WFF_ENABLE::write(0);
+    FrameBuffer::RFF_ENABLE::write(0);
+    FrameBuffer::WFF_FF_STA_INV::write(1);
+
+    MADPT_Y_MI_OFFSET::write(0x7f);
+    MADPT_Y_MI_DET_BYPS::write(1);
+    motionAdaptEngaged_ = false;
+}
+
+void Deinterlacer::forgetSteering()
+{
+    interlacedRun_ = 0;
+    progressiveRun_ = 0;
+    periodKnown_ = false;
+    relockDelay_ = 0;
+}
+
+void Deinterlacer::choose(const Preferences &wanted) { wanted_ = wanted; }
+
+const Deinterlacer::Preferences &Deinterlacer::chosen() { return wanted_; }
+
+Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
+                                           SourceMeasurement::ScanType scan,
+                                           void (*releaseCapture)())
+{
+    const Preferences &wanted = wanted_;
+    Steering steering = {false, false};
+    bool reconfiguring = false;
+
+    if (wanted.automatic) {
+        if (periodKnown_ && lastPeriod_ != verticalPeriod) {
+            reconfiguring = true;
+            interlacedRun_ = 0;
+            progressiveRun_ = 0;
+            if (wanted.relockable && wanted.bob)
+                armRelock(verticalPeriod);
+        }
+        periodKnown_ = true;
+        lastPeriod_ = verticalPeriod;
+
+        if (scan == SourceMeasurement::ScanInterlaced) {
+            progressiveRun_ = 0;
+            if (++interlacedRun_ >= FilteredPasses) {
+                if (!wanted.bob && !motionAdaptEngaged_) {
+                    disableScanlines();
+                    enableMotionAdapt(verticalTapFor(verticalPeriod), releaseCapture);
+                    rearmRelock(verticalPeriod);
+                    reconfiguring = true;
+                }
+                interlacedRun_ = 0;
+            }
+        } else if (scan == SourceMeasurement::ScanProgressive) {
+            interlacedRun_ = 0;
+            if (++progressiveRun_ >= FilteredPasses) {
+                if (!wanted.bob && motionAdaptEngaged_) {
+                    disableMotionAdapt();
+                    rearmRelock(verticalPeriod);
+                }
+                progressiveRun_ = 0;
+            }
+        } else {
+            interlacedRun_ = 0;
+            progressiveRun_ = 0;
+        }
+
+        if (wanted.bob) {
+            if (motionAdaptEngaged_) {
+                disableMotionAdapt();
+                steering.frameTimingMoved = true;
+            }
+            if (wanted.scanlines && !scanlinesApplied_)
+                enableScanlines(wanted.scanlineStrength);
+            else if (!wanted.scanlines && scanlinesApplied_)
+                disableScanlines();
+        }
+
+        if (relockCountedOut(verticalPeriod)) {
+            steering.frameTimingMoved = true;
+            steering.outputRateSettled = true;
+        }
+    }
+
+    if (wanted.scanlines && !scanlinesApplied_ && !motionAdaptEngaged_ && !reconfiguring)
+        enableScanlines(wanted.scanlineStrength);
+
+    return steering;
+}
+
+void Deinterlacer::applyLineDoubling(bool lineDoubled)
+{
+    MADPT_Y_DELAY::write(lineDoubled ? 0 : 1);
 }
 
 }  // namespace Tv5725

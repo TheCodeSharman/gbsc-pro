@@ -51,31 +51,38 @@ TEST_CASE("the fetch is the source pixels the line needs, over the request budge
         CHECK(Memory::fetchFor(1009) <= 256);  // clean at 256
     }
 
-    SUBCASE("deep zoom is held at the measured floor, never extrapolated down") {
-        // capture / 4 keeps falling as the zoom goes in -- 70 at the deepest
-        // framing -- and nobody has ever run the part that low. The measured
-        // scheme goes flat at 150 below HSCALE 581, so that is where this stops
-        // rather than at an arithmetic limit.
-        CHECK(Memory::fetchFor(279) == Memory::FetchFloor);
-        CHECK(Memory::fetchFor(336) == Memory::FetchFloor);
-        CHECK(Memory::fetchFor(0) == Memory::FetchFloor);
-        CHECK(Memory::FetchFloor == 150);
+    SUBCASE("deep zoom holds the RATIO, which is the quantity measured") {
+        // Swept by hand at capture 456, automation frozen: 114 and 128 clean,
+        // 140 breaking up, and 150 putting blocks of other content through flat
+        // colour. A constant floor holds the VALUE still and lets the ratio
+        // fall, and the ratio is what every verdict was taken on.
+        CHECK(Memory::fetchFor(456) == 114);
+        CHECK(Memory::fetchFor(279) == 70);
+        CHECK(Memory::fetchFor(336) == 84);
+    }
+
+    SUBCASE("the ratio stays inside the band at every framing") {
+        // Clean to 4.04 and tearing from 4.28 above; 3.56 clean and 3.26
+        // breaking up below. Expressed in integers so the check is exact:
+        // 100 x capture / fetch lands within [340, 404].
+        for (uint16_t capture = 250; capture <= 1200; ++capture) {
+            uint32_t ratio = 100u * capture / Memory::fetchFor(capture);
+            CHECK(ratio >= 340);
+            CHECK(ratio <= 404);
+        }
     }
 
     SUBCASE("it never leaves the register's range") {
-        for (uint32_t capture = 0; capture <= 4095; capture += 3) {
-            uint16_t fetch = Memory::fetchFor((uint16_t)capture);
-            CHECK(fetch >= Memory::FetchMin);
-            CHECK(fetch <= Memory::FetchMax);
-        }
+        for (uint32_t capture = 0; capture <= 4095; capture += 3)
+            CHECK(Memory::fetchFor((uint16_t)capture) <= Memory::FetchMax);
     }
 
     SUBCASE("it is continuous -- one pixel of capture never moves it far") {
         // Stepping is not good enough -- values between the steps were measured
         // not working, so it has to ramp. A pad press changes the capture by one
         // unit, so the fetch must change by at most one.
-        uint16_t previous = Memory::fetchFor(150);
-        for (uint16_t capture = 151; capture <= 1200; ++capture) {
+        uint16_t previous = Memory::fetchFor(250);
+        for (uint16_t capture = 251; capture <= 1200; ++capture) {
             uint16_t fetch = Memory::fetchFor(capture);
             CHECK(fetch >= previous);
             CHECK(fetch - previous <= 1);
@@ -89,13 +96,12 @@ TEST_CASE("the fetch is the source pixels the line needs, over the request budge
         // takes no raster, so there is no gate left to switch the rule off.
         CHECK(Memory::fetchFor(1185) == 297);
         CHECK(Memory::fetchFor(1009) == 253);
-        CHECK(Memory::fetchFor(279) == Memory::FetchFloor);
+        CHECK(Memory::fetchFor(279) == 70);
     }
 
-    SUBCASE("a dropped capture read cannot produce a short burst") {
-        // Capture 0 is a failed read, not a framing. The floor is the honest
-        // answer -- returning 0 would stop playback entirely.
-        CHECK(Memory::fetchFor(0) == Memory::FetchFloor);
+    SUBCASE("a dropped capture read is not a framing") {
+        // Capture 0 has no ratio to hold, and 0 would stop playback entirely.
+        CHECK(Memory::fetchFor(0) == Memory::DefaultFetch);
     }
 }
 
@@ -128,7 +134,7 @@ TEST_CASE("the stride covers the widest fetch the line can ask for")
         CHECK(Memory::offsetFor(Memory::FetchMax * 8) <= Memory::OffsetMax);
     }
 
-    SUBCASE("a dropped capture read gives the floor, not a stride of nothing") {
-        CHECK(Memory::offsetFor(0) >= Memory::FetchFloor);
+    SUBCASE("a dropped capture read gives a stride, not nothing") {
+        CHECK(Memory::offsetFor(0) == Memory::DefaultFetch);
     }
 }

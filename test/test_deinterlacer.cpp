@@ -14,8 +14,13 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Deinterlacer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
 using Tv5725::Deinterlacer;
+using Tv5725::FrameBuffer;
+using Tv5725::VideoProcessor;
 
 static const uint8_t Poison = 0xA5;
 
@@ -111,4 +116,606 @@ TEST_CASE("the motion index fixed value is owned, despite sharing a datasheet na
 
     CHECK(Wire.field(2, 0x0D, 0, 7) == 4);    // MADPT_MI_THRESHOLD
     CHECK(Wire.field(2, 0x0E, 0, 7) == 127);  // MADPT_MI_FIXED_VALUE
+}
+
+// Scanlines: the chroma and luma deinterlace stages made to drop alternate
+// lines, plus the two registers outside this block that the effect needs.
+
+TEST_CASE("scanlines drop alternate lines at the strength asked for")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
+
+    Deinterlacer::enableScanlines(0x30);
+
+    CHECK(Deinterlacer::MADPT_UV_MI_OFFSET::read() == 0x30);
+    CHECK(Deinterlacer::MADPT_Y_MI_OFFSET::read() == 0x30);
+    CHECK(Deinterlacer::MADPT_EN_UV_DEINT::read() == 1);
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 0);
+}
+
+TEST_CASE("scanlines take the deinterlacer RAM out of bypass")
+{
+    // Left in bypass the effect has no field to drop from. The three bypass
+    // bits go together, and leaving one behind fills the screen with random
+    // colour while every register still reads correct.
+    Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
+
+    Deinterlacer::enableScanlines(0x30);
+
+    CHECK(Deinterlacer::DIAG_BOB_PLDY_RAM_BYPS::read() == 0);
+    CHECK(Deinterlacer::MADPT_PD_RAM_BYPS::read() == 0);
+    CHECK(Deinterlacer::MADPT_VIIR_BYPS::read() == 0);
+}
+
+TEST_CASE("scanlines reach the two registers outside this block")
+{
+    // The frame buffer has to flip the line it reads back, and the video
+    // processor's white level expansion carries the brightening.
+    Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
+
+    Deinterlacer::enableScanlines(0x30);
+
+    CHECK(FrameBuffer::RFF_LINE_FLIP::read() == 1);
+    CHECK(FrameBuffer::RFF_YUV_DEINTERLACE::read() == 1);
+    CHECK(VideoProcessor::VDS_W_LEV_BYPS::read() == 0);
+    CHECK(VideoProcessor::VDS_WLEV_GAIN::read() == 0x08);
+}
+
+TEST_CASE("turning scanlines off puts every bypass back")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x30);
+    Wire.poison(Poison);
+
+    Deinterlacer::disableScanlines();
+
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 1);
+    CHECK(Deinterlacer::DIAG_BOB_PLDY_RAM_BYPS::read() == 1);
+    CHECK(Deinterlacer::MADPT_PD_RAM_BYPS::read() == 1);
+    CHECK(Deinterlacer::MADPT_VIIR_BYPS::read() == 1);
+    CHECK(VideoProcessor::VDS_W_LEV_BYPS::read() == 1);
+    CHECK(FrameBuffer::RFF_LINE_FLIP::read() == 0);
+}
+
+TEST_CASE("turning scanlines off leaves the chroma deinterlace where it was")
+{
+    // RFF_YUV_DEINTERLACE is written on the way in and NOT on the way out --
+    // the motion-adaptive path owns its value, and clearing it here would take
+    // that path's setting with it.
+    Wire.reset();
+    FrameBuffer::RFF_YUV_DEINTERLACE::write(1);
+
+    Deinterlacer::disableScanlines();
+
+    CHECK(FrameBuffer::RFF_YUV_DEINTERLACE::read() == 1);
+}
+
+// The motion-adaptive deinterlacer: two fields in flight, so the frame buffer
+// fetches ahead and the write side is told not to invert its start.
+
+static unsigned g_released = 0;
+static uint8_t g_progressiveAtRelease = 0xff;
+static void releaseStub()
+{
+    ++g_released;
+    g_progressiveAtRelease = (uint8_t)Deinterlacer::MAPDT_VT_SEL_PRGV::read();
+}
+
+TEST_CASE("the motion-adaptive path puts two fields in flight")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+    g_released = 0;
+
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+
+    CHECK(FrameBuffer::WFF_ENABLE::read() == 1);
+    CHECK(FrameBuffer::RFF_ENABLE::read() == 1);
+    CHECK(FrameBuffer::RFF_FETCH_NUM::read() == 0x80);
+    CHECK(FrameBuffer::WFF_FF_STA_INV::read() == 0);
+}
+
+TEST_CASE("the capture is released before the progressive select is cleared")
+{
+    // Clearing it first shows the deinterlacer a buffer nothing is filling.
+    Wire.reset();
+    Wire.poison(Poison);
+    g_released = 0;
+    g_progressiveAtRelease = 0xff;
+
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+
+    CHECK(g_released == 1);
+    CHECK(g_progressiveAtRelease == 1);
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 0);
+}
+
+TEST_CASE("the vertical tap is written when the caller has one")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::enableMotionAdapt(6, releaseStub);
+
+    CHECK(Deinterlacer::MADPT_VTAP2_COEFF::read() == 6);
+}
+
+TEST_CASE("a caller with no vertical tap leaves the one in force")
+{
+    // Upstream writes the coefficient for two source standards and for nothing
+    // else, so a caller that cannot name one must not have a default chosen
+    // for it.
+    Wire.reset();
+    Deinterlacer::MADPT_VTAP2_COEFF::write(3);
+
+    Deinterlacer::enableMotionAdapt(Deinterlacer::KeepVerticalTap, releaseStub);
+
+    CHECK(Deinterlacer::MADPT_VTAP2_COEFF::read() == 3);
+}
+
+TEST_CASE("turning the motion-adaptive path off stops both fifos")
+{
+    Wire.reset();
+    Wire.poison(Poison);
+
+    Deinterlacer::disableMotionAdapt();
+
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 1);
+    CHECK(FrameBuffer::WFF_ENABLE::read() == 0);
+    CHECK(FrameBuffer::RFF_ENABLE::read() == 0);
+    CHECK(FrameBuffer::RFF_FETCH_NUM::read() == 1);
+    CHECK(FrameBuffer::WFF_FF_STA_INV::read() == 1);
+    CHECK(Deinterlacer::MADPT_Y_MI_DET_BYPS::read() == 1);
+}
+
+// Whether the scanline stages are in force. State rather than a register: the
+// chip has no bit for it, and the firmware kept one in an undocumented register
+// that a preset load cleared behind the RAM copy's back.
+
+TEST_CASE("nothing is applied until the scanlines are switched on")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("switching the scanlines on records that they are applied")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+
+    Deinterlacer::enableScanlines(0x40);
+
+    CHECK(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("switching them off again records that they are not")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+
+    Deinterlacer::disableScanlines();
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("switching on what is already on writes nothing")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+    const size_t applied = Wire.trace.size();
+
+    Deinterlacer::enableScanlines(0x40);
+
+    CHECK(Wire.trace.size() == applied);
+}
+
+TEST_CASE("switching off what is already off writes nothing")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    const size_t before = Wire.trace.size();
+
+    Deinterlacer::disableScanlines();
+
+    CHECK(Wire.trace.size() == before);
+}
+
+TEST_CASE("a preset load rewrote the stages, so what was applied is forgotten")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+
+    Deinterlacer::forgetScanlines();
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the strength moves under scanlines that are in force")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    Deinterlacer::enableScanlines(0x40);
+
+    Deinterlacer::applyScanlineStrength(0x20);
+
+    CHECK(Deinterlacer::MADPT_Y_MI_OFFSET::read() == 0x20);
+    CHECK(Deinterlacer::MADPT_UV_MI_OFFSET::read() == 0x20);
+}
+
+TEST_CASE("the strength is not written when no scanlines are in force")
+{
+    Wire.reset();
+    Deinterlacer::forgetScanlines();
+    const size_t before = Wire.trace.size();
+
+    Deinterlacer::applyScanlineStrength(0x20);
+
+    CHECK(Wire.trace.size() == before);
+}
+
+TEST_CASE("the vertical tap follows the total the period sits at")
+{
+    CHECK(Deinterlacer::verticalTapFor(524) == 6);
+    CHECK(Deinterlacer::verticalTapFor(624) == 4);
+}
+
+TEST_CASE("a period naming no total leaves the tap where it is")
+{
+    CHECK(Deinterlacer::verticalTapFor(112)
+          == static_cast<uint8_t>(Deinterlacer::KeepVerticalTap));
+}
+
+
+
+// --- who owns "is the motion-adaptive path engaged" -------------------------
+//
+// The sketch used to keep its own copy of this beside the registers, and three
+// reset paths assigned that copy directly without writing the chip. The two
+// then disagreed permanently, and the branch that turns the path off is
+// guarded by the copy -- so a progressive source ran through the deinterlacer
+// RAM for the life of the boot, with RFF_WFF_OFFSET 0x100 putting a shifted
+// second image on screen. Measured on a Wii going 576i -> 480p.
+//
+// So the state belongs to whatever writes the registers, and it can only
+// change by writing them.
+
+TEST_CASE("the motion-adaptive path reports itself engaged")
+{
+    Wire.reset();
+    Deinterlacer::disableMotionAdapt();
+    REQUIRE_FALSE(Deinterlacer::motionAdaptEngaged());
+
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+
+    CHECK(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("turning it off reports it disengaged")
+{
+    Wire.reset();
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+    REQUIRE(Deinterlacer::motionAdaptEngaged());
+
+    Deinterlacer::disableMotionAdapt();
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+// The regression lock. Engagement going true -> false without those writes is
+// exactly the state the sketch used to reach, and the one nothing could undo.
+TEST_CASE("it cannot report itself disengaged without stopping the fifos")
+{
+    Wire.reset();
+    Deinterlacer::enableMotionAdapt(4, releaseStub);
+    Wire.reset();
+
+    Deinterlacer::disableMotionAdapt();
+
+    REQUIRE_FALSE(Deinterlacer::motionAdaptEngaged());
+    CHECK(Wire.touched[0x02][0x16]);
+    CHECK(Wire.touched[0x04][0x42]);
+    CHECK(Wire.touched[0x04][0x4d]);
+    CHECK(Deinterlacer::MAPDT_VT_SEL_PRGV::read() == 1);
+    CHECK(FrameBuffer::WFF_ENABLE::read() == 0);
+    CHECK(FrameBuffer::RFF_ENABLE::read() == 0);
+}
+
+// --- the luma delay, which follows the scan mode ------------------------------
+
+TEST_CASE("the luma delay pipe follows the scan mode")
+{
+    // Measured: 0 on the 15 kHz RGBHV bench raster, 1 on component 480p.
+    Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::applyLineDoubling(false);
+    CHECK(Wire.field(2, 0x17, 0, 4) == 1);
+
+    Deinterlacer::applyLineDoubling(true);
+    CHECK(Wire.field(2, 0x17, 0, 4) == 0);
+}
+
+TEST_CASE("the chroma delay pipe beside it is left alone")
+{
+    // MADPT_UV_DELAY shares the byte and has its own owner in init().
+    Wire.reset();
+    Wire.poison(Poison);
+    Deinterlacer::applyLineDoubling(false);
+
+    CHECK(Wire.field(2, 0x17, 4, 4) == ((Poison >> 4) & 0xF));
+}
+
+// Steering: one maintenance pass over an acquired source, which is where the
+// motion-adaptive path is engaged and released and where the scanlines follow
+// the preference. docs/video-source-acquisition.md
+
+using Tv5725::SourceMeasurement;
+
+static Deinterlacer::Preferences automatic()
+{
+    Deinterlacer::Preferences wanted;
+    wanted.automatic = true;
+    wanted.bob = false;
+    wanted.scanlines = false;
+    wanted.scanlineStrength = 0x40;
+    wanted.relockable = false;
+    return wanted;
+}
+
+struct AtRest {
+    AtRest()
+    {
+        Wire.reset();
+        Wire.poison(Poison);
+        Deinterlacer::disableMotionAdapt();
+        Deinterlacer::forgetScanlines();
+        Deinterlacer::forgetSteering();
+        g_released = 0;
+    }
+};
+
+// The preferences are held rather than handed in, so a pass chooses them and
+// then steers -- which is what the firmware does, one press apart.
+static Deinterlacer::Steering pass(uint16_t verticalPeriod,
+                                   SourceMeasurement::ScanType scan,
+                                   const Deinterlacer::Preferences &wanted)
+{
+    Deinterlacer::choose(wanted);
+    return Deinterlacer::steer(verticalPeriod, scan, releaseStub);
+}
+
+TEST_CASE("one interlaced reading is not enough to engage the motion-adaptive path")
+{
+    AtRest rest;
+
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a settled run of interlaced readings engages it")
+{
+    AtRest rest;
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a vertical period that moved restarts the run")
+{
+    AtRest rest;
+
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    pass(525, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a reading of neither scan type restarts the run")
+{
+    AtRest rest;
+
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    pass(524, SourceMeasurement::ScanUnknown, automatic());
+    pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("a settled run of progressive readings releases it again")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanProgressive, automatic());
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("engaging the motion-adaptive path turns the scanlines off")
+{
+    AtRest rest;
+    Deinterlacer::enableScanlines(0x40);
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the scanlines asked for are applied on a progressive source")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.scanlines = true;
+
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("no scanlines are applied on the pass where the vertical period moved")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+    wanted.scanlines = true;
+
+    pass(525, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the scanlines follow the preference with the steering switched off")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.automatic = false;
+    wanted.scanlines = true;
+
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("the scan type steers nothing with the steering switched off")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.automatic = false;
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, wanted);
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("bob releases the motion-adaptive path")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.bob = true;
+
+    pass(524, SourceMeasurement::ScanInterlaced, wanted);
+
+    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
+}
+
+TEST_CASE("releasing it for bob reports the frame timing moved")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.bob = true;
+
+    const Deinterlacer::Steering steering =
+        pass(524, SourceMeasurement::ScanInterlaced, wanted);
+
+    CHECK(steering.frameTimingMoved);
+}
+
+TEST_CASE("bob takes the scanlines away when they are no longer wanted")
+{
+    AtRest rest;
+    Deinterlacer::Preferences wanted = automatic();
+    wanted.bob = true;
+    wanted.scanlines = true;
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+    wanted.scanlines = false;
+
+    pass(524, SourceMeasurement::ScanProgressive, wanted);
+
+    CHECK_FALSE(Deinterlacer::scanlinesApplied());
+}
+
+TEST_CASE("nothing is reported while the re-lock is still counting out")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    bool reported = false;
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses - 2; i++)
+        reported |= pass(524, SourceMeasurement::ScanInterlaced, automatic())
+                        .outputRateSettled;
+
+    CHECK_FALSE(reported);
+}
+
+TEST_CASE("the re-lock is reported once the count runs out")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses - 2; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    const Deinterlacer::Steering steering =
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    CHECK(steering.outputRateSettled);
+    CHECK(steering.frameTimingMoved);
+}
+
+TEST_CASE("a pass at the other field parity does not advance the count")
+{
+    // The parity is how an interlaced source's two fields are told apart, so a
+    // re-lock armed on one field is counted out on that field alone.
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    bool reported = false;
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses * 2; i++)
+        reported |= pass(525, SourceMeasurement::ScanInterlaced, automatic())
+                        .outputRateSettled;
+
+    CHECK_FALSE(reported);
+}
+
+TEST_CASE("a second change inside the window cancels the re-lock")
+{
+    AtRest rest;
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanInterlaced, automatic());
+
+    for (uint8_t i = 0; i < Deinterlacer::FilteredPasses; i++)
+        pass(524, SourceMeasurement::ScanProgressive, automatic());
+
+    bool reported = false;
+    for (uint8_t i = 0; i < Deinterlacer::RelockPasses * 2; i++)
+        reported |= pass(524, SourceMeasurement::ScanProgressive, automatic())
+                        .outputRateSettled;
+
+    CHECK_FALSE(reported);
+}
+
+TEST_CASE("a settled source that has not moved reports nothing")
+{
+    AtRest rest;
+
+    const Deinterlacer::Steering steering =
+        pass(524, SourceMeasurement::ScanProgressive, automatic());
+
+    CHECK_FALSE(steering.frameTimingMoved);
+    CHECK_FALSE(steering.outputRateSettled);
 }
