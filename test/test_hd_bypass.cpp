@@ -25,6 +25,7 @@ void tv5725Log(const char *) {}
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourSpace.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
@@ -330,7 +331,45 @@ TEST_CASE("the channel raster is sized from the divider the engine holds")
     CHECK(Adc::PLLAD_MD::read() == 2039);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 2047);   // + RasterGuardSamples
     CHECK(HdBypass::HD_HB_ST::read() == 2039);       // the line's end
-    CHECK(HdBypass::HD_HB_SP::read() == 144);
+    CHECK(HdBypass::HD_HB_SP::read()
+          == (uint16_t)lrintf(Tv5725::AxisHorizontal.activeStart() * 2039.0f));
+}
+
+// 0x90 was inherited and nothing derived it. It is a count of SAMPLES against a
+// divider chosen per source, so what it covers is whatever fraction that
+// divider makes it -- and on the bench it covers nothing at all. Measured in
+// bypass at 800x600@60 on a 2048 sample line, `HD_HB_SP` stepped 144, 240, 320,
+// 400, 480, 560 against the panel:
+//
+//   HD_HB_SP        144  240  320  400  480  560
+//   blanked columns   0    0    0   36  117  198
+//
+// The panel's own left edge falls at sample 364, so the first three blank
+// nothing and the constant has been inert at every divider it has run at.
+//
+// AxisHorizontal::activeStart() is the engine's one answer to where video
+// starts on a source whose raster it does not know, and the scaling path places
+// its capture from it. One rule for both paths, rather than a second number
+// that has to be kept in step by hand.
+//
+// **IT DOES NOT HIDE A SOURCE'S BORDER, AND MUST NOT BE TUNED UNTIL IT DOES.**
+// The envelope is deliberately early so nothing is cropped. Hiding the bench
+// source's 40-pixel border needs about 0.215 of the line against the envelope's
+// 0.117, and bypass has no framing control to give the picture back with.
+// docs/known-issues.md
+TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
+{
+    const uint16_t dividers[] = {1124, 1856, 2039};
+
+    for (unsigned i = 0; i < sizeof(dividers) / sizeof(dividers[0]); i++) {
+        CAPTURE(dividers[i]);
+        applyForSource(dividers[i], 31469);
+
+        CHECK(HdBypass::HD_HB_SP::read()
+              == (uint16_t)lrintf(Tv5725::AxisHorizontal.activeStart()
+                                  * (float)dividers[i]));
+        CHECK(HdBypass::HD_HB_SP::read() < HdBypass::HD_HB_ST::read());
+    }
 }
 
 TEST_CASE("the blanking start stays inside the line at every divider")

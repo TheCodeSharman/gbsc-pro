@@ -50,6 +50,12 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
 	src/tv5725/ModeDetect.cpp
 
+# Axis and the value types it solves into. HdBypass asks it where video starts
+# on a source whose raster is unknown, so anything linking HdBypass links these.
+AXIS_SRC = src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/RasterFit.cpp \
+           src/tv5725/PictureOrigin.cpp src/tv5725/AxisSolution.cpp \
+           src/tv5725/BlankingTiming.cpp
+
 # The engine no longer drives itself -- its stages are named calls the
 # acquisition path makes in order -- so a case that wants a solve links the
 # layer with it.
@@ -529,7 +535,7 @@ chip:
 	  src/tv5725/VideoRoute.cpp \
 	  src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  $(SAMPLING_SRC)
+	  $(AXIS_SRC) $(SAMPLING_SRC)
 	@"$(OUT)/test_chip"
 
 ## hd-bypass: host unit tests for Tv5725::HdBypass
@@ -544,7 +550,7 @@ hd-bypass:
 	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
 	  src/tv5725/Chip.cpp src/tv5725/VideoRoute.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
-	  $(SAMPLING_SRC)
+	  $(AXIS_SRC) $(SAMPLING_SRC)
 	@"$(OUT)/test_hd_bypass"
 
 ## source-maintenance: host unit tests for SourceMaintenance

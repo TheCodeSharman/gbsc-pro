@@ -1,5 +1,9 @@
 #include "HdBypass.h"
 
+#include <math.h>
+
+#include "Axis.h"
+
 #include "InputFormatter.h"
 #include "VideoSignal.h"
 
@@ -35,7 +39,6 @@ namespace {
 // The played-out line as a function of the line the CHANNEL sees.
 // docs/investigations/one-bypass-route-carries-rgbhv.md
 const uint16_t RasterGuardSamples = 8;
-const uint16_t BlankEndSamples = 0x90;
 
 // How far the sample lags the sync the block emits beside it, in channel
 // clocks. The sync generator does not account for the delay the channel adds to
@@ -150,7 +153,19 @@ void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
     // of the line cost the last 3% of the panel. It still has to sit below
     // HD_HSYNC_RST or the generator never opens at all.
     HD_HB_ST::write(channelLine);
-    HD_HB_SP::write(BlankEndSamples);
+
+    // The near edge is the same envelope the scaling path places its capture
+    // from, so there is one answer to where video starts on a source whose
+    // raster is unknown rather than two that drift apart. It was 0x90, a count
+    // of SAMPLES against a divider chosen per source, and on the bench it
+    // covered nothing: the panel's own left edge falls at sample 364 of a 2048
+    // sample line and the blanking is invisible below about 400.
+    //
+    // It does not hide a source's border, and is not tuned until it does: the
+    // envelope is deliberately early so nothing is cropped, and bypass has no
+    // framing control to give a cropped picture back with. docs/known-issues.md
+    HD_HB_SP::write((uint16_t)lrintf(AxisHorizontal.activeStart()
+                                     * (float)channelLine));
 }
 
 uint16_t HdBypass::dividerFor(uint32_t lineRateHz)
