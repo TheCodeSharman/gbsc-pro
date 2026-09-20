@@ -9,8 +9,12 @@
 #include "src/WebSocketsServer.h"
 #include "fonts.h"
 #include "src/tv5725/Adc.h"
+#include "src/tv5725/TestBusRateMeasurement.h"
+#include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SyncProcessor.h"
-#include "src/tv5725/SyncType.h"
+#include "src/tv5725/SyncMeasurement.h"
+#include "src/tv5725/VideoRoute.h"
+#include "src/tv5725/RgbhvOutput.h"
 #include <stdio.h>
 
 
@@ -28,12 +32,9 @@ extern uint8_t RGB_Com;
 #define Ypbpr_Sync 3
 
 extern bool scalingRgbhv();
-extern void applyPresets(uint8_t videoMode);
-extern void setOutModeHdBypass(bool bypass);
+extern void applyPresets();
 extern void saveUserPrefs();
-extern float getOutputFrameRate();
 extern void loadDefaultUserOptions();
-extern uint8_t getVideoMode();
 extern void ChangeAvModeOption(uint8_t num);
 extern void ChangeSvModeOption(uint8_t num);
 
@@ -91,7 +92,6 @@ extern uint8_t SeleInputSource;
 extern uint8_t BriorCon;
 
 // 屏显
-extern uint8_t Info;
 // 解析菜单处理程序
 bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, bool isFirstTime)
 {
@@ -113,7 +113,6 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
     PresetPreference preset = PresetPreference::Output1080P;
     switch (item->tag)
     {
@@ -132,34 +131,27 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
     case MT_480s576:
         preset = PresetPreference::Output480P;
         break;
-    case MT_BYPASS:
-        preset = PresetPreference::OutputBypass;//  OutputBypass   OutputCustomized
-        break;
+    // MT_BYPASS names no resolution, and the branch below skips it: handing the
+    // source to the panel is stored on its own, not in this field.
     default:
         break;
     }
-    if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read())
-    {
-        videoMode = rto->videoStandardInput;
-    }
-
     if (item->tag != MT_BYPASS)
     {
         uopt->presetPreference = preset;
         if (scalingRgbhv())
         {
-            rto->videoStandardInput = 15;
+            Tv5725::RgbhvOutput::chooseBypass();
         }
         else
         {
-            applyPresets(videoMode);
+            applyPresets();
         }
     }
     else
     {
         // setOutModeHdBypass(false);
         // uopt->presetPreference = preset;
-        // if (rto->videoStandardInput != 15)
         // {
         //     rto->autoBestHtotalEnabled = 0;
         //     if (rto->applyPresetDoneStage == 11)
@@ -175,7 +167,7 @@ bool resolutionMenuHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMen
         // {
         //     rto->applyPresetDoneStage = 1;
         // }
-      // if(Info == InfoVGA)
+      // if(selected() == InfoVGA)
       // {
       //     uopt->preferScalingRgbhv = false;
       // }
@@ -332,7 +324,7 @@ bool currentSettingHandler(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav
     display.clear();
     display.setColor(OLEDDISPLAY_COLOR::WHITE);
     display.setFont(ArialMT_Plain_16);
-    if (rto->sourceDisconnected || !rto->boardHasPower)
+    if (rto->sourceDisconnected || !Tv5725::Chip::hasPower())
     {
         if (millis() - oledMenuFreezeStartTime >= oledMenuFreezeTimeoutInMS)
         {
@@ -347,7 +339,7 @@ bool currentSettingHandler(OLEDMenuManager *manager, OLEDMenuItem *, OLEDMenuNav
         // TODO translations
         boolean vsyncActive = 0;
         boolean hsyncActive = 0;
-        float ofr = getOutputFrameRate();
+        float ofr = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
         uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
 
         display.setFont(URW_Gothic_L_Book_20);
@@ -488,7 +480,7 @@ ChecksumSender sender;
 
 // The ESP and the HC32 each persist the selected input separately and neither
 // can read the other back, so nothing else reconciles them at boot. The byte is
-// taken whole from InputSource, low nibble included -- assembling it from a
+// taken whole from VideoSourceSelection, low nibble included -- assembling it from a
 // base array and a mode is what dropped VGA's asw_01.
 void sendInputFrame(uint8_t frame)
 {
@@ -527,17 +519,15 @@ static void LoadDefault()
     rto->autoBestHtotalEnabled = true; // 已启用自动最佳总计
     rto->syncLockFailIgnore = 16;      //
     rto->syncWatcherEnabled = true;    //
-    rto->phaseADC = 16;                //
-    rto->phaseSP = 16;                 //
-    rto->failRetryAttempts = 0;        //
+    Tv5725::Adc::choosePhaseAdc(16);
+    Tv5725::Adc::choosePhaseSyncProcessor(16);
     rto->presetID = 0;                 //
-    rto->HPLLState = 0;
-    rto->motionAdaptiveDeinterlaceActive = false; // 运动自适应隔行扫描
+    Tv5725::Deinterlacer::disableMotionAdapt();
     rto->deinterlaceAutoEnabled = true;           // 去隔行扫描自动启用
-    rto->scanlinesEnabled = false;                // 扫描线启用
-    rto->boardHasPower = true;                    // 板有电源
-    rto->presetIsPalForce60 = false;              // 预设为 PalForce60
-    Tv5725::SyncType::set(false);                   // 同步类型
+    Tv5725::Deinterlacer::forgetScanlines();
+    Tv5725::Deinterlacer::forgetSteering();
+    Tv5725::Chip::holdPower(true);                    // 板有电源
+    Tv5725::SyncMeasurement::set(false);                   // 同步类型
 
     // **AND FORGET THAT IT WAS EVER MEASURED.** set() deliberately does not mark
     // the type as probed, so without this the previous input's answer survives a
@@ -545,24 +535,16 @@ static void LoadDefault()
     // just written, and a csync source coming after a separate-sync one is never
     // measured. LoadDefault() is reached only from the input handlers in this
     // file, so this is the change-of-source edge. docs/sync-type-selection.md
-    Tv5725::SyncType::forget();
+    Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;          // 有效缩放
-    rto->medResLineCount = 0x33;                  //
     rto->osr = 0;                                 //
-    rto->notRecognizedCounter = 0;                //
 
-    rto->videoStandardInput = 0;    // 视频标准输入
-    rto->outModeHdBypass = false;   //
-    rto->videoIsFrozen = true;      //
+    Tv5725::VideoRoute::toScaler();   //
     rto->sourceDisconnected = true; //
     // rto->isInLowPowerMode = false; //
     rto->applyPresetDoneStage = 0; //
-    // rto->presetVlineShift = 0;     //
-    rto->clampPositionIsSet = 0;     //
-    rto->coastPositionIsSet = 0;     //
-    rto->continousStableCounter = 0; //
-    rto->currentLevelSOG = 5;        //
-    rto->thisSourceMaxLevelSOG = 31; //
+    Tv5725::SyncProcessor::forgetPositions();
+    Tv5725::SyncOnGreen::choose(5);  //
 }
 
 static void resetSyncProcessor_yuv()
@@ -607,7 +589,7 @@ void SetReg(unsigned char reg, unsigned char val)
 //   sender.send(Adv_SIGNALIZED);
 // }
 
-void applyInputRegisters(const InputSource::Settings &settings)
+void applyInputRegisters(const VideoSourceSelection::Settings &settings)
 {
     if (settings.writesAdc)
         Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
@@ -616,12 +598,12 @@ void applyInputRegisters(const InputSource::Settings &settings)
         Tv5725::Adc::selectInput(settings.adcInputSel);
 }
 
-void applyInputSelection(InputSource::Id id)
+void applyInputSelection(VideoSourceSelection::Id id)
 {
-    const InputSource::Settings settings = InputSource::settingsFor(id);
+    const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(id);
 
     SeleInputSource = settings.legacySource;
-    Info = id;
+    VideoSourceSelection::select(id);
     resetSyncProcessor();
     applyInputRegisters(settings);
     BriorCon = settings.brightnessSet;
@@ -634,55 +616,55 @@ void applyInputSelection(InputSource::Id id)
 void InputVGA_mode(uint8_t mode)
 {
     Checksum_Sendmode(VGA, !mode);
-    applyInputSelection(InputSource::Vga);
+    applyInputSelection(VideoSourceSelection::Vga);
 }
 void InputRGsB_mode(uint8_t mode)
 {
     Checksum_Sendmode(RGsB, !mode);
-    applyInputSelection(InputSource::RgsB);
+    applyInputSelection(VideoSourceSelection::RgsB);
 }
 void InputRGBs_mode(uint8_t mode)
 {
     Checksum_Sendmode(RGBs, !mode);
-    applyInputSelection(InputSource::Rgbs);
+    applyInputSelection(VideoSourceSelection::Rgbs);
 }
 
 void InputRGBs(void)
 {
     sender.send(RGBs);
-    applyInputSelection(InputSource::Rgbs);
+    applyInputSelection(VideoSourceSelection::Rgbs);
 }
 void InputYUV(void)
 {
     sender.send(Ypbpr);
-    applyInputSelection(InputSource::Ypbpr);
+    applyInputSelection(VideoSourceSelection::Ypbpr);
 }
 
 void InputNULL(void)
 {
     sender.send(Ypbpr);
     SeleInputSource = S_YUV;
-    // Info = InfoYUV;
+    // select(InfoYUV);
     resetSyncProcessor();
     rto->sourceDisconnected = true;
 }
 void InputRGsB(void)
 {
     sender.send(RGsB);
-    applyInputSelection(InputSource::RgsB);
+    applyInputSelection(VideoSourceSelection::RgsB);
 }
 void InputVGA(void)
 {
     Checksum_Sendmode(VGA, 1);
-    applyInputSelection(InputSource::Vga);
+    applyInputSelection(VideoSourceSelection::Vga);
 }
 void InputINFO(void)
 {
     sender.send(INFO);
     SeleInputSource = S_YUV;
-    // Info = InfoSV;
+    // select(InfoSV);
     resetSyncProcessor();
-    applyInputRegisters(InputSource::settingsFor(InputSource::Composite));
+    applyInputRegisters(VideoSourceSelection::settingsFor(VideoSourceSelection::Composite));
     BriorCon = 2;
     rto->sourceDisconnected = true;
     saveUserPrefs();
@@ -690,24 +672,24 @@ void InputINFO(void)
 void InputSV(void)
 {
     sender.send(Adv_7391_SV);
-    applyInputSelection(InputSource::SVideo);
+    applyInputSelection(VideoSourceSelection::SVideo);
 }
 
 void InputSV_mode(uint8_t mode)
 {
     Checksum_Sendmode(Adv_7391_SV, mode);
-    applyInputSelection(InputSource::SVideo);
+    applyInputSelection(VideoSourceSelection::SVideo);
 }
 void InputAV(void)
 {
     sender.send(Adv_7391_AV);
-    applyInputSelection(InputSource::Composite);
+    applyInputSelection(VideoSourceSelection::Composite);
 }
 
 void InputAV_mode(uint8_t mode)
 {
     Checksum_Sendmode(Adv_7391_AV, mode);
-    applyInputSelection(InputSource::Composite);
+    applyInputSelection(VideoSourceSelection::Composite);
 }
 
 void Send_TvMode(uint8_t Mode)
@@ -764,7 +746,6 @@ bool Adv7391TvModeSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMe
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
 
     TVMODE_PresetPreference preset = TVMODE_PresetPreference::MT_MODE_AUTO;
 
@@ -812,9 +793,9 @@ switch (item->tag) {
 
     // 更新后的条件处理逻辑
 // if (preset == TVMODE_PresetPreference::MT_MODE_AUTO) {  
-    if (Info == InfoAV) ChangeAvModeOption(0);
-    else if (Info == InfoSV) ChangeSvModeOption(0);
-    if (Info == InfoSV || Info == InfoAV) {
+    if (VideoSourceSelection::selected() == InfoAV) ChangeAvModeOption(0);
+    else if (VideoSourceSelection::selected() == InfoSV) ChangeSvModeOption(0);
+    if (VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
         TvMode[3] = modes[preset];  // 0x04
         sender.send(TvMode);
     }
@@ -848,7 +829,6 @@ bool InputSwHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
 
     INPUT_PresetPreference preset = INPUT_PresetPreference::MT_RGBs;
 
@@ -932,7 +912,6 @@ bool SettingHandler(OLEDMenuManager *manager, OLEDMenuItem *item, OLEDMenuNav, b
     display->drawString(OLED_MENU_WIDTH / 2, 16, item->str);
     display->drawXbm((OLED_MENU_WIDTH - TEXT_LOADED_WIDTH) / 2, OLED_MENU_HEIGHT / 2, IMAGE_ITEM(TEXT_LOADED));
     display->display();
-    uint8_t videoMode = getVideoMode();
     SETTING_PresetPreference preset = SETTING_PresetPreference::MT_7391_1X;
 
     // MT_7391_1X    ,

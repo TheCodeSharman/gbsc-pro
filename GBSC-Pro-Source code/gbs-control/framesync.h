@@ -23,6 +23,8 @@
 #include "src/clock/ClockGen.h"
 #include "src/clock/RateAgreement.h"
 #include "src/tv5725/DisplayClock.h"
+#include "src/tv5725/TestBus.h"
+#include "src/tv5725/VideoRoute.h"
 
 // FS_DEBUG:      full verbose debug over serial
 // FS_DEBUG_LED:  just blink LED (off = adjust phase, on = normal phase)
@@ -146,33 +148,13 @@ private:
     static uint8_t delayLock;
     static int16_t syncLastCorrection;
 
+    // When the lock was last run, or last disturbed by something that makes a
+    // correction taken against the old state worthless.
+    static uint32_t disturbedMs;
+
     /// Set to -1 if uninitialized.
     /// Reset with syncLastCorrection.
     static float maybeFreqExt_per_videoFps;
-
-    // Which signal DEBUG_IN_PIN is carrying, for as long as this object lives.
-    //
-    // The pin is shared: the sync watcher and auto gain select their own bus and
-    // put back what they found, so a sampler that does not select its own reads
-    // whatever ran last. Restoring in a destructor covers every early return.
-    class TestBus
-    {
-    public:
-        static const uint8_t InputVsync = 0x0;
-        static const uint8_t OutputVsync = 0x2;   // VDS, t3t50t4
-
-        explicit TestBus(uint8_t signal) : restore_(GBS::TEST_BUS_SEL::read())
-        {
-            GBS::TEST_BUS_SEL::write(signal);
-        }
-
-        ~TestBus() { GBS::TEST_BUS_SEL::write(restore_); }
-
-        void select(uint8_t signal) { GBS::TEST_BUS_SEL::write(signal); }
-
-    private:
-        uint8_t restore_;
-    };
 
 
 #if GBS_DEBUG
@@ -198,14 +180,12 @@ private:
         // the HTotal search use. If none of them move it, the fault is the pin
         // or the net, not the selection.
         const uint8_t selectors[] = {0x0, 0x2, 0xa};
-        const uint8_t selBackup = GBS::TEST_BUS_SEL::read();
-        const uint8_t enBackup = GBS::TEST_BUS_EN::read();
-
-        GBS::TEST_BUS_EN::write(1);
+        const uint8_t selBackup = Tv5725::TestBus::selected();
+        const bool enBackup = Tv5725::TestBus::enabled();
 
         for (uint8_t i = 0; i < sizeof(selectors); i++)
         {
-            GBS::TEST_BUS_SEL::write(selectors[i]);
+            Tv5725::TestBus::select(selectors[i]);
             delay(1); // let the mux settle before counting
 
             int level = digitalRead(DEBUG_IN_PIN);
@@ -233,8 +213,8 @@ private:
                 selectors[i], transitions, (unsigned)FS_PROBE_MS, first, level, spins);
         }
 
-        GBS::TEST_BUS_SEL::write(selBackup);
-        GBS::TEST_BUS_EN::write(enBackup);
+        Tv5725::TestBus::select(selBackup);
+        Tv5725::TestBus::enable(enBackup);
     }
 #endif
 
@@ -242,7 +222,7 @@ private:
     // difference in microseconds
     static bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput, int32_t *phase)
     {
-        TestBus bus(TestBus::InputVsync);
+        Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
 
         uint32_t inStart, inStop, outStart, outStop;
         uint32_t inPeriod, outPeriod, diff;
@@ -256,7 +236,7 @@ private:
             return false;
         }
 
-        bus.select(TestBus::OutputVsync);   // measure VDS vblank (VB ST/SP)
+        Tv5725::TestBus::select(Tv5725::TestBus::OutputVsync);   // measure VDS vblank (VB ST/SP)
         inPeriod = (inStop - inStart); //>> 1;
         if (!sampleVsyncPeriod(&outStart, &outStop))
         {
@@ -289,66 +269,37 @@ private:
         return true;
     }
 
-    // Find appropriate htotal that makes output frame time slightly more than the input.
-    static bool findBestHTotal(uint32_t &bestHtotal)
+    // Whether there is a raster and both vsync periods can be read, which is
+    // the whole of what arms the frame time lock.
+    //
+    // This replaced a search for the output horizontal total that would match
+    // the input frame time. Its answer was DISCARDED -- init() returned it and
+    // the one caller ignored the return -- so the search decided only whether
+    // arming succeeded, which is these three checks. The raster is solved by
+    // Tv5725::VideoPath now. docs/video-source-acquisition.md
+    static bool bothVsyncPeriodsReadable()
     {
-        uint16_t inHtotal = HSYNC_RST::read();
+        if (HSYNC_RST::read() == 0)
+            return false;
+
         uint32_t inPeriod, outPeriod;
-
-        if (inHtotal == 0)
-        {
-            return false;
-        } // safety
         if (!sampleVsyncPeriods(&inPeriod, &outPeriod))
-        {
             return false;
-        }
 
-        if (inPeriod == 0 || outPeriod == 0)
-        {
-            return false;
-        } // safety
-
-        // allow ~4 negative (inPeriod is < outPeriod) clock cycles jitter
-        if ((inPeriod > outPeriod ? inPeriod - outPeriod : outPeriod - inPeriod) <= 4)
-        {
-            /*if (inPeriod >= outPeriod) {
-        Serial.print("inPeriod >= out: ");
-        Serial.println(inPeriod - outPeriod);
-      }
-      else {
-        Serial.print("inPeriod < out: ");
-        Serial.println(outPeriod - inPeriod);
-      }*/
-            bestHtotal = inHtotal;
-        }
-        else
-        {
-            // large htotal can push intermediates to 33 bits
-            bestHtotal = (uint64_t)(inHtotal * (uint64_t)inPeriod) / (uint64_t)outPeriod;
-        }
-
-        // new 08.11.19: skip this step, IF period measurement should be stable enough to give repeatable results
-        // if (bestHtotal == (inHtotal + 1)) { bestHtotal -= 1; } // works well
-        // if (bestHtotal == (inHtotal - 1)) { bestHtotal += 1; } // check with SNES + vtotal = 1000 (1280x960)
-
-#ifdef FS_DEBUG
-        if (bestHtotal != inHtotal)
-        {
-            Serial.print(F("                     wants new htotal, oldbest: "));
-            Serial.print(inHtotal);
-            Serial.print(F(" newbest: "));
-            Serial.println(bestHtotal);
-            Serial.print(F("                     inPeriod: "));
-            Serial.print(inPeriod);
-            Serial.print(F(" outPeriod: "));
-            Serial.println(outPeriod);
-        }
-#endif
-        return true;
+        return inPeriod != 0 && outPeriod != 0;
     }
 
 public:
+    // The lock was run, or something disturbed it: a source that is not steady
+    // enough to correct against, a mode change, or a user command that moved
+    // the output. Either way a correction measured before now is worthless.
+    static void defer() { disturbedMs = millis(); }
+
+    // Nothing has disturbed the lock for this long. Both callers ask it of
+    // their own interval -- running a correction is due less often than arming
+    // one -- so the interval is the caller's rather than fixed here.
+    static bool quietFor(uint32_t ms) { return millis() - disturbedMs > ms; }
+
     // Time one period of whatever signal the debug pin currently carries.
     //
     // Which signal that is belongs to the caller: TEST_BUS_SEL selects it, and
@@ -470,27 +421,21 @@ public:
         delayLock = 0;
     }
 
-    static uint16_t init()
+    // Arm the frame time lock. False where the source or the output cannot be
+    // measured yet, which leaves it unarmed for the caller to retry.
+    static bool init()
     {
-        uint32_t bestHTotal = 0;
-
-        // Adjust output horizontal sync timing so that the overall
-        // frame time is as close to the input as possible while still
-        // being less.  Increasing the vertical frame size slightly
-        // should then push the output frame time to being larger than
-        // the input.
-        if (!findBestHTotal(bestHTotal))
-        {
-            return 0;
-        }
+        if (!bothVsyncPeriodsReadable())
+            return false;
 
         syncLockReady = true;
         delayLock = 0;
-        return (uint16_t)bestHTotal;
+        return true;
     }
 
     // Measures whatever DEBUG_IN_PIN is already carrying: the CALLER selects the
-    // bus. getOutputFrameRate() selects the VDS bus before calling this, so
+    // bus. Tv5725::TestBusRateMeasurement selects the VDS bus before calling this,
+    // so
     // choosing one here would answer with the input rate under an output name.
     static uint32_t getPulseTicks()
     {
@@ -673,10 +618,10 @@ public:
             return true;
         }
 
-        if (rto->outModeHdBypass)
+        if (Tv5725::VideoRoute::isHdBypassChannel())
         {
             fsDebugPrintf(
-                "Skipping FrameSyncManager::runFrequency(), rto->outModeHdBypass\n");
+                "Skipping FrameSyncManager::runFrequency(), the HD bypass channel carries the video\n");
             return true;
         }
         // Not a sentinel: PLL_VS4 = 11 is what takes the display clock from
@@ -734,7 +679,7 @@ public:
 
             uint32_t periodInput2;
             {
-                TestBus bus(TestBus::InputVsync);
+                Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
                 periodInput2 = getPulseTicks();
             }
             if (periodInput2 == 0)
@@ -848,4 +793,7 @@ bool FrameSyncManager<GBS, Attrs>::syncLockReady;
 
 template <class GBS, class Attrs>
 int32_t FrameSyncManager<GBS, Attrs>::syncTargetPhase = Attrs::syncTargetPhase;
+
+template <class GBS, class Attrs>
+uint32_t FrameSyncManager<GBS, Attrs>::disturbedMs;
 #endif

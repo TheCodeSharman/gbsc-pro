@@ -6,7 +6,6 @@ extern unsigned long OledUpdataTime;
 // import machine
 static uint8_t Info_sate = 0;
 static bool decode_flag = 0;
-static unsigned long lastVsyncLock = millis();
 #define digitalRead(x) ((GPIO_REG_READ(GPIO_IN_ADDRESS) >> x) & 1)
 #define DEBUG_IN_PIN D6 
 // LED_BUILTIN    15
@@ -65,43 +64,50 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "slot.h"
 #include "src/net/RegisterQueue.h"
 #include "gbs_types.h"   // typedef Tv5725::Tv5725 GBS, in one place
+#include "src/tv5725/WriteTrace.h"
 #include "src/tv5725/FramingText.h"
 #include "src/tv5725/SlotText.h"
-#include "src/tv5725/Geometry.h"
+#include "src/tv5725/VideoPath.h"
 #include "src/tv5725/FramingSaveTimer.h"
-#include "src/tv5725/SyncOutput.h"
 #include "src/tv5725/Controls.h"
 #include "src/tv5725/ControlSteps.h"
 #include "src/tv5725/PresetLoad.h"
 #include "src/tv5725/FrameBuffer.h"
 #include "src/tv5725/InputFormatter.h"
 #include "src/tv5725/HdBypass.h"
+#include "src/tv5725/SamplingClock.h"
 #include "src/tv5725/ModeDetect.h"
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SourceMeasurement.h"
-#include "src/tv5725/SourceStandard.h"
 #include "src/tv5725/ColourSpace.h"
-#include "src/tv5725/SyncType.h"
+#include "src/tv5725/SyncMeasurement.h"
+#include "src/tv5725/TestBus.h"
+#include "src/tv5725/TestBusRateMeasurement.h"
+#include "src/videosource/SourceMaintenance.h"
+#include "src/videosource/SyncRecovery.h"
 #include "src/tv5725/DisplayClock.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
 #include "src/tv5725/Chip.h"
+#include "src/tv5725/VideoRoute.h"
+#include "src/tv5725/RgbhvOutput.h"
 #include "src/tv5725/SourceMeasurement.h"
 #include "src/clock/ClockRamp.h"
 #include "src/clock/ClockGen.h"
 #include "src/input/HoldRamp.h"
 #include "src/input/IrReceiver.h"
-#include "src/input/InputSource.h"
+#include "src/videosource/VideoSourceAcquisition.h"
+#include "src/videosource/VideoSourceSelection.h"
 #if GBS_SAMPLING_LOG
 #include "src/tv5725/SamplingLog.h"
 // The sync watcher's RGBHV choices, named as they are taken. A register dump
 // afterwards shows where the firmware arrived and never why.
 #define SYNC_EVENT(what, lines) \
-    Tv5725::SamplingLog::event(millis(), (what), (lines), rto->videoStandardInput)
+    Tv5725::SamplingLog::event(millis(), (what), (lines))
 #else
 #define SYNC_EVENT(what, lines) ((void)0)
 #endif
-#include "src/input/SyncSearch.h"
+#include "src/videosource/SyncSearch.h"
 
 enum PresetID : uint8_t {
     PresetHdBypass = 0x21,
@@ -126,23 +132,6 @@ String slotIndexMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 
 char serialCommand;
 
-#if GBS_TRACE_WRITES
-// A forced standard waiting for loop(). The register write trace is the oracle
-// for branches no bench source can reach, and this is how they are reached.
-// Compiled only into a trace build, so it cannot ship.
-static volatile int8_t traceStandard = -1;
-static volatile uint8_t traceIsYuv = 0;
-static volatile uint8_t tracePal60 = 0;
-
-// Which entry to trace through. doPostPresetLoadSteps() alone does not reach
-// either bypass switch -- applyPresets() is what branches to them on standards
-// 15 and 5/6/7/13 -- so an oracle taken through it says nothing about the code
-// those standards actually run. And applyPresets() reaches setOutModeHdBypass()
-// on those four standards ONLY, so the switch's SD and progressive arms, which
-// the pass-through preference reaches, need an entry of their own.
-enum TraceEntry { TraceViaPost = 0, TraceViaApply = 1, TraceViaBypass = 2 };
-static volatile uint8_t traceVia = TraceViaPost;
-#endif
 char userCommand;
 
 // An input selection asked for over HTTP, waiting for loop() to act on it.
@@ -151,7 +140,7 @@ char userCommand;
 // web server serves from network-stack callbacks rather than from loop() -- so
 // doing any of that in the handler touches the bus from the wrong context. The
 // route parses and queues; loop() selects.
-volatile uint8_t pendingInputSelection = InputSource::None;
+volatile uint8_t pendingInputSelection = VideoSourceSelection::None;
 
 #if GBS_SAMPLING_LOG
 Tv5725::SamplingLog samplingLog;
@@ -164,6 +153,43 @@ volatile uint16_t pendingSamplingA = 0;
 volatile uint16_t pendingSamplingB = 0;
 volatile uint16_t pendingSamplingC = 0;
 volatile uint32_t pendingSamplingD = 0;
+#endif
+
+#if GBS_TRACE_WRITES
+// What /writetrace queued. A replay issues real bus traffic, so it belongs to
+// loop() like every other write.
+volatile bool pendingWriteReplay = false;
+volatile uint16_t pendingWriteReplayFirst = 0;
+volatile uint16_t pendingWriteReplayLast = 0;
+volatile bool pendingWriteReplayGaps = false;
+#endif
+
+#if GBS_DEBUG
+// What /testbus queued, for loop() to start. The route answers from a network
+// callback, which must not touch the bus.
+volatile bool pendingTestBusSweep = false;
+volatile uint16_t pendingTestBusMs = 25;
+volatile uint8_t pendingTestBusSp = 0xff;
+volatile uint8_t pendingTestBusSig = 0;
+volatile uint8_t pendingTestBusIf = 0xff;
+
+// What /sampleclock queued. Same reason: the route answers from a network
+// callback and the bus belongs to loop().
+volatile bool pendingSampleClock = false;
+volatile bool pendingSampleClockApply = false;
+volatile uint16_t pendingSampleClockDivider = 0;
+volatile uint8_t pendingSampleClockOversample = 0;
+volatile bool pendingDividerHold = false;
+volatile uint16_t pendingHeldDivider = 0;
+
+// What /framing/full queued, for the same reason.
+volatile bool pendingFullFramingChange = false;
+volatile bool pendingFullFraming = false;
+
+// A reset asked for over HTTP. Without one the only way to restart the ESP is a
+// flash or the mains, and neither is available to a session working remotely --
+// so a boot that comes up without a source cannot be repeated to find out why.
+volatile bool pendingRestart = false;
 #endif
 
 // How many output pixels the pending press asked for, or 0 for the pad's own
@@ -194,16 +220,6 @@ void PR_rgb(void)
   printf("math:R %0.2lf G %0.2lf B %0.2lf \n", ((signed char)((signed char)GBS::VDS_Y_OFST::read()) + (float)(1.402 * (signed char)((signed char)GBS::VDS_V_OFST::read()))), ((signed char)((signed char)GBS::VDS_Y_OFST::read()) - (float)(0.344136 * (signed char)((signed char)GBS::VDS_U_OFST::read())) - 0.714136 * (signed char)((signed char)GBS::VDS_V_OFST::read())), ((signed char)((signed char)GBS::VDS_Y_OFST::read()) + (float)(1.772 * (signed char)((signed char)GBS::VDS_U_OFST::read()))));
   printf("VAL:R %d G %d B %d \n", R_VAL, G_VAL, B_VAL);
 #endif
-}
-int round_up_if_above(double value) {
-    int integer_part = (int)value;
-    double decimal_part = value - integer_part;
-
-    if (decimal_part > 0.5) {
-        return integer_part + 1;
-    } else {
-        return integer_part;
-    }
 }
 void Color_Conversion(void)
 {
@@ -429,7 +445,6 @@ const int pin_switch = 0; // D3 = GPIO0
 
 
 void handleRotate(int8_t rotation);
-void handlePress();
 
 /*
 OLED MENU
@@ -449,7 +464,6 @@ volatile uint8_t rotaryIsrID = 0;
 uint8_t syncFound = 0;
 // uint8_t InCurrent = 0;
 uint8_t BriorCon = 0;
-uint8_t Info = 0;
 // uint8_t InputChanged = 0;
 uint8_t SeleInputSource = 0;
 
@@ -549,14 +563,15 @@ static void bootLogPrintf(const char *fmt, ...)
 // written raw -- so byte 0 is the one position that can be asserted on, and
 // "not all bytes identical" rules out erased flash and zero fill.
 //
-// **BYTE 0 IS A VALUE, NOT A DIGIT.** saveUserPrefs() writes
-// `presetPreference + '0'` and OutputBypass is 10, so the bypass switch puts
-// ':' there. A digits-only bound rejects a file this firmware wrote, on every
-// boot after it, and a rejected file is what stops saveUserPrefs() writing --
-// including the save behind "restore defaults", so nothing in the UI repairs it.
+// Byte 0 is `presetPreference + '0'` and a preference names a resolution, so it
+// is a digit. It was not always: pass-through used to be stored in the same
+// field as the resolutions, at 10, which encodes as ':' -- so the bound here had
+// to admit one, and a digits-only bound rejected a file this firmware had
+// written. A rejected file is what stops saveUserPrefs() writing at all,
+// including the save behind "restore defaults".
 static bool prefsLookPlausible(const uint8_t *buf)
 {
-    if (buf[0] < '0' || buf[0] > (uint8_t)('0' + OutputBypass)) {
+    if (buf[0] < '0' || buf[0] > (uint8_t)('0' + Output576P)) {
         return false;
     }
     for (uint8_t i = 1; i < PREFS_BYTES; i++) {
@@ -628,58 +643,43 @@ unsigned long pingLastTime;
 Pinger pinger; 
 #endif
 
-void clearFrame()
-{
-    writeOneByte(0xF0, 0);    
-    writeOneByte(0x46, 0x00); 
-    writeOneByte(0x47, 0x00); 
 
-    // Clear memory banks
-    for (int y = 0; y < 6; y++) {
-        writeOneByte(0xF0, (uint8_t)y); // Select the bank
-        for (int z = 0; z < 16; z++) {
-            uint8_t bank[16] = {0};       // Initialize bank with zeros
-            writeBytes(z * 16, bank, 16); // Write zeros to the bank
-        }
-    }
+// The run-time state that says nothing about what is attached: the acquisition
+// machinery's own defaults. Boot and the input handlers' reset both start from
+// it, and what they believe about the SOURCE differs -- LoadDefault() comes up
+// with the frame buffer frozen and boot does not -- so that half stays at the
+// call sites.
+static void resetRunTimeDefaults()
+{
+    rto->autoBestHtotalEnabled = true;
+    rto->syncLockFailIgnore = 16;
+    rto->syncWatcherEnabled = true;
+    Tv5725::Adc::choosePhaseAdc(16);
+    Tv5725::Adc::choosePhaseSyncProcessor(16);
+    rto->presetID = 0;
+    Tv5725::Deinterlacer::disableMotionAdapt();
+    rto->deinterlaceAutoEnabled = true;
+    Tv5725::Deinterlacer::forgetScanlines();
+    Tv5725::Deinterlacer::forgetSteering();
+    Tv5725::Chip::holdPower(true);
+    Tv5725::SyncMeasurement::set(false);
+    rto->isValidForScalingRGBHV = false;
+    rto->osr = 0;
 }
 
 static void LoadDefault()
 {
     loadDefaultUserOptions();
 
-    rto->autoBestHtotalEnabled = true; 
-    rto->syncLockFailIgnore = 16;      
-    rto->syncWatcherEnabled = true;    
-    rto->phaseADC = 16;                
-    rto->phaseSP = 16;                 
-    rto->failRetryAttempts = 0;        
-    rto->presetID = 0;                 
-    rto->HPLLState = 0;
-    rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->deinterlaceAutoEnabled = true;           
-    rto->scanlinesEnabled = false;                
-    rto->boardHasPower = true;                    
-    rto->presetIsPalForce60 = false;              
-    Tv5725::SyncType::set(false);                   
-    rto->isValidForScalingRGBHV = false;          
-    rto->medResLineCount = 0x33;                  
-    rto->osr = 0;                                 
-    rto->notRecognizedCounter = 0;                
+    resetRunTimeDefaults();
 
-    rto->videoStandardInput = 0;    
-    rto->outModeHdBypass = false;   
-    rto->videoIsFrozen = true;      
+    Tv5725::VideoRoute::toScaler();   
     rto->sourceDisconnected = true; 
     // rto->isInLowPowerMode = false;
     rto->applyPresetDoneStage = 0; //
-    // rto->presetVlineShift = 0;    
-    rto->clampPositionIsSet = 0;     
-    rto->coastPositionIsSet = 0;     
-    Tv5725::SyncType::forget();
-    rto->continousStableCounter = 0; 
-    rto->currentLevelSOG = 5;        
-    rto->thisSourceMaxLevelSOG = 31; 
+    Tv5725::SyncProcessor::forgetPositions();
+    Tv5725::SyncMeasurement::forget();
+    Tv5725::SyncOnGreen::choose(5);        
 }
 
 void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCurrent, uint8_t readout, uint8_t inputToogleBit);
@@ -691,51 +691,13 @@ static void submitRegisterJob(AsyncWebServerRequest *request, const RegisterQueu
 static void serviceRegisterQueue();
 #endif
 void UpDisplay(void);
-void printBinary(unsigned char num);
-void turnOffWiFi();
-void turnOffWiFi()
-{
-    WiFi.mode(WIFI_OFF); 
-    Serial.println("WiFi has been turned off.");
-}
-void turnOnWiFi();
-void turnOnWiFi()
-{
-    WiFi.mode(WIFI_AP);                  // Setting WiFi Mode to Access Point Mode
-    WiFi.softAP(full_ssid, ap_password); 
-    Serial.println("WiFi has been turned on.");
-    Serial.print("Access Point IP address: ");
-    Serial.println(WiFi.softAPIP()); // Print the IP address of the access point
-}
-
-void printBinary(unsigned char num)
-{
-
-    for (int i = sizeof(num) * 8 - 1; i >= 0; i--) {
-
-        putchar((num & (1U << i)) ? '1' : '0');
-    }
-    putchar('\n'); 
-}
-// The standard a preset load is for. The classification is not trusted on its
-// own: it reports nothing on a source whose H-sync is arriving, so the held
-// standard answers where it cannot. docs/retiring-mode-detect.md
-static uint8_t standardForPresetLoad()
-{
-    const uint8_t videoMode = getVideoMode();
-    if (videoMode == 0 && GBS::STATUS_SYNC_PROC_HSACT::read()) {
-        return rto->videoStandardInput;
-    }
-    return videoMode;
-}
 
 void UpDisplay(void)
 {
-    const uint8_t videoMode = standardForPresetLoad();
     if (scalingRgbhv()) {
-        rto->videoStandardInput = 15;
+        Tv5725::RgbhvOutput::chooseBypass();
     } else {
-        applyPresets(videoMode);
+        applyPresets();
     }
 }
 
@@ -778,7 +740,7 @@ boolean CheckInputFrequency()
 {
     unsigned char freq = 0;
     static unsigned char freq_last;
-    freq = getOutputFrameRate();
+    freq = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
     if ((abs(freq_last - freq) < 9) || (freq_last == 0)) {
         freq_last = freq;
         return 0;
@@ -977,7 +939,18 @@ SerialMirror SerialM;
 // initialised in the order they appear, so geometry is ready before the controls
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
-Tv5725::Geometry geometry(rtos.displayClock);
+// What the source IS, measured off the chip. The composition root holds it and
+// hands it to both the engine and the acquisition path, the way it already
+// holds the display clock: the engine derives from it and does not own it.
+// docs/video-source-acquisition.md
+Tv5725::SourceMeasurement sourceSampling;
+
+// What the user tuned, per source. Product state rather than acquisition, and
+// the root is what persists it -- holding it here is what removes the round
+// trip a load and a save took through the engine. docs/video-source-acquisition.md
+Tv5725::FramingTable sourceFramings;
+
+Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling, sourceFramings);
 
 // The framing table, in its own file. Separate from /preferencesv2.txt because
 // it is variable length and keyed, and mixing it with the scalar settings
@@ -1008,8 +981,13 @@ static const char SlotFramingFilePath[] = "/slots.txt";
 // nothing to debounce -- only the same read guard.
 static bool slotFramingIsSuspect = true;
 
-Tv5725::SyncOutput syncOutput;
 Tv5725::Controls geometryControls(geometry, SerialM);
+
+// The acquisition path, which owns the tick loop() used to hand the engine
+// directly. It calls down for the scaler's share; the escalation, the input
+// policy and the no-signal report move into it. docs/video-source-acquisition.md
+VideoSourceAcquisition inputAcquisition(sourceSampling, geometry);
+SourceMaintenance sourceMaintenance;
 
 
 #include "framesync.h"
@@ -1023,6 +1001,28 @@ struct FrameSyncAttrs
 };
 typedef FrameSyncManager<GBS, FrameSyncAttrs> FrameSync;
 
+// Hand the display clock to the external generator, keeping the divider the
+// register still names as the seed to steer to. Does nothing once PCLKIN is
+// selected, or on the HD bypass clock.
+//
+// **THIS DUPLICATES WHAT Tv5725::DisplayClock OWNS** -- adopt() takes the seed
+// off the register and select() writes ExternalPclkIn -- and is not yet
+// substitutable for them: select() also asserts PLL_VCORST and PLL_IS, and the
+// settle below has no counterpart there. Both differences need the bench.
+// docs/video-source-acquisition.md
+static void handDisplayClockToGenerator()
+{
+    const uint8_t selected = GBS::PLL648_CONTROL_01::read();
+    if (selected == Tv5725::DisplayClock::ExternalPclkIn
+        || selected == Tv5725::DisplayClock::HdBypassSeed)
+        return;
+
+    clockGen.enable();
+    ESP.wdtFeed();
+    delayMicroseconds(800);
+    GBS::PLL648_CONTROL_01::write(Tv5725::DisplayClock::ExternalPclkIn);
+}
+
 void externalClockGenResetClock()
 {
     if (!rto->extClockGenDetected) {
@@ -1034,7 +1034,7 @@ void externalClockGenResetClock()
     // it, because loop() stashes the divider and parks
     // DisplayClock::ExternalPclkIn in PLL648_CONTROL_01 -- so the register
     // stops answering what the raster asked for. The paths that solve no raster
-    // adopt it through Geometry::enterBypass().
+    // adopt it through VideoPath::setOutputMode(ModeBypass).
     Tv5725::DisplayClock &displayClock = rto->displayClock;
     uint32_t steered = displayClock.reset();
 
@@ -1050,7 +1050,7 @@ void externalClockGenResetClock()
     FrameSync::clearFrequency();
 }
 
-float sourceFieldRateOffIfBus() { return getSourceFieldRate(0); }
+float sourceFieldRateOffIfBus() { return Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false); }
 
 // A rate two consecutive measurements agree on, or 0 when they never do. Each
 // measurement spins for up to a vsync period, so the attempts are few.
@@ -1081,7 +1081,7 @@ void externalClockGenSyncInOutRate()
     if (GBS::PAD_CKIN_ENZ::read() != 0) {
         return;
     }
-    if (rto->outModeHdBypass) {
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
         return;
     }
     if (GBS::PLL648_CONTROL_01::read() != 0x75) {
@@ -1099,7 +1099,7 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
-    float ofr = agreedRate(getOutputFrameRate);
+    float ofr = agreedRate(Tv5725::TestBusRateMeasurement::outputFrameRateHz);
     if (ofr == 0.0f) {
         return;
     }
@@ -1115,7 +1115,7 @@ void externalClockGenSyncInOutRate()
     // ;//SerialMprint(F("source Hz: "));
     // ;//SerialMprint(sfr, 5);
     // ;//SerialMprint(F(" new out: "));
-    // ;//SerialMprint(getOutputFrameRate(), 5);
+    // ;//SerialMprint(Tv5725::TestBusRateMeasurement::outputFrameRateHz(), 5);
     // ;//SerialMprint(F(" clock: "));
     // ;//SerialMprint(F(" ("));
     // ;//SerialMprint(diff >= 0 ? "+" : "");
@@ -1129,7 +1129,6 @@ void externalClockGenDetectAndInitialize()
 
     rto->displayClock.assumeHz(Tv5725::DisplayClock::FallbackHz);
     rto->extClockGenDetected = 0;
-    rto->presetDisplayClock = 0;
 
     if (uopt->disableExternalClockGenerator) {
         return;
@@ -1165,29 +1164,24 @@ static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t nu
         GBS::write(lastSegment, slaveRegister, values, numValues);
 }
 
-// 14 and 15 are not standards. The byte has no room for "no standard was
-// recognised", so an RGBHV source borrows the top of its range: scaled when the
-// line count qualifies, bypassed when it does not. docs/rgbhv-bypass-trap.md
-bool sourceIsRgbhv() { return rto->videoStandardInput >= 14; }
-bool scalingRgbhv() { return rto->videoStandardInput == 14; }
-bool rgbhvBypass() { return rto->videoStandardInput == 15; }
+// Which connector the source is on, which the input selection knows without the
+// classifier. The standard byte carried this as its top value because Mode
+// Detect names an RGBHV source nothing, and that value was only ever reached for
+// the three inputs sharing the RGB port -- so the selection is the same fact,
+// known earlier and without a detection pass. docs/video-source-acquisition.md
+bool sourceIsRgbhv()
+{
+    return VideoSourceSelection::isRgbhv(VideoSourceSelection::selected());
+}
+bool scalingRgbhv() { return sourceIsRgbhv() && Tv5725::RgbhvOutput::isScaling(); }
+bool rgbhvBypass() { return sourceIsRgbhv() && !Tv5725::RgbhvOutput::isScaling(); }
 
-// Whether the loop may steer this source between scaling RGBHV and RGBHV
-// bypass. 14 and 15 name the OUTPUT as much as the source, so an RGBHV source
-// switched to HD bypass reads as one of them and the steering pulls it straight
-// back out. docs/investigations/hd-bypass-undone-by-rgbhv-steering.md
-bool steerableRgbhv() { return sourceIsRgbhv() && !rto->outModeHdBypass; }
-
-// Whether the source runs a 15 kHz line. The engine measures only what it
-// scales, so in bypass it holds no measurement and the standard byte is what is
-// left -- honest there, because it carries the mode detected immediately before
-// the switch. docs/firmware-geometry-engine.md
+// Whether the source runs a 15 kHz line. One reader, on every path: the held
+// rate survives a bypass switch, so bypass is not a special case.
+// docs/video-source-acquisition.md
 static boolean sourceLowLineRate()
 {
-    if (rto->outModeHdBypass)
-        return rto->videoStandardInput == 1 || rto->videoStandardInput == 2;
-
-    return geometry.sourceLowLineRate();
+    return inputAcquisition.sourceLowLineRate();
 }
 
 // Bypass hands the source's OWN timing to the encoder, so it only works where
@@ -1195,9 +1189,13 @@ static boolean sourceLowLineRate()
 // at all, which reads as the scaler having failed rather than as the television
 // refusing the mode -- so the request is refused here instead.
 // docs/rgbhv-bypass-trap.md
+// Whether bypass would reach the panel. Asked at EVERY entry, not only at the
+// serial command: bypass hands the source's own timing to the encoder, and a
+// rate the display refuses puts torn content on the panel that reads as a
+// broken scaler rather than as a refused mode. docs/rgbhv-bypass-trap.md
 static boolean bypassCanBeDisplayed()
 {
-    return !sourceLowLineRate();
+    return Tv5725::HdBypass::suitsLineRate(sourceSampling.lineRateHz());
 }
 
 // A 15 kHz line whose vertical interval carries equalisation and serration
@@ -1206,7 +1204,7 @@ static boolean bypassCanBeDisplayed()
 // docs/investigations/serrated-sync-is-not-line-rate.md
 static boolean sourceHasSerratedSync()
 {
-    return sourceLowLineRate() && Tv5725::SyncType::isCsync();
+    return sourceLowLineRate() && Tv5725::SyncMeasurement::isCsync();
 }
 
 void zeroAll()
@@ -1238,7 +1236,7 @@ void zeroAll()
 //
 // It stays a table-shaped number. Whether presetID should survive at all is a
 // separate question from where it comes from.
-static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
+static uint8_t presetIdFor(const Tv5725::OutputMode *mode)
 {
   uint8_t code = 0;
   if (mode == &Tv5725::Mode960p) {
@@ -1250,28 +1248,21 @@ static uint8_t presetIdFor(const Tv5725::OutputMode *mode, bool pal)
   } else if (mode == &Tv5725::Mode480p) {
     code = 0x04;
   } else if (mode == &Tv5725::Mode576p) {
-    // Its own code, not 480p's with the PAL bit: that bit says what the SOURCE
-    // runs at, and either resolution is now selectable at either rate.
+    // Its own code rather than 480p's with a rate bit beside it: the id names
+    // the OUTPUT, and either resolution is selectable at either source rate.
     code = 0x07;
   } else if (mode == &Tv5725::Mode1080p) {
     code = 0x05;
   }
-  return code | (pal ? 0x10 : 0x00);
+  return code;
 }
 
-// The output resolution asked for, against the standard the detection reported.
-//
-// GBS_OPTION_SCALING_RGBHV is read here rather than inside the choice because
-// loadComputedPreset() clears it, so a load has to build the choice before it
-// runs. It gates the 1024p -> 960p downshift alone, with standard 8, and that
-// asymmetry is upstream's rather than a design.
-static Tv5725::OutputChoice outputChoiceFor(uint8_t standard)
+// The output resolution asked for. Nothing qualifies it: a preference names a
+// height and the source does not get a say.
+static Tv5725::OutputChoice outputChoiceFor()
 {
-  return Tv5725::OutputChoice(uopt->presetPreference,
-                              uopt->matchPresetSource != 0,
-                              standard != 8 &&
-                                  GBS::GBS_OPTION_SCALING_RGBHV::read() == 0,
-                              rto->presetIsPalForce60);
+  return Tv5725::OutputChoice(
+      (Tv5725::PresetPreference)uopt->presetPreference);
 }
 
 // What the OUTPUT resolution decides, and all it decides. Everything else
@@ -1293,39 +1284,33 @@ static void applyOutputResolutionSettings()
 // engine to resolve and solve the raster from.
 //
 // s1_2B and s1_2C are cleared here because nothing else clears them and they
-// latch across loads. PALFORCED60 in particular is set by
-// doPostPresetLoadSteps() and has no other writer.
+// latch across loads.
 void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
 {
-  rto->outputChoice = choice;
+  // The engine is told the choice HERE, by the call whose job that is. It used
+  // to arrive as an argument to the source event further down, which is how a
+  // source event came to carry output state.
+  inputAcquisition.setOutputResolution(choice.resolve());
   rto->presetID = presetId;
 
-  // Nothing reads this any more. It is cleared because a unit upgraded from a
-  // firmware that had custom presets can have it set on the chip, and a
-  // register dump showing "custom" with no such thing in the build reads as a
-  // fault.
-  GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
-  GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+  // The load rewrites the scanline stages, so whatever was applied is gone.
+  Tv5725::Deinterlacer::forgetScanlines();
+  Tv5725::Deinterlacer::forgetSteering();
+  Tv5725::PresetLoad::forgetScalingRgbhv();
 
   FrameSync::cleanup();
 
-  // Which standard this load lands on, and what it implies for the ADC input
-  // and the scaling-RGBHV option. Pure integer logic over rto->, so it lives in
-  // Tv5725::PresetLoad and is checked by test_preset_load.cpp.
-  const Tv5725::PresetLoad load(rto->videoStandardInput,
-                                GBS::ADC_INPUT_SEL::read(),
-                                uopt->preferScalingRgbhv,
-                                rto->isValidForScalingRGBHV);
+  Tv5725::VideoRoute::toScaler();
 
-  rto->videoStandardInput = load.videoStandardInput();
-  rto->outModeHdBypass = 0;
-  rto->inputIsYpBpR = load.inputIsYpBpR();
+  // Which connector is live is held rather than read back: Adc::selectInput()
+  // records what it wrote and is the only writer of ADC_INPUT_SEL.
+  rto->inputIsYpBpR = Tv5725::Adc::inputIsComponent();
 
-  if (load.enableScalingRgbhv())
+  if (rto->isValidForScalingRGBHV)
   {
-    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
+    Tv5725::RgbhvOutput::chooseScaling();
+    Tv5725::PresetLoad::rememberScalingRgbhv();
   }
-  rto->videoStandardInput = load.videoStandardInputAfterLoad();
 }
 
 void activeFrameTimeLockInitialSteps()
@@ -1345,72 +1330,33 @@ void activeFrameTimeLockInitialSteps()
     }
 }
 
-void setResetParameters_re() 
-{
-    rto->videoStandardInput = 0;   
-    rto->videoIsFrozen = false;    
-    rto->applyPresetDoneStage = 0; 
-    rto->presetVlineShift = 0;     
-    // rto->sourceDisconnected = true;  
-    rto->outModeHdBypass = 0;        
-    rto->clampPositionIsSet = 0;     
-    rto->coastPositionIsSet = 0;     
-    Tv5725::SyncType::forget();
-    rto->phaseIsSet = 0;             
-    rto->continousStableCounter = 0; 
-    rto->noSyncCounter = 0;          
-
-    rto->isInLowPowerMode = false;   
-    rto->currentLevelSOG = 5;        
-    rto->thisSourceMaxLevelSOG = 31; 
-    rto->failRetryAttempts = 0;      
-    rto->HPLLState = 0;
-    rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->scanlinesEnabled = false;                
-    Tv5725::SyncType::set(false);                   
-    rto->isValidForScalingRGBHV = false;          
-    rto->medResLineCount = 0x33;
-    rto->osr = 0;                  
-    rto->notRecognizedCounter = 0; 
-}
-
 // The ADC input the user chose, or the RGB pins when nothing is chosen -- which
 // is where a sweep starts looking.
 static uint8_t selectedAdcInput()
 {
-    const InputSource::Id chosen = InputSource::fromStored(Info);
-    if (chosen == InputSource::None)
+    const VideoSourceSelection::Id chosen = VideoSourceSelection::selected();
+    if (chosen == VideoSourceSelection::None)
         return 1;
-    return InputSource::settingsFor(chosen).adcInputSel;
+    return VideoSourceSelection::settingsFor(chosen).adcInputSel;
 }
 
 void setResetParameters()
 {
-    rto->videoStandardInput = 0;
-    rto->videoIsFrozen = false; 
     rto->applyPresetDoneStage = 0;
-    rto->presetVlineShift = 0;
     rto->sourceDisconnected = true; 
-    rto->outModeHdBypass = 0;       
-    rto->clampPositionIsSet = 0;    
-    rto->coastPositionIsSet = 0;    
-    Tv5725::SyncType::forget();
-    rto->phaseIsSet = 0;
-    rto->continousStableCounter = 0;
-    rto->noSyncCounter = 0;         
+    Tv5725::VideoRoute::toScaler();       
+    Tv5725::SyncProcessor::forgetPositions();
+    Tv5725::SyncMeasurement::forget();
+    Tv5725::Adc::forgetPhase();
 
     rto->isInLowPowerMode = false;  
-    rto->currentLevelSOG = 5;       
-    rto->thisSourceMaxLevelSOG = 31;
-    rto->failRetryAttempts = 0;     
-    rto->HPLLState = 0;
-    rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->scanlinesEnabled = false;                
-    Tv5725::SyncType::set(false);                   
+    Tv5725::SyncOnGreen::choose(5);       
+    Tv5725::Deinterlacer::disableMotionAdapt();
+    Tv5725::Deinterlacer::forgetScanlines();
+    Tv5725::Deinterlacer::forgetSteering();
+    Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
-    rto->medResLineCount = 0x33;
     rto->osr = 0;                  
-    rto->notRecognizedCounter = 0; 
 
     adco->r_gain = 0;
     adco->g_gain = 0;
@@ -1421,7 +1367,7 @@ void setResetParameters()
     GBS::ADC_UNUSED_66::write(0);
     GBS::ADC_UNUSED_67::write(0);
     rto->presetID = 0;
-    GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+    Tv5725::PresetLoad::forgetScalingRgbhv();
 
     Tv5725::InputFormatter::applyVerticalTiming(
         Tv5725::InputFormatter::NormalTiming);
@@ -1445,7 +1391,7 @@ void setResetParameters()
     // the RGB pins with nothing to put it back until the next reboot.
     Tv5725::Adc::selectInput(selectedAdcInput());
     GBS::ADC_POWDZ::write(1);
-    setAndUpdateSogLevel(rto->currentLevelSOG);
+    Tv5725::SyncOnGreen::putInForce();
     Tv5725::BringUp::holdAllBlocks();
     GBS::GPIO_CONTROL_00::write(0x67);
     GBS::GPIO_CONTROL_01::write(0x00);
@@ -1470,10 +1416,7 @@ void setResetParameters()
     GBS::SP_SOG_SRC_SEL::write(0);  
     Tv5725::SyncProcessor::selectExternalSync(0);
     Tv5725::SyncProcessor::holdClamp();
-    GBS::PLLAD_ICP::write(0);       
-    GBS::PLLAD_FS::write(0);        
-    GBS::PLLAD_5_16::write(0x1f);
-    GBS::PLLAD_MD::write(0x700);
+    Tv5725::Adc::applyResetParameters();
     resetPLL();
     delay(2);
     resetPLLAD();
@@ -1495,11 +1438,9 @@ void setResetParameters()
     GBS::SFTRST_INT_RSTZ::write(1);
     Tv5725::Interrupts::enableEverySource();
     Tv5725::Interrupts::acknowledgeAll();
-    rto->clampPositionIsSet = 0;     
-    rto->coastPositionIsSet = 0;     
-    Tv5725::SyncType::forget();
-    rto->phaseIsSet = 0;
-    rto->continousStableCounter = 0; 
+    Tv5725::SyncProcessor::forgetPositions();
+    Tv5725::SyncMeasurement::forget();
+    Tv5725::Adc::forgetPhase();
     serialCommand = '@';
     userCommand = '@';
 }
@@ -1602,175 +1543,57 @@ void setAdcParametersGainAndOffset()
     Tv5725::Adc::applyGain(0x7B, 0x7B, 0x7B);
 }
 
-void updateHVSyncEdge()
+// What the sync processor reports about the source's sync edges, by name. The
+// polarity bits are only meaningful beside their ACT bit, which is why the pair
+// travels together.
+static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
 {
-    static uint8_t printHS = 0, printVS = 0;
-    uint16_t temp = 0;
-
-    if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-        Tv5725::Interrupts::acknowledgeSogBad();
-        return;
-    }
-
-    uint8_t syncStatus = GBS::STATUS_16::read();
-    if (Tv5725::SyncType::isCsync()) {
-        if ((syncStatus & 0x02) != 0x02)
-            return;
-    } else {
-        if ((syncStatus & 0x0a) != 0x0a)
-            return;
-    }
-
-    if ((syncStatus & 0x02) != 0x02) {
-    } else {
-        if ((syncStatus & 0x01) == 0x00) {
-
-            printHS = 1;
-
-            temp = GBS::HD_HS_SP::read();
-            if (GBS::HD_HS_ST::read() < temp) {
-                GBS::HD_HS_SP::write(GBS::HD_HS_ST::read());
-                GBS::HD_HS_ST::write(temp);
-                GBS::SP_HS2PLL_INV_REG::write(1);
-            }
-        } else {
-            printHS = 2;
-
-            temp = GBS::HD_HS_SP::read();
-            if (GBS::HD_HS_ST::read() > temp) {
-                GBS::HD_HS_SP::write(GBS::HD_HS_ST::read());
-                GBS::HD_HS_ST::write(temp);
-                GBS::SP_HS2PLL_INV_REG::write(0);
-            }
-        }
-
-        if (Tv5725::SyncType::isCsync() == false) {
-            if ((syncStatus & 0x08) != 0x08) {
-                Serial.println(F("VS can't detect sync edge"));
-            } else {
-                if ((syncStatus & 0x04) == 0x00) {
-                    printVS = 1;
-
-                    temp = GBS::HD_VS_SP::read();
-                    if (GBS::HD_VS_ST::read() < temp) {
-                        GBS::HD_VS_SP::write(GBS::HD_VS_ST::read());
-                        GBS::HD_VS_ST::write(temp);
-                    }
-                } else {
-                    printVS = 2;
-
-                    temp = GBS::HD_VS_SP::read();
-                    if (GBS::HD_VS_ST::read() > temp) {
-                        GBS::HD_VS_SP::write(GBS::HD_VS_ST::read());
-                        GBS::HD_VS_ST::write(temp);
-                    }
-                }
-            }
-        }
-    }
+    Tv5725::HdBypass::SourceSyncEdges edges;
+    edges.hsyncFound = GBS::STATUS_SYNC_PROC_HSACT::read() == 1;
+    edges.hsyncPositive = GBS::STATUS_SYNC_PROC_HSPOL::read() == 1;
+    edges.vsyncFound = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
+    edges.vsyncPositive = GBS::STATUS_SYNC_PROC_VSPOL::read() == 1;
+    return edges;
 }
 
 void prepareSyncProcessor() 
 {
-    writeOneByte(0xF0, 5);
-    GBS::SP_SOG_P_ATO::write(0);   
+    GBS::SP_SOG_P_ATO::write(0);
     GBS::SP_JITTER_SYNC::write(0); // Use falling and rising edge to sync input Hsync
 
-    writeOneByte(0x21, 0x18);
-    writeOneByte(0x22, 0x0F);
-    writeOneByte(0x23, 0x00);
-    writeOneByte(0x24, 0x40);
-    writeOneByte(0x25, 0x00);
-    writeOneByte(0x26, 0x04);
-    writeOneByte(0x27, 0x00);
-    writeOneByte(0x2a, 0x0F);
+    Tv5725::SyncProcessor::applyPulseWidthDifference();
 
-    writeOneByte(0x2d, 0x03);
-    writeOneByte(0x2e, 0x00);
-    writeOneByte(0x2f, 0x02);
-    writeOneByte(0x31, 0x2f);
-
-    writeOneByte(0x33, 0x3a);
-    writeOneByte(0x34, 0x06);
-
-    if (rto->videoStandardInput == 0)
-        GBS::SP_DLT_REG::write(0x70);
-    else if (rto->videoStandardInput <= 4)
-        GBS::SP_DLT_REG::write(0xC0);
-    else if (rto->videoStandardInput <= 6)
-        GBS::SP_DLT_REG::write(0xA0);
-    else if (rto->videoStandardInput == 7)
-        GBS::SP_DLT_REG::write(0x70);
-    else
-        GBS::SP_DLT_REG::write(0x70);
-
-    if (sourceHasSerratedSync()) {
-        GBS::SP_H_PULSE_IGNOR::write(0x6b);
-    } else {
-        GBS::SP_H_PULSE_IGNOR::write(0x02);
-    }
+    Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncMeasurement::isCsync(),
+                                            sourceHasSerratedSync());
 
     GBS::SP_H_TOTAL_EQ_THD::write(3);
 
-    Tv5725::SyncProcessor::writeSdVsyncStart(4);
-    Tv5725::SyncProcessor::writeSdVsyncStop(1);
+    Tv5725::SyncProcessor::applySdVsyncPosition();
 
     GBS::SP_CS_HS_ST::write(0x10);
     GBS::SP_CS_HS_SP::write(0x00);
 
-    writeOneByte(0x49, 0x00);
-    writeOneByte(0x4a, 0x00); //
-    writeOneByte(0x4b, 0x44);
-    writeOneByte(0x4c, 0x00); //
-
-    writeOneByte(0x51, 0x02);
-    writeOneByte(0x52, 0x00);
-    writeOneByte(0x53, 0x00);
-    writeOneByte(0x54, 0x00);
-
-    if (!rgbhvBypass() && (GBS::GBS_OPTION_SCALING_RGBHV::read() != 1)) {
+    if (!rgbhvBypass() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
         GBS::SP_CLAMP_MANUAL::write(0);
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::holdClamp();
         GBS::SP_SOG_MODE::write(1);
-        GBS::SP_H_CST_ST::write(0x10);
-        GBS::SP_H_CST_SP::write(0x100);
-        Tv5725::SyncProcessor::setSubCoast(true);
+        Tv5725::SyncProcessor::applyDefaultCoastWindow();
         Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
         GBS::SP_HCST_AUTO_EN::write(0);
         GBS::SP_NO_COAST_REG::write(0);
     }
 
+    // The sub coast covers the equalising pulses, so serration is the whole of
+    // what it asks about -- and it is asked on every route, because a path that
+    // does not write it inherits whatever the last source left.
+    Tv5725::SyncProcessor::setSubCoast(sourceHasSerratedSync());
+
     GBS::SP_HS_REG::write(1);
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_VS_PROC_INV_REG::write(0); 
-
-    writeOneByte(0x58, 0x05);
-    writeOneByte(0x59, 0x00);
-    writeOneByte(0x5a, 0x01);
-    writeOneByte(0x5b, 0x00);
-    writeOneByte(0x5c, 0x03);
-    writeOneByte(0x5d, 0x02);
+    GBS::SP_HS_PROC_INV_REG::write(0);
+    GBS::SP_VS_PROC_INV_REG::write(0);
 }
 
-void setAndUpdateSogLevel(uint8_t level)
-{
-    rto->currentLevelSOG = level & 0x1f;
-    GBS::ADC_SOGCTRL::write(level);
-    setAndLatchPhaseSP();
-    setAndLatchPhaseADC();
-    latchPLLAD();
-    Tv5725::Interrupts::acknowledgeAll();
-}
-void goLowPowerWithInputDetection_re() 
-{
-    // GBS::OUT_SYNC_CNTRL::write(0);
-    // GBS::DAC_RGBS_PWDNZ::write(0);
-    setResetParameters_re();
-    prepareSyncProcessor(); 
-    delay(100);
-    // rto->isInLowPowerMode = true;
-}
 void goLowPowerWithInputDetection()
 {
     // The dark-boot state, recorded at the moment it is entered. This powers the
@@ -1790,204 +1613,7 @@ void goLowPowerWithInputDetection()
     rto->isInLowPowerMode = true;
 }
 
-// How long HSOUT/VSOUT are taken away to make the encoder re-acquire after the
-// output raster moves. Measured working at 1500; the minimum is unestablished,
-// and this blocks loop() once per mode change.
-static const uint16_t ENCODER_RELOCK_MS = 250;
-
-boolean optimizePhaseSP() 
-{
-    uint16_t pixelClock = GBS::PLLAD_MD::read();
-    uint8_t badHt = 0, prevBadHt = 0, worstBadHt = 0, worstPhaseSP = 0, prevPrevBadHt = 0, goodHt = 0;
-    boolean runTest = 1;
-
-    // Eight samples rather than the two the other sites use: this asks whether
-    // a phase sweep is worth running, not whether the divider was latched.
-    if (!Tv5725::SourceMeasurement::dividerLatched(
-            Tv5725::SourceMeasurement::measureLineSamples(), pixelClock, 8)) {
-        return 0;
-    }
-
-    if (rto->currentLevelSOG <= 2) {
-
-        rto->phaseSP = 16;
-        rto->phaseADC = 16;
-        if (rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
-            if (rto->osr == 4) {
-                rto->phaseADC += 16;
-                rto->phaseADC &= 0x1f;
-            }
-        }
-        delay(8);
-        runTest = 0;
-    }
-
-    if (runTest) {
-
-        for (uint8_t u = 0; u < 34; u++) {
-            rto->phaseSP++;
-            rto->phaseSP &= 0x1f;
-            setAndLatchPhaseSP();
-            badHt = 0;
-            ESP.wdtFeed();
-            delayMicroseconds(256);
-            ESP.wdtFeed();
-            for (uint8_t i = 0; i < 20; i++) {
-                if (GBS::STATUS_SYNC_PROC_HTOTAL::read() != pixelClock) {
-                    badHt++;
-                    ESP.wdtFeed();
-                    delayMicroseconds(384);
-                }
-            }
-
-            if ((badHt + prevBadHt + prevPrevBadHt) > worstBadHt) {
-                worstBadHt = (badHt + prevBadHt + prevPrevBadHt);
-                worstPhaseSP = (rto->phaseSP - 1) & 0x1f;
-            }
-
-            if (badHt == 0) {
-
-                goodHt++;
-            }
-
-            prevPrevBadHt = prevBadHt;
-            prevBadHt = badHt;
-        }
-
-        if (goodHt < 17) {
-
-            return 0;
-        }
-
-        if (worstBadHt != 0) {
-            rto->phaseSP = (worstPhaseSP + 16) & 0x1f;
-
-            rto->phaseADC = 16;
-
-            if (rto->videoStandardInput >= 5 && rto->videoStandardInput <= 7) {
-                if (rto->osr == 2) {
-
-                    rto->phaseADC += 16;
-                    rto->phaseADC &= 0x1f;
-                }
-            } else if (rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
-                if (rto->osr == 4) {
-
-                    rto->phaseADC += 16;
-                    rto->phaseADC &= 0x1f;
-                }
-            }
-        } else {
-
-            rto->phaseSP = 16;
-            rto->phaseADC = 16;
-            if (rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
-                if (rto->osr == 4) {
-                    rto->phaseADC += 16;
-                    rto->phaseADC &= 0x1f;
-                }
-            }
-        }
-    }
-
-    setAndLatchPhaseSP();
-    delay(1);
-    setAndLatchPhaseADC();
-
-    return 1;
-}
-
-void optimizeSogLevel() // Optimize SOG levels
-{
-    if (rto->boardHasPower == false) {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
-        return;
-    }
-    if (rgbhvBypass() || GBS::SP_SOG_MODE::read() != 1 || Tv5725::SyncType::isCsync() == false) {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
-        return;
-    }
-
-    if (rto->inputIsYpBpR && Info_sate == 0) //&& SeleInputSource == S_YUV )
-    {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 14;
-    } else if (rto->inputIsYpBpR == false && Info_sate == 0) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-
-    {
-        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
-    }
-    setAndUpdateSogLevel(rto->currentLevelSOG);
-
-    uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
-    uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
-    if (debug_backup != 0xa) {
-        GBS::TEST_BUS_SEL::write(0xa);
-        delay(1);
-    }
-    if (debug_backup_SP != 0x0f) {
-        GBS::TEST_BUS_SP_SEL::write(0x0f);
-        delay(1);
-    }
-
-    GBS::TEST_BUS_EN::write(1);
-
-    delay(100);
-    while (1) {
-        uint16_t syncGoodCounter = 0;
-        unsigned long timeout = millis();
-        while ((millis() - timeout) < 60) {
-            if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-                syncGoodCounter++;
-                if (syncGoodCounter >= 60) {
-                    break;
-                }
-            } else if (syncGoodCounter >= 4) {
-                syncGoodCounter -= 3;
-            }
-        }
-
-        if (syncGoodCounter >= 60) {
-            syncGoodCounter = 0;
-
-            if (GBS::TEST_BUS_2F::read() > 0) {
-                delay(20);
-                for (int a = 0; a < 50; a++) {
-                    syncGoodCounter++;
-                    if (GBS::STATUS_SYNC_PROC_HSACT::read() == 0 || GBS::TEST_BUS_2F::read() == 0) {
-                        syncGoodCounter = 0;
-                        break;
-                    }
-                }
-                if (syncGoodCounter >= 49) {
-                    break;
-                }
-            }
-        }
-
-        if (rto->currentLevelSOG >= 2) {
-            rto->currentLevelSOG -= 1;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
-            delay(8);
-        } else {
-            rto->currentLevelSOG = 13;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
-            delay(8);
-            break;
-        }
-    }
-
-    rto->thisSourceMaxLevelSOG = rto->currentLevelSOG;
-    if (rto->thisSourceMaxLevelSOG == 0) {
-        rto->thisSourceMaxLevelSOG = 1;
-    }
-
-    if (debug_backup != 0xa) {
-        GBS::TEST_BUS_SEL::write(debug_backup);
-    }
-    if (debug_backup_SP != 0x0f) {
-        GBS::TEST_BUS_SP_SEL::write(debug_backup_SP);
-    }
-}
+static void feedWatchdog() { ESP.wdtFeed(); }
 
 static uint32_t millisNow() { return (uint32_t)millis(); }
 
@@ -1998,15 +1624,15 @@ static uint32_t millisNow() { return (uint32_t)millis(); }
 // connector to ask, so the measurement stands.
 boolean syncTypeHasOwnVsync()
 {
-    const InputSource::Id id = (InputSource::Id)Info;
-    if (InputSource::chosen(id) && !InputSource::syncTypeMustBeMeasured(id))
+    const VideoSourceSelection::Id id = VideoSourceSelection::selected();
+    if (VideoSourceSelection::chosen(id) && !VideoSourceSelection::syncTypeMustBeMeasured(id))
         return false;
     return sourceHasOwnVsync();
 }
 
 boolean sourceHasOwnVsync()
 {
-    return Tv5725::SourceMeasurement::sourceHasOwnVsync(millisNow);
+    return Tv5725::SyncMeasurement::hasOwnVsync(millisNow);
 }
 
 // Point both halves of the input path at the input the user last chose, so
@@ -2015,7 +1641,7 @@ boolean sourceHasOwnVsync()
 // detectAndSwitchToActiveInput()'s sweep, which alternates 0/1 from wherever it
 // started.
 //
-// **KEYED ON `Info`, NOT `SeleInputSource`.** `Info` carries all six inputs;
+// **KEYED ON THE SELECTION, NOT `SeleInputSource`.** It carries all six inputs;
 // `SeleInputSource` carries three, so a restore keyed on it sends RGsB the RGBs
 // frame, S-Video and composite the YPbPr frame, and VGA a frame without the low
 // nibble that raises asw_01.
@@ -2034,23 +1660,23 @@ boolean sourceHasOwnVsync()
 // does, and that is what a choice refuses.
 static bool detectionMayChangeInput()
 {
-    return !InputSource::chosen(Info);
+    return !VideoSourceSelection::chosen(VideoSourceSelection::selected());
 }
 
 void applySavedInputSource()
 {
-    const InputSource::Id saved = InputSource::fromStored(Info);
-    if (saved == InputSource::None) {
+    const VideoSourceSelection::Id saved = VideoSourceSelection::selected();
+    if (saved == VideoSourceSelection::None) {
         // Nothing chosen, so leave the muxes alone and let detection sweep.
         // Only ADC_INPUT_SEL 0 and 1 carry video -- 2 is written solely by
         // calibrateAdcOffset() as a calibration reference -- which is what
         // makes that 0/1 sweep complete.
-        bootLogPrintf("INPUT: nothing stored, Info=%u t=%lums\n",
-                      (unsigned)Info, (unsigned long)millis());
+        bootLogPrintf("INPUT: nothing stored, selection=%u t=%lums\n",
+                      (unsigned)VideoSourceSelection::selected(), (unsigned long)millis());
         return;
     }
 
-    const InputSource::Settings settings = InputSource::settingsFor(saved);
+    const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(saved);
     applyInputRegisters(settings);
 
     // The other half of the path: the HC32's asw_01..04 decide what is actually
@@ -2058,7 +1684,7 @@ void applySavedInputSource()
     sendInputFrame(settings.frame);
 
     bootLogPrintf("INPUT: %s frame=0x%02x ADC_INPUT_SEL=%u t=%lums\n",
-                  InputSource::name(saved), (unsigned)settings.frame,
+                  VideoSourceSelection::name(saved), (unsigned)settings.frame,
                   (unsigned)GBS::ADC_INPUT_SEL::read(), (unsigned long)millis());
 }
 
@@ -2069,14 +1695,20 @@ static_assert(SyncSearch::SourceRgbs == S_RGBs, "SyncSearch::SourceRgbs drifted 
 static_assert(SyncSearch::SourceVga == S_VGA, "SyncSearch::SourceVga drifted from S_VGA");
 static_assert(SyncSearch::SourceYuv == S_YUV, "SyncSearch::SourceYuv drifted from S_YUV");
 
-// InputSource::Id IS the stored `Info` byte, which is what lets the boot restore
+// VideoSourceSelection::Id IS the stored byte, which is what lets the boot restore
 // reconstruct all six. Nothing else checks the two spellings agree.
-static_assert(InputSource::Rgbs == InfoRGBs, "InputSource::Rgbs drifted from InfoRGBs");
-static_assert(InputSource::RgsB == InfoRGsB, "InputSource::RgsB drifted from InfoRGsB");
-static_assert(InputSource::Vga == InfoVGA, "InputSource::Vga drifted from InfoVGA");
-static_assert(InputSource::Ypbpr == InfoYUV, "InputSource::Ypbpr drifted from InfoYUV");
-static_assert(InputSource::SVideo == InfoSV, "InputSource::SVideo drifted from InfoSV");
-static_assert(InputSource::Composite == InfoAV, "InputSource::Composite drifted from InfoAV");
+static_assert(VideoSourceSelection::Rgbs == InfoRGBs, "VideoSourceSelection::Rgbs drifted from InfoRGBs");
+static_assert(VideoSourceSelection::RgsB == InfoRGsB, "VideoSourceSelection::RgsB drifted from InfoRGsB");
+static_assert(VideoSourceSelection::Vga == InfoVGA, "VideoSourceSelection::Vga drifted from InfoVGA");
+static_assert(VideoSourceSelection::Ypbpr == InfoYUV, "VideoSourceSelection::Ypbpr drifted from InfoYUV");
+static_assert(VideoSourceSelection::SVideo == InfoSV, "VideoSourceSelection::SVideo drifted from InfoSV");
+static_assert(VideoSourceSelection::Composite == InfoAV, "VideoSourceSelection::Composite drifted from InfoAV");
+
+// How long detection waits for the sync processor to start counting before it
+// reports the source as found. The boots that work have a count within about
+// 100 ms of the preset load; this is several times that, and it is only spent
+// on a boot that would otherwise never acquire at all.
+static const unsigned long DetectCountWaitMs = 600;
 
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
@@ -2085,12 +1717,11 @@ uint8_t detectAndSwitchToActiveInput()
     if (traceLeft > 0) {
         --traceLeft;
         bootLogPrintf("DETECT: enter t=%lums ADCsel=%u S16=0x%02x srcVT=%u "
-                      "HPERIOD=%u videoStd=%u\n",
+                      "HPERIOD=%u\n",
                       (unsigned long)millis(), (unsigned)GBS::ADC_INPUT_SEL::read(),
-                      (unsigned)GBS::STATUS_16::read(),
+                      (unsigned)GBS::read(0x00, 0x16),
                       (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
-                      (unsigned)GBS::HPERIOD_IF::read(),
-                      (unsigned)rto->videoStandardInput);
+                      (unsigned)GBS::HPERIOD_IF::read());
     }
     // Frozen: docs/gbs-control-debug-interface.md
     if (AUTOMATION_FROZEN()) {
@@ -2103,7 +1734,7 @@ uint8_t detectAndSwitchToActiveInput()
         delay(10);
         handleWiFi(0);
 
-        boolean stable = getStatus16SpHsStable();
+        boolean stable = Tv5725::SyncProcessor::hsyncActive();
         // printf("stable = %d \n",stable);
         if (stable) {
             currentInput = GBS::ADC_INPUT_SEL::read();
@@ -2112,8 +1743,8 @@ uint8_t detectAndSwitchToActiveInput()
             {                                                                                                     // RGBS or RGBHV
                 boolean vsyncActive = 0;
                 rto->inputIsYpBpR = false; // declare for MD
-                rto->currentLevelSOG = 13; //
-                setAndUpdateSogLevel(rto->currentLevelSOG);
+                Tv5725::SyncOnGreen::choose(13); //
+                Tv5725::SyncOnGreen::putInForce();
 
                 unsigned long timeOutStart = millis();
                 // vsync test
@@ -2122,6 +1753,7 @@ uint8_t detectAndSwitchToActiveInput()
                     handleWiFi(0); // wifi stack
                     delay(1);
                 }
+                const unsigned long vsyncWaitMs = millis() - timeOutStart;
 
 
                 if (Info_sate == 0 &&
@@ -2131,11 +1763,13 @@ uint8_t detectAndSwitchToActiveInput()
                     boolean hsyncActive = 0;
 
                     timeOutStart = millis();
+                    const unsigned long hsyncWaitStart = millis();
                     while (!hsyncActive && millis() - timeOutStart < 400) {
                         hsyncActive = GBS::STATUS_SYNC_PROC_HSACT::read();
                         handleWiFi(0); // wifi stack
                         delay(1);
                     }
+                    const unsigned long hsyncWaitMs = millis() - hsyncWaitStart;
 
                     if (hsyncActive) {
                         ; // SerialMprint(F("HSync: present"));
@@ -2145,9 +1779,9 @@ uint8_t detectAndSwitchToActiveInput()
                         short decodeSuccess = 0;
                         for (int i = 0; i < 3; i++) {
                             
-                            Tv5725::SyncType::set(1); // temporary for test
-                            float sfr = getSourceFieldRate(1);
-                            Tv5725::SyncType::set(0); // undo
+                            Tv5725::SyncMeasurement::set(1); // temporary for test
+                            float sfr = Tv5725::TestBusRateMeasurement::sourceFieldRateHz(true);
+                            Tv5725::SyncMeasurement::set(0); // undo
                             if (sfr > 40.0f)
                                 decodeSuccess++; 
                         }
@@ -2156,41 +1790,67 @@ uint8_t detectAndSwitchToActiveInput()
                         // yields a plausible field rate, and every source above 40 Hz
                         // says yes — so it can never conclude "separate sync" on its
                         // own. A V sync line of its own overrules it.
-                        boolean ownVsync = sourceHasOwnVsync();
+                        boolean ownVsync = syncTypeHasOwnVsync();
 
                         if (decodeSuccess >= 2 && !ownVsync) {
                             // SerialMprintln(F(" (with CSync)"));
                             GBS::SP_PRE_COAST::write(0x10); 
                             delay(40);
-                            Tv5725::SyncType::set(true);
+                            Tv5725::SyncMeasurement::set(true);
                         } else {
                             // SerialMprintln();
-                            Tv5725::SyncType::set(false); 
+                            Tv5725::SyncMeasurement::set(false); 
                         }
                         debugPrintf("sync type: %d/3 field rate probes plausible, own V sync %s -> %s\n",
                             decodeSuccess, ownVsync ? "yes" : "no",
-                            Tv5725::SyncType::isCsync() ? "csync" : "separate H/V");
+                            Tv5725::SyncMeasurement::isCsync() ? "csync" : "separate H/V");
 
-                        for (uint8_t i = 0; i < 16; i++) {
-
-                            uint8_t innerVideoMode = getVideoMode();
-                            if (innerVideoMode == 8) {
-                                setAndUpdateSogLevel(rto->currentLevelSOG);
-                                rto->medResLineCount = GBS::MD_HD1250P_CNTRL::read();
-                                // SerialMprintln(F("med res"));
-
-                                return 1;
-                            }
-
-                            GBS::MD_HD1250P_CNTRL::write(GBS::MD_HD1250P_CNTRL::read() + 1);
-
-                            delay(30);
-                        }
-
-                        rto->videoStandardInput = 15;
-
-                        applyPresets(rto->videoStandardInput);
+                        Tv5725::RgbhvOutput::chooseBypass();
+                        const unsigned long presetsAt = millis();
+                        applyPresets();
                         delay(100);
+
+                        // **FOUND IS TWO STATUS BITS; THE ENGINE NEEDS A COUNT.**
+                        // Concluding here while the sync processor counts nothing
+                        // commits the whole boot to a state it cannot measure,
+                        // and the recovery ladder cannot escalate out of that --
+                        // ReprobeSyncType succeeds on any source with its own V
+                        // sync and restarts the run, so the rungs past it never
+                        // fire. Measured over six restarts, the count at this
+                        // moment decides it every time: zero never acquires,
+                        // non-zero always does.
+                        //
+                        // So wait for one, and report not-found without it. The
+                        // caller retries, which is what recovers this -- where
+                        // returning found does not, for the life of the boot.
+                        // docs/investigations/a-boot-that-detects-too-early-can-never-recover.md
+                        const unsigned long countFrom = millis();
+                        while (!Tv5725::VideoSignal::countIsSource(
+                                   Tv5725::SyncProcessor::lineCount())
+                               && millis() - countFrom < DetectCountWaitMs)
+                            delay(2);
+                        const unsigned countWaited = (unsigned)(millis() - countFrom);
+                        const uint16_t counted = Tv5725::SyncProcessor::lineCount();
+
+                        bootLogPrintf("DETECT: found t=%lums vsyncWait=%lums "
+                                      "hsyncWait=%lums presets=%lums count=%ums "
+                                      "VT=%u HT=%u "
+                                      "HPERIOD=%u lock=%u SOG=%u\n",
+                                      (unsigned long)millis(), vsyncWaitMs,
+                                      hsyncWaitMs,
+                                      (unsigned long)(millis() - presetsAt),
+                                      countWaited,
+                                      (unsigned)counted,
+                                      (unsigned)GBS::STATUS_SYNC_PROC_HTOTAL::read(),
+                                      (unsigned)GBS::HPERIOD_IF::read(),
+                                      (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read(),
+                                      (unsigned)GBS::SP_SOG_MODE::read());
+
+                        if (!Tv5725::VideoSignal::countIsSource(counted)) {
+                            debugPrintf("DETECT: sync found but no line count after %ums,"
+                                        " not taking it\n", countWaited);
+                            return 0;
+                        }
 
                         return 3;
                     } else {
@@ -2201,53 +1861,37 @@ uint8_t detectAndSwitchToActiveInput()
                 if (Info_sate == 0 &&
                     SyncSearch::searchFor(SeleInputSource, vsyncActive) == SyncSearch::VsyncAbsent) {
 
-                    Tv5725::SyncType::set(true);
+                    Tv5725::SyncMeasurement::set(true);
                     GBS::MD_SEL_VGA60::write(0); 
                     uint16_t testCycle = 0;
                     timeOutStart = millis();
                     while ((millis() - timeOutStart) < 6000) {
                         delay(2);
-                        if (getVideoMode() > 0) {
-                            if (getVideoMode() != 8) { 
-                                return 1;
-                            }
+                        if (Tv5725::VideoSignal::countIsSource(
+                                Tv5725::SyncProcessor::lineCount())) {
+                            return 1;
                         }
                         testCycle++;
                         
                         if ((testCycle % 150) == 0) {
-                            if (rto->currentLevelSOG == 1) {
-                                rto->currentLevelSOG = 2;
+                            if (Tv5725::SyncOnGreen::level() == 1) {
+                                Tv5725::SyncOnGreen::choose(2);
                             } else {
-                                rto->currentLevelSOG += 2;
+                                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 2);
                             }
-                            if (rto->currentLevelSOG >= 15) {
-                                rto->currentLevelSOG = 1;
+                            if (Tv5725::SyncOnGreen::level() >= 15) {
+                                Tv5725::SyncOnGreen::choose(1);
                             }
-                            setAndUpdateSogLevel(rto->currentLevelSOG);
+                            Tv5725::SyncOnGreen::putInForce();
                         }
 
-                        
-                        if (getVideoMode() == 8) {
-                            rto->currentLevelSOG = rto->thisSourceMaxLevelSOG = 13;
-                            setAndUpdateSogLevel(rto->currentLevelSOG);
-                            rto->medResLineCount = GBS::MD_HD1250P_CNTRL::read();
-                            ; // SerialMprintln(F("med res"));
-                            return 1;
-                        }
-
-                        uint8_t currentMedResLineCount = GBS::MD_HD1250P_CNTRL::read();
-                        if (currentMedResLineCount < 0x3c) {
-                            GBS::MD_HD1250P_CNTRL::write(currentMedResLineCount + 1);
-                        } else {
-                            GBS::MD_HD1250P_CNTRL::write(0x33);
-                        }
                     }
                     return 1;
                 }
 
                 GBS::SP_SOG_MODE::write(1);
-                resetSyncProcessor();
-                resetModeDetect();
+                Tv5725::SyncProcessor::reset();
+                Tv5725::ModeDetect::reset();
                 delay(40);
             } else if (currentInput == 0 && Info_sate == 0) //&& SeleInputSource == S_YUV ) // 20240919
             {
@@ -2259,38 +1903,38 @@ uint8_t detectAndSwitchToActiveInput()
                 unsigned long timeOutStart = millis();
                 while ((millis() - timeOutStart) < 6000) {
                     delay(2);
-                    if (getVideoMode() > 0) {
+                    if (Tv5725::VideoSignal::countIsSource(
+                            Tv5725::SyncProcessor::lineCount())) {
                         return 2;
                     }
 
                     testCycle++;
                     if ((testCycle % 180) == 0) {
-                        if (rto->currentLevelSOG == 1) {
-                            rto->currentLevelSOG = 2;
+                        if (Tv5725::SyncOnGreen::level() == 1) {
+                            Tv5725::SyncOnGreen::choose(2);
                         } else {
-                            rto->currentLevelSOG += 2;
+                            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 2);
                         }
-                        if (rto->currentLevelSOG >= 16) {
-                            rto->currentLevelSOG = 1;
+                        if (Tv5725::SyncOnGreen::level() >= 16) {
+                            Tv5725::SyncOnGreen::choose(1);
                         }
-                        setAndUpdateSogLevel(rto->currentLevelSOG);
-                        rto->thisSourceMaxLevelSOG = rto->currentLevelSOG;
+                        Tv5725::SyncOnGreen::putInForce();
                     }
                 }
 
-                rto->currentLevelSOG = rto->thisSourceMaxLevelSOG = 14;
-                setAndUpdateSogLevel(rto->currentLevelSOG);
+                Tv5725::SyncOnGreen::choose(14);
+                Tv5725::SyncOnGreen::putInForce();
 
                 return 2;
             }
 
             ; // SerialMprintln(" lost..");
-            rto->currentLevelSOG = 2;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
+            Tv5725::SyncOnGreen::choose(2);
+            Tv5725::SyncOnGreen::putInForce();
         }
 
         if (detectionMayChangeInput()) {
-            GBS::ADC_INPUT_SEL::write(!currentInput);
+            Tv5725::Adc::selectInput(!currentInput);
             delay(200);
         }
 
@@ -2302,15 +1946,22 @@ uint8_t detectAndSwitchToActiveInput()
 
 uint8_t inputAndSyncDetect() 
 {
+    // **DETECTION BLOCKS loop(), so what it costs is invisible from the
+    // console except as silence.** Its two line-count waits run 6000 ms each
+    // and exit early only on a source count, so the duration says which
+    // happened and nothing else can.
+    // docs/investigations/detection-blocks-the-loop.md
+    const unsigned long detectAt = millis();
     uint8_t syncFound = detectAndSwitchToActiveInput();
+    debugPrintf("DETECT: %lums, syncFound %u\n",
+                (unsigned long)(millis() - detectAt), (unsigned)syncFound);
     // printf(" syncFound = %d \n",syncFound);
     if (syncFound == 0) {
         if (!getSyncPresent()) 
         {
             if (rto->isInLowPowerMode == false) {
                 rto->sourceDisconnected = true; 
-                rto->videoStandardInput = 0;
-                GBS::SP_SOG_MODE::write(1);
+                            GBS::SP_SOG_MODE::write(1);
                 goLowPowerWithInputDetection();
                 rto->isInLowPowerMode = true;
             }
@@ -2323,9 +1974,7 @@ uint8_t inputAndSyncDetect()
         rto->isInLowPowerMode = false; 
         resetDebugPort();
         applyRGBPatches();
-        if (Info == InfoRGBs || Info == InfoRGsB) {
-            // printf("\n RGBS HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
-            rto->HdmiHoldDetection = false;
+        if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
         }
 
         return 1;
@@ -2338,9 +1987,7 @@ uint8_t inputAndSyncDetect()
         applyYuvPatches();
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
-        if (Info == InfoYUV || Info == InfoSV || Info == InfoAV) {
-            // printf("\n YUV HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
-            rto->HdmiHoldDetection = false;
+        if (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
         }
 
         return 2;
@@ -2349,13 +1996,9 @@ uint8_t inputAndSyncDetect()
         rto->isInLowPowerMode = false; 
         rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
-        rto->videoStandardInput = 15;
+        Tv5725::RgbhvOutput::chooseBypass();
         resetDebugPort();
 
-        if (Info == InfoVGA && rto->HdmiHoldDetection) {
-            // printf("\n VGA HdmiHoldDetection :0x%02x \n",rto->HdmiHoldDetection);
-            rto->HdmiHoldDetection = false;
-        }
         return 3;
     }
 
@@ -2363,10 +2006,6 @@ uint8_t inputAndSyncDetect()
 }
 
 
-uint8_t getSingleByteFromPreset(const uint8_t *programArray, unsigned int offset)
-{
-    return pgm_read_byte(programArray + offset);
-}
 // Read from register
 static inline void readFromRegister(uint8_t reg, int bytesToRead, uint8_t *output)
 {
@@ -2437,8 +2076,7 @@ void resetPLLAD()
     GBS::PLLAD_VCORST::write(0);
     delay(1);
     latchPLLAD();
-    rto->clampPositionIsSet = 0;     
-    rto->continousStableCounter = 1; 
+    Tv5725::SyncProcessor::forgetPositions();
 }
 
 void latchPLLAD() { Tv5725::Adc::latch(); }
@@ -2483,13 +2121,11 @@ bool writePllAdMdChecked(uint16_t wanted)
         return true;
     }
 
-    GBS::PLLAD_MD::write(wanted);
-    latchPLLAD();
+    Tv5725::Adc::applyDivider(wanted);
 
     if (GBS::PLLAD_MD::read() != wanted) {
         debugPrintf("PLLAD_MD: write of %u did not take, restoring %u\n", wanted, previous);
-        GBS::PLLAD_MD::write(previous);
-        latchPLLAD();
+        Tv5725::Adc::applyDivider(previous);
         return false;
     }
 
@@ -2497,14 +2133,13 @@ bool writePllAdMdChecked(uint16_t wanted)
     while ((int32_t)(millis() - deadline) < 0) {
         handleWiFi(0); // the whole point is staying reachable while we wait
         delay(10);
-        if (getStatus16SpHsStable()) {
+        if (Tv5725::SyncProcessor::hsyncActive()) {
             return true;
         }
     }
 
     debugPrintf("PLLAD_MD: %u lost sync, restoring %u\n", wanted, previous);
-    GBS::PLLAD_MD::write(previous);
-    latchPLLAD();
+    Tv5725::Adc::applyDivider(previous);
     return false;
 }
 
@@ -2514,8 +2149,7 @@ void resetPLL()
     delay(1);
     GBS::PLL_VCORST::write(0);
     delay(1);
-    rto->clampPositionIsSet = 0;     
-    rto->continousStableCounter = 1; 
+    Tv5725::SyncProcessor::forgetPositions();
 }
 
 void ResetSDRAM()
@@ -2526,62 +2160,12 @@ void ResetSDRAM()
     GBS::MEM_INI_REG::write(0x82);
 }
 
-void resetDigital()
-{
-    const boolean keepBypassActive = Tv5725::HdBypass::enabled();
-    GBS::SFTRST_DEC_RSTZ::write(1);
-    GBS::SFTRST_MODE_RSTZ::write(1);
-    GBS::SFTRST_SYNC_RSTZ::write(1);
-    Tv5725::HdBypass::hold();
-    GBS::SFTRST_INT_RSTZ::write(1);
-    if (rto->outModeHdBypass) {
-        GBS::SFTRST_IF_RSTZ::write(0);
-        GBS::SFTRST_DEINT_RSTZ::write(0);
-        GBS::SFTRST_MEM_FF_RSTZ::write(0);
-        GBS::SFTRST_MEM_RSTZ::write(0);
-        GBS::SFTRST_FIFO_RSTZ::write(0);
-        GBS::SFTRST_OSD_RSTZ::write(0);
-        GBS::SFTRST_VDS_RSTZ::write(0);
-        Tv5725::HdBypass::release();
-        return;
-    }
-    GBS::SFTRST_IF_RSTZ::write(1);
-    GBS::SFTRST_DEINT_RSTZ::write(0);
-    GBS::SFTRST_MEM_FF_RSTZ::write(0);
-    GBS::SFTRST_MEM_RSTZ::write(0);
-    GBS::SFTRST_FIFO_RSTZ::write(0);
-    GBS::SFTRST_OSD_RSTZ::write(0);
-    GBS::SFTRST_VDS_RSTZ::write(1);
-    if (keepBypassActive) {
-        Tv5725::HdBypass::release();
-    }
-    GBS::SFTRST_IF_RSTZ::write(1);
-    GBS::SFTRST_DEINT_RSTZ::write(1);
-    GBS::SFTRST_MEM_FF_RSTZ::write(1);
-    GBS::SFTRST_MEM_RSTZ::write(1);
-    GBS::SFTRST_FIFO_RSTZ::write(1);
-    GBS::SFTRST_OSD_RSTZ::write(1);
-    GBS::SFTRST_VDS_RSTZ::write(1);
-}
 
-void resetSyncProcessor()
-{
-    GBS::SFTRST_SYNC_RSTZ::write(0);
-    ESP.wdtFeed();
-    delayMicroseconds(10);
-    GBS::SFTRST_SYNC_RSTZ::write(1);
-}
 
-void resetModeDetect()
-{
-    GBS::SFTRST_MODE_RSTZ::write(0);
-    delay(1);
-    GBS::SFTRST_MODE_RSTZ::write(1);
-}
 
 void moveHS(uint16_t amountToAdd, bool subtracting)
 {
-    if (rto->outModeHdBypass) {
+    if (Tv5725::VideoRoute::isHdBypassChannel()) {
         uint16_t SP_CS_HS_ST = GBS::SP_CS_HS_ST::read();
         uint16_t SP_CS_HS_SP = GBS::SP_CS_HS_SP::read();
         uint16_t htotal = GBS::HD_HSYNC_RST::read();
@@ -2631,32 +2215,6 @@ void moveHS(uint16_t amountToAdd, bool subtracting)
     printVideoTimings();
 }
 
-void moveVS(uint16_t amountToAdd, bool subtracting)
-{
-    uint16_t vtotal = GBS::VDS_VSYNC_RST::read();
-    if (vtotal == 0)
-        return;
-    uint16_t VDS_DIS_VB_ST = GBS::VDS_DIS_VB_ST::read();
-    uint16_t newVDS_VS_ST = GBS::VDS_VS_ST::read();
-    uint16_t newVDS_VS_SP = GBS::VDS_VS_SP::read();
-
-    if (subtracting) {
-        if ((newVDS_VS_ST - amountToAdd) > VDS_DIS_VB_ST) {
-            newVDS_VS_ST -= amountToAdd;
-            newVDS_VS_SP -= amountToAdd;
-        } else
-            ; // SerialMprintln("limit");
-    } else {
-        if ((newVDS_VS_SP + amountToAdd) < vtotal) {
-            newVDS_VS_ST += amountToAdd;
-            newVDS_VS_SP += amountToAdd;
-        } else
-            ; // SerialMprintln("limit");
-    }
-
-    GBS::VDS_VS_ST::write(newVDS_VS_ST);
-    GBS::VDS_VS_SP::write(newVDS_VS_SP);
-}
 
 void invertHS()
 {
@@ -2713,7 +2271,7 @@ uint16_t getCsVsStop()
 }
 
 // Dump the scaler's live display timings: on demand from the web UI (`/sc?,`)
-// or serial (`,`), and after every moveHS()/moveVS() nudge. printf_P gives one
+// or serial (`,`), and after every moveHS() nudge. printf_P gives one
 // WebSocket frame per line, with the format strings left in flash.
 void printVideoTimings()
 {
@@ -2752,34 +2310,14 @@ void resetDebugPort()
     GBS::PAD_BOUT_EN::write(1);
     GBS::IF_TEST_EN::write(1);
     GBS::IF_TEST_SEL::write(3);
-    GBS::TEST_BUS_SEL::write(0xa);
-    GBS::TEST_BUS_EN::write(1);
-    GBS::TEST_BUS_SP_SEL::write(0x0f);
+    Tv5725::TestBus::select(Tv5725::TestBus::SyncProcessor);
+    Tv5725::SyncProcessor::driveTestBus(
+        Tv5725::SyncProcessor::TestModuleOutProc, 0);
     GBS::MEM_FF_TOP_FF_SEL::write(1);
 
     GBS::VDS_TEST_EN::write(1);
 }
 
-void readEeprom()
-{
-    int addr = 0;
-    const uint8_t eepromAddr = 0x50;
-    Wire.beginTransmission(eepromAddr);
-
-    Wire.write(addr >> 8);
-    Wire.write((uint8_t)addr);
-    Wire.endTransmission();
-    Wire.requestFrom(eepromAddr, (uint8_t)128);
-    uint8_t readData = 0;
-    uint8_t i = 0;
-    while (Wire.available()) {
-
-        readData = Wire.read();
-        Serial.println(readData, HEX);
-
-        i++;
-    }
-}
 
 // The OSD bar's four controls, and **the only way it may reach the geometry**.
 // Anything here that writes a register directly -- VDS_HB_SP, VDS_HSCALE and
@@ -2828,139 +2366,20 @@ static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
 // reaching for SerialM -- which lives above it and does not host-compile.
 void tv5725Log(const char *message) { fsDebugPrintf("%s\n", message); }
 
-float getSourceFieldRate(boolean useSPBus)
+
+
+
+// The ESP's half of Tv5725::TestBusRateMeasurement: count the edges of whatever the chip has
+// selected onto the debug pin, and say what one tick is worth. The yield and
+// the watchdog feed stay on this side -- src/tv5725/ calls neither.
+uint32_t debugPinPulseTicks()
 {
-    double esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
-    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-    uint8_t spBusSelBackup = GBS::TEST_BUS_SP_SEL::read();
-    uint8_t ifBusSelBackup = GBS::IF_TEST_SEL::read();
-    uint8_t debugPinBackup = GBS::PAD_BOUT_EN::read();
-
-    if (debugPinBackup != 1)
-        GBS::PAD_BOUT_EN::write(1);
-
-    if (ifBusSelBackup != 3)
-        GBS::IF_TEST_SEL::write(3);
-
-    if (useSPBus) {
-        if (Tv5725::SyncType::isCsync()) {
-
-            if (testBusSelBackup != 0xa)
-                GBS::TEST_BUS_SEL::write(0xa);
-        } else {
-
-            if (testBusSelBackup != 0x0)
-                GBS::TEST_BUS_SEL::write(0x0);
-        }
-        if (spBusSelBackup != 0x0f)
-            GBS::TEST_BUS_SP_SEL::write(0x0f);
-    } else {
-        if (testBusSelBackup != 0)
-            GBS::TEST_BUS_SEL::write(0);
-    }
-
-    float retVal = 0;
-
-    uint32_t fieldTimeTicks = FrameSync::getPulseTicks();
-    if (fieldTimeTicks == 0) {
-
-        fieldTimeTicks = FrameSync::getPulseTicks();
-    }
-
-    if (fieldTimeTicks > 0) {
-        retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-        if (retVal < 47.0f || retVal > 86.0f) {
-
-            fieldTimeTicks = FrameSync::getPulseTicks();
-            if (fieldTimeTicks > 0) {
-                retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-            }
-        }
-    }
-
-    GBS::TEST_BUS_SEL::write(testBusSelBackup);
-    GBS::PAD_BOUT_EN::write(debugPinBackup);
-    if (spBusSelBackup != 0x0f)
-        GBS::TEST_BUS_SP_SEL::write(spBusSelBackup);
-    if (ifBusSelBackup != 3)
-        GBS::IF_TEST_SEL::write(ifBusSelBackup);
-
-    return retVal;
-}
-
-float getOutputFrameRate()
-{
-    double esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
-    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-    uint8_t debugPinBackup = GBS::PAD_BOUT_EN::read();
-
-    if (debugPinBackup != 1)
-        GBS::PAD_BOUT_EN::write(1);
-
-    if (testBusSelBackup != 2)
-        GBS::TEST_BUS_SEL::write(2);
-
-    float retVal = 0;
-
-    uint32_t fieldTimeTicks = FrameSync::getPulseTicks();
-    if (fieldTimeTicks == 0) {
-
-        fieldTimeTicks = FrameSync::getPulseTicks();
-    }
-
-    if (fieldTimeTicks > 0) {
-        retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-        if (retVal < 47.0f || retVal > 86.0f) {
-
-            fieldTimeTicks = FrameSync::getPulseTicks();
-            if (fieldTimeTicks > 0) {
-                retVal = esp8266_clock_freq / (double)fieldTimeTicks;
-            }
-        }
-    }
-
-    GBS::TEST_BUS_SEL::write(testBusSelBackup);
-    GBS::PAD_BOUT_EN::write(debugPinBackup);
-
-    return retVal;
-}
-
-uint32_t getPllRate()
-{
-    uint32_t esp8266_clock_freq = ESP.getCpuFreqMHz() * 1000000;
-    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-    uint8_t spBusSelBackup = GBS::TEST_BUS_SP_SEL::read();
-    uint8_t debugPinBackup = GBS::PAD_BOUT_EN::read();
-
-    if (testBusSelBackup != 0xa) {
-        GBS::TEST_BUS_SEL::write(0xa);
-    }
-    if (Tv5725::SyncType::isCsync()) {
-        if (spBusSelBackup != 0x6b)
-            GBS::TEST_BUS_SP_SEL::write(0x6b);
-    } else {
-        if (spBusSelBackup != 0x09)
-            GBS::TEST_BUS_SP_SEL::write(0x09);
-    }
-    GBS::PAD_BOUT_EN::write(1);
     yield();
     ESP.wdtFeed();
-    delayMicroseconds(200);
-    uint32_t ticks = FrameSync::getPulseTicks();
-
-    GBS::PAD_BOUT_EN::write(debugPinBackup);
-    if (testBusSelBackup != 0xa) {
-        GBS::TEST_BUS_SEL::write(testBusSelBackup);
-    }
-    GBS::TEST_BUS_SP_SEL::write(spBusSelBackup);
-
-    uint32_t retVal = 0;
-    if (ticks > 0) {
-        retVal = esp8266_clock_freq / ticks;
-    }
-
-    return retVal;
+    return FrameSync::getPulseTicks();
 }
+
+uint32_t debugPinTicksPerSecond() { return ESP.getCpuFreqMHz() * 1000000; }
 
 #define AUTO_GAIN_INIT 0x48
 
@@ -2972,16 +2391,14 @@ uint32_t getPllRate()
 // Falls back to a whole load only where the engine cannot re-solve -- nothing
 // solved yet, bypass, or a mode change already in flight. The blank is the
 // caller's, taken before this runs.
-static void changeOutputResolution(uint8_t standard)
+static void changeOutputResolution()
 {
-    const bool pal = (standard == 2 || standard == 4);
-    const Tv5725::OutputChoice choice = outputChoiceFor(standard);
+    const Tv5725::OutputChoice choice = outputChoiceFor();
 
-    rto->outputChoice = choice;
-    rto->presetID = presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal);
+    rto->presetID = presetIdFor(choice.resolve());
 
-    if (!geometry.outputChanged(choice)) {
-        applyPresets(standard);
+    if (!inputAcquisition.setOutputResolution(choice.resolve())) {
+        applyPresets();
         return;
     }
 
@@ -3020,20 +2437,12 @@ void doPostPresetLoadSteps()
 
     // Beside ModeDetect::init() inside that block and travelling with it: both
     // depend on runtime state rather than on any table.
-    Tv5725::ModeDetect::applySyncType(Tv5725::SyncType::isCsync()
+    Tv5725::ModeDetect::applySyncType(Tv5725::SyncMeasurement::isCsync()
                                           ? Tv5725::ModeDetect::Csync
                                           : Tv5725::ModeDetect::SeparateSync);
-    Tv5725::ModeDetect::applyMedResLineCount(rto->medResLineCount);
 
     // if(Info_sate == 0)
     {
-        if (rto->videoStandardInput == 0) {
-            uint8_t videoMode = getVideoMode();
-            if (videoMode > 0) {
-                rto->videoStandardInput = videoMode;
-            }
-        }
-
         GBS::ADC_UNUSED_64::write(0);
         GBS::ADC_UNUSED_65::write(0);
         GBS::ADC_UNUSED_66::write(0);
@@ -3042,18 +2451,18 @@ void doPostPresetLoadSteps()
 
         prepareSyncProcessor();
         if (scalingRgbhv()) {
-            Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncType::isCsync());
-            if (Tv5725::SyncType::isCsync()) {
-                rto->currentLevelSOG = 24;
+            Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
+            if (Tv5725::SyncMeasurement::isCsync()) {
+                Tv5725::SyncOnGreen::choose(24);
             }
-            rto->phaseADC = 16;
-            rto->phaseSP = 8;
+            Tv5725::Adc::choosePhaseAdc(16);
+            Tv5725::Adc::choosePhaseSyncProcessor(8);
         }
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
         Tv5725::SyncProcessor::setCoastInvert(false);
-        if (!rto->outModeHdBypass && GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
-            updateSpDynamic(0);
+        if (!Tv5725::VideoRoute::isHdBypassChannel() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
+            inputAcquisition.applySyncProcessorDynamic(0);
         }
 
         Tv5725::SyncProcessor::holdClamp();
@@ -3067,59 +2476,55 @@ void doPostPresetLoadSteps()
             applyRGBPatches();
         }
 
-        if (rto->outModeHdBypass) {
+        if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Chip::OUT_SYNC_SEL::write(1);
             rto->autoBestHtotalEnabled = false;
         } else {
             rto->autoBestHtotalEnabled = true;
         }
 
-        rto->phaseADC = GBS::PA_ADC_S::read();
-        rto->phaseSP = 8;
+        Tv5725::Adc::choosePhaseSyncProcessor(8);
 
         if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
         {
-            rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 14;
+            Tv5725::SyncOnGreen::choose(14);
         } else if (rto->inputIsYpBpR) // == false && Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
         {
-            rto->thisSourceMaxLevelSOG = rto->currentLevelSOG = 13;
+            Tv5725::SyncOnGreen::choose(13);
         }
 
-        setAndUpdateSogLevel(rto->currentLevelSOG);
+        Tv5725::SyncOnGreen::putInForce();
 
 
         setAdcParametersGainAndOffset();
 
         GBS::GPIO_CONTROL_00::write(0x67);
         GBS::GPIO_CONTROL_01::write(0x00);
-        rto->clampPositionIsSet = 0; // Clamp position setting
-        rto->coastPositionIsSet = 0; // coast position setting
-        rto->phaseIsSet = 0;
-        rto->continousStableCounter = 0;              
-        rto->noSyncCounter = 0;                       
-        rto->motionAdaptiveDeinterlaceActive = false; 
-        rto->scanlinesEnabled = false;                
-        rto->failRetryAttempts = 0;                   
-        rto->videoIsFrozen = true;
+        Tv5725::SyncProcessor::forgetPositions();
+        Tv5725::Adc::forgetPhase();
+        Tv5725::Deinterlacer::disableMotionAdapt();
+        Tv5725::Deinterlacer::forgetScanlines();
+        Tv5725::Deinterlacer::forgetSteering();
         rto->sourceDisconnected = false;
-        rto->boardHasPower = true;
+        Tv5725::Chip::holdPower(true);
 
         Tv5725::InputFormatter::writeLineCounterStart(0);
         Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
 
-        rto->osr = Tv5725::SourceStandard(rto->videoStandardInput,
-                                          rto->inputIsYpBpR)
-                       .apply(GBS::PLLAD_KS::read());
+
+        // The most the clock can carry, for every source: the decimators undo
+        // the faster tap so the same samples a line reach the pipeline either
+        // way, and they filter. applySampleRate() clamps it to the crossover
+        // row. docs/investigations/the-decimators-filter.md
+        rto->osr = Tv5725::Adc::OversampleAsClockAllows;
 
         resetDebugPort();
 
-        boolean avoidAutoBest = 0;
-        if (Tv5725::SyncType::isCsync()) {
-            if (GBS::TEST_BUS_2F::read() == 0) {
+        if (Tv5725::SyncMeasurement::isCsync()) {
+            if (Tv5725::TestBus::readHigh() == 0) {
                 delay(4);
-                if (GBS::TEST_BUS_2F::read() == 0) {
-                    optimizeSogLevel();
-                    avoidAutoBest = 1;
+                if (Tv5725::TestBus::readHigh() == 0) {
+                    inputAcquisition.acquireSeparatorLevel();
                     delay(4);
                 }
             }
@@ -3138,7 +2543,7 @@ void doPostPresetLoadSteps()
         // later goes with the message; loop() drives the rest once the source
         // has settled into the new mode. AFTER the block above, which settles
         // rto->osr.
-        geometry.modeChanged(rto->outputChoice, rto->osr);
+        geometry.inputTimingsChanged(rto->osr);
 
         GBS::ADC_TEST_04::write(0x02); // 1:0 REF test resistance selection 4:2REF test current selection
         GBS::ADC_TEST_0C::write(0x12);
@@ -3162,57 +2567,17 @@ void doPostPresetLoadSteps()
 
         Tv5725::VideoProcessor::applyFreeRunTiming();
 
-        if (!rto->outModeHdBypass && rto->autoBestHtotalEnabled &&
-            GBS::GBS_OPTION_SCALING_RGBHV::read() == 0 && !avoidAutoBest &&
-            (rto->videoStandardInput >= 1 && rto->videoStandardInput <= 4)) {
-
-            updateCoastPosition(0);
-            delay(1);
-            Tv5725::Interrupts::acknowledgeNoHsync();
-            Tv5725::Interrupts::acknowledgeSogBad();
-            delay(10);
-
-            delay(70);
-
-            for (uint8_t i = 0; i < 4; i++) {
-                if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-                    optimizeSogLevel();
-                    Tv5725::Interrupts::acknowledgeSogBad();
-                    delay(40);
-                } else if (getStatus16SpHsStable() && getStatus16SpHsStable()) {
-                    delay(1);
-                    if (getVideoMode() == rto->videoStandardInput) {
-                        boolean ok = 0;
-                        float sfr = getSourceFieldRate(0);
-
-                        if (rto->videoStandardInput == 1 || rto->videoStandardInput == 3) {
-                            if (sfr > 58.6f && sfr < 61.4f)
-                                ok = 1;
-                        } else if (rto->videoStandardInput == 2 || rto->videoStandardInput == 4) {
-                            if (sfr > 49.1f && sfr < 51.1f)
-                                ok = 1;
-                        }
-                        if (ok) {
-                            delay(1);
-                            break;
-                        }
-                    }
-                }
-                delay(10);
-            }
-        } else {
-
-            delay(10);
-
-            delay(20);
-            updateCoastPosition(0);
-            updateClampPosition();
-        }
+        // ONE SETTLE FOR EVERY SOURCE. Nothing measurable about the source is
+        // true here -- the mode change was armed a hundred lines above -- so
+        // waiting for it to become so is the acquisition layer's.
+        delay(30);
+        inputAcquisition.placeCoastWindow(0);
+        inputAcquisition.placeClampWindow();
 
 
         Tv5725::VideoProcessor::applyFrameSequencing();
 
-        resetDigital();
+        Tv5725::Chip::resetVideoBlocks();
 
         resetPLLAD();
         GBS::PLLAD_LEN::write(1); //
@@ -3242,13 +2607,13 @@ void doPostPresetLoadSteps()
         // Both halves of that pair are Tv5725::Memory's: the offset is
         // Memory::offsetFor(the output line) and the fetch is computed
         // against it, so deriving one from the other after the fact could
-        // only fight the model. Geometry::write() sets both.
+        // only fight the model. VideoPath::write() sets both.
 
-        if (!rto->outModeHdBypass) {
+        if (!Tv5725::VideoRoute::isHdBypassChannel()) {
             ResetSDRAM();
         }
 
-        setAndUpdateSogLevel(rto->currentLevelSOG);
+        Tv5725::SyncOnGreen::putInForce();
 
         Tv5725::InputFormatter::applyVerticalTiming(
             Tv5725::InputFormatter::VcrTiming);
@@ -3263,88 +2628,67 @@ void doPostPresetLoadSteps()
 
 
         Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-        if (rto->videoStandardInput >= 5) {
-            Tv5725::SyncProcessor::setSubCoast(false);
-        }
 
-        if (Tv5725::SyncType::isCsync()) {
+        if (Tv5725::SyncMeasurement::isCsync()) {
             Tv5725::SyncProcessor::selectExternalSync(1);
         }
 
-        rto->coastPositionIsSet = false;
-        rto->clampPositionIsSet = false;
+        Tv5725::SyncProcessor::forgetPositions();
 
-        if (rto->outModeHdBypass) {
+        if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Interrupts::enableEverySource();
             Tv5725::Interrupts::acknowledgeAll();
 
             // Video routes around the VDS here, so the mode change armed above
             // has no solve coming and the freeze it took would never be
             // released.
-            geometry.enterBypass();
+            geometry.setOutputMode(&Tv5725::ModeBypass);
 
             return;
         }
 
-        if (GBS::GBS_OPTION_SCALING_RGBHV::read() == 1) {
-            rto->videoStandardInput = 14;
-        }
-
-        if (GBS::GBS_OPTION_SCALING_RGBHV::read() == 0) {
+        if (!Tv5725::PresetLoad::scalingRgbhvInForce()) {
             unsigned long timeout = millis();
-            while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
+            while ((!Tv5725::SyncProcessor::hsyncActive()) && (millis() - timeout < 2002)) {
                 delay(4);
                 handleWiFi(0);
-                updateSpDynamic(0);
-            }
-            while ((getVideoMode() == 0) && (millis() - timeout < 1505)) {
-                delay(4);
-                handleWiFi(0);
-                updateSpDynamic(0);
+                inputAcquisition.applySyncProcessorDynamic(0);
             }
             timeout = millis() - timeout;
-            if (timeout > 1000) {
-            }
             if (timeout >= 1500) {
-                if (rto->currentLevelSOG >= 7) {
-                    optimizeSogLevel();
+                if (Tv5725::SyncOnGreen::level() >= 7) {
+                    inputAcquisition.acquireSeparatorLevel();
                     delay(300);
                 }
             }
         }
 
-        updateClampPosition();
-        if (rto->clampPositionIsSet) {
+        inputAcquisition.placeClampWindow();
+        if (Tv5725::SyncProcessor::clampPlaced()) {
             if (Tv5725::SyncProcessor::clampHeld()) {
                 Tv5725::SyncProcessor::releaseClamp();
             }
         }
 
-        updateSpDynamic(0);
+        inputAcquisition.applySyncProcessorDynamic(0);
 
         if (!rto->syncWatcherEnabled) {
             Tv5725::SyncProcessor::releaseClamp();
         }
 
-        setAndUpdateSogLevel(rto->currentLevelSOG);
+        Tv5725::SyncOnGreen::putInForce();
 
         Tv5725::Interrupts::enableEverySource();
         Tv5725::Interrupts::acknowledgeAll();
 
         // OutputComponentOrVGA();
 
-        if (uopt->presetPreference == 10 && !rgbhvBypass()) {
-            rto->autoBestHtotalEnabled = 0;
-            if (rto->applyPresetDoneStage == 11) {
-
-                rto->applyPresetDoneStage = 1;
-            } else {
-                rto->applyPresetDoneStage = 10;
-            }
-        } else {
-
-            rto->applyPresetDoneStage = 1;
-        }
+        // Pass-through is not decided here. It is a statement about the
+        // measured source, and this runs at the end of a preset load with
+        // whatever the PREVIOUS source measured still held --
+        // VideoSourceAcquisition::passSourceThrough() owns it and re-answers it
+        // from each measurement. docs/video-source-acquisition.md
+        rto->applyPresetDoneStage = 1;
 
         // Capture stays frozen: it is released by the poll() that lands the
         // windows, seconds from now once the source has settled into the new
@@ -3357,7 +2701,7 @@ void doPostPresetLoadSteps()
     }
 }
 
-void applyPresets(uint8_t result)
+void applyPresets()
 {
     // Frozen: docs/gbs-control-debug-interface.md
     if (AUTOMATION_FROZEN()) {
@@ -3365,19 +2709,23 @@ void applyPresets(uint8_t result)
     }
 
     // printf("result %d \n", result);
-    if (!rto->boardHasPower) {
+    if (!Tv5725::Chip::hasPower()) {
         return;
     }
 
-    if (result == 14) {
-        if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
+    // WHICH CONNECTOR THE SOURCE ARRIVES ON, not what the classification calls
+    // it. The byte reached this test as Rgbhv and skipped it as BypassRgbhv,
+    // which is the same source with a different output chosen for it, so a
+    // source passed through never had its sync type established here at all.
+    if (sourceIsRgbhv()) {
+        if (Tv5725::SyncProcessor::hsyncActive()) {
             rto->inputIsYpBpR = 0;
 
             // **DO NOT DECIDE THE SYNC TYPE FROM STATUS_SYNC_PROC_VSACT.** That
             // is circular -- VSACT only reports correctly once the sync type is
             // already right, so the choice latches to whatever the chip happens
             // to be configured for. Landing in the wrong basin has
-            // updateSpDynamic() write the separate-sync quadruple (SP_PRE_COAST
+            // applySyncProcessorDynamic() write the separate-sync quadruple (SP_PRE_COAST
             // 0, SP_POST_COAST 0, SP_DLT_REG 0, SP_H_PULSE_IGNOR 0xFF) onto a
             // source with no separate sync. docs/sync-type-selection.md
             //
@@ -3387,14 +2735,13 @@ void applyPresets(uint8_t result)
             // change pays nothing.
             //
             // **WHAT RE-ARMS IT IS A CHANGE OF SOURCE, NOT A CLEARED CLAMP.**
-            // SyncType::forget() sits beside coastPositionIsSet and
-            // clampPositionIsSet at the five sites that mean a different source
+            // SyncMeasurement::forget() sits beside SyncProcessor::forgetPositions()
+            // at the five sites that mean a different source
             // may now be attached -- the resets, the low-power entry, and
             // LoadDefault() on the input handlers. Six OTHER sites clear those
             // two flags and deliberately do NOT forget, because they are mode
-            // changes on the source already attached: twice in this function,
-            // twice in runSyncWatcher()'s scaling-RGBHV arm, and the serial
-            // clock-generator command. Reading the flags as the rule re-probes
+            // changes on the source already attached: twice in this function
+            // and in the serial clock-generator command. Reading the flags as the rule re-probes
             // on every preset load and costs 500 ms a time.
             //
             // **IT CANNOT BE LEFT TO inputAndSyncDetect() ALONE.** Its probe
@@ -3406,26 +2753,29 @@ void applyPresets(uint8_t result)
                 // Whether it probed, not just what it holds: the message said
                 // "probed once" either way, so a probe suppressed by a stale
                 // answer read exactly like one that ran.
-                const bool measured = !Tv5725::SyncType::isSet();
-                Tv5725::SyncType::probeOnce(sourceHasOwnVsync);
+                const bool measured = !Tv5725::SyncMeasurement::isSet();
+                Tv5725::SyncMeasurement::syncType(syncTypeHasOwnVsync);
                 debugPrintf("sync type: %s for this source -> %s\n",
                     measured ? "probed" : "already held",
-                    Tv5725::SyncType::isCsync() ? "csync" : "separate H/V");
+                    Tv5725::SyncMeasurement::isCsync() ? "csync" : "separate H/V");
             }
         }
     }
 
+    // Coming off the channel, or from no source at all, so these three blocks
+    // are held and the load has to release them. Every source, because what the
+    // byte excluded -- 5, 6, 7, 13 and 15 -- were the values that used to be
+    // routed to the channel from here, and pass-through is not chosen here any
+    // more. A block left held shows nothing whatever the preset writes.
     boolean waitExtra = 0;
-    if (rto->outModeHdBypass || rgbhvBypass() || rto->videoStandardInput == 0) {
+    if (Tv5725::VideoRoute::isHdBypassChannel() || rgbhvBypass()
+        || !inputAcquisition.sourceIsPresent()) {
         waitExtra = 1;
-        if (result <= 4 || result == 14 || result == 8 || result == 9) {
-            GBS::SFTRST_IF_RSTZ::write(1);
-            GBS::SFTRST_VDS_RSTZ::write(1);
-            GBS::SFTRST_DEC_RSTZ::write(1);
-        }
+        GBS::SFTRST_IF_RSTZ::write(1);
+        GBS::SFTRST_VDS_RSTZ::write(1);
+        GBS::SFTRST_DEC_RSTZ::write(1);
     }
-    rto->presetIsPalForce60 = 0;
-    rto->outModeHdBypass = 0; // 
+    Tv5725::VideoRoute::toScaler(); // 
 
 
     if (GBS::ADC_UNUSED_62::read() != 0x00) {
@@ -3433,11 +2783,12 @@ void applyPresets(uint8_t result)
         serialCommand = 'D';
     }
 
-    if (result == 0) {
+    // No horizontal sync is the whole of what the byte's 0 meant here, and the
+    // sync processor answers it directly.
+    if (!Tv5725::SyncProcessor::hsyncActive()) {
 
-        result = 3;
         if (detectionMayChangeInput())
-            GBS::ADC_INPUT_SEL::write(1);
+            Tv5725::Adc::selectInput(1);
         delay(100);
         if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
             rto->inputIsYpBpR = 0;
@@ -3446,16 +2797,16 @@ void applyPresets(uint8_t result)
             // HERE the probe IS worth its ~500 ms, and the bare VSACT read is
             // not: this arm has just moved ADC_INPUT_SEL, so whatever detection
             // concluded was about a different input and there is nothing to
-            // inherit. It runs only when getVideoMode() found nothing at all,
+            // inherit. It runs only where no horizontal sync was found at all,
             // not on a mode change.
-            Tv5725::SyncType::probe(sourceHasOwnVsync);
+            Tv5725::SyncMeasurement::probe(syncTypeHasOwnVsync);
         } else {
             if (detectionMayChangeInput())
-                GBS::ADC_INPUT_SEL::write(0);
+                Tv5725::Adc::selectInput(0);
             delay(100);
             if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
                 rto->inputIsYpBpR = 1;
-                Tv5725::SyncType::set(1);
+                Tv5725::SyncMeasurement::set(1);
                 rto->syncWatcherEnabled = 1;
             } else // 
             {
@@ -3467,47 +2818,34 @@ void applyPresets(uint8_t result)
         }
     }
 
-    if (uopt->PalForce60 == 1) 
-    {
-        if (result == 2 || result == 4) 
-        {
-            Serial.println(F("PAL@50 to 60Hz"));
-            rto->presetIsPalForce60 = 1;
-        }
-        if (result == 2) {
-            result = 1;
-        }
-        if (result == 4) {
-            result = 3;
-        }
+    // PalForce60's 2 -> 1 and 4 -> 3 swap was here: the option remains, and
+    // toggling it now changes nothing. It mapped a PAL standard onto its NTSC
+    // twin so a table keyed on the byte would load the 60 Hz raster, and there
+    // are no tables. Removing the option itself means removing its OLED and TV
+    // OSD menu items, which is a menu-layout change only a remote can check.
+    // docs/video-source-acquisition.md
+
+    // **TWO BRANCHES AND TWELVE TABLE LOADS WERE HERE, AND THEY DIFFERED IN
+    // NOTHING BUT WHICH TABLE.** One branch per source standard, each a ladder
+    // on presetPreference picking a pal_* or ntsc_* blob. The preference is the
+    // resolution now, every register is computed from it, and a dispatch on
+    // eleven of the byte's fifteen values stood in front of one call.
+    //
+    // Pass-through is not a preset either. A source asking for it loads this
+    // same path, which shows any rate, and whether it is actually passed
+    // through is answered from the measurement that follows, by
+    // VideoSourceAcquisition::passSourceThrough() -- the only caller with one.
+    // docs/video-source-acquisition.md
+    const Tv5725::OutputChoice choice = outputChoiceFor();
+    loadComputedPreset(choice, presetIdFor(choice.resolve()));
+
+    // The output an RGBHV source is entitled to. Held beside the source rather
+    // than in the byte, which carried both facts in one number.
+    if (sourceIsRgbhv()) {
+        Tv5725::RgbhvOutput::chooseScaling();
+        rto->isValidForScalingRGBHV = true;
     }
 
-    if (result == 1 || result == 3 || result == 8 || result == 9 || result == 14 ||
-        result == 2 || result == 4) {
-
-        // **TWO BRANCHES AND TWELVE TABLE LOADS WERE HERE, AND THEY DIFFERED IN
-        // NOTHING BUT WHICH TABLE.** One branch per source standard, each a
-        // ladder on presetPreference picking a pal_* or ntsc_* blob. The
-        // preference is the resolution now, and every register is computed from
-        // it, so the two branches are one and the ladder is gone.
-        //
-        // The id keys on the detection result, as it always has. The raster
-        // keys on the rate the engine measures, which is what changed.
-        const bool pal = (result == 2 || result == 4);
-        const Tv5725::OutputChoice choice = outputChoiceFor(result);
-        loadComputedPreset(choice,
-                           presetIdFor(choice.resolve(pal ? 50.0f : 60.0f), pal));
-    } else if (result == 5 || result == 6 || result == 7 || result == 13) {
-
-        rto->videoStandardInput = result;
-        setOutModeHdBypass(false);
-        return;
-    } else if (result == 15) {
-        bypassModeSwitch_RGBHV();
-        return;
-    }
-
-    rto->videoStandardInput = result;
     if (waitExtra) {
 
         delay(400);
@@ -3515,138 +2853,16 @@ void applyPresets(uint8_t result)
     doPostPresetLoadSteps();
 }
 
-void unfreezeVideo()
-{
-    GBS::CAPTURE_ENABLE::write(1);
-}
-
-void freezeVideo()
-{
-    GBS::CAPTURE_ENABLE::write(0);
-}
-
-uint8_t getVideoMode()
-{
-    uint8_t detectedMode = 0;
-
-    if (sourceIsRgbhv()) {
-        detectedMode = GBS::STATUS_16::read();
-        if ((detectedMode & 0x0a) > 0) {
-            return rto->videoStandardInput;
-        } else {
-            return 0;
-        }
-    }
-
-    detectedMode = GBS::STATUS_00::read();
-
-    if ((detectedMode & 0x07) == 0x07) {
-        if ((detectedMode & 0x80) == 0x80) {
-            if ((detectedMode & 0x08) == 0x08)
-                return 1;
-            if ((detectedMode & 0x20) == 0x20)
-                return 2;
-            if ((detectedMode & 0x10) == 0x10)
-                return 3;
-            if ((detectedMode & 0x40) == 0x40)
-                return 4;
-        }
-
-        detectedMode = GBS::STATUS_03::read();
-        if ((detectedMode & 0x10) == 0x10) {
-            return 5;
-        }
-
-        if (rto->videoStandardInput == 4) {
-            detectedMode = GBS::STATUS_04::read();
-            if ((detectedMode & 0xFF) == 0x80) {
-                return 4;
-            }
-        }
-    }
-
-    detectedMode = GBS::STATUS_04::read();
-    if ((detectedMode & 0x20) == 0x20) {
-        if ((detectedMode & 0x61) == 0x61) {
-
-            if (GBS::VPERIOD_IF::read() < 1160) {
-                return 6;
-            }
-        }
-        if ((detectedMode & 0x10) == 0x10) {
-            if ((detectedMode & 0x04) == 0x04) {
-                return 8;
-            }
-            return 7;
-        }
-    }
-
-    if ((GBS::STATUS_05::read() & 0x0c) == 0x00) // 
-    {
-        if (GBS::STATUS_00::read() == 0x07) // 
-        {
-            if ((GBS::STATUS_03::read() & 0x02) == 0x02) {
-                return rto->inputIsYpBpR ? 13 : 15;
-            }
-        }
-    }
-
-    detectedMode = GBS::STATUS_00::read();
-    if ((detectedMode & 0x2F) == 0x07) {
-        detectedMode = GBS::STATUS_16::read();
-        if ((detectedMode & 0x02) == 0x02) {
-            uint16_t lineCount = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-            for (uint8_t i = 0; i < 2; i++) {
-                delay(2);
-                if (GBS::STATUS_SYNC_PROC_VTOTAL::read() < (lineCount - 1) ||
-                    GBS::STATUS_SYNC_PROC_VTOTAL::read() > (lineCount + 1)) {
-                    lineCount = 0;
-                    rto->notRecognizedCounter = 0; //
-                    break;
-                }
-                detectedMode = GBS::STATUS_00::read();
-                if ((detectedMode & 0x2F) != 0x07) {
-                    lineCount = 0;
-                    rto->notRecognizedCounter = 0; //
-                    break;
-                }
-            }
-            if (lineCount != 0 && rto->notRecognizedCounter < 255) {
-                rto->notRecognizedCounter++;
-            }
-        } else {
-            rto->notRecognizedCounter = 0; //
-        }
-    } else {
-        rto->notRecognizedCounter = 0; //
-    }
-
-    if (rto->notRecognizedCounter == 255) {
-        return 9;
-    }
-
-    return 0;
-}
-
 boolean getSyncPresent() //
 {
-    uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
-    uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
-    if (debug_backup != 0xa) {
-        GBS::TEST_BUS_SEL::write(0xa);
-    }
-    if (debug_backup_SP != 0x0f) {
-        GBS::TEST_BUS_SP_SEL::write(0x0f);
-    }
+    const uint8_t selBackup = Tv5725::TestBus::selected();
+    Tv5725::TestBus::select(Tv5725::TestBus::SyncProcessor);
+    Tv5725::SyncProcessor::driveTestBus(
+        Tv5725::SyncProcessor::TestModuleOutProc, 0);
 
-    uint16_t readout = GBS::TEST_BUS::read();
+    uint16_t readout = Tv5725::TestBus::read();
 
-    if (debug_backup != 0xa) {
-        GBS::TEST_BUS_SEL::write(debug_backup);
-    }
-    if (debug_backup_SP != 0x0f) {
-        GBS::TEST_BUS_SP_SEL::write(debug_backup_SP);
-    }
+    Tv5725::TestBus::select(selBackup);
 
     if (readout > 0x0180) {
         return true;
@@ -3655,506 +2871,24 @@ boolean getSyncPresent() //
     return false;
 }
 
-boolean getStatus00IfHsVsStable()
-{
-    return ((GBS::STATUS_00::read() & 0x04) == 0x04) ? 1 : 0;
-}
-
-boolean getStatus16SpHsStable()
-{
-
-    // printf("rto->videoStandardInput = %d \n",rto->videoStandardInput);
-    if (rgbhvBypass()) {
-        if (GBS::STATUS_INT_INP_NO_SYNC::read() == 0) {
-            // printf("\n stable from \n");
-            return true;
-        } else {
-            Tv5725::Interrupts::acknowledgeNoHsync();
-            // printf("\n false from 1\n");
-            return false;
-        }
-    }
-
-    uint8_t status16 = GBS::STATUS_16::read();
-    if ((status16 & 0x02) == 0x02) {
-        if (rto->videoStandardInput == 1 || rto->videoStandardInput == 2) {
-            if ((status16 & 0x01) != 0x01) {
-                // printf("\n stable from 1\n");
-                return true;
-            }
-        } else {
-            // printf("\n stable from 2\n");
-            return true;
-        }
-    }
-
-    // printf("\n false from 2\n");
-    return false;
-}
-
-void togglePhaseAdjustUnits()
-{
-    GBS::PA_SP_BYPSZ::write(0);
-    GBS::PA_SP_BYPSZ::write(1);
-    delay(2);
-    GBS::PA_ADC_BYPSZ::write(0);
-    GBS::PA_ADC_BYPSZ::write(1);
-    delay(2);
-}
 
 void advancePhase()
 {
-    rto->phaseADC = (rto->phaseADC + 1) & 0x1f;
+    Tv5725::Adc::nudgePhaseAdc();
     setAndLatchPhaseADC();
 }
 
-void movePhaseThroughRange()
-{
-    for (uint8_t i = 0; i < 128; i++) {
-        advancePhase();
-    }
-}
 
 void setAndLatchPhaseSP()
 {
-    GBS::PA_SP_LAT::write(0);
-    GBS::PA_SP_S::write(rto->phaseSP);
-    GBS::PA_SP_LAT::write(1);
+    Tv5725::Adc::applyPhaseSyncProcessor(Tv5725::Adc::phaseSyncProcessor());
 }
 
 void setAndLatchPhaseADC()
 {
-    GBS::PA_ADC_LAT::write(0);
-    GBS::PA_ADC_S::write(rto->phaseADC);
-    GBS::PA_ADC_LAT::write(1);
+    Tv5725::Adc::applyPhaseAdc(Tv5725::Adc::phaseAdc());
 }
 
-void nudgeMD()
-{
-    GBS::MD_VS_FLIP::write(!GBS::MD_VS_FLIP::read()); 
-    GBS::MD_VS_FLIP::write(!GBS::MD_VS_FLIP::read());
-}
-
-void updateSpDynamic(boolean withCurrentVideoModeCheck)
-{
-    if (!rto->boardHasPower || rto->sourceDisconnected) {
-        return;
-    }
-
-    uint8_t vidModeReadout = getVideoMode();
-    if (vidModeReadout == 0) {
-        vidModeReadout = getVideoMode();
-    }
-
-    const bool sourceIsCounted = Tv5725::SourceMeasurement::countIsSource(
-        Tv5725::SourceMeasurement::measureSourceLines());
-    const bool searching =
-        SyncSearch::shouldSweepSyncProcessor(vidModeReadout, sourceIsCounted);
-
-    if (rto->videoStandardInput == 0 && searching) {
-        if (GBS::SP_DLT_REG::read() > 0x30)
-            GBS::SP_DLT_REG::write(0x30);
-        else
-            GBS::SP_DLT_REG::write(0xC0);
-        return;
-    }
-
-    if (withCurrentVideoModeCheck && searching) {
-        if ((rto->noSyncCounter % 16) <= 8 && rto->noSyncCounter != 0) {
-            GBS::SP_DLT_REG::write(0x30);
-        } else if ((rto->noSyncCounter % 16) > 8 && rto->noSyncCounter != 0) {
-            GBS::SP_DLT_REG::write(0xC0);
-        } else {
-            GBS::SP_DLT_REG::write(0x30);
-        }
-        GBS::SP_H_PULSE_IGNOR::write(0x02);
-
-        GBS::SP_H_CST_ST::write(0x10);
-        GBS::SP_H_CST_SP::write(0x100);
-        GBS::SP_H_COAST::write(0);
-        GBS::SP_H_TIMER_VAL::write(0x3a);
-        if (Tv5725::SyncType::isCsync()) {
-            Tv5725::SyncProcessor::setCoastInvert(true);
-        }
-        rto->coastPositionIsSet = false;
-        return;
-    }
-
-    if (Tv5725::SyncType::isCsync()) {
-        Tv5725::SyncProcessor::setCoastInvert(false);
-    }
-
-    if (rto->videoStandardInput != 0) {
-        if (rto->videoStandardInput <= 2) {
-            GBS::SP_PRE_COAST::write(7);
-            GBS::SP_POST_COAST::write(3);
-            GBS::SP_DLT_REG::write(0xC0);
-            GBS::SP_H_TIMER_VAL::write(0x28);
-
-            if (Tv5725::SyncType::isCsync()) {
-                uint16_t hPeriod = GBS::HPERIOD_IF::read();
-                for (int i = 0; i < 16; i++) {
-                    if (hPeriod == 511 || hPeriod < 200) {
-                        hPeriod = GBS::HPERIOD_IF::read();
-                        if (i == 15) {
-                            hPeriod = 300;
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                    ESP.wdtFeed();
-                    delayMicroseconds(100);
-                }
-
-                uint16_t ignoreLength = hPeriod * 0.081f;
-                if (hPeriod <= 200) {
-                    ignoreLength = 0x18;
-                }
-
-                double ratioHs, ratioHsAverage = 0.0;
-                uint8_t testOk = 0;
-                for (int i = 0; i < 30; i++) {
-                    ratioHs = (double)GBS::STATUS_SYNC_PROC_HLOW_LEN::read() / (double)(GBS::STATUS_SYNC_PROC_HTOTAL::read() + 1);
-                    if (ratioHs > 0.041 && ratioHs < 0.152) {
-                        testOk++;
-                        ratioHsAverage += ratioHs;
-                        if (testOk == 12) {
-                            ratioHs = ratioHsAverage / testOk;
-                            break;
-                        }
-                        ESP.wdtFeed();
-                        delayMicroseconds(30);
-                    }
-                }
-                if (testOk != 12) {
-                    ratioHs = 0.032;
-                }
-
-                uint16_t pllDiv = GBS::PLLAD_MD::read();
-                ignoreLength = ignoreLength + (pllDiv * (ratioHs * 0.38));
-
-                if (ignoreLength > GBS::SP_H_PULSE_IGNOR::read() || GBS::SP_H_PULSE_IGNOR::read() >= 0x90) {
-                    if (ignoreLength > 0x90) {
-                        ignoreLength = 0x90;
-                    }
-                    if (ignoreLength >= 0x1A && ignoreLength <= 0x42) {
-                        ignoreLength = 0x1A;
-                    }
-                    if (ignoreLength != GBS::SP_H_PULSE_IGNOR::read()) {
-                        GBS::SP_H_PULSE_IGNOR::write(ignoreLength);
-                        rto->coastPositionIsSet = 0; // coast position setting
-                    }
-                }
-            }
-        } else if (rto->videoStandardInput <= 4) {
-            GBS::SP_PRE_COAST::write(7);
-            GBS::SP_POST_COAST::write(6);
-
-            GBS::SP_DLT_REG::write(0xA0);
-            GBS::SP_H_PULSE_IGNOR::write(0x0E);
-        } else if (rto->videoStandardInput == 5) {
-            GBS::SP_PRE_COAST::write(7);
-            GBS::SP_POST_COAST::write(7);
-            GBS::SP_DLT_REG::write(0x30);
-            GBS::SP_H_PULSE_IGNOR::write(0x08);
-        } else if (rto->videoStandardInput <= 7) {
-            GBS::SP_PRE_COAST::write(9);
-            GBS::SP_POST_COAST::write(18);
-            GBS::SP_DLT_REG::write(0x70);
-
-            GBS::SP_H_PULSE_IGNOR::write(0x06);
-        } else if (rto->videoStandardInput >= 13) {
-            if (Tv5725::SyncType::isCsync() == false) {
-                GBS::SP_PRE_COAST::write(0x00);
-                GBS::SP_POST_COAST::write(0x00);
-                GBS::SP_H_PULSE_IGNOR::write(0xff); 
-                GBS::SP_DLT_REG::write(0x00);
-            } else {
-                GBS::SP_PRE_COAST::write(0x04);
-                GBS::SP_POST_COAST::write(0x07);
-                GBS::SP_DLT_REG::write(0x70);
-                GBS::SP_H_PULSE_IGNOR::write(0x02);
-            }
-        }
-    }
-}
-
-void updateCoastPosition(boolean autoCoast) // Updated coastal locations
-{
-    if (((rto->videoStandardInput == 0) || rgbhvBypass()) ||
-        !rto->boardHasPower || rto->sourceDisconnected) {
-        return;
-    }
-
-    uint32_t accInHlength = 0;
-    uint16_t prevInHlength = GBS::HPERIOD_IF::read();
-    for (uint8_t i = 0; i < 8; i++) {
-
-        uint16_t thisInHlength = GBS::HPERIOD_IF::read();
-        if ((thisInHlength > (prevInHlength - 3)) && (thisInHlength < (prevInHlength + 3))) {
-            accInHlength += thisInHlength;
-        } else {
-            return;
-        }
-        if (!getStatus16SpHsStable()) {
-            return;
-        }
-
-        prevInHlength = thisInHlength;
-    }
-    accInHlength = (accInHlength * 4) / 8;
-
-    if (accInHlength >= 2040) {
-        accInHlength = 1716;
-    }
-
-    if (accInHlength <= 240) {
-
-        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= 322) {
-            delay(4);
-            if (GBS::STATUS_SYNC_PROC_VTOTAL::read() <= 322) {
-                accInHlength = 2000;
-
-                if (Tv5725::SyncType::isCsync() && rto->videoStandardInput > 0 && rto->videoStandardInput <= 4) {
-                    if (GBS::PLLAD_ICP::read() >= 5 && GBS::PLLAD_FS::read() == 1) {
-                        GBS::PLLAD_ICP::write(5);
-                        GBS::PLLAD_FS::write(0); // FS、VCO Gain Selection
-                        latchPLLAD();
-                        rto->phaseIsSet = 0;
-                    }
-                }
-            }
-        }
-    }
-
-    if (accInHlength > 32) {
-        if (autoCoast) {
-
-            GBS::SP_H_CST_ST::write((uint16_t)(accInHlength * 0.0562f));
-            GBS::SP_H_CST_SP::write((uint16_t)(accInHlength * 0.1550f));
-            GBS::SP_HCST_AUTO_EN::write(1);
-        } else {
-
-            GBS::SP_H_CST_ST::write(0x10);
-
-            GBS::SP_H_CST_SP::write((uint16_t)(accInHlength * 0.968f));
-
-            GBS::SP_HCST_AUTO_EN::write(0);
-        }
-        rto->coastPositionIsSet = 1;
-    }
-}
-
-void updateClampPosition() // Update Clamp Position
-{
-    if ((rto->videoStandardInput == 0) || !rto->boardHasPower || rto->sourceDisconnected) {
-        return;
-    }
-
-    if (getVideoMode() == 0) {
-        return;
-    }
-
-    if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-    {
-        GBS::SP_CLAMP_MANUAL::write(0);
-    } else if (rto->inputIsYpBpR == false) // && Info_sate == 0 )//&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs) )
-    {
-        GBS::SP_CLAMP_MANUAL::write(1); 
-    }
-
-    uint32_t accInHlength = 0;
-    uint16_t prevInHlength = 0;
-    uint16_t thisInHlength = 0;
-    if (Tv5725::SyncType::isCsync())
-        prevInHlength = GBS::HPERIOD_IF::read();
-    else
-        prevInHlength = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-    for (uint8_t i = 0; i < 16; i++) {
-        if (Tv5725::SyncType::isCsync())
-            thisInHlength = GBS::HPERIOD_IF::read();
-        else
-            thisInHlength = GBS::STATUS_SYNC_PROC_HTOTAL::read();
-        if ((thisInHlength > (prevInHlength - 3)) && (thisInHlength < (prevInHlength + 3))) {
-            accInHlength += thisInHlength;
-        } else {
-
-            return;
-        }
-        if (!getStatus16SpHsStable()) {
-            return;
-        }
-
-        prevInHlength = thisInHlength;
-        ESP.wdtFeed();
-        delayMicroseconds(100);
-    }
-    accInHlength = accInHlength / 16;
-
-    if (accInHlength > 4095) {
-        return;
-    }
-
-    uint16_t oldClampST = GBS::SP_CS_CLP_ST::read();
-    uint16_t oldClampSP = GBS::SP_CS_CLP_SP::read();
-    float multiSt = Tv5725::SyncType::isCsync() == 1 ? 0.032f : 0.010f;
-    float multiSp = Tv5725::SyncType::isCsync() == 1 ? 0.174f : 0.058f;
-    uint16_t start = 1 + (accInHlength * multiSt);
-    uint16_t stop = 2 + (accInHlength * multiSp);
-
-    if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-
-    {
-
-        multiSt = Tv5725::SyncType::isCsync() == 1 ? 0.089f : 0.032f;
-        start = 1 + (accInHlength * multiSt);
-
-        if (rto->outModeHdBypass) {
-            if (sourceLowLineRate()) {
-                start += 0x60;
-                stop += 0x60;
-            }
-
-            GBS::HD_BLK_GY_DATA::write(0x05);
-            GBS::HD_BLK_BU_DATA::write(0x00);
-            GBS::HD_BLK_RV_DATA::write(0x00);
-        }
-    }
-
-    if ((start < (oldClampST - 1) || start > (oldClampST + 1)) ||
-        (stop < (oldClampSP - 1) || stop > (oldClampSP + 1))) {
-        GBS::SP_CS_CLP_ST::write(start);
-        GBS::SP_CS_CLP_SP::write(stop);
-    }
-
-    rto->clampPositionIsSet = true;
-}
-
-void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
-{
-    if (!rto->boardHasPower) {
-        return;
-    }
-
-    // Same reason as bypassModeSwitch_RGBHV(): what this writes has to be
-    // undone before the chip scales again.
-    Tv5725::BringUp::arm();
-
-    rto->autoBestHtotalEnabled = false;
-    rto->outModeHdBypass = 1;
-
-    // Video routes around the VDS here, so no solve is coming. The bypass
-    // register writes below belong to the engine too, once it owns them.
-    geometry.enterBypass();
-
-    externalClockGenResetClock();
-    updateSpDynamic(0);
-    if (GBS::ADC_UNUSED_62::read() != 0x00) {
-        serialCommand = 'D';
-    }
-
-    GBS::SP_NO_COAST_REG::write(0);
-    Tv5725::SyncProcessor::setCoastInvert(false);
-
-    FrameSync::cleanup();
-    GBS::ADC_UNUSED_62::write(0x00);
-    Tv5725::BringUp::holdAllBlocks();
-    GBS::PA_ADC_BYPSZ::write(1);
-    GBS::PA_SP_BYPSZ::write(1);
-
-    rto->presetID = PresetHdBypass;
-
-    if (!regsInitialized) {
-    }
-    doPostPresetLoadSteps();
-
-    resetDebugPort();
-
-    rto->autoBestHtotalEnabled = false;
-    Tv5725::Chip::OUT_SYNC_SEL::write(1);
-
-    GBS::PLL_CKIS::write(0);
-    GBS::PLL_DIVBY2Z::write(0);
-
-    GBS::PAD_OSC_CNTRL::write(1);
-    GBS::PLL648_CONTROL_01::write(0x35);
-    GBS::PLL648_CONTROL_03::write(0x00);
-    GBS::PLL_LEN::write(1);
-    GBS::DAC_RGBS_R0ENZ::write(1); // RDAC output follows input R data
-    GBS::DAC_RGBS_G0ENZ::write(1); // GDAC Output follows input G data
-    GBS::DAC_RGBS_B0ENZ::write(1); // BDAC Output follows input B data
-    GBS::DAC_RGBS_S1EN::write(1);
-
-    GBS::PAD_TRI_ENZ::write(1);
-    GBS::PLL_MS::write(2);
-    GBS::MEM_PAD_CLK_INVERT::write(0);
-    GBS::SFTRST_DEC_RSTZ::write(1);
-    GBS::SFTRST_MODE_RSTZ::write(1);
-    GBS::SFTRST_SYNC_RSTZ::write(1);
-    GBS::SFTRST_INT_RSTZ::write(1);
-    Tv5725::HdBypass::enable();
-
-    Tv5725::Chip::routeToHdBypass();
-    GBS::SP_HS_LOOP_SEL::write(1);     
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_CS_P_SWAP::write(0);
-    GBS::SP_HS2PLL_INV_REG::write(0);
-
-    GBS::PB_BYPASS::write(1);
-    GBS::PLLAD_MD::write(2345);
-    GBS::PLLAD_KS::write(2);
-    rto->osr = Tv5725::Adc::applyOversample(2, 2);
-    GBS::PLLAD_ICP::write(5);
-    GBS::PLLAD_FS::write(1);
-
-    if (rto->inputIsYpBpR) // && Info_sate == 0 )//&& SeleInputSource == S_YUV )
-    {
-        Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
-        GBS::HD_MATRIX_BYPS::write(0);
-        GBS::HD_DYN_BYPS::write(0);
-    } else if (rto->inputIsYpBpR == false) //&& (SeleInputSource == S_VGA || SeleInputSource == S_RGBs))
-    {
-        Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
-        GBS::HD_MATRIX_BYPS::write(1);
-        GBS::HD_DYN_BYPS::write(1);
-    }
-
-    GBS::HD_SEL_BLK_IN::write(0);
-
-    Tv5725::SyncProcessor::writeSdVsyncStart(0);
-    Tv5725::SyncProcessor::writeSdVsyncStop(2);
-
-    GBS::HD_HSYNC_RST::write(0x3ff);
-    GBS::HD_INI_ST::write(0);
-
-    Tv5725::HdBypass::applyForStandard(rto->videoStandardInput, applyRGBPatches);
-
-    GBS::DEC_IDREG_EN::write(1);
-    GBS::DEC_WEN_MODE::write(1);
-    rto->phaseSP = 8;
-    rto->phaseADC = 24;
-    setAndUpdateSogLevel(rto->currentLevelSOG);
-
-    rto->outModeHdBypass = 1;
-
-    unsigned long timeout = millis();
-    while ((!getStatus16SpHsStable()) && (millis() - timeout < 2002)) {
-        delay(1);
-    }
-    while ((getVideoMode() == 0) && (millis() - timeout < 1502)) {
-        delay(1);
-    }
-
-    updateSpDynamic(0);
-    while ((getVideoMode() == 0) && (millis() - timeout < 1502)) {
-        delay(1);
-    }
-
-    Tv5725::Chip::outputUp();
-    delay(200);
-    optimizePhaseSP();
-}
 
 // Restart the blocks a bypass switch has just reconfigured, then load what it
 // chose.
@@ -4170,13 +2904,13 @@ void setOutModeHdBypass(bool regsInitialized) // Set output mode HD bypass
 // rather than derived.
 static void restartAfterBypassSwitch()
 {
-    resetDigital();
-    resetSyncProcessor();
+    Tv5725::Chip::resetVideoBlocks();
+    Tv5725::SyncProcessor::reset();
     delay(2);
     ResetSDRAM();
     delay(2);
     resetPLLAD();
-    togglePhaseAdjustUnits();
+    Tv5725::Adc::restartPhaseAdjusters();
     delay(20);
     GBS::PLLAD_LEN::write(1);
     Tv5725::Chip::outputUp();
@@ -4186,74 +2920,98 @@ static void restartAfterBypassSwitch()
     latchPLLAD();
 }
 
-void bypassModeSwitch_RGBHV() 
+// The one entry to pass-through, for every source that reaches it.
+//
+// It is NOT a preset load. Nothing here re-runs the scaling bring-up, and
+// Tv5725::BringUp::arm() is the whole of what this owes the scaling path: the
+// fields written below have no owner there, so the next scaled load claims
+// them back by bringing the chip up again.
+//
+// docs/investigations/one-bypass-route-carries-rgbhv.md
+// The engine decides pass-through and this is the user's veto, so it has to
+// reach the engine every time it changes rather than being read from uopt where
+// the decision is taken. docs/video-source-acquisition.md
+static void applyPassThroughPreference()
 {
-    SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
+    inputAcquisition.allowPassThrough(!uopt->preferScalingRgbhv);
+}
 
-    // Bypass reconfigures the chip away from the scaling setup, so the next
-    // scaled load has to re-establish it.
-    Tv5725::BringUp::arm();
-    if (!rto->boardHasPower) {
+void enterHdBypass()
+{
+    if (!Tv5725::Chip::hasPower()) {
         return;
     }
 
+    SYNC_EVENT("bypass-switch", GBS::STATUS_SYNC_PROC_VTOTAL::read());
+
+    Tv5725::BringUp::arm();
+
+    // Down across the whole switch. Dropping HSOUT/VSOUT is what makes the
+    // encoder re-acquire the timing underneath it; restartAfterBypassSwitch()
+    // raises them again. docs/investigations/encoder-stale-timing.md
     Tv5725::Chip::outputDown();
 
-    // Video routes around the VDS here, so no solve is coming. The bypass
-    // register writes below belong to the engine too, once it owns them.
-    geometry.enterBypass();
+    // Video routes around the VDS here, so no solve is coming.
+    geometry.setOutputMode(&Tv5725::ModeBypass);
+    rto->autoBestHtotalEnabled = false;
 
-    Tv5725::HdBypass::enable();
     externalClockGenResetClock();
     FrameSync::cleanup();
     GBS::ADC_UNUSED_62::write(0x00);
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
-    applyRGBPatches();
     resetDebugPort();
-    rto->videoStandardInput = 15;
-    rto->autoBestHtotalEnabled = false;
-    rto->clampPositionIsSet = false;
-    rto->HPLLState = 0;
+    Tv5725::SyncProcessor::forgetPositions();
 
-    Tv5725::Chip::enterBypassRgbhv();
-
-    GBS::SFTRST_HDBYPS_RSTZ::write(1);
-    GBS::HD_INI_ST::write(0);
-
-    GBS::HD_MATRIX_BYPS::write(1);
-    GBS::HD_DYN_BYPS::write(1);
-
-    GBS::PAD_SYNC1_IN_ENZ::write(0);
-    GBS::PAD_SYNC2_IN_ENZ::write(0);
-
-    GBS::SP_SOG_P_ATO::write(1);
-    Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncType::isCsync());
-    if (Tv5725::SyncType::isCsync()) {
-        rto->currentLevelSOG = 24;
+    // The ADC's sense of what arrives on R, G and B, which the preset load used
+    // to choose. applyColourPath() runs after it and wins on the matrix bits;
+    // applyStoredAdcGain() below puts back the gain applyYuv() overwrites.
+    if (rto->inputIsYpBpR) {
+        applyYuvPatches();
+    } else {
+        applyRGBPatches();
     }
-    rto->phaseADC = 16;
-    rto->phaseSP = 8;
-    GBS::SP_CLAMP_MANUAL::write(1);  
-    Tv5725::SyncProcessor::setCoastInvert(false);
 
+    Tv5725::Chip::enterHdBypass();
+    Tv5725::HdBypass::enable();
+    Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
+
+    // The sync processor is configured here or nowhere, for the same reason.
+    Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
+    if (Tv5725::SyncMeasurement::isCsync()) {
+        Tv5725::SyncOnGreen::choose(24);
+    }
+    Tv5725::SyncProcessor::setCoastInvert(false);
     Tv5725::SyncProcessor::setSubCoast(false);
-    GBS::SP_HS_PROC_INV_REG::write(0); 
-    GBS::SP_VS_PROC_INV_REG::write(0); 
-    Tv5725::Adc::PLLAD_KS::write(1);
-    rto->osr = Tv5725::Adc::applyOversample(1, 2);
-    Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1);
-    Tv5725::Adc::applyForBypassRgbhv();
-    GBS::DAC_RGBS_R0ENZ::write(1);    
-    GBS::DAC_RGBS_G0ENZ::write(1);    
-    GBS::DAC_RGBS_B0ENZ::write(1);    
-    GBS::OUT_SYNC_CNTRL::write(1);    
+    GBS::SP_SOG_P_ATO::write(1);
+
+    // The sync polarities, put back rather than inherited: a path that never
+    // brings the chip up keeps whatever the last entry left.
+    GBS::SP_HS_PROC_INV_REG::write(0);
+    GBS::SP_VS_PROC_INV_REG::write(0);
+    GBS::SP_CS_P_SWAP::write(0);
+    GBS::SP_HS2PLL_INV_REG::write(0);
+
+    Tv5725::Adc::choosePhaseAdc(16);
+    Tv5725::Adc::choosePhaseSyncProcessor(8);
+
+    // The whole ADC sampling group, from the rate the engine measured: the one
+    // writer of PLLAD_MD on this path, and last of the group because it
+    // installs the sampling the played-out raster is derived from.
+    Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(
+                                         sourceSampling.lineRateHz()),
+                                     sourceSampling.lineRateHz(),
+                                     geometry.sourceActiveStartLine());
+
+    Tv5725::Chip::dacsFollowInput();
+    GBS::OUT_SYNC_CNTRL::write(1);
 
     restartAfterBypassSwitch();
 
     applyStoredAdcGain();
+    Tv5725::SyncOnGreen::putInForce();
 
-    rto->presetID = PresetBypassRGBHV;
+    rto->presetID = PresetHdBypass;
 
     // Beside the preset id, because they are one fact: which mode the chip is
     // in. The branch that sends a source here clears
@@ -4262,9 +3020,13 @@ void bypassModeSwitch_RGBHV()
     // opposite of the truth. Several sites read it back to decide things,
     // including PresetLoad via writeProgramArrayNew() and the autoBestHtotal
     // guard in doPostPresetLoadSteps().
-    GBS::GBS_OPTION_SCALING_RGBHV::write(0);
+    Tv5725::PresetLoad::forgetScalingRgbhv();
 
     delay(200);
+
+    // The only phase search on this route: nothing maintains a source while it
+    // is passed through, because there is no scaled path to maintain.
+    inputAcquisition.acquireSamplingPhase();
 }
 
 void runAutoGain() //
@@ -4289,10 +3051,10 @@ void runAutoGain() //
             handleWiFi(0);
             limit_found = 0;
         }
-        greenValue = GBS::TEST_BUS_2F::read();
+        greenValue = Tv5725::TestBus::readHigh();
 
         if (greenValue == 0x7f) {
-            if (getStatus16SpHsStable() && (GBS::STATUS_00::read() == status00reg)) {
+            if (Tv5725::SyncProcessor::hsyncActive() && (GBS::STATUS_00::read() == status00reg)) {
                 limit_found++;
             } else
                 return;
@@ -4316,109 +3078,29 @@ void runAutoGain() //
     }
 }
 
-void enableScanlines() 
+void enableScanlines()
 {
-    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 0) 
-    {
-
-        GBS::MADPT_UVDLY_PD_SP::write(0);                       
-        GBS::MADPT_UVDLY_PD_ST::write(0);                       
-        GBS::MADPT_EN_UV_DEINT::write(1);                       
-        GBS::MADPT_UV_MI_DET_BYPS::write(1);                    
-        GBS::MADPT_UV_MI_OFFSET::write(uopt->scanlineStrength); 
-
-        GBS::MADPT_MO_ADP_UV_EN::write(1); 
-
-        GBS::DIAG_BOB_PLDY_RAM_BYPS::write(0);
-        GBS::MADPT_PD_RAM_BYPS::write(0);
-        GBS::RFF_YUV_DEINTERLACE::write(1);
-        GBS::MADPT_Y_MI_DET_BYPS::write(1);
-        GBS::VDS_WLEV_GAIN::write(0x08);
-        GBS::VDS_W_LEV_BYPS::write(0);
-        GBS::MADPT_VIIR_COEF::write(0x08);                     
-        GBS::MADPT_Y_MI_OFFSET::write(uopt->scanlineStrength); 
-        GBS::MADPT_VIIR_BYPS::write(0);
-        GBS::RFF_LINE_FLIP::write(1);
-
-        GBS::MAPDT_VT_SEL_PRGV::write(0);
-        GBS::GBS_OPTION_SCANLINES_ENABLED::write(1);
-    }
-    rto->scanlinesEnabled = 1;
+    Tv5725::Deinterlacer::enableScanlines(uopt->scanlineStrength);
 }
 
-void disableScanlines() //
+void disableScanlines()
 {
-    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-        GBS::MAPDT_VT_SEL_PRGV::write(1);
-
-        GBS::MADPT_UVDLY_PD_SP::write(4);
-        GBS::MADPT_UVDLY_PD_ST::write(4);
-        GBS::MADPT_EN_UV_DEINT::write(0);
-        GBS::MADPT_UV_MI_DET_BYPS::write(0);
-        GBS::MADPT_UV_MI_OFFSET::write(4);
-        GBS::MADPT_MO_ADP_UV_EN::write(0);
-
-        GBS::DIAG_BOB_PLDY_RAM_BYPS::write(1);
-        GBS::VDS_W_LEV_BYPS::write(1);
-
-        GBS::MADPT_Y_MI_OFFSET::write(0xff);
-        GBS::MADPT_VIIR_BYPS::write(1);
-        GBS::MADPT_PD_RAM_BYPS::write(1);
-        GBS::RFF_LINE_FLIP::write(0);
-
-        GBS::GBS_OPTION_SCANLINES_ENABLED::write(0);
-    }
-    rto->scanlinesEnabled = 0;
+    Tv5725::Deinterlacer::disableScanlines();
 }
 
 void enableMotionAdaptDeinterlace() //
 {
-    // freezeVideo();
-    GBS::DEINT_00::write(0x19);
-    GBS::MADPT_Y_MI_OFFSET::write(0x00);
+    const uint8_t verticalTap =
+        Tv5725::Deinterlacer::verticalTapFor(
+            Tv5725::InputFormatter::verticalPeriod());
 
-    GBS::MADPT_Y_MI_DET_BYPS::write(0);
-
-    if (rto->videoStandardInput == 1)
-        GBS::MADPT_VTAP2_COEFF::write(6);
-    if (rto->videoStandardInput == 2)
-        GBS::MADPT_VTAP2_COEFF::write(4);
-
-    GBS::RFF_ADR_ADD_2::write(1);
-    GBS::RFF_REQ_SEL::write(3);
-
-    GBS::RFF_FETCH_NUM::write(0x80);
-    Tv5725::FrameBuffer::writeFifoLineOffset(0x100);
-    GBS::RFF_YUV_DEINTERLACE::write(0);
-    GBS::WFF_FF_STA_INV::write(0);
-
-    GBS::WFF_ENABLE::write(1);
-    GBS::RFF_ENABLE::write(1);
-
-    unfreezeVideo();
-    delay(60);
-    GBS::MAPDT_VT_SEL_PRGV::write(0);
-    rto->motionAdaptiveDeinterlaceActive = true;
+    Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
+                                            Tv5725::FrameBuffer::releaseCapture);
 }
 
 void disableMotionAdaptDeinterlace() // 
 {
-    GBS::MAPDT_VT_SEL_PRGV::write(1);
-    GBS::DEINT_00::write(0xff);
-
-    GBS::RFF_FETCH_NUM::write(0x1);
-    Tv5725::FrameBuffer::writeFifoLineOffset(1);
-    delay(2);
-    GBS::WFF_ENABLE::write(0);
-    GBS::RFF_ENABLE::write(0);
-
-    GBS::WFF_FF_STA_INV::write(1);
-
-    GBS::MADPT_Y_MI_OFFSET::write(0x7f);
-
-    GBS::MADPT_Y_MI_DET_BYPS::write(1);
-
-    rto->motionAdaptiveDeinterlaceActive = false; 
+    Tv5725::Deinterlacer::disableMotionAdapt();
 }
 
 void printInfo()
@@ -4460,9 +3142,9 @@ void printInfo()
     // printf(print, ...) passed `print` — the output buffer — as the format
     // string, a mangled sprintf. Since `print` is static and nothing ever writes
     // to it, this formatted an empty string: printInfo() has printed nothing at
-    // all, whatever the docs said. It is the only view of noSyncCounter and
-    // continousStableCounter, which live in ESP RAM and so cannot be read back
-    // over I2C, so it is worth having.
+    // all, whatever the docs said. It is the only view of the acquisition run --
+    // `u:` unmeasured passes, `s:` acquired -- which lives in ESP RAM and so
+    // cannot be read back over I2C, so it is worth having.
     //
     // Rate limited, and only the output is: loop() calls printInfo() every
     // iteration with no gate of its own, and SerialM broadcasts to the
@@ -4473,14 +3155,14 @@ void printInfo()
     if ((millis() - lastInfoPrint) >= 250) {
         lastInfoPrint = millis();
         snprintf(print, sizeof(print),
-            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x m:%hu ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
+            "h:%4u v:%4s PLL:%01u A:%02x%02x%02x S:%02x.%02x.%02x %c%c%c%c I:%02x D:%04x ht:%4d vt:%4d hpw:%4d u:%3x s:%2x S:%2d W:%2d\n",
             hperiod, vperiodText, lockCounterPrevious,
             GBS::ADC_RGCTRL::read(), GBS::ADC_GGCTRL::read(), GBS::ADC_BGCTRL::read(),
             GBS::STATUS_00::read(), GBS::STATUS_05::read(), GBS::SP_CS_0x3E::read(),
-            h, HSp, v, VSp, stat0FIrq, GBS::TEST_BUS::read(), getVideoMode(),
+            h, HSp, v, VSp, stat0FIrq, Tv5725::TestBus::read(),
             GBS::STATUS_SYNC_PROC_HTOTAL::read(), GBS::STATUS_SYNC_PROC_VTOTAL::read() /*+ 1*/,
-            GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), rto->noSyncCounter, rto->continousStableCounter,
-            rto->currentLevelSOG, wifi);
+            GBS::STATUS_SYNC_PROC_HLOW_LEN::read(), inputAcquisition.unmeasuredPasses(), inputAcquisition.acquiredPasses(),
+            Tv5725::SyncOnGreen::level(), wifi);
         SerialM.print(print);
     }
     if (stat0FIrq != 0x00) {
@@ -4527,1077 +3209,186 @@ void startWire()
     // Wire.setClock(400000);
 }
 
-void fastSogAdjust() // 
-{
-    if (rto->noSyncCounter <= 5) {
-        uint8_t debug_backup = GBS::TEST_BUS_SEL::read();
-        uint8_t debug_backup_SP = GBS::TEST_BUS_SP_SEL::read();
-        if (debug_backup != 0xa) {
-            GBS::TEST_BUS_SEL::write(0xa);
-        }
-        if (debug_backup_SP != 0x0f) {
-            GBS::TEST_BUS_SP_SEL::write(0x0f);
-        }
 
-        if ((GBS::TEST_BUS_2F::read() & 0x05) != 0x05) {
-            while ((GBS::TEST_BUS_2F::read() & 0x05) != 0x05) {
-                if (rto->currentLevelSOG >= 4) {
-                    rto->currentLevelSOG -= 2;
-                } else {
-                    rto->currentLevelSOG = 13;
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
-                    delay(40);
-                    break;
-                }
-                setAndUpdateSogLevel(rto->currentLevelSOG);
-                delay(28);
-            }
-            delay(10);
-        }
-
-        if (debug_backup != 0xa) {
-            GBS::TEST_BUS_SEL::write(debug_backup);
-        }
-        if (debug_backup_SP != 0x0f) {
-            GBS::TEST_BUS_SP_SEL::write(debug_backup_SP);
-        }
-    }
-}
-
-// Bypass solves no raster, so the sync processor's vertical window is steered
-// from the source's own line count. 15 kHz only -- above that the window the
-// bypass switch wrote already fits -- and rate limited, because each adjustment
-// costs 150 ms with the picture live.
+#if GBS_DEBUG
+// The whole ADC sampling group, applied the way the firmware applies it, so an
+// experiment over it costs a request rather than a flash.
 //
-// The count is held between passes rather than re-derived, so a mode change has
-// to say it is stale: forgetHdBypassLineCount().
-static uint16_t hdBypassLineCount = 0;
-static unsigned long hdBypassLastMeasure = millis();
-
-static void forgetHdBypassLineCount() { hdBypassLineCount = 0; }
-
-static void steerHdBypassVsyncWindow(boolean syncStable)
-{
-    if (!rto->outModeHdBypass || !syncStable || !sourceLowLineRate())
-        return;
-    if (millis() - hdBypassLastMeasure <= 765)
-        return;
-
-    uint16_t lines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-    for (uint8_t i = 0; i < 3; i++) {
-        delay(2);
-        if (GBS::STATUS_SYNC_PROC_VTOTAL::read() < (lines - 3) ||
-            GBS::STATUS_SYNC_PROC_VTOTAL::read() > (lines + 3)) {
-            lines = 0;
-            break;
-        }
-    }
-
-    if (lines != 0) {
-        if (lines < (hdBypassLineCount - 3) || lines > (hdBypassLineCount + 3)) {
-            hdBypassLineCount = lines;
-            if (hdBypassLineCount < 230 || hdBypassLineCount > 340) {
-                Tv5725::SyncProcessor::writeSdVsyncStart(1);
-                if (getCsVsStop() == 1) {
-                    Tv5725::SyncProcessor::writeSdVsyncStop(2);
-                }
-                nudgeMD();
-            } else {
-                Tv5725::SyncProcessor::writeSdVsyncStart(lines - 9);
-            }
-            delay(150);
-        }
-    }
-    hdBypassLastMeasure = millis();
-}
-
-// The SOG slicer level is tuned against the source rather than solved, because
-// nothing measures the sync amplitude: a run of bad-hsync samples inside a
-// window is the only evidence, and the response is to step the level down and
-// watch again. csync only -- there is no sync on green to slice otherwise.
+// **THE GROUP CANNOT BE BISECTED BY HAND.** PLLAD_MD, KS, CKOS, ICP, FS and the
+// two decimators are one setting: PLLAD_LAT loads several of them on a rising
+// edge and the loop filter has to suit the tap, so writing two or three of them
+// over /setreg leaves the PLL unlocked in a state that locked beforehand. This
+// goes through the same call the switch does, and moves the channel's played-out
+// raster with the divider, which is the other half a hand sweep gets wrong.
 //
-// Its window and its bad-sample count are held across passes, so a mode change
-// has to say they are stale: forgetPreemptiveSogWindow().
-static const uint16_t sogWindowLen = 3000;
-static unsigned long preemptiveSogWindowStart = millis();
-static uint16_t badHsActive = 0;
-static boolean lastAdjustWasInActiveWindow = 0;
-
-static void forgetPreemptiveSogWindow()
+// Pass-through only. On the scaling path the divider belongs to the engine,
+// which re-solves it from the measurement and would take this straight back.
+static void reportSampleClock(const char *what)
 {
-    badHsActive = 0;
-    preemptiveSogWindowStart = millis();
+    debugPrintf("sample clock %s: MD %u KS %u CKOS %u DEC2_BYPS %u "
+                "HSYNC_RST %u HTOTAL %u lock %u\n",
+                what,
+                (unsigned)GBS::PLLAD_MD::read(), (unsigned)GBS::PLLAD_KS::read(),
+                (unsigned)Tv5725::Adc::PLLAD_CKOS::read(),
+                (unsigned)Tv5725::Adc::DEC2_BYPS::read(),
+                (unsigned)GBS::HD_HSYNC_RST::read(),
+                (unsigned)GBS::STATUS_SYNC_PROC_HTOTAL::read(),
+                (unsigned)GBS::STATUS_MISC_PLLAD_LOCK::read());
 }
 
-static void tuneSogLevelPreemptively(boolean sourceDisturbed, boolean modeChangePending)
+// The scaling path's sampling group, written the way the engine writes it: the
+// divider is one quantity in three registers and PLLAD_LAT loads several
+// members of the ADC PLL group on one edge, so writing a subset by hand leaves
+// the PLL unlocked at a value every register reports correctly.
+static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
 {
-    if (!Tv5725::SyncType::isCsync() || rto->inputIsYpBpR || modeChangePending)
-        return;
+    const bool doubled = geometry.lineDoubled();
 
-    if (sourceDisturbed || GBS::STATUS_INT_SOG_BAD::read() == 1) {
-        if ((millis() - preemptiveSogWindowStart) > sogWindowLen) {
-
-            preemptiveSogWindowStart = millis();
-            badHsActive = 0;
-        }
-        lastVsyncLock = millis();
-    }
-
-    if ((millis() - preemptiveSogWindowStart) < sogWindowLen) {
-        for (uint8_t i = 0; i < 16; i++) {
-            if (GBS::STATUS_INT_SOG_BAD::read() == 1 || GBS::STATUS_SYNC_PROC_HSACT::read() == 0) {
-                Tv5725::Interrupts::acknowledgeSogBad();
-                uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-                if (rto->videoStandardInput == 0)
-                    hlowStart = 777;
-                for (int a = 0; a < 20; a++) {
-                    if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
-
-                        badHsActive++;
-                        lastVsyncLock = millis();
-                        break;
-                    }
-                }
-            }
-            if ((i % 3) == 0) {
-                delay(1);
-            } else {
-                delay(0);
-            }
-        }
-
-        if (badHsActive >= 17) {
-            if (rto->currentLevelSOG >= 2) {
-                rto->currentLevelSOG -= 1;
-                setAndUpdateSogLevel(rto->currentLevelSOG);
-                delay(30);
-                updateSpDynamic(0);
-                badHsActive = 0;
-                lastAdjustWasInActiveWindow = 1;
-            } else if (badHsActive > 40) {
-                optimizeSogLevel();
-                badHsActive = 0;
-                lastAdjustWasInActiveWindow = 1;
-            }
-            preemptiveSogWindowStart = millis();
-        }
-    } else if (lastAdjustWasInActiveWindow) {
-        lastAdjustWasInActiveWindow = 0;
-        if (rto->currentLevelSOG >= 8) {
-            rto->currentLevelSOG -= 1;
-            setAndUpdateSogLevel(rto->currentLevelSOG);
-            delay(30);
-            updateSpDynamic(0);
-            badHsActive = 0;
-            rto->phaseIsSet = 0;
-        }
-    }
+    Tv5725::Adc::applySampleRate(divider, sourceSampling.lineRateHz(), oversample);
+    Tv5725::InputFormatter::writeLineCounter(
+        Tv5725::InputFormatter::lineCounterFor(divider, doubled));
+    Tv5725::SyncProcessor::writeRetimeStop(
+        Tv5725::SyncProcessor::retimeStopFor(divider));
 }
 
-void runSyncWatcher() // 
+static void applySampleClock(bool apply, uint16_t divider, uint8_t oversample)
 {
-    // Frozen: docs/gbs-control-debug-interface.md
-    if (AUTOMATION_FROZEN()) {
-        return;
-    }
-    if (!rto->boardHasPower) {
+    if (!apply) {
+        reportSampleClock("now");
         return;
     }
 
-    static uint8_t newVideoModeCounter = 0;
-    static unsigned long lastSyncDrop = millis();
-    uint8_t detectedVideoMode = getVideoMode();
-    boolean status16SpHsStable = getStatus16SpHsStable();
+    const bool passingThrough = Tv5725::VideoRoute::isHdBypassChannel();
+    const uint32_t lineRateHz = sourceSampling.lineRateHz();
+    const uint8_t ratio =
+        oversample != 0 ? oversample : Tv5725::Adc::OversampleAsClockAllows;
+    const uint16_t wanted =
+        divider != 0 ? divider
+                     : (passingThrough
+                            ? Tv5725::HdBypass::dividerFor(lineRateHz)
+                            : Tv5725::SamplingClock::recommendedDivider(
+                                  lineRateHz, ratio, geometry.lineDoubled()));
 
-    steerHdBypassVsyncWindow(status16SpHsStable);
-
-    if (rto->videoStandardInput == 13) {
-        if (detectedVideoMode == 0) {
-            if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
-                detectedVideoMode = 13;
-            }
-        }
+    if (wanted == 0) {
+        debugPrintf("sample clock: no line rate measured, nothing applied\n");
+        return;
     }
 
-    // A source that returns at the SAME line count and a different field rate is
-    // invisible to Geometry::sourceMoved(), which has only the count to go on, so
-    // the engine holds a rate the source no longer runs at and nothing re-arms it.
-    // The chip latches the disturbance instead. Measured: a wrong rate solved
-    // against a correct count survives indefinitely and takes /sc?~ to clear.
-    //
-    // ONE CLAIMANT PER LATCHED BIT. Reading STATUS_INT_SOG_SW claims it, and the
-    // pre-emptive SOG adjustment below wants the same event, so it is sampled
-    // here and nowhere else and both are handed the answer. That is what gives
-    // every sync path the re-measure, and there is no cheaper signal to give
-    // them: getSourceFieldRate() blocks spinning for vsync edges, and
-    // HPERIOD_IF rails. The engine waits behind its own steadiness run before
-    // measuring, so arming on arrival does not read the source mid-transition.
-    const bool sourceDisturbed = Tv5725::Interrupts::takeSourceDisturbed();
-    if (sourceDisturbed)
-        geometry.sourceInterrupted();
-
-    tuneSogLevelPreemptively(sourceDisturbed, newVideoModeCounter != 0);
-
-    if ((detectedVideoMode == 0 || !status16SpHsStable) && !rgbhvBypass()) {
-        rto->noSyncCounter++;            // 
-        rto->continousStableCounter = 0; // 
-        lastVsyncLock = millis();
-        if (rto->noSyncCounter == 1) {
-            // freezeVideo(); 
-            return;
-        }
-
-        rto->phaseIsSet = 0;
-
-        if (rto->noSyncCounter <= 3 || GBS::STATUS_SYNC_PROC_HSACT::read() == 0) {
-            // freezeVideo(); 
-        }
-
-        if (newVideoModeCounter == 0) {
-
-            if (rto->noSyncCounter == 2) {
-
-                if ((millis() - lastSyncDrop) > 1500) {
-                    if (rto->printInfos == false) {
-                        ;
-                    }
-                } else {
-                    if (rto->printInfos == false) {
-                        ;
-                    }
-                }
-
-                if (rto->currentLevelSOG <= 1 && sourceHasSerratedSync()) {
-                    rto->currentLevelSOG += 1;
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
-                    delay(30);
-                }
-                lastSyncDrop = millis();
-            }
-        }
-
-        if (rto->noSyncCounter == 8) {
-            GBS::SP_H_CST_ST::write(0x10);
-            GBS::SP_H_CST_SP::write(0x100);
-
-            if (sourceHasSerratedSync()) {
-
-                GBS::SP_PRE_COAST::write(9);
-                GBS::SP_POST_COAST::write(9);
-
-                uint8_t ignore = GBS::SP_H_PULSE_IGNOR::read();
-                if (ignore >= 0x33) {
-                    GBS::SP_H_PULSE_IGNOR::write(ignore / 2);
-                }
-            }
-            rto->coastPositionIsSet = 0; // coast position setting
-        }
-
-        if (rto->noSyncCounter % 27 == 0) {
-
-            updateSpDynamic(1);
-        }
-
-        if (rto->noSyncCounter % 32 == 0) {
-            if (GBS::STATUS_SYNC_PROC_HSACT::read() == 1) {
-                unfreezeVideo();
-            } else {
-                // freezeVideo();
-            }
-        }
-
-        if (rto->inputIsYpBpR && (rto->noSyncCounter == 34) && Info_sate == 0) //&& SeleInputSource == S_YUV )
-        {
-            Tv5725::SyncProcessor::holdClamp();
-            rto->clampPositionIsSet = false;
-        }
-
-        if (rto->noSyncCounter == 38) {
-            nudgeMD();
-        }
-
-        if (Tv5725::SyncType::isCsync()) {
-            if (rto->noSyncCounter > 47) {
-                if (rto->noSyncCounter % 16 == 0) {
-                    Tv5725::SyncProcessor::setHsyncOverflowProtect(
-                        !Tv5725::SyncProcessor::hsyncOverflowProtect());
-                }
-            }
-        }
-
-        if (rto->noSyncCounter % 150 == 0) {
-            if (rto->noSyncCounter == 150 || rto->noSyncCounter % 900 == 0) {
-
-                printInfo();
-                if (sourceHasOwnVsync()) {
-                    // Correct the classification before the retry below hands
-                    // bypassModeSwitch_RGBHV a csync type that blinds the sync
-                    // processor to the V sync that is right there.
-                    if (Tv5725::SyncType::isCsync()) {
-                        debugPrintf("sync type: own V sync found while configured for csync -> separate H/V\n");
-                        Tv5725::SyncType::set(false);
-                    }
-                    rto->noSyncCounter = 0x07fe;
-                    printf("noSyncCounter max2 \n");
-                }
-            }
-            GBS::SP_H_COAST::write(0);
-            Tv5725::SyncProcessor::setHsyncOverflowProtect(false);
-            GBS::SP_H_CST_ST::write(0x10);
-            GBS::SP_H_CST_SP::write(0x100);
-            Tv5725::SyncProcessor::applyDefaultClampWindow();
-            updateSpDynamic(1);           
-            nudgeMD();
-            delay(80);
-
-            uint16_t hlowStart = GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
-            if (GBS::PLLAD_VCORST::read() == 1) {
-
-                hlowStart = 777;
-            }
-            for (int a = 0; a < 128; a++) {
-                if (GBS::STATUS_SYNC_PROC_HLOW_LEN::read() != hlowStart) {
-
-                    if (rto->noSyncCounter % 450 == 0) {
-                        rto->currentLevelSOG = 0;
-                        setAndUpdateSogLevel(rto->currentLevelSOG);
-                    } else {
-                        optimizeSogLevel();
-                    }
-                    break;
-                } else if (a == 127) {
-
-                    rto->currentLevelSOG = 5; // Current level SOG
-                    setAndUpdateSogLevel(rto->currentLevelSOG);
-                }
-                delay(0);
-            }
-
-            resetSyncProcessor();
-            delay(8);
-            resetModeDetect();
-            delay(8);
-        }
-
-        if (rto->noSyncCounter % 413 == 0 && detectionMayChangeInput()) {
-            if (GBS::ADC_INPUT_SEL::read() == 1) {
-                GBS::ADC_INPUT_SEL::write(0);
-            } else {
-                GBS::ADC_INPUT_SEL::write(1);
-            }
-            delay(40);
-            unsigned long timeout = millis();
-            while (millis() - timeout <= 210) {
-                if (getStatus16SpHsStable()) {
-                    rto->noSyncCounter = 0x07fe;
-                    printf("noSyncCounter max1 \n");
-                    break;
-                }
-                handleWiFi(0);
-                delay(1);
-            }
-
-            if (millis() - timeout > 210) {
-                if (GBS::ADC_INPUT_SEL::read() == 1) {
-                    GBS::ADC_INPUT_SEL::write(0);
-                } else {
-                    GBS::ADC_INPUT_SEL::write(1);
-                }
-            }
-        }
-
-        newVideoModeCounter = 0;
-    }
-
-    if (((detectedVideoMode != 0 && detectedVideoMode != rto->videoStandardInput) ||
-         (detectedVideoMode != 0 && rto->videoStandardInput == 0)) &&
-        !rgbhvBypass()) {
-
-        if (newVideoModeCounter < 255) {
-            newVideoModeCounter++;
-            rto->continousStableCounter = 0; 
-            if (newVideoModeCounter > 1) {
-                if (newVideoModeCounter == 2) {
-                    ;
-                }
-            }
-            if (newVideoModeCounter == 3) {
-                // freezeVideo();
-                GBS::SP_H_CST_ST::write(0x10);
-                GBS::SP_H_CST_SP::write(0x100);
-                rto->coastPositionIsSet = 0; // coast position setting
-                delay(10);
-                if (getVideoMode() == 0) {
-                    updateSpDynamic(1);
-                    delay(40);
-                }
-            }
-        }
-
-        if (newVideoModeCounter >= 8) {
-            uint8_t vidModeReadout = 0;
-            for (int a = 0; a < 30; a++) {
-                vidModeReadout = getVideoMode();
-                if (vidModeReadout == 13) {
-                    newVideoModeCounter = 5;
-                }
-                if (vidModeReadout != detectedVideoMode) {
-                    newVideoModeCounter = 0;
-                }
-            }
-            if (newVideoModeCounter != 0) {
-                rto->videoIsFrozen = false; 
-
-                if (GBS::SP_SOG_MODE::read() == 1) {
-                    Tv5725::SyncType::set(true);
-                } else {
-                    Tv5725::SyncType::set(false); 
-                }
-                boolean wantPassThroughMode = uopt->presetPreference == 10;
-
-                if (((rto->videoStandardInput == 1 || rto->videoStandardInput == 3) && (detectedVideoMode == 2 || detectedVideoMode == 4)) ||
-                    rto->videoStandardInput == 0 ||
-                    ((rto->videoStandardInput == 2 || rto->videoStandardInput == 4) && (detectedVideoMode == 1 || detectedVideoMode == 3))) {
-                } else {
-                }
-
-                if (!wantPassThroughMode) {
-
-                    applyPresets(detectedVideoMode);
-                } else {
-                    rto->videoStandardInput = detectedVideoMode;
-                    setOutModeHdBypass(false);
-                }
-                rto->videoStandardInput = detectedVideoMode;
-                rto->noSyncCounter = 0;          
-                rto->continousStableCounter = 0; 
-                newVideoModeCounter = 0;
-                forgetHdBypassLineCount();
-                delay(20);
-                forgetPreemptiveSogWindow();
-            } else {
-                unfreezeVideo();
-                printInfo();
-                newVideoModeCounter = 0;
-                if (rto->videoStandardInput == 0) {
-                    rto->noSyncCounter = 0x05ff;
-                }
-            }
-        }
-    } else if (getStatus16SpHsStable() && detectedVideoMode != 0 && !rgbhvBypass() && (rto->videoStandardInput == detectedVideoMode)) {
-
-        if (rto->continousStableCounter < 255) {
-            rto->continousStableCounter++;
-        }
-
-        static boolean doFullRestore = 0;
-        if (rto->noSyncCounter >= 150) {
-
-            rto->coastPositionIsSet = false;
-            rto->phaseIsSet = false;
-            FrameSync::reset(uopt->frameTimeLockMethod);
-            doFullRestore = 1;
-        }
-
-        rto->noSyncCounter = 0; 
-        newVideoModeCounter = 0;
-
-        if (rto->continousStableCounter == 1 && !doFullRestore) {
-            rto->videoIsFrozen = true;
-            unfreezeVideo();
-        }
-
-        if (rto->continousStableCounter == 2) {
-            updateSpDynamic(0);
-            if (doFullRestore) {
-                delay(20);
-                optimizeSogLevel();
-                doFullRestore = 0;
-            }
-            rto->videoIsFrozen = true;
-            unfreezeVideo();
-        }
-
-        if (rto->continousStableCounter == 4) {
-        }
-
-        if (!rto->phaseIsSet) {
-            if (rto->continousStableCounter >= 10 && rto->continousStableCounter < 61) {
-
-                if ((rto->continousStableCounter % 10) == 0) {
-                    rto->phaseIsSet = optimizePhaseSP();
-                }
-            }
-        }
-
-        if (rto->continousStableCounter == 160) {
-            Tv5725::Interrupts::acknowledgeSogBad();
-        }
-
-        if (rto->continousStableCounter == 45) {
-            GBS::ADC_UNUSED_67::write(0);
-
-            rto->clampPositionIsSet = 0; // Clamp position setting
-        }
-
-        if (rto->continousStableCounter % 31 == 0) {
-            updateSpDynamic(0);
-        }
-
-        if (rto->continousStableCounter >= 3) {
-            if ((rto->videoStandardInput == 1 || rto->videoStandardInput == 2) &&
-                !rto->outModeHdBypass && rto->noSyncCounter == 0) {
-
-                static uint8_t timingAdjustDelay = 0;
-                static uint8_t oddEvenWhenArmed = 0;
-                boolean preventScanlines = 0;
-
-                if (rto->deinterlaceAutoEnabled) {
-                    uint16_t VPERIOD_IF = GBS::VPERIOD_IF::read();
-                    static uint8_t filteredLineCountMotionAdaptiveOn = 0, filteredLineCountMotionAdaptiveOff = 0;
-                    static uint16_t VPERIOD_IF_OLD = VPERIOD_IF;
-
-                    if (VPERIOD_IF_OLD != VPERIOD_IF) {
-
-                        preventScanlines = 1;
-                        filteredLineCountMotionAdaptiveOn = 0;
-                        filteredLineCountMotionAdaptiveOff = 0;
-                        if (uopt->enableFrameTimeLock || rto->extClockGenDetected) {
-                            if (uopt->deintMode == 1) {
-                                timingAdjustDelay = 11;
-                                oddEvenWhenArmed = VPERIOD_IF % 2;
-                            }
-                        }
-                    }
-
-                    if (VPERIOD_IF == 522 || VPERIOD_IF == 524 || VPERIOD_IF == 526 ||
-                        VPERIOD_IF == 622 || VPERIOD_IF == 624 || VPERIOD_IF == 626) {
-                        filteredLineCountMotionAdaptiveOn++;
-                        filteredLineCountMotionAdaptiveOff = 0;
-                        if (filteredLineCountMotionAdaptiveOn >= 2) {
-                            if (uopt->deintMode == 0 && !rto->motionAdaptiveDeinterlaceActive) {
-                                if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-                                    disableScanlines();
-                                }
-                                enableMotionAdaptDeinterlace();
-                                if (timingAdjustDelay == 0) {
-                                    timingAdjustDelay = 11;
-                                    oddEvenWhenArmed = VPERIOD_IF % 2;
-                                } else {
-                                    timingAdjustDelay = 0;
-                                }
-                                preventScanlines = 1;
-                            }
-                            filteredLineCountMotionAdaptiveOn = 0;
-                        }
-                    } else if (VPERIOD_IF == 521 || VPERIOD_IF == 523 || VPERIOD_IF == 525 ||
-                               VPERIOD_IF == 623 || VPERIOD_IF == 625 || VPERIOD_IF == 627) {
-                        filteredLineCountMotionAdaptiveOff++;
-                        filteredLineCountMotionAdaptiveOn = 0;
-                        if (filteredLineCountMotionAdaptiveOff >= 2) {
-                            if (uopt->deintMode == 0 && rto->motionAdaptiveDeinterlaceActive) {
-                                disableMotionAdaptDeinterlace();
-                                if (timingAdjustDelay == 0) {
-                                    timingAdjustDelay = 11;
-                                    oddEvenWhenArmed = VPERIOD_IF % 2;
-                                } else {
-                                    timingAdjustDelay = 0;
-                                }
-                            }
-                            filteredLineCountMotionAdaptiveOff = 0;
-                        }
-                    } else {
-                        filteredLineCountMotionAdaptiveOn = filteredLineCountMotionAdaptiveOff = 0;
-                    }
-                    VPERIOD_IF_OLD = VPERIOD_IF;
-
-                    if (uopt->deintMode == 1) {
-                        if (rto->motionAdaptiveDeinterlaceActive) {
-                            disableMotionAdaptDeinterlace();
-                            FrameSync::reset(uopt->frameTimeLockMethod);
-                            lastVsyncLock = millis();
-                        }
-                        if (uopt->wantScanlines && !rto->scanlinesEnabled) {
-                            enableScanlines();
-                        } else if (!uopt->wantScanlines && rto->scanlinesEnabled) {
-                            disableScanlines();
-                        }
-                    }
-
-                    if (timingAdjustDelay != 0) {
-                        if ((VPERIOD_IF % 2) == oddEvenWhenArmed) {
-                            timingAdjustDelay--;
-                            if (timingAdjustDelay == 0) {
-                                if (uopt->enableFrameTimeLock) {
-                                    FrameSync::reset(uopt->frameTimeLockMethod);
-                                    delay(10);
-                                    lastVsyncLock = millis();
-                                }
-                                externalClockGenSyncInOutRate();
-                            }
-                        }
-                    }
-                }
-
-                if (uopt->wantScanlines) {
-                    if (!rto->scanlinesEnabled && !rto->motionAdaptiveDeinterlaceActive && !preventScanlines) {
-                        enableScanlines();
-                    } else if (!uopt->wantScanlines && rto->scanlinesEnabled) {
-                        disableScanlines();
-                    }
-                }
-            }
-        }
-    }
-
-    if (steerableRgbhv()) {
-        static uint16_t RGBHVNoSyncCounter = 0;
-
-        if (uopt->preferScalingRgbhv && rto->continousStableCounter >= 2) {
-            static uint16_t activePresetLineCount = 0;
-
-            uint16 sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-            if (sourceLines != 0 && rgbhvBypass()) {
-                SYNC_EVENT("rgbhv-leave-bypass", sourceLines);
-                uint16_t firstDetectedSourceLines = sourceLines;
-                boolean moveOn = 1;
-                for (int i = 0; i < 30; i++) {
-                    sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-
-                    if ((sourceLines < firstDetectedSourceLines - 3) || (sourceLines > firstDetectedSourceLines + 3)) {
-                        moveOn = 0;
-                        break;
-                    }
-                    delay(10);
-                }
-                if (moveOn) {
-                    rto->isValidForScalingRGBHV = true;
-                    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                    rto->autoBestHtotalEnabled = 1;
-
-                    if (Tv5725::SyncType::isCsync() == false) {
-                        GBS::SP_SOG_MODE::write(0);
-                        GBS::SP_NO_COAST_REG::write(1);
-                        GBS::ADC_5_00::write(0x10);
-                        GBS::PLL_IS::write(0);
-                        GBS::PLL_VCORST::write(1);
-                        delay(320);
-                    } else {
-                        GBS::SP_SOG_MODE::write(1);
-                        GBS::SP_H_CST_ST::write(0x10);
-                        GBS::SP_H_CST_SP::write(0x80);
-                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
-                    }
-                    delay(4);
-
-                    float sourceRate = getSourceFieldRate(1);
-                    Serial.printf("sourceRate: ");
-                    Serial.println(sourceRate);
-
-                    if (sourceLines < 280) {
-
-                        rto->videoStandardInput = 1;
-                    } else if (sourceLines < 380) {
-
-                        rto->videoStandardInput = 2;
-                    } else if (sourceRate > 44.0f && sourceRate < 53.8f) {
-
-                        rto->videoStandardInput = 4;
-                    } else {
-
-                        rto->videoStandardInput = 3;
-                    }
-                
-                    if (uopt->presetPreference == 10)
-                        uopt->presetPreference = Output1080P;
-
-                    activePresetLineCount = sourceLines;
-                    applyPresets(rto->videoStandardInput);
-
-                    GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                    Tv5725::InputFormatter::writeLineCounterStart(16);
-                    GBS::SP_SOG_P_ATO::write(1);
-
-                    Tv5725::SyncProcessor::writeSdVsyncStart(2);
-                    Tv5725::SyncProcessor::writeSdVsyncStop(0);
-
-                    rto->coastPositionIsSet = rto->clampPositionIsSet = 0; // Clamp position setting
-                    rto->videoStandardInput = 14;
-
-                    if (GBS::PLLAD_ICP::read() >= 6) {
-                        GBS::PLLAD_ICP::write(5);
-                        latchPLLAD();
-                        delay(40);
-                    }
-
-                    updateSpDynamic(1);
-                    if (Tv5725::SyncType::isCsync() == false) {
-                        GBS::SP_SOG_MODE::write(0);
-                        GBS::SP_CLAMP_MANUAL::write(1); 
-                        GBS::SP_NO_COAST_REG::write(1);
-                    } else {
-                        GBS::SP_SOG_MODE::write(1);
-                        GBS::SP_H_CST_ST::write(0x10);
-                        GBS::SP_H_CST_SP::write(0x80);
-                        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
-                    }
-                    delay(300);
-
-                    if (rto->extClockGenDetected) {
-
-                        if (!rto->outModeHdBypass) {
-                            if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-
-                                rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-
-                                clockGen.enable();
-                                ESP.wdtFeed();
-                                delayMicroseconds(800);
-                                GBS::PLL648_CONTROL_01::write(0x75);
-                            }
-                        }
-
-                        externalClockGenSyncInOutRate();
-                    }
-                }
-            }
-
-            else if (sourceLines != 0 && scalingRgbhv()) {
-                SYNC_EVENT("rgbhv-keep-scaling", sourceLines);
-
-                const uint8_t wantedStandard =
-                    Tv5725::PresetLoad::rgbhvPresetStandard(sourceLines, activePresetLineCount);
-
-                if (wantedStandard != 0) {
-
-                    uint16_t firstDetectedSourceLines = sourceLines;
-                    boolean moveOn = 1;
-                    for (int i = 0; i < 30; i++) {
-                        sourceLines = GBS::STATUS_SYNC_PROC_VTOTAL::read();
-                        if ((sourceLines < firstDetectedSourceLines - 3) || (sourceLines > firstDetectedSourceLines + 3)) {
-                            moveOn = 0;
-                            break;
-                        }
-                        delay(10);
-                    }
-
-                    if (moveOn) {
-                        if (uopt->presetPreference == 10) {
-                            uopt->presetPreference = Output720P;
-                        }
-
-                        activePresetLineCount = sourceLines;
-                        rto->videoStandardInput = wantedStandard;
-                        applyPresets(rto->videoStandardInput);
-
-                        GBS::GBS_OPTION_SCALING_RGBHV::write(1);
-                        Tv5725::InputFormatter::writeLineCounterStart(16);
-                        GBS::SP_SOG_P_ATO::write(1);
-
-                        Tv5725::SyncProcessor::writeSdVsyncStart(2);
-                        Tv5725::SyncProcessor::writeSdVsyncStop(0);
-
-                        rto->coastPositionIsSet = rto->clampPositionIsSet = 0; // Clamp position setting
-                        rto->videoStandardInput = 14;
-
-                        if (GBS::PLLAD_ICP::read() >= 6) {
-                            GBS::PLLAD_ICP::write(5);
-                            latchPLLAD();
-                        }
-
-                        updateSpDynamic(1);
-                        if (Tv5725::SyncType::isCsync() == false) {
-                            GBS::SP_SOG_MODE::write(0);
-                            GBS::SP_CLAMP_MANUAL::write(1); 
-                            GBS::SP_NO_COAST_REG::write(1);
-                        } else {
-                            GBS::SP_SOG_MODE::write(1);
-                            GBS::SP_H_CST_ST::write(0x10);
-                            GBS::SP_H_CST_SP::write(0x80);
-                            Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
-                        }
-                        delay(300);
-
-                        if (rto->extClockGenDetected) {
-
-                            if (!rto->outModeHdBypass) {
-                                if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-
-                                    rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-
-                                    clockGen.enable();
-                                    ESP.wdtFeed();
-                                    delayMicroseconds(800);
-                                    GBS::PLL648_CONTROL_01::write(0x75);
-                                }
-                            }
-
-                            externalClockGenSyncInOutRate();
-                        }
-                    }
-                }
-            }
-
-        }
-
-        if (!uopt->preferScalingRgbhv && scalingRgbhv()) {
-            rto->videoStandardInput = 15;
-            rto->isValidForScalingRGBHV = false; 
-            applyPresets(rto->videoStandardInput);
-            delay(300);
-        }
-
-        uint16_t limitNoSync = 0;
-        uint8_t VSHSStatus = 0;
-        boolean stable = 0;
-        if (Tv5725::SyncType::isCsync() == true) {
-            if (GBS::STATUS_INT_SOG_BAD::read() == 1) {
-                resetModeDetect();
-                stable = 0;
-                delay(10);
-                Tv5725::Interrupts::acknowledgeSogBad();
-            } else {
-                stable = 1;
-                VSHSStatus = GBS::STATUS_00::read();
-
-                stable = ((VSHSStatus & 0x04) == 0x04);
-            }
-            limitNoSync = 200;
-        } else {
-            // SYNC_PROC_STATUS_[0]   HS polarity  
-            // SYNC_PROC_STATUS_[1]   HS active
-            // SYNC_PROC_STATUS_[2]   VS polarity  
-            // SYNC_PROC_STATUS_[3]   VS active
-            // SYNC_PROC_STATUS_[7:4] Reserved
-            VSHSStatus = GBS::STATUS_16::read();
-            stable = ((VSHSStatus & 0x0a) == 0x0a);
-            limitNoSync = 300;
-        }
-        // printf("0x%02x \n",stable);
-        if (!stable) {
-
-            RGBHVNoSyncCounter++;
-            rto->continousStableCounter = 0; 
-                                             // if (RGBHVNoSyncCounter % 2 == 0)
-                                             // {
-                                             //     printf("count:0x%02x\n",RGBHVNoSyncCounter);
-                                             //     ESP.wdtFeed();
-                                             // }
-        } else {
-            RGBHVNoSyncCounter = 0;
-
-            if (rto->continousStableCounter < 255) {
-                rto->continousStableCounter++;
-                if (rto->continousStableCounter == 6) {
-                    updateSpDynamic(1); 
-                }
-            }
-        }
-
-        if (RGBHVNoSyncCounter > limitNoSync && rto->noSyncCounter < 100) {
-            RGBHVNoSyncCounter = 0;
-            // if (!rto->isInLowPowerMode)
-            if (!rto->HdmiHoldDetection) {
-                setResetParameters();   
-                prepareSyncProcessor(); 
-                resetSyncProcessor();   
-            }
-            rto->noSyncCounter = 0; 
-            Serial.println("RGBHV limit no sync");
-            // No Signal Out
-        }
-
-        // if (RGBHVNoSyncCounter > limitNoSync)
-        // {
-        //   RGBHVNoSyncCounter = 0;
-        //   setResetParameters();
-        //   prepareSyncProcessor();
-        //   resetSyncProcessor();
-
-        //   rto->noSyncCounter = 0;
-        //   Serial.println("RGBHV limit no sync");
-        // }
-
-        static unsigned long lastTimeSogAndPllRateCheck = millis();
-        if ((millis() - lastTimeSogAndPllRateCheck) > 900) {
-            if (rgbhvBypass()) {
-                updateHVSyncEdge();
-                delay(100);
-            }
-
-            static uint8_t runsWithSogBadStatus = 0; 
-            static uint8_t oldHPLLState = 0;
-            if (Tv5725::SyncType::isCsync() == false) {
-                if (GBS::STATUS_INT_SOG_BAD::read()) 
-                {
-                    runsWithSogBadStatus++;
-                    if (runsWithSogBadStatus >= 4) {
-                        // A second route to csync, and a suspect if a separate-sync
-                        // source locks then loses it: SOG is not in use on RGBHV.
-                        debugPrintf("sync type: SOG bad for %d runs -> csync\n", runsWithSogBadStatus);
-                        Tv5725::SyncType::set(true);
-                        rto->HPLLState = runsWithSogBadStatus = RGBHVNoSyncCounter = 0;
-                        rto->noSyncCounter = 0x07fe;
-                        printf("noSyncCounter max \n");
-                    }
-                } else {
-                    runsWithSogBadStatus = 0;
-                }
-            }
-
-            uint32_t currentPllRate = 0;
-            static uint32_t oldPllRate = 10;
-
-            if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
-                currentPllRate = getPllRate();
-
-                if (currentPllRate > 100 && currentPllRate < 7500) {
-                    if ((currentPllRate < (oldPllRate - 3)) || (currentPllRate > (oldPllRate + 3))) {
-                        delay(40);
-                        if (GBS::STATUS_INT_SOG_BAD::read() == 1)
-                            delay(100);
-                        currentPllRate = getPllRate();
-
-                        if ((currentPllRate < (oldPllRate - 3)) || (currentPllRate > (oldPllRate + 3))) {
-                            oldPllRate = currentPllRate;
-                        }
-                    }
-                } else {
-                    currentPllRate = 0;
-                }
-            }
-
-            Tv5725::Interrupts::acknowledgeSogBad();
-
-            oldHPLLState = rto->HPLLState;
-            if (currentPllRate != 0) {
-                if (currentPllRate < 1030) {
-                    rto->HPLLState = 1;
-                } else if (currentPllRate < 2300) {
-                    rto->HPLLState = 2;
-                } else if (currentPllRate < 3200) {
-                    rto->HPLLState = 3;
-                } else if (currentPllRate < 3800) {
-                    rto->HPLLState = 4;
-                } else {
-                    rto->HPLLState = 5;
-                }
-            }
-
-            if (rgbhvBypass()) {
-                if (oldHPLLState != rto->HPLLState) {
-                    uint8_t postDivider = GBS::PLLAD_KS::read();
-                    if (rto->HPLLState == 1) {
-                        postDivider = 2;
-                        GBS::PLLAD_KS::write(postDivider);
-                        GBS::PLLAD_FS::write(0); // FS, VCO Gain Selection
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 2) {
-                        postDivider = 1;
-                        GBS::PLLAD_KS::write(postDivider); // VCO post crossover control, determined by CKO frequency
-                        GBS::PLLAD_FS::write(0); // FS, VCO Gain Selection
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 3) {
-                        postDivider = 1;
-                        GBS::PLLAD_KS::write(postDivider); // VCO post crossover control, determined by CKO frequency
-                        GBS::PLLAD_FS::write(1);
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 4) {
-                        postDivider = 0;
-                        GBS::PLLAD_KS::write(postDivider);
-                        GBS::PLLAD_FS::write(0); // FS、VCO Gain Selection
-                        GBS::PLLAD_ICP::write(6);
-                    } else if (rto->HPLLState == 5) {
-                        postDivider = 0;
-                        GBS::PLLAD_KS::write(postDivider);
-                        GBS::PLLAD_FS::write(1);
-                        GBS::PLLAD_ICP::write(6);
-                    }
-
-                    latchPLLAD();
-                    delay(2);
-                    rto->osr = Tv5725::Adc::applyOversample(postDivider, 4);
-                    latchPLLAD();
-                    delay(100);
-                }
-            } else if (scalingRgbhv()) {
-                if (oldHPLLState != rto->HPLLState) {
-                }
-            }
-
-            if (scalingRgbhv()) {
-
-                if (uopt->wantScanlines) {
-                    if (!rto->scanlinesEnabled && !rto->motionAdaptiveDeinterlaceActive) {
-                        if (GBS::IF_LD_RAM_BYPS::read() == 0) {
-                            enableScanlines();
-                        }
-                    } else if (!uopt->wantScanlines && rto->scanlinesEnabled) {
-                        disableScanlines();
-                    }
-                }
-            }
-
-            rto->clampPositionIsSet = false;
-            lastTimeSogAndPllRateCheck = millis();
-        }
-    }
-
-    // if (((Info == InfoRGBs || Info == InfoRGsB || Info == InfoVGA)))
-    // {
-    //   // Osd_Display(0xFF, "RGB ");
-
-    //   if (GBS::STATUS_SYNC_PROC_VSACT::read())
-    //   {
-    //     if (GBS::STATUS_SYNC_PROC_HSACT::read())
-    //     {
-    //       // Osd_Display(0xFF, "HV   ");
-    //       if( (Info == InfoVGA || Info == InfoRGsB) && rto->HdmiHoldDetection == true)
-    //         {
-    //           rto->HdmiHoldDetection = false;
-    //           printf(" VGA Detection : false\n");
-    //         }
-    //     }
-    //   }
-    //   else if((Info == InfoRGBs )&& rto->HdmiHoldDetection == true)
-    //   {
-    //     rto->HdmiHoldDetection = false;
-    //     printf(" RGBS Detection : false\n");
-    //   }
-    // }
-
-    if ((rto->noSyncCounter >= 0x07fe)) 
-    {
-        rto->noSyncCounter = 0; 
-        // prepareSyncProcessor(); 
-        printf("No Signal Out\n");
-        // rto->isInLowPowerMode = true;  
-        rto->HdmiHoldDetection = true;
-    }
-    /*
-    if (rto->noSyncCounter >= 0x07fe)
-    {
-      GBS::DAC_RGBS_PWDNZ::write(0);
-      rto->noSyncCounter = 0;
-      goLowPowerWithInputDetection();
-      printf("No Signal Out\n");
-    }
-  */
+    if (passingThrough)
+        Tv5725::HdBypass::applyPassThroughSampling(wanted, lineRateHz, ratio);
+    else
+        applyScalingSampleClock(wanted, ratio);
+
+    // Writing the group is not enough to re-establish lock: the PLL and the
+    // phase adjusters have to be restarted after it, and without that the ADC
+    // PLL stays out of lock at whatever was written -- measured, including when
+    // the value written is the one it already held.
+    restartAfterBypassSwitch();
+
+    reportSampleClock("applied");
 }
+
+// Hand the engine a divider to solve AROUND, and re-solve. What this buys over
+// applySampleClock() is that the capture window, both scales, the fetch and the
+// stride are computed for the divider rather than left describing the previous
+// solve -- so two densities are comparable as pictures. Held until released
+// with 0, and a source mode change while it is held solves the new rate around
+// the old divider.
+// docs/investigations/a-hand-set-divider-cannot-be-judged-against-a-solved-window.md
+static void holdSampleClock(uint16_t divider)
+{
+    geometry.holdDivider(divider);
+    if (!geometry.resolve()) {
+        debugPrintf("divider hold %u: solve refused\n", (unsigned)divider);
+        return;
+    }
+    debugPrintf("divider hold %u: IF_HSYNC_RST %u HB_ST2 %u HSCALE %u VSCALE %u\n",
+                (unsigned)divider,
+                (unsigned)GBS::IF_HSYNC_RST::read(),
+                (unsigned)GBS::IF_HB_ST2::read(),
+                (unsigned)GBS::VDS_HSCALE::read(),
+                (unsigned)GBS::VDS_VSCALE::read());
+    reportSampleClock(divider != 0 ? "held" : "released");
+}
+
+// WHERE A SIGNAL REACHES, which no register value can answer. TEST_BUS_SEL picks
+// which block drives DEBUG_IN_PIN, and the transition count over one window
+// separates a field-rate signal from a line-rate one and both from a dead bus:
+// at 50 Hz expect single digits, at 15.6 kHz several hundred.
+//
+// SP_TEST_MODULE exposes one sync-processor stage (4 is vs_act_det, 6 the
+// retiming module, 7 out proc) and IF_TEST_SEL one input-formatter signal, so a
+// sweep taken on each sync type says which stage stops carrying vertical sync.
+// A stage carries several signals, so the signal is asked for too: selecting a
+// module alone reports whichever signal the last caller left.
+static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
+                         uint8_t ifSel)
+{
+    const uint8_t padBackup = GBS::PAD_BOUT_EN::read();
+    const uint8_t selBackup = Tv5725::TestBus::selected();
+    const bool enBackup = Tv5725::TestBus::enabled();
+    const uint8_t spModBackup = GBS::SP_TEST_MODULE::read();
+    const uint8_t spSigBackup = GBS::SP_TEST_SIGNAL_SEL::read();
+    const uint8_t spEnBackup = GBS::SP_TEST_EN::read();
+    const uint8_t ifSelBackup = GBS::IF_TEST_SEL::read();
+    const uint8_t ifEnBackup = GBS::IF_TEST_EN::read();
+
+    if (spModule != 0xff)
+        Tv5725::SyncProcessor::driveTestBus(spModule, spSignal);
+    if (ifSel != 0xff) {
+        GBS::IF_TEST_SEL::write(ifSel);
+        GBS::IF_TEST_EN::write(1);
+    }
+    Tv5725::TestBus::enable(true);
+
+    debugPrintf("tb,header,sel,transitions,first,last,spins ms=%u sp=%d sig=%u if=%d sogmode=%d\n",
+           (unsigned)windowMs, (int)(int8_t)spModule, (unsigned)spSignal,
+           (int)(int8_t)ifSel, (int)GBS::SP_SOG_MODE::read());
+
+    for (uint8_t sel = 0; sel < 32; sel++) {
+        Tv5725::TestBus::select(sel);
+        delay(1);
+
+        int level = digitalRead(DEBUG_IN_PIN);
+        const int first = level;
+        uint32_t transitions = 0;
+        uint32_t spins = 0;
+        const uint32_t deadline = millis() + windowMs;
+        while ((int32_t)(millis() - deadline) < 0) {
+            const int sample = digitalRead(DEBUG_IN_PIN);
+            if (sample != level) {
+                transitions++;
+                level = sample;
+            }
+            if (++spins % 4096 == 0)
+                ESP.wdtFeed();
+        }
+        debugPrintf("tb,%u,%u,%d,%d,%u\n", (unsigned)sel, (unsigned)transitions,
+               first, level, (unsigned)spins);
+        handleWiFi(0);
+    }
+
+    Tv5725::TestBus::select(selBackup);
+    Tv5725::TestBus::enable(enBackup);
+    GBS::SP_TEST_MODULE::write(spModBackup);
+    GBS::SP_TEST_SIGNAL_SEL::write(spSigBackup);
+    GBS::SP_TEST_EN::write(spEnBackup);
+    GBS::IF_TEST_SEL::write(ifSelBackup);
+    GBS::IF_TEST_EN::write(ifEnBackup);
+    GBS::PAD_BOUT_EN::write(padBackup);
+    debugPrintf("tb,done\n");
+}
+#endif
 
 boolean checkBoardPower()
 {
-    GBS::ADC_UNUSED_69::write(0x6a);
-    if (GBS::ADC_UNUSED_69::read() == 0x6a) {
-        GBS::ADC_UNUSED_69::write(0);
+    const bool was = Tv5725::Chip::hasPower();
+    if (Tv5725::Chip::checkPower())
         return 1;
-    }
 
-    GBS::ADC_UNUSED_69::write(0);
-    if (rto->boardHasPower == true) {
+    if (was) {
         Serial.println(F("! power / i2c lost !"));
     }
-
     return 0;
 }
 
@@ -5605,7 +3396,7 @@ void calibrateAdcOffset()
 {
     GBS::PAD_BOUT_EN::write(0);
     GBS::PLL648_CONTROL_01::write(0xA5);
-    GBS::ADC_INPUT_SEL::write(2);
+    Tv5725::Adc::selectInput(2);
     Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
     Tv5725::Adc::enableGainMeasurement(true);
     GBS::ADC_5_03::write(0x31);
@@ -5615,9 +3406,8 @@ void calibrateAdcOffset()
     GBS::SP_5_56::write(0x05);
     GBS::SP_5_57::write(0x80);
     GBS::ADC_5_00::write(0x02);
-    GBS::TEST_BUS_SEL::write(0x0b);
-    GBS::TEST_BUS_EN::write(1);
-    resetDigital();
+    Tv5725::TestBus::select(0x0b);
+    Tv5725::Chip::resetVideoBlocks();
 
     uint16_t hitTargetCounter = 0;
     uint16_t readout16 = 0;
@@ -5636,7 +3426,7 @@ void calibrateAdcOffset()
         startTimer = millis();
 
         while ((millis() - startTimer) < 800) {
-            readout16 = GBS::TEST_BUS::read() & 0x7fff;
+            readout16 = Tv5725::TestBus::read() & 0x7fff;
 
             if (readout16 < 7) {
                 hitTargetCounter++;
@@ -5702,9 +3492,10 @@ void loadDefaultUserOptions()
     uopt->wantScanlines = 0;       
     uopt->wantOutputComponent = 0; 
     uopt->deintMode = 0;           
-    uopt->wantVdsLineFilter = 1;
+    uopt->wantVdsLineFilter = 0;
     uopt->wantPeaking = 1;
-    uopt->preferScalingRgbhv = 1;
+    uopt->preferScalingRgbhv = 0;
+    applyPassThroughPreference();
     uopt->wantTap6 = 1;
     uopt->PalForce60 = 0;
     uopt->matchPresetSource = 1; 
@@ -5782,17 +3573,6 @@ void ICACHE_RAM_ATTR isrRotaryEncoderRotateForNewMenu()
     }
 }
 
-void handlePress() {
-
-	  static unsigned long lastInterruptTime = 0;
-    unsigned long interruptTime = millis();
-    if ((interruptTime - lastInterruptTime > 500) && (oled_menuItem == 0))   //Minimum Repeat Press Interval
-    {
-        oledNav = OLEDMenuNav::ENTER;
-        ++rotaryIsrID;
-    }
-    lastInterruptTime = interruptTime;
-}
 void ICACHE_RAM_ATTR isrRotaryEncoderPushForNewMenu()
 {
     static unsigned long lastInterruptTime = 0;
@@ -5940,11 +3720,22 @@ void handleWiFi(boolean instant)
     yield();
 }
 
-void myLog(char const *type, char command)
-{
 
-    printf("%s command %c at settings source %d, custom slot %d, status %x\n",
-           type, command, uopt->presetPreference, uopt->presetSlot, rto->presetID);
+// The acquisition path's entry gate. **THE FREEZE ONLY**: board power is a
+// latched failure rather than a live reading, and it stays false through the
+// whole recovery -- exactly when the engine has to solve.
+// docs/video-source-acquisition.md
+static bool engineMayRun()
+{
+#if GBS_SAMPLING_LOG
+    // The divider walk writes PLLAD_MD, which the engine owns. Left running,
+    // the two take turns writing it and the walk's readings are taken through
+    // a divider it did not set. A monitor run is exempt: it only reads, and
+    // watching a live engine is what it is for.
+    if (samplingLog.sweeping())
+        return false;
+#endif
+    return !AUTOMATION_FROZEN();
 }
 
 void setup()
@@ -5955,6 +3746,15 @@ void setup()
     // the only signal that a source may have changed it -- a RISC PC sets it
     // from CMOS, so the mux need not have moved. docs/sync-type-selection.md
     geometry.useSyncTypeProbe(syncTypeHasOwnVsync);
+    inputAcquisition.usePassThroughSwitch(enterHdBypass);
+    inputAcquisition.useWatchdogFeed(feedWatchdog);
+    inputAcquisition.useClock(millisNow);
+    applyPassThroughPreference();
+
+    // The freeze, on the tick rather than inside the engine.
+    // docs/gbs-control-debug-interface.md
+    inputAcquisition.useRunGate(engineMayRun);
+
     // delay(700);
     // ESP.wdtDisable();
 
@@ -5977,7 +3777,6 @@ void setup()
 #if USE_NEW_OLED_MENU
     // versatile_encoder = new Versatile_RotaryEncoder(pin_a, pin_b, pin_switch);
     // versatile_encoder->setHandleRotate(handleRotate);  //
-    // versatile_encoder->setHandlePress(handlePress);//
 
     attachInterrupt(digitalPinToInterrupt(pin_a),   isrRotaryEncoderRotateForNewMenu, CHANGE);
     attachInterrupt(digitalPinToInterrupt(pin_b),   isrRotaryEncoderRotateForNewMenu, CHANGE);   //isrRotaryEncoderPushForNewMenu
@@ -6023,42 +3822,19 @@ void setup()
     rto->allowUpdatesOTA = false;      
     rto->freezeAutomation = false; // never persisted: a reboot returns to normal
     rto->enableDebugPings = false;     
-    rto->autoBestHtotalEnabled = true; 
-    rto->syncLockFailIgnore = 16;      
-    rto->syncWatcherEnabled = true;    
-    rto->phaseADC = 16;
-    rto->phaseSP = 16;
-    rto->failRetryAttempts = 0;  
-    rto->presetID = 0;           
-    rto->HPLLState = 0;
-    rto->motionAdaptiveDeinterlaceActive = false; 
-    rto->deinterlaceAutoEnabled = true;           
-    rto->scanlinesEnabled = false;                
-    rto->boardHasPower = true;                    
-    rto->presetIsPalForce60 = false;
-    Tv5725::SyncType::set(false);          
-    rto->isValidForScalingRGBHV = false; 
-    rto->medResLineCount = 0x33;
-    rto->osr = 0;                  
-    rto->notRecognizedCounter = 0; 
+    resetRunTimeDefaults();
 
     rto->inputIsYpBpR = false;   
-    rto->videoStandardInput = 0; 
-    rto->outModeHdBypass = false;
-    rto->videoIsFrozen = false;  
+    Tv5725::VideoRoute::toScaler();
     if (!rto->webServerEnabled)
         rto->webServerStarted = false;
     rto->printInfos = false;          
     rto->sourceDisconnected = true;   
     rto->isInLowPowerMode = false;    
     rto->applyPresetDoneStage = 0;     
-    rto->presetVlineShift = 0;         
-    rto->clampPositionIsSet = 0;       
-    rto->coastPositionIsSet = 0;       
-    Tv5725::SyncType::forget();
-    rto->continousStableCounter = 0;   
-    rto->currentLevelSOG = 5;          
-    rto->thisSourceMaxLevelSOG = 31;   
+    Tv5725::SyncProcessor::forgetPositions();
+    Tv5725::SyncMeasurement::forget();
+    Tv5725::SyncOnGreen::choose(5);          
 
     adco->r_gain = 0;
     adco->g_gain = 0;
@@ -6234,7 +4010,7 @@ void setup()
 
             uopt->wantVdsLineFilter = (uint8_t)(f.read() - '0'); 
             if (uopt->wantVdsLineFilter > 1)
-                uopt->wantVdsLineFilter = 1;
+                uopt->wantVdsLineFilter = 0;
 
             uopt->wantPeaking = (uint8_t)(f.read() - '0'); 
             if (uopt->wantPeaking > 1)
@@ -6243,6 +4019,7 @@ void setup()
             uopt->preferScalingRgbhv = (uint8_t)(f.read() - '0'); 
             if (uopt->preferScalingRgbhv > 1)
                 uopt->preferScalingRgbhv = 1;
+            applyPassThroughPreference();
 
             uopt->wantTap6 = (uint8_t)(f.read() - '0');
             if (uopt->wantTap6 > 1)
@@ -6302,7 +4079,7 @@ void setup()
             if (BriorCon > 2)
                 BriorCon = 1;
 
-            Info = (uint8_t)(f.read() - '0');
+            VideoSourceSelection::selectStored((uint8_t)(f.read() - '0'));
 
             RGB_Com = (uint8_t)(f.read() - '0');
             if (RGB_Com > 1)
@@ -6341,7 +4118,7 @@ void setup()
         // own read failure is distinguishable in the boot log from theirs.
         loadFramingTable();
         bootLogPrintf("FRAMING: %u stored, suspect=%d t=%lums\n",
-            (unsigned)geometry.framings().count(), framingIsSuspect ? 1 : 0,
+            (unsigned)sourceFramings.count(), framingIsSuspect ? 1 : 0,
             (unsigned long)millis());
 
         loadSlotFramings();
@@ -6350,7 +4127,6 @@ void setup()
             (unsigned long)millis());
     }
 
-    // ReadUserIRRemote();
 
     GBS::PAD_CKIN_ENZ::write(1);
     externalClockGenDetectAndInitialize();
@@ -6405,11 +4181,9 @@ void setup()
         if (!checkBoardPower()) {
             stopWire();
             powerOrWireIssue = 1;
-            rto->boardHasPower = false;
             rto->syncWatcherEnabled = false;
         } else {
             rto->syncWatcherEnabled = true;
-            rto->boardHasPower = true;
             ; // SerialMprintln(F("recovered"));
         }
     }
@@ -6427,6 +4201,15 @@ void setup()
 
         zeroAll();
         setResetParameters();
+
+        // BEFORE detection, which runs below and cannot measure a source
+        // through a sync processor left at zeros: with the coast and the delta
+        // registers clear, STATUS_SYNC_PROC_HTOTAL reads a number that does not
+        // move when the divider is written and latched by hand. The full
+        // bring-up runs after the last setResetParameters(), which is too late
+        // for this, and this block survives it -- SFTRST_SYNC_RSTZ is not one of
+        // the six that call holds.
+        Tv5725::SyncProcessor::init();
         prepareSyncProcessor();
 
         uint8_t productId = GBS::CHIP_ID_PRODUCT::read();
@@ -6468,7 +4251,7 @@ void setup()
 // re-run detection every 500 ms and step the SOG slice level down, sweeping for
 // a level that finds sync.
 //
-// loop() reaches this directly rather than through runSyncWatcher(), so the
+// loop() reaches this directly rather than through the acquisition tick, so the
 // freeze has to be checked here as well. Guarding detectAndSwitchToActiveInput()
 // instead does not work: frozen it returns 0, which is what tells
 // inputAndSyncDetect() nothing is plugged in.
@@ -6488,21 +4271,18 @@ void runSourceRecovery(unsigned long &lastTimeSourceCheck)
     if (checkBoardPower()) {
         inputAndSyncDetect();
     } else {
-        rto->boardHasPower = false;
-        rto->continousStableCounter = 0;
         rto->syncWatcherEnabled = false;
     }
     lastTimeSourceCheck = millis();
 
-    uint8_t currentSOG = GBS::ADC_SOGCTRL::read();
-    if (currentSOG >= 3) {
-        rto->currentLevelSOG = currentSOG - 1;
-        GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
-    } else {
-        rto->currentLevelSOG = 6;
-        GBS::ADC_SOGCTRL::write(rto->currentLevelSOG);
-    }
+    const uint8_t currentSOG = Tv5725::SyncOnGreen::level();
+    Tv5725::SyncOnGreen::apply(currentSOG >= 3 ? currentSOG - 1 : 6);
 }
+
+// Passes with nothing measured before the rails are questioned rather than the
+// source. Far past every recovery the ladder runs, so it only fires on a run
+// that none of them fixed.
+static const uint16_t BoardPowerCheckPass = 61;
 
 void loop()
 {
@@ -6555,7 +4335,6 @@ void loop()
     static uint8_t registerCurrent = 255;
     static uint8_t inputToogleBit = 0;
     static uint8_t inputStage = 0;
-    static unsigned long lastTimeSyncWatcher = millis();
     static unsigned long lastTimeSourceCheck = 500;
     static unsigned long lastTimeCheck = 500;
     static unsigned long lastTimeInterruptClear = millis();
@@ -6621,12 +4400,10 @@ void loop()
         rto->autoBestHtotalEnabled &&
         rto->syncWatcherEnabled &&
         FrameSync::ready() &&
-        millis() - lastVsyncLock > FrameSyncAttrs::lockInterval &&
-        rto->continousStableCounter > 20 &&
-        rto->noSyncCounter == 0) {
-        if (Tv5725::SourceMeasurement::dividerLatched(
-                Tv5725::SourceMeasurement::measureLineSamples(),
-                GBS::PLLAD_MD::read())) {
+        FrameSync::quietFor(FrameSyncAttrs::lockInterval) &&
+        inputAcquisition.acquiredPasses() > 20 &&
+        inputAcquisition.unmeasuredPasses() == 0) {
+        if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
             fsDebugPrintf("running frame sync, clock gen enabled = %d\n", rto->extClockGenDetected);
 
             bool success = rto->extClockGenDetected ? FrameSync::runFrequency() : FrameSync::runVsync(uopt->frameTimeLockMethod);
@@ -6641,11 +4418,11 @@ void loop()
             }
         }
 
-        lastVsyncLock = millis();
+        FrameSync::defer();
     }
 
           
-    if (rto->syncWatcherEnabled && rto->boardHasPower) {
+    if (rto->syncWatcherEnabled && Tv5725::Chip::hasPower()) {
         if ((millis() - lastTimeInterruptClear) > 3000) {
             Tv5725::Interrupts::acknowledgeAllButSogBad();
             lastTimeInterruptClear = millis();
@@ -6663,15 +4440,27 @@ void loop()
     // The engine decides when the source has settled into a new mode, because
     // it owns the measurements that decide it. Cheap on every pass, and
     // expensive only while a change is outstanding.
-    // Blanked while the engine has a change outstanding, so the measuring and
-    // solving happen behind it and absorb the encoder's relock time rather than
-    // being followed by it. src/tv5725/SyncOutput.h
-    if (!uopt->wantOutputComponent)
-        syncOutput.poll(geometry.changing(), millis());
 
     pollFramingSave(millis());
 
-    if (geometry.poll()) {
+    // What the acquisition layer is told rather than measures: the user's
+    // deinterlacer preferences, and whether keeping the source coming is wanted
+    // at all -- detection owns the input while a source is disconnected, and
+    // the automatic path can be switched off. Told every pass rather than at
+    // every writer, so neither can go stale.
+    inputAcquisition.allowMaintenance(!rto->sourceDisconnected
+                                      && rto->syncWatcherEnabled);
+    {
+        Tv5725::Deinterlacer::Preferences wanted;
+        wanted.automatic = rto->deinterlaceAutoEnabled;
+        wanted.bob = uopt->deintMode == 1;
+        wanted.scanlines = uopt->wantScanlines;
+        wanted.scanlineStrength = uopt->scanlineStrength;
+        wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
+        Tv5725::Deinterlacer::choose(wanted);
+    }
+
+    if (inputAcquisition.poll(millis())) {
         // Rate steer last, after raster, clock and windows. The solve moved the
         // raster, so the ratio the frequency lock steers by is stale -- and
         // re-establishing it here is the only thing that does: the
@@ -6681,24 +4470,36 @@ void loop()
 
     }
 
-    if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true && (millis() - lastTimeSyncWatcher) > 20) {
-        runSyncWatcher();                                                                                               
-        lastTimeSyncWatcher = millis();
+    // What a pass decided that lives above the acquisition layer: the frame
+    // time lock and the external clock generator. Reported rather than
+    // injected, which is what keeps the layer free of uopt and of FrameSync.
+    {
+        const VideoSourceAcquisition::Report &report = inputAcquisition.report();
+        if (report.frameTimingMoved)
+            FrameSync::reset(uopt->frameTimeLockMethod);
+        if (report.vsyncLockStale)
+            FrameSync::defer();
+        if (report.outputRateSettled)
+            externalClockGenSyncInOutRate();
+    }
 
-        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && rto->videoStandardInput > 0 && rto->clampPositionIsSet && rto->noSyncCounter == 0 && rto->continousStableCounter > 90 && rto->boardHasPower) {
-            if (Tv5725::SourceMeasurement::dividerLatched(
-                    Tv5725::SourceMeasurement::measureLineSamples(),
-                    GBS::PLLAD_MD::read())) {
+    // On the pass that advanced the run, not on a timer of its own: every
+    // threshold below counts in those passes, and two 20 ms cadences beside each
+    // other drift until a count is answered twice or not at all.
+    if (rto->sourceDisconnected == false && rto->syncWatcherEnabled == true
+        && inputAcquisition.runAdvanced()) {
+        if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
+            if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
                 uint8_t debugRegBackup = 0, debugPinBackup = 0;
                 debugPinBackup = GBS::PAD_BOUT_EN::read();
-                debugRegBackup = GBS::TEST_BUS_SEL::read();
+                debugRegBackup = Tv5725::TestBus::selected();
                 GBS::PAD_BOUT_EN::write(0);
                 Tv5725::Adc::DEC_TEST_SEL::write(1);
-                GBS::TEST_BUS_SEL::write(0xb);
+                Tv5725::TestBus::select(0xb);
                 if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
                     runAutoGain();
                 }
-                GBS::TEST_BUS_SEL::write(debugRegBackup);
+                Tv5725::TestBus::select(debugRegBackup);
                 GBS::PAD_BOUT_EN::write(debugPinBackup);
             }
         }
@@ -6708,23 +4509,21 @@ void loop()
     // that arms it. Worth arming only on a source that has been stable a while
     // with the divider latched, which STATUS_SYNC_PROC_HTOTAL is the witness for.
     if (rto->autoBestHtotalEnabled && !FrameSync::ready() && rto->syncWatcherEnabled) {
-        if (rto->continousStableCounter >= 10 && rto->coastPositionIsSet &&
-            ((millis() - lastVsyncLock) > 500)) {
-            if ((rto->continousStableCounter % 5) == 0) {
-                if (Tv5725::SourceMeasurement::dividerLatched(
-                        Tv5725::SourceMeasurement::measureLineSamples(),
-                        GBS::PLLAD_MD::read()))
+        if (inputAcquisition.acquiredPasses() >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
+            FrameSync::quietFor(500)) {
+            if ((inputAcquisition.acquiredPasses() % 5) == 0) {
+                if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
                     FrameSync::init();
             }
         }
     }
 
-    if ((!rgbhvBypass() && rto->videoStandardInput != 0) &&
-        rto->syncWatcherEnabled && !rto->coastPositionIsSet) {
-        if (rto->continousStableCounter >= 7) {
-            if ((getStatus16SpHsStable() == 1) && (getVideoMode() == rto->videoStandardInput)) {
-                updateCoastPosition(0);
-                if (rto->coastPositionIsSet) {
+    if (!rgbhvBypass() && rto->syncWatcherEnabled
+        && !Tv5725::SyncProcessor::coastPlaced()) {
+        if (inputAcquisition.acquiredPasses() >= 7) {
+            if (inputAcquisition.sourceIsPresent()) {
+                inputAcquisition.placeCoastWindow(0);
+                if (Tv5725::SyncProcessor::coastPlaced()) {
                     if (sourceHasSerratedSync()) 
                     {
 
@@ -6736,10 +4535,10 @@ void loop()
         }
     }
 
-    if ((rto->videoStandardInput != 0) && (rto->continousStableCounter >= 4) &&
-        !rto->clampPositionIsSet && rto->syncWatcherEnabled) {
-        updateClampPosition();
-        if (rto->clampPositionIsSet) {
+    if (inputAcquisition.sourceIsPresent() && (inputAcquisition.acquiredPasses() >= 4) &&
+        !Tv5725::SyncProcessor::clampPlaced() && rto->syncWatcherEnabled) {
+        inputAcquisition.placeClampWindow();
+        if (Tv5725::SyncProcessor::clampPlaced()) {
             if (Tv5725::SyncProcessor::clampHeld()) {
                 Tv5725::SyncProcessor::releaseClamp();
             }
@@ -6748,32 +4547,25 @@ void loop()
 
 
     if ((rto->applyPresetDoneStage == 1) &&
-        ((rto->continousStableCounter > 35 && rto->continousStableCounter < 45) ||
+        ((inputAcquisition.acquiredPasses() > 35 && inputAcquisition.acquiredPasses() < 45) ||
          !rto->syncWatcherEnabled)) {
         if (rto->applyPresetDoneStage == 1) {
 
             GBS::DAC_RGBS_PWDNZ::write(1); 
             if (!rto->syncWatcherEnabled) {
-                updateClampPosition();
+                inputAcquisition.placeClampWindow();
                 Tv5725::SyncProcessor::releaseClamp();
             }
 
-            if (rto->extClockGenDetected && !scalingRgbhv()) {
-                if (!rto->outModeHdBypass) {
-                    if (GBS::PLL648_CONTROL_01::read() != 0x35 && GBS::PLL648_CONTROL_01::read() != 0x75) {
-                        rto->presetDisplayClock = GBS::PLL648_CONTROL_01::read();
-                        clockGen.enable();
-                        ESP.wdtFeed();
-                        delayMicroseconds(800);
-                        GBS::PLL648_CONTROL_01::write(0x75);
-                    }
-                }
+            if (rto->extClockGenDetected) {
+                if (!Tv5725::VideoRoute::isHdBypassChannel())
+                    handDisplayClockToGenerator();
                 externalClockGenSyncInOutRate();
             }
             rto->applyPresetDoneStage = 0;
         }
     } 
-    else if (rto->applyPresetDoneStage == 1 && (rto->continousStableCounter > 35)) {
+    else if (rto->applyPresetDoneStage == 1 && (inputAcquisition.acquiredPasses() > 35)) {
 
         GBS::DAC_RGBS_PWDNZ::write(1);  // 
 
@@ -6781,27 +4573,19 @@ void loop()
         rto->applyPresetDoneStage = 0;
     }
 
-    if (rto->applyPresetDoneStage == 10) // 
-    {
-        rto->applyPresetDoneStage = 11;
-        setOutModeHdBypass(false);
-    }
-
-    if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && rto->boardHasPower) {
+    if (rto->syncWatcherEnabled == true && rto->sourceDisconnected == true && Tv5725::Chip::hasPower()) {
         runSourceRecovery(lastTimeSourceCheck);
-    } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && rto->boardHasPower)) {
+    } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && Tv5725::Chip::hasPower())) {
         if ((millis() - lastTimeSourceCheck) >= 500) {
-            // if (CheckInputFrequency() && rto->HdmiHoldDetection)
             if (CheckInputFrequency()) {
-                const uint8_t videoMode = standardForPresetLoad();
                 // Every branch here re-decides the output mode, and none of
                 // them is about HD bypass. A source that changes mode under it
                 // is the detection block's, which asks presetPreference.
-                if (!rto->outModeHdBypass) {
+                if (!Tv5725::VideoRoute::isHdBypassChannel()) {
                     if (scalingRgbhv()) {
-                        rto->videoStandardInput = 15;
+                        Tv5725::RgbhvOutput::chooseBypass();
                     } else {
-                        applyPresets(videoMode);
+                        applyPresets();
                     }
                 }
             }
@@ -6810,22 +4594,15 @@ void loop()
         }
     }
 
-    if ((rto->noSyncCounter == 61 || rto->noSyncCounter == 62) && rto->boardHasPower) // 
-    {
-        if (!checkBoardPower()) {
-            rto->noSyncCounter = 1;
-            rto->boardHasPower = false;
-            rto->continousStableCounter = 0; // 
-
-            stopWire(); // 
-                        // printf("out off-2\n");
-        } else {
-
-            rto->noSyncCounter = 63;
-        }
+    // A run this long with nothing measured is worth one I2C probe to tell a
+    // source that went away from a board that lost its rails. One position
+    // rather than two: the pair existed so the second could be latched out.
+    if (inputAcquisition.unmeasuredPasses() == BoardPowerCheckPass && Tv5725::Chip::hasPower()
+        && !checkBoardPower()) {
+        stopWire();
     }
 
-    if (!rto->boardHasPower && rto->syncWatcherEnabled) 
+    if (!Tv5725::Chip::hasPower() && rto->syncWatcherEnabled) 
     {
         if (digitalRead(SCL) && digitalRead(SDA)) {
             delay(50);
@@ -6842,7 +4619,7 @@ void loop()
                     GBS::STATUS_00::read();
                 }
                 rto->syncWatcherEnabled = true;
-                rto->boardHasPower = true;
+                Tv5725::Chip::holdPower(true);
                 delay(100);
                 goLowPowerWithInputDetection();
             }
@@ -6923,38 +4700,6 @@ static int16_t pressStep(int16_t asked, int16_t step)
 void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCurrent, uint8_t readout, uint8_t inputToogleBit)
 {
 
-#if GBS_TRACE_WRITES
-    if (traceStandard >= 0) {
-        const uint8_t forced = (uint8_t)traceStandard;
-        traceStandard = -1;
-        rto->videoStandardInput = forced;
-        rto->inputIsYpBpR = traceIsYuv;
-        rto->presetIsPalForce60 = tracePal60;
-
-        // Delimiters, not timestamps: the parser must not have to guess where a
-        // load starts, and the helpers that read live measurements make the
-        // timing vary run to run.
-        const uint8_t via = traceVia;
-        static const char *const viaNames[] = {"post", "apply", "bypass"};
-        Serial.print(F("=== TRACE BEGIN std="));
-        Serial.print(forced);
-        Serial.print(F(" yuv="));
-        Serial.print(traceIsYuv);
-        Serial.print(F(" pal60="));
-        Serial.print(tracePal60);
-        Serial.print(F(" via="));
-        Serial.print(viaNames[via]);
-        Serial.println(F(" ==="));
-        if (via == TraceViaApply) {
-            applyPresets(forced);
-        } else if (via == TraceViaBypass) {
-            setOutModeHdBypass(false);
-        } else {
-            doPostPresetLoadSteps();
-        }
-        Serial.println(F("=== TRACE END ==="));
-    }
-#endif
 
     if ((millis() - Tim_web) >= 300) {
         if (Serial.available()) {
@@ -6975,7 +4720,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     serialCommand = ' ';
                 }
             }
-            // myLog("serial", serialCommand);
 
             switch (serialCommand) {
                 case ' ':
@@ -6984,9 +4728,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'd': {
 
-                    if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-                        disableScanlines();
-                    }
+                    disableScanlines();
 
                     if (uopt->enableFrameTimeLock && FrameSync::getSyncLastCorrection() != 0) {
                         FrameSync::reset(uopt->frameTimeLockMethod);
@@ -7029,7 +4771,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 // Re-derive every register from the framing held and the source
                 // as it reads now, without moving the framing.
                 case 'U':
-                    geometry.resolve();
+                    inputAcquisition.resolveFromSource();
                     break;
                 // Back to the default framing. The framing is the engine's own
                 // state and no register holds it, so without this a picture
@@ -7038,11 +4780,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     geometry.reset();
                     break;
                 case 'q':
-                    resetDigital();
+                    Tv5725::Chip::resetVideoBlocks();
                     delay(2);
                     ResetSDRAM();
                     delay(2);
-                    togglePhaseAdjustUnits();
+                    Tv5725::Adc::restartPhaseAdjusters();
                     break;
                 case 'D':; // SerialMprint(F("debug view: "));
                     if (GBS::ADC_UNUSED_62::read() == 0x00) {
@@ -7111,26 +4853,34 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                     break;
                 case 'p':
-                    if (!rto->motionAdaptiveDeinterlaceActive) {
-                        if (GBS::GBS_OPTION_SCANLINES_ENABLED::read() == 1) {
-                            disableScanlines();
-                        }
+                    if (!Tv5725::Deinterlacer::motionAdaptEngaged()) {
+                        disableScanlines();
                         enableMotionAdaptDeinterlace();
                     } else {
                         disableMotionAdaptDeinterlace();
                     }
                     break;
                 case 'k':
-                    bypassModeSwitch_RGBHV();
+                    if (!bypassCanBeDisplayed()) {
+                        printf("bypass refused: source line rate too low\n");
+                        break;
+                    }
+                    Tv5725::RgbhvOutput::chooseBypass();
+                    enterHdBypass();
                     break;
                 case 'K':
                     if (!bypassCanBeDisplayed()) {
                         printf("pass refused: source line rate too low to bypass\n");
                         break;
                     }
-                    setOutModeHdBypass(false);
-                    uopt->presetPreference = OutputBypass;
+                    // The RESOLUTION is not touched. Handing the source over is a
+                    // different fact about the same output, so it is stored on
+                    // its own and leaving returns to the resolution the user
+                    // chose. docs/video-source-acquisition.md
+                    uopt->preferScalingRgbhv = 0;
+                    applyPassThroughPreference();
                     saveUserPrefs();
+                    enterHdBypass();
                     printf("pass \n");
                     break;
                 case 'T':; // SerialMprint(F("auto gain "));
@@ -7156,9 +4906,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case '!':
                     Serial.print(F("sfr: "));
-                    Serial.println(getSourceFieldRate(1));
+                    Serial.println(Tv5725::TestBusRateMeasurement::sourceFieldRateHz(true));
                     Serial.print(F("pll: "));
-                    Serial.println(getPllRate());
+                    Serial.println(Tv5725::TestBusRateMeasurement::pllRateHz());
                     break;
                 case '$': {
 
@@ -7181,21 +4931,19 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     resetPLLAD();
                     break;
                 case 'v':
-                    rto->phaseSP += 1;
-                    rto->phaseSP &= 0x1f;
+                    Tv5725::Adc::choosePhaseSyncProcessor(
+                        (uint8_t)((Tv5725::Adc::phaseSyncProcessor() + 1)
+                                  & Tv5725::Adc::PhaseMax));
                     ; // SerialMprint("SP: ");
-                    ; // SerialMprintln(rto->phaseSP);
                     setAndLatchPhaseSP();
                     break;
                 case 'b':
                     advancePhase();
                     latchPLLAD();
                     ; // SerialMprint("ADC: ");
-                    ; // SerialMprintln(rto->phaseADC);
                     break;
                 case '#':
-                    rto->videoStandardInput = 13;
-                    applyPresets(13);
+                    applyPresets();
                     break;
                 case 'n': {
                     uint16_t pll_divider = GBS::PLLAD_MD::read() + 1;
@@ -7213,8 +4961,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         GBS::IF_LINE_ST::write(Tv5725::CaptureWindow::ProgressiveStart);
                         GBS::IF_LINE_SP::write(Tv5725::CaptureWindow::ProgressiveStart
                             + ((pll_divider / 2) + 1));
-                        updateClampPosition();
-                        updateCoastPosition(0);
+                        inputAcquisition.placeClampWindow();
+                        inputAcquisition.placeCoastWindow(0);
                     } else {
                         debugPrintf("PLLAD_MD %u refused, left at %u\n",
                             pll_divider, GBS::PLLAD_MD::read());
@@ -7237,11 +4985,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         ok ? "accepted" : "refused and restored", GBS::PLLAD_MD::read());
                 } break;
                 case 'N': {
-                    if (rto->scanlinesEnabled) {
-                        rto->scanlinesEnabled = false; // 
+                    if (Tv5725::Deinterlacer::scanlinesApplied()) {
                         disableScanlines();
                     } else {
-                        rto->scanlinesEnabled = true;
                         enableScanlines();
                     }
                 } break;
@@ -7250,9 +4996,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case 'm':; // SerialMprint(F("syncwatcher "));
                     if (rto->syncWatcherEnabled == true) {
                         rto->syncWatcherEnabled = false;
-                        if (rto->videoIsFrozen) {
-                            unfreezeVideo();
-                        }; // SerialMprintln("off");
+                        Tv5725::FrameBuffer::releaseCapture();; // SerialMprintln("off");
                     } else {
                         rto->syncWatcherEnabled = true;
                         ; // SerialMprintln("on");
@@ -7306,26 +5050,20 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     // // OutputComponentOrVGA();
                     // saveUserPrefs();
 
-                    // uint8_t videoMode = getVideoMode();
-                    // if (videoMode == 0)
-                    //   videoMode = rto->videoStandardInput;
                     // PresetPreference backup = uopt->presetPreference;
                     // uopt->presetPreference = Output720P;
-                    // rto->videoStandardInput = 0;
-                    // applyPresets(videoMode);
+                    // applyPresets();
                     // uopt->presetPreference = backup;
                 } break;
-                case 'l':; // SerialMprintln(F("resetSyncProcessor"));
-                    resetSyncProcessor();
+                case 'l':;
+                    Tv5725::SyncProcessor::reset();
                     break;
                 case 'Z': {
                     uopt->matchPresetSource = !uopt->matchPresetSource;
                     saveUserPrefs();
-                    uint8_t vidMode = getVideoMode();
-                    if (uopt->presetPreference == 0 && rto->presetID == 0x11) {
-                        applyPresets(vidMode);
-                    } else if (uopt->presetPreference == 4 && rto->presetID == 0x02) {
-                        applyPresets(vidMode);
+                    if ((uopt->presetPreference == 0 && rto->presetID == 0x11)
+                        || (uopt->presetPreference == 4 && rto->presetID == 0x02)) {
+                        applyPresets();
                     }
                 } break;
                 case 'W':
@@ -7383,11 +5121,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     rto->osr = Tv5725::Adc::applyOversample(GBS::PLLAD_KS::read(), wanted);
                     latchPLLAD();
                     delay(4);
-                    optimizePhaseSP();
+                    inputAcquisition.acquireSamplingPhase();
                     ; // SerialMprint("OSR ");
                     ; // SerialMprint(rto->osr);
                     ; // SerialMprintln("x");
-                    rto->phaseIsSet = 0;
+                    Tv5725::Adc::forgetPhase();
                 } break;
                 case 'g':
                     inputStage++;
@@ -7559,10 +5297,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                 } break;
                 case '_': {
-                    uint8_t testBusSelBackup = GBS::TEST_BUS_SEL::read();
-                    GBS::TEST_BUS_SEL::write(0x0);
+                    uint8_t testBusSelBackup = Tv5725::TestBus::selected();
+                    Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
                     uint32_t ticks = FrameSync::getPulseTicks();
-                    GBS::TEST_BUS_SEL::write(testBusSelBackup);
+                    Tv5725::TestBus::select(testBusSelBackup);
                     Serial.println(ticks);
                 } break;
                 case '~':
@@ -7587,8 +5325,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             uint32_t wanted = rto->displayClock.hzNow();
                             if (wanted >= 1000000 && wanted <= 250000000) {
                                 clockGen.setFrequency(wanted);
-                                rto->clampPositionIsSet = 0; // Clamp position setting
-                                rto->coastPositionIsSet = 0; // coast position setting
+                                Tv5725::SyncProcessor::forgetPositions();
                             }
                             Serial.print(F("set freqExtClockGen: "));
                             Serial.println((uint32_t)rto->displayClock.hzNow());
@@ -7603,7 +5340,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         ; // SerialMprint(" ");
                         ; // SerialMprintln(value);
                         if (what.equals("sog")) {
-                            setAndUpdateSogLevel(value);
+                            Tv5725::SyncOnGreen::choose(value);
+                            Tv5725::SyncOnGreen::putInForce();
                         } else if (what.equals("ifini")) {
                             Tv5725::InputFormatter::writeLineCounterStart(value);
                         } else if (what.equals("vsstc")) {
@@ -7666,7 +5404,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
             delay(1);
 
-            lastVsyncLock = millis();
+            FrameSync::defer();
 
             if (!Serial.available()) {
 
@@ -7677,6 +5415,43 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             }
         }
 
+#if GBS_DEBUG
+        if (pendingTestBusSweep) {
+            pendingTestBusSweep = false;
+            sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusSig,
+                         pendingTestBusIf);
+        }
+        if (pendingSampleClock) {
+            pendingSampleClock = false;
+            applySampleClock(pendingSampleClockApply,
+                             pendingSampleClockDivider,
+                             pendingSampleClockOversample);
+        }
+        if (pendingDividerHold) {
+            pendingDividerHold = false;
+            holdSampleClock(pendingHeldDivider);
+        }
+        if (pendingFullFramingChange) {
+            pendingFullFramingChange = false;
+            geometry.forceFullFraming(pendingFullFraming);
+            inputAcquisition.resolveFromSource();
+            debugPrintf("framing: full %s\n", pendingFullFraming ? "on" : "off");
+        }
+        if (pendingRestart) {
+            pendingRestart = false;
+            debugPrintf("restart: asked for over HTTP\n");
+            delay(50);            // let the reply leave before the stack goes
+            ESP.restart();
+        }
+#endif
+#if GBS_TRACE_WRITES
+        if (pendingWriteReplay) {
+            pendingWriteReplay = false;
+            Tv5725::WriteTrace::replay(pendingWriteReplayFirst,
+                                       pendingWriteReplayLast,
+                                       pendingWriteReplayGaps);
+        }
+#endif
 #if GBS_SAMPLING_LOG
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
@@ -7686,23 +5461,23 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             pendingSamplingSweep = false;
             samplingLog.sweep(millis(), pendingSamplingA, pendingSamplingB,
                               pendingSamplingC, (uint16_t)pendingSamplingD,
-                              rto->osr);
+                              rto->osr, inputAcquisition.sourceLineRateHz());
         }
 #endif
-        if (pendingInputSelection != InputSource::None) {
+        if (pendingInputSelection != VideoSourceSelection::None) {
             // Cleared before acting, not after: every handler below blocks for
             // seconds while detection runs, and a second request landing in that
             // window must queue a new selection rather than be swallowed.
-            const InputSource::Id wanted = (InputSource::Id)pendingInputSelection;
-            pendingInputSelection = InputSource::None;
+            const VideoSourceSelection::Id wanted = (VideoSourceSelection::Id)pendingInputSelection;
+            pendingInputSelection = VideoSourceSelection::None;
 
             switch (wanted) {
-                case InputSource::Rgbs: InputRGBs(); break;
-                case InputSource::RgsB: InputRGsB(); break;
-                case InputSource::Vga: InputVGA(); break;
-                case InputSource::Ypbpr: InputYUV(); break;
-                case InputSource::SVideo: InputSV(); break;
-                case InputSource::Composite: InputAV(); break;
+                case VideoSourceSelection::Rgbs: InputRGBs(); break;
+                case VideoSourceSelection::RgsB: InputRGsB(); break;
+                case VideoSourceSelection::Vga: InputVGA(); break;
+                case VideoSourceSelection::Ypbpr: InputYUV(); break;
+                case VideoSourceSelection::SVideo: InputSV(); break;
+                case VideoSourceSelection::Composite: InputAV(); break;
                 default: break;
             }
         }
@@ -7712,7 +5487,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
             handleType2Command(userCommand);
             userCommand = '@';
-            lastVsyncLock = millis();
+            FrameSync::defer();
             handleWiFi(1);
 
             // printf("uopt->presetSlot %d  \n", uopt->presetSlot);
@@ -7726,7 +5501,6 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
 void handleType2Command(char argument)
 {
-    // myLog("user", argument);
     switch (argument) {
         case '0':
 
@@ -7863,13 +5637,6 @@ void handleType2Command(char argument)
         case 'p':
         case 's':
         case 'L': {
-            // Before anything writes an output register: the blank belongs to
-            // the whole change, and the press is the start of it.
-            syncOutput.blankNow(millis());
-
-            // Loading presets via webui
-            const uint8_t videoMode = standardForPresetLoad();
-
             if (argument == 'f')
                 uopt->presetPreference = Output960P; //Output960P; // 1280x960
             if (argument == 'g')
@@ -7885,9 +5652,9 @@ void handleType2Command(char argument)
             // if (argument == 'L')
 
             if (scalingRgbhv()) {
-                rto->videoStandardInput = 15;
+                Tv5725::RgbhvOutput::chooseBypass();
             } else {
-                changeOutputResolution(videoMode);
+                changeOutputResolution();
             }
             saveUserPrefs();
         } break;
@@ -7985,9 +5752,7 @@ void handleType2Command(char argument)
             if (uopt->deintMode != 1) {
                 uopt->deintMode = 1;
                 disableMotionAdaptDeinterlace();
-                if (GBS::GBS_OPTION_SCANLINES_ENABLED::read()) {
-                    disableScanlines();
-                }
+                disableScanlines();
                 saveUserPrefs();
             }; // SerialMprintln(F("Deinterlacer: Bob"));
             break;
@@ -8028,20 +5793,13 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'x':
-            if (uopt->preferScalingRgbhv && !bypassCanBeDisplayed()) {
-                printf("scaling stays on: source line rate too low to bypass\n");
-                break;
-            }
             uopt->preferScalingRgbhv = !uopt->preferScalingRgbhv;
-            ; // SerialMprint(F("preferScalingRgbhv: "));
-            if (uopt->preferScalingRgbhv) {
-                ; // SerialMprintln("on");
-                  // printf("on\n");
-            } else {
-                ; // SerialMprintln("off");
-                  // printf("off\n");
-            }
+            applyPassThroughPreference();
             saveUserPrefs();
+            // Applied to the source in force rather than at the next one. The
+            // preference is the user's veto on the route, and a bypass
+            // reference has to be reachable while a source stands still.
+            inputAcquisition.resolveFromSource();
             break;
         case 'X':; // SerialMprint(F("ExternalClockGenerator "));
             if (uopt->disableExternalClockGenerator == 0) {
@@ -8054,18 +5812,17 @@ void handleType2Command(char argument)
             saveUserPrefs();
             break;
         case 'z':
-            // sog slicer level
-            if (rto->currentLevelSOG > 0) {
-                rto->currentLevelSOG -= 1;
+            // sog sync separator level
+            if (Tv5725::SyncOnGreen::level() > 0) {
+                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() - 1);
             } else {
-                rto->currentLevelSOG = 16;
+                Tv5725::SyncOnGreen::choose(16);
             }
-            setAndUpdateSogLevel(rto->currentLevelSOG);
-            optimizePhaseSP();
+            Tv5725::SyncOnGreen::putInForce();
+            inputAcquisition.acquireSamplingPhase();
             ; // SerialMprint("Phase: ");
-            ; // SerialMprint(rto->phaseSP);
             ; // SerialMprint(" SOG: ");
-            ; // SerialMprint(rto->currentLevelSOG);
+            ; // SerialMprint(Tv5725::SyncOnGreen::level());
             ; // SerialMprintln();
             break;
         case 'E':
@@ -8093,10 +5850,7 @@ void handleType2Command(char argument)
             } else {
                 uopt->scanlineStrength = 0x50;
             }
-            if (rto->scanlinesEnabled) {
-                GBS::MADPT_Y_MI_OFFSET::write(uopt->scanlineStrength);
-                GBS::MADPT_UV_MI_OFFSET::write(uopt->scanlineStrength);
-            }
+            Tv5725::Deinterlacer::applyScanlineStrength(uopt->scanlineStrength);
             saveUserPrefs();
             break;
         case 'W':
@@ -8621,6 +6375,135 @@ void startWebserver()
     // Until this existed the OLED was the ONLY way to choose an input: the six
     // handlers had two callers between them, the menu and one IR key. A unit
     // that came up on the wrong one needed someone standing at it.
+#if GBS_DEBUG
+    // Which block still carries a signal, sampled on the device because the
+    // rate is the answer and an HTTP read cannot see one.
+    //
+    //   /testbus?ms=25                 sweep every TEST_BUS_SEL
+    //   /testbus?ms=25&sp=4            with the sync processor's vs_act_det out
+    //   /testbus?ms=25&sp=4&sig=1      that stage's signal 1 rather than 0
+    //   /testbus?ms=25&if=0            with an input formatter signal out
+    server.on("/testbus", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name, int fallback) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : fallback;
+        };
+        pendingTestBusMs = (uint16_t)number("ms", 25);
+        pendingTestBusSp = (uint8_t)number("sp", 0xff);
+        pendingTestBusSig = (uint8_t)number("sig", 0);
+        pendingTestBusIf = (uint8_t)number("if", 0xff);
+        pendingTestBusSweep = true;
+        request->send(200, "application/json", "{\"queued\":\"testbus\"}");
+    });
+
+    // The ADC sampling group, in one request, the way the firmware writes it.
+    //
+    //   /sampleclock                    report the group, change nothing
+    //   /sampleclock?md=2039&os=2       apply a divider and an oversampling ratio
+    //   /sampleclock?hold=1244          solve the whole engine around a divider
+    //   /sampleclock?hold=0             release it, back to the recommendation
+    //
+    // Either parameter alone is enough to apply; the one left out takes what
+    // the source is due.
+    //
+    // Queued, and it answers on the console: the group latches together, so a
+    // reply written from the network callback would report registers the bus
+    // has not been given a chance to write.
+    // Restart the ESP. The chip keeps its registers across one, so this
+    // repeats the boot rather than clearing the board -- which is what makes it
+    // an instrument for a boot that comes up with no source.
+    server.on("/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
+        pendingRestart = true;
+        request->send(200, "application/json", "{\"queued\":\"restart\"}");
+    });
+
+    server.on("/sampleclock", HTTP_GET, [](AsyncWebServerRequest *request) {
+        auto number = [request](const char *name) -> int {
+            return request->hasParam(name)
+                ? request->getParam(name)->value().toInt() : 0;
+        };
+        if (request->hasParam("hold")) {
+            pendingHeldDivider = (uint16_t)number("hold");
+            pendingDividerHold = true;
+            request->send(200, "application/json", "{\"queued\":\"hold\"}");
+            return;
+        }
+        pendingSampleClockApply = request->hasParam("md") || request->hasParam("os");
+        pendingSampleClockDivider = (uint16_t)number("md");
+        pendingSampleClockOversample = (uint8_t)number("os");
+        pendingSampleClock = true;
+        request->send(200, "application/json", "{\"queued\":\"sampleclock\"}");
+    });
+#endif
+
+#if GBS_TRACE_WRITES
+    // The register write sequence, and the means to issue a slice of it back at
+    // bus speed.
+    //
+    //   /writetrace?arm=1              record from here
+    //   /writetrace?stat=1             held, seen and whether it overflowed
+    //   /writetrace                    what was recorded, oldest first
+    //   /writetrace?first=40&last=96   issue that slice again, back to back
+    //   /writetrace?first=40&last=96&gaps=1   with the recorded spacing
+    //
+    // A replay from the HOST cannot answer the question this exists for:
+    // /setreg is deferred to loop() and lands at tens of hertz whatever bytes it
+    // carries, so a sequence whose ordering decides the outcome is not
+    // reproducible from outside the device.
+    server.on("/writetrace", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("arm")) {
+            Tv5725::WriteTrace::arm(millis());
+            request->send(200, "application/json", "{\"armed\":true}");
+            return;
+        }
+        if (request->hasParam("stop")) {
+            Tv5725::WriteTrace::stop();
+            request->send(200, "application/json", "{\"armed\":false}");
+            return;
+        }
+        if (request->hasParam("stat")) {
+            char stat[96];
+            snprintf(stat, sizeof(stat),
+                     "{\"held\":%u,\"seen\":%lu,\"capacity\":%u,\"overflowed\":%s}",
+                     (unsigned)Tv5725::WriteTrace::count(),
+                     (unsigned long)Tv5725::WriteTrace::seen(),
+                     (unsigned)Tv5725::WriteTrace::Capacity,
+                     Tv5725::WriteTrace::overflowed() ? "true" : "false");
+            request->send(200, "application/json", stat);
+            return;
+        }
+        if (request->hasParam("first")) {
+            pendingWriteReplayFirst = (uint16_t)request->getParam("first")->value().toInt();
+            pendingWriteReplayLast = request->hasParam("last")
+                ? (uint16_t)request->getParam("last")->value().toInt()
+                : Tv5725::WriteTrace::count();
+            pendingWriteReplayGaps = request->hasParam("gaps");
+            pendingWriteReplay = true;
+            request->send(200, "application/json", "{\"queued\":\"replay\"}");
+            return;
+        }
+
+        // Fixed-width lines, so the byte index the chunked response counts in
+        // divides straight into an entry number and nothing has to be carried
+        // between calls.
+        const uint16_t held = Tv5725::WriteTrace::count();
+        const size_t total = (size_t)held * Tv5725::WriteTrace::LineBytes;
+        AsyncWebServerResponse *response = request->beginChunkedResponse(
+            "text/plain",
+            [total](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                size_t written = 0;
+                char line[Tv5725::WriteTrace::LineBytes + 1];
+                while (written < maxLen && index + written < total) {
+                    const size_t at = index + written;
+                    Tv5725::WriteTrace::line(line, (uint16_t)(at / Tv5725::WriteTrace::LineBytes));
+                    const size_t column = at % Tv5725::WriteTrace::LineBytes;
+                    buffer[written++] = (uint8_t)line[column];
+                }
+                return written;
+            });
+        request->send(response);
+    });
+#endif
 #if GBS_SAMPLING_LOG
     // Log the source measurements from loop(), where HTTP polling cannot reach:
     // at tens of hertz a host cannot tell a value that dithers from one read
@@ -8665,8 +6548,8 @@ void startWebserver()
         }
 
         const String value = request->getParam("src")->value();
-        const InputSource::Id wanted = InputSource::fromName(value.c_str());
-        if (wanted == InputSource::None) {
+        const VideoSourceSelection::Id wanted = VideoSourceSelection::fromName(value.c_str());
+        if (wanted == VideoSourceSelection::None) {
             request->send(400, "application/json",
                 "{\"error\":\"unknown src: rgbs rgsb vga ypbpr sv av\"}");
             return;
@@ -8675,7 +6558,7 @@ void startWebserver()
         pendingInputSelection = wanted;
         char body[64];
         snprintf_P(body, sizeof(body), PSTR("{\"queued\":\"%s\"}"),
-            InputSource::name(wanted));
+            VideoSourceSelection::name(wanted));
         request->send(200, "application/json", body);
     });
 
@@ -8688,12 +6571,13 @@ void startWebserver()
     // without it answers 404 rather than reporting an empty framing.
 #if GBS_DEBUG
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[288];
+        char body[320];
         snprintf_P(body, sizeof(body),
             PSTR("{\"oh\":%u,\"eh\":%u,\"ov\":%u,\"ev\":%u,"
                  "\"ch\":%u,\"cv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
-                 "\"lineRateHz\":%lu,\"lowLineRate\":%s}"),
+                 "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
+                 "\"present\":%s,\"state\":\"%s\"}"),
             geometry.originUnitsOn(Tv5725::AxisHorizontal),
             geometry.extentUnitsOn(Tv5725::AxisHorizontal),
             geometry.originUnitsOn(Tv5725::AxisVertical),
@@ -8706,8 +6590,18 @@ void startWebserver()
             (int)lrintf(geometry.framing().extentOn(Tv5725::AxisHorizontal) * 10000.0f),
             (int)lrintf(geometry.framing().originOn(Tv5725::AxisVertical) * 10000.0f),
             (int)lrintf(geometry.framing().extentOn(Tv5725::AxisVertical) * 10000.0f),
-            (unsigned long)geometry.sourceLineRateHz(),
-            geometry.sourceLowLineRate() ? "true" : "false");
+            (unsigned long)inputAcquisition.sourceLineRateHz(),
+            inputAcquisition.sourceLowLineRate() ? "true" : "false",
+            // The engine's own answer to "is a source there": a steadiness run
+            // over the line count paired with one reading of what the sync
+            // processor counts against the divider, not a live reading of
+            // either. The state names which of the three, because absent and unlocked
+            // want the same recovery and only one is worth re-probing the sync
+            // type on. docs/video-source-acquisition.md
+            inputAcquisition.sourceIsPresent() ? "true" : "false",
+            inputAcquisition.sourceState() == VideoSourceAcquisition::SourceAcquired   ? "acquired"
+            : inputAcquisition.sourceState() == VideoSourceAcquisition::SourceUnlocked ? "unlocked"
+                                                               : "absent");
         request->send(200, "application/json", body);
     });
 
@@ -8715,25 +6609,25 @@ void startWebserver()
     // caller that disturbs the framing and walks away persists it as that
     // source's remembered framing. `?on=1` suppresses that for the session;
     // lifting it adopts whatever is live rather than writing it.
-#if GBS_TRACE_WRITES
-    // Force a standard and run the load, so the write trace can be captured for
-    // a branch this bench has no source for. Queued for loop(): the load touches
-    // the bus and this is a network callback.
-    server.on("/trace/standard", HTTP_GET, [](AsyncWebServerRequest *request) {
-        if (!request->hasArg("std")) {
-            request->send(400, "application/json", "{\"error\":\"std required\"}");
-            return;
+
+    // Hold the framing at the whole capturable region, so one rule can be
+    // checked against any source and any output resolution without a press:
+    // at 100% the capture takes the source's blanking on all four sides, and
+    // the scaler magnifies to fill rather than being asked to minify.
+    //
+    // Queued, because it re-solves: the route answers from a network callback
+    // and the bus belongs to loop().
+    server.on("/framing/full", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasArg("on")) {
+            pendingFullFraming = request->arg("on").toInt() != 0;
+            pendingFullFramingChange = true;
         }
-        traceIsYuv = request->hasArg("yuv") ? request->arg("yuv").toInt() != 0 : 0;
-        tracePal60 = request->hasArg("pal60") ? request->arg("pal60").toInt() != 0 : 0;
-        const String via = request->hasArg("via") ? request->arg("via") : String("post");
-        traceVia = via == "apply" ? TraceViaApply
-                 : via == "bypass" ? TraceViaBypass
-                 : TraceViaPost;
-        traceStandard = (int8_t)request->arg("std").toInt();
-        request->send(200, "application/json", "{\"queued\":true}");
+        char body[48];
+        snprintf_P(body, sizeof(body), PSTR("{\"full\":%s,\"queued\":%s}"),
+                   geometry.fullFramingForced() ? "true" : "false",
+                   pendingFullFramingChange ? "true" : "false");
+        request->send(200, "application/json", body);
     });
-#endif
 
     server.on("/framing/autosave", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (request->hasArg("on"))
@@ -8764,7 +6658,7 @@ void startWebserver()
             rto->displayClock.seed(),
             (unsigned long)rto->displayClock.hz(),
             (unsigned long)rto->displayClock.hzNow(),
-            geometry.sourceFieldRateHz(),
+            inputAcquisition.sourceFieldRateHz(),
             (long)FrameSync::targetPhase());
         request->send(200, "application/json", body);
     });
@@ -9273,58 +7167,7 @@ void initUpdateOTA()
     yield();
 }
 
-void StrClear(char *str, uint16_t length)
-{
-    for (int i = 0; i < length; i++) {
-        str[i] = 0;
-    }
-}
 
-// void SaveUserIRRemote()
-// {
-
-//   File f = LittleFS.open("/IRmote.txt", "w");
-//   if (!f)
-//   {
-//     return;
-//   }
-//   f.write((uint8_t *)IRKeyMenu, 4);
-//   f.write((uint8_t *)IRKeySave, 4);
-//   f.write((uint8_t *)IRKeyInfo, 4);
-//   f.write((uint8_t *)IRKeyRight, 4);
-//   f.write((uint8_t *)IRKeyLeft, 4);
-//   f.write((uint8_t *)IRKeyUp, 4);
-//   f.write((uint8_t *)IRKeyDown, 4);
-//   f.write((uint8_t *)IRKeyOk, 4);
-//   f.write((uint8_t *)IRKeyExit, 4);
-//   f.write((uint8_t *)IRKeyMute, 4);
-//   f.write((uint8_t *)kRecv2, 4);
-//   f.write((uint8_t *)kRecv3, 4);
-
-//   f.close();
-// }
-
-void ReadUserIRRemote()
-{
-
-    File f = LittleFS.open("/IRmote.txt", "r");
-    if (!f) {
-        return;
-    }
-    f.read((uint8_t *)IRKeyMenu, 4);
-    f.read((uint8_t *)IRKeySave, 4);
-    f.read((uint8_t *)IRKeyInfo, 4);
-    f.read((uint8_t *)IRKeyRight, 4);
-    f.read((uint8_t *)IRKeyLeft, 4);
-    f.read((uint8_t *)IRKeyUp, 4);
-    f.read((uint8_t *)IRKeyDown, 4);
-    f.read((uint8_t *)IRKeyOk, 4);
-    f.read((uint8_t *)IRKeyExit, 4);
-    f.read((uint8_t *)IRKeyMute, 4);
-    f.read((uint8_t *)kRecv2, 4);
-    f.read((uint8_t *)kRecv3, 4);
-    f.close();
-}
 // = (uint8_t)(f.read() - '0');
 void loadFramingTable()
 {
@@ -9334,7 +7177,7 @@ void loadFramingTable()
         // Nothing stored yet is not a failed read. Every source takes its
         // computed default and the first tuning is saveable.
         framingIsSuspect = false;
-        framingSaves.markSaved(geometry.framingRevision());
+        framingSaves.markSaved(sourceFramings.revision());
         return;
     }
 
@@ -9354,10 +7197,10 @@ void loadFramingTable()
     f.close();
 
     for (uint16_t i = 0; i < read.count(); ++i)
-        geometry.rememberFraming(read.keyAt(i), read.framingAt(i));
+        sourceFramings.remember(read.keyAt(i), read.framingAt(i));
 
     framingIsSuspect = false;
-    framingSaves.markSaved(geometry.framingRevision());
+    framingSaves.markSaved(sourceFramings.revision());
 }
 
 void saveFramingTable()
@@ -9375,17 +7218,16 @@ void saveFramingTable()
               "originH extentH originV extentV\n"
               "# in ten-thousandths of the capturable region\n"));
 
-    const Tv5725::FramingTable &table = geometry.framings();
-    Tv5725::FramingText text(const_cast<Tv5725::FramingTable &>(table));
+    Tv5725::FramingText text(sourceFramings);
     char line[80];
-    for (uint16_t i = 0; i < table.count(); ++i)
+    for (uint16_t i = 0; i < sourceFramings.count(); ++i)
         if (text.writeLine(i, line, sizeof(line))) {
             f.print(line);
             f.print('\n');
         }
     f.close();
 
-    framingSaves.markSaved(geometry.framingRevision());
+    framingSaves.markSaved(sourceFramings.revision());
 }
 
 // Which slot the user has selected, as an index into slotFramings, or -1 when
@@ -9472,7 +7314,7 @@ bool recallSlotFraming(int16_t slot)
 // Called every loop. Nothing is written until the table has held still.
 void pollFramingSave(uint32_t now)
 {
-    if (framingSaves.due(geometry.framingRevision(), now, FramingSaveQuietMs))
+    if (framingSaves.due(sourceFramings.revision(), now, FramingSaveQuietMs))
         saveFramingTable();
 }
 
@@ -9531,7 +7373,7 @@ void saveUserPrefs()
     f.write(SmoothOption + '0');
     f.write(LineOption + '0');
     f.write(BriorCon + '0'); // 27
-    f.write(Info + '0');     // 28
+    f.write(VideoSourceSelection::selected() + '0');     // 28
     f.write(RGB_Com + '0');
 
     f.write((Bright / 100) + '0');
@@ -10277,7 +8119,7 @@ void OSD_selectOption()
                 //     break;
                 case IRKeyOk:
                     // tentative = uopt->presetPreference;
-                    // if(Info == InfoVGA)
+                    // if(selected() == InfoVGA)
                     // {
                     //     uopt->preferScalingRgbhv = false;
                     // }
@@ -10517,10 +8359,9 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    geometryControls.horizontalPan(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
-                    if (GBS::IF_HBIN_SP::read() >= 10) {
-                    } else {
+                    // The press reports its own limit: neither stop shows in a register.
+                    if (!geometryControls.horizontalPan(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca1;
@@ -10543,10 +8384,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    geometryControls.horizontalPan(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
-                    if (GBS::IF_HBIN_SP::read() < 0x150) {
-                    } else {
+                    if (!geometryControls.horizontalPan(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca1;
@@ -10626,9 +8465,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyRight:
                     Tim_menuItem = millis();
-                    geometryControls.horizontalZoom(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
-                    if (GBS::VDS_HSCALE::read() == 1023) {
+                    if (!geometryControls.horizontalZoom(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -10643,9 +8481,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyLeft:
                     Tim_menuItem = millis();
-                    geometryControls.horizontalZoom(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
-                    if (GBS::VDS_HSCALE::read() <= 256) {
+                    if (!geometryControls.horizontalZoom(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -10660,9 +8497,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyUp:
                     Tim_menuItem = millis();
-                    geometryControls.verticalZoom(+Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
-                    if (GBS::VDS_VSCALE::read() == 1023) {
+                    if (!geometryControls.verticalZoom(+Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -10677,9 +8513,8 @@ void OSD_selectOption()
                     break;
                 case IRKeyDown:
                     Tim_menuItem = millis();
-                    geometryControls.verticalZoom(-Tv5725::ControlSteps::Fine
-                            * geometryHold.multiplierFor(irKey, millis()));
-                    if (GBS::VDS_VSCALE::read() <= 256) {
+                    if (!geometryControls.verticalZoom(-Tv5725::ControlSteps::Fine
+                            * geometryHold.multiplierFor(irKey, millis()))) {
                         for (int p = 0; p <= 400; p++) {
                             colour1 = 0x14;
                             number_stroca = stroca2;
@@ -11125,7 +8960,6 @@ void OSD_selectOption()
                     PR_rgb();
                     break;
                 case IRKeyOk:
-                    // turnOffWiFi();
                     saveUserPrefs();
                     // serialCommand = 'K';
                     break;
@@ -11196,7 +9030,6 @@ void OSD_selectOption()
                     break;
 
                 case IRKeyOk:
-                    // turnOnWiFi();
                     saveUserPrefs();
                     break;
 
@@ -11987,9 +9820,7 @@ void OSD_selectOption()
                     if (uopt->deintMode != 1) {
                         uopt->deintMode = 1;
                         disableMotionAdaptDeinterlace();
-                        if (GBS::GBS_OPTION_SCANLINES_ENABLED::read()) {
-                            disableScanlines();
-                        }
+                        disableScanlines();
                         saveUserPrefs();
                     } else if (uopt->deintMode != 0) {
                         uopt->deintMode = 0;
@@ -13003,7 +10834,7 @@ void OSD_selectOption()
             decode_flag = 1;
             switch (results.value) {
                 case IRKeyOk:
-                    if (Info == InfoSV || Info == InfoAV) {
+                    if (VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV) {
                         COl_L = 1;
                         OSD_menu_F(OSD_CROSS_TOP);
                         OSD_menu_F('^');
@@ -13566,7 +11397,7 @@ void OSD_selectOption()
 
         boolean vsyncActive = 0;
         boolean hsyncActive = 0;
-        float ofr = getOutputFrameRate();
+        float ofr = Tv5725::TestBusRateMeasurement::outputFrameRateHz();
         uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
 
         colour1 = yellow;
@@ -13655,14 +11486,14 @@ void OSD_selectOption()
             OSD_c1(n0, P14, blue_fill);
         }
 
-        if (Info == InfoRGBs) {
+        if (VideoSourceSelection::selected() == InfoRGBs) {
             // OSD_writeString(17,1," RGBs");
             OSD_c1(r, P17, blue_fill);
             OSD_c1(R, P18, main0);
             OSD_c1(G, P19, main0);
             OSD_c1(B, P20, main0);
             OSD_c1(s, P21, main0);
-        } else if (Info == InfoRGsB) {
+        } else if (VideoSourceSelection::selected() == InfoRGsB) {
             // OSD_writeString(17,1," RGsB ");
             OSD_c1(r, P17, blue_fill);
             OSD_c1(R, P18, main0);
@@ -13670,7 +11501,7 @@ void OSD_selectOption()
             OSD_c1(s, P20, main0);
             OSD_c1(B, P21, main0);
             OSD_c1(B, P22, blue_fill);
-        } else if (Info == InfoVGA) {
+        } else if (VideoSourceSelection::selected() == InfoVGA) {
             // OSD_writeString(17,1," VGA  ");
             OSD_c1(r, P17, blue_fill);
             OSD_c1(V, P18, main0);
@@ -13678,21 +11509,21 @@ void OSD_selectOption()
             OSD_c1(A, P20, main0);
             OSD_c1(B, P21, blue_fill);
             OSD_c1(B, P22, blue_fill);
-        } else if (Info == InfoYUV) {
+        } else if (VideoSourceSelection::selected() == InfoYUV) {
             OSD_c1(r, P17, blue_fill);
             OSD_c1(Y, P18, main0);
             OSD_c1(P, P19, main0);
             OSD_c1(B, P20, main0);
             OSD_c1(P, P21, main0);
             OSD_c1(R, P22, main0);
-        } else if (Info == InfoSV) {
+        } else if (VideoSourceSelection::selected() == InfoSV) {
             OSD_c1(r, P17, blue_fill);
             OSD_c1(Y, P18, blue_fill);
             OSD_c1(S, P19, main0);
             OSD_c1(V, P20, main0);
             OSD_c1(B, P21, blue_fill);
             OSD_c1(B, P22, blue_fill);
-        } else if (Info == InfoAV) {
+        } else if (VideoSourceSelection::selected() == InfoAV) {
             OSD_c1(r, P17, blue_fill);
             OSD_c1(Y, P18, blue_fill);
             OSD_c1(A, P19, main0);
@@ -13727,10 +11558,9 @@ void OSD_selectOption()
         number_stroca = stroca2;
 
         Osd_Display(0xFF, " ");
-        // if (( rto->sourceDisconnected || !rto->boardHasPower || Info_sate == 1) && rto->HdmiHoldDetection)
-        if ((rto->sourceDisconnected || !rto->boardHasPower || Info_sate == 1)) {
+        if ((rto->sourceDisconnected || !Tv5725::Chip::hasPower() || Info_sate == 1)) {
             Osd_Display(0xFF, "No Input");
-        } else if (((currentInput == 1) || (Info == InfoRGBs || Info == InfoRGsB || Info == InfoVGA))) {
+        } else if (((currentInput == 1) || (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB || VideoSourceSelection::selected() == InfoVGA))) {
             OSD_c2(B, P16, blue_fill);
             Osd_Display(0xFF, "RGB ");
             vsyncActive = GBS::STATUS_SYNC_PROC_VSACT::read();
@@ -13740,26 +11570,36 @@ void OSD_selectOption()
                 if (hsyncActive) {
                     Osd_Display(0xFF, "HV   ");
                 }
-            } else if ((Info == InfoVGA) && ((!vsyncActive || !hsyncActive))) {
+            } else if ((VideoSourceSelection::selected() == InfoVGA) && ((!vsyncActive || !hsyncActive))) {
                 OSD_c2(B, P11, blue_fill);
                 Osd_Display(0x09, "No Input");
             }
-        } else if ((rto->continousStableCounter > 35 || currentInput != 1) || (Info == InfoYUV || Info == InfoSV || Info == InfoAV)) {
+        } else if ((inputAcquisition.acquiredPasses() > 35 || currentInput != 1) || (VideoSourceSelection::selected() == InfoYUV || VideoSourceSelection::selected() == InfoSV || VideoSourceSelection::selected() == InfoAV)) {
             OSD_c2(B, P16, blue_fill);
-            if (Info == InfoYUV)
+            if (VideoSourceSelection::selected() == InfoYUV)
                 Osd_Display(0xFF, "  YPBPR  ");
-            else if (Info == InfoSV)
+            else if (VideoSourceSelection::selected() == InfoSV)
                 Osd_Display(0xFF, "   SV    ");
-            else if (Info == InfoAV)
+            else if (VideoSourceSelection::selected() == InfoAV)
                 Osd_Display(0xFF, "   AV    ");
         } else {
             Osd_Display(0xFF, "No Input");
         }
 #if 1
-        static uint8_t S0_Read_Resolution;
+        static GBS::STATUS_IF_INP_SD::Value inputIsSd;
+        static GBS::STATUS_IF_INP_PAL_PRG::Value inputIsPalPrg;
+        static GBS::STATUS_IF_INP_PAL_INT::Value inputIsPalInt;
+        static GBS::STATUS_IF_INP_NTSC_PRG::Value inputIsNtscPrg;
+        static GBS::STATUS_IF_INP_NTSC_INT::Value inputIsNtscInt;
         static unsigned long Tim_info = 0;
         if ((millis() - Tim_info) >= 1000) {
-            S0_Read_Resolution = GBS::STATUS_00::read();
+            // One transaction, so the five describe the same instant.
+            GBS::Tie<GBS::STATUS_IF_INP_SD,
+                     GBS::STATUS_IF_INP_PAL_PRG,
+                     GBS::STATUS_IF_INP_PAL_INT,
+                     GBS::STATUS_IF_INP_NTSC_PRG,
+                     GBS::STATUS_IF_INP_NTSC_INT>::read(
+                inputIsSd, inputIsPalPrg, inputIsPalInt, inputIsNtscPrg, inputIsNtscInt);
 
             // GBS::IF_LD_RAM_BYPS::write(1);
             // printf( "Scanning method: %d\n",GBS::STATUS_SYNC_PROC_VTOTAL::read() );   // 0x%02x
@@ -13770,24 +11610,24 @@ void OSD_selectOption()
             Tim_info = millis();
         }
 
-        if (S0_Read_Resolution & 0x80) 
+        if (inputIsSd)
         {
-            if (S0_Read_Resolution & 0x40) 
+            if (inputIsPalPrg)
             {
                 Osd_Display(0xFF, "   576p");
             } 
-            else if (S0_Read_Resolution & 0x20) 
+            else if (inputIsPalInt)
             {
                 if( abs(GBS::STATUS_SYNC_PROC_VTOTAL::read() - 312) <= 10)
                   Osd_Display(0xFF, "   288p");
                 else  
                   Osd_Display(0xFF, "   576i");
             } 
-            else if (S0_Read_Resolution & 0x10) 
+            else if (inputIsNtscPrg)
             {
                 Osd_Display(0xFF, "   480p");
             } 
-            else if (S0_Read_Resolution & 0x08)   
+            else if (inputIsNtscInt)
             {
                 if( abs(GBS::STATUS_SYNC_PROC_VTOTAL::read() - 262) <= 10)
                   Osd_Display(0xFF, "   240p");
@@ -13946,7 +11786,7 @@ void OSD_IR()
         decode_flag = 1;
         if (results.value == IRKeyMenu) {
             Tim_menuItem = millis();
-            if (rto->sourceDisconnected || !rto->boardHasPower || GBS::PAD_CKIN_ENZ::read()) // || !GBS::STATUS_MISC_VSYNC::read()
+            if (rto->sourceDisconnected || !Tv5725::Chip::hasPower() || GBS::PAD_CKIN_ENZ::read()) // || !GBS::STATUS_MISC_VSYNC::read()
             {
 
                 NEW_OLED_MENU = false;
@@ -13967,7 +11807,7 @@ void OSD_IR()
                 doPostPresetLoadSteps();
                 GBS::VDS_DIS_HB_ST::write(0x00);
                 GBS::VDS_DIS_HB_SP::write(0xffff);
-                freezeVideo();                  
+                Tv5725::FrameBuffer::freezeCapture();                  
                 GBS::SP_CLAMP_MANUAL::write(1); 
                                                 // GBS::VDS_U_OFST::write(GBS::VDS_U_OFST::read() + 100);
             } else {
@@ -14835,7 +12675,7 @@ void handle_h(void)
 void handle_i(void)
 {
     if (COl_L == 1) {
-        if ((Info != InfoSV) && (Info != InfoAV)) {
+        if ((VideoSourceSelection::selected() != InfoSV) && (VideoSourceSelection::selected() != InfoAV)) {
             A1_yellow = 0X14;
         } else {
             A1_yellow = yellowT;

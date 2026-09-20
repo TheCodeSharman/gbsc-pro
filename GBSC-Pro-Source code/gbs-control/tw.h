@@ -6,7 +6,9 @@
 #include <Wire.h>
 
 #if GBS_TRACE_WRITES
-#include <Arduino.h>   // Serial / millis, for the register write trace below
+#include <Arduino.h>   // millis, for the register write trace below
+
+#include "src/tv5725/WriteTrace.h"
 #endif
 
 namespace tw
@@ -95,28 +97,20 @@ namespace tw
         {
 #if GBS_TRACE_WRITES
             // Every TV5725 register write funnels through here, so this is the
-            // one place that can record the *sequence* -- which is what an HTTP
-            // sampler cannot see, having missed the entry into the HPERIOD_IF
-            // fault twice at 3 Hz.
+            // one place that can record the SEQUENCE and its spacing -- which
+            // is what decides where the picture lands when no register
+            // distinguishes the two outcomes.
             //
-            // Serial, never SerialM. SerialM mirrors to the WebSocket and
-            // broadcastTXT() allocates a send buffer per frame; this build runs
-            // on ~21 KB of free heap and sheds console clients below 20 KB.
-            // Serial.print() is a UART FIFO and costs no heap at all.
+            // Into memory, never out of a port. Serial.print() at 115200 costs
+            // ~90us a byte inside every I2C write, which reorders the very
+            // sequence being recorded; SerialM would allocate a WebSocket frame
+            // per line on ~18 KB of free heap.
             //
-            // Segment selects are writes to 0xF0 and appear in the trace, so the
-            // segment of every following write can be reconstructed from it.
-            Serial.print(millis());
-            Serial.print(F(" W "));
-            if (reg < 0x10) Serial.print('0');
-            Serial.print(reg, HEX);
-            Serial.print(':');
-            for (uint8_t i = 0; i < size; ++i) {
-                if (input[i] < 0x10) Serial.print('0');
-                Serial.print(input[i], HEX);
-            }
-            Serial.println();
+            // Segment selects are writes to 0xF0 and appear in the trace, so
+            // the segment of every following write can be reconstructed.
+            Tv5725::WriteTrace::record(millis(), reg, input, size);
 #endif
+
             Wire.beginTransmission(addr);
             Wire.write(reg);
             Wire.write(input, size);
