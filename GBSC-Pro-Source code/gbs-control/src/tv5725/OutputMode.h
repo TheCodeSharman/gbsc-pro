@@ -45,8 +45,12 @@ enum PresetPreference : uint8_t {
 // find the mode the user asked for.
 class OutputMode {
 public:
-    OutputMode(uint16_t activeLines, float syncNs, float backPorchNs,
-               float frontPorchNs, uint16_t vsyncLines, uint16_t vBackPorchLines,
+    // The standard's own raster, in its own pixels at its own clock: active
+    // lines, sync and back porch widths, active width, line total, pixel clock.
+    // The front porch is what the total leaves, never stated.
+    OutputMode(uint16_t activeLines, uint16_t syncPx, uint16_t backPorchPx,
+               uint16_t activePx, uint16_t totalPx, uint32_t standardHz,
+               uint16_t vsyncLines, uint16_t vBackPorchLines,
                uint16_t vFrontPorchLines);
 
     // Swept on the bench 2026-08-11, RiscPC 320x256@50, judged on the TV:
@@ -97,11 +101,11 @@ public:
     // docs/investigations/720p-edge-corruption.md
     static const uint16_t MaxHorizontalTotal = 2450;
 
-    // The FLOOR under the output mode's own front porch, in pixels: what this
-    // part needs blank at the far end whatever the mode states. Measured on a
-    // 1916 px raster by creeping the display window -- good at 1900, wrong at
-    // 1910. Every mode's porch is an order of magnitude above it, so it binds
-    // only where a raster has no room for the real one.
+    // The FLOOR under what stays blank at the far end, in pixels: what this
+    // part needs there whatever the mode carries. Measured on a 1916 px raster
+    // by creeping the display window -- good at 1900, wrong at 1910. The
+    // standard's own fraction leaves an order of magnitude more, so it binds
+    // only on a raster short enough to have no room for it.
     // docs/scaler-geometry-model.md "The output front porch"
     static const uint16_t FrontPorchMinPx = 16;
 
@@ -140,8 +144,12 @@ public:
                         uint32_t ceilingHz = WorkingCeilingHz) const;
 
 private:
+    // The pixel count of a standard width at the clock this line runs at.
+    uint16_t scaled(uint16_t standardPx, float clockHz) const;
+
     uint16_t activeLines_;
-    float syncNs_, backPorchNs_, frontPorchNs_;
+    uint16_t syncPx_, backPorchPx_, activePx_, totalPx_;
+    uint32_t standardHz_;
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };
 

@@ -212,7 +212,7 @@ static void checkBenchGeometry()
     CHECK(InputFormatter::IF_LINE_SP::read() == 1165);
 
     // Both scales computed from the capture and the raster, never inherited.
-    CHECK(VideoProcessor::VDS_HSCALE::read() == 568);
+    CHECK(VideoProcessor::VDS_HSCALE::read() == 582);
     CHECK(VideoProcessor::VDS_VSCALE::read() == 552);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
@@ -241,11 +241,11 @@ static void checkBenchGeometry()
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
     // captured, which is memory the previous mode left behind.
-    CHECK(VideoProcessor::VDS_HB_ST::read() == 1851);
+    CHECK(VideoProcessor::VDS_HB_ST::read() == 1810);
     CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
 
     // And the horizontal window is an ODD number of units wide, which is what
-    // reaches the picture: an even one shears. 1854 would be 1814 wide.
+    // reaches the picture: an even one shears.
     // docs/known-issues.md
     CHECK((VideoProcessor::VDS_HB_ST::read()
            - VideoProcessor::VDS_HB_SP::read()) % 2 == 1);
@@ -254,7 +254,7 @@ static void checkBenchGeometry()
     // floor of 8 no longer binds: 140 is 32 of sync and 108 of porch, which is
     // 1080p60's 996.6 ns at this clock, and 41 is its 5 sync lines and 36 of
     // porch. Below 41 the window would open with vsync still asserted.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 40);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 41);
     CHECK(VideoProcessor::VDS_VB_SP::read() == 39);
     // One capture unit past the porch on each axis: the write origin marks
     // where content first appears, and that unit is only partly written.
@@ -1115,7 +1115,7 @@ TEST_CASE("a framed picture holds every window against the framing")
     CHECK(VideoProcessor::VDS_VB_ST::read() > 1100);
     // The near edge follows the output mode's back porch less the write origin,
     // rather than resting on the floor of 8.
-    CHECK(VideoProcessor::VDS_HB_SP::read() == 19);
+    CHECK(VideoProcessor::VDS_HB_SP::read() == 21);
     CHECK(VideoProcessor::VDS_VB_SP::read() > 0);
     CHECK(VideoProcessor::VDS_DIS_HB_SP::read() > VideoProcessor::VDS_HB_SP::read());
     CHECK(VideoProcessor::VDS_DIS_VB_SP::read() > VideoProcessor::VDS_VB_SP::read());

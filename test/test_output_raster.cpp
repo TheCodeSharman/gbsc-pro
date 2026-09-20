@@ -109,31 +109,35 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     }
 }
 
-// The far end of the line carries the output mode's own front porch, because the
-// board emits a raster a standard names and CEA states one. `FrontPorchMinPx` is
-// a floor under it, not the reserve itself: 16 px is what this part needs at the
-// far end, and every mode's porch is an order of magnitude above it.
+// The far end of the line is decided by the mode's active FRACTION, not by a
+// front porch. The encoder samples the analog signal between HS_OUT edges and
+// resamples it into the standard's active pixel count, so a line longer than the
+// standard's carries the same count spread over the same fraction of it, and the
+// rest is past the end of the encoder's line.
 //
-// The reading this replaces was that the encoder generates its own HDMI blanking
-// from what it samples and never sees ours, so conforming bought nothing. It is
-// refuted: what it samples is the analog signal between HS_OUT edges, and
-// emitting the porches the mode states stopped the picture landing somewhere
-// different on each acquisition -- 17 trials within 0.65 photo px against four
-// controls at 101 px.
-// docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md
-TEST_CASE("the far end carries the output mode's front porch, floored by the board's")
+// `FrontPorchMinPx` is a floor under what stays blank, for the part rather than
+// for the standard: 16 px is what this one needs at the far end.
+// docs/investigations/the-active-window-is-a-fraction-of-the-line.md
+TEST_CASE("the far end is the mode's active fraction, floored by the board's porch")
 {
-    // 1080p60's front porch is 88 px of its 148.5 MHz line, 592.59 ns, which is
-    // 64 px at 108 MHz and 77 at 129.6 -- a time, so it survives the clock change.
+    // 1080p is 1920 of CEA's 2200, so a 1920 px line carries 1675 and a 2304 px
+    // one 2010 -- a fraction, so it grows with the raster where a duration
+    // would not.
     OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
-    CHECK(at108.activeStop == 1920 - 64);
+    CHECK(at108.activeStop == 140 + 1675);
 
     OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
-    CHECK(at1296.activeStop == 2304 - 77);
+    CHECK(at1296.activeStop == 167 + 2010);
 
-    SUBCASE("and the active window is what lies between the two porches") {
+    SUBCASE("the fraction floors, because a part pixel past the end is lost") {
+        // 1920 x 1920 / 2200 is 1675.6. Rounding up puts the picture's far edge
+        // outside what the encoder samples, which is the fault this replaces.
+        CHECK(at108.activeWidth() == 1675);
+    }
+
+    SUBCASE("and the active window is what lies between start and stop") {
         CHECK(at108.activeWidth() == at108.activeStop - at108.activeStart);
     }
 
@@ -359,4 +363,26 @@ TEST_CASE("a mode's frame total is its active lines plus the standard blanking")
     CHECK(Mode1080p.frameLines() == 1125);   // 1080 + 4 front + 5 sync + 36 back
     CHECK(Mode720p.activeLines() == 720);
     CHECK(Mode720p.frameLines() == 750);     // 720 + 5 front + 5 sync + 20 back
+}
+
+TEST_CASE("the active window is the standard's fraction of the line, not a porch time")
+{
+    // The encoder starts sampling where OUR blanking ends -- measured within 4
+    // raster px of activeStart in both modes -- and then resamples the line
+    // into the STANDARD's active pixel count. So what it can carry is
+    // raster x activeStd / totalStd, and anything the scaler paints past that
+    // falls off the end of the encoder's line.
+    //
+    // A front porch stated as a time cannot express that: our raster overruns
+    // the standard's by a different factor in every mode, 1920/2200 against
+    // 2026/1688, so the error is 3.6% at 1080p and 5.4% at 1024p.
+    OutputTimings hd = Mode1080p.solve(50.0f, 108000000u);
+    CHECK(hd.horizontalTotal == 1920);
+    CHECK(hd.activeStart == 140);
+    CHECK(hd.activeWidth() == 1675);     // 1920 x 1920 / 2200
+
+    OutputTimings dmt = Mode1024p.solve(50.0f, 108000000u);
+    CHECK(dmt.horizontalTotal == 2026);
+    CHECK(dmt.activeStart == 360);
+    CHECK(dmt.activeWidth() == 1536);    // 2026 x 1280 / 1688
 }

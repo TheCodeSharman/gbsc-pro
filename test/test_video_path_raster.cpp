@@ -444,7 +444,7 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
     // Not half of 2508: undoubled, one IF unit is one ADC sample. What binds
     // is the 480p raster -- Axis::maximumCapture of it, rounded even -- and
     // not a constant of the part.
-    CHECK(Wire.field(5, 0x12, 0, 12) == 1934);
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1880);
     CHECK(Wire.field(1, 0x0E, 0, 11) <= InputFormatter::LineCounterMax);
 }
 
@@ -621,8 +621,10 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
         const long wanted = raster.horizontalTotal - raster.activeStop;
         const long step = 1 + (stop - start) / Wire.field(3, 0x16, 0, 10);  // VDS_HSCALE
         const long reach = 1 + Scale::Unity / Wire.field(3, 0x16, 0, 10);
+        // And by the parity give-back: an even memory window shears, so the
+        // aperture hands one unit back rather than taking one.
         CHECK(total - stop >= wanted - step);
-        CHECK(total - stop <= wanted + step + reach);
+        CHECK(total - stop <= wanted + step + reach + 1);
     }
 
     // One unit of scale is several output lines at any magnification worth the
