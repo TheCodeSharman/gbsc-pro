@@ -226,12 +226,25 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // The front porch is therefore never stated: it is what the total leaves, and
 // FrontPorchMinPx is the floor under it.
 //
-// Vertical is in lines, which need no conversion and no fraction -- the encoder
-// counts real lines -- and is the standard's in full: active, front porch, sync,
-// back porch.
+// Vertical is in lines, which need no conversion and no fraction -- the chain
+// counts real lines -- and is the standard's in full on five of the six: active,
+// front porch, sync, back porch.
 //
 //   1080p  CEA-861   1080 + 4 + 5 + 36 = 1125
 //   720p   CEA-861    720 + 5 + 5 + 20 =  750
+//
+// **THE 625-LINE MODE IS THE EXCEPTION, AND IT IS MEASURED.** The chain paints
+// raster lines 25..624 there -- 600 of the 625, from 24 lines of blanking --
+// where CEA 576p states 576 from line 44. That is VESA DMT's 800x600@56, which
+// is what a 625-line 50 Hz raster identifies as, and CEA's window inside it
+// leaves 19 lines of the painted area black across the top of the screen. The
+// EMITTED vsync pulse stays at CEA's five lines: the chain locks to it as it
+// is, and only where the picture may go was wrong.
+//
+// It is the vertical twin of carriedPx and it stops at the same place: whether
+// the window belongs to the encoder or to the one television it was measured on
+// takes a second display. 525 lines at 50 Hz identifies as 640x480, whose
+// 2 + 33 lands within one line of CEA 480p's 6 + 30, so that mode needs nothing.
 //
 // RD-5725-1.1 wants total-1 in VDS_VSYNC_RST, so a total written there directly
 // runs one line long -- which is what the shipped tables did, all six of them.
@@ -248,7 +261,7 @@ const OutputMode Mode1080p(1080, 44, 148, 1920, 1920, 2200, 148500000, 5, 36, 4)
 const OutputMode Mode1024p(1024, 112, 248, 1280, 1280, 1688, 108000000, 3, 38, 1); // 1066
 const OutputMode Mode960p(960, 112, 312, 1280, 1280, 1800, 108000000, 3, 36, 1);   // 1000
 const OutputMode Mode720p(720, 40, 220, 1280, 1280, 1650, 74250000, 5, 20, 5);     //  750
-const OutputMode Mode576p(576, 64, 68, 720, 679, 864, 27000000, 5, 39, 5);         //  625
+const OutputMode Mode576p(600, 64, 68, 720, 679, 864, 27000000, 5, 19, 1);         //  625
 const OutputMode Mode480p(480, 62, 60, 720, 690, 858, 27000000, 6, 30, 9);         //  525
 
 }  // namespace Tv5725

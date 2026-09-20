@@ -346,8 +346,11 @@ TEST_CASE("480p and 576p are separate preferences, neither of them a rate")
 
     CHECK(Mode480p.activeLines() == 480);
     CHECK(Mode480p.frameLines() == 525);    // 480 + 9 front + 6 sync + 30 back
-    CHECK(Mode576p.activeLines() == 576);
-    CHECK(Mode576p.frameLines() == 625);    // 576 + 5 front + 5 sync + 39 back
+    // 625 lines at 50 Hz is carried as VESA 800x600@56, not as CEA 576p, so the
+    // lines the chain paints are 600 -- measured. The preference is still the
+    // 625-line raster, which is what the user chose.
+    CHECK(Mode576p.activeLines() == 600);
+    CHECK(Mode576p.frameLines() == 625);    // 600 + 1 front + 5 sync + 19 back
 }
 
 TEST_CASE("bypass has no raster to solve, and says so twice")
@@ -439,4 +442,40 @@ TEST_CASE("the active window is the standard's fraction of the line, not a porch
     CHECK(dmt.horizontalTotal == 2026);
     CHECK(dmt.activeStart == 360);
     CHECK(dmt.activeWidth() == 1536);    // 2026 x 1280 / 1688
+}
+
+TEST_CASE("the 625-line mode's transmitted lines are not CEA 576p's")
+{
+    // Measured on the bench, RiscPC 320x256@50 on vga, automation frozen, the
+    // vertical window stepped in ten-line increments with its span held and the
+    // picture's own edges read off each photograph:
+    //
+    //     picture start   4    14    24    34    44
+    //     top edge       37    37    37    50    64   (photo rows)
+    //     bottom edge   812   827   841   855   869
+    //
+    // The bottom tracks 1.407 photo rows per raster line throughout; the top is
+    // pinned until the start passes 24.8, so the first line the chain paints is
+    // raster line 25 and the last is 624.6 -- 600 lines of the 625, where CEA
+    // 576p states 576 from line 44.
+    //
+    // 600 active in 625 with 24 lines of blanking before them is VESA DMT's
+    // 800x600@56, which is what a 625-line 50 Hz raster identifies as. The same
+    // sweep at 480p pins at 35.2 and 514.7 against CEA 480p's 36 and 516, so
+    // that mode is carried whole and needs nothing.
+    //
+    // The EMITTED vsync pulse is left at CEA's five lines: the chain locks to it
+    // as it is, and only where the picture may go was ever wrong.
+    // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
+    OutputTimings p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
+    CHECK(p576.verticalTotal == 625);
+    CHECK(p576.vsyncStop == 5);
+    CHECK(p576.activeLinesStart == 24);
+    CHECK(p576.activeLinesStop == 624);
+
+    SUBCASE("and 480p's are CEA's, because the chain carries that one whole") {
+        OutputTimings p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
+        CHECK(p480.activeLinesStart == 36);
+        CHECK(p480.activeLinesStop == 516);
+    }
 }
