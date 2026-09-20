@@ -390,29 +390,6 @@ The one-line recovery, which needs no reflash and no bench trip:
 
     python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set PAD_SYNC_OUT_ENZ=0
 
-### A junk line at the bottom of the picture
-
-Intermittent. A thin line of scattered bright pixels below the last row of
-picture.
-
-**The column that used to sit at the left edge is FIXED and is not this.** It
-was the blanking the capture path writes past the hsync pulse on a doubled line,
-taken into the window because `VideoSourceLine::DoubledHeadBlankingUnits` was 17
-where the bench needs 20. Crept at `PLLAD_MD` 2200 and confirmed after a flash,
-so the encoder acquired the raster from cold: 0.0 against 27.0. It cost no
-picture -- the guard takes the source's own blanking, which a full framing
-reaches into anyway, and the solve refills the same display window.
-
-The bottom line has not been measured the same way, and the shape that fits it
-is still the display window exposing memory the playback stage did not write:
-`OutputMode.h` records the same thing at the START of a line above a
-magnification the part will not state.
-
-**What to run on it is the step that settled the left column**: move
-`VDS_DIS_VB_*` by a known amount on a frozen engine and difference the frames,
-which says whether the artefact is the panel's or the part's, and then creep the
-capture's own far end rather than the output window.
-
 ### The capture tail runs a whole sync pulse past the picture
 
 `VideoSourceLine::lastCapture()` is `units - 2`, and `firstCapture()` is
@@ -1101,21 +1078,6 @@ flickers**, so neither is a property of the bypass route. The clipping is the
 open third fault in
 `investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md`
 -- the produced picture is wider than the encoder transmits.
-
-### The bottom line of the picture sometimes shows garbage
-
-Observed on the bench at 2026-09-17 across several scaled modes, intermittently:
-the last line of the display carries garbage rather than picture or blanking.
-
-Nothing is measured beyond the observation -- which modes, whether it tracks the
-capture window's vertical stop, the playback fetch or the output blanking, and
-whether it is present in pass-through, are all open. A comparable artefact was
-diagnosed before as stale memory read past the end of what was written
-(`the-bar-is-stale-memory`), so `IF_VB_ST`, `VDS_DIS_VB_ST` and `PB_FETCH_NUM`
-are where to look first.
-
-**Photograph it as a clip rather than a still.** It is intermittent, and a still
-that misses it reads as the artefact being absent.
 
 ### The encoder drops the link with nothing on the board moving
 
