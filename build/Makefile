@@ -28,10 +28,11 @@ GBS_DEBUG ?= 1
 #   make -C build flash BOOTLOG_BYTES=2048
 BOOTLOG_BYTES ?= 0
 
-# Trace every TV5725 register write to the UART. Off by default: it is a lot of
-# output and it slows the loop, but it is the only way to see the *sequence* of
-# writes, and an HTTP sampler cannot -- it missed the entry into the HPERIOD_IF
-# fault twice at 3 Hz. Costs no heap: Serial, not SerialM. See tw.h rawWrite.
+# Record every TV5725 register write in order, served at /writetrace. Off by
+# default: it costs 5120 bytes of .bss, which comes out of a free heap already
+# near the console's broadcast gate. It is the only way to see the *sequence* of
+# writes -- an HTTP sampler cannot, having missed the entry into the HPERIOD_IF
+# fault twice at 3 Hz. See tw.h rawWrite and docs/testing.md.
 #   make -C build flash GBS_TRACE_WRITES=1
 GBS_TRACE_WRITES ?= 0
 
