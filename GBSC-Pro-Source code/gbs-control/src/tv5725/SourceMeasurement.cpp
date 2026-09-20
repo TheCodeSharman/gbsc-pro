@@ -1,204 +1,234 @@
 #include "SourceMeasurement.h"
 
+#include "Tv5725Log.h"
+
 #include <stdio.h>
 
-#include "CaptureWindow.h"   // the settling bounds, so there is one owner of them
-#include "InputLine.h"   // the capture write limit, likewise
+#include "Adc.h"             // the divider the duty is counted against
+#include "InputFormatter.h"   // the line and frame periods, counted at 27 MHz
+#include "ModeDetect.h"   // whether the source is interlaced, which it measures
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
-#include "../../gbs_types.h"
 
 namespace Tv5725 {
 
-const uint32_t SourceMeasurement::MaxSampleRateHz;
-const uint16_t SourceMeasurement::DividerMax;
-const uint16_t SourceMeasurement::RecommendedPercent;
-const uint16_t SourceMeasurement::RetimeStopPercent;
-const uint16_t SourceMeasurement::LatchedSamplesTolerance;
 const uint8_t SourceMeasurement::LinesPerCountMax;
-const uint16_t SourceMeasurement::LineDoubleBelowLines;
-const uint16_t SourceMeasurement::OwnVsyncSettleMs;
-const uint16_t SourceMeasurement::OwnVsyncWindowMs;
 
-// A dropped read of ADC_CLK_ICLK1X/2X arrives as 0. Treating that as "no
-// oversampling" keeps the ceiling honest; treating it as a divisor would make
-// the limit infinite, which is the wrong way to be wrong about a rating.
-static uint8_t atLeastOne(uint8_t oversample)
+bool SourceMeasurement::heldRateJudges(uint16_t lines, uint16_t heldLines,
+                                       uint32_t heldLineRateHz)
 {
-    return oversample == 0 ? 1 : oversample;
-}
-
-uint16_t SourceMeasurement::ifLineFor(uint16_t divider, bool lineDoubled)
-{
-    return lineDoubled ? (uint16_t)(divider / 2) : divider;
-}
-
-// Integer, because the ESP8266 has no FPU and this runs on every solve. The
-// float form it replaces truncated too, and 4095 x 93 is well inside 32 bits.
-uint16_t SourceMeasurement::retimeStopFor(uint16_t divider)
-{
-    return (uint16_t)(((uint32_t)divider * RetimeStopPercent) / 100);
-}
-
-uint32_t SourceMeasurement::sampleRateHz(uint16_t divider, uint32_t lineRateHz,
-                                uint8_t oversample)
-{
-    return (uint32_t)divider * lineRateHz * atLeastOne(oversample);
-}
-
-bool SourceMeasurement::withinLimit(uint16_t divider, uint32_t lineRateHz,
-                           uint8_t oversample)
-{
-    if (lineRateHz == 0)
-        return false;
-    return sampleRateHz(divider, lineRateHz, oversample) <= MaxSampleRateHz;
-}
-
-uint16_t SourceMeasurement::maxDivider(uint32_t lineRateHz, uint8_t oversample)
-{
-    if (lineRateHz == 0)
-        return 0;
-
-    // getSourceFieldRate() reports 0 with no lock and that reaches here as a
-    // line rate, so the divide is guarded above. Everything below is integer:
-    // the ESP8266 has no FPU and this runs on every solve.
-    uint32_t perLine = lineRateHz * atLeastOne(oversample);
-    uint32_t largest = MaxSampleRateHz / perLine;
-
-    if (largest > DividerMax)
-        return DividerMax;
-    return (uint16_t)largest;
-}
-
-uint32_t SourceMeasurement::lineRateFrom(uint16_t sourceLines, float fieldRateHz)
-{
-    if (!countIsSource(sourceLines))
-        return 0;
-
-    if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
-        return 0;
-
-    return (uint32_t)(fieldRateHz * (float)sourceLines);
+    return heldLineRateHz != 0 && lines == heldLines;
 }
 
 bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
                                          uint16_t heldLines, uint32_t heldLineRateHz)
 {
-    if (heldLineRateHz == 0 || lineRateHz == 0)
-        return true;
-    if (lines != heldLines)
+    if (lineRateHz == 0 || !heldRateJudges(lines, heldLines, heldLineRateHz))
         return true;
 
-    return ratesAgree(lineRateHz, heldLineRateHz);
+    return VideoSignal::ratesAgree(lineRateHz, heldLineRateHz);
 }
 
-bool SourceMeasurement::ratesAgree(uint32_t a, uint32_t b)
+// HPERIOD_IF IS A CHANGE DETECTOR AND NOTHING ELSE, AND SAYING SO IS THE POINT.
+// It rails, and it reads values that are plainly wrong and perfectly steady --
+// 511 on a 311-line source at 50 Hz is 13183 Hz against a real 15625, held
+// across every sample, which no run can reject. Asking it what the rate IS
+// therefore cannot be made safe.
+//
+// Asking whether the reading MOVED can, because the comparison is against its
+// own earlier value: a bias cancels, a rail that stays railed compares equal,
+// and a rail the reference was itself taken from still shows the move away
+// from it. It counts against the chip's own 27 MHz rather than the ADC clock,
+// so a correct reading is the same number whatever the divider -- which is what
+// lets one reference outlive the solves that move it. What the rate actually is comes from the field rate afterwards,
+// measured a different way and only where this says something changed.
+// docs/investigations/hperiod-if-railing.md
+uint16_t SourceMeasurement::settledLinePeriod()
 {
-    const uint32_t larger = a > b ? a : b;
-    const uint32_t smaller = a > b ? b : a;
-    return (larger - smaller) * 1000u <= (uint32_t)HeldRateTolerancePerMille * smaller;
-}
-
-uint32_t SourceMeasurement::lineRateForHPeriod(uint16_t hperiod)
-{
-    return 27000000u / (((uint32_t)hperiod + 1u) * 4u);
-}
-
-uint32_t SourceMeasurement::lineRateFromHPeriod(const uint16_t *samples, uint8_t count,
-                                                uint16_t lines)
-{
-    if (samples == nullptr || count < 2 || !countIsSource(lines))
-        return 0;
-
-    uint16_t low = samples[0];
-    uint16_t high = samples[0];
-    for (uint8_t i = 1; i < count; ++i) {
-        if (samples[i] < low)
-            low = samples[i];
-        if (samples[i] > high)
-            high = samples[i];
+    const uint16_t first = InputFormatter::linePeriod();
+    uint16_t low = first, high = first;
+    for (uint8_t i = 1; i < HPeriodSamples; ++i) {
+        const uint16_t sample = InputFormatter::linePeriod();
+        if (sample < low)
+            low = sample;
+        if (sample > high)
+            high = sample;
     }
     if ((uint16_t)(high - low) > HPeriodAgreement)
         return 0;
-
-    const uint32_t rate = lineRateForHPeriod(samples[0]);
-    const float fieldRateHz = (float)rate / (float)lines;
-    if (!(fieldRateHz >= FieldRateMinHz) || !(fieldRateHz <= FieldRateMaxHz))
-        return 0;
-    return rate;
+    return first;
 }
 
-uint16_t SourceMeasurement::recommendedDivider(uint32_t lineRateHz, uint8_t oversample,
-                                               bool lineDoubled)
+// STATUS_IF_HT_BAD is deliberately not consulted. It is a one-sided gate on the
+// same unreliable block, and stuck set it would refuse every reading for ever --
+// which is a source change this can never see rather than a false one it
+// avoids. A reading that survives here is corroborated before anything acts on
+// it, so a false positive costs a measurement and never a wrong solve.
+bool SourceMeasurement::hasLineRateMoved(uint16_t reference)
 {
-    uint16_t ceiling = maxDivider(lineRateHz, oversample);
-    if (ceiling == 0)
-        return 0;
+    if (reference == 0)
+        return false;
 
-    uint16_t backed = (uint16_t)(((uint32_t)ceiling * RecommendedPercent) / 100);
+    const uint16_t now = settledLinePeriod();
+    if (now == 0)
+        return false;
 
-    // The second ceiling: a line the capture path cannot write to the end of.
-    // InputLine::WriteLimitUnits is in IF units and ifLineFor() halves, so the
-    // divider that puts the line end exactly on the limit is twice it.
-    const uint16_t forWriteLimit = lineDoubled
-        ? (uint16_t)(InputLine::WriteLimitUnits * 2)
-        : InputLine::WriteLimitUnits;
-    if (backed > forWriteLimit)
-        backed = forWriteLimit;
-
-    // Even, so ifLineFor() divides exactly. An odd divider leaves the IF half a
-    // sample out from the line the ADC is delivering.
-    return (uint16_t)(backed & ~1u);
+    return !VideoSignal::ratesAgree(now, reference);
 }
 
 // --- the chosen divider, held ----------------------------------------------
 
-const uint8_t SourceMeasurement::NominalFieldRateHz;
 const uint8_t SourceMeasurement::SteadySamples;
 const uint16_t SourceMeasurement::RateAgreementPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
+const uint8_t SourceMeasurement::LatchSettlePasses;
 
 SourceMeasurement::SourceMeasurement()
-    : divider_(0), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
-      agreedRateHz_(0.0f), goodLines_(0), goodLineRateHz_(0),
-      rateRejections_(0), lineDoubled_(true), steadyLines_(0), steadyRun_(0),
-      rateAttempts_(0)
+    : lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
+      agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
+      rateRejections_(0), verticalPeriod_(0),
+      dutyMeasured_(false), settlePasses_(0),
+      steady_(SteadySamples), rateAttempts_(0),
+      serrationsSeen_(false)
 {
 }
 
-bool SourceMeasurement::countIsSource(uint16_t lines)
+bool SourceMeasurement::countWasSerrations() const
 {
-    return lines >= CaptureWindow::SourceVerticalTotalMin
-        && lines <= CaptureWindow::SourceVerticalTotalMax;
+    return serrationsSeen_;
 }
+
+bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
+                                          bool interlaced)
+{
+    if (!interlaced)
+        return false;
+
+    const uint16_t frameLines = (uint16_t)(halfLines / 2);
+    if (!VideoSignal::countIsSource(frameLines))
+        return false;
+
+    const int32_t toHalfLines = (int32_t)lines - (int32_t)halfLines;
+    const int32_t toFrame = (int32_t)lines - (int32_t)frameLines;
+    const int32_t fromHalfLines = toHalfLines < 0 ? -toHalfLines : toHalfLines;
+    const int32_t fromFrame = toFrame < 0 ? -toFrame : toFrame;
+    return fromHalfLines < fromFrame;
+}
+
+SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeriod,
+                                                          bool lineDoubled)
+{
+    const uint16_t lines = lineDoubled ? (uint16_t)(verticalPeriod / 2)
+                                       : verticalPeriod;
+    if (!VideoSignal::countIsSource(lines))
+        return ScanUnknown;
+
+    const bool carriesHalfLine = (verticalPeriod % 2 != 0) != lineDoubled;
+    return carriesHalfLine ? ScanInterlaced : ScanProgressive;
+}
+
+bool SourceMeasurement::countAlternated() const { return steady_.alternated(); }
+
+SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPeriod,
+                                                           bool lineDoubled,
+                                                           bool countAlternated)
+{
+    const ScanType measured = scanTypeFor(verticalPeriod, lineDoubled);
+    if (measured != ScanUnknown)
+        return measured;
+    return countAlternated ? ScanInterlaced : ScanUnknown;
+}
+
+SourceMeasurement::ScanType SourceMeasurement::measureScanType(bool lineDoubled)
+{
+    verticalPeriod_ = InputFormatter::verticalPeriod();
+    return scanTypeFrom(verticalPeriod_, lineDoubled, countAlternated());
+}
+
+uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
 bool SourceMeasurement::sampleSteady()
 {
-    uint16_t lines = measureSourceLines();
+    uint16_t lines = readSourceLines();
 
-    if (!countIsSource(lines)) {
-        steadyLines_ = lines;
-        steadyRun_ = 0;
+    if (!VideoSignal::countIsSource(lines)) {
+        steady_.restart(lines);
         return false;
     }
 
-    if (lines != steadyLines_) {
-        steadyLines_ = lines;
-        steadyRun_ = 1;
+    if (!steady_.sample(lines))
+        return false;
+
+    verticalPeriod_ = InputFormatter::verticalPeriod();
+    if (countIsSerrations(lines, verticalPeriod_,
+                          ModeDetect::sourceIsInterlaced())) {
+        serrationsSeen_ = true;
+        steady_.restart(lines);
         return false;
     }
-
-    if (steadyRun_ < SteadySamples)
-        ++steadyRun_;
-    return steadyRun_ >= SteadySamples;
+    serrationsSeen_ = false;
+    return true;
 }
 
-void SourceMeasurement::resetSteadiness()
+void SourceMeasurement::modeChanged()
 {
-    steadyRun_ = 0;
-    steadyLines_ = 0;
+    steady_.reset();
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
+    dutyMeasured_ = false;
+}
+
+void SourceMeasurement::samplingClockLatched()
+{
+    settlePasses_ = LatchSettlePasses;
+}
+
+// **WHAT A LATER READING IS JUDGED AGAINST MUST NOT ITSELF BE A TRANSIENT.**
+// rateFollowsCount() accepts anything at a moved count, because a moved count
+// IS a mode change -- so a mid-change reading admitted there can become the
+// rate every correct one afterwards is refused against. Measured on the bench,
+// 320x256@50 -> 640x480@60: `524 lines x 45.98 Hz` was taken, and the 59
+// readings of the real 60.36 Hz that followed were all refused, 2.28 s of them,
+// until HeldRateRejectionLimit drained.
+void SourceMeasurement::takeJudgedRate()
+{
+    judgedLines_ = sourceLines_;
+    judgedRateHz_ = lineRateHz_;
+    rateRejections_ = 0;
+}
+
+void SourceMeasurement::forgetHeldRate()
+{
+    judgedLines_ = 0;
+    judgedRateHz_ = 0;
+    goodLineRateHz_ = 0;
+}
+
+float SourceMeasurement::medianOfThree(float a, float b, float c)
+{
+    const float low = a < b ? a : b;
+    const float high = a < b ? b : a;
+    if (c < low)
+        return low;
+    return c < high ? c : high;
+}
+
+// The pass whose attempts have run out is taken whether or not it agrees with
+// anything, so one reading decides the whole number of hertz the key carries --
+// and nothing re-judges it afterwards, because identity is wider than the
+// rounding and every later correct reading compares equal. A single pulse timed
+// on a CPU that takes interrupts reads percent high about one sample in ten, so
+// that pass takes the median of three. Two of the three have to be wrong before
+// the median is. docs/investigations/single-sample-rate-jitter.md
+float SourceMeasurement::sampleFieldRateHz()
+{
+    const float first = TestBusRateMeasurement::sourceFieldRateHz(false);
+    if (rateAttempts_ + 1 < RateAgreementAttempts)
+        return first;
+
+    const float second = TestBusRateMeasurement::sourceFieldRateHz(false);
+    const float third = TestBusRateMeasurement::sourceFieldRateHz(false);
+    return medianOfThree(first, second, third);
 }
 
 bool SourceMeasurement::rateSettled()
@@ -231,35 +261,32 @@ bool SourceMeasurement::rateSettled()
 // fault. docs/firmware-geometry-engine.md
 bool SourceMeasurement::measureLineRate()
 {
-    sourceLines_ = measureSourceLines();
+    sourceLines_ = readSourceLines();
 
-    // HPERIOD_IF first: it states the line rate for the cost of a register read,
-    // where getSourceFieldRate() spins for vsync edges. It rails with nothing to
-    // say so, which is what lineRateFromHPeriod() judges; the field rate is what
-    // answers when the judgement refuses. Neither is trusted on its own -- the
-    // cross-check below reads the same either way.
-    lineRateHz_ = measureLineRateFromHPeriod(sourceLines_);
-    if (lineRateHz_ != 0) {
-        fieldRateHz_ = (float)lineRateHz_ / (float)sourceLines_;
-    } else {
-        fieldRateHz_ = getSourceFieldRate(0);
-        lineRateHz_ = lineRateFrom(sourceLines_, fieldRateHz_);
-    }
+    // ONE MEASUREMENT, so nothing about the answer depends on which of two
+    // happened to be taken. HPERIOD_IF states the line rate for a register read
+    // where this spins for vsync edges, and it was preferred for that -- but at
+    // 800x600 it reads 38135 Hz where the field rate gives 37878 and DMT states
+    // 37879. The 0.68% sits inside the 2% the corroboration allowed, so the
+    // counter won and put the source a whole hertz out, 60.72 against 60.32.
+    // The key is rounded to a whole hertz and the raster is generated from it,
+    // so which measurement answered decided the framing.
+    // docs/investigations/hperiod-if-railing.md
+    fieldRateHz_ = sampleFieldRateHz();
+    lineRateHz_ = VideoSignal::isVideo(sourceLines_, fieldRateHz_)
+        ? VideoSignal::lineRateFor(sourceLines_, fieldRateHz_) : 0;
 
     // Against the last reading that was GOOD, not the last one taken: a refusal
     // that cleared the held rate would disarm this for the pass after it.
-    if (!rateFollowsCount(sourceLines_, lineRateHz_, goodLines_, goodLineRateHz_)
+    if (!rateFollowsCount(sourceLines_, lineRateHz_, judgedLines_, judgedRateHz_)
         && ++rateRejections_ < HeldRateRejectionLimit) {
         lineRateHz_ = 0;
     }
 
-    if (lineRateHz_ != 0) {
-        goodLines_ = sourceLines_;
+    if (lineRateHz_ != 0)
         goodLineRateHz_ = lineRateHz_;
-        rateRejections_ = 0;
-    }
 
-    char line[72];
+    char line[80];
     snprintf(line, sizeof(line), "sampling: %u lines x %u.%02u Hz -> line rate %u",
              (unsigned)sourceLines_, (unsigned)fieldRateHz_,
              (unsigned)(fieldRateHz_ * 100) % 100, (unsigned)lineRateHz_);
@@ -268,166 +295,127 @@ bool SourceMeasurement::measureLineRate()
     return lineRateHz_ != 0;
 }
 
-bool SourceMeasurement::solve(uint32_t lineRateHz, uint8_t oversample)
+SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
 {
-    uint16_t chosen = recommendedDivider(lineRateHz, oversample, lineDoubled_);
-    if (chosen == 0)
-        return false;
-    divider_ = chosen;
-    return true;
+    // Ahead of the steadiness run as well as of the duty: the count is
+    // corrected against the divider in force, so a run gathering samples while
+    // the processor still counts the previous line fills with readings the
+    // correction cannot judge.
+    if (settlePasses_ > 0) {
+        --settlePasses_;
+        return ClockSettling;
+    }
+
+    if (!sampleSteady())
+        return countWasSerrations() ? Serrations : NotSteady;
+
+    if (!measureLineRate())
+        return Unmeasurable;
+
+    if (!rateSettled())
+        return Settling;
+
+    takeJudgedRate();
+    return Measured;
 }
 
-bool SourceMeasurement::usable() const { return divider_ != 0; }
+SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty()
+{
+    if (settlePasses_ > 0) {
+        --settlePasses_;
+        return ClockSettling;
+    }
 
-uint16_t SourceMeasurement::divider() const { return divider_; }
+    return readSource() ? Measured : Settling;
+}
 
-uint32_t SourceMeasurement::lineRateHz() const { return lineRateHz_; }
+HsyncPulse SourceMeasurement::hsync() const { return hsync_; }
+
+uint32_t SourceMeasurement::lineRateHz() const { return goodLineRateHz_; }
+
+uint16_t SourceMeasurement::readSourceLines() const
+{
+    return measureSourceLinesCorrected(Adc::dividerInForce());
+}
+
+bool SourceMeasurement::readSource()
+{
+    // NORMALISE BEFORE COUNTING. The count is the low time of the sync reaching
+    // the counter, so on an uncorrected positive-going source it is the line
+    // minus the pulse -- around 0.9, which forDuty() refuses. Correcting it here
+    // means everything downstream sees one polarity.
+    const bool found = SyncProcessor::hsyncFound();
+    const bool positive = SyncProcessor::hsyncPositive();
+    SyncProcessor::normaliseHsyncPolarity(found, positive);
+
+    // The duty rather than the register, because the divider this was counted
+    // against is about to move. HsyncPulse.h.
+    const uint16_t divider = Adc::dividerInForce();
+    const uint16_t low = SyncProcessor::hsyncLowSamples();
+    const uint16_t lineSamples = SyncProcessor::lineSamples();
+    const bool latched = Adc::dividerLatched(lineSamples);
+    const float duty = divider > 0 ? (float)low / (float)divider : 0.0f;
+
+    // Both sides of the ratio, because the divider the samples were counted at
+    // is not necessarily the one this divides by, and no reading taken
+    // afterwards can separate the two.
+    char line[112];
+    snprintf(line, sizeof(line), "duty: %u pulse / %u divider, htotal %u, %s%s%s",
+             (unsigned)low, (unsigned)divider, (unsigned)lineSamples,
+             positive ? "positive" : "negative", found ? "" : ", NO EDGE",
+             latched ? "" : ", UNLOCKED");
+    tv5725Log(line);
+
+    return takeDuty(latched, HsyncPulse(duty, positive));
+}
+
+// Whether the solve has a duty it can use, taking this reading if it is one.
+//
+// A count taken while the processor was counting another line length divides by
+// a divider it never saw, so it is not a measurement and is never taken. What a
+// locked pass gave stands; a source that has had none waits, because the only
+// alternative is a plausible number -- 9.96% measured on a source whose duty is
+// 7.03% -- that the window is then sized from for the life of the mode.
+//
+// Waiting once looked impossible, and a floor of passes was put under it. That
+// was the reference clock being sized from a nominal field rate, which put the
+// ADC PLL on a post divider row it could not hold, so a locked reading never
+// arrived at all.
+// docs/investigations/the-duty-is-counted-before-the-processor-relocks.md
+bool SourceMeasurement::takeDuty(bool latched, const HsyncPulse &reading)
+{
+    if (latched) {
+        hsync_ = reading;
+        dutyMeasured_ = true;
+        return true;
+    }
+    return dutyMeasured_;
+}
 
 uint16_t SourceMeasurement::sourceLines() const { return sourceLines_; }
 
-uint16_t SourceMeasurement::steadyLines() const { return steadyLines_; }
+uint16_t SourceMeasurement::steadyLines() const { return steady_.value(); }
 
 float SourceMeasurement::fieldRateHz() const { return fieldRateHz_; }
 
-uint16_t SourceMeasurement::ifLine() const { return ifLineFor(divider_, lineDoubled_); }
-
-void SourceMeasurement::forgetSource()
-{
-    lineRateHz_ = 0;
-    goodLineRateHz_ = 0;
-    goodLines_ = 0;
-}
-
-uint16_t SourceMeasurement::referenceDivider(bool lineDoubled)
-{
-    const uint16_t limit = lineDoubled ? (uint16_t)(2 * InputLine::WriteLimitUnits)
-                                       : InputLine::WriteLimitUnits;
-    // Even, for the reason recommendedDivider() masks: an odd divider leaves
-    // the input formatter half a sample out from the line the ADC delivers, and
-    // the rate is timed off that block. WriteLimitUnits is odd, so only the
-    // progressive reference needs it.
-    return (uint16_t)(limit & ~1u);
-}
-
-void SourceMeasurement::holdDivider(uint16_t divider) { divider_ = divider; }
-
-uint32_t SourceMeasurement::estimatedLineRateHz() const
-{
-    if (steadyLines_ != 0)
-        return (uint32_t)steadyLines_ * NominalFieldRateHz;
-    return goodLineRateHz_;
-}
-
-uint32_t SourceMeasurement::heldLineRateHz() const { return goodLineRateHz_; }
 
 bool SourceMeasurement::lowLineRate() const
 {
-    return heldLineRateHz() != 0 && heldLineRateHz() < LowLineRateBelowHz;
-}
-
-bool SourceMeasurement::lineDoublingFor(uint16_t sourceLines,
-                                       uint16_t showableUnits)
-{
-    if (sourceLines == 0)
-        return true;
-    if (sourceLines >= LineDoubleBelowLines)
-        return false;
-    if (showableUnits == 0)
-        return true;
-
-    // The IF counts half-lines with the doubler in, so the doubled frame asks
-    // for twice the source's own count.
-    return 2u * ((uint32_t)sourceLines + 1u) <= showableUnits;
-}
-
-void SourceMeasurement::holdLineDoubling(bool lineDoubled) { lineDoubled_ = lineDoubled; }
-
-bool SourceMeasurement::lineDoubled() const { return lineDoubled_; }
-
-uint16_t SourceMeasurement::retimeStop() const { return retimeStopFor(divider_); }
-
-uint16_t SourceMeasurement::measureSourceLines()
-{
-    return GBS::STATUS_SYNC_PROC_VTOTAL::read();
-}
-
-uint32_t SourceMeasurement::measureLineRateFromHPeriod(uint16_t lines)
-{
-    uint16_t hperiod[HPeriodSamples];
-    for (uint8_t i = 0; i < HPeriodSamples; ++i)
-        hperiod[i] = GBS::HPERIOD_IF::read();
-    return lineRateFromHPeriod(hperiod, HPeriodSamples, lines);
-}
-
-void SourceMeasurement::forgetHeldRate()
-{
-    goodLines_ = 0;
-    goodLineRateHz_ = 0;
-}
-
-bool SourceMeasurement::sourceHasOwnVsync(uint32_t (*nowMs)())
-{
-    const uint8_t extSyncBackup = SyncProcessor::SP_EXT_SYNC_SEL::read();
-    SyncProcessor::SP_EXT_SYNC_SEL::write(0);
-    delay(OwnVsyncSettleMs);
-
-    bool active = false;
-    const uint32_t start = nowMs();
-    while (!active && (nowMs() - start) < OwnVsyncWindowMs) {
-        active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
-        delay(2);
-    }
-    const uint32_t rose = nowMs() - start;
-
-    if (active) { // confirm it: the bit flickers while the processor settles
-        delay(10);
-        active = GBS::STATUS_SYNC_PROC_VSACT::read() == 1;
-    }
-
-    // How far into the window V arrived, because OwnVsyncWindowMs is sized from
-    // that distribution and nothing else on the board reports it.
-    char line[64];
-    snprintf(line, sizeof(line), "own V sync: %s after %ums",
-             active ? "yes" : "no", (unsigned)rose);
-    tv5725Log(line);
-
-    SyncProcessor::SP_EXT_SYNC_SEL::write(extSyncBackup);
-    return active;
-}
-
-uint16_t SourceMeasurement::measureLineSamples()
-{
-    return GBS::STATUS_SYNC_PROC_HTOTAL::read();
-}
-
-bool SourceMeasurement::dividerLatched(uint16_t lineSamples, uint16_t divider,
-                                       uint16_t tolerance)
-{
-    if (divider == 0)
-        return false;
-
-    uint16_t larger = lineSamples > divider ? lineSamples : divider;
-    uint16_t smaller = lineSamples > divider ? divider : lineSamples;
-    return (uint16_t)(larger - smaller) <= tolerance;
-}
-
-bool SourceMeasurement::dividerLatched() const
-{
-    return dividerLatched(measureLineSamples(), divider_);
+    return lineRateHz() != 0 && lineRateHz() < LowLineRateBelowHz;
 }
 
 uint16_t SourceMeasurement::measureSourceLinesCorrected(uint16_t divider)
 {
-    const uint16_t lines = measureSourceLines();
-    if (countIsSource(lines))
+    const uint16_t lines = SyncProcessor::lineCount();
+    if (VideoSignal::countIsSource(lines))
         return lines;
 
-    const uint8_t multiple = linesPerCount(measureLineSamples(), divider);
+    const uint8_t multiple = linesPerCount(SyncProcessor::lineSamples(), divider);
     if (multiple == 0)
         return lines;
 
     const uint32_t corrected = (uint32_t)lines * multiple;
-    return countIsSource(corrected) ? (uint16_t)corrected : lines;
+    return VideoSignal::countIsSource(corrected) ? (uint16_t)corrected : lines;
 }
 
 uint8_t SourceMeasurement::linesPerCount(uint16_t lineSamples, uint16_t divider)
@@ -439,18 +427,10 @@ uint8_t SourceMeasurement::linesPerCount(uint16_t lineSamples, uint16_t divider)
         uint32_t wanted = (uint32_t)divider * lines;
         uint32_t apart = lineSamples > wanted ? lineSamples - wanted
                                               : wanted - lineSamples;
-        if (apart <= (uint32_t)LatchedSamplesTolerance * lines)
+        if (apart <= (uint32_t)Adc::LatchedSamplesTolerance * lines)
             return lines;
     }
     return 0;
-}
-
-// How much of the line the hsync pulse takes, in ADC samples -- the same space
-// the divider is in, which is why the denominator is the divider and never
-// STATUS_SYNC_PROC_HTOTAL, that being an echo of PLLAD_MD.
-uint16_t SourceMeasurement::measureHsyncLow()
-{
-    return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
 }  // namespace Tv5725

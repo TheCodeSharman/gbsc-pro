@@ -38,9 +38,15 @@ public:
     float activeStart(const Axis &axis) const;
     float activeExtent(const Axis &axis) const;
 
+    // The same vertical answer in lines, for a caller with a frame to count
+    // against and no scale to apply -- pass-through plays the source's raster
+    // out untouched, so the only thing it can blank correctly is what the
+    // raster says is not picture. Zero where no raster matched.
+    uint16_t activeStartLine(uint16_t frameLines) const;
+
 private:
     struct Raster {
-        uint16_t totalLines, rateBucket;
+        uint16_t totalLines, rateHz;
         uint16_t totalPixels, syncPixels, activeStartPixel, activePixels;
         uint16_t activeStartLine, activeLines;
     };

@@ -61,7 +61,8 @@ const SourceTiming::Raster *SourceTiming::lookUp(uint16_t sourceLines,
     for (uint16_t i = 0; i < PublishedCount; ++i) {
         const Raster &raster = Published[i];
         if (measured.lines() + 1 != raster.totalLines
-            || measured.rateBucket() != raster.rateBucket)
+            || (fabsf(measured.rateHz() - (float)raster.rateHz) * 1000.0f
+                > (float)RateTolerancePerMille * (float)raster.rateHz))
             continue;
 
         const float duty = (float)raster.syncPixels / (float)raster.totalPixels;
@@ -91,6 +92,14 @@ float SourceTiming::activeExtent(const Axis &axis) const
     return axis.vertical()
         ? (float)raster_->activeLines / (float)raster_->totalLines
         : (float)raster_->activePixels / (float)raster_->totalPixels;
+}
+
+uint16_t SourceTiming::activeStartLine(uint16_t frameLines) const
+{
+    if (!published())
+        return 0;
+
+    return (uint16_t)(activeStart(AxisVertical) * frameLines + 0.5f);
 }
 
 }  // namespace Tv5725
