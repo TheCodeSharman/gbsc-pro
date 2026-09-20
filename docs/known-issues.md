@@ -1365,6 +1365,29 @@ entries resolve the raster match in time is open.
 
 ## Costs time rather than correctness
 
+### A mode change arriving while a solve is pending keeps the old divider's premise
+
+`VideoPath::setOutputMode()` returns early where `modePending_` is already set,
+so the output is stored and no divider is derived. The pending solve then runs
+`installSampling()` through the MEASURED path, whose tolerance forgives two
+dividers within 5% -- and 480p's 1880 against 576p's 1954 is 3.9%. The exact
+comparison that makes a deliberate output change take effect is on the
+`SamplingFollowsOutput` path, which this route does not reach.
+
+What it wants is not a wider comparison but a re-measurement: the divider is
+what the source is measured THROUGH, so a solve whose output moved underneath it
+is measuring the source against a premise that no longer holds. A mode change
+arriving mid-solve should abandon that solve and re-arm the measurement.
+
+**The narrow rule is the one to write.** Re-measuring on EVERY output change
+contradicts a tested invariant -- `test_video_path_raster.cpp`, "an output
+change re-solves the raster without re-measuring the source" -- so the trigger
+is `modePending_` already being set, not an output change as such.
+
+Not reproduced on the bench: it needs a resolution picked inside the window
+between a source event and its solve. The host can drive it directly.
+
+
 ### A mode change into a taller frame stalls seconds in the field-rate spin
 
 Timed with `SamplingLog` at 25 ms across 311 -> 524: **5.0 s of stall in 21
