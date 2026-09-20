@@ -83,12 +83,25 @@ ruff check tools                  # BEFORE any hardware run
 
 **RUN THE HOST SUITE ONCE AND READ THE STATUS OUT OF THAT RUN.** `test/Makefile`
 sets `MAKEFLAGS += -j$(shell nproc)`, so a bare `make -C test` already builds and
-runs all 54 suites at once in about twenty seconds. Invoking it a second time in
+runs every suite at once in about twenty seconds. Invoking it a second time in
 the same command -- once to count failures, once for the status line -- doubles
 the wall clock, and that is where an apparent three-minute suite comes from.
 While iterating, name the suites under work instead of running all of them --
 but **the full suite runs once before any commit**, because a suite nobody named
 is where a change to a shared constant lands.
+
+**The way this rule gets broken is a SECOND PIPELINE, not a second command.**
+`make -C test 2>&1 | grep ERROR; make -C test 2>&1 | grep -c SUCCESS` reads as
+one line of shell and runs the whole suite twice. So does any `&&` pair that
+greps the same target for two different things. **Redirect the run to a file
+once and grep the file** -- which also fixes the hazard in
+[[never-pipe-make-into-grep]], since grep's exit status otherwise masks a failed
+target:
+
+```sh
+nix develop -c make -C test >/tmp/test.log 2>&1; echo "make: $?"
+grep -E "ERROR|FATAL" /tmp/test.log
+```
 
 **`ruff check tools` before every hardware run.** A pytest module referencing a
 name it never imported imports fine and fails five minutes in, against a live
@@ -1037,9 +1050,12 @@ twelve tables while they existed, which is what `BringUp` was built from.
   At the 1436 raster that left 307 units of travel; when `Geometry::solveRaster()`
   made the raster 1916 on 2026-08-13 it left **73**, at which point the
   horizontal scale clamps before the picture reaches full screen.
-  **`scaleMin` is now DERIVED — `Scale::Unity / maxMagnification`,
-  both axes at 4.0x** — so the floor is `raster / 4` (479 at 1916, 530 units of
-  travel) and it no longer collapses each time the output widens.
+  **`Scale::Min` is 342, both axes, which is 2.994x** — the largest
+  magnification at or under 3.0x — so the floor follows the raster
+  (`room x Min / Unity`, about 640 at 1916) and no longer collapses each time
+  the output widens. It is a PICTURE-QUALITY bound and not a derivation: past
+  3.0x the scaler starts picking wrong samples, which is what `d882dff75` put it
+  there for, and `docs/known-issues.md` carries the sweep.
 
   **RD-5725-1.1 states no minimum for `VDS_HSCALE`**: it gives
   only `HSCALE = 1024 x in / out` and the field is 10 bits, so there is no
@@ -1183,9 +1199,9 @@ twelve tables while they existed, which is what `BringUp` was built from.
   **But its original justification is GONE, and nobody has re-tested the
   alternative.** It read: at 129.6 MHz the raster is 2298, the zoom floor lands
   exactly on the default framing, and horizontal zoom-in has no travel. That was
-  true at `scaleMin` 500. With the floor now `raster / 4` it is `575` against an
-  890 default — **315 units of travel, not zero** — so the usability argument
-  for 108 over 129.6 no longer holds on its own terms. 129.6 MHz would buy a
+  true at `scaleMin` 500. With the floor following the raster over `Scale::Min`
+  it is about `768` against an 890 default — **travel, rather than none** — so
+  the usability argument for 108 over 129.6 no longer holds on its own terms. 129.6 MHz would buy a
   third more horizontal resolution and is already measured as working and sharp.
   Raising `EngineCeilingHz` is now a live bench experiment
   rather than a settled no; it has not been tried, so do not assume it works.
@@ -1466,7 +1482,7 @@ firmware C++.
   | the fact | the copies |
   |---|---|
   | what causes the tail green at IF 1126 | `VideoSourceLine.h` and the host tests both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
-  | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against the **4.0x** `test_axis.cpp` asserts, `Scale::Min` having become derived |
+  | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against what `test_axis.cpp` asserts, `Scale::Min` having moved |
 
   One fact, three copies, two wrong, and every test passed — because tests check
   code, and nothing checks prose. A single doc can be reviewed and corrected in
