@@ -11,8 +11,44 @@ component colour path -- and YPbPr is a *direct analog* path, so its timings are
 its own. Only composite and S-Video go through the ADV7280/ADV7391 chain, which
 regenerates them to broadcast standard, so any argument resting on a source being
 standard-conformant reaches those two and nothing else.
+**BOTH ARE PLUGGED IN AND POWERED AT ONCE, ALL THE TIME, AND SWITCHING NEEDS NO
+BENCH TRIP** -- `/input?src=vga` and `/input?src=ypbpr`, so a session judges a
+change against both inputs without anyone touching a cable and without asking
+first. **Neither source has to be arranged**: assuming the Wii needs setting up,
+or proposing it as an experiment rather than reaching for it, is the same
+mistake as not using it at all.
+
+**ACQUISITION IS SECONDS ON BOTH INPUTS, SO A WAIT OF MINUTES IS A FAULT AND NOT
+A SETTLE.** Measured on `vga`: `/input?src=vga` to `sampling: 311 lines x
+50.08 Hz` in 7.2 s, `state: acquired` at 8.1 s, FrameSync steering by 10.4 s,
+and the sync-type probe answering `own V sync: yes after 2ms`. Measured on
+`ypbpr` with the Wii in 480p: `/input?src=ypbpr` to `sampling: 524 lines x
+59.80 Hz -> line rate 31395` in 15.2 s, acquired and holding, `PLLAD_MD` 1096
+against `STATUS_SYNC_PROC_HTOTAL` 1096, `SP_SOG_MODE` 1, `HPERIOD_IF` at the 214
+that mode is due, and a clean legible picture.
+**Do not budget minutes for a source to appear**; a source that has not solved
+in about ten seconds is not settling.
+
+**ESTABLISH WHICH WII OUTPUT MODE IS SET BEFORE JUDGING THE INPUT.** The two
+measured so far behave completely differently: 480p solves in 15 s and holds,
+480i never reaches `state: acquired` at all, because an interlaced field count
+alternates 259/260 and the steadiness run needs four identical samples --
+measured, two values in 1417 samples, and the picture rolls while every register
+reads correct. A wandering count is a property of the mode, so
+`ypbpr` is not unusable as an input.
+`docs/investigations/mode-detect-answers-before-any-measurement.md`,
+`docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
+
+**ALL THREE SYNC ARRANGEMENTS ARE ON THE BENCH AND ALL THREE ARE SCRIPTABLE.**
+The RISC PC's sync type is one CMOS value rather than a mode-file setting, and
+ModeServ sets it -- `SYNC 0` separate, `SYNC 1` composite, `SYNC 3` auto -- so
+**a COMPOSITE-SYNC RGBHV source exists here**, on `vga`, and a branch keyed on
+csync with RGBHV is bench testable rather than host-test-only. Sync on green is
+the Wii on `ypbpr`. No sync arrangement is out of reach from a session.
+
 **`docs/bench-sources.md` is what each source can prove; read it before
-concluding a branch is untestable.**
+concluding a branch is untestable**, and it carries what each one is currently
+known to do.
 
 ## Layout
 
@@ -21,7 +57,7 @@ concluding a branch is untestable.**
 | `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
-| `docs/` | **`chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the one bound on what arrives intact — the horizontal write limit — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` is what decides whether an RGBHV source is scaled or bypassed, and which measurements bypass invalidates; `osd-menu.md` is the menu the remote drives — read it before touching anything called OSD, because three subsystems answer to that name and only the STV9426 reaches the television; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
+| `docs/` | **`known-issues.md` is the register of open defects and unsettled questions -- read it before diagnosing anything, and put a new one there rather than in a handover. `chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the one bound on what arrives intact — the horizontal write limit — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` is what decides whether an RGBHV source is scaled or bypassed, and which measurements bypass invalidates; `osd-menu.md` is the menu the remote drives — read it before touching anything called OSD, because three subsystems answer to that name and only the STV9426 reaches the television; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
 | `GBSC-AV-IR-v1.1-20240923.pdf` | the board schematic (KiCad, 14 sheets) |
 | [gbsc-pro-bench-photos](https://github.com/TheCodeSharman/gbsc-pro-bench-photos) | **a separate repo** — the 67 bench photographs, 146 MB. Mirrors this repo's paths, so its tree drops into a checkout and lands ignored. *What each one shows stays here*, in `docs/photos/*/README.md` and `snapshots/LOG.md` |
 | `gbsc-pro-bench-tools` | **a separate repo**, a sibling checkout — tooling for the bench *instruments*: a DSO Nano and a Rigol DS1000Z. **The dividing line: anything talking to the RetroScaler belongs here, anything driving one person's test gear belongs there.** |
@@ -36,11 +72,23 @@ make -C build                     # compile -> build/output/gbs-control.ino.bin
 make -C build flash-ota HOST=…    # upload over WiFi — arms the unit itself
 make -C build flash               # upload over USB serial (PORT=/dev/ttyUSB0)
 
+make -C test                      # all 54 host suites, ~20 s — ALREADY PARALLEL
+make -C test video-path adc       # just the suites under work
+
 pytest tools/gbsc-pro-hwtest/ --host=192.168.88.108 -v
 pytest tools/gbsc-pro-hwtest/ -q  # no --host: hardware tests skip, unit tests run
 
 ruff check tools                  # BEFORE any hardware run
 ```
+
+**RUN THE HOST SUITE ONCE AND READ THE STATUS OUT OF THAT RUN.** `test/Makefile`
+sets `MAKEFLAGS += -j$(shell nproc)`, so a bare `make -C test` already builds and
+runs all 54 suites at once in about twenty seconds. Invoking it a second time in
+the same command -- once to count failures, once for the status line -- doubles
+the wall clock, and that is where an apparent three-minute suite comes from.
+While iterating, name the suites under work instead of running all of them --
+but **the full suite runs once before any commit**, because a suite nobody named
+is where a change to a shared constant lands.
 
 **`ruff check tools` before every hardware run.** A pytest module referencing a
 name it never imported imports fine and fails five minutes in, against a live
@@ -57,16 +105,41 @@ command per connection -- the close is the end of the reply. It lives in the
 printf 'MODE X320 Y256 C256 F50\n' | nc 192.168.88.10 6502   # the bench mode
 printf 'PATTERN PM5544\n'          | nc 192.168.88.10 6502   # redraw, or pick the plainer CARD
 printf 'MODES\n'                   | nc 192.168.88.10 6502   # what this monitor definition allows
+printf 'SYNC 1\n'                  | nc 192.168.88.10 6502   # 0 separate, 1 composite, 3 auto
 printf 'PING\n'                    | nc 192.168.88.10 6502   # OK ModeServ 1
+printf 'VERSION\n'                 | nc 192.168.88.10 6502   # which build is RUNNING
 ```
+
+**`VERSION` FIRST, BEFORE JUDGING ANYTHING THE CARD DOES.** It answers
+`OK ModeServ <build> PatLib <build>`, and it names both because the two files
+tokenise and load separately -- a `Build` that lands one and not the other
+leaves a server whose halves disagree and whose behaviour never says so. Without
+it, "the feature is missing" and "the feature is there and broken" are
+indistinguishable from this end, and a session has been spent inventing probes
+to guess between them.
+
+**The machine runs `RetroScaler-Acorn.mdf`, not a stock definition** -- 63 modes,
+15.6 kHz to 1080p, so `MODES` lists 1280x720 and 1920x1080. Only 13 modes carry a
+name and the rest are nameless, which is why the desktop's monitor icon lists
+nothing; a nameless mode is still reachable by `MODE`. `docs/bench-sources.md`.
 
 `MODE` replies with the mode read back from the hardware, never with the
 request, so a monitor definition that cannot do what was asked does not look
-like a fault in the scaler. **It repaints the card too**, because the default
+like a fault in the scaler. **THE REPLY IS NOT WHEN THE TIMING CHANGED** --
+VIDC20 changes on a register write and the scaler sees the source leave within
+~70 ms, while the reply waits on the repaint. Timing a transition from the reply
+charges the source for two thirds of a mode change that is entirely the
+engine's; measure from the console instead. **It repaints the card too**, because the default
 signal after a mode change is black with a flashing cursor, which reads from
 here as a scaler with no output and has been diagnosed as one. **A session can therefore change the source without
 anyone at the bench**, which is what makes the mode-change recovery below usable
 unattended.
+
+`SYNC` changes the machine's sync type and re-applies the mode so the change
+reaches VIDC20's external register -- no reboot, no bench trip. It replies with
+the type read back and the mode it landed in. **This is what makes the RISC PC a
+composite-sync source as well as a separate-sync one**, so the two sync types can
+be judged against one input, one cable and one raster, with nothing else moving.
 
 `--source` opts into tests needing a locked signal; `--preset-save` opts into
 tests that write flash. Without `--host` everything hardware skips, so a bare
@@ -113,6 +186,136 @@ Two things that bite regardless of route, both detailed under the traps below:
 raw -echo` first), and **USB backfeeds power**, so leaving the cable attached
 means later "power cycles" are not power cycles. Flashing preserves the filesystem
 (`wipe=none` in the FQBN), so stored timings and preferences survive.
+
+## READ THE CONSOLE FIRST. IT SAYS WHAT THE ENGINE IS DOING.
+
+**The status WebSocket is the cheapest instrument on the board and it answers
+before any register can.** A register dump is a snapshot of a machine that
+re-solves itself every few seconds; several faults here are a SEQUENCE rather
+than a state, and the console is the only place a sequence is visible. Reach for
+it first, ahead of `/getregs`, `/geometry` and a photograph.
+
+```sh
+nix develop -c python3 - <<'PY'
+import websocket, time
+ws = websocket.create_connection("ws://192.168.88.108:81", subprotocols=["arduino"], timeout=5)
+ws.settimeout(1); t0 = time.time()
+while time.time() - t0 < 90:
+    try: print(f"{time.time()-t0:7.2f}  {ws.recv().strip()}", flush=True)
+    except Exception: pass
+PY
+```
+
+**TIMESTAMP EVERY LINE, AND CAPTURE AT LEAST 60 SECONDS.** The cadence is the
+finding. Printed bare, a solve every five seconds that nothing asked for reads
+as a healthy engine reporting a correct measurement, over and over.
+
+| line | what it says |
+|---|---|
+| `sampling: 311 lines x 50.08 Hz -> line rate 15625` | **the engine's whole measurement of the source in one line** — the count, the field rate, and the line rate derived from them. `line rate 0` is a reading `rateFollowsCount()` rejected. A first sample of 60..160 Hz followed by a good one is `getSourceFieldRate()` settling, not a fault |
+| `source moved: interrupt \| count \| rate (N lines, solved M)` | why a solve was armed. `interrupt` with `N == M` is the count saying nothing moved, which is the case the latch exists for -- the same count at a different field rate. **An arm SPENDS the latch**, so one taken during a change the engine armed for another reason cannot fire again afterwards |
+| `own V sync: yes\|no after Nms` | the sync type probe ran. **It writes `SP_EXT_SYNC_SEL`, and the chip latches that as a SOG switch**, which the probe acknowledges itself -- so an `interrupt` arm after one is a disturbance the probe did not cause |
+| `no INPUT vsync` / `no OUTPUT vsync` | which FrameSync sample timed out. Do not infer which — it says |
+| `h:%4u … ht:%4d vt:%4d … u:%3x s:%2x S:%2d` | `printInfo()`. `h:` is `HPERIOD_IF`, `ht:`/`vt:` are `STATUS_SYNC_PROC_HTOTAL`/`VTOTAL`, **`u:` is `VideoSourceAcquisition::unmeasuredPasses()` IN HEX**, `s:` is `acquiredPasses()`, `S:` is the SOG level |
+
+**`u:` climbing with `s: 0` is a diagnosis on its own.** One of the two is always
+zero: `u:` counts the passes since the engine could last measure the source and
+`s:` the unbroken run since it could. `u:` pinned in the nineties is the ladder
+cycling its recovery on a source it never acquires, roughly every five seconds,
+for ever. `vt:` beside it says whether the sync processor is counting at all,
+which separates a dead sync path from a source the engine is refusing.
+
+**`printf()` IN THE SKETCH DOES NOT REACH THE CONSOLE. `debugPrintf()` DOES.**
+The console mirror is `SerialM`, and `debugPrintf` is
+`SerialM.printf_P(PSTR(fmt), ...)`; a bare `printf` goes to stdout and is
+invisible over the websocket. Several existing messages are bare `printf` --
+the colour-offset readback among them -- so **a missing line is not evidence the
+branch did not run**, and a new diagnostic written with `printf` produces a
+silent route that answers 200.
+
+**A quiet console is not a quiet firmware.** Silence with a live HTTP stack
+means the loop is not running, or the heap gate is shut — read `/bootlog`'s
+`free heap:` line before believing it. And the console DROPS BURSTS under
+FrameSync spam, so a missing line is not evidence the step did not run: judge by
+outcome, and by what the next line implies.
+
+### WHERE A SIGNAL REACHES IS `/testbus`, AND ONLY THE DEVICE CAN TIME IT
+
+`TEST_BUS_SEL` (`s0_4d[4:0]`) picks which block drives `DEBUG_IN_PIN`, and the
+transition count over one window separates a field-rate signal from a line-rate
+one and both from a dead bus. The pin is an ESP GPIO, so no HTTP read can see
+it; `/testbus` queues a sweep for `loop()` and prints CSV to the console.
+
+```sh
+curl 'http://<ip>/testbus?ms=25'            # every selector
+curl 'http://<ip>/testbus?ms=25&sp=4'       # with a sync-processor stage out
+curl 'http://<ip>/testbus?ms=25&if=0'       # with an input-formatter signal out
+```
+
+At 50 Hz expect single-digit transitions in 25 ms, at 15.6 kHz several hundred.
+`SP_TEST_MODULE` selects one sync-processor stage (4 `vs_act_det`, 6 retiming, 7
+out proc) and `IF_TEST_SEL` one input-formatter signal, so **a sweep taken on
+each sync type says which stage stops carrying vertical sync.**
+
+### AN HTTP READ IS NOT A SAMPLE. `/samplinglog` IS.
+
+`/getreg` is deferred to `loop()` and answers at tens of hertz at best, so it
+cannot tell a value that dithers from one read torn across two states, and it
+cannot see a transient at all. `Tv5725::SamplingLog` samples from inside
+`loop()` and prints CSV to the console.
+
+```sh
+make -C build flash-ota HOST=… GBS_SAMPLING_LOG=1     # off in the default build
+curl 'http://<ip>/samplinglog?ms=25&for=30000'        # follow the source
+curl 'http://<ip>/samplinglog?low=1600&high=2900&step=100&dwell=400'   # walk the divider
+```
+
+One line per sample carries the divider, `STATUS_MISC_PLLAD_LOCK`,
+`STATUS_SYNC_PROC_VTOTAL`, `STATUS_SYNC_PROC_HTOTAL`, `HPERIOD_IF`,
+`VPERIOD_IF`, `HSACT`, the IF status bits and the latched interrupt byte — read
+adjacently in one pass, which is what makes two of them comparable to each other.
+`SamplingLog::event()` logs a decision as the branch takes it, which no dump
+afterwards can show.
+
+**QUEUE IT FROM THE PROCESS THAT HOLDS THE WEBSOCKET.** The log prints to the
+console, so a capture has to be listening before it starts -- and queuing from a
+shell while a separate capture process starts up races both ways: the request
+answers `{"error":"already running"}` against a previous run, or the log finishes
+before the socket is attached. Either gives an empty capture, which reads as a
+dead route rather than as a missed window. Open the socket, poll the route until
+it answers `queued`, then read until `smp,done`.
+
+**A `sol,` line says where the engine SOLVED**, emitted when it moves rather
+than per sample: the raster, both scales, both display windows, both output
+sync pulses, `IF_HSYNC_RST` and `IF_HBIN_SP`. That is the set two runs are
+compared on, and taking it over HTTP is what changes the outcome — a full dump
+per return is hundreds of `loop()`-deferred requests through the loop being
+measured, and the affordable subset used instead left out `VDS_HS_ST`, which is
+a pan.
+
+`STATUS_SYNC_PROC_VTOTAL` on the Wii is the measurement that made the case:
+HTTP point reads gave 149 / 160 / 230 / 299 among 310s where the log gave
+**310 in 1050 of 1050**, so HTTP over-reported a steady register as
+intermittent. **A count of agreeing HTTP samples is not evidence of stability**
+— a dozen reads at five-second spacing say nothing about the 5.99 seconds
+between each pair. The console also drops bursts, so ask for an interval the
+link can carry: `ms=25` over 30 s lands ~1050 lines and reports its own
+effective rate.
+
+**THE OPPOSITE CLAIM IS REFUTED: HTTP DOES NOT REPORT A RAILED `HPERIOD_IF` AS
+HEALTHY.** Measured against the log in one window on one railed state, seven
+HTTP reads at five-second spacing returned **zero** healthy values, and dense
+HTTP and the log agree the register is railed. So a sparse read is not a trap
+that shows 431 while the part rails — it shows 255 and 511 like everything else.
+What the two do disagree on is WHICH bad value, and that is not a split read:
+`read_field()`'s two requests and `read_named()`'s one agree with each other.
+`docs/investigations/hperiod-if-railing.md`.
+
+**AND A READING TAKEN TWO SOURCE EXCURSIONS LATER IS NOT A SECOND INSTRUMENT.**
+An input change or a sync-type round trip re-rails the register, so a healthy
+HTTP sample before one and a railed on-device sample after it compare two
+states, not two instruments. That is how the refuted claim above was arrived at,
+twice. Sample both in ONE window, or say which state each belongs to.
 
 ## The system has three control domains, and you can only see one
 
@@ -206,11 +409,13 @@ distinguish these:
 
    **Toggle `PAD_SYNC_OUT_ENZ` (s0_49 bit 2) before pulling the rails.** Set it
    to 1, pause, set it back to 0: dropping HSOUT/VSOUT makes the encoder
-   re-acquire, and measured 2026-08-20 the picture comes back at once with no
-   power cycle. Entering RGBHV bypass does the same the long way round. The
-   firmware has this as `useHdmiSyncFix`, armed only where the input
-   classification swaps inside the SD 50/60 families — so a change between an SD
-   source and a VGA-class one never gets it. `docs/investigations/encoder-stale-timing.md`.
+   re-acquire, and the picture comes back at once with no power cycle. Entering
+   RGBHV bypass does the same the long way round. **The firmware already does
+   this on every solve that MOVES the output timing**: `VideoPath` sets
+   `encoderMoved_` when a solve changes the horizontal total, the vertical total
+   or the field rate, and `VideoSourceAcquisition` then holds the pad away for
+   `EncoderRelookMs`. A mode change that solves the same raster and rate drops
+   nothing. `docs/investigations/encoder-stale-timing.md`.
 
    A power cycle — mains *and* USB, since USB backfeeds the rails — remains the
    fallback for a state the toggle does not clear.
@@ -231,6 +436,36 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 
 ## Things that will cost you an hour if you don't know them
 
+- **THE ADC PLL GROUP CANNOT BE BISECTED BY HAND, AND TRYING COSTS THE LOCK.**
+  `PLLAD_MD`, `PLLAD_KS`, `PLLAD_CKOS`, `PLLAD_ICP`, `PLLAD_FS` and the two
+  decimators are ONE setting: `PLLAD_LAT` loads several of them on a rising edge
+  and the loop filter has to suit the tap. Writing two or three of them over HTTP
+  to compare configurations leaves the PLL unlocked -- measured twice in one
+  session, `STATUS_MISC_PLLAD_LOCK` 0 with `STATUS_SYNC_PROC_HTOTAL` wandering a
+  few counts under the divider, in states that locked before the poking started.
+  **`/sampleclock` IS THE INSTRUMENT**, behind `GBS_DEBUG` and pass-through only:
+  it writes the whole group through the call the bypass switch makes, moves the
+  channel's played-out raster with the divider, and restarts the PLL afterwards
+  — which is itself required, because applying the group alone leaves it
+  unlocked even at the value it already held.
+
+  ```sh
+  curl 'http://<ip>/sampleclock'                 # report, change nothing
+  curl 'http://<ip>/sampleclock?md=2039&os=2'    # divider and oversampling
+  ```
+
+  It answers on the console, not in the reply. `/sc?~` recovers.
+- **`/sc?~` IS THE RECOVERY FOR A UNIT THAT COMES BACK FROM A FLASH WITH NO
+  PICTURE, and reflashing is not.** The signature is `SP_SOG_MODE` 1 on a
+  separate-sync source with `SP_VTOTAL` 0 or 97, `ADC_SOGCTRL` walked to 1 or 2,
+  `DAC_RGBS_PWDNZ` 0, `/geometry` all zeroes, and the console printing
+  `own V sync: yes` every ~7 s while nothing changes. The chip keeps its
+  registers across an ESP reset, so detection restarts against a sync path left
+  from before and settles on csync. `/sc?~` runs
+  `goLowPowerWithInputDetection()`, which forgets the sync type, and the source
+  is back in under a minute -- measured four times. **Flashing a different image
+  appears to fix it and is only the reset**, which costs four minutes and reads
+  as evidence about the build.
 - **Power-cycle the SOURCE too, before spending a session on the scaler.** The
   intermittent shear glitch — a few scanlines high, content compressed and
   diagonally sheared, ~3% of frames — cost several sessions on this board and
@@ -243,49 +478,72 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   cold-boot both ends first — it is one minute against an evening.
   Paired artefacts are in the archive: `CLEAN-*-2026-08-15` and
   `glitching-2026-08-14`.
-- **A preset load turns a 15 kHz RGBHV source PROGRESSIVE, and the picture
-  survives it.** Measured: one `/sc?)` on the bench RiscPC moves
-  `IF_PRGRSV_CNTRL` 0 -> 1, `IF_LD_RAM_BYPS` 0 -> 1, `IF_HS_DEC_FACTOR` 1 -> 0,
-  `PLLAD_MD` 2250 -> 1124, and `SP_VTOTAL` collapses from 311 to noise. The
-  chain: `preferScalingRgbhv` defaults to 1, `runSyncWatcher()` sets
-  `isValidForScalingRGBHV` for any RGBHV source, and
-  `PresetLoad::videoStandardInputAfterLoad()` then forces `videoStandardInput`
-  to `ScalingRgbhvStandard`, which is **3** -- and `doPostPresetLoadSteps()`
-  branches `3 || 4 || 8 || 9` straight into `applyScanMode(Progressive)`. So a
-  source that qualifies for scaling RGBHV and also needs the line doubler gets
-  the wrong one, because one number carries both facts. The divider that follows
-  is arithmetically right for the wrong premise, so every register reads
-  self-consistent. `pytest test_geometry_pads.py --source` reaches it in about
-  four and a half minutes and is the reproduction.
+- **THE LINE DOUBLER FOLLOWS THE MEASURED COUNT, AND MUST STAY THAT WAY.** A
+  preset load used to turn a 15 kHz RGBHV source progressive -- `IF_PRGRSV_CNTRL`
+  0 -> 1, `IF_LD_RAM_BYPS` 0 -> 1, `IF_HS_DEC_FACTOR` 1 -> 0, `PLLAD_MD`
+  2250 -> 1124, `SP_VTOTAL` collapsing from 311 to noise -- because one number
+  carried two facts: the standard byte was forced to 3 for a scaling RGBHV
+  source, and 3 also meant progressive SD. The divider that followed was
+  arithmetically right for the wrong premise, so every register read
+  self-consistent. `SourceMeasurement::lineDoublingFor()` answers off the count
+  now and nothing classifies, but **anything that re-introduces a value carrying
+  both the source's scan and the output chosen for it brings this back**, and a
+  register dump cannot see it.
 - **THE TWO RECOVERIES ARE NOT INTERCHANGEABLE, and each fails at the other's
   fault.** Measured, both directions:
 
   | fault | cleared by | does NOT clear it |
   |---|---|---|
-  | railed `HPERIOD_IF`, sync processor fine | a source mode change | `/sc?~`, every `SFTRST_*_RSTZ`, the analog bias resets, one cold boot |
+  | railed `HPERIOD_IF`, sync processor fine | a source mode change round trip, or an `ADC_INPUT_SEL` bounce | `/sc?~`, every `SFTRST_*_RSTZ`, the analog bias resets, every clock reset in BOTH domains, one cold boot |
   | divider stuck on another mode's value | `/sc?~` | a mode-change round trip |
 
   So reach for the one that matches. A stuck `PLLAD_MD` survived 311 -> 524 ->
   311 unchanged at 1822 and the picture rolled; `/sc?~` restored 2250 at once.
   **Judge the divider against the source**, not against whether it moved.
 
-  **The first row is contradicted on both counts by a 2026-08-25 measurement, so
-  treat neither recovery as reliable for it.** After an OTA reflash `HPERIOD_IF`
-  read 14/255/271/274/508/510/511 against the 431 the mode was due, with
-  `SP_VTOTAL` a rock-steady 311 beside it. A source mode change -- 320x256@50 to
-  800x600@60 and back, the recovery that row names -- did **not** clear it. A
-  cold boot with mains and USB both pulled, which that row lists as not clearing
-  it, restored a steady 431 at once.
+  **Neither clearance is certain, so try them in cost order.** A 2026-08-25
+  measurement has a mode round trip failing to clear it and a cold boot restoring
+  431 at once -- both columns of the first row the wrong way round. A 2026-09-06
+  measurement has the round trip clearing it completely: 431 steady in 5 of 5
+  samples over 24 s. The round trip is cheapest and needs no bench trip; the
+  bounce and a cold boot are what is left when it fails. **The held rate that
+  went with that reading is no longer reachable from `HPERIOD_IF`** -- it is a
+  change detector now, so a railed reading can strand the held rate but cannot
+  set one.
 
-  **And it does not necessarily reach the picture.** Throughout the noisy state
-  the panel showed a correct full-screen picture, and all 1536 config registers
-  were byte-identical to a known-good reference. Nothing in a register dump
-  distinguishes the two, so `HPERIOD_IF` disagreeing with the mode is a reason to
-  look, not a fault to chase on its own -- the geometry engine does not read it.
-- **Check `HPERIOD_IF` against the value the MODE should give**, which is
-  `27e6 / (4 x lineRateHz) - 1` -- 431 at 311 lines/50 Hz, 213 at 524/60, 214 at
-  448/70. Steady is not valid: a steady **50** was measured at 640x480@60 where
-  213 was due, and every check that tests stability alone passes it.
+  **`ADC_INPUT_SEL` to 0 for 400 ms and back clears it from this end**, with no
+  source change at all -- 0/16 correct before, 16/16 at 431 after,
+  `STATUS_IF_HT_OK` 0 -> 1. It also CAUSES it, railing a mode that read correctly
+  six times beforehand, so it is a recovery and never something to run in front
+  of a measurement.
+
+  **NO CLOCK RESET REACHES IT, IN EITHER DOMAIN.** The ADC side is closed by the
+  divider sweep over 1000..2900, the clock group verified correct while the fault
+  stands, `PLLAD_VCORST`, `PLLAD_PDZ` and `ADC_POWDZ`. The display and memory
+  side is closed by `PLL_VCORST`, `SDRAM_RESET_SIGNAL`, `PLL_LEN` and
+  `MEM_CLK_DLY_REG`, each pulsed against a live instance with every write read
+  back, each 0/16 correct afterwards.
+
+  **`HPERIOD_IF` IS A CHANGE DETECTOR AND NOTHING ELSE.** It does not state the
+  line rate and nothing derives one from it: `SourceMeasurement::measureLineRate()`
+  takes the count and the field rate and calls `VideoSignal::lineRateFor()`.
+  Asking whether the reading MOVED is safe where asking what it IS is not,
+  because the comparison is against its own earlier value -- a bias cancels and a
+  rail compares equal to itself. `SourceMeasurement.cpp` states this at the head
+  of the file.
+
+  **It still reaches the picture, through the HELD rate.** A rate once accepted
+  becomes the held good one and `rateFollowsCount()` rejects correct readings
+  against it, so the engine can sit at `state: absent` with the sync processor
+  counting the source perfectly beside it -- measured with `STATUS_SYNC_PROC_VTOTAL`
+  following the source and the held rate stuck on the previous mode's.
+  `HeldRateRejectionLimit` is what lets it out. A register dump cannot
+  distinguish the two states.
+- **Check `HPERIOD_IF` against the value the MODE should give** when reading it
+  as a diagnostic, which is `27e6 / (4 x lineRateHz) - 1` -- 431 at 311 lines/50 Hz,
+  213 at 524/60, 214 at 448/70, 177 at 627/60. Steady is not valid: a steady **50**
+  was measured at 640x480@60 where 213 was due, and every check that tests
+  stability alone passes it.
   `docs/investigations/hperiod-if-railing.md` has the table.
 - **Check the preferences before diagnosing anything.** A short read of
   `/preferencesv2.txt` silently yields a full set of defaults, and one evening
@@ -333,7 +591,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   `RegisterQueue`, so a read blocks for as long as `loop()` is busy, while the
   plain-JSON routes keep answering from the network callback. Intermittent empty
   `/getreg` replies with ping at 2 ms therefore mean the firmware is *inside*
-  one of detection's long searches — the 6000 ms `getVideoMode()` sweeps in
+  one of detection's long searches — the two 6000 ms line-count waits in
   `detectAndSwitchToActiveInput()`. Used exactly that way on 2026-08-13 to tell
   "unit wedged" from "unit hunting", which are opposite diagnoses.
 - **What is attached is worth KNOWING, not closing.**
@@ -383,6 +641,22 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   comm -23 <(ls build/output/sketch/src/tv5725/*.cpp | sed 's|.*/||' | sort) \
            <(ls "GBSC-Pro-Source code/gbs-control/src/tv5725/"*.cpp | sed 's|.*/||' | sort)
   ```
+- **ALWAYS ENTER THE DEV SHELL FROM THE REPO ROOT.** `NIX_LDFLAGS` carries
+  `-rpath $out/lib`, and `$out` is derived from the directory `nix develop` was
+  invoked in. Enter it from inside `GBSC-Pro-Source code/` and `$out` contains
+  the space, so the link line word-splits and g++ is handed a nonexistent
+  `-L code/gbs-control/outputs/out/lib`:
+
+  ```
+  ld.bfd: cannot find code/gbs-control/outputs/out/lib: No such file or directory
+  ```
+
+  **It reads as a source that vanished**, which is the trap: it looks exactly
+  like the stale-build-cache entry above, so a rename in flight gets the blame
+  and the next move is a pointless `make -C build clean`. Nothing is wrong with
+  the tree. `cd` back to the root and the same command passes. A `cd` in an
+  earlier compound command is enough to cause it, because the shell's working
+  directory persists between calls.
 - **Nix copies the working tree into the store to evaluate the flake from a
   dirty git checkout, and it copies TRACKED FILES ONLY.** One copy per distinct
   tree state, so an editing session is several GB — this is what took `/nix/store`
@@ -467,6 +741,14 @@ bits, so the header is right and the table is simply an error.
   overwrote earlier ones, one read `(hi, lo)` as `(lo, hi)`. Both looked fine.
 - **The danger is one-directional.** A field declared *narrower* than it is
   truncates every value written through it and says nothing.
+- **A READ-BACK IS NOT PROOF THE HARDWARE ACTED ON THE WRITE.** Reserved bits
+  beside a field are often writable storage with nothing behind them, so
+  widening a field on a successful round trip proves only that the bit exists.
+  `HD_HSYNC_RST` is the case: `s1_38` bit 3 stores a 1 and reads it back, and
+  the channel's counter ignores it — proven by the pair either side of 2048,
+  where a line of 2040 counts displays and one of 2056 gives no signal.
+  **Ask the behaviour, not the register.**
+  `docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md`
 - **The PDF's line wrapping is what breaks any re-derivation, in two
   directions.** A long field name wraps across two lines, and a parser that
   keeps only the second gets a fragment — `ALUE`, `EG0`, `R_B` — which reaches
@@ -552,10 +834,16 @@ twelve tables while they existed, which is what `BringUp` was built from.
   sync processor's retime window) are **ONE quantity in THREE registers**, and
   `Tv5725::SourceMeasurement` owns all three off one held value. It is *state*,
   handed to `Tv5725::CaptureWindow` rather than read back — the same rule
-  `CaptureWindow::ProgressiveStart` already carried. Verified across all twelve shipped
-  tables: `IF_HSYNC_RST == PLLAD_MD/2` without exception, while `SP_RT_HS_SP` is
-  wrong in five of them (`ntsc_1280x720` ships **68** against 2180) and is only
-  saved by the runtime write.
+  `CaptureWindow::ProgressiveStart` already carried.
+
+  **`IF_HSYNC_RST` is `PLLAD_MD` HALVED ONLY WHERE THE LINE IS DOUBLED**, which is
+  what `SourceMeasurement::ifLineFor()` does — an IF unit is two ADC samples on a
+  doubled line and one on an undoubled one. All twelve shipped tables were
+  line-doubled SD, so `== PLLAD_MD/2` held across every one of them and reads as a
+  universal law; measured on an 800x600@60 RGBHV source it is `== PLLAD_MD`, 1124
+  against 1124, and that is correct. `SP_RT_HS_SP` is wrong in five of the tables
+  (`ntsc_1280x720` ships **68** against 2180) and is only saved by the runtime
+  write.
 
   **`STATUS_SYNC_PROC_HTOTAL` is the only thing on the board that can see a
   missing latch**, because it counts real ADC clocks per line and so reports the
@@ -586,16 +874,25 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `VSACT` is self-latching: the bit only reports correctly once the sync type is
   already right, so a unit that lands on csync stays there. `applyPresets()`
   decides with `sourceHasOwnVsync()` instead, which switches `SP_EXT_SYNC_SEL`
-  and asks whether a V sync line actually arrives. It costs ~500 ms, so
-  `rto->syncTypeIsSet` runs it once per SOURCE rather than once per mode change.
+  and asks whether a V sync line actually arrives.
+
+  **IT RUNS PER SOURCE MODE CHANGE, not once per input**, because a source can
+  change its sync type without the mux moving -- a RISC PC sets it from CMOS --
+  so a mode change is the only signal there is that it may have moved.
+  `Geometry::useSyncTypeProbe()` is the engine's and does exactly that; the
+  sketch's `rto->syncTypeIsSet` gate is per source and is the older behaviour.
+  The cost does not argue for the cheaper cadence: reacquisition is **2-3 ms**
+  on a source with its own V sync, and the full window is spent only on a
+  genuinely composite source where the timeout is the right answer.
   `docs/sync-type-selection.md`.
 - **`HPERIOD_IF` going bad is three different faults, and BYPASS IS NOT ONE OF
   THEM — establish the path first.** With the IF out of the path the register
   measures nothing, and it does *not* only sit at a stable `0`: measured in
   bypass it ran 255, 511, 511, 275, 258, 511 while the sync processor stayed
   perfect beside it, which is indistinguishable from the railing fault and has
-  twice been diagnosed as one. `DAC_RGBS_ADC2DAC` and `OUT_SYNC_SEL` are 1 in
-  bypass and 0 on the scaling path; the scale registers are NOT the tell, since
+  twice been diagnosed as one. `DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` are 1 in
+  bypass and 0 on the scaling path; `DAC_RGBS_ADC2DAC` is NOT the tell, being 0
+  on both paths, and the scale registers are not either, since
   bypass leaves `VDS_HSCALE`/`VDS_VSCALE` on the last scaled load's values.
   `docs/rgbhv-bypass-trap.md`. On the scaling path, noisy multi-valued garbage
   is the second fault. The third is
@@ -636,9 +933,8 @@ twelve tables while they existed, which is what `BringUp` was built from.
   dump, minus the divider-derived differences.**
   `docs/investigations/preset-abandonment-audit.md`.
 - **`/uc?h` does not clear Mode Detect.** It sets `presetPreference =
-  Output480P` — a persistent user preference — and force-calls `applyPresets()`,
-  falling back to the remembered standard when `getVideoMode()` returns 0. It
-  appears to "fix" railing by reloading a preset. The actual Mode Detect reset is
+  Output480P` — a persistent user preference — and force-calls `applyPresets()`.
+  It appears to "fix" railing by reloading a preset. The actual Mode Detect reset is
   `resetModeDetect()` (`SFTRST_MODE_RSTZ`, s0 `0x47` bit 1), reachable via
   `/setreg` — but it does **not** recover a bypassed IF, and nothing in the
   firmware resets Mode Detect while sync is present.
@@ -681,11 +977,31 @@ twelve tables while they existed, which is what `BringUp` was built from.
   is derivable — `1121 - 41 = 1080` exactly, the encoder's active window, same on
   every display — while the horizontal is real overscan and is not.
 - **The engine CALCULATES every register from held state. Registers are an
-  output and are never an input.** The only reads permitted are measurements of
-  the source — the `STATUS_SYNC_PROC_*` registers, which nothing else can
-  supply. Everything else the engine needs, it already knows, because it
-  computed it: the raster, both scales, both windows, the divider. Reading one
-  back to derive another is what most of the geometry bugs here were.
+  output and are never an input.** Everything the engine needs, it already
+  knows, because it computed it: the raster, both scales, both windows, the
+  divider. Reading one back to derive another is what most of the geometry bugs
+  here were.
+
+  **The rule is two rules, and conflating them blocks correct work.** One is
+  that **every field has a single owner**, and all writes to it go through that
+  owner. The other is that **nothing is read back to derive something else**, so
+  a value is derived once and a previous solve's state cannot reach the next
+  one.
+
+  **The exception to the read rule is a TRUE MEASUREMENT — something only the
+  chip can tell you about the SOURCE.** `STATUS_SYNC_PROC_*` is the obvious
+  family, and it is not a closed list: the source's hsync polarity is as much a
+  measurement as its line count. What disqualifies a read is asking the chip for
+  a value the engine itself put there.
+
+  **Writing a register FROM a measurement is ordinary, not an exception.**
+  `SP_HS_INV_REG` set from the measured polarity is the same kind of act as any
+  other solved register — one owner, derived once. Prefer it over carrying the
+  polarity into the solve: **normalising at the hardware boundary removes a
+  variable from the solver, and one fewer input retires a whole class of bugs
+  rather than one instance of it.** Measure it where the sync arrangement is
+  already being determined, write it once, and let everything downstream see one
+  shape.
 
   Two consequences. **A register written by anything outside the engine corrupts
   the calculation**, which is why the OSD, the IR handler and the web pads must
@@ -738,17 +1054,37 @@ twelve tables while they existed, which is what `BringUp` was built from.
   `VDS_HB_SP` at 9, fifty units before the pulse. Position or width, one at a
   time, is the experiment. Treat 8 as measured at one hsync setting only.
   `snapshots/hsync-tuned-no-left-corruption-2026-08-06.json`.
-- **Nothing is captured past IF 1125.** The capture path stops writing video
-  there and writes `Y=U=V=0`, which decodes to green and **destroys** active
-  picture that reaches it — it is a bound on usable width, not an artefact to
-  hide. The position is absolute in the line and unmoved by the capture start,
-  the source's timings or the memory clock; what counts to 2250 ADC samples is
-  unknown. `InputLine::WriteLimitUnits` is 1125 IF units — 2250 ADC samples —
-  and `SourceMeasurement` caps `PLLAD_MD` there so the whole line arrives, which
-  is why the bench now runs a 1126-unit IF line rather than 1277, and
-  `InputLine::lastCapture()` clamps the lines the divider did not choose. Do not
-  read the divider cap as the tearing ceiling that was removed — that one stays
-  refuted. `docs/capture-limits.md`.
+- **THERE IS NO CAPTURE BOUND, AND THE GREEN TAIL IS A USER OPTION.** The band
+  at the end of the line is the VDS's one-line delay, `VDS_D_RAM_BYPS` — the
+  OLED's Menu->Color->Line filter, `uopt->wantVdsLineFilter`, `/uc?m` — which
+  sits DOWNSTREAM of the capture and is now defaulted off. Bypassed, the whole
+  line arrives at every divider to 3200; in circuit the band's edge moves with
+  the divider, which is what made it look like a capture bound for months. The
+  constants that enforced one are deleted.
+  `docs/investigations/the-tail-green-is-the-vds-line-filter.md`.
+- **THE LINE COUNTER IS ELEVEN BITS AND THE REGISTER IS TWELVE**, so 2047 kept
+  samples per line is the wall on every source and both scan modes — and a
+  read-back cannot test it, because `s1_0F` bit 3 stores a 1 and returns it
+  while the counter ignores it. No status field reacts either: a counter of
+  1500 on a 1103-unit line tears the picture in half with `STATUS_IF_HT_OK`
+  still 1. Pass-through hits the same wall in `HD_HSYNC_RST`. **Only the
+  picture can measure this**, and the discriminator is `correct + 2048`, which
+  an eleven-bit counter must render indistinguishable from `correct`.
+  `docs/investigations/the-line-counters-are-eleven-bits-measured.md`.
+- **THE KEPT COUNT IS THE RULE AND NYQUIST IS BEST EFFORT.** What carries the
+  source's pixels is the count the decimator KEEPS — `PLLAD_MD` undoubled, and
+  **half of it where the line is doubled**. Oversampling acts on the CONVERSION
+  rate (`converted = kept x ratio x samplesPerUnit`, the doubler's own
+  decimation being a second factor of two), so it buys freedom from aliasing and
+  **buys no resolution at all**. `SamplingClock::recommendedDivider()` therefore
+  maximises the kept count and takes a ratio only where it costs none of it.
+  **The asymmetry is the reason**: a source that could have been oversampled and
+  was not aliases the top of its band, while one starved of samples to pay for
+  oversampling loses resolution no filtering brings back.
+  **The divider therefore moves with the measured line rate** wherever the row
+  binds rather than the counter, so a wobble re-latches the ADC PLL.
+  `docs/sampling-table.md` is what every input mode lands on, generated from the
+  firmware — regenerate it, never edit it.
 - **The horizontal axis has no native resolution.** The chip sees sync edges, not
   pixels, so the source's pixel clock is unknowable and 320x256 and 640x256 are
   indistinguishable. Capture is in ADC sample units, and how many there are per
@@ -908,6 +1244,15 @@ restored — see the freeze note below, because `/freeze` does not stop it.
 The two snapshot formats are not interchangeable: `dump_registers.py` writes 496
 config registers, `snapdiff.py` writes all 1536. Diff like against like.
 
+**AND A DIFF OVER THE SMALLER SET IS NOT A DIFF OVER THE MACHINE.** Comparing a
+608-register dump against a full one leaves 928 addresses outside the comparison
+entirely, and 114 of those hold values that are neither 0x00 nor 0xff on a
+settled unit — s1 0x60..0x77 is a live table, not padding. So *"a full dump
+either side differs in only five fields"* is a statement about whichever subset
+was taken, and every such conclusion here was drawn over the config range. When
+the question is **what state survived an excursion**, take `snapdiff.py --save`
+at both ends; the config dump answers a narrower question than it appears to.
+
 `geometry.py --host <ip>` prints the input side, output side, and where the three
 horizontal extents disagree — the fastest read on why a picture is wrong.
 
@@ -938,7 +1283,7 @@ merely tedious. Two ways it has cost real time:
   2250 divider and an 88% sync duty — a textbook no-lock signature, diagnosed as
   a dead source, while the picture on the screen was perfect. By name the same
   registers give 311, 2250 and 7.1%.
-- checking RGBHV bypass by hand-written slice gave `DAC_RGBS_ADC2DAC` 0 and
+- checking RGBHV bypass by hand-written slice gave `DAC_RGBS_BYPS2DAC` 0 and
   `OUT_SYNC_SEL` 0 on a unit correctly *in* bypass with a full-screen picture,
   which reads exactly like the "no raster at all" failure. By name: 1 and 1.
 
@@ -980,14 +1325,38 @@ one the same way; the rules below are each a wasted session.
   absence of data. Establish that there IS picture under the window before
   reading anything as a floor — force the magnification if need be.
 - **A MAPPING FROM PHOTO COLUMNS TO OUTPUT PIXELS DOES NOT SURVIVE AN OUTPUT MODE
-  CHANGE.** Measured 57 columns adrift — a fifth of the picture — after a
-  1080p/960p/1080p round trip with the raster registers identical either side:
-  the encoder re-acquires and where it puts the picture on the panel is its
-  choice. Calibrate by differencing a frame at one `VDS_DIS_?B_ST` against
-  frames at others, so the difference IS the strip the register blanked, and
-  **re-calibrate after anything that re-locks the encoder**. Read against a stale
-  mapping, a correct far edge reads as 110 px of overshoot and the line's repeat
-  reads as the picture.
+  CHANGE.** Measured twice: 57 columns adrift after a 1080p/960p/1080p round
+  trip, and ~150 columns after a pass-through round trip, each with the raster
+  registers read identical either side. Calibrate by differencing a frame at one
+  `VDS_DIS_?B_ST` against frames at others, so the difference IS the strip the
+  register blanked, and **re-calibrate after any output excursion**. Read against
+  a stale mapping, a correct far edge reads as 110 px of overshoot and the
+  line's repeat reads as the picture.
+
+  **THE DISPLACEMENT IS DOWNSTREAM OF THE BOARD, AND IT IS NOW MEASURED.** Both
+  checks this entry used to demand have been run. A full `snapdiff.py --save`
+  either side covers all 1536 addresses and the byte-identity has been
+  *constructed* — writing every differing byte so the dump reports 0 differing
+  leaves the picture where it was, as do resets of the video blocks, the SDRAM,
+  the phase adjusters and the sync processor.
+
+  **The instrument that localises it is the STV9426 overlay, and it needs no
+  probe.** The television's menu is drawn from `HS_OUT`/`VS_OUT` and keyed into
+  the video at U13, downstream of the VDS, so it rides the SYNC timebase while
+  the picture rides the VDS's counter — one photograph carries both. At two
+  landings they move together, overlay -100.78 px / +26.58 rows against picture
+  -101.01 px / +26.43 rows, agreeing to 0.23 px and 0.15 rows with the camera
+  controlled at lag 0, r = 0.998. Video cannot have moved relative to sync
+  inside the scaler, so the analog frame is identical and the position is chosen
+  after it.
+
+  **What is still NOT established is which downstream part chooses it** — the
+  MS9288A and the television are both there and a second display is what splits
+  them — and *why* it differs between acquisitions. So the attribution that
+  remains unlicensed is a specific mechanism inside the encoder, not the
+  locality. Repeat the overlay measurement before believing any new claim about
+  where the position is set; it costs one photograph per landing.
+  `docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
 - **Separate what the board must emit from what one display happens to show.**
   The MS9288A consumes the scaler's analog blanking and generates HDMI blanking
   of its own, so the minimum the scaler must emit is a board property, measured
@@ -1026,12 +1395,50 @@ one the same way; the rules below are each a wasted session.
   is the same error as measuring a fixed span from a moving origin. Anchor the
   band to a feature of the picture, and print that feature's position with every
   frame so a shift is visible in the results rather than hidden in them.
+- **A FRAME DIFFERENCE IS NOT A DISPLACEMENT, AND IT IS BLIND OVER FLAT COLOUR.**
+  Scoring a clip on `tblend=all_mode=difference` measures displacement
+  MULTIPLIED BY LOCAL CONTRAST, so a whole line can shift across a solid block
+  and read zero while a fraction of a pixel on a grating reads large. Per-row it
+  then puts the entire score on the test card's frequency wedge, which reads as
+  aliasing when the artefact is uniform jitter. **Measure an edge's POSITION
+  instead** — average a flat strip to one row, take the centroid of the
+  strongest luma gradient, and the spread across frames is the jitter in pixels.
+  The bench floor established that way is 0.05 px.
+  `docs/investigations/a-hand-set-divider-cannot-be-judged-against-a-solved-window.md`.
+- **NO SUBSET OF AN INTERDEPENDENT SOLVE CAN BE SET BY HAND AND JUDGED.** The
+  divider is one input to a solve that also sets the capture window, both
+  scales, the playback fetch and the stride, so freezing automation and walking
+  `PLLAD_MD` measures the MISMATCH against the last solve. It produced a clean
+  cliff at 2005 across two line rates with the PLL group identical either side —
+  which was `IF_HB_ST2` frozen at 2005, and every "clean" point had the window's
+  stop past the end of a shorter line. **There is no count limit below 2047 and
+  that figure must not be reinstated.** Compare engine-solved states, or change
+  the rule and reflash.
 - **An artefact that leaves the screen is hidden, not cured**, and which one it
   is decides whether it travels. Move the thing that generates it back onto the
   panel and re-measure before concluding anything: shift the picture back by the
   same amount the change moved it, then compare like with like.
 
 ## Conventions
+
+**EVERY DIFFERENCE MUST BE DELIBERATE, AND THE GOAL IS THE BEST PICTURE WITH THE
+LEAST MECHANISM.** This is the point of the whole refactor and it is easy to
+mistake for tidying, so it is stated first.
+
+Where two paths do the same job differently, the question is *why*, and **"nobody
+knows" is the answer that means collapse them**. An unexplained divergence is not
+a risk to preserve carefully -- it IS the complexity, and preserving it because
+removing it might change something is how it has survived this long. That
+instinct reads as caution and is the opposite: it guarantees the next reader
+inherits the same unanswerable question.
+
+The worked example is the bypass route. Two existed, the second had no reason to,
+and it went -- one route, less code, and the picture measured indistinguishable.
+`docs/investigations/one-bypass-route-carries-rgbhv.md`.
+
+So: keep a difference that has a reason, and write the reason down. Delete one
+that does not. A faithful refactor of an accident preserves the accident.
+
 
 **`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
 than namespaces over file-scope globals, one class per file named after it,
@@ -1058,7 +1465,7 @@ firmware C++.
 
   | the fact | the copies |
   |---|---|
-  | what causes the tail green at IF 1126 | `InputLine.h` and the host tests both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
+  | what causes the tail green at IF 1126 | `VideoSourceLine.h` and the host tests both asserted *"it is the source's blanking"* — which `docs/scaler-geometry-model.md` had already **refuted** by measurement, and carries as an open question |
   | the horizontal zoom ceiling | `test_geometry_pads.py` said `1024/500 = 2.048x` against the **4.0x** `test_axis.cpp` asserts, `Scale::Min` having become derived |
 
   One fact, three copies, two wrong, and every test passed — because tests check
@@ -1133,6 +1540,30 @@ firmware C++.
   a handover is stated in the imperative and stops being true when the session
   ends. When a session produces both, the findings go in `docs/investigations/`
   and the rest leaves the repo.
+- **WORK GOES ON `dev`. `main` IS WHAT HAS BEEN REVIEWED**, and it moves only
+  when a review advances it — never as a side effect of doing the work.
+  **Check the branch before the first commit of a session**, because a session
+  that starts on `main` will happily put a day's work there and destroy the one
+  signal the branch carries. Nothing is lost when that happens and the repair is
+  pointer movement, as long as `main` is still a pure fast-forward ahead of
+  `origin/main`:
+
+  ```sh
+  git rev-list --count main..origin/main    # 0, or stop and think
+  git merge-base --is-ancestor dev main     # dev must be behind main
+  git branch -f dev main && git checkout dev && git branch -f main origin/main
+  git merge-base --is-ancestor main dev     # main is now an ancestor of dev
+  ```
+
+  No `feature/` or `fix/` branches, and no self-review PRs. The discipline is in
+  how commits are split, not in branch topology.
+- **`dev` IS PUSHED SO IT CAN BE READ ON GITHUB, and the review is of the
+  RESULTING CODE rather than of each commit.** Hundreds of commits are not read
+  one at a time; what is reviewed is the engine as it now stands. So a push is
+  routine and carries no promise that the history is final — **once the code is
+  agreed, the commits are squashed aggressively to remove churn** and the series
+  rationalised. Keep upstream-cherry-pickable commits separable through that;
+  our own churn folds.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.

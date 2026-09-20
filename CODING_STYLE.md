@@ -124,6 +124,26 @@ as expected, including after a `using namespace Tv5725;`.
 Registers migrate out of `Tv5725::Tv5725` into the subsystem that owns them, so
 what remains in it is whatever has no owner yet. `docs/chip-initialisation.md`.
 
+### An unused register DECLARATION stays; an unused helper does not
+
+Dead firmware is deleted here without ceremony. A register field declaration is
+not dead firmware, and the two are not weighed the same way.
+
+**A declaration cannot be recovered by reading the datasheet.** RD-5725-1.1
+contradicts itself on every wide field -- the bit diagram, the Bit/Name table
+rows and the slice written into the function description disagree -- and this
+header carries fields whose slices came from cross-checking all three against
+the bench rather than from the PDF. The tooling that produced them was deleted
+once it had stopped finding things. So a declaration removed today costs bench
+work to restore, while a typedef kept costs no flash, no RAM and no runtime.
+
+**Everything else around the registers is firmware and goes when nothing uses
+it**: constants naming a ratio or an icon, lookup tables, convenience wrappers.
+They encode nothing the datasheet does not, and unused ones make a search return
+subsystems that have nothing to do with each other.
+
+The test is therefore not "is it used" but "is it a fact about the chip".
+
 ## One class per file, named after the class — `ClassName.h`
 
 `src/tv5725/Scale.h` holds `Tv5725::Scale` and nothing else, and
@@ -300,6 +320,51 @@ against a broken picture for a whole evening.
 between the lines is what stops it being read at a glance. Prefer extracting a
 well-named function over explaining an unnamed one.
 
+**Open with what it does.** The first sentence of a class or function comment
+states its purpose, in the present tense: *Measures the timing from the video
+source*. *Drives one chosen signal out of the chip on the debug pin.* Everything
+else comes after it. Two openings that look like purpose and are not:
+
+| reads as purpose | is actually |
+|---|---|
+| *The line count, the line rate, the hsync pulse and the scan type.* | an inventory of what the class holds |
+| *The chip routes one signal onto the pin and the ESP counts its edges.* | mechanism, before the reader knows why they care |
+
+A reader who stops after the first sentence should know whether this is the
+class they want. **If that sentence cannot be written, the class does more than
+one thing** — which is a finding about the code, not a problem with the comment.
+
+**A HEADER IS A LIST OF METHODS, AND A COMMENT PER METHOD DESTROYS THAT.** The
+question a reader brings to a header is *what can this class do* — answered by
+running an eye down the declarations. Ten lines of prose above each one turns a
+surface that fits on a screen into several pages, so nobody scans it and nobody
+finds the method they wanted. The cost is paid by every reader, not just the one
+the comment was written for.
+
+**The class's own comment may be longer; a method's is one small paragraph.**
+The class comment is read once, to decide whether this is the class you want, so
+it can afford to say what the thing is for and what constrains it. A method's
+comment is passed over dozens of times by readers looking for something else, so
+it states the **contract** and stops: what it does, and what the caller must do
+first.
+
+```cpp
+// Measure the video source timings, holding them as state. Asked on every
+// pass. applyReferenceSampling() must be in force first.
+Reading measure();
+```
+
+The measurements, the traps and the reasoning that settled the design are worth
+keeping and do not go here — they go in `docs/`, cited by name where the
+declaration needs it. A `.cpp` may say *how* where the mechanism is genuinely
+surprising, and the first move is always to simplify it instead.
+
+**Do not list who else uses it.** *The frame time lock, auto gain and the sync
+watcher all drive this pin* is true the day it is written and a maintenance
+burden thereafter, because the next caller will not update it. State the rule
+the caller must follow instead — *no selection survives another caller* — which
+stays true however many there are.
+
 **Scope decides where context lives:**
 
 | the context is | it belongs |
@@ -406,6 +471,37 @@ Two things to know when writing an assertion:
   *relative*, and every tolerance in the geometry is a count of pixels. Hence the
   shared `CHECK_NEAR(got, want, tol)` macro in `test/CheckNear.h`, over
   `CHECK_MESSAGE`.
+
+## The test suite drives the public interface
+
+**Nothing is public because a test wants to reach it.** The public interface is
+what a collaborator calls; a member no collaborator calls is private, whatever
+the suite does with it.
+
+A private method is covered through the public one that calls it. Reaching past
+that surface asserts on mechanism rather than behaviour, so the test breaks on a
+rename and stays silent on the thing it was written for -- and a class keeps a
+wide surface nobody outside it needs, which reads to the next caller as an
+invitation.
+
+The seam that makes this affordable is `test/fake/Wire.h`. A register-level
+behaviour is driven by seeding the bus and calling the public method, so a helper
+that takes a register's value as an argument needs no separate entry point:
+
+```cpp
+// The behaviour, through the interface the engine uses.
+seedSourceLines(311);
+seedHPeriod(431);
+CHECK(measurement.measureLineRate());
+CHECK(measurement.lineRateHz() == 15625u);
+```
+
+**A method that is hard to reach through the public interface is the signal that
+the class does too much.** Split it, and the new class's public interface is the
+seam the test wanted -- which is a design improvement rather than a concession.
+
+A member nothing calls at all is deleted rather than made private. Registers are
+the one exception, above.
 
 ## Prove a refactor changed nothing
 
