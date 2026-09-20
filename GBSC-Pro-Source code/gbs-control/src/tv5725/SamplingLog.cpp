@@ -2,6 +2,8 @@
 
 #include "SamplingLog.h"
 
+#include "TestBusRateMeasurement.h"
+
 #include <Arduino.h>
 #include <stdio.h>
 
@@ -175,6 +177,16 @@ void SamplingLog::sweep(uint32_t nowMs, uint16_t low, uint16_t high,
     applyStep(nowMs);
 }
 
+void SamplingLog::rates(uint32_t nowMs, uint16_t count)
+{
+    mode_ = Rating;
+    remaining_ = count;
+    interval_ = 0;
+    startedMs_ = nowMs;
+    lastSampleMs_ = nowMs;
+    tv5725Log("rate,header,ms,sp_vtotal,field_rate_mhz");
+}
+
 void SamplingLog::applyStep(uint32_t nowMs)
 {
     // Through Adc, so the write and the latch stay inseparable here as
@@ -231,6 +243,25 @@ void SamplingLog::poll(uint32_t nowMs)
     const uint32_t now = nowMs;
     if ((uint32_t)(now - lastSampleMs_) < interval_)
         return;
+
+    if (mode_ == Rating) {
+        if (remaining_ == 0) {
+            finish(now);
+            return;
+        }
+        --remaining_;
+        lastSampleMs_ = now;
+        // Millihertz, because the whole question is a spread of parts per
+        // thousand and %f on this part costs more than the reading is worth.
+        const float hz = TestBusRateMeasurement::sourceFieldRateHz(false);
+        char line[64];
+        snprintf(line, sizeof(line), "rate,%lu,%u,%lu",
+                 (unsigned long)(now - startedMs_),
+                 (unsigned)GBS::STATUS_SYNC_PROC_VTOTAL::read(),
+                 (unsigned long)(hz * 1000.0f + 0.5f));
+        tv5725Log(line);
+        return;
+    }
 
     if (mode_ == Monitoring) {
         if ((uint32_t)(now - startedMs_) >= durationMs_) {

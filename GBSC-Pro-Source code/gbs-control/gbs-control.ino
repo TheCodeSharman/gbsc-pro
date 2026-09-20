@@ -149,6 +149,7 @@ Tv5725::SamplingLog samplingLog;
 // the route answers from a network callback, which must not touch the bus.
 volatile bool pendingSamplingMonitor = false;
 volatile bool pendingSamplingSweep = false;
+volatile bool pendingSamplingRates = false;
 volatile uint16_t pendingSamplingA = 0;
 volatile uint16_t pendingSamplingB = 0;
 volatile uint16_t pendingSamplingC = 0;
@@ -4905,10 +4906,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     doPostPresetLoadSteps();
                     break;
                 case '!':
-                    Serial.print(F("sfr: "));
-                    Serial.println(Tv5725::TestBusRateMeasurement::sourceFieldRateHz(true));
-                    Serial.print(F("pll: "));
-                    Serial.println(Tv5725::TestBusRateMeasurement::pllRateHz());
+                    debugPrintf("sfr: %.4f pll: %lu\n",
+                                Tv5725::TestBusRateMeasurement::sourceFieldRateHz(true),
+                                (unsigned long)Tv5725::TestBusRateMeasurement::pllRateHz());
                     break;
                 case '$': {
 
@@ -5458,6 +5458,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         }
 #endif
 #if GBS_SAMPLING_LOG
+        if (pendingSamplingRates) {
+            pendingSamplingRates = false;
+            samplingLog.rates(millis(), pendingSamplingA);
+        }
         if (pendingSamplingMonitor) {
             pendingSamplingMonitor = false;
             samplingLog.monitor(millis(), pendingSamplingA, pendingSamplingD);
@@ -6530,7 +6534,10 @@ void startWebserver()
                 ? (uint32_t)request->getParam(name)->value().toInt() : fallback;
         };
 
-        if (request->hasParam("low")) {
+        if (request->hasParam("rates")) {
+            pendingSamplingA = (uint16_t)number("rates", 200);
+            pendingSamplingRates = true;
+        } else if (request->hasParam("low")) {
             pendingSamplingA = (uint16_t)number("low", 1600);
             pendingSamplingB = (uint16_t)number("high", 2900);
             pendingSamplingC = (uint16_t)number("step", 100);

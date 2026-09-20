@@ -49,6 +49,15 @@ public:
     void sweep(uint32_t nowMs, uint16_t low, uint16_t high, uint16_t step,
                uint16_t dwellMs, uint8_t oversample, uint32_t lineRateHz);
 
+    // Time the source's field rate `count` times, back to back, and log each
+    // reading with the line count beside it. The two together are what
+    // VideoSignal::lineRateFor() converts, so the spread of a settled source
+    // over one run is the width any tolerance comparing two rates has to cover.
+    //
+    // One reading per poll rather than a burst: each spins on vsync for up to
+    // two field periods, and the loop has to keep running.
+    void rates(uint32_t nowMs, uint16_t count);
+
     // A decision, as it is taken. The sync watcher chooses between scaling and
     // bypass on a line count, inside loop(), and the choice is over before any
     // HTTP read can see it -- a dump afterwards shows where the firmware
@@ -104,7 +113,7 @@ private:
     void reportSolve(uint32_t nowMs);
     void finish(uint32_t nowMs);
 
-    enum Mode : uint8_t { Idle, Monitoring, Sweeping };
+    enum Mode : uint8_t { Idle, Monitoring, Sweeping, Rating };
 
     Mode mode_;
     uint16_t low_, high_, step_, dwellMs_, interval_, restoreDivider_;
@@ -113,6 +122,7 @@ private:
     uint8_t oversample_;
     uint32_t durationMs_;
     uint32_t startedMs_, stepStartedMs_, lastSampleMs_;
+    uint16_t remaining_;
 
     uint16_t solve_[SolveFields];
     uint32_t lastSolveMs_;
