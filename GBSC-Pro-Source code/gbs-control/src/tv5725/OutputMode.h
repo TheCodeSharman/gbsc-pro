@@ -48,9 +48,12 @@ public:
     // The standard's own raster, in its own pixels at its own clock: active
     // lines, sync and back porch widths, active width, line total, pixel clock.
     // The front porch is what the total leaves, never stated.
+    // `carriedPx` is what the CHAIN takes, in the standard's own pixels, which
+    // is the standard's `activePx` on four of the six modes and measurably less
+    // on the two SD ones. See below.
     OutputMode(uint16_t activeLines, uint16_t syncPx, uint16_t backPorchPx,
-               uint16_t activePx, uint16_t totalPx, uint32_t standardHz,
-               uint16_t vsyncLines, uint16_t vBackPorchLines,
+               uint16_t activePx, uint16_t carriedPx, uint16_t totalPx,
+               uint32_t standardHz, uint16_t vsyncLines, uint16_t vBackPorchLines,
                uint16_t vFrontPorchLines);
 
     // Swept on the bench 2026-08-11, RiscPC 320x256@50, judged on the TV:
@@ -148,7 +151,7 @@ private:
     uint16_t scaled(uint16_t standardPx, float clockHz) const;
 
     uint16_t activeLines_;
-    uint16_t syncPx_, backPorchPx_, activePx_, totalPx_;
+    uint16_t syncPx_, backPorchPx_, activePx_, carriedPx_, totalPx_;
     uint32_t standardHz_;
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };

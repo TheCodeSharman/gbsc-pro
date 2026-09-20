@@ -819,9 +819,13 @@ TEST_CASE("a framing tuned on one output resolution is not rewritten by another"
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
+    // Panned clear of the capture floor, which is a DIFFERENT bound and moves
+    // with the scan mode: a doubled line's first capturable unit is a larger
+    // proportion of it than an undoubled one's, so a framing left against the
+    // floor here is legitimately clamped on arrival and would test that instead.
     const uint16_t usable = engine.lineUnitsOn(AxisHorizontal);
     REQUIRE(usable > 300);
-    REQUIRE(engine.applyFraming(PanAndZoom(engine.framing().originOn(AxisHorizontal),
+    REQUIRE(engine.applyFraming(PanAndZoom(engine.framing().originOn(AxisHorizontal) + 0.03f,
                                            300.0f / (float)usable,
                                            engine.framing().originOn(AxisVertical),
                                            engine.framing().extentOn(AxisVertical))));
@@ -1390,7 +1394,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     engine.setOutputMode(&Mode480p);
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
-    REQUIRE(dividerInForce() == 1876);
+    REQUIRE(dividerInForce() == 1804);
 
     // The output alone. Nothing tells the engine the source moved, because it
     // has not -- which is the whole of what /uc?<key> does.
@@ -1398,7 +1402,7 @@ TEST_CASE("an output change re-derives the divider even where the doubling holds
     for (uint8_t i = 0; i < SourceMeasurement::SteadySamples; ++i)
         pollOnce(acquisition);
 
-    CHECK(dividerInForce() == 1952);
+    CHECK(dividerInForce() == 1852);
 }
 
 TEST_CASE("the source is measured through a known divider, not the last mode's")

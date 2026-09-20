@@ -104,11 +104,12 @@ const OutputMode *OutputMode::forFrameHeight(uint16_t frameLines)
 }
 
 OutputMode::OutputMode(uint16_t activeLines, uint16_t syncPx, uint16_t backPorchPx,
-                       uint16_t activePx, uint16_t totalPx, uint32_t standardHz,
-                       uint16_t vsyncLines, uint16_t vBackPorchLines,
-                       uint16_t vFrontPorchLines)
+                       uint16_t activePx, uint16_t carriedPx, uint16_t totalPx,
+                       uint32_t standardHz, uint16_t vsyncLines,
+                       uint16_t vBackPorchLines, uint16_t vFrontPorchLines)
     : activeLines_(activeLines), syncPx_(syncPx), backPorchPx_(backPorchPx),
-      activePx_(activePx), totalPx_(totalPx), standardHz_(standardHz),
+      activePx_(activePx), carriedPx_(carriedPx), totalPx_(totalPx),
+      standardHz_(standardHz),
       vsyncLines_(vsyncLines), vBackPorchLines_(vBackPorchLines),
       vFrontPorchLines_(vFrontPorchLines) {}
 
@@ -172,7 +173,7 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // different factor in every mode -- 1920 against CEA's 2200, 2026 against
     // DMT's 1688 -- so a front porch stated as a time cannot express it.
     // docs/investigations/the-active-window-is-a-fraction-of-the-line.md
-    long span = (long)horizontalTotal * activePx_ / totalPx_;
+    long span = (long)horizontalTotal * carriedPx_ / totalPx_;
     long lastUsable = (long)horizontalTotal - FrontPorchMinPx;
     long stop = solved.activeStart + span;
     if (stop > lastUsable)
@@ -195,8 +196,21 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 //   the sync pulse and back porch are DURATIONS, converted to whatever clock
 //   the line runs at, so the encoder sees them where the standard says;
 //
-//   the active width is a FRACTION of the line, activePx / totalPx, because the
-//   encoder resamples the line into activePx samples however long it is.
+//   the active width is a FRACTION of the line, carriedPx / totalPx, because
+//   the encoder resamples the line into that many samples however long it is.
+//
+// **carriedPx IS MEASURED, AND IT IS NOT activePx ON THE TWO SD MODES.** What
+// reaches the panel is 0.804 of the line at 480p and 0.786 at 576p, where the
+// standard's activePx/totalPx is 0.839 and 0.833; the other four carry all of
+// theirs. Measured against the panel on all six, with the photo-column mapping
+// re-derived per mode: the left edge lands on activeStart to within 2 px
+// everywhere, so the whole of the shortfall is at the far end, and the fraction
+// holds to 0.3% across a 33% change of raster. It is a property of the MODE.
+//
+// The mechanism is not known and the raster ratio is refuted as the boundary.
+// Nor is it established whether the fraction belongs to the encoder or to the
+// one television it was measured on -- which takes a second display.
+// ../../../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
 //
 // The front porch is therefore never stated: it is what the total leaves, and
 // FrontPorchMinPx is the floor under it.
@@ -211,18 +225,19 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 // RD-5725-1.1 wants total-1 in VDS_VSYNC_RST, so a total written there directly
 // runs one line long -- which is what the shipped tables did, all six of them.
 //
-// Arguments are (activeLines, syncPx, backPorchPx, activePx, totalPx,
-// standardHz, vsync, vBackPorch, vFrontPorch). Bypass has no active lines and no
+// Arguments are (activeLines, syncPx, backPorchPx, activePx, carriedPx,
+// totalPx, standardHz, vsync, vBackPorch, vFrontPorch). Bypass has no active lines and no
 // porches, so frameLines() is 0 and clockDividerFor() finds no divider -- which
 // is what makes solve() fail usable() rather than return a plausible zero
 // raster, and is why its zero standardHz is never divided by.
-const OutputMode ModeBypass(0, 0, 0, 0, 0, 0, 0, 0, 0);
+const OutputMode ModeBypass(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-const OutputMode Mode1080p(1080, 44, 148, 1920, 2200, 148500000, 5, 36, 4);  // 1125
-const OutputMode Mode1024p(1024, 112, 248, 1280, 1688, 108000000, 3, 38, 1); // 1066
-const OutputMode Mode960p(960, 112, 312, 1280, 1800, 108000000, 3, 36, 1);   // 1000
-const OutputMode Mode720p(720, 40, 220, 1280, 1650, 74250000, 5, 20, 5);     //  750
-const OutputMode Mode576p(576, 64, 68, 720, 864, 27000000, 5, 39, 5);        //  625
-const OutputMode Mode480p(480, 62, 60, 720, 858, 27000000, 6, 30, 9);        //  525
+//                       active  sync   bp  activePx  carriedPx  totalPx
+const OutputMode Mode1080p(1080, 44, 148, 1920, 1920, 2200, 148500000, 5, 36, 4);  // 1125
+const OutputMode Mode1024p(1024, 112, 248, 1280, 1280, 1688, 108000000, 3, 38, 1); // 1066
+const OutputMode Mode960p(960, 112, 312, 1280, 1280, 1800, 108000000, 3, 36, 1);   // 1000
+const OutputMode Mode720p(720, 40, 220, 1280, 1280, 1650, 74250000, 5, 20, 5);     //  750
+const OutputMode Mode576p(576, 64, 68, 720, 679, 864, 27000000, 5, 39, 5);         //  625
+const OutputMode Mode480p(480, 62, 60, 720, 690, 858, 27000000, 6, 30, 9);         //  525
 
 }  // namespace Tv5725

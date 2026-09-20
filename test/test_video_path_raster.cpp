@@ -444,7 +444,7 @@ TEST_CASE("an output too short for the doubled frame turns the line doubler off"
     // Not half of 2508: undoubled, one IF unit is one ADC sample. What binds
     // is the 480p raster -- Axis::maximumCapture of it, rounded even -- and
     // not a constant of the part.
-    CHECK(Wire.field(5, 0x12, 0, 12) == 1876);
+    CHECK(Wire.field(5, 0x12, 0, 12) == 1804);
     CHECK(Wire.field(1, 0x0E, 0, 11) <= InputFormatter::LineCounterMax);
 }
 

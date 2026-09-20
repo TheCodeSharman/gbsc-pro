@@ -118,6 +118,31 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
 // `FrontPorchMinPx` is a floor under what stays blank, for the part rather than
 // for the standard: 16 px is what this one needs at the far end.
 // docs/investigations/the-active-window-is-a-fraction-of-the-line.md
+TEST_CASE("the SD modes carry less of the line than their standard states")
+{
+    // Measured against the panel on both SD modes at two rasters each: the chain
+    // takes 0.804 of the line at 480p and 0.786 at 576p, where the standard's
+    // activePx/totalPx is 0.839 and 0.833. The left edge lands on activeStart
+    // exactly on all six modes, so the whole of it is at the far end, and the
+    // fraction holds to 0.3% across a 33% change of raster -- which is what
+    // makes it a property of the MODE rather than of the raster it is solved
+    // into. The raster ratio was the standing explanation and is refuted.
+    // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
+    OutputTimings p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
+    CHECK(p480.horizontalTotal == 2053);
+    CHECK(p480.activeWidth() == 2053 * 690 / 858);
+
+    OutputTimings p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
+    CHECK(p576.horizontalTotal == 2070);
+    CHECK(p576.activeWidth() == 2070 * 679 / 864);
+
+    SUBCASE("and the four that reach the panel whole carry all of theirs") {
+        CHECK(Mode1080p.solve(50.0f, 108000000u).activeWidth() == 1920 * 1920 / 2200);
+        CHECK(Mode720p.solve(50.081f, OutputMode::EngineCeilingHz).activeWidth()
+              == 2156 * 1280 / 1650);
+    }
+}
+
 TEST_CASE("the far end is the mode's active fraction, floored by the board's porch")
 {
     // 1080p is 1920 of CEA's 2200, so a 1920 px line carries 1675 and a 2304 px
