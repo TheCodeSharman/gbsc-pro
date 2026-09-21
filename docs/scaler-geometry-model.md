@@ -269,7 +269,7 @@ signal between `HS_OUT` edges, so our timing is exactly what reaches it -- and
 emitting the porches the mode states stopped the picture landing somewhere
 different on each acquisition, 17 trials within 0.65 photo px against four
 controls at 101 px.
-`investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+`investigations/the-picture-position-is-latched-not-re-rolled.md`.
 
 **What the porch costs is sampling density, not picture.** It bounds where the
 produced picture may END, so `fitToRaster` sizes the picture to stop there; the

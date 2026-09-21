@@ -21,7 +21,7 @@ starts, so the only thing it can have done is provoke a re-lock, and the re-lock
 re-placed the picture.
 
 That matches the eight landings in
-[the-picture-position-is-re-rolled-by-the-sync-pad.md](the-picture-position-is-re-rolled-by-the-sync-pad.md):
+[the-picture-position-is-latched-not-re-rolled.md](the-picture-position-is-latched-not-re-rolled.md):
 a natural acquisition at dx 0 and seven re-locks forced with `PAD_SYNC_OUT_ENZ`
 all at dx −8, every board register identical throughout. Landings are discrete
 and a forced one is repeatable; what differs is which landing a given lock

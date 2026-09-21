@@ -249,10 +249,11 @@ measured at one framing on one mode, so the sense is not established elsewhere.
 ### The picture falls up to two lines short of the vertical active region
 
 The output raster opens the display window at the back porch its `OutputMode`
-states, which stopped the picture's landing re-rolling -- 12 trials within
+states, which stopped the picture's landing moving -- 12 trials within
 0.52 photo px against 4 controls at 101 px, every trial with the sink dropping
-the link and re-acquiring.
-`investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+the link and re-acquiring. That is what a LATCHED origin predicts: hold the
+blanking still across the lock and the landing repeats.
+`investigations/the-picture-position-is-latched-not-re-rolled.md`.
 
 Horizontally the picture fills the active region the mode states, 1396 px of
 1396. **Vertically it can still fall short, and by how much follows the
@@ -604,7 +605,7 @@ overlay -100.78 px and +26.58 rows against the picture's -101.01 px and
 lag 0 and r = 0.998. Video cannot have moved relative to sync inside the
 scaler, so the analog frame is identical at both landings and the displacement
 is added after it. It does not separate the MS9288A from the television.
-`investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+`investigations/the-picture-position-is-latched-not-re-rolled.md`.
 
 **There is a vertical component at some landing pairs** -- +26.4 photo rows at
 the 1550/1450 pair -- so "a pure horizontal translation" describes the pairs
@@ -640,18 +641,28 @@ trips, a spread of 1.6 ppm that does not sort with position.
 What does move it, with every other byte on the part unchanged, is
 `PAD_SYNC_OUT_ENZ` -- once in nine toggles, so it is a demonstration that the
 choice is made downstream of the output pins rather than the trigger a round
-trip pulls. `investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`
+trip pulls. `investigations/the-picture-position-is-latched-not-re-rolled.md`
 carries the measurements and the open candidate, which is that
 `EncoderRelookMs` returns the pad 300 ms in, while FrameSync is still steering.
 
 Neither a `PAD_SYNC_OUT_ENZ` toggle nor a source mode round trip re-centres it.
 
-**THE PAD RE-ROLLS THE LANDING RATHER THAN REPAIRING ONE, and a single trial
+**THE PAD MOVES THE LANDING RATHER THAN REPAIRING ONE, and a single trial
 cannot tell the two apart.** Nine 3 s drops from three different positions at
 640x480@60 moved the picture twice: once from the right landing to the left one,
 and once from the left landing to a third in the middle, right edges 1444, 1504
 and 1545 photo columns. A drop that happens to land somewhere better reads as a
 fix, and the next one moves it again.
+
+**THE THREE LANDINGS ARE NOT A DRAW.** The encoder latches its window origin
+from our blanking at the moment it locks -- a toggle with `VDS_DIS_HB_SP` at 300
+put the origin at 300.3 -- so a landing is whatever the blanking was when the
+pad returned. `EncoderRelookMs` returns it 300 ms in, **while FrameSync is still
+steering**, so the value latched is one taken off a window that has not settled.
+That is the leading explanation for three landings at one nominal framing, and
+what would settle it is holding the pad away until the solve is quiet and
+counting the landings again.
+`investigations/the-shown-window-is-latched-at-lock.md`.
 
 **And a pass-through round trip is not a provoker either**: twenty-two of them
 across two builds moved the picture once, that once being the first round trip
@@ -1011,7 +1022,7 @@ right-hand 55% of the frame, and the only columns that change at all are 50..148
 at the far left. 340 and 380 differ from 300 in zero columns. The picture does
 not move; a strip of it is blanked. A photograph taken across two ACQUISITIONS
 does appear to move, which is the confound --
-`investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+`investigations/the-picture-position-is-latched-not-re-rolled.md`.
 
 **Putting the porch on the same footing as the span recovers the whole card.**
 At 640x480@75, frozen, with `312/1800 x 1440 = 250` in place of 312 --

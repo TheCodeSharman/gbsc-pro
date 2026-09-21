@@ -1,4 +1,47 @@
-# The picture position is chosen downstream of the board, and the STV9426 overlay proves it
+# The picture position is chosen downstream of the board, and it is LATCHED rather than re-rolled
+
+> ## The "re-roll" is REFUTED, and the landing is deterministic
+>
+> This page was written as `the-picture-position-is-re-rolled-by-the-sync-pad.md`
+> and its central word was wrong. **Nothing here ever measured a random draw.**
+> What it measured was several landings that differed, and inferred a re-roll
+> from the difference. The landing is chosen, and what chooses it is now
+> measured.
+>
+> **The window the picture is shown through takes its origin from OUR blanking
+> at the moment the link locks, and then holds it.** Which side holds that
+> window -- the board or the encoder -- is NOT settled here; the overlay
+> measurement separates them and has not been run on it. Measured on the bench
+> unit, automation frozen,
+> the origin found by creeping `VDS_DIS_HB_SP` until the panel's left edge
+> starts to move:
+>
+> | | origin |
+> |---|---|
+> | raster 1790, as found | 420.8, against our window at 425 |
+> | raster 1440, as found | 376 |
+> | raster 1790, after a `PAD_SYNC_OUT_ENZ` toggle with `VDS_DIS_HB_SP` = **300** | **300.3** |
+>
+> The origin followed the register to 0.3 units. So two landings that differ are
+> two different blanking values in force at lock -- not two draws.
+>
+> **And it can be pulled earlier but not pushed later.** The same toggle at
+> raster 1440 with our blanking at 402, LATER than the 376 already latched, left
+> it at 376. Black inside the window it already holds is no cue; content earlier
+> than the window is. That asymmetry is what makes a late window a permanent bar
+> and an early one harmless.
+>
+> **Within one acquisition the window does not move at all.** `VDS_DIS_HB_SP`
+> swept over 126 units moves the picture 0 px, `r = 1.0000` across the
+> right-hand 55% of the frame, with only a strip of blanking changing. So a pair
+> of frames taken either side of an acquisition is the ONLY way this ever looked
+> random, and the difference between them is the blanking, not chance.
+>
+> The measurements are in
+> [`the-shown-window-is-latched-at-lock.md`](the-shown-window-is-latched-at-lock.md).
+> **Do not describe this as a re-roll, and do not treat a landing as unrepeatable
+> until the blanking at lock has been ruled out.**
+
 
 ## What this still applies to
 

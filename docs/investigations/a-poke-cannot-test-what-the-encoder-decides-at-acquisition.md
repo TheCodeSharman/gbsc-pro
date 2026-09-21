@@ -60,7 +60,7 @@ column leaves the sampled region. It is displaced, not cured.
 the scaling path is full of those.** The porch work states it from the other
 direction — a landing measured after a poke is measured on a timing that arrived
 mid-flight.
-[`the-picture-position-is-re-rolled-by-the-sync-pad.md`](the-picture-position-is-re-rolled-by-the-sync-pad.md)
+[`the-picture-position-is-latched-not-re-rolled.md`](the-picture-position-is-latched-not-re-rolled.md)
 
 What makes it expensive here is that the poke produced a *monotonic, repeatable,
 well-separated* result — a clean fade from 24.9 to 0.3 with the baseline

@@ -165,7 +165,7 @@ window** where 640x480@60 has 108 output pixels of it.
 
 Across eight source mode round trips each, 800x600@60's picture lands in the
 same place every time and 640x480@60's lands in one of three.
-[the-picture-position-is-re-rolled-by-the-sync-pad.md](the-picture-position-is-re-rolled-by-the-sync-pad.md)
+[the-picture-position-is-latched-not-re-rolled.md](the-picture-position-is-latched-not-re-rolled.md)
 carries that measurement; the right-hand margin is the only difference between
 the two modes that sorts with it.
 

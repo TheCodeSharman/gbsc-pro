@@ -55,7 +55,7 @@ Writing it back to 0 **alone**, with nothing else touched:
 
 So it is 94 px of the 200, and the residual 106 px is not a bypass artefact at
 all -- 92..1549 is the ordinary `+41` landing of
-[the-picture-position-is-re-rolled-by-the-sync-pad.md](the-picture-position-is-re-rolled-by-the-sync-pad.md).
+[the-picture-position-is-latched-not-re-rolled.md](the-picture-position-is-latched-not-re-rolled.md).
 A bypass round trip is therefore that jump plus a register-visible 94 px, which
 makes it a **6-of-6 provoker** for a jump a source mode change only fires 2 in 8.
 
