@@ -434,6 +434,35 @@ distinguish these:
    fallback for a state the toggle does not clear.
 3. **The TV timed out** and dropped the input.
 
+**"IT IS THE ENCODER" IS THE STANDING WRONG ANSWER ON THE SCALING PATH.** Two
+occasions where it genuinely was the encoder bound how far that reaches, and
+neither licenses reaching for it again:
+
+- **A raster that is not a standard one confuses it**, and the symptom is
+  framing that JUMPS WITH NO REGISTER CHANGE. That is what `Tv5725::OutputMode`
+  stating each mode's own standard timings fixed: emitting CEA, or close to it,
+  stopped the jumping. So a standard raster is the CURE, and a non-standard one
+  is the condition -- not the other way round.
+- **In bypass it locks to the actual image**, which turning the source's border
+  on is enough to move. **Why bypass and not the scaling path is not known.**
+
+**The second of those is itself the argument that it is not the encoder while
+scaling: if it locked to image content there, PAN WOULD NOT WORK.** Panning
+moves the picture inside an unchanged raster every day, and the lock does not
+follow it.
+
+**Refute it before carrying it**, because it is cheap to: FREEZE automation and
+change one output register. If the picture moves as a whole, the placement is
+downstream; if a strip is blanked and the rest correlates at zero shift, it is
+the board. A row-averaged profile of two photographs settles it in one command.
+
+**A COMPARISON ACROSS TWO ACQUISITIONS CANNOT ANSWER THAT QUESTION**, and it is
+what makes the encoder look guilty. The picture's position is re-rolled between
+acquisitions, so two frames either side of a mode change, an input change or a
+sync-type round trip differ by a displacement nobody wrote. Freeze, take both
+frames inside ONE acquisition, and the displacement is gone.
+`docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+
 **Bypass is NOT a way to get a picture out of an unknown source.** It passes the
 source's own timing to the encoder, so it only works where the DISPLAY can show
 that timing -- the bench 800x600 does, and a 15 kHz mode does not. Reaching for
