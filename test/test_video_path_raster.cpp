@@ -107,6 +107,10 @@ struct SettledEngine {
         Wire.reset();
         poisonChip();
         Wire.lockSyncProcessor();
+        // The bench source's pulse, modelled so the count follows the divider
+        // the engine measures through. Poisoned, HLOW_LEN is not a duty and
+        // the engine waits rather than solving from it.
+        Wire.sourceHsync(181, 2553, true);
         g_fieldRate = 50.08f;
         setSourceLines(311);  // the bench RiscPC, settled: PAL-like
     }

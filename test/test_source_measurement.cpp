@@ -746,6 +746,7 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
     // preset loads in four came out at 1923 or 1910 against the 1916 the same
     // engine computes once the source has settled.
     seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
     g_fieldRate = 50.26f;
 
     SourceMeasurement measurement;
@@ -798,6 +799,7 @@ TEST_CASE("the reading taken as it stands is not one sample")
     // 320x256@50, a 51.1 Hz sample keys 51 and the raster solves 1882 where
     // 1920 is due.
     seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, false);
     g_fieldRate = 50.26f;
 
     SourceMeasurement measurement;
@@ -1947,3 +1949,30 @@ int main(int argc, char **argv)
     return doctest::Context(argc, argv).run();
 }
 
+
+// THE COUNTER RE-COUNTS THE LINE, SO THE CORRECTION IS NOT INSTANT. The
+// polarity write reaches SP_HS_INV_REG at once and
+// STATUS_SYNC_PROC_HLOW_LEN keeps reporting what it counted before -- measured
+// on the bench at 800x600 as 1790/2038 = 0.878 followed, about 1.5 s later, by
+// 196/1606 = 0.122 against the mode's 0.1212.
+//
+// 0.878 is the complement, not a measurement. Taken as the duty it is what
+// SourceTiming::lookUp() matches on, and no published raster has a duty near
+// unity -- so pass-through blanks from the sync envelope instead of the
+// standard, and the border it shows changes between two landings on one source
+// with every register self-consistent.
+// docs/investigations/the-duty-is-the-complement-until-the-counter-recounts.md
+TEST_CASE("the complement of a duty is not taken as one")
+{
+    SourceMeasurement sampling;
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, true);
+    Wire.hsyncInversionLag(200);
+    g_fieldRate = 50.08f;
+
+    measurePastGate(sampling);
+
+    CHECK(sampling.hsync().syncDuty() != doctest::Approx(
+              (float)(BenchDivider - 181) / (float)BenchDivider));
+}

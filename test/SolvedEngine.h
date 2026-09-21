@@ -122,10 +122,14 @@ struct SolvedEngine {
     Tv5725::VideoPath engine;
     VideoSourceAcquisition acquisition;
 
+    // hsyncLow is a count in ADC samples, so it means nothing without the
+    // divider it was counted at: the pair is the duty, and the duty is what the
+    // engine measures.
     SolvedEngine(uint16_t sourceLines = 311, float fieldRateHz = 50.08f,
                  uint16_t hsyncLow = 181,
                  const Tv5725::OutputMode *choice = &Tv5725::Mode1080p,
-                 bool hsyncPositive = true)
+                 bool hsyncPositive = true,
+                 uint16_t hsyncCountedAt = 2553)
         : engine(clock, sampling, framings), acquisition(sampling, engine)
     {
         Wire.reset();
@@ -142,12 +146,13 @@ struct SolvedEngine {
         seed(3, 0x01, 0, 12, 1915);          // VDS_HSYNC_RST, output line - 1
         seed(3, 0x02, 4, 11, 1124);          // VDS_VSYNC_RST, output frame - 1
         seed(1, 0x0E, 0, 11, 1276);          // IF_HSYNC_RST, capture wrap - 1
-        seed(0, 0x19, 0, 12, hsyncLow);      // STATUS_SYNC_PROC_HLOW_LEN
         seed(5, 0x12, 0, 12, 2553);          // PLLAD_MD, the line in ADC samples
         seed(0, 0x1B, 0, 11, sourceLines);   // STATUS_SYNC_PROC_VTOTAL
-        // Which end of the pulse the line is counted from. The bench source is
-        // positive-going; every VESA mode below 800x600 is not.
-        seed(0, 0x16, 0, 1, hsyncPositive ? 1 : 0);   // STATUS_SYNC_PROC_HSPOL
+        // Modelled rather than seeded: the count is in ADC samples, so it has
+        // to follow the divider the engine is measuring through. Which end of
+        // the pulse the line is counted from goes with it -- the bench source
+        // is positive-going; every VESA mode below 800x600 is not.
+        Wire.sourceHsync(hsyncLow, hsyncCountedAt, hsyncPositive);
         seed(0, 0x16, 3, 1, 1);              // STATUS_SYNC_PROC_VSACT, V on its own pin
 
         engine.setOutputMode(choice);

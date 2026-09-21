@@ -377,7 +377,8 @@ bool SourceMeasurement::readSource()
     snprintf(line, sizeof(line), "duty: %u pulse / %u divider, htotal %u, %s%s%s",
              (unsigned)low, (unsigned)divider, (unsigned)lineSamples,
              positive ? "positive" : "negative", found ? "" : ", NO EDGE",
-             latched ? "" : ", UNLOCKED");
+             latched ? (HsyncPulse(duty, positive).isPulse() ? "" : ", NOT A PULSE")
+                     : ", UNLOCKED");
     tv5725Log(line);
 
     return takeDuty(latched, HsyncPulse(duty, positive));
@@ -398,7 +399,7 @@ bool SourceMeasurement::readSource()
 // docs/investigations/the-duty-is-counted-before-the-processor-relocks.md
 bool SourceMeasurement::takeDuty(bool latched, const HsyncPulse &reading)
 {
-    if (latched) {
+    if (latched && reading.isPulse()) {
         hsync_ = reading;
         dutyMeasured_ = true;
         return true;

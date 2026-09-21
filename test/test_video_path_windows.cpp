@@ -453,17 +453,15 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // processor counts from zero and reports as 524 -- which is what the bench
     // reads on a source running this mode.
     //
-    // Seeded against the divider the engine solves for this source, because
-    // that is the one in force when the layer that measures reads the pulse.
-    // The register counts ADC samples, so on the part it scales with the
-    // divider and the duty is the same either side; the fake holds whatever was
-    // seeded. HsyncPulse.h
+    // The count is in ADC samples, so the divider it was counted at is half of
+    // the reading: the pair is the duty, and the duty is what the engine
+    // measures. HsyncPulse.h
     // Into a raster with room for the whole published window. At 1080p this
     // mode's 80% of the line is wider than a 1600 raster can show at unity, and
     // what the capture does THERE is the bound's own case below.
     const uint16_t Divider = 2046;
     const uint16_t HsyncLow = (uint16_t)(Divider * 96 / 800);
-    SolvedEngine solved(524, 59.94f, HsyncLow, &Tv5725::Mode720p, false);
+    SolvedEngine solved(524, 59.94f, HsyncLow, &Tv5725::Mode720p, false, Divider);
 
     const long line = Wire.field(1, 0x0E, 0, 11) + 1;
     const long stop = Wire.field(1, 0x1A, 0, 11);

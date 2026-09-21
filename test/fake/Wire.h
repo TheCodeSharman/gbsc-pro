@@ -65,6 +65,9 @@ public:
         segment = 0;
         refusing_ = false;
         hsyncModelled_ = false;
+        hsyncLag_ = 0;
+        hsyncLagLeft_ = 0;
+        hsyncInvertedSeen_ = false;
         syncProcessorLocked_ = false;
         trace.clear();
         tx_.clear();
@@ -125,6 +128,14 @@ public:
         bank[0][0x16] = (uint8_t)((bank[0][0x16] & ~0x03) | 0x02
                                   | (positive ? 0x01 : 0x00));
     }
+
+    // How many reads report the OLD low count after the inversion bit moves.
+    //
+    // The chip re-counts the line through the new polarity, so a read taken
+    // straight after the write still reports what it counted before -- measured
+    // on the bench as around 1.5 s at 60 Hz. Zero is the default, so a test
+    // that does not ask for the lag sees the corrected count at once.
+    void hsyncInversionLag(uint8_t reads) { hsyncLag_ = reads; }
 
     // A bus that acknowledges writes and stores none of them, which is what an
     // unpowered board looks like from this end: the segment select still lands,
@@ -217,23 +228,49 @@ private:
     void refreshHsyncLowCount()
     {
         const bool inverted = (bank[5][0x55] & 0x08) != 0;
-        const uint16_t low = (hsyncPositive_ != inverted)
-                                 ? (uint16_t)(hsyncLine_ - hsyncPulse_)
-                                 : hsyncPulse_;
+        if (inverted != hsyncInvertedSeen_) {
+            hsyncInvertedSeen_ = inverted;
+            hsyncLagLeft_ = hsyncLag_;
+        }
+        bool counting = inverted;
+        if (hsyncLagLeft_ > 0) {
+            counting = !inverted;
+            --hsyncLagLeft_;
+        }
+        // THE COUNT IS IN ADC SAMPLES, so the same physical pulse spans a
+        // different number of them at a different divider -- and the engine
+        // moves the divider to a reference before it measures. A fixed count
+        // describes a pulse whose duty changes with the clock, which no source
+        // has.
+        const uint16_t divider = dividerInForce();
+        const uint16_t line = divider > 0 ? divider : hsyncLine_;
+        const uint16_t pulse = hsyncLine_ > 0
+            ? (uint16_t)(((uint32_t)hsyncPulse_ * line + hsyncLine_ / 2) / hsyncLine_)
+            : hsyncPulse_;
+        const uint16_t low = (hsyncPositive_ != counting)
+                                 ? (uint16_t)(line - pulse)
+                                 : pulse;
         bank[0][0x19] = (uint8_t)(low & 0xFF);
         bank[0][0x1A] = (uint8_t)((low >> 8) & 0x0F);
     }
 
+    uint16_t dividerInForce() const
+    {
+        return (uint16_t)(bank[5][0x12] | ((uint16_t)(bank[5][0x13] & 0x0F) << 8));
+    }
+
     void echoLineSamples()
     {
-        const uint16_t divider
-            = (uint16_t)(bank[5][0x12] | ((uint16_t)(bank[5][0x13] & 0x0F) << 8));
+        const uint16_t divider = dividerInForce();
         bank[0][0x17] = (uint8_t)(divider & 0xFF);
         bank[0][0x18] = (uint8_t)((divider >> 8) & 0x0F);
     }
 
     bool syncProcessorLocked_ = false;
     bool hsyncModelled_ = false;
+    uint8_t hsyncLag_ = 0;
+    uint8_t hsyncLagLeft_ = 0;
+    bool hsyncInvertedSeen_ = false;
     uint16_t hsyncPulse_ = 0;
     uint16_t hsyncLine_ = 0;
     bool hsyncPositive_ = false;
