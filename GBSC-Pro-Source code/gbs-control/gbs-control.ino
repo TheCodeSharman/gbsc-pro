@@ -1557,42 +1557,12 @@ static Tv5725::HdBypass::SourceSyncEdges sourceSyncEdges()
     return edges;
 }
 
-void prepareSyncProcessor() 
+void prepareSyncProcessor()
 {
-    GBS::SP_SOG_P_ATO::write(0);
-    GBS::SP_JITTER_SYNC::write(0); // Use falling and rising edge to sync input Hsync
-
-    Tv5725::SyncProcessor::applyPulseWidthDifference();
-
-    Tv5725::SyncProcessor::applyPulseIgnore(Tv5725::SyncMeasurement::isCsync(),
-                                            sourceHasSerratedSync());
-
-    GBS::SP_H_TOTAL_EQ_THD::write(3);
-
-    Tv5725::SyncProcessor::applySdVsyncPosition();
-
-    GBS::SP_CS_HS_ST::write(0x10);
-    GBS::SP_CS_HS_SP::write(0x00);
-
-    if (!rgbhvBypass() && !Tv5725::PresetLoad::scalingRgbhvInForce()) {
-        GBS::SP_CLAMP_MANUAL::write(0);
-        Tv5725::SyncProcessor::clampFromReferenceClock();
-        Tv5725::SyncProcessor::holdClamp();
-        GBS::SP_SOG_MODE::write(1);
-        Tv5725::SyncProcessor::applyDefaultCoastWindow();
-        Tv5725::SyncProcessor::setHsyncOverflowProtect(true);
-        GBS::SP_HCST_AUTO_EN::write(0);
-        GBS::SP_NO_COAST_REG::write(0);
-    }
-
-    // The sub coast covers the equalising pulses, so serration is the whole of
-    // what it asks about -- and it is asked on every route, because a path that
-    // does not write it inherits whatever the last source left.
-    Tv5725::SyncProcessor::setSubCoast(sourceHasSerratedSync());
-
-    GBS::SP_HS_REG::write(1);
-    GBS::SP_HS_PROC_INV_REG::write(0);
-    GBS::SP_VS_PROC_INV_REG::write(0);
+    Tv5725::SyncProcessor::prepare(Tv5725::SyncMeasurement::isCsync(),
+                                   sourceHasSerratedSync(),
+                                   rgbhvBypass()
+                                       || Tv5725::PresetLoad::scalingRgbhvInForce());
 }
 
 void goLowPowerWithInputDetection()
@@ -2450,9 +2420,14 @@ void doPostPresetLoadSteps()
         GBS::ADC_UNUSED_67::write(0);
         GBS::PAD_CKIN_ENZ::write(0);
 
+        // BEFORE prepareSyncProcessor(), which is the per-load setup that does
+        // not follow the sync type. Asked on every route rather than only the
+        // scaling-RGBHV one: a source that never reaches it keeps whatever sync
+        // path the last one left, and a separate-sync source left on
+        // sync-on-green counts nothing at all.
+        Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
         prepareSyncProcessor();
         if (scalingRgbhv()) {
-            Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
             if (Tv5725::SyncMeasurement::isCsync()) {
                 Tv5725::SyncOnGreen::choose(24);
             }

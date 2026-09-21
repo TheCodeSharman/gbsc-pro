@@ -1006,3 +1006,34 @@ TEST_CASE("normalising the polarity clears the inversion into the ADC PLL")
 
     CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 0u);
 }
+
+// The per-load setup runs after applyForSyncType() on every preset load, and
+// SP_SOG_MODE follows the sync type. Written from both, a separate-sync source
+// is left configured for sync-on-green: STATUS_SYNC_PROC_VTOTAL then reads 0,
+// detection's line-count wait times out, and the input is never taken -- so no
+// output mode is set and the engine's own re-arm cannot fire either.
+// Measured on the bench at 800x600@60: SOG mode 1 gives VTOTAL 0, and clearing
+// it by hand gives 627 and a full acquisition within 3 s.
+// docs/investigations/sp-sog-mode-had-two-owners.md
+
+TEST_CASE("the per-load setup leaves the sync mode the sync type chose")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(false);
+
+    SyncProcessor::prepare(false, false, false);
+
+    CHECK(SyncProcessor::SP_SOG_MODE::read() == 0u);
+}
+
+TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
+{
+    Wire.reset();
+    Wire.poison(Poisons[0]);
+    SyncProcessor::applyForSyncType(false);
+
+    SyncProcessor::prepare(false, false, false);
+
+    CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
+}

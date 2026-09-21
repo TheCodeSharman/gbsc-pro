@@ -233,6 +233,18 @@ public:
     // only reports correctly once the type is already right.
     static void applyForSyncType(bool csync);
 
+    // The per-load sync processor setup that does not follow the sync type.
+    // `serrated` is a 15 kHz csync source whose vertical interval carries
+    // equalisation pulses; `rgbhvRoute` suppresses the clamp and protection
+    // setup that an RGBHV route owns itself.
+    //
+    // The sync-type fields are NOT written here. SP_SOG_MODE, the coast pair
+    // and SP_NO_COAST_REG are applyForSyncType()'s, and writing them from a
+    // second place left a separate-sync source configured for csync -- the
+    // sync processor then counts nothing and detection refuses the input.
+    // docs/investigations/sp-sog-mode-had-two-owners.md
+    static void prepare(bool csync, bool serrated, bool rgbhvRoute);
+
     // How long the sync processor counts nothing usable after its path moves.
     // Measured: STATUS_SYNC_PROC_VTOTAL reads 305 / 330 / 425 the instant
     // SP_EXT_SYNC_SEL is restored on a 311-line source, and is back to 311

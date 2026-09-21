@@ -178,6 +178,37 @@ void SyncProcessor::applyDefaultCoastWindow()
     SP_H_CST_SP::write(0x100);
 }
 
+void SyncProcessor::prepare(bool csync, bool serrated, bool rgbhvRoute)
+{
+    SP_SOG_P_ATO::write(0);
+    SP_JITTER_SYNC::write(0);
+
+    applyPulseWidthDifference();
+    applyPulseIgnore(csync, serrated);
+
+    SP_H_TOTAL_EQ_THD::write(3);
+
+    applySdVsyncPosition();
+
+    SP_CS_HS_ST::write(0x10);
+    SP_CS_HS_SP::write(0x00);
+
+    if (!rgbhvRoute) {
+        SP_CLAMP_MANUAL::write(0);
+        clampFromReferenceClock();
+        holdClamp();
+        applyDefaultCoastWindow();
+        setHsyncOverflowProtect(true);
+        SP_HCST_AUTO_EN::write(0);
+    }
+
+    setSubCoast(serrated);
+
+    SP_HS_REG::write(1);
+    SP_HS_PROC_INV_REG::write(0);
+    SP_VS_PROC_INV_REG::write(0);
+}
+
 void SyncProcessor::applyForSyncType(bool csync)
 {
     // No ordering constraint between these fields is established, so the two
