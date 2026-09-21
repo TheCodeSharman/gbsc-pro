@@ -39,6 +39,40 @@ holds whatever `prepareSyncProcessor()` computed earlier in the load. Measured o
 the bench csync leg it holds 2, the unserrated value, while
 `sourceHasSerratedSync()` is true.
 
+## The missing lines ARE the vertical sync
+
+An unserrated broad pulse carries no horizontal edges, so there is nothing for
+the line counter to count while vertical sync is asserted. The count comes up
+short by exactly that interval, measured on four modes whose vsync widths
+differ:
+
+| mode | `v_timings` vsync | separate | composite | short by |
+|---|---|---|---|---|
+| 800x600@60 | 4 | 627 | 623 | 4 |
+| 640x352@60 | 3 | 363 | 360 | 3 |
+| 640x480@60 | 2 | 524 | 522 | 2 |
+| 320x256@50 | 3 | 311 | 308 | 3 |
+
+So the shortfall is not a fixed number of lines and not an equalisation interval
+of some standard size: it is the mode's own vertical sync width, and it follows
+that width wherever the mode puts it.
+
+**It is a consequence of the signal rather than a fault in the coasting.** A
+serrated source keeps feeding the counter through the vertical interval; this
+one cannot, so no coast setting recovers the lines, and a count taken across
+vertical sync is short on any unserrated composite source.
+
+**What it costs is the raster match, and through it the picture.**
+`SourceTiming::lookUp()` matches on the count plus one against a published
+total, so 623 asks for a 624-line raster where the table holds 628 and nothing
+matches at all. The timing goes unpublished, the solve falls through to its
+default guess, and `VDS_HSCALE` lands at 1023 against the 958 separate sync
+solves -- near enough unity that a near-full-line capture plays out unmagnified.
+The card then repeats about 1.7 times across over heavy green tearing.
+
+It also moves the source's identity, which is keyed on the count.
+`../source-identity-and-framing-lookup.md`, `../known-issues.md`.
+
 ## Coast is binary, not proportional
 
 The coast window is the other setting `sourceHasSerratedSync()` drives. Removing

@@ -1858,10 +1858,15 @@ whose vsync differs:
 | 640x352@60 | 3 | 363 | 360 | 3 |
 | 640x480@60 | 2 | 524 | 522 | 2 |
 
-So the composite path is not counting the lines DURING the vertical sync pulse,
-rather than losing a fixed number of them. Coasting is where to look --
-`SP_PRE_COAST`, `SP_POST_COAST` and `SP_DLT_REG` are what carry the sync
-processor across a composite frame's serration.
+A fourth mode agrees: 320x256@50 has a vsync of 3 and reads 308 against 311.
+
+**And the mechanism is already written down.** The RISC PC's composite sync
+carries no serrations, so the broad vertical pulse offers the line counter no
+horizontal edges and the lines under it cannot be counted.
+`docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md`. That makes
+it a consequence of the signal rather than a fault in the coasting, so no coast
+setting recovers the lines -- what has to change is the engine adding the
+interval back, or matching a raster without it.
 
 **One mode must look the same on both sync types**, so this is a defect rather
 than a property of composite sync. It also makes the source identity move:
