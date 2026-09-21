@@ -87,7 +87,19 @@ negative on the bench 640x480 and positive on its 800x600. It is a second
 horizontal discriminator already in hand.
 
 The decision that follows is that the sync width belongs in the source's
-identity rather than beside it. `SourceKey` is persisted in the framing file, so
+identity rather than beside it, and the two polarities with it. That makes the
+identity every measurable fact the part offers:
+
+| term | kind | measured by |
+|---|---|---|
+| line count | with the rate, the horizontal rate | `STATUS_SYNC_PROC_VTOTAL` |
+| field rate | the vertical rate | `SourceMeasurement` |
+| sync width, as a fraction of the line | horizontal structure | `STATUS_SYNC_PROC_HLOW_LEN` |
+| hsync polarity | horizontal structure | `STATUS_SYNC_PROC_HSPOL` |
+| vsync polarity | vertical structure | `STATUS_SYNC_PROC_VSPOL` |
+
+Nothing measurable is left out, and the one fact that would complete it -- a
+vertical sync width -- does not exist on this part. `SourceKey` is persisted in the framing file, so
 adding a field changes the stored format and existing entries need migrating or
 discarding; that cost is what the three options below were weighing, and the
 measurement removes the doubt about whether the term is worth paying it for.
