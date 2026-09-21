@@ -245,6 +245,13 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
 
     applyHorizontalFromChannelLine(divider);
 
+    // The third register of the one quantity the divider is. The sync
+    // processor runs on this route -- it reports the line count and the
+    // samples per line the engine reads back -- so its retime window follows
+    // the line the ADC is delivering here, not the one a scaling solve last
+    // sized it for.
+    SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
+
     holdHsyncPulse(ChannelSyncDelay, ChannelSyncDelay + SyncPulseWidth);
     holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);
 }

@@ -914,3 +914,21 @@ TEST_CASE("the pass-through divider is even, like every other divider")
 {
     CHECK(HdBypass::dividerFor(37879) % 2 == 0);
 }
+
+// THE DIVIDER IS ONE QUANTITY IN THREE REGISTERS, and pass-through moved only
+// one of them. The sync processor runs on this route -- it is what reports the
+// line count and the samples per line the engine reads back -- so its retime
+// window has to be sized for the line the ADC is actually delivering.
+//
+// Left behind, it keeps whatever the last scaling solve computed: measured on
+// the bench in pass-through at PLLAD_MD 2038, SP_RT_HS_SP read 1339, which is
+// 93% of 1440 -- the scaling path's divider -- so the window closed at 66% of
+// the line instead of 93%.
+TEST_CASE("pass-through sizes the retime window from its own divider")
+{
+    Wire.reset();
+    HdBypass::applyPassThroughSampling(2038, 37879);
+
+    CHECK(Tv5725::SyncProcessor::SP_RT_HS_SP::read()
+          == Tv5725::SyncProcessor::retimeStopFor(2038));
+}
