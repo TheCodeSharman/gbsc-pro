@@ -1769,3 +1769,22 @@ is being judged.
 
 `docs/investigations/low-power-detection-strands-pass-through-off-its-route.md`
 has the measurements and what they refute.
+
+### The vertical capture window starts inside the picture
+
+At 800x600@60 the solve places the vertical capture about eight counter lines
+after the source's active image begins, clipping the top. Measured with both
+capture edges moved together so the height stays at 600 lines: the card's top
+border band is 21 rows and the solve shows 12, reaching full height at
+`IF_VB_SP` 18 against the solved 26.
+
+The mode file gives this source zero vertical border, so it is not the
+horizontal border case -- the window is cutting the source's own displayed
+lines. `VideoSourceLine::FrameLagLines` is -1.5 and is the whole vertical
+correction; this mode wants about -9. A second line count is what separates a
+pipeline lag from a conversion error.
+
+Independently, the bottom border band reads 5 rows at EVERY capture position,
+so the bottom is clipped on the output side and is a separate fault.
+
+`docs/investigations/the-vertical-capture-window-is-placed-late.md`.
