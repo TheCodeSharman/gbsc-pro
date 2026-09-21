@@ -454,8 +454,9 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   decimators are ONE setting: `PLLAD_LAT` loads several of them on a rising edge
   and the loop filter has to suit the tap. Writing two or three of them over HTTP
   to compare configurations leaves the PLL unlocked -- measured twice in one
-  session, `STATUS_MISC_PLLAD_LOCK` 0 with `STATUS_SYNC_PROC_HTOTAL` wandering a
-  few counts under the divider, in states that locked before the poking started.
+  session, `STATUS_SYNC_PROC_HTOTAL` wandering a few counts under the divider in
+  states that reported it back exactly before the poking started. The wandering
+  count is the evidence; the lock bit beside it is not, for the reason below.
   **`/sampleclock` IS THE INSTRUMENT**, behind `GBS_DEBUG` and pass-through only:
   it writes the whole group through the call the bypass switch makes, moves the
   channel's played-out raster with the divider, and restarts the PLL afterwards
@@ -867,6 +868,41 @@ twelve tables while they existed, which is what `BringUp` was built from.
   reads wrong for a third reason too — an *unconfigured sync processor*. With
   `SP_PRE_COAST`/`SP_POST_COAST`/`SP_DLT_REG` zeroed it read 2400 and did not
   move when 2553 was written and latched by hand.
+- **`STATUS_MISC_PLLAD_LOCK` IS A DUTY CYCLE, NOT A STATE, AND ONE READ OF IT
+  SAYS NOTHING.** It flickers several times a second on a picture judged
+  perfect: measured with `Tv5725::SamplingLog` at 25 ms, a scaling state reads 1
+  in **86.3% of 1131 samples with 261 transitions**, 8.7 a second. So a single
+  HTTP read has better than a one in eight chance of returning 0 while
+  everything is right, and **"the ADC PLL is unlocked" is not a conclusion a
+  register dump can reach**. Ask the percentage and the transition rate, which
+  need the sampling log -- an HTTP read answers at tens of hertz at best and
+  cannot see a bit moving at 8.7 Hz.
+
+  **The honest health metric is `STATUS_SYNC_PROC_HTOTAL` against the divider**,
+  because the sync processor counts in ADC clocks and so reports a locked PLL's
+  divider back. That is a comparison, it is stable where the bit is not -- 0 or
+  ±1 on every healthy state measured -- and a genuinely sick state is hundreds
+  out rather than one. `docs/investigations/pllad-lock-is-a-duty-cycle-not-a-state.md`.
+
+- **`STATUS_IF_VT_OK` READING 0 IS THE NORMAL STATE ON SEPARATE SYNC, NOT A
+  FAULT.** The block does not complete a vertical measurement there and
+  `VPERIOD_IF` holds debris rather than a period, so the bench RISC PC on `vga`
+  reads 0 whenever it is healthy. Reading it as "the input formatter is dead" is
+  a diagnosis of the sync arrangement, not of the unit. It gates exactly one
+  thing -- `Deinterlacer::steer()`, which a progressive source skips regardless
+  -- so it reaches neither acquisition nor the solve, and there is nothing it
+  can explain. `STATUS_IF_HT_OK` is no better in the other direction: it reads 1
+  while `HPERIOD_IF` rails.
+
+  **The pattern is worth naming, because three of these have now cost time.**
+  `STATUS_MISC_PLLAD_LOCK`, `STATUS_SYNC_PROC_VSACT` and `STATUS_IF_VT_OK` all
+  read like verdicts and are none of them a verdict: one is a duty cycle, one
+  reports the sync path already chosen, and one reports a measurement this sync
+  type never completes. **A status bit is a measurement of a block, not a
+  judgement of the unit** -- ask what the bit is counting before quoting it as
+  evidence, and prefer a comparison that has a right answer, such as
+  `STATUS_SYNC_PROC_HTOTAL` against the divider.
+
 - **`STATUS_SYNC_PROC_VSACT` is not a lock indicator, and it is not dead
   either — it reports the sync path you are already on.** Both readings are
   measured, on the same source, a day apart:
