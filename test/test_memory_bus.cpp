@@ -135,3 +135,21 @@ TEST_CASE("segment 0 gets the clock and nothing else")
         REQUIRE_FALSE(Wire.touched[0][r]);
     }
 }
+
+TEST_CASE("the FIFO status registers are made readable")
+{
+    // MEM_FF_TOP_FF_SEL gates whether the FIFOs report their status at all, so
+    // with it clear a dump of MEM_FF_STATUS says nothing about the FIFOs. Its
+    // only writer was a function that reset the debug port, which is a
+    // different subsystem's business.
+    //
+    // Poisoned with the bit CLEAR rather than through FreshChip: Poison has
+    // bit 7 set, so the fixture's own value would pass this without a write.
+    Wire.reset();
+    Wire.poison(Poison);
+    Wire.bank[4][0x5B] &= 0x7f;
+
+    MemoryBus::init();
+
+    CHECK(Wire.field(4, 0x5B, 7, 1) == 1);
+}

@@ -14,6 +14,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 
 void tv5725Log(const char *) {}
 
@@ -92,4 +93,62 @@ TEST_CASE("the output's vertical takes the VDS's test output with it")
     TestBus::selectOutputVsync();
 
     CHECK(VideoProcessor::VDS_TEST_EN::read() == 1);
+}
+
+TEST_CASE("a hold puts back the formatter's selection, not just the selector")
+{
+    // Three of the borrowers restored TEST_BUS_SEL alone while having changed
+    // the sub-selection too, which is the half nothing owned.
+    Wire.reset();
+    TestBus::selectInputVsync();
+
+    {
+        const TestBus::Hold held;
+        InputFormatter::IF_TEST_SEL::write(9);
+        InputFormatter::IF_TEST_EN::write(0);
+    }
+
+    CHECK(InputFormatter::IF_TEST_SEL::read() == 3);
+}
+
+TEST_CASE("a hold puts back the sync processor's stage")
+{
+    Wire.reset();
+    SyncProcessor::driveTestBus(SyncProcessor::TestModuleOutProc, 0);
+
+    {
+        const TestBus::Hold held;
+        SyncProcessor::driveTestBus(SyncProcessor::TestModuleVsActDet, 4);
+    }
+
+    CHECK(SyncProcessor::SP_TEST_MODULE::read() ==
+          (uint8_t)SyncProcessor::TestModuleOutProc);
+}
+
+TEST_CASE("a hold puts back the pad it found cleared")
+{
+    // The auto-gain path clears the pad and then selects, and select() drives
+    // the pad -- so the borrower cannot hold the pad down by hand.
+    Wire.reset();
+    Chip::PAD_BOUT_EN::write(0);
+
+    {
+        const TestBus::Hold held;
+        TestBus::select(0x0b);
+    }
+
+    CHECK(Chip::PAD_BOUT_EN::read() == 0);
+}
+
+TEST_CASE("a hold puts back a bus that was not enabled")
+{
+    Wire.reset();
+    TestBus::enable(false);
+
+    {
+        const TestBus::Hold held;
+        TestBus::select(0x0b);
+    }
+
+    CHECK(!TestBus::enabled());
 }

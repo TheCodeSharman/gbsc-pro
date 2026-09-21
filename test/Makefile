@@ -90,7 +90,9 @@ test-bus:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_test_bus" \
-	  "$(HERE)/test_test_bus.cpp" src/tv5725/TestBus.cpp
+	  "$(HERE)/test_test_bus.cpp" src/tv5725/TestBus.cpp \
+	  src/tv5725/SyncProcessor.cpp src/tv5725/SyncMeasurement.cpp \
+	  src/tv5725/Interrupts.cpp
 	@"$(OUT)/test_test_bus"
 
 ## test-bus-rate-measurement: host unit tests for Tv5725::TestBusRateMeasurement

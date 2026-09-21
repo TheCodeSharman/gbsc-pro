@@ -128,6 +128,10 @@ void MemoryBus::init()
     MEM_CS1_DLY_REG::write(0x0);         // s4_1c[6:4]
     MEM_BA0_DLY_REG::write(0x0);         // s4_1d[2:0]
     MEM_BA1_DLY_REG::write(0x0);         // s4_1d[6:4]
+
+    // Without this the FIFOs report no status, so MEM_FF_STATUS says nothing
+    // about them and a dump of it reads as healthy.
+    MEM_FF_TOP_FF_SEL::write(1);         // s4_5b[7:7]
 }
 
 }  // namespace Tv5725

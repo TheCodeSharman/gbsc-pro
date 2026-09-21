@@ -30,6 +30,11 @@ public:
     static void selectInputVsync();
     static void selectOutputVsync();
 
+    // Ask the input formatter for one of its signals, without selecting it.
+    // RD-5725-1.1 tabulates no values, so which signal a number is belongs to
+    // the caller -- a sweep asking each in turn, or selectInputVsync().
+    static void driveFormatter(uint8_t signal);
+
     // Drive this signal out. Enables the bus AND the pad the signal leaves the
     // chip on: a selection nothing is driving is not a selection, and leaving
     // either to the caller is what makes a measurement silently read 0.
@@ -43,6 +48,27 @@ public:
     static uint8_t selected();
     static bool enabled();
     static void enable(bool on);
+
+    // Borrow the pin and put back everything the borrow moved: the selector,
+    // the bus enable, the pad, and both halves of the sub-selection. A
+    // borrower that restores the selector alone leaves the next reader on
+    // whichever stage or signal it chose. Scope one over the borrowing.
+    class Hold {
+    public:
+        Hold();
+        ~Hold();
+
+    private:
+        uint8_t sel_;
+        uint8_t pad_;
+        uint8_t ifSel_;
+        uint8_t ifEn_;
+        uint8_t vdsEn_;
+        uint8_t spModule_;
+        uint8_t spSignal_;
+        uint8_t spEn_;
+        bool enabled_;
+    };
 
     // The bus's value, for a signal read rather than counted. Counting edges
     // is the ESP's job, off the pin. readHigh() is the top byte of the same

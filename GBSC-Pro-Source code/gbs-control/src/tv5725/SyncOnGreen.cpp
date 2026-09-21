@@ -22,21 +22,19 @@ const uint16_t HoldRun = 50;
 const uint16_t EdgeWindowMs = 60;
 
 // The sync processor's own test bus, which is where the sync separator's output
-// appears. Selecting it is what makes it readable, and the previous selection
-// is put back: the console, the auto-gain routine and getSyncPresent() drive
-// the same two registers for other things.
+// appears. Selecting it is what makes it readable, and TestBus::Hold puts back
+// what was there: the console, the auto-gain routine and getSyncPresent() drive
+// the same registers for other things.
 struct SeparatorBus {
-    uint8_t sel;
+    TestBus::Hold held;
 
-    SeparatorBus() : sel(TestBus::selected())
+    SeparatorBus()
     {
         TestBus::select(TestBus::SyncProcessor);
         delay(1);
         SyncProcessor::driveTestBus(SyncProcessor::TestModuleOutProc, 0);
         delay(1);
     }
-
-    ~SeparatorBus() { TestBus::select(sel); }
 
     uint8_t read() const { return TestBus::readHigh(); }
 };

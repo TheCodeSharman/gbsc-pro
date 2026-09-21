@@ -180,8 +180,7 @@ private:
         // the HTotal search use. If none of them move it, the fault is the pin
         // or the net, not the selection.
         const uint8_t selectors[] = {0x0, 0x2, 0xa};
-        const uint8_t selBackup = Tv5725::TestBus::selected();
-        const bool enBackup = Tv5725::TestBus::enabled();
+        const Tv5725::TestBus::Hold held;
 
         for (uint8_t i = 0; i < sizeof(selectors); i++)
         {
@@ -212,9 +211,6 @@ private:
                 "  DEBUG_IN_PIN sel=0x%x: %u transitions in %ums, level %d->%d, %u samples\n",
                 selectors[i], transitions, (unsigned)FS_PROBE_MS, first, level, spins);
         }
-
-        Tv5725::TestBus::select(selBackup);
-        Tv5725::TestBus::enable(enBackup);
     }
 #endif
 

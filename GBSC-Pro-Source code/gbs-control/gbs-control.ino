@@ -1423,7 +1423,6 @@ void setResetParameters()
     resetPLLAD();
     GBS::PLL_VCORST::write(1);
     GBS::PLLAD_CONTROL_00_5x11::write(0x01);
-    resetDebugPort();
 
     GBS::SFTRST_IF_RSTZ::write(1);
     GBS::SFTRST_DEINT_RSTZ::write(0);
@@ -1943,7 +1942,6 @@ uint8_t inputAndSyncDetect()
         rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
         rto->isInLowPowerMode = false; 
-        resetDebugPort();
         applyRGBPatches();
         if (VideoSourceSelection::selected() == InfoRGBs || VideoSourceSelection::selected() == InfoRGsB) {
         }
@@ -1954,7 +1952,6 @@ uint8_t inputAndSyncDetect()
         rto->isInLowPowerMode = false; 
         rto->inputIsYpBpR = true;
         rto->sourceDisconnected = false;
-        resetDebugPort();
         applyYuvPatches();
         // GBS::VDS_CONVT_BYPS::write(0);
         // GBS::PIP_CONVT_BYPS::write(0);
@@ -1968,7 +1965,6 @@ uint8_t inputAndSyncDetect()
         rto->inputIsYpBpR = false;
         rto->sourceDisconnected = false;
         Tv5725::RgbhvOutput::chooseBypass();
-        resetDebugPort();
 
         return 3;
     }
@@ -2276,19 +2272,6 @@ void printVideoTimings()
 #endif
 }
 
-void resetDebugPort()
-{
-    GBS::PAD_BOUT_EN::write(1);
-    GBS::IF_TEST_EN::write(1);
-    GBS::IF_TEST_SEL::write(3);
-    Tv5725::TestBus::select(Tv5725::TestBus::SyncProcessor);
-    Tv5725::SyncProcessor::driveTestBus(
-        Tv5725::SyncProcessor::TestModuleOutProc, 0);
-    GBS::MEM_FF_TOP_FF_SEL::write(1);
-
-    GBS::VDS_TEST_EN::write(1);
-}
-
 
 // The OSD bar's four controls, and **the only way it may reach the geometry**.
 // Anything here that writes a register directly -- VDS_HB_SP, VDS_HSCALE and
@@ -2494,7 +2477,6 @@ void doPostPresetLoadSteps()
         // row. docs/investigations/the-decimators-filter.md
         rto->osr = Tv5725::Adc::OversampleAsClockAllows;
 
-        resetDebugPort();
 
         if (Tv5725::SyncMeasurement::isCsync()) {
             if (Tv5725::TestBus::readHigh() == 0) {
@@ -2831,20 +2813,13 @@ void applyPresets()
 
 boolean getSyncPresent() //
 {
-    const uint8_t selBackup = Tv5725::TestBus::selected();
+    const Tv5725::TestBus::Hold held;
+
     Tv5725::TestBus::select(Tv5725::TestBus::SyncProcessor);
     Tv5725::SyncProcessor::driveTestBus(
         Tv5725::SyncProcessor::TestModuleOutProc, 0);
 
-    uint16_t readout = Tv5725::TestBus::read();
-
-    Tv5725::TestBus::select(selBackup);
-
-    if (readout > 0x0180) {
-        return true;
-    }
-
-    return false;
+    return Tv5725::TestBus::read() > 0x0180;
 }
 
 
@@ -2936,7 +2911,6 @@ void enterHdBypass()
     GBS::ADC_UNUSED_62::write(0x00);
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
-    resetDebugPort();
     Tv5725::SyncProcessor::forgetPositions();
 
     // The ADC's sense of what arrives on R, G and B, which the preset load used
@@ -3272,21 +3246,12 @@ static void holdSampleClock(uint16_t divider)
 static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
                          uint8_t ifSel)
 {
-    const uint8_t padBackup = GBS::PAD_BOUT_EN::read();
-    const uint8_t selBackup = Tv5725::TestBus::selected();
-    const bool enBackup = Tv5725::TestBus::enabled();
-    const uint8_t spModBackup = GBS::SP_TEST_MODULE::read();
-    const uint8_t spSigBackup = GBS::SP_TEST_SIGNAL_SEL::read();
-    const uint8_t spEnBackup = GBS::SP_TEST_EN::read();
-    const uint8_t ifSelBackup = GBS::IF_TEST_SEL::read();
-    const uint8_t ifEnBackup = GBS::IF_TEST_EN::read();
+    const Tv5725::TestBus::Hold held;
 
     if (spModule != 0xff)
         Tv5725::SyncProcessor::driveTestBus(spModule, spSignal);
-    if (ifSel != 0xff) {
-        GBS::IF_TEST_SEL::write(ifSel);
-        GBS::IF_TEST_EN::write(1);
-    }
+    if (ifSel != 0xff)
+        Tv5725::TestBus::driveFormatter(ifSel);
     Tv5725::TestBus::enable(true);
 
     debugPrintf("tb,header,sel,transitions,first,last,spins ms=%u sp=%d sig=%u if=%d sogmode=%d\n",
@@ -3316,14 +3281,6 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
         handleWiFi(0);
     }
 
-    Tv5725::TestBus::select(selBackup);
-    Tv5725::TestBus::enable(enBackup);
-    GBS::SP_TEST_MODULE::write(spModBackup);
-    GBS::SP_TEST_SIGNAL_SEL::write(spSigBackup);
-    GBS::SP_TEST_EN::write(spEnBackup);
-    GBS::IF_TEST_SEL::write(ifSelBackup);
-    GBS::IF_TEST_EN::write(ifEnBackup);
-    GBS::PAD_BOUT_EN::write(padBackup);
     debugPrintf("tb,done\n");
 }
 #endif
@@ -3342,7 +3299,6 @@ boolean checkBoardPower()
 
 void calibrateAdcOffset()
 {
-    GBS::PAD_BOUT_EN::write(0);
     GBS::PLL648_CONTROL_01::write(0xA5);
     Tv5725::Adc::selectInput(2);
     Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
@@ -4445,17 +4401,12 @@ void loop()
         && inputAcquisition.runAdvanced()) {
         if (uopt->enableAutoGain == 1 && !rto->sourceDisconnected && inputAcquisition.sourceIsPresent() && Tv5725::SyncProcessor::clampPlaced() && inputAcquisition.acquiredPasses() > 90 && Tv5725::Chip::hasPower()) {
             if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
-                uint8_t debugRegBackup = 0, debugPinBackup = 0;
-                debugPinBackup = GBS::PAD_BOUT_EN::read();
-                debugRegBackup = Tv5725::TestBus::selected();
-                GBS::PAD_BOUT_EN::write(0);
+                const Tv5725::TestBus::Hold held;
                 Tv5725::Adc::DEC_TEST_SEL::write(1);
                 Tv5725::TestBus::select(0xb);
                 if (GBS::STATUS_INT_SOG_BAD::read() == 0) {
                     runAutoGain();
                 }
-                Tv5725::TestBus::select(debugRegBackup);
-                GBS::PAD_BOUT_EN::write(debugPinBackup);
             }
         }
     }
@@ -5256,11 +5207,9 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                 } break;
                 case '_': {
-                    uint8_t testBusSelBackup = Tv5725::TestBus::selected();
+                    const Tv5725::TestBus::Hold held;
                     Tv5725::TestBus::selectInputVsync();
-                    uint32_t ticks = FrameSync::getPulseTicks();
-                    Tv5725::TestBus::select(testBusSelBackup);
-                    Serial.println(ticks);
+                    Serial.println(FrameSync::getPulseTicks());
                 } break;
                 case '~':
                     goLowPowerWithInputDetection();
