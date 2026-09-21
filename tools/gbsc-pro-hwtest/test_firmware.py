@@ -394,6 +394,29 @@ def _sync_sample(host):
     }
 
 
+def dropout_is_confirmed(follow):
+    """Whether a sync dropout survives being looked at again.
+
+    STATUS_MISC_PLLAD_LOCK is deliberately NOT consulted. It is a duty cycle
+    rather than a state -- measured at 86.3% over 1131 samples with 8.7
+    transitions a second on a picture judged perfect -- so a single zero
+    confirms nothing and promotes every sampling artefact to a failure.
+    ../../docs/investigations/pllad-lock-is-a-duty-cycle-not-a-state.md
+    """
+    return any(sample["status16"] & LOCKED != LOCKED for sample in follow)
+
+
+def test_a_lone_lock_bit_zero_does_not_confirm_a_dropout():
+    locked = {"status16": LOCKED, "pll_lock": False}
+    assert not dropout_is_confirmed([locked, locked, locked])
+
+
+def test_a_dropout_that_persists_is_confirmed():
+    locked = {"status16": LOCKED, "pll_lock": True}
+    unlocked = {"status16": 0, "pll_lock": True}
+    assert dropout_is_confirmed([locked, unlocked, locked])
+
+
 def test_the_sync_processor_holds_a_lock(host, source):
     """H sync active and staying active is what every downstream stage waits
     for. The no-sync fault shows up here twice over: as a lock that never
@@ -435,8 +458,7 @@ def test_the_sync_processor_holds_a_lock(host, source):
                 "htotal": sample["htotal"],
                 "vtotal": sample["vtotal"],
                 "follow": [f["status16"] for f in follow],
-                "confirmed": not sample["pll_lock"]
-                or any(f["status16"] & LOCKED != LOCKED for f in follow),
+                "confirmed": dropout_is_confirmed(follow),
             }
         )
 
