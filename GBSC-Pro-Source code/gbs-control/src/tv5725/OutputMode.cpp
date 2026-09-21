@@ -163,10 +163,13 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // truth. They differ by up to 0.5%, under a pixel here.
     float clockHz = (float)horizontalTotal * (float)frameLines() * fieldRateHz;
 
-    // The sync pulse and back porch are the standard's DURATIONS: the encoder
-    // measures the pulse and finds active video where our blanking ends, so
-    // both have to arrive when the standard says, whatever clock the line runs
-    // at.
+    // The sync pulse is the standard's DURATION, and it is load-bearing: the
+    // encoder drops the link outright at 90, 140 or 60 where 112 carries a
+    // picture, so it has to arrive when the standard says whatever clock the
+    // line runs at. The back porch is a duration for symmetry and is NOT
+    // load-bearing -- the encoder's active window does not follow our blanking
+    // edge -- so it is what gives way below.
+    // ../../../docs/investigations/the-shown-window-is-latched-at-lock.md
     long width = scaled(syncPx_, clockHz);
     if (width < 1)
         width = 1;
@@ -174,7 +177,6 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 
     solved.hsyncStart = 0;
     solved.hsyncStop = (uint16_t)width;
-    solved.activeStart = (uint16_t)(width + porch);
 
     // The active window is the standard's FRACTION of the line, and that is a
     // different quantity from a duration. The encoder resamples the line into
@@ -186,7 +188,20 @@ OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
     // docs/investigations/the-active-window-is-a-fraction-of-the-line.md
     long span = (long)horizontalTotal * carriedPx_ / totalPx_;
     long lastUsable = (long)horizontalTotal - FrontPorchMinPx;
-    long stop = solved.activeStart + span;
+
+    // A rate the standard does not run at shortens the line while the porch,
+    // being a duration, stays where it was -- so the two stop fitting. THE SPAN
+    // IS THE PICTURE AND THE PORCH IS BLANKING: giving way at the porch costs
+    // nothing visible, and taking it out of the span throws picture away and
+    // makes the same source reach the panel differently at different rates.
+    long start = (long)width + porch;
+    if (start + span > lastUsable)
+        start = lastUsable - span;
+    if (start < (long)width)
+        start = width;
+    solved.activeStart = (uint16_t)start;
+
+    long stop = start + span;
     if (stop > lastUsable)
         stop = lastUsable;
     solved.activeStop = stop > (long)solved.activeStart ? (uint16_t)stop

@@ -567,7 +567,7 @@ TEST_CASE("a source passed through still names where its active video starts")
 // fall, 528 ns after sync horizontally against the 997 ns stated, and
 // vertically at line 3 with the vsync pulse still asserted to line 5.
 //
-// docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md
+// docs/investigations/the-picture-position-is-latched-not-re-rolled.md
 TEST_CASE("the display window opens at the porch the output mode states")
 {
     SettledEngine settled;

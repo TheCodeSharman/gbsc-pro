@@ -479,3 +479,36 @@ TEST_CASE("the 625-line mode's transmitted lines are not CEA 576p's")
         CHECK(p480.activeLinesStop == 516);
     }
 }
+
+// The mode is the standard's SHAPE, and a rate the standard does not run at
+// deforms it: Mode960p is 1800 x 1000 at 108 MHz, so a 75 Hz source gets 1440
+// of the same clock and the line is a fifth shorter. What has to survive that
+// is the PROPORTION -- the same source framed the same way must reach the panel
+// the same way whatever rate it arrives at.
+//
+// It does not. The active span is a fraction of the line and shrinks with it,
+// while the blanking before it is a duration at an unchanged clock and does
+// not, so the two stop fitting and activeStop is clamped to the front-porch
+// floor with the rest of the picture discarded.
+TEST_CASE("an output mode carries the same fraction of the line at every field rate")
+{
+    // Measured on the bench at 640x480@75 and 800x600@75: a black band down the
+    // left of the panel and the card's outer columns gone, where 60 Hz fills
+    // the screen. VDS_DIS_HB_SP alone decides it -- whole at 410, clipped at
+    // 426 -- so the columns are live video rather than border.
+    OutputTimings at60 = Mode960p.solve(60.0f, OutputMode::EngineCeilingHz);
+    OutputTimings at75 = Mode960p.solve(75.0f, OutputMode::EngineCeilingHz);
+
+    CHECK(at60.horizontalTotal == 1800);
+    CHECK(at75.horizontalTotal == 1440);
+
+    // In thousandths of the line, so the comparison is integer.
+    CHECK(at75.activeWidth() * 1000 / at75.horizontalTotal
+          == at60.activeWidth() * 1000 / at60.horizontalTotal);
+
+    SUBCASE("so the far end is the mode's fraction rather than the porch floor") {
+        // 1440 x 1280/1800 = 1024. Clamped to horizontalTotal - FrontPorchMinPx
+        // it is 1424 - activeStart, which throws picture away.
+        CHECK(at75.activeWidth() == 1440 * 1280 / 1800);
+    }
+}
