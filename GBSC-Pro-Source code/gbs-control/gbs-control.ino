@@ -4912,7 +4912,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case 'i':
                     rto->printInfos = !rto->printInfos;
-                    printf("printfInfo\n");
+                    debugPrintf("printInfo %s\n", rto->printInfos ? "on" : "off");
                     break;
                 case 'c':; // SerialMprintln(F("OTA Updates on"));
                     initUpdateOTA();
