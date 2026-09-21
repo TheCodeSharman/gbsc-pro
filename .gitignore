@@ -70,10 +70,12 @@ docs/photos/**/*.jpg
 docs/photos/**/*.jpeg
 docs/photos/**/*.png
 docs/photos/**/*.mov
+docs/photos/**/*.mp4
 tools/gbsc-pro-hwtest/snapshots/**/*.jpg
 tools/gbsc-pro-hwtest/snapshots/**/*.jpeg
 tools/gbsc-pro-hwtest/snapshots/**/*.png
 tools/gbsc-pro-hwtest/snapshots/**/*.mov
+tools/gbsc-pro-hwtest/snapshots/**/*.mp4
 
 # The Gerbers extracted from the tracked zip beside them. Nix copies TRACKED
 # files into the store on every dirty evaluation, so a second uncompressed copy
