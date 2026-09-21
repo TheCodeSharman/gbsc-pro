@@ -1806,10 +1806,49 @@ At 800x600@60 on `vga` the line count reads 627 on separate sync and 623 on
 composite, with nothing but the source's sync type changed. `SourceKey` is the
 line count and the field rate, so the same mode on the same machine is two
 sources across that change and a framing tuned on one is not found from the
-other.
+other. The count itself is the entry below.
 
 `STATUS_SYNC_PROC_HSPOL` moves with it too, 1 against 0, which is why neither
 polarity may join the identity.
 `docs/source-identity-and-framing-lookup.md`.
 
 The sync width does survive it, shifting 0.12204 to 0.12017.
+
+### Composite sync undercounts the line total, and the picture falls apart
+
+The same source mode reads four lines short on composite sync, and that is
+enough to take it out of the published raster table entirely.
+
+Measured at 800x600@60 on `vga`, `SYNC 1` against `SYNC 0` with nothing else
+touched:
+
+| | `SP_SOG_MODE` | VTOTAL | `VDS_HSCALE` | `VDS_VSCALE` | capture lines |
+|---|---|---|---|---|---|
+| separate | 0 | **627** | 958 | 641 | 26..626, 600 |
+| composite | 1 | **623** | **1023** | 621 | 37..619, 582 |
+
+**The count is the root and the rest follows from it.** `SourceTiming::lookUp()`
+matches on `measured.lines() + 1 == raster.totalLines`, so 623 asks for a
+624-line raster and the table holds 628. Nothing matches, the timing goes
+unpublished, and the solve falls through to the default guess -- which is a
+different capture, a different scale on both axes, and `VDS_HSCALE` at 1023,
+near enough unity that a near-full-line capture is played out unmagnified.
+
+The picture shows exactly that: the card repeats about 1.7 times across, with
+two crosses and two captions, over heavy green line tearing.
+
+The ADC PLL is not implicated. `STATUS_SYNC_PROC_HTOTAL` equals `PLLAD_MD` at
+1606 on both, `IF_HSYNC_RST` is the 1606 an undoubled line is due, and
+`HPERIOD_IF` reads its correct 176.
+
+The sync width survives the change -- 0.12204 against 0.12017 -- so whatever
+miscounts the frame is counting the line correctly. Coasting is where to look:
+`SP_PRE_COAST`, `SP_POST_COAST` and `SP_DLT_REG` are what carry the sync
+processor over a composite frame's serration, and four lines is the size of an
+equalisation interval.
+
+**One mode must look the same on both sync types**, so this is a defect rather
+than a property of composite sync. It also makes the source identity move:
+`SourceKey` is the line count and the field rate, so a framing tuned on one sync
+type is not found from the other.
+`docs/source-identity-and-framing-lookup.md`.
