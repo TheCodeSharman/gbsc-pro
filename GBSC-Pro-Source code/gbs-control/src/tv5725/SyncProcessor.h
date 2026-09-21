@@ -245,6 +245,12 @@ public:
     // docs/investigations/sp-sog-mode-had-two-owners.md
     static void prepare(bool csync, bool serrated, bool rgbhvRoute);
 
+    // The sync processor's half of entering pass-through: the coast pair off,
+    // and the four polarity and swap bits put back rather than inherited,
+    // because a route that never brings the chip up keeps whatever the last
+    // entry left.
+    static void applyForPassThrough();
+
     // How long the sync processor counts nothing usable after its path moves.
     // Measured: STATUS_SYNC_PROC_VTOTAL reads 305 / 330 / 425 the instant
     // SP_EXT_SYNC_SEL is restored on a 311-line source, and is back to 311

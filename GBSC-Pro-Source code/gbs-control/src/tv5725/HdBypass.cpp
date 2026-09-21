@@ -14,6 +14,8 @@
 #include "SamplingClock.h"
 #include "SyncProcessor.h"
 #include "SyncMeasurement.h"
+#include "SyncOnGreen.h"
+#include "Tv5725.h"
 
 namespace Tv5725 {
 
@@ -161,6 +163,31 @@ void HdBypass::enable()
     HD_BLK_GY_DATA::write(0);                    // s1_53[7:0]
     HD_BLK_BU_DATA::write(0);                    // s1_54[7:0]
     HD_BLK_RV_DATA::write(0);                    // s1_55[7:0]
+}
+
+void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
+                        const SourceTiming &timing, uint16_t frameLines)
+{
+    Chip::enterHdBypass();
+    enable();
+    applyColourPath(component);
+
+    // The sync processor is configured here or nowhere: no preset load runs on
+    // this route.
+    SyncProcessor::applyForSyncType(csync);
+    if (csync)
+        SyncOnGreen::choose(CsyncSogLevel);
+    SyncProcessor::applyForPassThrough();
+
+    Adc::choosePhaseAdc(EntryPhaseAdc);
+    Adc::choosePhaseSyncProcessor(EntryPhaseSyncProcessor);
+
+    // LAST of the group, because it installs the sampling the played-out
+    // raster is derived from, and it is the one writer of PLLAD_MD here.
+    applyForSource(dividerFor(lineRateHz), lineRateHz, timing, frameLines);
+
+    Chip::dacsFollowInput();
+    Tv5725::OUT_SYNC_CNTRL::write(1);
 }
 
 void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,

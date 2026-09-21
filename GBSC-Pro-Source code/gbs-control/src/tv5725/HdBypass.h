@@ -228,6 +228,21 @@ public:
     static void applyForSource(uint16_t divider, uint32_t lineRateHz,
                                const SourceTiming &timing, uint16_t frameLines);
 
+    // Put the chip into the pass-through configuration for this source: the
+    // route, this block, the colour path, the sync processor's half, the ADC
+    // phases and the whole sampling group, in the order they have to land.
+    //
+    // The caller still owns what is not the chip -- the bring-up, the display
+    // clock, FrameSync, the colour patches and the phase search that follows.
+    static void enterFor(bool component, bool csync, uint32_t lineRateHz,
+                         const SourceTiming &timing, uint16_t frameLines);
+
+    // The sync-on-green slice a composite-sync source is handed on entry, and
+    // the two phase adjusters pass-through starts from.
+    static const uint8_t CsyncSogLevel = 24;
+    static const uint8_t EntryPhaseAdc = 16;
+    static const uint8_t EntryPhaseSyncProcessor = 8;
+
     // Blank the lines before active video and nothing else. Where active video
     // starts is not measurable -- a border is black active video, electrically
     // identical to back porch -- so the caller derives it from the raster its

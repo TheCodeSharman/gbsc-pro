@@ -209,6 +209,18 @@ void SyncProcessor::prepare(bool csync, bool serrated, bool rgbhvRoute)
     SP_VS_PROC_INV_REG::write(0);
 }
 
+void SyncProcessor::applyForPassThrough()
+{
+    setCoastInvert(false);
+    setSubCoast(false);
+    SP_SOG_P_ATO::write(1);
+
+    SP_HS_PROC_INV_REG::write(0);
+    SP_VS_PROC_INV_REG::write(0);
+    SP_CS_P_SWAP::write(0);
+    SP_HS2PLL_INV_REG::write(0);
+}
+
 void SyncProcessor::applyForSyncType(bool csync)
 {
     // No ordering constraint between these fields is established, so the two

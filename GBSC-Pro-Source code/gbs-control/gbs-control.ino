@@ -2948,40 +2948,11 @@ void enterHdBypass()
         applyRGBPatches();
     }
 
-    Tv5725::Chip::enterHdBypass();
-    Tv5725::HdBypass::enable();
-    Tv5725::HdBypass::applyColourPath(rto->inputIsYpBpR);
-
-    // The sync processor is configured here or nowhere, for the same reason.
-    Tv5725::SyncProcessor::applyForSyncType(Tv5725::SyncMeasurement::isCsync());
-    if (Tv5725::SyncMeasurement::isCsync()) {
-        Tv5725::SyncOnGreen::choose(24);
-    }
-    Tv5725::SyncProcessor::setCoastInvert(false);
-    Tv5725::SyncProcessor::setSubCoast(false);
-    GBS::SP_SOG_P_ATO::write(1);
-
-    // The sync polarities, put back rather than inherited: a path that never
-    // brings the chip up keeps whatever the last entry left.
-    GBS::SP_HS_PROC_INV_REG::write(0);
-    GBS::SP_VS_PROC_INV_REG::write(0);
-    GBS::SP_CS_P_SWAP::write(0);
-    GBS::SP_HS2PLL_INV_REG::write(0);
-
-    Tv5725::Adc::choosePhaseAdc(16);
-    Tv5725::Adc::choosePhaseSyncProcessor(8);
-
-    // The whole ADC sampling group, from the rate the engine measured: the one
-    // writer of PLLAD_MD on this path, and last of the group because it
-    // installs the sampling the played-out raster is derived from.
-    Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(
-                                         sourceSampling.lineRateHz()),
-                                     sourceSampling.lineRateHz(),
-                                     geometry.sourceTiming(),
-                                     sourceSampling.sourceLines() + 1);
-
-    Tv5725::Chip::dacsFollowInput();
-    GBS::OUT_SYNC_CNTRL::write(1);
+    Tv5725::HdBypass::enterFor(rto->inputIsYpBpR,
+                               Tv5725::SyncMeasurement::isCsync(),
+                               sourceSampling.lineRateHz(),
+                               geometry.sourceTiming(),
+                               sourceSampling.sourceLines() + 1);
 
     restartAfterBypassSwitch();
 

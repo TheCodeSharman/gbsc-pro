@@ -535,7 +535,7 @@ chip:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_chip" \
-	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp \
+	  "$(HERE)/test_chip.cpp" src/tv5725/Chip.cpp src/tv5725/HdBypass.cpp src/tv5725/SyncOnGreen.cpp \
 	  src/tv5725/VideoRoute.cpp \
 	  src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
@@ -551,7 +551,7 @@ hd-bypass:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_hd_bypass" \
-	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp \
+	  "$(HERE)/test_hd_bypass.cpp" src/tv5725/HdBypass.cpp src/tv5725/SyncOnGreen.cpp \
 	  src/tv5725/Chip.cpp src/tv5725/VideoRoute.cpp src/tv5725/ColourSpace.cpp \
 	  src/tv5725/MemoryBus.cpp src/tv5725/SdramTimings.cpp \
 	  $(AXIS_SRC) $(TIMING_SRC) $(SAMPLING_SRC)
