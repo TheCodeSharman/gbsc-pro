@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "HsyncPulse.h"
+#include "SourceKey.h"
 #include "SteadyRun.h"
 #include "TestBusRateMeasurement.h"
 #include "Tv5725Log.h"
@@ -127,9 +128,16 @@ public:
     // refused, and leaves the last one that was not standing.
     HsyncPulse hsync() const;
 
-    // The source's vertical sync polarity, which joins the count and the rate
-    // in identifying it.
-    bool vsyncPositive() const;
+    // The sync polarities, which join the count, the rate and the sync width in
+    // identifying the source. Undetermined on an arrangement that states
+    // neither, which is composite sync and sync on green.
+    //
+    // TAKEN ON THE PASS THAT MEASURED THE SOURCE, not derived when asked. The
+    // sync type latches, so a later re-derivation could move the key with no
+    // measurement behind it and lose a framing the user tuned.
+    // docs/sync-type-selection.md
+    SourceKey::Polarity hsyncPolarity() const;
+    SourceKey::Polarity vsyncPolarity() const;
 
     uint16_t sourceLines() const;
 
@@ -190,6 +198,7 @@ private:
     bool normalisePolarity();
     bool readSource();
     bool takeDuty(bool latched, const HsyncPulse &reading);
+    static SourceKey::Polarity polarityOf(bool positive);
 
     // --- what the pass reads and judges --------------------------------------
 
@@ -252,7 +261,8 @@ private:
     uint8_t rateRejections_;
 
     HsyncPulse hsync_;
-    bool vsyncPositive_;
+    SourceKey::Polarity hsyncPolarity_;
+    SourceKey::Polarity vsyncPolarity_;
     uint16_t verticalPeriod_;
     bool dutyMeasured_;
     uint8_t settlePasses_;

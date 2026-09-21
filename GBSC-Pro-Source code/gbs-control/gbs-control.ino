@@ -3238,6 +3238,13 @@ static void holdSampleClock(uint16_t divider)
 // separates a field-rate signal from a line-rate one and both from a dead bus:
 // at 50 Hz expect single digits, at 15.6 kHz several hundred.
 //
+// THE HIGH COUNT IS WHAT SAYS WHICH WAY UP. A sync pulse cannot be more than
+// half the interval and still leave a raster, so the shorter state IS the pulse
+// and the duty states the polarity of the wire rather than of the separator.
+// One sample is 2.5 us against a 3.2 us pulse, which resolves no single pulse
+// at all -- the RATIO is what converges, over the hundreds of lines a window
+// holds. docs/source-identity-and-framing-lookup.md
+//
 // SP_TEST_MODULE exposes one sync-processor stage (4 is vs_act_det, 6 the
 // retiming module, 7 out proc) and IF_TEST_SEL one input-formatter signal, so a
 // sweep taken on each sync type says which stage stops carrying vertical sync.
@@ -3254,7 +3261,7 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
         Tv5725::TestBus::driveFormatter(ifSel);
     Tv5725::TestBus::enable(true);
 
-    debugPrintf("tb,header,sel,transitions,first,last,spins ms=%u sp=%d sig=%u if=%d sogmode=%d\n",
+    debugPrintf("tb,header,sel,transitions,high,spins,first,last ms=%u sp=%d sig=%u if=%d sogmode=%d\n",
            (unsigned)windowMs, (int)(int8_t)spModule, (unsigned)spSignal,
            (int)(int8_t)ifSel, (int)GBS::SP_SOG_MODE::read());
 
@@ -3265,6 +3272,7 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
         int level = digitalRead(DEBUG_IN_PIN);
         const int first = level;
         uint32_t transitions = 0;
+        uint32_t high = 0;
         uint32_t spins = 0;
         const uint32_t deadline = millis() + windowMs;
         while ((int32_t)(millis() - deadline) < 0) {
@@ -3273,11 +3281,13 @@ static void sweepTestBus(uint16_t windowMs, uint8_t spModule, uint8_t spSignal,
                 transitions++;
                 level = sample;
             }
+            if (sample)
+                high++;
             if (++spins % 4096 == 0)
                 ESP.wdtFeed();
         }
-        debugPrintf("tb,%u,%u,%d,%d,%u\n", (unsigned)sel, (unsigned)transitions,
-               first, level, (unsigned)spins);
+        debugPrintf("tb,%u,%u,%u,%u,%d,%d\n", (unsigned)sel, (unsigned)transitions,
+               (unsigned)high, (unsigned)spins, first, level);
         handleWiFi(0);
     }
 
@@ -7130,7 +7140,7 @@ void saveFramingTable()
         return;
 
     f.print(F("# framing, one source a line: "
-              "<lines>@<fieldRateHz>/<syncWidth><vsyncPolarity> = "
+              "<lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
               "originH extentH originV extentV\n"
               "# in ten-thousandths of the capturable region\n"));
 
@@ -7191,7 +7201,7 @@ void saveSlotFramings()
         return;
 
     f.print(F("# slot framings: "
-              "<slot> <lines>@<fieldRateHz>/<syncWidth><vsyncPolarity> = "
+              "<slot> <lines>@<fieldRateHz>/<syncWidth><hPol><vPol> = "
               "originH extentH originV extentV\n"
               "# in ten-thousandths of the capturable region\n"));
 

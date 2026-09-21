@@ -3,10 +3,11 @@
 
 // One stored framing as text, and back:
 //
-//   311@50/1213- = 364 8525 740 8553
+//   311@50/1213++ = 364 8525 740 8553
 //
 // The line count, the field-rate bucket, the hsync width as a fraction of the
-// line and the vertical sync polarity name the source; the four numbers are the
+// line and the two sync polarities -- horizontal then vertical, `?` where the
+// arrangement states none -- name the source; the four numbers are the
 // origin and extent of each axis in ten-thousandths of the capturable region.
 // Integers because the ESP's printf has no %f, and ten-thousandths because one
 // input unit is at least eight of them on any line this chip captures -- so the
@@ -49,6 +50,11 @@ public:
 private:
     static float proportionOf(long tenThousandths);
     static long tenThousandthsOf(float proportion);
+
+    // False on a symbol the grammar does not spell, which is what a record
+    // written before the polarities reads as.
+    static bool polarityFrom(char symbol, SourceKey::Polarity &into);
+    static char symbolFor(SourceKey::Polarity polarity);
 };
 
 }  // namespace Tv5725

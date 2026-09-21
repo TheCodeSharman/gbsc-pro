@@ -7,6 +7,7 @@
 #include "Adc.h"             // the divider the duty is counted against
 #include "InputFormatter.h"   // the line and frame periods, counted at 27 MHz
 #include "ModeDetect.h"   // whether the source is interlaced, which it measures
+#include "SyncMeasurement.h"   // whether the arrangement can state a polarity
 #include "SyncProcessor.h"   // SP_EXT_SYNC_SEL, the path this switches
 
 
@@ -89,7 +90,8 @@ const uint8_t SourceMeasurement::LatchSettlePasses;
 SourceMeasurement::SourceMeasurement()
     : lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
-      rateRejections_(0), vsyncPositive_(false), verticalPeriod_(0),
+      rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
+      vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
       dutyMeasured_(false), settlePasses_(0),
       steady_(SteadySamples), rateAttempts_(0),
       serrationsSeen_(false)
@@ -347,7 +349,22 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureDuty()
 
 HsyncPulse SourceMeasurement::hsync() const { return hsync_; }
 
-bool SourceMeasurement::vsyncPositive() const { return vsyncPositive_; }
+SourceKey::Polarity SourceMeasurement::hsyncPolarity() const { return hsyncPolarity_; }
+
+SourceKey::Polarity SourceMeasurement::vsyncPolarity() const { return vsyncPolarity_; }
+
+// Composite sync and sync on green state no polarity: measured on two modes the
+// monitor definition gives as V positive, both bits read 0 on composite.
+//
+// The arrangement IN FORCE rather than whether it has been probed -- a held
+// sync type nothing probed still says which path the pins are read through,
+// and isSet() governs whether to probe again, which is a different question.
+SourceKey::Polarity SourceMeasurement::polarityOf(bool positive)
+{
+    if (SyncMeasurement::isCsync())
+        return SourceKey::Undetermined;
+    return positive ? SourceKey::Positive : SourceKey::Negative;
+}
 
 uint32_t SourceMeasurement::lineRateHz() const { return goodLineRateHz_; }
 
@@ -363,7 +380,8 @@ bool SourceMeasurement::readSource()
     // minus the pulse -- around 0.9, which forDuty() refuses.
     const bool found = SyncProcessor::hsyncFound();
     const bool positive = normalisePolarity();
-    vsyncPositive_ = SyncProcessor::vsyncPositive();
+    hsyncPolarity_ = polarityOf(positive);
+    vsyncPolarity_ = polarityOf(SyncProcessor::vsyncPositive());
 
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.

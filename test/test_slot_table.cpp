@@ -19,8 +19,8 @@ void tv5725Log(const char *) {}
 
 using namespace Tv5725;
 
-static const SourceKey Bench(311, 50.08f, 0.0f, false);
-static const SourceKey Vga(525, 59.94f, 0.0f, false);
+static const SourceKey Bench(311, 50.08f, 0.0f, SourceKey::Negative, SourceKey::Negative);
+static const SourceKey Vga(525, 59.94f, 0.0f, SourceKey::Negative, SourceKey::Negative);
 
 static const PanAndZoom Wide(0.0364f, 0.8525f, 0.0740f, 0.8553f);
 static const PanAndZoom Narrow(0.2000f, 0.5000f, 0.1000f, 0.7000f);

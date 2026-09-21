@@ -29,12 +29,13 @@ bool ratesWithinTolerance(float a, float b)
 }  // namespace
 
 SourceKey::SourceKey()
-    : lines_(0), rateHz_(0.0f), syncWidth_(0.0f), vsyncPositive_(false) {}
+    : lines_(0), rateHz_(0.0f), syncWidth_(0.0f),
+      hsyncPolarity_(Undetermined), vsyncPolarity_(Undetermined) {}
 
 SourceKey::SourceKey(uint16_t sourceLines, float fieldRateHz, float syncWidth,
-                     bool vsyncPositive)
+                     Polarity hsyncPolarity, Polarity vsyncPolarity)
     : lines_(0), rateHz_(0.0f), syncWidth_(syncWidth),
-      vsyncPositive_(vsyncPositive)
+      hsyncPolarity_(hsyncPolarity), vsyncPolarity_(vsyncPolarity)
 {
     if (!VideoSignal::isVideo(sourceLines, fieldRateHz))
         return;
@@ -51,14 +52,17 @@ float SourceKey::rateHz() const { return rateHz_; }
 
 float SourceKey::syncWidth() const { return syncWidth_; }
 
-bool SourceKey::vsyncPositive() const { return vsyncPositive_; }
+SourceKey::Polarity SourceKey::hsyncPolarity() const { return hsyncPolarity_; }
+
+SourceKey::Polarity SourceKey::vsyncPolarity() const { return vsyncPolarity_; }
 
 bool SourceKey::operator==(const SourceKey &other) const
 {
     return valid() && other.valid()
         && lines_ == other.lines_ && ratesWithinTolerance(rateHz_, other.rateHz_)
         && fabsf(syncWidth_ - other.syncWidth_) <= SyncWidthIdentity
-        && vsyncPositive_ == other.vsyncPositive_;
+        && hsyncPolarity_ == other.hsyncPolarity_
+        && vsyncPolarity_ == other.vsyncPolarity_;
 }
 
 bool SourceKey::operator!=(const SourceKey &other) const

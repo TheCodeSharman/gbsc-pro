@@ -569,7 +569,8 @@ void VideoPath::configureScalingPath()
 SourceKey VideoPath::arrivingKey() const
 {
     return SourceKey(sampling_.sourceLines(), sampling_.fieldRateHz(),
-                     reading_.syncDuty(), sampling_.vsyncPositive());
+                     reading_.syncDuty(), sampling_.hsyncPolarity(),
+                     sampling_.vsyncPolarity());
 }
 
 void VideoPath::adoptSourceKey()

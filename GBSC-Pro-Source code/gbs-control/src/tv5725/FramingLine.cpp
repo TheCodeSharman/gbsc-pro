@@ -10,6 +10,25 @@ namespace {
 const float Whole = 10000.0f;
 }
 
+bool FramingLine::polarityFrom(char symbol, SourceKey::Polarity &into)
+{
+    switch (symbol) {
+        case '+': into = SourceKey::Positive; return true;
+        case '-': into = SourceKey::Negative; return true;
+        case '?': into = SourceKey::Undetermined; return true;
+        default:  return false;
+    }
+}
+
+char FramingLine::symbolFor(SourceKey::Polarity polarity)
+{
+    switch (polarity) {
+        case SourceKey::Positive: return '+';
+        case SourceKey::Negative: return '-';
+        default:                  return '?';
+    }
+}
+
 const char *FramingLine::skipSpace(const char *at)
 {
     while (*at == ' ' || *at == '\t')
@@ -64,9 +83,14 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
     if (!number(at, width))
         return false;
     at = skipSpace(at);
-    const char polarity = *at++;
-    if (polarity != '+' && polarity != '-')
+    SourceKey::Polarity hsync = SourceKey::Undetermined;
+    SourceKey::Polarity vsync = SourceKey::Undetermined;
+    if (!polarityFrom(*at, hsync))
         return false;
+    ++at;
+    if (!polarityFrom(*at, vsync))
+        return false;
+    ++at;
     at = skipSpace(at);
     if (*at++ != '=')
         return false;
@@ -77,7 +101,7 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
             return false;
 
     const SourceKey read((uint16_t)lines, (float)rate, proportionOf(width),
-                         polarity == '+');
+                         hsync, vsync);
     if (!read.valid())
         return false;
 
@@ -94,9 +118,10 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
         return -1;
 
     const int written = snprintf(
-        out, size, "%u@%u/%ld%c = %ld %ld %ld %ld",
+        out, size, "%u@%u/%ld%c%c = %ld %ld %ld %ld",
         (unsigned)key.lines(), (unsigned)lrintf(key.rateHz()),
-        tenThousandthsOf(key.syncWidth()), key.vsyncPositive() ? '+' : '-',
+        tenThousandthsOf(key.syncWidth()),
+        symbolFor(key.hsyncPolarity()), symbolFor(key.vsyncPolarity()),
         tenThousandthsOf(framing.originOn(AxisHorizontal)),
         tenThousandthsOf(framing.extentOn(AxisHorizontal)),
         tenThousandthsOf(framing.originOn(AxisVertical)),

@@ -52,9 +52,20 @@ const float SyncWidthIdentity = 0.005f;
 
 class SourceKey {
 public:
+    // Which way a sync pulse goes, where the arrangement carrying it can say.
+    //
+    // Composite sync and sync on green state neither. Measured on two modes the
+    // monitor definition gives as V positive, both polarities read 0 on
+    // composite: the VIDC20's composite form on the HSync pin is a NOR, and a
+    // NOR is sync-tip-low for both pulses. Undetermined records that rather than
+    // a plausible 0, and it is a third value rather than a wildcard -- one
+    // matching both would make equality non-transitive.
+    // ../../../docs/source-identity-and-framing-lookup.md
+    enum Polarity { Undetermined, Negative, Positive };
+
     SourceKey();
     SourceKey(uint16_t sourceLines, float fieldRateHz, float syncWidth,
-              bool vsyncPositive);
+              Polarity hsyncPolarity, Polarity vsyncPolarity);
 
     // A count or a rate outside what any source runs identifies nothing, and
     // two of those are not each other: a settling source passes through counts
@@ -68,16 +79,10 @@ public:
     // published standards share a count and a rate.
     float syncWidth() const;
 
-    // Whether the source's vertical sync is positive-going, which is a property
-    // of the MODE rather than of the arrangement carrying it.
-    //
-    // The horizontal polarity is not here and may not be. Measured across a
-    // sync-type change on three modes, VSPOL agrees with what the mode states
-    // on both types while HSPOL reads 0 on composite whatever the mode states:
-    // the VIDC20's composite form on the HSync pin is a NOR, which has no
-    // separate H line for the bit to report.
-    // ../../../docs/source-identity-and-framing-lookup.md
-    bool vsyncPositive() const;
+    // The polarity pair, which is how the standards tell modes apart: DMT
+    // publishes 640x480@60 as H-/V- and 800x600@60 as H+/V+.
+    Polarity hsyncPolarity() const;
+    Polarity vsyncPolarity() const;
 
     // A WHOLE NUMBER OF HERTZ, not the reading it was built from. The output
     // raster is generated from the key rather than from the measurement, so
@@ -100,7 +105,8 @@ private:
     uint16_t lines_;
     float rateHz_;
     float syncWidth_;
-    bool vsyncPositive_;
+    Polarity hsyncPolarity_;
+    Polarity vsyncPolarity_;
 };
 
 }  // namespace Tv5725

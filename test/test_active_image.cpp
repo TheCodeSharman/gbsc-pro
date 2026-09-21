@@ -209,7 +209,7 @@ TEST_CASE("a source running a published raster is captured where that raster put
     // a raster the standards state is placed from the standard rather than from
     // the assumption an unrecognised one takes.
     const VideoSourceLine line(1126);
-    const SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, false));
+    const SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     BlankingTiming got = ActiveImage().capture(line, dmt, AxisHorizontal);
 
