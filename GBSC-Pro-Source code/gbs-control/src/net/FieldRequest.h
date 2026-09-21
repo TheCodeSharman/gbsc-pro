@@ -1,6 +1,7 @@
 #ifndef FIELD_REQUEST_H_
 #define FIELD_REQUEST_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 // Many register fields named in ONE HTTP request. docs/register-bus-ownership.md

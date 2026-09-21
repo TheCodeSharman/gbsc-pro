@@ -40,7 +40,7 @@ const FieldRequest::Field &FieldRequest::at(uint8_t index) const { return fields
 bool FieldRequest::parse(const char *spec)
 {
     count_ = 0;
-    if (spec == nullptr || *spec == '\0')
+    if (spec == NULL || *spec == '\0')
         return false;
 
     const char *at = spec;

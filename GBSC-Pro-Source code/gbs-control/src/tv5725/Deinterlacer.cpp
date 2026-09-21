@@ -288,7 +288,7 @@ void Deinterlacer::enableMotionAdapt(uint8_t verticalTap,
     FrameBuffer::WFF_ENABLE::write(1);
     FrameBuffer::RFF_ENABLE::write(1);
 
-    if (releaseCapture != nullptr)
+    if (releaseCapture != NULL)
         releaseCapture();
     delay(SettleMs);
     MAPDT_VT_SEL_PRGV::write(0);

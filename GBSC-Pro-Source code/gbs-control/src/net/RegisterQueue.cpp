@@ -2,7 +2,7 @@
 
 RegisterQueue::RegisterQueue()
     : fieldsOutstanding_(false), head_(0), count_(0), inFlight_(false),
-      inFlightCancelled_(false), inFlightKind_(None), inFlightToken_(nullptr)
+      inFlightCancelled_(false), inFlightKind_(None), inFlightToken_(NULL)
 {
     for (uint8_t i = 0; i < Capacity; ++i) {
         pending_[i] = false;
@@ -88,7 +88,7 @@ void RegisterQueue::complete()
     }
     inFlight_ = false;
     inFlightCancelled_ = false;
-    inFlightToken_ = nullptr;
+    inFlightToken_ = NULL;
 }
 
 void RegisterQueue::cancel(const void *token)

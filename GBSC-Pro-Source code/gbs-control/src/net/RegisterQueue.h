@@ -1,6 +1,7 @@
 #ifndef REGISTER_QUEUE_H_
 #define REGISTER_QUEUE_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "FieldRequest.h"
@@ -25,7 +26,7 @@ public:
     struct Job
     {
         Kind kind = None;
-        void *token = nullptr;
+        void *token = NULL;
         uint8_t segment = 0;
         uint8_t first = 0;
         uint8_t last = 0;
