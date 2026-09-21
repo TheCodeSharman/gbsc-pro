@@ -92,15 +92,50 @@ adding a field changes the stored format and existing entries need migrating or
 discarding; that cost is what the three options below were weighing, and the
 measurement removes the doubt about whether the term is worth paying it for.
 
-## The vertical half cannot be verified
+## What the chip can tell a lookup
 
-`STATUS_SYNC_PROC_HLOW_LEN` has no vertical counterpart. The chip offers
-`VPERIOD_IF`, which is a period, and `STATUS_SYNC_PROC_VSPOL`, which is a
-polarity; there is no vertical sync WIDTH anywhere in the register map.
+Four kinds of fact, and the part supplies three of them:
 
-So a matched row is checked on its total lines, its field rate and its
-horizontal sync width, and the `activeStartLine` and `activeLines` it then
-supplies are an assumption that nothing tests. A source may match on every
+| | rate | structure |
+|---|---|---|
+| horizontal | line rate, the field rate times the count | sync WIDTH and POLARITY |
+| vertical | field rate | POLARITY only |
+
+Both rates describe how often a line and a frame start -- the raster's outline.
+Structure is the division of the interval, and it is a different kind of fact:
+the outline says nothing about where sync ends and video begins.
+
+**There is no vertical sync WIDTH anywhere in the register map.**
+`STATUS_SYNC_PROC_HLOW_LEN` has no counterpart; the part offers `VPERIOD_IF`,
+which is a period, and `STATUS_SYNC_PROC_VSPOL`, which is a polarity. So the one
+cell that would verify a row's vertical blanking split cannot be filled.
+
+## Sync polarity is measured, stable, and unused
+
+`STATUS_SYNC_PROC_HSPOL` and `STATUS_SYNC_PROC_VSPOL` are read on every pass and
+nothing keys on either. Measured across a source mode round trip, 40 samples a
+landing:
+
+| mode | mode file | HSPOL | VSPOL |
+|---|---|---|---|
+| 800x600@60 | `sync_pol:0` | 1 | 1 |
+| 640x480@60 | `sync_pol:3` | 0 | 0 |
+| 800x600@60 again | | 1 | 1 |
+
+No dither at all, which is tighter than the sync width's one count, and the pair
+repeats across re-acquisition. It agrees with what the standards publish --
+DMT gives 640x480@60 as H-/V- and 800x600@60 as H+/V+ -- and the polarity PAIR
+is a long-standing way of telling DMT modes apart.
+
+**So a vertical term IS available to the lookup**, and it is the only one. It
+cannot check where a row puts active video, which is a width; it can check that
+the row is the right row on a vertical axis rather than on horizontal evidence
+alone.
+
+A matched row is checked today on its total lines, its field rate and its
+horizontal sync width -- polarity is read and discarded -- and the
+`activeStartLine` and `activeLines` it then supplies are an assumption that
+nothing tests, because testing them needs a width the part does not measure. A source may match on every
 checked quantity and divide its frame differently:
 
 | mode | source `v_timings` | source active starts | published row |
@@ -111,9 +146,11 @@ checked quantity and divide its frame differently:
 `RetroScaler-Acorn.mdf`. The 640x480 mode matches VESA on total, rate and sync
 width and starts its active image a line earlier than the standard does.
 
-**This is a property of the part, not of the lookup.** No rearrangement of the
-tables can check a vertical number, so any vertical placement taken from a
-standard is a guess that happens to be well-informed.
+**That much is a property of the part, not of the lookup.** No rearrangement of
+the tables can check a vertical BLANKING SPLIT, so any vertical placement taken
+from a standard is a guess that happens to be well-informed. Choosing the right
+row is a separate question, and polarity is evidence for it that is currently
+thrown away.
 
 ## Where the implementation departs from the design
 
