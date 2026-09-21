@@ -449,6 +449,10 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
 
 ## Things that will cost you an hour if you don't know them
 
+- **THE TELEVISION IS SET TO FULL AND DOES NOT OVERSCAN, ON EVERY MODE.** A
+  photograph shows the whole HDMI active area, so picture missing from one was
+  never sent and "the panel is hiding it" is not available as an explanation.
+  The measurement section below has what follows from that.
 - **THE ADC PLL GROUP CANNOT BE BISECTED BY HAND, AND TRYING COSTS THE LOCK.**
   `PLLAD_MD`, `PLLAD_KS`, `PLLAD_CKOS`, `PLLAD_ICP`, `PLLAD_FS` and the two
   decimators are ONE setting: `PLLAD_LAT` loads several of them on a rising edge
@@ -1020,11 +1024,15 @@ twelve tables while they existed, which is what `BringUp` was built from.
 - **Two points cannot disconfirm a line.** Three magnifications is the minimum
   that can fail, and `measure_produced.py` and `measure_origin.py` print
   residuals so they can.
-- **Don't pin the picture to a panel edge.** Where a display stops showing is a
-  property of the display, so `geometry_math` centres on the raster instead and
-  the user finds their own edges with pan and scale. The vertical visible region
-  is derivable — `1121 - 41 = 1080` exactly, the encoder's active window, same on
-  every display — while the horizontal is real overscan and is not.
+- **Don't pin a CONSTANT to a panel edge**, because where a display stops
+  showing is a property of that display: `geometry_math` centres on the raster
+  instead and the user finds their own edges with pan and scale. The vertical
+  visible region is derivable — `1121 - 41 = 1080` exactly, the encoder's active
+  window, same on every display.
+  **This is not licence to explain a discrepancy as overscan on THIS bench**,
+  where the set is on FULL for every mode and paints the whole active area. A
+  measurement taken here is portable in the direction that matters: what the
+  board emitted.
 - **The engine CALCULATES every register from held state. Registers are an
   output and are never an input.** Everything the engine needs, it already
   knows, because it computed it: the raster, both scales, both windows, the
@@ -1347,6 +1355,36 @@ the same one `snapdiff.py` and `setfield.py` decode with. `setfield.py --set
 NAME=VALUE` writes by name, read-modify-write, so a field sharing a byte with its
 neighbour does not destroy it. `dump_registers.py` reads everything in one pass.
 
+### THE BENCH TELEVISION DOES NOT OVERSCAN. IT IS SET TO FULL, ON EVERY MODE.
+
+**So a photograph of the panel shows the WHOLE HDMI active area, and content
+missing from a photograph was not sent.** Every mode, not just the ones someone
+checked. Nothing on this page may be read as the set hiding picture, and a
+discrepancy may not be explained away as overscan -- that explanation is closed,
+and reaching for it has cost several sessions and at least one wrong retraction.
+
+Two consequences, both the opposite of what is easy to assume:
+
+- **The panel is a valid instrument for where the OUTPUT ends**, vertically and
+  horizontally. A row or column count against a known feature is a real
+  measurement, not a measurement of the set.
+- **A "clip" seen on screen is the board's.** If the picture is short at an
+  edge, the board did not emit it.
+
+What still is NOT a panel property, and is the thing that actually blocks a
+naive edge measurement: **the engine always scales the capture to fill the
+raster**, so there is never blanking above or beside the picture to measure
+against. That is a property of the solve. Count a feature of the SOURCE.
+
+**EVERY PATTERN ANIMATES, SO A STILL OF A FLASHING FEATURE PROVES NOTHING.**
+There is no static card to fall back on: `PM5544` flips its four corner squares
+yellow/white twice a second (`PROCanimcorners`), and `CARD` flashes its border
+yellow. A feature caught in one phase and absent in the other reads exactly like
+a crop, and has been reported as one. Measure against something that does not
+animate -- the grid, the colour blocks, the frequency wedge -- or record a clip
+and compare frames in the same phase. `PatLib.bas` in the `RiscPc` repo is what
+says which is which.
+
 ### The shape of an eye-in-the-loop measurement
 
 Where the picture is the only instrument, the tool is a **jog the user drives**,
@@ -1430,10 +1468,14 @@ one the same way; the rules below are each a wasted session.
   of its own, so the minimum the scaler must emit is a board property, measured
   once, portable. Where a set stops painting is that set's overscan. Sizing a
   constant from the second reads as a fix and ships one panel's number.
-- **BYPASS IS THE ONLY REFERENCE FOR WHERE THE PANEL'S PICTURE ENDS.** Nothing on
-  the scaling path can supply it, because whatever the scaler blanks reads as
-  bezel from the far end. An 800x600 source in bypass passes straight through
-  filling the screen, and its extent IS the panel's painted area:
+- **BYPASS IS A SECOND VIEW, NOT A PANEL REFERENCE, AND IT IS NOT TRUSTWORTHY
+  VERTICALLY.** The set does not overscan, so the panel needs no reference: what
+  is on it is what was sent. And bypass has a vertical fault of its own --
+  `known-issues.md` carries 800x600 in bypass clipping the top and leaving a bar
+  at the bottom, **varying between entries** -- so it cannot anchor a vertical
+  measurement. It remains useful as a second path to compare against
+  horizontally. An 800x600 source in bypass passes straight through filling the
+  screen:
   `printf 'MODE X800 Y600 C256 F60\n' | nc 192.168.88.10 6502`, then `/uc?x` to
   turn `preferScalingRgbhv` off — **the line count no longer puts it there, so
   the reference has to be asked for**. Take it at the same camera position as
