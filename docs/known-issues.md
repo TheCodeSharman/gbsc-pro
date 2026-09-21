@@ -10,6 +10,73 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### `Deinterlacer::steer()` never runs on separate sync, so motion adapt latches
+
+`VideoSourceAcquisition` returns before steering when the vertical period reads
+0, and `InputFormatter::verticalPeriod()` returns 0 unless `STATUS_IF_VT_OK` is
+set. **That bit reports the sync arrangement, not the source**: the input
+formatter completes no vertical measurement on separate sync, so the bench RISC
+PC on `vga` reads 0 whenever it is healthy -- measured 0 in 6 of 6 samples at
+800x600@60 with a clean full-screen picture, `VPERIOD_IF` wandering 143..219 as
+debris beside it.
+
+So on a separate-sync source the deinterlacer is never steered in either
+direction. Two consequences:
+
+- **Anything engaged on another arrangement stays engaged.** A composite
+  excursion on the same source engaged motion adapt, and returning to separate
+  sync left it engaged, with the card repeating about 1.7 times across over
+  green tearing and interlaced-looking stripes on a progressive source.
+- **A genuinely interlaced separate-sync source is never deinterlaced.**
+
+**Every field the state differs in is `enableMotionAdapt()`'s**, which is what
+identifies it. A full 1536-register `snapdiff.py` pair either side of the
+recovery differs in 17 bytes, and the ones that are not divider-derived are:
+
+| field | corrupt | clean |
+|---|---|---|
+| `MADPT_Y_MI_OFFSET` | 0 | 127 |
+| `MADPT_Y_MI_DET_BYPS` | 0 | 1 |
+| `RFF_FETCH_NUM` | 128 | 1 |
+| `RFF_WFF_OFFSET` | 256 | 0 |
+| `WFF_FF_STA_INV` | 0 | 1 |
+| `RFF_ENABLE` / `WFF_ENABLE` | 1 | 0 |
+| `MAPDT_VT_SEL_PRGV` | 0 | 1 |
+
+The rest is one re-solve's jitter -- the divider moved 1606 -> 1608 and
+`IF_HSYNC_RST`, `SP_RT_HS_SP`, `IF_HB_*` and `VDS_HSCALE` followed.
+
+**A twelve-field read cannot see it.** `SP_SOG_MODE`, `SP_EXT_SYNC_SEL`, the
+count, the divider against `STATUS_SYNC_PROC_HTOTAL`, both polarities and
+`VDS_HSCALE` all read correct for separate sync throughout, and `VDS_HSCALE` was
+958 rather than the 1023 the composite fault gives. Toggling
+`PAD_SYNC_OUT_ENZ` does not clear it, so it is not the encoder holding a stale
+timing either.
+
+**The recovery is a source mode round trip**, which forces a re-solve.
+
+What would fix it: the scan type is already measured on the line above the gate
+and thrown away, and `verticalPeriod` is wanted only as a settling guard -- the
+filter restarts when it moves. Steering on the measured scan type, with a guard
+that exists on both sync arrangements, closes the door without the bit.
+
+**The bit is complementary across the two arrangements**, which is what makes
+this one-directional rather than intermittent: `VT_OK` 1 / `VT_BAD` 0 in 8 of 8
+on composite sync, `VT_OK` 0 / `VT_BAD` 1 in 5 of 5 on separate. So
+`STATUS_IF_VT_BAD == 0` is not a better gate -- neither bit is wrong, and both
+describe the arrangement.
+
+**That the gate is never exercised is REFUTED.** It was carried as open only in
+that the bench RISC PC is progressive, so the deinterlacer was thought to have
+nothing to engage for even on the composite leg. It engaged anyway, on that
+source, and the state outlived the excursion.
+
+**There is a second owner of the same registers.** `enableMotionAdaptDeinterlace()`
+in the sketch calls `Deinterlacer::enableMotionAdapt()` directly from the `p`
+serial command, with no steering and no filtering, and picks its vertical tap
+from the same `InputFormatter::verticalPeriod()` -- so on separate sync it is
+handed 0.
+
 ### `Memory::FetchFloor` drives the playback ratio off the bottom of its band
 
 `Memory::fetchFor()` is `max(FetchFloor, ceil(captureWidth / RequestsPerLine))`
@@ -1320,16 +1387,6 @@ the signal together, instead of writing the module bare. Two sweeps taken at
 different times are comparable, and each says what it read.
 
 ## Measured wrong, no picture consequence found yet
-
-### `Deinterlacer::steer()` gates on `STATUS_IF_VT_OK`
-
-`STATUS_IF_VT_BAD == 0` was proposed as matching the evidence better. The two
-are complementary on this bench -- `VT_OK` 1 / `VT_BAD` 0 in 8 of 8 on composite
-sync, `VT_OK` 0 / `VT_BAD` 1 in 5 of 5 on separate -- so neither is the wrong
-gate on these readings, and the flicker the proposal rested on has not been
-reproduced. Open only in that nothing has exercised the gate: the bench RISC PC
-is progressive, so the deinterlacer has nothing to engage for even on the
-composite leg where the flag lets it through.
 
 ### `DAC_RGBS_ADC2DAC` reads 0 in pass-through
 

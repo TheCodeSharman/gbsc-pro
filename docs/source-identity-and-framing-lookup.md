@@ -37,8 +37,8 @@ selected on field rate, which `vesa-gtf.md` settles.
 ## What identifies a source
 
 `SourceKey` is the line count, the field rate, the hsync width as a fraction of
-the line and the vertical sync polarity. It is what both lookups are keyed on
-and what is persisted against a tuned framing.
+the line, and both sync polarities. It is what both lookups are keyed on and
+what is persisted against a tuned framing.
 
 **The line rate is not a third fact.** `lineRate = frameRate x VTOTAL`, so any
 two of the three determine the remaining one and a key built from any pair
@@ -97,10 +97,15 @@ qualify:
 | line count | with the rate, the horizontal rate | `STATUS_SYNC_PROC_VTOTAL` |
 | field rate | the vertical rate | `SourceMeasurement` |
 | sync width, as a fraction of the line | horizontal structure | `STATUS_SYNC_PROC_HLOW_LEN` |
+| horizontal sync polarity | horizontal structure | `STATUS_SYNC_PROC_HSPOL` |
 | vertical sync polarity | vertical structure | `STATUS_SYNC_PROC_VSPOL` |
 
-The horizontal polarity does not, reporting the arrangement rather than the
-mode, and a vertical sync width does not because the part never measures one.
+A vertical sync WIDTH does not join them, because the part never measures one.
+
+**NEITHER POLARITY SURVIVES A SYNC-TYPE CHANGE, so both are recorded as
+UNDETERMINED where the arrangement states none** -- a third value equal only to
+itself, never a wildcard, since one matching both would make equality
+non-transitive. Composite sync and sync on green are those arrangements.
 
 `SourceKey` is persisted in the framing file, so each term that joins it changes
 the stored format: a record written before it reads as malformed and is skipped,
@@ -124,9 +129,8 @@ the outline says nothing about where sync ends and video begins.
 which is a period, and `STATUS_SYNC_PROC_VSPOL`, which is a polarity. So the one
 cell that would verify a row's vertical blanking split cannot be filled.
 
-## Only one of the two polarities is a property of the mode
+## Both polarities are the mode's, and only on an arrangement that carries them
 
-`STATUS_SYNC_PROC_VSPOL` is in the key and `STATUS_SYNC_PROC_HSPOL` may not be.
 Measured across a source mode round trip, 40 samples a
 landing:
 
@@ -173,15 +177,28 @@ one level for the whole vertical interval whatever H does underneath it. The
 mode's horizontal polarity is not on the wire to report.
 `investigations/the-risc-pc-composite-sync-is-not-serrated.md`.
 
-**VSPOL is the opposite and does belong.** It tracks what the mode states and
-survives the change: 800x600 reads 1 on both sync types, 640x352 and 640x480
-read 0 on both, and the mode file's `sync_pol` agrees in every case. The
-separator recovers the vertical polarity from the composite rather than
-inventing one.
+**VSPOL GOES THE SAME WAY, WHICH IS MEASURED AND WAS ONCE RECORDED OTHERWISE.**
+An earlier reading of this page had it tracking the mode on both sync types. It
+does not. Two modes the monitor definition gives as V positive, sampled with
+nothing else touched:
+
+| mode | stated | separate | composite |
+|---|---|---|---|
+| 800x600@60 `sync_pol:0` | V+ | 1 | **0** | 
+| 320x256@50 `sync_pol:0` | V+ | 1 | **0** |
+
+Ten samples on composite and six on separate at 800x600, no dither in either.
+The three modes the original table covered included only ONE that is V positive,
+so that row carried the whole claim on its own.
+
+**One mechanism destroys both.** A NOR is sync-tip-low for whichever pulse is
+asserted, so composite states neither polarity -- it is not that the horizontal
+is lost and the vertical survives.
 
 A key that moves when the sync arrangement moves loses the framing a user tuned
 by doing nothing but changing sync type, which is the opposite of one mode
-looking the same on both.
+looking the same on both. Undetermined is what keeps the two legs from claiming
+a polarity they cannot see; the count already separates them regardless.
 
 **The sync width survives that change**, shifting 0.0019 -- an eighth of the
 tolerance the standards lookup already allows, and a twenty-fifth of the
@@ -223,12 +240,13 @@ of the array order rather than a stated rule.
 The 525-line 60 Hz pair above is the case that would collide, and today it does
 not, because the sync width separates them well inside `SyncDutyTolerance`.
 
-**The polarity is in the key and not yet in the table.** `SourceTiming::lookUp()`
-takes the whole key and matches a row on the count, the rate and the sync width,
-so a source is told from a row by three of the four terms it is identified by.
-The standards publish the polarity pair, and matching on it would let two rows
-sharing all three be told apart -- which is the discrimination the vertical
-blanking split needs and the part cannot supply directly.
+**The polarities are in the key and not yet in the table.**
+`SourceTiming::lookUp()` takes the whole key and matches a row on the count, the
+rate and the sync width, so a source is told from a row by three of the five
+terms it is identified by. The standards publish the polarity pair, and matching
+on it would let two rows sharing all three be told apart -- which is the
+discrimination the vertical blanking split needs and the part cannot supply
+directly.
 
 ## What this does not explain
 
