@@ -14,12 +14,14 @@ that one has nothing to say.
 ## What the code does
 
 ```
+VideoPath::arrivingKey()
+    key = SourceKey(lines, fieldRateHz, hsyncDuty, vsyncPositive)
+
 VideoPath::sourceMeasured()
-    timing_ = SourceTiming::matching(lines, fieldRateHz, hsyncDuty)
+    timing_ = SourceTiming::matching(arrivingKey())
 
 VideoPath::adoptSourceKey()
-    key = SourceKey(lines, fieldRateHz)
-    if (!framings_.find(key, &framing_))
+    if (!framings_.find(arrivingKey(), &framing_))
         framing_.reset()                      // leaves the axis untuned
 
 ActiveImage::place(), on an untuned axis
@@ -34,8 +36,9 @@ selected on field rate, which `vesa-gtf.md` settles.
 
 ## What identifies a source
 
-`SourceKey` is the line count and the field rate, quantised. It is what the
-framing table is keyed on and what is persisted against a tuned framing.
+`SourceKey` is the line count, the field rate, the hsync width as a fraction of
+the line and the vertical sync polarity. It is what both lookups are keyed on
+and what is persisted against a tuned framing.
 
 **The line rate is not a third fact.** `lineRate = frameRate x VTOTAL`, so any
 two of the three determine the remaining one and a key built from any pair
@@ -58,8 +61,8 @@ source here.
 
 What it CAN measure is the sync width as a fraction of the line --
 `STATUS_SYNC_PROC_HLOW_LEN` against the divider -- which is 0.120 against 0.072
-for that pair. That is why `SourceTiming::matching()` takes a third argument,
-and it is the only horizontal STRUCTURE available to a lookup.
+for that pair. It is the only horizontal STRUCTURE available to a lookup, and it
+is in the key for that reason.
 
 ## The sync width is repeatable enough to key on
 
@@ -86,22 +89,22 @@ measured beside the width and was stable across the same six acquisitions,
 negative on the bench 640x480 and positive on its 800x600. It is a second
 horizontal discriminator already in hand.
 
-The decision that follows is that the sync width belongs in the source's
-identity rather than beside it. The polarities do not, for the reason above.
+What a term has to be to join the key is a property of the SOURCE MODE. Four
+qualify:
 
 | term | kind | measured by |
 |---|---|---|
 | line count | with the rate, the horizontal rate | `STATUS_SYNC_PROC_VTOTAL` |
 | field rate | the vertical rate | `SourceMeasurement` |
 | sync width, as a fraction of the line | horizontal structure | `STATUS_SYNC_PROC_HLOW_LEN` |
+| vertical sync polarity | vertical structure | `STATUS_SYNC_PROC_VSPOL` |
 
-What a measurable fact has to be to join this list is a property of the SOURCE
-MODE. The vertical polarity passes and is the next term to land. The horizontal
-polarity fails, reporting the arrangement rather than the mode, and a vertical
-sync width fails by not being measured at all. `SourceKey` is persisted in the framing file, so
-adding a field changes the stored format and existing entries need migrating or
-discarding; that cost is what the three options below were weighing, and the
-measurement removes the doubt about whether the term is worth paying it for.
+The horizontal polarity does not, reporting the arrangement rather than the
+mode, and a vertical sync width does not because the part never measures one.
+
+`SourceKey` is persisted in the framing file, so each term that joins it changes
+the stored format: a record written before it reads as malformed and is skipped,
+which loses stored framings once.
 
 ## What the chip can tell a lookup
 
@@ -121,10 +124,10 @@ the outline says nothing about where sync ends and video begins.
 which is a period, and `STATUS_SYNC_PROC_VSPOL`, which is a polarity. So the one
 cell that would verify a row's vertical blanking split cannot be filled.
 
-## Sync polarity is measured, stable, and unused
+## Only one of the two polarities is a property of the mode
 
-`STATUS_SYNC_PROC_HSPOL` and `STATUS_SYNC_PROC_VSPOL` are read on every pass and
-nothing keys on either. Measured across a source mode round trip, 40 samples a
+`STATUS_SYNC_PROC_VSPOL` is in the key and `STATUS_SYNC_PROC_HSPOL` may not be.
+Measured across a source mode round trip, 40 samples a
 landing:
 
 | mode | mode file | HSPOL | VSPOL |
@@ -162,12 +165,19 @@ So it is not inverted by the arrangement, it is constant under it, and no
 correction keyed on the sync type recovers the mode's polarity. Composite sync
 is sync-tip-low and carries no separate HSync line for the bit to report.
 
+**The source's own datasheet says why, and names which composite it emits.**
+VIDC20 offers two, on two pins: the HSYNC pin carries `CSYNCnor`, the NOR of H
+and V, and the VSYNC pin carries `CSYNCxnor`. A VGA connector's composite sync
+is on the HSync pin, so the NOR is what arrives -- and a NOR saturates, holding
+one level for the whole vertical interval whatever H does underneath it. The
+mode's horizontal polarity is not on the wire to report.
+`investigations/the-risc-pc-composite-sync-is-not-serrated.md`.
+
 **VSPOL is the opposite and does belong.** It tracks what the mode states and
 survives the change: 800x600 reads 1 on both sync types, 640x352 and 640x480
 read 0 on both, and the mode file's `sync_pol` agrees in every case. The
-extractor recovers the vertical polarity from the composite rather than
-inventing one, which is what an earlier reading of this page assumed it could
-not do.
+separator recovers the vertical polarity from the composite rather than
+inventing one.
 
 A key that moves when the sync arrangement moves loses the framing a user tuned
 by doing nothing but changing sync type, which is the opposite of one mode
@@ -181,11 +191,11 @@ separation it has to achieve.
 already unstable across a sync-type change, before any term is added to it.
 `known-issues.md`.
 
-A matched row is checked today on its total lines, its field rate and its
-horizontal sync width -- polarity is read and discarded -- and the
-`activeStartLine` and `activeLines` it then supplies are an assumption that
-nothing tests, because testing them needs a width the part does not measure. A source may match on every
-checked quantity and divide its frame differently:
+A matched row is checked on its total lines, its field rate and its horizontal
+sync width, and the `activeStartLine` and `activeLines` it then supplies are an
+assumption that nothing tests, because testing them needs a width the part does
+not measure. A source may match on every checked quantity and divide its frame
+differently:
 
 | mode | source `v_timings` | source active starts | published row |
 |---|---|---|---|
@@ -198,8 +208,8 @@ width and starts its active image a line earlier than the standard does.
 **That much is a property of the part, not of the lookup.** No rearrangement of
 the tables can check a vertical BLANKING SPLIT, so any vertical placement taken
 from a standard is a guess that happens to be well-informed. Choosing the right
-row is a separate question, and polarity is evidence for it that is currently
-thrown away.
+row is a separate question, and the polarity the key now carries is evidence for
+it that the table does not yet read.
 
 ## Where the implementation departs from the design
 
@@ -213,21 +223,12 @@ of the array order rather than a stated rule.
 The 525-line 60 Hz pair above is the case that would collide, and today it does
 not, because the sync width separates them well inside `SyncDutyTolerance`.
 
-**The two lookups are keyed differently.** The framing table is keyed on
-`SourceKey(lines, rate)`; the standards lookup adds the measured sync duty. One
-source therefore has two spellings of its identity, and only the narrower one is
-persisted.
-
-The sync width is going into the identity, the reading being repeatable enough
-to key on. Three ways to arrange that:
-
-- carry the sync duty in `SourceKey` itself, so both lookups share one key. It
-  is persisted in the framing file, so the stored format changes and existing
-  entries need migrating or discarding.
-- leave `SourceKey` alone and keep the duty as an argument to the standards
-  lookup only. No file change; the two keys stay different.
-- add a second, non-persisted identity carrying all three, used for the
-  standards lookup. No file change; two types to keep in step.
+**The polarity is in the key and not yet in the table.** `SourceTiming::lookUp()`
+takes the whole key and matches a row on the count, the rate and the sync width,
+so a source is told from a row by three of the four terms it is identified by.
+The standards publish the polarity pair, and matching on it would let two rows
+sharing all three be told apart -- which is the discrimination the vertical
+blanking split needs and the part cannot supply directly.
 
 ## What this does not explain
 

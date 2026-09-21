@@ -1,8 +1,27 @@
-# The RISC PC's composite sync carries no serrations
+# The RISC PC's composite sync is a NOR, and carries no serrations
 
 `sourceHasSerratedSync()` is `sourceLowLineRate() && SyncMeasurement::isCsync()`
 -- 15 kHz plus composite sync, therefore broadcast structure. Measured on the
 bench source, the structure is not there.
+
+## The source's datasheet names which composite it emits
+
+VIDC20 builds two different composite signals and puts them on two different
+pins. `ereg[19:16]` selects per pin: the HSYNC pin offers `HSYNC`, `nHSYNC`,
+`CSYNCnor` and `nCSYNCnor`, and the VSYNC pin offers `VSYNC`, `nVSYNC`,
+`CSYNCxnor` and `nCSYNCxnor`. A VGA connector carries composite sync on the
+HSync pin, which is the one this board takes on `vga`, so **the NOR form is
+what arrives.**
+
+That settles what the vertical interval can contain. `!(H | V)` with V asserted
+is one level for the whole interval whatever H does underneath it, so the
+horizontal edges are not attenuated or inverted, they are absent. The XOR form
+would have kept an edge per line -- shifted by the sync width and inverted --
+and would have cost no lines at all.
+
+**The count discriminates between the two forms, and it picks the NOR.** The
+shortfall below is exactly the vertical sync width on four modes; the XOR form
+leaves no shortfall to explain.
 
 Broadcast composite sync puts two things in the vertical interval that a
 computer's does not: *equalising pulses*, narrow and at half-line spacing, which
@@ -82,11 +101,23 @@ matching, and the part measures no vertical sync width to break the loop with.
 
 Two ways that do not close the circle:
 
-- **Measure the line rate independently of the counter.** The true total is the
-  line rate over the field rate, and the field rate is already taken off
-  `DEBUG_IN_PIN` rather than from the sync processor. `TestBusRateMeasurement`
-  is the instrument that reads a rate that way. It needs no table, so it also
-  answers for a source matching no published raster.
+- **Time the line, do not count it.** The lines whose edges are missing still
+  occupy TIME, so a period survives what a count cannot: the true total is the
+  vertical period over the horizontal one, and both are tick counts off
+  `DEBUG_IN_PIN`, so the tick clock cancels and no Hz conversion is needed.
+  `debugPinPulseTicks()` already returns an interval between two adjacent edges
+  rather than a count over a window, and `TestBusRateMeasurement` is what points
+  the bus at a signal and inverts it. It needs no table, so it also answers for
+  a source matching no published raster.
+
+  **An edge COUNT taken anywhere recovers nothing**, including one taken over
+  the test bus: the edges are not on the wire, so every instrument that counts
+  them is short by the same lines. The distinction is the whole difference
+  between the two.
+
+  **One sample in the vertical interval reads long, never short**, being an
+  interval of several lines rather than one. So the minimum of several samples
+  is the line period and the straddling sample rejects itself.
 - **Carry the vertical sync width in the table and reconstruct during the
   match**, accepting `measured + syncLines + 1 == totalLines` on a csync source.
   The standards publish the width, and the field rate and the sync duty still
@@ -123,9 +154,13 @@ between 8 and 16.
 
 ## What is left unexplained
 
-The csync leg counts 308 where the separate-sync leg counts 311 on the same
-source in the same mode, and no setting tried reaches 311. Three lines is the
-width a vertical sync pulse of this mode would occupy, and a sync processor
-counting horizontal edges cannot count edges that a combined H/V sync has
-swallowed -- but that is a hypothesis, and the measurement that would test it is
-whether the shortfall tracks the vsync width across modes with different ones.
+**Whether the coast circuit regenerates the missing edges on some internal
+stage.** Coasting exists to keep a horizontal oscillator running through a
+vertical interval, so a stage downstream of it may carry a line-rate signal the
+counter is not reading -- in which case the count is taken upstream of a signal
+that already has what it needs. `SP_TEST_MODULE` puts one stage at a time on
+the test bus, so a sweep on the csync leg answers it.
+
+It needs a window long enough for the difference to show: the shortfall is 3
+lines in 311, so a 25 ms window at 50 Hz cannot separate the two, where a
+one-second window expects 15625 edges against 15475.
