@@ -37,29 +37,60 @@ selected on field rate, which `vesa-gtf.md` settles.
 `SourceKey` is the line count and the field rate, quantised. It is what the
 framing table is keyed on and what is persisted against a tuned framing.
 
-**The line rate is not a fourth fact.** `lineRate = lines x fieldRate`, so
-naming the line rate and the frame rate states the same thing as the count and
-the rate: one of the three is always derivable from the other two, and a key
-built from any two of them identifies exactly the same set of sources.
+**The line rate is not a third fact.** `lineRate = frameRate x VTOTAL`, so any
+two of the three determine the remaining one and a key built from any pair
+identifies the same set of sources. A frame rate ALONE does not fix the count,
+which is why the pair is what the key carries.
 
-**And that set is not fine enough for the standards lookup**, because the count
-and the rate describe how often a line starts and say nothing about how a line
-is DIVIDED. Two rows of the published table demonstrate it:
+**And no pair of them is fine enough for the standards lookup**, because all
+three describe how often a line starts and none says how a line is DIVIDED. Two
+rows of the published table agree on every one of them:
 
-| | lines | pixels | sync | pixel clock | line rate | field rate |
+| | VTOTAL | frame rate | line rate | pixels | sync | pixel clock |
 |---|---|---|---|---|---|---|
-| DMT 640x480@60 | 525 | 800 | 96 | 25.175 MHz | 31468.75 Hz | 59.94 |
-| CEA 720x480p | 525 | 858 | 62 | 27.000 MHz | 31468.5 Hz | 59.94 |
+| DMT 640x480@60 | 525 | 59.94 | 31468.75 Hz | 800 | 96 | 25.175 MHz |
+| CEA 720x480p | 525 | 59.94 | 31468.5 Hz | 858 | 62 | 27.000 MHz |
 
-They agree on the line rate to 0.001% and on the field rate exactly. What
-separates them is the pixel clock, and this chip cannot see it: it locks to
-sync edges, so the horizontal axis has no native resolution and 320x256 and
-640x256 are one source here.
+Same count, same field rate, and the same line rate to 0.001%. What separates
+them is the pixel clock, and this chip cannot see it: it locks to sync edges, so
+the horizontal axis has no native resolution and 320x256 and 640x256 are one
+source here.
 
 What it CAN measure is the sync width as a fraction of the line --
 `STATUS_SYNC_PROC_HLOW_LEN` against the divider -- which is 0.120 against 0.072
 for that pair. That is why `SourceTiming::matching()` takes a third argument,
 and it is the only horizontal STRUCTURE available to a lookup.
+
+## The sync width is repeatable enough to key on
+
+The question a persisted key asks is not whether the reading is ACCURATE but
+whether it REPEATS: a duty that moves between acquisitions changes the key and
+loses the framing the user tuned.
+
+Measured on the bench. Within one acquisition, 2499 samples over 45 s at
+800x600@60 give two adjacent readings and nothing else -- 196 and 197 counts of
+1606 -- for a mean duty of 0.12218, a standard deviation of 0.00026 and a total
+spread of 0.00062. Across six re-acquisitions driven by source mode changes:
+
+| mode | readings | duty |
+|---|---|---|
+| 800x600@60 | 196/1606, 196/1606, 196/1606 | 0.12204 every time |
+| 640x480@60 | 187/1614, 186/1614, 187/1614 | 0.11586, 0.11524, 0.11586 |
+
+So the reading repeats to the same one-count dither it shows while standing
+still, about 0.0006 either way, and the separation it has to achieve on the
+colliding pair above is 0.048 -- a margin of roughly 77 times.
+
+**Sync polarity comes with it and is free.** `STATUS_SYNC_PROC_HSPOL` is
+measured beside the width and was stable across the same six acquisitions,
+negative on the bench 640x480 and positive on its 800x600. It is a second
+horizontal discriminator already in hand.
+
+The decision that follows is that the sync width belongs in the source's
+identity rather than beside it. `SourceKey` is persisted in the framing file, so
+adding a field changes the stored format and existing entries need migrating or
+discarding; that cost is what the three options below were weighing, and the
+measurement removes the doubt about whether the term is worth paying it for.
 
 ## The vertical half cannot be verified
 
@@ -101,7 +132,8 @@ not, because the sync width separates them well inside `SyncDutyTolerance`.
 source therefore has two spellings of its identity, and only the narrower one is
 persisted.
 
-Three ways to close that, none of them yet chosen:
+The sync width is going into the identity, the reading being repeatable enough
+to key on. Three ways to arrange that:
 
 - carry the sync duty in `SourceKey` itself, so both lookups share one key. It
   is persisted in the framing file, so the stored format changes and existing
