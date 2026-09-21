@@ -18,6 +18,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
 void tv5725Log(const char *) {}
 
@@ -92,7 +94,7 @@ TEST_CASE("the pin is left carrying what was measured")
 
     TestBusRateMeasurement::sourceFieldRateHz(false);
 
-    CHECK(TestBus::selected() == (uint8_t)TestBus::InputVsync);
+    CHECK(TestBus::selected() == 0);
 }
 
 TEST_CASE("a composite-sync PLL is timed off the sync separator")
@@ -142,4 +144,29 @@ TEST_CASE("a measurement leaves the pin's pad driven")
     TestBusRateMeasurement::sourceFieldRateHz(false);
 
     CHECK(Chip::PAD_BOUT_EN::read() == 1);
+}
+
+TEST_CASE("the formatter carrying the pulse is enabled by the measurement")
+{
+    // Nothing on the measuring path turned the formatter's test output on. It
+    // was left to resetDebugPort(), which runs from a preset load and an input
+    // detection -- so a solve armed before either measured through whatever
+    // the chip retained across the ESP reset, and the fault this guards was
+    // measured only during acquisition.
+    given(50.08f);
+    InputFormatter::IF_TEST_EN::write(0);
+
+    TestBusRateMeasurement::sourceFieldRateHz(false);
+
+    CHECK(InputFormatter::IF_TEST_EN::read() == 1);
+}
+
+TEST_CASE("the VDS carrying the output pulse is enabled by the measurement")
+{
+    given(50.08f);
+    VideoProcessor::VDS_TEST_EN::write(0);
+
+    TestBusRateMeasurement::outputFrameRateHz();
+
+    CHECK(VideoProcessor::VDS_TEST_EN::read() == 1);
 }

@@ -2,7 +2,6 @@
 
 #include <Arduino.h>   // delayMicroseconds(), a hardware settling time
 
-#include "InputFormatter.h"
 #include "SyncMeasurement.h"
 #include "SyncProcessor.h"
 #include "TestBus.h"
@@ -44,23 +43,21 @@ float TestBusRateMeasurement::measureRateHz()
 
 float TestBusRateMeasurement::sourceFieldRateHz(bool useSyncProcessorBus)
 {
-    InputFormatter::IF_TEST_SEL::write(3);
+    if (useSyncProcessorBus && SyncMeasurement::isCsync())
+        TestBus::select(TestBus::SyncProcessor);
+    else
+        TestBus::selectInputVsync();
 
-    if (useSyncProcessorBus) {
-        TestBus::select(SyncMeasurement::isCsync() ? TestBus::SyncProcessor
-                                                   : TestBus::InputVsync);
+    if (useSyncProcessorBus)
         SyncProcessor::driveTestBus(SyncProcessor::TestModuleOutProc,
                                     StageSignalFirst);
-    } else {
-        TestBus::select(TestBus::InputVsync);
-    }
 
     return measureRateHz();
 }
 
 float TestBusRateMeasurement::outputFrameRateHz()
 {
-    TestBus::select(TestBus::OutputVsync);
+    TestBus::selectOutputVsync();
 
     return measureRateHz();
 }

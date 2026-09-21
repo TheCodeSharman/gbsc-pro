@@ -16,16 +16,26 @@ namespace Tv5725 {
 // immediately before reading, because no selection survives another caller.
 class TestBus {
 public:
-    static const uint8_t InputVsync = 0x0;
-    static const uint8_t OutputVsync = 0x2;    // the VDS bus
     static const uint8_t SyncProcessor = 0xa;
 
     // The widest selector the five-bit field carries.
     static const uint8_t SignalMax = 31;
 
+    // The source's vertical, off the input formatter's test output, and the
+    // output's off the VDS's. Each enables the block that generates the signal
+    // as well as selecting it: the selector is only the top half of a
+    // two-level mux, and a reader that sets one half depends on whoever set
+    // the other.
+    // docs/investigations/the-test-bus-selection-had-two-halves.md
+    static void selectInputVsync();
+    static void selectOutputVsync();
+
     // Drive this signal out. Enables the bus AND the pad the signal leaves the
     // chip on: a selection nothing is driving is not a selection, and leaving
     // either to the caller is what makes a measurement silently read 0.
+    //
+    // RD-5725-1.1 tabulates no values for the selector, so which block drives
+    // which is not derivable and that block's enable stays the caller's.
     static void select(uint8_t signal);
 
     // What is selected, and whether it is driven. For a caller that has to put
@@ -41,6 +51,10 @@ public:
     static uint8_t readHigh();
 
 private:
+    static const uint8_t InputVsync = 0x0;
+    static const uint8_t OutputVsync = 0x2;
+    static const uint8_t FormatterVertical = 3;
+
     typedef UReg<0x00, 0x4D, 0, 5> TEST_BUS_SEL;
     typedef UReg<0x00, 0x4D, 5, 1> TEST_BUS_EN;
     typedef UReg<0x00, 0x2E, 0, 16> TEST_BUS;

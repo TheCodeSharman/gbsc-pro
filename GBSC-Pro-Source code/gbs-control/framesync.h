@@ -222,7 +222,7 @@ private:
     // difference in microseconds
     static bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput, int32_t *phase)
     {
-        Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
+        Tv5725::TestBus::selectInputVsync();
 
         uint32_t inStart, inStop, outStart, outStop;
         uint32_t inPeriod, outPeriod, diff;
@@ -236,7 +236,7 @@ private:
             return false;
         }
 
-        Tv5725::TestBus::select(Tv5725::TestBus::OutputVsync);   // measure VDS vblank (VB ST/SP)
+        Tv5725::TestBus::selectOutputVsync();   // measure VDS vblank (VB ST/SP)
         inPeriod = (inStop - inStart); //>> 1;
         if (!sampleVsyncPeriod(&outStart, &outStop))
         {
@@ -679,7 +679,7 @@ public:
 
             uint32_t periodInput2;
             {
-                Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
+                Tv5725::TestBus::selectInputVsync();
                 periodInput2 = getPulseTicks();
             }
             if (periodInput2 == 0)

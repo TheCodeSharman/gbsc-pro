@@ -5257,7 +5257,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 } break;
                 case '_': {
                     uint8_t testBusSelBackup = Tv5725::TestBus::selected();
-                    Tv5725::TestBus::select(Tv5725::TestBus::InputVsync);
+                    Tv5725::TestBus::selectInputVsync();
                     uint32_t ticks = FrameSync::getPulseTicks();
                     Tv5725::TestBus::select(testBusSelBackup);
                     Serial.println(ticks);
