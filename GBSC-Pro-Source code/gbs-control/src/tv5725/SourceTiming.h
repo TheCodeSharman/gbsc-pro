@@ -38,6 +38,12 @@ public:
     float activeStart(const Axis &axis) const;
     float activeExtent(const Axis &axis) const;
 
+    // How far the horizontal sync pulse runs, as a fraction of the whole line.
+    // The one part of a published raster a source matching it cannot have spent
+    // differently: the match is ON the sync width. Meaningless unless
+    // published().
+    float hsyncExtent() const;
+
     // The same vertical answer in lines, for a caller with a frame to count
     // against and no scale to apply -- pass-through plays the source's raster
     // out untouched, so the only thing it can blank correctly is what the

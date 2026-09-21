@@ -102,6 +102,13 @@ float SourceTiming::activeExtent(const Axis &axis) const
         : (float)raster_->activePixels / (float)raster_->totalPixels;
 }
 
+float SourceTiming::hsyncExtent() const
+{
+    if (!published())
+        return 0.0f;
+    return (float)raster_->syncPixels / (float)raster_->totalPixels;
+}
+
 uint16_t SourceTiming::activeStartLine(uint16_t frameLines) const
 {
     if (!published())

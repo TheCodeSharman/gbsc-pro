@@ -43,45 +43,30 @@ namespace {
 // docs/investigations/one-bypass-route-carries-rgbhv.md
 const uint16_t RasterGuardSamples = 8;
 
-// How far the sample lags the sync the block emits beside it, in channel
-// clocks. The sync generator does not account for the delay the channel adds to
-// the sample beside it.
-// Measured at 800x600@60 and 640x480@60: the same 40 either way, so it is the
-// channel's delay rather than any source's back porch.
-const uint16_t ChannelSyncDelay = 40;
+// Where the block starts the hsync it emits, in channel clocks. It is not a
+// measured channel delay: the encoder chooses the horizontal placement when it
+// locks, so nothing downstream holds this value's effect still.
+// ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+const uint16_t ChannelSyncStart = 40;
 
-// Where active video starts and stops on the line, as a fraction of it.
+// Where the channel starts showing the line, as a fraction of it.
 //
-// Pass-through plays the source's raster out untouched, so what a STATED
-// raster calls not-picture is the only thing this can blank correctly -- and
-// it is what hides a mode file's border, which is black active video and so
-// invisible to every measurement the chip can take. Where nothing matched,
-// the envelope the scaling path captures across, which is deliberately early
-// and leaves an unrecognised source its border: this path has no framing
-// control to give a cropped picture back with.
-// docs/investigations/vesa-modes-are-clipped-by-default.md
-float activeStart(const SourceTiming &timing)
+// The sync pulse and nothing else. A border is active video the source chose to
+// emit, and a mode file spends it where the standard of the same total and sync
+// spends porch, so blanking to the standard's display area crops it. Leaving
+// the porch through costs nothing -- it is already at blanking level -- and on
+// this path the window does not frame the picture: the encoder places it.
+// Where no raster matched, the envelope the scaling path captures across.
+// ../../../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+float showFrom(const SourceTiming &timing)
 {
-    return timing.published() ? timing.activeStart(AxisHorizontal)
+    return timing.published() ? timing.hsyncExtent()
                               : AxisHorizontal.activeStart();
-}
-
-float activeStop(const SourceTiming &timing)
-{
-    return timing.activeStart(AxisHorizontal) + timing.activeExtent(AxisHorizontal);
 }
 
 uint16_t onChannelLine(float fraction, uint16_t channelLine)
 {
     return (uint16_t)lrintf(fraction * (float)channelLine);
-}
-
-// The end of the line where no raster stated one. It has to stay below
-// HD_HSYNC_RST or the generator never opens at all.
-uint16_t blankStart(const SourceTiming &timing, uint16_t channelLine)
-{
-    return timing.published() ? onChannelLine(activeStop(timing), channelLine)
-                              : channelLine;
 }
 
 const uint16_t SyncPulseWidth = 124;
@@ -212,8 +197,8 @@ void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 {
     HD_HSYNC_RST::write(channelLine + RasterGuardSamples);
 
-    HD_HB_ST::write(blankStart(timing_, channelLine));
-    HD_HB_SP::write(onChannelLine(activeStart(timing_), channelLine));
+    HD_HB_ST::write(channelLine);
+    HD_HB_SP::write(onChannelLine(showFrom(timing_), channelLine));
 }
 
 uint16_t HdBypass::dividerFor(uint32_t lineRateHz)
@@ -252,7 +237,7 @@ void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
     // sized it for.
     SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
 
-    holdHsyncPulse(ChannelSyncDelay, ChannelSyncDelay + SyncPulseWidth);
+    holdHsyncPulse(ChannelSyncStart, ChannelSyncStart + SyncPulseWidth);
     holdVsyncPulse(ChannelVsyncStart, ChannelVsyncStop);
 }
 

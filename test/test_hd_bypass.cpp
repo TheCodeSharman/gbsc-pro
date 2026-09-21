@@ -386,12 +386,21 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
 // is what the raster says is not picture, which is the rule the vertical axis
 // already follows.
 //
-// It matters because a mode file may spend part of the porch on BORDER, which
-// is black active video and so electrically invisible. VESA 800x600@60 starts
-// active at pixel 216 of 1056; the Acorn AKF50 mode of the same total and
-// clock spends 176..216 on border and starts its 800 displayed pixels at 216
-// too. Blanking to the published raster hides that border and crops nothing.
-TEST_CASE("a published raster blanks the channel to where the standard puts video")
+
+// BLANK THE SYNC AND NOTHING ELSE. A border is active video the source chose to
+// emit, and a mode file spends it at both ends of the line where the standard
+// of the same total and sync spends porch -- AKF50's 800x600 is
+// 128,48,40,800,40,0 against VESA's 128 sync, 88 back porch, 800 active, 40
+// front porch. Blanking to the standard's DISPLAY AREA therefore crops 40
+// pixels of picture at each end of a source that matched only on total, sync
+// and rate.
+//
+// Nothing is lost by leaving the porch unblanked: a back porch is already at
+// blanking level, and on this path the window does not frame the picture --
+// the encoder places it, and a window biased wide covers every source the
+// match admits.
+// ../docs/investigations/the-encoder-tunes-the-left-edge-in-pass-through.md
+TEST_CASE("a published raster blanks the channel to the end of its sync")
 {
     const Tv5725::SourceTiming vesa800x600 =
         Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
@@ -400,13 +409,12 @@ TEST_CASE("a published raster blanks the channel to where the standard puts vide
     applyForSource(2039, 37879, vesa800x600, 628);
 
     CHECK(HdBypass::HD_HB_SP::read()
-          == (uint16_t)lrintf(216.0f / 1056.0f * 2039.0f));
+          == (uint16_t)lrintf(128.0f / 1056.0f * 2039.0f));
 }
 
-// The far edge is the same argument as the near one. A mode file spends border
-// at BOTH ends -- AKF50's 800x600 is 128,48,40,800,40,0, so 1016..1056 is
-// border where VESA 800x600@60 spends 1016..1056 on front porch.
-TEST_CASE("a published raster blanks the channel where the standard ends video")
+// The source's own border sits between the sync and the standard's display
+// area, so the near edge has to stay below it.
+TEST_CASE("a published raster leaves the source's border unblanked")
 {
     const Tv5725::SourceTiming vesa800x600 =
         Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
@@ -414,8 +422,25 @@ TEST_CASE("a published raster blanks the channel where the standard ends video")
 
     applyForSource(2039, 37879, vesa800x600, 628);
 
-    CHECK(HdBypass::HD_HB_ST::read()
-          == (uint16_t)lrintf(1016.0f / 1056.0f * 2039.0f));
+    const uint16_t borderStarts = (uint16_t)lrintf(176.0f / 1056.0f * 2039.0f);
+    const uint16_t borderEnds = (uint16_t)lrintf(1016.0f / 1056.0f * 2039.0f);
+    CHECK(HdBypass::HD_HB_SP::read() < borderStarts);
+    CHECK(HdBypass::HD_HB_ST::read() > borderEnds);
+}
+
+// The far edge is the same answer whether a raster matched or not, so there is
+// no published branch left in it.
+TEST_CASE("the line runs to its end whether a raster matched or not")
+{
+    const Tv5725::SourceTiming vesa800x600 =
+        Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
+    REQUIRE(vesa800x600.published());
+
+    applyForSource(2039, 37879, vesa800x600, 628);
+    CHECK(HdBypass::HD_HB_ST::read() == 2039);
+
+    applyForSource(2039, 31469);
+    CHECK(HdBypass::HD_HB_ST::read() == 2039);
 }
 
 TEST_CASE("the blanking start stays inside the line at every divider")
