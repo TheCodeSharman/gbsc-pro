@@ -1776,17 +1776,24 @@ has the measurements and what they refute.
 
 ### The vertical capture window starts inside the picture
 
-At 800x600@60 the solve places the vertical capture about eight counter lines
-after the source's active image begins, clipping the top. Measured with both
-capture edges moved together so the height stays at 600 lines: the card's top
-border band is 21 rows and the solve shows 12, reaching full height at
-`IF_VB_SP` 18 against the solved 26.
+At 800x600@60 the solve starts the vertical capture after the source's active
+image begins, clipping the top: the card's top border band grows from 12 rows at
+the solved `IF_VB_SP` of 26 to about 21 when the window is moved earlier, both
+edges together.
+
+**How much is not established.** The picture overruns the panel's painted area
+at the top, so a count of visible band rows measures where the panel stops
+painting; and a source mode change re-lands the encoder, which moved two sweeps
+of the same registers by about four lines. Closing it needs a panel reference
+from pass-through at the same camera position.
 
 The mode file gives this source zero vertical border, so it is not the
 horizontal border case -- the window is cutting the source's own displayed
 lines. `VideoSourceLine::FrameLagLines` is -1.5 and is the whole vertical
-correction; this mode wants about -9. A second line count is what separates a
-pipeline lag from a conversion error.
+correction. Note also that `SourceTiming::matching()` compares only the line
+count, the field rate and the HORIZONTAL sync duty, so nothing verifies a
+match's vertical numbers -- the bench 640x480 mode starts active at line 34
+where the table says 35.
 
 Independently, the bottom border band reads 5 rows at EVERY capture position,
 so the bottom is clipped on the output side and is a separate fault.
