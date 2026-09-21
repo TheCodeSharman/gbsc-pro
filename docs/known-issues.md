@@ -966,6 +966,73 @@ that comparison; re-flashing the suspect image is what separates them, and a
 suspect image that acquires in under a second on the second attempt was never
 the cause.
 
+### The output porch is a duration and the active span a fraction, so above 70.9 Hz the picture is clipped
+
+Every mode at 72 Hz and above lands with a black band down the left of the panel
+and the card's outer columns missing; at 60 Hz the same card fills the screen. It
+is the FIELD RATE and not the mode -- 800x600 is clean at 60 and clipped at 72
+and 75, 640x480 clean at 60 and clipped at 75.
+
+**`Mode960p` is a 60 Hz standard being run at every rate.** Its raster is
+1800 x 1000 at 108 MHz, and `OutputMode::solve()` keeps the mode and the clock
+while re-solving the horizontal total for the source's field rate. Two
+quantities then come out of it, and they are not the same kind:
+
+- the sync pulse and back porch are DURATIONS, `scaled()` against the clock, so
+  at an unchanged 108 MHz they are a **constant 112 + 312** whatever the total;
+- the active span is a FRACTION, `horizontalTotal x carriedPx / totalPx`, so it
+  shrinks with the total.
+
+The blanking before the picture is therefore 424 of 1800 at 60 Hz and 424 of
+1440 at 75 Hz -- 23.6% of the line against 29.4% -- while the span it has to fit
+alongside stays 71.1% of the line. The two no longer fit, and `activeStop` is
+clamped to `horizontalTotal - FrontPorchMinPx`, throwing the rest away.
+
+| raster | `activeStart + span` | `lastUsable` | `activeStop` predicted / measured |
+|---|---|---|---|
+| 1800 | 424 + 1280 = 1704 | 1784 | 1704 / **1703** |
+| 1496 | 424 + 1063 = 1487 | 1480 | 1480 / **1479** |
+| 1440 | 424 + 1024 = 1448 | 1424 | 1424 / **1423** |
+| 1432 | 424 + 1018 = 1442 | 1416 | 1416 / **1415** |
+
+**The boundary follows from the arithmetic.** `424 + (1280/1800) x T <= T - 16`
+holds only for `T >= 1523`, and `T = 108e6 / (1000 x f)`, so the rate above which
+picture is thrown away is **70.9 Hz**. 60 Hz clears it and 72 Hz does not.
+
+**The clipped columns are real picture, and the display window is what removes
+them.** Frozen at 640x480@75, `VDS_DIS_HB_SP` alone moves the left edge of what
+is shown: at 300, 340, 380 and 410 the card is whole, at 426 it is not, and the
+strip the register blanks is live video rather than border.
+
+**It is NOT the encoder re-locking.** Measured within one frozen acquisition, a
+row-averaged profile over the middle half of the panel correlates at r = 1.0000
+between `VDS_DIS_HB_SP` 410 and 426 with a best shift of **0 px** across the
+right-hand 55% of the frame, and the only columns that change at all are 50..148
+at the far left. 340 and 380 differ from 300 in zero columns. The picture does
+not move; a strip of it is blanked. A photograph taken across two ACQUISITIONS
+does appear to move, which is the confound --
+`investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+
+**Putting the porch on the same footing as the span recovers the whole card.**
+At 640x480@75, frozen, with `312/1800 x 1440 = 250` in place of 312 --
+`VDS_HB_SP` 260, `VDS_DIS_HB_SP` 340, `VDS_DIS_HB_ST` 1364 -- both castellation
+columns come back and nothing is clipped.
+
+The code states the reason for the span being a fraction: the encoder resamples
+the line into the standard's active pixel count however long the line is. **The
+same argument reaches the porch**, which the mode currently states as a time.
+Whether the fraction is the right conversion for the pulse as well as the window
+is what a fix has to settle, since the two claims -- that the encoder finds
+active video where the blanking ends, and that it resamples the whole line --
+are not both true in the way they are currently used.
+`investigations/the-active-window-is-a-fraction-of-the-line.md`.
+
+Two things that are NOT the fault: the capture window, which matches the mode's
+published active region to the unit (640x480@75 reads `oh 292 / eh 1017` of
+`ch 1335` against DMT's `(64+120)/840` and `640/840`); and `EngineCeilingHz`,
+which buys room at 129.6 MHz -- a raster of 1728 at 75 Hz clears the bound -- but
+raises the rate at which the same mismatch bites rather than removing it.
+
 ### A short output raster shreds a source of few lines, and only that combination
 
 The RiscPC at 320x256@50 -- 311 lines -- into 480p or 576p: the card is torn into
