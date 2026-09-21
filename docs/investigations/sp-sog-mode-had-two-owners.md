@@ -51,14 +51,21 @@ logged nothing at all.
 
 ## Three models this refutes
 
-**The hsync polarity.** `STATUS_SYNC_PROC_HSPOL` is 1 on this source and
-`SourceTiming::lookUp()` cannot match the complement's 0.879 duty, so an
-un-normalised polarity looks like the cause. It is not: measured in one window,
-`SP_HS_INV_REG` 0 gives `VTOTAL` 627 and setting it to 1 gives 627 across twelve
-samples over 48 s. The register that misleads here is the pairing, not the
-polarity — a reading taken before a preset load and one taken after it are two
-states, not two instruments, and `VTOTAL` recovers on its own once the ladder
-reaches its sync-processor rung.
+**The hsync polarity, as the reason the count is missing.** `STATUS_SYNC_PROC_HSPOL`
+is 1 on this source and `SourceTiming::lookUp()` cannot match the complement's
+0.879 duty, so an un-normalised polarity looks like what detection is waiting
+on. It is not: measured in one window, `SP_HS_INV_REG` 0 gives `VTOTAL` 627 and
+setting it to 1 gives 627 across twelve samples over 48 s. The count does not
+depend on the polarity at all, and a reading taken before a preset load paired
+with one taken after it is two states rather than two instruments — `VTOTAL`
+recovers on its own once the ladder reaches its sync-processor rung.
+
+The normalisation still matters, downstream: it lives at the head of
+`measureRate()`, so it runs only once something has armed a solve. With the sync
+type applied the whole sequence follows — `SP_HS_INV_REG` 1, a pulse of 176
+against a 1436 divider, `PLLAD_MD` 2039 latched against `STATUS_SYNC_PROC_HTOTAL`
+2039, `STATUS_MISC_PLLAD_LOCK` 1 and a full-screen picture. Un-normalised
+polarity is what a measurement cannot get past, not what a count cannot.
 
 **The coast pair.** An unconfigured sync processor misreads `STATUS_SYNC_PROC_HTOTAL`,
 so `SP_PRE_COAST`/`SP_POST_COAST` at 0/0 look like the fault. The direction is
