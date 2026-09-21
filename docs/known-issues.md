@@ -1808,8 +1808,13 @@ line count and the field rate, so the same mode on the same machine is two
 sources across that change and a framing tuned on one is not found from the
 other. The count itself is the entry below.
 
-`STATUS_SYNC_PROC_HSPOL` moves with it too, 1 against 0, which is why neither
-polarity may join the identity.
+`STATUS_SYNC_PROC_HSPOL` moves with it too, and the information is LOST rather
+than inverted: measured on three modes, it reads 0 on composite whatever the
+mode's horizontal polarity, where separate sync gives 1 for an H+ mode and 0 for
+an H- one. Composite sync is sync-tip-low and there is no separate HSync line to
+read, so the bit carries nothing there and no correction recovers it. That is
+why it may not join the identity. `STATUS_SYNC_PROC_VSPOL` does survive the
+change, correct on both sync types across three modes and two polarities.
 `docs/source-identity-and-framing-lookup.md`.
 
 The sync width does survive it, shifting 0.12204 to 0.12017.
@@ -1842,10 +1847,21 @@ The ADC PLL is not implicated. `STATUS_SYNC_PROC_HTOTAL` equals `PLLAD_MD` at
 `HPERIOD_IF` reads its correct 176.
 
 The sync width survives the change -- 0.12204 against 0.12017 -- so whatever
-miscounts the frame is counting the line correctly. Coasting is where to look:
+miscounts the frame is counting the line correctly.
+
+**THE SHORTFALL IS THE MODE'S VERTICAL SYNC WIDTH**, measured on three modes
+whose vsync differs:
+
+| mode | `v_timings` vsync | separate | composite | short by |
+|---|---|---|---|---|
+| 800x600@60 | 4 | 627 | 623 | 4 |
+| 640x352@60 | 3 | 363 | 360 | 3 |
+| 640x480@60 | 2 | 524 | 522 | 2 |
+
+So the composite path is not counting the lines DURING the vertical sync pulse,
+rather than losing a fixed number of them. Coasting is where to look --
 `SP_PRE_COAST`, `SP_POST_COAST` and `SP_DLT_REG` are what carry the sync
-processor over a composite frame's serration, and four lines is the size of an
-equalisation interval.
+processor across a composite frame's serration.
 
 **One mode must look the same on both sync types**, so this is a defect rather
 than a property of composite sync. It also makes the source identity move:
