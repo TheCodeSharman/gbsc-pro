@@ -2,6 +2,7 @@
 #define TV5725_HD_BYPASS_H
 
 #include "Adc.h"
+#include "SourceTiming.h"
 #include "Tv5725.h"
 
 namespace Tv5725 {
@@ -162,6 +163,9 @@ public:
     // ../../../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
     static const uint16_t MaxChannelLine = 2047;
 
+
+    // The widest sample clock this block will ask the ADC for.
+    static const uint32_t MaxSampleClockHz = 162000000;
     // The densest sampling pass-through can ask for at this line rate.
     //
     // PLLAD_MD is samples per line and nothing is written to memory here, so
@@ -213,10 +217,6 @@ public:
     // neither enters pass-through nor leaves it.
     static bool suitsSource(uint16_t sourceLines, float fieldRateHz);
 
-    // The top of RD-5725-1.1's crossover table: its first row is 162..80 MHz
-    // and there is no row above it.
-    static const uint32_t MaxSampleClockHz = 162000000;
-
     // The whole of what the measurement implies for the block: the ADC's
     // sampling, the raster it plays out, both sync pulses and both blanking
     // windows. Runs AFTER enable(), whose resting timing it overwrites.
@@ -229,7 +229,7 @@ public:
     // for the source. The two together are the ADC clock, which is what chooses
     // the PLL's crossover row -- so neither can be left out.
     static void applyForSource(uint16_t divider, uint32_t lineRateHz,
-                               uint16_t activeStartLine);
+                               const SourceTiming &timing, uint16_t frameLines);
 
     // Blank the lines before active video and nothing else. Where active video
     // starts is not measurable -- a border is black active video, electrically
@@ -317,6 +317,7 @@ private:
     // The channel's two sync pulses as the last writer left them, smaller value
     // first. Order is what applyChannelSyncEdges() decides, so what has to
     // survive between the two calls is the pair rather than its arrangement.
+    static SourceTiming timing_;
     static uint16_t hsyncLow_;
     static uint16_t hsyncHigh_;
     static uint16_t vsyncLow_;

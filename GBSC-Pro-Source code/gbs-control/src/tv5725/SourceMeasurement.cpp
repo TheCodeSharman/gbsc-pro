@@ -298,8 +298,21 @@ bool SourceMeasurement::measureLineRate()
     return lineRateHz_ != 0;
 }
 
+bool SourceMeasurement::normalisePolarity()
+{
+    const bool positive = SyncProcessor::hsyncPositive();
+    SyncProcessor::normaliseHsyncPolarity(SyncProcessor::hsyncFound(), positive);
+    return positive;
+}
+
 SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
 {
+    // BEFORE EVERYTHING, INCLUDING THE SETTLE. A positive-going hsync reaches
+    // the counter as the line minus the pulse, and the rate measurement is one
+    // of the things that defeats -- so leaving this to measureDuty() puts the
+    // correction downstream of a measurement that cannot succeed without it.
+    normalisePolarity();
+
     // Ahead of the steadiness run as well as of the duty: the count is
     // corrected against the divider in force, so a run gathering samples while
     // the processor still counts the previous line fills with readings the
@@ -345,11 +358,9 @@ bool SourceMeasurement::readSource()
 {
     // NORMALISE BEFORE COUNTING. The count is the low time of the sync reaching
     // the counter, so on an uncorrected positive-going source it is the line
-    // minus the pulse -- around 0.9, which forDuty() refuses. Correcting it here
-    // means everything downstream sees one polarity.
+    // minus the pulse -- around 0.9, which forDuty() refuses.
     const bool found = SyncProcessor::hsyncFound();
-    const bool positive = SyncProcessor::hsyncPositive();
-    SyncProcessor::normaliseHsyncPolarity(found, positive);
+    const bool positive = normalisePolarity();
 
     // The duty rather than the register, because the divider this was counted
     // against is about to move. HsyncPulse.h.

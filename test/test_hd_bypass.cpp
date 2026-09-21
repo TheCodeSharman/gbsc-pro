@@ -29,6 +29,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourSpace.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
@@ -306,14 +307,19 @@ static const uint16_t DividerBeforeLadder = 2345;
 // crossover row. Only the RGBHV arm reads it.
 static const uint32_t BenchLineRateHz = 37879;
 
+// A source running nothing the standards state, which is what most of these
+// cases are about.
+static const Tv5725::SourceTiming Unpublished(0.0f);
+
 static void applyForSource(uint16_t divider = DividerBeforeLadder,
                            uint32_t lineRateHz = BenchLineRateHz,
-                           uint16_t activeStartLine = 0)
+                           const Tv5725::SourceTiming &timing = Unpublished,
+                           uint16_t frameLines = 0)
 {
     Wire.reset();
     Wire.poison(Poison);
     Adc::PLLAD_MD::write(DividerBeforeLadder);
-    HdBypass::applyForSource(divider, lineRateHz, activeStartLine);
+    HdBypass::applyForSource(divider, lineRateHz, timing, frameLines);
 }
 
 // ONE PATH FOR EVERY SOURCE. This dispatched on rto->videoStandardInput into
@@ -370,6 +376,44 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
                                   * (float)dividers[i]));
         CHECK(HdBypass::HD_HB_SP::read() < HdBypass::HD_HB_ST::read());
     }
+}
+
+// The envelope is the answer for a source whose raster is unknown. Where one
+// IS known the standard states where active video starts, and pass-through
+// plays that raster out untouched -- so the only thing it can blank correctly
+// is what the raster says is not picture, which is the rule the vertical axis
+// already follows.
+//
+// It matters because a mode file may spend part of the porch on BORDER, which
+// is black active video and so electrically invisible. VESA 800x600@60 starts
+// active at pixel 216 of 1056; the Acorn AKF50 mode of the same total and
+// clock spends 176..216 on border and starts its 800 displayed pixels at 216
+// too. Blanking to the published raster hides that border and crops nothing.
+TEST_CASE("a published raster blanks the channel to where the standard puts video")
+{
+    const Tv5725::SourceTiming vesa800x600 =
+        Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
+    REQUIRE(vesa800x600.published());
+
+    applyForSource(2039, 37879, vesa800x600, 628);
+
+    CHECK(HdBypass::HD_HB_SP::read()
+          == (uint16_t)lrintf(216.0f / 1056.0f * 2039.0f));
+}
+
+// The far edge is the same argument as the near one. A mode file spends border
+// at BOTH ends -- AKF50's 800x600 is 128,48,40,800,40,0, so 1016..1056 is
+// border where VESA 800x600@60 spends 1016..1056 on front porch.
+TEST_CASE("a published raster blanks the channel where the standard ends video")
+{
+    const Tv5725::SourceTiming vesa800x600 =
+        Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
+    REQUIRE(vesa800x600.published());
+
+    applyForSource(2039, 37879, vesa800x600, 628);
+
+    CHECK(HdBypass::HD_HB_ST::read()
+          == (uint16_t)lrintf(1016.0f / 1056.0f * 2039.0f));
 }
 
 TEST_CASE("the blanking start stays inside the line at every divider")
@@ -461,7 +505,7 @@ TEST_CASE("the sync polarities are not this block's to invert")
     ModeDetect::MD_HS_FLIP::write(1);
     ModeDetect::MD_VS_FLIP::write(1);
 
-    HdBypass::applyForSource(2039, 31469, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
 
     CHECK(SyncProcessor::SP_HS2PLL_INV_REG::read() == 1);
     CHECK(SyncProcessor::SP_CS_P_SWAP::read() == 1);
@@ -483,7 +527,7 @@ TEST_CASE("the coast lengths are not written here")
     SyncProcessor::SP_POST_COAST::write(3);
     SyncProcessor::SP_DLT_REG::write(0xC0);
 
-    HdBypass::applyForSource(2039, 31469, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
     CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
@@ -525,7 +569,7 @@ TEST_CASE("the channel blanks the lines before active video")
     // 720x480p is 525 lines with active starting at 36. Every arm carried a
     // constant instead -- the progressive one 0x40, which is 64, so 28 lines
     // of picture came off the top.
-    applyForSource(2039, 31469, 36);
+    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(524, 60.0f, 62.0f / 858.0f), 525);
 
     CHECK(HdBypass::HD_VB_ST::read() == 0);
     CHECK(HdBypass::HD_VB_SP::read() == 36);
@@ -539,7 +583,7 @@ TEST_CASE("a source running no published raster keeps the window it had")
     Wire.poison(Poison);
     HdBypass::HD_VB_SP::write(64);
 
-    HdBypass::applyForSource(2039, 31469, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
 
     CHECK(HdBypass::HD_VB_SP::read() == 64);
 }
@@ -552,7 +596,7 @@ TEST_CASE("no divider means no sampling to install and no raster to size")
     HdBypass::enable();
     Adc::PLLAD_MD::write(DividerBeforeLadder);
 
-    HdBypass::applyForSource(0, BenchLineRateHz, 0);
+    HdBypass::applyForSource(0, BenchLineRateHz, Unpublished, 0);
 
     CHECK(Adc::PLLAD_MD::read() == DividerBeforeLadder);
     CHECK(HdBypass::HD_HSYNC_RST::read() == 1023);
@@ -671,7 +715,7 @@ TEST_CASE("the channel's entry records the oversampling it leaves the ADC on")
     Wire.reset();
     REQUIRE(Adc::applySampleRate(2250, 15574, Adc::OversampleAsClockAllows) == 4);
 
-    HdBypass::applyForSource(2039, 31469, 0);
+    HdBypass::applyForSource(2039, 31469, Unpublished, 0);
 
     // 2039 samples on a 31469 Hz line is CKO 64.2 MHz, which the crossover
     // table takes at post divider one -- so two is all the tap can carry.
@@ -841,3 +885,4 @@ TEST_CASE("a source already bypassed is judged on a count taken now")
         CHECK_FALSE(HdBypass::suitsLineRate((uint32_t)(0 * measurement.fieldRateHz())));
     }
 }
+

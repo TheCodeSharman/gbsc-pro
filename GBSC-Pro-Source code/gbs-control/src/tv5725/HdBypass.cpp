@@ -11,6 +11,7 @@
 #include "Chip.h"
 #include "ColourSpace.h"
 #include "ModeDetect.h"
+#include "SamplingClock.h"
 #include "SyncProcessor.h"
 #include "SyncMeasurement.h"
 
@@ -46,6 +47,41 @@ const uint16_t RasterGuardSamples = 8;
 // Measured at 800x600@60 and 640x480@60: the same 40 either way, so it is the
 // channel's delay rather than any source's back porch.
 const uint16_t ChannelSyncDelay = 40;
+
+// Where active video starts and stops on the line, as a fraction of it.
+//
+// Pass-through plays the source's raster out untouched, so what a STATED
+// raster calls not-picture is the only thing this can blank correctly -- and
+// it is what hides a mode file's border, which is black active video and so
+// invisible to every measurement the chip can take. Where nothing matched,
+// the envelope the scaling path captures across, which is deliberately early
+// and leaves an unrecognised source its border: this path has no framing
+// control to give a cropped picture back with.
+// docs/investigations/vesa-modes-are-clipped-by-default.md
+float activeStart(const SourceTiming &timing)
+{
+    return timing.published() ? timing.activeStart(AxisHorizontal)
+                              : AxisHorizontal.activeStart();
+}
+
+float activeStop(const SourceTiming &timing)
+{
+    return timing.activeStart(AxisHorizontal) + timing.activeExtent(AxisHorizontal);
+}
+
+uint16_t onChannelLine(float fraction, uint16_t channelLine)
+{
+    return (uint16_t)lrintf(fraction * (float)channelLine);
+}
+
+// The end of the line where no raster stated one. It has to stay below
+// HD_HSYNC_RST or the generator never opens at all.
+uint16_t blankStart(const SourceTiming &timing, uint16_t channelLine)
+{
+    return timing.published() ? onChannelLine(activeStop(timing), channelLine)
+                              : channelLine;
+}
+
 const uint16_t SyncPulseWidth = 124;
 
 // The vertical sync the block emits, in lines of the frame it plays out. Every
@@ -61,6 +97,7 @@ const uint8_t ComponentBlankLuma = 5;
 
 }  // namespace
 
+SourceTiming HdBypass::timing_(0.0f);
 uint16_t HdBypass::hsyncLow_ = 0;
 uint16_t HdBypass::hsyncHigh_ = SyncPulseWidth;
 uint16_t HdBypass::vsyncLow_ = ChannelVsyncStart;
@@ -127,11 +164,12 @@ void HdBypass::enable()
 }
 
 void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,
-                              uint16_t activeStartLine)
+                              const SourceTiming &timing, uint16_t frameLines)
 {
+    timing_ = timing;
     applyPassThroughSampling(divider, lineRateHz);
     SyncProcessor::applySdVsyncPosition();
-    applyVerticalBlanking(activeStartLine);
+    applyVerticalBlanking(timing.activeStartLine(frameLines));
 }
 
 void HdBypass::applyVerticalBlanking(uint16_t activeStartLine)
@@ -147,25 +185,8 @@ void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 {
     HD_HSYNC_RST::write(channelLine + RasterGuardSamples);
 
-    // At the end of the line, not at a fraction of it. Pass-through plays out
-    // whatever the source sends and the source's own porches are already black,
-    // so blanking earlier only takes picture off the right -- measured, 0.945
-    // of the line cost the last 3% of the panel. It still has to sit below
-    // HD_HSYNC_RST or the generator never opens at all.
-    HD_HB_ST::write(channelLine);
-
-    // The near edge is the same envelope the scaling path places its capture
-    // from, so there is one answer to where video starts on a source whose
-    // raster is unknown rather than two that drift apart. It was 0x90, a count
-    // of SAMPLES against a divider chosen per source, and on the bench it
-    // covered nothing: the panel's own left edge falls at sample 364 of a 2048
-    // sample line and the blanking is invisible below about 400.
-    //
-    // It does not hide a source's border, and is not tuned until it does: the
-    // envelope is deliberately early so nothing is cropped, and bypass has no
-    // framing control to give a cropped picture back with. docs/known-issues.md
-    HD_HB_SP::write((uint16_t)lrintf(AxisHorizontal.activeStart()
-                                     * (float)channelLine));
+    HD_HB_ST::write(blankStart(timing_, channelLine));
+    HD_HB_SP::write(onChannelLine(activeStart(timing_), channelLine));
 }
 
 uint16_t HdBypass::dividerFor(uint32_t lineRateHz)

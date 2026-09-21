@@ -183,6 +183,7 @@ private:
     static float medianOfThree(float a, float b, float c);
     bool rateSettled();
     void takeJudgedRate();
+    bool normalisePolarity();
     bool readSource();
     bool takeDuty(bool latched, const HsyncPulse &reading);
 

@@ -522,6 +522,28 @@ TEST_CASE("the sync processor's retime window is the divider a third time")
 // a solid green screen and every register self-consistent. So SourceMeasurement holds the
 // number it chose and hands it to whoever needs it.
 
+// A positive-going hsync reaches the counter as the line MINUS the pulse, so
+// everything derived from the pulse width is the complement of what the source
+// sends: measured on the bench at 800x600@60, HLOW 882 of HTOTAL 1003 against
+// the 122 the mode states, and SourceTiming's duty match is 0.015 wide.
+//
+// Normalising inside measureDuty() alone cannot break that, because the rate
+// has to be measured first and the rate measurement is what the wrong polarity
+// defeats. The engine then never leaves the recovery ladder: measured with
+// STATUS_SYNC_PROC_VTOTAL reading the source correctly throughout, the ADC PLL
+// never locking, and the unmeasured-pass counter climbing without ever resetting.
+TEST_CASE("the hsync polarity is normalised before the rate is measured")
+{
+    Adc::applyDivider(BenchDivider);
+    seedSource(311, BenchDivider, BenchDivider);
+    Wire.bank[0][0x16] = 0x03;   // STATUS_SYNC_PROC_HSPOL | HSACT -- positive, found
+
+    SourceMeasurement measurement;
+    measurement.measureRate();
+
+    CHECK(SyncProcessor::SP_HS_INV_REG::read() == 1);
+}
+
 TEST_CASE("a solved divider is held, and every register follows from it")
 {
     Wire.reset();

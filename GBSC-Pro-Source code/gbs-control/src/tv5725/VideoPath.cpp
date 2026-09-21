@@ -148,6 +148,8 @@ int16_t VideoPath::videoLagOn(const Axis &axis) const
 
 uint16_t VideoPath::sourceActiveStartLine() const { return activeStartLine_; }
 
+const SourceTiming &VideoPath::sourceTiming() const { return timing_; }
+
 uint16_t VideoPath::originUnitsOn(const Axis &axis) const
 {
     return (uint16_t)lrintf(framing_.originOn(axis) * (float)lineUnitsOn(axis));

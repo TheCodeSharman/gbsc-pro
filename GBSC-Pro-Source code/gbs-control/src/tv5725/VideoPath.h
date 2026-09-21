@@ -58,6 +58,11 @@ public:
     // never solves. docs/video-source-acquisition.md
     uint16_t sourceActiveStartLine() const;
 
+    // The published raster the measurement matched, unpublished where none did.
+    // Pass-through blanks both axes from it, so it is handed over whole rather
+    // than as one derived number per axis.
+    const SourceTiming &sourceTiming() const;
+
     // The framing on this axis in input units, against that region.
     // docs/scaler-geometry-model.md
     uint16_t originUnitsOn(const Axis &axis) const;
