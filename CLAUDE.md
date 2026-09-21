@@ -457,11 +457,24 @@ downstream; if a strip is blanked and the rest correlates at zero shift, it is
 the board. A row-averaged profile of two photographs settles it in one command.
 
 **A COMPARISON ACROSS TWO ACQUISITIONS CANNOT ANSWER THAT QUESTION**, and it is
-what makes the encoder look guilty. The picture's position is re-rolled between
-acquisitions, so two frames either side of a mode change, an input change or a
-sync-type round trip differ by a displacement nobody wrote. Freeze, take both
-frames inside ONE acquisition, and the displacement is gone.
-`docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+what makes the encoder look guilty. Two frames either side of a mode change, an
+input change or a sync-type round trip differ by a displacement nobody wrote.
+Freeze, take both frames inside ONE acquisition, and the displacement is gone.
+
+**THAT DISPLACEMENT IS LATCHED, NOT RANDOM, AND "RE-ROLL" IS REFUTED.** The
+window the picture is shown through takes its origin from OUR blanking at the
+moment the link locks, and then holds it: a `PAD_SYNC_OUT_ENZ` toggle with
+`VDS_DIS_HB_SP` at 300 put the origin at **300.3**, following the register to a
+third of a unit. **IT IS A RE-ACQUISITION LOCK RATHER THAN A RE-ROLL**, and it
+is held DOWNSTREAM: across one such lock the STV9426 overlay -- generated on the
+board and keyed in at U13 -- itself moved 124 photo columns with the board
+frozen and no sync register touched, which nothing on the board can do. Two landings
+that differ are two different blanking values at lock, not two draws -- so a
+landing is reproducible, and treating one as unrepeatable before ruling out the
+blanking is what cost the sessions behind that page. **It can be pulled earlier
+but not pushed later**: the same toggle with the blanking LATER than what was
+latched changed nothing, because black inside the window it already holds is no
+cue. `docs/investigations/the-shown-window-is-latched-at-lock.md`.
 
 **Bypass is NOT a way to get a picture out of an unknown source.** It passes the
 source's own timing to the encoder, so it only works where the DISPLAY can show
@@ -1491,7 +1504,7 @@ one the same way; the rules below are each a wasted session.
   remains unlicensed is a specific mechanism inside the encoder, not the
   locality. Repeat the overlay measurement before believing any new claim about
   where the position is set; it costs one photograph per landing.
-  `docs/investigations/the-picture-position-is-re-rolled-by-the-sync-pad.md`.
+  `docs/investigations/the-picture-position-is-latched-not-re-rolled.md`.
 - **Separate what the board must emit from what one display happens to show.**
   The MS9288A consumes the scaler's analog blanking and generates HDMI blanking
   of its own, so the minimum the scaler must emit is a board property, measured
