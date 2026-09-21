@@ -136,3 +136,52 @@ mechanism can do.
 mode as `1280 x 960/60Hz` off a 1790 x 1000 raster -- `Mode960p`'s
 `activePx` exactly -- so our line is resampled into the standard's active pixel
 count, which is why `carriedPx / totalPx` is the right shape for the width.
+
+
+## What it locks ONTO is the blanking edge, not the first content
+
+Two models fitted the measurements above: the window latches at
+`VDS_DIS_HB_SP`, or it latches at the first sample distinguishable from blank.
+They agree on every reading taken so far, because at a default framing the
+picture's own edge IS the first content and sits at the window.
+
+**A black border between the two separates them**, and it was run. Panned to
+expose 80 units of the source's blanking inside the display window, so the line
+carries blank, then a black border, then picture:
+
+| | predicts | observed |
+|---|---|---|
+| first-content lock | window jumps past the border to ~504, so the border DISAPPEARS | -- |
+| blanking-edge lock | window stays at `VDS_DIS_HB_SP` 425, so the border REMAINS | **remains** |
+
+The border sat at panel column 138 before and 138 after, 88 columns wide against
+87. **The link was verified to have dropped**: photographed during the hold, the
+panel reads mean 31.2 with no content at all, against 144.7 before and 145.8
+after. So a real re-acquisition happened and the window did not move.
+
+**So the origin is the blanking edge.** One rule now covers every reading:
+`VDS_DIS_HB_SP` 425 latches 420.8, 300 latches 300.3, and content inside the
+window does not move it.
+
+### How it SEES that edge is open, and the panel cannot answer it
+
+`VDS_BLK_BF_EN` cuts the playback stage's garbage out of the blanking interval,
+and every blanking amplitude on this path is zero -- `VDS_UV_BLK_VAL` 0 (a signed
+field, so it can sit either side of neutral), `VDS_SYNC_LEV` 0, and the HD path's
+`HD_BLK_GY_DATA` / `_BU_` / `_RV_` all 0 behind `HD_SEL_BLK_IN` 0. On the panel,
+true blanking and captured black border are **indistinguishable**: one flat
+profile at 37.5 across both, with no step at the boundary.
+
+That does not mean they are identical on the wire. A pedestal of a code or two
+-- on the blanking, or on the captured black, which is the likelier place since
+the ADC clamps the source's own black -- would be crushed by the television long
+before a camera saw it. **The panel is the wrong instrument for a level
+question; the scope is.** Until then the edge is established by behaviour and
+its mechanism is not.
+
+### Bypass is not established as a separate mechanism
+
+The board-side reading of the knee is refuted -- opening the window to 350 at
+1790 revealed nothing, because the latched window still began at 421 and
+everything below was outside what the sink displayed -- and the overlay moves
+with it, which nothing on the board can do.

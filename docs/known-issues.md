@@ -428,11 +428,16 @@ the picture wrongly.
 
 The sink fixes its active window WHEN IT ACQUIRES and holds it until it acquires
 again, taking the origin from our blanking at that moment --
-`investigations/the-shown-window-is-latched-at-lock.md`. `VDS_BLK_BF_EN` is what
-makes that edge visible to it: set, the final composite blank `(dis_hb|dis_vb)`
-cuts the garbage out of the blanking interval, so the DISPLAY window is the one
-electrically distinct downstream, which is why the origin follows
-`VDS_DIS_HB_SP` and not `VDS_HB_SP`.
+`investigations/the-shown-window-is-latched-at-lock.md`. It latches on the
+BLANKING EDGE rather than on the first content: a black border panned into the
+display window survives a verified re-acquisition unmoved, where locking to the
+first non-blank sample would have jumped the window past it. The origin follows
+the DISPLAY window because `VDS_BLK_BF_EN` gates which samples reach the DAC --
+set, the final composite blank `(dis_hb|dis_vb)` forces the blank value over
+whatever the playback stage is fetching, so `VDS_DIS_HB_SP` is where valid data
+starts. **How the sink distinguishes that edge is open**: blanking and captured
+black are indistinguishable on the panel, both flat at 37.5, and a pedestal of a
+code or two would be crushed by the television. That is a scope question.
 
 **`serviceEncoderRelook()` returns the pad `EncoderRelookMs` after the move that
 took it away, whatever has happened since.** 300 ms is inside the window where
