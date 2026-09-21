@@ -1,5 +1,28 @@
 # The picture position is chosen downstream of the board, and the STV9426 overlay proves it
 
+## What this still applies to
+
+**The scaling path, on an output raster that states no standard.** Every mode
+`Tv5725::OutputMode` offers now carries one -- CEA-861 for 1080p, 720p, 480p and
+576p, VESA DMT for the rest -- and the displacement below does not appear on
+them. A sink locking to a mode it recognises places it the same way every time.
+
+**It is not recorded as happening WITHIN pass-through**, and the two claims that
+sound alike are different. What is recorded is ~150 photo columns adrift across
+a pass-through ROUND TRIP -- an excursion out of the scaling path and back --
+which says the mapping does not survive the excursion. It does not say the
+picture moves between two acquisitions while pass-through is held.
+
+That distinction decides how pass-through is measured. A blanking edge found
+there is a real edge, and a second acquisition is not needed to confirm the
+picture did not move underneath it. Re-calibrate across an excursion, not
+within one path.
+
+The measurements below stand as taken. What has changed is the raster they were
+taken against.
+
+## The finding
+
 The picture lands on one of a small set of positions on the panel, and which one
 it lands on changes across a transition. **A full 1536-register snapshot taken at
 three of them is byte-identical**, and no write on the part moves it except by
