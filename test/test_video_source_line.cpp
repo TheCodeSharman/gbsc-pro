@@ -17,6 +17,19 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 
+// The line from a count in ADC samples and the divider it was counted at, which
+// is the pair the chip reports. Their ratio is the duty; two samples to the unit
+// is what says the line is doubled.
+static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
+                                            uint16_t adcLine, bool syncAtHead)
+{
+    return Tv5725::VideoSourceLine::forDuty(
+        units,
+        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f,
+                           syncAtHead),
+        adcLine >= units + units / 2);
+}
+
 using namespace Tv5725;
 
 // IF_LINE_ST/SP is the input formatter's PROGRESSIVE line window -- line double
@@ -31,7 +44,7 @@ static long lagUnits(const VideoSourceLine &line)
 
 TEST_CASE("the progressive line window spans exactly one line")
 {
-    const VideoSourceLine SourceLine = VideoSourceLine::measured(1126, 160, 2250, true);
+    const VideoSourceLine SourceLine = measuredLine(1126, 160, 2250, true);
 
     SUBCASE("it starts where IF_LINE_ST says and runs a whole line") {
         // The bench value: 64 + 1126 = 1190.
@@ -46,7 +59,7 @@ TEST_CASE("the progressive line window spans exactly one line")
     SUBCASE("a longer line makes a longer window") {
         // The whole reason this cannot be a constant: PLLAD_MD moves and the
         // line moves with it.
-        CHECK(VideoSourceLine::measured(1057, 128, 2114, true).progressiveStop(64) == 1121);
+        CHECK(measuredLine(1057, 128, 2114, true).progressiveStop(64) == 1121);
     }
 
     SUBCASE("it may run past the end of the line, and that is not a fault") {
@@ -65,7 +78,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     // of PLLAD_MD 2553 and read here at the 2250 the write limit caps the
     // divider to. 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine, true);
+    const VideoSourceLine SourceLine = measuredLine(LineUnits, HsyncLow, AdcLine, true);
 
     SUBCASE("the pulse width comes from the hsync duty") {
         CHECK(SourceLine.syncUnits() == 81);
@@ -74,18 +87,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     SUBCASE("a wider pulse excludes proportionally more") {
         // 800x600@60 is hsync 128 of 1056, a duty of 0.121 -- nearly twice the
         // bench source's. A fixed guard would under-clip it.
-        CHECK(VideoSourceLine::measured(1126, 128, 1056, true).syncUnits() == 137);
-    }
-
-    SUBCASE("an unmeasurable duty falls back to what the retimer is set for") {
-        // HLOW_LEN is a live measurement and rails; the firmware discards a
-        // reading outside 0.041..0.152 too (gbs-control.ino:4858). Failing open
-        // would restore the green bands, so the fallback is the fraction
-        // SP_RT_HS_SP = PLLAD_MD x 0.93 configures the retimer for.
-        for (uint16_t railed : {(uint16_t)0, (uint16_t)4095, (uint16_t)10}) {
-            // ceil(1126 x 0.07) = 79, against the 81 the duty measures.
-            CHECK(VideoSourceLine::measured(1126, railed, 2250, true).syncUnits() == 79);
-        }
+        CHECK(measuredLine(1126, 128, 1056, true).syncUnits() == 137);
     }
 
     SUBCASE("a line with nothing measured keeps all of itself") {
@@ -104,7 +106,7 @@ TEST_CASE("the capture stops where the line wraps, and nowhere earlier")
     CHECK(VideoSourceLine(1126).lastCapture() == 1124);
 
     SUBCASE("the head guard still applies, and the two do not cross") {
-        VideoSourceLine bench = VideoSourceLine::measured(1277, 181, 2553, true);
+        VideoSourceLine bench = measuredLine(1277, 181, 2553, true);
         CHECK(bench.firstCapture() < bench.lastCapture());
         CHECK(bench.lastCapture() == 1275);
         CHECK(bench.maxCaptureWidth() == bench.capturable());
@@ -152,7 +154,7 @@ TEST_CASE("a doubled line's capture clears the blanking the chip writes past the
     // the unit.
     const uint16_t Units = 1103, HsyncLow = 156, AdcLine = 2206;
 
-    VideoSourceLine line = VideoSourceLine::measured(
+    VideoSourceLine line = measuredLine(
         Units, HsyncLow, AdcLine, true);
 
     CHECK(line.syncUnits() == 79);
@@ -174,7 +176,7 @@ TEST_CASE("the blanking at a doubled line's head moves no position in it")
     // standards state. docs/vesa-gtf.md
     const float ActiveStart = 0.117f;
 
-    VideoSourceLine line = VideoSourceLine::measured(
+    VideoSourceLine line = measuredLine(
         Units, HsyncLow, AdcLine, true);
 
     CHECK(line.videoAt(ActiveStart) == 129);
@@ -187,18 +189,18 @@ TEST_CASE("the capture starts where the sync pulse ends")
     const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
 
     SUBCASE("a positive pulse sits at the head and the floor clears it") {
-        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
+        VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
         CHECK(line.firstCapture() == 137 + lagUnits(line));
     }
 
     SUBCASE("an inverted pulse is behind the origin, leaving only the lag") {
-        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+        VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
         CHECK(line.firstCapture() == lagUnits(line));
     }
 
     SUBCASE("an inverted pulse keeps the span the head guard would take") {
-        VideoSourceLine positive = VideoSourceLine::measured(900, 109, 900, true);
-        VideoSourceLine inverted = VideoSourceLine::measured(900, 109, 900, false);
+        VideoSourceLine positive = measuredLine(900, 109, 900, true);
+        VideoSourceLine inverted = measuredLine(900, 109, 900, false);
         CHECK(inverted.capturable() - positive.capturable() == positive.syncUnits());
     }
 
@@ -206,7 +208,7 @@ TEST_CASE("the capture starts where the sync pulse ends")
         // The doubled path: IF_HBIN_SP is the FIFO's line reset there and puts
         // the picture where it wants it, so the lag is not the caller's to add.
         // The blanking written past the pulse is a separate term and remains.
-        CHECK(VideoSourceLine::measured(1126, 160, 2250, true).firstCapture()
+        CHECK(measuredLine(1126, 160, 2250, true).firstCapture()
               == 81 + VideoSourceLine::DoubledHeadBlankingUnits);
     }
 }
@@ -230,7 +232,7 @@ TEST_CASE("the doubled head guard clears the blanking the capture path writes")
     // does not shrink -- the solve refills the raster from a capture a few
     // units narrower.
     const uint16_t Units = 1101, HsyncLow = 156, AdcLine = 2200;
-    VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
+    VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
 
     CHECK(line.firstCapture() - line.syncUnits() >= 22);
 }
@@ -246,12 +248,12 @@ TEST_CASE("a position in the source's line maps onto where video lands in this o
     const float ActiveStart = 216.0f / 1056.0f;
 
     SUBCASE("a positive pulse shares the standard's own origin") {
-        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
+        VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
         CHECK(line.videoAt(ActiveStart) == 230 + lagUnits(line));
     }
 
     SUBCASE("an inverted pulse moves it back by the sync interval as well") {
-        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+        VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
         CHECK(line.videoAt(ActiveStart)
               == 230 - line.syncUnits() + lagUnits(line));
     }
@@ -269,39 +271,19 @@ TEST_CASE("a position in the source's line maps onto where video lands in this o
 TEST_CASE("a capture window may be as wide as the line allows")
 {
     SUBCASE("a line with room to spare is offered all of it") {
-        VideoSourceLine line = VideoSourceLine::measured(
+        VideoSourceLine line = measuredLine(
             2047, 248, 2046, true);
         CHECK(line.maxCaptureWidth() == line.capturable());
     }
 
     SUBCASE("and so is a doubled one") {
-        VideoSourceLine line = VideoSourceLine::measured(1270, 160, 2540, true);
+        VideoSourceLine line = measuredLine(1270, 160, 2540, true);
         CHECK(line.maxCaptureWidth() == line.capturable());
     }
 
     SUBCASE("a window the ends already bound is left alone") {
-        VideoSourceLine narrow = VideoSourceLine::measured(900, 64, 900, true);
+        VideoSourceLine narrow = measuredLine(900, 64, 900, true);
         CHECK(narrow.maxCaptureWidth() == narrow.capturable());
-    }
-}
-
-// A REFUSED DUTY IS A FAULT, NOT A DEFAULT. FallbackDuty places the capture
-// window from a guess, and on the bench source the guess happens to be right to
-// one unit -- 7.03% against a fallback of 7.00% -- so a wrong reading on every
-// OTHER mode is invisible from the picture. It has to say so.
-TEST_CASE("a duty outside the sync processor's window is announced, not swallowed")
-{
-    SUBCASE("a duty the processor could not have measured says so") {
-        g_logLines.clear();
-        VideoSourceLine::forDuty(1253, 0.93f, true, true);
-        CHECK(loggedContaining("duty"));
-        CHECK(loggedContaining("refused"));
-    }
-
-    SUBCASE("a plausible duty says nothing") {
-        g_logLines.clear();
-        VideoSourceLine::forDuty(1253, 0.0703f, true, true);
-        CHECK(g_logLines.empty());
     }
 }
 
@@ -316,12 +298,12 @@ TEST_CASE("the capture floor hides the sync pulse and nothing else")
     // 640x480@60 on the bench at PLLAD_MD 1494, HLOW_LEN 172.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     SUBCASE("a low-active source has the pulse behind the origin already") {
-        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+        VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
         CHECK(line.firstCapture() == lagUnits(line));
     }
 
     SUBCASE("a high-active source has it at the head, so the floor clears it") {
-        VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
+        VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
         CHECK(line.firstCapture() == line.syncUnits() + lagUnits(line));
     }
 }
@@ -351,7 +333,7 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
 {
     // 640x480@60 at PLLAD_MD 1494, low-active: the pulse is at the tail.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
-    VideoSourceLine line = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+    VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
     const long Lag = lagUnits(line);
 
     SUBCASE("the floor is where the sync ends, a lag later") {
@@ -365,7 +347,7 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
     }
 
     SUBCASE("a doubled line is placed by IF_HBIN_SP and takes no lag") {
-        VideoSourceLine doubled = VideoSourceLine::measured(1254, 89, 2506, true);
+        VideoSourceLine doubled = measuredLine(1254, 89, 2506, true);
         CHECK(doubled.firstCapture()
               == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
     }
@@ -403,9 +385,9 @@ TEST_CASE("one framing takes the same video in both scan modes")
         // The bench source either side of the doubler: PLLAD_MD 2200 on a 1100
         // unit line doubled, 1852 undoubled, sync 36 of 512.
         const float Duty = 36.0f / 512.0f;
-        VideoSourceLine doubled = VideoSourceLine::measured(
+        VideoSourceLine doubled = measuredLine(
             1100, (uint16_t)lrintf(2200 * Duty), 2200, true);
-        VideoSourceLine undoubled = VideoSourceLine::measured(
+        VideoSourceLine undoubled = measuredLine(
             1852, (uint16_t)lrintf(1852 * Duty), 1852, true);
 
         const float Framing = 0.2036f;

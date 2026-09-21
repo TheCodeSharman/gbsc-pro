@@ -58,6 +58,14 @@ static std::string g_log;
 static std::vector<std::string> g_lines;
 void tv5725Log(const char *message) { g_log = message; g_lines.push_back(message); }
 
+static bool loggedContaining(const std::string &part)
+{
+    for (size_t i = 0; i < g_lines.size(); ++i)
+        if (g_lines[i].find(part) != std::string::npos)
+            return true;
+    return false;
+}
+
 static bool logged(const std::string &line)
 {
     return std::find(g_lines.begin(), g_lines.end(), line) != g_lines.end();
@@ -1975,4 +1983,22 @@ TEST_CASE("the complement of a duty is not taken as one")
 
     CHECK(sampling.hsync().syncDuty() != doctest::Approx(
               (float)(BenchDivider - 181) / (float)BenchDivider));
+}
+
+// A REFUSED DUTY IS A FAULT, NOT A DEFAULT, so it has to say so. Nothing
+// substitutes a value any more -- the guess suited the bench source to one unit
+// and was wrong on every other mode, invisibly -- so the console is the only
+// place a reader can see the engine waiting and why.
+TEST_CASE("a duty that is not a pulse is announced")
+{
+    SourceMeasurement sampling;
+    Adc::applyDivider(BenchDivider);
+    seedSourceLines(311);
+    Wire.sourceHsync(181, BenchDivider, true);
+    Wire.hsyncInversionLag(200);
+    g_fieldRate = 50.08f;
+
+    measurePastGate(sampling);
+
+    CHECK(loggedContaining("NOT A PULSE"));
 }

@@ -27,6 +27,19 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
 
+// The line from a count in ADC samples and the divider it was counted at, which
+// is the pair the chip reports. Their ratio is the duty; two samples to the unit
+// is what says the line is doubled.
+static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
+                                            uint16_t adcLine, bool syncAtHead)
+{
+    return Tv5725::VideoSourceLine::forDuty(
+        units,
+        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f,
+                           syncAtHead),
+        adcLine >= units + units / 2);
+}
+
 using namespace Tv5725;
 
 // --- the framing, held as state rather than read back ------------------------
@@ -330,7 +343,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
     // here at the 2250 the write limit caps the divider to.
     // 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const VideoSourceLine SourceLine = VideoSourceLine::measured(LineUnits, HsyncLow, AdcLine, true);
+    const VideoSourceLine SourceLine = measuredLine(LineUnits, HsyncLow, AdcLine, true);
     const float Rate = 50.0f;
 
     SUBCASE("zooming all the way out stops clear of the sync") {
@@ -447,7 +460,7 @@ TEST_CASE("no framing puts the capture stop past what the line can write")
     for (uint16_t units : lines) {
         for (bool vertical : {false, true}) {
             const VideoSourceLine line = vertical ? VideoSourceLine(units)
-                                            : VideoSourceLine::measured(units, 181, 2553, true);
+                                            : measuredLine(units, 181, 2553, true);
             CAPTURE(units);
             CAPTURE(vertical);
             CAPTURE(line.lastCapture());
@@ -540,8 +553,8 @@ TEST_CASE("the default capture starts where video lands, not where the standard 
     const float Rate = 60.0f;
 
     SUBCASE("an inverted pulse puts it a sync width the other way") {
-        VideoSourceLine positive = VideoSourceLine::measured(Units, HsyncLow, AdcLine, true);
-        VideoSourceLine inverted = VideoSourceLine::measured(Units, HsyncLow, AdcLine, false);
+        VideoSourceLine positive = measuredLine(Units, HsyncLow, AdcLine, true);
+        VideoSourceLine inverted = measuredLine(Units, HsyncLow, AdcLine, false);
         BlankingTiming at_head = ActiveImage().capture(positive, Rate, AxisHorizontal);
         BlankingTiming behind = ActiveImage().capture(inverted, Rate, AxisHorizontal);
         CHECK(at_head.stop() - behind.stop() == positive.syncUnits());
@@ -589,8 +602,8 @@ TEST_CASE("one framing takes the same span of the line in either scan mode")
     // picture in each: photographed at one framing, 480p fitted at 0.980 of
     // the 1080p frame horizontally and 576p at 0.962. Anchored to the LINE it
     // names the same part, because the line is the same either way.
-    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, 0.0718f, true, true);
-    const VideoSourceLine single = VideoSourceLine::forDuty(1881, 0.0718f, false, true);
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f, true), true);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1881, HsyncPulse(0.0718f, true), false);
 
     ActiveImage image;
     image.setFraming(PanAndZoom(0.2036f, 0.6245f, 0.0f, 1.0f));
@@ -618,8 +631,8 @@ TEST_CASE("one framing names the same source video in either scan mode")
 {
     // 1080p doubles the bench source at PLLAD_MD 2200; 480p cannot fit the
     // doubled frame and captures it whole at 1880.
-    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, 0.0718f, true, true);
-    const VideoSourceLine single = VideoSourceLine::forDuty(1880, 0.0718f, false, true);
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f, true), true);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1880, HsyncPulse(0.0718f, true), false);
 
     ActiveImage image;
     image.setFraming(PanAndZoom(0.2036f, 0.6245f, 0.0f, 1.0f));

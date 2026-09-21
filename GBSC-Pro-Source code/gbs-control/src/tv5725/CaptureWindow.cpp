@@ -36,8 +36,7 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     if (!VideoSignal::isVideo(sourceLines, source.fieldRateHz()))
         return false;
 
-    horizontalLine_ = VideoSourceLine::forDuty(horizontalWrap, reading.syncDuty(),
-                                               lineDoubled, reading.syncAtHead());
+    horizontalLine_ = VideoSourceLine::forDuty(horizontalWrap, reading, lineDoubled);
 
     // The IF's line counter runs at twice the source line rate only while the
     // line doubler is in the path, so what it counts is half-lines there and

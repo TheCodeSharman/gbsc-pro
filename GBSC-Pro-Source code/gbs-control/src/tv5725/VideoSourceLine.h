@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 
+#include "HsyncPulse.h"
+
 namespace Tv5725 {
 
 // The line the framing is applied to, together with the part of it the capture
@@ -122,27 +124,26 @@ public:
     // whichever line it was picked against.
     uint16_t progressiveStop(uint16_t start) const;
 
-    // The line as the chip measures it. `hlowLen` is STATUS_SYNC_PROC_HLOW_LEN,
-    // the hsync low duration in ADC samples, and `adcLine` is PLLAD_MD, the
-    // whole line in the same samples -- so their ratio is the hsync duty and
-    // the pulse is that fraction of `units`. Nothing here is a constant for one
-    // source: a 0.121 duty source excludes nearly twice what a 0.071 one does.
+    // The line the source sends, from the pulse measured off it. The pulse is
+    // that fraction of `units`, and nothing here is a constant for one source:
+    // a 0.121 duty source excludes nearly twice what a 0.071 one does.
     //
-    // `syncAtHead` is STATUS_SYNC_PROC_HSPOL. A positive-going pulse puts the
-    // line's origin on its leading edge, so the pulse is at the head and no
-    // window may start inside it; an inverted one puts the origin on the
-    // trailing edge, where the sync interval is already behind the origin and
-    // a guard there would throw away video.
+    // NOTHING IS SUBSTITUTED FOR AN IMPLAUSIBLE DUTY. An HsyncPulse has already
+    // been judged a pulse where it was taken, so there is no reading here to
+    // refuse -- and a fallback placed the window from a guess that happened to
+    // suit the bench source to one unit, which made every other mode wrong and
+    // invisible. HsyncPulse.h
+    //
+    // The pulse's own polarity says which end of the line the origin is on. A
+    // positive-going pulse puts it on the leading edge, so the pulse is at the
+    // head and no window may start inside it; an inverted one puts it on the
+    // trailing edge, where the sync interval is already behind the origin and a
+    // guard there would throw away video.
     //
     // `lineDoubled` carries DoubledHeadBlankingUnits, which is a bound on where
     // a window may OPEN rather than a displacement of the video behind it.
-    static VideoSourceLine measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine,
-                                    bool syncAtHead);
-
-    // The same line from the duty directly, which is the form a reading taken
-    // against one divider carries across the solve that replaces it.
-    static VideoSourceLine forDuty(uint16_t units, float duty, bool lineDoubled,
-                                   bool syncAtHead);
+    static VideoSourceLine forDuty(uint16_t units, const HsyncPulse &pulse,
+                                   bool lineDoubled);
 
 private:
     VideoSourceLine(uint16_t units, uint16_t syncUnits,

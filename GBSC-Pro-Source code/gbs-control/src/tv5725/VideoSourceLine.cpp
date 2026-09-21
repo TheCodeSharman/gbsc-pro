@@ -12,22 +12,6 @@ const uint16_t VideoSourceLine::FirstCapturableUnit;
 const float VideoSourceLine::CaptureLagFraction = 0.0539f;
 const float VideoSourceLine::FrameLagLines = -1.5f;
 
-namespace {
-
-// The sync processor's own validity window for the hsync duty.
-// updateSpDynamic() discards a reading outside it too, and HLOW_LEN is a
-// segment 0 live measurement that rails like every other one.
-const float DutyMin = 0.041f;
-const float DutyMax = 0.152f;
-
-// What the chip is already configured for when the duty cannot be measured.
-// SourceMeasurement writes SP_RT_HS_SP = PLLAD_MD x 0.93, so 1 - 0.93 IS the sync width
-// the retiming module expects rather than a fudge factor. Failing open here
-// restores the green bands. docs/scaler-geometry-model.md
-const float FallbackDuty = 0.07f;
-
-}  // namespace
-
 VideoSourceLine::VideoSourceLine(uint16_t units)
     : units_(units), syncUnits_(0), lag_(0.0f), headBlankingUnits_(0),
       syncAtHead_(true) {}
@@ -127,39 +111,15 @@ uint16_t VideoSourceLine::capturable() const
     return last > first ? last - first : 0;
 }
 
-VideoSourceLine VideoSourceLine::forDuty(uint16_t units, float duty, bool lineDoubled,
-                                         bool syncAtHead)
+VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse,
+                                         bool lineDoubled)
 {
-    if (duty < DutyMin || duty > DutyMax) {
-        // The capture window is placed from a GUESS from here on. Silent, this
-        // is invisible from the picture wherever the guess is close -- the
-        // bench source's 7.03% against a 7.00% fallback -- while every mode
-        // whose pulse is a different fraction of the line is placed wrong.
-        char line[80];
-        snprintf(line, sizeof(line),
-                 "duty refused: %u/1000 outside %u..%u, falling back to %u/1000",
-                 (unsigned)lrintf(duty * 1000.0f),
-                 (unsigned)lrintf(DutyMin * 1000.0f),
-                 (unsigned)lrintf(DutyMax * 1000.0f),
-                 (unsigned)lrintf(FallbackDuty * 1000.0f));
-        tv5725Log(line);
-        duty = FallbackDuty;
-    }
-
     // Round UP, so a pulse that ends part way through a unit leaves that unit
-    // outside the capture rather than half in it. DutyMax bounds it at 15% of
-    // the line, so what is left is always the greater part of it.
-    return VideoSourceLine(units, (uint16_t)ceilf(units * duty),
-                           lineDoubled ? DoubledHeadBlankingUnits : 0, syncAtHead);
+    // outside the capture rather than half in it. HsyncPulse's ceiling keeps it
+    // under a sixth of the line, so what is left is always the greater part.
+    return VideoSourceLine(units, (uint16_t)ceilf(units * pulse.syncDuty()),
+                           lineDoubled ? DoubledHeadBlankingUnits : 0,
+                           pulse.syncAtHead());
 }
-
-VideoSourceLine VideoSourceLine::measured(uint16_t units, uint16_t hlowLen, uint16_t adcLine,
-                                          bool syncAtHead)
-{
-    // Two ADC samples to the unit is what says the line is doubled.
-    return forDuty(units, adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f,
-                   adcLine >= units + units / 2, syncAtHead);
-}
-
 
 }  // namespace Tv5725
