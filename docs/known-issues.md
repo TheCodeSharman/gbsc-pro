@@ -424,6 +424,38 @@ right because the painted area starts after the line does and ends before it
 does; the right border falls off the end. Do not read it as the scaler placing
 the picture wrongly.
 
+### The sync pad returns on a fixed delay, so the sink can lock to a window a later solve moves
+
+The sink fixes its active window WHEN IT ACQUIRES and holds it until it acquires
+again, taking the origin from our blanking at that moment --
+`investigations/the-shown-window-is-latched-at-lock.md`. `VDS_BLK_BF_EN` is what
+makes that edge visible to it: set, the final composite blank `(dis_hb|dis_vb)`
+cuts the garbage out of the blanking interval, so the DISPLAY window is the one
+electrically distinct downstream, which is why the origin follows
+`VDS_DIS_HB_SP` and not `VDS_HB_SP`.
+
+**`serviceEncoderRelook()` returns the pad `EncoderRelookMs` after the move that
+took it away, whatever has happened since.** 300 ms is inside the window where
+the raster is still being solved and FrameSync is still steering, so the sink is
+handed a window to lock that a later solve then moves. Nothing corrects it
+afterwards: a later solve that moves the window without moving the raster arms
+no re-look at all, because `VideoPath` arms `encoderMoved_` on the horizontal
+total, the vertical total and the field rate and on nothing else.
+
+Measured at 640x480@75: the sink held 376 while the engine had solved 402, a
+26-unit bar down the left that no pad toggle at 402 would shift, because the
+window can be pulled earlier but not pushed later.
+
+**The fix is to return the pad on QUIET rather than on a delay** -- restart the
+wait whenever the timing moves again, so the pad comes back once and the sink
+locks once, on the settled window. What stops that being a small change is that
+it moves acquisition timing, and a longer hold is a longer dark panel on every
+mode change; it needs checking against a cold boot before it ships.
+
+**`EncoderRelookMs` is also the wrong SHAPE of constant** while `encoderMoved_`
+ignores the window: two solves that agree on the raster and differ on the
+blanking need a re-look and get none.
+
 ### The output sync pad is raised only on a source-state transition, so it latches down
 
 Measured on the bench after an OTA flash: no picture at all, with
