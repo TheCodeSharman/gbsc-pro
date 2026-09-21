@@ -4210,6 +4210,13 @@ void setup()
         // a bring-up that ran before it would be discarded.
         Tv5725::BringUp::init();
 
+        // The output the user chose, handed over at boot rather than only from
+        // inside a preset load. VideoSourceAcquisition::sourceMoved() cannot
+        // arm a solve without a resolution to solve to, and the only other
+        // armer IS that preset load -- so a boot whose detection pass is
+        // refused had no route to a picture for the life of the boot.
+        inputAcquisition.setOutputResolution(outputChoiceFor().resolve());
+
         delay(4);
         handleWiFi(1);
         delay(4);

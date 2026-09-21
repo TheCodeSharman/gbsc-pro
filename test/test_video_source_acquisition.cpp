@@ -2005,3 +2005,23 @@ TEST_CASE("granting the pass-through permission hands the same source over")
     CHECK(unit.path.outputMode()->isBypass());
     CHECK(g_passThroughSwitches == 1);
 }
+
+// A COLD ENGINE HAS TO ARM ITS OWN FIRST SOLVE. sourceMoved() is the only
+// armer, and it compared the count against solvedLines_ -- which only a solve
+// writes, and only an arm opens a solve. The one other armer is a preset load,
+// so a boot whose detection pass is refused leaves the engine with no route in
+// at all: measured on the bench, 120 s of a plausible 627-line source with the
+// recovery ladder cycling, the sync processor counting it perfectly, and no arm
+// ever raised.
+// docs/investigations/sp-sog-mode-had-two-owners.md
+TEST_CASE("an engine that has never solved arms the first solve from the count")
+{
+    seedBenchSource();
+    Acquiring unit;
+
+    // The output resolution alone, WITHOUT the mode change a preset load
+    // arms -- which is the state a refused detection leaves behind.
+    unit.acquisition.setOutputResolution(&Mode1080p);
+
+    CHECK(unit.pollUntilSolved());
+}

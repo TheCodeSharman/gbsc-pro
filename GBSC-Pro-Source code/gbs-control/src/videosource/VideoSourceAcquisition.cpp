@@ -278,8 +278,12 @@ bool VideoSourceAcquisition::sourceMoved()
     // -- and without one there is no event, which is what left a source that
     // moved under bypass with no route back.
     // docs/investigations/leaving-bypass-needs-a-count-the-divider-cannot-give.md
+    // Nothing solved AND the output passed through is the one cold state with
+    // no way forward: bypass has no raster to solve, and the switch into it can
+    // leave nothing behind, so reading a state here would blank the pad and arm
+    // a solve straight over the bypass setup.
     const Tv5725::OutputMode *mode = videoPath_.outputMode();
-    if (mode == 0 || solvedLines_ == 0) {
+    if (mode == 0 || (solvedLines_ == 0 && outputIsPassedThrough())) {
         sourceInterrupted_ = false;
         return false;
     }
@@ -355,6 +359,22 @@ bool VideoSourceAcquisition::sourceMoved()
     }
     unsettledPasses_ = 0;
     unsettledArmed_ = false;
+
+    // THE FIRST SOLVE HAS NO PREVIOUS COUNT TO DIFFER FROM. Every arm below
+    // asks whether the source moved AWAY from solvedLines_, which only a solve
+    // writes and only an arm opens -- so an engine that has never solved could
+    // raise none of them, and the one other armer is a preset load. A boot
+    // whose detection pass is refused then has no route in for the life of the
+    // boot, with the recovery ladder cycling over a source the sync processor
+    // is counting perfectly.
+    //
+    // Guarded by the two checks above rather than trusted: the count is already
+    // known to be inside the source bounds and to have held still.
+    // Every arm below compares against solvedLines_, and 0 differs from every
+    // count -- so this answers for all of them rather than falling through to
+    // one that would fire for the wrong reason.
+    if (solvedLines_ == 0)
+        return armMove("first count", lines);
 
     // A composite-sync source held as separate-sync runs uncoasted: the count
     // loses the lines the vertical pulse occupies -- 308 against 311 -- dithers,
