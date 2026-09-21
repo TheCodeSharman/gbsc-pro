@@ -34,7 +34,8 @@ public:
     // cannot minify. Zero on both totals means bypass, where there is no scaled
     // raster and nothing to solve.
     void setRasters(uint16_t linePx, uint16_t frameLines,
-                    uint16_t activeStop = 0, uint16_t activeLinesStop = 0);
+                    uint16_t activeStop = 0, uint16_t activeLinesStop = 0,
+                    uint16_t activeStart = 0, uint16_t activeLinesStart = 0);
 
     // Read the output rasters and the bounds the window sits in. False when the
     // source has not settled far enough to derive a window from.

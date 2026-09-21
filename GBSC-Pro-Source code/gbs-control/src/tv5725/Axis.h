@@ -67,7 +67,8 @@ public:
     // is barely over 1:1 and it cannot minify at all: a capture past this
     // produces a picture past the room, and the far end is cropped rather than
     // shrunk, with the clamped scale the only trace.
-    uint16_t maximumCapture(uint16_t rasterTotal, uint16_t activeStop) const;
+    uint16_t maximumCapture(uint16_t rasterTotal, uint16_t activeStart,
+                            uint16_t activeStop) const;
 
     float originOffset(float magnification) const;
 

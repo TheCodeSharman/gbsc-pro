@@ -15,7 +15,8 @@ namespace Tv5725 {
 
 class OutputRaster {
 public:
-    OutputRaster(uint16_t total = 0, uint16_t activeStop = 0);
+    OutputRaster(uint16_t total = 0, uint16_t activeStop = 0,
+                 uint16_t activeStart = 0);
 
     uint16_t total() const;
 
@@ -23,10 +24,14 @@ public:
     // what a bypass or a custom preset gets: no porch is known to reserve.
     uint16_t activeStop() const;
 
+    // Where the window OPENS, which is room the capture cannot use: the
+    // picture starts after the mode's sync and back porch.
+    uint16_t activeStart() const;
+
     bool solved() const;
 
 private:
-    uint16_t total_, activeStop_;
+    uint16_t total_, activeStop_, activeStart_;
 };
 
 }  // namespace Tv5725

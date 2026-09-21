@@ -657,7 +657,7 @@ void VideoPath::solveLineDoubling(uint16_t lines)
     // edge and a doubling that only just fits is caught by the capture clamp.
     const uint16_t showable =
         mode_ && !mode_->isBypass()
-            ? AxisVertical.maximumCapture(mode_->frameLines(), 0) : 0;
+            ? AxisVertical.maximumCapture(mode_->frameLines(), 0, 0) : 0;
     const bool doubled = InputFormatter::shouldDoubleLine(lines, showable);
     if (scanModeApplied_ && doubled == lineDoubled_)
         return;
@@ -730,7 +730,7 @@ uint16_t VideoPath::dividerCeilingForOutput() const
         return 0;
 
     const uint16_t showable =
-        AxisHorizontal.maximumCapture(raster.horizontalTotal, raster.activeStop);
+        AxisHorizontal.maximumCapture(raster.horizontalTotal, 0, raster.activeStop);
     if (showable == 0)
         return 0;
 
@@ -807,7 +807,7 @@ bool VideoPath::fail()
 bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
 {
     capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
-                       activeLinesStop_);
+                       activeLinesStop_, activeStart_, activeLinesStart_);
     if (!capture.readRasters(sampling_, reading_, timing_, lineDoubled_)) {
         // Bypass is not a failure to retry: there is nothing to solve.
         if (!capture.scaling()) {

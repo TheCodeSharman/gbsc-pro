@@ -61,14 +61,15 @@ uint16_t Axis::minimumCapture(uint16_t rasterTotal, uint16_t activeStart,
     return smallest <= 0.0f ? 0 : (uint16_t)ceilf(smallest);
 }
 
-uint16_t Axis::maximumCapture(uint16_t rasterTotal, uint16_t activeStop) const
+uint16_t Axis::maximumCapture(uint16_t rasterTotal, uint16_t activeStart,
+                              uint16_t activeStop) const
 {
     // fitToRaster solves produced = room x capture / (capture + startPerMag),
     // so the scale it asks for is Unity x (capture + startPerMag) / room. The
     // capture the room still holds is the largest that keeps that at or under
     // Scale::Max, and the write offset is charged because it comes out of the
     // same room.
-    const float room = maxDisplayWindow(rasterTotal, 0, activeStop);
+    const float room = maxDisplayWindow(rasterTotal, activeStart, activeStop);
     const float largest = room * (float)Scale::Max / (float)Scale::Unity
                         - startPerMag_;
     return largest <= 0.0f ? 0 : (uint16_t)largest;

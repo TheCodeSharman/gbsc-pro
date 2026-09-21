@@ -50,10 +50,11 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
 }
 
 void CaptureWindow::setRasters(uint16_t linePx, uint16_t frameLines,
-                               uint16_t activeStop, uint16_t activeLinesStop)
+                               uint16_t activeStop, uint16_t activeLinesStop,
+                               uint16_t activeStart, uint16_t activeLinesStart)
 {
-    line_ = OutputRaster(linePx, activeStop);
-    frame_ = OutputRaster(frameLines, activeLinesStop);
+    line_ = OutputRaster(linePx, activeStop, activeStart);
+    frame_ = OutputRaster(frameLines, activeLinesStop, activeLinesStart);
 }
 
 bool CaptureWindow::scaling() const
@@ -102,7 +103,8 @@ void CaptureWindow::clampToRaster(const VideoSourceLine &line,
     if (!raster.solved() || whole == 0)
         return;
 
-    const uint16_t most = axis.maximumCapture(raster.total(), raster.activeStop());
+    const uint16_t most = axis.maximumCapture(raster.total(), raster.activeStart(),
+                                             raster.activeStop());
     if (most == 0 || most >= reachable)
         return;
 

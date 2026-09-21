@@ -271,7 +271,7 @@ TEST_CASE("the capture is bounded by what the raster can actually show")
     const uint16_t ActiveStop = 516;  // less CEA's nine-line front porch
     const float room = AxisVertical.maxDisplayWindow(Raster, 0, ActiveStop);
 
-    const uint16_t most = AxisVertical.maximumCapture(Raster, ActiveStop);
+    const uint16_t most = AxisVertical.maximumCapture(Raster, 0, ActiveStop);
     CHECK(AxisVertical.fitToRaster(most, Raster, 0, ActiveStop).produced() <= room);
 
     SUBCASE("and the capture it bounds does not fit") {
@@ -283,7 +283,7 @@ TEST_CASE("the capture is bounded by what the raster can actually show")
     SUBCASE("a raster with room for everything bounds nothing the input can hold") {
         // 1080p against the same source: the doubled frame fits with 1.8x to
         // spare, so the ceiling is above anything the input line can offer.
-        CHECK(AxisVertical.maximumCapture(1126, 1117) > 622);
+        CHECK(AxisVertical.maximumCapture(1126, 0, 1117) > 622);
     }
 }
 
@@ -951,4 +951,31 @@ TEST_CASE("the vertical aperture gives back the row past the last written one")
     const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster,
                                                    ActiveStart, ActiveStop);
     CHECK(solved.display().start() == 1116);
+}
+
+// The bound above is taken with the window opening at 0, which no real output
+// mode does: the picture starts after the mode's sync and back porch, and that
+// is room the capture cannot use. Measured on 800x600@60 into Mode960p, where
+// the porch is a quarter of the line -- a capture free to take the whole
+// capturable region is allowed 1322 units against a display window of 1269, so
+// VDS_HSCALE pins at its 1023 floor, the surplus is cropped off the far end,
+// and the source's own right-hand blanking can never be shown.
+TEST_CASE("the capture bound accounts for the output mode's back porch")
+{
+    const uint16_t Raster = 1790;       // Mode960p solved at 60 Hz
+    const uint16_t ActiveStart = 426;   // after the sync pulse and back porch
+    const uint16_t ActiveStop = 1695;
+
+    const float room = AxisHorizontal.maxDisplayWindow(Raster, ActiveStart, ActiveStop);
+    const uint16_t most = AxisHorizontal.maximumCapture(Raster, ActiveStart, ActiveStop);
+
+    // Within the rounding of the scale, which is to nearest rather than up.
+    CHECK(AxisHorizontal.fitToRaster(most, Raster, ActiveStart, ActiveStop).produced()
+          <= room + 1.0f);
+
+    SUBCASE("and the porch is room the capture cannot have") {
+        // Taken with the window opening at 0, the bound is the whole raster's
+        // and lets through a capture a quarter wider than the window can show.
+        CHECK(most < AxisHorizontal.maximumCapture(Raster, 0, ActiveStop));
+    }
 }
