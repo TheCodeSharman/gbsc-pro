@@ -3,9 +3,15 @@
 
 For finding where the source's porches end and its picture begins on the bypass
 channel. HdBypass places both edges from the published raster the source
-matched, and on this board the window lands displaced from the video: the near
-edge exposes the source's border while the far edge clips picture, which is one
-shift rather than two errors.
+matched, and the channel delays the sample behind the sync it emits beside it,
+so the window lands displaced from the video by that delay.
+
+CHECK BOTH EDGES ARE ON THE PANEL BEFORE CREEPING EITHER. The sink places its
+own window from HD_HS_ST and follows it one for one, so an edge can sit outside
+what the display paints -- creeping it then moves nothing visible, and the
+placement that results is a reading of the other edge alone. Open both edges
+wide, confirm the source's border is visible at each, and move HD_HS_ST until it
+is if not.
 
     python3 tools/gbsc-pro-hwtest/creep_bypass_window.py --host 192.168.88.108
 
@@ -40,7 +46,9 @@ import time
 
 import setfield
 
-from gbs_unit import field_spec, get, get_json, read_fields, write_reg
+from gbs_unit import get, get_json, read_fields, write_reg
+
+FIELDS = setfield.load_map()
 
 EDGES = ["HD_HB_SP", "HD_HB_ST"]
 STATE = EDGES + ["HD_HSYNC_RST", "HD_HS_ST", "HD_HS_SP", "HD_VB_ST", "HD_VB_SP",
@@ -51,7 +59,7 @@ STATE = EDGES + ["HD_HSYNC_RST", "HD_HS_ST", "HD_HS_SP", "HD_VB_ST", "HD_VB_SP",
 
 def write_named(host, name, value):
     """One field, read-modify-write, quietly: a jog writes on every keypress."""
-    spec = field_spec(name)
+    spec = FIELDS[name]
     writes = setfield.byte_writes(host, spec, value)
     if writes is None:
         return False
