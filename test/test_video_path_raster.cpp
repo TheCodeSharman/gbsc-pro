@@ -18,6 +18,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/clock/ClockGen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
@@ -107,6 +108,8 @@ struct SettledEngine {
         Wire.reset();
         poisonChip();
         Wire.lockSyncProcessor();
+        // The chip's route outlives an instance the way it outlives a reset.
+        Tv5725::VideoRoute::toScaler();
         // The bench source's pulse, modelled so the count follows the divider
         // the engine measures through. Poisoned, HLOW_LEN is not a duty and
         // the engine waits rather than solving from it.
@@ -212,6 +215,7 @@ TEST_CASE("entering bypass drops the outstanding solve")
     // and a solve landing afterwards writes a scaled raster and a recomputed
     // divider straight over the bypass setup.
     settled.engine.setOutputMode(&ModeBypass);
+    Tv5725::VideoRoute::toHdBypassChannel();
     Wire.reset();
     poisonChip();
     setSourceLines(311);

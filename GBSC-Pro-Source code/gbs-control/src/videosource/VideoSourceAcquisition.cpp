@@ -143,8 +143,7 @@ bool VideoSourceAcquisition::resolveFromSource()
 
 bool VideoSourceAcquisition::outputIsPassedThrough() const
 {
-    const Tv5725::OutputMode *mode = videoPath_.outputMode();
-    return mode != 0 && mode->isBypass();
+    return Tv5725::VideoRoute::isHdBypassChannel();
 }
 
 bool VideoSourceAcquisition::passThroughSuitsSource() const

@@ -110,8 +110,13 @@ struct Acquiring {
     VideoSourceAcquisition acquisition;
     uint32_t nowMs;
 
+    // VideoRoute is the chip's, so it outlives an instance the way it outlives
+    // a reset. Boot starts on the scaler and so does every case.
     Acquiring()
-        : path(clock, sampling, framings), acquisition(sampling, path), nowMs(0) {}
+        : path(clock, sampling, framings), acquisition(sampling, path), nowMs(0)
+    {
+        VideoRoute::toScaler();
+    }
 
     void start(const OutputMode *mode = &Mode1080p)
     {
@@ -429,6 +434,7 @@ TEST_CASE("an interrupt re-measures a source whose line count did not move")
         // the source may have moved has to reach it. This one cannot stay: the
         // bench source is line-doubled and 15 kHz, which no panel takes raw.
         unit.path.setOutputMode(&ModeBypass);
+        VideoRoute::toHdBypassChannel();
         unit.acquisition.sourceInterrupted();
         CHECK(unit.pollUntilSolved(8));
         CHECK_FALSE(unit.path.outputMode()->isBypass());
@@ -495,6 +501,32 @@ TEST_CASE("a source the panel takes straight is passed through, not scaled")
     REQUIRE(unit.pollUntilSolved(8));
     CHECK(unit.path.outputMode()->isBypass());
     CHECK(g_passThroughSwitches == 1);
+}
+
+// DETECTION TAKES THE ROUTE AWAY WITHOUT TELLING THE ENGINE. Low power
+// detection routes the DACs back to the scaler, and the held output mode still
+// says bypass -- so the switch that claims the route never runs again and the
+// channel plays out into a route nothing selected.
+// ../docs/investigations/low-power-detection-strands-pass-through-off-its-route.md
+TEST_CASE("a route taken away underneath pass-through is claimed again")
+{
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(g_passThroughSwitches == 1);
+
+    VideoRoute::toScaler();
+    unit.acquisition.sourceInterrupted();
+
+    REQUIRE(unit.pollUntilSolved(8));
+
+    CHECK(g_passThroughSwitches == 2);
 }
 
 // A GUARD ON THE ONE STATE THAT COULD NOT ADVANCE ITSELF. Every arm in
@@ -766,6 +798,7 @@ TEST_CASE("a source that changes under a bypassed output is solved for")
     // Passed through, on a raster the panel takes straight, with the divider
     // the bypass switch chose rather than the one the last solve did.
     unit.path.setOutputMode(&ModeBypass);
+    VideoRoute::toHdBypassChannel();
     REQUIRE(unit.path.outputMode()->isBypass());
     seed(5, 0x12, 0, 12, 1886);
 
