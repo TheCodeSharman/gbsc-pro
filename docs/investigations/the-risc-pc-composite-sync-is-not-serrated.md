@@ -73,6 +73,28 @@ The card then repeats about 1.7 times across over heavy green tearing.
 It also moves the source's identity, which is keyed on the count.
 `../source-identity-and-framing-lookup.md`, `../known-issues.md`.
 
+### Putting the interval back
+
+The count is short by a known-shaped amount, so it can be reconstructed -- but
+not from the standard that the count itself selects. **Taking the vsync width
+off the matched row is circular**: the wrong count is what stopped the row
+matching, and the part measures no vertical sync width to break the loop with.
+
+Two ways that do not close the circle:
+
+- **Measure the line rate independently of the counter.** The true total is the
+  line rate over the field rate, and the field rate is already taken off
+  `DEBUG_IN_PIN` rather than from the sync processor. `TestBusRateMeasurement`
+  is the instrument that reads a rate that way. It needs no table, so it also
+  answers for a source matching no published raster.
+- **Carry the vertical sync width in the table and reconstruct during the
+  match**, accepting `measured + syncLines + 1 == totalLines` on a csync source.
+  The standards publish the width, and the field rate and the sync duty still
+  separate the rows. Cheap and host-testable, but it only answers for a mode
+  the table holds.
+
+Neither is implemented.
+
 ## Coast is binary, not proportional
 
 The coast window is the other setting `sourceHasSerratedSync()` drives. Removing
