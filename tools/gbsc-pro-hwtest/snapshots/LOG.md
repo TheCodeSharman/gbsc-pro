@@ -1049,3 +1049,9 @@ at each end, and that is the expected difference rather than a finding.
 | `bar-and-shift-2026-09-13` | the picture panned left with a blue/green bar at the right, reached by three pass-through round trips on the RiscPC at 320x256@50. A **full 1536-register** capture, so it covers the 928 addresses a config dump leaves out — diff it with `snapdiff.py`, not against a `dump_registers.py` state. The board is exonerated for the displacement itself, measured through the STV9426 overlay; what this carries is the bar beside it, and the cost of reaching it again is three round trips at the bench |
 | `baseline-320x256-50-scaling-2026-09-18` | the bench source on the scaling path at a 100% framing, `vga`, SYNC 0, `preferScalingRgbhv` on. The reference for what a settled 15 kHz solve looks like |
 | `baseline-640x480-60-scaling-2026-09-18` | 640x480@60 on the scaling path at a 100% framing, with the route **verified by `DAC_RGBS_BYPS2DAC` 0** rather than assumed — which is the check `docs/rgbhv-bypass-trap.md` exists for, since a bypassed state reads plausibly on the fields a scaling state is judged by |
+
+## The golden pass-through reference
+
+| snapshot | what it shows |
+|---|---|
+| `golden-800x600-bypass-2026-09-21` | the reference for a correct RGBHV **pass-through**: the RISC PC at 800x600@60 on `vga`, divider 2038, `HD_HS_ST` 33, blanking open to the source's own active video at `HD_HB_SP` 340 / `HD_HB_ST` 2037. Both of the card's corner blocks measure the same width, so nothing is clipped at either end, and the frequency wedge sits at the camera's noise floor with no beat. A **full 1536-register** capture for `snapdiff.py`, with `…dump.json` beside it for `dump_registers.py --restore`. `docs/photos/2026-09-21-golden-800x600-bypass/README.md` carries how each of those is measured, and why the engine's own `HD_HB_SP` 417 / `HD_HB_ST` 1961 crops a border the standard does not know about |
