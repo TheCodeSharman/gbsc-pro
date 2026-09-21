@@ -87,19 +87,17 @@ negative on the bench 640x480 and positive on its 800x600. It is a second
 horizontal discriminator already in hand.
 
 The decision that follows is that the sync width belongs in the source's
-identity rather than beside it, and the two polarities with it. That makes the
-identity every measurable fact the part offers:
+identity rather than beside it. The polarities do not, for the reason above.
 
 | term | kind | measured by |
 |---|---|---|
 | line count | with the rate, the horizontal rate | `STATUS_SYNC_PROC_VTOTAL` |
 | field rate | the vertical rate | `SourceMeasurement` |
 | sync width, as a fraction of the line | horizontal structure | `STATUS_SYNC_PROC_HLOW_LEN` |
-| hsync polarity | horizontal structure | `STATUS_SYNC_PROC_HSPOL` |
-| vsync polarity | vertical structure | `STATUS_SYNC_PROC_VSPOL` |
 
-Nothing measurable is left out, and the one fact that would complete it -- a
-vertical sync width -- does not exist on this part. `SourceKey` is persisted in the framing file, so
+What a measurable fact has to be to join this list is a property of the SOURCE
+MODE. Both polarities and the vertical sync width fail that test for different
+reasons -- one reports the arrangement, one is not measured at all. `SourceKey` is persisted in the framing file, so
 adding a field changes the stored format and existing entries need migrating or
 discarding; that cost is what the three options below were weighing, and the
 measurement removes the doubt about whether the term is worth paying it for.
@@ -139,10 +137,35 @@ repeats across re-acquisition. It agrees with what the standards publish --
 DMT gives 640x480@60 as H-/V- and 800x600@60 as H+/V+ -- and the polarity PAIR
 is a long-standing way of telling DMT modes apart.
 
-**So a vertical term IS available to the lookup**, and it is the only one. It
-cannot check where a row puts active video, which is a width; it can check that
-the row is the right row on a vertical axis rather than on horizontal evidence
-alone.
+**Neither polarity may go in the identity**, because neither is a property of
+the MODE. Measured at 800x600@60 with the source's sync type changed under it
+and nothing else touched:
+
+| sync type | `SP_SOG_MODE` | VTOTAL | HSPOL | VSPOL | duty |
+|---|---|---|---|---|---|
+| separate | 0 | 627 | 1 | 1 | 0.12204 |
+| composite | 1 | 623 | **0** | 1 | 0.12017 |
+| separate again | 0 | 627 | 1 | 1 | 0.12204 |
+
+HSPOL flips. It is a real reading rather than a read-back -- the engine writes
+`SP_HS_INV_REG` downstream of it and the bit still reports the source -- but
+what it reports is the sync signal AS PRESENTED, and one CMOS value on the
+source changes that without changing the mode. VSPOL held, and on composite
+sync it cannot have been tracking the source, because there is no separate V
+sync to have a polarity: vertical sync is recovered from the composite and the
+bit reports whatever the extractor emits.
+
+A key that moves when the sync arrangement moves loses the framing a user tuned
+by doing nothing but changing sync type, which is the opposite of one mode
+looking the same on both.
+
+**The sync width survives that change**, shifting 0.0019 -- an eighth of the
+tolerance the standards lookup already allows, and a twenty-fifth of the
+separation it has to achieve.
+
+**And the line count does NOT survive it: 627 against 623.** So the identity is
+already unstable across a sync-type change, before any term is added to it.
+`known-issues.md`.
 
 A matched row is checked today on its total lines, its field rate and its
 horizontal sync width -- polarity is read and discarded -- and the

@@ -1799,3 +1799,17 @@ Independently, the bottom border band reads 5 rows at EVERY capture position,
 so the bottom is clipped on the output side and is a separate fault.
 
 `docs/investigations/the-vertical-capture-window-is-placed-late.md`.
+
+### The source identity moves when the sync type does
+
+At 800x600@60 on `vga` the line count reads 627 on separate sync and 623 on
+composite, with nothing but the source's sync type changed. `SourceKey` is the
+line count and the field rate, so the same mode on the same machine is two
+sources across that change and a framing tuned on one is not found from the
+other.
+
+`STATUS_SYNC_PROC_HSPOL` moves with it too, 1 against 0, which is why neither
+polarity may join the identity.
+`docs/source-identity-and-framing-lookup.md`.
+
+The sync width does survive it, shifting 0.12204 to 0.12017.
