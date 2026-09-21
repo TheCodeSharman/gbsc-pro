@@ -103,9 +103,15 @@ static void seedPassThroughSource()
     g_fieldRate = 60.0f;
 }
 
+// The bench source's hsync as a share of its line, which is what the key
+// carries. Modelled rather than seeded as a count, because the sync processor
+// counts in ADC clocks: pin the count and the share moves with every divider
+// the engine chooses, which no source does.
+static const float BenchSyncWidth = 181.0f / 2250.0f;
+
 static void seedSourceMeasurement()
 {
-    seedField(0, 0x19, 0, 12, 181);    // STATUS_SYNC_PROC_HLOW_LEN
+    Wire.sourceHsync(181, 2250, true);
     seedField(0, 0x1B, 0, 11, 311);    // STATUS_SYNC_PROC_VTOTAL
     // The bench source's hsync is positive-going, which is what puts the pulse
     // at the head of the line. Unseeded this reads 0, the inverted case, and
@@ -972,7 +978,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     VideoSourceAcquisition acquisition(sampling, engine);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
-    REQUIRE(framings.remember(SourceKey(311, 50.08f), stored));
+    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchSyncWidth), stored));
 
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
@@ -1008,7 +1014,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     frameAt(engine, 300, 120, 40, -15);
 
     PanAndZoom stored;
-    REQUIRE(framings.find(SourceKey(311, 50.08f), &stored));
+    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth), &stored));
     CHECK(stored == engine.framing());
 }
 
@@ -1374,9 +1380,11 @@ TEST_CASE("the hsync duty is counted against the divider the source is left on")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    // 181 is the pulse STATUS_SYNC_PROC_HLOW_LEN reports, seeded by the fixture.
+    // The SHARE the source spends on sync, which is what the fixture models and
+    // what a key carries. The count the sync processor reports moves with the
+    // divider and the share does not.
     CHECK(sampling.hsync().syncDuty()
-          == doctest::Approx(181.0f / (float)Adc::dividerInForce()).epsilon(0.001));
+          == doctest::Approx(BenchSyncWidth).epsilon(0.001));
 }
 
 TEST_CASE("an output change re-derives the divider even where the doubling holds")
@@ -1644,7 +1652,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     SUBCASE("and the source is left framed that way for next time") {
         PanAndZoom remembered;
-        REQUIRE(framings.find(SourceKey(311, 50.08f), &remembered));
+        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth), &remembered));
         CHECK(remembered == engine.framing());
     }
 }
@@ -1665,7 +1673,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(engine.framedKey() == SourceKey(311, 50.08f));
+    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchSyncWidth));
 }
 
 

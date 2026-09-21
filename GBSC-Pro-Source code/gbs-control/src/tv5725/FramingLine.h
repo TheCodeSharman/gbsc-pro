@@ -3,14 +3,14 @@
 
 // One stored framing as text, and back:
 //
-//   311@50 = 364 8525 740 8553
+//   311@50/1213 = 364 8525 740 8553
 //
-// The line count and the field-rate bucket name the source; the four numbers
-// are the origin and extent of each axis in ten-thousandths of the capturable
-// region. Integers because the ESP's printf has no %f, and ten-thousandths
-// because one input unit is at least eight of them on any line this chip
-// captures -- so the window a framing describes survives the round trip exactly
-// even though the float does not.
+// The line count, the field-rate bucket and the hsync width as a fraction of
+// the line name the source; the four numbers are the origin and extent of each
+// axis in ten-thousandths of the capturable region. Integers because the ESP's
+// printf has no %f, and ten-thousandths because one input unit is at least
+// eight of them on any line this chip captures -- so the window a framing
+// describes survives the round trip exactly even though the float does not.
 //
 // The grammar has one owner because more than one file is written in it: the
 // per-source table and the numbered slots, which prefix the same record with a

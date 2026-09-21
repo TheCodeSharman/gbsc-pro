@@ -23,7 +23,7 @@ void tv5725Log(const char *) {}
 
 using namespace Tv5725;
 
-static const SourceKey Bench(311, 50.08f);
+static const SourceKey Bench(311, 50.08f, 0.1213f);
 
 static const char *rendered(const FramingTable &table, uint16_t index, char *buffer)
 {
@@ -91,12 +91,12 @@ TEST_CASE("a line that says nothing is skipped rather than fatal")
         "",
         "   ",
         "# the bench RiscPC",
-        "311@50",              // no value at all
-        "311@50 = 364 8525",   // truncated mid-record
-        "@50 = 364 8525 740 8553",
+        "311@50/1213",         // no value at all
+        "311@50/1213 = 364 8525",  // truncated mid-record
+        "@50/1213 = 364 8525 740 8553",
         "311@ = 364 8525 740 8553",
         "nonsense = 1 2 3 4",
-        "311@50 = a b c d",
+        "311@50/1213 = a b c d",
     };
     for (unsigned i = 0; i < sizeof(ignored) / sizeof(*ignored); ++i) {
         FramingTable table;
@@ -109,7 +109,7 @@ TEST_CASE("a source the key cannot identify is skipped")
 {
     // 97 lines is what a settling source reads, and no standard runs it.
     FramingTable table;
-    FramingText(table).readLine("97@50 = 364 8525 740 8553");
+    FramingText(table).readLine("97@50/1213 = 364 8525 740 8553");
 
     CHECK(table.count() == 0);
 }
@@ -117,7 +117,7 @@ TEST_CASE("a source the key cannot identify is skipped")
 TEST_CASE("whitespace around the record does not matter")
 {
     FramingTable table;
-    FramingText(table).readLine("  311@50  =  364   8525  740  8553  ");
+    FramingText(table).readLine("  311@50/1213  =  364   8525  740  8553  ");
 
     CHECK(table.count() == 1);
     CHECK(table.find(Bench, 0));
@@ -126,11 +126,11 @@ TEST_CASE("whitespace around the record does not matter")
 TEST_CASE("a whole file reads back as the table that wrote it")
 {
     FramingTable written;
-    REQUIRE(written.remember(SourceKey(311, 50.08f),
+    REQUIRE(written.remember(SourceKey(311, 50.08f, 0.0f),
                              PanAndZoom(0.03f, 0.85f, 0.07f, 0.85f)));
-    REQUIRE(written.remember(SourceKey(525, 59.94f),
+    REQUIRE(written.remember(SourceKey(525, 59.94f, 0.0f),
                              PanAndZoom(0.05f, 0.90f, 0.03f, 0.94f)));
-    REQUIRE(written.remember(SourceKey(628, 60.02f),
+    REQUIRE(written.remember(SourceKey(628, 60.02f, 0.0f),
                              PanAndZoom(0.11f, 0.70f, 0.09f, 0.80f)));
 
     FramingTable read;

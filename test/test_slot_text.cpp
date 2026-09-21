@@ -20,7 +20,7 @@ void tv5725Log(const char *) {}
 
 using namespace Tv5725;
 
-static const SourceKey Bench(311, 50.08f);
+static const SourceKey Bench(311, 50.08f, 0.1213f);
 static const PanAndZoom Wide(0.0364f, 0.8525f, 0.0740f, 0.8553f);
 
 TEST_CASE("a record survives being written out and read back")
@@ -45,8 +45,8 @@ TEST_CASE("a whole file of records reads back")
     const char *file[] = {
         "# slot framings",
         "",
-        "3 311@50 = 364 8525 740 8553",
-        "4 525@60 = 1000 7000 500 9000",
+        "3 311@50/1213 = 364 8525 740 8553",
+        "4 525@60/1213 = 1000 7000 500 9000",
     };
     SlotTable read;
     for (const char *line : file)
@@ -54,7 +54,7 @@ TEST_CASE("a whole file of records reads back")
 
     CHECK(read.count() == 2);
     CHECK(read.find(3, Bench, 0));
-    CHECK(read.find(4, SourceKey(525, 60.0f), 0));
+    CHECK(read.find(4, SourceKey(525, 60.0f, 0.1213f), 0));
 }
 
 TEST_CASE("a line that is not a record is skipped, not fatal")
@@ -62,13 +62,13 @@ TEST_CASE("a line that is not a record is skipped, not fatal")
     SlotTable read;
     SlotText text(read);
 
-    text.readLine("3 311@50 = 364 8525 740 8553");
-    for (const char *bad : {"311@50 = 364 8525 740 8553",  // no slot
-                            "3 311@50 = 364 8525 740",     // short
+    text.readLine("3 311@50/1213 = 364 8525 740 8553");
+    for (const char *bad : {"311@50/1213 = 364 8525 740 8553",  // no slot
+                            "3 311@50/1213 = 364 8525 740",  // short
                             "3 311 50 = 364 8525 740 8553",// no @
-                            "3 311@50 364 8525 740 8553",  // no =
+                            "3 311@50/1213 364 8525 740 8553",  // no =
                             "3 a@b = c d e f",
-                            "4096 311@50 = 364 8525 740 8553",
+                            "4096 311@50/1213 = 364 8525 740 8553",
                             "3 0@0 = 364 8525 740 8553"})
         text.readLine(bad);
 

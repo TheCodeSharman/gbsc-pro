@@ -50,13 +50,18 @@ bool FramingLine::empty(const char *line)
 
 bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
 {
-    long lines = 0, rate = 0;
+    long lines = 0, rate = 0, width = 0;
     if (!number(at, lines))
         return false;
     at = skipSpace(at);
     if (*at++ != '@')
         return false;
     if (!number(at, rate))
+        return false;
+    at = skipSpace(at);
+    if (*at++ != '/')
+        return false;
+    if (!number(at, width))
         return false;
     at = skipSpace(at);
     if (*at++ != '=')
@@ -67,7 +72,7 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
         if (!number(at, value[i]))
             return false;
 
-    const SourceKey read((uint16_t)lines, (float)rate);
+    const SourceKey read((uint16_t)lines, (float)rate, proportionOf(width));
     if (!read.valid())
         return false;
 
@@ -84,8 +89,9 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
         return -1;
 
     const int written = snprintf(
-        out, size, "%u@%u = %ld %ld %ld %ld",
+        out, size, "%u@%u/%ld = %ld %ld %ld %ld",
         (unsigned)key.lines(), (unsigned)lrintf(key.rateHz()),
+        tenThousandthsOf(key.syncWidth()),
         tenThousandthsOf(framing.originOn(AxisHorizontal)),
         tenThousandthsOf(framing.extentOn(AxisHorizontal)),
         tenThousandthsOf(framing.originOn(AxisVertical)),

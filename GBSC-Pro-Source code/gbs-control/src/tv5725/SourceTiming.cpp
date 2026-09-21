@@ -62,7 +62,7 @@ const SourceTiming::Raster *SourceTiming::lookUp(uint16_t sourceLines,
                                                  float fieldRateHz,
                                                  float syncDuty)
 {
-    const SourceKey measured(sourceLines, fieldRateHz);
+    const SourceKey measured(sourceLines, fieldRateHz, syncDuty);
     if (!measured.valid() || syncDuty <= 0.0f)
         return 0;
 
@@ -74,7 +74,7 @@ const SourceTiming::Raster *SourceTiming::lookUp(uint16_t sourceLines,
             continue;
 
         const float duty = (float)raster.syncPixels / (float)raster.totalPixels;
-        if (fabsf(duty - syncDuty) <= SyncDutyTolerance)
+        if (fabsf(duty - measured.syncWidth()) <= SyncDutyTolerance)
             return &raster;
     }
     return 0;

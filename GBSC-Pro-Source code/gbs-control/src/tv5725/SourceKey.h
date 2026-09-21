@@ -39,10 +39,21 @@ extern const uint16_t SourceIdentityPerMille;
 // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
 const uint16_t RateStepsPerHz = 100;
 
+// How far two sync-width readings may sit apart and still be the same source,
+// as a fraction of the line.
+//
+// Wider than the reading moves and far narrower than the standards it has to
+// tell apart. The reading dithers one ADC count while the source stands still
+// -- 196 and 197 of 1606 over 2499 samples at 800x600@60, a spread of 0.0006 --
+// and shifts 0.0019 when the source's sync type changes under it. The pair it
+// exists to separate, DMT 640x480@60 and CEA 720x480p, sit 0.048 apart.
+// ../../../docs/source-identity-and-framing-lookup.md
+const float SyncWidthIdentity = 0.005f;
+
 class SourceKey {
 public:
     SourceKey();
-    SourceKey(uint16_t sourceLines, float fieldRateHz);
+    SourceKey(uint16_t sourceLines, float fieldRateHz, float syncWidth);
 
     // A count or a rate outside what any source runs identifies nothing, and
     // two of those are not each other: a settling source passes through counts
@@ -50,6 +61,11 @@ public:
     bool valid() const;
 
     uint16_t lines() const;
+
+    // The hsync pulse as a fraction of the line. The count and the rate state
+    // how often a line starts and nothing about how one is DIVIDED, and two
+    // published standards share a count and a rate.
+    float syncWidth() const;
 
     // A WHOLE NUMBER OF HERTZ, not the reading it was built from. The output
     // raster is generated from the key rather than from the measurement, so
@@ -71,6 +87,7 @@ public:
 private:
     uint16_t lines_;
     float rateHz_;
+    float syncWidth_;
 };
 
 }  // namespace Tv5725

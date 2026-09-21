@@ -569,7 +569,8 @@ void VideoPath::configureScalingPath()
 
 void VideoPath::adoptSourceKey()
 {
-    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz());
+    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz(),
+                            reading_.syncDuty());
     if (arriving == framedKey_)
         return;
 
@@ -718,7 +719,8 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     // depends on the output choice and the key's rate, and on nothing the
     // sampling clock decides. Running it here costs one solve and keeps the
     // write order raster -> clock -> windows intact.
-    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz());
+    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz(),
+                            reading_.syncDuty());
     OutputTimings raster = mode_->solve(arriving.rateHz(), OutputMode::EngineCeilingHz);
     if (!raster.usable())
         return 0;

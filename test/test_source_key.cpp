@@ -30,14 +30,42 @@ TEST_CASE("a source with no measurement behind it identifies nothing")
 
 TEST_CASE("the same source measured twice is the same key")
 {
-    CHECK(SourceKey(311, 50.08f) == SourceKey(311, 50.08f));
+    CHECK(SourceKey(311, 50.08f, 0.0f) == SourceKey(311, 50.08f, 0.0f));
+}
+
+// THE COUNT AND THE RATE DO NOT SEPARATE TWO STANDARDS. DMT 640x480@60 and
+// CEA 720x480p are both 525 lines at 59.94 Hz, and therefore at the same line
+// rate to 0.001%: what differs is the pixel clock, which this chip cannot see,
+// and the share of the line its sync takes -- 96/800 against 62/858.
+// docs/source-identity-and-framing-lookup.md
+TEST_CASE("two standards sharing a count and a rate are told apart by sync width")
+{
+    CHECK(SourceKey(524, 59.94f, 96.0f / 800.0f)
+          != SourceKey(524, 59.94f, 62.0f / 858.0f));
+}
+
+// The reading dithers by one ADC count while the source stands still: measured
+// at 800x600@60, 2499 samples gave 196 and 197 of 1606 and nothing else.
+TEST_CASE("the sync width is bucketed wider than it dithers")
+{
+    CHECK(SourceKey(627, 60.31f, 196.0f / 1606.0f)
+          == SourceKey(627, 60.31f, 197.0f / 1606.0f));
+}
+
+// And wider than a sync-type change moves it. The count does not survive that
+// change either, which is its own defect, but the width must not be a second
+// reason to lose a tuned framing. Measured 0.12204 on separate sync against
+// 0.12017 on composite, one mode, nothing else touched.
+TEST_CASE("the sync width survives a change of sync type")
+{
+    CHECK(SourceKey(627, 60.31f, 0.12204f) == SourceKey(627, 60.31f, 0.12017f));
 }
 
 TEST_CASE("the rate is bucketed wider than it jitters")
 {
     // The engine re-solves on the measured field rate and that reading wobbles,
     // so an exact match on a float misses its own entry.
-    CHECK(SourceKey(311, 50.02f) == SourceKey(311, 50.13f));
+    CHECK(SourceKey(311, 50.02f, 0.0f) == SourceKey(311, 50.13f, 0.0f));
 }
 
 TEST_CASE("readings either side of a whole hertz are still the same source")
@@ -47,8 +75,8 @@ TEST_CASE("readings either side of a whole hertz are still the same source")
     // than the rounding. Measured at 800x600@60: one unchanged source settles
     // at 60.38 Hz after one mode change and 60.72 after the next. Were identity
     // decided by the rounded value, the stored framing would swap with it.
-    CHECK(SourceKey(627, 60.38f) == SourceKey(627, 60.72f));
-    CHECK(SourceKey(627, 60.38f).rateHz() != SourceKey(627, 60.72f).rateHz());
+    CHECK(SourceKey(627, 60.38f, 0.0f) == SourceKey(627, 60.72f, 0.0f));
+    CHECK(SourceKey(627, 60.38f, 0.0f).rateHz() != SourceKey(627, 60.72f, 0.0f).rateHz());
 }
 
 TEST_CASE("the key is quantised as finely as the instrument is repeatable")
@@ -63,9 +91,9 @@ TEST_CASE("the key is quantised as finely as the instrument is repeatable")
     // 60.317 Hz, every reading identical. The instrument is repeatable to
     // better than 0.002%, so hundredths cost no repeatability at all.
     // ../docs/investigations/the-rate-tolerance-answered-five-questions.md
-    CHECK(SourceKey(311, 50.081f).rateHz() == doctest::Approx(50.08f));
-    CHECK(SourceKey(627, 60.317f).rateHz() == doctest::Approx(60.32f));
-    CHECK(SourceKey(524, 59.94f).rateHz() == doctest::Approx(59.94f));
+    CHECK(SourceKey(311, 50.081f, 0.0f).rateHz() == doctest::Approx(50.08f));
+    CHECK(SourceKey(627, 60.317f, 0.0f).rateHz() == doctest::Approx(60.32f));
+    CHECK(SourceKey(524, 59.94f, 0.0f).rateHz() == doctest::Approx(59.94f));
 }
 
 TEST_CASE("a rate change too small to be movement does not change identity")
@@ -76,19 +104,19 @@ TEST_CASE("a rate change too small to be movement does not change identity")
     // behind it -- a silent reframing on drift.
     //
     // 60.0 against 62.5 is 4.2%, inside the 5% that trigger allows.
-    CHECK(SourceKey(627, 60.0f) == SourceKey(627, 62.5f));
+    CHECK(SourceKey(627, 60.0f, 0.0f) == SourceKey(627, 62.5f, 0.0f));
 }
 
 TEST_CASE("adjacent standards stay apart")
 {
-    CHECK(SourceKey(311, 50.08f) != SourceKey(311, 60.05f));
-    CHECK(SourceKey(311, 50.08f) != SourceKey(312, 50.08f));
+    CHECK(SourceKey(311, 50.08f, 0.0f) != SourceKey(311, 60.05f, 0.0f));
+    CHECK(SourceKey(311, 50.08f, 0.0f) != SourceKey(312, 50.08f, 0.0f));
 }
 
 TEST_CASE("a line count no source runs is not a key")
 {
     // A settling source passes through counts inside no standard at all, and a
     // framing stored against one of those is stored against nothing.
-    CHECK_FALSE(SourceKey(97, 50.08f).valid());
-    CHECK_FALSE(SourceKey(311, 0.0f).valid());
+    CHECK_FALSE(SourceKey(97, 50.08f, 0.0f).valid());
+    CHECK_FALSE(SourceKey(311, 0.0f, 0.0f).valid());
 }
