@@ -497,6 +497,27 @@ TEST_CASE("a source the panel takes straight is passed through, not scaled")
     CHECK(g_passThroughSwitches == 1);
 }
 
+// A GUARD ON THE ONE STATE THAT COULD NOT ADVANCE ITSELF. Every arm in
+// sourceMoved() compares against solvedLines_, which only a solve writes and
+// only an arm opens, so a refusal to reach the arms while it is zero could
+// never stop being true. sourceMoved() is not what gets here -- the mode change
+// solves through prepareToMeasure() first -- and this holds that route open.
+TEST_CASE("a bypassed output with nothing solved still arms the first count")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start(&ModeBypass);
+
+    REQUIRE(unit.path.outputMode());
+    REQUIRE(unit.path.outputMode()->isBypass());
+
+    CHECK(unit.pollUntilSolved(8));
+}
+
 TEST_CASE("pass-through is refused until the source has been measured")
 {
     // BYPASS HANDS THE SOURCE'S OWN TIMING TO THE ENCODER, so a mode entered on
