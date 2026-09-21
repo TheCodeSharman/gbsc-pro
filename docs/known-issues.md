@@ -1446,6 +1446,26 @@ What settles it: whether the phase sweep can find a window at a high divider
 once it stops scoring on equality, and then a density-against-oversampling
 judgement made on the picture at each row rather than in the arithmetic.
 
+### Try the horizontal decimator, so the divider can rise without the capture overrunning
+
+**The grating beats because the divider is too low to resolve it**, and the
+divider is bounded by what the raster can SHOW rather than by the part: the
+capture is in ADC samples, `VDS_HSCALE` cannot minify, so a line sampled finely
+enough produces more units than the display window holds and the surplus is
+cropped. `VideoPath` sizes the divider from `Axis::maximumCapture()` for exactly
+that reason.
+
+**`IF_HS_DEC_FACTOR` decimates in the input formatter**, which drops the count
+the capture carries WITHOUT dropping the rate the ADC samples at. That is the
+one direction the trade in `docs/sampling-table.md` does not currently take:
+the kept count is what carries resolution and oversampling buys only freedom
+from aliasing, but a decimator after a higher divider keeps the sampling density
+that resolves the grating while handing the capture a count the window can hold.
+
+Untried. What would settle it is a divider raised past what
+`recommendedDivider()` allows with the decimator taking the difference, judged
+on the finest grating of the card against the same framing.
+
 ### The pass-through ADC PLL does not lock, and the finest grating beats
 
 `STATUS_MISC_PLLAD_LOCK` reads 1 in **2 of 38** samples in pass-through against
