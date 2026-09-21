@@ -1970,19 +1970,19 @@ int main(int argc, char **argv)
 // standard, and the border it shows changes between two landings on one source
 // with every register self-consistent.
 // docs/investigations/the-duty-is-the-complement-until-the-counter-recounts.md
-TEST_CASE("the complement of a duty is not taken as one")
+TEST_CASE("the pulse is the shorter interval, whatever the counter reports")
 {
     SourceMeasurement sampling;
     Adc::applyDivider(BenchDivider);
     seedSourceLines(311);
     Wire.sourceHsync(181, BenchDivider, true);
-    Wire.hsyncInversionLag(200);
+    Wire.hsyncInversionLag(200);   // the correction never reaches the counter
     g_fieldRate = 50.08f;
 
     measurePastGate(sampling);
 
-    CHECK(sampling.hsync().syncDuty() != doctest::Approx(
-              (float)(BenchDivider - 181) / (float)BenchDivider));
+    CHECK(sampling.hsync().syncDuty()
+          == doctest::Approx(181.0f / (float)BenchDivider));
 }
 
 // A REFUSED DUTY IS A FAULT, NOT A DEFAULT, so it has to say so. Nothing
@@ -1991,11 +1991,13 @@ TEST_CASE("the complement of a duty is not taken as one")
 // place a reader can see the engine waiting and why.
 TEST_CASE("a duty that is not a pulse is announced")
 {
+    // Nothing substitutes a value any more, so the console is the only place a
+    // reader can see the engine waiting and why. The count has to be one no
+    // shorter interval can rescue: half the line either way.
     SourceMeasurement sampling;
     Adc::applyDivider(BenchDivider);
     seedSourceLines(311);
-    Wire.sourceHsync(181, BenchDivider, true);
-    Wire.hsyncInversionLag(200);
+    Wire.sourceHsync(BenchDivider / 2, BenchDivider, false);
     g_fieldRate = 50.08f;
 
     measurePastGate(sampling);

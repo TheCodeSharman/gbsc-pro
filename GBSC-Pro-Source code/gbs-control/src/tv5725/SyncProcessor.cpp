@@ -278,6 +278,15 @@ uint16_t SyncProcessor::hsyncLowSamples()
     return GBS::STATUS_SYNC_PROC_HLOW_LEN::read();
 }
 
+uint16_t SyncProcessor::hsyncPulseSamples(uint16_t lineSamples)
+{
+    const uint16_t low = hsyncLowSamples();
+    if (lineSamples <= low)
+        return low;
+    const uint16_t complement = (uint16_t)(lineSamples - low);
+    return low < complement ? low : complement;
+}
+
 bool SyncProcessor::hsyncPositive()
 {
     return GBS::STATUS_SYNC_PROC_HSPOL::read() != 0;

@@ -395,25 +395,39 @@ public:
     // positive-going -- which says which end of the line the sync interval
     // sits at.
     //
-    // **READ hsyncLowSamples() ONLY AFTER normaliseHsyncPolarity(), AND ONLY
-    // WHILE lineSamples() AGREES WITH THE DIVIDER.** The count is the LOW time
-    // of the sync reaching the counter, not the pulse width, so on an
-    // uncorrected high-active source it is the whole line minus the pulse; and
-    // counted before the block re-locks it belongs to a line of another length,
+    // **READ EITHER ONLY WHILE lineSamples() AGREES WITH THE DIVIDER.** A count
+    // taken before the block re-locks belongs to a line of another length,
     // which no later reading can separate from a real one.
     // docs/sync-type-selection.md
     static uint16_t hsyncLowSamples();
     static bool hsyncPositive();
+
+    // The pulse width in ADC samples, which is the SHORTER of the low time and
+    // its complement.
+    //
+    // The register is the low time, so on a high-active source it is the line
+    // minus the pulse. normaliseHsyncPolarity() is meant to remove that, and on
+    // this board it does not reliably reach the counter: measured with
+    // SP_HS_INV_REG 1 and HSPOL 1, the count held the complement for 30 s --
+    // 1411 of 1606 where the pulse is 196. A pulse cannot be more than half the
+    // line and still leave a raster, so the shorter interval IS the pulse, and
+    // it needs no write to have taken effect.
+    // docs/investigations/the-duty-is-the-shorter-interval.md
+    static uint16_t hsyncPulseSamples(uint16_t lineSamples);
 
     // Whether an hsync edge was found to take the polarity from. A polarity
     // read off a status the processor could not fill is a coin toss, which is
     // why HdBypass gates on the same bit.
     static bool hsyncFound();
 
-    // Invert the source's hsync ahead of the counter when it is positive-going,
-    // so everything downstream sees one polarity and hsyncLowSamples() is the
-    // pulse on every source. Writes SP_HS_INV_REG and SP_HS2PLL_INV_REG, which
-    // this class owns.
+    // Invert the source's hsync ahead of the DATA PATH when it is
+    // positive-going, so everything downstream sees one polarity. Writes
+    // SP_HS_INV_REG and SP_HS2PLL_INV_REG, which this class owns.
+    //
+    // **IT DOES NOT MAKE hsyncLowSamples() THE PULSE**, and relying on it to
+    // did. Measured with SP_HS_INV_REG 1 and HSPOL 1, the count held the
+    // complement for 30 s. hsyncPulseSamples() takes the shorter interval
+    // instead, which no write has to have reached.
     //
     // This is the whole point: a polarity carried into the solve is an input
     // every later calculation can get wrong, and normalising it here deletes
