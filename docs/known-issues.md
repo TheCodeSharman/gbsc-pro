@@ -246,6 +246,101 @@ measured at one framing on one mode, so the sense is not established elsewhere.
   with no write, which is the camera's noise floor -- so it is brief. It may be
   the two-byte fields being written a byte at a time.
 
+### The default capture is 1.7% narrower than the mode's active region
+
+On 800x600@60, the one VESA mode the bench source offers, the default framing
+takes less of the line than the standard states:
+
+| | value | the mode's |
+|---|---|---|
+| `poh` | 0.2043 | `(128+88)/1056` = 0.2045 |
+| `peh` | **0.7405** | `800/1056` = **0.7576** |
+
+**The start is right to a part in a thousand and only the width is short**, by
+27 units of 1217.
+
+**It is the capture lag running past the end of the counter.**
+`ActiveImage::place()` takes `start` from `videoAt()`, a COUNTER position that
+carries `CaptureLagFraction`, and tests it against `lastCapture()`, which is
+`units - 2` and carries nothing. Here `start = 0.2045 x 1607 + 87 = 416`, the
+wanted width is 1217, and `416 + 1217 = 1633` against a counter stopping at
+1605 -- so `place()` gives the width back. The shortfall follows from the mode
+alone:
+
+```
+loss = lag fraction - front porch fraction
+     = 0.0539 - 40/1056
+     = 0.0160 x 1607 = 25.7 units        against 27 solved
+```
+
+**Any mode whose front porch is shorter than the capture lag is short by the
+difference**, and DMT 800x600 is that shape at 3.79% against 5.39%.
+
+`VideoSourceLine`'s contract disagrees with this and one of the two is wrong:
+the header states the lag "TRANSLATES a window rather than narrowing it: both
+ends move", while `firstCapture()` adds it and `lastCapture()` does not, so
+`capturable()` is narrowed by it. **The doubled path's answer does not transfer, and that is measured.** The lag
+is zero on a doubled line because `IF_HBIN_SP` is the FIFO's reset and places
+the picture itself; undoubled it reads 2, and writing 87 into it moves the
+picture **0 photo columns**, `r = 0.9765` against the frame before it. The FIFO
+is out of circuit, so the register places nothing and the route is closed.
+
+**The tail is sampled but not reachable.** The capture window already runs the
+full counter -- `IF_HB_SP2` 415 to `IF_HB_ST2` 1605 -- and source units
+1519..1546 arrive at counter 1606..1633, which wraps to the head of the next
+cycle. The ADC does see them; a capture window cannot wrap to take them. What
+would recover them is whatever sets the input formatter's line reset relative to
+sync, and that has not been identified.
+
+**THE LAG NARROWS THE CAPTURE RATHER THAN TRANSLATING IT, AND FULL FRAMING
+SHOWS IT.** `/framing/full` takes the whole capturable region, so at 100% the
+source's own blanking should appear on BOTH sides. It appears on one:
+
+| | source units |
+|---|---|
+| full capture | 196 .. **1518** |
+| the mode's active region | 329 .. 1546 |
+| the line | 0 .. 1607 |
+
+The near bound is the sync end and carries no lag; the far bound is
+`lastCapture - lag` = `1605 - 87`. So the left shows the whole back porch --
+133 units, ~152 photo columns predicted against 147 measured -- and the right
+shows no blanking at all, because the capture stops 28 units INSIDE the picture.
+
+**The default framing's shortfall is the same bound.** Default and full end on
+the same unit:
+
+```
+default   oh  328 + eh 1190 = 1518
+full      oh  196 + eh 1322 = 1518
+```
+
+So widening the framing cannot recover the right-hand 28 units; they are
+unreachable by any framing, and the source's right porch is unreachable full
+stop.
+
+**WHAT THIS IS NOT IS THE 2.3% SIZE DIFFERENCE AGAINST BYPASS**, and the
+temptation to join them is why this says so. Measured on the card with `ANIM
+OFF`, the scaled picture is 2.29% larger than the passed-through one -- marker
+span 1068.0 against 1092.5, which agrees with `0.7576/0.7405` to 0.02% and
+looks like proof. It is not:
+
+- **the difference is SYMMETRIC.** The card's outermost frame line is 15 photo
+  columns wide at BOTH ends scaled and 33 at both ends passed through, and the
+  leftmost complete line moves outward as well as the rightmost. A width
+  trimmed off the far end alone anchors the near edge and cannot do that.
+- **the two frames are two ACQUISITIONS**, and the window the picture is shown
+  through is latched at each one --
+  `investigations/the-shown-window-is-latched-at-lock.md`. A bypass round trip
+  re-latches it, so the fraction of our raster the sink displays need not be the
+  same in the two states, and a size difference between them is not attributable
+  without holding that still.
+
+So the capture shortfall is an arithmetic fact worth fixing on its own terms,
+and the bypass comparison does not measure it. Settling the size difference
+needs the two states compared without a re-latch between them, or the latched
+window measured in each.
+
 ### The picture falls up to two lines short of the vertical active region
 
 The output raster opens the display window at the back porch its `OutputMode`
