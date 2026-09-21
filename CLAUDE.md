@@ -1349,6 +1349,22 @@ one the same way; the rules below are each a wasted session.
   a stale mapping, a correct far edge reads as 110 px of overshoot and the
   line's repeat reads as the picture.
 
+  **THE SCOPE IS AN EXCURSION, AND IT IS NARROWER THAN IT READS.** Both figures
+  are ROUND TRIPS, and both were taken on the scaling path before
+  `Tv5725::OutputMode` stated a standard's timings. Every mode it offers now
+  carries one — CEA-861 for 1080p, 720p, 480p and 576p, VESA DMT for the rest —
+  and a sink locking to a mode it recognises places it the same way every time.
+  **Nothing records the picture moving between two acquisitions while one path is
+  held**, and nothing records it on pass-through at all.
+
+  So a blanking edge found in pass-through is a real edge and does not need
+  re-checking against a second acquisition. **Read as a general licence to
+  explain away a discrepancy, this entry invents constants**: a pass-through
+  blanking offset justified by it rests on one frame photographed with
+  automation UNFROZEN, where the registers in force at the exposure are not
+  vouched for. Freeze, and read the registers either side of the shutter, before
+  reaching for this.
+
   **THE DISPLACEMENT IS DOWNSTREAM OF THE BOARD, AND IT IS NOW MEASURED.** Both
   checks this entry used to demand have been run. A full `snapdiff.py --save`
   either side covers all 1536 addresses and the byte-identity has been
