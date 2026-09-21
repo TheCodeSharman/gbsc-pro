@@ -48,9 +48,19 @@ to no type.
 
 ## Minimal object orientation, and no more
 
-No inheritance, no virtual functions, no templates, unless something concrete
-needs them. Plain value classes with inline non-virtual methods cost **nothing**
-at runtime or in flash.
+**Embedded systems programming is light on abstractions, and an abstraction has
+to earn its keep.** That is the governing rule, and inheritance, virtual
+functions and templates are three instances of it rather than three separate
+bans. An abstraction earns its keep by removing a concrete problem present in
+the code today — not by anticipating one, and not because two classes happen to
+share some code.
+
+**So strongly prefer composition over inheritance**, and reach for virtuals or
+templates only when something concrete needs them. Composition adds no
+indirection to read through and no vtable to spend, and it keeps the
+collaborator visible at the point of use. Plain value classes with inline
+non-virtual methods cost **nothing** at runtime or in flash. Inheritance is not
+banned; it has to pay for itself like anything else.
 
 Deep hierarchies and template metaprogramming make low-level concerns
 unreviewable, which on an ESP8266 with 80 KB of RAM is the thing you least want
@@ -313,6 +323,31 @@ geometry adjustment — `Tv5725::Controls::panH` / `panV` / `zoomH` / `zoomV`. T
 web pads, the OSD bar and the IR menus all land there. When there were three
 ways in, two of them bypassed the engine and the acceptance suite was green
 against a broken picture for a whole evening.
+
+## `NULL` for a null pointer, never `0` or `nullptr`
+
+This is embedded firmware, and `NULL` is what the embedded C world reads
+fluently. That familiarity is the reason: a spelling everyone recognises on
+sight beats a better one that makes a reader stop.
+
+It also fixes the readability fault that `0` has. `VideoSourceAcquisition`'s
+cold-state guard had both meanings on one line —
+
+```cpp
+if (mode == 0 || (solvedLines_ == 0 && outputIsPassedThrough()))
+```
+
+— where the first `0` is a null pointer and the second is a line count, three
+tokens apart.
+
+`nullptr` is available, both builds being `-std=c++11`, and is the stronger form:
+it is typed rather than an integer macro, so it disambiguates an overload
+between a pointer and an integer parameter. No such overload exists here, so it
+buys nothing this codebase can spend.
+
+**`NULL` is a macro, so it needs `<stddef.h>`** where nothing else already
+provides it. A translation unit that compiled against `nullptr` will not
+necessarily compile against `NULL`.
 
 ## Comments are pointers, not essays
 

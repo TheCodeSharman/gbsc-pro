@@ -1510,8 +1510,10 @@ that does not. A faithful refactor of an accident preserves the accident.
 
 **`CODING_STYLE.md` is the C++ style, and it is not optional.** Classes rather
 than namespaces over file-scope globals, one class per file named after it,
-declare-in-header/define-in-.cpp, minimal OO with no inheritance or virtuals,
-dependency injection over reaching for globals, a default of no comment at all,
+declare-in-header/define-in-.cpp, minimal OO strongly preferring composition over
+inheritance and using no virtuals, `NULL` for a null pointer rather than `0` or
+`nullptr`, dependency injection over reaching for globals, a default of no
+comment at all,
 and a behaviour-preserving refactor proven by diffing the `--dump` oracles.
 Every rule in it is there because it cost a session. Read it before writing
 firmware C++.
