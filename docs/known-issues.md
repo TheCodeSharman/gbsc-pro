@@ -1750,3 +1750,22 @@ scaled picture at both 1080p and 1024p with the bench framing, which crops 123
 capture units off the near end, so a card drawn with a magenta border at both
 extremes would show exactly this. `PatLib` draws it at the source, so the source
 is where to look first. `RiscPc/tools/video-source/`.
+
+### `/sc?~` in pass-through strands the output off its DAC route
+
+Low power detection from RGBHV pass-through leaves the unit dark with no way
+back short of changing the output mode. The engine keeps measuring the source
+and sizing the pass-through channel while the chip's routing sits where
+detection left it, on the scaling path.
+
+`passSourceThrough()` claims the route only on the way in, and asks the engine's
+held output mode whether it is already there -- which detection does not clear.
+So `passThroughSwitch_()` never runs again and `DAC_RGBS_BYPS2DAC` and
+`OUT_SYNC_SEL` stay 0.
+
+`/uc?x` recovers it. A source mode round trip recovers the engine's acquisition
+and not the picture, which is why the arms look absent when the screen is what
+is being judged.
+
+`docs/investigations/low-power-detection-strands-pass-through-off-its-route.md`
+has the measurements and what they refute.
