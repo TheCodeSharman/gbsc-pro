@@ -109,6 +109,11 @@ static void seedPassThroughSource()
 // the engine chooses, which no source does.
 static const float BenchSyncWidth = 181.0f / 2250.0f;
 
+// The bench source's vertical sync polarity, the other half of what the key
+// carries beyond the count and the rate. `sync_pol:0` in the monitor
+// definition, which reads 1.
+static const bool BenchVsyncPositive = true;
+
 static void seedSourceMeasurement()
 {
     Wire.sourceHsync(181, 2250, true);
@@ -118,6 +123,10 @@ static void seedSourceMeasurement()
     // the capture window then correctly stops guarding a head with no pulse in
     // it -- so leaving it out tests a source this fixture is not describing.
     seedField(0, 0x16, 0, 1, 1);       // STATUS_SYNC_PROC_HSPOL
+    // The bench mode is sync_pol:0, both polarities positive, and the vertical
+    // one is in the key -- so a fixture leaving it unseeded describes a source
+    // the bench does not run.
+    seedField(0, 0x16, 2, 1, 1);       // STATUS_SYNC_PROC_VSPOL
     seedField(0, 0x16, 3, 1, 1);       // STATUS_SYNC_PROC_VSACT, V on its own pin
     g_fieldRate = 50.08f;
 }
@@ -978,7 +987,7 @@ TEST_CASE("a framing restored from the file is applied when its source arrives")
     VideoSourceAcquisition acquisition(sampling, engine);
 
     const PanAndZoom stored(0.10f, 0.60f, 0.15f, 0.55f);
-    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchSyncWidth), stored));
+    REQUIRE(framings.remember(SourceKey(311, 50.08f, BenchSyncWidth, BenchVsyncPositive), stored));
 
     engine.setOutputMode(benchMode());
     engine.inputTimingsChanged(4);
@@ -1014,7 +1023,7 @@ TEST_CASE("a press stores the framing without leaving the source")
     frameAt(engine, 300, 120, 40, -15);
 
     PanAndZoom stored;
-    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth), &stored));
+    REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchVsyncPositive), &stored));
     CHECK(stored == engine.framing());
 }
 
@@ -1652,7 +1661,7 @@ TEST_CASE("a framing applied whole lands as the window it describes")
 
     SUBCASE("and the source is left framed that way for next time") {
         PanAndZoom remembered;
-        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth), &remembered));
+        REQUIRE(framings.find(SourceKey(311, 50.08f, BenchSyncWidth, BenchVsyncPositive), &remembered));
         CHECK(remembered == engine.framing());
     }
 }
@@ -1673,7 +1682,7 @@ TEST_CASE("the engine says which source the framing it holds is against")
     engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(acquisition));
 
-    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchSyncWidth));
+    CHECK(engine.framedKey() == SourceKey(311, 50.08f, BenchSyncWidth, BenchVsyncPositive));
 }
 
 

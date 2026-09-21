@@ -403,7 +403,7 @@ TEST_CASE("the pass-through blank ends on the envelope, not on a constant")
 TEST_CASE("a published raster blanks the channel to the end of its sync")
 {
     const Tv5725::SourceTiming vesa800x600 =
-        Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
+        Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, true));
     REQUIRE(vesa800x600.published());
 
     applyForSource(2039, 37879, vesa800x600, 628);
@@ -417,7 +417,7 @@ TEST_CASE("a published raster blanks the channel to the end of its sync")
 TEST_CASE("a published raster leaves the source's border unblanked")
 {
     const Tv5725::SourceTiming vesa800x600 =
-        Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
+        Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, true));
     REQUIRE(vesa800x600.published());
 
     applyForSource(2039, 37879, vesa800x600, 628);
@@ -433,7 +433,7 @@ TEST_CASE("a published raster leaves the source's border unblanked")
 TEST_CASE("the line runs to its end whether a raster matched or not")
 {
     const Tv5725::SourceTiming vesa800x600 =
-        Tv5725::SourceTiming::matching(627, 60.0f, 128.0f / 1056.0f);
+        Tv5725::SourceTiming::matching(Tv5725::SourceKey(627, 60.0f, 128.0f / 1056.0f, true));
     REQUIRE(vesa800x600.published());
 
     applyForSource(2039, 37879, vesa800x600, 628);
@@ -596,7 +596,7 @@ TEST_CASE("the channel blanks the lines before active video")
     // 720x480p is 525 lines with active starting at 36. Every arm carried a
     // constant instead -- the progressive one 0x40, which is 64, so 28 lines
     // of picture came off the top.
-    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(524, 60.0f, 62.0f / 858.0f), 525);
+    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, false)), 525);
 
     CHECK(HdBypass::HD_VB_ST::read() == 0);
     CHECK(HdBypass::HD_VB_SP::read() == 36);

@@ -127,6 +127,10 @@ public:
     // refused, and leaves the last one that was not standing.
     HsyncPulse hsync() const;
 
+    // The source's vertical sync polarity, which joins the count and the rate
+    // in identifying it.
+    bool vsyncPositive() const;
+
     uint16_t sourceLines() const;
 
     float fieldRateHz() const;
@@ -248,6 +252,7 @@ private:
     uint8_t rateRejections_;
 
     HsyncPulse hsync_;
+    bool vsyncPositive_;
     uint16_t verticalPeriod_;
     bool dutyMeasured_;
     uint8_t settlePasses_;

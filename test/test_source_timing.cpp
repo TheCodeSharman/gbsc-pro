@@ -33,7 +33,7 @@ TEST_CASE("a VESA source is placed where its own raster puts active video")
     // 640x480@60: 800 pixels, 96 sync and 48 back porch before 640 of picture.
     // 524 rather than 525 because the sync processor counts from zero, which is
     // what the bench reads on a source running this mode.
-    SourceTiming dmt = SourceTiming::matching(524, 59.94f, 96.0f / 800.0f);
+    SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, false));
 
     REQUIRE(dmt.published());
     CHECK_NEAR(dmt.activeStart(AxisHorizontal), 144.0f / 800.0f, 0.0005f);
@@ -43,7 +43,7 @@ TEST_CASE("a VESA source is placed where its own raster puts active video")
 TEST_CASE("the vertical axis comes from the same raster")
 {
     // 525 lines, 2 of sync and 33 of back porch before 480 of picture.
-    SourceTiming dmt = SourceTiming::matching(524, 59.94f, 96.0f / 800.0f);
+    SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, false));
 
     REQUIRE(dmt.published());
     CHECK_NEAR(dmt.activeStart(AxisVertical), 35.0f / 525.0f, 0.0005f);
@@ -54,8 +54,8 @@ TEST_CASE("a measured rate anywhere in the bucket still matches")
 {
     // The engine re-solves on the measured rate and that reading wobbles, so a
     // match on the float misses the raster the source is running.
-    CHECK(SourceTiming::matching(627, 60.32f, 128.0f / 1056.0f).published());
-    CHECK(SourceTiming::matching(627, 59.85f, 128.0f / 1056.0f).published());
+    CHECK(SourceTiming::matching(SourceKey(627, 60.32f, 128.0f / 1056.0f, true)).published());
+    CHECK(SourceTiming::matching(SourceKey(627, 59.85f, 128.0f / 1056.0f, true)).published());
 }
 
 TEST_CASE("two standards on one line count are told apart by the sync width")
@@ -63,8 +63,8 @@ TEST_CASE("two standards on one line count are told apart by the sync width")
     // 525 lines at 60 Hz is 640x480 DMT and it is 720x480p, and they put active
     // video 2.2% of the line apart. DMT spends 96 pixels of 800 on sync where
     // CEA spends 62 of 858.
-    SourceTiming dmt = SourceTiming::matching(524, 59.94f, 96.0f / 800.0f);
-    SourceTiming cea = SourceTiming::matching(524, 59.94f, 62.0f / 858.0f);
+    SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, false));
+    SourceTiming cea = SourceTiming::matching(SourceKey(524, 59.94f, 62.0f / 858.0f, false));
 
     REQUIRE(dmt.published());
     REQUIRE(cea.published());
@@ -76,9 +76,9 @@ TEST_CASE("a source running neither standard is left unpublished")
 {
     // Placing a source from a raster it is not emitting crops picture, so an
     // unrecognised sync width takes the assumption rather than the nearest row.
-    CHECK_FALSE(SourceTiming::matching(524, 59.94f, 0.20f).published());
-    CHECK_FALSE(SourceTiming::matching(311, 50.08f, 0.071f).published());
-    CHECK_FALSE(SourceTiming::matching(97, 50.08f, 0.12f).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(524, 59.94f, 0.20f, false)).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(311, 50.08f, 0.071f, true)).published());
+    CHECK_FALSE(SourceTiming::matching(SourceKey(97, 50.08f, 0.12f, true)).published());
 }
 
 // The bench RISC PC on AKF50's 800x600@60, measured 2026-09-10: VTOTAL 627,
@@ -87,7 +87,7 @@ TEST_CASE("a source running neither standard is left unpublished")
 // 216 exactly where DMT puts them -- the 40-pixel borders sit in the porches.
 TEST_CASE("the bench RISC PC at 800x600@60 is recognised as the published mode")
 {
-    SourceTiming t = SourceTiming::matching(627, 60.32f, 137.0f / 1124.0f);
+    SourceTiming t = SourceTiming::matching(SourceKey(627, 60.32f, 137.0f / 1124.0f, true));
 
     REQUIRE(t.published());
     CHECK_NEAR(t.activeStart(AxisHorizontal), 216.0f / 1056.0f, 0.0005f);
@@ -100,8 +100,8 @@ TEST_CASE("a field rate that wobbles across half a hertz still finds its mode")
 {
     const float duty = 137.0f / 1124.0f;
 
-    CHECK(SourceTiming::matching(627, 60.32f, duty).published());
-    CHECK(SourceTiming::matching(627, 60.72f, duty).published());
+    CHECK(SourceTiming::matching(SourceKey(627, 60.32f, duty, true)).published());
+    CHECK(SourceTiming::matching(SourceKey(627, 60.72f, duty, true)).published());
 }
 
 TEST_CASE("the line active video starts on, for a caller that cannot scale")
@@ -109,7 +109,7 @@ TEST_CASE("the line active video starts on, for a caller that cannot scale")
     // Pass-through plays the source's own raster out, so the only thing it can
     // blank correctly is what the raster says is not picture. 720x480p starts
     // active video at line 36 of 525.
-    const SourceTiming cea = SourceTiming::matching(524, 59.94f, 62.0f / 858.0f);
+    const SourceTiming cea = SourceTiming::matching(SourceKey(524, 59.94f, 62.0f / 858.0f, false));
     REQUIRE(cea.published());
 
     CHECK(cea.activeStartLine(525) == 36);

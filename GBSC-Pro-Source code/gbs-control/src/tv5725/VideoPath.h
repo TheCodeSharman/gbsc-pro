@@ -289,6 +289,10 @@ private:
     // docs/framing-presets.md
     // Which source is in force, held so the timings can be generated from it
     // rather than from the reading. Runs BEFORE the raster is solved.
+    // What the last measurement says the source is. One spelling, so the
+    // framing table and the standards lookup cannot disagree about it.
+    SourceKey arrivingKey() const;
+
     void adoptSourceKey();
 
     // Order: raster, clock, windows, rate steer LAST. Steering early corrects a

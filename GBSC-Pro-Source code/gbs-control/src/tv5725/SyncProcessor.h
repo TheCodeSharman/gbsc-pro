@@ -402,6 +402,12 @@ public:
     static uint16_t hsyncLowSamples();
     static bool hsyncPositive();
 
+    // Whether the source's vertical sync is positive-going. Unlike the
+    // horizontal polarity it is a property of the MODE: it reads what the mode
+    // states on separate and composite sync alike.
+    // docs/source-identity-and-framing-lookup.md
+    static bool vsyncPositive();
+
     // The pulse width in ADC samples, which is the SHORTER of the low time and
     // its complement.
     //

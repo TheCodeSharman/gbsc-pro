@@ -292,6 +292,11 @@ bool SyncProcessor::hsyncPositive()
     return GBS::STATUS_SYNC_PROC_HSPOL::read() != 0;
 }
 
+bool SyncProcessor::vsyncPositive()
+{
+    return GBS::STATUS_SYNC_PROC_VSPOL::read() != 0;
+}
+
 bool SyncProcessor::hsyncFound()
 {
     return GBS::STATUS_SYNC_PROC_HSACT::read() == 1;

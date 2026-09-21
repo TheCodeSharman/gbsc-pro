@@ -50,20 +50,16 @@ const uint16_t StandardRateDeviationPerMille = 50;
 SourceTiming::SourceTiming(float fieldRateHz)
     : fieldRateHz_(fieldRateHz), raster_(0) {}
 
-SourceTiming SourceTiming::matching(uint16_t sourceLines, float fieldRateHz,
-                                    float syncDuty)
+SourceTiming SourceTiming::matching(const SourceKey &measured)
 {
-    SourceTiming timing(fieldRateHz);
-    timing.raster_ = lookUp(sourceLines, fieldRateHz, syncDuty);
+    SourceTiming timing(measured.rateHz());
+    timing.raster_ = lookUp(measured);
     return timing;
 }
 
-const SourceTiming::Raster *SourceTiming::lookUp(uint16_t sourceLines,
-                                                 float fieldRateHz,
-                                                 float syncDuty)
+const SourceTiming::Raster *SourceTiming::lookUp(const SourceKey &measured)
 {
-    const SourceKey measured(sourceLines, fieldRateHz, syncDuty);
-    if (!measured.valid() || syncDuty <= 0.0f)
+    if (!measured.valid() || measured.syncWidth() <= 0.0f)
         return 0;
 
     for (uint16_t i = 0; i < PublishedCount; ++i) {

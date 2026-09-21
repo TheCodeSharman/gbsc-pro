@@ -387,8 +387,7 @@ bool VideoPath::setOutputMode(const OutputMode *mode)
 void VideoPath::sourceMeasured(const HsyncPulse &reading)
 {
     reading_ = reading;
-    timing_ = SourceTiming::matching(sampling_.sourceLines(), sampling_.fieldRateHz(),
-                                     reading.syncDuty());
+    timing_ = SourceTiming::matching(arrivingKey());
     activeStartLine_ = timing_.activeStartLine(sampling_.sourceLines() + 1);
 }
 
@@ -567,10 +566,15 @@ void VideoPath::configureScalingPath()
         ColourSpace::applyRgb();
 }
 
+SourceKey VideoPath::arrivingKey() const
+{
+    return SourceKey(sampling_.sourceLines(), sampling_.fieldRateHz(),
+                     reading_.syncDuty(), sampling_.vsyncPositive());
+}
+
 void VideoPath::adoptSourceKey()
 {
-    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz(),
-                            reading_.syncDuty());
+    const SourceKey arriving = arrivingKey();
     if (arriving == framedKey_)
         return;
 
@@ -719,8 +723,7 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     // depends on the output choice and the key's rate, and on nothing the
     // sampling clock decides. Running it here costs one solve and keeps the
     // write order raster -> clock -> windows intact.
-    const SourceKey arriving(sampling_.sourceLines(), sampling_.fieldRateHz(),
-                            reading_.syncDuty());
+    const SourceKey arriving = arrivingKey();
     OutputTimings raster = mode_->solve(arriving.rateHz(), OutputMode::EngineCeilingHz);
     if (!raster.usable())
         return 0;

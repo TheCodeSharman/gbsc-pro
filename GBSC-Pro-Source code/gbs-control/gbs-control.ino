@@ -7129,7 +7129,8 @@ void saveFramingTable()
     if (!f)
         return;
 
-    f.print(F("# framing, one source a line: <lines>@<fieldRateHz> = "
+    f.print(F("# framing, one source a line: "
+              "<lines>@<fieldRateHz>/<syncWidth><vsyncPolarity> = "
               "originH extentH originV extentV\n"
               "# in ten-thousandths of the capturable region\n"));
 
@@ -7189,7 +7190,8 @@ void saveSlotFramings()
     if (!f)
         return;
 
-    f.print(F("# slot framings: <slot> <lines>@<fieldRateHz> = "
+    f.print(F("# slot framings: "
+              "<slot> <lines>@<fieldRateHz>/<syncWidth><vsyncPolarity> = "
               "originH extentH originV extentV\n"
               "# in ten-thousandths of the capturable region\n"));
 

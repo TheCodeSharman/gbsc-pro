@@ -7,10 +7,12 @@
 // black active video, electrically identical to back porch -- so an untuned
 // source is placed from an assumption. For a source running a standard mode the
 // assumption can be exact instead: the standard states the whole raster, and
-// the line count, the field rate and the hsync width identify which one it is.
+// the key identifies which one it is.
 // docs/investigations/vesa-modes-are-clipped-by-default.md
 
 #include <stdint.h>
+
+#include "SourceKey.h"
 
 namespace Tv5725 {
 
@@ -26,8 +28,7 @@ public:
     // reads one short of the frame the standards state. `syncDuty` is the hsync
     // low time as a fraction of the line, which is what separates two standards
     // sharing a frame and a field rate.
-    static SourceTiming matching(uint16_t sourceLines, float fieldRateHz,
-                                 float syncDuty);
+    static SourceTiming matching(const SourceKey &measured);
 
     float fieldRateHz() const;
     bool published() const;
@@ -60,8 +61,7 @@ private:
     static const Raster Published[];
     static const uint16_t PublishedCount;
 
-    static const Raster *lookUp(uint16_t sourceLines, float fieldRateHz,
-                                float syncDuty);
+    static const Raster *lookUp(const SourceKey &measured);
 
     float fieldRateHz_;
     const Raster *raster_;

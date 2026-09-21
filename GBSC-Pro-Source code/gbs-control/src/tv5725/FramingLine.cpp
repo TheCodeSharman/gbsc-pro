@@ -64,6 +64,10 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
     if (!number(at, width))
         return false;
     at = skipSpace(at);
+    const char polarity = *at++;
+    if (polarity != '+' && polarity != '-')
+        return false;
+    at = skipSpace(at);
     if (*at++ != '=')
         return false;
 
@@ -72,7 +76,8 @@ bool FramingLine::read(const char *&at, SourceKey &key, PanAndZoom &framing)
         if (!number(at, value[i]))
             return false;
 
-    const SourceKey read((uint16_t)lines, (float)rate, proportionOf(width));
+    const SourceKey read((uint16_t)lines, (float)rate, proportionOf(width),
+                         polarity == '+');
     if (!read.valid())
         return false;
 
@@ -89,9 +94,9 @@ int FramingLine::write(char *out, uint8_t size, const SourceKey &key,
         return -1;
 
     const int written = snprintf(
-        out, size, "%u@%u/%ld = %ld %ld %ld %ld",
+        out, size, "%u@%u/%ld%c = %ld %ld %ld %ld",
         (unsigned)key.lines(), (unsigned)lrintf(key.rateHz()),
-        tenThousandthsOf(key.syncWidth()),
+        tenThousandthsOf(key.syncWidth()), key.vsyncPositive() ? '+' : '-',
         tenThousandthsOf(framing.originOn(AxisHorizontal)),
         tenThousandthsOf(framing.extentOn(AxisHorizontal)),
         tenThousandthsOf(framing.originOn(AxisVertical)),

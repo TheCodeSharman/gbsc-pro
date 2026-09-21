@@ -19,7 +19,7 @@ void tv5725Log(const char *) {}
 
 using namespace Tv5725;
 
-static const SourceKey Bench(311, 50.08f, 0.0f);
+static const SourceKey Bench(311, 50.08f, 0.0f, false);
 static const PanAndZoom Framed(0.0364f, 0.8525f, 0.0740f, 0.8553f);
 
 TEST_CASE("a source nobody has framed has no entry")
@@ -62,14 +62,14 @@ TEST_CASE("a source the key cannot identify is not stored")
     // that happens to settle through it.
     FramingTable table;
 
-    CHECK_FALSE(table.remember(SourceKey(97, 50.08f, 0.0f), Framed));
+    CHECK_FALSE(table.remember(SourceKey(97, 50.08f, 0.0f, false), Framed));
     CHECK(table.count() == 0);
 }
 
 TEST_CASE("adjacent sources keep their own framings")
 {
     FramingTable table;
-    const SourceKey sixty(311, 60.05f, 0.0f);
+    const SourceKey sixty(311, 60.05f, 0.0f, false);
     const PanAndZoom other(0.2f, 0.5f, 0.1f, 0.7f);
 
     REQUIRE(table.remember(Bench, Framed));
@@ -88,24 +88,24 @@ TEST_CASE("a full table refuses rather than discarding a tuning")
     // said. Refusing is visible and the user can clear one.
     FramingTable table;
     for (uint16_t i = 0; i < FramingTable::Entries; ++i)
-        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f), Framed));
+        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f, false), Framed));
 
     CHECK(table.count() == FramingTable::Entries);
-    CHECK_FALSE(table.remember(SourceKey(900, 50.0f, 0.0f), Framed));
+    CHECK_FALSE(table.remember(SourceKey(900, 50.0f, 0.0f, false), Framed));
 
     // And every earlier tuning is still there.
     PanAndZoom found;
-    CHECK(table.find(SourceKey(200, 50.0f, 0.0f), &found));
+    CHECK(table.find(SourceKey(200, 50.0f, 0.0f, false), &found));
 }
 
 TEST_CASE("a full table still takes a re-tune of a source already in it")
 {
     FramingTable table;
     for (uint16_t i = 0; i < FramingTable::Entries; ++i)
-        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f), Framed));
+        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f, false), Framed));
 
     const PanAndZoom retuned(0.1f, 0.5f, 0.2f, 0.6f);
-    CHECK(table.remember(SourceKey(200, 50.0f, 0.0f), retuned));
+    CHECK(table.remember(SourceKey(200, 50.0f, 0.0f, false), retuned));
 }
 
 TEST_CASE("forgetting a source frees its place")
@@ -163,7 +163,7 @@ TEST_CASE("a refused change does not move the revision")
     CHECK_FALSE(table.remember(SourceKey(), Framed));
     CHECK(table.revision() == stored);
 
-    CHECK_FALSE(table.forget(SourceKey(0, 0.0f, 0.0f)));
+    CHECK_FALSE(table.forget(SourceKey(0, 0.0f, 0.0f, false)));
     CHECK(table.revision() == stored);
 }
 
@@ -171,10 +171,10 @@ TEST_CASE("a full table refuses a new source without moving the revision")
 {
     FramingTable table;
     for (uint16_t i = 0; i < FramingTable::Entries; ++i)
-        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f), Framed));
+        REQUIRE(table.remember(SourceKey((uint16_t)(200 + i), 50.0f, 0.0f, false), Framed));
     const uint16_t full = table.revision();
 
-    CHECK_FALSE(table.remember(SourceKey(999, 50.0f, 0.0f), Framed));
+    CHECK_FALSE(table.remember(SourceKey(999, 50.0f, 0.0f, false), Framed));
     CHECK(table.revision() == full);
 }
 

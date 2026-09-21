@@ -53,7 +53,8 @@ const float SyncWidthIdentity = 0.005f;
 class SourceKey {
 public:
     SourceKey();
-    SourceKey(uint16_t sourceLines, float fieldRateHz, float syncWidth);
+    SourceKey(uint16_t sourceLines, float fieldRateHz, float syncWidth,
+              bool vsyncPositive);
 
     // A count or a rate outside what any source runs identifies nothing, and
     // two of those are not each other: a settling source passes through counts
@@ -66,6 +67,17 @@ public:
     // how often a line starts and nothing about how one is DIVIDED, and two
     // published standards share a count and a rate.
     float syncWidth() const;
+
+    // Whether the source's vertical sync is positive-going, which is a property
+    // of the MODE rather than of the arrangement carrying it.
+    //
+    // The horizontal polarity is not here and may not be. Measured across a
+    // sync-type change on three modes, VSPOL agrees with what the mode states
+    // on both types while HSPOL reads 0 on composite whatever the mode states:
+    // the VIDC20's composite form on the HSync pin is a NOR, which has no
+    // separate H line for the bit to report.
+    // ../../../docs/source-identity-and-framing-lookup.md
+    bool vsyncPositive() const;
 
     // A WHOLE NUMBER OF HERTZ, not the reading it was built from. The output
     // raster is generated from the key rather than from the measurement, so
@@ -88,6 +100,7 @@ private:
     uint16_t lines_;
     float rateHz_;
     float syncWidth_;
+    bool vsyncPositive_;
 };
 
 }  // namespace Tv5725
