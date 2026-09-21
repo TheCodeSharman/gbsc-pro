@@ -1751,9 +1751,9 @@ capture units off the near end, so a card drawn with a magenta border at both
 extremes would show exactly this. `PatLib` draws it at the source, so the source
 is where to look first. `RiscPc/tools/video-source/`.
 
-### `/sc?~` in pass-through strands the output off its DAC route
+### `/sc?~` in pass-through strands the output off its DAC route -- FIXED
 
-Low power detection from RGBHV pass-through leaves the unit dark with no way
+Low power detection from RGBHV pass-through left the unit dark with no way
 back short of changing the output mode. The engine keeps measuring the source
 and sizing the pass-through channel while the chip's routing sits where
 detection left it, on the scaling path.
@@ -1763,9 +1763,13 @@ held output mode whether it is already there -- which detection does not clear.
 So `passThroughSwitch_()` never runs again and `DAC_RGBS_BYPS2DAC` and
 `OUT_SYNC_SEL` stay 0.
 
-`/uc?x` recovers it. A source mode round trip recovers the engine's acquisition
-and not the picture, which is why the arms look absent when the screen is what
-is being judged.
+Fixed by having `outputIsPassedThrough()` ask `VideoRoute` -- the route in
+force -- rather than the held output mode. Verified on the bench: the recipe now
+holds `state: acquired` with the route claimed and a full picture.
+
+Before the fix `/uc?x` recovered it, while a source mode round trip recovered
+the engine's acquisition and not the picture -- which is why the arms looked
+absent when the screen was what was being judged.
 
 `docs/investigations/low-power-detection-strands-pass-through-off-its-route.md`
 has the measurements and what they refute.

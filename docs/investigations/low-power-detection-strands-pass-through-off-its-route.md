@@ -1,6 +1,13 @@
 # Low power detection strands pass-through off its DAC route
 
-`/sc?~` on a source running in RGBHV pass-through leaves the unit with no
+**Fixed.** `outputIsPassedThrough()` asks `VideoRoute` rather than its own held
+output mode, so the engine reads the route that is in force and re-claims it.
+Measured either side on the bench: 20 s and 40 s after `/sc?~` the unit now
+reads `state: acquired` with `DAC_RGBS_BYPS2DAC` 1, `OUT_SYNC_SEL` 1 and the
+pass-through divider 2038, holds that across a source mode round trip, and shows
+a full picture where it was dark. What follows is the fault it describes.
+
+`/sc?~` on a source running in RGBHV pass-through left the unit with no
 picture and no way back. The engine goes on measuring the source and sizing the
 pass-through channel, while the chip's output routing sits on the scaling path
 that detection put it back on.
@@ -26,7 +33,7 @@ distinguishes the two.
 
 ## The mechanism
 
-`passSourceThrough()` claims the DAC route only on the way IN:
+`passSourceThrough()` claimed the DAC route only on the way IN:
 
 ```cpp
 if (!outputIsPassedThrough()) {
@@ -93,3 +100,16 @@ one.
 at 640x480 after the round trip it reads 2038, the 800x600 pass-through
 divider, against a 524-line source. Whether `resizePassThrough()` is reaching
 those states at all is not established.
+
+## The fix
+
+`outputIsPassedThrough()` returns `VideoRoute::isHdBypassChannel()`. That is the
+value `VideoRoute`'s header already reserves the answer to -- the route in force
+rather than intended -- and detection updates it, so the engine sees the route
+go and enters pass-through again through the ordinary path. No register is read:
+the route is held state that `Chip` writes beside the registers it describes.
+
+The duplication is what the header warns about in as many words: a second
+spelling can say two routes are carrying at once, and the loop then reads both
+to reconstruct one fact. `VideoPath::passedThrough()` is a third spelling, still
+private to that class.
