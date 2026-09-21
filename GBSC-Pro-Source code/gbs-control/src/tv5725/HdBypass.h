@@ -163,9 +163,6 @@ public:
     // ../../../docs/investigations/the-bypass-divider-is-capped-by-the-channel-counter.md
     static const uint16_t MaxChannelLine = 2047;
 
-
-    // The widest sample clock this block will ask the ADC for.
-    static const uint32_t MaxSampleClockHz = 162000000;
     // The densest sampling pass-through can ask for at this line rate.
     //
     // PLLAD_MD is samples per line and nothing is written to memory here, so

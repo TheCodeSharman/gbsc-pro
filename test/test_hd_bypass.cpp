@@ -29,6 +29,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ColourSpace.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/HdBypass.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceTiming.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/ModeDetect.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
@@ -293,6 +294,7 @@ TEST_CASE("the reset can be cycled without reloading the configuration")
 // plausible number rather than an error.
 
 using Tv5725::Adc;
+using Tv5725::SamplingClock;
 using Tv5725::Chip;
 using Tv5725::ModeDetect;
 using Tv5725::SyncProcessor;
@@ -886,3 +888,29 @@ TEST_CASE("a source already bypassed is judged on a count taken now")
     }
 }
 
+// ONE CHOOSER FOR BOTH ROUTES. The ADC is the same part whichever way video
+// leaves it, so its rating and the margin held against a mis-measured line
+// rate are the same on both -- and the line rate IS mis-measured, which is
+// what the margin is for. Only which counter bounds the line differs, and
+// pass-through passes that in as the ceiling.
+//
+// Pass-through used to size its own divider from a second copy of the ADC's
+// 162 MHz rating, with no margin, no rating-per-oversampling-row and no
+// parity, and so returned the channel counter's own maximum for every source
+// under about 79 kHz.
+
+TEST_CASE("the pass-through divider keeps the ADC's rating margin")
+{
+    // A line rate where the part's rating binds below the channel counter, so
+    // the margin is visible in the answer.
+    const uint32_t rated = Adc::MaxSampleRateHz / 80000u;
+    const uint16_t allowed =
+        (uint16_t)(rated * SamplingClock::RecommendedPercent / 100u);
+
+    CHECK(HdBypass::dividerFor(80000) <= allowed);
+}
+
+TEST_CASE("the pass-through divider is even, like every other divider")
+{
+    CHECK(HdBypass::dividerFor(37879) % 2 == 0);
+}

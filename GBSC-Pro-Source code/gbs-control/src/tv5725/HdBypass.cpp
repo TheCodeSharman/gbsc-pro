@@ -191,12 +191,13 @@ void HdBypass::applyHorizontalFromChannelLine(uint16_t channelLine)
 
 uint16_t HdBypass::dividerFor(uint32_t lineRateHz)
 {
-    if (lineRateHz == 0)
-        return 0;
-
-    const uint32_t channelBound = MaxChannelLine - RasterGuardSamples;
-    const uint32_t clockBound = MaxSampleClockHz / lineRateHz;
-    return (uint16_t)(clockBound < channelBound ? clockBound : channelBound);
+    // The same chooser the scaling path uses. The ADC is the same part either
+    // way, so its rating, the margin held against a mis-measured line rate and
+    // the parity are the same too; what differs is only which counter bounds
+    // the line, and that goes in as the ceiling. Pass-through never doubles.
+    return SamplingClock::recommendedDivider(lineRateHz, Adc::OversampleAsClockAllows,
+                                             false,
+                                             MaxChannelLine - RasterGuardSamples);
 }
 
 void HdBypass::applyPassThroughSampling(uint16_t divider, uint32_t lineRateHz,
