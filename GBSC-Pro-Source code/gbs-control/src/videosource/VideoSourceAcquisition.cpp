@@ -163,11 +163,32 @@ bool VideoSourceAcquisition::passSourceThrough()
     if (!outputIsPassedThrough()) {
         if (passThroughSwitch_ == 0)
             return false;
+
+        // Entry sizes the channel as part of moving the route, and ends in a
+        // phase search -- so re-sizing after it would rewrite the sampling
+        // group the search just settled.
         passThroughSwitch_();
+    } else {
+        // THE ONLY PLACE A SOURCE THAT MOVED INSIDE PASS-THROUGH IS RE-SIZED.
+        // The switch sizes the channel on entry and cannot run again while the
+        // route is already where it belongs, and VideoPath::installSampling()
+        // and prepareToMeasure() both return early here because the bypass
+        // divider is not theirs. Without this a mode change keeps the previous
+        // mode's divider: measured, 800x600 to 640x480 held PLLAD_MD at 2039
+        // against a 524-line source with the ADC PLL unlocked.
+        resizePassThrough();
     }
 
     videoPath_.setOutputMode(&Tv5725::ModeBypass);
     return true;
+}
+
+void VideoSourceAcquisition::resizePassThrough()
+{
+    const uint32_t lineRateHz = sampling_.lineRateHz();
+    Tv5725::HdBypass::applyForSource(Tv5725::HdBypass::dividerFor(lineRateHz),
+                                     lineRateHz, videoPath_.sourceTiming(),
+                                     sampling_.sourceLines() + 1);
 }
 
 float VideoSourceAcquisition::sourceFieldRateHz() const { return sampling_.fieldRateHz(); }

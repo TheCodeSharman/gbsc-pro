@@ -234,6 +234,9 @@ private:
     // reason is being reported.
     bool armMove(const char *why, uint16_t lines);
 
+    // Re-apply the pass-through sampling for the source as last measured.
+    void resizePassThrough();
+
     // Whether the source just measured arrives intact only by being handed
     // over. Both halves are the measurement's: a raster the line doubler is not
     // needed for, at a rate that reaches the sink. docs/capture-limits.md

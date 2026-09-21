@@ -2025,3 +2025,37 @@ TEST_CASE("an engine that has never solved arms the first solve from the count")
 
     CHECK(unit.pollUntilSolved());
 }
+
+// NOTHING OUTSIDE THE ENGINE CAN RE-SIZE A CHANNEL ALREADY IN PASS-THROUGH.
+// The switch is what sizes it, and the switch runs on ENTRY only -- the route
+// has not moved, so there is nothing for it to do. VideoPath::installSampling()
+// and prepareToMeasure() both return early while passed through, deliberately,
+// because the bypass divider is not theirs. So a source that changes mode
+// inside pass-through re-measures correctly and keeps the previous mode's
+// divider: measured on the bench, 800x600 to 640x480 left PLLAD_MD at 2039
+// against a 524-line source with STATUS_MISC_PLLAD_LOCK 0 and the picture
+// stretched.
+TEST_CASE("a source that changes rate while passed through is re-sized")
+{
+    seedBenchSource();
+    seedPassThroughSource();
+    g_passThroughSwitches = 0;
+
+    Acquiring unit;
+    unit.acquisition.usePassThroughSwitch(enterPassThrough);
+    unit.acquisition.allowPassThrough(true);
+    unit.start();
+
+    REQUIRE(unit.pollUntilSolved(8));
+    REQUIRE(unit.path.outputMode()->isBypass());
+    const uint32_t sizedFor524 = HdBypass::HD_HSYNC_RST::read();
+
+    // Another raster the sink can still take, so the route does not move and
+    // the switch is not called again.
+    seedSourceLines(627);
+    g_fieldRate = 60.0f;
+    unit.pollFor(10);
+
+    CHECK(g_passThroughSwitches == 1);
+    CHECK(HdBypass::HD_HSYNC_RST::read() != sizedFor524);
+}
