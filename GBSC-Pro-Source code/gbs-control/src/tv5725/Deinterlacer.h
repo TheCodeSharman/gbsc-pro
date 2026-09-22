@@ -29,8 +29,6 @@ public:
     typedef UReg<0x02, 0x0E, 0, 7> MADPT_MI_FIXED_VALUE;               // Motion index fixed value
 
 
-    typedef UReg<0x02, 0x00, 0, 8> DEINT_00;
-
     typedef UReg<0x02, 0x00, 0, 1> DIAG_BOB_MIN_BYPS;                 // Diagonal Function Bypass Control When set to 1, bypass
                                                                       // diagonal min selection for Y. No diagonal detection, just
 

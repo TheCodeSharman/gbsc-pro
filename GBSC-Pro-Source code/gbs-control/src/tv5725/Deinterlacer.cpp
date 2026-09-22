@@ -274,7 +274,13 @@ void Deinterlacer::disableScanlines()
 void Deinterlacer::enableMotionAdapt(uint8_t verticalTap,
                                      void (*releaseCapture)())
 {
-    DEINT_00::write(0x19);
+    DIAG_BOB_MIN_BYPS::write(1);
+    DIAG_BOB_COEF_SEL::write(0);
+    DIAG_BOB_WEAVE_BYPS::write(0);
+    DIAG_BOB_DET_BYPS::write(3);
+    DIAG_BOB_YTAP3_BYPS::write(0);
+    DIAG_BOB_MIN_CBYPS::write(0);
+    DIAG_BOB_PLDY_RAM_BYPS::write(0);
     MADPT_Y_MI_OFFSET::write(0x00);
     MADPT_Y_MI_DET_BYPS::write(0);
 
@@ -302,7 +308,13 @@ bool Deinterlacer::motionAdaptEngaged() { return motionAdaptEngaged_; }
 void Deinterlacer::disableMotionAdapt()
 {
     MAPDT_VT_SEL_PRGV::write(1);
-    DEINT_00::write(0xff);
+    DIAG_BOB_MIN_BYPS::write(1);
+    DIAG_BOB_COEF_SEL::write(1);
+    DIAG_BOB_WEAVE_BYPS::write(1);
+    DIAG_BOB_DET_BYPS::write(3);
+    DIAG_BOB_YTAP3_BYPS::write(1);
+    DIAG_BOB_MIN_CBYPS::write(1);
+    DIAG_BOB_PLDY_RAM_BYPS::write(1);
 
     FrameBuffer::RFF_FETCH_NUM::write(0x1);
     FrameBuffer::RFF_WFF_OFFSET::write(1);
