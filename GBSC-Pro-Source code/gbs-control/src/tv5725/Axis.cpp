@@ -206,25 +206,22 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     // its own lands up to a whole unit past the write, leaving the last unit of
     // the aperture showing memory nothing wrote.
     //
-    // The write is usable one capture unit's worth of output short of where it
-    // ends: the scaler interpolates between two capture units, so the output
-    // unit landing on the last one written reads the one after it, which no
-    // capture filled. docs/known-issues.md
+    // HORIZONTALLY the write is usable one capture unit's worth of output short
+    // of where it ends: the scaler interpolates between two capture units, so
+    // the output unit landing on the last one written reads the one after it,
+    // which no capture filled.
     //
-    // VERTICALLY ONE OUTPUT ROW MORE, MEASURED. At the bench 1080p framing the
-    // row the arithmetic allows is the source's, not the capture's: crept a row
-    // at a time, the card's bottom castellations hold 205 grey levels of
-    // contrast at VDS_DIS_VB_ST 1116 and collapse to 90 at 1117. The same
-    // ladder at 576p is clean at the solved value already, and that mode is not
-    // line doubled -- so the doubler's last half-line never being emitted is
-    // the standing candidate, and it is not established, because a missing
-    // capture unit would cost two rows where one is measured.
+    // VERTICALLY NOTHING IS GIVEN BACK, MEASURED. Crept at 800x600@60 into
+    // Mode960p with the source's last picture line as the capture's last unit,
+    // the picture extends a row per step out to the far bound with the falloff
+    // keeping its shape and no row of stale memory at any of them; on the
+    // doubled bench source at 1080p the register moves the picture not at all
+    // over seven values, so neither a subtraction nor its absence shows there.
     // docs/known-issues.md
-    const float apertureGuard = vertical() ? 1.0f : 0.0f;
+    const float interpolatorReach = vertical() ? 0.0f : scale.magnification();
     const float writeEnds = (float)placed.windowStop()
                           + originOffset(scale.magnification())
-                          + solved.produced_ - scale.magnification()
-                          - apertureGuard;
+                          + solved.produced_ - interpolatorReach;
     int32_t apertureStart = (int32_t)floorf(writeEnds);
     if (apertureStart < placed.corner())
         apertureStart = placed.corner();

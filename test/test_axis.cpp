@@ -617,6 +617,35 @@ TEST_CASE("blanking starts no later than the write ends")
     CHECK((float)solved.display().start() <= writeEnds);
 }
 
+// Vertically it closes ON the floor of that sum, giving back the rows the
+// far-end subtraction used to blank. Measured at 800x600@60 into Mode960p with
+// the source's last picture line as the capture's last unit: crept from the
+// solved value out to the bound the picture extends a row a step, the falloff
+// keeping its shape, and no row of stale memory appears at any of them. The
+// same ladder on the doubled bench source at 1080p moves the picture not at all
+// over seven values of the register, so nothing there argues for a subtraction
+// either. docs/known-issues.md
+TEST_CASE("the vertical aperture closes where the write ends")
+{
+    SUBCASE("at the bench 800x600@60 framing, where the far bound is what stops it") {
+        const uint16_t Raster = 1000, ActiveStart = 39, ActiveStop = 999;
+        const AxisSolution solved = AxisVertical.solve(384, Scale(410), Raster,
+                                                       ActiveStart, ActiveStop);
+        CHECK(solved.display().start() == 998);
+    }
+
+    SUBCASE("and where it is the write rather than the bound") {
+        const uint16_t Raster = 1125, Capture = 582;
+        const Scale scale(533);
+        const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster);
+
+        const float writeEnds = (float)solved.memory().stop()
+                              + AxisVertical.originOffset(scale.magnification())
+                              + solved.produced();
+        CHECK(solved.display().start() == (int32_t)floorf(writeEnds));
+    }
+}
+
 TEST_CASE("the horizontal memory window is an odd number of units wide")
 {
     // An EVEN VDS_HB_ST - VDS_HB_SP shears the picture and an odd one is clean,
@@ -794,12 +823,15 @@ static float lastCaptureUnitRead(const Axis &axis, Scale scale,
 
 TEST_CASE("the aperture's last unit is interpolated from captured memory")
 {
+    // Vertically it reads the last unit the capture filled and no further --
+    // one unit later than the horizontal bound, because nothing on that axis
+    // has ever shown the row past it. See "the vertical aperture closes where
+    // the write ends".
     SUBCASE("vertically, at the bench 320x256@50 framing") {
         const uint16_t Raster = 1124, Capture = 582;
         const Scale scale(552);
         const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster);
-        CHECK(lastCaptureUnitRead(AxisVertical, scale, solved)
-              <= (float)Capture - 1.0f);
+        CHECK(lastCaptureUnitRead(AxisVertical, scale, solved) <= (float)Capture);
     }
 
     SUBCASE("horizontally, at the bench 320x256@50 framing") {
@@ -816,7 +848,7 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
 
             const AxisSolution v = AxisVertical.solve(582, scale, 1124);
             if (v.usable())
-                REQUIRE(lastCaptureUnitRead(AxisVertical, scale, v) <= 581.0f);
+                REQUIRE(lastCaptureUnitRead(AxisVertical, scale, v) <= 582.0f);
 
             const AxisSolution h = AxisHorizontal.solve(998, scale, 1919);
             if (h.usable())
@@ -922,35 +954,6 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
             REQUIRE(v.display().stop() == placed.corner());
         }
     }
-}
-
-TEST_CASE("the vertical aperture gives back the row past the last written one")
-{
-    // Measured on the bench at 1080p, RiscPC 320x256@50 on vga, automation
-    // frozen, VDS_DIS_VB_ST crept a row at a time. The card's bottom
-    // castellation row is the feature: its black blocks against its white gaps
-    // are 200 grey levels apart, and the last row shown collapses to 90 when
-    // the aperture is a row too late.
-    //
-    //   VDS_DIS_VB_ST   1117   1116   1115   1114   1113
-    //   contrast, last row shown    90    205    207    208    208
-    //
-    // So the solved 1117 shows one row the capture never wrote, and 1116 is
-    // clean. The same ladder at 576p is clean at the solved 620 already, and
-    // that mode is NOT line doubled -- which is the standing candidate for the
-    // mechanism, the doubler's last half-line never being emitted. It is not
-    // established: the correction measures one OUTPUT row where a missing
-    // capture unit would be two.
-    //
-    // Horizontally nothing is given back. The far end there carries the parity
-    // bias and the memory window runs a unit wider than the aperture, and no
-    // column of this kind has been seen.
-    const uint16_t Raster = 1125, ActiveStart = 41, ActiveStop = 1121;
-    const uint16_t Capture = 512;
-    const Scale scale(486);
-    const AxisSolution solved = AxisVertical.solve(Capture, scale, Raster,
-                                                   ActiveStart, ActiveStop);
-    CHECK(solved.display().start() == 1116);
 }
 
 // The bound above is taken with the window opening at 0, which no real output
