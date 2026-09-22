@@ -556,7 +556,7 @@ TEST_CASE("a source passed through still names where its active video starts")
     pollUntilSolved(settled.acquisition);
 
     REQUIRE(g_passedThrough);
-    CHECK(settled.engine.sourceActiveStartLine() == 36);
+    CHECK(settled.engine.sourceActiveStartLine() == 30);
 }
 
 // The display window is what the encoder samples, and the encoder takes analog

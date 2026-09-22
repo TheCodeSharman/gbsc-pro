@@ -593,23 +593,24 @@ TEST_CASE("oversampling costs the channel nothing, so pass-through takes it all"
 
 TEST_CASE("the channel blanks the lines before active video")
 {
-    // 720x480p is 525 lines with active starting at 36. Every arm carried a
-    // constant instead -- the progressive one 0x40, which is 64, so 28 lines
+    // 720x480p is 525 lines spending 6 on sync and 30 on back porch, and the
+    // counter zeroes after the sync, so active starts at 30. Every arm carried
+    // a constant instead -- the progressive one 0x40, which is 64, so 34 lines
     // of picture came off the top.
     applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
 
-    CHECK(HdBypass::HD_VB_SP::read() == 36);
+    CHECK(HdBypass::HD_VB_SP::read() == 30);
 }
 
 TEST_CASE("the channel closes the window where active video ends")
 {
-    // 720x480p is 525 lines carrying 480 from line 36, so lines 516..524 are
-    // the source's own end-of-frame blanking. Left open, the channel plays them
+    // 720x480p is 525 lines carrying 480 from line 30, so lines 510..524 are
+    // the source's own end-of-frame blanking and its vertical sync. Left open, the channel plays them
     // out as active black and the picture sits high on the panel with a band
     // under it.
     applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
 
-    CHECK(HdBypass::HD_VB_ST::read() == 516);
+    CHECK(HdBypass::HD_VB_ST::read() == 510);
 }
 
 TEST_CASE("a source running no published raster keeps the window it had")

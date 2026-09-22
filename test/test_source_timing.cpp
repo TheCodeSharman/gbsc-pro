@@ -42,12 +42,29 @@ TEST_CASE("a VESA source is placed where its own raster puts active video")
 
 TEST_CASE("the vertical axis comes from the same raster")
 {
-    // 525 lines, 2 of sync and 33 of back porch before 480 of picture.
+    // 525 lines, 2 of sync and 33 of back porch before 480 of picture. The
+    // counter zeroes after the sync, so the blanking it sees is the 33.
     SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(dmt.published());
-    CHECK_NEAR(dmt.activeStart(AxisVertical), 35.0f / 525.0f, 0.0005f);
+    CHECK_NEAR(dmt.activeStart(AxisVertical), 33.0f / 525.0f, 0.0005f);
     CHECK_NEAR(dmt.activeExtent(AxisVertical), 480.0f / 525.0f, 0.0005f);
+}
+
+TEST_CASE("the vertical start is counted from the counter's zero")
+{
+    // The input formatter's vertical counter zeroes on the vsync pulse's
+    // TRAILING edge, so the blanking before active video is the back porch
+    // alone. The standards state the frame from the LEADING edge and count the
+    // sync width with it, which places the window a sync width into the picture.
+    // docs/investigations/the-capture-tail-was-one-unit-short.md
+    //
+    // 800x600@60 is 628 lines: 4 of sync, 23 of back porch, 600 of picture.
+    SourceTiming dmt = SourceTiming::matching(
+        SourceKey(627, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
+    REQUIRE(dmt.published());
+
+    CHECK_NEAR(dmt.activeStart(AxisVertical), 23.0f / 628.0f, 0.0005f);
 }
 
 TEST_CASE("a measured rate anywhere in the bucket still matches")
@@ -107,12 +124,13 @@ TEST_CASE("a field rate that wobbles across half a hertz still finds its mode")
 TEST_CASE("the line active video starts on, for a caller that cannot scale")
 {
     // Pass-through plays the source's own raster out, so the only thing it can
-    // blank correctly is what the raster says is not picture. 720x480p starts
-    // active video at line 36 of 525.
+    // blank correctly is what the raster says is not picture. 720x480p spends
+    // 6 lines on sync and 30 on back porch, and the counter zeroes after the
+    // sync, so active video is line 30 of 525.
     const SourceTiming cea = SourceTiming::matching(SourceKey(524, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
     REQUIRE(cea.published());
 
-    CHECK(cea.activeStartLine(525) == 36);
+    CHECK(cea.activeStartLine(525) == 30);
 }
 
 TEST_CASE("a source matching no raster names no line to blank to")

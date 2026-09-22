@@ -7,25 +7,33 @@
 
 namespace Tv5725 {
 
-// VESA DMT and CEA-861, as the standards state them: the total, the sync width,
-// where active video starts and how long it runs, per axis. Progressive modes
-// only -- an interlaced source arrives as a field, and what its line count reads
-// as has not been measured.
+// VESA DMT and CEA-861: the total, the sync width, where active video starts and
+// how long it runs, per axis. Progressive modes only -- an interlaced source
+// arrives as a field, and what its line count reads as has not been measured.
+//
+// **THE TWO START COLUMNS ARE COUNTED FROM DIFFERENT EDGES, because the two
+// counters are.** The horizontal counter zeroes on the hsync pulse's LEADING
+// edge, so `start` is the standard's sync plus back porch, as stated. The
+// vertical counter zeroes on the vsync pulse's TRAILING edge, so `vstart` is the
+// BACK PORCH ALONE -- carrying the standard's figure there places the window a
+// sync width into the picture, which is a whole-frame downward shift the
+// registers cannot show.
+// docs/investigations/the-capture-tail-was-one-unit-short.md
 const SourceTiming::Raster SourceTiming::Published[] = {
     // frame  rate  total  sync  start  active  vstart  vactive
-    {  525,   60,    800,   96,   144,    640,     35,    480},  // 640x480@60
-    {  520,   73,    832,   40,   168,    640,     31,    480},  // 640x480@72
-    {  500,   75,    840,   64,   184,    640,     19,    480},  // 640x480@75
-    {  625,   56,   1024,   72,   200,    800,     24,    600},  // 800x600@56
-    {  628,   60,   1056,  128,   216,    800,     27,    600},  // 800x600@60
-    {  666,   72,   1040,  120,   184,    800,     29,    600},  // 800x600@72
-    {  625,   75,   1056,   80,   240,    800,     24,    600},  // 800x600@75
-    {  806,   60,   1344,  136,   296,   1024,     35,    768},  // 1024x768@60
-    {  806,   70,   1328,  136,   280,   1024,     35,    768},  // 1024x768@70
-    {  800,   75,   1312,   96,   272,   1024,     31,    768},  // 1024x768@75
-    { 1066,   60,   1688,  112,   360,   1280,     41,   1024},  // 1280x1024@60
-    {  525,   60,    858,   62,   122,    720,     36,    480},  // 720x480p
-    {  625,   50,    864,   64,   132,    720,     44,    576},  // 720x576p
+    {  525,   60,    800,   96,   144,    640,     33,    480},  // 640x480@60
+    {  520,   73,    832,   40,   168,    640,     28,    480},  // 640x480@72
+    {  500,   75,    840,   64,   184,    640,     16,    480},  // 640x480@75
+    {  625,   56,   1024,   72,   200,    800,     22,    600},  // 800x600@56
+    {  628,   60,   1056,  128,   216,    800,     23,    600},  // 800x600@60
+    {  666,   72,   1040,  120,   184,    800,     23,    600},  // 800x600@72
+    {  625,   75,   1056,   80,   240,    800,     21,    600},  // 800x600@75
+    {  806,   60,   1344,  136,   296,   1024,     29,    768},  // 1024x768@60
+    {  806,   70,   1328,  136,   280,   1024,     29,    768},  // 1024x768@70
+    {  800,   75,   1312,   96,   272,   1024,     28,    768},  // 1024x768@75
+    { 1066,   60,   1688,  112,   360,   1280,     38,   1024},  // 1280x1024@60
+    {  525,   60,    858,   62,   122,    720,     30,    480},  // 720x480p
+    {  625,   50,    864,   64,   132,    720,     39,    576},  // 720x576p
 };
 
 const uint16_t SourceTiming::PublishedCount =
