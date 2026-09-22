@@ -222,14 +222,15 @@ static void checkBenchGeometry()
     // is placed across the envelope of what real sources put on a line. The
     // doubler is in the path here, so the vertical counts half-lines.
     //
-    // The vertical window opens Axis::captureLead units EARLY: the path drops
-    // that many units at the start of the capture, so a window opened on the
-    // picture loses its first line. Measured on the source's own first active
-    // line, at 800x600@60 and 640x480@60 alike.
+    // The vertical window carries Axis::captureMargin units at EACH end: the
+    // path drops one at each end, so a window opened on the picture loses the
+    // source's first and last lines. Measured on the card's one-pixel frame,
+    // which lands on exactly those lines. The doubler is in the path here, so
+    // the margin is a half-line rather than a line -- which is NOT measured.
     CHECK(InputFormatter::IF_HB_SP2::read() == 129);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
     CHECK(InputFormatter::IF_VB_SP::read() == 30);
-    CHECK(InputFormatter::IF_VB_ST::read() == 613);
+    CHECK(InputFormatter::IF_VB_ST::read() == 614);
 
     // The progressive line window spans exactly one line from where it starts,
     // and may run past the end of the line without that being a fault.
@@ -238,7 +239,7 @@ static void checkBenchGeometry()
 
     // Both scales computed from the capture and the raster, never inherited.
     CHECK(VideoProcessor::VDS_HSCALE::read() == 583);
-    CHECK(VideoProcessor::VDS_VSCALE::read() == 552);
+    CHECK(VideoProcessor::VDS_VSCALE::read() == 554);
     CHECK(VideoProcessor::VDS_HSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_VSCALE_BYPS::read() == 0);
     CHECK(VideoProcessor::VDS_SYNC_EN::read() == 0);
@@ -266,9 +267,10 @@ static void checkBenchGeometry()
     // interpolates between two capture units, so the last unit an aperture
     // closing on the picture would show reads the unit after the last one
     // captured, which is memory the previous mode left behind. Vertically it
-    // closes on the write, nothing there having ever shown that row.
+    // closes on the write, which stops a trailing captureMargin sooner than
+    // the played-out window does.
     CHECK(VideoProcessor::VDS_HB_ST::read() == 1808);
-    CHECK(VideoProcessor::VDS_VB_ST::read() == 1120);
+    CHECK(VideoProcessor::VDS_VB_ST::read() == 1118);
 
     // And the horizontal window is an ODD number of units wide, which is what
     // reaches the picture: an even one shears.
@@ -746,7 +748,7 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
     CHECK(InputFormatter::IF_HB_SP2::read() == 129);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
     CHECK(InputFormatter::IF_VB_SP::read() == 30);
-    CHECK(InputFormatter::IF_VB_ST::read() == 613);
+    CHECK(InputFormatter::IF_VB_ST::read() == 614);
 
     // And leaves everything the framing does not own exactly as it was. The
     // divider, the raster and the clock are still the ones the mode change

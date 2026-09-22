@@ -304,10 +304,10 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
 // denominator, so it is the only thing that can convert -- and what it reports
 // has to be the window it wrote, or the report is a second model of the picture.
 //
-// The one deliberate difference is Axis::captureLead: the register window opens
-// that much before the picture because the path drops it, and the engine reports
-// the PICTURE. Named here rather than allowed silently, so a window that drifts
-// by anything else still fails.
+// The one deliberate difference is Axis::captureMargin: the register window
+// carries that much at EACH end because the path drops one there, and the
+// engine reports the PICTURE. Named here rather than allowed silently, so a
+// window that drifts by anything else still fails.
 TEST_CASE("the framing reported in units is the capture window on the chip")
 {
     SolvedEngine solved;
@@ -316,7 +316,7 @@ TEST_CASE("the framing reported in units is the capture window on the chip")
           == Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11));
     CHECK(solved.engine.extentUnitsOn(AxisVertical)
           == Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11)
-                 - AxisVertical.captureLead());
+                 - 2 * AxisVertical.captureMargin());
 
     SUBCASE("and it follows a press") {
         REQUIRE(solved.engine.zoom(400, 0));
@@ -663,7 +663,7 @@ TEST_CASE("a forced full framing captures everything the source offers")
     // meet through the lag.
     CHECK(Wire.field(1, 0x1A, 0, 11) == solved.engine.firstUnitOn(AxisHorizontal));
     CHECK(Wire.field(1, 0x1E, 0, 11)
-          == solved.engine.firstUnitOn(AxisVertical) - AxisVertical.captureLead());
+          == solved.engine.firstUnitOn(AxisVertical) - AxisVertical.captureMargin());
 
     CHECK(Wire.field(1, 0x18, 0, 11)
           == solved.engine.lineUnitsOn(AxisHorizontal) - 2);

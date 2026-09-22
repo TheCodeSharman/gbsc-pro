@@ -13,7 +13,7 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t captureGranularity, uint16_t captureLead,
+         uint16_t captureGranularity, uint16_t captureMargin,
          float activeStart, float activeExtent, bool vertical);
 
     // Which axis this is. The one place that knows: callers pass the axis and
@@ -41,17 +41,19 @@ public:
     // nobody has crept it.
     uint16_t windowStopMin() const;
 
-    // How many units the path drops at the START of the capture window, so a
-    // window opened on the picture loses its first line. The window is opened
-    // this much early so what the path drops is blanking rather than picture.
+    // How many units the path drops at EACH END of the capture window. The
+    // window is opened that much wider at both ends, so what is dropped is
+    // blanking rather than picture, and the scale is fitted on the widened
+    // window because that is what the hardware plays out.
     //
     // Vertically 1: the line buffer startPerMag already accounts for on the
-    // OUTPUT side costs a line on the INPUT side too. Measured on the source's
-    // own first active line -- the card's one-pixel frame reaches the panel from
-    // one unit of lead and not from none, at 800x600@60 and at 640x480@60 alike,
-    // both running VESA DMT timings. The doubled case is NOT measured.
+    // OUTPUT side costs a line at each end on the INPUT side. Measured on the
+    // source's own outermost active lines, which is where the card's one-pixel
+    // frame lands -- at 800x600@60 the top frame reaches the panel from
+    // IF_VB_SP 19 and not 20, and the bottom from IF_VB_ST 621 and not 620.
+    // The doubled case is NOT measured.
     // Horizontally 0: the near edge is already crept against corruption.
-    uint16_t captureLead() const;
+    uint16_t captureMargin() const;
 
     // The smallest change of capture POSITION this axis's hardware acts on.
     // Horizontally 2 IF units -- the low bit of IF_HB_SP2 does nothing, so a
@@ -145,7 +147,7 @@ private:
     float placementFloor(float offset, uint16_t activeStart) const;
 
     float startConst_, startPerMag_;
-    uint16_t windowStopMin_, captureGranularity_, captureLead_;
+    uint16_t windowStopMin_, captureGranularity_, captureMargin_;
     float activeStart_, activeExtent_;
     bool vertical_;
 };

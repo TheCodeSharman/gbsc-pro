@@ -5,12 +5,12 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t captureGranularity, uint16_t captureLead,
+           uint16_t captureGranularity, uint16_t captureMargin,
            float activeStart, float activeExtent, bool vertical)
     : startConst_(startConst), startPerMag_(startPerMag),
       windowStopMin_(windowStopMin),
       captureGranularity_(captureGranularity),
-      captureLead_(captureLead),
+      captureMargin_(captureMargin),
       activeStart_(activeStart), activeExtent_(activeExtent),
       vertical_(vertical) {}
 
@@ -28,7 +28,7 @@ uint16_t Axis::windowStopMin() const { return windowStopMin_; }
 
 uint16_t Axis::captureGranularity() const { return captureGranularity_; }
 
-uint16_t Axis::captureLead() const { return captureLead_; }
+uint16_t Axis::captureMargin() const { return captureMargin_; }
 
 int16_t Axis::stepUnits(int16_t pixels, float magnification) const
 {
@@ -214,17 +214,24 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     // the output unit landing on the last one written reads the one after it,
     // which no capture filled.
     //
-    // VERTICALLY NOTHING IS GIVEN BACK, MEASURED. Crept at 800x600@60 into
-    // Mode960p with the source's last picture line as the capture's last unit,
-    // the picture extends a row per step out to the far bound with the falloff
-    // keeping its shape and no row of stale memory at any of them; on the
-    // doubled bench source at 1080p the register moves the picture not at all
-    // over seven values, so neither a subtraction nor its absence shows there.
-    // docs/known-issues.md
+    // VERTICALLY THE INTERPOLATOR GIVES NOTHING BACK, MEASURED. Crept at
+    // 800x600@60 into Mode960p with the source's last picture line as the
+    // capture's last unit, the picture extends a row per step out to the far
+    // bound with the falloff keeping its shape and no row of stale memory at
+    // any of them. docs/known-issues.md
+    //
+    // THE TRAILING MARGIN IS A SEPARATE SUBTRACTION and is not that. `produced`
+    // is the whole capture window scaled, margin and all, because that is what
+    // the hardware plays out -- but the path drops the last margin units, so
+    // the WRITE stops that much sooner and an aperture closing on `produced`
+    // shows rows nothing wrote. Measured at 800x600@60: the aperture solved at
+    // 998 carries two rows of stale memory under the source's last line, and
+    // 996 is clean with that line intact.
     const float interpolatorReach = vertical() ? 0.0f : scale.magnification();
+    const float marginReach = (float)captureMargin_ * scale.magnification();
     const float writeEnds = (float)placed.windowStop()
                           + originOffset(scale.magnification())
-                          + solved.produced_ - interpolatorReach;
+                          + solved.produced_ - interpolatorReach - marginReach;
     int32_t apertureStart = (int32_t)floorf(writeEnds);
     if (apertureStart < placed.corner())
         apertureStart = placed.corner();

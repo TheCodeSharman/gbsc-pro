@@ -842,7 +842,13 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
 
 VideoProcessorTimings VideoPath::calculateOutputRaster(const CaptureWindow &capture) const
 {
-    return VideoProcessorTimings(capture.horizontal().width(), capture.vertical().width(),
+    // The vertical capture is the window the hardware plays out, margin and
+    // all -- scaling the picture alone runs the far end past the aperture and
+    // the source's last line is blanked.
+    return VideoProcessorTimings(
+                            capture.horizontal().width(),
+                            (uint16_t)(capture.vertical().width()
+                                       + 2 * AxisVertical.captureMargin()),
                             capture.linePx(), capture.frameLines(),
                             activeStop_, activeLinesStop_,
                             activeStart_, activeLinesStart_);
@@ -874,12 +880,18 @@ void VideoPath::write(const VideoProcessorTimings &solved, const CaptureWindow &
     GBS::IF_LINE_SP::write(capture.horizontalLine().progressiveStop(CaptureWindow::ProgressiveStart));
     GBS::IF_HB_SP2::write(capture.horizontal().stop());
     GBS::IF_HB_ST2::write(capture.horizontal().start());
-    // Opened early by the lead: the path drops that many units at the start of
-    // the capture, so the far end keeps the picture and the aperture is filled.
+    // A unit of margin at each end, because the path drops one at each end:
+    // a window opened on the picture loses the source's first and last lines.
     const uint16_t verticalStop = capture.vertical().stop();
-    const uint16_t lead = AxisVertical.captureLead();
-    GBS::IF_VB_SP::write(verticalStop > lead ? (uint16_t)(verticalStop - lead) : 0);
-    GBS::IF_VB_ST::write(capture.vertical().start());
+    const uint16_t margin = AxisVertical.captureMargin();
+    GBS::IF_VB_SP::write(verticalStop > margin ? (uint16_t)(verticalStop - margin) : 0);
+    // Clamped to the last unit before the counter wraps: at a full framing the
+    // window already reaches it, and a margin past it is a wrapped IF_VB_ST.
+    const uint16_t lastUnit = capture.lineUnitsOn(AxisVertical) > 2
+                                  ? (uint16_t)(capture.lineUnitsOn(AxisVertical) - 2)
+                                  : 0;
+    const uint16_t verticalStart = (uint16_t)(capture.vertical().start() + margin);
+    GBS::IF_VB_ST::write(verticalStart < lastUnit ? verticalStart : lastUnit);
     GBS::VDS_HSCALE_BYPS::write(0);
     GBS::VDS_VSCALE_BYPS::write(0);
     GBS::VDS_HSCALE::write(solved.horizontalScale().reg());

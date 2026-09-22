@@ -617,21 +617,23 @@ TEST_CASE("blanking starts no later than the write ends")
     CHECK((float)solved.display().start() <= writeEnds);
 }
 
-// Vertically it closes ON the floor of that sum, giving back the rows the
-// far-end subtraction used to blank. Measured at 800x600@60 into Mode960p with
-// the source's last picture line as the capture's last unit: crept from the
-// solved value out to the bound the picture extends a row a step, the falloff
-// keeping its shape, and no row of stale memory appears at any of them. The
-// same ladder on the doubled bench source at 1080p moves the picture not at all
-// over seven values of the register, so nothing there argues for a subtraction
-// either. docs/known-issues.md
+// Vertically it closes on the floor of that sum LESS the trailing capture
+// margin, which the path drops: `produced` is the whole window scaled, so an
+// aperture closing on it shows rows the write never reached. Measured at
+// 800x600@60 -- the aperture solved without that term carries two rows of
+// stale memory under the source's last line.
+//
+// The interpolator gives nothing back on this axis, which is a separate
+// question and still measured: crept into Mode960p with the source's last
+// picture line as the capture's last unit, the picture extends a row a step
+// out to the bound with the falloff keeping its shape.
 TEST_CASE("the vertical aperture closes where the write ends")
 {
     SUBCASE("at the bench 800x600@60 framing, where the far bound is what stops it") {
         const uint16_t Raster = 1000, ActiveStart = 39, ActiveStop = 999;
         const AxisSolution solved = AxisVertical.solve(384, Scale(410), Raster,
                                                        ActiveStart, ActiveStop);
-        CHECK(solved.display().start() == 998);
+        CHECK(solved.display().start() == 995);
     }
 
     SUBCASE("and where it is the write rather than the bound") {
@@ -641,7 +643,8 @@ TEST_CASE("the vertical aperture closes where the write ends")
 
         const float writeEnds = (float)solved.memory().stop()
                               + AxisVertical.originOffset(scale.magnification())
-                              + solved.produced();
+                              + solved.produced()
+                              - AxisVertical.captureMargin() * scale.magnification();
         CHECK(solved.display().start() == (int32_t)floorf(writeEnds));
     }
 }
