@@ -2121,6 +2121,46 @@ between the two scan modes taken on 320x256@50 by creeping until the source's
 flashing border entered the picture; the same source measured here with the
 green line gives 2.75.
 
+**IT IS GOOD TO THE UNIT AND NO BETTER, AND THE CAPTURE MARGIN IS WHAT CARRIES
+THAT.** One integer serves every source, and across six VESA DMT modes the
+largest `IF_VB_SP` that still keeps the source's first active line lands one
+unit apart either side of it: five modes sit exactly on the engine's own choice,
+1024x768@75 keeps the line a unit later than the engine opens, and 1024x768@60
+loses it at the engine's own value and keeps it one unit earlier. So a margin
+equal to what the path drops leaves no slack at all, and `Axis::captureMargin`
+is 2 vertically for that reason — one unit the path drops, one for this
+rounding. Nothing here says the lag is anything but 7; it says the bench cannot
+resolve it more finely than that.
+
+### The green frame measures presence, not amplitude
+
+`PATTERN CARD` draws one source pixel, which is what makes it the only feature
+that IS the source's outermost line — and what bounds it as an instrument.
+
+**A BURST OF STILLS BEATS WITH THE RING'S FLASH.** The ring flashes twice a
+second and covers the frame in one phase, and each `tv-snap` takes about the
+same time, so stills taken back to back sample one phase over and over. Twelve
+evenly spaced stills read a line that is plainly on the panel as absent; the
+same twelve with a jittered gap separate 23.4 from 2.0. `vesa_acceptance.py`
+jitters.
+
+**AND THE PEAK FALLS WITH MAGNIFICATION, BY AN ORDER OF MAGNITUDE.** The line
+is one source line, so it occupies `magnification` output rows, and every stage
+after the scaler resamples it — the encoder, the television and the camera. At
+1.99x it reads 20..27 and at 1.25x it reads 3..5 with the SAME line captured,
+and the sub-row phase modulates it with a period of `1 / frac(magnification)`
+units of `IF_VB_SP`: alternate units at 1.59x, every fourth at 1.25x, and
+uniform at 1.99x where a unit is a whole row.
+
+At 1.05x the peak does not clear zero at all. 1280x1024@60 into `Mode1080p`
+reads −5.4 at the top with `ov` 41 and `ev` 1024 — the whole published active
+region captured and the framing default to the ten-thousandth. Differencing
+settles it where the peak cannot: closing `VDS_DIS_VB_SP` over the first six
+output rows removes 7 units of G−R from the photograph's rows 32..35, so the
+green is there. **Read a low peak as the instrument's floor unless a creep shows
+a cliff** — a line outside the capture window reads the same at every aperture
+setting, and a line inside it moves.
+
 ### A half-unit lag kills the control that steps through it
 
 Latent rather than live, and it cost a session. `ActiveImage::place()` maps the

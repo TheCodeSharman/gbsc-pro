@@ -374,7 +374,18 @@ tops out at `Scale::Max`, so the least magnification it can express is 1.001;
 `Axis::fitToRaster()` clamps the scale between that and `Scale::Min`. A capture
 too small for the raster therefore letterboxes and one too large has its far end
 cropped — both visible, both undone by one press back, and neither able to touch
-the framing. What the CONTROL does is a separate question, and zoom-in stops at
+the framing.
+
+**A SOURCE TALLER THAN THE CHOSEN OUTPUT MODE IS CROPPED, AND THAT IS THE PART
+RATHER THAN THE SOLVE.** 1280x1024@60 is the first bench source tall enough to
+reach it: into `Mode960p` the 1024 active lines want 0.936x of a 958-row active
+window, `VDS_VSCALE` sits at `Scale::Max`, and the engine keeps 957 lines
+centred — `/geometry` reports `ov` 75 and `ev` 957 against a source active at
+41. Into `Mode1080p` the same source takes `ov` 41 and `ev` 1024, the whole
+published active region, at a magnification of 1.05. **The output resolution is
+a user preference and names nothing about the source**, so nothing here chooses
+a taller mode on the source's behalf; reading the crop as a raster the solver
+sized wrongly is the mistake to avoid. What the CONTROL does is a separate question, and zoom-in stops at
 `Axis::minimumCapture()` rather than pressing on into the letterboxed range:
 past it the crop no longer magnifies, so the press has nothing left to do.
 
