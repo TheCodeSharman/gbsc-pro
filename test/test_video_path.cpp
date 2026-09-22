@@ -475,6 +475,33 @@ TEST_CASE("a transition blanks the picture and leaves the output sync running")
           == VideoProcessor::VDS_DIS_VB_SP::read() + 1);
 }
 
+TEST_CASE("a pad taken down outside the engine is driven again when the output is shown")
+{
+    // setResetParameters() writes the whole of s0_49, so the low-power path and
+    // both boot calls take PAD_SYNC_OUT_ENZ down without the engine's knowledge.
+    // Suppressing a drive the engine believes is already in force then leaves a
+    // dark panel with every geometry register correct.
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling;
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    engine.showOutput(true);
+    REQUIRE(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
+
+    Chip::PAD_CONTROL_01_0x49::write(0x1f);
+    REQUIRE(Chip::PAD_SYNC_OUT_ENZ::read() == 1);
+
+    engine.showOutput(true);
+
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
+}
+
 TEST_CASE("a solve that completes with no change outstanding puts the picture back")
 {
     // THE BLANK LIFTS WHEN THE GEOMETRY IS READY, WHICHEVER SOLVE FINISHED IT.
@@ -1182,9 +1209,9 @@ TEST_CASE("a framed picture holds every window against the framing")
 
     // The raster did not change, so its registers are not rewritten -- and
     // neither is the sampling group, which was installed before the duty was
-    // read rather than by the solve. The two beyond the geometry are
-    // OUT_SYNC_CNTRL and the DAC power, asserted with every show.
-    CHECK(registersWritten() == 34);
+    // read rather than by the solve. The three beyond the geometry are
+    // OUT_SYNC_CNTRL, the DAC power and the sync pad, asserted with every show.
+    CHECK(registersWritten() == 35);
 }
 
 // --- the IF line counter follows the scan mode -------------------------------

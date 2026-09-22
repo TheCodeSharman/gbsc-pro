@@ -101,15 +101,24 @@ bool VideoPath::encoderTimingMoved()
 
 void VideoPath::holdOutputSync(bool away) { driveSyncOut(!away); }
 
+// Only the DROP is suppressed. It costs the sink a full re-acquisition, while
+// driving a pad already driven costs one write -- and s0_49 has a second writer
+// in the power path, so a cached drive cannot be trusted to still be in force.
 void VideoPath::driveSyncOut(bool on)
 {
-    if (syncOutEver_ && syncOut_ == on)
+    if (!on && syncOutEver_ && !syncOut_)
         return;
+
+    const bool changed = !syncOutEver_ || syncOut_ != on;
     syncOut_ = on;
     syncOutEver_ = true;
-    char line[48];
-    snprintf(line, sizeof(line), "sync pad: %s", on ? "driven" : "away");
-    tv5725Log(line);
+
+    if (changed) {
+        char line[48];
+        snprintf(line, sizeof(line), "sync pad: %s", on ? "driven" : "away");
+        tv5725Log(line);
+    }
+
     if (on)
         SyncProcessor::enableOutput();
     else

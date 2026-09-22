@@ -1840,6 +1840,20 @@ static bool outputBlanked()
                   <= VideoProcessor::VDS_DIS_VB_SP::read() + 1;
 }
 
+// What the pad costs is the DROP -- a full sink re-acquisition -- so what a test
+// asks is whether it was ever taken away, not whether s0_49 was written. The
+// engine restores a pad it did not take down, because a second writer on the
+// power path can leave one disabled, and that write is free.
+static bool syncPadEverTakenAway()
+{
+    for (size_t i = 0; i < Wire.trace.size(); ++i) {
+        const FakeTwoWire::Traced &w = Wire.trace[i];
+        if (w.segment == 0 && w.reg == 0x49 && (w.value & 0x04) != 0)
+            return true;
+    }
+    return false;
+}
+
 TEST_CASE("a mode change takes the output sync away")
 {
     seedBenchSource();
@@ -1940,10 +1954,10 @@ TEST_CASE("the encoder is made to look again only when the output timing moves")
         seedSourceLines(57);
         unit.pollFor(1);
         seedSourceLines(311);
-        Wire.touched[0][0x49] = false;
+        Wire.trace.clear();
         unit.pollFor(8);
 
-        CHECK_FALSE(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
+        CHECK_FALSE(syncPadEverTakenAway());
         CHECK_FALSE(outputBlanked());
     }
 
@@ -1962,14 +1976,14 @@ TEST_CASE("the encoder is made to look again only when the output timing moves")
         seedField(0, 0x16, 0, 1, 0);       // STATUS_SYNC_PROC_HSPOL
         seedField(0, 0x16, 3, 1, 1);       // STATUS_SYNC_PROC_VSACT, V on its own pin
         g_fieldRate = 60.0f;
-        Wire.touched[0][0x49] = false;
+        Wire.trace.clear();
 
         bool solved = false;
         for (uint8_t i = 0; i < 8 * SourceMeasurement::SteadySamples && !solved; ++i)
             solved = unit.poll();
         REQUIRE(solved);
 
-        CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
+        CHECK(syncPadEverTakenAway());
     }
 }
 
