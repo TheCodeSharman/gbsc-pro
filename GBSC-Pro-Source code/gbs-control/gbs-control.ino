@@ -1379,9 +1379,7 @@ void setResetParameters()
 
     GBS::OUT_SYNC_CNTRL::write(0);
     GBS::DAC_RGBS_PWDNZ::write(0);
-    GBS::ADC_TA_05_CTRL::write(0x02); // ADC test enable BIT0    ADC test bus control bit   BIT4:1
-    GBS::ADC_TEST_04::write(0x02);    // 1:0 REF test resistance selection 4:2REF test current selection
-    GBS::ADC_TEST_0C::write(0x12);
+    Tv5725::Adc::applyReferenceTrim();
     GBS::ADC_CLK_PA::write(0);
     GBS::ADC_SOGEN::write(1); 
     GBS::SP_SOG_MODE::write(1);
@@ -2498,9 +2496,7 @@ void doPostPresetLoadSteps()
         // rto->osr.
         geometry.inputTimingsChanged(rto->osr);
 
-        GBS::ADC_TEST_04::write(0x02); // 1:0 REF test resistance selection 4:2REF test current selection
-        GBS::ADC_TEST_0C::write(0x12);
-        GBS::ADC_TA_05_CTRL::write(0x02); // ADC test enable BIT0    ADC test bus control bit   BIT4:1
+        Tv5725::Adc::applyReferenceTrim();
 
         applyStoredAdcGain();
 
@@ -3308,13 +3304,33 @@ void calibrateAdcOffset()
     Tv5725::Adc::selectInput(2);
     Tv5725::ColourSpace::DEC_MATRIX_BYPS::write(1); 
     Tv5725::Adc::enableGainMeasurement(true);
-    GBS::ADC_5_03::write(0x31);
-    GBS::ADC_TEST_04::write(0x00);
+    GBS::ADC_POWDZ::write(1);
+    GBS::ADC_RYSEL_R::write(0);
+    GBS::ADC_RYSEL_G::write(0);
+    GBS::ADC_RYSEL_B::write(0);
+    GBS::ADC_FLTR::write(3);
+    GBS::ADC_TR_RSEL::write(0);
+    GBS::ADC_TR_ISEL::write(0);
     GBS::SP_CS_CLP_ST::write(0x00);
     GBS::SP_CS_CLP_SP::write(0x00);
-    GBS::SP_5_56::write(0x05);
-    GBS::SP_5_57::write(0x80);
-    GBS::ADC_5_00::write(0x02);
+    GBS::SP_SOG_MODE::write(1);
+    GBS::SP_HS2PLL_INV_REG::write(0);
+    GBS::SP_CLAMP_MANUAL::write(1);
+    GBS::SP_CLP_SRC_SEL::write(0);
+    GBS::SP_SYNC_BYPS::write(0);
+    GBS::SP_HS_PROC_INV_REG::write(0);
+    GBS::SP_VS_PROC_INV_REG::write(0);
+    GBS::SP_CLAMP_INV_REG::write(0);
+    GBS::SP_NO_CLAMP_REG::write(0);
+    GBS::SP_COAST_INV_REG::write(0);
+    GBS::SP_NO_COAST_REG::write(0);
+    GBS::SP_COAST_VALUE_REG::write(0);
+    GBS::SP_HS_LOOP_SEL::write(0);
+    GBS::SP_HS_REG::write(1);
+    GBS::ADC_CLK_PA::write(2);
+    GBS::ADC_CLK_PLLAD::write(0);
+    GBS::ADC_CLK_ICLK2X::write(0);
+    GBS::ADC_CLK_ICLK1X::write(0);
     Tv5725::TestBus::select(0x0b);
     Tv5725::Chip::resetVideoBlocks();
 

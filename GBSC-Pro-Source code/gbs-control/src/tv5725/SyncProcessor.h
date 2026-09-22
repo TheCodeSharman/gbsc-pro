@@ -149,7 +149,6 @@ public:
     typedef UReg<0x05, 0x55, 7, 1> SP_HCST_AUTO_EN;                   // Retiming control If enable h coast will start at ( V
                                                                       // total - hcst_st)
 
-    typedef UReg<0x05, 0x56, 0, 8> SP_5_56;
 
     // SOG here is the sync SEPARATOR'S INPUT, not sync on green. This reads 1
     // for composite sync arriving on the HSync pin with nothing on green, and
@@ -172,7 +171,6 @@ public:
 
     typedef UReg<0x05, 0x56, 7, 1> SP_CLAMP_INV_REG;                  // Out control Clamp to ADC invert
 
-    typedef UReg<0x05, 0x57, 0, 8> SP_5_57;
 
     typedef UReg<0x05, 0x57, 0, 1> SP_NO_CLAMP_REG;                   // Out control Clamp always be 0
 

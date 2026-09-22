@@ -121,7 +121,8 @@ void Adc::init()
     ADC_AUTO_OFST_DELAY::write(0x0);             // s5_0e[3:2]
     ADC_AUTO_OFST_STEP::write(0x0);              // s5_0e[5:4]
     ADC_AUTO_OFST_TEST::write(0x1);              // s5_0e[7:7]
-    ADC_AUTO_OFST_RANGE_REG::write(0x0);         // s5_0f[7:0]
+    ADC_AUTO_OFST_U_RANGE::write(0x0);           // s5_0f[3:0]
+    ADC_AUTO_OFST_V_RANGE::write(0x0);           // s5_0f[7:4]
     ADC_AUTO_OFST_V_RANGE::write(0x0);           // s5_0f[7:4]
     PLLAD_TEST::write(0x0);                      // s5_11[2:2]
     PLLAD_TS::write(0x0);                        // s5_11[3:3]
@@ -491,13 +492,21 @@ void Adc::enableGainMeasurement(bool on)
     DEC_TEST_ENABLE::write(on ? 1 : 0);
 }
 
+void Adc::applyReferenceTrim()
+{
+    ADC_TA_EN::write(0);
+    ADC_TA_CTRL::write(1);
+    ADC_TR_RSEL::write(2);
+    ADC_TR_ISEL::write(0);
+    ADC_CKBS::write(0);
+    ADC_TEST::write(9);
+}
+
 void Adc::applyForBypassRgbhv()
 {
     ADC_FLTR::write(0);
 
-    ADC_TA_05_CTRL::write(0x02);
-    ADC_TEST_04::write(0x02);
-    ADC_TEST_0C::write(0x12);
+    applyReferenceTrim();
 }
 
 uint8_t Adc::applySampleRate(uint16_t divider, uint32_t lineRateHz,

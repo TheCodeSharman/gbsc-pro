@@ -114,9 +114,6 @@ public:
                                                                       // [datasheet: IF_STATUS_[23]]
 
 
-    typedef UReg<0x00, 0x03, 0, 8> STATUS_03;                         // Part of IF_STATUS_, which RD-5725-1.1 documents as one
-                                                                      // 45-bit block at s0_00 rather than field by field.
-
     typedef UReg<0x00, 0x03, 0, 1> STATUS_IF_INP_SXGA;                // When =1, means input is SXGA (1280x1024) mode, include
                                                                       // 60/75/85Hz [datasheet: IF_STATUS_[24]]
 
@@ -141,9 +138,6 @@ public:
     typedef UReg<0x00, 0x03, 7, 1> STATUS_IF_INP_2640_1125I;          // When =1, means input is 2640x1125i mode [datasheet:
                                                                       // IF_STATUS_[31]]
 
-
-    typedef UReg<0x00, 0x04, 0, 8> STATUS_04;                         // Part of IF_STATUS_, which RD-5725-1.1 documents as one
-                                                                      // 45-bit block at s0_00 rather than field by field.
 
     typedef UReg<0x00, 0x04, 0, 1> STATUS_IF_INP_1080I;               // When =1, means input is HD1080i source, include
                                                                       // 2200x1125i, 2376x1250i, [datasheet: IF_STATUS_[32]]

@@ -20,7 +20,6 @@ namespace Tv5725 {
 // selects with no derivation available -- what all twelve tables shipped.
 class Adc {
 public:
-    typedef UReg<0x05, 0x00, 0, 8> ADC_5_00;
 
     typedef UReg<0x05, 0x00, 0, 2> ADC_CLK_PA;                        // Clock selection for PA_ADC When = 00, PA_ADC input clock
                                                                       // is from PLLAD’s CLKO2 When = 01, PA_ADC input clock is
@@ -42,7 +41,6 @@ public:
     typedef UReg<0x05, 0x02, 6, 2> ADC_INPUT_SEL;                     // When = 01, R1/G1/B1/SOG1 as input When = 10, R2/G2/B2 as
                                                                       // input When = 11, reserved
 
-    typedef UReg<0x05, 0x03, 0, 8> ADC_5_03;
 
     typedef UReg<0x05, 0x03, 0, 1> ADC_POWDZ;                         // ADC power down control When = 0, ADC in power down mode
 
@@ -60,13 +58,11 @@ public:
     typedef UReg<0x05, 0x03, 4, 2> ADC_FLTR;                          // ADC internal filter control When = 00, 150MHz When = 01,
                                                                       // 110MHz When = 10, 70MHz
 
-    typedef UReg<0x05, 0x04, 0, 8> ADC_TEST_04;
 
     typedef UReg<0x05, 0x04, 0, 2> ADC_TR_RSEL;                       // REF test resistor selection
 
     typedef UReg<0x05, 0x04, 2, 3> ADC_TR_ISEL;                       // REF test currents selection
 
-    typedef UReg<0x05, 0x05, 0, 8> ADC_TA_05_CTRL;
 
     typedef UReg<0x05, 0x05, 0, 1> ADC_TA_EN;                         // ADC test enable When = 0, ADC work normally
 
@@ -90,7 +86,6 @@ public:
 
     typedef UReg<0x05, 0x0B, 0, 8> ADC_BGCTRL;                        // Gain control for B channel of ADC
 
-    typedef UReg<0x05, 0x0C, 0, 8> ADC_TEST_0C;
 
     typedef UReg<0x05, 0x0C, 0, 1> ADC_CKBS;                          // ADC output clock invert control When = 0, default
 
@@ -117,7 +112,6 @@ public:
 
     typedef UReg<0x05, 0x0E, 7, 1> ADC_AUTO_OFST_TEST;                // Auto offset adjustment test control
 
-    typedef UReg<0x05, 0x0F, 0, 8> ADC_AUTO_OFST_RANGE_REG;
 
     typedef UReg<0x05, 0x0F, 0, 4> ADC_AUTO_OFST_U_RANGE;             // U channel offset detection range Define U channel offset
                                                                       // detection range 0~15
@@ -452,6 +446,11 @@ public:
     // NOT the VCO gain and NOT the charge pump -- HdBypass::dividerFor() answers
     // the first against the line rate, and applySampleRate() owns the rest of
     // the group the latch loads.
+    // The converter's reference trim, through its test registers. The same
+    // six fields are wanted by the reset path, a source mode change and the
+    // bypass switch, which each used to write the three bytes by hand.
+    static void applyReferenceTrim();
+
     static void applyForBypassRgbhv();
 
     // The analog gain and offset, a triple at a time. Six registers that no

@@ -410,7 +410,8 @@ TEST_CASE("the ADC's automatic offset correction is the bring-up's")
     CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_DELAY) == 0);
     CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_STEP) == 0);
     CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_TEST) == 1);
-    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_RANGE_REG) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_U_RANGE) == 0);
+    CHECK(WRITTEN(Tv5725::Adc::ADC_AUTO_OFST_V_RANGE) == 0);
 }
 
 TEST_CASE("the peaking filter's shape is the bring-up's, its gain is not")
