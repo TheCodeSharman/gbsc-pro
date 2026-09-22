@@ -764,3 +764,27 @@ TEST_CASE("the sampling clock can be restarted without re-solving anything")
     CHECK(Tv5725::Adc::PLLAD_VCORST::read() == 0);
     CHECK(Wire.field(5, 0x12, 0, 12) == divider);
 }
+
+
+// One press is one output pixel, and the smallest press has to move the window
+// or the control is dead for good: step() reverts a framing that moved no
+// register, so a press swallowed once is swallowed every time.
+//
+// The vertical framing is what swallows it. It is held as a proportion of the
+// frame, and the proportion a solve seeds names a position in the SOURCE, which
+// the frame's lag puts half a unit off the counter's grid. Re-gridding it to
+// whole units before the step lands back on the unit it started from.
+TEST_CASE("the smallest vertical pan moves the capture window")
+{
+    // 800x600@60 on the bench RISC PC: 128 of its 1056 pixels on sync, a
+    // 628-line frame reported as 627, and a positive-going pulse. Undoubled, so
+    // the frame's lag is in force.
+    const uint16_t Divider = 1606;
+    const uint16_t HsyncLow = (uint16_t)(Divider * 128 / 1056);
+    SolvedEngine solved(627, 60.317f, HsyncLow, &Tv5725::Mode960p, true, Divider);
+
+    const long before = Wire.field(1, 0x1E, 0, 11);   // IF_VB_SP
+
+    CHECK(solved.engine.pan(0, -1));
+    CHECK(Wire.field(1, 0x1E, 0, 11) < before);
+}

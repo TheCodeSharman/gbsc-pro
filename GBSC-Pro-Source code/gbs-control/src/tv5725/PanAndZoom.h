@@ -38,8 +38,7 @@ public:
     float extentOn(const Axis &axis) const;
 
     // `usable` is the capturable region this mode offers, so one step is one
-    // input unit exactly and a step with its inverse returns the identical
-    // proportion rather than one that happens to land on the same unit.
+    // input unit exactly, whatever grid the proportion sits on.
     //
     // The two controls are orthogonal: the pan places the near edge and the
     // zoom moves the far one, so a framing is found in one pass of each. Zoom

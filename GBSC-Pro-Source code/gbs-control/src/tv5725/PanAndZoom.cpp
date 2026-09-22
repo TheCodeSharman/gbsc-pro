@@ -51,10 +51,14 @@ float PanAndZoom::moved(float value, int16_t units, uint16_t usable)
 {
     if (usable == 0)
         return value;
-    // Back to the grid first: every value a control produces is a whole number
-    // of units over `usable`, so out and back returns the same float.
-    long onGrid = lrintf(value * (float)usable) + units;
-    return (float)onGrid / (float)usable;
+    // Moved by exactly `units`, and not re-gridded on the way. A proportion
+    // names a position in the SOURCE where the window register is a position in
+    // the COUNTER, so the grid a solve seeds this on is the counter's offset by
+    // the capture lag, which is no whole number of units. Rounding that offset
+    // away can land the step back on the unit it started from, and
+    // VideoPath::step() reverts a framing that moved no register -- so the
+    // control dies rather than coarsens. docs/known-issues.md
+    return value + (float)units / (float)usable;
 }
 
 float PanAndZoom::limitFor(uint16_t reach, uint16_t usable)
