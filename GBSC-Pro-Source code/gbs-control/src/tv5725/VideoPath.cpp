@@ -887,9 +887,7 @@ void VideoPath::write(const VideoProcessorTimings &solved, const CaptureWindow &
     GBS::IF_VB_SP::write(verticalStop > margin ? (uint16_t)(verticalStop - margin) : 0);
     // Clamped to the last unit before the counter wraps: at a full framing the
     // window already reaches it, and a margin past it is a wrapped IF_VB_ST.
-    const uint16_t lastUnit = capture.lineUnitsOn(AxisVertical) > 2
-                                  ? (uint16_t)(capture.lineUnitsOn(AxisVertical) - 2)
-                                  : 0;
+    const uint16_t lastUnit = capture.verticalLine().lastCapture();
     const uint16_t verticalStart = (uint16_t)(capture.vertical().start() + margin);
     GBS::IF_VB_ST::write(verticalStart < lastUnit ? verticalStart : lastUnit);
     GBS::VDS_HSCALE_BYPS::write(0);

@@ -175,9 +175,10 @@ TEST_CASE("the framing is held as state and the window is derived")
         }
     }
 
-    SUBCASE("the capture stop never lands on the line reset itself") {
+    SUBCASE("the capture stop never lands on the wrap point itself") {
         for (int16_t p : {+5000, +600, +132}) {
-            CHECK(framed(VideoSourceLine(1265), 50.0f, AxisHorizontal, 0, p, 0).capture(VideoSourceLine(1265), 50.0f, AxisHorizontal).start() <= 1263);
+            CHECK(framed(VideoSourceLine(1265), 50.0f, AxisHorizontal, 0, p, 0).capture(VideoSourceLine(1265), 50.0f, AxisHorizontal).start()
+                  <= VideoSourceLine(1265).lastCapture());
         }
     }
 
@@ -557,7 +558,8 @@ TEST_CASE("the default capture starts where video lands, not where the standard 
         VideoSourceLine inverted = measuredLine(Units, HsyncLow, AdcLine, false);
         BlankingTiming at_head = ActiveImage().capture(positive, Rate, AxisHorizontal);
         BlankingTiming behind = ActiveImage().capture(inverted, Rate, AxisHorizontal);
-        CHECK(at_head.stop() - behind.stop() == positive.syncUnits());
+        CHECK(at_head.stop() - behind.stop()
+              == positive.syncUnits() - VideoSourceLine::FirstCapturableUnit);
     }
 }
 

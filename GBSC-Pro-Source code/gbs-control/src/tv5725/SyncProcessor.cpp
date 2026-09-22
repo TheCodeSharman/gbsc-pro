@@ -234,7 +234,7 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_PRE_COAST::write(SerratedPreCoastLines);
         SP_POST_COAST::write(SerratedPostCoastLines);
         SP_SYNC_BYPS::write(0);
-        SP_HS_LOOP_SEL::write(1);
+        SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
     } else {
         SP_SOG_SRC_SEL::write(0);
@@ -248,7 +248,7 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_SYNC_BYPS::write(0);
         SP_HS_POL_ATO::write(1);
         SP_VS_POL_ATO::write(1);
-        SP_HS_LOOP_SEL::write(1);
+        SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(0);
     }
 }

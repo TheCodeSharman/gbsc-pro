@@ -117,6 +117,7 @@ const BlankingTiming &CaptureWindow::horizontal() const { return horizontal_; }
 const BlankingTiming &CaptureWindow::vertical() const { return vertical_; }
 
 const VideoSourceLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
+const VideoSourceLine &CaptureWindow::verticalLine() const { return verticalLine_; }
 
 uint16_t CaptureWindow::lineUnitsOn(const Axis &axis) const
 {

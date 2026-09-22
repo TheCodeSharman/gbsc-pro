@@ -40,32 +40,20 @@ public:
     // arrangement leaves free. docs/known-issues.md
     static const uint16_t FirstCapturableUnit = 1;
 
-    // How late the capture path delivers video, as a FRACTION OF THE LINE,
-    // counted from the sync edge the line is counted from. It TRANSLATES a
-    // window rather than narrowing it: both ends move, because the video
-    // behind them does. Zero on a doubled line, where IF_HBIN_SP is the FIFO's
-    // own reset and places the picture itself -- so what this holds is the
-    // DIFFERENCE between the two scan modes, and it is measured as one.
-    //
-    // A fraction and not a count of samples, which takes two dividers to tell
-    // apart: 72 samples at PLLAD_MD 1124 on 800x600@60 and 118 at 1880 on the
-    // bench source at 480p are 0.0641 and 0.0628 of their lines, agreeing to
-    // 2%, where as a count they disagree by 64%. Nor is it a time -- the same
-    // two are 1.69 us and 4.02 us.
-    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
-    static const float CaptureLagFraction;
-
     // How far the video sits AHEAD of the counter down the frame, in the
-    // COUNTER'S OWN UNITS. Negative where the line's is positive: the two
-    // pipelines are not the same one and nothing requires them to agree in
-    // sign, nor on a unit.
+    // COUNTER'S OWN UNITS. The line carries no such displacement, and nothing
+    // requires the two pipelines to agree.
     //
     // The scan mode does not enter it. The doubled counter runs at twice the
     // source's line rate, so the same seven units are three and a half source
     // lines there and seven undoubled -- which is what one source measured in
     // both scan modes shows, and what a framing held as a proportion needs if
     // it is to take the same video at either output resolution.
-    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+    //
+    // ITS VALUE IS UNVERIFIED. The horizontal constant it was derived beside
+    // turned out to be the retiming bypassed, and the page they shared is
+    // retracted; zeroing this one changes nothing the bench can see.
+    // docs/investigations/the-capture-lag-was-the-retiming-bypassed.md
     static const float FrameLagUnits;
 
     // The whole line is available. The exclusion is the HSYNC pulse and there

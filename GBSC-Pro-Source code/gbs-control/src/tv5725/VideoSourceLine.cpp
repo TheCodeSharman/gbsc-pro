@@ -9,7 +9,6 @@ namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
 const uint16_t VideoSourceLine::FirstCapturableUnit;
-const float VideoSourceLine::CaptureLagFraction = 0.0539f;
 const float VideoSourceLine::FrameLagUnits = -7.0f;
 
 VideoSourceLine::VideoSourceLine(uint16_t units)
@@ -22,8 +21,7 @@ VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits)
 
 VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits,
                                  uint16_t headBlankingUnits, bool syncAtHead)
-    : units_(units), syncUnits_(syncUnits),
-      lag_(headBlankingUnits ? 0.0f : units * CaptureLagFraction),
+    : units_(units), syncUnits_(syncUnits), lag_(0.0f),
       headBlankingUnits_(headBlankingUnits), syncAtHead_(syncAtHead) {}
 
 VideoSourceLine VideoSourceLine::frame(uint16_t units)
@@ -81,17 +79,18 @@ float VideoSourceLine::fractionAt(uint16_t position) const
 
 uint16_t VideoSourceLine::lastCapture() const
 {
-    // Neither of the last two units is a capture stop. `units` is the wrap
-    // point, and a window written onto it rolls rather than clamping;
-    // units - 1 is the line reset value, where the input formatter stops
-    // producing pixels at all. docs/scaler-geometry-model.md
+    // `units` is the wrap point, and a window written onto it rolls rather
+    // than clamping, so the last unit a window may stop on is the one before
+    // it. That unit is captured: horizontally it is the last sample of the
+    // front porch, vertically the last line of the vsync pulse.
+    // docs/investigations/the-capture-tail-was-one-unit-short.md
     //
     // THE PULSE IS NOT TAKEN OFF THE TAIL. Where the line is counted from the
     // pulse's trailing edge the next line's pulse does occupy the tail, and
     // excluding it costs picture: measured at 640x480@60 the right-hand border
     // goes with it. What arrives there is bounded by the wrap, not by the
     // pulse. docs/known-issues.md
-    return units_ < 2 ? 0 : units_ - 2;
+    return units_ < 1 ? 0 : units_ - 1;
 }
 
 uint16_t VideoSourceLine::lastReachable() const

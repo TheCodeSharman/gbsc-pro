@@ -92,7 +92,7 @@ TEST_CASE("separate sync runs off the source's own H and V, uncoasted")
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_HS_POL_ATO>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_VS_POL_ATO>(csync) == 1);
-    CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 1);
+    CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 0);
 }
 
@@ -107,7 +107,7 @@ TEST_CASE("csync coasts around the vertical interval and protects the line")
     CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 7);
     CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 3);
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
-    CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 1);
+    CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 1);
 }
 

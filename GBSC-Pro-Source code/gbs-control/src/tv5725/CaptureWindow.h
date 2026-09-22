@@ -70,6 +70,7 @@ public:
     // vertical does not, because nothing has measured the vsync equivalent and
     // a guess there would crop picture rather than blanking.
     const VideoSourceLine &horizontalLine() const;
+    const VideoSourceLine &verticalLine() const;
 
     // The capturable region this axis offers, which is the denominator the
     // framing's proportions are taken against.

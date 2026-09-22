@@ -93,22 +93,22 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     SUBCASE("a line with nothing measured keeps all of itself") {
         CHECK(VideoSourceLine(1126).syncUnits() == 0);
         CHECK(VideoSourceLine(1126).firstCapture() == VideoSourceLine::FirstCapturableUnit);
-        CHECK(VideoSourceLine(1126).lastCapture() == 1124);
+        CHECK(VideoSourceLine(1126).lastCapture() == 1125);
     }
 }
 
 TEST_CASE("the capture stops where the line wraps, and nowhere earlier")
 {
-    // Neither of the last two units is a capture stop: `units` is the wrap
-    // point and units - 1 is the line reset, where the input formatter stops
-    // producing pixels at all.
-    CHECK(VideoSourceLine(1277).lastCapture() == 1275);
-    CHECK(VideoSourceLine(1126).lastCapture() == 1124);
+    // `units` is the wrap point, so the last unit a window may stop on is the
+    // one before it. That unit holds frame: the tail of an undoubled line is
+    // the front porch, and stopping a unit earlier loses a sample of it.
+    CHECK(VideoSourceLine(1277).lastCapture() == 1276);
+    CHECK(VideoSourceLine(1126).lastCapture() == 1125);
 
     SUBCASE("the head guard still applies, and the two do not cross") {
         VideoSourceLine bench = measuredLine(1277, 181, 2553, true);
         CHECK(bench.firstCapture() < bench.lastCapture());
-        CHECK(bench.lastCapture() == 1275);
+        CHECK(bench.lastCapture() == 1276);
         CHECK(bench.maxCaptureWidth() == bench.capturable());
     }
 }
@@ -193,15 +193,16 @@ TEST_CASE("the capture starts where the sync pulse ends")
         CHECK(line.firstCapture() == 137 + lagUnits(line));
     }
 
-    SUBCASE("an inverted pulse is behind the origin, leaving only the lag") {
+    SUBCASE("an inverted pulse is behind the origin, so the floor is the first unit") {
         VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
-        CHECK(line.firstCapture() == lagUnits(line));
+        CHECK(line.firstCapture() == VideoSourceLine::FirstCapturableUnit);
     }
 
     SUBCASE("an inverted pulse keeps the span the head guard would take") {
         VideoSourceLine positive = measuredLine(900, 109, 900, true);
         VideoSourceLine inverted = measuredLine(900, 109, 900, false);
-        CHECK(inverted.capturable() - positive.capturable() == positive.syncUnits());
+        CHECK(inverted.capturable() - positive.capturable()
+              == positive.syncUnits() - VideoSourceLine::FirstCapturableUnit);
     }
 
     SUBCASE("a line whose origin is placed for it takes no lag") {
@@ -299,7 +300,7 @@ TEST_CASE("the capture floor hides the sync pulse and nothing else")
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     SUBCASE("a low-active source has the pulse behind the origin already") {
         VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
-        CHECK(line.firstCapture() == lagUnits(line));
+        CHECK(line.firstCapture() == VideoSourceLine::FirstCapturableUnit);
     }
 
     SUBCASE("a high-active source has it at the head, so the floor clears it") {
@@ -336,14 +337,14 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
     VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
     const long Lag = lagUnits(line);
 
-    SUBCASE("the floor is where the sync ends, a lag later") {
-        CHECK(line.firstCapture() == Lag);
+    SUBCASE("the floor is the first unit, the pulse being behind the origin") {
+        CHECK(line.firstCapture() == VideoSourceLine::FirstCapturableUnit);
     }
 
     SUBCASE("the stop is the wrap, which the lag cannot move past") {
         // Video displaced past the counter's reset arrives at the head of the
         // next line, so the tail is bounded by the wrap and not by the lag.
-        CHECK(line.lastCapture() == Units - 2);
+        CHECK(line.lastCapture() == Units - 1);
     }
 
     SUBCASE("a doubled line is placed by IF_HBIN_SP and takes no lag") {
@@ -394,7 +395,7 @@ TEST_CASE("one framing takes the same video along the line in both scan modes")
         const float Framing = 0.2036f;
         const float apart = (float)undoubled.videoAt(Framing) / 1852.0f
                           - (float)doubled.videoAt(Framing) / 1100.0f;
-        CHECK(apart == doctest::Approx(0.0539f).epsilon(0.02f));
+        CHECK(apart == doctest::Approx(0.0f).scale(1.0f).epsilon(0.002f));
     }
 
 }
@@ -445,4 +446,35 @@ TEST_CASE("one framing takes the same video whichever scan mode is in force")
     // resolutions.
     CHECK(doubled.videoAt(Framing) - undoubled.videoAt(Framing)
           == lrintf(Framing * 312.0f));
+}
+
+
+// The input formatter's counter is reset by the RETIMED hsync, so video sits
+// where the counter says and a progressive line carries no displacement of its
+// own.
+//
+// A fractional lag was applied here instead, and it was a correction for the
+// retiming being bypassed: SyncProcessor::applyForSyncType() wrote
+// SP_HS_LOOP_SEL 1 on both sync types, which takes the retiming module out of
+// circuit. Measured on the bench at 800x600@60, one frozen state, the only
+// variable the routing bit: engaging the retiming moved the card's corner
+// square 99 photo columns, which is 77.4 counter units, against the 77.6 the
+// correction was applying. The whole of it was the bypass.
+// docs/investigations/the-capture-lag-was-the-retiming-bypassed.md
+TEST_CASE("a progressive line carries no video lag")
+{
+    // 800x600@60 at PLLAD_MD 1438, positive-going pulse, undoubled.
+    const VideoSourceLine line = measuredLine(1439, 176, 1438, true);
+
+    SUBCASE("the video is not displaced along the counter") {
+        CHECK(line.videoLag() == 0.0f);
+    }
+
+    SUBCASE("the line's own start is the counter's origin") {
+        CHECK(line.videoAt(0.0f) == 0);
+    }
+
+    SUBCASE("so the tail is reachable to the wrap") {
+        CHECK(line.lastReachable() == line.lastCapture());
+    }
 }

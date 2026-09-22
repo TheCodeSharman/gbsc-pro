@@ -668,10 +668,17 @@ TEST_CASE("a forced full framing captures everything the source offers")
                              - (long)AxisVertical.captureMargin();
     CHECK(Wire.field(1, 0x1E, 0, 11) == (verticalFloor > 0 ? verticalFloor : 0));
 
+    // The far edge is the last unit the framing can name, and this source's
+    // pulse decides where that is: it sits at the TAIL, so the source's video
+    // ends a sync width before the counter wraps and the window stops there
+    // rather than on the wrap. With the lag gone nothing else displaces it, so
+    // the registers follow the framing exactly.
+    CHECK(Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11)
+          == solved.engine.extentUnitsOn(AxisHorizontal));
     CHECK(Wire.field(1, 0x18, 0, 11)
-          == solved.engine.lineUnitsOn(AxisHorizontal) - 2);
+          < solved.engine.lineUnitsOn(AxisHorizontal) - 2);
     CHECK(Wire.field(1, 0x1C, 0, 11)
-          == solved.engine.lineUnitsOn(AxisVertical) - 2);
+          == solved.engine.lineUnitsOn(AxisVertical) - 1);
 
     SUBCASE("and the scaler still magnifies rather than clamping at unity") {
         CHECK(Wire.field(3, 0x16, 0, 10) <= Scale::Max);
