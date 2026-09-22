@@ -401,18 +401,13 @@ The same framing solves `VDS_VSCALE` 455 against 456 and paints 1080 of 1080.
 picture where the line doubler was bypassed -- the source's flashing border down
 the right and across the bottom at 480p and 576p, none at 1080p. It is fixed:
 `VideoSourceLine::CaptureLagFraction` is 0.0539 rather than 0.0640, and
-`FrameLagLines` is the vertical half, which nothing modelled before. Zero
+`FrameLagUnits` is the vertical half, which nothing modelled before. Zero
 flashing columns and rows at all three modes now, against 26 to 28 and 14 to 16
 before.
 
-What is left is the form of the two constants, and one source cannot settle it:
+The frame's form is settled -- a count of counter units, see the entry on it
+below -- and the line's is not:
 
-- **`FrameLagLines` is a COUNT of source lines, not a fraction of the frame.**
-  The unit either side of the doubler is a line and a doubler's latency is
-  stated in them, which is the argument, not a measurement. A second source at
-  another line count separates the two -- the Wii at 480p on `ypbpr` is 524
-  lines and undoubled, so it is reachable without a bench trip, but it carries
-  no border instrument and no tuned framing.
 - **`CaptureLagFraction` now disagrees with the four-mode table it came from.**
   Those readings were absolute -- a knee against each mode's stated timings --
   and they are used as the difference between the scan modes, which is what is
@@ -2061,31 +2056,65 @@ absent when the screen was what was being judged.
 `docs/investigations/low-power-detection-strands-pass-through-off-its-route.md`
 has the measurements and what they refute.
 
-### The vertical capture window starts inside the picture
+### The first and last source lines cannot both be shown
 
-At 800x600@60 the solve starts the vertical capture after the source's active
-image begins, clipping the top: the card's top border band grows from 12 rows at
-the solved `IF_VB_SP` of 26 to about 21 when the window is moved earlier, both
-edges together.
+**Closed as a placement fault, open by one line at each end.** The capture
+window opens on the source's first picture line now, and what is left is the
+output aperture: the two are 599 source lines apart and the aperture shows about
+598 of them.
 
-**How much is not established.** The picture overruns the panel's painted area
-at the top, so a count of visible band rows measures where the panel stops
-painting; and a source mode change re-lands the encoder, which moved two sweeps
-of the same registers by about four lines. Closing it needs a panel reference
-from pass-through at the same camera position.
+The instrument is `PATTERN CARD`, whose `PROCframe` draws a one-pixel green line
+on the source's outermost rows -- one source line, so it is present or it is
+not. At 800x600@60 into 960p the top line first appears at `IF_VB_SP` 20 and the
+bottom is still there at 21, so no window position shows both.
 
-The mode file gives this source zero vertical border, so it is not the
-horizontal border case -- the window is cutting the source's own displayed
-lines. `VideoSourceLine::FrameLagLines` is -1.5 and is the whole vertical
-correction. Note also that `SourceTiming::matching()` compares only the line
-count, the field rate and the HORIZONTAL sync duty, so nothing verifies a
-match's vertical numbers -- the bench 640x480 mode starts active at line 34
-where the table says 35.
+What eats them is the far-end guard in `Axis::solve()`: the aperture closes
+`magnification` plus one output row before the write ends, 2.6 rows at this
+framing, which is 1.6 source lines. The near end loses the 0.48 of a row between
+the aperture opening at the mode's first active line and the write starting at
+`VDS_VB_SP` plus the origin offset. The entry above on the vertical aperture's
+far end is the same row.
 
-Independently, the bottom border band reads 5 rows at EVERY capture position,
-so the bottom is clipped on the output side and is a separate fault.
+### The frame's lag was measured on one source and one scan mode
 
-`docs/investigations/the-vertical-capture-window-is-placed-late.md`.
+**Closed.** `VideoSourceLine::FrameLagUnits` is -7 and applies in both scan
+modes; it was -1.5 undoubled and nothing doubled, which put the capture five to
+six source lines inside the picture on every undoubled source and cost the top
+of the picture. Measured with the green frame on three sources, one of them in
+both scan modes:
+
+| source | counter | scan | first picture line | it arrived at |
+|---|---|---|---|---|
+| 320x256@50 into 480p | 312 | undoubled | 36 | 29.4 |
+| 320x256@50 into 960p | 624 | doubled | 72 | 64.3 |
+| 800x600@60 | 628 | undoubled | 27 | 20.3 |
+| 1024x768@60 | 806 | undoubled | 35 | 28.3 |
+
+**It is a count of the COUNTER's units, and that is what one source in both scan
+modes settles.** Read as source lines the same source is 6.6 early undoubled and
+3.9 doubled; read as a fraction of the frame it is 0.021 of a 312-unit frame
+against 0.011 of a 628-unit one. Read as counter units every reading is seven,
+so the doubled branch is gone.
+
+**The 1.5-line figure it replaces does not survive.** That was the difference
+between the two scan modes taken on 320x256@50 by creeping until the source's
+flashing border entered the picture; the same source measured here with the
+green line gives 2.75.
+
+### A half-unit lag kills the control that steps through it
+
+Latent rather than live, and it cost a session. `ActiveImage::place()` maps the
+framing into the counter with `lrintf(fraction x units + lag)`, and `lrintf`
+rounds ties to even -- so where the lag is half a unit every whole-unit step of
+the framing lands on a tie, the window does not move, and `VideoPath::step()`
+reverts a framing that moved no register. The control is then dead for good
+rather than coarse: the press that was swallowed once is swallowed every time.
+
+It was reachable while `FrameLagUnits` was -1.5, on `/sc?*=1` at 800x600@60.
+Nothing reaches it now -- the frame's lag is a whole number and the line's is
+`units x CaptureLagFraction`, which a framing seeded through `fractionAt()`
+returns to an integer. **Anything that makes either lag half-integral brings it
+back**, and no test covers it because no constant can currently produce it.
 
 ### The source identity moves when the sync type does
 

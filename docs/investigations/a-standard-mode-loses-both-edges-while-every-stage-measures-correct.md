@@ -138,26 +138,44 @@ it to.
 > reading; against the mode file each counter is out by a further 0.010 to
 > 0.020 of a line, which is that bias rather than a second finding.
 >
-> **THE FRAME HAS ONE TOO, AND IT IS NEGATIVE.** The undoubled frame delivers
-> video one and a half SOURCE LINES EARLY where the undoubled line delivers it
-> late. The two pipelines are not the same one and nothing requires them to
-> agree in sign. `VideoSourceLine::FrameLagLines`, and
-> `docs/known-issues.md` carries what one source cannot settle about either
-> constant.
+> **THE FRAME HAS ONE TOO, IT IS NEGATIVE, AND IT IS SEVEN OF THE COUNTER'S OWN
+> UNITS IN BOTH SCAN MODES.** The frame delivers video early where the line
+> delivers it late. The two pipelines are not the same one and nothing requires
+> them to agree in sign, nor on a unit -- the line's lag is a fraction of the
+> line and the frame's a count of units. `VideoSourceLine::FrameLagUnits`.
 >
-> Measured on the bench, RiscPC X320 Y256 F50, automation frozen, the capture
-> window crept a unit at a time until the source's flashing border entered the
-> picture, with `RetroScaler-Acorn.mdf` naming the feature -- active video at
-> 110..430 of 512 and lines 36..292 of 312:
+> The instrument is `PATTERN CARD`, whose `PROCframe` draws a one-pixel green
+> line on the source's outermost rows. One source line, so it is in the picture
+> or it is not, and the threshold is found by creeping the capture window a unit
+> at a time until it appears:
 >
-> | the card's edge | doubled | undoubled |
-> |---|---|---|
-> | top / bottom, source lines | 30.0 / 288.5 | 28.5 / 287.0 |
-> | right, fraction of the line | 0.8300 | 0.8839 |
+> | source | counter | scan | first picture line | it arrived at |
+> |---|---|---|---|---|
+> | 320x256@50 into 480p | 312 | undoubled | 36 | 29.4 |
+> | 320x256@50 into 960p | 624 | doubled | 72 | 64.3 |
+> | 800x600@60 | 628 | undoubled | 27 | 20.3 |
+> | 1024x768@60 | 806 | undoubled | 35 | 28.3 |
 >
-> The symptom it closes: one stored framing took different picture at 480p and
-> 576p than at 1080p, the source's border standing down the right and across the
-> bottom while the matching content fell off the left and the top.
+> **One source measured in BOTH scan modes is what settles the form.** Read as
+> source lines that source is 6.6 early undoubled and 3.9 doubled; read as a
+> fraction of the frame it is 0.021 of a 312-unit frame against 0.011 of a
+> 628-unit one. Read as a count of the counter's units every reading is seven,
+> and the doubled counter running at twice the source's line rate is the whole
+> of the difference -- so `frame()` carries no scan mode.
+>
+> That is also what a framing held as a proportion needs. The symptom it closes
+> is one stored framing taking different picture at 480p and 576p than at 1080p,
+> the source's border standing down the right and across the bottom while the
+> matching content fell off the left and the top.
+>
+> **THE 1.5-LINE FIGURE THIS REPLACES DOES NOT SURVIVE.** It was the difference
+> between the scan modes on 320x256@50, taken by creeping until the source's
+> flashing border entered the picture -- doubled 30.0/288.5 source lines against
+> undoubled 28.5/287.0. The same source measured with the green line gives 2.75,
+> and the absolute readings behind it put the undoubled lag at -1.5 where it is
+> -6.6. The horizontal half of that table stands: it is a difference between two
+> readings of a sharp feature, where the vertical was two readings of a fuzzy
+> one.
 
 **The sync term is decided by a bit the chip already reports.**
 `STATUS_SYNC_PROC_HSPOL` reads 1 on AKF50's `sync_pol` 0 and 2 modes and 0 on

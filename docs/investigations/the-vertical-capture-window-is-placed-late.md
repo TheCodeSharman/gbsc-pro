@@ -1,106 +1,61 @@
-# The vertical capture window is placed late
+# The vertical capture window was placed late, and the magnitude needed a one-line feature
 
-At 800x600@60 on `vga` the solve starts the vertical capture after the source's
-active image begins, so the top of the picture is clipped. Nothing in a register
-dump shows it: every value is self-consistent and `/geometry` reports a 600-line
-capture of a 600-line mode.
+At 800x600@60 on `vga` the solve started the vertical capture five to six source
+lines after the source's active image began, so the top of the picture was cut
+and the same amount of the source's blanking was shown at the bottom. Nothing in
+a register dump showed it: every value was self-consistent and `/geometry`
+reported a 600-line capture of a 600-line mode.
 
-**How much is not established.** The obvious measurement -- how much of the
-card's top border band is on screen -- is contaminated twice over, and both
-contaminations are larger than the effect. What stands is the direction and the
-mechanism.
+It is `VideoSourceLine::FrameLagUnits`, which was -1.5 and is -7.
+[a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md](a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md)
+carries the four readings that fix it and why it is a count of the counter's own
+units rather than of source lines.
 
-## What stands
+## Why the first attempt could not put a number on it
 
-Moving the vertical capture window earlier recovers picture at the top. With
-both edges moved together so the captured height stays at 600 lines, the card's
-top border band grows from 12 rows at the solved `IF_VB_SP` of 26 to about 21,
-and the card's own displayed lines are what appear. The window is starting
-inside the picture.
-
-## Why the magnitude is not established
+The obvious measurement -- how much of the card's top border band is on screen
+-- is contaminated twice over, and both contaminations are larger than the
+effect.
 
 **The picture overruns the panel's painted area at the top.** The engine always
 scales the capture to fill the output raster, so there is no framing at which
 the picture's top edge is visible with blanking above it. Driven to `IF_VB_SP`
 4 through the pads -- 22 lines before the standard's active start, with the
 capture certainly inside the source's vertical blanking -- the card's top band
-is still hard against the panel edge with no black above it. So a count of
-visible band rows measures where the panel stops painting, not where the capture
-starts.
+was still hard against the panel edge with no black above it. A count of visible
+band rows measures where the panel stops painting, not where the capture starts.
 
 **A source mode change re-lands the encoder.** Two sweeps of the same register
-values either side of an 800x600 -> 640x480 -> 800x600 round trip disagree by
+values either side of an 800x600 -> 640x480 -> 800x600 round trip disagreed by
 about four lines, with the picture placed four photo rows higher in the second.
-That is the encoder choosing a landing, measured elsewhere on the pass-through
-path, reaching a scaled measurement here.
 [the-encoder-tunes-the-left-edge-in-pass-through.md](the-encoder-tunes-the-left-edge-in-pass-through.md)
 
-Closing it needs a reference for the panel's painted area taken at the same
-camera position, which on this bench comes from an 800x600 source in
-pass-through, or an instrument that does not look through the panel at all.
+## What made it measurable
 
-## The raster match verifies nothing vertical
+**A feature one source line tall, and a threshold rather than a position.**
+`PATTERN CARD`'s `PROCframe` draws a one-pixel green line on the source's
+outermost rows. It is present in the picture or it is not, so creeping the
+capture window a unit at a time gives the counter unit the source's first
+picture line arrives at, and neither contamination above can reach that: no
+photo-column mapping is used, and nothing is compared across an acquisition.
 
-`SourceTiming::matching()` keys on the line count, the field rate and the
-**horizontal** sync duty. Nothing it compares is vertical, so a source that
-agrees on all three and spends its vertical blanking differently is placed from
-the standard's numbers regardless.
+Green is what makes it a threshold. Against the card's black outer band the line
+is the only green in the frame, so a per-row `G - (R + B)/2` over a band of
+columns separates it from the camera's own colour cast, which is uniformly
+magenta here. Fully inside the window it reads 60 to 95 above the local median;
+half clipped by the display aperture, about half that; outside, under 10.
 
-The bench has one of each, and the difference is why a second mode cannot be
-assumed comparable:
+**The two contaminations are still there and still do not matter.** The photo
+rows the green line lands on drift with the panel's tilt and with where in the
+frame it sits, and the calibration of photo rows against output lines is good in
+the middle of the panel and wrong at the top -- fitted over output lines 120 to
+520 it gives 0.883 photo rows per output line with residuals under 1.2, and
+extrapolated to the picture's first row it disagrees with the green line's own
+motion by 16%. The threshold does not use any of it.
 
-| mode | source `v_timings` | source active starts | table `vstart` |
-|---|---|---|---|
-| 800x600@60 | `4,23,0,600,0,1` | 27 | 27 |
-| 640x480@60 | `2,32,0,480,0,11` | 34 | **35** |
+## What is left
 
-`RetroScaler-Acorn.mdf`. The 640x480 mode is a line off DMT vertically while
-matching it on total, rate and sync width, so the engine places its window one
-line late before any lag term is applied.
-
-## The lag constant
-
-`VideoSourceLine::FrameLagLines` is **-1.5**, and it is the whole vertical
-correction: the window is the standard's active start nudged by that much, which
-is what puts `IF_VB_SP` at 26 against an active start of 27, and at 34 against
-35.
-
-Whether it describes a pipeline delay or absorbs a conversion cannot be settled
-from what is measured here, and the question is live because both lag constants
-are fitted -- `CaptureLagFraction` on two sources, `FrameLagLines` on one, with
-its own comment saying a second line count is what would settle its form. A
-constant fitted on one mode and a conversion that cancels there are
-indistinguishable until two modes are compared on an instrument that survives
-the comparison.
-
-## A second clip the capture cannot reach
-
-The card's bottom border band reads about 5 rows at every capture position
-swept, including those that put more of the top band on screen. A window that
-cannot move it is not what is cutting it, so the bottom is clipped on the output
-side and is a separate fault from the top.
-
-## What is refuted
-
-**That the capture window is clamped to the published active region.** It is
-not: the pads drive `ov` to 6 and `IF_VB_SP` to 4 with no clamp, well inside the
-source's vertical blanking. Whatever prevents the picture being recovered, it is
-not the framing control's range.
-
-**That `VDS_VSCALE` can be set by hand to shrink the picture for a
-measurement.** The playback fetch and the stride are solved with it, so writing
-it alone tiles the picture into repeated fragments. Recovering needed the scale
-put back and `PAD_SYNC_OUT_ENZ` toggled, which was found already at 1.
-
-## The horizontal arithmetic disagrees too
-
-```
-/geometry   oh 328   eh 1190   ch 1607
-DMT         active start 216/1056 -> 329    agrees
-            active       800/1056 -> 1217   against eh 1190, 27 units short
-```
-
-Not established as a defect: a stored pan and zoom would account for it, and the
-framing was not read back against a known default. Read the framing before
-treating it as one.
+The capture now opens on the source's first picture line, and the first and last
+source lines still cannot both be shown: they are 599 apart and the display
+aperture shows about 598. That is the aperture's far-end guard, not the capture.
+`docs/known-issues.md`.
