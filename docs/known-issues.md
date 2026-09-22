@@ -476,6 +476,30 @@ any register states.
 
 Horizontally nothing is given back, and no column of this kind has been seen.
 
+**IT COSTS THE SOURCE'S LAST LINE ON A FRAMING THAT REACHES THE SOURCE'S EDGE,
+AND THE LADDER ABOVE NO LONGER REPRODUCES.** Both measured with `PATTERN CARD`,
+whose green frame line is the source's last row, automation frozen:
+
+| | solved | crept to the far bound | what appeared |
+|---|---|---|---|
+| 800x600@60 into 960p, default | 995 | 998 | the green line, greenness 7.5 -> 35.0, and no junk |
+| 320x256@50 into 1080p, default | 1117 | 1121 | nothing at all, the profiles identical |
+
+The second is the configuration the ladder above was taken in, and the guard
+neither costs nor buys anything there because that framing's capture runs 15
+source lines into the source's bottom border -- what the guard blanks is black.
+The first is a framing whose capture reaches the source's own last line, and
+there the guard and the `- magnification` term beside it blank about 2.6 output
+rows of picture.
+
+**What is NOT established is whether the terms can go.** The interpolation
+argument for `- magnification` bites hardest at a high magnification, and the
+test for it needs a framing built to put high-contrast content on the capture's
+LAST unit -- zoomed to 2.06x on the bench card the bottom of the picture is
+black, so creeping the aperture out shows nothing either way. Until that is
+measured, the 800x600 reading says the guard costs a line, not that it is safe
+to remove.
+
 ### Bypass shows the source's border, and nothing on the board can hide it
 
 **The constant is gone and the symptom is not.** `HdBypass` wrote `0x90` into
