@@ -478,11 +478,7 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     // is counted from the trailing edge with the pulse already behind it.
     const long sync = (long)std::ceil((double)line * (double)HsyncLow / (double)Divider);
 
-    // Plus the lag, which is how far behind the counter's origin the capture
-    // path delivers video: a window placed where the standard states without
-    // it captures the picture's left edge as blanking.
-    const long lag = solved.engine.videoLagOn(AxisHorizontal);
-    CHECK_NEAR(stop, 0.180 * line - sync + lag, 2);
+    CHECK_NEAR(stop, 0.180 * line - sync, 2);
     CHECK_NEAR(start - stop, 0.800 * line, 2);
 }
 

@@ -226,16 +226,14 @@ static void checkBenchGeometry()
     // is placed across the envelope of what real sources put on a line. The
     // doubler is in the path here, so the vertical counts half-lines.
     //
-    // The vertical window carries Axis::captureMargin units at EACH end: one
-    // the path drops, so a window opened on the picture loses the source's
-    // first and last lines, and one for the frame lag's rounding. Measured on
-    // the card's one-pixel frame, which lands on exactly those lines. The
-    // doubler is in the path here, so the margin is a half-line rather than a
-    // line -- which is NOT measured.
+    // The vertical window carries Axis::captureMargin units at EACH end, both
+    // measured on the card's one-pixel frame, which lands on exactly those
+    // lines. The doubler is in the path here, so the margin is a half-line
+    // rather than a line -- which is NOT measured.
     CHECK(InputFormatter::IF_HB_SP2::read() == 129);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
-    CHECK(InputFormatter::IF_VB_SP::read() == 29);
-    CHECK(InputFormatter::IF_VB_ST::read() == 615);
+    CHECK(InputFormatter::IF_VB_SP::read() == 36);
+    CHECK(InputFormatter::IF_VB_ST::read() == 622);
 
     // The progressive line window spans exactly one line from where it starts,
     // and may run past the end of the line without that being a fault.
@@ -756,8 +754,8 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
 
     CHECK(InputFormatter::IF_HB_SP2::read() == 129);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
-    CHECK(InputFormatter::IF_VB_SP::read() == 29);
-    CHECK(InputFormatter::IF_VB_ST::read() == 615);
+    CHECK(InputFormatter::IF_VB_SP::read() == 36);
+    CHECK(InputFormatter::IF_VB_ST::read() == 622);
 
     // And leaves everything the framing does not own exactly as it was. The
     // divider, the raster and the clock are still the ones the mode change
@@ -978,10 +976,7 @@ TEST_CASE("a source nobody has framed gets the computed default")
 static long askedOrigin(const Tv5725::VideoPath &engine,
                         const Tv5725::PanAndZoom &stored, const Tv5725::Axis &axis)
 {
-    // A framing names a position in the SOURCE and firstUnitOn() is a position
-    // in the COUNTER, so the floor has to come back through the lag before the
-    // two can be compared.
-    const long first = (long)engine.firstUnitOn(axis) - engine.videoLagOn(axis);
+    const long first = (long)engine.firstUnitOn(axis);
     const long asked = lrintf(stored.originOn(axis) * (float)engine.lineUnitsOn(axis));
     return asked < first ? first : asked;
 }

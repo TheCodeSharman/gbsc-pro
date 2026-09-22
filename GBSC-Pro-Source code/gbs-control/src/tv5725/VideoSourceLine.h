@@ -40,28 +40,11 @@ public:
     // arrangement leaves free. docs/known-issues.md
     static const uint16_t FirstCapturableUnit = 1;
 
-    // How far the video sits AHEAD of the counter down the frame, in the
-    // COUNTER'S OWN UNITS. The line carries no such displacement, and nothing
-    // requires the two pipelines to agree.
-    //
-    // The scan mode does not enter it. The doubled counter runs at twice the
-    // source's line rate, so the same seven units are three and a half source
-    // lines there and seven undoubled -- which is what one source measured in
-    // both scan modes shows, and what a framing held as a proportion needs if
-    // it is to take the same video at either output resolution.
-    //
-    // ITS VALUE IS UNVERIFIED. The horizontal constant it was derived beside
-    // turned out to be the retiming bypassed, and the page they shared is
-    // retracted; zeroing this one changes nothing the bench can see.
-    // docs/investigations/the-capture-lag-was-the-retiming-bypassed.md
-    static const float FrameLagUnits;
-
     // The whole line is available. The exclusion is the HSYNC pulse and there
     // is no vertical equivalent.
     explicit VideoSourceLine(uint16_t units);
 
-    // The frame, which carries its lag and nothing else: no sync interval to
-    // exclude and no head blanking.
+    // The frame: no sync interval to exclude and no head blanking.
     static VideoSourceLine frame(uint16_t units);
 
     VideoSourceLine(uint16_t units, uint16_t syncUnits);
@@ -85,19 +68,6 @@ public:
     // The inverse: which fraction of the source's line the video at this
     // position in the counter came from.
     float fractionAt(uint16_t position) const;
-
-    // lastCapture() said in the source's own units, which is what a control
-    // bound has to be in: a framing names a position in the video and the lag
-    // is what turns that into a position in the counter. Bounding the control
-    // by the counter's own last unit instead leaves the tail of the line
-    // unreachable by exactly the lag, which is a dead zone one press wide.
-    uint16_t lastReachable() const;
-
-    // How far the video sits behind the counter's origin on this axis, which is
-    // what turns a position in the source into a position in the counter.
-    // Signed: the frame's is negative, and fractional, so it is applied before
-    // a position is rounded rather than after.
-    float videoLag() const;
 
     // The span the framing is a proportion of: everything between the ends.
     uint16_t capturable() const;
@@ -142,7 +112,6 @@ private:
 
     uint16_t units_;
     uint16_t syncUnits_;
-    float lag_;
     uint16_t headBlankingUnits_;
     bool syncAtHead_;
 };

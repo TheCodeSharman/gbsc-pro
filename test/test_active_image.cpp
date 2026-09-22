@@ -57,9 +57,9 @@ static void press(Tv5725::ActiveImage &f, const Tv5725::VideoSourceLine &line,
         f.clampToLine(line, timing, axis);
     Tv5725::PanAndZoom moved = f.framing();
     if (zoomUnits != 0)
-        moved.zoomBy(axis, zoomUnits, line.units(), line.lastReachable());
+        moved.zoomBy(axis, zoomUnits, line.units(), line.lastCapture());
     if (panUnits != 0)
-        moved.panBy(axis, panUnits, line.units(), line.lastReachable());
+        moved.panBy(axis, panUnits, line.units(), line.lastCapture());
     f.setFraming(moved);
 }
 

@@ -35,13 +35,6 @@ using namespace Tv5725;
 // IF_LINE_ST/SP is the input formatter's PROGRESSIVE line window -- line double
 // timing, so deinterlacing's rather than the picture's -- and it has to span
 // exactly one line from wherever it starts.
-// The lag is fractional along the line, so it is applied before a position is
-// rounded. A position carries it as whole units.
-static long lagUnits(const VideoSourceLine &line)
-{
-    return lrintf(line.videoLag());
-}
-
 TEST_CASE("the progressive line window spans exactly one line")
 {
     const VideoSourceLine SourceLine = measuredLine(1126, 160, 2250, true);
@@ -190,7 +183,7 @@ TEST_CASE("the capture starts where the sync pulse ends")
 
     SUBCASE("a positive pulse sits at the head and the floor clears it") {
         VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
-        CHECK(line.firstCapture() == 137 + lagUnits(line));
+        CHECK(line.firstCapture() == 137);
     }
 
     SUBCASE("an inverted pulse is behind the origin, so the floor is the first unit") {
@@ -250,13 +243,13 @@ TEST_CASE("a position in the source's line maps onto where video lands in this o
 
     SUBCASE("a positive pulse shares the standard's own origin") {
         VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
-        CHECK(line.videoAt(ActiveStart) == 230 + lagUnits(line));
+        CHECK(line.videoAt(ActiveStart) == 230);
     }
 
     SUBCASE("an inverted pulse moves it back by the sync interval as well") {
         VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
         CHECK(line.videoAt(ActiveStart)
-              == 230 - line.syncUnits() + lagUnits(line));
+              == 230 - line.syncUnits());
     }
 
     SUBCASE("a line nothing has measured maps one to one") {
@@ -305,7 +298,7 @@ TEST_CASE("the capture floor hides the sync pulse and nothing else")
 
     SUBCASE("a high-active source has it at the head, so the floor clears it") {
         VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
-        CHECK(line.firstCapture() == line.syncUnits() + lagUnits(line));
+        CHECK(line.firstCapture() == line.syncUnits());
     }
 }
 
@@ -330,24 +323,21 @@ TEST_CASE("the capture floor never reaches zero")
 // 69..76 units, a capture-floor sweep puts the first content at unit 110..115,
 // and RetroScaler-Acorn.mdf states a back porch of 22 of 800 -- 41 units --
 // against a measured 116, leaving 75.
-TEST_CASE("the whole window is translated by the lag, not just its floor")
+TEST_CASE("a line whose pulse is at the tail opens on the first unit")
 {
     // 640x480@60 at PLLAD_MD 1494, low-active: the pulse is at the tail.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
     VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
-    const long Lag = lagUnits(line);
 
     SUBCASE("the floor is the first unit, the pulse being behind the origin") {
         CHECK(line.firstCapture() == VideoSourceLine::FirstCapturableUnit);
     }
 
-    SUBCASE("the stop is the wrap, which the lag cannot move past") {
-        // Video displaced past the counter's reset arrives at the head of the
-        // next line, so the tail is bounded by the wrap and not by the lag.
+    SUBCASE("the stop is the last unit before the wrap") {
         CHECK(line.lastCapture() == Units - 1);
     }
 
-    SUBCASE("a doubled line is placed by IF_HBIN_SP and takes no lag") {
+    SUBCASE("a doubled line is placed by IF_HBIN_SP") {
         VideoSourceLine doubled = measuredLine(1254, 89, 2506, true);
         CHECK(doubled.firstCapture()
               == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
@@ -402,48 +392,17 @@ TEST_CASE("one framing takes the same video along the line in both scan modes")
 
 
 // The frame's own lag, measured with PATTERN CARD, whose green frame is one
-// source pixel on the outermost row: the capture window was crept a unit at a
-// time until that row entered the picture.
-//
-//   source                counter  first picture line  it arrived at
-//   320x256@50 at 480p      312           36               29.4
-//   320x256@50 at 960p      624           72               64.3
-//   800x600@60              628           27               20.3
-//   1024x768@60             806           35               28.3
-//
-// One source measured in BOTH scan modes is what settles the form. Read as
-// source lines the same source is 6.6 early undoubled and 3.9 doubled; read as
-// a fraction of the frame it is 0.021 of a 312-unit frame against 0.011 of a
-// 628-unit one. Read as a count of the COUNTER's units every reading is seven.
-TEST_CASE("the frame delivers video a fixed count of counter units early")
-{
-    struct { uint16_t units, firstPictureLine, arrivedAt; } measured[] = {
-        { 312, 36, 29 }, { 624, 72, 64 }, { 628, 27, 20 }, { 806, 35, 28 },
-    };
-
-    for (unsigned i = 0; i < sizeof(measured) / sizeof(measured[0]); ++i) {
-        CAPTURE(measured[i].units);
-        const VideoSourceLine frame = VideoSourceLine::frame(measured[i].units);
-        CHECK_NEAR(frame.videoAt((float)measured[i].firstPictureLine
-                                 / (float)measured[i].units),
-                   measured[i].arrivedAt, 1);
-    }
-}
-
-
-// Which is what makes the scan mode irrelevant to it: the doubled counter runs
-// at twice the source's line rate, so the same position is twice as far in and
-// the lag is not.
+// The doubled counter runs at twice the source's line rate, so the same
+// proportion is twice as far in and nothing else differs.
 TEST_CASE("one framing takes the same video whichever scan mode is in force")
 {
     const float Framing = 36.0f / 312.0f;
     const VideoSourceLine undoubled = VideoSourceLine::frame(312);
     const VideoSourceLine doubled = VideoSourceLine::frame(624);
 
-    // The doubled counter is further in by the position and by nothing else: a
-    // lag that differed between the modes would leave its own term here, and
-    // that is the stored framing taking different picture at two output
-    // resolutions.
+    // Further in by the position and by nothing else: a term that differed
+    // between the modes is the stored framing taking different picture at two
+    // output resolutions.
     CHECK(doubled.videoAt(Framing) - undoubled.videoAt(Framing)
           == lrintf(Framing * 312.0f));
 }
@@ -466,15 +425,8 @@ TEST_CASE("a progressive line carries no video lag")
     // 800x600@60 at PLLAD_MD 1438, positive-going pulse, undoubled.
     const VideoSourceLine line = measuredLine(1439, 176, 1438, true);
 
-    SUBCASE("the video is not displaced along the counter") {
-        CHECK(line.videoLag() == 0.0f);
-    }
-
     SUBCASE("the line's own start is the counter's origin") {
         CHECK(line.videoAt(0.0f) == 0);
     }
 
-    SUBCASE("so the tail is reachable to the wrap") {
-        CHECK(line.lastReachable() == line.lastCapture());
-    }
 }

@@ -83,7 +83,6 @@ public:
     // lies outside them is the capture path's own exclusion, not the framing's.
     uint16_t firstUnitOn(const Axis &axis) const;
     uint16_t reachOn(const Axis &axis) const;
-    int16_t videoLagOn(const Axis &axis) const;
 
     uint16_t linePx() const;
     uint16_t frameLines() const;

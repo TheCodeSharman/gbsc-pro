@@ -132,14 +132,8 @@ uint16_t CaptureWindow::firstUnitOn(const Axis &axis) const
 
 uint16_t CaptureWindow::reachOn(const Axis &axis) const
 {
-    return axis.vertical() ? verticalLine_.lastReachable()
-                           : horizontalLine_.lastReachable();
-}
-
-int16_t CaptureWindow::videoLagOn(const Axis &axis) const
-{
-    return (int16_t)lrintf(axis.vertical() ? verticalLine_.videoLag()
-                                           : horizontalLine_.videoLag());
+    return axis.vertical() ? verticalLine_.lastCapture()
+                           : horizontalLine_.lastCapture();
 }
 
 uint16_t CaptureWindow::linePx() const { return line_.total(); }
