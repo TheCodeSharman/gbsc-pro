@@ -1047,3 +1047,34 @@ TEST_CASE("restarting the PLL pulses the VCO reset and reloads the group after i
     CHECK(vcoReleasedAt() >= 0);
     CHECK(lastLatchRisingEdge() > vcoReleasedAt());
 }
+
+// --- the PLL group has one owner --------------------------------------------
+
+TEST_CASE("the reset parameters leave the loop filter set and the group to the sample rate")
+{
+    // s5_16 carries PLLAD_R and PLLAD_S beside PLLAD_KS and PLLAD_CKOS, and the
+    // last two are applySampleRate()'s -- written from the crossover row moments
+    // after this. Only the loop filter survives, so only it is set here.
+    Wire.reset();
+
+    Adc::applyResetParameters();
+
+    CHECK(Adc::PLLAD_R::read() == 3);
+    CHECK(Adc::PLLAD_S::read() == 3);
+}
+
+TEST_CASE("the ADC PLL is parked without pulsing the latch")
+{
+    // The low-power path leaves the converter's PLL in reset and powered down.
+    // PLLAD_LAT loads the group on a rising edge, so parking must not make one.
+    Wire.reset();
+    Adc::restartPll();
+    Wire.trace.clear();
+
+    Adc::holdPllInReset();
+
+    CHECK(Adc::PLLAD_VCORST::read() == 1);
+    CHECK(Adc::PLLAD_PDZ::read() == 0);
+    CHECK(Adc::PLLAD_LEN::read() == 0);
+    CHECK(latchRisingEdge() == -1);
+}

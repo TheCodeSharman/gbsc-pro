@@ -147,6 +147,18 @@ void Adc::latch()
     PLLAD_LAT::write(1);
 }
 
+void Adc::holdPllInReset()
+{
+    PLLAD_VCORST::write(1);
+    PLLAD_PDZ::write(0);
+    PLLAD_LEN::write(0);
+    PLLAD_TEST::write(0);
+    PLLAD_TS::write(0);
+    PLLAD_FS::write(0);
+    PLLAD_BPS::write(0);
+    PLLAD_LAT::write(0);
+}
+
 void Adc::restartPll()
 {
     PLLAD_VCORST::write(1);
@@ -427,9 +439,11 @@ void Adc::applyDivider(uint16_t divider)
 
 void Adc::applyResetParameters()
 {
-    // Before applySampleRate(), which ends in the latch: PLLAD_LAT is what
-    // loads the group, so anything holding part of it has to be written first.
-    PLLAD_5_16::write(0x1f);
+    // The loop filter only. PLLAD_KS and PLLAD_CKOS share s5_16 with it and
+    // belong to applySampleRate(), which writes them from the crossover row
+    // immediately below.
+    PLLAD_R::write(3);
+    PLLAD_S::write(3);
 
     // The whole group, not the divider alone. A divider written without the
     // crossover row and the VCO gain puts the PLL on a frequency the hardware

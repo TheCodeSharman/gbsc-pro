@@ -1416,7 +1416,7 @@ void setResetParameters()
     delay(2);
     resetPLLAD();
     GBS::PLL_VCORST::write(1);
-    GBS::PLLAD_CONTROL_00_5x11::write(0x01);
+    Tv5725::Adc::holdPllInReset();
 
     GBS::SFTRST_IF_RSTZ::write(1);
     GBS::SFTRST_DEINT_RSTZ::write(0);

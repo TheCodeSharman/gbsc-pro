@@ -119,7 +119,6 @@ public:
     typedef UReg<0x05, 0x0F, 4, 4> ADC_AUTO_OFST_V_RANGE;             // V channel offset detection range Define V channel offset
                                                                       // detection range 0~15
 
-    typedef UReg<0x05, 0x11, 0, 8> PLLAD_CONTROL_00_5x11;
 
     typedef UReg<0x05, 0x11, 0, 1> PLLAD_VCORST;                      // VCORST Initial VCO control voltage
 
@@ -144,7 +143,6 @@ public:
 
     typedef UReg<0x05, 0x14, 0, 12> PLLAD_ND;                         // ND[11:8] PLLAD input divider control
 
-    typedef UReg<0x05, 0x16, 0, 8> PLLAD_5_16;
 
     typedef UReg<0x05, 0x16, 0, 2> PLLAD_R;                           // R Skew control for testing
 
@@ -421,6 +419,11 @@ public:
     // gain, and the parked divider. The pulse on VCORST/PDZ that follows is the
     // caller's -- this is the state it latches. Leaves no divider in force,
     // because a PLL held in reset is running none.
+    // The converter's PLL left in reset and powered down, which is where the
+    // low-power path parks it. PLLAD_LAT loads the group on a rising edge, so
+    // this leaves it low rather than writing the byte it sits in.
+    static void holdPllInReset();
+
     static void applyResetParameters();
 
     // Whether the PLL is running the divider in force, against the sync
