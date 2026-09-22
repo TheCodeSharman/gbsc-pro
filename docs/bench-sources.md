@@ -108,9 +108,16 @@ concept of a video standard does not survive here.
 
 ### The line rate the bench reaches is the MONITOR DEFINITION's, not the machine's
 
-**The machine now runs `RetroScaler-Acorn.mdf`, not a stock file** -- 63 modes,
-15.6 kHz to 1080p, Acorn's own timings verbatim plus a CEA-861 block, built by
-`RiscPc/tools/video-source/make_acorn_mdf.py`. `MODES` lists 1280x720 and
+**The machine now runs `RetroScaler-Acorn.mdf`, not a stock file** -- 80 modes,
+15.6 kHz to 1080p, Acorn's own timings verbatim plus a CEA-861 block and the
+VESA DMT set, built by `RiscPc/tools/video-source/make_acorn_mdf.py`.
+
+The DMT entries are the standard's own sync, back porch and front porch with no
+border, so a source running one of them publishes the raster the engine derives
+its capture window from. Acorn's own entries do not: they differ in sync width
+and porch split, and where the two describe the same resolution and field rate
+the Acorn entry is dropped, since `MODE` selects by X/Y/F and cannot tell them
+apart. `MODES` lists 1280x720 and
 1920x1080, so the ceiling below is history for this bench and is kept because it
 is what a stock file reaches.
 
