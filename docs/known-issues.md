@@ -446,59 +446,39 @@ write is not being stopped where the register says.
 past the fetch cost anything. The horizontal equivalent is live
 (`IF_HB_ST2` bounds the line), so this is not a property the two axes share.
 
-### The vertical aperture's far end needs a row nothing explains
+### The vertical aperture's far end took two rows nothing could reproduce
 
-`Axis::solve()` closes the vertical aperture one OUTPUT ROW earlier than the
-write-end arithmetic allows, and the row is measured rather than derived.
+**Closed.** `Axis::solve()` subtracted the magnification and a further output
+row from the vertical write end. The magnification is the interpolator reading
+one capture unit past the last one written; the extra row came from a
+castellation ladder at 1080p. Together they blanked 2.6 output rows at the bench
+800x600@60 framing, which there is the source's last picture line.
 
-Crept on the bench at 1080p, RiscPC 320x256@50 on `vga`, automation frozen,
-scoring the card's bottom castellations -- black blocks against white gaps:
+Crept with `PATTERN CARD`, whose green frame line is the source's last row:
 
-| `VDS_DIS_VB_ST` | 1117 | 1116 | 1115 | 1114 | 1113 |
-|---|---|---|---|---|---|
-| contrast, last row shown | **90** | 205 | 207 | 208 | 208 |
+| framing | ladder | what moved |
+|---|---|---|
+| 800x600@60 into 960p, magnification 2.50, the source's last picture line as the capture's last unit | solved 994 out to the bound 998 | a row of picture per step, the falloff keeping its shape, no row of stale memory at any of them |
+| 320x256@50 into 1080p, capture 582 at `VDS_VSCALE` 552 | 1112 to 1121 | **nothing at all**, ten values, profiles identical to a grey level |
 
-The solved 1117 shows a row the capture never wrote. It reads as mostly white
-with a coloured span or two where the castellations should be, which is what
-memory from another framing looks like.
+The second is the framing BOTH measurements behind those terms were taken at, so
+neither can be reproduced: the register is not what ends the picture there. And
+the interpolation reading measured the CAPTURE rather than the aperture -- a
+stale line that cleared when the capture took one more line -- so the aperture
+correction was the modelled response to it rather than a reading of it.
 
-**What is not established is why.** The same ladder at 576p is clean at the
-solved 620, and that mode is NOT line doubled, so the doubler's last half-line
-never being emitted is the standing candidate. It does not fit cleanly: a
-missing capture unit is two output rows at this magnification and one is
-measured. The other candidate is the vertical write origin, `0.2 + 0.8m`, being
-a fraction of a row out.
+**Horizontally the term stays and the axis is untested.** At 960p the
+transmitted window ends before the aperture does, so creeping `VDS_DIS_HB_ST`
+over the same range moves nothing and the panel cannot see the far end at all.
+The parity bias and the memory window are untouched and `VDS_HB_ST` solves to
+the same value it did.
 
-**Both capture STOP registers are inert on the scaling path**, which is what
-makes this hard to reason about -- see the entry below. The write's real extent
-is not the one the engine believes, so "the last written unit" is not a quantity
-any register states.
-
-Horizontally nothing is given back, and no column of this kind has been seen.
-
-**IT COSTS THE SOURCE'S LAST LINE ON A FRAMING THAT REACHES THE SOURCE'S EDGE,
-AND THE LADDER ABOVE NO LONGER REPRODUCES.** Both measured with `PATTERN CARD`,
-whose green frame line is the source's last row, automation frozen:
-
-| | solved | crept to the far bound | what appeared |
-|---|---|---|---|
-| 800x600@60 into 960p, default | 995 | 998 | the green line, greenness 7.5 -> 35.0, and no junk |
-| 320x256@50 into 1080p, default | 1117 | 1121 | nothing at all, the profiles identical |
-
-The second is the configuration the ladder above was taken in, and the guard
-neither costs nor buys anything there because that framing's capture runs 15
-source lines into the source's bottom border -- what the guard blanks is black.
-The first is a framing whose capture reaches the source's own last line, and
-there the guard and the `- magnification` term beside it blank about 2.6 output
-rows of picture.
-
-**What is NOT established is whether the terms can go.** The interpolation
-argument for `- magnification` bites hardest at a high magnification, and the
-test for it needs a framing built to put high-contrast content on the capture's
-LAST unit -- zoomed to 2.06x on the bench card the bottom of the picture is
-black, so creeping the aperture out shows nothing either way. Until that is
-measured, the 800x600 reading says the guard costs a line, not that it is safe
-to remove.
+**What is left is sub-row granularity.** The write ends at a fraction and the
+aperture closes on the floor of it, so up to a row is still blanked: at the
+800x600@60 default the write ends 997.98 rows in and the aperture closes at 997,
+losing a row that is 98% written. Whether that should round rather than floor is
+untried, and the guard against it is `blanking starts no later than the write
+ends`.
 
 ### Bypass shows the source's border, and nothing on the board can hide it
 
@@ -2082,22 +2062,20 @@ has the measurements and what they refute.
 
 ### The first and last source lines cannot both be shown
 
-**Closed as a placement fault, open by one line at each end.** The capture
-window opens on the source's first picture line now, and what is left is the
-output aperture: the two are 599 source lines apart and the aperture shows about
-598 of them.
+**Narrowed to sub-row granularity.** The capture window opens on the source's
+first picture line and the aperture closes on the write, so what is left at each
+end is under an output row.
 
 The instrument is `PATTERN CARD`, whose `PROCframe` draws a one-pixel green line
 on the source's outermost rows -- one source line, so it is present or it is
-not. At 800x600@60 into 960p the top line first appears at `IF_VB_SP` 20 and the
-bottom is still there at 21, so no window position shows both.
+not. At 800x600@60 into 960p both lines are now at the extreme edges of the
+display window and each reads about a third of the amplitude it has when fully
+inside, which is what a half-shown row looks like.
 
-What eats them is the far-end guard in `Axis::solve()`: the aperture closes
-`magnification` plus one output row before the write ends, 2.6 rows at this
-framing, which is 1.6 source lines. The near end loses the 0.48 of a row between
-the aperture opening at the mode's first active line and the write starting at
-`VDS_VB_SP` plus the origin offset. The entry above on the vertical aperture's
-far end is the same row.
+The near end loses the 0.48 of a row between the aperture opening at the mode's
+first active line and the write starting at `VDS_VB_SP` plus the origin offset.
+The far end loses the fraction the floor discards. Neither is recoverable
+without a finer scale; see the aperture entry above.
 
 ### The frame's lag was measured on one source and one scan mode
 
