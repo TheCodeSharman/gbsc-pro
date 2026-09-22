@@ -94,10 +94,38 @@ freezing the picture, which is what put `VideoSourceLine::lastCapture()` at
 engaged `units - 1` captures cleanly on both axes.
 `docs/investigations/the-capture-tail-was-one-unit-short.md`.
 
-`FrameLagUnits`, the vertical constant, is a separate quantity and is **not**
-explained by this. Zeroing it changes neither the framing fault this page
-describes nor the bright band at the bottom of a 100% framing, which is the
-captured vsync pulse.
+## The vertical constant went too
+
+`FrameLagUnits` held -7 counter units, derived beside the horizontal one and
+justified by four readings taken by creeping the capture window a unit at a time
+until the card's outermost row entered the picture:
+
+| source | counter units | first picture line | video arrived at |
+|---|---|---|---|
+| 320x256@50 at 480p | 312 | 36 | 29.4 |
+| 320x256@50 at 960p | 624 | 72 | 64.3 |
+| 800x600@60 | 628 | 27 | 20.3 |
+| 1024x768@60 | 806 | 35 | 28.3 |
+
+Read as a count of the counter's own units every reading is seven, which is what
+made it look like a property of the capture path.
+
+**It is deleted, and the readings are better explained by where the default
+framing opened.** Both of the places a vertical window is placed from counted
+the vsync pulse as leading blanking -- the convention the DMT tables and the
+monitor definition state, where `v_timings` lists sync first -- while the
+counter zeroes at the pulse's TRAILING edge. So the window opened a sync width
+into the picture, the lag cancelled some of that, and a creep that finds the
+picture late measures the pair rather than a pipeline delay.
+
+`SourceTiming`'s `vstart` column is the back porch alone now, so a source
+running a published raster is placed on its active area exactly: measured at
+800x600@60, capture `23..623` of 628 against the standard's 23 and 600, and at
+640x480@60 `33..513` of 525 against 33 and 480.
+
+**The envelope is the half that remains.** `Axis`'s vertical `activeStart` is
+0.061, which is the same leading-edge convention, and it is what places a source
+matching no published raster.
 
 ## The retiming does not cause a vertical wobble
 
