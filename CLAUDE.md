@@ -1725,8 +1725,7 @@ firmware C++.
   one at a time; what is reviewed is the engine as it now stands. So a push is
   routine and carries no promise that the history is final — **once the code is
   agreed, the commits are squashed aggressively to remove churn** and the series
-  rationalised. Keep upstream-cherry-pickable commits separable through that;
-  our own churn folds.
+  rationalised.
 - Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
   `framesync:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
@@ -1736,9 +1735,14 @@ firmware C++.
   churn the unit and leaves them rebuilding the feature out of five commits
   because it touched five files. `docs/patch-workflow.md` has the mechanics,
   including which regroupings conflict and why.
-- **A commit holds ONE of these four, never a mixture.** The firmware is a fork
-  and its commits have to be cherry-pickable upstream on their own; a commit that
-  also edits our Python or our conventions cannot be taken without them.
+- **A commit holds ONE of these four, never a mixture.** It is a readability
+  rule: a reviewer reading the engine should not have to step over a prose edit,
+  and a tooling change should not hide inside a firmware diff.
+
+  **UPSTREAM CHERRY-PICKABILITY IS NOT A CONSTRAINT.** This fork has diverged
+  too far for a commit to be lifted back, so nothing is shaped to keep it
+  liftable -- upstream-derived files, `framesync.h` among them, are refactored
+  like any other, and a fix does not wait on being separable.
 
   | kind | paths | prefix |
   |---|---|---|
@@ -1749,8 +1753,8 @@ firmware C++.
 
   `test/` travels with the firmware — it is the host-compiled C++ that proves it.
   So one feature is at most four commits, landing as an **adjacent run**:
-  firmware first, then its tooling and its docs. The run is still one push, and
-  it is one conceptual commit split only as far as cherry-pickability demands.
+  firmware first, then its tooling and its docs. The run is still one push and
+  one conceptual commit, split only so each kind reads on its own.
   Check before committing:
 
   ```sh
