@@ -4,12 +4,27 @@ The bench RISC PC on `vga` at AKF50's 800x600@60, scaled to the solved raster,
 shows the PM5544 card with its outermost castellation columns missing at left
 and right. The same source in RGBHV bypass shows the card complete.
 
+> **RETRACTED: THE LINE OFFSET IS NOT A PROPERTY OF THE SOURCE OR THE DOUBLER.**
+> It was the sync processor's retiming module held out of circuit by
+> `SP_HS_LOOP_SEL` 1, which `SyncProcessor::applyForSyncType()` wrote on both
+> sync types. With the retiming engaged the residual offset is zero, and
+> `VideoSourceLine::CaptureLagFraction` is deleted rather than corrected.
+>
+> The derivation below is confounded and cannot be repaired: its two readings
+> were taken on **different sources** — 800x600@60 at `PLLAD_MD` 1124 and 480p
+> at 1880 — so divider and source moved together, where the argument needed two
+> dividers against one source. The constant it shipped matched neither reading.
+>
+> `docs/investigations/the-capture-lag-was-the-retiming-bypassed.md` has the
+> measurement that replaces it. The rest of this page — the source's timings,
+> the head blanking, and the transmitted window — stands.
+
 **It is three separate faults sharing one symptom.** One is closed; two are not.
 
 | | what it is | state |
 |---|---|---|
 | head blanking | `IF_HBIN_SP` blanks into the capture where the doubler is bypassed | **closed** |
-| the line offset | the video sits 6.4% of a line behind the counter's origin where the doubler is bypassed, and nothing behind it where it is in | **closed**: the placement translates by it |
+| the line offset | read as the video sitting 6.4% of a line behind the counter's origin | **retracted**: it was the retiming bypassed |
 | the transmitted window | the emitted active window is wider than what reaches the panel, on the two short rasters | open; `VDS_HSYNC_RST` is the lever |
 
 ## The source, exactly

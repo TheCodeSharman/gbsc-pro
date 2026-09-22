@@ -375,23 +375,32 @@ capturable unit**, because clipping both ends by `syncUnits` excludes
 and costs 91 units of zoom-out reach for nothing. Clipping the capture to hide an
 artefact the capture does not produce would crop picture for nothing.
 
-### The last two units of the line are not capture stops
+### Only the wrap point is not a capture stop
 
-`VideoSourceLine::lastCapture()` is `units - 2`, and both excluded units are excluded
-for their own reason.
+`VideoSourceLine::lastCapture()` is `units - 1`.
 
 `units` is the wrap point — `IF_VB_ST` rolls at `2 x (VTOTAL + 1)` and
 `IF_HB_ST2` at `IF_HSYNC_RST + 1` — and a window written onto it rolls rather
 than clamping, which reads as the picture jumping rather than as a capture fault.
 
-`units - 1` is the line reset value itself, and a capture stopping there stops
-the input formatter producing pixels at all. Measured 2026-08-17 on a 1265-unit
-line with `IF_HSYNC_RST` 1264: a stop of 1264 froze the picture on the last frame
-the buffer held, with the raster nothing writes to showing green, every config
-register still reading correct and the firmware loop still running; 1263 was
-clean. **So the bound is the reset value, not a region before it** — a stop one
-unit further back is not safer, and nothing in a register dump distinguishes the
-frozen state.
+**`units - 1` IS a capture stop, and the unit it takes carries frame.**
+Horizontally it is the last sample of the front porch; vertically the last line
+of the vsync pulse, which is the price of a capture that reaches the end of the
+front porch at all. Measured on a 1439-unit line and a 628-line frame with the
+retiming engaged: `IF_HB_ST2` 1438 and `IF_VB_ST` 627 both hold a clean picture,
+and `IF_VB_ST` 628 — the wrap — loses sync lock at once.
+
+**This overturns a measured freeze, and the difference is the retiming.** A
+2026-08-17 reading on a 1265-unit line had a stop of 1264 freezing the picture on
+the last frame the buffer held, with every config register still correct and the
+loop still running, where 1263 was clean. That was taken with
+`SP_HS_LOOP_SEL` 1, the sync processor's retiming module bypassed, which left
+the input formatter's line counter running ahead of the video — so `units` did
+not mean then what it means now.
+`docs/investigations/the-capture-lag-was-the-retiming-bypassed.md`.
+**If a stop at `units - 1` ever freezes the picture again, read
+`SP_HS_LOOP_SEL` first**: nothing in a register dump distinguishes the frozen
+state, and that bit is what changed underneath it.
 
 ### What is left
 
