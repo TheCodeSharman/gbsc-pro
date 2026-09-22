@@ -53,6 +53,24 @@ count, the divider against `STATUS_SYNC_PROC_HTOTAL`, both polarities and
 `PAD_SYNC_OUT_ENZ` does not clear it, so it is not the encoder holding a stale
 timing either.
 
+**ONE BIT CARRIES EVERYTHING YOU CAN SEE, AND IT IS COLLATERAL.**
+`enableMotionAdapt()` opens with `DEINT_00::write(0x19)` -- a whole byte at
+s2_00, of which `DIAG_BOB_PLDY_RAM_BYPS` is bit 7. `0x19` clears it, which
+routes video through the deinterlacer RAM, and that is what produces the green
+cast, the line-interleaved tearing and the horizontally repeated card. Nothing
+about motion adapt intends to touch that bit; only `disableMotionAdapt()`'s
+`DEINT_00::write(0xff)` puts it back.
+
+Measured on a latched unit: setting `DIAG_BOB_PLDY_RAM_BYPS` back to 1 alone
+restores a clean full-screen picture, with every field in the table above still
+at its engaged value. **So a clean picture is not evidence the latch cleared**
+-- the one bit masks the symptom and leaves motion adapt running on a
+progressive source. Read the table, not the screen.
+
+It is also a live case for `docs/whole-byte-convenience-names.md`: the byte
+write is the whole mechanism, and a field write of what motion adapt actually
+wants would not reach bit 7.
+
 **The recovery is a source mode round trip**, which forces a re-solve.
 
 What would fix it: the scan type is already measured on the line above the gate
