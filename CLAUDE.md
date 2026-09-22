@@ -131,10 +131,19 @@ it, "the feature is missing" and "the feature is there and broken" are
 indistinguishable from this end, and a session has been spent inventing probes
 to guess between them.
 
-**The machine runs `RetroScaler-Acorn.mdf`, not a stock definition** -- 63 modes,
-15.6 kHz to 1080p, so `MODES` lists 1280x720 and 1920x1080. Only 13 modes carry a
+**The machine runs `RetroScaler-Acorn.mdf`, not a stock definition** -- 80 modes,
+15.6 kHz to 1080p, so `MODES` lists 1280x720 and 1920x1080. Only 17 modes carry a
 name and the rest are nameless, which is why the desktop's monitor icon lists
 nothing; a nameless mode is still reachable by `MODE`. `docs/bench-sources.md`.
+
+**IT CARRIES THE VESA DMT SET, EXACTLY AS THE STANDARD STATES IT, AND THAT IS
+THE ACCEPTANCE SET.** Acorn's own entries are not conformant even where they
+carry a VESA resolution and rate -- the sync widths and porches differ, and
+where one collides with a DMT entry on resolution and field rate the Acorn one
+gives way, because `MODE` picks by X/Y/F alone and the conformant timing is what
+the engine's published-raster arithmetic is entitled to assume. A source running
+one of these has a raster the engine can derive a capture window from, which is
+what makes a framing testable rather than merely plausible.
 
 `MODE` replies with the mode read back from the hardware, never with the
 request, so a monitor definition that cannot do what was asked does not look
