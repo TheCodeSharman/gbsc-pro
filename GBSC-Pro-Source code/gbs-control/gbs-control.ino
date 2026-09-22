@@ -5702,12 +5702,12 @@ void handleType2Command(char argument)
             if (uopt->wantTap6 == 0) {
                 uopt->wantTap6 = 1;
                 Tv5725::VideoProcessor::setSixTapFilter(true);
-                GBS::MADPT_Y_DELAY_UV_DELAY::write(GBS::MADPT_Y_DELAY_UV_DELAY::read() - 1);
+                Tv5725::Deinterlacer::applySixTapFilter(true);
                 ; // SerialMprintln("on");
             } else {
                 uopt->wantTap6 = 0;
                 Tv5725::VideoProcessor::setSixTapFilter(false);
-                GBS::MADPT_Y_DELAY_UV_DELAY::write(GBS::MADPT_Y_DELAY_UV_DELAY::read() + 1);
+                Tv5725::Deinterlacer::applySixTapFilter(false);
                 ; // SerialMprintln("off");
             }
             saveUserPrefs();

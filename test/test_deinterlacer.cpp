@@ -719,3 +719,39 @@ TEST_CASE("a settled source that has not moved reports nothing")
     CHECK_FALSE(steering.frameTimingMoved);
     CHECK_FALSE(steering.outputRateSettled);
 }
+
+// --- the luma delay has one owner -------------------------------------------
+
+TEST_CASE("the six-tap filter shortens the luma delay without reaching the chroma")
+{
+    // s2_17 carries MADPT_Y_DELAY[3:0] and MADPT_UV_DELAY[7:4]. Adjusting the
+    // luma delay by stepping the whole byte borrows out of the chroma delay at
+    // zero, which is where a line-doubled source sits.
+    Wire.reset();
+    Deinterlacer::MADPT_UV_DELAY::write(0);
+
+    SUBCASE("on a line-doubled source the delay is already at its floor") {
+        Deinterlacer::applyLineDoubling(true);
+        Deinterlacer::applySixTapFilter(true);
+
+        CHECK(Deinterlacer::MADPT_Y_DELAY::read() == 0);
+        CHECK(Deinterlacer::MADPT_UV_DELAY::read() == 0);
+    }
+
+    SUBCASE("otherwise it comes off the one the doubling asked for") {
+        Deinterlacer::applyLineDoubling(false);
+        Deinterlacer::applySixTapFilter(true);
+
+        CHECK(Deinterlacer::MADPT_Y_DELAY::read() == 0);
+        CHECK(Deinterlacer::MADPT_UV_DELAY::read() == 0);
+    }
+
+    SUBCASE("and goes back when the filter does") {
+        Deinterlacer::applyLineDoubling(false);
+        Deinterlacer::applySixTapFilter(true);
+        Deinterlacer::applySixTapFilter(false);
+
+        CHECK(Deinterlacer::MADPT_Y_DELAY::read() == 1);
+        CHECK(Deinterlacer::MADPT_UV_DELAY::read() == 0);
+    }
+}

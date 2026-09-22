@@ -11,6 +11,8 @@ namespace {
 
 bool scanlinesApplied_ = false;
 bool motionAdaptEngaged_ = false;
+bool lineDoubled_ = false;
+bool sixTapFilter_ = false;
 
 // The steering's own state: the filtered scan type, the period it was counted
 // against, and a re-lock waiting for the source to settle under it.
@@ -393,9 +395,22 @@ Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
     return steering;
 }
 
+void Deinterlacer::writeLumaDelay()
+{
+    const uint8_t pipes = lineDoubled_ ? 0 : 1;
+    MADPT_Y_DELAY::write(sixTapFilter_ && pipes > 0 ? pipes - 1 : pipes);
+}
+
 void Deinterlacer::applyLineDoubling(bool lineDoubled)
 {
-    MADPT_Y_DELAY::write(lineDoubled ? 0 : 1);
+    lineDoubled_ = lineDoubled;
+    writeLumaDelay();
+}
+
+void Deinterlacer::applySixTapFilter(bool sixTap)
+{
+    sixTapFilter_ = sixTap;
+    writeLumaDelay();
 }
 
 }  // namespace Tv5725

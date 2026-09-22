@@ -220,7 +220,6 @@ public:
                                                                       // bit must be set to 1
 
 
-    typedef UReg<0x02, 0x17, 0, 8> MADPT_Y_DELAY_UV_DELAY;
 
     typedef UReg<0x02, 0x17, 0, 4> MADPT_Y_DELAY;                     // Y delay pipe control MADPT_Y_DELAY Y data delay pipes
                                                                       // 0000 1 0001 2 0010 3 0011 4 0100 5 0101 6 0110 7 0111 8
@@ -540,6 +539,11 @@ public:
     // InputFormatter::applyLineDoubling() and VideoProcessor::applyLineDoubling().
     static void applyLineDoubling(bool lineDoubled);
 
+    // The six-tap luma filter costs one pipe of luma delay. It shares s2_17
+    // with the chroma delay, so it is set here with the doubling rather than
+    // by stepping the byte, which borrows out of the chroma at zero.
+    static void applySixTapFilter(bool sixTap);
+
     // Whether the motion-adaptive path is running, owned here because this is
     // what writes the registers that make it so. A caller keeping its own copy
     // is what let the two disagree, after which nothing could turn the path
@@ -608,6 +612,9 @@ public:
     // How long a re-lock waits after the change that armed it, counted in
     // passes where the field parity matches the one it was armed at.
     static const uint8_t RelockPasses = 11;
+
+private:
+    static void writeLumaDelay();
 };
 
 }  // namespace Tv5725
