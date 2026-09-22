@@ -16,6 +16,7 @@ the panel. docs/bench-sources.md.
 """
 
 import argparse
+import random
 import socket
 import subprocess
 import sys
@@ -150,7 +151,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", required=True)
     ap.add_argument("--source", default="192.168.88.10:6502")
-    ap.add_argument("--shots", type=int, default=4)
+    ap.add_argument("--shots", type=int, default=8)
     ap.add_argument("--only", help="substring of the mode name")
     args = ap.parse_args()
 
@@ -188,6 +189,11 @@ def main():
         shots = []
         for _ in range(args.shots):
             shots.append(green_edges(frame(snap())))
+            # Jittered, because each capture takes about the same time: a burst
+            # taken back to back BEATS with the ring's flash rather than
+            # sampling it, and twelve evenly spaced stills have read a line
+            # that is plainly on the panel as absent.
+            time.sleep(random.uniform(0.05, 0.65))
         edges = best_of(shots)
 
         framed = all(abs(d) <= 1 for d in off)
