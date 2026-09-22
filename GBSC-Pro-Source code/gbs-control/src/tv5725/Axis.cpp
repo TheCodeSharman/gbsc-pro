@@ -5,11 +5,12 @@
 namespace Tv5725 {
 
 Axis::Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-           uint16_t captureGranularity,
+           uint16_t captureGranularity, uint16_t captureLead,
            float activeStart, float activeExtent, bool vertical)
     : startConst_(startConst), startPerMag_(startPerMag),
       windowStopMin_(windowStopMin),
       captureGranularity_(captureGranularity),
+      captureLead_(captureLead),
       activeStart_(activeStart), activeExtent_(activeExtent),
       vertical_(vertical) {}
 
@@ -26,6 +27,8 @@ float Axis::startPerMag() const { return startPerMag_; }
 uint16_t Axis::windowStopMin() const { return windowStopMin_; }
 
 uint16_t Axis::captureGranularity() const { return captureGranularity_; }
+
+uint16_t Axis::captureLead() const { return captureLead_; }
 
 int16_t Axis::stepUnits(int16_t pixels, float magnification) const
 {
@@ -287,8 +290,8 @@ AxisSolution Axis::solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
     return solved;
 }
 
-const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, 0.117f, 0.864f, false);
+const Axis AxisHorizontal(55.0f, 25.0f, 8, 2, 0, 0.117f, 0.864f, false);
 
-const Axis AxisVertical(0.2f, 0.8f, 0, 1, 0.061f, 0.933f, true);
+const Axis AxisVertical(0.2f, 0.8f, 0, 1, 1, 0.061f, 0.933f, true);
 
 }  // namespace Tv5725

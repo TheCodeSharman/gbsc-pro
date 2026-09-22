@@ -13,7 +13,7 @@ namespace Tv5725 {
 class Axis {
 public:
     Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t captureGranularity,
+         uint16_t captureGranularity, uint16_t captureLead,
          float activeStart, float activeExtent, bool vertical);
 
     // Which axis this is. The one place that knows: callers pass the axis and
@@ -40,6 +40,18 @@ public:
     // measured at ONE output hsync setting. Vertically 0 is an ASSUMPTION --
     // nobody has crept it.
     uint16_t windowStopMin() const;
+
+    // How many units the path drops at the START of the capture window, so a
+    // window opened on the picture loses its first line. The window is opened
+    // this much early so what the path drops is blanking rather than picture.
+    //
+    // Vertically 1: the line buffer startPerMag already accounts for on the
+    // OUTPUT side costs a line on the INPUT side too. Measured on the source's
+    // own first active line -- the card's one-pixel frame reaches the panel from
+    // one unit of lead and not from none, at 800x600@60 and at 640x480@60 alike,
+    // both running VESA DMT timings. The doubled case is NOT measured.
+    // Horizontally 0: the near edge is already crept against corruption.
+    uint16_t captureLead() const;
 
     // The smallest change of capture POSITION this axis's hardware acts on.
     // Horizontally 2 IF units -- the low bit of IF_HB_SP2 does nothing, so a
@@ -133,7 +145,7 @@ private:
     float placementFloor(float offset, uint16_t activeStart) const;
 
     float startConst_, startPerMag_;
-    uint16_t windowStopMin_, captureGranularity_;
+    uint16_t windowStopMin_, captureGranularity_, captureLead_;
     float activeStart_, activeExtent_;
     bool vertical_;
 };

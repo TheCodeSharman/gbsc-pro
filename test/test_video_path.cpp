@@ -221,9 +221,14 @@ static void checkBenchGeometry()
     // The capture window: this source runs no raster the standards state, so it
     // is placed across the envelope of what real sources put on a line. The
     // doubler is in the path here, so the vertical counts half-lines.
+    //
+    // The vertical window opens Axis::captureLead units EARLY: the path drops
+    // that many units at the start of the capture, so a window opened on the
+    // picture loses its first line. Measured on the source's own first active
+    // line, at 800x600@60 and 640x480@60 alike.
     CHECK(InputFormatter::IF_HB_SP2::read() == 129);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
-    CHECK(InputFormatter::IF_VB_SP::read() == 31);
+    CHECK(InputFormatter::IF_VB_SP::read() == 30);
     CHECK(InputFormatter::IF_VB_ST::read() == 613);
 
     // The progressive line window spans exactly one line from where it starts,
@@ -740,7 +745,7 @@ TEST_CASE("a reset puts the framing back without re-deriving the rest")
 
     CHECK(InputFormatter::IF_HB_SP2::read() == 129);
     CHECK(InputFormatter::IF_HB_ST2::read() == 1080);
-    CHECK(InputFormatter::IF_VB_SP::read() == 31);
+    CHECK(InputFormatter::IF_VB_SP::read() == 30);
     CHECK(InputFormatter::IF_VB_ST::read() == 613);
 
     // And leaves everything the framing does not own exactly as it was. The

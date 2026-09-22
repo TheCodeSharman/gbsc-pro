@@ -874,7 +874,11 @@ void VideoPath::write(const VideoProcessorTimings &solved, const CaptureWindow &
     GBS::IF_LINE_SP::write(capture.horizontalLine().progressiveStop(CaptureWindow::ProgressiveStart));
     GBS::IF_HB_SP2::write(capture.horizontal().stop());
     GBS::IF_HB_ST2::write(capture.horizontal().start());
-    GBS::IF_VB_SP::write(capture.vertical().stop());
+    // Opened early by the lead: the path drops that many units at the start of
+    // the capture, so the far end keeps the picture and the aperture is filled.
+    const uint16_t verticalStop = capture.vertical().stop();
+    const uint16_t lead = AxisVertical.captureLead();
+    GBS::IF_VB_SP::write(verticalStop > lead ? (uint16_t)(verticalStop - lead) : 0);
     GBS::IF_VB_ST::write(capture.vertical().start());
     GBS::VDS_HSCALE_BYPS::write(0);
     GBS::VDS_VSCALE_BYPS::write(0);
