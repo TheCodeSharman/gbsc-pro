@@ -96,7 +96,6 @@ public:
     typedef UReg<0x00, 0x47, 4, 1> SFTRST_INT_RSTZ;                   // Interrupt generator reset control When = 0, interrupt
                                                                       // generator is in reset status
 
-    typedef UReg<0x00, 0x48, 0, 8> PAD_CONTROL_00_0x48;
 
     typedef UReg<0x00, 0x48, 0, 1> PAD_BOUT_EN;                       // VB_[7:0] output control When = 0, disable VB_[7:0]
                                                                       // (test_out_[7:0]) output
@@ -126,7 +125,6 @@ public:
                                                                       // control When = 0, enable H/V sync2 input filter When = 1,
                                                                       // disable H/V sync2 input filter
 
-    typedef UReg<0x00, 0x49, 0, 8> PAD_CONTROL_01_0x49;
 
     typedef UReg<0x00, 0x49, 0, 1> PAD_CKIN_ENZ;                      // PCLKIN control When = 0, PCLKIN input enable
 
@@ -195,6 +193,12 @@ public:
     // The DACs and the sync outputs, off and back on around a mode switch. The
     // encoder samples the analog output, so dropping it is what stops it seeing
     // half-written timing.
+    // The pad block as the reset and low-power paths want it: the sync inputs
+    // listening, everything the encoder is driven from parked. Chip::init()'s
+    // pad state is the other one -- sync inputs disabled, output pads not
+    // tri-stated -- so these are two states, not one written twice.
+    static void padsToResetState();
+
     static void outputDown();
     static void outputUp();
 

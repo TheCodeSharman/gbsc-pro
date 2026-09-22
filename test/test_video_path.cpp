@@ -494,7 +494,7 @@ TEST_CASE("a pad taken down outside the engine is driven again when the output i
     engine.showOutput(true);
     REQUIRE(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
 
-    Chip::PAD_CONTROL_01_0x49::write(0x1f);
+    Chip::PAD_SYNC_OUT_ENZ::write(1);
     REQUIRE(Chip::PAD_SYNC_OUT_ENZ::read() == 1);
 
     engine.showOutput(true);

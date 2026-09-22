@@ -293,3 +293,20 @@ TEST_CASE("a bus that will not hold a byte is a board with no power")
 
     Wire.refuseWrites(false);
 }
+
+// --- the pad and GPIO reset state -------------------------------------------
+
+TEST_CASE("the pads reach their reset state without disturbing the reserved bit")
+{
+    // RD-5725-1.1 marks s0_49[7] RESERVED. A whole-byte write puts a 0 there,
+    // which is a write to a bit the part does not document; the named fields
+    // leave it alone, and this is what says so.
+    fresh();
+    Wire.bank[0][0x49] = 0x80;
+
+    Chip::padsToResetState();
+
+    CHECK(Wire.bank[0][0x48] == 0x2b);
+    CHECK((Wire.bank[0][0x49] & 0x7f) == 0x1f);
+    CHECK((Wire.bank[0][0x49] & 0x80) == 0x80);
+}

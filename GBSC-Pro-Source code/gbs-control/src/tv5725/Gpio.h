@@ -15,7 +15,6 @@ namespace Tv5725 {
 // is the HC32F460's -- so these are the tables' values, kept for continuity.
 class Gpio {
 public:
-    typedef UReg<0x00, 0x52, 0, 8> GPIO_CONTROL_00;
 
     typedef UReg<0x00, 0x52, 0, 1> GPIO_SEL_0;                        // GPIO bit0 selection When = 0, GPIO (pin76) is used as
                                                                       // INTZ output
@@ -45,7 +44,6 @@ public:
                                                                       // selection When = 0, CLKOUT (pin4) is used as clock output
                                                                       // When = 1, CLKOUT (pin4) is used as GPIO bit7
 
-    typedef UReg<0x00, 0x53, 0, 8> GPIO_CONTROL_01;
 
     typedef UReg<0x00, 0x53, 0, 1> GPIO_EN_0;                         // GPIO bit0 output enable When = 0, GPIO bit0 output
                                                                       // disable

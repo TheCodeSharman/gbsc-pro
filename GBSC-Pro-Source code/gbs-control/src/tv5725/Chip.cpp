@@ -37,6 +37,26 @@ void releaseVideoBlocks()
 // The three bits that decide whether anything reaches the encoder, written
 // together because they are taken down together: a restore that carries one of
 // them leaves a dark panel with every geometry register correct.
+void Chip::padsToResetState()
+{
+    PAD_BOUT_EN::write(1);
+    PAD_BIN_ENZ::write(1);
+    PAD_ROUT_EN::write(0);
+    PAD_RIN_ENZ::write(1);
+    PAD_GOUT_EN::write(0);
+    PAD_GIN_ENZ::write(1);
+    PAD_SYNC1_IN_ENZ::write(0);
+    PAD_SYNC2_IN_ENZ::write(0);
+
+    PAD_CKIN_ENZ::write(1);
+    PAD_CKOUT_ENZ::write(1);
+    PAD_SYNC_OUT_ENZ::write(1);
+    PAD_BLK_OUT_ENZ::write(1);
+    PAD_TRI_ENZ::write(1);
+    PAD_PLDN_ENZ::write(0);
+    PAD_PLUP_ENZ::write(0);
+}
+
 void Chip::outputDown()
 {
     OUT_SYNC_CNTRL::write(0);

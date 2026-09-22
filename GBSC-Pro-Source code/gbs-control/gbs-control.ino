@@ -1394,19 +1394,15 @@ void setResetParameters()
     GBS::ADC_POWDZ::write(1);
     Tv5725::SyncOnGreen::putInForce();
     Tv5725::BringUp::holdAllBlocks();
-    GBS::GPIO_CONTROL_00::write(0x67);
-    GBS::GPIO_CONTROL_01::write(0x00);
+    Tv5725::Gpio::init();
     GBS::DAC_RGBS_PWDNZ::write(0);
     GBS::PLL648_CONTROL_01::write(0x00);
-    GBS::PAD_CKIN_ENZ::write(0);
-    GBS::PAD_CKOUT_ENZ::write(1);
     GBS::IF_SEL_ADC_SYNC::write(1);
     GBS::PLLAD_VCORST::write(1);
     GBS::PLL_ADS::write(1);
     GBS::PLL_CKIS::write(0);
     GBS::PLL_MS::write(2);
-    GBS::PAD_CONTROL_00_0x48::write(0x2b);
-    GBS::PAD_CONTROL_01_0x49::write(0x1f); 
+    Tv5725::Chip::padsToResetState();
     Tv5725::HdBypass::init();
     Tv5725::ModeDetect::init();
     setAdcParametersGainAndOffset();
@@ -2457,8 +2453,7 @@ void doPostPresetLoadSteps()
 
         setAdcParametersGainAndOffset();
 
-        GBS::GPIO_CONTROL_00::write(0x67);
-        GBS::GPIO_CONTROL_01::write(0x00);
+        Tv5725::Gpio::init();
         Tv5725::SyncProcessor::forgetPositions();
         Tv5725::Adc::forgetPhase();
         Tv5725::Deinterlacer::disableMotionAdapt();
@@ -11632,7 +11627,6 @@ void OSD_selectOption()
     if ((millis() - Tim_Resolution) >= OSD_RESOLUTION_UP_TIME && oled_menuItem == OSD_Resolution_RetainedSettings) {
         Tim_menuItem = millis(); // updata osd close
         Tim_Resolution = millis();
-        // printf(" status:%02x  \n",GBS::PAD_CONTROL_01_0x49::read());
         // printf(" %02x \n",GBS::STATUS_MISC::read());
         uint8_t T_tim = OSD_RESOLUTION_CLOSE_TIME / 1000 - ((Tim_Resolution - Tim_Resolution_Start) / 1000);
         // colour1 = A2_main0;
