@@ -1,7 +1,7 @@
 # The whole-byte convenience names
 
-The driver declares 25 names that cover a whole byte whose individual bits the
-datasheet already names. `GBS::PLL648_CONTROL_01::write(0x75)` sets five
+A name covering a whole byte whose individual bits the datasheet already names
+hides what the write does. `GBS::PLL648_CONTROL_01::write(0x75)` sets five
 documented fields at once under a name RD-5725-1.1 does not contain, and `0x75`
 cannot be looked up anywhere.
 
@@ -9,8 +9,16 @@ cannot be looked up anywhere.
 there is a choice, prefer the datasheet's name unless the firmware's has a
 tangible benefit.
 
-Removing them is a campaign, deliberately not started in one go. This is the
-inventory, the two things that make it non-mechanical, and the order to do it in.
+**Deleting the name is the mechanism, not a policy against using it**: every
+remaining call site then fails to compile, which is a check no grep gives. This
+is what is left, why each one is still here, and the one thing that makes any of
+it non-mechanical.
+
+Two bugs have come out of decomposing these, so the exercise is not cosmetic. A
+byte write to s0_49 took the sync output pad down behind the engine's cache and
+left a dark panel with every geometry register correct, and stepping s2_17 to
+move the luma delay by one pipe borrowed out of the chroma delay at zero, which
+is where a line-doubled source sits.
 
 ## What is already settled
 
@@ -105,49 +113,40 @@ touching the sketch. Recount rather than trusting it:
 grep -c 'GBS::PLL648_CONTROL_01::' "GBSC-Pro-Source code/gbs-control/gbs-control.ino"
 ```
 
-| name | addr | uses | every bit datasheet-named? |
-|---|---|---|---|
-| `PLL648_CONTROL_01` | s0_41 | 24 | yes |
-| `TEST_BUS_SP_SEL` | s5_63 | 17 | no — bit 7 |
-| `INTERRUPT_CONTROL_00` | s0_58 | 4 | yes |
-| `RESET_CONTROL_0x47` | s0_47 | 9 | no — bits 5,6,7 |
-| `RESET_CONTROL_0x46` | s0_46 | 8 | no — bit 7 |
-| `MADPT_Y_DELAY_UV_DELAY` | s2_17 | 6 | yes |
-| `ADC_TEST_04` | s5_04 | 4 | no — bits 5,6,7 |
-| `INTERRUPT_CONTROL_01` | s0_59 | 1 | yes |
-| `ADC_TEST_0C` | s5_0c | 3 | no — bits 5,6,7 |
-| `ADC_TA_05_CTRL` | s5_05 | 3 | no — bits 5,6,7 |
-| `PLL648_CONTROL_03` | s0_43 | 2 | no — bits 6,7 |
-| `PAD_CONTROL_01_0x49` | s0_49 | 2 | no — bit 7 |
-| `INPUT_FORMATTER_02` | s1_02 | 2 | yes |
-| `GPIO_CONTROL_00` / `_01` | s0_52 / s0_53 | 2 each | yes |
-| `DEINT_00` | s2_00 | 2 | yes |
-| `ADC_5_00` | s5_00 | 2 | no — bits 5,6,7 |
-| `SP_CS_0x3E` | s5_3e | 1 | no — bits 6,7 |
-| `SP_5_57` | s5_57 | 1 | no — bits 4,5 |
-| `SP_5_56` | s5_56 | 1 | yes |
-| `PLLAD_CONTROL_00_5x11` | s5_11 | 1 | yes |
-| `PLLAD_5_16` | s5_16 | 1 | yes |
-| `PAD_CONTROL_00_0x48` | s0_48 | 1 | yes |
-| `ADC_AUTO_OFST_RANGE_REG` | s5_0f | 1 | yes |
-| `ADC_5_03` | s5_03 | 1 | no — bits 6,7 |
+What is left, and what each one is waiting on:
 
-**13 fully covered, 12 not.**
+| name | addr | why it is still here |
+|---|---|---|
+| `PLL648_CONTROL_01` | s0_41 | the display-clock sentinel. `0x75` means "the Si5351 drives the display" to the code that compares against it, and it is saved and restored as a byte in several places. Settling what the sentinel *is* comes before decomposing it |
+| `PLL648_CONTROL_03` | s0_43 | written once, beside `PLL648_CONTROL_01`, and goes with it |
+| `PLLAD_CONTROL_00_5x11` | s5_11 | the ADC PLL group, which `PLLAD_LAT` loads on a rising edge. Field writes are read-modify-write, so decomposing changes what is in the register between the edge and the write |
+| `PLLAD_5_16` | s5_16 | the same group |
+| `INTERRUPT_CONTROL_00` / `_01` | s0_58 / s0_59 | kept on purpose. Private to `Tv5725::Interrupts`, so the bits have no second writer, and each sequence is one bus write where the decomposition is eight |
+| `MEM_INI_REG` | s4_00 | **not a convenience name.** RD-5725-1.1 names the whole byte this. It is listed only because `SDRAM_RESET_SIGNAL` names one bit inside it, which is the granularity exception above |
+| `STATUS_00`, `STATUS_05`, `STATUS_0F`, `SP_CS_0x3E` | — | read-side, and nearly all of it is inside `getVideoMode()`, which step 12 of `video-source-acquisition.md` deletes |
+
+The ADC's reference trim is the shape the rest should take: three bytes written
+in three places became `Adc::applyReferenceTrim()`, named fields, one owner.
 
 ## The two things that make it non-mechanical
 
 ### 1. A byte write is not the same as writing its named fields
 
-This is the trap, and it is silent. `GBS::ADC_TEST_0C::write(0x12)` sets
-**s5_0c[7:5] to 0**. Nothing in the datasheet names those three bits, so the
-decomposition — `ADC_CKBS::write(0)` plus `ADC_TEST::write(9)` — leaves them at
-whatever they already held.
+`GBS::ADC_TEST_0C::write(0x12)` sets **s5_0c[7:5] to 0**, and the decomposition
+— `ADC_CKBS::write(0)` plus `ADC_TEST::write(9)` — leaves those three bits at
+whatever they already held. So the two forms are not equivalent.
 
-For the 12 partially-covered bytes the two forms are therefore *not equivalent*,
-and the difference only shows if some path ever sets one of those bits. Doing
-those needs a bench check per byte, not a refactor.
+**They are not equivalent in the DECOMPOSITION'S FAVOUR, and no bench check per
+byte is owed.** Every bit left uncovered on a partially-covered write-side byte
+is marked **RESERVED** in RD-5725-1.1's own table — checked against the
+datasheet for all nine of them, s0_43, s0_49, s5_00, s5_03, s5_04, s5_05,
+s5_0c, s5_3e and s5_57. Writing a reserved bit is what the byte form does; the
+fields leave it alone, which is what a reserved bit is for.
 
-The 13 fully-covered bytes have no such gap, which is why they go first.
+So a partially-covered byte is *more* correct decomposed, not merely different,
+and the split between fully and partially covered does not order the work.
+`test_chip.cpp` asserts a seeded s0_49[7] survives `Chip::padsToResetState()`,
+which is the guard against the byte form coming back.
 
 ### 2. Save-and-restore genuinely wants the byte
 
