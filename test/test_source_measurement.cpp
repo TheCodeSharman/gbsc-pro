@@ -796,33 +796,41 @@ TEST_CASE("the field rate has to REPEAT before anything is sized from it")
     }
 }
 
-TEST_CASE("the reading taken as it stands is not one sample")
+TEST_CASE("no reading the key is cut from is one sample")
 {
-    // The last attempt is taken whether or not it agrees, so a single reading
-    // off the debug pin decides the whole number of hertz the key carries and
-    // the raster is generated from. That reading is wrong by percent about one
-    // sample in ten, and the key cannot be re-chosen afterwards: identity is
-    // wider than the rounding, so every later correct reading compares equal
-    // and the raster stays where the outlier put it. Measured on the bench at
-    // 320x256@50, a 51.1 Hz sample keys 51 and the raster solves 1882 where
-    // 1920 is due.
+    // A single reading off the debug pin decides the whole number of hertz the
+    // key carries and the raster is generated from, and the key cannot be
+    // re-chosen afterwards: identity is wider than the rounding, so every later
+    // correct reading compares equal and the raster stays where the outlier put
+    // it. Measured at 320x256@50, a 51.1 Hz sample keys 51 and the raster
+    // solves 1882 where 1920 is due.
+    // docs/investigations/single-sample-rate-jitter.md
     seedSourceLines(311);
     Wire.sourceHsync(181, BenchDivider, false);
-    g_fieldRate = 50.26f;
 
     SourceMeasurement measurement;
-    REQUIRE(measureToFirstReading(measurement) == SourceMeasurement::Settling);
 
-    // Nothing agrees, so the attempts run out. One is already spent above.
-    for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
-        CAPTURE(i);
-        g_fieldRate = 50.0f + (float)i * 0.1f;
-        REQUIRE(measureOnce(measurement) == SourceMeasurement::Settling);
+    SUBCASE("the reading the source settles on") {
+        g_fieldRate = 50.08f;
+        g_fieldRates = {51.14f, 50.08f, 50.08f};
+        REQUIRE(measureToFirstReading(measurement) == SourceMeasurement::Settling);
     }
 
-    // The pass that is taken as it stands opens on the outlier.
-    g_fieldRates = {51.14f, 50.08f, 50.08f};
-    REQUIRE(measureOnce(measurement) == SourceMeasurement::Measured);
+    SUBCASE("and the one taken as it stands once the attempts run out") {
+        g_fieldRate = 50.26f;
+        REQUIRE(measureToFirstReading(measurement) == SourceMeasurement::Settling);
+
+        // Nothing agrees, so the attempts run out. One is already spent above.
+        for (uint8_t i = 2; i < SourceMeasurement::RateAgreementAttempts; ++i) {
+            CAPTURE(i);
+            g_fieldRate = 50.0f + (float)i * 0.1f;
+            REQUIRE(measureOnce(measurement) == SourceMeasurement::Settling);
+        }
+
+        g_fieldRate = 50.08f;
+        g_fieldRates = {51.14f, 50.08f, 50.08f};
+        REQUIRE(measureOnce(measurement) == SourceMeasurement::Measured);
+    }
 
     CHECK(measurement.fieldRateHz() == doctest::Approx(50.08f).epsilon(0.001f));
 }
@@ -1057,6 +1065,25 @@ TEST_CASE("a reading nothing can corroborate is refused, not adopted")
 
     CHECK_FALSE(rateMeasured(measurePastGate(sampling)));
     CHECK(sampling.lineRateHz() == 0u);
+}
+
+TEST_CASE("a source that did not pulse is not timed three times over")
+{
+    // A sample that reports nothing waited out FS_SAMPLE_TIMEOUT_MS twice, so a
+    // silent source costs half a second of loop() a pass. The median is worth
+    // three timings of a source that is pulsing and none of one that is not:
+    // the second and third have the same nothing to time.
+    SourceMeasurement sampling;
+    seedSourceLines(311);
+    g_fieldRate = 50.08f;
+    REQUIRE(rateMeasured(measurePastGate(sampling)));
+
+    g_fieldRate = 0.0f;
+    g_fieldRateCalls = 0;
+    CHECK_FALSE(rateMeasured(measureOnce(sampling)));
+
+    // One sample, which times the pin again itself when the first reports none.
+    CHECK(g_fieldRateCalls == 2);
 }
 
 TEST_CASE("a refusal does not spend the rejection budget")

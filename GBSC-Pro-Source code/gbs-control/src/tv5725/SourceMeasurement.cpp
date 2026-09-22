@@ -218,18 +218,16 @@ float SourceMeasurement::medianOfThree(float a, float b, float c)
     return c < high ? c : high;
 }
 
-// The pass whose attempts have run out is taken whether or not it agrees with
-// anything, so one reading decides the whole number of hertz the key carries --
-// and nothing re-judges it afterwards, because identity is wider than the
-// rounding and every later correct reading compares equal. A single pulse timed
-// on a CPU that takes interrupts reads percent high about one sample in ten, so
-// that pass takes the median of three. Two of the three have to be wrong before
-// the median is. docs/investigations/single-sample-rate-jitter.md
+// A single pulse timed on a CPU that takes interrupts reads percent high often
+// enough to reach the key, which nothing re-judges afterwards.
+// docs/investigations/single-sample-rate-jitter.md
 float SourceMeasurement::sampleFieldRateHz()
 {
+    // A source that did not pulse has nothing for the other two to time, and a
+    // sample that reports none has already waited out two timeouts.
     const float first = TestBusRateMeasurement::sourceFieldRateHz(false);
-    if (rateAttempts_ + 1 < RateAgreementAttempts)
-        return first;
+    if (first == 0.0f)
+        return 0.0f;
 
     const float second = TestBusRateMeasurement::sourceFieldRateHz(false);
     const float third = TestBusRateMeasurement::sourceFieldRateHz(false);

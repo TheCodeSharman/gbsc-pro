@@ -22,10 +22,11 @@ TEST_CASE("two readings of a settled source agree")
 
 TEST_CASE("the single-sample outlier that steered the clock does not agree")
 {
-    // Measured 2026-08-22 on a settled 320x256@50 source: getSourceFieldRate()
-    // returns 51.14 among 50.08s, one sample in ten or so. The seed multiplied
-    // by it and the output ran 51 Hz until FrameSync walked it back, which is
-    // tens of seconds of dropped frames and an encoder locked to the wrong rate.
+    // Measured on a settled 320x256@50 source: getSourceFieldRate() returns
+    // 51.14 among 50.08s. The seed multiplied by it and the output ran 51 Hz
+    // until FrameSync walked it back, which is tens of seconds of dropped
+    // frames and an encoder locked to the wrong rate. How often a sample lands
+    // there is docs/investigations/single-sample-rate-jitter.md.
     CHECK_FALSE(RateAgreement::agree(50.08f, 51.14f));
     CHECK_FALSE(RateAgreement::agree(51.18f, 50.08f));
 }

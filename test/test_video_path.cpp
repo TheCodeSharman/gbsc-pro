@@ -50,6 +50,10 @@ static float g_fieldRate = 50.08f;
 // in front of it is that loop() cannot afford it on every pass.
 static unsigned g_fieldRateCalls = 0;
 
+// One reading of the field rate is a median of three of these, so a case about
+// how often the source is READ counts in multiples of it.
+static const unsigned TimingsPerReading = 3;
+
 // The divider actually in force at the moment the rate is sampled. The rate is
 // timed off the input formatter's test bus and the IF's line counter is the
 // divider's, so this is the state the measurement is taken through.
@@ -702,7 +706,7 @@ TEST_CASE("the source is measured once per poll, not once per thing that needs i
     // the way. Installing before the duty costs exactly that one extra sample.
     const unsigned before = g_fieldRateCalls;
     REQUIRE(pollUntilSolved(acquisition));
-    CHECK(g_fieldRateCalls - before == 3);
+    CHECK(g_fieldRateCalls - before == 3 * TimingsPerReading);
 
     SUBCASE("and not at all for a pad press") {
         // A press moves the framing, not the source. Every quantity the windows
