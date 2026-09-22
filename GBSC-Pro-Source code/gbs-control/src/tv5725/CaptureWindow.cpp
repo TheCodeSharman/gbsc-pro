@@ -42,8 +42,7 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     // line doubler is in the path, so what it counts is half-lines there and
     // whole source lines otherwise. docs/scaler-geometry-model.md
     verticalLine_ = VideoSourceLine::frame(lineDoubled ? 2 * (sourceLines + 1)
-                                                       : sourceLines + 1,
-                                           lineDoubled);
+                                                       : sourceLines + 1);
 
     timing_ = timing;
     return true;

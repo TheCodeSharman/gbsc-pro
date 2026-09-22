@@ -658,13 +658,10 @@ TEST_CASE("a forced full framing captures everything the source offers")
     CHECK(Wire.field(1, 0x1A, 0, 11) == solved.engine.firstUnitOn(AxisHorizontal));
     CHECK(Wire.field(1, 0x1E, 0, 11) == solved.engine.firstUnitOn(AxisVertical));
 
-    for (int vertical = 0; vertical < 2; ++vertical) {
-        const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
-        CAPTURE(vertical);
-        CHECK(solved.engine.extentUnitsOn(axis)
-              == solved.engine.reachOn(axis) + solved.engine.videoLagOn(axis)
-                 - solved.engine.firstUnitOn(axis));
-    }
+    CHECK(Wire.field(1, 0x18, 0, 11)
+          == solved.engine.lineUnitsOn(AxisHorizontal) - 2);
+    CHECK(Wire.field(1, 0x1C, 0, 11)
+          == solved.engine.lineUnitsOn(AxisVertical) - 2);
 
     SUBCASE("and the scaler still magnifies rather than clamping at unity") {
         CHECK(Wire.field(3, 0x16, 0, 10) <= Scale::Max);

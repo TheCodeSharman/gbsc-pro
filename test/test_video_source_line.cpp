@@ -35,8 +35,8 @@ using namespace Tv5725;
 // IF_LINE_ST/SP is the input formatter's PROGRESSIVE line window -- line double
 // timing, so deinterlacing's rather than the picture's -- and it has to span
 // exactly one line from wherever it starts.
-// The lag is fractional -- the frame's is a line and a half -- so it is applied
-// before a position is rounded. A position carries it as whole units.
+// The lag is fractional along the line, so it is applied before a position is
+// rounded. A position carries it as whole units.
 static long lagUnits(const VideoSourceLine &line)
 {
     return lrintf(line.videoLag());
@@ -369,9 +369,10 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
 //   top / bottom, lines       30.0 / 288.5   28.5 / 287.0
 //   right, of the line        0.8300         0.8839
 //
-// So the undoubled line delivers video 0.0539 of a line LATE, and the undoubled
-// frame delivers it one and a half lines EARLY. The two pipelines are not the
-// same one and nothing requires them to agree in sign.
+// So the undoubled line delivers video 0.0539 of a line LATE, where the frame
+// delivers it early. The two pipelines are not the same one and nothing
+// requires them to agree in sign, nor to agree on a unit: the frame's is a
+// count of counter units and the line's a fraction, each measured as such.
 //
 // **THE MEASUREMENT IS RELATIVE, WHICH IS WHY IT IS WORTH MORE THAN THE ONE IT
 // REPLACES.** Both readings take the same feature on the same source with the
@@ -379,9 +380,9 @@ TEST_CASE("the whole window is translated by the lag, not just its floor")
 // inset, the interpolation, the threshold -- fall out of the difference. Read
 // against the mode file instead, each counter is out by a further 0.010 to
 // 0.020 of a line, which is the bias rather than a second finding.
-TEST_CASE("one framing takes the same video in both scan modes")
+TEST_CASE("one framing takes the same video along the line in both scan modes")
 {
-    SUBCASE("along the line") {
+    {
         // The bench source either side of the doubler: PLLAD_MD 2200 on a 1100
         // unit line doubled, 1852 undoubled, sync 36 of 512.
         const float Duty = 36.0f / 512.0f;
@@ -396,14 +397,52 @@ TEST_CASE("one framing takes the same video in both scan modes")
         CHECK(apart == doctest::Approx(0.0539f).epsilon(0.02f));
     }
 
-    SUBCASE("down the frame") {
-        // 311 source lines, so the counter wraps at 312 undoubled and 624
-        // doubled. One source line is two doubled units, and the undoubled
-        // counter runs three of them early.
-        VideoSourceLine doubled = VideoSourceLine::frame(624, true);
-        VideoSourceLine undoubled = VideoSourceLine::frame(312, false);
+}
 
-        const float Framing = 0.1010f;
-        CHECK(doubled.videoAt(Framing) == 2 * undoubled.videoAt(Framing) + 3);
+
+// The frame's own lag, measured with PATTERN CARD, whose green frame is one
+// source pixel on the outermost row: the capture window was crept a unit at a
+// time until that row entered the picture.
+//
+//   source                counter  first picture line  it arrived at
+//   320x256@50 at 480p      312           36               29.4
+//   320x256@50 at 960p      624           72               64.3
+//   800x600@60              628           27               20.3
+//   1024x768@60             806           35               28.3
+//
+// One source measured in BOTH scan modes is what settles the form. Read as
+// source lines the same source is 6.6 early undoubled and 3.9 doubled; read as
+// a fraction of the frame it is 0.021 of a 312-unit frame against 0.011 of a
+// 628-unit one. Read as a count of the COUNTER's units every reading is seven.
+TEST_CASE("the frame delivers video a fixed count of counter units early")
+{
+    struct { uint16_t units, firstPictureLine, arrivedAt; } measured[] = {
+        { 312, 36, 29 }, { 624, 72, 64 }, { 628, 27, 20 }, { 806, 35, 28 },
+    };
+
+    for (unsigned i = 0; i < sizeof(measured) / sizeof(measured[0]); ++i) {
+        CAPTURE(measured[i].units);
+        const VideoSourceLine frame = VideoSourceLine::frame(measured[i].units);
+        CHECK_NEAR(frame.videoAt((float)measured[i].firstPictureLine
+                                 / (float)measured[i].units),
+                   measured[i].arrivedAt, 1);
     }
+}
+
+
+// Which is what makes the scan mode irrelevant to it: the doubled counter runs
+// at twice the source's line rate, so the same position is twice as far in and
+// the lag is not.
+TEST_CASE("one framing takes the same video whichever scan mode is in force")
+{
+    const float Framing = 36.0f / 312.0f;
+    const VideoSourceLine undoubled = VideoSourceLine::frame(312);
+    const VideoSourceLine doubled = VideoSourceLine::frame(624);
+
+    // The doubled counter is further in by the position and by nothing else: a
+    // lag that differed between the modes would leave its own term here, and
+    // that is the stored framing taking different picture at two output
+    // resolutions.
+    CHECK(doubled.videoAt(Framing) - undoubled.videoAt(Framing)
+          == lrintf(Framing * 312.0f));
 }

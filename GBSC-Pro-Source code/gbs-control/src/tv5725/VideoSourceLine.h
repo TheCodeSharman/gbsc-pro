@@ -55,23 +55,26 @@ public:
     // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
     static const float CaptureLagFraction;
 
-    // How far the video sits AHEAD of the counter on an undoubled frame, in
-    // source lines. Negative where the line's is positive: the two pipelines
-    // are not the same one and nothing requires them to agree in sign.
+    // How far the video sits AHEAD of the counter down the frame, in the
+    // COUNTER'S OWN UNITS. Negative where the line's is positive: the two
+    // pipelines are not the same one and nothing requires them to agree in
+    // sign, nor on a unit.
     //
-    // A COUNT of lines rather than a fraction of the frame, because the unit
-    // either side of the doubler is a line and a doubler's latency is stated in
-    // them. One source cannot separate the two forms, so a second source at
-    // another line count is what would settle it.
-    static const float FrameLagLines;
+    // The scan mode does not enter it. The doubled counter runs at twice the
+    // source's line rate, so the same seven units are three and a half source
+    // lines there and seven undoubled -- which is what one source measured in
+    // both scan modes shows, and what a framing held as a proportion needs if
+    // it is to take the same video at either output resolution.
+    // docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
+    static const float FrameLagUnits;
 
     // The whole line is available. The exclusion is the HSYNC pulse and there
     // is no vertical equivalent.
     explicit VideoSourceLine(uint16_t units);
 
-    // The frame, which carries the scan mode's own offset and nothing else:
-    // no sync interval to exclude and no head blanking.
-    static VideoSourceLine frame(uint16_t units, bool lineDoubled);
+    // The frame, which carries its lag and nothing else: no sync interval to
+    // exclude and no head blanking.
+    static VideoSourceLine frame(uint16_t units);
 
     VideoSourceLine(uint16_t units, uint16_t syncUnits);
 

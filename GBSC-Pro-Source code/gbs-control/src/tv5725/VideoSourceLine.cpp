@@ -10,7 +10,7 @@ namespace Tv5725 {
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
 const uint16_t VideoSourceLine::FirstCapturableUnit;
 const float VideoSourceLine::CaptureLagFraction = 0.0539f;
-const float VideoSourceLine::FrameLagLines = -1.5f;
+const float VideoSourceLine::FrameLagUnits = -7.0f;
 
 VideoSourceLine::VideoSourceLine(uint16_t units)
     : units_(units), syncUnits_(0), lag_(0.0f), headBlankingUnits_(0),
@@ -26,10 +26,10 @@ VideoSourceLine::VideoSourceLine(uint16_t units, uint16_t syncUnits,
       lag_(headBlankingUnits ? 0.0f : units * CaptureLagFraction),
       headBlankingUnits_(headBlankingUnits), syncAtHead_(syncAtHead) {}
 
-VideoSourceLine VideoSourceLine::frame(uint16_t units, bool lineDoubled)
+VideoSourceLine VideoSourceLine::frame(uint16_t units)
 {
     VideoSourceLine line(units);
-    line.lag_ = lineDoubled ? 0.0f : FrameLagLines;
+    line.lag_ = FrameLagUnits;
     return line;
 }
 
