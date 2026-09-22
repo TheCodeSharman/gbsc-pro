@@ -113,4 +113,13 @@ uint16_t SourceTiming::activeStartLine(uint16_t frameLines) const
     return (uint16_t)(activeStart(AxisVertical) * frameLines + 0.5f);
 }
 
+uint16_t SourceTiming::activeStopLine(uint16_t frameLines) const
+{
+    if (!published())
+        return 0;
+
+    return (uint16_t)((activeStart(AxisVertical) + activeExtent(AxisVertical))
+                          * frameLines + 0.5f);
+}
+
 }  // namespace Tv5725

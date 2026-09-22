@@ -250,7 +250,8 @@ public:
     // what a source matching no published raster gets: its own porches are
     // already black, the argument applyHorizontalFromChannelLine() makes for
     // the other axis.
-    static void applyVerticalBlanking(uint16_t activeStartLine);
+    static void applyVerticalBlanking(uint16_t activeStartLine,
+                                      uint16_t activeStopLine);
 
     // The sampling and the played-out raster for a source with no standard of
     // its own, which are one operation.

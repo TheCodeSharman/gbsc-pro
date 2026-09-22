@@ -181,15 +181,17 @@ void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,
     timing_ = timing;
     applyPassThroughSampling(divider, lineRateHz);
     SyncProcessor::applySdVsyncPosition();
-    applyVerticalBlanking(timing.activeStartLine(frameLines));
+    applyVerticalBlanking(timing.activeStartLine(frameLines),
+                          timing.activeStopLine(frameLines));
 }
 
-void HdBypass::applyVerticalBlanking(uint16_t activeStartLine)
+void HdBypass::applyVerticalBlanking(uint16_t activeStartLine,
+                                     uint16_t activeStopLine)
 {
     if (activeStartLine == 0)
         return;
 
-    HD_VB_ST::write(0);
+    HD_VB_ST::write(activeStopLine);
     HD_VB_SP::write(activeStartLine);
 }
 

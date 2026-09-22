@@ -51,6 +51,11 @@ public:
     // raster says is not picture. Zero where no raster matched.
     uint16_t activeStartLine(uint16_t frameLines) const;
 
+    // Where active video stops, in the same units. A window opened at
+    // activeStartLine and never closed runs to the end of the frame, which
+    // plays the source's own end-of-frame blanking out as picture.
+    uint16_t activeStopLine(uint16_t frameLines) const;
+
 private:
     struct Raster {
         uint16_t totalLines, rateHz;

@@ -598,8 +598,18 @@ TEST_CASE("the channel blanks the lines before active video")
     // of picture came off the top.
     applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
 
-    CHECK(HdBypass::HD_VB_ST::read() == 0);
     CHECK(HdBypass::HD_VB_SP::read() == 36);
+}
+
+TEST_CASE("the channel closes the window where active video ends")
+{
+    // 720x480p is 525 lines carrying 480 from line 36, so lines 516..524 are
+    // the source's own end-of-frame blanking. Left open, the channel plays them
+    // out as active black and the picture sits high on the panel with a band
+    // under it.
+    applyForSource(2039, 31469, Tv5725::SourceTiming::matching(Tv5725::SourceKey(524, 60.0f, 62.0f / 858.0f, Tv5725::SourceKey::Negative, Tv5725::SourceKey::Negative)), 525);
+
+    CHECK(HdBypass::HD_VB_ST::read() == 516);
 }
 
 TEST_CASE("a source running no published raster keeps the window it had")
