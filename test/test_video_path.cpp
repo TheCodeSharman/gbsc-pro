@@ -342,8 +342,11 @@ static void checkBenchGeometry()
     // the duty the capture window is placed from is the pulse on every source.
     // s5_56 is SP_HS2PLL_INV_REG, cleared by the same normalisation: the only
     // other writer is the bypass channel, which does not normalise. s5_17 is
-    // PLLAD_ICP, which goes in with the group the latch loads.
-    CHECK(registersWritten() == 81);
+    // PLLAD_ICP, which goes in with the group the latch loads. s0_4f is
+    // OUT_SYNC_CNTRL and s0_44 the DAC power, asserted whenever the output is
+    // shown because the power path takes both down and neither has an owner
+    // that would put them back.
+    CHECK(registersWritten() == 82);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 
     // Three of those are the measurement rather than the geometry: timing the
@@ -643,10 +646,11 @@ TEST_CASE("entering bypass leaves nothing to solve")
                   + SourceMeasurement::LatchSettlePasses); ++i)
         CHECK_FALSE(pollOnce(acquisition));
 
-    // The output sync, and nothing else: bypass has no solve coming, so giving
-    // it back is the whole of ending the change, and a pass-through left
-    // without it shows nothing at all.
-    CHECK(registersWritten() == 1);
+    // The output, and nothing else: bypass has no solve coming, so giving it
+    // back is the whole of ending the change, and a pass-through left without
+    // it shows nothing at all. Three registers, because the output is three
+    // bits -- the pad the encoder locks to, OUT_SYNC_CNTRL and the DAC power.
+    CHECK(registersWritten() == 3);
     CHECK(Wire.touched[0][0x49]);   // PAD_SYNC_OUT_ENZ
 }
 
@@ -1183,8 +1187,9 @@ TEST_CASE("a framed picture holds every window against the framing")
 
     // The raster did not change, so its registers are not rewritten -- and
     // neither is the sampling group, which was installed before the duty was
-    // read rather than by the solve.
-    CHECK(registersWritten() == 32);
+    // read rather than by the solve. The two beyond the geometry are
+    // OUT_SYNC_CNTRL and the DAC power, asserted with every show.
+    CHECK(registersWritten() == 34);
 }
 
 // --- the IF line counter follows the scan mode -------------------------------

@@ -1973,6 +1973,43 @@ TEST_CASE("the encoder is made to look again only when the output timing moves")
     }
 }
 
+TEST_CASE("a source that comes back raises the whole output, not just the pad")
+{
+    // Low power takes the output down as a unit -- OUT_SYNC_CNTRL, the DAC power
+    // and, through setResetParameters() zeroing segment 0, the sync pad -- and
+    // the only thing that ever wrote them back was doPostPresetLoadSteps(). A
+    // source that returns and acquires without a preset load on the way leaves
+    // the panel dark with state acquired and every geometry register correct.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    unit.poll();
+    REQUIRE_FALSE(outputBlanked());
+
+    // The teardown, as goLowPowerWithInputDetection() writes it, behind the
+    // engine's back. The pad is left alone: setResetParameters() zeroes segment
+    // 0, which ENABLES it, and the only thing that drives it high is the
+    // engine's own blank, which knows it did.
+    Chip::OUT_SYNC_CNTRL::write(0);
+    Chip::DAC_RGBS_PWDNZ::write(0);
+
+    seedSourceLines(0);
+    for (uint8_t i = 0; i < 8; ++i)
+        unit.poll();
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    REQUIRE(unit.pollUntilSolved(8));
+    for (uint8_t i = 0; i < 40; ++i)
+        unit.poll();
+
+    CHECK(Chip::PAD_SYNC_OUT_ENZ::read() == 0);
+    CHECK(Chip::DAC_RGBS_PWDNZ::read() == 1);
+    CHECK(Chip::OUT_SYNC_CNTRL::read() == 1);
+}
+
 TEST_CASE("an output resolution change makes the encoder look again")
 {
     // CHANGING THE OUTPUT MOVES THE RASTER, so the encoder is locked to a timing

@@ -524,6 +524,7 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     // source solve, because an OUTPUT change moves the raster too and no source
     // solve follows one -- the source has not moved.
     if (!encoderLooking_ && videoPath_.encoderTimingMoved()) {
+        tv5725Log("encoder relook: hold");
         videoPath_.holdOutputSync(true);
         encoderLooking_ = true;
         encoderLookMs_ = nowMs;
@@ -541,6 +542,7 @@ void VideoSourceAcquisition::serviceEncoderRelook(uint32_t nowMs)
     if (!encoderLooking_ || (uint32_t)(nowMs - encoderLookMs_) < EncoderRelookMs)
         return;
     encoderLooking_ = false;
+    tv5725Log("encoder relook: release");
     videoPath_.holdOutputSync(false);
 }
 

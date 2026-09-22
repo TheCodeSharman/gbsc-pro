@@ -172,7 +172,7 @@ void HdBypass::enterFor(bool component, bool csync, uint32_t lineRateHz,
     applyForSource(dividerFor(lineRateHz), lineRateHz, timing, frameLines);
 
     Chip::dacsFollowInput();
-    Tv5725::OUT_SYNC_CNTRL::write(1);
+    Chip::OUT_SYNC_CNTRL::write(1);
 }
 
 void HdBypass::applyForSource(uint16_t divider, uint32_t lineRateHz,

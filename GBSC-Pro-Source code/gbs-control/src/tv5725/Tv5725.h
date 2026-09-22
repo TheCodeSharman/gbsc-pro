@@ -452,7 +452,6 @@ public:
                                                                       // control When = 0, disable CLKOUT to PAD When = 1, enable
                                                                       // CLKOUT to PAD
 
-    typedef UReg<0x00, 0x4F, 5, 1> OUT_SYNC_CNTRL;                    // H/V sync output enable When = 0, disable H/V sync output
                                                                       // to PAD
 
                                                                       // selection control When = 00, H/V sync output are from

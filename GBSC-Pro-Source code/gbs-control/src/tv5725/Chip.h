@@ -134,6 +134,7 @@ public:
                                                                       // CLKOUT output enable When = 1, CLKOUT output disable
 
     typedef UReg<0x00, 0x49, 2, 1> PAD_SYNC_OUT_ENZ;                  // HSOUT/VSOUT control When = 0, HSOUT/VSOUT output enable
+    typedef UReg<0x00, 0x4F, 5, 1> OUT_SYNC_CNTRL;                    // H/V sync output enable When = 0, disable H/V sync output
 
     typedef UReg<0x00, 0x49, 3, 1> PAD_BLK_OUT_ENZ;                   // When = 1, HSOUT/VSOUT output disable HBOUT/VBOUT control
                                                                       // When = 0, HBOUT/VBOUT output enable When = 1, HBOUT/VBOUT

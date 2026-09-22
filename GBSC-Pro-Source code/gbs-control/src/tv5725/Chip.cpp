@@ -34,14 +34,19 @@ void releaseVideoBlocks()
 
 }  // namespace
 
+// The three bits that decide whether anything reaches the encoder, written
+// together because they are taken down together: a restore that carries one of
+// them leaves a dark panel with every geometry register correct.
 void Chip::outputDown()
 {
+    OUT_SYNC_CNTRL::write(0);
     DAC_RGBS_PWDNZ::write(0);
     PAD_SYNC_OUT_ENZ::write(1);
 }
 
 void Chip::outputUp()
 {
+    OUT_SYNC_CNTRL::write(1);
     DAC_RGBS_PWDNZ::write(1);
     PAD_SYNC_OUT_ENZ::write(0);
 }

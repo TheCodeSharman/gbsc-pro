@@ -73,6 +73,16 @@ void VideoPath::showOutput(bool show)
 {
     showing_ = show;
 
+    // The power path takes the whole output down and only a preset load ever
+    // wrote these two back, so a source that returns without one leaves a dark
+    // panel with every geometry register correct. Written unconditionally,
+    // because neither is what the encoder locks to -- the pad is, and it keeps
+    // its own owner below for that reason.
+    if (show) {
+        Chip::OUT_SYNC_CNTRL::write(1);
+        Chip::DAC_RGBS_PWDNZ::write(1);
+    }
+
     if (!displaySolved_ || mode_ == 0 || mode_->isBypass()) {
         driveSyncOut(show);
         return;
@@ -98,6 +108,9 @@ void VideoPath::driveSyncOut(bool on)
         return;
     syncOut_ = on;
     syncOutEver_ = true;
+    char line[48];
+    snprintf(line, sizeof(line), "sync pad: %s", on ? "driven" : "away");
+    tv5725Log(line);
     if (on)
         SyncProcessor::enableOutput();
     else
