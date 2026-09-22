@@ -1567,6 +1567,33 @@ is equally safe and is not treated as such.
 
 What settles it: clamp the window to the field, and say so when the clamp bites.
 
+### The Wii's 480p framing leaves a wide margin and clips the right edge
+
+`ypbpr` on the Wii in 480p acquires and holds -- `state: acquired`, 525 lines,
+59.940 Hz, FrameSync ready and driving -- and the framing is wrong in a way the
+bench RISC PC's is not: a wide black margin, the right-hand edge clipped, and
+horizontal pan clamping before it reaches the picture.
+
+Measured at that acquisition: capture `206..1216` of a 1449-unit line and
+`36..516` of 525, `lineRateHz` 31468, `PLLAD_MD` 1448.
+
+**The divider is the thing to look at first, because its VCO is below the
+documented lock edge.** `PLLAD_KS` reads 1 at that divider, so
+`CKO = 1448 x 31400 = 45.5 MHz` and the VCO runs at **90.9 MHz** --
+`investigations/adc-pll-lock-range.md` puts the edge between 110 and 120 MHz and
+solid lock from 150 MHz up. A divider of 1096 at the same line rate gives CKO
+34.4 MHz, `KS` 2 and a 137.6 MHz VCO, which is inside the range, and 1096 is what
+the working record for this mode carries. `SamplingClock::recommendedDivider()`
+has a CKO ceiling (`Adc::maxCkoFor()`) and no VCO floor, so nothing stops it
+choosing a divider whose VCO cannot lock.
+
+Whether that is what the framing is about is NOT established -- the margin and
+the clip are a placement question and the divider is a sampling one, and they
+have not been separated. `/sampleclock?md=1096` is the instrument, because the
+whole PLL group has to move together.
+
+Acquisition also took about 40 s against the 15.2 s on record for this mode.
+
 ## Fixed, kept here until the next session has seen them
 
 ### The ADC sampling phase was chosen against the oversampling ASKED FOR
