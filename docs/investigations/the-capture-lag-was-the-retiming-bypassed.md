@@ -98,3 +98,11 @@ engaged `units - 1` captures cleanly on both axes.
 explained by this. Zeroing it changes neither the framing fault this page
 describes nor the bright band at the bottom of a 100% framing, which is the
 captured vsync pulse.
+
+## The retiming does not cause a vertical wobble
+
+Engaging it was blamed for a 1-2 px whole-picture vertical shift at ~25 Hz, and
+the measurement that exonerates it -- the loop toggled with the field rate
+re-sampled 40 times each way, and the build re-acquired eight times -- is on
+`docs/investigations/single-sample-rate-jitter.md`, with the single-trial
+reasoning that produced the claim.
