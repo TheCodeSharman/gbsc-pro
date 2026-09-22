@@ -662,8 +662,11 @@ TEST_CASE("a forced full framing captures everything the source offers")
     // the registers; the framing is a proportion of the SOURCE, and the two
     // meet through the lag.
     CHECK(Wire.field(1, 0x1A, 0, 11) == solved.engine.firstUnitOn(AxisHorizontal));
-    CHECK(Wire.field(1, 0x1E, 0, 11)
-          == solved.engine.firstUnitOn(AxisVertical) - AxisVertical.captureMargin());
+    // Vertically the margin is taken off the floor, and clamped at the
+    // counter's origin: a window at the floor has nowhere left to open into.
+    const long verticalFloor = (long)solved.engine.firstUnitOn(AxisVertical)
+                             - (long)AxisVertical.captureMargin();
+    CHECK(Wire.field(1, 0x1E, 0, 11) == (verticalFloor > 0 ? verticalFloor : 0));
 
     CHECK(Wire.field(1, 0x18, 0, 11)
           == solved.engine.lineUnitsOn(AxisHorizontal) - 2);
@@ -794,4 +797,27 @@ TEST_CASE("the smallest vertical pan moves the capture window")
 
     CHECK(solved.engine.pan(0, -1));
     CHECK(Wire.field(1, 0x1E, 0, 11) < before);
+}
+
+
+// The vertical capture window opens TWO units before the picture's first unit.
+//
+// One of them is what the path drops: a window opened on the picture loses the
+// source's first line. The second is the frame lag's rounding.
+// `VideoSourceLine::FrameLagUnits` is one number for every source and the bench
+// measures it only to the unit, so a mode where it rounds late puts the first
+// WRITTEN unit past the picture and the source's outermost line is never
+// captured at all.
+//
+// Measured with PATTERN CARD, whose green frame IS that line, on six VESA DMT
+// modes. Five of them keep the line from the engine's own window and lose it
+// one unit later; 1024x768@60 loses it from the engine's own window and keeps
+// it one unit earlier. Opening early costs a line of the source's blanking and
+// nothing else -- 1024x768@75 already ran a unit early and shows the frame.
+TEST_CASE("the vertical capture window clears the picture by more than the path drops")
+{
+    SolvedEngine solved;
+
+    CHECK(Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11)
+          == solved.engine.extentUnitsOn(AxisVertical) + 4);
 }

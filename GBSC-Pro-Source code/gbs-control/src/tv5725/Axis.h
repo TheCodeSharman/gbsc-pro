@@ -41,17 +41,23 @@ public:
     // nobody has crept it.
     uint16_t windowStopMin() const;
 
-    // How many units the path drops at EACH END of the capture window. The
-    // window is opened that much wider at both ends, so what is dropped is
-    // blanking rather than picture, and the scale is fitted on the widened
-    // window because that is what the hardware plays out.
+    // How far beyond the picture the capture window opens at EACH END. The
+    // scale is fitted on the widened window because that is what the hardware
+    // plays out, and neither end's margin is picture, so the aperture closes a
+    // margin's worth sooner than `produced`.
     //
-    // Vertically 1: the line buffer startPerMag already accounts for on the
-    // OUTPUT side costs a line at each end on the INPUT side. Measured on the
-    // source's own outermost active lines, which is where the card's one-pixel
-    // frame lands -- at 800x600@60 the top frame reaches the panel from
-    // IF_VB_SP 19 and not 20, and the bottom from IF_VB_ST 621 and not 620.
-    // The doubled case is NOT measured.
+    // Vertically 2, and the two units answer different questions. ONE is what
+    // the path drops: a window opened on the picture loses the source's first
+    // and last lines, measured at 800x600@60 where the top frame reaches the
+    // panel from IF_VB_SP 19 and not 20 and the bottom from IF_VB_ST 621 and
+    // not 620. THE OTHER IS THE FRAME LAG'S ROUNDING --
+    // VideoSourceLine::FrameLagUnits is one integer for every source and the
+    // bench knows it only to the unit, so on a mode where it rounds late the
+    // first WRITTEN unit lands past the picture and the source's outermost line
+    // is never captured. Measured at 1024x768@60, where the card's green frame
+    // does not reach the panel from the engine's own window and does from one
+    // unit earlier; opening early costs a line of the source's blanking and
+    // nothing else. The doubled case is NOT measured.
     // Horizontally 0: the near edge is already crept against corruption.
     uint16_t captureMargin() const;
 

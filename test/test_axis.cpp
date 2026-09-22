@@ -618,10 +618,10 @@ TEST_CASE("blanking starts no later than the write ends")
 }
 
 // Vertically it closes on the floor of that sum LESS the trailing capture
-// margin, which the path drops: `produced` is the whole window scaled, so an
-// aperture closing on it shows rows the write never reached. Measured at
-// 800x600@60 -- the aperture solved without that term carries two rows of
-// stale memory under the source's last line.
+// margin, none of which is picture: `produced` is the whole window scaled, and
+// the path drops one of those units while the other is the source's own
+// blanking. Measured at 800x600@60 -- the aperture solved without that term
+// carries two rows of stale memory under the source's last line.
 //
 // The interpolator gives nothing back on this axis, which is a separate
 // question and still measured: crept into Mode960p with the source's last
@@ -633,7 +633,7 @@ TEST_CASE("the vertical aperture closes where the write ends")
         const uint16_t Raster = 1000, ActiveStart = 39, ActiveStop = 999;
         const AxisSolution solved = AxisVertical.solve(384, Scale(410), Raster,
                                                        ActiveStart, ActiveStop);
-        CHECK(solved.display().start() == 995);
+        CHECK(solved.display().start() == 993);
     }
 
     SUBCASE("and where it is the write rather than the bound") {
