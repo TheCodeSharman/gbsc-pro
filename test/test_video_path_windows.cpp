@@ -20,6 +20,9 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+
+static Tv5725::InputFormatter inputFormatter;
 
 using namespace Tv5725;
 
@@ -281,9 +284,9 @@ TEST_CASE("a vertical total outside what any source runs defers the solve")
 
     DisplayClock clock;
 
-    SourceMeasurement sampling;
+    SourceMeasurement sampling(inputFormatter);
     FramingTable framings;
-    VideoPath engine(clock, sampling, framings);
+    VideoPath engine(clock, sampling, framings, inputFormatter);
     VideoSourceAcquisition acquisition(sampling, engine);
 
     engine.setOutputMode(&Tv5725::Mode1080p);

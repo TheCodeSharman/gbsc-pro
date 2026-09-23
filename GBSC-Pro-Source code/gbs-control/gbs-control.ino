@@ -940,18 +940,24 @@ SerialMirror SerialM;
 // initialised in the order they appear, so geometry is ready before the controls
 // that reference it, and the controls before the OSD that references them. It
 // sits below SerialM because the controls take a reference to it.
+// The input formatter, which owns the IF's counters and what their units mean.
+// Held here rather than reached for, so a class that needs it says so in its
+// constructor.
+Tv5725::InputFormatter inputFormatter;
+
 // What the source IS, measured off the chip. The composition root holds it and
 // hands it to both the engine and the acquisition path, the way it already
 // holds the display clock: the engine derives from it and does not own it.
 // docs/video-source-acquisition.md
-Tv5725::SourceMeasurement sourceSampling;
+Tv5725::SourceMeasurement sourceSampling(inputFormatter);
 
 // What the user tuned, per source. Product state rather than acquisition, and
 // the root is what persists it -- holding it here is what removes the round
 // trip a load and a save took through the engine. docs/video-source-acquisition.md
 Tv5725::FramingTable sourceFramings;
 
-Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling, sourceFramings);
+Tv5725::VideoPath geometry(rtos.displayClock, sourceSampling, sourceFramings,
+                           inputFormatter);
 
 // The framing table, in its own file. Separate from /preferencesv2.txt because
 // it is variable length and keyed, and mixing it with the scalar settings
@@ -1370,10 +1376,10 @@ void setResetParameters()
     rto->presetID = 0;
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
-    Tv5725::InputFormatter::applyVerticalTiming(
+    inputFormatter.applyVerticalTiming(
         Tv5725::InputFormatter::NormalTiming);
     GBS::IF_HSYNC_RST::write(0x3FF);
-    Tv5725::InputFormatter::writeReferenceVerticalBlank();
+    inputFormatter.writeReferenceVerticalBlank();
 
     FrameSync::cleanup();
 
@@ -2381,7 +2387,7 @@ void doPostPresetLoadSteps()
     // setResetParameters(), and setOutModeHdBypass(). Boot brings the chip up,
     // so a mode change does not repeat it.
     if (Tv5725::BringUp::armed())
-        Tv5725::BringUp::init();
+        Tv5725::BringUp::init(inputFormatter);
 
     // Beside ModeDetect::init() inside that block and travelling with it: both
     // depend on runtime state rather than on any table.
@@ -2460,8 +2466,8 @@ void doPostPresetLoadSteps()
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 
-        Tv5725::InputFormatter::writeLineCounterStart(0);
-        Tv5725::InputFormatter::applyDefaultHorizontalScalePath();
+        inputFormatter.writeLineCounterStart(0);
+        inputFormatter.applyDefaultHorizontalScalePath();
 
 
         // The most the clock can carry, for every source: the decimators undo
@@ -2504,7 +2510,7 @@ void doPostPresetLoadSteps()
             Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
         }
 
-        Tv5725::InputFormatter::disableAutoOffset();
+        inputFormatter.disableAutoOffset();
 
         Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
         Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
@@ -2564,7 +2570,7 @@ void doPostPresetLoadSteps()
 
         Tv5725::SyncOnGreen::putInForce();
 
-        Tv5725::InputFormatter::applyVerticalTiming(
+        inputFormatter.applyVerticalTiming(
             Tv5725::InputFormatter::VcrTiming);
 
         Tv5725::SyncProcessor::clampFromReferenceClock();
@@ -3005,7 +3011,7 @@ void enableMotionAdaptDeinterlace() //
 {
     const uint8_t verticalTap =
         Tv5725::Deinterlacer::verticalTapFor(
-            Tv5725::InputFormatter::verticalPeriod());
+            inputFormatter.verticalPeriod());
 
     Tv5725::Deinterlacer::enableMotionAdapt(verticalTap,
                                             Tv5725::FrameBuffer::releaseCapture);
@@ -3158,7 +3164,7 @@ static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
     const bool doubled = geometry.lineDoubled();
 
     Tv5725::Adc::applySampleRate(divider, sourceSampling.lineRateHz(), oversample);
-    Tv5725::InputFormatter::writeLineCounter(
+    inputFormatter.writeLineCounter(
         Tv5725::InputFormatter::lineCounterFor(divider, doubled));
     Tv5725::SyncProcessor::writeRetimeStop(
         Tv5725::SyncProcessor::retimeStopFor(divider));
@@ -4157,7 +4163,7 @@ void setup()
 
         // After the last setResetParameters(), which holds six blocks in reset:
         // a bring-up that ran before it would be discarded.
-        Tv5725::BringUp::init();
+        Tv5725::BringUp::init(inputFormatter);
 
         // The output the user chose, handed over at boot rather than only from
         // inside a preset load. VideoSourceAcquisition::sourceMoved() cannot
@@ -5272,7 +5278,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                             Tv5725::SyncOnGreen::choose(value);
                             Tv5725::SyncOnGreen::putInForce();
                         } else if (what.equals("ifini")) {
-                            Tv5725::InputFormatter::writeLineCounterStart(value);
+                            inputFormatter.writeLineCounterStart(value);
                         } else if (what.equals("vsstc")) {
                             Tv5725::SyncProcessor::writeSdVsyncStart(value);
                         } else if (what.equals("vsspc")) {

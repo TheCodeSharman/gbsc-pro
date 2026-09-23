@@ -15,6 +15,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 
+static Tv5725::InputFormatter inputFormatter;
+
 using Tv5725::InputFormatter;
 
 // What the output can display, in the units the capture is counted in.
@@ -32,7 +34,7 @@ struct FreshChip {
     {
         Wire.reset();
         Wire.poison(Poison);
-        InputFormatter::init();
+        inputFormatter.init();
     }
 };
 
@@ -103,8 +105,8 @@ TEST_CASE("a line-doubled source undoes every progressive setting")
 {
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(false, false);
-    InputFormatter::applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(true, false);
 
     CHECK(Wire.field(1, 0x0B, 4, 2) == 1);  // IF_HS_DEC_FACTOR
     CHECK(Wire.field(1, 0x0B, 7, 1) == 0);  // IF_LD_SEL_PROV
@@ -116,8 +118,8 @@ TEST_CASE("a progressive source undoes every line-doubled setting")
 {
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(true, false);
-    InputFormatter::applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(false, false);
 
     CHECK(Wire.field(1, 0x0B, 4, 2) == 0);  // IF_HS_DEC_FACTOR
     CHECK(Wire.field(1, 0x0B, 7, 1) == 1);  // IF_LD_SEL_PROV
@@ -132,10 +134,10 @@ TEST_CASE("the line doubler's write enable follows the scan mode")
     // sources: 0 on the 15 kHz RGBHV raster, 1 on component 480p.
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(false, false);
     CHECK(Wire.field(1, 0x02, 0, 1) == 1);  // IF_SEL_WEN
 
-    InputFormatter::applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x02, 0, 1) == 0);
 }
 
@@ -143,10 +145,10 @@ TEST_CASE("the horizontal low-pass follows the scan mode the other way")
 {
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(false, false);
     CHECK(Wire.field(1, 0x02, 1, 1) == 0);  // IF_HS_SEL_LPF
 
-    InputFormatter::applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x02, 1, 1) == 1);
 }
 
@@ -157,13 +159,13 @@ TEST_CASE("a line-doubled component source takes a shorter luma delay")
     // line doubler adds the stage that puts them out.
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(true, true);
+    inputFormatter.applyLineDoubling(true, true);
     CHECK(Wire.field(1, 0x02, 5, 2) == 2);  // IF_HS_Y_PDELAY
 
-    InputFormatter::applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(true, false);
     CHECK(Wire.field(1, 0x02, 5, 2) == 3);
 
-    InputFormatter::applyLineDoubling(false, true);
+    inputFormatter.applyLineDoubling(false, true);
     CHECK(Wire.field(1, 0x02, 5, 2) == 3);
 }
 
@@ -171,7 +173,7 @@ TEST_CASE("a progressive source blanks nothing at the head of the captured line"
 {
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(false, false);
 
     // With the line-double FIFO bypassed IF_HBIN_SP is a blanking edge in the
     // capture window's own units, so anything it holds is a second left crop
@@ -183,8 +185,8 @@ TEST_CASE("a line-doubled source keeps the line-double FIFO's reset position")
 {
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(false, false);
-    InputFormatter::applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(true, false);
 
     CHECK(Wire.field(1, 0x26, 0, 12) == 272);
 }
@@ -194,7 +196,7 @@ TEST_CASE("a line-doubled source blanks the tail of the captured line")
     FreshChip chip;
 
     Wire.bank[1][0x24] = 50;
-    InputFormatter::applyLineDoubling(true, false);
+    inputFormatter.applyLineDoubling(true, false);
 
     CHECK(Wire.field(1, 0x24, 0, 12) == InputFormatter::DoubledTailBlanking);
 }
@@ -204,7 +206,7 @@ TEST_CASE("a progressive source blanks no tail at all")
     FreshChip chip;
 
     Wire.bank[1][0x24] = 50;
-    InputFormatter::applyLineDoubling(false, false);
+    inputFormatter.applyLineDoubling(false, false);
 
     CHECK(Wire.field(1, 0x24, 0, 12) == 0);
 }
@@ -217,8 +219,8 @@ TEST_CASE("the vertical timing leaves the scan mode alone")
     // written by applyLineDoubling() from a different caller at a different time.
     FreshChip chip;
 
-    InputFormatter::applyLineDoubling(false, false);
-    InputFormatter::applyVerticalTiming(InputFormatter::VcrTiming);
+    inputFormatter.applyLineDoubling(false, false);
+    inputFormatter.applyVerticalTiming(InputFormatter::VcrTiming);
 
     CHECK(Wire.field(1, 0x00, 5, 1) == 0);  // IF_VS_SEL
     CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
@@ -228,8 +230,8 @@ TEST_CASE("normal vertical timing is the other value of the same field")
 {
     FreshChip chip;
 
-    InputFormatter::applyVerticalTiming(InputFormatter::VcrTiming);
-    InputFormatter::applyVerticalTiming(InputFormatter::NormalTiming);
+    inputFormatter.applyVerticalTiming(InputFormatter::VcrTiming);
+    inputFormatter.applyVerticalTiming(InputFormatter::NormalTiming);
 
     CHECK(Wire.field(1, 0x00, 5, 1) == 1);  // IF_VS_SEL
     CHECK(Wire.field(1, 0x01, 0, 1) == 1);  // IF_VS_FLIP
@@ -239,7 +241,7 @@ TEST_CASE("disabling the auto offset leaves the rest of its bytes alone")
 {
     FreshChip chip;
 
-    InputFormatter::disableAutoOffset();
+    inputFormatter.disableAutoOffset();
 
     CHECK(Wire.field(1, 0x29, 0, 1) == 0);  // IF_AUTO_OFST_EN
     CHECK(Wire.field(1, 0x29, 1, 1) == 0);  // IF_AUTO_OFST_PRD
@@ -308,13 +310,13 @@ TEST_CASE("the vertical period is zero until the measurement completes")
     Wire.bank[0][0x08] = (uint8_t)((624 >> 7) & 0x0F);
     Wire.bank[0][0x00] |= 0x01;   // STATUS_IF_VT_OK
 
-    CHECK(InputFormatter::verticalPeriod() == 624);
+    CHECK(inputFormatter.verticalPeriod() == 624);
 
     SUBCASE("and a measurement that did not complete claims nothing") {
         // VPERIOD_IF is debris on a separate-sync source, where it reads values
         // like 20 against a true 311 -- so the register's value is not the
         // thing to judge it by.
         Wire.bank[0][0x00] &= (uint8_t)~0x01;
-        CHECK(InputFormatter::verticalPeriod() == 0);
+        CHECK(inputFormatter.verticalPeriod() == 0);
     }
 }

@@ -26,6 +26,8 @@ namespace Tv5725 {
 // the output mode, which this class knows nothing about -- so it measures the
 // line rate through whatever is in force, hands that back, and reads the duty
 // once the caller has installed the clock it sized from it.
+class InputFormatter;
+
 class SourceMeasurement {
 public:
 
@@ -41,7 +43,7 @@ public:
     // HeldRateRejectionLimit lets it through.
     // ../../../docs/investigations/the-rate-tolerance-answered-five-questions.md
     static const uint16_t RateFollowsCountPerMille = 50;
-    SourceMeasurement();
+    explicit SourceMeasurement(InputFormatter &inputFormatter);
 
     // A sampling clock has just been latched, so nothing counted in ADC samples
     // is the source's until the PLL has relocked and the sync processor has
@@ -113,14 +115,14 @@ public:
     // The input formatter's line period, settled, or 0 where the samples will
     // not agree. A REFERENCE TO COMPARE AGAINST, never a measurement: the
     // register rails to values that are wrong and steady.
-    static uint16_t settledLinePeriod();
+    uint16_t settledLinePeriod();
 
     // Whether the source's line period has moved away from `reference`, for the
     // idle path. This is the whole contract -- it answers "did it change" and
     // cannot be asked what the rate is, so no caller can come to depend on a
     // number that is not trustworthy. What the rate IS is measured a different
     // way, and only where this says something moved.
-    static bool hasLineRateMoved(uint16_t reference);
+    bool hasLineRateMoved(uint16_t reference);
 
     // --- what the last measure() found ---------------------------------------
 
@@ -249,6 +251,7 @@ private:
     static const uint32_t LowLineRateBelowHz = 20000;
     static const uint8_t LinesPerCountMax = 4;
 
+    InputFormatter &inputFormatter_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;
     float fieldRateHz_;

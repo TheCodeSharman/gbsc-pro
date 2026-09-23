@@ -14,14 +14,10 @@
 
 namespace Tv5725 {
 
-// The source presents a rectangle -- sync, porches, borders and picture -- and
-// this is the rectangle taken from inside it. Both are held here because they
-// are one concept: a window is only meaningful against the bounds it sits in,
-// and a framing those bounds cannot realise is clamped on the way in, so
-// framing() afterwards is what was achieved rather than what was asked.
-//
-// It holds the output raster too, because how far the window may be cropped
-// depends on what the magnification can stretch back to fill.
+/* 
+    CapturwWindwow respents the apperture grabbed out of the video input that should be
+    displayed on the output.
+*/
 class CaptureWindow {
 public:
     CaptureWindow();

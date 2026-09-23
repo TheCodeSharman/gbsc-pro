@@ -35,6 +35,9 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SourceMeasurement.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+
+static Tv5725::InputFormatter inputFormatter;
 
 using Tv5725::ColourSpace;
 using Tv5725::HdBypass;
@@ -770,7 +773,7 @@ TEST_CASE("only a rate a display accepts may be bypassed")
     // scaling path, which shows any rate; accepting wrongly puts torn,
     // sheared content on the panel that reads as a broken scaler.
     // docs/rgbhv-bypass-trap.md
-    SourceMeasurement measurement;
+    SourceMeasurement measurement(inputFormatter);
 
     SUBCASE("nothing measured yet cannot be bypassed") {
         CHECK_FALSE(HdBypass::suitsLineRate(measurement.lineRateHz()));
@@ -819,7 +822,7 @@ TEST_CASE("a source that can be passed through is never a slow-line source")
     // satisfy. Bringing the floors together again would revive that shape
     // silently, so the gap is asserted rather than left to be read off two
     // constants in different parts of the header.
-    SourceMeasurement measurement;
+    SourceMeasurement measurement(inputFormatter);
 
     SUBCASE("the slowest rate that may bypass is well clear of the slow-line split") {
         // 640x512@50, VTOTAL 533 -- the measured floor.
@@ -845,7 +848,7 @@ TEST_CASE("a source at 640x480 or above is passed through, and anything below is
     // scaling path cannot carry it well anyway, the capture's write limit
     // bounding a line at about 1024 IF units however it is placed.
     // ../capture-limits.md
-    SourceMeasurement measurement;
+    SourceMeasurement measurement(inputFormatter);
 
     SUBCASE("640x480 is the smallest that goes through") {
         // VTOTAL 524 at 60 Hz -- a 31.5 kHz line, which no sink taking HDMI
@@ -897,7 +900,7 @@ TEST_CASE("a source already bypassed is judged on a count taken now")
     // underneath it keeps reading as displayable, the branch that would leave
     // never fires, and the panel stays blank for ever.
     // docs/rgbhv-bypass-trap.md
-    SourceMeasurement measurement;
+    SourceMeasurement measurement(inputFormatter);
 
     seedSourceLines(524);
     g_fieldRate = 60.0f;

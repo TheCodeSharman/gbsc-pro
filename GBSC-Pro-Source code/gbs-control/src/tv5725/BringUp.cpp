@@ -27,7 +27,7 @@ bool BringUp::armed()
     return armed_;
 }
 
-void BringUp::init()
+void BringUp::init(InputFormatter &inputFormatter)
 {
     // ADDRESS ORDER. Chip stays FIRST: it releases the six block resets that
     // everything below is configured behind, and releasing one afterwards would
@@ -36,7 +36,7 @@ void BringUp::init()
     HdBypass::init();        // s0  the bypass block held off; scaling avoids it
     Gpio::init();            // s0  pin mux
     Interrupts::init();      // s0  masks and their resets
-    InputFormatter::init();  // s1  input path, H-sync rate, line double
+    inputFormatter.init();   // s1  input path, H-sync rate, line double
     ModeDetect::init();      // s1  the thresholds a standard is named by
     Deinterlacer::init();    // s2  motion adaptive deinterlacer and diagonal bob
     VideoProcessor::init();             // s3  scaler filters and coefficients

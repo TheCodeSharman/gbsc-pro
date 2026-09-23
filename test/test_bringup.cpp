@@ -36,6 +36,8 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoProcessor.h"
 
+static Tv5725::InputFormatter inputFormatter;
+
 // Neither a preset table's value nor the firmware's, so a register left at the
 // poison was never written rather than written with the value we hoped for.
 static const uint8_t Poison = 0xA5;
@@ -54,7 +56,7 @@ static std::vector<Write> runBringUp()
     Wire.reset();
     Wire.poison(Poison);
     Wire.trace.clear();
-    Tv5725::BringUp::init();
+    Tv5725::BringUp::init(inputFormatter);
 
     std::vector<Write> out;
     for (size_t i = 0; i < Wire.trace.size(); ++i) {
@@ -91,7 +93,7 @@ static uint32_t written(uint8_t segment, uint8_t reg, uint8_t offset,
     for (int i = 0; i < 2; ++i) {
         Wire.reset();
         Wire.poison(poisons[i]);
-        Tv5725::BringUp::init();
+        Tv5725::BringUp::init(inputFormatter);
         under[i] = Wire.field(segment, reg, offset, width);
     }
     return under[0] == under[1] ? under[0] : NotWritten;
@@ -106,7 +108,7 @@ static void dumpFinalState(uint8_t poison)
 {
     Wire.reset();
     Wire.poison(poison);
-    Tv5725::BringUp::init();
+    Tv5725::BringUp::init(inputFormatter);
 
     for (uint8_t segment = 0; segment < FakeTwoWire::Segments; ++segment)
         for (int reg = 0; reg < 256; ++reg)
@@ -374,13 +376,13 @@ TEST_CASE("holding the blocks arms the bring-up, and running it disarms")
     Wire.reset();
     Wire.poison(Poison);
 
-    Tv5725::BringUp::init();
+    Tv5725::BringUp::init(inputFormatter);
     CHECK(Tv5725::BringUp::armed() == false);
 
     Tv5725::BringUp::holdAllBlocks();
     CHECK(Tv5725::BringUp::armed() == true);
 
-    Tv5725::BringUp::init();
+    Tv5725::BringUp::init(inputFormatter);
     CHECK(Tv5725::BringUp::armed() == false);
 }
 
@@ -394,7 +396,7 @@ TEST_CASE("arming is a verb the bypass switches can use")
     Wire.reset();
     Wire.poison(Poison);
 
-    Tv5725::BringUp::init();
+    Tv5725::BringUp::init(inputFormatter);
     CHECK(Tv5725::BringUp::armed() == false);
 
     Tv5725::BringUp::arm();

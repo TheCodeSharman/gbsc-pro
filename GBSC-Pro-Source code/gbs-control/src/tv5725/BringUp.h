@@ -3,6 +3,8 @@
 
 namespace Tv5725 {
 
+class InputFormatter;
+
 // The chip's static bring-up: every subsystem's init(), in the order the
 // hardware requires.
 //
@@ -34,7 +36,7 @@ class BringUp {
 public:
     // Call where a preset table would have been loaded, BEFORE the engine
     // solves the raster and the windows.
-    static void init();
+    static void init(InputFormatter &inputFormatter);
 
     // Every block reset asserted, across two subsystems. Arms the bring-up: a
     // held block loses its configuration.

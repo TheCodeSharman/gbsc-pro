@@ -18,6 +18,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 
 // The sketch defines this for real; here the test drives it, so the one input
 // that cannot be held still on a board is a constant here.
@@ -117,6 +118,7 @@ static bool resolveUntilSolved(VideoSourceAcquisition &acquisition)
 // left behind.
 struct SolvedEngine {
     Tv5725::DisplayClock clock;
+    Tv5725::InputFormatter inputFormatter;
     Tv5725::SourceMeasurement sampling;
     Tv5725::FramingTable framings;
     Tv5725::VideoPath engine;
@@ -130,7 +132,8 @@ struct SolvedEngine {
                  const Tv5725::OutputMode *choice = &Tv5725::Mode1080p,
                  bool hsyncPositive = true,
                  uint16_t hsyncCountedAt = 2553)
-        : engine(clock, sampling, framings), acquisition(sampling, engine)
+        : sampling(inputFormatter), engine(clock, sampling, framings, inputFormatter),
+          acquisition(sampling, engine)
     {
         Wire.reset();
         poisonChip();

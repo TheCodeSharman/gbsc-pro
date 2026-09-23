@@ -23,11 +23,28 @@
 namespace Tv5725 {
 
 class OutputMode;
+class InputFormatter;
+
+/*
+    VideoPath configures the TV5725 to show a capture window, framed as asked,
+    in the chosen output mode. It solves the sampling clock, the output raster,
+    the display clock and both windows from a measurement and a framing, and
+    owns the route the video takes -- scaled, or handed to the panel.
+
+    It measures nothing. Every characteristic of the source arrives from
+    VideoSourceAcquisition, which owns the measuring.
+
+    Four events reach it:
+        - the sync type, which moves per source MODE change and not per input
+        - the source's timings moved, so the capture is re-solved
+        - the output mode moved, so the raster is re-solved
+        - the framing moved, so the windows are re-solved
+*/
 
 class VideoPath {
 public:
     VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
-              FramingTable &framings);
+              FramingTable &framings, InputFormatter &inputFormatter);
 
     const PanAndZoom &framing() const;
 
@@ -371,6 +388,7 @@ private:
     bool step(const PanAndZoom &wanted);
 
     DisplayClock &displayClock_;
+    InputFormatter &inputFormatter_;
     PanAndZoom framing_;
     // The capturable region the last solve ran against, per axis: the
     // denominator a press converts its units into a proportion with.

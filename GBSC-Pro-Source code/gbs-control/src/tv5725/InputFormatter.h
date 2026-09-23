@@ -241,11 +241,11 @@ public:
 
     // Every static register of this subsystem, in address order. Called from
     // the bring-up where a preset table would have been loaded.
-    static void init();
+    void init();
 
     // The line counter, in IF units. SourceMeasurement decides the value off
     // the ADC divider; this block is where the register lives.
-    static void writeLineCounter(uint16_t units);
+    void writeLineCounter(uint16_t units);
 
     // The vertical blanking window a measurement of the source is taken
     // through. The field rate is timed off this block's test bus and
@@ -254,19 +254,19 @@ public:
     // leaves both dead, with the register that would replace it only written
     // once the measurement it prevents has succeeded.
     // docs/investigations/if-vertical-blank-strands-the-measurement.md
-    static void writeReferenceVerticalBlank();
+    void writeReferenceVerticalBlank();
 
     // Where the line counter starts, as a pixel shift from the horizontal sync.
-    static void writeLineCounterStart(uint16_t pixels);
+    void writeLineCounterStart(uint16_t pixels);
 
     // The horizontal scaling-down path every load starts from. Not in init():
     // applyLineDoubling() selects the interpolator beside it, so a value written
     // only at bring-up would be left behind by whichever source ran last.
-    static void applyDefaultHorizontalScalePath();
+    void applyDefaultHorizontalScalePath();
 
     // The auto offset adjuster off and its detection range zeroed: what the ADC
     // subtracts comes from the stored calibration instead.
-    static void disableAutoOffset();
+    void disableAutoOffset();
 
     // Which vertical timing the block runs on -- the source's own sync, or the
     // periodic timing the block generates. RD-5725-1.1 calls them VCR mode and
@@ -276,7 +276,7 @@ public:
         NormalTiming,
     };
 
-    static void applyVerticalTiming(VerticalTiming timing);
+    void applyVerticalTiming(VerticalTiming timing);
 
     // IF_HBIN_SP is two things, and which one depends on the scan mode. With the
     // line-double FIFO in circuit it is that FIFO's line reset and moving it pans
@@ -312,7 +312,7 @@ public:
     // The colour path comes with it because the luma delay needs both: only a
     // component source arrives with luma and chroma separated, and only the
     // line doubler puts them out.
-    static void applyLineDoubling(bool lineDoubled, bool component);
+    void applyLineDoubling(bool lineDoubled, bool component);
 
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
@@ -351,13 +351,13 @@ public:
     // What this block measures of the source. The vertical is 0 unless
     // STATUS_IF_VT_OK says the measurement completed, which it does not on
     // separate sync -- VPERIOD_IF holds debris there rather than a period.
-    static uint16_t verticalPeriod();
+    uint16_t verticalPeriod();
 
     // The line period against the chip's own 27 MHz, so it does not move with
     // PLLAD_MD. **IT RAILS TO A VALUE THAT IS WRONG AND STEADY**, and nothing
     // here judges it -- one reading is not evidence.
     // ../../../docs/investigations/hperiod-if-railing.md
-    static uint16_t linePeriod();
+    uint16_t linePeriod();
 
 };
 

@@ -270,7 +270,7 @@ void VideoSourceAcquisition::holdSolvedSource()
     // against the chip's own 27 MHz: the divider this solve just wrote does not
     // change it, so there is nothing to wait for. 0 where it will not hold
     // still, and rateMoved() takes one later.
-    solvedLinePeriod_ = Tv5725::SourceMeasurement::settledLinePeriod();
+    solvedLinePeriod_ = sampling_.settledLinePeriod();
 
     idle_.settle(solvedLines_);
 
@@ -447,13 +447,13 @@ bool VideoSourceAcquisition::rateMoved()
     // The solve could not settle a reading to compare against, so this is the
     // first one that holds still.
     if (solvedLinePeriod_ == 0) {
-        solvedLinePeriod_ = Tv5725::SourceMeasurement::settledLinePeriod();
+        solvedLinePeriod_ = sampling_.settledLinePeriod();
         rateRun_ = 0;
         return false;
     }
 
     if (solvedLineRateHz_ == 0
-        || !Tv5725::SourceMeasurement::hasLineRateMoved(solvedLinePeriod_)) {
+        || !sampling_.hasLineRateMoved(solvedLinePeriod_)) {
         rateRun_ = 0;
         return false;
     }
@@ -476,7 +476,7 @@ bool VideoSourceAcquisition::rateMoved()
         // The register moved and the rate did not, which is the register being
         // unreliable. Adopt what it reads now, so the same disagreement does
         // not buy another spin every pass.
-        solvedLinePeriod_ = Tv5725::SourceMeasurement::settledLinePeriod();
+        solvedLinePeriod_ = sampling_.settledLinePeriod();
         return false;
     }
 

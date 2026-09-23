@@ -30,8 +30,8 @@ namespace Tv5725 {
 // --- VideoPath ----------------------------------------------------------
 
 VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
-                     FramingTable &framings)
-    : displayClock_(displayClock),
+                     FramingTable &framings, InputFormatter &inputFormatter)
+    : displayClock_(displayClock), inputFormatter_(inputFormatter),
       usableHorizontal_(0), usableVertical_(0),
       reachHorizontal_(0), reachVertical_(0),
       firstHorizontal_(0), firstVertical_(0), activeStartLine_(0),
@@ -420,7 +420,7 @@ void VideoPath::prepareToMeasure(uint16_t sourceLines)
     // Unconditional, because a window is not only stranded by a mode change.
     // Nothing else writes these two until a solve succeeds, which is the thing
     // they are stopping.
-    InputFormatter::writeReferenceVerticalBlank();
+    inputFormatter_.writeReferenceVerticalBlank();
 }
 
 bool VideoPath::installSampling(SamplingReason reason)
@@ -566,7 +566,7 @@ void VideoPath::configureScalingPath()
     // Route first, so the bring-up sees the path it is configuring.
     Chip::routeToScaler();
     if (BringUp::armed())
-        BringUp::init();
+        BringUp::init(inputFormatter_);
 
     // Configured, then restarted. Chip::init() leaves the VDS and the input
     // formatter held -- only this releases them, and only on the scaling
@@ -681,7 +681,7 @@ void VideoPath::solveLineDoubling(uint16_t lines)
     const bool component = Adc::inputIsComponent();
 
     lineDoubled_ = doubled;
-    InputFormatter::applyLineDoubling(doubled, component);
+    inputFormatter_.applyLineDoubling(doubled, component);
     VideoProcessor::applyLineDoubling(doubled, component);
     Deinterlacer::applyLineDoubling(doubled);
     scanModeApplied_ = true;
@@ -695,7 +695,7 @@ void VideoPath::applySampling(uint16_t divider)
         return;
 
     Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
-    InputFormatter::writeLineCounter(
+    inputFormatter_.writeLineCounter(
         InputFormatter::lineCounterFor(divider, lineDoubled_));
     SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
 

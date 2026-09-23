@@ -104,6 +104,7 @@ static void seedLineSamplesUnlocked(uint16_t samples)
 // units the layer counts them in.
 struct Acquiring {
     DisplayClock clock;
+    InputFormatter inputFormatter;
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath path;
@@ -113,7 +114,8 @@ struct Acquiring {
     // VideoRoute is the chip's, so it outlives an instance the way it outlives
     // a reset. Boot starts on the scaler and so does every case.
     Acquiring()
-        : path(clock, sampling, framings), acquisition(sampling, path), nowMs(0)
+        : sampling(inputFormatter), path(clock, sampling, framings, inputFormatter),
+          acquisition(sampling, path), nowMs(0)
     {
         VideoRoute::toScaler();
     }

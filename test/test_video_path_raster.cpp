@@ -25,10 +25,13 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoPath.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMode.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 
 #include "RegistersWritten.h"
 #include "MeasuredSource.h"
 #include "DebugPinStub.h"
+
+static Tv5725::InputFormatter inputFormatter;
 
 using namespace Tv5725;
 
@@ -97,13 +100,15 @@ static bool pollUntilSolved(VideoSourceAcquisition &acquisition)
 
 struct SettledEngine {
     DisplayClock clock;
+    InputFormatter inputFormatter;
     SourceMeasurement sampling;
     FramingTable framings;
     VideoPath engine;
     VideoSourceAcquisition acquisition;
 
     SettledEngine()
-        : engine(clock, sampling, framings), acquisition(sampling, engine)
+        : sampling(inputFormatter), engine(clock, sampling, framings, inputFormatter),
+          acquisition(sampling, engine)
     {
         Wire.reset();
         poisonChip();
@@ -494,9 +499,9 @@ TEST_CASE("the engine always holds what the output is doing")
 TEST_CASE("nothing solved yet is not bypass")
 {
     DisplayClock clock;
-    SourceMeasurement sampling;
+    SourceMeasurement sampling(inputFormatter);
     FramingTable framings;
-    VideoPath engine(clock, sampling, framings);
+    VideoPath engine(clock, sampling, framings, inputFormatter);
 
     CHECK((engine.outputMode() == 0));
 }

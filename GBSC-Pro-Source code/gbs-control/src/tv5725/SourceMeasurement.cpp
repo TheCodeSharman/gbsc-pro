@@ -47,10 +47,10 @@ bool SourceMeasurement::rateFollowsCount(uint16_t lines, uint32_t lineRateHz,
 // docs/investigations/hperiod-if-railing.md
 uint16_t SourceMeasurement::settledLinePeriod()
 {
-    const uint16_t first = InputFormatter::linePeriod();
+    const uint16_t first = inputFormatter_.linePeriod();
     uint16_t low = first, high = first;
     for (uint8_t i = 1; i < HPeriodSamples; ++i) {
-        const uint16_t sample = InputFormatter::linePeriod();
+        const uint16_t sample = inputFormatter_.linePeriod();
         if (sample < low)
             low = sample;
         if (sample > high)
@@ -87,8 +87,8 @@ const uint16_t SourceMeasurement::LinePeriodMovedPerMille;
 const uint8_t SourceMeasurement::RateAgreementAttempts;
 const uint8_t SourceMeasurement::LatchSettlePasses;
 
-SourceMeasurement::SourceMeasurement()
-    : lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
+SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
+    : inputFormatter_(inputFormatter), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
@@ -146,7 +146,7 @@ SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPer
 
 SourceMeasurement::ScanType SourceMeasurement::measureScanType(bool lineDoubled)
 {
-    verticalPeriod_ = InputFormatter::verticalPeriod();
+    verticalPeriod_ = inputFormatter_.verticalPeriod();
     return scanTypeFrom(verticalPeriod_, lineDoubled, countAlternated());
 }
 
@@ -164,7 +164,7 @@ bool SourceMeasurement::sampleSteady()
     if (!steady_.sample(lines))
         return false;
 
-    verticalPeriod_ = InputFormatter::verticalPeriod();
+    verticalPeriod_ = inputFormatter_.verticalPeriod();
     if (countIsSerrations(lines, verticalPeriod_,
                           ModeDetect::sourceIsInterlaced())) {
         serrationsSeen_ = true;
