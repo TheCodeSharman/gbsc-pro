@@ -75,18 +75,17 @@ usable oracle.** Picture quality after a settle is: every build tested was
 either clean on every acquire or torn on every acquire, with no build sitting
 between.
 
-## What is not established
+## The magnitudes are not one number
 
-The correct origin for **composite sync** is not measured. Sync-on-green wants
-seven units earlier than separate sync; composite sync is displaced further and
-also counts a shorter frame, so the two corrections are not assumed to be the
-same number. A value for it has to come from the bench.
+Sync on green wants the placement seven units earlier than separate sync.
+Composite sync is displaced further and also counts a shorter frame, 623 against
+627, so the two are not the same correction and neither is assumed from the
+other.
 
-Whether the offset is a property of the sync type alone, or of the source's
-vertical sync width, is also open. Seven units is one number measured on two
-sources; the sync width is the quantity a placement rule would naturally be
-written against, and the horizontal axis already takes its exclusion from a
-measured pulse rather than from a constant.
+**The source's vertical sync width is not the quantity**, which is the rule a
+placement would naturally be written against and which the section below
+refutes: the displacement matches neither the vsync width nor either porch on
+any mode measured.
 
 ## The shape the fix has to take
 
@@ -105,3 +104,61 @@ is the horizontal constant that turned out to be one misconfigured bit;
 is where -7 came from and how a one-source-line feature made it measurable;
 [framing-is-anchored-to-a-measured-pulse.md](framing-is-anchored-to-a-measured-pulse.md)
 is the horizontal axis doing what the vertical one does not.
+
+## The origin is measurable, and the test bus already carries it
+
+The input formatter's vertical signal -- `IF_TEST_SEL` 3 driven onto
+`TEST_BUS_SEL` 0, which is what `TestBus::selectInputVsync()` selects -- is a
+vertical-rate pulse whose high time is the source's **vertical blanking
+interval**. It is the only vertical-rate signal of the sixteen: every other
+`IF_TEST_SEL` value reads line-rate, faster, or static.
+
+Measured at `ms=100`, normalised per pulse, three repeats:
+
+| sync | mode | lines per pulse | the mode's blanking |
+|---|---|---|---|
+| separate | 640x480@60 | 41.3  41.4  41.3 | 45 |
+| separate | 800x600@60 | 26.1  26.2  26.3 | 28 |
+| separate | 1024x768@60 | 34.1  34.1  34.3 | 38 |
+| composite | 800x600@60 | 43.0  47.9  43.0 | 28 |
+
+**It tracks the mode across three different blanking values, to ±0.2 lines**,
+which is what says it is a measurement of the source rather than a constant.
+
+**THE SAME RASTER READS 26 LINES ON SEPARATE SYNC AND 43 ON COMPOSITE.** Nothing
+moved but the sync type -- one input, one cable, one mode. That seventeen-line
+difference is where the input formatter believes active video begins, and it is
+the displacement, available as a reading rather than as a table.
+
+**It is not the window the engine wrote, played back.** Panning vertically
+through the pads moved `IF_VB_SP` 21 -> 0 -> 25, a 21-line excursion, and the
+measurement moved 24.4 -> 25.6 -> 26.1 -- under two lines. A single
+`setfield.py` write of `IF_VB_SP` does zero the signal and it does not return on
+restore, which reads as the same thing and is not: the write leaves the block
+needing a reconfigure, and concluding "it follows our window" from it is wrong.
+
+## What the measurement does not yet explain
+
+**Sync on green looks ordinary on it.** The Wii at 480p reads ~42 against the
+mode's 45, the same two-to-four line deficit every separate-sync mode shows --
+so this measurement accounts for composite sync's displacement and not for the
+seven units the Wii wants. Two of the three arrangements are explained.
+
+**The deficit itself is unexplained.** Every reading falls a few lines short of
+the published blanking -- 3.7, 1.9, 3.9 across the three separate-sync modes --
+and it matches neither the vsync width (2, 4, 6) nor either porch. It is
+consistent enough to be a property of the measurement rather than of the
+sources.
+
+**The sync processor's bus is not an alternative.** `SP_TEST_MODULE` 7 carries a
+vertical pulse on sync on green and reads nothing at all on separate sync; 4 and
+6 are line-rate or faster on both. No stage of it exposes the source's vertical
+on separate sync, which is why the input formatter's signal is the one to build
+on.
+
+## Reading it costs one window, and the window has to be chosen
+
+The count is `transitions / 2` complete pulses inside the sweep, so the high
+time has to be divided by that before it means anything: at `ms=25` a 60 Hz
+source gives one pulse or two depending on phase, and summing both reports the
+blanking as double. `ms=100` gives six and is stable to a fifth of a line.
