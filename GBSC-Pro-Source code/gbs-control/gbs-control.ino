@@ -2466,9 +2466,7 @@ void doPostPresetLoadSteps()
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 
-        inputFormatter.writeLineCounterStart(0);
-        inputFormatter.applyDefaultHorizontalScalePath();
-
+        inputFormatter.configureForSource();
 
         // The most the clock can carry, for every source: the decimators undo
         // the faster tap so the same samples a line reach the pipeline either
@@ -2509,8 +2507,6 @@ void doPostPresetLoadSteps()
         if (adco->r_off != 0 && adco->g_off != 0 && adco->b_off != 0) {
             Tv5725::Adc::applyOffset(adco->r_off, adco->g_off, adco->b_off);
         }
-
-        inputFormatter.disableAutoOffset();
 
         Tv5725::VideoProcessor::setLineFilter(uopt->wantVdsLineFilter);
         Tv5725::VideoProcessor::setPeaking(uopt->wantPeaking);
@@ -2569,9 +2565,6 @@ void doPostPresetLoadSteps()
         }
 
         Tv5725::SyncOnGreen::putInForce();
-
-        inputFormatter.applyVerticalTiming(
-            Tv5725::InputFormatter::VcrTiming);
 
         Tv5725::SyncProcessor::clampFromReferenceClock();
         Tv5725::SyncProcessor::applyDefaultClampWindow();

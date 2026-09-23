@@ -247,14 +247,15 @@ public:
     // the ADC divider; this block is where the register lives.
     void writeLineCounter(uint16_t units);
 
-    // The vertical blanking window a measurement of the source is taken
-    // through. The field rate is timed off this block's test bus and
-    // HPERIOD_IF is counted inside the same block, and a window whose start
-    // lies beyond the frame never fires -- so one solved for a taller mode
-    // leaves both dead, with the register that would replace it only written
-    // once the measurement it prevents has succeeded.
+    // The block's vertical window, opened wide before a measurement is taken
+    // through it. The source's field rate is timed off this block's test bus,
+    // so a window left where a taller mode's solve put it never fires and no
+    // rate arrives.
     // docs/investigations/if-vertical-blank-strands-the-measurement.md
     void writeReferenceVerticalBlank();
+
+    // Everything the block needs setting for a newly loaded source.
+    void configureForSource();
 
     // Where the line counter starts, as a pixel shift from the horizontal sync.
     void writeLineCounterStart(uint16_t pixels);

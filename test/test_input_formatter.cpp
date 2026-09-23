@@ -237,6 +237,21 @@ TEST_CASE("normal vertical timing is the other value of the same field")
     CHECK(Wire.field(1, 0x01, 0, 1) == 1);  // IF_VS_FLIP
 }
 
+TEST_CASE("one call configures the block for a newly loaded source")
+{
+    FreshChip chip;
+
+    inputFormatter.configureForSource();
+
+    CHECK(Wire.field(1, 0x0C, 5, 11) == 0);  // IF_INI_ST
+    CHECK(Wire.field(1, 0x02, 1, 1) == 1);   // IF_HS_SEL_LPF
+    CHECK(Wire.field(1, 0x29, 0, 1) == 0);   // IF_AUTO_OFST_EN
+    CHECK(Wire.field(1, 0x29, 1, 1) == 0);   // IF_AUTO_OFST_PRD
+    CHECK(Wire.field(1, 0x2A, 0, 8) == 0);   // both detection ranges
+    CHECK(Wire.field(1, 0x00, 5, 1) == 0);   // IF_VS_SEL, the source's own sync
+    CHECK(Wire.field(1, 0x01, 0, 1) == 1);   // IF_VS_FLIP
+}
+
 TEST_CASE("disabling the auto offset leaves the rest of its bytes alone")
 {
     FreshChip chip;

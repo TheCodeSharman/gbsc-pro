@@ -126,6 +126,14 @@ void InputFormatter::writeReferenceVerticalBlank()
     IF_VB_SP::write(2);
 }
 
+void InputFormatter::configureForSource()
+{
+    writeLineCounterStart(0);
+    applyDefaultHorizontalScalePath();
+    disableAutoOffset();
+    applyVerticalTiming(VcrTiming);
+}
+
 void InputFormatter::writeLineCounterStart(uint16_t pixels)
 {
     IF_INI_ST::write(pixels);
