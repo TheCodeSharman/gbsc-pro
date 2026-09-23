@@ -254,16 +254,11 @@ public:
     // docs/investigations/if-vertical-blank-strands-the-measurement.md
     void writeReferenceVerticalBlank();
 
-    // Everything the block needs setting for a newly loaded source.
-    void configureForSource();
+
 
     // Where the line counter starts, as a pixel shift from the horizontal sync.
     // Public only for the ifini debug route.
     void writeLineCounterStart(uint16_t pixels);
-
-    // The auto offset adjuster off and its detection range zeroed: what the ADC
-    // subtracts comes from the stored calibration instead.
-    void disableAutoOffset();
 
     // IF_HBIN_SP is two things, and which one depends on the scan mode. With the
     // line-double FIFO in circuit it is that FIFO's line reset and moving it pans
@@ -346,11 +341,6 @@ public:
     // ../../../docs/investigations/hperiod-if-railing.md
     uint16_t linePeriod();
 
-private:
-    // The horizontal scaling-down path every load starts from. Not in init():
-    // applyLineDoubling() selects the interpolator beside it, so a value written
-    // only at bring-up would be left behind by whichever source ran last.
-    void applyDefaultHorizontalScalePath();
 };
 
 }  // namespace Tv5725

@@ -2464,8 +2464,6 @@ void doPostPresetLoadSteps()
         rto->sourceDisconnected = false;
         Tv5725::Chip::holdPower(true);
 
-        inputFormatter.configureForSource();
-
         // The most the clock can carry, for every source: the decimators undo
         // the faster tap so the same samples a line reach the pipeline either
         // way, and they filter. applySampleRate() clamps it to the crossover

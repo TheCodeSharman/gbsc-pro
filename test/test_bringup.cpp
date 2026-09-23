@@ -434,20 +434,13 @@ TEST_CASE("the peaking filter's shape is the bring-up's, its gain is not")
 
 TEST_CASE("the input formatter's fixed horizontal filtering is the bring-up's")
 {
-    // Three constants with one writer each. Two of their neighbours in the same
-    // block are deliberately NOT here:
-    //
-    //   IF_HS_SEL_LPF has a second writer later in the same load, which sets 0
-    //   for one class of source. Written at bring-up instead, a source that
-    //   took that branch would leave 0 behind for the next one.
-    //
-    //   IF_INI_ST has four writers, two of which set 16 from the sync watcher.
+    // IF_HS_SEL_LPF is the path a load starts from, and applyLineDoubling()
+    // writes the scan mode's own value over it on every solve.
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_INT_LPF_BYPS) == 0);
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_PSHIFT_BYPS) == 1);
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_LD_WRST_SEL) == 1);
-
-    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_SEL_LPF) == NotWritten);
-    CHECK(WRITTEN(Tv5725::InputFormatter::IF_INI_ST) == NotWritten);
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_SEL_LPF) == 1);
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_INI_ST) == 0);
 }
 
 TEST_CASE("the sync processor's retime window starts where it always starts")

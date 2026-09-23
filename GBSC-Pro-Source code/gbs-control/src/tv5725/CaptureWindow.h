@@ -15,8 +15,8 @@
 namespace Tv5725 {
 
 /* 
-    CapturwWindwow respents the apperture grabbed out of the video input that should be
-    displayed on the output.
+    CaptureWindwow calculates the Input Formatter registers needed to capture
+    the aperture the PanAndZoom wants.
 */
 class CaptureWindow {
 public:

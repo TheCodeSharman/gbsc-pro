@@ -50,12 +50,10 @@ TEST_CASE("the rest of s1_0c is left to its own owners")
 {
     FreshChip chip;
 
-    // IF_LD_RAM_BYPS is bit 0 and IF_INI_ST is bits 7-5 of the same byte, and
-    // both are written by doPostPresetLoadSteps(). Read-modify-write is what
-    // keeps three owners in one byte from clobbering each other, and this is
-    // the assertion that says so rather than assuming it.
+    // IF_LD_RAM_BYPS is bit 0, written by applyLineDoubling(). Read-modify-write
+    // is what keeps three owners in one byte from clobbering each other, and
+    // this is the assertion that says so rather than assuming it.
     CHECK(Wire.field(1, 0x0C, 0, 1) == ((Poison >> 0) & 0x1));
-    CHECK(Wire.field(1, 0x0C, 5, 3) == ((Poison >> 5) & 0x7));
 }
 
 TEST_CASE("the input formatter stays inside segment 1")
@@ -86,9 +84,10 @@ TEST_CASE("the input formatter writes the addresses it owns and no others")
     FreshChip chip;
 
     const uint8_t owned[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                             0x08, 0x09, 0x0A, 0x0B, 0x0C,
+                             0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
                              0x10, 0x11, 0x12, 0x13,
-                             0x24, 0x25, 0x26, 0x27, 0x28};
+                             0x24, 0x25, 0x26, 0x27, 0x28,
+                             0x29, 0x2A};
     bool expected[256] = {false};
     for (size_t i = 0; i < sizeof(owned) / sizeof(owned[0]); ++i)
         expected[owned[i]] = true;
@@ -213,44 +212,36 @@ TEST_CASE("a progressive source blanks no tail at all")
 
 // --- the per-load state, which shares bytes with owners that are not here -----
 
-TEST_CASE("the vertical timing leaves the scan mode alone")
+TEST_CASE("the vertical timing survives the scan mode")
 {
     // IF_VS_SEL is bit 5 of s1_00 and IF_PRGRSV_CNTRL is bit 6 of the same byte,
     // written by applyLineDoubling() from a different caller at a different time.
     FreshChip chip;
 
+    inputFormatter.init();
     inputFormatter.applyLineDoubling(false, false);
-    inputFormatter.configureForSource();
 
     CHECK(Wire.field(1, 0x00, 5, 1) == 0);  // IF_VS_SEL
     CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
 }
 
-TEST_CASE("one call configures the block for a newly loaded source")
+TEST_CASE("the bring-up sets the block's constants")
 {
     FreshChip chip;
 
-    inputFormatter.configureForSource();
+    inputFormatter.init();
 
     CHECK(Wire.field(1, 0x0C, 5, 11) == 0);  // IF_INI_ST
     CHECK(Wire.field(1, 0x02, 1, 1) == 1);   // IF_HS_SEL_LPF
-    CHECK(Wire.field(1, 0x29, 0, 1) == 0);   // IF_AUTO_OFST_EN
-    CHECK(Wire.field(1, 0x29, 1, 1) == 0);   // IF_AUTO_OFST_PRD
-    CHECK(Wire.field(1, 0x2A, 0, 8) == 0);   // both detection ranges
-    CHECK(Wire.field(1, 0x00, 5, 1) == 0);   // IF_VS_SEL, the source's own sync
+    CHECK(Wire.field(1, 0x00, 5, 1) == 0);   // IF_VS_SEL, the virtual generator
     CHECK(Wire.field(1, 0x01, 0, 1) == 1);   // IF_VS_FLIP
-}
 
-TEST_CASE("disabling the auto offset leaves the rest of its bytes alone")
-{
-    FreshChip chip;
-
-    inputFormatter.disableAutoOffset();
-
-    CHECK(Wire.field(1, 0x29, 0, 1) == 0);  // IF_AUTO_OFST_EN
-    CHECK(Wire.field(1, 0x29, 1, 1) == 0);  // IF_AUTO_OFST_PRD
-    CHECK(Wire.field(1, 0x2A, 0, 8) == 0);  // both detection ranges
-    CHECK(Wire.field(1, 0x29, 2, 6) == ((Poison >> 2) & 0x3F));
+    SUBCASE("the auto offset off, leaving the rest of its bytes alone") {
+        CHECK(Wire.field(1, 0x29, 0, 1) == 0);  // IF_AUTO_OFST_EN
+        CHECK(Wire.field(1, 0x29, 1, 1) == 0);  // IF_AUTO_OFST_PRD
+        CHECK(Wire.field(1, 0x2A, 0, 8) == 0);  // both detection ranges
+        CHECK(Wire.field(1, 0x29, 2, 6) == ((Poison >> 2) & 0x3F));
+    }
 }
 
 // Which scan mode a source of a given line count is captured in.

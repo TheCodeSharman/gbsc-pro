@@ -46,8 +46,14 @@ void InputFormatter::init()
     IF_IN_DREG_BYPS::write(0x0);                 // s1_00[0:0]
     IF_UV_REVERT::write(0x0);                    // s1_00[2:2]
     IF_SEL_656::write(0x0);                      // s1_00[3:3]
+
+    // RD-5725-1.1: "choose the periodical or virtual vertical timing". Every
+    // source wants the virtual one -- vertical regenerated from what arrives
+    // rather than assumed to be periodic.
+    IF_VS_SEL::write(0x0);                       // s1_00[5:5]
     IF_SEL16BIT::write(0x0);                     // s1_00[4:4]
     IF_HS_FLIP::write(0x0);                      // s1_00[7:7]
+    IF_VS_FLIP::write(0x1);                      // s1_01[0:0]
     IF_UV_FLIP::write(0x0);                      // s1_01[1:1]
     IF_U_DELAY::write(0x0);                      // s1_01[2:2]
     IF_V_DELAY::write(0x0);                      // s1_01[3:3]
@@ -61,6 +67,9 @@ void InputFormatter::init()
     // ship, bar IF_HS_Y_PDELAY 2 in ntsc_1920x1080, which the YPbPr branch still
     // asks for afterwards.
     IF_HS_INT_LPF_BYPS::write(0x0);              // s1_02[0:0]
+    // The path every load starts from. applyLineDoubling() owns it from here
+    // on, writing the scan mode's own value on every solve.
+    IF_HS_SEL_LPF::write(0x1);                   // s1_02[1:1]
     IF_HS_PSHIFT_BYPS::write(0x1);               // s1_02[3:3]
     IF_HS_TAP11_BYPS::write(0x0);                // s1_02[4:4]
     IF_HS_Y_PDELAY::write(0x3);                  // s1_02[6:5]
@@ -91,6 +100,8 @@ void InputFormatter::init()
     // the bench-proven one.
     IF_LD_ST::write(5);              // s1_0c[4:1]
 
+    writeLineCounterStart(0);                    // s1_0c[15:5]
+
     // Horizontal blanking set 0. The IF module has three sets -- 0 at
     // s1_10/s1_12, 1 at s1_14/s1_16, 2 at s1_18/s1_1a -- with no selector
     // documented between them; VideoPath::write() owns set 2, the capture window
@@ -111,6 +122,13 @@ void InputFormatter::init()
     IF_HBIN_ST::write(0);                        // s1_24[11:0]
 
     IF_SEL_ADC_SYNC::write(0x1);                 // s1_28[2:2]
+
+    // Off. toggleIfAutoOffset() turns it on and is the only other writer, so a
+    // toggle now lasts until the next bring-up rather than until the next load.
+    IF_AUTO_OFST_EN::write(0x0);                 // s1_29[0:0]
+    IF_AUTO_OFST_PRD::write(0x0);                // s1_29[1:1]
+    IF_AUTO_OFST_U_RANGE::write(0x0);            // s1_2a[3:0]
+    IF_AUTO_OFST_V_RANGE::write(0x0);            // s1_2a[7:4]
 }
 
 void InputFormatter::writeLineCounter(uint16_t units)
@@ -126,36 +144,12 @@ void InputFormatter::writeReferenceVerticalBlank()
     IF_VB_SP::write(2);
 }
 
-void InputFormatter::configureForSource()
-{
-    writeLineCounterStart(0);
-    applyDefaultHorizontalScalePath();
-    disableAutoOffset();
-
-    // RD-5725-1.1: "choose the periodical or virtual vertical timing". Every
-    // source here wants the virtual one -- vertical regenerated from what
-    // arrives rather than assumed to be periodic.
-    IF_VS_SEL::write(0);
-    IF_VS_FLIP::write(1);
-}
-
 void InputFormatter::writeLineCounterStart(uint16_t pixels)
 {
     IF_INI_ST::write(pixels);
 }
 
-void InputFormatter::applyDefaultHorizontalScalePath()
-{
-    IF_HS_SEL_LPF::write(1);
-}
 
-void InputFormatter::disableAutoOffset()
-{
-    IF_AUTO_OFST_U_RANGE::write(0);
-    IF_AUTO_OFST_V_RANGE::write(0);
-    IF_AUTO_OFST_PRD::write(0);
-    IF_AUTO_OFST_EN::write(0);
-}
 
 void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
 {
