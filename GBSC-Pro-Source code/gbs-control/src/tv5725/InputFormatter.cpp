@@ -131,7 +131,12 @@ void InputFormatter::configureForSource()
     writeLineCounterStart(0);
     applyDefaultHorizontalScalePath();
     disableAutoOffset();
-    applyVerticalTiming(VcrTiming);
+
+    // RD-5725-1.1: "choose the periodical or virtual vertical timing". Every
+    // source here wants the virtual one -- vertical regenerated from what
+    // arrives rather than assumed to be periodic.
+    IF_VS_SEL::write(0);
+    IF_VS_FLIP::write(1);
 }
 
 void InputFormatter::writeLineCounterStart(uint16_t pixels)
@@ -150,12 +155,6 @@ void InputFormatter::disableAutoOffset()
     IF_AUTO_OFST_V_RANGE::write(0);
     IF_AUTO_OFST_PRD::write(0);
     IF_AUTO_OFST_EN::write(0);
-}
-
-void InputFormatter::applyVerticalTiming(VerticalTiming timing)
-{
-    IF_VS_SEL::write(timing == NormalTiming ? 1 : 0);
-    IF_VS_FLIP::write(1);
 }
 
 void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)

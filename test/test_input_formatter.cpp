@@ -220,21 +220,10 @@ TEST_CASE("the vertical timing leaves the scan mode alone")
     FreshChip chip;
 
     inputFormatter.applyLineDoubling(false, false);
-    inputFormatter.applyVerticalTiming(InputFormatter::VcrTiming);
+    inputFormatter.configureForSource();
 
     CHECK(Wire.field(1, 0x00, 5, 1) == 0);  // IF_VS_SEL
     CHECK(Wire.field(1, 0x00, 6, 1) == 1);  // IF_PRGRSV_CNTRL
-}
-
-TEST_CASE("normal vertical timing is the other value of the same field")
-{
-    FreshChip chip;
-
-    inputFormatter.applyVerticalTiming(InputFormatter::VcrTiming);
-    inputFormatter.applyVerticalTiming(InputFormatter::NormalTiming);
-
-    CHECK(Wire.field(1, 0x00, 5, 1) == 1);  // IF_VS_SEL
-    CHECK(Wire.field(1, 0x01, 0, 1) == 1);  // IF_VS_FLIP
 }
 
 TEST_CASE("one call configures the block for a newly loaded source")

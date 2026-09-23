@@ -1376,8 +1376,6 @@ void setResetParameters()
     rto->presetID = 0;
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
-    inputFormatter.applyVerticalTiming(
-        Tv5725::InputFormatter::NormalTiming);
     GBS::IF_HSYNC_RST::write(0x3FF);
     inputFormatter.writeReferenceVerticalBlank();
 
