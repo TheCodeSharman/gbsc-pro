@@ -144,11 +144,22 @@ mode's 45, the same two-to-four line deficit every separate-sync mode shows --
 so this measurement accounts for composite sync's displacement and not for the
 seven units the Wii wants. Two of the three arrangements are explained.
 
-**The deficit itself is unexplained.** Every reading falls a few lines short of
-the published blanking -- 3.7, 1.9, 3.9 across the three separate-sync modes --
-and it matches neither the vsync width (2, 4, 6) nor either porch. It is
-consistent enough to be a property of the measurement rather than of the
-sources.
+**The deficit is a CONSTANT, which is the useful part.** Every reading falls
+short of the published blanking by the same amount, against blanking that
+differs by seventeen lines across the three modes:
+
+| mode | measured | published | short by |
+|---|---|---|---|
+| 800x600@60 | 24.1 | 28 | 3.95 |
+| 640x480@60 | 41.3 | 45 | 3.7 |
+| 1024x768@60 | 34.2 | 38 | 3.8 |
+
+A fixed offset rather than a scale error, and it matches neither the vsync width
+(4, 2, 6) nor either porch -- so it is a property of the measurement, and one a
+calibration removes. What the offset IS has not been established; the polling
+window is the obvious suspect, and taking the reading off the cycle counter
+instead would say, because a latency of the sampler's would not survive the
+change.
 
 **The sync processor's bus is not an alternative.** `SP_TEST_MODULE` 7 carries a
 vertical pulse on sync on green and reads nothing at all on separate sync; 4 and
@@ -162,3 +173,48 @@ The count is `transitions / 2` complete pulses inside the sweep, so the high
 time has to be divided by that before it means anything: at `ms=25` a 60 Hz
 source gives one pulse or two depending on phase, and summing both reports the
 blanking as double. `ms=100` gives six and is stable to a fifth of a line.
+
+## The composite path has a second error: the frame it solves against is short
+
+`STATUS_SYNC_PROC_VTOTAL` reads short on composite sync by the mode's own
+vertical sync width -- already established on four modes, with the mechanism and
+the signal form that causes it, in
+[the-risc-pc-composite-sync-is-not-serrated.md](the-risc-pc-composite-sync-is-not-serrated.md).
+1024x768@60 adds a fifth point and changes nothing: 805 separate, 799 composite,
+against a 6-line pulse.
+
+**The coast is not the correction, and reaching for it is the tempting move.**
+It is 7 + 3 on this bench against a shortfall of 4, so adding it back
+over-corrects by six. Coast stops the serrations disturbing the PLL; on a source
+that has none it has no count to restore.
+
+What matters here is that this is a SECOND error on the composite path rather
+than the same one twice. The engine solves against a frame four lines shorter
+than the source's, so a placement taken as a fraction of the frame has the wrong
+denominator as well as the wrong origin -- which is why composite sync is
+displaced further than sync on green, and why the two are not one correction.
+
+**The reconstruction is bounded by the signal form.** `VTOTAL + vsyncWidth` is
+the true frame only where the vertical interval carries no horizontal edges. A
+serrated source keeps feeding the counter through it, so the shortfall is not
+there to add back, and nothing here has been measured on one.
+
+## The vertical polarity is measured, agrees with the standard, and is not needed
+
+`STATUS_SYNC_PROC_VSPOL` reads 1 on the one DMT mode of the three whose vertical
+sync is positive-going and 0 on both negative ones, so unlike
+`STATUS_SYNC_PROC_VSACT` it is a status bit worth quoting.
+
+**The measurement does not need it.** `IF_TEST_SEL` 3's high time is the blanking
+on all three modes -- 3.84%, 7.86%, 4.24%, never the complement -- so the input
+formatter's vertical is already polarity-normalised and the source's polarity
+never reaches the reading. Taking the SHORTER of the high and low intervals
+makes that structural rather than incidental, at no cost, which is what the
+horizontal axis settled on for the same reason.
+[the-duty-is-the-shorter-interval.md](the-duty-is-the-shorter-interval.md)
+
+**`VPERIOD_IF` is not a cross-check.** It completes a measurement only on
+composite sync -- `STATUS_IF_VT_OK` 0 with the register wandering 190..217 on
+separate sync, 1 with it steady on composite -- and across two acquisitions of
+the same composite mode it read 1255 and then 615, a factor of two apart. A
+reading that halves between acquisitions cannot witness anything.
