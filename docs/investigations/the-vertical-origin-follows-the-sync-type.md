@@ -144,22 +144,43 @@ mode's 45, the same two-to-four line deficit every separate-sync mode shows --
 so this measurement accounts for composite sync's displacement and not for the
 seven units the Wii wants. Two of the three arrangements are explained.
 
-**The deficit is a CONSTANT, which is the useful part.** Every reading falls
-short of the published blanking by the same amount, against blanking that
-differs by seventeen lines across the three modes:
+**THE SIGNAL IS THE PORCHES, NOT THE WHOLE BLANKING.** There was never a
+deficit; the comparison was against the wrong quantity. Measured off the CPU
+cycle counter at 800x600@60 -- 24 samples, no failures, median **24.00** lines,
+stdev 0.27 -- against `RetroScaler-Acorn.mdf`'s own
+`v_timings:4,23,0,600,0,1`: back porch 23 plus front porch 1 is **24**, and the
+4-line sync pulse is what the high time leaves out.
 
-| mode | measured | published | short by |
+The MDF is the check that settles it, because it states what the machine
+emits rather than what a standard says it should: totals and blanking agree with
+DMT on all three modes, so only the quantity being measured was wrong.
+
+**The polling reading is biased and must not be trusted to a line.** `/testbus`
+counts samples across a fixed window and normalises by the pulses in it, so a
+partial pulse at either edge inflates the answer: it gave 26.1 where the edge
+measurement gives 24.00. It is fine for telling 26 from 43 -- which is what
+separated the sync types -- and not for telling the porches from the blanking.
+
+## The edge-timed instrument is not reliable yet
+
+Timing the pulse off the cycle counter -- one rising edge, the falling edge, the
+next rising edge -- is stable on ONE of three modes:
+
+| mode | `STATUS_SYNC_PROC_VSPOL` | median lines | stdev |
 |---|---|---|---|
-| 800x600@60 | 24.1 | 28 | 3.95 |
-| 640x480@60 | 41.3 | 45 | 3.7 |
-| 1024x768@60 | 34.2 | 38 | 3.8 |
+| 800x600@60 | 1 | 24.00 | 0.46 |
+| 640x480@60 | 0 | 93.81 | **42.5** |
+| 1024x768@60 | 0 | 44.86 | **73.4** |
 
-A fixed offset rather than a scale error, and it matches neither the vsync width
-(4, 2, 6) nor either porch -- so it is a property of the measurement, and one a
-calibration removes. What the offset IS has not been established; the polling
-window is the obvious suspect, and taking the reading off the cycle counter
-instead would say, because a latency of the sampler's would not survive the
-change.
+**It works on the positive-going mode and fails on both negative-going ones**,
+with a spread larger than the quantity. The signal is not the problem -- the
+polling reading is steady to ±0.2 lines on all three -- so it is the edge
+capture. The chain detaches and re-attaches the interrupt from inside each ISR,
+which is where an edge on the opposite phase is dropped or double-counted, and
+taking the shorter of the two intervals cannot rescue a pair that was mistimed.
+
+Until that is fixed the measurement is a bench instrument and not something the
+engine can solve from.
 
 **The sync processor's bus is not an alternative.** `SP_TEST_MODULE` 7 carries a
 vertical pulse on sync on green and reads nothing at all on separate sync; 4 and
