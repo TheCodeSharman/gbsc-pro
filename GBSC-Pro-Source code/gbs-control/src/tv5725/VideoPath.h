@@ -373,6 +373,23 @@ private:
     // filling the screen with less of the source.
     uint16_t narrowestCaptureOn(const Axis &axis) const;
 
+    // Where zoom-out stops on this axis: the capture above which the picture is
+    // wider than the room and the part cannot minify, so every further unit is
+    // a unit of picture with nowhere to go.
+    // ../../../../docs/investigations/the-capture-may-not-outgrow-the-raster.md
+    uint16_t widestCaptureOn(const Axis &axis) const;
+
+    // Bring a framing back inside what the raster can show, before the capture
+    // window is asked to realise it. On the solve path rather than in zoom()
+    // alone, because an output mode change moves the raster under a framing
+    // nobody pressed.
+    void narrowToRaster(PanAndZoom &framing, const CaptureWindow &capture,
+                        const Axis &axis) const;
+
+    // Whether there is an output raster to solve a capture against. Bypass
+    // leaves none, and there is nothing to solve there.
+    bool rasterSolved() const;
+
     bool sizeCaptureWindow(CaptureWindow &capture);
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
     VideoProcessorTimings calculateOutputRaster(const CaptureWindow &capture) const;

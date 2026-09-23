@@ -34,6 +34,15 @@ const PanAndZoom::AxisFraming &PanAndZoom::on(const Axis &axis) const
 
 bool PanAndZoom::tunedOn(const Axis &axis) const { return on(axis).tuned; }
 
+void PanAndZoom::narrowTo(const Axis &axis, float extent)
+{
+    if (!tunedOn(axis) || extentOn(axis) <= extent)
+        return;
+
+    const float centre = originOn(axis) + extentOn(axis) / 2.0f;
+    seedOn(axis, centre - extent / 2.0f, extent);
+}
+
 float PanAndZoom::originOn(const Axis &axis) const { return on(axis).origin; }
 
 float PanAndZoom::extentOn(const Axis &axis) const { return on(axis).extent; }

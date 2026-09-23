@@ -85,15 +85,6 @@ BlankingTiming ActiveImage::capture(const VideoSourceLine &line,
                          (uint16_t)(placed.start + placed.width));
 }
 
-void ActiveImage::narrowTo(const Axis &axis, float extent)
-{
-    if (!framing_.tunedOn(axis) || framing_.extentOn(axis) <= extent)
-        return;
-
-    const float centre = framing_.originOn(axis) + framing_.extentOn(axis) / 2.0f;
-    framing_.seedOn(axis, centre - extent / 2.0f, extent);
-}
-
 void ActiveImage::clampToLine(const VideoSourceLine &line, const SourceTiming &timing,
                               const Axis &axis)
 {

@@ -827,3 +827,35 @@ TEST_CASE("the vertical capture window clears the picture by more than the path 
     CHECK(Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11)
           == solved.engine.extentUnitsOn(AxisVertical) + 4);
 }
+
+// THE FRAMING THE BOUNDS REALISE AT EACH ZOOM STOP. The framing is clamped
+// twice on its way into a capture window -- against what the source line can
+// reach, and against what the output raster can show -- and the two clamps do
+// not commute. This pins what the pair produces at both stops, on both axes, so
+// a change to where either clamp runs has to reproduce it exactly.
+TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds")
+{
+    SolvedEngine solved(311, 50.08f, 181, &Mode1080p);
+
+    SUBCASE("zoomed out to where the raster stops") {
+        for (int press = 0; press < 40; ++press) {
+            solved.engine.zoom(-40, 0);
+            solved.engine.zoom(0, -40);
+        }
+        CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 129);
+        CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 971);
+        CHECK(solved.engine.originUnitsOn(AxisVertical) == 38);
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 585);
+    }
+
+    SUBCASE("zoomed in to where the magnification stops") {
+        for (int press = 0; press < 40; ++press) {
+            solved.engine.zoom(40, 0);
+            solved.engine.zoom(0, 40);
+        }
+        CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 129);
+        CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 559);
+        CHECK(solved.engine.originUnitsOn(AxisVertical) == 38);
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 361);
+    }
+}

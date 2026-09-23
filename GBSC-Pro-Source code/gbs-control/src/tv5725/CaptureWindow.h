@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 #include "VideoSourceLine.h"
-#include "OutputRaster.h"
 #include "ActiveImage.h"
 #include "SourceMeasurement.h"
 #include "HsyncPulse.h"
@@ -25,16 +24,8 @@ public:
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 
-    // The output raster this capture is for, with the porch each axis may not
-    // run past: the capture is bounded by what the room can SHOW, and the part
-    // cannot minify. Zero on both totals means bypass, where there is no scaled
-    // raster and nothing to solve.
-    void setRasters(uint16_t linePx, uint16_t frameLines,
-                    uint16_t activeStop = 0, uint16_t activeLinesStop = 0,
-                    uint16_t activeStart = 0, uint16_t activeLinesStart = 0);
-
-    // Read the output rasters and the bounds the window sits in. False when the
-    // source has not settled far enough to derive a window from.
+    // The line the framing is placed on, per axis. False when the source has not
+    // settled far enough to derive a window from.
     //
     // The measurement is an ARGUMENT, not a read. PLLAD_LAT is what loads the
     // divider into the ADC PLL, so between a write and the latch the register
@@ -49,12 +40,8 @@ public:
     // resolved here: the three values that identify it are all measured, and a
     // path that plays the source out rather than scaling it never reaches this
     // call at all. docs/video-source-acquisition.md
-    bool readRasters(const SourceMeasurement &source, const HsyncPulse &reading,
-                     const SourceTiming &timing, bool lineDoubled);
-
-    // In RGBHV bypass the VDS is out of the video path and there is nothing to
-    // solve; both rasters read back as nearly zero.
-    bool scaling() const;
+    bool setSource(const SourceMeasurement &source, const HsyncPulse &reading,
+                   const SourceTiming &timing, bool lineDoubled);
 
     void setFraming(const PanAndZoom &wanted);
     const PanAndZoom &framing() const;
@@ -80,26 +67,11 @@ public:
     uint16_t firstUnitOn(const Axis &axis) const;
     uint16_t reachOn(const Axis &axis) const;
 
-    uint16_t linePx() const;
-    uint16_t frameLines() const;
-
-
     bool usable() const;
 
 private:
-    // The framing narrowed to what the raster can SHOW. Past that bound the
-    // scaler would have to minify and cannot -- VDS_?SCALE divides 1024 and
-    // pins at Scale::Max -- so every further unit of capture is a unit of
-    // picture with nowhere to go, and the playback is asked for more pixels per
-    // output line than the line has clocks.
-    // ../../../../docs/investigations/the-capture-may-not-outgrow-the-raster.md
-    void clampToRaster(const VideoSourceLine &line, const OutputRaster &raster,
-                       const Axis &axis);
-
     VideoSourceLine horizontalLine_, verticalLine_;
     SourceTiming timing_;
-    OutputRaster line_;       // output raster, horizontal
-    OutputRaster frame_;      // output raster, vertical
     ActiveImage image_;
     BlankingTiming horizontal_, vertical_;
 };

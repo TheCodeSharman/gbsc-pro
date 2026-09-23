@@ -34,6 +34,11 @@ public:
     bool tunedOn(const Axis &axis) const;
     void seedOn(const Axis &axis, float origin, float extent);
 
+    // Shrink to this extent about the framing's own centre, where it is wider.
+    // A framing nobody has tuned is left alone: its extent is a default rather
+    // than a request, and narrowing it would record a choice the user made.
+    void narrowTo(const Axis &axis, float extent);
+
     float originOn(const Axis &axis) const;
     float extentOn(const Axis &axis) const;
 

@@ -56,11 +56,6 @@ public:
     BlankingTiming capture(const VideoSourceLine &line, const SourceTiming &timing,
                            const Axis &axis) const;
 
-    // Give up extent, keeping the centre the user placed. The bound passed in
-    // is the OUTPUT raster's, which this class knows nothing about: the line's
-    // own bounds are clampToLine()'s.
-    void narrowTo(const Axis &axis, float extent);
-
     // Seed an axis nobody has framed yet, and bring a framed one back where
     // this line cannot realise it -- a framing left beyond anything reachable
     // kills the control in that direction, see VideoPath::readCapture().

@@ -13,7 +13,7 @@ const uint16_t CaptureWindow::ProgressiveStart;
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
 
-bool CaptureWindow::readRasters(const SourceMeasurement &source,
+bool CaptureWindow::setSource(const SourceMeasurement &source,
                                 const HsyncPulse &reading,
                                 const SourceTiming &timing, bool lineDoubled)
 {
@@ -48,19 +48,6 @@ bool CaptureWindow::readRasters(const SourceMeasurement &source,
     return true;
 }
 
-void CaptureWindow::setRasters(uint16_t linePx, uint16_t frameLines,
-                               uint16_t activeStop, uint16_t activeLinesStop,
-                               uint16_t activeStart, uint16_t activeLinesStart)
-{
-    line_ = OutputRaster(linePx, activeStop, activeStart);
-    frame_ = OutputRaster(frameLines, activeLinesStop, activeLinesStart);
-}
-
-bool CaptureWindow::scaling() const
-{
-    return line_.total() >= 64 && frame_.total() >= 64;
-}
-
 void CaptureWindow::setFraming(const PanAndZoom &wanted)
 {
     image_.setFraming(wanted);
@@ -74,9 +61,6 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted)
     image_.clampToLine(horizontalLine_, timing_, AxisHorizontal);
     image_.clampToLine(verticalLine_, timing_, AxisVertical);
 
-    clampToRaster(horizontalLine_, line_, AxisHorizontal);
-    clampToRaster(verticalLine_, frame_, AxisVertical);
-
     horizontal_ = image_.capture(horizontalLine_, timing_, AxisHorizontal);
     vertical_ = image_.capture(verticalLine_, timing_, AxisVertical);
 
@@ -89,25 +73,6 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted)
     const uint16_t fits = MemoryMap::clampWidth(horizontal_.width(), vertical_.width());
     if (fits < horizontal_.width())
         horizontal_ = BlankingTiming(horizontal_.stop(), horizontal_.stop() + fits);
-}
-
-void CaptureWindow::clampToRaster(const VideoSourceLine &line,
-                                  const OutputRaster &raster, const Axis &axis)
-{
-    // The bound is a capture WIDTH, so it is compared against what the line can
-    // realise; the proportion it becomes is of the whole line, which is what the
-    // framing is anchored to.
-    const uint16_t reachable = line.capturable();
-    const uint16_t whole = line.units();
-    if (!raster.solved() || whole == 0)
-        return;
-
-    const uint16_t most = axis.maximumCapture(raster.total(), raster.activeStart(),
-                                             raster.activeStop());
-    if (most == 0 || most >= reachable)
-        return;
-
-    image_.narrowTo(axis, (float)most / (float)whole);
 }
 
 const PanAndZoom &CaptureWindow::framing() const { return image_.framing(); }
@@ -135,10 +100,6 @@ uint16_t CaptureWindow::reachOn(const Axis &axis) const
     return axis.vertical() ? verticalLine_.lastCapture()
                            : horizontalLine_.lastCapture();
 }
-
-uint16_t CaptureWindow::linePx() const { return line_.total(); }
-
-uint16_t CaptureWindow::frameLines() const { return frame_.total(); }
 
 bool CaptureWindow::usable() const
 {

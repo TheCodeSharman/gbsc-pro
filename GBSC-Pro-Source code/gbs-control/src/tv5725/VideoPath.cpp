@@ -785,6 +785,40 @@ uint16_t VideoPath::narrowestCaptureOn(const Axis &axis) const
                                vertical ? activeLinesStop_ : activeStop_);
 }
 
+uint16_t VideoPath::widestCaptureOn(const Axis &axis) const
+{
+    const bool vertical = axis.vertical();
+    const uint16_t raster = vertical ? rasterFrameLines_ : rasterLinePx_;
+    if (raster == 0)
+        return 0;
+    return axis.maximumCapture(raster,
+                               vertical ? activeLinesStart_ : activeStart_,
+                               vertical ? activeLinesStop_ : activeStop_);
+}
+
+void VideoPath::narrowToRaster(PanAndZoom &framing, const CaptureWindow &capture,
+                               const Axis &axis) const
+{
+    // The bound is a capture WIDTH, so it is compared against what the line can
+    // realise; the proportion it becomes is of the whole line, which is what the
+    // framing is anchored to.
+    const uint16_t whole = capture.lineUnitsOn(axis);
+    const uint16_t first = capture.firstUnitOn(axis);
+    const uint16_t last = capture.reachOn(axis);
+    const uint16_t reachable = last > first ? (uint16_t)(last - first) : 0;
+
+    const uint16_t most = widestCaptureOn(axis);
+    if (whole == 0 || most == 0 || most >= reachable)
+        return;
+
+    framing.narrowTo(axis, (float)most / (float)whole);
+}
+
+bool VideoPath::rasterSolved() const
+{
+    return rasterLinePx_ >= 64 && rasterFrameLines_ >= 64;
+}
+
 bool VideoPath::zoom(int16_t dhPixels, int16_t dvPixels)
 {
     PanAndZoom wanted = framing_;
@@ -822,28 +856,22 @@ bool VideoPath::fail()
 
 bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
 {
-    capture.setRasters(rasterLinePx_, rasterFrameLines_, activeStop_,
-                       activeLinesStop_, activeStart_, activeLinesStart_);
-    if (!capture.readRasters(sampling_, reading_, timing_, lineDoubled_)) {
-        // Bypass is not a failure to retry: there is nothing to solve.
-        if (!capture.scaling()) {
-            solvePending_ = false;
-            return false;
-        }
-        return fail();
-    }
-    if (!capture.scaling()) {
+    // Bypass is not a failure to retry: there is nothing to solve.
+    if (!rasterSolved()) {
         solvePending_ = false;
         return false;
     }
-    return true;
+    return capture.setSource(sampling_, reading_, timing_, lineDoubled_) ? true : fail();
 }
 
 bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
 {
     // Forced, the whole capturable region every solve, so no stored framing and
     // no source change can put the bench rule back where it was.
-    capture.setFraming(fullFraming_ ? PanAndZoom(0.0f, 1.0f, 0.0f, 1.0f) : framing_);
+    PanAndZoom wanted = fullFraming_ ? PanAndZoom(0.0f, 1.0f, 0.0f, 1.0f) : framing_;
+    narrowToRaster(wanted, capture, AxisHorizontal);
+    narrowToRaster(wanted, capture, AxisVertical);
+    capture.setFraming(wanted);
     framing_ = capture.framing();
     usableHorizontal_ = capture.lineUnitsOn(AxisHorizontal);
     usableVertical_ = capture.lineUnitsOn(AxisVertical);
@@ -863,7 +891,7 @@ VideoProcessorTimings VideoPath::calculateOutputRaster(const CaptureWindow &capt
                             capture.horizontal().width(),
                             (uint16_t)(capture.vertical().width()
                                        + 2 * AxisVertical.captureMargin()),
-                            capture.linePx(), capture.frameLines(),
+                            rasterLinePx_, rasterFrameLines_,
                             activeStop_, activeLinesStop_,
                             activeStart_, activeLinesStart_);
 }
