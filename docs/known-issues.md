@@ -10,32 +10,41 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The frame time lock has never armed on the bench VGA source
+### The output rate is set once per boot, and it lands wrong about half the time
 
-Measured 2026-09-24, same source. With `enableFrameTimeLock` on, the lock's
-gate reports `not armed: no coast window` and holds there; over three toggles
-and 90 s of console it never reached `running`. So the output field rate on
-this source is set **once**, by `externalClockGenSyncInOutRate()` at each solve,
-and nothing walks a wrong one-shot back.
+**The shake is a property of the BOOT.** Surveyed over six restarts of the RISC
+PC at 800x600@60 on `vga`, scored from `tv-snap` clips as the standard deviation
+of a luma-gradient centroid, with the horizontal axis as the control:
 
-`SyncProcessor::coastPlaced()` is false because `forgetPositions()` runs at each
-preset load and the loop block that re-places it is gated on `!rgbhvBypass()`,
-as is `VideoSourceAcquisition::placeCoastWindow()`. Both ask
-`RgbhvOutput::isScaling()`, a held flag, where the output mode the engine solved
-answers the same question with one owner.
+| state | vertical sd | horizontal (control) |
+|---|---|---|
+| frame lock off, three boots of six | 0.005 - 0.008 | 0.005 - 0.006 |
+| frame lock off, the other three | **0.126 - 0.263** | 0.005 - 0.007 |
+| frame lock on, clipped 34 s after arming | 0.16 - 0.34 | 0.006 - 0.010 |
+| frame lock on, clipped at 180 s | **0.004** | 0.003 |
 
-**This is what a claim that frame lock steadies the picture has to survive.** A
-measurement taken across `/sc?~` compares two acquisitions and charges the
-difference to the option; the preset load re-runs the one-shot rate match on its
-own, with the option in either state.
+`tools/gbsc-pro-hwtest/shake_survey.py` is the survey. A single observation says
+nothing, which is why "it looked fine when I checked" has twice been taken as
+evidence that something fixed it.
 
-**The one-shot's tolerance is the thing to size next.**
-`Clock::RateAgreement` accepts two samples within 0.5 Hz absolute or 0.833%
-relative, and `externalClockGenSyncInOutRate()` sets the display clock to that
-ratio. At 60 Hz an agreeing-but-wrong pair puts the output up to 0.8% off the
-source, which beats. `FrameSync::runFrequency()` corrects at most 0.06% per
-1.67 s, so the lock is a slow net under a measurement that can miss by more than
-ten of its steps.
+**What sets it is one measurement admitted by too loose a tolerance.**
+`externalClockGenSyncInOutRate()` sets the display clock to the ratio of two
+measured field rates, each from `agreedRate()`, and `Clock::RateAgreement`
+admits a pair **0.5 Hz apart -- 0.83% at 60 Hz**. One shaking boot logged
+`rate match: source 60801 mHz` against a source running 60317. Nothing
+re-measures until the next solve, so a boot that lands wrong stays wrong.
+
+The measurement is quantised rather than noisy: good samples repeat to 0.00005
+Hz, and the bad ones sit at the true period plus or minus multiples of 4224 CPU
+ticks -- about two source lines -- so a tighter tolerance would reject a
+mismatched pair. Two bad samples landing on the SAME wrong value would still
+agree, so the tolerance alone is not the whole answer.
+
+**Frame time lock cures it and is not a cure for the boot.** Armed, it converges
+to within 0.0001 Hz of the source and the picture is the steadiest measured
+here. But it corrects at most 0.06% per 1.67 s, so walking back a one-shot that
+landed 0.8% out takes two to three minutes -- and while it walks, the output
+rate is moving, which scores WORSE than leaving it alone. It is off by default.
 
 ### An alternating count latched the scan type -- FIXED
 
