@@ -1839,6 +1839,55 @@ can disagree, with no check that they do not.
 
 ## Untried experiments with a known payoff
 
+### The divider should be keyed to the source identity, not to a raw measurement
+
+`SamplingClock::recommendedDivider()` takes a measured line rate, so the divider
+inherits that measurement's scatter and the same source lands on a different one
+each boot. Measured on the bench RISC PC at 800x600@60, two boots of one build
+on one mode:
+
+    PLLAD_MD      1436 -> 1440      0.28% apart
+    IF_HSYNC_RST  1436 -> 1440      = PLLAD_MD
+    SP_RT_HS_SP   1335 -> 1339      = 93% of PLLAD_MD
+    IF_HB_ST2 / IF_HB_SP2 / IF_LINE_SP / VDS_HSCALE / PB_CAP_OFFSET   follow
+
+Those nine bytes are the WHOLE difference between the two boots across all 1536
+addresses, so nothing else is moving and this is the scatter on its own.
+
+**The measurement only has to say which source mode the input is in, and being
+finer than that buys nothing.** Framings are already stored per `SourceKey` and
+the raster is already solved once per source identity; quantising the divider to
+the same granularity would make one source choose one divider every boot. A
+wobble in the measured rate currently re-latches the ADC PLL, which is the cost
+being paid for precision nothing asked for.
+
+**It is a repeatability tidy and must not be sold as a fix for anything
+downstream.** In particular it does not reach the frame time lock's phase noise,
+which is timed on the ESP off the input formatter's vertical output.
+`docs/investigations/the-frame-time-lock-saturates.md`.
+**Do not quantise the RATE into buckets** -- `SourceKey.h` rejects that by
+measurement, and `SourceKey`'s tolerance is the mechanism that has no boundary
+to land near.
+
+### WiFi light sleep in the edge sampler does nothing and has no stated reason
+
+`debugPinPulseEdges()` enters `WIFI_LIGHT_SLEEP` after the first edge and holds
+it across the second -- the edge whose timestamp is the measurement -- restoring
+`WIFI_NONE_SLEEP` only after the wait. `WIFI_NONE_SLEEP` is the low-latency
+mode and light sleep is the one that adds wake latency, and the SDK only enters
+it when the CPU is idle, which a busy-spin never is.
+
+The comment above that loop explains the `delay(7)` and explains why there is
+deliberately no `yield()` in the spin. It says nothing about the sleep mode,
+which is inherited from upstream.
+
+**Measured as making no difference**, by flipping it mid-boot so the
+boot-to-boot variable is gone: a clean boot stayed clean with it on, and two
+disturbed boots stayed disturbed with it off, one of them getting worse. So it
+is a latency knob in the most timing-sensitive loop in the firmware, with no
+reason recorded and no measured effect. Removing it is a tidy; keeping it wants
+a reason written down.
+
 ### The same framing must reproduce at every output resolution
 
 **The framing is stored as PROPORTIONS, so it scales with the raster and must
