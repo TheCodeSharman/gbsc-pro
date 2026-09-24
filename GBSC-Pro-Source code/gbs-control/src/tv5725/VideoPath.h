@@ -15,7 +15,7 @@
 #include "OutputMode.h"
 #include "OutputTimings.h"
 #include "PanAndZoom.h"
-#include "VideoProcessorTimings.h"
+#include "OutputImage.h"
 #include "FramingTable.h"
 #include "SourceKey.h"
 #include "SourceMeasurement.h"
@@ -392,13 +392,12 @@ private:
 
     bool sizeCaptureWindow(CaptureWindow &capture);
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
-    VideoProcessorTimings calculateOutputRaster(const CaptureWindow &capture) const;
+    OutputImage calculateOutputRaster(const CaptureWindow &capture) const;
 
     // Ordered so the headroom never dips: the solver always takes the whole
     // memory window, so the only edge that can narrow it is VDS_?B_SP moving up.
     // docs/firmware-geometry-engine.md "Write ordering".
-    void write(const VideoProcessorTimings &solved,
-               const CaptureWindow &capture);
+    void write(const OutputImage &solved, const CaptureWindow &capture);
 
     // A press that cannot move the window must not move the state either, or the
     // control goes dead for as many presses as it was pushed past its limit.
@@ -445,13 +444,12 @@ private:
     // The output raster in force, held rather than read back off VDS_?SYNC_RST.
     // Zero means there is none, which is what bypass looks like.
     uint16_t rasterLinePx_, rasterFrameLines_;
-    Scale horizontalScale_, verticalScale_;
 
-    // The display aperture the last solve chose, and whether a solve has chosen
-    // one. Held rather than read back, so the blank is a state this applies
-    // rather than a register value it saves.
-    DisplayWindow display_;
-    bool displaySolved_;
+    // Where the last solve put the picture: both scales and both pairs of
+    // blanking windows. Held rather than read back, so the blank is a state
+    // this applies rather than a register value it saves, and usable() is what
+    // says a solve has chosen one at all.
+    OutputImage output_;
     bool showing_;
 
     // The sync pad as this has it. Held, so the pad is written only when it
@@ -471,6 +469,9 @@ private:
     // The aperture as the showing_ state has it: what the last solve chose, or
     // an aperture that admits nothing.
     void writeDisplayAperture() const;
+
+    // The aperture the last solve chose on one axis: VDS_DIS_?B_ST/SP.
+    const BlankingTiming &display(const Axis &axis) const;
 
     // Where the front porch starts, from the raster this engine solved. The
     // registers carry no porch, so there is nothing to read back. 0 until a
