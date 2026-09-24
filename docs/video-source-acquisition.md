@@ -347,9 +347,9 @@ time, as the step that claims each group lands:
 | `deinterlaceAutoEnabled` | `Deinterlacer`, which holds the motion-adaptive state |
 | `medResLineCount` | **gone.** `ModeDetect::init()` owns the threshold, at the 51 that was in force |
 | `videoIsFrozen` | `FrameBuffer` |
-| `syncLockFailIgnore` | FrameSync, once it has an owner |
+| `syncLockFailIgnore` | **gone.** `FrameTimeLock` counts its own forgiven failures |
 | `inputIsYpBpR` | `VideoSourceSelection` |
-| `webServerEnabled`, `webServerStarted`, `allowUpdatesOTA`, `enableDebugPings`, `printInfos`, `freezeAutomation`, `boardHasPower`, `isInLowPowerMode`, `extClockGenDetected` | `RetroScaler` |
+| `webServerEnabled`, `webServerStarted`, `allowUpdatesOTA`, `enableDebugPings`, `printInfos`, `freezeAutomation`, `boardHasPower`, `isInLowPowerMode` | `RetroScaler`. `extClockGenDetected` is gone: `DisplayClock::driving()` is the same question |
 
 Only the last row is root configuration, and `boardHasPower` is in it under
 protest -- it is a latched failure rather than a live reading, which *The rule
@@ -1711,7 +1711,7 @@ Of its 53 lines most are already `Tv5725::` calls. Four clusters pin it:
 
 | blocker | where | clears with |
 |---|---|---|
-| `FrameSync::cleanup()`, `externalClockGenResetClock()` | the display clock and the Si5351 | step 11 |
+| `frameSync.cleanup()`, `externalClockGenResetClock()` | the display clock and the Si5351 | step 11 |
 | `adco->r/g/b`, `uopt->enableAutoGain`, `uopt->wantOutputComponent` | `applyStoredAdcGain()`, `applyRGBPatches()` | ADC gain ownership |
 | `rto->boardHasPower`, `presetID` | guards and flags | with their branches |
 
@@ -1937,27 +1937,30 @@ disconnected, because detection owns the input then and runs a heavier search of
 its own, and off while the user has the automatic path switched off. Told every
 pass rather than at every writer, so neither can go stale.
 
-**WHAT IS LEFT IN `loop()` IS THE PLATFORM.** `FrameSync` and the Si5351 are
-above `Tv5725::` and the sketch still owns them, so `loop()` calls
-`inputAcquisition.poll(millis())` and acts on the report. Collapsing that last
-block needs the frame time lock and the clock generator under the engine, which
-is where step 11's rate is already waiting.
+**WHAT IS LEFT IN `loop()` IS THE PLATFORM**, and the split that got the lock
+there is worth stating because the same shape fits whatever moves next.
 
-**What blocks it is the platform, not the shape.** `framesync.h` includes
-`ESP8266WiFi.h` and reaches the platform in 49 places across ten APIs --
-`DEBUG_IN_PIN` and `digitalRead` for the vsync edges, `ESP.getCycleCount` and
-`ESP.getCpuFreqMHz` for the period, `ESP.wdtFeed`, `yield`, `millis`, `delay`,
-`WiFi` and `SerialM` -- and the host tests compile `VideoSourceAcquisition.cpp`
-without any of them. So the move is a split rather than a rename: the vsync
-sampler is genuinely ESP-side and stays, and the lock logic above it is what
-comes under the engine. `useClock()` and `useWatchdogFeed()` on this class are
-the shape the seam already takes.
+`framesync.h` reached the platform in 49 places across ten APIs, and host tests
+compile `VideoSourceAcquisition.cpp` without any of them. The move was a split
+rather than a rename: **one primitive is genuinely ESP-side** --
+`debugPinPulseEdges()`, the cycle counts of two consecutive rising edges on
+`DEBUG_IN_PIN`, with the edge ISRs, the WiFi sleep-mode dance and the watchdog
+feed around it -- and everything above it is arithmetic.
+`src/tv5725/DebugPin.h` declares that primitive and the sketch defines it, the
+way `tv5725Log()` already worked.
 
-`lastVsyncLock` has gone ahead of that split. It was a file-scope static in the
-sketch stamped from four places and compared in two, all of them asking when the
-lock last ran or was last disturbed, and it is `FrameSync::defer()` and
-`FrameSync::quietFor()` now -- so the split has one class to move rather than a
-class and a loose static.
+What came under the engine with it: the HTotal and phase arithmetic, both
+corrections, the rate match that used to be `externalClockGenSyncInOutRate()`,
+and the gate, which is `FrameTimeLock` in this directory. `loop()` calls
+`inputAcquisition.poll(millis())`, acts on the report, and hands
+`FrameTimeLock::service()` the four facts it still holds -- the option, whether
+a source is present, whether the sync watcher is running, and which correction
+method the user chose.
+
+**The clock generator went the same way.** `DisplayClock::attach()` detects the
+Si5351 and takes the display clock from it, `handOver()` is the PCLKIN write,
+and `driving()` replaced `rto->extClockGenDetected`, which was a second owner of
+that question at fifteen sites.
 
 ## Input selection is the same collapse, one level up
 

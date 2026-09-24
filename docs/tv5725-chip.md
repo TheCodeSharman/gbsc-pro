@@ -729,13 +729,14 @@ and the HDMI transmitter, since both sit in the path of any time-varying artefac
 | **LM1881** | sync separator |
 | **CH340T** | USB-serial |
 
-The **Si5351A** is not passive: the firmware detects it (`rto->extClockGenDetected`)
-and `FrameSync::runFrequency()` retunes it at runtime to frame-lock the output,
-instead of `FrameSync::runVsync()`. A clock generator being adjusted while you
-watch is a candidate for interference that varies in time rather than sitting
-still. `/uc?X` toggles `disableExternalClockGenerator`, but it **only takes effect
-at boot** — the runtime branch tests `extClockGenDetected`, which is set during
-startup detection.
+The **Si5351A** is not passive: `Tv5725::DisplayClock::attach()` detects it and
+takes the display clock from it, and `FrameSync::runFrequency()` retunes it at
+runtime to frame-lock the output, instead of `FrameSync::runVsync()`. A clock
+generator being adjusted while you watch is a candidate for interference that
+varies in time rather than sitting still. `/uc?X` toggles
+`disableExternalClockGenerator`, but it **only takes effect at boot** — the
+runtime branch asks `DisplayClock::driving()`, and nothing attaches a generator
+after startup detection.
 
 ## Related
 

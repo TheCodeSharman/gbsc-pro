@@ -103,7 +103,7 @@ EOF
 ```
 
 Almost all are used from `gbs-control.ino` alone -- the exceptions are
-`PLL648_CONTROL_01` in `framesync.h` and in `Geometry.cpp`, and the two interrupt
+`PLL648_CONTROL_01` in `FrameSync.cpp` and in `Geometry.cpp`, and the two interrupt
 bytes, which no longer have a call site outside `Interrupts.cpp`.
 
 The per-name `uses` column below is a snapshot and drifts with every commit
@@ -192,7 +192,7 @@ bits mean *because the code would not say*.
    One commit per byte or per small group — `PLL648_CONTROL_01` alone is 24
    sites and deserves its own.
 2. **`PLL648_CONTROL_01` needs thought beyond mechanics.** `0x75` is a *sentinel*
-   the firmware tests for (`framesync.h`, `gbs-control.ino`), not just a
+   the firmware tests for (`src/tv5725/FrameSync.cpp`, `gbs-control.ino`), not just a
    value it writes, and `Geometry.cpp` writes a computed `raster.divider` into
    it. Decomposing the writes without deciding what the sentinel becomes will
    break the tests-for-0x75. See CLAUDE.md on why `PLL648_CONTROL_01 == 0x75` is

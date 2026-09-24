@@ -224,13 +224,12 @@ and by a lot.** Three of the largest contested writers cannot execute here:
 - `applyBestHTotal()` and the rest of the htotal search are deleted, so their
   seven geometry writes are gone rather than merely unreachable. The engine
   computes the horizontal total in `solveRaster()`.
-- `FrameSync::runVsync()` is the only caller of the `VDS_VSYNC_RST` /
-  `VDS_VS_ST` writes in `framesync.h`, and `gbs-control.ino` reads
-  `rto->extClockGenDetected ? runFrequency() : runVsync(...)`. With the clock
-  generator present only `runFrequency()` runs, and it steers the Si5351
-  instead.
-- `FrameSync::reset()`'s copies of those writes are guarded by
-  `syncLastCorrection != 0`, which only `runVsync()` ever sets.
+- `FrameSync::runVsync()` is the only thing that writes `VDS_VSYNC_RST` /
+  `VDS_VS_ST` for the lock, and `FrameTimeLock` picks it only where
+  `FrameSync::canSteerRate()` is false. With the clock generator present
+  `runFrequency()` runs instead, and it steers the Si5351.
+- `FrameSync::reset()` unwinds the same writes, and only where a correction was
+  made -- which only `runVsync()` ever makes.
 
 That is despite `enableFrameTimeLock` being 1 and `frameTimeLockMethod` 0 in
 the preferences — the option is on, the clock generator simply takes priority.

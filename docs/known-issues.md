@@ -44,12 +44,24 @@ Armed, the lock takes it from three boots in six to one in six, and converges to
 within 0.0001 Hz. It is still off by default, and the boot that shook through it
 is not explained.
 
-**The rate steering has no owner.** `externalClockGenSyncInOutRate()`,
-`agreedRate()`, `externalClockGenResetClock()`,
-`externalClockGenDetectAndInitialize()`, `handDisplayClockToGenerator()` and the
-frame time lock's gate are all in `gbs-control.ino`, and two of them read
-TV5725 registers there (`PAD_CKIN_ENZ`, `PLL648_CONTROL_01`). Whatever answers
-the phase question wants that owner first, or it lands in the sketch beside them.
+**THE LOCK CORRECTS FAR LESS OFTEN THAN ITS INTERVAL SUGGESTS, AND THAT IS A
+CANDIDATE FOR THE BOOT THAT SHAKES.** `runFrequency()` takes two readings of
+the source's field rate and steers only where they agree to
+`Clock::RateAgreement::RelativeTolerance`, which is 0.05% -- 0.03 Hz at 60 Hz.
+Measured on `vga` at 800x600@60, 95 s with the lock armed and the source
+steady: **five corrections against about fifty refusals**, so the pacing
+interval of 1670 ms is not what sets the cadence. The readings it does accept
+spread over a whole hertz -- 60317, 60125, 60221, 60030 and 61194 mHz -- against
+an engine that holds 60.317 Hz across the same window, so the refusals are the
+rule working rather than failing.
+
+Two things follow. A lock that corrects every fifteen to twenty seconds takes
+minutes to converge, which is why a survey clipped at 34 s scores worse than
+one clipped at 180 s. And the instrument, not the tolerance, is what is weak:
+`docs/investigations/the-field-rate-measurement-is-unreliable.md` has where the
+spread comes from. Asking the engine for the source rate is what fixed the same
+problem in the rate match; `runFrequency()` still measures it itself, because
+it needs the PHASE from the same pass.
 
 ### An alternating count latched the scan type -- FIXED
 
@@ -1691,8 +1703,8 @@ between a source event and its solve. The host can drive it directly.
 Timed with `SamplingLog` at 25 ms across 311 -> 524: **5.0 s of stall in 21
 passes**, individual passes taking 914, 794 and 783 ms. `getSourceFieldRate()`
 is a blocking spin with no `yield()`, one field period nominal and up to
-3 x 250 ms on retries, and `agreedRate()` wraps that in three more attempts. The
-reverse change is 2.89 s.
+3 x 250 ms on retries, and `FrameSync::matchRate()` wraps its own rate
+measurement in five more attempts. The reverse change is 2.89 s.
 
 **An input change between the two bench sources is the same transition**, since
 `vga` at 320x256@50 is 311 lines and the Wii at 480p is 524. `/input?src=ypbpr`

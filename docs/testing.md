@@ -176,6 +176,29 @@ A class that genuinely needs the time takes it as an argument -- `SamplingLog`
 is the worked example. A class that needs a subsystem the list already excludes
 has to be excluded with it, which is why `SamplingLog` sits beside `Adc`.
 
+### The free-function seam, for what the fake bus cannot reach
+
+Some of the engine needs the ESP itself rather than the chip. The pattern is a
+free function the engine DECLARES and the sketch DEFINES, so the class stays a
+plain `.cpp` the host can link with a stub of its own:
+
+| declared in | what the sketch supplies |
+|---|---|
+| `src/tv5725/Tv5725Log.h` | `tv5725Log()`, one line to the web console |
+| `src/tv5725/DebugPin.h` | `debugPinPulseEdges()`, the cycle counts of two rising edges on `DEBUG_IN_PIN`, plus the tick rate and the failure probe |
+
+`DebugPin.h` is what let `Tv5725::FrameSync` come under the engine at all.
+Everything the lock does is arithmetic over those two timestamps; the edge
+ISRs, the WiFi sleep-mode dance and the watchdog feed around them are not, and
+they stayed in the sketch.
+
+**One primitive, not one per caller.** The host side is `test/DebugPinStub.h`,
+which derives the edges from the period each binary already supplies through
+`debugPinPulseTicks()` -- so a suite that only drives a RATE needs nothing new,
+and a suite that drives the PHASE (`test_frame_sync.cpp`) defines the edges
+itself and leaves the stub out. `test/SketchSeam.h` bundles both for a binary
+that needs neither.
+
 ## Disciplines
 
 These are not style preferences. Each is here because its absence cost real
