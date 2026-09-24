@@ -652,7 +652,6 @@ Pinger pinger;
 // call sites.
 static void resetRunTimeDefaults()
 {
-    rto->autoBestHtotalEnabled = true;
     rto->syncLockFailIgnore = 16;
     rto->syncWatcherEnabled = true;
     Tv5725::Adc::choosePhaseAdc(16);
@@ -1006,6 +1005,16 @@ struct FrameSyncAttrs
     static const int16_t syncCorrection = 2;
     static const int32_t syncTargetPhase = 90;
 };
+
+// How long a source must have held before the frame time lock corrects against
+// it, in acquisition passes. A correction measured across a settling source
+// steers the output towards a rate the source is about to leave.
+static const uint8_t FrameTimeLockHeldPasses = 20;
+
+// What arming wants of the same source: a shorter hold, a placed coast window
+// and nothing disturbing the lock for this long.
+static const uint8_t FrameTimeLockArmPasses = 10;
+static const uint16_t FrameTimeLockArmQuietMs = 500;
 typedef FrameSyncManager<GBS, FrameSyncAttrs> FrameSync;
 
 // Hand the display clock to the external generator, keeping the divider the
@@ -1183,6 +1192,20 @@ bool sourceIsRgbhv()
 bool scalingRgbhv() { return sourceIsRgbhv() && Tv5725::RgbhvOutput::isScaling(); }
 bool rgbhvBypass() { return sourceIsRgbhv() && !Tv5725::RgbhvOutput::isScaling(); }
 
+// Whether the VDS carries the video. Bypass hands the source's own timing to
+// the encoder, so there is no output raster of ours to steer and nothing for
+// the frame time lock to arm against.
+//
+// Asked of the solved output mode rather than of the two bypass predicates:
+// every path that changes what the output is doing sets it, which is one owner,
+// where RgbhvOutput::isScaling() is a flag a boot leaves false on a unit that
+// goes on to scale.
+bool scalerCarriesVideo()
+{
+    const Tv5725::OutputMode *mode = geometry.outputMode();
+    return mode != NULL && !mode->isBypass();
+}
+
 // Whether the source runs a 15 kHz line. One reader, on every path: the held
 // rate survives a bypass switch, so bypass is not a special case.
 // docs/video-source-acquisition.md
@@ -1320,21 +1343,18 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
   }
 }
 
-void activeFrameTimeLockInitialSteps()
+// The user's switch, shared by both commands that reach it. A toggle has to
+// land somewhere defined in BOTH directions: switched on, the reset drops a
+// correction measured against the state before it and the lock re-arms from
+// the source in front of it; switched off, the reset takes the last correction
+// back out of the raster rather than leaving it there for ever.
+void toggleFrameTimeLock(bool persist)
 {
-    if (rto->extClockGenDetected) {
-        return;
+    uopt->enableFrameTimeLock = !uopt->enableFrameTimeLock;
+    if (persist) {
+        saveUserPrefs();
     }
-
-    if (rto->presetID != PresetHdBypass && rto->presetID != PresetBypassRGBHV) {
-        if (uopt->frameTimeLockMethod == 0) {
-        }
-        if (uopt->frameTimeLockMethod == 1) {
-        }
-        if (GBS::VDS_VS_ST::read() == 0) {
-            ;
-        }
-    }
+    FrameSync::reset(uopt->frameTimeLockMethod);
 }
 
 // The ADC input the user chose, or the RGB pins when nothing is chosen -- which
@@ -2435,9 +2455,6 @@ void doPostPresetLoadSteps()
 
         if (Tv5725::VideoRoute::isHdBypassChannel()) {
             Tv5725::Chip::OUT_SYNC_SEL::write(1);
-            rto->autoBestHtotalEnabled = false;
-        } else {
-            rto->autoBestHtotalEnabled = true;
         }
 
         Tv5725::Adc::choosePhaseSyncProcessor(8);
@@ -2639,9 +2656,6 @@ void doPostPresetLoadSteps()
         // mode. Releasing it here shows the previous mode's geometry against
         // the new source until then.
 
-        if (uopt->enableFrameTimeLock) {
-            activeFrameTimeLockInitialSteps();
-        }
     }
 }
 
@@ -2890,7 +2904,6 @@ void enterHdBypass()
 
     // Video routes around the VDS here, so no solve is coming.
     geometry.setOutputMode(&Tv5725::ModeBypass);
-    rto->autoBestHtotalEnabled = false;
 
     externalClockGenResetClock();
     FrameSync::cleanup();
@@ -3640,6 +3653,85 @@ void handleWiFi(boolean instant)
 }
 
 
+// Why FrameSync is not armed. Asked only where it already is not, so every
+// answer is a reason and none of them is "it is".
+static const char *frameTimeLockUnarmedBecause()
+{
+    if (inputAcquisition.acquiredPasses() < FrameTimeLockArmPasses)
+        return "not armed: the source has not held long enough";
+    if (!Tv5725::SyncProcessor::coastPlaced())
+        return "not armed: no coast window";
+    if (!FrameSync::quietFor(FrameTimeLockArmQuietMs))
+        return "not armed: something keeps disturbing the lock";
+    if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
+        return "not armed: the divider is not latched";
+    if (!FrameSync::init())
+        return "not armed: the vsync periods cannot be read";
+    return NULL;
+}
+
+// Which of the lock's conditions is shut, or NULL while all of them are open.
+// The divider is not among them: it costs a register read, so
+// serviceFrameTimeLock() asks it only once the free conditions have passed.
+static const char *frameTimeLockBlockedBy()
+{
+    if (!uopt->enableFrameTimeLock)
+        return "the option is off";
+    if (rto->sourceDisconnected)
+        return "no source";
+    if (!scalerCarriesVideo())
+        return "the video bypasses the scaler";
+    if (!rto->syncWatcherEnabled)
+        return "the sync watcher is off";
+    if (!FrameSync::ready())
+        return frameTimeLockUnarmedBecause();
+    if (!FrameSync::quietFor(FrameSyncAttrs::lockInterval))
+        return "disturbed";
+    if (inputAcquisition.acquiredPasses() <= FrameTimeLockHeldPasses)
+        return "the source has not held long enough";
+    if (inputAcquisition.unmeasuredPasses() != 0)
+        return "the source is unmeasured";
+    return NULL;
+}
+
+// On change only. The gate is asked every pass, and a state that holds for
+// minutes would flood the console it exists to explain.
+static void reportFrameTimeLock(const char *state)
+{
+    static const char *reported = NULL;
+    if (reported != NULL && strcmp(reported, state) == 0)
+        return;
+    reported = state;
+    debugPrintf("frame time lock: %s\n", state);
+}
+
+// The only thing on the board that steers the output field rate towards the
+// source's. It arms itself, runs when it can, and says which of the two it is
+// doing -- because an option whose gate is shut and an option that reaches
+// nothing look identical from the picture.
+static void serviceFrameTimeLock()
+{
+    const char *blocked = frameTimeLockBlockedBy();
+    if (blocked == NULL) {
+        if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
+            const bool success = rto->extClockGenDetected
+                                     ? FrameSync::runFrequency()
+                                     : FrameSync::runVsync(uopt->frameTimeLockMethod);
+            if (!success) {
+                if (rto->syncLockFailIgnore-- == 0) {
+                    FrameSync::reset(uopt->frameTimeLockMethod);
+                }
+            } else if (rto->syncLockFailIgnore > 0) {
+                rto->syncLockFailIgnore = 16;
+            }
+        } else {
+            blocked = "the divider is not latched";
+        }
+        FrameSync::defer();
+    }
+    reportFrameTimeLock(blocked == NULL ? "running" : blocked);
+}
+
 // The acquisition path's entry gate. **THE FREEZE ONLY**: board power is a
 // latched failure rather than a live reading, and it stays false through the
 // whole recovery -- exactly when the engine has to solve.
@@ -4321,31 +4413,6 @@ void loop()
         Tim_signal = millis();
     }
     web_service(inputStage, segmentCurrent, registerCurrent, readout, inputToogleBit);
-    if (uopt->enableFrameTimeLock &&
-        rto->sourceDisconnected == false &&
-        rto->autoBestHtotalEnabled &&
-        rto->syncWatcherEnabled &&
-        FrameSync::ready() &&
-        FrameSync::quietFor(FrameSyncAttrs::lockInterval) &&
-        inputAcquisition.acquiredPasses() > 20 &&
-        inputAcquisition.unmeasuredPasses() == 0) {
-        if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
-            fsDebugPrintf("running frame sync, clock gen enabled = %d\n", rto->extClockGenDetected);
-
-            bool success = rto->extClockGenDetected ? FrameSync::runFrequency() : FrameSync::runVsync(uopt->frameTimeLockMethod);
-
-            if (!success) {
-                if (rto->syncLockFailIgnore-- == 0) {
-                    FrameSync::reset(uopt->frameTimeLockMethod);
-                }
-            }
-            else if (rto->syncLockFailIgnore > 0) {
-                rto->syncLockFailIgnore = 16;
-            }
-        }
-
-        FrameSync::defer();
-    }
 
           
     if (rto->syncWatcherEnabled && Tv5725::Chip::hasPower()) {
@@ -4426,18 +4493,7 @@ void loop()
         }
     }
 
-    // FrameSync only runs once armed, and FrameSync::init() is the one thing
-    // that arms it. Worth arming only on a source that has been stable a while
-    // with the divider latched, which STATUS_SYNC_PROC_HTOTAL is the witness for.
-    if (rto->autoBestHtotalEnabled && !FrameSync::ready() && rto->syncWatcherEnabled) {
-        if (inputAcquisition.acquiredPasses() >= 10 && Tv5725::SyncProcessor::coastPlaced() &&
-            FrameSync::quietFor(500)) {
-            if ((inputAcquisition.acquiredPasses() % 5) == 0) {
-                if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
-                    FrameSync::init();
-            }
-        }
-    }
+    serviceFrameTimeLock();
 
     if (!rgbhvBypass() && rto->syncWatcherEnabled
         && !Tv5725::SyncProcessor::coastPlaced()) {
@@ -4987,7 +5043,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     }
                 } break;
                 case 'W':
-                    uopt->enableFrameTimeLock = !uopt->enableFrameTimeLock;
+                    toggleFrameTimeLock(false);
                     break;
                 case 'E':
                     loadComputedPreset(Tv5725::OutputChoice(Output1024P), 0x02);
@@ -5469,20 +5525,7 @@ void handleType2Command(char argument)
                 : F("slot save: no source measured, or the table is full"));
             break;
         case '5':
-            // 
-            uopt->enableFrameTimeLock = !uopt->enableFrameTimeLock;
-            saveUserPrefs();
-            if (uopt->enableFrameTimeLock) {
-                ; // SerialMprintln(F("FTL on"));
-            } else {
-                ; // SerialMprintln(F("FTL off"));
-            }
-            if (!rto->extClockGenDetected) {
-                FrameSync::reset(uopt->frameTimeLockMethod);
-            }
-            if (uopt->enableFrameTimeLock) {
-                activeFrameTimeLockInitialSteps();
-            }
+            toggleFrameTimeLock(true);
             break;
         case '6':
             //
@@ -5596,7 +5639,6 @@ void handleType2Command(char argument)
                 uopt->frameTimeLockMethod = 0;
             }
             saveUserPrefs();
-            activeFrameTimeLockInitialSteps();
             break;
         case 'l':
             // cycle through available SDRAM clocks

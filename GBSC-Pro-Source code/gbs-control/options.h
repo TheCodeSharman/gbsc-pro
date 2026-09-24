@@ -125,7 +125,6 @@ struct runTimeOptions
     bool webServerStarted;
     bool allowUpdatesOTA;
     bool enableDebugPings;
-    bool autoBestHtotalEnabled;
     bool deinterlaceAutoEnabled;
     bool isValidForScalingRGBHV;
     bool extClockGenDetected;

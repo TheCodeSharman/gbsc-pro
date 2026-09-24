@@ -516,7 +516,6 @@ static void LoadDefault()
     // to a sync-processor reset. uopt is the user's, and resetting the sync
     // processor is not a reason to touch it.
 
-    rto->autoBestHtotalEnabled = true; // 已启用自动最佳总计
     rto->syncLockFailIgnore = 16;      //
     rto->syncWatcherEnabled = true;    //
     Tv5725::Adc::choosePhaseAdc(16);
