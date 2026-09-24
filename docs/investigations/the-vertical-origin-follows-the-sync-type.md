@@ -1,10 +1,32 @@
 # The vertical capture origin follows the sync type
 
-The vertical capture window is placed seven counter units late on every sync
-arrangement except separate sync. On sync-on-green the picture tears and wraps;
-on composite sync the top of the picture is lost and the rest is pushed down the
-screen. Separate sync is correct, and it is the only arrangement the placement
-was measured on.
+**THE COUPLING IS WITHDRAWN ON COMPOSITE SYNC.** The title's claim held on two
+arrangements when it was written and holds on one now: the composite leg was a
+consequence of the short count, and restoring the count closed it.
+`SourceMeasurement::reconciledFrame()` adds back the vertical sync the composite
+counter loses, and the vertical placement is byte-identical across the two
+arrangements as a result.
+
+Measured on the RISC PC on `vga` at 800x600@60, `SYNC 0` against `SYNC 1`, one
+cable and one raster:
+
+| | `IF_VB_SP` | `IF_VB_ST` | `STATUS_SYNC_PROC_VTOTAL` | picture |
+|---|---|---|---|---|
+| separate (`SYNC 0`) | 21 | 625 | 627 | clean, full screen |
+| composite (`SYNC 1`) | **21** | **625** | 623 | clean, full screen |
+
+The count still reads four lines short on composite — that is the mode's own
+vertical sync width and it is unchanged — but the placement no longer follows it.
+The whole placement chain is identical across the two arrangements apart from the
+horizontal capture pair, which is a separate error and is measured in
+[the-composite-capture-window-sits-between-two-wrong-values.md](the-composite-capture-window-sits-between-two-wrong-values.md).
+
+**Sync on green still wants the placement seven units earlier**, and that row
+stands unexplained. The rest of this page is about that arrangement.
+
+The vertical capture window is placed seven counter units late on sync on green:
+the picture tears and wraps. Separate sync is correct, and it is the only
+arrangement the placement was measured on.
 
 `VideoSourceLine::frame()` builds the vertical line with no sync interval at all
 -- no `syncUnits`, no head blanking -- while the horizontal line is built by
@@ -28,16 +50,19 @@ the correction lands in the wrong place on both.
 
 One input, one cable, one raster, `vga` at 800x600, the sync type the only
 variable -- the RISC PC sets it from CMOS, so `SYNC 0` and `SYNC 1` are one
-command apart:
+command apart. **This is the reading the count restoration superseded**, kept
+because it is what the displacement looked like before the cause was found:
 
 | sync type | `IF_VB_SP` | `IF_VB_ST` | `STATUS_SYNC_PROC_VTOTAL` | picture |
 |---|---|---|---|---|
 | separate (`SYNC 0`) | 21 | 625 | 627 | clean, full screen |
 | composite (`SYNC 1`) | 36 | 622 | 623 | top of the card absent, content pushed down and right |
 
-The frame count itself differs, 623 against 627, so the vertical measurement is
-not merely displaced on composite sync -- the counter is counting a different
-frame.
+The frame count itself differs, 623 against 627, so the vertical measurement was
+not merely displaced on composite sync -- the counter was counting a different
+frame, and that is the whole of what the composite displacement was. Reading 36
+as an origin error rather than as a denominator error is what cost the sessions
+this page records.
 
 On the Wii at 480p on `ypbpr`, sync on green, the same solve either side of the
 removal:
@@ -78,14 +103,46 @@ between.
 ## The magnitudes are not one number
 
 Sync on green wants the placement seven units earlier than separate sync.
-Composite sync is displaced further and also counts a shorter frame, 623 against
-627, so the two are not the same correction and neither is assumed from the
-other.
+Composite sync counted a shorter frame, 623 against 627, and that was the whole
+of its displacement -- so the two were never the same correction, and restoring
+the count fixed one of them and left the other exactly where it was.
+
+**The quantity that fixed composite is not the quantity sync on green needs.**
+The Wii's sync on green is serrated, so the counter loses nothing: `VPERIOD_IF`
+524 equals `STATUS_SYNC_PROC_VTOTAL` 524 and the reconciliation correctly yields
+0. There is no shortfall on that source to add back.
+
+**And seven is not established as the right magnitude.** A wrap is a binary
+test: writing 21/505 by hand, vertical only with `IF_HB_SP2` untouched, cleans
+the picture completely, and writing 28/512 wraps it. That says 28 is wrong and 21
+works, and nothing at all about 20 or 22. There is one Wii mode and one sync
+arrangement behind it, so there is no A/B. Switching the Wii to 480i and 576i
+with 480p as the control in the same sitting is what would give one.
 
 **The source's vertical sync width is not the quantity**, which is the rule a
 placement would naturally be written against and which the section below
 refutes: the displacement matches neither the vsync width nor either porch on
 any mode measured.
+
+## The vertical axis consults no polarity, where the horizontal does
+
+This is the gap the origin work has to close, and it is a property of the code
+rather than of a source.
+
+`forDuty()` takes the horizontal origin end from the **measured** pulse, so the
+horizontal axis adapts to whichever edge the arrangement presents.
+`VideoSourceLine::frame(units)` asserts a trailing-edge origin unconditionally
+and reads no polarity at all — `STATUS_SYNC_PROC_VSPOL` reaches nothing. So the
+two axes are built on different rules, and the vertical one cannot express a
+source whose counter zeroes on the other edge.
+
+**`STATUS_SYNC_PROC_VSPOL` does not vary with the sync type on the RISC PC**, so
+it is not the discriminator the asymmetry might suggest: measured 1 on both
+`SYNC 0` and `SYNC 1` at 800x600@60, while `STATUS_SYNC_PROC_HSPOL` goes 1 to 0
+across the same change. The bit is still worth reading — it agrees with the
+standard on each mode, unlike `STATUS_SYNC_PROC_VSACT` — but a vertical origin
+keyed on it would read the same on both arrangements here and could not be
+tested from this end.
 
 ## The shape the fix has to take
 
@@ -126,9 +183,15 @@ Measured at `ms=100`, normalised per pulse, three repeats:
 which is what says it is a measurement of the source rather than a constant.
 
 **THE SAME RASTER READS 26 LINES ON SEPARATE SYNC AND 43 ON COMPOSITE.** Nothing
-moved but the sync type -- one input, one cable, one mode. That seventeen-line
-difference is where the input formatter believes active video begins, and it is
-the displacement, available as a reading rather than as a table.
+moved but the sync type -- one input, one cable, one mode.
+
+**That seventeen-line difference is not the displacement**, which is the reading
+this page carried and which the count restoration refuted: the composite
+displacement was the short count, and with the count restored the vertical
+placement is identical on both arrangements while this reading still differs by
+seventeen. So the two are not the same quantity, and what the difference is
+remains unexplained. It is still the signal that separates the arrangements, and
+it is no longer a candidate for a correction term.
 
 **It is not the window the engine wrote, played back.** Panning vertically
 through the pads moved `IF_VB_SP` 21 -> 0 -> 25, a 21-line excursion, and the
@@ -141,8 +204,8 @@ needing a reconfigure, and concluding "it follows our window" from it is wrong.
 
 **Sync on green looks ordinary on it.** The Wii at 480p reads ~42 against the
 mode's 45, the same two-to-four line deficit every separate-sync mode shows --
-so this measurement accounts for composite sync's displacement and not for the
-seven units the Wii wants. Two of the three arrangements are explained.
+so this measurement says nothing about the seven units the Wii wants, which is
+the one displacement still open.
 
 **THE SIGNAL IS THE PORCHES, NOT THE WHOLE BLANKING.** There was never a
 deficit; the comparison was against the wrong quantity. Measured off the CPU
@@ -181,6 +244,14 @@ taking the shorter of the two intervals cannot rescue a pair that was mistimed.
 
 Until that is fixed the measurement is a bench instrument and not something the
 engine can solve from.
+
+**THE EDGE-TIMED INSTRUMENT IS GONE AND MUST NOT BE REBUILT.** It measured a
+blanking-shaped quantity off `IF_TEST_SEL` 3, and an origin needs the *pulse*, so
+it could not answer the question it was built for whatever the edge capture did.
+`VPERIOD_IF` against `STATUS_SYNC_PROC_VTOTAL` gives the vertical sync directly,
+is proven over twelve modes, and is what
+`SourceMeasurement::reconciledFrame()` uses. `TestBus::selectInputVsync()`
+remains and is FrameSync's, not this measurement's.
 
 **The sync processor's bus is not an alternative.** `SP_TEST_MODULE` 7 carries a
 vertical pulse on sync on green and reads nothing at all on separate sync; 4 and
@@ -234,8 +305,24 @@ makes that structural rather than incidental, at no cost, which is what the
 horizontal axis settled on for the same reason.
 [the-duty-is-the-shorter-interval.md](the-duty-is-the-shorter-interval.md)
 
-**`VPERIOD_IF` is not a cross-check.** It completes a measurement only on
-composite sync -- `STATUS_IF_VT_OK` 0 with the register wandering 190..217 on
-separate sync, 1 with it steady on composite -- and across two acquisitions of
-the same composite mode it read 1255 and then 615, a factor of two apart. A
-reading that halves between acquisitions cannot witness anything.
+**`VPERIOD_IF` completes a measurement only on composite sync** --
+`STATUS_IF_VT_OK` 0 with the register wandering 154..248 as debris on separate
+sync, 1 with it steady on composite. And across two acquisitions of the same
+composite mode it read 1255 and then 615, a factor of two apart.
+
+**The factor of two is resolved rather than disqualifying, and this register is
+now the cross-check.** `SourceMeasurement::reconciledFrame()` takes whichever of
+one or two puts `VPERIOD_IF + 1` a non-negative distance of at most eight lines
+above `STATUS_SYNC_PROC_VTOTAL + 1`, and that distance is the vertical sync the
+composite counter lost. Eight because the widest vertical sync in the DMT set
+the bench carries is seven. At 800x600@60 on `SYNC 1`: `VPERIOD_IF` 1255 taken
+at two gives 628, against a counted 624, for a shortfall of **4** -- the mode's
+own pulse width.
+
+Two constraints come with it. The width is **held once two readings agree**
+rather than recomputed, because `VPERIOD_IF` spans two registers and tears, and a
+per-sample correction moves the count by the whole vertical sync whenever a
+reading is refused -- which the presence poll reads as the source moving, giving
+an endless acquire/absent loop. And it does not apply to an interlaced source and
+does not claim to: there the counter holds a field where `VPERIOD_IF` holds a
+frame, no factor reconciles them, and the raw count stands.

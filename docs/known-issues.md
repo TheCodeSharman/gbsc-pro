@@ -10,24 +10,49 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### `Deinterlacer::steer()` never runs on separate sync, so motion adapt latches
+### An alternating count latches the scan type, so motion adapt never releases
 
-`VideoSourceAcquisition` returns before steering when the vertical period reads
-0, and `InputFormatter::verticalPeriod()` returns 0 unless `STATUS_IF_VT_OK` is
-set. **That bit reports the sync arrangement, not the source**: the input
-formatter completes no vertical measurement on separate sync, so the bench RISC
-PC on `vga` reads 0 whenever it is healthy -- measured 0 in 6 of 6 samples at
-800x600@60 with a clean full-screen picture, `VPERIOD_IF` wandering 143..219 as
-debris beside it.
+**THE GATE IS FIXED AND THE LATCH MOVED.** `VideoSourceAcquisition` no longer
+returns before steering when the vertical period reads 0 -- it measures the scan
+type on the maintenance cadence and hands it to `steer()`, keeping the period
+only as a settling guard. `steer()` therefore runs on separate sync, and motion
+adapt engages there correctly on a count that alternates.
 
-So on a separate-sync source the deinterlacer is never steered in either
-direction. Two consequences:
+What is left is that it can never disengage. `SteadyRun::alternated()` never
+returns to false: `sample()` widens the pair only when a value agrees with
+neither end, so a steady stream after an alternating episode skips the branch
+and `low_` and `high_` stay one apart for ever. `measureScanType()` returns
+`ScanInterlaced` off that, so `steer()` cannot reach its progressive branch and
+`disableMotionAdapt()` is never called.
 
-- **Anything engaged on another arrangement stays engaged.** A composite
-  excursion on the same source engaged motion adapt, and returning to separate
-  sync left it engaged, with the card repeating about 1.7 times across over
-  green tearing and interlaced-looking stripes on a progressive source.
-- **A genuinely interlaced separate-sync source is never deinterlaced.**
+Measured at the host layer -- six samples of 627/628, then two hundred of 627 --
+`alternated()` is still 1 and `value()` still 628, so the count carried into the
+solve is a line high as well.
+
+On the bench, RISC PC on `vga` at 800x600@60 `SYNC 0`, driven by ModeServ's
+`INTERLACE`:
+
+| | `STATUS_SYNC_PROC_VTOTAL` | `MAPDT_VT_SEL_PRGV` | picture |
+|---|---|---|---|
+| `INTERLACE ON` | 627/628, alternating | 0 | motion adapt engaged, correctly |
+| `INTERLACE OFF` | **627 in 24 of 24** | **0** | green cast, comb tearing, content displaced |
+
+The card names its own state, so one frame carries the contradiction: it reads
+`SEPARATE SYNC PROGRESSIVE` while the deinterlacer weaves.
+
+Two consequences:
+
+- **A source that alternates once runs the deinterlacer for ever after.** A
+  single interlaced episode, or a count that alternates for any other reason, is
+  enough.
+- **`MAPDT_VT_SEL_PRGV` is not a detection read-out.** Four functions write it
+  -- `enableScanlines()`/`disableScanlines()` and
+  `enableMotionAdapt()`/`disableMotionAdapt()` -- so it is 1 on a correctly
+  detected interlaced source whenever bob is preferred and 0 on a progressive one
+  whenever scanlines are on. `MADPT_EN_UV_DEINT` and `RFF_LINE_FLIP` separate the
+  two features.
+
+`docs/investigations/an-alternating-count-latches-the-scan-type.md`
 
 **Every field the state differs in is `enableMotionAdapt()`'s**, which is what
 identifies it. A full 1536-register `snapdiff.py` pair either side of the
@@ -71,29 +96,96 @@ It is also a live case for `docs/whole-byte-convenience-names.md`: the byte
 write is the whole mechanism, and a field write of what motion adapt actually
 wants would not reach bit 7.
 
-**The recovery is a source mode round trip**, which forces a re-solve.
+**THE RECOVERY IS `/sc?~`, AND A SOURCE MODE ROUND TRIP IS NOT ONE.** Measured
+both ways: `INTERLACE OFF` re-applies the mode, so the source leaves and returns
+and the engine re-solves, and the latch survives it -- nothing in a re-solve
+resets the run. `/sc?~` restores a clean full-screen picture with every field in
+the table back at its released value.
 
-What would fix it: the scan type is already measured on the line above the gate
-and thrown away, and `verticalPeriod` is wanted only as a settling guard -- the
-filter restarts when it moves. Steering on the measured scan type, with a guard
-that exists on both sync arrangements, closes the door without the bit.
+| clears it | does not clear it |
+|---|---|
+| `/sc?~` | a source mode round trip |
 
-**The bit is complementary across the two arrangements**, which is what makes
-this one-directional rather than intermittent: `VT_OK` 1 / `VT_BAD` 0 in 8 of 8
-on composite sync, `VT_OK` 0 / `VT_BAD` 1 in 5 of 5 on separate. So
-`STATUS_IF_VT_BAD == 0` is not a better gate -- neither bit is wrong, and both
-describe the arrangement.
+That is the opposite way round from the gate fault this replaces, where the
+round trip was the recovery and `/sc?~` was not tested.
 
-**That the gate is never exercised is REFUTED.** It was carried as open only in
-that the bench RISC PC is progressive, so the deinterlacer was thought to have
-nothing to engage for even on the composite leg. It engaged anyway, on that
-source, and the state outlived the excursion.
+What would fix it: a narrowing rule on `SteadyRun`, tested in both directions.
+The pair widens on a single sample and must collapse on a run of agreeing ones,
+or the asymmetry simply moves. The collapse cannot be one sample either, because
+a genuinely interlaced field count presents runs of each value. The existing
+suite covers widening and nothing covers a source that alternates and then
+stops, which is why the latch shipped.
 
 **There is a second owner of the same registers.** `enableMotionAdaptDeinterlace()`
 in the sketch calls `Deinterlacer::enableMotionAdapt()` directly from the `p`
 serial command, with no steering and no filtering, and picks its vertical tap
 from the same `InputFormatter::verticalPeriod()` -- so on separate sync it is
 handed 0.
+
+### The Wii's vertical capture window is placed seven units late and the picture wraps
+
+`ypbpr` on the Wii in 480p, sync on green: `IF_VB_SP` 28 and `IF_VB_ST` 512
+where 21 and 505 are wanted. Writing 21/505 by hand, vertical only with
+`IF_HB_SP2` untouched at 101, **cleans the picture completely** -- full screen,
+no tear, no wrap.
+
+**It is a regression and not a framing preference.** `/geometry` reports the same
+framing either side of `9cea6c0e7` (`ov` 30, `ev` 480, `ch` 1449, `cv` 525), a
+bisect over 113 commits found that commit with its parent clean, and a wrap is
+not something a wrong framing can produce.
+
+**Seven is not established as the magnitude.** A wrap is a binary test: it says
+28 is wrong and 21 works, and nothing about 20 or 22. There is one Wii mode and
+one sync arrangement behind it, so there is no A/B.
+
+**The measured vertical sync cannot supply it.** The Wii's sync on green is
+serrated, so the counter loses nothing -- `VPERIOD_IF` 524 equals
+`STATUS_SYNC_PROC_VTOTAL` 524 and `reconciledFrame()` correctly yields 0. The
+quantity that fixed the composite path is not the quantity this needs.
+
+What would settle the magnitude: the Wii in 480i and 576i with 480p as the
+control in the same sitting.
+
+`investigations/the-vertical-origin-follows-the-sync-type.md`
+
+### The composite capture window opens a whole pulse from the wrong end, and neither end is right
+
+The horizontal capture window opens 174 units earlier on composite sync than on
+separate sync, and the picture sits right on screen. RISC PC on `vga` at
+800x600@60, one cable, one raster, sync type the only variable:
+
+| field | separate | composite |
+|---|---|---|
+| `IF_HB_SP2` | 294 | **120** |
+| `IF_HB_ST2` | 1384 | **1210** |
+| `STATUS_SYNC_PROC_HLOW_LEN` | 176 | 173 |
+| `STATUS_SYNC_PROC_HSPOL` | 1 | 0 |
+| `SP_HS_INV_REG` | 1 | 0 |
+
+Same width, and a return to `SYNC 0` gives 294 exactly. Everything else in the
+placement chain is identical -- both scales, both memory windows, both display
+windows, both output sync pulses, the vertical pair and the divider.
+
+**The 174 is one whole pulse, taken from the polarity bit.**
+`VideoSourceLine::forDuty()` gets its origin end from `HsyncPulse::syncAtHead()`,
+which is a copy of the polarity `normalisePolarity()` read -- and on csync that
+bit reports the signal arriving BEFORE the separator, where the separator
+regenerates H. The duty is not the variable: 176/1438 and 173/1438 are 0.122 and
+0.120, both accepted, so neither state is on `FallbackDuty`.
+
+**NEITHER VALUE IS CORRECT, WHICH IS WHY A CORRECTED BIT IS NOT THE FIX.**
+Frozen, with the separate-sync window forced onto composite, the picture moves
+too far the other way -- black at the right and the leftmost castellation column
+cut, where its own window leaves black at the left. Both bands are roughly equal
+by eye, about 180 and 190 px of a 1500 px picture, putting the truth near the
+midpoint of 120 and 294 -- about half a pulse, at neither end.
+
+What would settle it: creep `IF_HB_SP2` from 120 upward with automation frozen,
+one unit a press, width held, and read the boundary off the picture.
+`creep_window.py` is the pattern. If the answer is the midpoint, a separator
+phase shift is the explanation and no choice of pulse end reproduces it.
+
+`investigations/the-composite-capture-window-sits-between-two-wrong-values.md`
 
 ### `Memory::FetchFloor` drives the playback ratio off the bottom of its band
 
