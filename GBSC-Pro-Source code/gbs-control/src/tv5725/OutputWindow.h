@@ -61,8 +61,22 @@ public:
     // shrunk, with the clamped scale the only trace.
     static uint16_t widestCapture(const Axis &axis, const OutputTiming &raster);
 
-    // The arithmetic below is public only because it is what the host tests
-    // assert against, one step at a time. Nothing in the firmware calls it.
+    // The same bound against a raster that has not been solved into an
+    // OutputTiming: the scan mode is decided before the porch is known, and the
+    // divider is chosen against the raster the solve is about to write.
+    static uint16_t maximumCapture(const Axis &axis, uint16_t rasterTotal,
+                                   uint16_t activeStart, uint16_t activeStop);
+
+private:
+    // Pipeline latency before the first write, per axis:
+    // write start = VDS_?B_SP + constant + perMagnification x magnification.
+    // ~25 input samples of run-up for the 11-tap horizontal filter, ~1 line for
+    // the vertical line buffer. `floor` is the lowest VDS_?B_SP that does not
+    // corrupt the picture -- horizontally 8, measured at ONE output hsync
+    // setting; vertically 0 is an ASSUMPTION, nobody has crept it.
+    // docs/scaler-geometry-model.md
+    struct WriteStart { float constant, perMagnification; uint16_t floor; };
+    static const WriteStart &writeStart(const Axis &axis);
 
     // The scale that fits a capture to the room the raster offers.
     static RasterFit fitToRaster(const Axis &axis, uint16_t capture,
@@ -85,8 +99,6 @@ public:
 
     static uint16_t minimumCapture(const Axis &axis, uint16_t rasterTotal,
                                    uint16_t activeStart = 0, uint16_t activeStop = 0);
-    static uint16_t maximumCapture(const Axis &axis, uint16_t rasterTotal,
-                                   uint16_t activeStart, uint16_t activeStop);
 
     static float originOffset(const Axis &axis, float magnification);
 
@@ -114,17 +126,6 @@ public:
     static PictureOrigin placePicture(const Axis &axis, float produced,
                                       uint16_t rasterTotal, float magnification,
                                       uint16_t activeStart = 0);
-
-private:
-    // Pipeline latency before the first write, per axis:
-    // write start = VDS_?B_SP + constant + perMagnification x magnification.
-    // ~25 input samples of run-up for the 11-tap horizontal filter, ~1 line for
-    // the vertical line buffer. `floor` is the lowest VDS_?B_SP that does not
-    // corrupt the picture -- horizontally 8, measured at ONE output hsync
-    // setting; vertically 0 is an ASSUMPTION, nobody has crept it.
-    // docs/scaler-geometry-model.md
-    struct WriteStart { float constant, perMagnification; uint16_t floor; };
-    static const WriteStart &writeStart(const Axis &axis);
 
     static float placementFloor(const Axis &axis, float offset,
                                 uint16_t activeStart);

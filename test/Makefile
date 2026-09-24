@@ -122,11 +122,11 @@ sync-on-green:
 	  src/tv5725/TestBus.cpp src/tv5725/SyncProcessor.cpp
 	@"$(OUT)/test_sync_on_green"
 
-## axis: host unit tests for Tv5725::Axis, and its --dump
+## axis: host unit tests for Tv5725::Axis
 #
-# Where the scaler starts writing, how far it may magnify, and the room the
-# raster leaves -- the arithmetic every window is placed by. `--dump` prints the
-# solved grid, which is how a behaviour-preserving refactor is proven.
+# What the capture path does on one axis: the grid a window may move on, and
+# the step a press turns into. Where the picture lands is output-window's, and
+# so is the solved grid its --dump prints.
 axis:
 	$(call geometry_unit,test_axis)
 
@@ -251,7 +251,8 @@ capture-window:
 #
 # Both axes from the capture and the raster alone. Nothing is read back off the
 # chip -- inheriting a corner or a picture size is what every geometry fault of
-# 2026-08-06 was.
+# 2026-08-06 was. `--dump` prints the solved grid, which is how a
+# behaviour-preserving refactor is proven.
 output-window:
 	$(call geometry_unit,test_output_window)
 
