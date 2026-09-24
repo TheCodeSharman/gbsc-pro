@@ -165,7 +165,7 @@ TEST_CASE("a source that stops alternating stops reporting an alternating pair")
 {
     SteadyRun run(Samples);
 
-    for (uint8_t i = 0; i < Samples; ++i)
+    for (uint8_t i = 0; i < 2 * SteadyRun::CrossingsForInterlace; ++i)
         run.sample(i % 2 ? 628 : 627);
     REQUIRE(run.settled());
     REQUIRE(run.alternated());
@@ -228,4 +228,81 @@ TEST_CASE("a genuinely interlaced count is not collapsed by the runs it shows")
         }
         REQUIRE(run.alternated());
     }
+}
+
+// THE BOOT FAULT. A source wobbles by one as it is acquired, which widens the
+// pair -- and a pair that has been widened once reported alternating for every
+// sample until the collapse, sixteen samples later. Deinterlacer::FilteredPasses
+// is TWO, so motion adapt engaged fourteen samples before the collapse could
+// say the source was progressive, and the picture came up green and comb-torn
+// for the life of the boot. Measured on every ESP reset.
+// ../docs/known-issues.md
+TEST_CASE("one excursion through acquisition is not an alternating count")
+{
+    SteadyRun run(Samples);
+    for (uint8_t i = 0; i < Samples; ++i)
+        run.sample(627);
+    REQUIRE(run.settled());
+    REQUIRE_FALSE(run.alternated());
+
+    run.sample(628);
+    CHECK_FALSE(run.alternated());
+
+    for (uint8_t i = 0; i < SteadyRun::CollapseSamples; ++i) {
+        CAPTURE(i);
+        run.sample(627);
+        CHECK_FALSE(run.alternated());
+    }
+}
+
+// Excursions far enough apart are the same evidence as one of them, so they may
+// not add up to an alternating count. A run longer than any interlaced source
+// shows is what forgets them.
+TEST_CASE("excursions spread out do not accumulate into an alternation")
+{
+    SteadyRun run(Samples);
+    for (uint8_t i = 0; i < Samples; ++i)
+        run.sample(627);
+    REQUIRE(run.settled());
+
+    for (uint8_t excursion = 0; excursion < 6; ++excursion) {
+        CAPTURE(excursion);
+        run.sample(628);
+        CHECK_FALSE(run.alternated());
+        for (uint8_t i = 0; i < SteadyRun::AlternationStaleRun; ++i)
+            run.sample(627);
+        CHECK_FALSE(run.alternated());
+    }
+}
+
+// The other direction, and the one that must not regress: a count that really
+// does alternate has to be reported quickly, because motion adapt is what makes
+// an interlaced picture legible.
+TEST_CASE("a count that keeps crossing is reported alternating within a few samples")
+{
+    SteadyRun run(Samples);
+    for (uint8_t i = 0; i < 2 * SteadyRun::CrossingsForInterlace; ++i)
+        run.sample(i % 2 ? 628 : 627);
+
+    CHECK(run.settled());
+    CHECK(run.alternated());
+}
+
+// A count that moves by one and STAYS there is a new count, not the second half
+// of a pair. Nothing else adopts it: the collapse narrows a widened pair, and a
+// pair that never widened has nothing to narrow, so without this the run reports
+// the value the source has left for as long as it runs.
+TEST_CASE("a count that moves by one and holds is adopted")
+{
+    SteadyRun run(Samples);
+    for (uint8_t i = 0; i < Samples; ++i)
+        run.sample(627);
+    REQUIRE(run.value() == 627);
+
+    for (uint8_t i = 0; i < SteadyRun::CollapseSamples; ++i)
+        run.sample(628);
+
+    CHECK(run.value() == 628);
+    CHECK(run.settled());
+    CHECK_FALSE(run.alternated());
 }

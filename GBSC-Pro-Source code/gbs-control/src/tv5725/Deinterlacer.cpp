@@ -1,5 +1,7 @@
 #include "Deinterlacer.h"
 
+#include "Tv5725Log.h"
+
 #include <Arduino.h>
 
 #include "FrameBuffer.h"
@@ -367,6 +369,7 @@ Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
                     enableMotionAdapt(verticalTapFor(verticalPeriod), releaseCapture);
                     rearmRelock(verticalPeriod);
                     reconfiguring = true;
+                    tv5725Log("deinterlacer: motion adapt engaged");
                 }
                 interlacedRun_ = 0;
             }
@@ -376,6 +379,7 @@ Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
                 if (!wanted.bob && motionAdaptEngaged_) {
                     disableMotionAdapt();
                     rearmRelock(verticalPeriod);
+                    tv5725Log("deinterlacer: motion adapt released");
                 }
                 progressiveRun_ = 0;
             }

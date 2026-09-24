@@ -300,8 +300,17 @@ private:
     bool dutyMeasured_;
     uint8_t settlePasses_;
     SteadyRun steady_;
+
+    // The scan decision's own run. steady_ is the solve's, and it stops being
+    // fed the moment a source settles -- which is exactly when a source that
+    // starts alternating has to be noticed, and a source going interlaced moves
+    // the count by one, which SteadyRun::agree() calls the same measurement, so
+    // nothing re-measures. Sampled on the maintenance cadence instead, by
+    // measureScanType().
+    SteadyRun scanSteady_;
     uint8_t rateAttempts_;
     bool serrationsSeen_;  // the last completed steadiness run read the serrations
+    int8_t scanReported_;  // the last answer measureScanType() logged, so it logs changes
 };
 
 }  // namespace Tv5725

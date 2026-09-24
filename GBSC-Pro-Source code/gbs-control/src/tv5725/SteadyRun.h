@@ -33,6 +33,25 @@ public:
     // Deinterlacer::FilteredPasses is a second filter behind it.
     static const uint8_t CollapseSamples = 16;
 
+    // How many times the count must reach the second value before the pair
+    // widens onto it.
+    //
+    // One reading off by one is not evidence of interlace: a source wobbles
+    // once as it is acquired, and a pair widened by that reads as alternating
+    // for the whole run, because nothing narrows it again until CollapseSamples
+    // -- which is eight times what Deinterlacer::FilteredPasses waits. An
+    // interlaced field count reaches its second value every other sample for as
+    // long as it runs, so three of them separates the two and costs a genuinely
+    // interlaced source a few fields.
+    static const uint8_t CrossingsForInterlace = 3;
+
+    // A run of one value this long forgets a second value seen but not yet
+    // earned. Without it, wobbles far enough apart to be the same evidence
+    // twice add up to an alternation the source never showed. The bound is the
+    // measurement CollapseSamples rests on -- the longest run either value of a
+    // genuinely interlaced count holds is five -- so it cannot fire on one.
+    static const uint8_t AlternationStaleRun = 8;
+
     // Whether two counts are the same measurement: equal, or the pair an
     // interlaced field alternates between.
     //
@@ -65,16 +84,23 @@ public:
     bool settled() const;
 
     // Whether the settled run is a pair differing by one, which only an
-    // interlaced field makes a count do.
+    // interlaced field makes a count do. A latch: the samples that would keep
+    // answering it stop once the source is acquired, so what the pair is
+    // ALLOWED to hold is where the evidence is weighed, not what it is asked
+    // afterwards.
     bool alternated() const;
 
 private:
     uint8_t samples_;
     uint8_t run_;
     uint8_t same_;
+    uint8_t crossings_;
     uint16_t high_;
     uint16_t low_;
     uint16_t latest_;
+    uint16_t candidate_;
+
+    void forgetCandidate();
 };
 
 }  // namespace Tv5725

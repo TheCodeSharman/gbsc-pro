@@ -94,8 +94,9 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
       dutyMeasured_(false), settlePasses_(0),
-      steady_(SteadySamples), rateAttempts_(0),
-      serrationsSeen_(false)
+      steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
+      serrationsSeen_(false),
+      scanReported_(-1)
 {
 }
 
@@ -121,19 +122,33 @@ bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
     return fromHalfLines < fromFrame;
 }
 
-bool SourceMeasurement::countAlternated() const { return steady_.alternated(); }
+bool SourceMeasurement::countAlternated() const { return scanSteady_.alternated(); }
 
+// What the deinterlacer is steered by, and the one place it is decided. Said
+// out loud on change, because the alternative is reading it back off the
+// deinterlacer's own registers -- which report what was done, not what was
+// measured, and which cost two sessions each time they disagreed.
 SourceMeasurement::ScanType SourceMeasurement::measureScanType()
 {
     verticalPeriod_ = inputFormatter_.verticalPeriod();
 
-    if (countAlternated())
-        return ScanInterlaced;
+    const uint16_t lines = countNow();
+    if (VideoSignal::countIsSource(lines))
+        scanSteady_.sample(lines);
+    else
+        scanSteady_.restart(lines);
 
-    if (!steady_.settled())
-        tv5725Log("scan: no settled count, taken as progressive");
-
-    return ScanProgressive;
+    const ScanType scan = countAlternated() ? ScanInterlaced : ScanProgressive;
+    if (scan != scanReported_) {
+        scanReported_ = (int8_t)scan;
+        char line[72];
+        snprintf(line, sizeof(line), "scan: %s, count %u%s",
+                 scan == ScanInterlaced ? "interlaced" : "progressive",
+                 (unsigned)scanSteady_.value(),
+                 scanSteady_.settled() ? "" : ", no settled count");
+        tv5725Log(line);
+    }
+    return scan;
 }
 
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
@@ -169,6 +184,7 @@ bool SourceMeasurement::sampleSteady()
 void SourceMeasurement::modeChanged()
 {
     steady_.reset();
+    scanSteady_.reset();
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
     dutyMeasured_ = false;

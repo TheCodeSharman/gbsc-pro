@@ -1379,6 +1379,10 @@ static bool settleAlternating(SourceMeasurement &measurement, uint16_t low,
     for (uint8_t i = 0; i < samples; ++i) {
         seedSourceLines(i % 2 ? (uint16_t)(low + 1) : low);
         reading = measureOnce(measurement);
+        // The scan decision keeps its own run, and on the unit both advance on
+        // the same pass. A settling helper that drives only the solve leaves it
+        // reporting a source nothing has sampled.
+        measurement.measureScanType();
     }
     return reading != SourceMeasurement::NotSteady;
 }
@@ -2005,4 +2009,43 @@ TEST_CASE("a duty that is not a pulse is announced")
     measurePastGate(sampling);
 
     CHECK(loggedContaining("NOT A PULSE"));
+}
+
+// THE SCAN DECISION HAS ITS OWN RUN, AND IT NEEDS ONE. The solve's steadiness
+// run stops being fed the moment a source settles, which is exactly when a
+// source that starts alternating has to be noticed -- and a source going
+// interlaced does not move the count enough for anything to re-measure, because
+// 627 and 628 are one measurement by SteadyRun::agree().
+TEST_CASE("a source that starts alternating is noticed without a solve pass")
+{
+    seedSourceLines(627);
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
+    REQUIRE(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
+
+    SourceMeasurement::ScanType scan = SourceMeasurement::ScanProgressive;
+    for (uint8_t i = 0; i < 12 && scan == SourceMeasurement::ScanProgressive; ++i) {
+        seedSourceLines(i % 2 ? 628 : 627);
+        scan = measurement.measureScanType();
+    }
+    CHECK(scan == SourceMeasurement::ScanInterlaced);
+}
+
+// The boot fault at this layer. One reading off by one, seen by the scan run
+// alone, is what a source does as it is acquired -- and the deinterlacer
+// engages on two consecutive interlaced answers.
+TEST_CASE("one count off by one is not enough to read as interlaced")
+{
+    seedSourceLines(627);
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
+
+    seedSourceLines(628);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
+
+    for (uint8_t i = 0; i < 20; ++i) {
+        CAPTURE(i);
+        seedSourceLines(627);
+        CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
+    }
 }

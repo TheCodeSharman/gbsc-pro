@@ -22,6 +22,8 @@ using Tv5725::Deinterlacer;
 using Tv5725::FrameBuffer;
 using Tv5725::VideoProcessor;
 
+void tv5725Log(const char *) {}
+
 static const uint8_t Poison = 0xA5;
 
 // s2_00..s2_3f as the table shipped them.
