@@ -10,129 +10,48 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### An alternating count latches the scan type, so motion adapt never releases
+### An alternating count latched the scan type -- FIXED
 
-**THE GATE IS FIXED AND THE LATCH MOVED.** `VideoSourceAcquisition` no longer
-returns before steering when the vertical period reads 0 -- it measures the scan
-type on the maintenance cadence and hands it to `steer()`, keeping the period
-only as a settling guard. `steer()` therefore runs on separate sync, and motion
-adapt engages there correctly on a count that alternates.
+**`SteadyRun` narrows the pair now.** A run of `CollapseSamples` identical
+samples collapses it onto the value that ran, so a source that stops
+alternating stops reporting `ScanInterlaced` and `steer()` reaches
+`disableMotionAdapt()`.
 
-What is left is that it can never disengage. `SteadyRun::alternated()` never
-returns to false: `sample()` widens the pair only when a value agrees with
-neither end, so a steady stream after an alternating episode skips the branch
-and `low_` and `high_` stay one apart for ever. `measureScanType()` returns
-`ScanInterlaced` off that, so `steer()` cannot reach its progressive branch and
-`disableMotionAdapt()` is never called.
+The threshold is measured rather than chosen: RISC PC at 800x600@60 under
+ModeServ's `INTERLACE ON`, 1873 samples at the engine's own 20 ms detection
+interval, 953 of 628 against 920 of 627, and **the longest run of either value
+is five**. A second window at 25 ms agrees. `CollapseSamples` is 16, and
+`Deinterlacer::FilteredPasses` is a second filter behind it.
 
-Measured at the host layer -- six samples of 627/628, then two hundred of 627 --
-`alternated()` is still 1 and `value()` still 628, so the count carried into the
-solve is a line high as well.
+Verified on the bench in both directions: interlaced, motion adapt still
+engages; returned to progressive with the source otherwise untouched, the latch
+releases on its own and the picture comes good with no `/sc?~`.
 
-On the bench, RISC PC on `vga` at 800x600@60 `SYNC 0`, driven by ModeServ's
-`INTERLACE`:
+**What this closes.** An ordinary flash used to arm it -- the count wobbles once
+through re-acquisition and motion adapt is engaged by the time the source
+settles -- so a unit coming back from a flash with a green, comb-torn picture
+was this rather than the flash. Reproduced on three consecutive OTA flashes and
+on the commit before the fix.
 
-| | `STATUS_SYNC_PROC_VTOTAL` | `MAPDT_VT_SEL_PRGV` | picture |
-|---|---|---|---|
-| `INTERLACE ON` | 627/628, alternating | 0 | motion adapt engaged, correctly |
-| `INTERLACE OFF` | **627 in 24 of 24** | **0** | green cast, comb tearing, content displaced |
+Two things worth keeping from it:
 
-The card names its own state, so one frame carries the contradiction: it reads
-`SEPARATE SYNC PROGRESSIVE` while the deinterlacer weaves.
-
-**AN ORDINARY FLASH IS ENOUGH TO ARM IT, AND NOTHING HAS TO BE INTERLACED.**
-Observed on both of two consecutive OTA flashes on the progressive bench source:
-the unit comes back, the count wobbles through re-acquisition -- the divider
-moved 1438 to 1440 across one of them -- and motion adapt is engaged by the time
-the source settles, with `MAPDT_VT_SEL_PRGV` 0 and the full
-`enableMotionAdapt()` signature. So `INTERLACE ON` is a way to reproduce it
-rather than the condition: any count that alternates once during settling arms
-the latch for the life of the run.
-
-That makes it the likely cause of a unit that comes back from a flash with a
-green, comb-torn picture, which is otherwise diagnosed as the flash.
-
-Two consequences:
-
-- **A source that alternates once runs the deinterlacer for ever after.** A
-  single interlaced episode, or a count that alternates for any other reason, is
-  enough.
 - **`MAPDT_VT_SEL_PRGV` is not a detection read-out.** Four functions write it
   -- `enableScanlines()`/`disableScanlines()` and
   `enableMotionAdapt()`/`disableMotionAdapt()` -- so it is 1 on a correctly
-  detected interlaced source whenever bob is preferred and 0 on a progressive one
-  whenever scanlines are on. `MADPT_EN_UV_DEINT` and `RFF_LINE_FLIP` separate the
-  two features.
+  detected interlaced source whenever bob is preferred and 0 on a progressive
+  one whenever scanlines are on. `MADPT_EN_UV_DEINT` and `RFF_LINE_FLIP`
+  separate the two features.
+- **Setting `DIAG_BOB_PLDY_RAM_BYPS` back to 1 alone restores a clean picture**
+  while motion adapt stays engaged, so a clean screen was never evidence the
+  latch had cleared. Read the field table.
+
+**There is still a second owner of the same registers.**
+`enableMotionAdaptDeinterlace()` in the sketch calls
+`Deinterlacer::enableMotionAdapt()` directly from the `p` serial command, with
+no steering and no filtering, and picks its vertical tap from the same
+`InputFormatter::verticalPeriod()` -- so on separate sync it is handed 0.
 
 `docs/investigations/an-alternating-count-latches-the-scan-type.md`
-
-**Every field the state differs in is `enableMotionAdapt()`'s**, which is what
-identifies it. A full 1536-register `snapdiff.py` pair either side of the
-recovery differs in 17 bytes, and the ones that are not divider-derived are:
-
-| field | corrupt | clean |
-|---|---|---|
-| `MADPT_Y_MI_OFFSET` | 0 | 127 |
-| `MADPT_Y_MI_DET_BYPS` | 0 | 1 |
-| `RFF_FETCH_NUM` | 128 | 1 |
-| `RFF_WFF_OFFSET` | 256 | 0 |
-| `WFF_FF_STA_INV` | 0 | 1 |
-| `RFF_ENABLE` / `WFF_ENABLE` | 1 | 0 |
-| `MAPDT_VT_SEL_PRGV` | 0 | 1 |
-
-The rest is one re-solve's jitter -- the divider moved 1606 -> 1608 and
-`IF_HSYNC_RST`, `SP_RT_HS_SP`, `IF_HB_*` and `VDS_HSCALE` followed.
-
-**A twelve-field read cannot see it.** `SP_SOG_MODE`, `SP_EXT_SYNC_SEL`, the
-count, the divider against `STATUS_SYNC_PROC_HTOTAL`, both polarities and
-`VDS_HSCALE` all read correct for separate sync throughout, and `VDS_HSCALE` was
-958 rather than the 1023 the composite fault gives. Toggling
-`PAD_SYNC_OUT_ENZ` does not clear it, so it is not the encoder holding a stale
-timing either.
-
-**ONE BIT CARRIES EVERYTHING YOU CAN SEE, AND IT IS COLLATERAL.**
-`enableMotionAdapt()` opens with `DEINT_00::write(0x19)` -- a whole byte at
-s2_00, of which `DIAG_BOB_PLDY_RAM_BYPS` is bit 7. `0x19` clears it, which
-routes video through the deinterlacer RAM, and that is what produces the green
-cast, the line-interleaved tearing and the horizontally repeated card. Nothing
-about motion adapt intends to touch that bit; only `disableMotionAdapt()`'s
-`DEINT_00::write(0xff)` puts it back.
-
-Measured on a latched unit: setting `DIAG_BOB_PLDY_RAM_BYPS` back to 1 alone
-restores a clean full-screen picture, with every field in the table above still
-at its engaged value. **So a clean picture is not evidence the latch cleared**
--- the one bit masks the symptom and leaves motion adapt running on a
-progressive source. Read the table, not the screen.
-
-It is also a live case for `docs/whole-byte-convenience-names.md`: the byte
-write is the whole mechanism, and a field write of what motion adapt actually
-wants would not reach bit 7.
-
-**THE RECOVERY IS `/sc?~`, AND A SOURCE MODE ROUND TRIP IS NOT ONE.** Measured
-both ways: `INTERLACE OFF` re-applies the mode, so the source leaves and returns
-and the engine re-solves, and the latch survives it -- nothing in a re-solve
-resets the run. `/sc?~` restores a clean full-screen picture with every field in
-the table back at its released value.
-
-| clears it | does not clear it |
-|---|---|
-| `/sc?~` | a source mode round trip |
-
-That is the opposite way round from the gate fault this replaces, where the
-round trip was the recovery and `/sc?~` was not tested.
-
-What would fix it: a narrowing rule on `SteadyRun`, tested in both directions.
-The pair widens on a single sample and must collapse on a run of agreeing ones,
-or the asymmetry simply moves. The collapse cannot be one sample either, because
-a genuinely interlaced field count presents runs of each value. The existing
-suite covers widening and nothing covers a source that alternates and then
-stops, which is why the latch shipped.
-
-**There is a second owner of the same registers.** `enableMotionAdaptDeinterlace()`
-in the sketch calls `Deinterlacer::enableMotionAdapt()` directly from the `p`
-serial command, with no steering and no filtering, and picks its vertical tap
-from the same `InputFormatter::verticalPeriod()` -- so on separate sync it is
-handed 0.
 
 ### The Wii's vertical capture window is placed seven units late and the picture wraps
 
