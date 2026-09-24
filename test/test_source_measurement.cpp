@@ -1326,6 +1326,53 @@ TEST_CASE("the sampling budget is spent at the rate the ADC actually converts at
 
 // --- the scan type ----------------------------------------------------------
 //
+// --- the composite count is short by the vertical sync, and VPERIOD restores it
+//
+// The sync processor counts hsync edges between vertical syncs, and an
+// unserrated composite source sends none through the vertical pulse -- so the
+// count comes up short by exactly that pulse and the same source reads a
+// different length on each sync type. Measured on one machine and one cable,
+// 320x256@50 reads 311 separate and 308 composite, 640x480@60 reads 524 and
+// 522, and each stored a framing of its own against one source.
+//
+// VPERIOD_IF measures the whole frame, so the two reconcile: whichever of one
+// or two puts VPERIOD a small non-negative distance above the counted frame is
+// the valid reading, and that distance is what the counter lost. Confirmed
+// across twelve modes at widths 2, 3, 4 and 6, with both factors appearing and
+// every frame total exact.
+// docs/investigations/the-risc-pc-composite-sync-is-not-serrated.md
+
+TEST_CASE("the restored count holds through a torn vertical period")
+{
+    // VPERIOD_IF spans two registers and a counter can advance between the
+    // byte fetches, so a reading tears: 800x600@60 on composite gave 1255 in
+    // 539 of 721 samples from loop() with 615 and 1267 among the rest. A
+    // reconciliation recomputed per sample flips the count between restored
+    // and raw, which is further than a steady run tolerates and leaves the
+    // source never settling.
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
+    REQUIRE(measurement.sourceLines() == 311);
+
+    seedSourceHalfLines(615);
+    for (uint8_t pass = 0; pass < 8; pass++)
+        measureOnce(measurement);
+
+    CHECK(measurement.sourceLines() == 311);
+}
+
+TEST_CASE("the composite count is restored to the frame the source sends")
+{
+    seedSourceLines(308);
+    seedSourceHalfLines(623);
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
+
+    CHECK(measurement.sourceLines() == 311);
+}
+
 // --- an interlaced count never holds still, and that IS the measurement ------
 //
 // An interlaced field carries a half line, so the sync processor's count

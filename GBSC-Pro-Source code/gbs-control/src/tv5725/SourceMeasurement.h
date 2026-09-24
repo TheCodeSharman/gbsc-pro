@@ -117,7 +117,7 @@ public:
     //
     // Also taken by the caller before measuring, because the scan mode is
     // judged from it and the divider asked for follows the scan mode.
-    uint16_t readSourceLines() const;
+    uint16_t readSourceLines();
 
     // The input formatter's line period, settled, or 0 where the samples will
     // not agree. A REFERENCE TO COMPARE AGAINST, never a measurement: the
@@ -163,6 +163,12 @@ public:
     // complete. verticalTapFor() and the relock want the period itself.
     uint16_t verticalPeriod() const;
 
+    // The sync processor's count with the vertical sync it loses restored, for
+    // a caller reading the count for itself. **ONE OWNER OF WHAT THE COUNT
+    // IS**: the presence poll and the measurement have to agree, and a reader
+    // taking the register raw sees the source move on every pass against a
+    // solve made from the restored one.
+    uint16_t countNow() const;
 
     // Whether the source runs the 15.7 kHz broadcast line. Not on its own
     // whether the vertical interval is serrated.
@@ -219,10 +225,27 @@ private:
     // interlaced source can have its count doubled, and the half-line witness
     // alone cannot separate the two: a correct 480p count sits exactly on the
     // total and reads identically to a doubled one.
+    // The widest vertical sync a reconciliation may restore. The widest in the
+    // DMT set this bench carries is 7 lines, and a bound is what refuses a torn
+    // reading that happens to land a plausible distance away.
+    static const uint16_t VerticalSyncMaxLines = 8;
+
     static bool countIsSerrations(uint16_t lines, uint16_t halfLines,
                                   bool interlaced);
 
     bool countAlternated() const;
+
+    // The frame the source sends, reconciled from the input formatter's own
+    // measurement of it against the sync processor's count. 0 where the two
+    // cannot be reconciled, which is a torn read of either, or a source whose
+    // counter holds a field where the formatter holds a frame.
+    static uint16_t reconciledFrame(uint16_t verticalPeriod, uint16_t lines);
+
+    // What the sync processor's count is short by, held once two readings
+    // agree on it. HELD RATHER THAN RECOMPUTED: VPERIOD_IF tears, and a
+    // correction taken per sample moves the count by the whole vertical sync
+    // whenever a reading is refused, which reads as the source moving.
+    void holdVerticalSync(uint16_t lines);
 
 
     // Whether a new measurement is consistent with the one already held, and
@@ -259,6 +282,8 @@ private:
     InputFormatter &inputFormatter_;
     uint32_t lineRateHz_;
     uint16_t sourceLines_;
+    uint16_t verticalSyncLines_;          // held; what the count is short by
+    uint16_t offeredVerticalSyncLines_;   // the reading it has to repeat
     float fieldRateHz_;
     float agreedRateHz_;
     // The settled pair a later reading is judged against, and the last rate

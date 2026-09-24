@@ -308,7 +308,7 @@ bool VideoSourceAcquisition::sourceMoved()
         return false;
     }
 
-    const uint16_t lines = Tv5725::SyncProcessor::lineCount();
+    const uint16_t lines = sampling_.countNow();
 
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
     // caller double-advances it and the steadiness both readers depend on is

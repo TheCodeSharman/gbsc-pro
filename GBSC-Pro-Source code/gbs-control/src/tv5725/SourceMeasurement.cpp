@@ -88,7 +88,8 @@ const uint8_t SourceMeasurement::RateAgreementAttempts;
 const uint8_t SourceMeasurement::LatchSettlePasses;
 
 SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
-    : inputFormatter_(inputFormatter), lineRateHz_(0), sourceLines_(0), fieldRateHz_(0.0f),
+    : inputFormatter_(inputFormatter), lineRateHz_(0), sourceLines_(0),
+      verticalSyncLines_(0), offeredVerticalSyncLines_(0), fieldRateHz_(0.0f),
       agreedRateHz_(0.0f), judgedLines_(0), judgedRateHz_(0), goodLineRateHz_(0),
       rateRejections_(0), hsyncPolarity_(SourceKey::Undetermined),
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
@@ -137,6 +138,11 @@ SourceMeasurement::ScanType SourceMeasurement::measureScanType()
 
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
 
+uint16_t SourceMeasurement::countNow() const
+{
+    return (uint16_t)(SyncProcessor::lineCount() + verticalSyncLines_);
+}
+
 bool SourceMeasurement::sampleSteady()
 {
     uint16_t lines = readSourceLines();
@@ -166,6 +172,8 @@ void SourceMeasurement::modeChanged()
     agreedRateHz_ = 0.0f;
     rateAttempts_ = 0;
     dutyMeasured_ = false;
+    verticalSyncLines_ = 0;
+    offeredVerticalSyncLines_ = 0;
 }
 
 void SourceMeasurement::samplingClockLatched()
@@ -351,9 +359,50 @@ SourceKey::Polarity SourceMeasurement::polarityOf(bool positive)
 
 uint32_t SourceMeasurement::lineRateHz() const { return goodLineRateHz_; }
 
-uint16_t SourceMeasurement::readSourceLines() const
+const uint16_t SourceMeasurement::VerticalSyncMaxLines;
+
+// Two registers measure the same frame and only one of them loses the vertical
+// sync pulse, so the pair says how much was lost. Which multiple of the frame
+// VPERIOD_IF holds is not derivable -- measured, it is one on some modes and
+// two on others with the whole ADC clock group identical -- so both are tried
+// and the one that lands just above the count is the reading.
+uint16_t SourceMeasurement::reconciledFrame(uint16_t verticalPeriod, uint16_t lines)
 {
-    return measureSourceLinesCorrected(Adc::dividerInForce());
+    if (verticalPeriod == 0)
+        return 0;
+
+    const uint16_t measured = (uint16_t)(verticalPeriod + 1);
+    const uint16_t counted = (uint16_t)(lines + 1);
+
+    for (uint8_t factor = 1; factor <= 2; factor++) {
+        if (measured % factor != 0)
+            continue;
+        const uint16_t frame = (uint16_t)(measured / factor);
+        if (frame >= counted && (uint16_t)(frame - counted) <= VerticalSyncMaxLines)
+            return frame;
+    }
+
+    return 0;
+}
+
+void SourceMeasurement::holdVerticalSync(uint16_t lines)
+{
+    const uint16_t frame = reconciledFrame(inputFormatter_.verticalPeriod(), lines);
+    if (frame == 0)
+        return;
+
+    const uint16_t offered = (uint16_t)(frame - (lines + 1));
+    if (offered == offeredVerticalSyncLines_)
+        verticalSyncLines_ = offered;
+    offeredVerticalSyncLines_ = offered;
+}
+
+uint16_t SourceMeasurement::readSourceLines()
+{
+    const uint16_t lines = measureSourceLinesCorrected(Adc::dividerInForce());
+    holdVerticalSync(lines);
+
+    return (uint16_t)(lines + verticalSyncLines_);
 }
 
 bool SourceMeasurement::readSource()
