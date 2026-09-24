@@ -139,9 +139,9 @@ uint16_t OutputMode::frameLines() const
     return activeLines_ + vFrontPorchLines_ + vsyncLines_ + vBackPorchLines_;
 }
 
-OutputTimings OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
+OutputTiming OutputMode::solve(float fieldRateHz, uint32_t ceilingHz) const
 {
-    OutputTimings solved;
+    OutputTiming solved;
 
     uint8_t divider = OutputMode::clockDividerFor(frameLines(), fieldRateHz,
                                                ceilingHz);

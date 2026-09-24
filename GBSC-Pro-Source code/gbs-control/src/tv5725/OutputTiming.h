@@ -1,17 +1,26 @@
-#ifndef TV5725_OUTPUT_TIMINGS_H_
-#define TV5725_OUTPUT_TIMINGS_H_
+#ifndef TV5725_OUTPUT_TIMING_H_
+#define TV5725_OUTPUT_TIMING_H_
 
-// One solved output raster: every timing register an OutputMode produces for a
-// measured field rate.
+// The OutputMode rendered in VDS units: the standard re-expressed in pixels of
+// the clock this board actually runs, at the source's measured field rate. The
+// pair to SourceTiming, which is the raster the SOURCE runs.
+//
+// Two rendering rules, and they are not interchangeable. The sync pulse is the
+// standard's DURATION, because the encoder needs it to arrive when the standard
+// says whatever clock the line runs at. The active window is the standard's
+// FRACTION of the line, because the encoder resamples the line into the
+// standard's active pixel count -- and our raster overruns the standard's by a
+// different factor in every mode, 1920 against CEA's 2200 and 2026 against
+// DMT's 1688, which a duration cannot express. OutputMode::solve() applies
+// both.
 
 #include <stdint.h>
 
 namespace Tv5725 {
 
-// A solved raster: every output timing register, from a mode and a field rate.
-class OutputTimings {
+class OutputTiming {
 public:
-    OutputTimings();
+    OutputTiming();
 
     uint16_t horizontalTotal, verticalTotal;
     uint8_t divider;
@@ -45,4 +54,4 @@ public:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_OUTPUT_TIMINGS_H_
+#endif  // TV5725_OUTPUT_TIMING_H_

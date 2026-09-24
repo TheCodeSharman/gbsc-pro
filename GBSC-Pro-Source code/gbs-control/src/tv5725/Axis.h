@@ -105,7 +105,7 @@ public:
     // move every vertical solve.
     float blankingBeforePicture(uint16_t activeStart) const;
 
-    // One past the last pixel the picture may occupy: OutputTimings::activeStop,
+    // One past the last pixel the picture may occupy: OutputTiming::activeStop,
     // the raster total less the minimum front porch. 0 asks for the raster's own
     // edge, which is what a bypass or a custom preset gets -- there is no solved
     // raster to take a porch from.

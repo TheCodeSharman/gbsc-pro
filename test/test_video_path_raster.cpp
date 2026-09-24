@@ -581,7 +581,7 @@ TEST_CASE("the display window opens at the porch the output mode states")
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
-    const OutputTimings raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
+    const OutputTiming raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
 
     SUBCASE("vertically, clear of the sync pulse it would otherwise sit inside") {
         CHECK(Wire.field(3, 0x14, 4, 11) >= raster.activeLinesStart);
@@ -610,7 +610,7 @@ TEST_CASE("the picture fills the active region, the porch carrying the write ori
     settled.engine.inputTimingsChanged(4);
     REQUIRE(pollUntilSolved(settled.acquisition));
 
-    const OutputTimings raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
+    const OutputTiming raster = Mode1080p.solve(g_fieldRate, OutputMode::EngineCeilingHz);
     const long total = Wire.field(3, 0x01, 0, 12) + 1;     // VDS_HSYNC_RST
     const long start = Wire.field(3, 0x11, 4, 12);         // VDS_DIS_HB_SP
     const long stop = Wire.field(3, 0x10, 0, 12);          // VDS_DIS_HB_ST

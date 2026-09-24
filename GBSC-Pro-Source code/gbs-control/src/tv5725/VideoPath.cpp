@@ -201,7 +201,7 @@ bool VideoPath::solveWindows()
     if (!calculateInputFormatterRegisters(capture))
         return refused("input formatter", capture);
 
-    OutputImage solved = imageFor(capture);
+    OutputWindow solved = imageFor(capture);
     if (!solved.usable()) {
         fail();
         return refused("output raster", capture);
@@ -250,7 +250,7 @@ bool VideoPath::solveRaster()
     // docs/firmware-geometry-engine.md
     // EngineCeilingHz, not the higher WorkingCeilingHz the part is measured to
     // run at: a wider raster costs zoom travel. See the constant.
-    OutputTimings raster = mode->solve(framedKey_.rateHz(),
+    OutputTiming raster = mode->solve(framedKey_.rateHz(),
                                         OutputMode::EngineCeilingHz);
     if (!raster.usable()) {
         // Refused, not deferred: the frame height and the rate are settled, so
@@ -313,7 +313,7 @@ void VideoPath::adoptRaster()
     // Read back, which is what adopting means: bypass and a custom preset
     // leave a raster on the chip that this engine did not solve, so the totals
     // are all of it there is. The porch is not a register and stays zero.
-    raster_ = OutputTimings();
+    raster_ = OutputTiming();
     raster_.horizontalTotal = GBS::VDS_HSYNC_RST::read() + 1;
     raster_.verticalTotal = GBS::VDS_VSYNC_RST::read() + 1;
     displayClock_.adopt();
@@ -548,7 +548,7 @@ void VideoPath::configurePassThrough()
     // pad and closing an aperture would blank nothing.
     showOutput(true);
 
-    raster_ = OutputTimings();
+    raster_ = OutputTiming();
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
     // from the last scaled mode would size the next one's picture.
@@ -733,7 +733,7 @@ uint16_t VideoPath::dividerCeilingForOutput() const
     // sampling clock decides. Running it here costs one solve and keeps the
     // write order raster -> clock -> windows intact.
     const SourceKey arriving = arrivingKey();
-    OutputTimings raster = mode_->solve(arriving.rateHz(), OutputMode::EngineCeilingHz);
+    OutputTiming raster = mode_->solve(arriving.rateHz(), OutputMode::EngineCeilingHz);
     if (!raster.usable())
         return 0;
 
@@ -903,18 +903,18 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     return capture.usable() ? true : fail();
 }
 
-OutputImage VideoPath::imageFor(const CaptureWindow &capture) const
+OutputWindow VideoPath::imageFor(const CaptureWindow &capture) const
 {
     // The window the hardware plays out, which is the register pair: scaling the
     // picture alone runs the far end past the aperture and the source's last
     // line is blanked.
-    return OutputImage(capture.horizontal().width(), capture.vertical().width(),
+    return OutputWindow(capture.horizontal().width(), capture.vertical().width(),
                        raster_.horizontalTotal, raster_.verticalTotal,
                        raster_.activeStop, raster_.activeLinesStop,
                        raster_.activeStart, raster_.activeLinesStart);
 }
 
-void VideoPath::write(const OutputImage &solved, const CaptureWindow &capture)
+void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
 {
     // 1. Far edges OUTWARD only, which can only add headroom. The memory window
     // hugs the picture, so it moves in as well as out; narrowing it here would

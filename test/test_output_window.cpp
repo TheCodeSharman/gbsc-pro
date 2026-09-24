@@ -1,4 +1,4 @@
-// Host-compiled unit tests for Tv5725::OutputImage -- `make -C test output-image`.
+// Host-compiled unit tests for Tv5725::OutputWindow -- `make -C test output-window`.
 // Both axes solved from the capture and the raster alone -- nothing is read
 // back off the chip. docs/firmware-geometry-engine.md.
 //
@@ -20,7 +20,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputImage.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Scale.h"
 
 using namespace Tv5725;
@@ -31,7 +31,7 @@ TEST_CASE("nothing is inherited from the registers")
 {
     // The bench state: 798 IF units captured on a 1126-unit line, 513 units
     // of a 312-line frame, onto a 1445 x 1126 output raster.
-    OutputImage s(798, 513, 1445, 1126);
+    OutputWindow s(798, 513, 1445, 1126);
 
     SUBCASE("both scales are computed, not read") {
         CHECK(((s.scaleOn(AxisHorizontal) >= Scale::Min) && (s.scaleOn(AxisHorizontal) <= Scale::Max)));
@@ -54,7 +54,7 @@ TEST_CASE("nothing is inherited from the registers")
     }
 
     SUBCASE("the same capture always gives the same answer") {
-        OutputImage again = OutputImage(798, 513, 1445, 1126);
+        OutputWindow again = OutputWindow(798, 513, 1445, 1126);
         CHECK(((again.scaleOn(AxisHorizontal) == s.scaleOn(AxisHorizontal))
                && (again.scaleOn(AxisVertical) == s.scaleOn(AxisVertical))));
         CHECK(again.on(AxisHorizontal).memory().stop() == s.on(AxisHorizontal).memory().stop());
@@ -62,7 +62,7 @@ TEST_CASE("nothing is inherited from the registers")
     }
 
     SUBCASE("a capture that reads zero yields no picture rather than a wrong one") {
-        OutputImage dropped = OutputImage(0, 0, 1445, 1126);
+        OutputWindow dropped = OutputWindow(0, 0, 1445, 1126);
         CHECK(dropped.on(AxisHorizontal).produced() == 0.0f);
         CHECK(dropped.on(AxisVertical).produced() == 0.0f);
     }
@@ -73,7 +73,7 @@ TEST_CASE("the solution carries the front porch to both axes")
     const uint16_t Raster = 1916, Frame = 1126;
     const uint16_t StopH = 1852, StopV = 1121;
 
-    OutputImage solved(1008, 532, Raster, Frame, StopH, StopV);
+    OutputWindow solved(1008, 532, Raster, Frame, StopH, StopV);
     CHECK(solved.on(AxisHorizontal).display().start() <= (int32_t)StopH);
     CHECK(solved.on(AxisVertical).display().start() <= (int32_t)StopV);
 
@@ -81,7 +81,7 @@ TEST_CASE("the solution carries the front porch to both axes")
         // Compared against the solution that HAS a porch rather than against
         // the porch itself: the window gives back Axis::margin at the far edge,
         // so it sits inside either bound and the porch is the tighter one.
-        OutputImage plain(1008, 532, Raster, Frame);
+        OutputWindow plain(1008, 532, Raster, Frame);
         CHECK(plain.on(AxisHorizontal).display().start()
               > solved.on(AxisHorizontal).display().start());
         CHECK(plain.on(AxisHorizontal).display().start() < (int32_t)Raster);
@@ -99,7 +99,7 @@ TEST_CASE("the horizontal window goes where the geometry puts it")
     // width, which makes the beat independent of HSCALE, so there is no tearing
     // band left for the window to dodge and no table to consult.
     for (uint16_t capture = 400; capture <= 1009; capture += 3) {
-        OutputImage solved(capture, 512, 1445, 1126);
+        OutputWindow solved(capture, 512, 1445, 1126);
         REQUIRE(solved.usable());
         // The far edges part by the parity unit and no more, and the MEMORY one
         // is the wider: the fetch covers every column the aperture shows.
@@ -118,7 +118,7 @@ TEST_CASE("the scale is exactly what fitToRaster produced")
     // goes one way.
     uint16_t previous = 0;
     for (uint16_t capture = 400; capture <= 1009; ++capture) {
-        OutputImage solved(capture, 512, 1445, 1126);
+        OutputWindow solved(capture, 512, 1445, 1126);
         REQUIRE(solved.usable());
         AxisSolution plain = AxisHorizontal.solve(capture, solved.scaleOn(AxisHorizontal), 1445);
         CHECK(solved.on(AxisHorizontal).memory().stop() == plain.memory().stop());
@@ -138,7 +138,7 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
     //
     // Horizontally the far edges may part by the parity unit; vertically there
     // is no bias, so they still meet.
-    OutputImage solved(749, 512, 1445, 1126);
+    OutputWindow solved(749, 512, 1445, 1126);
     const int32_t spare = solved.on(AxisHorizontal).memory().start()
                         - solved.on(AxisHorizontal).display().start();
     CHECK(spare >= 0);
@@ -160,7 +160,7 @@ static void dumpGrid()
     for (uint16_t raster : {1445, 1716, 858})
         for (unsigned ch = 100; ch <= 1100; ch += 83)
             for (unsigned cv = 100; cv <= 600; cv += 71) {
-                OutputImage s(ch, cv, raster, 1126);
+                OutputWindow s(ch, cv, raster, 1126);
                 std::printf("whole %u %u %u %u %u %d %d %d %d %d %d %d %d\n",
                             raster, ch, cv, s.scaleOn(AxisHorizontal).reg(), s.scaleOn(AxisVertical).reg(),
                             s.on(AxisHorizontal).display().stop(), s.on(AxisHorizontal).memory().stop(), s.on(AxisHorizontal).display().stop(), s.on(AxisHorizontal).display().start(),

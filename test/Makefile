@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-image video-path source-measurement memory display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -247,13 +247,13 @@ video-source-line:
 capture-window:
 	$(call geometry_unit,test_capture_window)
 
-## output-image: host unit tests for Tv5725::OutputImage, and its --dump
+## output-window: host unit tests for Tv5725::OutputWindow, and its --dump
 #
 # Both axes from the capture and the raster alone. Nothing is read back off the
 # chip -- inheriting a corner or a picture size is what every geometry fault of
 # 2026-08-06 was.
-output-image:
-	$(call geometry_unit,test_output_image)
+output-window:
+	$(call geometry_unit,test_output_window)
 
 ## video-signal: host unit tests for what counts as a video signal
 #
@@ -338,7 +338,7 @@ output-mode:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_output_mode" \
 	  "$(HERE)/test_output_mode.cpp" src/tv5725/OutputMode.cpp \
-	  src/tv5725/OutputTimings.cpp src/tv5725/DisplayClock.cpp \
+	  src/tv5725/OutputTiming.cpp src/tv5725/DisplayClock.cpp \
 	  $(CLOCK_SRC)
 	@"$(OUT)/test_output_mode"
 
@@ -351,7 +351,7 @@ output-choice:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_output_choice" \
 	  "$(HERE)/test_output_choice.cpp" src/tv5725/OutputChoice.cpp \
-	  src/tv5725/OutputMode.cpp src/tv5725/OutputTimings.cpp \
+	  src/tv5725/OutputMode.cpp src/tv5725/OutputTiming.cpp \
 	  src/tv5725/DisplayClock.cpp $(CLOCK_SRC)
 	@"$(OUT)/test_output_choice"
 
@@ -802,7 +802,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-image video-path source-measurement memory display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

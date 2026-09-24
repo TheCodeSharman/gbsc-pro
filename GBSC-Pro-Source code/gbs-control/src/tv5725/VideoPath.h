@@ -13,9 +13,9 @@
 #include "VideoSourceLine.h"
 #include "CaptureWindow.h"
 #include "OutputMode.h"
-#include "OutputTimings.h"
+#include "OutputTiming.h"
 #include "PanAndZoom.h"
-#include "OutputImage.h"
+#include "OutputWindow.h"
 #include "FramingTable.h"
 #include "SourceKey.h"
 #include "SourceMeasurement.h"
@@ -392,12 +392,12 @@ private:
 
     bool sizeCaptureWindow(CaptureWindow &capture);
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
-    OutputImage imageFor(const CaptureWindow &capture) const;
+    OutputWindow imageFor(const CaptureWindow &capture) const;
 
     // Ordered so the headroom never dips: the solver always takes the whole
     // memory window, so the only edge that can narrow it is VDS_?B_SP moving up.
     // docs/firmware-geometry-engine.md "Write ordering".
-    void write(const OutputImage &solved, const CaptureWindow &capture);
+    void write(const OutputWindow &solved, const CaptureWindow &capture);
 
     // A press that cannot move the window must not move the state either, or the
     // control goes dead for as many presses as it was pushed past its limit.
@@ -445,13 +445,13 @@ private:
     // than unpacked into the fields each caller wants, because the porch is not
     // a register and the next solve cannot read any of it back. Zero totals
     // mean there is no raster, which is what bypass looks like.
-    OutputTimings raster_;
+    OutputTiming raster_;
 
     // Where the last solve put the picture: both scales and both pairs of
     // blanking windows. Held rather than read back, so the blank is a state
     // this applies rather than a register value it saves, and usable() is what
     // says a solve has chosen one at all.
-    OutputImage output_;
+    OutputWindow output_;
     bool showing_;
 
     // The sync pad as this has it. Held, so the pad is written only when it

@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#include "OutputTimings.h"
+#include "OutputTiming.h"
 
 namespace Tv5725 {
 
@@ -143,7 +143,7 @@ public:
 
     // Calculates the output timings for the given frame rate. ceilingHz clamps
     // the display clock to usable maximum.
-    OutputTimings solve(float fieldRateHz,
+    OutputTiming solve(float fieldRateHz,
                         uint32_t ceilingHz = WorkingCeilingHz) const;
 
 private:

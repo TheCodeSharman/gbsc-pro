@@ -1,9 +1,12 @@
-#ifndef TV5725_OUTPUT_IMAGE_H_
-#define TV5725_OUTPUT_IMAGE_H_
+#ifndef TV5725_OUTPUT_WINDOW_H_
+#define TV5725_OUTPUT_WINDOW_H_
 
-// Where the captured picture lands inside the output raster, per axis: the two
-// scales and the two blanking windows each axis is played out through. The
-// raster it sits inside is OutputTimings.
+// How the capture is mapped onto the output raster to fill it, per axis: the
+// two scales and the two blanking windows each axis is played out through.
+//
+// The pair to CaptureWindow. That one says which part of the source is taken;
+// this one says where it lands. The raster both are fitted into is
+// OutputTiming, which is the OutputMode rendered in VDS units.
 //
 // RD-5725-1.1 separates the two windows and the names follow it. The MEMORY
 // pair, VDS_?B_ST/SP, is "used to get data from memory" -- the window the
@@ -17,15 +20,15 @@
 
 namespace Tv5725 {
 
-class OutputImage {
+class OutputWindow {
 public:
     // Nothing solved: every axis reads unusable, which is what a path with no
     // geometry has.
-    OutputImage();
+    OutputWindow();
 
-    // The bounds are OutputTimings's. 0 for a stop means the raster's own edge
+    // The bounds are OutputTiming's. 0 for a stop means the raster's own edge
     // -- see Axis::farBound -- and 0 for a start means the write floor alone.
-    OutputImage(uint16_t horizontalCapture, uint16_t verticalCapture,
+    OutputWindow(uint16_t horizontalCapture, uint16_t verticalCapture,
                 uint16_t linePx, uint16_t frameLines,
                 uint16_t activeStopH = 0, uint16_t activeStopV = 0,
                 uint16_t activeStartH = 0, uint16_t activeStartV = 0);
@@ -44,4 +47,4 @@ private:
 
 }  // namespace Tv5725
 
-#endif  // TV5725_OUTPUT_IMAGE_H_
+#endif  // TV5725_OUTPUT_WINDOW_H_

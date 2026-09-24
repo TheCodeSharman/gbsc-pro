@@ -59,7 +59,7 @@ TEST_CASE("the raster total is even, so VDS_HSYNC_RST lands odd")
                                      &Mode720p, &Mode576p, &Mode480p};
         for (int i = 0; i < 6; ++i) {
             for (float rate = 49.0f; rate <= 61.0f; rate += 0.01f) {
-                const OutputTimings solved =
+                const OutputTiming solved =
                     modes[i]->solve(rate, OutputMode::EngineCeilingHz);
                 if (!solved.usable())
                     continue;
@@ -114,17 +114,17 @@ TEST_CASE("the sync pulse is CEA-861's, converted to the clock the line runs at"
     // difference. The pixel count then scales with OUR clock. The bench figures
     // 1918/2301/2877 were taken at 1126 lines; CEA's 1125 raises each by 2-3,
     // since a shorter frame buys a longer line.
-    OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
+    OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
     CHECK(at108.hsyncStart == 0);
     CHECK(at108.hsyncStop == 32);
     CHECK(at108.activeStart == 32 + 108);
 
-    OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
+    OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
     CHECK(at1296.hsyncStop == 38);
 
-    OutputTimings at648 = Mode1080p.solve(50.0f, 64800000u);
+    OutputTiming at648 = Mode1080p.solve(50.0f, 64800000u);
     CHECK(at648.horizontalTotal == 1152);
 
     SUBCASE("all three are the same 296 ns, which is the point") {
@@ -158,11 +158,11 @@ TEST_CASE("the SD modes carry less of the line than their standard states")
     // makes it a property of the MODE rather than of the raster it is solved
     // into. The raster ratio was the standing explanation and is refuted.
     // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
-    OutputTimings p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
+    OutputTiming p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
     CHECK(p480.horizontalTotal == 2054);
     CHECK(p480.activeWidth() == 2054 * 690 / 858);
 
-    OutputTimings p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
+    OutputTiming p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
     CHECK(p576.horizontalTotal == 2070);
     CHECK(p576.activeWidth() == 2070 * 679 / 864);
 
@@ -178,11 +178,11 @@ TEST_CASE("the far end is the mode's active fraction, floored by the board's por
     // 1080p is 1920 of CEA's 2200, so a 1920 px line carries 1675 and a 2304 px
     // one 2010 -- a fraction, so it grows with the raster where a duration
     // would not.
-    OutputTimings at108 = Mode1080p.solve(50.0f, 108000000u);
+    OutputTiming at108 = Mode1080p.solve(50.0f, 108000000u);
     CHECK(at108.horizontalTotal == 1920);
     CHECK(at108.activeStop == 140 + 1675);
 
-    OutputTimings at1296 = Mode1080p.solve(50.0f, 129600000u);
+    OutputTiming at1296 = Mode1080p.solve(50.0f, 129600000u);
     CHECK(at1296.horizontalTotal == 2304);
     CHECK(at1296.activeStop == 167 + 2010);
 
@@ -213,7 +213,7 @@ TEST_CASE("the default ceiling is the highest clock the bench demonstrated")
     // figure, which rates a pad PAD_CKOUT_ENZ disables.
     CHECK(OutputMode::WorkingCeilingHz == 129600000u);
 
-    OutputTimings best = Mode1080p.solve(50.0f);
+    OutputTiming best = Mode1080p.solve(50.0f);
     CHECK(best.horizontalTotal == 2304);
     CHECK(best.verticalTotal == 1125);
     CHECK(best.divider == 0x95);
@@ -245,7 +245,7 @@ TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
     // docs/investigations/display-window-opens-early.md
     CHECK(OutputMode::EngineCeilingHz < OutputMode::WorkingCeilingHz);
 
-    OutputTimings solved = Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz);
+    OutputTiming solved = Mode1080p.solve(50.0f, OutputMode::EngineCeilingHz);
     CHECK(solved.horizontalTotal == 1920);
     CHECK(solved.verticalTotal == 1125);
     CHECK(solved.demandedHz() <= OutputMode::EngineCeilingHz);
@@ -299,7 +299,7 @@ static void dumpGrid()
 
     for (unsigned c = 0; c < sizeof(ceilings) / sizeof(ceilings[0]); ++c) {
         for (unsigned r = 0; r < sizeof(rates) / sizeof(rates[0]); ++r) {
-            OutputTimings solved = Mode1080p.solve(rates[r], ceilings[c]);
+            OutputTiming solved = Mode1080p.solve(rates[r], ceilings[c]);
             std::printf("1080p %u %.2f %u %u %u %u %u %u %u\n",
                         (unsigned)ceilings[c], (double)rates[r],
                         (unsigned)solved.horizontalTotal, (unsigned)solved.verticalTotal,
@@ -434,12 +434,12 @@ TEST_CASE("the active window is the standard's fraction of the line, not a porch
     // A front porch stated as a time cannot express that: our raster overruns
     // the standard's by a different factor in every mode, 1920/2200 against
     // 2026/1688, so the error is 3.6% at 1080p and 5.4% at 1024p.
-    OutputTimings hd = Mode1080p.solve(50.0f, 108000000u);
+    OutputTiming hd = Mode1080p.solve(50.0f, 108000000u);
     CHECK(hd.horizontalTotal == 1920);
     CHECK(hd.activeStart == 140);
     CHECK(hd.activeWidth() == 1675);     // 1920 x 1920 / 2200
 
-    OutputTimings dmt = Mode1024p.solve(50.0f, 108000000u);
+    OutputTiming dmt = Mode1024p.solve(50.0f, 108000000u);
     CHECK(dmt.horizontalTotal == 2026);
     CHECK(dmt.activeStart == 360);
     CHECK(dmt.activeWidth() == 1536);    // 2026 x 1280 / 1688
@@ -468,14 +468,14 @@ TEST_CASE("the 625-line mode's transmitted lines are not CEA 576p's")
     // The EMITTED vsync pulse is left at CEA's five lines: the chain locks to it
     // as it is, and only where the picture may go was ever wrong.
     // ../docs/investigations/the-transmitted-window-is-a-per-mode-fraction.md
-    OutputTimings p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
+    OutputTiming p576 = Mode576p.solve(50.081f, OutputMode::EngineCeilingHz);
     CHECK(p576.verticalTotal == 625);
     CHECK(p576.vsyncStop == 5);
     CHECK(p576.activeLinesStart == 24);
     CHECK(p576.activeLinesStop == 624);
 
     SUBCASE("and 480p's are CEA's, because the chain carries that one whole") {
-        OutputTimings p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
+        OutputTiming p480 = Mode480p.solve(50.081f, OutputMode::EngineCeilingHz);
         CHECK(p480.activeLinesStart == 36);
         CHECK(p480.activeLinesStop == 516);
     }
@@ -497,8 +497,8 @@ TEST_CASE("an output mode carries the same fraction of the line at every field r
     // left of the panel and the card's outer columns gone, where 60 Hz fills
     // the screen. VDS_DIS_HB_SP alone decides it -- whole at 410, clipped at
     // 426 -- so the columns are live video rather than border.
-    OutputTimings at60 = Mode960p.solve(60.0f, OutputMode::EngineCeilingHz);
-    OutputTimings at75 = Mode960p.solve(75.0f, OutputMode::EngineCeilingHz);
+    OutputTiming at60 = Mode960p.solve(60.0f, OutputMode::EngineCeilingHz);
+    OutputTiming at75 = Mode960p.solve(75.0f, OutputMode::EngineCeilingHz);
 
     CHECK(at60.horizontalTotal == 1800);
     CHECK(at75.horizontalTotal == 1440);

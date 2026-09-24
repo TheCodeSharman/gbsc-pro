@@ -1,10 +1,10 @@
-#include "OutputImage.h"
+#include "OutputWindow.h"
 
 namespace Tv5725 {
 
-OutputImage::OutputImage() {}
+OutputWindow::OutputWindow() {}
 
-OutputImage::OutputImage(uint16_t horizontalCapture, uint16_t verticalCapture,
+OutputWindow::OutputWindow(uint16_t horizontalCapture, uint16_t verticalCapture,
                          uint16_t linePx, uint16_t frameLines,
                          uint16_t activeStopH, uint16_t activeStopV,
                          uint16_t activeStartH, uint16_t activeStartV)
@@ -20,17 +20,17 @@ OutputImage::OutputImage(uint16_t horizontalCapture, uint16_t verticalCapture,
         AxisVertical.solve(verticalCapture, verticalScale_, frameLines, activeStartV, activeStopV);
 }
 
-const AxisSolution &OutputImage::on(const Axis &axis) const
+const AxisSolution &OutputWindow::on(const Axis &axis) const
 {
     return axis.vertical() ? vertical_ : horizontal_;
 }
 
-Scale OutputImage::scaleOn(const Axis &axis) const
+Scale OutputWindow::scaleOn(const Axis &axis) const
 {
     return axis.vertical() ? verticalScale_ : horizontalScale_;
 }
 
-bool OutputImage::usable() const
+bool OutputWindow::usable() const
 {
     return horizontal_.usable() && vertical_.usable();
 }
