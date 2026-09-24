@@ -1,9 +1,9 @@
 #ifndef TV5725_AXIS_H_
 #define TV5725_AXIS_H_
 
-// RESPONSIBILITY: say which axis this is, and what the CAPTURE path does on
-// it -- the grid a window may move on, the margin the path drops at each end,
-// and where an untuned source is assumed to put its video.
+// Which axis this is, and what the CAPTURE path does on it: the grid a window
+// may move on, the margin the path drops at each end, and where an untuned
+// source is assumed to put its video.
 //
 // It is the token the whole engine is parameterised by: every ...On(axis) call
 // passes one of the two instances below rather than a flag each caller

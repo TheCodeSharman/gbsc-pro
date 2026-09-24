@@ -1,9 +1,9 @@
 #ifndef TV5725_AXIS_SOLUTION_H_
 #define TV5725_AXIS_SOLUTION_H_
 
-// RESPONSIBILITY: carry one axis's answer out of OutputWindow -- where the
-// picture landed, and the two blanking windows bounding it. A value, filled by
-// the one class entitled to compute it.
+// One axis's answer out of OutputWindow: where the picture landed, and the two
+// blanking windows bounding it. A value, filled by the one class entitled to
+// compute it.
 #include <stdint.h>
 
 #include "BlankingTiming.h"

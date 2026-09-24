@@ -8,8 +8,9 @@
 
 namespace Tv5725 {
 
-// The input formatter: what the chip does to a captured line before the scaler
-// sees it.
+// The input formatter block: its static configuration, the line counter it
+// writes, and the two counters a capture window is then placed in. What the
+// chip does to a captured line before the scaler sees it.
 //
 // The static half: IF_SEL24BIT = 1 takes the 24-bit input path, IF_SEL_HSCALE =
 // 1 puts the horizontal scaler in circuit, IF_SEL_ADC_SYNC = 1 takes sync from

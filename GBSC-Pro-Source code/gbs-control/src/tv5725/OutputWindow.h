@@ -1,9 +1,9 @@
 #ifndef TV5725_OUTPUT_WINDOW_H_
 #define TV5725_OUTPUT_WINDOW_H_
 
-// RESPONSIBILITY: map a capture onto the output raster so it fills it, and own
-// every VDS register that says where the picture lands -- both scales and both
-// blanking pairs, on both axes.
+// How a capture is mapped onto the output raster to fill it, and every VDS
+// register that says where the picture lands: both scales and both blanking
+// pairs, on both axes.
 //
 // The pair to CaptureWindow. That one says which part of the source is taken;
 // this one says where it goes. The raster both are fitted into is OutputTiming.
