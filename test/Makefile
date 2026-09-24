@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -238,13 +238,13 @@ slot-text:
 video-source-line:
 	$(call geometry_unit,test_video_source_line)
 
-## active-image: host unit tests for Tv5725::ActiveImage, and its --dump
+## capture-window: host unit tests for Tv5725::CaptureWindow, and its --dump
 #
-# The framing is held as state and every window derived from it. capture() and
-# clampToLine() recompute the same window and must agree exactly, or a press
-# past the edge leaves a dead zone the control never comes back from.
-active-image:
-	$(call geometry_unit,test_active_image)
+# The framing is held as state and every window derived from it. The clamp and
+# the placement come from one call, or a press past the edge leaves a dead zone
+# the control never comes back from.
+capture-window:
+	$(call geometry_unit,test_capture_window)
 
 ## video-processor-timings: host unit tests for Tv5725::VideoProcessorTimings, and its --dump
 #
@@ -801,7 +801,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line active-image video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window video-processor-timings video-path source-measurement memory display-clock output-raster output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

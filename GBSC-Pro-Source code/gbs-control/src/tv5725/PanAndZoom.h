@@ -8,7 +8,7 @@
 // whatever the source measures. That is what makes it both the live state and
 // the stored state, with no portable form to convert to, and it is why the
 // bound lives in the representation: a window outside what can be captured is
-// not expressible. ActiveImage knows the mode and turns a pair into the window
+// not expressible. CaptureWindow knows the mode and turns a pair into the window
 // on a given line. docs/framing-presets.md
 
 #include <stdint.h>
@@ -28,7 +28,7 @@ public:
     PanAndZoom(float horizontalOrigin, float horizontalExtent,
                float verticalOrigin, float verticalExtent);
 
-    // An axis nobody has framed yet has no proportion of its own: ActiveImage
+    // An axis nobody has framed yet has no proportion of its own: CaptureWindow
     // gives it the computed default for the mode in force. The first press
     // seeds it from that default, and from then on the pair is the answer.
     bool tunedOn(const Axis &axis) const;

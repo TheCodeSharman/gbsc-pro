@@ -552,7 +552,7 @@ TEST_CASE("horizontal zoom keeps its travel when the raster widens")
     // capture is a property of the INPUT line, so the two do not track and
     // widening the output raster eats the zoom travel.
     const uint16_t Raster = 1916;
-    const uint16_t DefaultCapture = 890;  // ActiveImage::defaultWidth on this bench
+    const uint16_t DefaultCapture = 890;  // CaptureWindow::defaultWidth on this bench
 
     uint16_t floor = AxisHorizontal.minimumCapture(Raster);
 
