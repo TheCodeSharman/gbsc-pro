@@ -235,6 +235,14 @@ public:
     // of its own latch bit -- the same trap PLLAD_MD has, and the reason these
     // are one operation rather than a write the caller follows with a latch.
     //
+    // **THE LATCH IS NOT ENOUGH: THE ADJUSTER TAKES THE VALUE ON A RESTART.**
+    // Latched but not restarted, the register reads back the phase while the
+    // chip samples at whatever it had -- so a sweep that writes 32 phases
+    // measures one, and a boot lands on an arbitrary sampling phase for its
+    // life. A bad one makes the sync processor mis-separate vsync, and the
+    // input formatter then emits merged pulses a quarter short.
+    // ../../../docs/investigations/the-frame-time-lock-saturates.md
+    //
     // A phase past the field is refused rather than truncated: masking 32 in
     // puts 0 there, which is a phase nobody chose.
     static void applyPhaseSyncProcessor(uint8_t phase);

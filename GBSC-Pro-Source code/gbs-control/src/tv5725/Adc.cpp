@@ -358,6 +358,9 @@ void Adc::applyPhaseSyncProcessor(uint8_t phase)
     PA_SP_LAT::write(0);
     PA_SP_S::write(phase);
     PA_SP_LAT::write(1);
+    PA_SP_BYPSZ::write(0);
+    PA_SP_BYPSZ::write(1);
+    delay(2);
 }
 
 void Adc::applyPhaseAdc(uint8_t phase)
@@ -367,6 +370,9 @@ void Adc::applyPhaseAdc(uint8_t phase)
     PA_ADC_LAT::write(0);
     PA_ADC_S::write(phase);
     PA_ADC_LAT::write(1);
+    PA_ADC_BYPSZ::write(0);
+    PA_ADC_BYPSZ::write(1);
+    delay(2);
 }
 
 void Adc::restartPhaseAdjusters()

@@ -1078,3 +1078,31 @@ TEST_CASE("the ADC PLL is parked without pulsing the latch")
     CHECK(Adc::PLLAD_LEN::read() == 0);
     CHECK(latchRisingEdge() == -1);
 }
+
+TEST_CASE("the sync processor's phase is not in force until its adjuster restarts")
+{
+    // The latch loads the register; the ADJUSTER only takes it on a restart.
+    // Without one PA_SP_S reads back the phase that was asked for while the
+    // chip goes on sampling at whatever it had -- measured on the bench as a
+    // boot whose input vsync arrives merged, a quarter of its pulses missing,
+    // with every register reading correct.
+    // ../docs/investigations/the-frame-time-lock-saturates.md
+    Wire.reset();
+    Adc::restartPhaseAdjusters();   // the adjuster in circuit, as the chip runs it
+    Wire.trace.clear();
+
+    Adc::applyPhaseSyncProcessor(5);
+
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i < Wire.trace.size(); ++i)
+        if (Wire.trace[i].segment == 5 && Wire.trace[i].reg == 0x19)
+            bytes.push_back(Wire.trace[i].value);
+
+    REQUIRE(bytes.size() >= 2);
+    const uint8_t last = bytes[bytes.size() - 1];
+    const uint8_t previous = bytes[bytes.size() - 2];
+
+    CHECK((previous & 0x01) == 0);
+    CHECK((last & 0x01) == 1);
+    CHECK(((last >> 1) & 0x1f) == 5);
+}
