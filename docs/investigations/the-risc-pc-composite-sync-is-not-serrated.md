@@ -76,6 +76,63 @@ So the shortfall is not a fixed number of lines and not an equalisation interval
 of some standard size: it is the mode's own vertical sync width, and it follows
 that width wherever the mode puts it.
 
+## The shortfall is measured and restored, from `VPERIOD_IF`
+
+`VPERIOD_IF` measures the whole frame where the sync processor's count loses the
+vertical pulse, so the two reconcile: whichever of one or two puts
+`VPERIOD_IF + 1` a non-negative distance of at most eight lines above the count
+is the valid reading, and **that distance is the vertical sync the counter
+lost**. Eight because the widest vertical sync in the DMT set this bench carries
+is seven lines, and a bound is what refuses a torn reading that happens to land
+a plausible distance away.
+
+Measured over twelve modes on composite sync, every frame total exact against
+`RetroScaler-Acorn.mdf`'s own `v_timings` and every width matching its stated
+vertical sync:
+
+| mode | factor | frame | width |
+|---|---|---|---|
+| 640x480@60 | 1 | 525 | 2 |
+| 640x480@75 | 1 | 500 | 3 |
+| 800x600@56 | 2 | 625 | 2 |
+| 800x600@60 | 2 | 628 | 4 |
+| 800x600@72 | 2 | 666 | 6 |
+| 800x600@75 | 1 | 625 | 3 |
+| 1024x768@60 | 2 | 806 | 6 |
+| 1024x768@70 | 1 | 806 | 6 |
+| 320x256@50 | 2 | 312 | 3 |
+| 640x352@60 | 2 | 364 | 3 |
+| 640x512@50 | 1 | 534 | 3 |
+
+**Which multiple `VPERIOD_IF` holds is not derivable and is not needed.** It is
+one on some modes and two on others with the whole ADC clock group identical --
+`PLLAD_CKOS`, `KS`, `ICP`, `FS` and both decimators the same, the dividers eight
+apart -- so both are tried and the screen picks. Holding a divider from 1100 to
+2000 through `/sampleclock?hold=` moves neither the factor nor the reading.
+
+**The width is HELD once two readings agree, not recomputed per sample.**
+`VPERIOD_IF` spans two registers and a counter can advance between the byte
+fetches, so a reading tears -- 1255 in 539 of 721 samples from `loop()` at
+800x600@60, with 615 and 1267 among the rest, both of which are one byte from
+each of the two coherent states. Reconciling per sample moves the count by the
+whole vertical sync whenever a reading is refused, and the presence poll reads
+that as the source moving: measured as an endless acquire/absent loop with the
+console printing `source moved: count (623 lines, solved 627)` on every pass.
+
+**And the count has one owner.** The presence poll read
+`SyncProcessor::lineCount()` raw while the measurement reported the restored
+value, which is the same loop from the other side.
+
+What it buys is one identity per source. 320x256@50 read 311 on separate sync
+and 308 on composite, 800x600@60 read 627 and 623, and the framing table keyed
+an entry to each; all three modes now agree across both sync types, and
+800x600@60's line rate is 37879 where the short count gave 37638.
+
+**It does not apply to an interlaced source and does not claim to.** There the
+sync processor counts a field where `VPERIOD_IF` counts a frame, which no factor
+of one or two reconciles to a small positive difference, so the reading is
+refused and the raw count stands.
+
 **It is a consequence of the signal rather than a fault in the coasting.** A
 serrated source keeps feeding the counter through the vertical interval; this
 one cannot, so no coast setting recovers the lines, and a count taken across

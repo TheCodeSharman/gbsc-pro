@@ -95,38 +95,44 @@ never seeded, and the picture rolls while every register reads correct.
 `mode-detect-answers-before-any-measurement.md`.
 
 
-## The scan type is the half line in `VPERIOD_IF`, and line doubling inverts its parity
+## The parity of `VPERIOD_IF` is not a scan type, and is no longer read as one
 
-An interlaced field carries a half line. `VPERIOD_IF` is the only count on the
-board with the resolution to hold one -- and it has that resolution only where
-the input formatter doubles the line, which is what puts the count in half lines.
-So the parity that means interlaced is not fixed: **it inverts with
-`IF_HS_DEC_FACTOR`.**
+An interlaced field carries a half line, and `VPERIOD_IF` can hold one -- but
+only where the input formatter doubles the line, which is what puts the count in
+half lines. Where the line is not doubled the bottom bit is the bottom bit of a
+line count and carries nothing.
 
-Measured with `INTERLACE ON|OFF` over ModeServ, one machine, one cable, one
-input, composite sync throughout, only the mode's line rate and the interlace
-flag moving:
-
-| mode | line rate | `IF_HS_DEC_FACTOR` | progressive | interlaced |
-|---|---|---|---|---|
-| 320x256@50 | 15625 | 1 | 623 odd x519 | 624 even x519 |
-| 640x200@60 | 15697 | 1 | 523 odd x534 | 524 even x536 |
-| 640x480@60 | 31690 | **0** | **524 even x526** | **525 odd x529** |
-
-3163 samples, every state unanimous. The Wii on `ypbpr` fits it from the other
-side: 480i is line doubled and reads `VPERIOD_IF` 524 x531, and 480p is not
-doubled and reads 524 as well. **The same period, two scan types** -- which no
-table of broadcast totals and no fixed parity can separate, and which is why the
-480p bench source was read as interlaced.
-
-The rule that holds across all eight states is one line:
+The rule drawn from that premise was one line:
 
     interlaced  <=>  (VPERIOD_IF + lineDoubled) is odd
 
-`SourceMeasurement::scanTypeFor()` is that, and `scanType()` applies it to the
-doubling the engine currently holds. The count must be a plausible vertical
-total first -- doubled counts are halved before that check -- or the answer is
-`ScanUnknown` and the caller leaves the deinterlacer where it is.
+and it was measured unanimous over 3163 samples. Every one of those states was
+line-doubled SD, so the premise held throughout and never had to be checked;
+`scanTypeFor()` then applied the parity to any count between 200 and 1300.
+
+**It misreads an undoubled source whose frame total is even.** A RiscPC at
+800x600@60 over composite sync reads 1255 -- odd, inside the range, and the
+source progressive. Measured 721 samples from `loop()`, 1255 in 539 of them,
+with the motion-adaptive deinterlacer engaged on it: `MAPDT_VT_SEL_PRGV` 0 and
+`WFF_ENABLE`/`RFF_ENABLE` 1, against a clean 640x480 reading 524 with the
+deinterlacer off. Separate sync then left it engaged, because `STATUS_IF_VT_OK`
+0 makes the period 0, which scored as neither scan type and advanced no run.
+
+So the parity is withdrawn and the alternation below is the whole rule.
+`ScanUnknown` is withdrawn with it: a source that cannot be shown to be
+interlaced is taken as progressive and the ladder says so. The costs are not
+symmetric -- deinterlacing a progressive source corrupts the picture, where
+leaving an interlaced one alone combs it and the deinterlacer's own preference
+turns it on.
+
+**What that costs is stated where it is paid.** A Wii at PAL 576i holds a steady
+310 while genuinely interlaced, 1186 samples with zero changes, so the
+alternation does not see it and it is steered as progressive.
+
+**`VPERIOD_IF` still measures the frame, and that is what it is read for**:
+against the sync processor's count it gives the vertical sync an unserrated
+composite source loses.
+[the-risc-pc-composite-sync-is-not-serrated.md](the-risc-pc-composite-sync-is-not-serrated.md)
 
 **The classification cannot supply this.** `s0_00..05` is byte-identical across
 a real interlace change at 15 kHz and 50 Hz, `a7 00 00 00 40 10` both ways, so
@@ -169,24 +175,23 @@ chase -- but the measured scan type is the better input and is now available
 beside it.
 
 
-## The same capture confirms the parity rule on a PAL interlaced source
+## A PAL interlaced source is where the alternation is blind
 
-576i is line doubled and reads `VPERIOD_IF` 624, so `624 + 1` is odd and the
-rule names it interlaced -- correctly, and from a single sample rather than a
-time series. That is the ninth measured state and the first PAL interlaced one.
+576i reads `VPERIOD_IF` 624 against a count of 310 and holds both steady, 1186
+samples with zero changes on each. The parity rule named it interlaced from
+that single sample; with the parity withdrawn, nothing here does.
 
-**It also bounds where the alternation is needed.** Every source on which the
-alternation rule has been shown to fail is a source where `VPERIOD_IF` answers
-correctly, because both are on the separator path. The alternation is only
-needed on separate sync, where `VPERIOD_IF` is dead -- and there it has been
-exact on the one source available, 0 changes in 1486 samples progressive against
-about 1090 in 1478 interlaced, at every coast length.
+**Why it holds steady is not established.** The sync-route table above is the
+closest thing to a mechanism -- the separator retimes vertical sync and can
+absorb the half line into a constant undercount -- and the Wii 480i row
+contradicts it, being SOG with the separator in path and alternating anyway. A
+broad-pulse width explains the two Wii readings and predicts the four RISC PC
+rows wrongly, since a pulse width is a property of the signal where the
+behaviour follows the route.
 
-The risk that survives is precise: **a separate-sync source that absorbs the
-half-line into a steady undercount, as 576i does on SOG, would read
-progressive.** The RISC PC is the only separate-sync source on this bench, so
-nothing here can test it.
-
+So the bound on the alternation is stated as measured rather than as derived:
+**it is blind to at least one genuinely interlaced source, and which sources
+those are is not predictable from the timings.**
 
 ## On separate sync the count alternates at every raster tried
 
