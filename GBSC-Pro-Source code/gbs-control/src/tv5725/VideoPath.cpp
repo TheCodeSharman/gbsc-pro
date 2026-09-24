@@ -695,8 +695,7 @@ void VideoPath::applySampling(uint16_t divider)
         return;
 
     Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
-    inputFormatter_.writeLineCounter(
-        InputFormatter::lineCounterFor(divider, lineDoubled_));
+    inputFormatter_.writeLineCounter(divider, lineDoubled_);
     SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
@@ -862,13 +861,7 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
         return false;
     }
 
-    // The divider is held rather than read back: PLLAD_LAT is what loads it
-    // into the ADC PLL, so between a write and the latch the register reports a
-    // value the chip is not using.
-    const uint16_t lineUnits =
-        InputFormatter::lineCounterFor(Adc::dividerInForce(),
-                                               lineDoubled_) + 1;
-    if (lineUnits < 64)
+    if (inputFormatter_.lineUnits() < 64)
         return fail();
 
     // **A MEASUREMENT IN RANGE IS NOT A MEASUREMENT THAT SETTLED**, and the
@@ -884,11 +877,9 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
     if (!VideoSignal::isVideo(sourceLines, sampling_.fieldRateHz()))
         return fail();
 
-    capture = CaptureWindow(
-        InputFormatter::capturableLine(Adc::dividerInForce(),
-                                               reading_, lineDoubled_),
-        InputFormatter::capturableFrame(sourceLines, lineDoubled_),
-        timing_);
+    capture = CaptureWindow(inputFormatter_.capturableLine(reading_),
+                            inputFormatter_.capturableFrame(sourceLines),
+                            timing_);
     return true;
 }
 

@@ -421,8 +421,11 @@ TEST_CASE("a solve puts all three registers of the one quantity on the chip")
     REQUIRE(pollUntilSolved(acquisition));
 
     CHECK(dividerInForce() == Adc::dividerInForce());
-    CHECK(lineCounterInForce() == InputFormatter::lineCounterFor(
-                                     Adc::dividerInForce(), engine.lineDoubled()));
+    // The rule spelled out, rather than compared against the derivation that
+    // produced it: the counter takes every ADC sample undoubled, half doubled.
+    CHECK(lineCounterInForce() == (engine.lineDoubled()
+                                       ? Adc::dividerInForce() / 2
+                                       : Adc::dividerInForce()));
     CHECK(retimeStopInForce()
           == SyncProcessor::retimeStopFor(Adc::dividerInForce()));
 }
@@ -447,8 +450,8 @@ TEST_CASE("a measurement that solved nothing keeps the clock, and never writes a
 
     CHECK(Adc::PLLAD_MD::read() == Adc::BringUpDivider);
     CHECK(InputFormatter::IF_HSYNC_RST::read()
-          == InputFormatter::lineCounterFor(Adc::BringUpDivider,
-                                            engine.lineDoubled()));
+          == (engine.lineDoubled() ? Adc::BringUpDivider / 2
+                                   : Adc::BringUpDivider));
 }
 
 TEST_CASE("a transition blanks the picture and leaves the output sync running")

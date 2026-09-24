@@ -24,6 +24,7 @@ namespace Tv5725 {
 // the neighbours survive rather than assuming it.
 class InputFormatter {
 public:
+    InputFormatter();
     typedef UReg<0x01, 0x00, 0, 1> IF_IN_DREG_BYPS;                   // Input pipe by pass Use the falling or rising edge of
                                                                       // clock to get the input data. 0: Clock input data on the
                                                                       // falling edge of ICLK. 1: Clock input date on the rising
@@ -244,9 +245,16 @@ public:
     // the bring-up where a preset table would have been loaded.
     void init();
 
-    // The line counter, in IF units. SourceMeasurement decides the value off
-    // the ADC divider; this block is where the register lives.
-    void writeLineCounter(uint16_t units);
+    // The line counter. Derived here from the divider just applied and the scan
+    // mode, and HELD: a caller re-deriving it is asking the chip a question a
+    // read-back cannot answer, because PLLAD_LAT is what loads the divider into
+    // the ADC PLL and between a write and that edge the ADC runs one value
+    // while the register reports another.
+    void writeLineCounter(uint16_t divider, bool lineDoubled);
+
+    // The span the counter wraps at, which is one past what it was written
+    // with. 0 until the first write.
+    uint16_t lineUnits() const;
 
     // The block's vertical window, opened wide before a measurement is taken
     // through it. The source's field rate is timed off this block's test bus,
@@ -325,18 +333,10 @@ public:
     // ../../../docs/investigations/the-line-counters-are-eleven-bits-measured.md
     static const uint16_t LineCounterMax = 2047;
 
-    // What the line counter must be set to for a given ADC divider. The
-    // horizontal decimation is what relates them, and only the line doubler
-    // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
-    // counter wrapping at half the samples arriving repeats the picture.
-    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
 
-    // The counter a horizontal capture window is placed in: the span the line
-    // counter wraps at, and the hsync interval measured off the source. This
-    // block writes that counter, so it is where a divider and a scan mode
-    // become units.
-    static VideoSourceLine capturableLine(uint16_t divider, const HsyncPulse &pulse,
-                                          bool lineDoubled);
+    // The counter a horizontal capture window is placed in: the span this block
+    // wrote, and the hsync interval measured off the source.
+    VideoSourceLine capturableLine(const HsyncPulse &pulse) const;
 
     // The counter the vertical window is placed in. The line counter runs at
     // twice the source line rate only while the doubler is in the path, so what
@@ -346,7 +346,25 @@ public:
     // Nothing is excluded at either end: no hardware facility measures the
     // vertical sync interval in these units, and a guess there would crop
     // picture rather than blanking.
-    static VideoSourceLine capturableFrame(uint16_t sourceLines, bool lineDoubled);
+    VideoSourceLine capturableFrame(uint16_t sourceLines) const;
+
+    // What the line counter must be set to for a given ADC divider. The
+    // horizontal decimation is what relates them, and only the line doubler
+    // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
+    // counter wrapping at half the samples arriving repeats the picture.
+    //
+    // It states the rule, which is what a divider has to be checked against
+    // before it is chosen. **The engine does not re-derive the counter from
+    // it** -- writeLineCounter() applies it once and holds the result, because
+    // between a divider write and PLLAD_LAT the ADC runs one value while the
+    // register reports another.
+    static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
+
+private:
+    uint16_t lineUnits_;
+    bool doubled_;
+
+public:
 
     // What this block measures of the source. The vertical is 0 unless
     // STATUS_IF_VT_OK says the measurement completed, which it does not on

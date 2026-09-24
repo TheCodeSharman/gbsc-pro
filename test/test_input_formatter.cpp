@@ -298,6 +298,52 @@ TEST_CASE("a source is not doubled into an output that cannot show the result")
     }
 }
 
+// The line counter is one quantity in one register, and the block that writes it
+// is the one that knows what it wrote. A caller re-deriving it from the divider
+// is asking the chip a question a read-back cannot answer: PLLAD_LAT is what
+// loads the divider into the ADC PLL, so between a write and the latch the ADC
+// runs one value while the register reports another.
+TEST_CASE("the block holds the line counter it wrote")
+{
+    InputFormatter block;
+
+    SUBCASE("nothing is held before the first write") {
+        CHECK(block.lineUnits() == 0);
+    }
+
+    SUBCASE("the write derives the counter from the divider and the scan mode") {
+        // The bench RISC PC at 800x600@60, undoubled: the counter takes every
+        // sample. LineCounterMax is what keeps an undoubled divider under 2048.
+        block.writeLineCounter(1438, false);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 1438);
+        CHECK(block.lineUnits() == 1439);
+
+        // Doubled, the counter takes half of them, which is what lets a 2553
+        // divider fit an eleven-bit counter at all.
+        block.writeLineCounter(2553, true);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 1276);
+        CHECK(block.lineUnits() == 1277);
+    }
+
+    SUBCASE("the counter follows a divider that changes") {
+        // An IF_HSYNC_RST that does not follow PLLAD_MD leaves the block
+        // counting to the end of a line that is not arriving. Measured on the
+        // unit at 320x256@50: PLLAD_MD 2553, IF_HSYNC_RST 1276.
+        block.writeLineCounter(2553, true);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 1276);
+        block.writeLineCounter(1276, true);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 638);
+        block.writeLineCounter(512, true);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 256);
+    }
+
+    SUBCASE("the counter it offers a capture window is the one it wrote") {
+        block.writeLineCounter(2200, true);
+        CHECK(block.capturableLine(HsyncPulse(0.0718f, true)).units()
+              == block.lineUnits());
+    }
+}
+
 // The counters a capture window is placed in. This block writes the line
 // counter, so it is where the divider and the scan mode become a span of units;
 // the pulse measured off the source is what says which of them a window may
@@ -306,44 +352,59 @@ TEST_CASE("the block states the counters a capture window sits in")
 {
     const HsyncPulse pulse(0.0718f, true);
 
-    SUBCASE("the line wraps where the line counter was set") {
-        // Doubled the counter takes half the samples, so the same divider gives
-        // half the units, and the wrap is one past the counter's last value.
-        CHECK(InputFormatter::capturableLine(2200, pulse, true).units()
-              == InputFormatter::lineCounterFor(2200, true) + 1);
-        CHECK(InputFormatter::capturableLine(2200, pulse, false).units()
-              == InputFormatter::lineCounterFor(2200, false) + 1);
+    SUBCASE("the line wraps one past the counter it wrote") {
+        InputFormatter block;
+
+        block.writeLineCounter(2200, true);
+        CHECK(block.capturableLine(pulse).units() == 1101);
+
+        block.writeLineCounter(2200, false);
+        CHECK(block.capturableLine(pulse).units() == 2201);
     }
 
     SUBCASE("the pulse is excluded from the head where it sits there") {
-        const VideoSourceLine atHead = InputFormatter::capturableLine(2200, pulse, false);
-        CHECK(atHead.syncUnits() == 159);        // ceil(2200 x 0.0718)
+        InputFormatter block;
+        block.writeLineCounter(2200, false);
+
+        const VideoSourceLine atHead = block.capturableLine(pulse);
+        CHECK(atHead.syncUnits() == 159);        // ceil(2201 x 0.0718)
         CHECK(atHead.firstCapture() == 159);
 
         // Inverted, the interval is already behind the origin and a guard there
         // would throw away video.
-        const VideoSourceLine atTail =
-            InputFormatter::capturableLine(2200, HsyncPulse(0.0718f, false), false);
+        const VideoSourceLine atTail = block.capturableLine(HsyncPulse(0.0718f, false));
         CHECK(atTail.firstCapture() == VideoSourceLine::FirstCapturableUnit);
     }
 
     SUBCASE("a doubled line keeps the head blanking clear of the capture") {
-        const VideoSourceLine doubled = InputFormatter::capturableLine(2200, pulse, true);
+        InputFormatter block;
+        block.writeLineCounter(2200, true);
+
+        const VideoSourceLine doubled = block.capturableLine(pulse);
         CHECK(doubled.firstCapture()
               == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
     }
 
     SUBCASE("the frame counts half-lines doubled and source lines otherwise") {
         // The line counter runs at twice the source line rate only while the
-        // doubler is in the path.
-        CHECK(InputFormatter::capturableFrame(311, true).units() == 624);
-        CHECK(InputFormatter::capturableFrame(311, false).units() == 312);
-        CHECK(InputFormatter::capturableFrame(627, false).units() == 628);
+        // doubler is in the path, and it is the scan mode the block holds --
+        // the same one the line counter was written with.
+        InputFormatter block;
+
+        block.writeLineCounter(2200, true);
+        CHECK(block.capturableFrame(311).units() == 624);
+
+        block.writeLineCounter(2200, false);
+        CHECK(block.capturableFrame(311).units() == 312);
+        CHECK(block.capturableFrame(627).units() == 628);
     }
 
     SUBCASE("the frame excludes nothing, because no vertical pulse is measured") {
-        CHECK(InputFormatter::capturableFrame(627, false).syncUnits() == 0);
-        CHECK(InputFormatter::capturableFrame(627, false).firstCapture()
+        InputFormatter block;
+        block.writeLineCounter(2200, false);
+
+        CHECK(block.capturableFrame(627).syncUnits() == 0);
+        CHECK(block.capturableFrame(627).firstCapture()
               == VideoSourceLine::FirstCapturableUnit);
     }
 }

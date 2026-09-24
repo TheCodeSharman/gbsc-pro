@@ -142,20 +142,6 @@ static void seedSource(uint16_t lines, uint16_t lineSamples, uint16_t divider)
 static const uint32_t BenchLineRate = 15550;
 static const uint16_t BenchDivider = 2553;
 
-TEST_CASE("the IF line follows the divider, because they are one quantity")
-{
-    // Measured on the unit: PLLAD_MD 2553, IF_HSYNC_RST 1276. The IF counts the
-    // ADC line after decimation by two.
-    CHECK(InputFormatter::lineCounterFor(BenchDivider, true) == 1276);
-
-    SUBCASE("and it follows a divider that changes") {
-        // The whole point: an IF_HSYNC_RST that does not follow PLLAD_MD leaves
-        // the IF counting to the end of a line that is not arriving.
-        CHECK(InputFormatter::lineCounterFor(1276, true) == 638);
-        CHECK(InputFormatter::lineCounterFor(512, true) == 256);
-    }
-}
-
 TEST_CASE("the ADC has a rated sampling ceiling and the divider must respect it")
 {
     // DS-5725-3.2: "Maximum analog sampling rate up to 162MSPS". The rate the
@@ -377,7 +363,7 @@ TEST_CASE("the divider is chosen at a mode change, under the ADC ceiling")
         uint16_t chosen = SamplingClock::recommendedDivider(BenchLine, Oversample, true);
         CHECK(chosen >= 2048);
         CHECK(chosen <= SamplingClock::DoubledLineSampleLimit);
-        CHECK(InputFormatter::lineCounterFor(chosen, true) <= InputFormatter::LineCounterMax);
+        CHECK(chosen / 2 <= InputFormatter::LineCounterMax);
         CHECK(Adc::withinLimit(chosen, BenchLine, Oversample));
     }
 

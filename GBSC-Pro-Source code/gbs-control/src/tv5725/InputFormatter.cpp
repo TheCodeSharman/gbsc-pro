@@ -4,6 +4,8 @@
 
 namespace Tv5725 {
 
+InputFormatter::InputFormatter() : lineUnits_(0), doubled_(false) {}
+
 const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
 const uint16_t InputFormatter::DoubledTailBlanking;
@@ -13,21 +15,15 @@ uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
     return lineDoubled ? (uint16_t)(divider / 2) : divider;
 }
 
-VideoSourceLine InputFormatter::capturableLine(uint16_t divider,
-                                               const HsyncPulse &pulse,
-                                               bool lineDoubled)
+VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse) const
 {
-    // The counter wraps one past its last value, so the span is the register
-    // plus one.
-    return VideoSourceLine::forDuty(
-        (uint16_t)(lineCounterFor(divider, lineDoubled) + 1), pulse, lineDoubled);
+    return VideoSourceLine::forDuty(lineUnits_, pulse, doubled_);
 }
 
-VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines,
-                                                bool lineDoubled)
+VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines) const
 {
-    return VideoSourceLine::frame(lineDoubled ? (uint16_t)(2 * (sourceLines + 1))
-                                              : (uint16_t)(sourceLines + 1));
+    return VideoSourceLine::frame(doubled_ ? (uint16_t)(2 * (sourceLines + 1))
+                                           : (uint16_t)(sourceLines + 1));
 }
 
 uint16_t InputFormatter::verticalPeriod()
@@ -148,10 +144,18 @@ void InputFormatter::init()
     IF_AUTO_OFST_V_RANGE::write(0x0);            // s1_2a[7:4]
 }
 
-void InputFormatter::writeLineCounter(uint16_t units)
+void InputFormatter::writeLineCounter(uint16_t divider, bool lineDoubled)
 {
-    IF_HSYNC_RST::write(units);
+    const uint16_t counter = lineCounterFor(divider, lineDoubled);
+    IF_HSYNC_RST::write(counter);
+
+    // The counter wraps one past its last value, so the span is the register
+    // plus one.
+    lineUnits_ = (uint16_t)(counter + 1);
+    doubled_ = lineDoubled;
 }
+
+uint16_t InputFormatter::lineUnits() const { return lineUnits_; }
 
 // Inside every frame any source presents, so it cannot be the window that
 // stops the block measuring.

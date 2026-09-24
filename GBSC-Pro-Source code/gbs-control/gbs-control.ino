@@ -3153,8 +3153,7 @@ static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
     const bool doubled = geometry.lineDoubled();
 
     Tv5725::Adc::applySampleRate(divider, sourceSampling.lineRateHz(), oversample);
-    inputFormatter.writeLineCounter(
-        Tv5725::InputFormatter::lineCounterFor(divider, doubled));
+    inputFormatter.writeLineCounter(divider, doubled);
     Tv5725::SyncProcessor::writeRetimeStop(
         Tv5725::SyncProcessor::retimeStopFor(divider));
 }
