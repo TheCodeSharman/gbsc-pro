@@ -40,6 +40,18 @@ On the bench, RISC PC on `vga` at 800x600@60 `SYNC 0`, driven by ModeServ's
 The card names its own state, so one frame carries the contradiction: it reads
 `SEPARATE SYNC PROGRESSIVE` while the deinterlacer weaves.
 
+**AN ORDINARY FLASH IS ENOUGH TO ARM IT, AND NOTHING HAS TO BE INTERLACED.**
+Observed on both of two consecutive OTA flashes on the progressive bench source:
+the unit comes back, the count wobbles through re-acquisition -- the divider
+moved 1438 to 1440 across one of them -- and motion adapt is engaged by the time
+the source settles, with `MAPDT_VT_SEL_PRGV` 0 and the full
+`enableMotionAdapt()` signature. So `INTERLACE ON` is a way to reproduce it
+rather than the condition: any count that alternates once during settling arms
+the latch for the life of the run.
+
+That makes it the likely cause of a unit that comes back from a flash with a
+green, comb-torn picture, which is otherwise diagnosed as the flash.
+
 Two consequences:
 
 - **A source that alternates once runs the deinterlacer for ever after.** A

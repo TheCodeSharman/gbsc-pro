@@ -48,6 +48,14 @@ Nothing else moves; both states are `state: acquired` with the source present.
 The card names its own state, so the photograph carries the contradiction in one
 frame: it reads `SEPARATE SYNC PROGRESSIVE` while the deinterlacer weaves.
 
+**`INTERLACE ON` reproduces it; it is not the condition.** Both of two
+consecutive OTA flashes on the same progressive source came back with motion
+adapt engaged, no interlaced source anywhere near the bench. Re-acquisition is
+enough: the count wobbles while the source settles -- the divider moved 1438 to
+1440 across one of those flashes -- and a single alternating pair arms the latch
+for the life of the run. A unit that returns from a flash green and comb-torn is
+this rather than the flash.
+
 The engaged state is `enableMotionAdapt()`'s and is identified by its own fields
 rather than by the one bit that shows:
 
