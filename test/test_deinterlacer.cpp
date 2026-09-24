@@ -525,17 +525,6 @@ TEST_CASE("a vertical period that moved restarts the run")
     CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
 }
 
-TEST_CASE("a reading of neither scan type restarts the run")
-{
-    AtRest rest;
-
-    pass(524, SourceMeasurement::ScanInterlaced, automatic());
-    pass(524, SourceMeasurement::ScanUnknown, automatic());
-    pass(524, SourceMeasurement::ScanInterlaced, automatic());
-
-    CHECK_FALSE(Deinterlacer::motionAdaptEngaged());
-}
-
 TEST_CASE("a settled run of progressive readings releases it again")
 {
     AtRest rest;

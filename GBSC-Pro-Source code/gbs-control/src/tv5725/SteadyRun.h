@@ -50,6 +50,9 @@ public:
     // undercount the true field, so the higher is the closer.
     uint16_t value() const;
 
+    // Whether enough samples have agreed for the run to say anything at all.
+    bool settled() const;
+
     // Whether the settled run is a pair differing by one, which only an
     // interlaced field makes a count do.
     bool alternated() const;

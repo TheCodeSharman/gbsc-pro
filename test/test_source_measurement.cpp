@@ -137,17 +137,6 @@ static void seedSource(uint16_t lines, uint16_t lineSamples, uint16_t divider)
     Adc::applyDivider(divider);
 }
 
-// The scan type as a fresh measurement reads it, with the doubling held. The
-// class takes the doubling from its own state rather than as an argument,
-// because InputFormatter::applyLineDoubling() owns the registers it has to match.
-static SourceMeasurement::ScanType scanTypeWithDoubling(uint16_t verticalPeriod,
-                                                        bool lineDoubled)
-{
-    SourceMeasurement measurement(inputFormatter);
-    seedSourceHalfLines(verticalPeriod);
-    return measurement.measureScanType(lineDoubled);
-}
-
 // The bench: RiscPC at 320x256@50, VTOTAL 311, so 311 x 50 = 15550 lines/sec.
 // PLLAD_MD 2553 and IF_HSYNC_RST 1276 are what the unit actually holds.
 static const uint32_t BenchLineRate = 15550;
@@ -1337,74 +1326,6 @@ TEST_CASE("the sampling budget is spent at the rate the ADC actually converts at
 
 // --- the scan type ----------------------------------------------------------
 //
-// An interlaced field carries a half line, and VPERIOD_IF is the only count on
-// the board with the resolution to hold one -- but only where the input
-// formatter doubles the line, which is what puts the count in half lines. So
-// the parity that means interlaced INVERTS with line doubling, and neither
-// parity nor a table of broadcast totals answers on its own.
-//
-// Every value below is measured, one machine and one cable, with only the
-// mode's line rate and its interlace flag moving.
-// docs/investigations/interlaced-source-measurement.md
-
-TEST_CASE("the scan type is the half line in VPERIOD_IF")
-{
-    SUBCASE("a doubled count carries the half line as an even period") {
-        // RiscPC 320x256@50 and 640x200@60, composite sync, 519 and 534 samples.
-        CHECK(scanTypeWithDoubling(623, true)
-              == SourceMeasurement::ScanProgressive);
-        CHECK(scanTypeWithDoubling(624, true)
-              == SourceMeasurement::ScanInterlaced);
-        CHECK(scanTypeWithDoubling(523, true)
-              == SourceMeasurement::ScanProgressive);
-        CHECK(scanTypeWithDoubling(524, true)
-              == SourceMeasurement::ScanInterlaced);
-    }
-
-    SUBCASE("an undoubled count carries it as an odd one") {
-        // RiscPC 640x480@60, 31690 Hz, IF_HS_DEC_FACTOR 0, 526 and 529 samples.
-        CHECK(scanTypeWithDoubling(524, false)
-              == SourceMeasurement::ScanProgressive);
-        CHECK(scanTypeWithDoubling(525, false)
-              == SourceMeasurement::ScanInterlaced);
-    }
-}
-
-// A Wii reads VPERIOD_IF 524 at 480i AND at 480p, so no table of totals and no
-// parity alone separates them. The doubling does, and it is held state.
-TEST_CASE("the two scan types of one source can share a period")
-{
-    CHECK(scanTypeWithDoubling(524, true)
-          == SourceMeasurement::ScanInterlaced);
-    CHECK(scanTypeWithDoubling(524, false)
-          == SourceMeasurement::ScanProgressive);
-}
-
-// The separate-sync path leaves debris here rather than a period -- 33 to 101
-// on the bench source, with STATUS_IF_VT_OK reading 0 beside it.
-TEST_CASE("a period too short to be a vertical one answers nothing")
-{
-    CHECK(scanTypeWithDoubling(57, true)
-          == SourceMeasurement::ScanUnknown);
-    CHECK(scanTypeWithDoubling(101, true)
-          == SourceMeasurement::ScanUnknown);
-    CHECK(scanTypeWithDoubling(0, false)
-          == SourceMeasurement::ScanUnknown);
-}
-
-TEST_CASE("the scan type of the held source uses the doubling in force")
-{
-    // One period, two answers: 524 is a doubled interlaced field and an
-    // undoubled progressive frame, which is why the Wii reads 524 at 480i and
-    // at 480p alike.
-    SourceMeasurement sampling(inputFormatter);
-    seedSourceLines(311);
-    seedSourceHalfLines(524);
-
-    CHECK(sampling.measureScanType(true) == SourceMeasurement::ScanInterlaced);
-    CHECK(sampling.measureScanType(false) == SourceMeasurement::ScanProgressive);
-}
-
 // --- an interlaced count never holds still, and that IS the measurement ------
 //
 // An interlaced field carries a half line, so the sync processor's count
@@ -1452,29 +1373,46 @@ TEST_CASE("a count alternating by one reads as interlaced where the period canno
     SourceMeasurement measurement(inputFormatter);
     REQUIRE(settleAlternating(measurement, 311, 8));
 
-    CHECK(measurement.measureScanType(true) == SourceMeasurement::ScanInterlaced);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanInterlaced);
 }
 
-TEST_CASE("a measured period still outranks the alternation")
+TEST_CASE("the alternation outranks whatever the period holds")
 {
     SourceMeasurement measurement(inputFormatter);
     REQUIRE(settleAlternating(measurement, 311, 8));
 
-    // 623 doubled is progressive, whatever the count did.
     seedSourceHalfLines(623);
-    CHECK(measurement.measureScanType(true) == SourceMeasurement::ScanProgressive);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanInterlaced);
 }
 
-TEST_CASE("a steady count claims nothing about the scan type on its own")
+// **THIS IS THE COST OF THE RULE, AND IT IS A REAL SOURCE.** A Wii at PAL 576i
+// holds a steady 310 while genuinely interlaced -- 1186 samples, zero changes
+// -- so the alternation misses it and it is steered as progressive. The
+// deinterlacer's manual preference is what covers it, and the trade is
+// deliberate: the reverse error engages motion adaption on a progressive
+// source, which corrupts the picture rather than combing it.
+TEST_CASE("a steady count is taken as progressive even where the source is not")
 {
-    // A Wii at PAL 576i holds a steady 310 while genuinely interlaced -- 1186
-    // samples, zero changes -- so a count that does not alternate is not
-    // evidence of a progressive source.
     seedSourceLines(310);
     SourceMeasurement measurement(inputFormatter);
     REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
 
-    CHECK(measurement.measureScanType(true) == SourceMeasurement::ScanUnknown);
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
+}
+
+// RiscPC 800x600@60 on composite sync: the count settles at 623 and never
+// alternates, while VPERIOD_IF reads 1255. Parity read that odd value as a half
+// line and so as an interlaced field, and the motion-adaptive deinterlacer
+// engaged on a progressive source -- measured 721 samples from loop(), with
+// MAPDT_VT_SEL_PRGV 0 and WFF/RFF_ENABLE 1 against a clean 640x480 reading 524.
+TEST_CASE("a settled count that never alternates is progressive whatever the period holds")
+{
+    seedSourceLines(623);
+    SourceMeasurement measurement(inputFormatter);
+    REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
+    seedSourceHalfLines(1255);
+
+    CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
 }
 
 TEST_CASE("a count that moves by more than one still starts the run again")

@@ -370,7 +370,7 @@ Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
                 }
                 interlacedRun_ = 0;
             }
-        } else if (scan == SourceMeasurement::ScanProgressive) {
+        } else {
             interlacedRun_ = 0;
             if (++progressiveRun_ >= FilteredPasses) {
                 if (!wanted.bob && motionAdaptEngaged_) {
@@ -379,9 +379,6 @@ Deinterlacer::Steering Deinterlacer::steer(uint16_t verticalPeriod,
                 }
                 progressiveRun_ = 0;
             }
-        } else {
-            interlacedRun_ = 0;
-            progressiveRun_ = 0;
         }
 
         if (wanted.bob) {

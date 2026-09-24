@@ -89,15 +89,22 @@ public:
     MeasurementStatus measureDuty();
 
     enum ScanType {
-        ScanUnknown,
         ScanProgressive,
         ScanInterlaced,
     };
 
-    // The scan type, from the half line an interlaced field carries. Takes its
-    // own reading, because an interlace change need not move the line count and
-    // so need not arm a mode change -- a held one would be the last mode's.
-    ScanType measureScanType(bool lineDoubled);
+    // The scan type, from the half line an interlaced field puts into the line
+    // count. Interlace offsets vertical sync by half a line every other field,
+    // so the count alternates by one and nothing else makes it do that.
+    //
+    // **THERE IS NO UNKNOWN ANSWER.** A source that cannot be shown to be
+    // interlaced is taken as progressive and the ladder says so, because the
+    // costs are not symmetric: deinterlacing a progressive source corrupts the
+    // picture, where leaving an interlaced one alone combs it and the user can
+    // turn the deinterlacer on. An answer that declined to choose left the
+    // previous source's steering in force instead.
+    // ../../../../docs/investigations/interlaced-source-measurement.md
+    ScanType measureScanType();
 
     // Measure the source's line count, corrected for a divider the ADC PLL
     // could not lock to. The ONE way the count is read, here and inside every
@@ -155,6 +162,7 @@ public:
     // The vertical period the last reading came from, or 0 where it did not
     // complete. verticalTapFor() and the relock want the period itself.
     uint16_t verticalPeriod() const;
+
 
     // Whether the source runs the 15.7 kHz broadcast line. Not on its own
     // whether the vertical interval is serrated.
@@ -214,9 +222,6 @@ private:
     static bool countIsSerrations(uint16_t lines, uint16_t halfLines,
                                   bool interlaced);
 
-    static ScanType scanTypeFor(uint16_t verticalPeriod, bool lineDoubled);
-    static ScanType scanTypeFrom(uint16_t verticalPeriod, bool lineDoubled,
-                                 bool countAlternated);
     bool countAlternated() const;
 
 

@@ -30,7 +30,9 @@ void SteadyRun::reset() { restart(0); }
 
 uint16_t SteadyRun::value() const { return high_; }
 
-bool SteadyRun::alternated() const { return run_ >= samples_ && low_ != high_; }
+bool SteadyRun::settled() const { return run_ >= samples_; }
+
+bool SteadyRun::alternated() const { return settled() && low_ != high_; }
 
 bool SteadyRun::sample(uint16_t value)
 {

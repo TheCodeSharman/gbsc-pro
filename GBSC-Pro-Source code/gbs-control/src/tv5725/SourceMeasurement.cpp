@@ -120,34 +120,19 @@ bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
     return fromHalfLines < fromFrame;
 }
 
-SourceMeasurement::ScanType SourceMeasurement::scanTypeFor(uint16_t verticalPeriod,
-                                                          bool lineDoubled)
-{
-    const uint16_t lines = lineDoubled ? (uint16_t)(verticalPeriod / 2)
-                                       : verticalPeriod;
-    if (!VideoSignal::countIsSource(lines))
-        return ScanUnknown;
-
-    const bool carriesHalfLine = (verticalPeriod % 2 != 0) != lineDoubled;
-    return carriesHalfLine ? ScanInterlaced : ScanProgressive;
-}
-
 bool SourceMeasurement::countAlternated() const { return steady_.alternated(); }
 
-SourceMeasurement::ScanType SourceMeasurement::scanTypeFrom(uint16_t verticalPeriod,
-                                                           bool lineDoubled,
-                                                           bool countAlternated)
-{
-    const ScanType measured = scanTypeFor(verticalPeriod, lineDoubled);
-    if (measured != ScanUnknown)
-        return measured;
-    return countAlternated ? ScanInterlaced : ScanUnknown;
-}
-
-SourceMeasurement::ScanType SourceMeasurement::measureScanType(bool lineDoubled)
+SourceMeasurement::ScanType SourceMeasurement::measureScanType()
 {
     verticalPeriod_ = inputFormatter_.verticalPeriod();
-    return scanTypeFrom(verticalPeriod_, lineDoubled, countAlternated());
+
+    if (countAlternated())
+        return ScanInterlaced;
+
+    if (!steady_.settled())
+        tv5725Log("scan: no settled count, taken as progressive");
+
+    return ScanProgressive;
 }
 
 uint16_t SourceMeasurement::verticalPeriod() const { return verticalPeriod_; }
