@@ -54,7 +54,7 @@ known to do.
 
 | Path | What |
 |---|---|
-| `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~19k lines; `framesync.h` is frame time lock; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
+| `GBSC-Pro-Source code/gbs-control/` | the firmware. `gbs-control.ino` is ~13.6k lines; `src/tv5725/FrameSync.*` is frame time lock and `src/videosource/FrameTimeLock.*` is the gate deciding when it may run; the register map is declared by the subsystem that owns each block, under `src/tv5725/`, with whatever has no owner yet left in `Tv5725::Tv5725` |
 | `build/` | `make`-driven arduino-cli build. `data/`, `output/`, `user/` are gitignored and large |
 | `tools/gbsc-pro-hwtest/` | Python: pytest suite against a live unit, plus register/geometry/soak tooling |
 | `docs/` | **`known-issues.md` is the register of open defects and unsettled questions -- read it before diagnosing anything, and put a new one there rather than in a handover. `chip-initialisation.md` is the design — code first, one class per subsystem in `Tv5725::`, and why the preset blobs are being deleted rather than tidied. Read it before adding a register write. `testing.md` is which test layer to use, the fake-Wire seam that makes firmware register code host-testable, and the poison/mutation disciplines.** TV5725 datasheet and register definitions; `scaler-geometry-model.md` is the measured arithmetic from capture window to output blanking registers — **read it before touching geometry**; `firmware-geometry-engine.md` is how `src/tv5725/` uses it and the rules that keep it correct; `vesa-gtf.md` settles the capture-window default — select PAL or NTSC on field rate, no curve — and records why GTF was rejected. Read before proposing a blanking formula. `capture-limits.md` is the one bound on what arrives intact — the horizontal write limit — and the trade `PLLAD_MD` makes between sampling density and reaching the end of the line; `rgbhv-bypass-trap.md` is what decides whether an RGBHV source is scaled or bypassed, and which measurements bypass invalidates; `osd-menu.md` is the menu the remote drives — read it before touching anything called OSD, because three subsystems answer to that name and only the STV9426 reaches the television; `sync-type-selection.md` is why the csync/separate-sync choice is circular and latches — read it before touching `syncTypeCsync` or believing `VSACT`; `preset-load-clobber.md` is what to read before rewriting preset loading; `whole-byte-convenience-names.md` is the inventory and order for removing the 25 non-datasheet byte-wide names; `preset-gap-datasheet-map.md` is every field the preset still owns, resolved against RD-5725-1.1. `MS9288A-Datasheet-Rev-B0.pdf` is the HDMI encoder's datasheet, in Chinese — pinout, application circuit and electrical characteristics, and **no register map**, which Macrosilicon release under NDA only; `EM638325-Industrial_Rev-3.2.pdf` is the **SDRAM part's** datasheet — the frame buffer is one EM638325TS-6, a 166 MHz bin, and it is what bounds the memory clock; `webui-build-chain.md` is the four-file UI chain, three of them checked-in artefacts — read it before editing anything under `public/`; `ota-flashing.md` is the espota handshake, why it needs an inbound port on the host, and how to tell an unarmed unit from a blocked one |
@@ -686,7 +686,7 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   A **polling** loop is the thing to look at, because it changes what the unit
   is doing between your reads.
 - **Never flash `GBS_DEBUG=0` while diagnosing.** It is the flag gating
-  `fsDebugPrintf` (`framesync.h`), so it silences `no INPUT vsync`,
+  `debugPrintf`, which `tv5725Log()` expands to, so it silences `no INPUT vsync`,
   `no OUTPUT vsync` and every `runFrequency()` reason — precisely the messages
   the "no HDMI with every register perfect" section tells you to read. It buys
   1068 bytes of globals (46516 vs 47584) and costs the diagnosis. Use
@@ -760,8 +760,8 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   binaries go in a separate repo; see the photo repo in the table above.
 - **Flashing preserves the filesystem** (`wipe=none` in the FQBN), so stored timings and
   preferences survive.
-- **The `framesync.h` hang is fixed — do not diagnose with it.**
-  `sampleVsyncPeriod()` used to spin 3,000,000 passes with `ESP.wdtDisable()`,
+- **The vsync-sampling hang is fixed — do not diagnose with it.**
+  The sampler used to spin 3,000,000 passes with `ESP.wdtDisable()`,
   exiting only on a vsync pulse, so a `PLLAD_MD` write that broke sync killed
   serial, ping and HTTP while the picture kept running. `38df4e5` (2026-08-03)
   bounded the wait in *time* (`FS_SAMPLE_TIMEOUT_MS`) and left the watchdog
@@ -1749,8 +1749,8 @@ firmware C++.
   routine and carries no promise that the history is final — **once the code is
   agreed, the commits are squashed aggressively to remove churn** and the series
   rationalised.
-- Commit messages: lowercase area prefix (`tools/hwtest:`, `build:`,
-  `framesync:`), then what changed and *why*, with the evidence. Look at
+- Commit messages: lowercase area prefix (`tv5725:`, `tools/hwtest:`,
+  `build:`), then what changed and *why*, with the evidence. Look at
   `git log` before writing one.
 - **Group by FEATURE first, then split that group by kind.** A theme is one
   feature — every change that implemented it — not one file, one layer, or one
@@ -1764,12 +1764,12 @@ firmware C++.
 
   **UPSTREAM CHERRY-PICKABILITY IS NOT A CONSTRAINT.** This fork has diverged
   too far for a commit to be lifted back, so nothing is shaped to keep it
-  liftable -- upstream-derived files, `framesync.h` among them, are refactored
-  like any other, and a fix does not wait on being separable.
+  liftable -- upstream-derived files, the frame time lock among them, are
+  refactored like any other, and a fix does not wait on being separable.
 
   | kind | paths | prefix |
   |---|---|---|
-  | firmware | `GBSC-Pro-Source code/**`, `test/**` | `tv5725:`, `framesync:`, … |
+  | firmware | `GBSC-Pro-Source code/**`, `test/**` | `tv5725:`, `build:`, … |
   | Python tooling | `tools/**` | `tools:`, `tools/hwtest:` |
   | project conventions | `CLAUDE.md`, `CODING_STYLE.md` | `project:` |
   | design notes | `docs/**` | `docs:` |
