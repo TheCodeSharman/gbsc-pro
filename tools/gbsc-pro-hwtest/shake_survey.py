@@ -29,6 +29,7 @@ Needs tv-snap (the bench camera), ffmpeg and numpy.
     python3 shake_survey.py --host <ip> --boots 6 --lock --settle 180
 """
 import argparse
+import json
 import re
 import subprocess
 import tempfile
@@ -122,6 +123,27 @@ def acquired(host):
     return status == 200 and payload is not None and payload.get("state") == "acquired"
 
 
+# /sc?W is a TOGGLE, and the boot it lands on decides which way it goes. Blind,
+# it arms a boot that came up disarmed and DISARMS one that came up armed, which
+# is what a saved enableFrameTimeLock produces -- and the survey then reports
+# unlocked figures under a locked heading, silently. Ask what state the lock is
+# in, act only if it is wrong, and refuse rather than report a lie.
+def arm_frame_time_lock(host):
+    if lock_is_armed(host):
+        return
+    get(host, "/sc?W", timeout=5)  # RAM only, so the flash is left alone
+    for _ in range(20):
+        time.sleep(1)
+        if lock_is_armed(host):
+            return
+    raise SystemExit("--lock: the lock would not arm; /framesync still reports "
+                     "ready false, so every figure below would be an unlocked one")
+
+
+def lock_is_armed(host):
+    return json.loads(get(host, "/framesync", timeout=5))["ready"]
+
+
 def survey_one(host, settle, arm_lock, clip_seconds, directory):
     get(host, "/restart", timeout=5)
     time.sleep(6)
@@ -134,7 +156,7 @@ def survey_one(host, settle, arm_lock, clip_seconds, directory):
 
         if arm_lock:
             time.sleep(2)
-            get(host, "/sc?W", timeout=5)  # RAM only, so the flash is left alone
+            arm_frame_time_lock(host)
         time.sleep(settle)
         matches = [RATE_MATCH.search(line) for line in console.lines]
         matches = [m for m in matches if m]
@@ -158,7 +180,8 @@ def main():
                              "--lock this wants 180: the lock is still walking "
                              "the rate in before then, which is itself a shake")
     parser.add_argument("--lock", action="store_true",
-                        help="arm the frame time lock once acquired, with /sc?W, "
+                        help="arm the frame time lock once acquired, checking "
+                        "/framesync first because /sc?W is a toggle, "
                              "which writes no flash")
     parser.add_argument("--clip", type=float, default=6.0)
     parser.add_argument("--dir", default=tempfile.gettempdir())
