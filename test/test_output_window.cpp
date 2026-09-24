@@ -194,3 +194,29 @@ int main(int argc, char **argv)
     }
     return doctest::Context(argc, argv).run();
 }
+
+// THE WRITE FLOOR BINDS AT THE PORCH IT EXACTLY REACHES, and the boundary is
+// inclusive. Below it the picture starts at the write floor and the origin is
+// charged out of the room; above it the mode's own back porch is what holds the
+// picture off, and charging the origin again would leave a bar no zoom closes.
+//
+// Nothing else in this suite sits on the value, so a `<` here for a `<=` moves
+// the capture bound by the whole origin charge and no other case notices --
+// which is how it reached a commit once.
+TEST_CASE("the write floor binds at the porch it exactly reaches")
+{
+    // AxisHorizontal's floor is 8 and its write origin's constant is 55.
+    const uint16_t Boundary = 63;
+    const uint16_t Raster = 1916, Frame = 1126;
+
+    const uint16_t at = OutputWindow::narrowestCapture(
+        AxisHorizontal, rasterOf(Raster, Frame, 0, 0, Boundary, 0));
+    const uint16_t past = OutputWindow::narrowestCapture(
+        AxisHorizontal, rasterOf(Raster, Frame, 0, 0, Boundary + 1, 0));
+
+    // Charged at the boundary and not one unit past it, so the smallest capture
+    // that still fills the raster jumps by the charge.
+    REQUIRE(at > 0);
+    CHECK(past > at);
+    CHECK(past - at >= 20);
+}

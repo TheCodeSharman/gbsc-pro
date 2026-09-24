@@ -110,7 +110,7 @@ float OutputWindow::originOffset(const Axis &axis, float magnification)
 
 bool OutputWindow::writeFloorBinds(const Axis &axis, uint16_t activeStart)
 {
-    return (float)activeStart < (float)writeStart(axis).floor + writeStart(axis).constant;
+    return (float)activeStart <= (float)writeStart(axis).floor + writeStart(axis).constant;
 }
 
 float OutputWindow::blankingBeforePicture(const Axis &axis, uint16_t activeStart)
