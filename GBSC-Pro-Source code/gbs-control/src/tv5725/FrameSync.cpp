@@ -80,6 +80,19 @@ void FrameSync::setTargetPhase(int32_t degrees)
 
 int16_t FrameSync::lastCorrection() const { return lastCorrection_; }
 
+int32_t FrameSync::phaseError(int32_t phase, int32_t period) const
+{
+    const int32_t target = (targetPhase_ * period) / 360;
+    int32_t error = phase - target;
+
+    if (error > period / 2)
+        error -= period;
+    if (error < -period / 2)
+        error += period;
+
+    return error;
+}
+
 bool FrameSync::steerable(const char *what) const
 {
     char line[80];
@@ -302,8 +315,7 @@ bool FrameSync::runVsync(uint8_t frameTimeLockMethod)
     if (!vsyncPeriodAndPhase(&period, NULL, &phase))
         return false;
 
-    int32_t target = (targetPhase_ * period) / 360;
-    int16_t correction = phase > target ? 0 : Correction;
+    int16_t correction = phaseError(phase, period) > 0 ? 0 : Correction;
 
     if (correction == lastCorrection_)
         return true;
@@ -360,12 +372,10 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
         return false;
     }
 
-    int32_t target = (targetPhase_ * periodInput) / 360;
-
     // Distance behind target, in fractional frames. Latency rising means the
     // read pointer is falling behind, so the output rate goes up.
     const float latencyErrFrames =
-        (float)(phase - target) / ticksPerSecond * rateInput;
+        (float)phaseError(phase, periodInput) / ticksPerSecond * rateInput;
 
     float correction = CorrectionPerFrame * latencyErrFrames;
     if (correction > MaxCorrection)

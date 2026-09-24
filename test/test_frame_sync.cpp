@@ -628,3 +628,58 @@ TEST_CASE("a phase that cannot be measured is a lock failure")
     CHECK_FALSE(lock.runFrequency(60.0f));
     CHECK(board.clock.hzNow() == 108000000u);
 }
+
+TEST_CASE("a phase that has wrapped past zero is corrected the short way")
+{
+    // `phase` is a position in [0, period), so a read pointer drifting down
+    // through zero reappears at the top and the raw difference against a 90
+    // degree target jumps from just under it to three quarters of a frame over
+    // it. Answering that jump slams the clock the other way, and the loop then
+    // hunts across the wrap instead of settling: measured on the bench as two
+    // boots in six holding a limit cycle at the 0.06% clamp for three minutes.
+    aLockedSource();
+    g_outputOffset = g_inputPeriod - g_inputPeriod / 50;   // just below zero
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    REQUIRE(lock.runFrequency(60.0f));
+
+    // The short way round is DOWN -- the pointer is a little behind the
+    // target, not three quarters of a frame ahead of it.
+    CHECK(board.clock.hzNow() < 108000000u);
+}
+
+TEST_CASE("the raster correction reads the wrap the same way")
+{
+    // Unwrapped, a pointer just below zero reads as far past the target and the
+    // raster is left alone, so it drifts further and wraps again.
+    aLockedSource();
+    g_outputOffset = g_inputPeriod - g_inputPeriod / 50;
+
+    DisplayClock clock;
+    FrameSync lock(clock);
+    lock.init();
+    lock.runVsync(0);
+    lock.runVsync(0);
+
+    CHECK(lock.runVsync(0));
+    CHECK(lock.lastCorrection() == FrameSync::Correction);
+}
+
+TEST_CASE("a phase at the target is left alone, whichever side it approaches from")
+{
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 4;   // exactly the 90 degree target
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    REQUIRE(lock.runFrequency(60.0f));
+
+    CHECK(board.clock.hzNow() == doctest::Approx(108000000.0).epsilon(0.00001));
+}

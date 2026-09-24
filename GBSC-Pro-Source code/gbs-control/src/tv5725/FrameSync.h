@@ -111,6 +111,19 @@ public:
     bool runVsync(uint8_t frameTimeLockMethod);
 
 private:
+    // How far the read pointer is from where it is aimed, in the same ticks
+    // the phase is measured in, and signed: negative is behind the target.
+    //
+    // **THE SHORT WAY ROUND.** `phase` is a position in [0, period), so a
+    // pointer drifting down through zero reappears at the top and the raw
+    // difference against the target jumps by most of a frame in one sample.
+    // Answering that jump slams the correction the other way, and the loop then
+    // holds a limit cycle at the clamp instead of settling. Taking the shorter
+    // of the two arcs puts the discontinuity half a frame from the target,
+    // outside the range the lock works in.
+    // ../../../docs/investigations/the-frame-time-lock-saturates.md
+    int32_t phaseError(int32_t phase, int32_t period) const;
+
     // Whether the display clock is ours to steer at all: a generator driving
     // it, the pad enabled, the scaler carrying the video, and the part taking
     // PCLKIN. Every one is an external state rather than a bad signal.
