@@ -21,7 +21,7 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/AxisSolution.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputMapping.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/PictureOrigin.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/RasterFit.h"
@@ -243,7 +243,7 @@ TEST_CASE("the display window opens after the picture starts, not on it")
     // same reason; the near edge gave back nothing.
     // docs/investigations/display-window-opens-early.md
     const uint16_t Raster = 2300, Capture = 1043;
-    const AxisSolution solved = OutputWindow::solve(AxisHorizontal, Capture, Scale(474), Raster);
+    const OutputMapping solved = OutputWindow::solve(AxisHorizontal, Capture, Scale(474), Raster);
     const PictureOrigin placed = OutputWindow::placePicture(AxisHorizontal, 
         Scale(474).produced(Capture), Raster, Scale(474).magnification());
 
@@ -328,7 +328,7 @@ TEST_CASE("the solver places every output register")
     // the write start is 94.4 px after VDS_HB_SP, needing the register below its
     // floor of 8 -- so the picture is pushed right to 102.
     const Scale scale(650);
-    AxisSolution solved = OutputWindow::solve(AxisHorizontal, 798, scale, 1445);
+    OutputMapping solved = OutputWindow::solve(AxisHorizontal, 798, scale, 1445);
 
     SUBCASE("the solver centres the picture as far as the hardware allows") {
         // The MEMORY window opens where the write does; the display window
@@ -367,10 +367,10 @@ TEST_CASE("the solver places every output register")
 
     SUBCASE("no returned register reaches the value that wraps") {
         // Tested at the boundary itself: off-by-one is the risk.
-        AxisSolution h = OutputWindow::solve(AxisHorizontal, 500, Scale(650), 1445);
+        OutputMapping h = OutputWindow::solve(AxisHorizontal, 500, Scale(650), 1445);
         CHECK(h.memory().start() < 1444);
         CHECK(h.display().start() < 1444);
-        AxisSolution v = OutputWindow::solve(AxisVertical, 500, Scale(650), 1126);
+        OutputMapping v = OutputWindow::solve(AxisVertical, 500, Scale(650), 1126);
         CHECK(v.memory().start() < 1125);
         CHECK(v.display().start() < 1125);
     }
@@ -378,14 +378,14 @@ TEST_CASE("the solver places every output register")
     SUBCASE("the display window never runs past the last written pixel") {
         // VDS_DIS_?B_ST is where blanking STARTS, so it may equal origin +
         // produced but never exceed it. Rounding up shows scratch.
-        AxisSolution tall = OutputWindow::solve(AxisVertical, 513, Scale(487), 1126);
+        OutputMapping tall = OutputWindow::solve(AxisVertical, 513, Scale(487), 1126);
         CHECK(tall.display().start() <= tall.display().stop() + tall.produced());
     }
 
     SUBCASE("a vertical solve does not double the capture it is given") {
         // Doubling it is the likeliest bug here: 513 units at VSCALE 660 is
         // 795.9 output lines, not 1591.
-        AxisSolution half = OutputWindow::solve(AxisVertical, 513, Scale(660), 1125);
+        OutputMapping half = OutputWindow::solve(AxisVertical, 513, Scale(660), 1125);
         CHECK(((half.produced() > 795) && (half.produced() < 797)));
         CHECK(half.memory().start() < 1125);
     }
@@ -481,7 +481,7 @@ TEST_CASE("the picture stops at the front porch, not at the raster edge")
     // porch to within a pixel is emitted blank from the porch.
     SUBCASE("and the picture fills the line up to the front porch, not past it") {
         RasterFit fit = OutputWindow::fitToRaster(AxisHorizontal, Capture, Raster, 0, ActiveStop);
-        AxisSolution solved = OutputWindow::solve(AxisHorizontal, Capture, fit.scale(), Raster,
+        OutputMapping solved = OutputWindow::solve(AxisHorizontal, Capture, fit.scale(), Raster,
                                                    0, ActiveStop);
         CHECK(solved.display().start() <= (int32_t)ActiveStop);
         CHECK(solved.display().start() > (int32_t)ActiveStop - 8);
@@ -509,7 +509,7 @@ TEST_CASE("the scale is not bumped for an overshoot the window already clips")
     CHECK(fit.produced() > (float)(ActiveStop - ActiveStart) - 1.0f);
 
     SUBCASE("and the display window still closes by the front porch") {
-        AxisSolution solved = OutputWindow::solve(AxisVertical, Capture, fit.scale(), Raster,
+        OutputMapping solved = OutputWindow::solve(AxisVertical, Capture, fit.scale(), Raster,
                                                  ActiveStart, ActiveStop);
         CHECK(solved.display().start() <= (int32_t)ActiveStop);
     }
@@ -582,7 +582,7 @@ TEST_CASE("a picture too small for the raster is blanked, not left open")
     RasterFit fit = OutputWindow::fitToRaster(AxisHorizontal, capture, raster);
     REQUIRE(fit.produced() < (float)raster);
 
-    AxisSolution solved =
+    OutputMapping solved =
         OutputWindow::solve(AxisHorizontal, capture, fit.scale(), raster, 0, 0);
 
     // the window IS the picture, and the room left over is black at both ends
@@ -610,7 +610,7 @@ TEST_CASE("blanking starts no later than the write ends")
     // at 1121 leaves the last line of the aperture unwritten.
     const uint16_t Raster = 1125, Capture = 582;
     const Scale scale(533);
-    const AxisSolution solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster);
+    const OutputMapping solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster);
 
     const float writeEnds = (float)solved.memory().stop()
                           + OutputWindow::originOffset(AxisVertical, scale.magnification())
@@ -632,7 +632,7 @@ TEST_CASE("the vertical aperture closes where the write ends")
 {
     SUBCASE("at the bench 800x600@60 framing, where the far bound is what stops it") {
         const uint16_t Raster = 1000, ActiveStart = 39, ActiveStop = 999;
-        const AxisSolution solved = OutputWindow::solve(AxisVertical, 384, Scale(410), Raster,
+        const OutputMapping solved = OutputWindow::solve(AxisVertical, 384, Scale(410), Raster,
                                                        ActiveStart, ActiveStop);
         CHECK(solved.display().start() == 993);
     }
@@ -640,7 +640,7 @@ TEST_CASE("the vertical aperture closes where the write ends")
     SUBCASE("and where it is the write rather than the bound") {
         const uint16_t Raster = 1125, Capture = 582;
         const Scale scale(533);
-        const AxisSolution solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster);
+        const OutputMapping solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster);
 
         const float writeEnds = (float)solved.memory().stop()
                               + OutputWindow::originOffset(AxisVertical, scale.magnification())
@@ -667,7 +667,7 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
 
     SUBCASE("across the zoom range, where the parity otherwise alternates") {
         for (uint16_t scale = 280; scale <= 1020; ++scale) {
-            const AxisSolution solved = OutputWindow::solve(AxisHorizontal, 829, Scale(scale), Raster);
+            const OutputMapping solved = OutputWindow::solve(AxisHorizontal, 829, Scale(scale), Raster);
             if (!solved.usable())
                 continue;
             REQUIRE(solved.memory().width() % 2 == 1);
@@ -680,7 +680,7 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
         // and forward is what keeps the picture filling the screen. Back left a
         // black column at the right on every mode whose width came out even.
         for (uint16_t scale = 280; scale <= 1020; ++scale) {
-            const AxisSolution solved = OutputWindow::solve(AxisHorizontal, 829, Scale(scale), Raster);
+            const OutputMapping solved = OutputWindow::solve(AxisHorizontal, 829, Scale(scale), Raster);
             if (!solved.usable())
                 continue;
             float reach = floorf((float)solved.memory().stop()
@@ -700,7 +700,7 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
         // edges move together. Blanking it loses nothing: that column was never
         // captured.
         for (uint16_t scale = 280; scale <= 1020; ++scale) {
-            const AxisSolution solved = OutputWindow::solve(AxisHorizontal, 829, Scale(scale), Raster);
+            const OutputMapping solved = OutputWindow::solve(AxisHorizontal, 829, Scale(scale), Raster);
             if (!solved.usable())
                 continue;
             const float reach = floorf((float)solved.memory().stop()
@@ -714,7 +714,7 @@ TEST_CASE("the horizontal memory window is an odd number of units wide")
         // Biasing the width must give a unit back, never take one: memory past
         // the picture is memory the playback stage still walks.
         const Scale scale(496);
-        const AxisSolution solved = OutputWindow::solve(AxisHorizontal, 831, scale, Raster);
+        const OutputMapping solved = OutputWindow::solve(AxisHorizontal, 831, scale, Raster);
         const float writeEnds = (float)solved.memory().stop()
                               + OutputWindow::originOffset(AxisHorizontal, scale.magnification())
                               + solved.produced();
@@ -726,7 +726,7 @@ TEST_CASE("the display window is the picture, at both ends")
 {
     const uint16_t Raster = 1916, Capture = 973;
     const Scale scale(557);
-    const AxisSolution solved = OutputWindow::solve(AxisHorizontal, Capture, scale, Raster);
+    const OutputMapping solved = OutputWindow::solve(AxisHorizontal, Capture, scale, Raster);
     const PictureOrigin placed = OutputWindow::placePicture(AxisHorizontal, 
         scale.produced(Capture), Raster, scale.magnification());
 
@@ -769,7 +769,7 @@ static void dumpGrid()
         for (unsigned capture = 100; capture <= 900; capture += 61)
             for (uint16_t scale : scales)
                 for (int i = 0; i < 2; ++i) {
-                    AxisSolution s = OutputWindow::solve(*axes[i], capture, Scale(scale),
+                    OutputMapping s = OutputWindow::solve(*axes[i], capture, Scale(scale),
                                                     raster);
                     std::printf("solve %s %u %u %u %.4f %d %d %d %d %d\n",
                                 names[i], raster, capture, scale, s.produced(),
@@ -816,7 +816,7 @@ int main(int argc, char **argv)
 // band that does NOT flash while the source's border does when the capture
 // takes forty fewer.
 static float lastCaptureUnitRead(const Axis &axis, Scale scale,
-                                 const AxisSolution &solved)
+                                 const OutputMapping &solved)
 {
     const float lastUnit = (float)solved.display().start() - 1.0f;
     const float pos = (lastUnit - (float)solved.memory().stop()
@@ -834,14 +834,14 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
     SUBCASE("vertically, at the bench 320x256@50 framing") {
         const uint16_t Raster = 1124, Capture = 582;
         const Scale scale(552);
-        const AxisSolution solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster);
+        const OutputMapping solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster);
         CHECK(lastCaptureUnitRead(AxisVertical, scale, solved) <= (float)Capture);
     }
 
     SUBCASE("horizontally, at the bench 320x256@50 framing") {
         const uint16_t Raster = 1919, Capture = 998;
         const Scale scale(568);
-        const AxisSolution solved = OutputWindow::solve(AxisHorizontal, Capture, scale, Raster);
+        const OutputMapping solved = OutputWindow::solve(AxisHorizontal, Capture, scale, Raster);
         CHECK(lastCaptureUnitRead(AxisHorizontal, scale, solved)
               <= (float)Capture - 1.0f);
     }
@@ -850,11 +850,11 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
         for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
             const Scale scale(reg);
 
-            const AxisSolution v = OutputWindow::solve(AxisVertical, 582, scale, 1124);
+            const OutputMapping v = OutputWindow::solve(AxisVertical, 582, scale, 1124);
             if (v.usable())
                 REQUIRE(lastCaptureUnitRead(AxisVertical, scale, v) <= 582.0f);
 
-            const AxisSolution h = OutputWindow::solve(AxisHorizontal, 998, scale, 1919);
+            const OutputMapping h = OutputWindow::solve(AxisHorizontal, 998, scale, 1919);
             if (h.usable())
                 REQUIRE(lastCaptureUnitRead(AxisHorizontal, scale, h) <= 997.0f);
         }
@@ -881,7 +881,7 @@ TEST_CASE("the aperture's last unit is interpolated from captured memory")
 // which comes back as nothing, so the unit buys no picture there and costs a
 // black bar across the top -- the test below holds that end.
 static float firstCaptureUnitRead(const Axis &axis, Scale scale,
-                                  const AxisSolution &solved)
+                                  const OutputMapping &solved)
 {
     return ((float)solved.display().stop() - (float)solved.memory().stop()
             - OutputWindow::originOffset(axis, scale.magnification()))
@@ -896,15 +896,15 @@ static const float UnitSlack = 1e-3f;
 TEST_CASE("the aperture's first unit is interpolated from captured memory")
 {
     SUBCASE("horizontally, at the three crept magnifications") {
-        const AxisSolution a = OutputWindow::solve(AxisHorizontal, 1232, Scale(904), 1600);
+        const OutputMapping a = OutputWindow::solve(AxisHorizontal, 1232, Scale(904), 1600);
         CHECK(firstCaptureUnitRead(AxisHorizontal, Scale(904), a)
               >= 1.0f - UnitSlack);
 
-        const AxisSolution b = OutputWindow::solve(AxisHorizontal, 1195, Scale(877), 1600);
+        const OutputMapping b = OutputWindow::solve(AxisHorizontal, 1195, Scale(877), 1600);
         CHECK(firstCaptureUnitRead(AxisHorizontal, Scale(877), b)
               >= 1.0f - UnitSlack);
 
-        const AxisSolution c = OutputWindow::solve(AxisHorizontal, 917, Scale(473), 1600);
+        const OutputMapping c = OutputWindow::solve(AxisHorizontal, 917, Scale(473), 1600);
         CHECK(firstCaptureUnitRead(AxisHorizontal, Scale(473), c)
               >= 1.0f - UnitSlack);
     }
@@ -912,7 +912,7 @@ TEST_CASE("the aperture's first unit is interpolated from captured memory")
     SUBCASE("across the zoom range") {
         for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
             const Scale scale(reg);
-            const AxisSolution h = OutputWindow::solve(AxisHorizontal, 998, scale, 1919);
+            const OutputMapping h = OutputWindow::solve(AxisHorizontal, 998, scale, 1919);
             if (h.usable())
                 REQUIRE(firstCaptureUnitRead(AxisHorizontal, scale, h)
                         >= 1.0f - UnitSlack);
@@ -933,7 +933,7 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
         const uint16_t Raster = 1125, ActiveStart = 41, ActiveStop = 1121;
         const uint16_t Capture = 512;
         const Scale scale(486);
-        const AxisSolution solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster,
+        const OutputMapping solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster,
                                                        ActiveStart, ActiveStop);
         CHECK(solved.display().stop() == ActiveStart);
     }
@@ -942,7 +942,7 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
         const uint16_t Raster = 625, ActiveStart = 44, ActiveStop = 620;
         const uint16_t Capture = 312;
         const Scale scale(455);
-        const AxisSolution solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster,
+        const OutputMapping solved = OutputWindow::solve(AxisVertical, Capture, scale, Raster,
                                                        ActiveStart, ActiveStop);
         CHECK(solved.display().stop() == ActiveStart);
     }
@@ -950,7 +950,7 @@ TEST_CASE("the vertical aperture opens on the picture, not a capture unit later"
     SUBCASE("across the zoom range") {
         for (uint16_t reg = Scale::Min; reg <= Scale::Max; ++reg) {
             const Scale scale(reg);
-            const AxisSolution v = OutputWindow::solve(AxisVertical, 582, scale, 1125, 41, 1121);
+            const OutputMapping v = OutputWindow::solve(AxisVertical, 582, scale, 1125, 41, 1121);
             if (!v.usable())
                 continue;
             const PictureOrigin placed = OutputWindow::placePicture(AxisVertical, 

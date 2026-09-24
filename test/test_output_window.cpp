@@ -50,37 +50,37 @@ TEST_CASE("nothing is inherited from the registers")
     OutputWindow s(798, 513, rasterOf(1445, 1126));
 
     SUBCASE("both scales are computed, not read") {
-        CHECK(((s.scaleOn(AxisHorizontal) >= Scale::Min) && (s.scaleOn(AxisHorizontal) <= Scale::Max)));
-        CHECK(((s.scaleOn(AxisVertical) >= Scale::Min) && (s.scaleOn(AxisVertical) <= Scale::Max)));
+        CHECK(((s.horizontal().scale() >= Scale::Min) && (s.horizontal().scale() <= Scale::Max)));
+        CHECK(((s.vertical().scale() >= Scale::Min) && (s.vertical().scale() <= Scale::Max)));
     }
 
     SUBCASE("both memory windows clear their floor") {
-        CHECK(s.on(AxisHorizontal).memory().stop() >= 8);
-        CHECK(s.on(AxisVertical).memory().stop() >= 0);
+        CHECK(s.horizontal().memory().stop() >= 8);
+        CHECK(s.vertical().memory().stop() >= 0);
     }
 
     SUBCASE("neither window reaches the value that wraps") {
-        CHECK(((s.on(AxisHorizontal).memory().start() < 1444) && (s.on(AxisHorizontal).display().start() < 1444)));
-        CHECK(((s.on(AxisVertical).memory().start() < 1125) && (s.on(AxisVertical).display().start() < 1125)));
+        CHECK(((s.horizontal().memory().start() < 1444) && (s.horizontal().display().start() < 1444)));
+        CHECK(((s.vertical().memory().start() < 1125) && (s.vertical().display().start() < 1125)));
     }
 
     SUBCASE("the vertical picture is not doubled") {
         // ~2200 would mean the capture had been doubled on the way through.
-        CHECK(((s.on(AxisVertical).produced() > 900) && (s.on(AxisVertical).produced() < 1130)));
+        CHECK(((s.vertical().produced() > 900) && (s.vertical().produced() < 1130)));
     }
 
     SUBCASE("the same capture always gives the same answer") {
         OutputWindow again = OutputWindow(798, 513, rasterOf(1445, 1126));
-        CHECK(((again.scaleOn(AxisHorizontal) == s.scaleOn(AxisHorizontal))
-               && (again.scaleOn(AxisVertical) == s.scaleOn(AxisVertical))));
-        CHECK(again.on(AxisHorizontal).memory().stop() == s.on(AxisHorizontal).memory().stop());
-        CHECK(again.on(AxisVertical).display().start() == s.on(AxisVertical).display().start());
+        CHECK(((again.horizontal().scale() == s.horizontal().scale())
+               && (again.vertical().scale() == s.vertical().scale())));
+        CHECK(again.horizontal().memory().stop() == s.horizontal().memory().stop());
+        CHECK(again.vertical().display().start() == s.vertical().display().start());
     }
 
     SUBCASE("a capture that reads zero yields no picture rather than a wrong one") {
         OutputWindow dropped = OutputWindow(0, 0, rasterOf(1445, 1126));
-        CHECK(dropped.on(AxisHorizontal).produced() == 0.0f);
-        CHECK(dropped.on(AxisVertical).produced() == 0.0f);
+        CHECK(dropped.horizontal().produced() == 0.0f);
+        CHECK(dropped.vertical().produced() == 0.0f);
     }
 }
 
@@ -90,17 +90,17 @@ TEST_CASE("the solution carries the front porch to both axes")
     const uint16_t StopH = 1852, StopV = 1121;
 
     OutputWindow solved(1008, 532, rasterOf(Raster, Frame, StopH, StopV));
-    CHECK(solved.on(AxisHorizontal).display().start() <= (int32_t)StopH);
-    CHECK(solved.on(AxisVertical).display().start() <= (int32_t)StopV);
+    CHECK(solved.horizontal().display().start() <= (int32_t)StopH);
+    CHECK(solved.vertical().display().start() <= (int32_t)StopV);
 
     SUBCASE("and without one the raster edge still bounds it") {
         // Compared against the solution that HAS a porch rather than against
         // the porch itself: the window gives back Axis::margin at the far edge,
         // so it sits inside either bound and the porch is the tighter one.
         OutputWindow plain(1008, 532, rasterOf(Raster, Frame));
-        CHECK(plain.on(AxisHorizontal).display().start()
-              > solved.on(AxisHorizontal).display().start());
-        CHECK(plain.on(AxisHorizontal).display().start() < (int32_t)Raster);
+        CHECK(plain.horizontal().display().start()
+              > solved.horizontal().display().start());
+        CHECK(plain.horizontal().display().start() < (int32_t)Raster);
     }
 }
 
@@ -119,8 +119,8 @@ TEST_CASE("the horizontal window goes where the geometry puts it")
         REQUIRE(solved.usable());
         // The far edges part by the parity unit and no more, and the MEMORY one
         // is the wider: the fetch covers every column the aperture shows.
-        const int32_t spare = solved.on(AxisHorizontal).memory().start()
-                            - solved.on(AxisHorizontal).display().start();
+        const int32_t spare = solved.horizontal().memory().start()
+                            - solved.horizontal().display().start();
         CHECK(spare >= 0);
         CHECK(spare <= 1);
     }
@@ -136,13 +136,13 @@ TEST_CASE("the scale is exactly what fitToRaster produced")
     for (uint16_t capture = 400; capture <= 1009; ++capture) {
         OutputWindow solved(capture, 512, rasterOf(1445, 1126));
         REQUIRE(solved.usable());
-        AxisSolution plain = OutputWindow::solve(AxisHorizontal, capture, solved.scaleOn(AxisHorizontal), 1445);
-        CHECK(solved.on(AxisHorizontal).memory().stop() == plain.memory().stop());
-        CHECK(solved.on(AxisHorizontal).memory().start() == plain.memory().start());
-        CHECK(solved.on(AxisHorizontal).display().stop() == plain.display().stop());
-        CHECK(solved.on(AxisHorizontal).display().start() == plain.display().start());
-        CHECK(solved.scaleOn(AxisHorizontal).reg() >= previous);
-        previous = solved.scaleOn(AxisHorizontal).reg();
+        OutputMapping plain = OutputWindow::solve(AxisHorizontal, capture, solved.horizontal().scale(), 1445);
+        CHECK(solved.horizontal().memory().stop() == plain.memory().stop());
+        CHECK(solved.horizontal().memory().start() == plain.memory().start());
+        CHECK(solved.horizontal().display().stop() == plain.display().stop());
+        CHECK(solved.horizontal().display().start() == plain.display().start());
+        CHECK(solved.horizontal().scale().reg() >= previous);
+        previous = solved.horizontal().scale().reg();
     }
 }
 
@@ -155,17 +155,17 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
     // Horizontally the far edges may part by the parity unit; vertically there
     // is no bias, so they still meet.
     OutputWindow solved(749, 512, rasterOf(1445, 1126));
-    const int32_t spare = solved.on(AxisHorizontal).memory().start()
-                        - solved.on(AxisHorizontal).display().start();
+    const int32_t spare = solved.horizontal().memory().start()
+                        - solved.horizontal().display().start();
     CHECK(spare >= 0);
     CHECK(spare <= 1);
-    CHECK(solved.on(AxisVertical).memory().start() == solved.on(AxisVertical).display().start());
+    CHECK(solved.vertical().memory().start() == solved.vertical().display().start());
 
     SUBCASE("and neither reaches the value that wraps") {
         // VDS_VB_ST at VDS_VSYNC_RST rolls the frame; VDS_HB_ST at
         // VDS_HSYNC_RST wraps.
-        CHECK(solved.on(AxisHorizontal).memory().start() <= 1445 - 2);
-        CHECK(solved.on(AxisVertical).memory().start() <= 1126 - 2);
+        CHECK(solved.horizontal().memory().start() <= 1445 - 2);
+        CHECK(solved.vertical().memory().start() <= 1126 - 2);
     }
 }
 
@@ -178,9 +178,9 @@ static void dumpGrid()
             for (unsigned cv = 100; cv <= 600; cv += 71) {
                 OutputWindow s(ch, cv, rasterOf(raster, 1126));
                 std::printf("whole %u %u %u %u %u %d %d %d %d %d %d %d %d\n",
-                            raster, ch, cv, s.scaleOn(AxisHorizontal).reg(), s.scaleOn(AxisVertical).reg(),
-                            s.on(AxisHorizontal).display().stop(), s.on(AxisHorizontal).memory().stop(), s.on(AxisHorizontal).display().stop(), s.on(AxisHorizontal).display().start(),
-                            s.on(AxisVertical).display().stop(), s.on(AxisVertical).memory().stop(), s.on(AxisVertical).display().stop(), s.on(AxisVertical).display().start());
+                            raster, ch, cv, s.horizontal().scale().reg(), s.vertical().scale().reg(),
+                            s.horizontal().display().stop(), s.horizontal().memory().stop(), s.horizontal().display().stop(), s.horizontal().display().start(),
+                            s.vertical().display().stop(), s.vertical().memory().stop(), s.vertical().display().stop(), s.vertical().display().start());
             }
 }
 

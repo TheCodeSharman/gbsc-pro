@@ -12,7 +12,7 @@
 // widestCapture() -- because that bound is set by the write-start model this
 // class holds, not by anything the capture side knows.
 //
-// RD-5725-1.1 separates the two blanking pairs and AxisSolution's names follow
+// RD-5725-1.1 separates the two blanking pairs and OutputMapping's names follow
 // it. The MEMORY pair, VDS_?B_ST/SP, is "used to get data from memory" -- the
 // window the playback stage fetches through. The DISPLAY pair,
 // VDS_DIS_?B_ST/SP, is the "final display" blanking, "used to clean the output
@@ -21,7 +21,7 @@
 #include <stdint.h>
 
 #include "Axis.h"
-#include "AxisSolution.h"
+#include "OutputMapping.h"
 #include "OutputTiming.h"
 #include "PictureOrigin.h"
 #include "RasterFit.h"
@@ -38,10 +38,10 @@ public:
     OutputWindow(uint16_t horizontalCapture, uint16_t verticalCapture,
                  const OutputTiming &raster);
 
-    // One axis: its two blanking windows and what the scale produced.
-    const AxisSolution &on(const Axis &axis) const;
-
-    Scale scaleOn(const Axis &axis) const;
+    // Each axis's whole answer: its scale, what that produced, and the two
+    // blanking windows bounding it.
+    const OutputMapping &horizontal() const;
+    const OutputMapping &vertical() const;
 
     bool usable() const;
 
@@ -74,7 +74,7 @@ public:
     // ends: nothing is given back to hide the pipeline's run-up, because at
     // every clock OutputMode::EngineCeilingHz allows there is none to hide.
     // docs/investigations/display-window-opens-early.md
-    static AxisSolution solve(const Axis &axis, uint16_t capture, Scale scale,
+    static OutputMapping solve(const Axis &axis, uint16_t capture, Scale scale,
                               uint16_t rasterTotal, uint16_t activeStart = 0,
                               uint16_t activeStop = 0);
 
@@ -133,8 +133,7 @@ private:
     static uint16_t activeStartOn(const Axis &axis, const OutputTiming &raster);
     static uint16_t activeStopOn(const Axis &axis, const OutputTiming &raster);
 
-    AxisSolution horizontal_, vertical_;
-    Scale horizontalScale_, verticalScale_;
+    OutputMapping horizontal_, vertical_;
 };
 
 }  // namespace Tv5725

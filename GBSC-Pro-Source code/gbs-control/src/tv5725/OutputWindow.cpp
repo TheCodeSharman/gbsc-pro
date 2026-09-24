@@ -47,29 +47,22 @@ OutputWindow::OutputWindow() {}
 OutputWindow::OutputWindow(uint16_t horizontalCapture, uint16_t verticalCapture,
                            const OutputTiming &raster)
 {
-    horizontalScale_ = fitToRaster(AxisHorizontal, horizontalCapture,
-                                   raster.horizontalTotal, raster.activeStart,
-                                   raster.activeStop).scale();
-    verticalScale_ = fitToRaster(AxisVertical, verticalCapture,
-                                 raster.verticalTotal, raster.activeLinesStart,
-                                 raster.activeLinesStop).scale();
-
-    horizontal_ = solve(AxisHorizontal, horizontalCapture, horizontalScale_,
+    horizontal_ = solve(AxisHorizontal, horizontalCapture,
+                        fitToRaster(AxisHorizontal, horizontalCapture,
+                                    raster.horizontalTotal, raster.activeStart,
+                                    raster.activeStop).scale(),
                         raster.horizontalTotal, raster.activeStart, raster.activeStop);
-    vertical_ = solve(AxisVertical, verticalCapture, verticalScale_,
+    vertical_ = solve(AxisVertical, verticalCapture,
+                      fitToRaster(AxisVertical, verticalCapture,
+                                  raster.verticalTotal, raster.activeLinesStart,
+                                  raster.activeLinesStop).scale(),
                       raster.verticalTotal, raster.activeLinesStart,
                       raster.activeLinesStop);
 }
 
-const AxisSolution &OutputWindow::on(const Axis &axis) const
-{
-    return axis.vertical() ? vertical_ : horizontal_;
-}
+const OutputMapping &OutputWindow::horizontal() const { return horizontal_; }
 
-Scale OutputWindow::scaleOn(const Axis &axis) const
-{
-    return axis.vertical() ? verticalScale_ : horizontalScale_;
-}
+const OutputMapping &OutputWindow::vertical() const { return vertical_; }
 
 bool OutputWindow::usable() const
 {
@@ -117,7 +110,7 @@ float OutputWindow::originOffset(const Axis &axis, float magnification)
 
 bool OutputWindow::writeFloorBinds(const Axis &axis, uint16_t activeStart)
 {
-    return (float)activeStart <= (float)writeStart(axis).floor + writeStart(axis).constant;
+    return (float)activeStart < (float)writeStart(axis).floor + writeStart(axis).constant;
 }
 
 float OutputWindow::blankingBeforePicture(const Axis &axis, uint16_t activeStart)
@@ -224,11 +217,12 @@ PictureOrigin OutputWindow::placePicture(const Axis &axis, float produced,
     return PictureOrigin(corner, windowStop);
 }
 
-AxisSolution OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scale,
+OutputMapping OutputWindow::solve(const Axis &axis, uint16_t capture, Scale scale,
                                  uint16_t rasterTotal, uint16_t activeStart,
                                  uint16_t activeStop)
 {
-    AxisSolution solved;
+    OutputMapping solved;
+    solved.scale_ = scale;
     solved.produced_ = scale.produced(capture);
     if (solved.produced_ <= 0.0f)
         return solved;

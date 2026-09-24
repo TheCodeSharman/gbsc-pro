@@ -472,9 +472,6 @@ private:
     // an aperture that admits nothing.
     void writeDisplayAperture() const;
 
-    // The aperture the last solve chose on one axis: VDS_DIS_?B_ST/SP.
-    const BlankingTiming &display(const Axis &axis) const;
-
     // This axis's slice of the solved raster: the total it runs to, and where
     // the picture may start and must stop inside it.
     uint16_t rasterTotalOn(const Axis &axis) const;

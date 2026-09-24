@@ -127,23 +127,18 @@ void VideoPath::driveSyncOut(bool on)
 // bench measured black. RD-5725-1.1 states no behaviour for a start at the
 // stop, so the aperture is collapsed to the narrowest measured rather than to
 // the narrowest expressible.
-const BlankingTiming &VideoPath::display(const Axis &axis) const
-{
-    return output_.on(axis).display();
-}
-
 void VideoPath::writeDisplayAperture() const
 {
     if (showing_) {
-        GBS::VDS_DIS_HB_SP::write(display(AxisHorizontal).stop());
-        GBS::VDS_DIS_HB_ST::write(display(AxisHorizontal).start());
-        GBS::VDS_DIS_VB_SP::write(display(AxisVertical).stop());
-        GBS::VDS_DIS_VB_ST::write(display(AxisVertical).start());
+        GBS::VDS_DIS_HB_SP::write(output_.horizontal().display().stop());
+        GBS::VDS_DIS_HB_ST::write(output_.horizontal().display().start());
+        GBS::VDS_DIS_VB_SP::write(output_.vertical().display().stop());
+        GBS::VDS_DIS_VB_ST::write(output_.vertical().display().start());
         return;
     }
 
-    GBS::VDS_DIS_VB_SP::write(display(AxisVertical).stop());
-    GBS::VDS_DIS_VB_ST::write((uint16_t)(display(AxisVertical).stop() + 1));
+    GBS::VDS_DIS_VB_SP::write(output_.vertical().display().stop());
+    GBS::VDS_DIS_VB_ST::write((uint16_t)(output_.vertical().display().stop() + 1));
 }
 
 bool VideoPath::changing() const { return modePending_ || solvePending_; }
@@ -761,9 +756,9 @@ int16_t VideoPath::unitsFor(int16_t pixels, const Scale &scale, const Axis &axis
 bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)
 {
     PanAndZoom wanted = framing_;
-    wanted.panBy(AxisHorizontal, unitsFor(dxPixels, output_.scaleOn(AxisHorizontal), AxisHorizontal),
+    wanted.panBy(AxisHorizontal, unitsFor(dxPixels, output_.horizontal().scale(), AxisHorizontal),
                  usableHorizontal_, reachHorizontal_);
-    wanted.panBy(AxisVertical, unitsFor(dyPixels, output_.scaleOn(AxisVertical), AxisVertical),
+    wanted.panBy(AxisVertical, unitsFor(dyPixels, output_.vertical().scale(), AxisVertical),
                  usableVertical_, reachVertical_);
     return step(wanted);
 }
@@ -819,10 +814,10 @@ bool VideoPath::rasterSolved() const
 bool VideoPath::zoom(int16_t dhPixels, int16_t dvPixels)
 {
     PanAndZoom wanted = framing_;
-    wanted.zoomBy(AxisHorizontal, unitsFor(dhPixels, output_.scaleOn(AxisHorizontal), AxisHorizontal),
+    wanted.zoomBy(AxisHorizontal, unitsFor(dhPixels, output_.horizontal().scale(), AxisHorizontal),
                   usableHorizontal_, reachHorizontal_,
                   narrowestCaptureOn(AxisHorizontal));
-    wanted.zoomBy(AxisVertical, unitsFor(dvPixels, output_.scaleOn(AxisVertical), AxisVertical),
+    wanted.zoomBy(AxisVertical, unitsFor(dvPixels, output_.vertical().scale(), AxisVertical),
                   usableVertical_, reachVertical_,
                   narrowestCaptureOn(AxisVertical));
     return step(wanted);
@@ -914,16 +909,16 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
     // hugs the picture, so it moves in as well as out; narrowing it here would
     // leave the old, wider display window showing unwritten memory at the far
     // edge for the length of a write. Inward moves wait for step 5b.
-    if (solved.on(AxisHorizontal).memory().start() > GBS::VDS_HB_ST::read())
-        GBS::VDS_HB_ST::write(solved.on(AxisHorizontal).memory().start());
-    if (solved.on(AxisVertical).memory().start() > GBS::VDS_VB_ST::read())
-        GBS::VDS_VB_ST::write(solved.on(AxisVertical).memory().start());
+    if (solved.horizontal().memory().start() > GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.horizontal().memory().start());
+    if (solved.vertical().memory().start() > GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.vertical().memory().start());
 
     // 2. Near edges down, if down is where they are going.
-    if (solved.on(AxisHorizontal).memory().stop() < GBS::VDS_HB_SP::read())
-        GBS::VDS_HB_SP::write(solved.on(AxisHorizontal).memory().stop());
-    if (solved.on(AxisVertical).memory().stop() < GBS::VDS_VB_SP::read())
-        GBS::VDS_VB_SP::write(solved.on(AxisVertical).memory().stop());
+    if (solved.horizontal().memory().stop() < GBS::VDS_HB_SP::read())
+        GBS::VDS_HB_SP::write(solved.horizontal().memory().stop());
+    if (solved.vertical().memory().stop() < GBS::VDS_VB_SP::read())
+        GBS::VDS_VB_SP::write(solved.vertical().memory().stop());
 
     // 3. The picture. BYPS cleared because an explicit scale was computed.
     //
@@ -938,27 +933,27 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
     GBS::IF_VB_ST::write(capture.vertical().start());
     GBS::VDS_HSCALE_BYPS::write(0);
     GBS::VDS_VSCALE_BYPS::write(0);
-    GBS::VDS_HSCALE::write(solved.scaleOn(AxisHorizontal).reg());
-    GBS::VDS_VSCALE::write(solved.scaleOn(AxisVertical).reg());
+    GBS::VDS_HSCALE::write(solved.horizontal().scale().reg());
+    GBS::VDS_VSCALE::write(solved.vertical().scale().reg());
 
     // 4. Near edges up, now that the picture they bound is the new one.
-    GBS::VDS_HB_SP::write(solved.on(AxisHorizontal).memory().stop());
-    GBS::VDS_VB_SP::write(solved.on(AxisVertical).memory().stop());
+    GBS::VDS_HB_SP::write(solved.horizontal().memory().stop());
+    GBS::VDS_VB_SP::write(solved.vertical().memory().stop());
 
     // 5. The aperture, which must hug the picture. Through the blank state, so
     // a solve taken while the picture is hidden does not put it back on screen.
     output_ = solved;
-    GBS::VDS_DIS_HB_SP::write(display(AxisHorizontal).stop());
-    GBS::VDS_DIS_HB_ST::write(display(AxisHorizontal).start());
+    GBS::VDS_DIS_HB_SP::write(output_.horizontal().display().stop());
+    GBS::VDS_DIS_HB_ST::write(output_.horizontal().display().start());
     writeDisplayAperture();
 
     // 5b. Far edges INWARD, now that the aperture they bound has closed. The
     // mirror of step 2: a window edge may only cross the display window's in
     // the direction that keeps the picture covered.
-    if (solved.on(AxisHorizontal).memory().start() < GBS::VDS_HB_ST::read())
-        GBS::VDS_HB_ST::write(solved.on(AxisHorizontal).memory().start());
-    if (solved.on(AxisVertical).memory().start() < GBS::VDS_VB_ST::read())
-        GBS::VDS_VB_ST::write(solved.on(AxisVertical).memory().start());
+    if (solved.horizontal().memory().start() < GBS::VDS_HB_ST::read())
+        GBS::VDS_HB_ST::write(solved.horizontal().memory().start());
+    if (solved.vertical().memory().start() < GBS::VDS_VB_ST::read())
+        GBS::VDS_VB_ST::write(solved.vertical().memory().start());
 
     // 6. The playback burst, only if it is not already right. Rewriting
     // PB_FETCH_NUM reprograms the playback FIFO while the picture is being read
