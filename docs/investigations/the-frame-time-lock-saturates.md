@@ -225,6 +225,38 @@ An ISR that cannot service an edge would lose both. So the disturbance is
 specific to what the input vsync path delivers, and a model that blames
 interrupt latency has to explain why one signal survives it.
 
+### The PULSES ARE NOT ON THE PIN -- the signal is malformed, not mistimed
+
+Counting transitions over a full second measures the SIGNAL, with no edge
+timestamping in it at all. `/testbus?ms=1000&if=3` drives the input formatter's
+vertical out and polls it at about 400 kHz, and the VDS's output vsync is swept
+in the same pass as a control. The source runs at 60.3 Hz, so both should read
+about 120.6 transitions per second:
+
+| boot | input vsync | duty | output vsync | duty |
+|---|---|---|---|---|
+| clean | **120** | 3.8% | 120 | 4.2% |
+| disturbed | **90** | **17.5%** | 120 | 4.2% |
+
+**The output is identical on both. The input loses a quarter of its transitions
+and its pulse is 4.6 times wider.** Fewer, much wider pulses -- not a signal
+whose edges are being mistimed, a signal whose edges are not there.
+
+So the edge sampler reading whole multiples of the frame was reporting
+correctly: it is not missing pulses, the pulses are absent. That closes every
+model that blames the ESP's interrupt latency, and it is consistent with the
+output period staying inside 0.06% in the same pass.
+
+The pulse is 2.9 ms wide against a 2.5 us polling interval, so neither figure is
+a sampling artefact.
+
+**Nothing in the chip's configuration accounts for it.** A full 1536-address
+dump on a clean boot against a disturbed one differs in nine bytes that are all
+one divider and its dependents, with no input formatter or sync processor
+setting among them. So this is not a register left unwritten, and a reset at
+boot does not reach it -- a cold boot IS a full reset of the part and is
+disturbed as often as a warm one.
+
 ### The phase itself, with the clock parked
 
 **A CORRECTION THAT IS STEERING CANNOT BE USED TO JUDGE ITS OWN MEASUREMENT.**
@@ -339,10 +371,13 @@ measured line rate.
 
 ## What is still open
 
-- **What disturbs the input vsync path, per boot, for the whole boot.** Every
-  correction of a boot is disturbed or none are, so it is a state set once and
-  held. It reaches the input path and not the output one, and no register
-  differs between the two cases.
+- **What makes the input formatter's vertical output malformed, per boot, for
+  the whole boot.** Every correction of a boot is disturbed or none are, so it
+  is a state set once and held. It reaches the input path and not the output
+  one; no register differs between the two cases; and a full power cycle of the
+  part does not decide it. What feeds that output rather than what configures
+  it is where to look next -- the sync separation ahead of the formatter, and
+  the analog routing the HC32F460 owns, which appears in no register dump.
 - ~~Whether a COLD boot behaves differently.~~ **REFUTED, below.**
 - **Whether the divider should be keyed to the source identity.** The same
   source chose 1436 on one boot and 1440 on the next, because the divider comes
