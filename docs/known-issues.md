@@ -40,28 +40,27 @@ where the read pointer sits relative to the write pointer when the buffer starts
 -- which is what `FrameSync`'s `syncTargetPhase` exists to park at 90 degrees,
 and what the frame time lock does beyond matching rates.
 
-Armed, the lock takes it from three boots in six to one in six, and converges to
-within 0.0001 Hz. It is still off by default, and the boot that shook through it
-is not explained.
+Armed, four boots in six converge to two parts per million and hold. **The other
+two saturate**: the rate correction sits at its +-0.06% clamp and changes sign
+for as long as the lock is armed, and the picture shakes throughout. Nothing in
+the rate distinguishes them -- all six matched the same 60316 mHz and landed on
+the same display clock to within 88 Hz.
 
-**THE LOCK CORRECTS FAR LESS OFTEN THAN ITS INTERVAL SUGGESTS, AND THAT IS A
-CANDIDATE FOR THE BOOT THAT SHAKES.** `runFrequency()` takes two readings of
-the source's field rate and steers only where they agree to
-`Clock::RateAgreement::RelativeTolerance`, which is 0.05% -- 0.03 Hz at 60 Hz.
-Measured on `vga` at 800x600@60, 95 s with the lock armed and the source
-steady: **five corrections against about fifty refusals**, so the pacing
-interval of 1670 ms is not what sets the cadence. The readings it does accept
-spread over a whole hertz -- 60317, 60125, 60221, 60030 and 61194 mHz -- against
-an engine that holds 60.317 Hz across the same window, so the refusals are the
-rule working rather than failing.
+**WHAT CAUSES THE SATURATION IS NOT KNOWN, AND THE PHASE IS NOT LOGGED.** Two
+models have been tried on the bench and one is refuted; the display clock is two
+steps downstream of the phase, so a noisy phase and an oscillating one reach it
+looking alike. `docs/investigations/the-frame-time-lock-saturates.md` has the
+measurements, the loop's arithmetic, and what to instrument before proposing a
+third model. The lock is still off by default.
 
-Two things follow. A lock that corrects every fifteen to twenty seconds takes
-minutes to converge, which is why a survey clipped at 34 s scores worse than
-one clipped at 180 s. And the instrument, not the tolerance, is what is weak:
-`docs/investigations/the-field-rate-measurement-is-unreliable.md` has where the
-spread comes from. Asking the engine for the source rate is what fixed the same
-problem in the rate match; `runFrequency()` still measures it itself, because
-it needs the PHASE from the same pass.
+**The cadence is fixed and was not the cause.** `runFrequency()` measured the
+source's field rate itself and refused to correct unless two readings agreed to
+`Clock::RateAgreement::RelativeTolerance` -- 0.05%, which is 0.03 Hz at 60 Hz --
+while those readings spread over a whole hertz against an engine holding
+60.317 Hz. Measured: **five corrections in 95 s against about fifty refusals**.
+It asks the engine now and makes all fifty-seven the interval intends. That made
+the saturation legible rather than curing it: the shake rate either side is two
+boots in six against one, which at six boots distinguishes nothing.
 
 ### An alternating count latched the scan type -- FIXED
 
