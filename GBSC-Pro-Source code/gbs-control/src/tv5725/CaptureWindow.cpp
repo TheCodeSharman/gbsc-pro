@@ -6,6 +6,7 @@
 namespace Tv5725 {
 
 const uint16_t CaptureWindow::ProgressiveStart;
+const uint16_t CaptureWindow::FirstCapturableUnit;
 
 CaptureWindow::CaptureWindow()
     : horizontalLine_(0), verticalLine_(0), timing_(0.0f) {}
@@ -43,8 +44,9 @@ const BlankingTiming &CaptureWindow::vertical() const { return vertical_; }
 
 BlankingTiming CaptureWindow::progressiveWindow() const
 {
-    return BlankingTiming(ProgressiveStart,
-                          horizontalLine_.progressiveStop(ProgressiveStart));
+    return BlankingTiming(
+        ProgressiveStart,
+        (uint16_t)(ProgressiveStart + horizontalLine_.units()));
 }
 
 const VideoSourceLine &CaptureWindow::lineOn(const Axis &axis) const
@@ -59,12 +61,82 @@ uint16_t CaptureWindow::lineUnitsOn(const Axis &axis) const
 
 uint16_t CaptureWindow::firstUnitOn(const Axis &axis) const
 {
-    return lineOn(axis).firstCapture();
+    return firstCapture(lineOn(axis));
 }
 
 uint16_t CaptureWindow::reachOn(const Axis &axis) const
 {
-    return lineOn(axis).lastCapture();
+    return lastCapture(lineOn(axis));
+}
+
+uint16_t CaptureWindow::capturableOn(const Axis &axis) const
+{
+    return capturable(lineOn(axis));
+}
+
+uint16_t CaptureWindow::videoAtOn(const Axis &axis, float lineFraction) const
+{
+    return videoAt(lineOn(axis), lineFraction);
+}
+
+float CaptureWindow::fractionAtOn(const Axis &axis, uint16_t position) const
+{
+    return fractionAt(lineOn(axis), position);
+}
+
+uint16_t CaptureWindow::firstCapture(const VideoSourceLine &line)
+{
+    // Zero is not a capture start. Measured at 640x480@60, whose pulse is
+    // behind the origin and so raises the floor off nothing: IF_HB_SP2 at 0
+    // doubles and smears the picture, and 1 is clean with every other register
+    // identical. The tail keeps two units clear of the wrap for its own
+    // reasons; this is the head's equivalent.
+    const long floor = (long)line.headBlankingUnits()
+                     + (line.syncAtHead() ? (long)line.syncUnits() : 0L);
+    return floor < (long)FirstCapturableUnit ? FirstCapturableUnit : (uint16_t)floor;
+}
+
+uint16_t CaptureWindow::lastCapture(const VideoSourceLine &line)
+{
+    // `units` is the wrap point, and a window written onto it rolls rather
+    // than clamping, so the last unit a window may stop on is the one before
+    // it. That unit is captured: horizontally it is the last sample of the
+    // front porch, vertically the last line of the vsync pulse.
+    // docs/investigations/the-capture-tail-was-one-unit-short.md
+    //
+    // THE PULSE IS NOT TAKEN OFF THE TAIL. Where the line is counted from the
+    // pulse's trailing edge the next line's pulse does occupy the tail, and
+    // excluding it costs picture: measured at 640x480@60 the right-hand border
+    // goes with it. What arrives there is bounded by the wrap, not by the
+    // pulse. docs/known-issues.md
+    return line.units() < 1 ? 0 : line.units() - 1;
+}
+
+uint16_t CaptureWindow::capturable(const VideoSourceLine &line)
+{
+    // Nothing in the capture path bounds a window's width, so the widest one
+    // that may be taken is this whole span.
+    // docs/investigations/the-tail-green-is-the-vds-line-filter.md
+    const uint16_t first = firstCapture(line), last = lastCapture(line);
+    return last > first ? last - first : 0;
+}
+
+uint16_t CaptureWindow::videoAt(const VideoSourceLine &line, float lineFraction)
+{
+    long at = lrintf(lineFraction * (float)line.units())
+            - (line.syncAtHead() ? 0L : (long)line.syncUnits());
+    if (at < 0)
+        at = 0;
+    return at > (long)line.units() ? line.units() : (uint16_t)at;
+}
+
+float CaptureWindow::fractionAt(const VideoSourceLine &line, uint16_t position)
+{
+    if (line.units() == 0)
+        return 0.0f;
+    const float at = (float)position
+                   + (line.syncAtHead() ? 0.0f : (float)line.syncUnits());
+    return at < 0.0f ? 0.0f : at / (float)line.units();
 }
 
 bool CaptureWindow::usable() const
@@ -90,7 +162,7 @@ CaptureWindow::Placement CaptureWindow::place(const Axis &axis) const
     if (framing_.tunedOn(axis) && usable > 0) {
         wanted = lrintf(framing_.extentOn(axis) * (float)usable);
         width = clampWidth(wanted, line);
-        start = line.videoAt(framing_.originOn(axis));
+        start = videoAt(line, framing_.originOn(axis));
     } else {
         // Nothing has framed this axis yet, so the computed default stands in
         // until the first solve seeds it. clampFramingTo() is where that happens.
@@ -100,7 +172,7 @@ CaptureWindow::Placement CaptureWindow::place(const Axis &axis) const
         // The standard states that position in ITS line. This one is counted
         // from whichever sync edge the chip triggered on, and carries video a
         // lag behind it.
-        start = line.videoAt(from);
+        start = videoAt(line, from);
     }
 
     // The near edge is the pan's and the far edge is the zoom's, so each is
@@ -110,12 +182,12 @@ CaptureWindow::Placement CaptureWindow::place(const Axis &axis) const
     // do. The start still stops short of the end, or a pan far enough right
     // would leave no window at all.
     const long asked = start, wide = width;
-    if (start < (long)line.firstCapture())
-        start = line.firstCapture();
-    if (start > (long)line.lastCapture() - (long)MinimumCapture)
-        start = (long)line.lastCapture() - (long)MinimumCapture;
-    if (start + width > (long)line.lastCapture())
-        width = (long)line.lastCapture() - start;
+    if (start < (long)firstCapture(line))
+        start = firstCapture(line);
+    if (start > (long)lastCapture(line) - (long)MinimumCapture)
+        start = (long)lastCapture(line) - (long)MinimumCapture;
+    if (start + width > (long)lastCapture(line))
+        width = (long)lastCapture(line) - start;
 
     Placement placed = {width, start, width != wanted || width != wide
                                       || start != asked};
@@ -140,7 +212,7 @@ BlankingTiming CaptureWindow::captureOn(const Axis &axis) const
     const long margin = axis.captureMargin();
     const long near = placed.start > margin ? placed.start - margin : 0;
     const long far = placed.start + placed.width + margin;
-    const long last = line.lastCapture();
+    const long last = lastCapture(line);
     return BlankingTiming((uint16_t)near, (uint16_t)(far < last ? far : last));
 }
 
@@ -159,14 +231,14 @@ void CaptureWindow::clampFramingTo(const Axis &axis)
     Placement placed = place(axis);
     if (framing_.tunedOn(axis) && !placed.clamped)
         return;
-    framing_.seedOn(axis, line.fractionAt((uint16_t)placed.start),
+    framing_.seedOn(axis, fractionAt(line, (uint16_t)placed.start),
                     (float)placed.width / (float)usable);
 }
 
 long CaptureWindow::clampWidth(long width, const VideoSourceLine &line)
 {
-    if (width > (long)line.maxCaptureWidth())
-        width = line.maxCaptureWidth();
+    if (width > (long)capturable(line))
+        width = capturable(line);
     return width < (long)MinimumCapture ? (long)MinimumCapture : width;
 }
 

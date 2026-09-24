@@ -1,14 +1,10 @@
 #include "VideoSourceLine.h"
 
-#include "Tv5725Log.h"
-
 #include <math.h>
-#include <stdio.h>
 
 namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
-const uint16_t VideoSourceLine::FirstCapturableUnit;
 
 VideoSourceLine::VideoSourceLine(uint16_t units)
     : units_(units), syncUnits_(0), headBlankingUnits_(0),
@@ -28,71 +24,6 @@ VideoSourceLine VideoSourceLine::frame(uint16_t units)
     return VideoSourceLine(units);
 }
 
-uint16_t VideoSourceLine::units() const { return units_; }
-
-uint16_t VideoSourceLine::syncUnits() const { return syncUnits_; }
-
-uint16_t VideoSourceLine::progressiveStop(uint16_t start) const
-{
-    return start + units_;
-}
-
-uint16_t VideoSourceLine::firstCapture() const
-{
-    // Zero is not a capture start. Measured at 640x480@60, whose pulse is
-    // behind the origin and so raises the floor off nothing: IF_HB_SP2 at 0
-    // doubles and smears the picture, and 1 is clean with every other register
-    // identical. The tail keeps two units clear of the wrap for its own
-    // reasons; this is the head's equivalent.
-    const long floor = (long)headBlankingUnits_
-                     + (syncAtHead_ ? (long)syncUnits_ : 0L);
-    return floor < (long)FirstCapturableUnit ? FirstCapturableUnit : (uint16_t)floor;
-}
-
-uint16_t VideoSourceLine::maxCaptureWidth() const
-{
-    return capturable();
-}
-
-uint16_t VideoSourceLine::videoAt(float lineFraction) const
-{
-    long at = lrintf(lineFraction * (float)units_)
-            - (syncAtHead_ ? 0L : (long)syncUnits_);
-    if (at < 0)
-        at = 0;
-    return at > (long)units_ ? units_ : (uint16_t)at;
-}
-
-float VideoSourceLine::fractionAt(uint16_t position) const
-{
-    if (units_ == 0)
-        return 0.0f;
-    const float at = (float)position + (syncAtHead_ ? 0.0f : (float)syncUnits_);
-    return at < 0.0f ? 0.0f : at / (float)units_;
-}
-
-uint16_t VideoSourceLine::lastCapture() const
-{
-    // `units` is the wrap point, and a window written onto it rolls rather
-    // than clamping, so the last unit a window may stop on is the one before
-    // it. That unit is captured: horizontally it is the last sample of the
-    // front porch, vertically the last line of the vsync pulse.
-    // docs/investigations/the-capture-tail-was-one-unit-short.md
-    //
-    // THE PULSE IS NOT TAKEN OFF THE TAIL. Where the line is counted from the
-    // pulse's trailing edge the next line's pulse does occupy the tail, and
-    // excluding it costs picture: measured at 640x480@60 the right-hand border
-    // goes with it. What arrives there is bounded by the wrap, not by the
-    // pulse. docs/known-issues.md
-    return units_ < 1 ? 0 : units_ - 1;
-}
-
-uint16_t VideoSourceLine::capturable() const
-{
-    uint16_t first = firstCapture(), last = lastCapture();
-    return last > first ? last - first : 0;
-}
-
 VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse,
                                          bool lineDoubled)
 {
@@ -103,5 +34,13 @@ VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse
                            lineDoubled ? DoubledHeadBlankingUnits : 0,
                            pulse.syncAtHead());
 }
+
+uint16_t VideoSourceLine::units() const { return units_; }
+
+uint16_t VideoSourceLine::syncUnits() const { return syncUnits_; }
+
+bool VideoSourceLine::syncAtHead() const { return syncAtHead_; }
+
+uint16_t VideoSourceLine::headBlankingUnits() const { return headBlankingUnits_; }
 
 }  // namespace Tv5725

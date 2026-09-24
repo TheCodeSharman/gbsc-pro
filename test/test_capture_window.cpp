@@ -42,6 +42,48 @@ static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
 
 using namespace Tv5725;
 
+// --- the bounds a line offers, which the framing does not move ---------------
+
+// An unframed window on `line`, since where a window MAY sit is the line's
+// business rather than the framing's. The other axis is given a line of its own.
+static Tv5725::CaptureWindow boundsOn(const Tv5725::VideoSourceLine &line,
+                                      const Tv5725::Axis &axis)
+{
+    return Tv5725::CaptureWindow(axis.vertical() ? Tv5725::VideoSourceLine(64) : line,
+                                 axis.vertical() ? line
+                                                 : Tv5725::VideoSourceLine::frame(8),
+                                 Tv5725::SourceTiming(50.0f));
+}
+
+static uint16_t firstUnitOf(const Tv5725::VideoSourceLine &line,
+                            const Tv5725::Axis &axis)
+{
+    return boundsOn(line, axis).firstUnitOn(axis);
+}
+
+static uint16_t reachOf(const Tv5725::VideoSourceLine &line, const Tv5725::Axis &axis)
+{
+    return boundsOn(line, axis).reachOn(axis);
+}
+
+static uint16_t capturableOf(const Tv5725::VideoSourceLine &line,
+                             const Tv5725::Axis &axis)
+{
+    return boundsOn(line, axis).capturableOn(axis);
+}
+
+static uint16_t videoAtOf(const Tv5725::VideoSourceLine &line,
+                          const Tv5725::Axis &axis, float lineFraction)
+{
+    return boundsOn(line, axis).videoAtOn(axis, lineFraction);
+}
+
+static float fractionAtOf(const Tv5725::VideoSourceLine &line,
+                          const Tv5725::Axis &axis, uint16_t position)
+{
+    return boundsOn(line, axis).fractionAtOn(axis, position);
+}
+
 // --- the framing, held as state rather than read back ------------------------
 
 
@@ -95,9 +137,9 @@ static Tv5725::PanAndZoom press(const Tv5725::VideoSourceLine &line,
 {
     Tv5725::PanAndZoom moved = clampedTo(line, timing, axis);
     if (zoomUnits != 0)
-        moved.zoomBy(axis, zoomUnits, line.units(), line.lastCapture());
+        moved.zoomBy(axis, zoomUnits, line.units(), reachOf(line, axis));
     if (panUnits != 0)
-        moved.panBy(axis, panUnits, line.units(), line.lastCapture());
+        moved.panBy(axis, panUnits, line.units(), reachOf(line, axis));
     return moved;
 }
 
@@ -120,9 +162,9 @@ static Tv5725::PanAndZoom pressedOn(const Tv5725::VideoSourceLine &line,
     Tv5725::PanAndZoom moved = from.tunedOn(axis) ? from
                                                   : clampedTo(line, timing, axis, from);
     if (zoomUnits != 0)
-        moved.zoomBy(axis, zoomUnits, line.units(), line.lastCapture());
+        moved.zoomBy(axis, zoomUnits, line.units(), reachOf(line, axis));
     if (panUnits != 0)
-        moved.panBy(axis, panUnits, line.units(), line.lastCapture());
+        moved.panBy(axis, panUnits, line.units(), reachOf(line, axis));
     return clampedTo(line, timing, axis, moved);
 }
 
@@ -200,7 +242,7 @@ TEST_CASE("the framing is held as state and the window is derived")
         CHECK(far_right.start() <= 1126);
         CHECK(far_right.start() - far_right.stop() == centred.start() - centred.stop());
         BlankingTiming far_left = captureFor(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, -5000);
-        CHECK(far_left.stop() == VideoSourceLine::FirstCapturableUnit);
+        CHECK(far_left.stop() == CaptureWindow::FirstCapturableUnit);
         CHECK(far_left.start() - far_left.stop() == centred.start() - centred.stop());
     }
 
@@ -231,16 +273,16 @@ TEST_CASE("the framing is held as state and the window is derived")
         // pan_capture() bounds it the same way, for the same reason.
         for (int16_t p : {+5000, +600, -5000}) {
             CHECK(captureFor(VideoSourceLine(624), 50.0f, AxisVertical, 0, p).start()
-                  <= VideoSourceLine(624).lastCapture());
+                  <= reachOf(VideoSourceLine(624), AxisVertical));
             CHECK(captureFor(VideoSourceLine(1126), 50.0f, AxisHorizontal, 0, p).start()
-                  <= VideoSourceLine(1126).lastCapture());
+                  <= reachOf(VideoSourceLine(1126), AxisHorizontal));
         }
     }
 
     SUBCASE("the capture stop never lands on the wrap point itself") {
         for (int16_t p : {+5000, +600, +132}) {
             CHECK(captureFor(VideoSourceLine(1265), 50.0f, AxisHorizontal, 0, p).start()
-                  <= VideoSourceLine(1265).lastCapture());
+                  <= reachOf(VideoSourceLine(1265), AxisHorizontal));
         }
     }
 
@@ -336,7 +378,7 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         // The framing is a proportion now, so the reachable edge is asserted on
         // the window it lands on rather than on the units behind it.
         BlankingTiming pinned = captureOf(line, Rate, AxisHorizontal, f);
-        CHECK(pinned.start() == line.lastCapture());
+        CHECK(pinned.start() == reachOf(line, AxisHorizontal));
     }
 
     SUBCASE("and one unit back then actually moves the window") {
@@ -352,7 +394,8 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
     SUBCASE("the same holds at the other end of the line") {
         const VideoSourceLine line(Units);
         PanAndZoom f = pressedOn(line, Rate, AxisHorizontal, 0, -200, PanAndZoom());
-        CHECK(captureOf(line, Rate, AxisHorizontal, f).stop() == line.firstCapture());
+        CHECK(captureOf(line, Rate, AxisHorizontal, f).stop()
+              == firstUnitOf(line, AxisHorizontal));
 
         BlankingTiming at_edge = captureOf(line, Rate, AxisHorizontal, f);
         f = pressedOn(line, Rate, AxisHorizontal, 0, +1, f);
@@ -418,6 +461,13 @@ TEST_CASE("the progressive window spans exactly one line")
         CHECK(shorter.progressiveWindow().start()
               < window.progressiveWindow().start());
     }
+
+    SUBCASE("it may run past the end of the line, and that is not a fault") {
+        // A stop of 1190 on a 1126 unit line was once reported as a stray
+        // write. It is a stop measured from a start, not a position within the
+        // raster, so it rolls.
+        CHECK(window.progressiveWindow().start() > line.units());
+    }
 }
 
 // The capture path drops a unit at each end of the vertical window, so a window
@@ -452,7 +502,7 @@ TEST_CASE("the window each axis reports is the register pair")
     SUBCASE("the far end clamps at the last unit before the wrap") {
         const PanAndZoom framing(0.0f, 1.0f, 0.0f, 1.0f);
         const BlankingTiming got = captureOf(frame, 60.0f, AxisVertical, framing);
-        CHECK(got.start() == frame.lastCapture());
+        CHECK(got.start() == reachOf(frame, AxisVertical));
     }
 }
 
@@ -480,7 +530,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
         BlankingTiming rest = defaultWindowOn(SourceLine, Rate, AxisHorizontal);
         BlankingTiming huge = captureFor(SourceLine, Rate, AxisHorizontal, -5000, 0);
         CHECK(huge.stop() == rest.stop());
-        CHECK(huge.start() == SourceLine.lastCapture());
+        CHECK(huge.start() == reachOf(SourceLine, AxisHorizontal));
     }
 
     SUBCASE("panning to the left stop cannot walk into the sync") {
@@ -490,7 +540,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
 
     SUBCASE("panning to the right stop reaches the last unit before the reset") {
         BlankingTiming right = captureFor(SourceLine, Rate, AxisHorizontal, 0, +5000);
-        CHECK(right.start() == SourceLine.lastCapture());
+        CHECK(right.start() == reachOf(SourceLine, AxisHorizontal));
     }
 
     SUBCASE("the resting picture is untouched") {
@@ -517,7 +567,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
         // difference of one unit between them is a dead zone.
         PanAndZoom f = pressedOn(SourceLine, Rate, AxisHorizontal, 0, -5000, PanAndZoom());
         BlankingTiming at_edge = captureOf(SourceLine, Rate, AxisHorizontal, f);
-        CHECK(at_edge.stop() == SourceLine.firstCapture());
+        CHECK(at_edge.stop() == firstUnitOf(SourceLine, AxisHorizontal));
 
         f = pressedOn(SourceLine, Rate, AxisHorizontal, 0, +1, f);
         CHECK(captureOf(SourceLine, Rate, AxisHorizontal, f).stop() > at_edge.stop());
@@ -581,21 +631,22 @@ TEST_CASE("no framing puts the capture stop past what the line can write")
         for (bool vertical : {false, true}) {
             const VideoSourceLine line = vertical ? VideoSourceLine(units)
                                             : measuredLine(units, 181, 2553, true);
+            const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
             CAPTURE(units);
             CAPTURE(vertical);
-            CAPTURE(line.lastCapture());
+            CAPTURE(reachOf(line, axis));
 
             for (int16_t p : pans) {
                 for (int16_t z : zooms) {
                     CAPTURE(p);
                     CAPTURE(z);
-                    const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
                     const BlankingTiming got = captureFor(line, 50.0f, axis, z, p);
 
-                    CHECK(got.start() <= line.lastCapture());
+                    CHECK(got.start() <= reachOf(line, axis));
                     // The margin is the only thing allowed to reach ahead of
                     // the first capturable unit; the picture behind it is not.
-                    CHECK(got.stop() + axis.captureMargin() >= line.firstCapture());
+                    CHECK(got.stop() + axis.captureMargin()
+                          >= firstUnitOf(line, axis));
                 }
             }
         }
@@ -627,8 +678,8 @@ static void dumpGrid()
                     // same units the old four-integer framing carried, so the
                     // window columns stay comparable across the change.
                     PanAndZoom moved = clampedTo(line, 50.0f, axis);
-                    moved.zoomBy(axis, zoom, line.capturable());
-                    moved.panBy(axis, pan, line.capturable());
+                    moved.zoomBy(axis, zoom, capturableOf(line, axis));
+                    moved.panBy(axis, pan, capturableOf(line, axis));
 
                     BlankingTiming placed = captureOf(line, 50.0f, axis, moved);
 
@@ -671,7 +722,7 @@ TEST_CASE("the default capture starts where video lands, not where the standard 
         BlankingTiming at_head = defaultWindowOn(positive, Rate, AxisHorizontal);
         BlankingTiming behind = defaultWindowOn(inverted, Rate, AxisHorizontal);
         CHECK(at_head.stop() - behind.stop()
-              == positive.syncUnits() - VideoSourceLine::FirstCapturableUnit);
+              == positive.syncUnits() - CaptureWindow::FirstCapturableUnit);
     }
 }
 
@@ -755,6 +806,282 @@ TEST_CASE("one framing names the same source video in either scan mode")
     const uint16_t fine = captureOf(doubled, 50.0f, AxisHorizontal, framing).stop();
     const uint16_t coarse = captureOf(single, 50.0f, AxisHorizontal, framing).stop();
 
-    CHECK(single.fractionAt(coarse)
-          == doctest::Approx(doubled.fractionAt(fine)).epsilon(0.001));
+    CHECK(fractionAtOf(single, AxisHorizontal, coarse)
+          == doctest::Approx(fractionAtOf(doubled, AxisHorizontal, fine))
+                 .epsilon(0.001));
+}
+
+// --- where a window may sit in the counter -----------------------------------
+
+TEST_CASE("the capture stops where the line wraps, and nowhere earlier")
+{
+    // `units` is the wrap point, so the last unit a window may stop on is the
+    // one before it. That unit holds frame: the tail of an undoubled line is
+    // the front porch, and stopping a unit earlier loses a sample of it.
+    CHECK(reachOf(VideoSourceLine(1277), AxisHorizontal) == 1276);
+    CHECK(reachOf(VideoSourceLine(1126), AxisHorizontal) == 1125);
+
+    SUBCASE("the head guard still applies, and the two do not cross") {
+        const VideoSourceLine bench = measuredLine(1277, 181, 2553, true);
+        CHECK(firstUnitOf(bench, AxisHorizontal) < reachOf(bench, AxisHorizontal));
+        CHECK(reachOf(bench, AxisHorizontal) == 1276);
+    }
+}
+
+// IF_HB_SP2 AT ZERO IS NOT A WINDOW THAT STARTS AT ZERO. Measured on the bench
+// at 640x480@60, the one mode whose pulse is behind the origin and so whose
+// floor is otherwise nothing: at 0 the picture is doubled and smeared, and at
+// 1 it is clean, with every other register identical. The tail already keeps
+// two units clear of the wrap for the same kind of reason.
+TEST_CASE("the capture floor never reaches zero")
+{
+    // A line nothing has measured: no pulse, no head blanking, so the floor is
+    // the clamp and nothing else.
+    CHECK(firstUnitOf(VideoSourceLine(1126), AxisHorizontal)
+          == CaptureWindow::FirstCapturableUnit);
+}
+
+// A 100% framing exposes the whole of the source that is not synchronisation:
+// back porch, border and picture alike. The only interval hidden is the hsync
+// pulse, because that is the one part of the line the chip can MEASURE as not
+// being image -- blanking is black active video and is undetectable. Whether
+// the pulse sits at the head of the line is the polarity's to say: normalising
+// inverts a high-active source, which swaps the edge the counter triggers on.
+TEST_CASE("the capture floor hides the sync pulse and nothing else")
+{
+    // 640x480@60 on the bench at PLLAD_MD 1494, HLOW_LEN 172.
+    const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
+
+    SUBCASE("a low-active source has the pulse behind the origin already") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
+        CHECK(firstUnitOf(line, AxisHorizontal) == CaptureWindow::FirstCapturableUnit);
+    }
+
+    SUBCASE("a high-active source has it at the head, so the floor clears it") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
+        CHECK(firstUnitOf(line, AxisHorizontal) == line.syncUnits());
+    }
+
+    SUBCASE("the stop is the last unit before the wrap either way") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
+        CHECK(reachOf(line, AxisHorizontal) == Units - 1);
+    }
+
+    SUBCASE("an inverted pulse keeps the span the head guard would take") {
+        const VideoSourceLine positive = measuredLine(900, 109, 900, true);
+        const VideoSourceLine inverted = measuredLine(900, 109, 900, false);
+        CHECK(capturableOf(inverted, AxisHorizontal)
+                  - capturableOf(positive, AxisHorizontal)
+              == positive.syncUnits() - CaptureWindow::FirstCapturableUnit);
+    }
+}
+
+TEST_CASE("the capture starts where the sync pulse ends")
+{
+    // 800x600@60 at PLLAD_MD 1124. HLOW_LEN 136 of 1124 is the 12.1% duty its
+    // 128-of-1056 hsync gives, so 137 units of pulse.
+    const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
+
+    SUBCASE("a positive pulse sits at the head and the floor clears it") {
+        CHECK(firstUnitOf(measuredLine(Units, HsyncLow, AdcLine, true),
+                          AxisHorizontal) == 137);
+    }
+
+    SUBCASE("an inverted pulse is behind the origin, so the floor is the first unit") {
+        CHECK(firstUnitOf(measuredLine(Units, HsyncLow, AdcLine, false),
+                          AxisHorizontal) == CaptureWindow::FirstCapturableUnit);
+    }
+}
+
+// The capture path writes blanking past the hsync pulse on a doubled line, and
+// a window opened inside it takes that blanking into the picture as saturated
+// green.
+//
+// Measured on the bench RiscPC at 320x256@50, PLLAD_MD 2206, output 1080p, by
+// stepping IF_HB_SP2 one unit at a time and counting green photo columns down
+// the left edge:
+//
+//     IF_HB_SP2  82  88  90  92  94  95  96
+//     green cols 27  19  15  12  10   6   0
+//
+// 82 is that line's floor plus the 3 units the framing origin was off zero, so
+// the guard that creep asks for is 96 - 79 = 17.
+//
+// **A second creep at PLLAD_MD 2200 -- the same divider -- needs 20.** It reads
+// the artefact as green above the blanking beside it rather than as a count of
+// columns over a threshold, and it puts 17.9 units past the pulse at 24.1 and
+// 26.6 where under 8 is clean, 19.9 at 6.0 and 21.9 at 1.3.
+//
+// The two do not contradict each other: a shortfall of a few CAPTURE units is
+// magnified onto the output, so how many columns it covers depends on the
+// framing each creep was taken at, and a residue that is sub-pixel at one
+// magnification is several columns at another. The requirement is in capture
+// units and the guard takes the larger of the two.
+//
+// docs/investigations/tail-green.md
+TEST_CASE("a doubled line's capture clears the blanking the chip writes past the pulse")
+{
+    SUBCASE("the floor clears the pulse by the head blanking") {
+        // The bench line: 1103 IF units, and HLOW_LEN 156 of an ADC line of
+        // 2206 is the 7.07% duty its hsync gives, which the round-up makes 79
+        // units of pulse.
+        const VideoSourceLine line = measuredLine(1103, 156, 2206, true);
+        CHECK(line.syncUnits() == 79);
+        CHECK(firstUnitOf(line, AxisHorizontal)
+              == 79 + VideoSourceLine::DoubledHeadBlankingUnits);
+    }
+
+    SUBCASE("and the clearance is what the creep asked for") {
+        // The bench line at PLLAD_MD 2200: IF line 1101 and HLOW_LEN 156 put
+        // the pulse at 78.1 units.
+        const VideoSourceLine line = measuredLine(1101, 156, 2200, true);
+        CHECK(firstUnitOf(line, AxisHorizontal) - line.syncUnits() >= 22);
+    }
+
+    SUBCASE("a doubled line is placed by IF_HBIN_SP") {
+        const VideoSourceLine doubled = measuredLine(1254, 89, 2506, true);
+        CHECK(firstUnitOf(doubled, AxisHorizontal)
+              == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
+    }
+}
+
+// --- a framing proportion against the counter --------------------------------
+
+// A video standard states where active video begins as a position in its own
+// line, counted from the hsync leading edge. The counter is zeroed on whichever
+// edge the chip triggered on, so the two are the same position only where that
+// edge is the leading one.
+TEST_CASE("a position in the source's line maps onto where video lands in the counter")
+{
+    const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
+    // 800x600@60: sync, back porch and border are 216 of its 1056 pixels.
+    const float ActiveStart = 216.0f / 1056.0f;
+
+    SUBCASE("a positive pulse shares the standard's own origin") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
+        CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 230);
+    }
+
+    SUBCASE("an inverted pulse moves it back by the sync interval as well") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
+        CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 230 - line.syncUnits());
+    }
+
+    SUBCASE("a line nothing has measured maps one to one") {
+        CHECK(videoAtOf(VideoSourceLine(624), AxisVertical, 0.5f) == 312);
+    }
+}
+
+// The blanking is written INTO the head of a doubled line; the video behind it
+// is where IF_HBIN_SP's own reset put it. So it bounds where a window may OPEN
+// and displaces nothing -- which is what a lag does, and the difference is a
+// default framing's worth of picture. Charged as a lag, every position in the
+// line moves on by it: the bench default window ran 129..1083 and became
+// 146..1100, keeping its extent and taking seventeen more units of the line's
+// tail, where the source's picture has already stopped.
+// docs/investigations/the-bar-at-the-right-edge-is-captured-line-tail.md
+TEST_CASE("the blanking at a doubled line's head moves no position in it")
+{
+    // Where AxisHorizontal puts active video on a source running no raster the
+    // standards state. docs/vesa-gtf.md
+    const float ActiveStart = 0.117f;
+    const VideoSourceLine line = measuredLine(1103, 156, 2206, true);
+
+    CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 129);
+}
+
+// The input formatter's counter is reset by the RETIMED hsync, so video sits
+// where the counter says and a progressive line carries no displacement of its
+// own.
+//
+// A fractional lag was applied here instead, and it was a correction for the
+// retiming being bypassed: SyncProcessor::applyForSyncType() wrote
+// SP_HS_LOOP_SEL 1 on both sync types, which takes the retiming module out of
+// circuit. Measured on the bench at 800x600@60, one frozen state, the only
+// variable the routing bit: engaging the retiming moved the card's corner
+// square 99 photo columns, which is 77.4 counter units, against the 77.6 the
+// correction was applying. The whole of it was the bypass.
+// docs/investigations/the-capture-lag-was-the-retiming-bypassed.md
+TEST_CASE("a progressive line carries no video lag")
+{
+    // 800x600@60 at PLLAD_MD 1438, positive-going pulse, undoubled.
+    const VideoSourceLine line = measuredLine(1439, 176, 1438, true);
+
+    CHECK(videoAtOf(line, AxisHorizontal, 0.0f) == 0);
+}
+
+// ONE FRAMING MUST TAKE THE SAME VIDEO IN BOTH SCAN MODES. The framing names a
+// proportion of the source, so the two counters have to be brought onto one
+// another -- and they do not sit where the model had them.
+//
+// Measured on the bench, RiscPC X320 Y256 F50 on `vga`, automation frozen, the
+// capture window crept a unit at a time until the source's flashing border
+// entered the picture. `RetroScaler-Acorn.mdf` states the mode, so the feature
+// is known: h_timings 36,30,44,320,44,38 puts active video at 110..430 of 512,
+// and v_timings 3,16,17,256,17,3 at lines 36..292 of 312.
+//
+// Where each counter puts the card's own edges:
+//
+//   edge                      doubled        undoubled
+//   top / bottom, lines       30.0 / 288.5   28.5 / 287.0
+//   right, of the line        0.8300         0.8839
+//
+// So the undoubled line delivers video 0.0539 of a line LATE, where the frame
+// delivers it early. The two pipelines are not the same one and nothing
+// requires them to agree in sign, nor to agree on a unit: the frame's is a
+// count of counter units and the line's a fraction, each measured as such.
+//
+// **THE MEASUREMENT IS RELATIVE, WHICH IS WHY IT IS WORTH MORE THAN THE ONE IT
+// REPLACES.** Both readings take the same feature on the same source with the
+// same edge finder, so the knee's systematic biases -- the aperture's far-end
+// inset, the interpolation, the threshold -- fall out of the difference. Read
+// against the mode file instead, each counter is out by a further 0.010 to
+// 0.020 of a line, which is the bias rather than a second finding.
+TEST_CASE("one framing takes the same video along the line in both scan modes")
+{
+    // The bench source either side of the doubler: PLLAD_MD 2200 on a 1100
+    // unit line doubled, 1852 undoubled, sync 36 of 512.
+    const float Duty = 36.0f / 512.0f;
+    const VideoSourceLine doubled = measuredLine(
+        1100, (uint16_t)lrintf(2200 * Duty), 2200, true);
+    const VideoSourceLine undoubled = measuredLine(
+        1852, (uint16_t)lrintf(1852 * Duty), 1852, true);
+
+    const float Framing = 0.2036f;
+    const float apart = (float)videoAtOf(undoubled, AxisHorizontal, Framing) / 1852.0f
+                      - (float)videoAtOf(doubled, AxisHorizontal, Framing) / 1100.0f;
+    CHECK(apart == doctest::Approx(0.0f).scale(1.0f).epsilon(0.002f));
+}
+
+// The doubled counter runs at twice the source's line rate, so the same
+// proportion is twice as far in and nothing else differs.
+TEST_CASE("one framing takes the same video whichever scan mode is in force")
+{
+    const float Framing = 36.0f / 312.0f;
+    const VideoSourceLine undoubled = VideoSourceLine::frame(312);
+    const VideoSourceLine doubled = VideoSourceLine::frame(624);
+
+    // Further in by the position and by nothing else: a term that differed
+    // between the modes is the stored framing taking different picture at two
+    // output resolutions.
+    CHECK(videoAtOf(doubled, AxisVertical, Framing)
+              - videoAtOf(undoubled, AxisVertical, Framing)
+          == lrintf(Framing * 312.0f));
+}
+
+// The frame's counter zeroes on the vertical sync pulse's trailing edge, so
+// video starts at the counter's own origin and a framing proportion maps
+// straight onto it.
+TEST_CASE("a framing proportion maps onto the frame's own counter")
+{
+    // The Wii at 480p on ypbpr: 524 counted lines, so a 525-unit frame.
+    const VideoSourceLine frame = VideoSourceLine::frame(525);
+
+    CHECK(videoAtOf(frame, AxisVertical, 0.4f) == 210);
+
+    SUBCASE("and a position maps back to the framing it was taken from") {
+        CHECK(fractionAtOf(frame, AxisVertical,
+                           videoAtOf(frame, AxisVertical, 0.4f))
+              == doctest::Approx(0.4f));
+    }
 }

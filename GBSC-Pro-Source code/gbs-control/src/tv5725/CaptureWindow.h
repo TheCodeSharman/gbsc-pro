@@ -38,6 +38,10 @@ public:
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
 
+    // The earliest unit a window may open on, whatever the sync arrangement
+    // leaves free. docs/known-issues.md
+    static const uint16_t FirstCapturableUnit = 1;
+
     // Clamped on the way in, so the framing kept is one these bounds can
     // realise, and the windows are derived from the same placement -- one unit
     // apart is a dead zone one press wide. A press big enough to overshoot
@@ -64,13 +68,25 @@ public:
 
     // The span the framing is a proportion of: the WHOLE line, which is the
     // same part of the source in either scan mode. What the capture path can
-    // actually reach inside it is VideoSourceLine's own business.
+    // reach inside it is capturableOn().
     uint16_t lineUnitsOn(const Axis &axis) const;
 
-    // The first and last units of the line a capture window may occupy. What
-    // lies outside them is the capture path's own exclusion, not the framing's.
+    // The first and last units of the line a capture window may occupy, and
+    // the span between them. What lies outside them is the capture path's own
+    // exclusion, not the framing's.
     uint16_t firstUnitOn(const Axis &axis) const;
     uint16_t reachOn(const Axis &axis) const;
+    uint16_t capturableOn(const Axis &axis) const;
+
+    // Where a position a video standard states as a fraction of ITS line lands
+    // in this counter. The standard counts from the hsync leading edge; the
+    // counter is zeroed on whichever edge the chip triggered on, so the two
+    // differ by the sync interval where that edge is the trailing one.
+    uint16_t videoAtOn(const Axis &axis, float lineFraction) const;
+
+    // The inverse: which fraction of the source's line the video at this
+    // position in the counter came from.
+    float fractionAtOn(const Axis &axis, uint16_t position) const;
 
     bool usable() const;
 
@@ -93,6 +109,14 @@ private:
     const VideoSourceLine &lineOn(const Axis &axis) const;
     Placement place(const Axis &axis) const;
     BlankingTiming captureOn(const Axis &axis) const;
+
+    // The same bounds against a line held rather than selected by axis, so the
+    // statics below can use them before a window exists.
+    static uint16_t firstCapture(const VideoSourceLine &line);
+    static uint16_t lastCapture(const VideoSourceLine &line);
+    static uint16_t capturable(const VideoSourceLine &line);
+    static uint16_t videoAt(const VideoSourceLine &line, float lineFraction);
+    static float fractionAt(const VideoSourceLine &line, uint16_t position);
 
     // Seeds an axis nobody has framed yet, and brings a framed one back where
     // the line cannot realise it -- a framing left beyond anything reachable

@@ -368,12 +368,12 @@ TEST_CASE("the block states the counters a capture window sits in")
 
         const VideoSourceLine atHead = block.capturableLine(pulse);
         CHECK(atHead.syncUnits() == 159);        // ceil(2201 x 0.0718)
-        CHECK(atHead.firstCapture() == 159);
+        CHECK(atHead.syncAtHead());
 
         // Inverted, the interval is already behind the origin and a guard there
         // would throw away video.
         const VideoSourceLine atTail = block.capturableLine(HsyncPulse(0.0718f, false));
-        CHECK(atTail.firstCapture() == VideoSourceLine::FirstCapturableUnit);
+        CHECK_FALSE(atTail.syncAtHead());
     }
 
     SUBCASE("a doubled line keeps the head blanking clear of the capture") {
@@ -381,8 +381,8 @@ TEST_CASE("the block states the counters a capture window sits in")
         block.writeLineCounter(2200, true);
 
         const VideoSourceLine doubled = block.capturableLine(pulse);
-        CHECK(doubled.firstCapture()
-              == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
+        CHECK(doubled.headBlankingUnits()
+              == VideoSourceLine::DoubledHeadBlankingUnits);
     }
 
     SUBCASE("the frame counts half-lines doubled and source lines otherwise") {
@@ -404,8 +404,7 @@ TEST_CASE("the block states the counters a capture window sits in")
         block.writeLineCounter(2200, false);
 
         CHECK(block.capturableFrame(627).syncUnits() == 0);
-        CHECK(block.capturableFrame(627).firstCapture()
-              == VideoSourceLine::FirstCapturableUnit);
+        CHECK(block.capturableFrame(627).headBlankingUnits() == 0);
     }
 }
 
