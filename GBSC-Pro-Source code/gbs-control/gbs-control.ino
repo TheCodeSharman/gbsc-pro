@@ -6501,10 +6501,10 @@ void startWebserver()
     // without it answers 404 rather than reporting an empty framing.
 #if GBS_DEBUG
     server.on("/geometry", HTTP_GET, [](AsyncWebServerRequest *request) {
-        char body[320];
+        char body[360];
         snprintf_P(body, sizeof(body),
             PSTR("{\"oh\":%u,\"eh\":%u,\"ov\":%u,\"ev\":%u,"
-                 "\"ch\":%u,\"cv\":%u,"
+                 "\"ch\":%u,\"cv\":%u,\"fh\":%u,\"fv\":%u,"
                  "\"poh\":%d,\"peh\":%d,\"pov\":%d,\"pev\":%d,"
                  "\"lineRateHz\":%lu,\"lowLineRate\":%s,"
                  "\"present\":%s,\"state\":\"%s\"}"),
@@ -6514,6 +6514,11 @@ void startWebserver()
             geometry.extentUnitsOn(Tv5725::AxisVertical),
             geometry.lineUnitsOn(Tv5725::AxisHorizontal),
             geometry.lineUnitsOn(Tv5725::AxisVertical),
+            // The earliest unit a capture window may open on, per axis. Held
+            // state, so a caller reads what the engine SOLVED against rather
+            // than re-deriving it from a duty that has moved since.
+            geometry.firstUnitOn(Tv5725::AxisHorizontal),
+            geometry.firstUnitOn(Tv5725::AxisVertical),
             // The proportion itself, in ten-thousandths: the ESP's printf has
             // no %f, and this is the state the framing table stores.
             (int)lrintf(geometry.framing().originOn(Tv5725::AxisHorizontal) * 10000.0f),
