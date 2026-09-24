@@ -68,6 +68,8 @@ bool FrameSync::quietFor(uint32_t ms, uint32_t nowMs) const
 
 bool FrameSync::ready() const { return ready_; }
 
+bool FrameSync::canSteerRate() const { return clock_.driving(); }
+
 int32_t FrameSync::targetPhase() const { return targetPhase_; }
 
 void FrameSync::setTargetPhase(int32_t degrees)

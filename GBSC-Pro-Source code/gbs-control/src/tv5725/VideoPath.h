@@ -284,6 +284,13 @@ public:
     // been solved; ModeBypass -- isBypass() -- while video routes around the VDS.
     const OutputMode *outputMode() const;
 
+    // Whether the video goes through the scaler at all. Asked of the solved
+    // output mode rather than of a bypass predicate: every path that changes
+    // what the output is doing sets the mode, which is one owner, where
+    // RgbhvOutput::isScaling() is a flag a boot leaves false on a unit that
+    // goes on to scale.
+    bool scalerCarriesVideo() const;
+
     // Whether the line doubler is in the capture path. Decided here, because
     // what decides it is whether the doubled frame fits the raster -- and
     // written to three blocks, InputFormatter, VideoProcessor and Deinterlacer,

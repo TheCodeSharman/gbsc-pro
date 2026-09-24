@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -310,6 +310,15 @@ segment-select:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" -o "$(OUT)/test_segment_select" \
 	  "$(HERE)/test_segment_select.cpp"
 	@"$(OUT)/test_segment_select"
+
+## frame-time-lock: host unit tests for the gate in front of the frame time lock
+frame-time-lock:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_frame_time_lock" \
+	  "$(HERE)/test_frame_time_lock.cpp" $(GEOMETRY_RASTER_SRC) \
+	  src/videosource/FrameTimeLock.cpp
+	"$(OUT)/test_frame_time_lock"
 
 ## frame-sync: host unit tests for the frame time lock's two corrections
 frame-sync:
@@ -810,7 +819,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

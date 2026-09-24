@@ -302,6 +302,12 @@ bool VideoPath::solveRaster()
     return true;
 }
 
+bool VideoPath::scalerCarriesVideo() const
+{
+    const OutputMode *mode = outputMode();
+    return mode != NULL && !mode->isBypass();
+}
+
 void VideoPath::adoptRaster()
 {
     // Read back, which is what adopting means: bypass and a custom preset

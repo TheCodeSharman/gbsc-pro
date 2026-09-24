@@ -92,6 +92,11 @@ public:
     // outcomes: the next solve measures again.
     bool matchRate(float sourceFieldRateHz);
 
+    // Whether the rate correction is the one available. A generator driving
+    // the display clock is what makes it possible; without one the rate is
+    // fixed and the raster has to be stretched instead.
+    bool canSteerRate() const;
+
     // One correction. True means the lock ran or had nothing to do; false means
     // the measurement failed and the caller should consider resetting.
     bool runFrequency();

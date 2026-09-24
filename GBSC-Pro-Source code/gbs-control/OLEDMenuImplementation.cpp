@@ -15,6 +15,7 @@
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/tv5725/VideoRoute.h"
 #include "src/tv5725/RgbhvOutput.h"
+#include "src/videosource/FrameTimeLock.h"
 #include <stdio.h>
 
 
@@ -47,6 +48,7 @@ extern const char *ap_password;
 extern const char *device_hostname_full;
 extern WebSocketsServer webSocket;
 extern OLEDMenuManager oledMenu;
+extern FrameTimeLock frameTimeLock;
 unsigned long oledMenuFreezeStartTime;
 unsigned long oledMenuFreezeTimeoutInMS;
 
@@ -516,7 +518,7 @@ static void LoadDefault()
     // to a sync-processor reset. uopt is the user's, and resetting the sync
     // processor is not a reason to touch it.
 
-    rto->syncLockFailIgnore = 16;      //
+    frameTimeLock.forgiveFailures();
     rto->syncWatcherEnabled = true;    //
     Tv5725::Adc::choosePhaseAdc(16);
     Tv5725::Adc::choosePhaseSyncProcessor(16);

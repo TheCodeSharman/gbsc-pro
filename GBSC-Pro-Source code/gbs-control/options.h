@@ -99,7 +99,6 @@ struct runTimeOptions
     // the frame time lock walks away from that on every correction. It lives
     // here because both reach it; Tv5725::VideoPath is handed a reference.
     Tv5725::DisplayClock displayClock;
-    uint8_t syncLockFailIgnore;
     uint8_t applyPresetDoneStage;//应用预置完成阶段
     uint8_t presetID;  // PresetID
     uint8_t osr;
