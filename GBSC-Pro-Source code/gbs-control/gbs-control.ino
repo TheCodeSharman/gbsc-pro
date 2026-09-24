@@ -1017,31 +1017,9 @@ static const uint8_t FrameTimeLockArmPasses = 10;
 static const uint16_t FrameTimeLockArmQuietMs = 500;
 typedef FrameSyncManager<GBS, FrameSyncAttrs> FrameSync;
 
-// Hand the display clock to the external generator, keeping the divider the
-// register still names as the seed to steer to. Does nothing once PCLKIN is
-// selected, or on the HD bypass clock.
-//
-// **THIS DUPLICATES WHAT Tv5725::DisplayClock OWNS** -- adopt() takes the seed
-// off the register and select() writes ExternalPclkIn -- and is not yet
-// substitutable for them: select() also asserts PLL_VCORST and PLL_IS, and the
-// settle below has no counterpart there. Both differences need the bench.
-// docs/video-source-acquisition.md
-static void handDisplayClockToGenerator()
-{
-    const uint8_t selected = GBS::PLL648_CONTROL_01::read();
-    if (selected == Tv5725::DisplayClock::ExternalPclkIn
-        || selected == Tv5725::DisplayClock::HdBypassSeed)
-        return;
-
-    clockGen.enable();
-    ESP.wdtFeed();
-    delayMicroseconds(800);
-    GBS::PLL648_CONTROL_01::write(Tv5725::DisplayClock::ExternalPclkIn);
-}
-
 void externalClockGenResetClock()
 {
-    if (!rto->extClockGenDetected) {
+    if (!rto->displayClock.driving()) {
         return;
     }
     fsDebugPrintf("externalClockGenResetClock()\n");
@@ -1098,7 +1076,7 @@ void externalClockGenSyncInOutRate()
 {
     fsDebugPrintf("externalClockGenSyncInOutRate()\n");
 
-    if (!rto->extClockGenDetected) {
+    if (!rto->displayClock.driving()) {
         return;
     }
     if (GBS::PAD_CKIN_ENZ::read() != 0) {
@@ -1166,24 +1144,17 @@ void externalClockGenSyncInOutRate()
 void externalClockGenDetectAndInitialize()
 {
 
-    rto->displayClock.assumeHz(Tv5725::DisplayClock::FallbackHz);
-    rto->extClockGenDetected = 0;
-
     if (uopt->disableExternalClockGenerator) {
+        rto->displayClock.detach();
+        rto->displayClock.assumeHz(Tv5725::DisplayClock::FallbackHz);
         return;
     }
 
-    if (!clockGen.detect()) {
+    if (!rto->displayClock.attach(clockGen, Tv5725::DisplayClock::FallbackHz)) {
         bootLogPrintf("CLOCKGEN: detect FAILED t=%lums (no external display clock)\n",
                       (unsigned long)millis());
         return;
     }
-    rto->extClockGenDetected = 1;
-    clockGen.begin(rto->displayClock.hzNow());
-
-    // Without this the display clock is never handed over and the internal PLL
-    // keeps driving the encoder.
-    rto->displayClock.driveWith(clockGen);
 
     bootLogPrintf("CLOCKGEN: detected, begin(%lu) t=%lums\n",
                   (unsigned long)rto->displayClock.hzNow(),
@@ -3743,7 +3714,7 @@ static void serviceFrameTimeLock()
     const char *blocked = frameTimeLockBlockedBy();
     if (blocked == NULL) {
         if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
-            const bool success = rto->extClockGenDetected
+            const bool success = rto->displayClock.driving()
                                      ? FrameSync::runFrequency()
                                      : FrameSync::runVsync(uopt->frameTimeLockMethod);
             if (!success) {
@@ -4231,10 +4202,10 @@ void setup()
 
     if (powerOrWireIssue == 0) {
 
-        if (!rto->extClockGenDetected) {
+        if (!rto->displayClock.driving()) {
             externalClockGenDetectAndInitialize();
         }
-        if (rto->extClockGenDetected == 1) {
+        if (rto->displayClock.driving()) {
             Serial.println(F("ext clockgen detected"));
         } else {
             Serial.println(F("no ext clockgen"));
@@ -4479,7 +4450,7 @@ void loop()
         wanted.bob = uopt->deintMode == 1;
         wanted.scanlines = uopt->wantScanlines;
         wanted.scanlineStrength = uopt->scanlineStrength;
-        wanted.relockable = uopt->enableFrameTimeLock || rto->extClockGenDetected;
+        wanted.relockable = uopt->enableFrameTimeLock || rto->displayClock.driving();
         Tv5725::Deinterlacer::choose(wanted);
     }
 
@@ -4564,9 +4535,9 @@ void loop()
                 Tv5725::SyncProcessor::releaseClamp();
             }
 
-            if (rto->extClockGenDetected) {
+            if (rto->displayClock.driving()) {
                 if (!Tv5725::VideoRoute::isHdBypassChannel())
-                    handDisplayClockToGenerator();
+                    rto->displayClock.handOver();
                 externalClockGenSyncInOutRate();
             }
             rto->applyPresetDoneStage = 0;
@@ -5330,7 +5301,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                         break;
                     }
                     if (what.equals("f")) {
-                        if (rto->extClockGenDetected) {
+                        if (rto->displayClock.driving()) {
                             Serial.print(F("old freqExtClockGen: "));
                             Serial.println((uint32_t)rto->displayClock.hzNow());
                             rto->displayClock.assumeHz(Serial.parseInt());
@@ -5397,11 +5368,11 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     break;
                 case ';':
                     externalClockGenResetClock();
-                    if (rto->extClockGenDetected) {
-                        rto->extClockGenDetected = 0;
+                    if (rto->displayClock.driving()) {
+                        rto->displayClock.detach();
                         Serial.println(F("ext clock gen bypass"));
                     } else {
-                        rto->extClockGenDetected = 1;
+                        rto->displayClock.driveWith(clockGen);
                         Serial.println(F("ext clock gen active"));
                         externalClockGenSyncInOutRate();
                     }
@@ -5664,7 +5635,7 @@ void handleType2Command(char argument)
         } break;
         case 'i':
             // toggle active frametime lock method
-            if (!rto->extClockGenDetected) {
+            if (!rto->displayClock.driving()) {
                 FrameSync::reset(uopt->frameTimeLockMethod);
             }
             if (uopt->frameTimeLockMethod == 0) {

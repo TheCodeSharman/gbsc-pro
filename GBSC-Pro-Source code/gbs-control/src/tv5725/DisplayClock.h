@@ -84,9 +84,25 @@ public:
 
     DisplayClock();
 
+    // Bring a generator up on `startHz` and take the display clock from it.
+    // False means nothing answered, which leaves the internal PLL driving the
+    // display -- a working picture that frame time lock cannot steer.
+    bool attach(Clock::ClockGen &generator, uint32_t startHz);
+
     // The generator this board found, if it found one. Absent means the
     // internal PLL is driving the display and there is nothing to steer.
     void driveWith(Clock::ClockGen &generator);
+
+    // Stop steering, without stopping the part: the generator keeps running,
+    // and the next select() gives the display back to the seed's own internal
+    // divider.
+    void detach();
+
+    // Enable the generator and point the part at PCLKIN, which is the two
+    // halves of handing over the display clock. Does nothing once the part is
+    // there, and nothing on the bypass seed -- pass-through drives the encoder
+    // from the source's own timing.
+    void handOver();
 
     // The seed the raster solve chose. A TARGET FREQUENCY, not a byte to write:
     // select() puts ExternalPclkIn in the register instead whenever a generator

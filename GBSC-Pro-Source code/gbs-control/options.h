@@ -127,7 +127,6 @@ struct runTimeOptions
     bool enableDebugPings;
     bool deinterlaceAutoEnabled;
     bool isValidForScalingRGBHV;
-    bool extClockGenDetected;
 };
 // remember adc options across presets
 struct adcOptions

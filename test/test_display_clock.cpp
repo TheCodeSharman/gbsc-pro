@@ -223,7 +223,7 @@ TEST_CASE("the clock steers the generator to the frequency its seed asks for")
 
 TEST_CASE("a board with no generator steers nothing")
 {
-    // extClockGenDetected 0. The internal PLL is driving the display, and
+    // No generator attached. The internal PLL is driving the display, and
     // writing PAD_CKIN_ENZ would hand it to a pin nothing is on.
     Wire.reset();
     Wire.poison(0xE2);
@@ -351,4 +351,118 @@ TEST_CASE("the VCO is released with a generator driving too")
 
     CHECK(Wire.field(0, 0x43, 5, 1) == 0);
     CHECK(Wire.field(0, 0x40, 2, 1) == 1);
+}
+
+TEST_CASE("attaching detects the generator and brings it up on the starting clock")
+{
+    Wire.reset();
+    g_setFreqHz = 0;
+    g_enabled = false;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+
+    CHECK(clock.attach(generator, DisplayClock::FallbackHz));
+    CHECK(clock.driving());
+    CHECK(clock.hzNow() == DisplayClock::FallbackHz);
+
+    SUBCASE("and the part is left disabled until the display clock is handed over") {
+        // begin() writes the frequency and stops there: enabling before the
+        // TV5725 takes an external clock puts one on a pin nothing listens to.
+        CHECK(g_setFreqHz == DisplayClock::FallbackHz);
+        CHECK_FALSE(g_enabled);
+    }
+}
+
+TEST_CASE("a generator that does not answer leaves the internal PLL driving")
+{
+    // SYS_INIT set: the part acknowledges on the bus while it is still bringing
+    // itself up, so an address probe alone is not detection.
+    Wire.reset();
+    Wire.poison(0x80);
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+
+    CHECK_FALSE(clock.attach(generator, DisplayClock::FallbackHz));
+    CHECK_FALSE(clock.driving());
+
+    SUBCASE("and the starting clock is still what the board assumes it runs at") {
+        CHECK(clock.hzNow() == DisplayClock::FallbackHz);
+    }
+}
+
+TEST_CASE("detaching gives the display back to the seed's own divider")
+{
+    Wire.reset();
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.attach(generator, DisplayClock::FallbackHz);
+    clock.hold(0x85);
+
+    clock.detach();
+
+    CHECK_FALSE(clock.driving());
+
+    SUBCASE("so the next selection names the internal divider rather than PCLKIN") {
+        clock.select();
+        CHECK(Wire.bank[0][0x41] == 0x85);
+    }
+}
+
+TEST_CASE("handing over enables the generator and points the part at PCLKIN")
+{
+    Wire.reset();
+    g_enabled = false;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.attach(generator, DisplayClock::FallbackHz);
+    clock.hold(0x85);
+
+    clock.handOver();
+
+    CHECK(g_enabled);
+    CHECK(Wire.bank[0][0x41] == DisplayClock::ExternalPclkIn);
+}
+
+TEST_CASE("the hand over leaves the bypass seed alone")
+{
+    // Pass-through drives the encoder from the source's own timing, so taking
+    // the display clock from the generator there is a mode change nobody asked
+    // for.
+    Wire.reset();
+    Wire.bank[0][0x41] = DisplayClock::HdBypassSeed;
+    g_enabled = false;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.attach(generator, DisplayClock::FallbackHz);
+
+    clock.handOver();
+
+    CHECK(Wire.bank[0][0x41] == DisplayClock::HdBypassSeed);
+    CHECK_FALSE(g_enabled);
+}
+
+TEST_CASE("a part already on PCLKIN is not handed the clock twice")
+{
+    Wire.reset();
+    Wire.bank[0][0x41] = DisplayClock::ExternalPclkIn;
+    g_enabled = false;
+
+    Si5351mcu part;
+    Clock::ClockGen generator(part);
+    DisplayClock clock;
+    clock.attach(generator, DisplayClock::FallbackHz);
+
+    clock.handOver();
+
+    CHECK_FALSE(g_enabled);
 }

@@ -1,5 +1,7 @@
 #include "DisplayClock.h"
 
+#include <Arduino.h>
+
 #include "../../gbs_types.h"
 #include "../clock/ClockGen.h"
 
@@ -63,7 +65,40 @@ DisplayClock::DisplayClock()
 {
 }
 
+bool DisplayClock::attach(Clock::ClockGen &generator, uint32_t startHz)
+{
+    generator_ = 0;
+    hzNow_ = startHz;
+
+    if (!generator.detect())
+        return false;
+
+    generator.begin(startHz);
+    generator_ = &generator;
+    return true;
+}
+
 void DisplayClock::driveWith(Clock::ClockGen &generator) { generator_ = &generator; }
+
+void DisplayClock::detach() { generator_ = 0; }
+
+void DisplayClock::handOver()
+{
+    if (generator_ == 0)
+        return;
+
+    uint8_t selected = GBS::PLL648_CONTROL_01::read();
+    if (selected == ExternalPclkIn || selected == HdBypassSeed)
+        return;
+
+    generator_->enable();
+
+    // The generator's output has to be up before the part is told to clock off
+    // it, or the display runs on a pin carrying nothing.
+    delayMicroseconds(800);
+
+    GBS::PLL648_CONTROL_01::write(ExternalPclkIn);
+}
 
 void DisplayClock::hold(uint8_t seed)
 {
