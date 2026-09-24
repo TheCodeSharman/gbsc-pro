@@ -2543,7 +2543,7 @@ void doPostPresetLoadSteps()
         //
         // Upstream disabled it against a memory map whose capture buffer
         // started at 0x100000, only 356 KB below the guard address, where a
-        // large capture could genuinely trip it. MemoryMap puts the guard at
+        // large capture could genuinely trip it. MemoryWindow puts the guard at
         // the top of the address space with the engine clamping the capture
         // below it, so nothing but a real overrun reaches it.
 
@@ -2552,7 +2552,7 @@ void doPostPresetLoadSteps()
         Tv5725::FrameBuffer::writeFifoLineOffset(0);
         // PB_CAP_OFFSET = PB_FETCH_NUM + 4 was here for standards 3 and 4.
         // Both halves of that pair are Tv5725::Memory's: the offset is
-        // Memory::offsetFor(the output line) and the fetch is computed
+        // MemoryWindow::strideFor(the output line) and the fetch is computed
         // against it, so deriving one from the other after the fact could
         // only fight the model. VideoPath::write() sets both.
 

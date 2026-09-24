@@ -13,10 +13,10 @@
 FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/FrameBuffer.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryMap.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryWindow.h"
 
 using Tv5725::FrameBuffer;
-using Tv5725::MemoryMap;
+using Tv5725::MemoryWindow;
 
 // **EVERY owned field's value must differ from what the poison leaves in its
 // bits**, or dropping that field's write survives the suite. Bit 1 set, bits 3,
@@ -38,13 +38,13 @@ TEST_CASE("the memory map is written, not left to a preset")
 {
     FreshChip chip;
 
-    CHECK(Wire.field(4, 0x51, 0, 21) == MemoryMap::FieldStoreStart);
-    CHECK(Wire.field(4, 0x44, 0, 21) == MemoryMap::FieldStoreGuard);
-    CHECK(Wire.field(4, 0x47, 0, 21) == MemoryMap::FieldStoreGuard);
-    CHECK(Wire.field(4, 0x31, 0, 21) == MemoryMap::CaptureStart);
-    CHECK(Wire.field(4, 0x34, 0, 21) == MemoryMap::CaptureStart);
-    CHECK(Wire.field(4, 0x24, 0, 21) == MemoryMap::CaptureGuard);
-    CHECK(Wire.field(4, 0x27, 0, 21) == MemoryMap::CaptureGuard);
+    CHECK(Wire.field(4, 0x51, 0, 21) == MemoryWindow::FieldStoreStart);
+    CHECK(Wire.field(4, 0x44, 0, 21) == MemoryWindow::FieldStoreGuard);
+    CHECK(Wire.field(4, 0x47, 0, 21) == MemoryWindow::FieldStoreGuard);
+    CHECK(Wire.field(4, 0x31, 0, 21) == MemoryWindow::CaptureStart);
+    CHECK(Wire.field(4, 0x34, 0, 21) == MemoryWindow::CaptureStart);
+    CHECK(Wire.field(4, 0x24, 0, 21) == MemoryWindow::CaptureGuard);
+    CHECK(Wire.field(4, 0x27, 0, 21) == MemoryWindow::CaptureGuard);
 }
 
 TEST_CASE("both bounds are armed, including the one no preset ever switched on")

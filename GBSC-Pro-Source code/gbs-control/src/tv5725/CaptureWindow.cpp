@@ -1,7 +1,7 @@
 #include <math.h>
 #include "CaptureWindow.h"
 
-#include "MemoryMap.h"
+#include "MemoryWindow.h"
 
 namespace Tv5725 {
 
@@ -31,7 +31,7 @@ void CaptureWindow::setFraming(const PanAndZoom &wanted)
     // wrong address on screen and reporting nothing, so the window is narrowed
     // rather than refused -- for the reason the framing is clamped rather than
     // rejected, a dead picture with no way back being the worse failure.
-    const uint16_t fits = MemoryMap::clampWidth(horizontal_.width(), vertical_.width());
+    const uint16_t fits = MemoryWindow::clampWidth(horizontal_.width(), vertical_.width());
     if (fits < horizontal_.width())
         horizontal_ = BlankingTiming(horizontal_.stop(), horizontal_.stop() + fits);
 }

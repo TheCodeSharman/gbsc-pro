@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -289,16 +289,6 @@ source-measurement:
 	  src/tv5725/OutputWindow.cpp src/tv5725/OutputTiming.cpp
 	@"$(OUT)/test_source_measurement"
 
-## memory: host unit tests for the playback burst structure
-#
-# PB_FETCH_NUM sets the memory read request rate, which is one side of the beat
-# that tore the picture across 80 of 493 framings. Pure arithmetic.
-memory:
-	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_memory" \
-	  "$(HERE)/test_memory.cpp" src/tv5725/Memory.cpp
-	@"$(OUT)/test_memory"
-
 ## hold-ramp: host unit tests for the IR hold-to-accelerate ramp
 hold-ramp:
 	@mkdir -p "$(OUT)"
@@ -435,17 +425,18 @@ rgbhv-output:
 	  "$(HERE)/test_rgbhv_output.cpp" src/tv5725/RgbhvOutput.cpp
 	@"$(OUT)/test_rgbhv_output"
 
-## memory-map: host unit tests for the SDRAM layout and the capture capacity
+## memory-window: host unit tests for the SDRAM region a capture occupies
 #
 # Whether the frame the engine is about to capture fits in the buffer the chip
-# was told to write it into -- a question nothing in this firmware has ever
-# asked. Pure address arithmetic, so it costs a second here against a flash
-# cycle and a corrupted picture there.
-memory-map:
+# was told to write it into, and the burst structure playback reads it back
+# with. PB_FETCH_NUM sets the memory read request rate, which is one side of the
+# beat that tore the picture across 80 of 493 framings. Pure arithmetic, so it
+# costs a second here against a flash cycle and a corrupted picture there.
+memory-window:
 	@mkdir -p "$(OUT)"
-	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_memory_map" \
-	  "$(HERE)/test_memory_map.cpp" src/tv5725/MemoryMap.cpp
-	@"$(OUT)/test_memory_map"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -o "$(OUT)/test_memory_window" \
+	  "$(HERE)/test_memory_window.cpp" src/tv5725/MemoryWindow.cpp
+	@"$(OUT)/test_memory_window"
 
 ## sdram-timings: host unit tests for how fast the SDRAM bus may run
 #
@@ -513,7 +504,7 @@ frame-buffer:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_frame_buffer" \
-	  "$(HERE)/test_frame_buffer.cpp" src/tv5725/FrameBuffer.cpp src/tv5725/MemoryMap.cpp
+	  "$(HERE)/test_frame_buffer.cpp" src/tv5725/FrameBuffer.cpp src/tv5725/MemoryWindow.cpp
 	@"$(OUT)/test_frame_buffer"
 
 ## input-formatter: host unit tests for the input formatter's owned fields
@@ -804,7 +795,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load memory-map sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

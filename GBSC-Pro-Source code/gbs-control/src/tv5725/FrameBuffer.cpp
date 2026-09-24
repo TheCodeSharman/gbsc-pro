@@ -1,6 +1,6 @@
 #include "FrameBuffer.h"
 
-#include "MemoryMap.h"
+#include "MemoryWindow.h"
 namespace Tv5725 {
 
 void FrameBuffer::init()
@@ -44,27 +44,27 @@ void FrameBuffer::init()
     RFF_TST_REG::write(0x0);                     // s4_50[3:0]
     RFF_WFF_STA_ADDR_B::write(0x1);              // s4_54[20:0]
 
-    // --- and what MemoryMap derives ------------------------------------
+    // --- and what MemoryWindow derives ------------------------------------
     // The deinterlacer's field store, from address 0. WFF_SAFE_GUARD is 1 in all
     // twelve tables, so only the guard's address was ever a preset's to choose.
-    RFF_WFF_STA_ADDR_A::write(MemoryMap::FieldStoreStart);
-    WFF_SAFE_GUARD_A::write(MemoryMap::FieldStoreGuard);
-    WFF_SAFE_GUARD_B::write(MemoryMap::FieldStoreGuard);
+    RFF_WFF_STA_ADDR_A::write(MemoryWindow::FieldStoreStart);
+    WFF_SAFE_GUARD_A::write(MemoryWindow::FieldStoreGuard);
+    WFF_SAFE_GUARD_B::write(MemoryWindow::FieldStoreGuard);
     WFF_SAFE_GUARD::write(1);
 
     // The capture buffer. _B mirrors _A rather than naming a second buffer --
     // CAP_DOUBLE_BUFFER, PB_DB_BUFFER_EN and PB_DB_FIELD_EN all read 0, so it is
     // inert, but a pair left disagreeing is a trap for whoever enables double
     // buffering next.
-    PB_CAP_BUF_STA_ADDR_A::write(MemoryMap::CaptureStart);
-    PB_CAP_BUF_STA_ADDR_B::write(MemoryMap::CaptureStart);
+    PB_CAP_BUF_STA_ADDR_A::write(MemoryWindow::CaptureStart);
+    PB_CAP_BUF_STA_ADDR_B::write(MemoryWindow::CaptureStart);
 
     // The chip's own bound on the capture buffer, which no preset ever switched
-    // on. The engine already clamps the capture to fit (MemoryMap::clampWidth);
+    // on. The engine already clamps the capture to fit (MemoryWindow::clampWidth);
     // this is the hardware saying it underneath, on a failure whose symptom is a
     // wrong address on screen and no report anywhere.
-    CAP_SAFE_GUARD_A::write(MemoryMap::CaptureGuard);
-    CAP_SAFE_GUARD_B::write(MemoryMap::CaptureGuard);
+    CAP_SAFE_GUARD_A::write(MemoryWindow::CaptureGuard);
+    CAP_SAFE_GUARD_B::write(MemoryWindow::CaptureGuard);
     CAP_SAFE_GUARD_EN::write(1);
 
     // The FIFO request watermarks: MASTER_FLAG sets the HIGH request timing and

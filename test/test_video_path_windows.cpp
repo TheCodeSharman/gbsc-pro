@@ -19,7 +19,7 @@
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
-#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 
@@ -140,7 +140,7 @@ TEST_CASE("the playback stride covers the widest fetch, and holds still while zo
     // wrap the engine solved, and the 1276 seeded in the fixture is what the
     // previous load left behind.
     CHECK(Wire.field(4, 0x37, 0, 10)
-          == Memory::offsetFor(Wire.field(1, 0x0E, 0, 11) + 1));
+          == MemoryWindow::strideFor(Wire.field(1, 0x0E, 0, 11) + 1));
     CHECK(Wire.field(1, 0x0E, 0, 11) != 1276);
     CHECK(Wire.field(4, 0x37, 0, 10) >= Wire.field(4, 0x39, 0, 10));
 

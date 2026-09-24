@@ -10,8 +10,8 @@ namespace Tv5725 {
 // The SDRAM frame buffer subsystem: where capture, playback and the
 // deinterlacer's field store live in memory, and the guards that bound them.
 //
-// The numbers, and every reason for them, are in MemoryMap: this class is only
-// the register traffic, so that MemoryMap stays pure arithmetic.
+// The numbers, and every reason for them, are in MemoryWindow: this class is only
+// the register traffic, so that MemoryWindow stays pure arithmetic.
 //
 // ORDER WITHIN init() IS LOAD-BEARING: the constants transcribed from the preset
 // tables run FIRST, so the derived map wins where the two overlap.

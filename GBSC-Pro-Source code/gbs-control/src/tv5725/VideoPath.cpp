@@ -16,9 +16,8 @@
 #include "Deinterlacer.h"
 #include "HdBypass.h"
 #include "InputFormatter.h"
-#include "Memory.h"
+#include "MemoryWindow.h"
 #include "SamplingClock.h"
-#include "MemoryMap.h"
 #include "OutputMode.h"
 #include "ModeDetect.h"
 #include "SyncProcessor.h"
@@ -944,8 +943,8 @@ void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)
     // PB_FETCH_NUM reprograms the playback FIFO while the picture is being read
     // out of it, which flickers even when the value written is identical.
     // docs/investigations/horizontal-scale-corruption.md
-    uint16_t fetch = Memory::fetchFor(capture.horizontal().width());
-    uint16_t offset = Memory::offsetFor(capture.lineUnitsOn(AxisHorizontal));
+    uint16_t fetch = MemoryWindow::fetchFor(capture.horizontal().width());
+    uint16_t offset = MemoryWindow::strideFor(capture.lineUnitsOn(AxisHorizontal));
     if (GBS::PB_FETCH_NUM::read() != fetch)
         GBS::PB_FETCH_NUM::write(fetch);
     if (GBS::PB_CAP_OFFSET::read() != offset)

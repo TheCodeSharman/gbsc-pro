@@ -181,7 +181,7 @@ TEST_CASE("the solution carries the front porch to both axes")
 
 TEST_CASE("the horizontal window goes where the geometry puts it")
 {
-    // Asserting an absence. Memory::fetchFor sizes PB_FETCH_NUM from the capture
+    // Asserting an absence. MemoryWindow::fetchFor sizes PB_FETCH_NUM from the capture
     // width, which makes the beat independent of HSCALE, so there is no tearing
     // band left for the window to dodge and no table to consult.
     for (uint16_t capture = 400; capture <= 1009; capture += 3) {
