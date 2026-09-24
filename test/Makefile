@@ -318,7 +318,9 @@ frame-sync:
 	  -o "$(OUT)/test_frame_sync" \
 	  "$(HERE)/test_frame_sync.cpp" src/tv5725/FrameSync.cpp \
 	  src/tv5725/DisplayClock.cpp src/tv5725/TestBus.cpp \
-	  src/tv5725/VideoRoute.cpp $(CLOCK_SRC)
+	  src/tv5725/VideoRoute.cpp src/tv5725/TestBusRateMeasurement.cpp \
+	  src/tv5725/SyncMeasurement.cpp src/tv5725/SyncProcessor.cpp \
+	  src/tv5725/Interrupts.cpp src/tv5725/HsyncPulse.cpp $(CLOCK_SRC)
 	"$(OUT)/test_frame_sync"
 
 ## display-clock: host unit tests for the display clock and the raster it affords

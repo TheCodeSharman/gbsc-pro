@@ -8,6 +8,7 @@
 #include "DebugPin.h"
 #include "DisplayClock.h"
 #include "TestBus.h"
+#include "TestBusRateMeasurement.h"
 #include "Tv5725Log.h"
 #include "VideoRoute.h"
 
@@ -42,6 +43,10 @@ const float MaxFrameRateChange = 0.0006f;
 // chance of guessing the field rate wrong when the source's sync changes.
 const int MeasureAttempts = 2;
 
+// How many measurements of the output rate are taken looking for two that
+// agree. Each one spins for up to a frame period, so they are few.
+const uint8_t OutputRateAttempts = 5;
+
 bool rateIsPlausible(float hz)
 {
     return hz >= FrameSync::FieldRateMinHz && hz <= FrameSync::FieldRateMaxHz;
@@ -71,6 +76,102 @@ void FrameSync::setTargetPhase(int32_t degrees)
 }
 
 int16_t FrameSync::lastCorrection() const { return lastCorrection_; }
+
+bool FrameSync::steerable(const char *what) const
+{
+    char line[80];
+
+    if (!clock_.driving()) {
+        snprintf(line, sizeof line, "%s: no external display clock to steer", what);
+        tv5725Log(line);
+        return false;
+    }
+    if (GBS::PAD_CKIN_ENZ::read() != 0) {
+        snprintf(line, sizeof line, "%s: the external clock input pad is off", what);
+        tv5725Log(line);
+        return false;
+    }
+    if (VideoRoute::isHdBypassChannel()) {
+        snprintf(line, sizeof line, "%s: the HD bypass channel carries the video", what);
+        tv5725Log(line);
+        return false;
+    }
+    // Not a sentinel: PLL_VS4 = 11 is what takes the display clock from PCLKIN.
+    // Any other mapped byte is the internal PLL, whose rate nothing can slew.
+    // ../../../docs/tv5725-chip.md
+    if (GBS::PLL648_CONTROL_01::read() != DisplayClock::ExternalPclkIn) {
+        snprintf(line, sizeof line, "%s: the display clock is internal", what);
+        tv5725Log(line);
+        return false;
+    }
+    return true;
+}
+
+// Every sample is printed. The display clock is set to a RATIO involving this
+// rate, so a pair that agrees and is wrong beats against the source for as long
+// as the boot runs -- and declining to steer is silent, so without the samples
+// a refusal and a route that never ran look the same.
+// ../../../docs/known-issues.md
+float FrameSync::agreedOutputRate() const
+{
+    char line[64];
+    float previous = 0.0f;
+
+    for (uint8_t attempt = 0; attempt < OutputRateAttempts; ++attempt) {
+        float rate = TestBusRateMeasurement::outputFrameRateHz();
+
+        snprintf(line, sizeof line, "rate sample %u: %lu mHz", (unsigned)attempt,
+                 (unsigned long)(rate * 1000.0f));
+        tv5725Log(line);
+
+        if (!rateIsPlausible(rate)) {
+            previous = 0.0f;
+            continue;
+        }
+        if (previous != 0.0f && Clock::RateAgreement::agree(previous, rate))
+            return rate;
+        previous = rate;
+    }
+
+    tv5725Log("rate: no two samples agreed, not steering");
+    return 0.0f;
+}
+
+bool FrameSync::matchRate(float sourceFieldRateHz)
+{
+    if (!steerable("rate match"))
+        return false;
+
+    if (!rateIsPlausible(sourceFieldRateHz)) {
+        char line[64];
+        snprintf(line, sizeof line, "rate: no settled source rate yet (%lu mHz)",
+                 (unsigned long)(sourceFieldRateHz * 1000.0f));
+        tv5725Log(line);
+        return false;
+    }
+
+    float outputRate = agreedOutputRate();
+    if (outputRate == 0.0f)
+        return false;
+
+    const uint32_t from = clock_.hzNow();
+    initFrequency(outputRate, from);
+    clock_.slewTo((uint32_t)((sourceFieldRateHz / outputRate) * from));
+
+    // In milli-hertz: the agreement tolerance is 0.05%, which is 0.03 Hz at
+    // 60 Hz, and the clock is set to the RATIO of the two. A pair that agrees
+    // and is wrong puts the output that far from the source, and whole hertz
+    // cannot see it.
+    char line[104];
+    snprintf(line, sizeof line,
+             "rate match: source %lu mHz, output %lu mHz, clock %lu -> %lu",
+             (unsigned long)(sourceFieldRateHz * 1000.0f),
+             (unsigned long)(outputRate * 1000.0f), (unsigned long)from,
+             (unsigned long)clock_.hzNow());
+    tv5725Log(line);
+
+    return true;
+}
 
 bool FrameSync::vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput,
                                     int32_t *phase)
@@ -230,21 +331,9 @@ bool FrameSync::runFrequency()
         return true;
     }
 
-    // The same four conditions the rate match asks, because the same thing is
-    // being steered. Each one is an external state rather than a bad signal, so
-    // none of them is a lock failure.
-    if (GBS::PAD_CKIN_ENZ::read() != 0) {
-        tv5725Log("frame time lock: the external clock input pad is off");
+    // An external state rather than a bad signal, so not a lock failure.
+    if (!steerable("frame time lock"))
         return true;
-    }
-    if (VideoRoute::isHdBypassChannel()) {
-        tv5725Log("frame time lock: the HD bypass channel carries the video");
-        return true;
-    }
-    if (GBS::PLL648_CONTROL_01::read() != DisplayClock::ExternalPclkIn) {
-        tv5725Log("frame time lock: the display clock is internal");
-        return true;
-    }
 
     if (!ready_) {
         tv5725Log("frame time lock: not armed");

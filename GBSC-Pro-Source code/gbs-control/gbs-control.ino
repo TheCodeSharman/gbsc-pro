@@ -1038,103 +1038,6 @@ void externalClockGenResetClock()
     frameSync.clearFrequency();
 }
 
-// A rate two consecutive measurements agree on, or 0 when they never do. Each
-// measurement spins for up to a vsync period, so the attempts are few.
-//
-// Every sample is printed, because the display clock is set to the RATIO of two
-// of these and a pair that agrees and is wrong beats against the source for as
-// long as the boot runs. Refusing to steer is the better outcome and it is
-// silent, so without the samples a refusal and a route that never ran look the
-// same. docs/known-issues.md
-float agreedRate(float (*measure)())
-{
-    const uint8_t Attempts = 5;
-    float previous = 0.0f;
-    for (uint8_t attempt = 0; attempt < Attempts; ++attempt) {
-        float rate = measure();
-        debugPrintf("rate sample %u: %lu mHz\n", (unsigned)attempt,
-                    (unsigned long)(rate * 1000.0f));
-        if (rate < 47.0f || rate > 86.0f) {
-            previous = 0.0f;
-            continue;
-        }
-        if (previous != 0.0f && Clock::RateAgreement::agree(previous, rate))
-            return rate;
-        previous = rate;
-    }
-    debugPrintf("rate: no two of %u samples agreed, not steering\n", (unsigned)Attempts);
-    return 0.0f;
-}
-
-void externalClockGenSyncInOutRate()
-{
-    debugPrintf("externalClockGenSyncInOutRate()\n");
-
-    if (!rto->displayClock.driving()) {
-        return;
-    }
-    if (GBS::PAD_CKIN_ENZ::read() != 0) {
-        return;
-    }
-    if (Tv5725::VideoRoute::isHdBypassChannel()) {
-        return;
-    }
-    if (GBS::PLL648_CONTROL_01::read() != 0x75) {
-        return;
-    }
-
-    // **THE SOURCE'S RATE IS ASKED OF THE ENGINE, NOT MEASURED AGAIN HERE.**
-    // A reading taken off the test bus just after the divider latches is
-    // repeatably wrong -- two samples both read 60529 mHz against a source
-    // running 60317, so no agreement between a pair of them can reject it, and
-    // the clock went 0.8% off and beat for the life of the boot. What the
-    // engine settled on has survived several consecutive readings agreeing.
-    // docs/known-issues.md
-    const float sfr = sourceSampling.settledFieldRateHz();
-    if (sfr < 47.0f || sfr > 86.0f) {
-        debugPrintf("rate: no settled source rate yet (%lu mHz), not steering\n",
-                    (unsigned long)(sfr * 1000.0f));
-        return;
-    }
-
-    // The output's rate has no other owner, so it is measured -- twice, because
-    // one sample is wrong by percent often enough to matter and the clock is set
-    // to the ratio. Not steering at all is the better of the two outcomes: the
-    // next pass measures again.
-
-    float ofr = agreedRate(Tv5725::TestBusRateMeasurement::outputFrameRateHz);
-    if (ofr == 0.0f) {
-        return;
-    }
-
-    uint32_t old = rto->displayClock.hzNow();
-    frameSync.initFrequency(ofr, old);
-
-    rto->displayClock.slewTo((uint32_t)((sfr / ofr) * old));
-
-    // In milli-hertz, because the tolerance that admitted these two is 0.5 Hz
-    // absolute -- 0.83% at 60 Hz -- and the display clock is set to their
-    // RATIO. A pair that agrees and is wrong puts the output that far from the
-    // source, which beats, and a printout in whole hertz cannot see it.
-    debugPrintf("rate match: source %lu mHz, output %lu mHz, clock %lu -> %lu\n",
-                (unsigned long)(sfr * 1000.0f), (unsigned long)(ofr * 1000.0f),
-                (unsigned long)old, (unsigned long)rto->displayClock.hzNow());
-
-    int32_t diff = rto->displayClock.hzNow() - old;
-
-    // F("source Hz: ");
-    // ;//SerialMprint(F("source Hz: "));
-    // ;//SerialMprint(sfr, 5);
-    // ;//SerialMprint(F(" new out: "));
-    // ;//SerialMprint(Tv5725::TestBusRateMeasurement::outputFrameRateHz(), 5);
-    // ;//SerialMprint(F(" clock: "));
-    // ;//SerialMprint(F(" ("));
-    // ;//SerialMprint(diff >= 0 ? "+" : "");
-    // ;//SerialMprint(diff);
-    // ;//SerialMprintln(F(")"));
-    delay(1);
-}
-
 void externalClockGenDetectAndInitialize()
 {
 
@@ -2540,7 +2443,7 @@ static void changeOutputResolution()
     // The raster moved, so the ratio the frequency lock steers by is stale.
     frameSync.cleanup();
     frameSync.clearFrequency();
-    externalClockGenSyncInOutRate();
+    frameSync.matchRate(sourceSampling.settledFieldRateHz());
 }
 
 // Put the stored analog gain back, or start the auto-gain loop from its initial
@@ -4631,7 +4534,7 @@ void loop()
         // re-establishing it here is the only thing that does: the
         // applyPresetDoneStage block fires once and cannot see a later solve.
         frameSync.clearFrequency();
-        externalClockGenSyncInOutRate();
+        frameSync.matchRate(sourceSampling.settledFieldRateHz());
 
     }
 
@@ -4645,7 +4548,7 @@ void loop()
         if (report.vsyncLockStale)
             frameSync.defer(millis());
         if (report.outputRateSettled)
-            externalClockGenSyncInOutRate();
+            frameSync.matchRate(sourceSampling.settledFieldRateHz());
     }
 
     // On the pass that advanced the run, not on a timer of its own: every
@@ -4709,7 +4612,7 @@ void loop()
             if (rto->displayClock.driving()) {
                 if (!Tv5725::VideoRoute::isHdBypassChannel())
                     rto->displayClock.handOver();
-                externalClockGenSyncInOutRate();
+                frameSync.matchRate(sourceSampling.settledFieldRateHz());
             }
             rto->applyPresetDoneStage = 0;
         }
@@ -4718,7 +4621,7 @@ void loop()
 
         GBS::DAC_RGBS_PWDNZ::write(1);  // 
 
-        externalClockGenSyncInOutRate();
+        frameSync.matchRate(sourceSampling.settledFieldRateHz());
         rto->applyPresetDoneStage = 0;
     }
 
@@ -5535,7 +5438,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     saveUserPrefs();
                 } break;
                 case ':':
-                    externalClockGenSyncInOutRate();
+                    frameSync.matchRate(sourceSampling.settledFieldRateHz());
                     break;
                 case ';':
                     externalClockGenResetClock();
@@ -5545,7 +5448,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     } else {
                         rto->displayClock.driveWith(clockGen);
                         Serial.println(F("ext clock gen active"));
-                        externalClockGenSyncInOutRate();
+                        frameSync.matchRate(sourceSampling.settledFieldRateHz());
                     }
                     //{
 

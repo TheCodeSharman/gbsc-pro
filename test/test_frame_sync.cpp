@@ -44,13 +44,19 @@ static bool onOutputBus() { return Wire.field(0, 0x4d, 0, 5) == 0x2; }
 
 uint32_t debugPinTicksPerSecond() { return TicksPerSecond; }
 
+// Added to every second output sample, so a suite can make two readings of the
+// output rate disagree with each other.
+static uint32_t g_outputWobble;
+static unsigned g_outputSamples;
+
 bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
 {
     if (onOutputBus()) {
         if (!g_outputArrives)
             return false;
         *start = 1 + g_outputOffset;
-        *stop = *start + g_outputPeriod;
+        *stop = *start + g_outputPeriod
+                + ((g_outputSamples++ & 1) ? g_outputWobble : 0);
         return true;
     }
     if (!g_inputArrives)
@@ -82,6 +88,8 @@ void aLockedSource()
     g_outputOffset = g_inputPeriod / 4;
     g_inputArrives = true;
     g_outputArrives = true;
+    g_outputWobble = 0;
+    g_outputSamples = 0;
     g_probes = 0;
     g_logLines.clear();
     VideoRoute::toScaler();
@@ -464,5 +472,123 @@ TEST_CASE("two readings of the source rate that disagree steer nothing")
     lock.initFrequency(60.0f, clock.hzNow());
 
     CHECK_FALSE(lock.runFrequency());
+    CHECK(clock.hzNow() == 108000000u);
+}
+
+namespace {
+
+// A board whose generator drives the display, with the part on PCLKIN.
+struct SteerableClock {
+    Si5351mcu part;
+    Clock::ClockGen generator;
+    DisplayClock clock;
+
+    SteerableClock() : generator(part)
+    {
+        theGeneratorDrivesTheDisplay();
+        clock.attach(generator, 108000000u);
+        clock.hold(0x85);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("the rate match puts the output's field rate on the source's")
+{
+    // The clock is set to the RATIO, so an output measured fast is answered by
+    // a proportionally slower clock.
+    aLockedSource();
+    g_outputPeriod = ticksForHz(60.3f);
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+
+    CHECK(lock.matchRate(60.0f));
+
+    const double wanted = 108000000.0 * (60.0 / 60.3);
+    CHECK(board.clock.hzNow() == doctest::Approx((double)wanted).epsilon(0.0005));
+}
+
+TEST_CASE("a source rate the engine has not settled on steers nothing")
+{
+    // Asked of the engine rather than measured again here: a reading taken off
+    // the test bus just after the divider latches is repeatably wrong, and two
+    // such samples agree with each other.
+    aLockedSource();
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+
+    CHECK_FALSE(lock.matchRate(0.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
+}
+
+TEST_CASE("an output rate no two samples agree on steers nothing")
+{
+    // The clock is set to a ratio involving this rate and nothing re-measures
+    // until the next solve, so a pair that agrees and is wrong beats against
+    // the source for the life of the boot. Declining is the better outcome.
+    aLockedSource();
+    g_outputWobble = g_outputPeriod / 10;
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+
+    CHECK_FALSE(lock.matchRate(60.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
+}
+
+TEST_CASE("the rate match establishes the ratio the per-frame correction needs")
+{
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 100;
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+
+    REQUIRE(lock.matchRate(60.0f));
+    const uint32_t matched = board.clock.hzNow();
+
+    CHECK(lock.runFrequency());
+    CHECK(board.clock.hzNow() != matched);
+}
+
+TEST_CASE("the rate match leaves the display alone while the bypass carries it")
+{
+    aLockedSource();
+    g_outputPeriod = ticksForHz(60.3f);
+
+    SteerableClock board;
+    VideoRoute::toHdBypassChannel();
+    FrameSync lock(board.clock);
+
+    CHECK_FALSE(lock.matchRate(60.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
+}
+
+TEST_CASE("the rate match leaves the display alone on the internal PLL")
+{
+    aLockedSource();
+    g_outputPeriod = ticksForHz(60.3f);
+
+    SteerableClock board;
+    GBS::PLL648_CONTROL_01::write(0x85);
+    FrameSync lock(board.clock);
+
+    CHECK_FALSE(lock.matchRate(60.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
+}
+
+TEST_CASE("a board with no generator has no rate to match")
+{
+    aLockedSource();
+    theGeneratorDrivesTheDisplay();
+
+    DisplayClock clock;
+    clock.assumeHz(108000000u);
+    FrameSync lock(clock);
+
+    CHECK_FALSE(lock.matchRate(60.0f));
     CHECK(clock.hzNow() == 108000000u);
 }

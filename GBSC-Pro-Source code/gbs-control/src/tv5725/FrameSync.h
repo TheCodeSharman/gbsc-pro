@@ -75,12 +75,38 @@ public:
     // proportional to the input field rate.
     void initFrequency(float outFramesPerS, uint32_t displayClockHz);
 
+    // Put the output's field rate on the source's, in one step, by setting the
+    // display clock to the ratio of the two. The coarse half of the same job
+    // runFrequency() then does a frame at a time -- and what establishes the
+    // ratio it works from, so a solve that moves the raster calls this before
+    // the lock can correct anything.
+    //
+    // `sourceFieldRateHz` is asked of the engine rather than measured here. A
+    // reading taken off the test bus just after the divider latches is
+    // repeatably wrong -- two samples both read 60529 mHz against a source
+    // running 60317 -- so no agreement between a pair of them can reject it,
+    // and the clock went 0.8% off and beat for the life of the boot.
+    // ../../../docs/known-issues.md
+    //
+    // False means nothing was steered, which is the better of the two
+    // outcomes: the next solve measures again.
+    bool matchRate(float sourceFieldRateHz);
+
     // One correction. True means the lock ran or had nothing to do; false means
     // the measurement failed and the caller should consider resetting.
     bool runFrequency();
     bool runVsync(uint8_t frameTimeLockMethod);
 
 private:
+    // Whether the display clock is ours to steer at all: a generator driving
+    // it, the pad enabled, the scaler carrying the video, and the part taking
+    // PCLKIN. Every one is an external state rather than a bad signal.
+    bool steerable(const char *what) const;
+
+    // The output's rate, from two measurements that agree, or 0 when no two of
+    // them do. It has no other owner, so unlike the source's it is measured.
+    float agreedOutputRate() const;
+
     bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput,
                              int32_t *phase);
     bool bothVsyncPeriodsReadable();
