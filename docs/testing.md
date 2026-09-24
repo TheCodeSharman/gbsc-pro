@@ -277,6 +277,42 @@ was caught, the last by two separate assertions.
 - **No tests for removals.**
 - Tests set the state they need rather than saving and restoring it.
 
+**GO THROUGH THE PUBLIC INTERFACE, AND ONLY THAT.** Set the class up the way the
+code base sets it up, then check what comes out -- for this firmware that is
+usually the registers, because the registers are the behaviour. A test that
+reaches past the interface pins the route rather than the result, and the route
+is what a refactor is entitled to change.
+
+**Widening an interface to let a test in is the defect, not the fix.** If a step
+has to be made public to assert on it, that is the signal to assert on the
+result instead. An arithmetic helper made public "for the tests" was how nine of
+`OutputWindow`'s private steps ended up on its face, and the comment saying so
+was the smell admitting itself.
+
+**An intermediate either reaches the registers or it does not.** If it does, the
+result assertions already cover it and the step assertion is redundant; if it
+does not, it does not matter. Either way the step assertion earns nothing --
+and it costs, because it reads as coverage. `test_axis.cpp` asserted
+`originOffset(AxisVertical, 2.0f)` was within 1.0 of 2 when the value is 1.8:
+the vertical write-start constant could be moved from 0.8 to 0.9 and the
+assertion still passed. A test that cannot fail for the thing it names is worse
+than no test, because it stops anyone writing the one that can.
+
+**Prefer socialised tests to isolated ones.** `SolvedEngine.h` builds a real
+`VideoPath`, `InputFormatter`, `SourceMeasurement` and `FramingTable` over the
+fake bus and drives the acquisition path, so a case says "this source, this
+output mode, these presses" and asserts `Wire.field(...)`. Real collaborators
+catch what a stubbed one cannot: the seam between two classes is where the
+engine's faults have actually been.
+
+**A behaviour-preserving move is not proven by a `--dump` oracle alone.** The
+oracle re-runs the cases it already had; it cannot see a branch none of them
+enters. Moving the placement arithmetic off `Axis` turned `writeFloorBinds()`'s
+`<=` into `<`, and 55 suites stayed green with the dump byte-identical, because
+nothing sits on the boundary the two disagree about. **Mutate the moved code and
+confirm the mutations are still caught** -- that is what found it, on the first
+run.
+
 ### Say so when a fix cannot be tested
 
 Several reliability fixes here have no acceptance test because their trigger is
