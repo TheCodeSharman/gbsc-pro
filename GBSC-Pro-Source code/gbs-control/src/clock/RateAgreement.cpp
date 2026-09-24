@@ -3,7 +3,6 @@
 namespace Clock {
 
 constexpr float RateAgreement::RelativeTolerance;
-constexpr float RateAgreement::AbsoluteToleranceHz;
 
 bool RateAgreement::agree(float oneHz, float otherHz)
 {
@@ -16,7 +15,7 @@ bool RateAgreement::agree(float oneHz, float otherHz)
     if (relative != relative)
         return false;
 
-    return difference <= AbsoluteToleranceHz && relative <= RelativeTolerance;
+    return relative <= RelativeTolerance;
 }
 
 }  // namespace Clock

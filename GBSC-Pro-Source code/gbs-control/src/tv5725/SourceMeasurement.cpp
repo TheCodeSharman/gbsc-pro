@@ -211,6 +211,14 @@ void SourceMeasurement::takeJudgedRate()
     rateRejections_ = 0;
 }
 
+float SourceMeasurement::settledFieldRateHz() const
+{
+    if (judgedRateHz_ == 0 || judgedLines_ == 0)
+        return 0.0f;
+
+    return (float)judgedRateHz_ / (float)(judgedLines_ + 1);
+}
+
 void SourceMeasurement::forgetHeldRate()
 {
     judgedLines_ = 0;

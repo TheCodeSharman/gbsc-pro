@@ -155,6 +155,17 @@ public:
     // A refusal leaves the last believed rate standing rather than zeroing it.
     uint32_t lineRateHz() const;
 
+    // The field rate the engine SETTLED on, from the pair it judged. 0 before
+    // anything has been judged.
+    //
+    // **WHAT SETS THE DISPLAY CLOCK ASKS THIS RATHER THAN MEASURING AGAIN.** A
+    // reading taken off the test bus just after the divider latches is
+    // repeatably wrong -- two samples both read 60529 mHz against a source
+    // running 60317 -- so no agreement between a pair of them can reject it.
+    // This one has already survived RateAgreementAttempts consecutive readings
+    // agreeing, which is the test a pair cannot do. docs/known-issues.md
+    float settledFieldRateHz() const;
+
 
     // The count the steadiness gate settled on, which is not the last sample.
     uint16_t steadyLines() const;

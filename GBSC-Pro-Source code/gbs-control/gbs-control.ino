@@ -1066,16 +1066,22 @@ void externalClockGenResetClock()
     FrameSync::clearFrequency();
 }
 
-float sourceFieldRateOffIfBus() { return Tv5725::TestBusRateMeasurement::sourceFieldRateHz(false); }
-
 // A rate two consecutive measurements agree on, or 0 when they never do. Each
 // measurement spins for up to a vsync period, so the attempts are few.
+//
+// Every sample is printed, because the display clock is set to the RATIO of two
+// of these and a pair that agrees and is wrong beats against the source for as
+// long as the boot runs. Refusing to steer is the better outcome and it is
+// silent, so without the samples a refusal and a route that never ran look the
+// same. docs/known-issues.md
 float agreedRate(float (*measure)())
 {
-    const uint8_t Attempts = 3;
+    const uint8_t Attempts = 5;
     float previous = 0.0f;
     for (uint8_t attempt = 0; attempt < Attempts; ++attempt) {
         float rate = measure();
+        debugPrintf("rate sample %u: %lu mHz\n", (unsigned)attempt,
+                    (unsigned long)(rate * 1000.0f));
         if (rate < 47.0f || rate > 86.0f) {
             previous = 0.0f;
             continue;
@@ -1084,6 +1090,7 @@ float agreedRate(float (*measure)())
             return rate;
         previous = rate;
     }
+    debugPrintf("rate: no two of %u samples agreed, not steering\n", (unsigned)Attempts);
     return 0.0f;
 }
 
@@ -1104,16 +1111,24 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
-    // Both rates twice, because one sample is wrong by percent often enough to
-    // matter and the clock is set to their ratio. Steering on a disputed pair
-    // leaves the output a whole hertz off the source, which FrameSync then
-    // walks back over tens of seconds of dropped frames -- and the encoder locks
-    // to the wrong rate on the way. Not steering at all is the better of the
-    // two: the next pass measures again.
-    float sfr = agreedRate(sourceFieldRateOffIfBus);
-    if (sfr == 0.0f) {
+    // **THE SOURCE'S RATE IS ASKED OF THE ENGINE, NOT MEASURED AGAIN HERE.**
+    // A reading taken off the test bus just after the divider latches is
+    // repeatably wrong -- two samples both read 60529 mHz against a source
+    // running 60317, so no agreement between a pair of them can reject it, and
+    // the clock went 0.8% off and beat for the life of the boot. What the
+    // engine settled on has survived several consecutive readings agreeing.
+    // docs/known-issues.md
+    const float sfr = sourceSampling.settledFieldRateHz();
+    if (sfr < 47.0f || sfr > 86.0f) {
+        debugPrintf("rate: no settled source rate yet (%lu mHz), not steering\n",
+                    (unsigned long)(sfr * 1000.0f));
         return;
     }
+
+    // The output's rate has no other owner, so it is measured -- twice, because
+    // one sample is wrong by percent often enough to matter and the clock is set
+    // to the ratio. Not steering at all is the better of the two outcomes: the
+    // next pass measures again.
 
     float ofr = agreedRate(Tv5725::TestBusRateMeasurement::outputFrameRateHz);
     if (ofr == 0.0f) {

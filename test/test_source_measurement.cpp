@@ -2049,3 +2049,31 @@ TEST_CASE("one count off by one is not enough to read as interlaced")
         CHECK(measurement.measureScanType() == SourceMeasurement::ScanProgressive);
     }
 }
+
+// **THE ONE-SHOT THAT SETS THE DISPLAY CLOCK MUST NOT RE-MEASURE THIS.** It
+// took its own reading off the test bus, and a reading taken just after the
+// divider latches is repeatably wrong: two samples both read 60529 mHz against
+// a source running 60317, so no agreement rule between them can reject it. The
+// clock went 0.8% off the source and beat for the life of the boot.
+//
+// What the engine settled on has already survived RateAgreementAttempts
+// consecutive readings agreeing, which is the test a pair of samples cannot do.
+TEST_CASE("the settled field rate is the judged pair, not a fresh reading")
+{
+    seedSourceLines(627);
+    SourceMeasurement measurement(inputFormatter);
+
+    SUBCASE("nothing is offered before a rate has been judged") {
+        CHECK(measurement.settledFieldRateHz() == 0.0f);
+    }
+
+    SUBCASE("and afterwards it is the rate the line rate was accepted at") {
+        REQUIRE(measurePastGate(measurement) != SourceMeasurement::NotSteady);
+        const uint32_t lineRate = measurement.lineRateHz();
+        REQUIRE(lineRate != 0);
+
+        const float settled = measurement.settledFieldRateHz();
+        CHECK(settled > 0.0f);
+        CHECK(settled == doctest::Approx((float)lineRate / 628.0f).epsilon(0.0001));
+    }
+}
