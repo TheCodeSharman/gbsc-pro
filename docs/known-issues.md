@@ -1837,6 +1837,40 @@ patch: one fact -- what an RGBHV source's output is -- stored where two writers
 can disagree, with no check that they do not.
 `docs/video-source-acquisition.md`.
 
+## The frame time lock arms itself on a cold boot with the option off
+
+**Measured once, on a true cold boot, and not explained.** `/framesync` came up
+`ready:true` and the console printed corrections at the design cadence, so the
+option was enabled in RAM -- and the boot log says it was not:
+
+    PREFS: LittleFS.begin()=1 at t=1737ms (took 1ms)
+    PREFS: attempt 1 t=1738ms open=1 size=39 got=39 plausible=1 first=[35 30 41 30]
+    PREFS: loaded presetPreference=5 frameTimeLock=0 slot=65 SeleInputSource=2 suspect=0
+    BOOT: reason='External System'
+
+**The read was clean**, so the power-up race on the SPI flash is refuted here:
+39 bytes asked for and 39 got, plausible, not suspect. `/preferencesv2.txt`
+reads `50A000000111` and index 1 is `enableFrameTimeLock`, verified against the
+WRITE order in `saveUserPrefs()` rather than assumed.
+
+Nothing else can turn it on. `FrameSync::init()` is reachable from exactly one
+place, `FrameTimeLock::unarmedBecause()`, which `blockedBy()` only reaches after
+`conditions.optionEnabled` passes; `conditions.optionEnabled` is
+`uopt->enableFrameTimeLock` directly; and the only writers of that field are the
+defaults (0), the preferences parse, and `toggleFrameTimeLock()`, whose two
+call sites are `/sc?W` and `/uc?5`. Neither was sent -- the bench operator did
+nothing but switch the power off and on, and the web UI only READS that bit to
+draw its switch.
+
+**It did NOT happen on any warm `/restart`**, where the lock consistently came
+up disarmed and had to be armed by hand. So it is cold-boot specific, which is
+also where the preferences race lives even though this instance is not it.
+
+Left unpoked on purpose: toggling it to inspect would spend the state. The
+cheap check is the next cold boot -- `/bootlog` for `PREFS: loaded ...
+frameTimeLock=` against `/framesync`'s `ready`, both before opening a console,
+since the boot log stops recording once a websocket client takes delivery.
+
 ## Untried experiments with a known payoff
 
 ### The divider should be keyed to the source identity, not to a raw measurement
