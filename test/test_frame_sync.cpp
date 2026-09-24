@@ -739,6 +739,6 @@ TEST_CASE("a period the pin reads as three frames does not reach the correction"
     CHECK(board.clock.hzNow() > 108000000u);
 
     SUBCASE("and what the pin made of it is still printed, so a capture can see it") {
-        CHECK(loggedContaining("pin 7999998"));
+        CHECK(loggedContaining("pin 7999998/"));
     }
 }

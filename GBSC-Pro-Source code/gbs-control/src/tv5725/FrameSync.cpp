@@ -378,11 +378,12 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
     const float rateInput = sourceFieldRateHz;
 
     int32_t pinPeriod = 0;
+    int32_t pinOutPeriod = 0;
     uint32_t offset = 0;
     bool measured = false;
 
     for (int attempt = 0; attempt < PhaseAttempts; attempt++) {
-        if (vsyncEdges(&pinPeriod, NULL, &offset)) {
+        if (vsyncEdges(&pinPeriod, &pinOutPeriod, &offset)) {
             measured = true;
             break;
         }
@@ -427,12 +428,13 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
     // phase from an oscillating one. The rates are in milli-hertz: the whole
     // correction is bounded at 0.06%, which whole hertz cannot show at 60 Hz.
     // ../../../docs/investigations/the-frame-time-lock-saturates.md
-    char line[168];
+    char line[184];
     snprintf(line, sizeof line,
-             "frame time lock: phase %ld/%ld target %ld err %ld pin %ld, "
+             "frame time lock: phase %ld/%ld target %ld err %ld pin %ld/%ld, "
              "in %lu mHz, out %lu -> %lu mHz, clock %lu -> %lu",
              (long)phase, (long)periodInput, (long)targetTicks(periodInput),
-             (long)error, (long)pinPeriod, (unsigned long)(rateInput * 1000.0f),
+             (long)error, (long)pinPeriod, (long)pinOutPeriod,
+             (unsigned long)(rateInput * 1000.0f),
              (unsigned long)(previousRateOutput * 1000.0f),
              (unsigned long)(rateOutput * 1000.0f),
              (unsigned long)clock_.hzNow(), (unsigned long)steered);
