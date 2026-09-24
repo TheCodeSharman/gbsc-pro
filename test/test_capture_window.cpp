@@ -1069,17 +1069,25 @@ TEST_CASE("one framing takes the same video whichever scan mode is in force")
           == lrintf(Framing * 312.0f));
 }
 
-// The frame's counter zeroes on the vertical sync pulse's trailing edge, so
-// video starts at the counter's own origin and a framing proportion maps
-// straight onto it.
-TEST_CASE("a framing proportion maps onto the frame's own counter")
+// WHERE THE COUNTER ZEROES ON VERTICAL SYNC IS NOT THE SAME ON EVERY SYNC
+// ARRANGEMENT, so the frame carries its vertical sync interval the way the line
+// carries its hsync pulse. Separate sync zeroes on the pulse's trailing edge and
+// video starts at the counter's own origin; sync on green zeroes on the leading
+// edge, so the pulse is leading blanking and the video sits that far behind.
+// docs/investigations/the-vertical-origin-follows-the-sync-type.md
+TEST_CASE("the frame's origin follows where the counter zeroes on vertical sync")
 {
     // The Wii at 480p on ypbpr: 524 counted lines, so a 525-unit frame.
-    const VideoSourceLine frame = VideoSourceLine::frame(525);
+    SUBCASE("a counter zeroed on the trailing edge puts video at its own origin") {
+        CHECK(videoAtOf(VideoSourceLine::frame(525), AxisVertical, 0.4f) == 210);
+    }
 
-    CHECK(videoAtOf(frame, AxisVertical, 0.4f) == 210);
+    SUBCASE("a counter zeroed on the leading edge puts it a sync interval earlier") {
+        CHECK(videoAtOf(VideoSourceLine::frame(525, 7), AxisVertical, 0.4f) == 203);
+    }
 
-    SUBCASE("and a position maps back to the framing it was taken from") {
+    SUBCASE("a position maps back to the framing it was taken from") {
+        const VideoSourceLine frame = VideoSourceLine::frame(525, 7);
         CHECK(fractionAtOf(frame, AxisVertical,
                            videoAtOf(frame, AxisVertical, 0.4f))
               == doctest::Approx(0.4f));

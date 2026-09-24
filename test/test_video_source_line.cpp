@@ -83,12 +83,24 @@ TEST_CASE("head blanking is carried only where the line is doubled")
     CHECK(measuredLine(1439, 176, 1438, true).headBlankingUnits() == 0);
 }
 
-// The frame's counter zeroes on the vertical sync pulse's trailing edge, so
-// video starts at the counter's own origin: nothing is excluded from it.
-TEST_CASE("the frame carries no interval to exclude")
+// WHERE THE COUNTER ZEROES ON VERTICAL SYNC IS NOT THE SAME ON EVERY SYNC
+// ARRANGEMENT, so the frame carries its vertical sync interval the way the line
+// carries its hsync pulse. Separate sync zeroes on the pulse's trailing edge and
+// video starts at the counter's own origin; sync on green zeroes on the leading
+// edge, so the pulse is leading blanking and the video sits that far behind.
+// Which edge a sync arrangement zeroes on is not derivable here.
+// docs/investigations/the-vertical-origin-follows-the-sync-type.md
+TEST_CASE("the frame states where its counter zeroes on vertical sync")
 {
     // The Wii at 480p on ypbpr: 524 counted lines, so a 525-unit frame.
-    CHECK(VideoSourceLine::frame(525).units() == 525);
-    CHECK(VideoSourceLine::frame(525).syncUnits() == 0);
-    CHECK(VideoSourceLine::frame(525).headBlankingUnits() == 0);
+    SUBCASE("a frame given no vsync interval excludes nothing") {
+        CHECK(VideoSourceLine::frame(525).syncUnits() == 0);
+        CHECK(VideoSourceLine::frame(525).syncAtHead());
+    }
+
+    SUBCASE("a frame zeroed on the leading edge carries the pulse as blanking") {
+        CHECK(VideoSourceLine::frame(525, 7).syncUnits() == 7);
+        CHECK_FALSE(VideoSourceLine::frame(525, 7).syncAtHead());
+        CHECK(VideoSourceLine::frame(525, 7).headBlankingUnits() == 0);
+    }
 }

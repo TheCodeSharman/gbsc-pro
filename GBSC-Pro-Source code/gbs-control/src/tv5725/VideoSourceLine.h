@@ -32,8 +32,17 @@ public:
 
     VideoSourceLine(uint16_t units, uint16_t syncUnits);
 
-    // The frame: no sync interval to exclude and no head blanking.
+    // The frame, for a counter that zeroes on the vertical sync pulse's
+    // TRAILING edge: video starts at the counter's own origin, so there is no
+    // interval to exclude and no head blanking.
     static VideoSourceLine frame(uint16_t units);
+
+    // The frame for a counter that zeroes on the pulse's LEADING edge instead,
+    // where the pulse is leading blanking and the video sits that far behind
+    // the origin. Which edge a sync arrangement zeroes on is not derivable here
+    // and is the caller's.
+    // ../../../../docs/investigations/the-vertical-origin-follows-the-sync-type.md
+    static VideoSourceLine frame(uint16_t units, uint16_t vsyncUnits);
 
     // The line the source sends, from the pulse measured off it. The pulse is
     // that fraction of `units`, and nothing here is a constant for one source:

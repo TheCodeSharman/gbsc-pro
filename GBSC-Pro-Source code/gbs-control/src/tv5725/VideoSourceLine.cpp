@@ -24,6 +24,11 @@ VideoSourceLine VideoSourceLine::frame(uint16_t units)
     return VideoSourceLine(units);
 }
 
+VideoSourceLine VideoSourceLine::frame(uint16_t units, uint16_t vsyncUnits)
+{
+    return VideoSourceLine(units, vsyncUnits, 0, false);
+}
+
 VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse,
                                          bool lineDoubled)
 {
