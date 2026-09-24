@@ -257,7 +257,16 @@ silent route that answers 200.
 
 **A quiet console is not a quiet firmware.** Silence with a live HTTP stack
 means the loop is not running, or the heap gate is shut — read `/bootlog`'s
-`free heap:` line before believing it. And the console DROPS BURSTS under
+`free heap:` line before believing it.
+
+**AND IT IS DEAF FOR THE FIRST ~15 SECONDS OF A BOOT**, which is where
+detection, the sync-type probe, the first solve and the rate match all happen.
+`/bootlog` holds them, and **everything printed through `SerialM` is already in
+it** — `SerialMirror::write()` appends there itself, so no line needs anything
+added to survive a boot and a second path alongside it double-writes. The whole
+of what is needed is `BOOTLOG_BYTES=2048` on the flash line. It stops recording
+once a websocket client takes delivery, so open no console until after the read.
+`docs/gbs-control-debug-interface.md`. And the console DROPS BURSTS under
 FrameSync spam, so a missing line is not evidence the step did not run: judge by
 outcome, and by what the next line implies.
 

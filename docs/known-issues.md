@@ -10,41 +10,46 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### The output rate is set once per boot, and it lands wrong about half the time
+### About half of boots shake, and the rate was only part of it
 
-**The shake is a property of the BOOT.** Surveyed over six restarts of the RISC
-PC at 800x600@60 on `vga`, scored from `tv-snap` clips as the standard deviation
-of a luma-gradient centroid, with the horizontal axis as the control:
+**The shake is a property of the BOOT.** Surveyed with
+`tools/gbsc-pro-hwtest/shake_survey.py` over restarts of the RISC PC at
+800x600@60 on `vga`, scored as the standard deviation of a luma-gradient
+centroid with the horizontal axis as the control:
 
-| state | vertical sd | horizontal (control) |
-|---|---|---|
-| frame lock off, three boots of six | 0.005 - 0.008 | 0.005 - 0.006 |
-| frame lock off, the other three | **0.126 - 0.263** | 0.005 - 0.007 |
-| frame lock on, clipped 34 s after arming | 0.16 - 0.34 | 0.006 - 0.010 |
-| frame lock on, clipped at 180 s | **0.004** | 0.003 |
+| state | shaking boots | vertical sd when it shakes | clean |
+|---|---|---|---|
+| before, frame lock off | 3 of 6 | 0.126 - 0.263 | 0.005 |
+| the display clock's rate taken from the engine | 4 of 8 | 0.205 - 0.288 | 0.003 |
+| that, plus frame lock armed, 60 s settle | 1 of 6 | 0.203 | 0.003 |
 
-`tools/gbsc-pro-hwtest/shake_survey.py` is the survey. A single observation says
-nothing, which is why "it looked fine when I checked" has twice been taken as
-evidence that something fixed it.
+A single observation says nothing, which is why "it looked fine when I checked"
+has twice been taken as evidence that something fixed it.
 
-**What sets it is one measurement admitted by too loose a tolerance.**
-`externalClockGenSyncInOutRate()` sets the display clock to the ratio of two
-measured field rates, each from `agreedRate()`, and `Clock::RateAgreement`
-admits a pair **0.5 Hz apart -- 0.83% at 60 Hz**. One shaking boot logged
-`rate match: source 60801 mHz` against a source running 60317. Nothing
-re-measures until the next solve, so a boot that lands wrong stays wrong.
+**What is fixed: the rate.** The one-shot measured the source's field rate off
+the test bus for itself, and a reading taken just after the divider latches is
+repeatably wrong -- the boot log caught two samples BOTH reading 60529 mHz
+against a source running 60317, so no agreement rule between a pair of them can
+reject it. Eight boots before gave 60997, 59558 and 61194; eight after gave
+60316 every time. The engine's settled rate is asked for instead.
 
-The measurement is quantised rather than noisy: good samples repeat to 0.00005
-Hz, and the bad ones sit at the true period plus or minus multiples of 4224 CPU
-ticks -- about two source lines -- so a tighter tolerance would reject a
-mismatched pair. Two bad samples landing on the SAME wrong value would still
-agree, so the tolerance alone is not the whole answer.
+**What is NOT fixed: the phase.** Boots 2 and 3 of the survey after that change
+set the display clock to the same 108022960 Hz from the same 60316 mHz, and one
+shook while the other did not. Rate alone cannot explain that. What differs is
+where the read pointer sits relative to the write pointer when the buffer starts
+-- which is what `FrameSync`'s `syncTargetPhase` exists to park at 90 degrees,
+and what the frame time lock does beyond matching rates.
 
-**Frame time lock cures it and is not a cure for the boot.** Armed, it converges
-to within 0.0001 Hz of the source and the picture is the steadiest measured
-here. But it corrects at most 0.06% per 1.67 s, so walking back a one-shot that
-landed 0.8% out takes two to three minutes -- and while it walks, the output
-rate is moving, which scores WORSE than leaving it alone. It is off by default.
+Armed, the lock takes it from three boots in six to one in six, and converges to
+within 0.0001 Hz. It is still off by default, and the boot that shook through it
+is not explained.
+
+**The rate steering has no owner.** `externalClockGenSyncInOutRate()`,
+`agreedRate()`, `externalClockGenResetClock()`,
+`externalClockGenDetectAndInitialize()`, `handDisplayClockToGenerator()` and the
+frame time lock's gate are all in `gbs-control.ino`, and two of them read
+TV5725 registers there (`PAD_CKIN_ENZ`, `PLL648_CONTROL_01`). Whatever answers
+the phase question wants that owner first, or it lands in the sketch beside them.
 
 ### An alternating count latched the scan type -- FIXED
 

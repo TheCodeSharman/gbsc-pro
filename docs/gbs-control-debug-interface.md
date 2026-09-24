@@ -154,6 +154,47 @@ Si5351, which `syncWatcherEnabled` does not gate either.
 `websocket-client` (in the dev shell) is enough to read it. The server accepts
 five clients (`WEBSOCKETS_SERVER_CLIENT_MAX`); each one costs heap.
 
+## The boot log: the first seconds, which the console cannot see
+
+`GET /bootlog`. **The WebSocket server does not accept a client until roughly
+fifteen seconds into a boot**, so the console is deaf to exactly the decisions a
+boot fault is made of -- detection, the sync-type probe, the first solve, the
+rate match that sets the display clock. The boot log is a RAM buffer that holds
+them until something asks.
+
+**EVERYTHING PRINTED THROUGH `SerialM` ALREADY LANDS IN IT.** `SerialMirror::write()`
+calls `bootLogAppend()` itself, so every `debugPrintf()`, every `fsDebugPrintf()`
+and every `tv5725Log()` is already captured -- there is nothing to add to a line
+to make it survive a boot, and a second path that appends alongside them
+double-writes. To read the first seconds of a boot, the whole of what is needed
+is to build with the buffer on:
+
+```sh
+make -C build flash-ota HOST=<ip> BOOTLOG_BYTES=2048
+curl http://<ip>/bootlog
+```
+
+**It is off by default** (`BOOTLOG_BYTES=0`) because 2 KB of globals on a unit
+with ~20 KB of free heap costs the console its broadcast threshold. With it off
+the route still answers, and says so rather than reading as empty -- empty is a
+regression, disabled is a build choice.
+
+**It stops recording once it is delivered.** `loop()` broadcasts it to the first
+WebSocket client that connects and sets `bootLogDelivered`, after which
+`bootLogAppend()` returns immediately. So it is a boot-window buffer and not a
+running log: a line printed a minute in is on the console and not in here. The
+buffer is also finite, and a full one says `(TRUNCATED: buffer full, raise
+BOOTLOG_BYTES)` rather than quietly dropping the tail.
+
+Two consequences for reading one:
+
+- **Open no console until after the read**, or the buffer is handed over and
+  closed at whatever point that client attached. A survey that tails the
+  WebSocket and also wants the boot window has to take the window from here.
+- `free heap:` is the first line of every reply, on every build, including one
+  with the buffer compiled out. That is the reading behind "a connected but
+  silent console is a shut heap gate, not a quiet firmware".
+
 ## Output that is still absent
 
 Some `SerialM.print(...)` calls are written `; // SerialMprint(...)`, with the
