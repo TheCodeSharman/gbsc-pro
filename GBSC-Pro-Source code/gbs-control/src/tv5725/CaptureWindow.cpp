@@ -157,12 +157,24 @@ CaptureWindow::Placement CaptureWindow::place(const Axis &axis) const
 
 BlankingTiming CaptureWindow::captureOn(const Axis &axis) const
 {
-    if (lineOn(axis).units() == 0)
+    const VideoSourceLine &line = lineOn(axis);
+    if (line.units() == 0)
         return BlankingTiming();
 
+    // The axis's own margin at each end, because the capture path drops that
+    // much at each end: a window opened on the picture loses the source's first
+    // and last lines. Horizontally the margin is 0 and the near edge is already
+    // crept against corruption, so this is the vertical pair in practice.
+    //
+    // The near end floors at the counter's origin -- a window already there has
+    // nowhere to open into -- and the far end is clamped to the last unit
+    // before the counter wraps, because a margin past it rolls the frame.
     Placement placed = place(axis);
-    return BlankingTiming((uint16_t)placed.start,
-                         (uint16_t)(placed.start + placed.width));
+    const long margin = axis.captureMargin();
+    const long near = placed.start > margin ? placed.start - margin : 0;
+    const long far = placed.start + placed.width + margin;
+    const long last = line.lastCapture();
+    return BlankingTiming((uint16_t)near, (uint16_t)(far < last ? far : last));
 }
 
 void CaptureWindow::clampFramingTo(const Axis &axis)

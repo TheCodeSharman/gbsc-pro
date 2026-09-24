@@ -68,6 +68,9 @@ public:
     void setFraming(const PanAndZoom &wanted);
     const PanAndZoom &framing() const;
 
+    // The register pairs: IF_HB_ST2/SP2 and IF_VB_ST/SP. Each carries its
+    // axis's captureMargin at both ends of the picture, floored at the
+    // counter's origin and clamped to the last unit before it wraps.
     const BlankingTiming &horizontal() const;
     const BlankingTiming &vertical() const;
 

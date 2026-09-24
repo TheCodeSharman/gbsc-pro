@@ -251,9 +251,15 @@ TEST_CASE("the framing is held as state and the window is derived")
     }
 
     SUBCASE("the vertical axis derives from its own frame the same way") {
+        // The vertical pair carries captureMargin at each end of the picture,
+        // so the span is the default width plus both margins and the near edge
+        // opens that far ahead of where the picture starts.
+        const long Margin = AxisVertical.captureMargin();
         BlankingTiming v = captureFor(VideoSourceLine(624), 50.0f, AxisVertical, 0, 0);
-        CHECK(v.start() - v.stop() == CaptureWindow::defaultWidth(VideoSourceLine(624), 50.0f, AxisVertical));
-        CHECK_NEAR((int)v.stop(), AxisVertical.activeStart() * 624.0f, 1.0);
+        CHECK(v.start() - v.stop()
+              == CaptureWindow::defaultWidth(VideoSourceLine(624), 50.0f, AxisVertical)
+                     + 2 * Margin);
+        CHECK_NEAR((int)v.stop(), AxisVertical.activeStart() * 624.0f - Margin, 1.0);
     }
 }
 
@@ -299,8 +305,9 @@ TEST_CASE("a source matching no published raster is captured across the envelope
         BlankingTiming sixty = defaultWindowOn(VideoSourceLine(624), 60.0f, AxisVertical);
         CHECK(fifty.stop() == sixty.stop());
         CHECK(fifty.start() == sixty.start());
-        CHECK_NEAR(fifty.stop(), 0.061f * 624.0f, 1.0f);
-        CHECK_NEAR(fifty.start(), 0.994f * 624.0f, 1.0f);
+        const float Margin = (float)AxisVertical.captureMargin();
+        CHECK_NEAR(fifty.stop(), 0.061f * 624.0f - Margin, 1.0f);
+        CHECK_NEAR(fifty.start(), 0.994f * 624.0f + Margin, 1.0f);
     }
 }
 
@@ -319,7 +326,8 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
         // hard against the stop
         const PanAndZoom f = pressedOn(frame, Rate, AxisVertical, 5000, 0, PanAndZoom());
         BlankingTiming got = captureOf(frame, Rate, AxisVertical, f);
-        CHECK(got.start() - got.stop() == MinimumCapture);
+        CHECK(got.start() - got.stop()
+              == MinimumCapture + 2 * AxisVertical.captureMargin());
     }
 
     SUBCASE("an overshooting pan is brought back to what the line allows") {
@@ -352,13 +360,16 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
     }
 
     SUBCASE("vertically too, which is the 'or bottom' half of the report") {
+        // The margin takes the near edge past FirstCapturableUnit, so at the
+        // floor the pair opens on the counter's origin and the press back is
+        // seen at the FAR edge: the near one has nowhere left to go.
         const VideoSourceLine frame(624);
         PanAndZoom f = pressedOn(frame, Rate, AxisVertical, 0, -400, PanAndZoom());
         BlankingTiming at_edge = captureOf(frame, Rate, AxisVertical, f);
-        CHECK(at_edge.stop() == VideoSourceLine::FirstCapturableUnit);
+        CHECK(at_edge.stop() == 0);
 
         f = pressedOn(frame, Rate, AxisVertical, 0, +1, f);
-        CHECK(captureOf(frame, Rate, AxisVertical, f).stop() > at_edge.stop());
+        CHECK(captureOf(frame, Rate, AxisVertical, f).start() > at_edge.start());
     }
 
     SUBCASE("an overshooting zoom is brought back the same way") {
@@ -384,6 +395,42 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
 
         window.setFraming(settled);
         CHECK(window.framing() == settled);
+    }
+}
+
+// The capture path drops a unit at each end of the vertical window, so a window
+// opened on the picture loses the source's first and last lines. The pair the
+// registers take therefore carries the axis's margin at each end, floored at the
+// counter's origin and clamped to the last unit before it wraps.
+TEST_CASE("the window each axis reports is the register pair")
+{
+    const long Margin = AxisVertical.captureMargin();
+    const VideoSourceLine frame = VideoSourceLine::frame(628);
+
+    SUBCASE("the vertical pair carries a margin at each end of the picture") {
+        const PanAndZoom framing(0.0f, 1.0f, 100.0f / 628.0f, 400.0f / 628.0f);
+        const BlankingTiming got = captureOf(frame, 60.0f, AxisVertical, framing);
+        CHECK(got.start() - got.stop() == 400 + 2 * Margin);
+    }
+
+    SUBCASE("the horizontal pair carries none, which is its axis's margin") {
+        REQUIRE(AxisHorizontal.captureMargin() == 0);
+        const VideoSourceLine line(1126);
+        const PanAndZoom framing(100.0f / 1126.0f, 400.0f / 1126.0f, 0.0f, 1.0f);
+        const BlankingTiming got = captureOf(line, 50.0f, AxisHorizontal, framing);
+        CHECK(got.start() - got.stop() == 400);
+    }
+
+    SUBCASE("the near end floors at the counter's origin") {
+        const PanAndZoom framing(0.0f, 1.0f, 0.0f, 400.0f / 628.0f);
+        const BlankingTiming got = captureOf(frame, 60.0f, AxisVertical, framing);
+        CHECK(got.stop() == 0);
+    }
+
+    SUBCASE("the far end clamps at the last unit before the wrap") {
+        const PanAndZoom framing(0.0f, 1.0f, 0.0f, 1.0f);
+        const BlankingTiming got = captureOf(frame, 60.0f, AxisVertical, framing);
+        CHECK(got.start() == frame.lastCapture());
     }
 }
 
@@ -524,7 +571,9 @@ TEST_CASE("no framing puts the capture stop past what the line can write")
                     const BlankingTiming got = captureFor(line, 50.0f, axis, z, p);
 
                     CHECK(got.start() <= line.lastCapture());
-                    CHECK(got.stop() >= line.firstCapture());
+                    // The margin is the only thing allowed to reach ahead of
+                    // the first capturable unit; the picture behind it is not.
+                    CHECK(got.stop() + axis.captureMargin() >= line.firstCapture());
                 }
             }
         }
@@ -618,18 +667,22 @@ TEST_CASE("a framing survives a round trip through a coarser capture grid")
     const VideoSourceLine doubled(624);      // half-lines
     const VideoSourceLine single(312);       // whole source lines
 
+    // The pair carries a margin at each end, so the picture is the span less
+    // both of them -- and it is the picture the framing is a proportion of.
+    const long Margin = AxisVertical.captureMargin();
     PanAndZoom framing(0.0f, 1.0f, 62.0f / 624.0f, 513.0f / 624.0f);
 
     const BlankingTiming fine = captureOf(doubled, 50.0f, AxisVertical, framing);
-    CHECK(fine.start() - fine.stop() == 513);
+    CHECK(fine.start() - fine.stop() - 2 * Margin == 513);
 
     framing = clampedTo(single, 50.0f, AxisVertical, framing);
     const BlankingTiming coarse = captureOf(single, 50.0f, AxisVertical, framing);
-    CHECK(coarse.start() - coarse.stop() == 256);   // 513 half-lines is 256.5
+    // 513 half-lines is 256.5
+    CHECK(coarse.start() - coarse.stop() - 2 * Margin == 256);
 
     framing = clampedTo(doubled, 50.0f, AxisVertical, framing);
     const BlankingTiming back = captureOf(doubled, 50.0f, AxisVertical, framing);
-    CHECK(back.start() - back.stop() == 513);
+    CHECK(back.start() - back.stop() - 2 * Margin == 513);
 }
 
 TEST_CASE("one framing takes the same span of the line in either scan mode")
