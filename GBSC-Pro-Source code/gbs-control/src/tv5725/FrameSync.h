@@ -108,7 +108,7 @@ public:
     // against the period from its own pass, so a biased period cancels in the
     // ratio. ../../../docs/known-issues.md
     bool runFrequency(float sourceFieldRateHz);
-    bool runVsync(uint8_t frameTimeLockMethod);
+    bool runVsync(uint8_t frameTimeLockMethod, float sourceFieldRateHz);
 
 private:
     // How far the read pointer is from where it is aimed, in the same ticks
@@ -124,6 +124,9 @@ private:
     // ../../../docs/investigations/the-frame-time-lock-saturates.md
     int32_t phaseError(int32_t phase, int32_t period) const;
 
+    // Where the read pointer is aimed, in the ticks the phase is measured in.
+    int32_t targetTicks(int32_t period) const;
+
     // Whether the display clock is ours to steer at all: a generator driving
     // it, the pad enabled, the scaler carrying the video, and the part taking
     // PCLKIN. Every one is an external state rather than a bad signal.
@@ -133,8 +136,15 @@ private:
     // them do. It has no other owner, so unlike the source's it is measured.
     float agreedOutputRate() const;
 
-    bool vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput,
-                             int32_t *phase);
+    // Both vsync edges in one pass, and what the pin makes of each period. The
+    // offset between the edges is RAW, because folding it into a frame wants a
+    // period the caller trusts and the pin's is not one.
+    bool vsyncEdges(int32_t *periodInput, int32_t *periodOutput,
+                    uint32_t *offset);
+
+    // That offset folded into one frame, which is what a phase is.
+    static int32_t phaseOf(uint32_t offset, int32_t period);
+
     bool bothVsyncPeriodsReadable();
 
     // Move the raster by `delta` lines, between fields so the write lands on a

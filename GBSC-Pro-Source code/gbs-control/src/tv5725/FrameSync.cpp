@@ -53,6 +53,15 @@ bool rateIsPlausible(float hz)
     return hz >= FrameSync::FieldRateMinHz && hz <= FrameSync::FieldRateMaxHz;
 }
 
+// One frame of the source, in the ticks the edges are timestamped in. Asked of
+// the engine's rate rather than the pin: an edge ISR that misses a pulse times
+// the one after it, so the pin reads a whole multiple of the frame back.
+// ../../../docs/investigations/the-frame-time-lock-saturates.md
+int32_t framePeriodTicks(float sourceFieldRateHz)
+{
+    return (int32_t)((float)debugPinTicksPerSecond() / sourceFieldRateHz);
+}
+
 }  // namespace
 
 FrameSync::FrameSync(DisplayClock &clock)
@@ -80,10 +89,14 @@ void FrameSync::setTargetPhase(int32_t degrees)
 
 int16_t FrameSync::lastCorrection() const { return lastCorrection_; }
 
+int32_t FrameSync::targetTicks(int32_t period) const
+{
+    return (targetPhase_ * period) / 360;
+}
+
 int32_t FrameSync::phaseError(int32_t phase, int32_t period) const
 {
-    const int32_t target = (targetPhase_ * period) / 360;
-    int32_t error = phase - target;
+    int32_t error = phase - targetTicks(period);
 
     if (error > period / 2)
         error -= period;
@@ -187,15 +200,15 @@ bool FrameSync::matchRate(float sourceFieldRateHz)
     return true;
 }
 
-bool FrameSync::vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput,
-                                    int32_t *phase)
+bool FrameSync::vsyncEdges(int32_t *periodInput, int32_t *periodOutput,
+                           uint32_t *offset)
 {
     TestBus::selectInputVsync();
 
     uint32_t inStart, inStop, outStart, outStop;
 
     if (!debugPinPulseEdges(&inStart, &inStop)) {
-        tv5725Log("vsyncPeriodAndPhase(): no INPUT vsync");
+        tv5725Log("vsyncEdges(): no INPUT vsync");
         debugPinProbe();
         return false;
     }
@@ -203,22 +216,24 @@ bool FrameSync::vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput,
     // The VDS's blanking, which is where the read pointer is.
     TestBus::selectOutputVsync();
 
-    uint32_t inPeriod = inStop - inStart;
     if (!debugPinPulseEdges(&outStart, &outStop)) {
-        tv5725Log("vsyncPeriodAndPhase(): no OUTPUT vsync");
+        tv5725Log("vsyncEdges(): no OUTPUT vsync");
         return false;
     }
 
-    uint32_t diff = (outStart - inStart) % inPeriod;
-
     if (periodInput)
-        *periodInput = inPeriod;
+        *periodInput = inStop - inStart;
     if (periodOutput)
         *periodOutput = outStop - outStart;
-    if (phase)
-        *phase = (diff < inPeriod) ? diff : diff - inPeriod;
+    if (offset)
+        *offset = outStart - inStart;
 
     return true;
+}
+
+int32_t FrameSync::phaseOf(uint32_t offset, int32_t period)
+{
+    return (int32_t)(offset % (uint32_t)period);
 }
 
 // Whether there is a raster and both vsync periods can be read, which is the
@@ -230,7 +245,7 @@ bool FrameSync::bothVsyncPeriodsReadable()
         return false;
 
     int32_t inPeriod, outPeriod;
-    if (!vsyncPeriodAndPhase(&inPeriod, &outPeriod, NULL))
+    if (!vsyncEdges(&inPeriod, &outPeriod, NULL))
         return false;
 
     return inPeriod != 0 && outPeriod != 0;
@@ -299,10 +314,15 @@ void FrameSync::cleanup()
     clockPerFrameRate_ = -1.0f;
 }
 
-bool FrameSync::runVsync(uint8_t frameTimeLockMethod)
+bool FrameSync::runVsync(uint8_t frameTimeLockMethod, float sourceFieldRateHz)
 {
     if (!ready_)
         return false;
+
+    if (!rateIsPlausible(sourceFieldRateHz)) {
+        tv5725Log("frame time lock: no settled source rate to correct towards");
+        return true;
+    }
 
     // Two passes of settling before the first correction: the raster has just
     // been written and a phase measured across that is not the steady one.
@@ -311,11 +331,12 @@ bool FrameSync::runVsync(uint8_t frameTimeLockMethod)
         return true;
     }
 
-    int32_t period, phase;
-    if (!vsyncPeriodAndPhase(&period, NULL, &phase))
+    uint32_t offset;
+    if (!vsyncEdges(NULL, NULL, &offset))
         return false;
 
-    int16_t correction = phaseError(phase, period) > 0 ? 0 : Correction;
+    const int32_t period = framePeriodTicks(sourceFieldRateHz);
+    int16_t correction = phaseError(phaseOf(offset, period), period) > 0 ? 0 : Correction;
 
     if (correction == lastCorrection_)
         return true;
@@ -356,12 +377,12 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
     const float ticksPerSecond = (float)debugPinTicksPerSecond();
     const float rateInput = sourceFieldRateHz;
 
-    int32_t periodInput = 0;
-    int32_t phase = 0;
+    int32_t pinPeriod = 0;
+    uint32_t offset = 0;
     bool measured = false;
 
     for (int attempt = 0; attempt < PhaseAttempts; attempt++) {
-        if (vsyncPeriodAndPhase(&periodInput, NULL, &phase)) {
+        if (vsyncEdges(&pinPeriod, NULL, &offset)) {
             measured = true;
             break;
         }
@@ -372,10 +393,13 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
         return false;
     }
 
+    const int32_t periodInput = framePeriodTicks(rateInput);
+    const int32_t phase = phaseOf(offset, periodInput);
+    const int32_t error = phaseError(phase, periodInput);
+
     // Distance behind target, in fractional frames. Latency rising means the
     // read pointer is falling behind, so the output rate goes up.
-    const float latencyErrFrames =
-        (float)phaseError(phase, periodInput) / ticksPerSecond * rateInput;
+    const float latencyErrFrames = (float)error / ticksPerSecond * rateInput;
 
     float correction = CorrectionPerFrame * latencyErrFrames;
     if (correction > MaxCorrection)
@@ -398,12 +422,17 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
 
     const uint32_t steered = (uint32_t)(clockPerFrameRate_ * rateOutput);
 
-    // In milli-hertz: the whole correction is bounded at 0.06%, which whole
-    // hertz cannot show at 60 Hz.
-    char line[112];
+    // The phase in the ticks it was measured in, because it is the controlled
+    // variable and the clock two steps downstream of it cannot tell a noisy
+    // phase from an oscillating one. The rates are in milli-hertz: the whole
+    // correction is bounded at 0.06%, which whole hertz cannot show at 60 Hz.
+    // ../../../docs/investigations/the-frame-time-lock-saturates.md
+    char line[168];
     snprintf(line, sizeof line,
-             "frame time lock: in %lu mHz, out %lu -> %lu mHz, clock %lu -> %lu",
-             (unsigned long)(rateInput * 1000.0f),
+             "frame time lock: phase %ld/%ld target %ld err %ld pin %ld, "
+             "in %lu mHz, out %lu -> %lu mHz, clock %lu -> %lu",
+             (long)phase, (long)periodInput, (long)targetTicks(periodInput),
+             (long)error, (long)pinPeriod, (unsigned long)(rateInput * 1000.0f),
              (unsigned long)(previousRateOutput * 1000.0f),
              (unsigned long)(rateOutput * 1000.0f),
              (unsigned long)clock_.hzNow(), (unsigned long)steered);

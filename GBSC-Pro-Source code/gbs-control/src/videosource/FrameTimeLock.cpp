@@ -106,7 +106,7 @@ void FrameTimeLock::service(const Conditions &conditions, uint32_t nowMs)
             const bool ran =
                 lock_.canSteerRate()
                     ? lock_.runFrequency(sampling_.settledFieldRateHz())
-                    : lock_.runVsync(conditions.method);
+                    : lock_.runVsync(conditions.method, sampling_.settledFieldRateHz());
             if (ran) {
                 forgiveFailures();
             } else if (failuresLeft_ == 0) {

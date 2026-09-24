@@ -55,6 +55,10 @@ static unsigned g_outputSamples;
 static uint32_t g_inputWobble;
 static unsigned g_inputSamples;
 
+// How many frames the input period reads as. An edge ISR that misses a pulse
+// times the one after it, so the pin hands back a whole multiple of the frame.
+static uint32_t g_inputFramesPerRead;
+
 bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
 {
     if (onOutputBus()) {
@@ -68,7 +72,8 @@ bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
     if (!g_inputArrives)
         return false;
     *start = 1;
-    *stop = 1 + g_inputPeriod + ((g_inputSamples++ & 1) ? g_inputWobble : 0);
+    *stop = 1 + g_inputPeriod * g_inputFramesPerRead
+            + ((g_inputSamples++ & 1) ? g_inputWobble : 0);
     return true;
 }
 
@@ -98,6 +103,7 @@ void aLockedSource()
     g_outputSamples = 0;
     g_inputWobble = 0;
     g_inputSamples = 0;
+    g_inputFramesPerRead = 1;
     g_probes = 0;
     g_logLines.clear();
     VideoRoute::toScaler();
@@ -191,7 +197,7 @@ TEST_CASE("an unarmed lock corrects nothing")
     DisplayClock clock;
     FrameSync lock(clock);
 
-    CHECK_FALSE(lock.runVsync(0));
+    CHECK_FALSE(lock.runVsync(0, 60.0f));
     CHECK(GBS::VDS_VSYNC_RST::read() == 1125u);
 }
 
@@ -204,8 +210,8 @@ TEST_CASE("the first two passes after arming settle rather than correct")
     FrameSync lock(clock);
     lock.init();
 
-    CHECK(lock.runVsync(0));
-    CHECK(lock.runVsync(0));
+    CHECK(lock.runVsync(0, 60.0f));
+    CHECK(lock.runVsync(0, 60.0f));
     CHECK(GBS::VDS_VSYNC_RST::read() == 1125u);
     CHECK(lock.lastCorrection() == 0);
 }
@@ -220,10 +226,10 @@ TEST_CASE("a read pointer ahead of target is held back by stretching the raster"
     DisplayClock clock;
     FrameSync lock(clock);
     lock.init();
-    lock.runVsync(0);
-    lock.runVsync(0);
+    lock.runVsync(0, 60.0f);
+    lock.runVsync(0, 60.0f);
 
-    CHECK(lock.runVsync(0));
+    CHECK(lock.runVsync(0, 60.0f));
 
     CHECK(lock.lastCorrection() == FrameSync::Correction);
     CHECK(GBS::VDS_VSYNC_RST::read() == 1125u + FrameSync::Correction);
@@ -241,9 +247,9 @@ TEST_CASE("method 1 stretches the raster and leaves the vsync pulse where it is"
     DisplayClock clock;
     FrameSync lock(clock);
     lock.init();
-    lock.runVsync(1);
-    lock.runVsync(1);
-    lock.runVsync(1);
+    lock.runVsync(1, 60.0f);
+    lock.runVsync(1, 60.0f);
+    lock.runVsync(1, 60.0f);
 
     CHECK(GBS::VDS_VSYNC_RST::read() == 1125u + FrameSync::Correction);
     CHECK(GBS::VDS_VS_ST::read() == 4u);
@@ -257,9 +263,9 @@ TEST_CASE("a read pointer already past target is left alone")
     DisplayClock clock;
     FrameSync lock(clock);
     lock.init();
-    lock.runVsync(0);
-    lock.runVsync(0);
-    lock.runVsync(0);
+    lock.runVsync(0, 60.0f);
+    lock.runVsync(0, 60.0f);
+    lock.runVsync(0, 60.0f);
 
     CHECK(lock.lastCorrection() == 0);
     CHECK(GBS::VDS_VSYNC_RST::read() == 1125u);
@@ -275,9 +281,9 @@ TEST_CASE("resetting takes the correction back out of the raster")
     DisplayClock clock;
     FrameSync lock(clock);
     lock.init();
-    lock.runVsync(0);
-    lock.runVsync(0);
-    lock.runVsync(0);
+    lock.runVsync(0, 60.0f);
+    lock.runVsync(0, 60.0f);
+    lock.runVsync(0, 60.0f);
     REQUIRE(GBS::VDS_VSYNC_RST::read() == 1125u + FrameSync::Correction);
 
     lock.reset(0);
@@ -662,10 +668,10 @@ TEST_CASE("the raster correction reads the wrap the same way")
     DisplayClock clock;
     FrameSync lock(clock);
     lock.init();
-    lock.runVsync(0);
-    lock.runVsync(0);
+    lock.runVsync(0, 60.0f);
+    lock.runVsync(0, 60.0f);
 
-    CHECK(lock.runVsync(0));
+    CHECK(lock.runVsync(0, 60.0f));
     CHECK(lock.lastCorrection() == FrameSync::Correction);
 }
 
@@ -682,4 +688,57 @@ TEST_CASE("a phase at the target is left alone, whichever side it approaches fro
     REQUIRE(lock.runFrequency(60.0f));
 
     CHECK(board.clock.hzNow() == doctest::Approx(108000000.0).epsilon(0.00001));
+}
+
+TEST_CASE("the correction prints the phase it worked from, and where it was aimed")
+{
+    // The controlled variable. Inferred from the display clock instead, a noisy
+    // phase and an oscillating one look alike, because the clock sits two steps
+    // downstream -- phase, correction, clock.
+    // ../docs/investigations/the-frame-time-lock-saturates.md
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 100;   // 26666 ticks of a 2666666 frame
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    REQUIRE(lock.runFrequency(60.0f));
+
+    // A quarter of a frame is 666666 ticks, and the pointer is just past zero,
+    // so it is 640000 behind the target rather than most of a frame ahead.
+    CHECK(loggedContaining("phase 26666/2666666"));
+    CHECK(loggedContaining("target 666666"));
+    CHECK(loggedContaining("err -640000"));
+}
+
+TEST_CASE("a period the pin reads as three frames does not reach the correction")
+{
+    // A missed edge times the pulse after it, so the pin hands back a whole
+    // multiple of the frame -- 2x, 3x and 6x measured on the bench, on exactly
+    // the boots whose clock then saturates. The period scales the target and
+    // folds the offset, so it moves the error by most of a frame while the
+    // phase itself is healthy. The engine holds the source's rate to the
+    // milli-hertz, so the period is arithmetic rather than a measurement.
+    // ../docs/investigations/the-frame-time-lock-saturates.md
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 2;   // half a frame, past the 90 degree target
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    g_inputFramesPerRead = 3;
+
+    REQUIRE(lock.runFrequency(60.0f));
+
+    // Past the target, so the output is hurried. Read through a tripled period
+    // the target lands past the same phase and the clock goes the other way.
+    CHECK(board.clock.hzNow() > 108000000u);
+
+    SUBCASE("and what the pin made of it is still printed, so a capture can see it") {
+        CHECK(loggedContaining("pin 7999998"));
+    }
 }
