@@ -1125,6 +1125,14 @@ void externalClockGenSyncInOutRate()
 
     setExternalClockGenFrequencySmooth((sfr / ofr) * old);
 
+    // In milli-hertz, because the tolerance that admitted these two is 0.5 Hz
+    // absolute -- 0.83% at 60 Hz -- and the display clock is set to their
+    // RATIO. A pair that agrees and is wrong puts the output that far from the
+    // source, which beats, and a printout in whole hertz cannot see it.
+    debugPrintf("rate match: source %lu mHz, output %lu mHz, clock %lu -> %lu\n",
+                (unsigned long)(sfr * 1000.0f), (unsigned long)(ofr * 1000.0f),
+                (unsigned long)old, (unsigned long)rto->displayClock.hzNow());
+
     int32_t diff = rto->displayClock.hzNow() - old;
 
     // F("source Hz: ");
@@ -3653,6 +3661,12 @@ void handleWiFi(boolean instant)
 }
 
 
+// The lock's own interval rather than anything standing in its way: it defers
+// itself after each correction, so this is the answer for most of the passes
+// between two of them. Reported to nobody -- a state that alternates with
+// "running" every second is the console telling itself the time.
+static const char *const Pacing = "pacing";
+
 // Why FrameSync is not armed. Asked only where it already is not, so every
 // answer is a reason and none of them is "it is".
 static const char *frameTimeLockUnarmedBecause()
@@ -3686,7 +3700,7 @@ static const char *frameTimeLockBlockedBy()
     if (!FrameSync::ready())
         return frameTimeLockUnarmedBecause();
     if (!FrameSync::quietFor(FrameSyncAttrs::lockInterval))
-        return "disturbed";
+        return Pacing;
     if (inputAcquisition.acquiredPasses() <= FrameTimeLockHeldPasses)
         return "the source has not held long enough";
     if (inputAcquisition.unmeasuredPasses() != 0)
@@ -3729,7 +3743,8 @@ static void serviceFrameTimeLock()
         }
         FrameSync::defer();
     }
-    reportFrameTimeLock(blocked == NULL ? "running" : blocked);
+    if (blocked != Pacing)
+        reportFrameTimeLock(blocked == NULL ? "running" : blocked);
 }
 
 // The acquisition path's entry gate. **THE FREEZE ONLY**: board power is a
@@ -4495,7 +4510,7 @@ void loop()
 
     serviceFrameTimeLock();
 
-    if (!rgbhvBypass() && rto->syncWatcherEnabled
+    if (scalerCarriesVideo() && rto->syncWatcherEnabled
         && !Tv5725::SyncProcessor::coastPlaced()) {
         if (inputAcquisition.acquiredPasses() >= 7) {
             if (inputAcquisition.sourceIsPresent()) {
@@ -4555,15 +4570,19 @@ void loop()
     } else if ((rto->syncWatcherEnabled == true && rto->sourceDisconnected == false && Tv5725::Chip::hasPower())) {
         if ((millis() - lastTimeSourceCheck) >= 500) {
             if (CheckInputFrequency()) {
-                // Every branch here re-decides the output mode, and none of
-                // them is about HD bypass. A source that changes mode under it
-                // is the detection block's, which asks presetPreference.
-                if (!Tv5725::VideoRoute::isHdBypassChannel()) {
-                    if (scalingRgbhv()) {
-                        Tv5725::RgbhvOutput::chooseBypass();
-                    } else {
-                        applyPresets();
-                    }
+                // The rate the VDS is playing out moved, so the output is
+                // re-solved for it. Either bypass plays the source's own timing
+                // and has nothing here to re-decide.
+                //
+                // **THIS IS NOT WHERE PASS-THROUGH IS CHOSEN.** A toggle stood
+                // here -- scaling RGBHV was switched to pass-through and
+                // everything else re-solved -- which changed the held output
+                // preference without entering pass-through at all, on a unit
+                // that carried on scaling. RgbhvOutput::isScaling() then read
+                // false for the life of the boot, and the loop stopped placing
+                // the coast window, so the frame time lock never armed.
+                if (scalerCarriesVideo()) {
+                    applyPresets();
                 }
             }
 

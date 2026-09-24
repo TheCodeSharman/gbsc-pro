@@ -730,11 +730,16 @@ void VideoSourceAcquisition::placeCoastWindow(bool autoCoast)
 {
     // Bypass is excluded because the sync processor's window is the SCALING
     // path's: the channel plays out the source's own timing.
-    const bool passedThroughRgbhv =
-        VideoSourceSelection::isRgbhv(VideoSourceSelection::selected())
-        && !Tv5725::RgbhvOutput::isScaling();
+    //
+    // Asked of the output mode the engine solved, which every path that changes
+    // what the output is doing sets. RgbhvOutput::isScaling() is the same fact
+    // held in a flag with several writers, and it reads pass-through on a unit
+    // that is scaling -- which stopped this being called at all, so the frame
+    // time lock had no coast window to arm against.
+    const Tv5725::OutputMode *mode = videoPath_.outputMode();
+    const bool passedThrough = mode == NULL || mode->isBypass();
 
-    if (!mayWriteForSource() || passedThroughRgbhv)
+    if (!mayWriteForSource() || passedThrough)
         return;
 
     Tv5725::SyncProcessor::acquireCoastWindow(autoCoast, sampling_.lineRateHz());
