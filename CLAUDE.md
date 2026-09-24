@@ -292,6 +292,12 @@ curl 'http://<ip>/samplinglog?ms=25&for=30000'        # follow the source
 curl 'http://<ip>/samplinglog?low=1600&high=2900&step=100&dwell=400'   # walk the divider
 ```
 
+**`flash-ota` REBUILDS, so the flag has to be on THAT line.** A `GBS_SAMPLING_LOG=1`
+passed to a bare `make -C build` does not reach the unit — the `flash-ota` target
+rebuilds without it and uploads the default image. **An unregistered route
+answers 500, not 404**, which reads as a crash in the handler rather than as a
+build missing the flag, and the difference is one word on the upload line.
+
 One line per sample carries the divider, `STATUS_MISC_PLLAD_LOCK`,
 `STATUS_SYNC_PROC_VTOTAL`, `STATUS_SYNC_PROC_HTOTAL`, `HPERIOD_IF`,
 `VPERIOD_IF`, `HSACT`, the IF status bits and the latched interrupt byte — read
@@ -1537,6 +1543,14 @@ one the same way; the rules below are each a wasted session.
   bypass is out by the whole border. Zoom in and pan until content is hard against
   the edge under test. Panning `-` moves the capture left and puts the image
   against the RIGHT edge; `+` exposes the source's blanking there instead.
+- **USE PLAIN `tv-snap`, NOT `--full`, FOR ANY POSITION MEASUREMENT.** The
+  rectification is a saved fixed homography in `~/.config/tv-snap/rectify` —
+  lens correction, perspective and a scale, applied identically to every shot —
+  so the plain rectified capture is what makes two frames comparable. `--full` is
+  the keystoned raw sensor frame, and positions measured on it are not
+  comparable between shots. No crop is saved (`tv-snap --show-crop` says so), so
+  the panel is not cropped to a fixed frame either; setting one would improve it
+  further, and the calibration frame has to be pass-through.
 - **THE ROOM IS IN THE PHOTOGRAPH, SO ABSOLUTE BRIGHTNESS IS NOT A MEASUREMENT.**
   Held still, `tv-snap` is repeatable to a tenth of a grey level -- four shots over a
   minute on an untouched unit gave mean 88.9, 88.9, 89.0, 89.0 -- and that
