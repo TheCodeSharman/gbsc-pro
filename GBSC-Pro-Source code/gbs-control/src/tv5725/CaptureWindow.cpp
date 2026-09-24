@@ -41,8 +41,11 @@ const BlankingTiming &CaptureWindow::horizontal() const { return horizontal_; }
 
 const BlankingTiming &CaptureWindow::vertical() const { return vertical_; }
 
-const VideoSourceLine &CaptureWindow::horizontalLine() const { return horizontalLine_; }
-const VideoSourceLine &CaptureWindow::verticalLine() const { return verticalLine_; }
+BlankingTiming CaptureWindow::progressiveWindow() const
+{
+    return BlankingTiming(ProgressiveStart,
+                          horizontalLine_.progressiveStop(ProgressiveStart));
+}
 
 const VideoSourceLine &CaptureWindow::lineOn(const Axis &axis) const
 {

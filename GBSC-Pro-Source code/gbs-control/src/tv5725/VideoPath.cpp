@@ -945,8 +945,8 @@ void VideoPath::write(const VideoProcessorTimings &solved, const CaptureWindow &
     // The line double's progressive window spans one whole line, so it is
     // recomputed on every solve. Its start is written rather than read, or a
     // clobbered preset byte would propagate into the stop.
-    GBS::IF_LINE_ST::write(CaptureWindow::ProgressiveStart);
-    GBS::IF_LINE_SP::write(capture.horizontalLine().progressiveStop(CaptureWindow::ProgressiveStart));
+    GBS::IF_LINE_ST::write(capture.progressiveWindow().stop());
+    GBS::IF_LINE_SP::write(capture.progressiveWindow().start());
     GBS::IF_HB_SP2::write(capture.horizontal().stop());
     GBS::IF_HB_ST2::write(capture.horizontal().start());
     GBS::IF_VB_SP::write(capture.vertical().stop());
@@ -981,7 +981,7 @@ void VideoPath::write(const VideoProcessorTimings &solved, const CaptureWindow &
     // out of it, which flickers even when the value written is identical.
     // docs/investigations/horizontal-scale-corruption.md
     uint16_t fetch = Memory::fetchFor(capture.horizontal().width());
-    uint16_t offset = Memory::offsetFor(capture.horizontalLine().units());
+    uint16_t offset = Memory::offsetFor(capture.lineUnitsOn(AxisHorizontal));
     if (GBS::PB_FETCH_NUM::read() != fetch)
         GBS::PB_FETCH_NUM::write(fetch);
     if (GBS::PB_CAP_OFFSET::read() != offset)

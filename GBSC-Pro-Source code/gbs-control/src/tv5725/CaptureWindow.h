@@ -55,11 +55,12 @@ public:
     const BlankingTiming &horizontal() const;
     const BlankingTiming &vertical() const;
 
-    // The horizontal line knows what the hsync pulse takes off its head; the
-    // vertical does not, because nothing has measured the vsync equivalent and
-    // a guess there would crop picture rather than blanking.
-    const VideoSourceLine &horizontalLine() const;
-    const VideoSourceLine &verticalLine() const;
+    // The line doubler's window, IF_LINE_ST and IF_LINE_SP. It is the line
+    // double timing rather than the picture, and it has to span exactly one
+    // line -- so the far end follows the line length and may roll past it. The
+    // line length moves with PLLAD_MD, so a constant there sizes the window for
+    // whichever line it was picked against.
+    BlankingTiming progressiveWindow() const;
 
     // The span the framing is a proportion of: the WHOLE line, which is the
     // same part of the source in either scan mode. What the capture path can

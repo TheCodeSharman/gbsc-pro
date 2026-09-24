@@ -398,6 +398,28 @@ TEST_CASE("a press that overshoots the edge leaves no dead zone")
     }
 }
 
+// The line doubler's own window, IF_LINE_ST and IF_LINE_SP. It is the line
+// double timing rather than the picture -- it has to span exactly one line, so
+// the stop follows the line length and may roll past it. The line length moves
+// with PLLAD_MD, so a constant stop sizes the window for whichever line it was
+// picked against.
+TEST_CASE("the progressive window spans exactly one line")
+{
+    const VideoSourceLine line(1126);
+    const CaptureWindow window(line, VideoSourceLine::frame(628), 50.0f);
+
+    CHECK(window.progressiveWindow().stop() == CaptureWindow::ProgressiveStart);
+    CHECK(window.progressiveWindow().start() - window.progressiveWindow().stop()
+          == line.units());
+
+    SUBCASE("and it follows the line rather than a constant") {
+        const CaptureWindow shorter(VideoSourceLine(563),
+                                    VideoSourceLine::frame(628), 50.0f);
+        CHECK(shorter.progressiveWindow().start()
+              < window.progressiveWindow().start());
+    }
+}
+
 // The capture path drops a unit at each end of the vertical window, so a window
 // opened on the picture loses the source's first and last lines. The pair the
 // registers take therefore carries the axis's margin at each end, floored at the
