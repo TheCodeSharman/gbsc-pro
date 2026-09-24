@@ -1,9 +1,6 @@
 #include <math.h>
 #include "CaptureWindow.h"
 
-#include "../../gbs_types.h"
-#include "Adc.h"
-#include "InputFormatter.h"
 #include "MemoryMap.h"
 
 namespace Tv5725 {
@@ -16,39 +13,6 @@ CaptureWindow::CaptureWindow()
 CaptureWindow::CaptureWindow(const VideoSourceLine &line, const VideoSourceLine &frame,
                              const SourceTiming &timing)
     : horizontalLine_(line), verticalLine_(frame), timing_(timing) {}
-
-bool CaptureWindow::setSource(const SourceMeasurement &source,
-                                const HsyncPulse &reading,
-                                const SourceTiming &timing, bool lineDoubled)
-{
-    const uint16_t sourceLines = source.sourceLines();
-    const uint16_t horizontalWrap = InputFormatter::lineCounterFor(Adc::dividerInForce(), lineDoubled) + 1;
-
-    if (horizontalWrap < 64)
-        return false;
-
-    // **A MEASUREMENT IN RANGE IS NOT A MEASUREMENT THAT SETTLED**, and the
-    // vertical axis is the one it fools: the horizontal line comes from the held
-    // divider, while this is entirely the source's line count. Sampled through
-    // a preset load the count passes 506, 251, 269, 259 and 511 -- all inside the
-    // bounds a range check applies, and a solve that lands on one sizes the
-    // vertical window for a frame the source is not sending. Having SUCCEEDED it
-    // is never revisited.
-    //
-    // VideoSignal is the one owner of the bounds, on both the count and the
-    // rate.
-    if (!VideoSignal::isVideo(sourceLines, source.fieldRateHz()))
-        return false;
-
-    // The IF's line counter runs at twice the source line rate only while the
-    // line doubler is in the path, so what it counts is half-lines there and
-    // whole source lines otherwise. docs/scaler-geometry-model.md
-    *this = CaptureWindow(
-        VideoSourceLine::forDuty(horizontalWrap, reading, lineDoubled),
-        VideoSourceLine::frame(lineDoubled ? 2 * (sourceLines + 1) : sourceLines + 1),
-        timing);
-    return true;
-}
 
 void CaptureWindow::setFraming(const PanAndZoom &wanted)
 {

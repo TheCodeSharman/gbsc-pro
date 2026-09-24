@@ -48,6 +48,7 @@ SAMPLING_SRC = src/tv5725/SourceMeasurement.cpp src/tv5725/HsyncPulse.cpp \
 	src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp src/tv5725/SamplingClock.cpp \
 	src/tv5725/SteadyRun.cpp src/tv5725/Adc.cpp \
 	src/tv5725/InputFormatter.cpp src/tv5725/SyncProcessor.cpp \
+	src/tv5725/VideoSourceLine.cpp \
 	src/tv5725/ModeDetect.cpp
 
 # Axis and the value types it solves into. HdBypass asks it where video starts
@@ -145,7 +146,7 @@ source-key:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_key" \
 	  "$(HERE)/test_source_key.cpp" src/tv5725/SourceKey.cpp \
-	  $(SAMPLING_SRC) src/tv5725/VideoSourceLine.cpp
+	  $(SAMPLING_SRC)
 	@"$(OUT)/test_source_key"
 
 ## source-timing: host unit tests for Tv5725::SourceTiming
@@ -158,7 +159,7 @@ source-timing:
 	  -o "$(OUT)/test_source_timing" \
 	  "$(HERE)/test_source_timing.cpp" src/tv5725/SourceTiming.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/VideoSourceLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+ src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp
 	@"$(OUT)/test_source_timing"
@@ -174,7 +175,7 @@ framing-table:
 	  -o "$(OUT)/test_framing_table" \
 	  "$(HERE)/test_framing_table.cpp" src/tv5725/FramingTable.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+ src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -191,7 +192,7 @@ slot-table:
 	  -o "$(OUT)/test_slot_table" \
 	  "$(HERE)/test_slot_table.cpp" src/tv5725/SlotTable.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+ src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -208,7 +209,7 @@ framing-text:
 	  "$(HERE)/test_framing_text.cpp" src/tv5725/FramingText.cpp \
 	  src/tv5725/FramingLine.cpp \
 	  src/tv5725/FramingTable.cpp src/tv5725/SourceKey.cpp \
-	  $(SAMPLING_SRC) src/tv5725/VideoSourceLine.cpp \
+	  $(SAMPLING_SRC) \
 	  src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/AxisSolution.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp
@@ -225,7 +226,7 @@ slot-text:
 	  "$(HERE)/test_slot_text.cpp" src/tv5725/SlotText.cpp \
 	  src/tv5725/SlotTable.cpp src/tv5725/FramingLine.cpp \
 	  src/tv5725/SourceKey.cpp $(SAMPLING_SRC) \
-	  src/tv5725/VideoSourceLine.cpp src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
+ src/tv5725/PanAndZoom.cpp src/tv5725/Axis.cpp \
 	  src/tv5725/Scale.cpp src/tv5725/BlankingTiming.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp
@@ -281,7 +282,7 @@ source-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_source_measurement" \
 	  "$(HERE)/test_source_measurement.cpp" $(SAMPLING_SRC) \
-	  src/tv5725/VideoSourceLine.cpp src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
+ src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp \
 	 

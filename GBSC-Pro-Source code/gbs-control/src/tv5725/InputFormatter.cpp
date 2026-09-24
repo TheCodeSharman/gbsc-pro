@@ -13,6 +13,23 @@ uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
     return lineDoubled ? (uint16_t)(divider / 2) : divider;
 }
 
+VideoSourceLine InputFormatter::capturableLine(uint16_t divider,
+                                               const HsyncPulse &pulse,
+                                               bool lineDoubled)
+{
+    // The counter wraps one past its last value, so the span is the register
+    // plus one.
+    return VideoSourceLine::forDuty(
+        (uint16_t)(lineCounterFor(divider, lineDoubled) + 1), pulse, lineDoubled);
+}
+
+VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines,
+                                                bool lineDoubled)
+{
+    return VideoSourceLine::frame(lineDoubled ? (uint16_t)(2 * (sourceLines + 1))
+                                              : (uint16_t)(sourceLines + 1));
+}
+
 uint16_t InputFormatter::verticalPeriod()
 {
     if (!GBS::STATUS_IF_VT_OK::read())

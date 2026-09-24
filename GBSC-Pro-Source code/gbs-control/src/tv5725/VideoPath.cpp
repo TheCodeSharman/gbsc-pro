@@ -861,7 +861,35 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
         solvePending_ = false;
         return false;
     }
-    return capture.setSource(sampling_, reading_, timing_, lineDoubled_) ? true : fail();
+
+    // The divider is held rather than read back: PLLAD_LAT is what loads it
+    // into the ADC PLL, so between a write and the latch the register reports a
+    // value the chip is not using.
+    const uint16_t lineUnits =
+        InputFormatter::lineCounterFor(Adc::dividerInForce(),
+                                               lineDoubled_) + 1;
+    if (lineUnits < 64)
+        return fail();
+
+    // **A MEASUREMENT IN RANGE IS NOT A MEASUREMENT THAT SETTLED**, and the
+    // vertical axis is the one it fools: the line comes from the held divider,
+    // while this is entirely the source's line count. Sampled through a preset
+    // load the count passes 506, 251, 269, 259 and 511 -- all inside the bounds
+    // a range check applies, and a solve that lands on one sizes the vertical
+    // window for a frame the source is not sending.
+    //
+    // VideoSignal is the one owner of the bounds, on both the count and the
+    // rate.
+    const uint16_t sourceLines = sampling_.sourceLines();
+    if (!VideoSignal::isVideo(sourceLines, sampling_.fieldRateHz()))
+        return fail();
+
+    capture = CaptureWindow(
+        InputFormatter::capturableLine(Adc::dividerInForce(),
+                                               reading_, lineDoubled_),
+        InputFormatter::capturableFrame(sourceLines, lineDoubled_),
+        timing_);
+    return true;
 }
 
 bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)

@@ -2,6 +2,7 @@
 #define TV5725_INPUT_FORMATTER_H
 
 #include "Tv5725.h"
+#include "VideoSourceLine.h"
 
 #include <stdint.h>
 
@@ -329,6 +330,23 @@ public:
     // applies it: PLLAD_MD 2553 against 1276 doubled, 2553 against 2553 not. A
     // counter wrapping at half the samples arriving repeats the picture.
     static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
+
+    // The counter a horizontal capture window is placed in: the span the line
+    // counter wraps at, and the hsync interval measured off the source. This
+    // block writes that counter, so it is where a divider and a scan mode
+    // become units.
+    static VideoSourceLine capturableLine(uint16_t divider, const HsyncPulse &pulse,
+                                          bool lineDoubled);
+
+    // The counter the vertical window is placed in. The line counter runs at
+    // twice the source line rate only while the doubler is in the path, so what
+    // it counts is half-lines there and whole source lines otherwise.
+    // ../../../docs/scaler-geometry-model.md
+    //
+    // Nothing is excluded at either end: no hardware facility measures the
+    // vertical sync interval in these units, and a guess there would crop
+    // picture rather than blanking.
+    static VideoSourceLine capturableFrame(uint16_t sourceLines, bool lineDoubled);
 
     // What this block measures of the source. The vertical is 0 unless
     // STATUS_IF_VT_OK says the measurement completed, which it does not on

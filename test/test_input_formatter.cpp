@@ -14,10 +14,13 @@ FakeTwoWire Wire;
 
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 
 static Tv5725::InputFormatter inputFormatter;
 
 using Tv5725::InputFormatter;
+using Tv5725::HsyncPulse;
+using Tv5725::VideoSourceLine;
 
 // What the output can display, in the units the capture is counted in.
 static uint16_t showableIn(uint16_t frameLines)
@@ -292,6 +295,56 @@ TEST_CASE("a source is not doubled into an output that cannot show the result")
         // Bypass, and every caller that has not solved a raster yet.
         CHECK(InputFormatter::shouldDoubleLine(311, 0));
         CHECK_FALSE(InputFormatter::shouldDoubleLine(524, 0));
+    }
+}
+
+// The counters a capture window is placed in. This block writes the line
+// counter, so it is where the divider and the scan mode become a span of units;
+// the pulse measured off the source is what says which of them a window may
+// occupy.
+TEST_CASE("the block states the counters a capture window sits in")
+{
+    const HsyncPulse pulse(0.0718f, true);
+
+    SUBCASE("the line wraps where the line counter was set") {
+        // Doubled the counter takes half the samples, so the same divider gives
+        // half the units, and the wrap is one past the counter's last value.
+        CHECK(InputFormatter::capturableLine(2200, pulse, true).units()
+              == InputFormatter::lineCounterFor(2200, true) + 1);
+        CHECK(InputFormatter::capturableLine(2200, pulse, false).units()
+              == InputFormatter::lineCounterFor(2200, false) + 1);
+    }
+
+    SUBCASE("the pulse is excluded from the head where it sits there") {
+        const VideoSourceLine atHead = InputFormatter::capturableLine(2200, pulse, false);
+        CHECK(atHead.syncUnits() == 159);        // ceil(2200 x 0.0718)
+        CHECK(atHead.firstCapture() == 159);
+
+        // Inverted, the interval is already behind the origin and a guard there
+        // would throw away video.
+        const VideoSourceLine atTail =
+            InputFormatter::capturableLine(2200, HsyncPulse(0.0718f, false), false);
+        CHECK(atTail.firstCapture() == VideoSourceLine::FirstCapturableUnit);
+    }
+
+    SUBCASE("a doubled line keeps the head blanking clear of the capture") {
+        const VideoSourceLine doubled = InputFormatter::capturableLine(2200, pulse, true);
+        CHECK(doubled.firstCapture()
+              == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
+    }
+
+    SUBCASE("the frame counts half-lines doubled and source lines otherwise") {
+        // The line counter runs at twice the source line rate only while the
+        // doubler is in the path.
+        CHECK(InputFormatter::capturableFrame(311, true).units() == 624);
+        CHECK(InputFormatter::capturableFrame(311, false).units() == 312);
+        CHECK(InputFormatter::capturableFrame(627, false).units() == 628);
+    }
+
+    SUBCASE("the frame excludes nothing, because no vertical pulse is measured") {
+        CHECK(InputFormatter::capturableFrame(627, false).syncUnits() == 0);
+        CHECK(InputFormatter::capturableFrame(627, false).firstCapture()
+              == VideoSourceLine::FirstCapturableUnit);
     }
 }
 

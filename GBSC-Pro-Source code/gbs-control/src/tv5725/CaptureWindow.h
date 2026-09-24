@@ -18,8 +18,6 @@
 
 #include "Axis.h"
 #include "VideoSourceLine.h"
-#include "SourceMeasurement.h"
-#include "HsyncPulse.h"
 #include "SourceTiming.h"
 #include "PanAndZoom.h"
 #include "BlankingTiming.h"
@@ -31,31 +29,14 @@ public:
     CaptureWindow();
 
     // The line, the frame and the published raster a framing is placed against.
-    // setSource() derives the three from a measurement and hands them here.
+    // InputFormatter states the two counters, because it is the block that
+    // writes the line counter; `timing` is the published raster the measurement
+    // matched, resolved before it gets here. docs/firmware-geometry-engine.md
     CaptureWindow(const VideoSourceLine &line, const VideoSourceLine &frame,
                   const SourceTiming &timing);
 
     // IF_LINE_ST. Chosen, not derived -- nothing explains 64.
     static const uint16_t ProgressiveStart = 64;
-
-    // The line the framing is placed on, per axis. False when the source has not
-    // settled far enough to derive a window from.
-    //
-    // The measurement is an ARGUMENT, not a read. PLLAD_LAT is what loads the
-    // divider into the ADC PLL, so between a write and the latch the register
-    // reports a value the chip is not using.
-    //
-    // The sync duty and polarity arrive in the READING, taken by the layer that
-    // measures. The line count and the field rate come off the measurement,
-    // which is what keeps the two cross-checked against each other rather than
-    // against a value some caller chose. docs/firmware-geometry-engine.md
-    //
-    // `timing` is the published raster the MEASUREMENT matched. It is not
-    // resolved here: the three values that identify it are all measured, and a
-    // path that plays the source out rather than scaling it never reaches this
-    // call at all. docs/video-source-acquisition.md
-    bool setSource(const SourceMeasurement &source, const HsyncPulse &reading,
-                   const SourceTiming &timing, bool lineDoubled);
 
     // Clamped on the way in, so the framing kept is one these bounds can
     // realise, and the windows are derived from the same placement -- one unit
