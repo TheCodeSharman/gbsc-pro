@@ -100,7 +100,7 @@ Rules that come with it:
   running later. Every check that compared the map against the tables passed.
 - **Don't split responsibility too thinly.** The one split that is justified is
   pure arithmetic versus register traffic, and only because the pure half then
-  host-compiles: `MemoryMap`/`FrameBuffer`, `SdramTimings`/`MemoryBus`. If a
+  host-compiles: `MemoryWindow`/`FrameBuffer`, `SdramTimings`/`MemoryBus`. If a
   split does not buy a test, it is not worth the second file.
 - **A subsystem does not read its own inputs back off the chip.** An early
   `MemoryBus` read `MEM_ACT_CYCLE` to derive the clock from it, which quietly

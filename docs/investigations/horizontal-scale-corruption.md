@@ -190,7 +190,7 @@ capture 737 while 256 tore — the lower end of the withdrawn line above, and th
 only value at that end anybody has ever put into the register by hand. When the
 line was withdrawn, its lower *clamp* was kept as the constant, and the clamp
 was 200 — a number produced by arithmetic that had already been deleted. It sat
-in `Memory.h` for a day looking exactly as measured as 204 does.
+in the fetch rule's header for a day looking exactly as measured as 204 does.
 
 Nothing about the 200 photographs is retracted: they are of 200, they show the
 correct block counts, and the shredding at HSCALE 381 was seen at 200. The

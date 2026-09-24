@@ -74,9 +74,9 @@ nothing is lost but the artefact. On the bench build the engine moves from
 Closing either window on `produced` alone. The tempting form is
 `VDS_?B_ST == VDS_DIS_?B_ST == corner + produced`, which two host tests asserted
 and which reads as the windows hugging the picture exactly; it hugs one unit of
-memory nothing wrote. `test_axis.cpp`'s "the aperture's last unit is
-interpolated from captured memory" walks the whole zoom range on both axes and
-is what holds the rule.
+memory nothing wrote. `test_output_window.cpp`'s "the aperture's last
+unit is interpolated from captured memory" walks the whole zoom range on both
+axes and is what holds the rule.
 
 A register dump cannot see this. Every value is self-consistent under the old
 arithmetic, and `produced` really is `capture x 1024 / scale` with no loss term

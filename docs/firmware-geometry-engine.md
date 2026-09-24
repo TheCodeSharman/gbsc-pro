@@ -12,13 +12,32 @@ is about the code.
 | File | What |
 |---|---|
 | `…/gbs-control/src/tv5725/` | the driver. One class per file; every caller includes the classes it names, and there is no umbrella header |
-| `…/src/tv5725/Geometry.cpp`, `Controls.cpp` | the only two that touch registers or Arduino — everything else is pure arithmetic and host-compiles |
-| `test/test_axis.cpp`, `test_scale.cpp`, `test_input_line.cpp`, `test_active_image.cpp` | host-compiled unit tests, one per class, `make -C test` |
-| `test/test_geometry*.cpp` | what `Tv5725::Geometry` writes, asserted field by field, `make -C test geometry` |
+| `…/src/tv5725/VideoPath.cpp` | the sequencing, and the only part of the cluster that writes registers — everything it derives from is pure arithmetic and host-compiles. `test/Makefile`'s `HOST_GEOMETRY_SRC` is the exclusion list |
+| `test/test_capture_window.cpp`, `test_output_window.cpp`, `test_scale.cpp`, `test_axis.cpp`, `test_memory_window.cpp` | host-compiled unit tests, one per class, `make -C test` |
+| `test/test_video_path_windows.cpp`, `test_video_path_raster.cpp` | what a solve writes, asserted field by field over the fake bus |
 
-`geometry_math.py` is the reference implementation and stays that way. It holds
-every bench measurement from 2026-08-03 to 2026-08-06 as an acceptance test, and
-the pan/zoom pads built on it produced a pixel-perfect picture unaided.
+`geometry_math.py` is scaffolding, not the reference, and is slated for
+deletion. Nothing asserts that the firmware equals it.
+
+## The classes, and the one question each answers
+
+```
+SourceTiming     the raster the SOURCE runs
+OutputTiming     the raster WE run -- the OutputMode rendered in VDS units
+
+CaptureWindow::horizontal()  -> BlankingTiming    which part of the source
+MemoryWindow                                      the SDRAM region it occupies
+OutputWindow::horizontal()   -> OutputMapping     how it maps onto the raster
+```
+
+`MemoryWindow` is the seam: capture writes a region and playback reads it, and
+every input to it is capture-side, so nothing about the output raster reaches
+across.
+
+`Axis` is the token the whole cluster is parameterised by — the grid a window
+may move on and the step a press turns into. Where the picture LANDS is
+`OutputWindow`'s, and that arithmetic is private to it: the cases assert the
+four registers an axis comes out with, not the steps that produced them.
 
 ## The model
 

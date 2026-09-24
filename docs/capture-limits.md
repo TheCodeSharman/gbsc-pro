@@ -59,7 +59,7 @@ twelve deleted preset tables all sat at 2553..2559, hard against the 4x row.
 **RGBHV bypass runs at 1856 whatever the source**: it writes nothing to memory
 and the IF is out of the path, so none of this reaches it.
 
-**`MemoryMap::captureFits()` bounds the capture against SDRAM**, which is a
+**`MemoryWindow::captureFits()` bounds the capture against SDRAM**, which is a
 separate and unrelated limit.
 
 ## The divider follows the measured line rate

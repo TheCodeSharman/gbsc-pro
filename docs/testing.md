@@ -116,7 +116,7 @@ and a test is not a build artefact.
 
 Two kinds:
 
-**Pure arithmetic** — `MemoryMap`, `SdramTimings`, `OutputMode`, `SourceMeasurement`,
+**Pure arithmetic** — `MemoryWindow`, `SdramTimings`, `OutputMode`, `SourceMeasurement`,
 `DisplayClock`, `PresetLoad`. No chip, no Arduino. This is where most logic
 should live, and the pure/register split in `src/tv5725/` exists largely to put
 it there.
@@ -292,11 +292,24 @@ was the smell admitting itself.
 **An intermediate either reaches the registers or it does not.** If it does, the
 result assertions already cover it and the step assertion is redundant; if it
 does not, it does not matter. Either way the step assertion earns nothing --
-and it costs, because it reads as coverage. `test_axis.cpp` asserted
+and it costs, because it reads as coverage. A case asserted
 `originOffset(AxisVertical, 2.0f)` was within 1.0 of 2 when the value is 1.8:
 the vertical write-start constant could be moved from 0.8 to 0.9 and the
 assertion still passed. A test that cannot fail for the thing it names is worse
 than no test, because it stops anyone writing the one that can.
+
+**What replaced it is the shape to copy.** The suite states the bench reading
+itself -- the write origin is 55 + 25m horizontally and 0.2 + 0.8m vertically --
+predicts the registers from it, and compares. A constant that moves in the
+firmware then disagrees with the measurement it came from, where asking the
+class for the value compares the model with itself. The readings stay as a case
+of their own, checking the stated model against the numbers it was fitted to,
+so the chain from a bench measurement to a register has both links tested and
+neither is a tautology.
+
+**A sweep is what catches a small constant.** Vertically 0.8 against 0.9 is a
+tenth of a line and only some magnifications round across it, so a single
+magnification proves nothing.
 
 **Prefer socialised tests to isolated ones.** `SolvedEngine.h` builds a real
 `VideoPath`, `InputFormatter`, `SourceMeasurement` and `FramingTable` over the
