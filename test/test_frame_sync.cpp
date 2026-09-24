@@ -49,6 +49,12 @@ uint32_t debugPinTicksPerSecond() { return TicksPerSecond; }
 static uint32_t g_outputWobble;
 static unsigned g_outputSamples;
 
+// The same for the input, which is how a source whose period reads differently
+// on two consecutive samples behaves. The engine's settled rate is what the
+// correction uses; only the phase comes from here.
+static uint32_t g_inputWobble;
+static unsigned g_inputSamples;
+
 bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
 {
     if (onOutputBus()) {
@@ -62,7 +68,7 @@ bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
     if (!g_inputArrives)
         return false;
     *start = 1;
-    *stop = 1 + g_inputPeriod;
+    *stop = 1 + g_inputPeriod + ((g_inputSamples++ & 1) ? g_inputWobble : 0);
     return true;
 }
 
@@ -90,6 +96,8 @@ void aLockedSource()
     g_outputArrives = true;
     g_outputWobble = 0;
     g_outputSamples = 0;
+    g_inputWobble = 0;
+    g_inputSamples = 0;
     g_probes = 0;
     g_logLines.clear();
     VideoRoute::toScaler();
@@ -311,7 +319,7 @@ TEST_CASE("the rate correction steers nothing until a ratio is established")
 
     // True rather than false: no ratio is an external state, not a failed
     // measurement, so it is not a lock failure for the caller to reset on.
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() == 108000000u);
 }
 
@@ -334,7 +342,7 @@ TEST_CASE("an output crossing early is slowed by lowering the display clock")
     lock.init();
     lock.initFrequency(60.0f, clock.hzNow());
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() < 108000000u);
 
     SUBCASE("by no more than the 0.06% a sink will follow") {
@@ -360,7 +368,7 @@ TEST_CASE("an output crossing late is hurried by raising the display clock")
     lock.init();
     lock.initFrequency(60.0f, clock.hzNow());
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() > 108000000u);
     CHECK(clock.hzNow() <= (uint32_t)(108000000.0 * 1.0006));
 }
@@ -383,7 +391,7 @@ TEST_CASE("the rate correction leaves the display alone while the bypass carries
     lock.init();
     lock.initFrequency(60.0f, clock.hzNow());
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() == 108000000u);
 }
 
@@ -405,7 +413,7 @@ TEST_CASE("the rate correction leaves the display alone on the internal PLL")
     lock.init();
     lock.initFrequency(60.0f, clock.hzNow());
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() == 108000000u);
 }
 
@@ -426,7 +434,7 @@ TEST_CASE("cleanup forgets the ratio, so nothing is steered against a stale rast
     lock.cleanup();
     lock.init();
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() == 108000000u);
 }
 
@@ -448,31 +456,8 @@ TEST_CASE("a reset keeps the ratio, because the callers that reset do not re-est
     lock.reset(0);
     lock.init();
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(clock.hzNow() < 108000000u);
-}
-
-TEST_CASE("two readings of the source rate that disagree steer nothing")
-{
-    // The display clock is set to a ratio involving this rate, so a reading
-    // acted on in error beats against the source for as long as the boot runs.
-    aLockedSource();
-    theGeneratorDrivesTheDisplay();
-    g_outputOffset = g_inputPeriod / 100;
-    g_inputPeriod = ticksForHz(200.0f);   // outside any plausible field rate
-
-    Si5351mcu part;
-    Clock::ClockGen generator(part);
-    DisplayClock clock;
-    clock.attach(generator, 108000000u);
-
-    FrameSync lock(clock);
-    GBS::VDS_HSYNC_RST::write(1915);
-    lock.init();
-    lock.initFrequency(60.0f, clock.hzNow());
-
-    CHECK_FALSE(lock.runFrequency());
-    CHECK(clock.hzNow() == 108000000u);
 }
 
 namespace {
@@ -550,7 +535,7 @@ TEST_CASE("the rate match establishes the ratio the per-frame correction needs")
     REQUIRE(lock.matchRate(60.0f));
     const uint32_t matched = board.clock.hzNow();
 
-    CHECK(lock.runFrequency());
+    CHECK(lock.runFrequency(60.0f));
     CHECK(board.clock.hzNow() != matched);
 }
 
@@ -591,4 +576,55 @@ TEST_CASE("a board with no generator has no rate to match")
 
     CHECK_FALSE(lock.matchRate(60.0f));
     CHECK(clock.hzNow() == 108000000u);
+}
+
+TEST_CASE("the correction takes the source's rate from the engine, not the pin")
+{
+    // Two readings of the input period taken here spread by more than the
+    // agreement tolerance on a source the engine holds steady, so a correction
+    // that insisted the pair agreed refused about nine times in ten.
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 100;
+    g_inputWobble = g_inputPeriod / 60;   // well over RateAgreement's 0.05%
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    CHECK(lock.runFrequency(60.0f));
+    CHECK(board.clock.hzNow() != 108000000u);
+}
+
+TEST_CASE("a source the engine has not settled on corrects nothing")
+{
+    // Not a lock failure: the gate lets a pass through on held state, and the
+    // rate is the one thing here that comes from outside it.
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 100;
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    CHECK(lock.runFrequency(0.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
+}
+
+TEST_CASE("a phase that cannot be measured is a lock failure")
+{
+    // The distinction that matters to the caller: the rate coming from the
+    // engine does not make the phase measurable, and a pin carrying nothing is
+    // what the forgiveness count exists for.
+    aLockedSource();
+    g_inputArrives = false;
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+
+    CHECK_FALSE(lock.runFrequency(60.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
 }

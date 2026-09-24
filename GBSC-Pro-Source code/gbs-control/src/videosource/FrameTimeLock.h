@@ -12,6 +12,7 @@
 
 namespace Tv5725 {
 class FrameSync;
+class SourceMeasurement;
 class VideoPath;
 }
 
@@ -45,7 +46,8 @@ public:
     };
 
     FrameTimeLock(Tv5725::FrameSync &lock, VideoSourceAcquisition &acquisition,
-                  Tv5725::VideoPath &videoPath);
+                  Tv5725::VideoPath &videoPath,
+                  Tv5725::SourceMeasurement &sampling);
 
     // One pass, from loop(). Arms the lock, runs it when it can, and reports
     // which of the two it is doing.
@@ -69,6 +71,7 @@ private:
     Tv5725::FrameSync &lock_;
     VideoSourceAcquisition &acquisition_;
     Tv5725::VideoPath &videoPath_;
+    Tv5725::SourceMeasurement &sampling_;
     uint8_t failuresLeft_;
     const char *reported_;
 };

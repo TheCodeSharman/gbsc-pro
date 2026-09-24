@@ -39,9 +39,10 @@ const float CorrectionPerFrame = 0.0038f;
 const float MaxCorrection = 0.0006f;
 const float MaxFrameRateChange = 0.0006f;
 
-// Two tries at measuring the input period, which substantially reduces the
-// chance of guessing the field rate wrong when the source's sync changes.
-const int MeasureAttempts = 2;
+// Two tries at measuring the phase. One is enough where the pin is carrying
+// vsync at all, and a second costs a frame period; more than that is a signal
+// that is not there, which the caller's forgiveness count is for.
+const int PhaseAttempts = 2;
 
 // How many measurements of the output rate are taken looking for two that
 // agree. Each one spins for up to a frame period, so they are few.
@@ -160,10 +161,8 @@ bool FrameSync::matchRate(float sourceFieldRateHz)
     initFrequency(outputRate, from);
     clock_.slewTo((uint32_t)((sourceFieldRateHz / outputRate) * from));
 
-    // In milli-hertz: the agreement tolerance is 0.05%, which is 0.03 Hz at
-    // 60 Hz, and the clock is set to the RATIO of the two. A pair that agrees
-    // and is wrong puts the output that far from the source, and whole hertz
-    // cannot see it.
+    // In milli-hertz: a pair that agrees to the 0.05% tolerance can still be
+    // 0.03 Hz apart at 60 Hz, and whole hertz cannot see that.
     char line[104];
     snprintf(line, sizeof line,
              "rate match: source %lu mHz, output %lu mHz, clock %lu -> %lu",
@@ -210,13 +209,8 @@ bool FrameSync::vsyncPeriodAndPhase(int32_t *periodInput, int32_t *periodOutput,
 }
 
 // Whether there is a raster and both vsync periods can be read, which is the
-// whole of what arms the lock.
-//
-// This replaced a search for the output horizontal total that would match the
-// input frame time. Its answer was DISCARDED -- init() returned it and the one
-// caller ignored the return -- so the search decided only whether arming
-// succeeded, which is these checks. Tv5725::VideoPath solves the raster now.
-// ../../../docs/video-source-acquisition.md
+// whole of what arms the lock. **DO NOT PUT AN HTOTAL SEARCH BACK HERE**:
+// Tv5725::VideoPath solves the raster. ../../../docs/video-source-acquisition.md
 bool FrameSync::bothVsyncPeriodsReadable()
 {
     if (GBS::VDS_HSYNC_RST::read() == 0)
@@ -326,7 +320,7 @@ void FrameSync::initFrequency(float outFramesPerS, uint32_t displayClockHz)
     clockPerFrameRate_ = (float)displayClockHz / outFramesPerS;
 }
 
-bool FrameSync::runFrequency()
+bool FrameSync::runFrequency(float sourceFieldRateHz)
 {
     if (clockPerFrameRate_ < 0) {
         tv5725Log("frame time lock: no output/input rate ratio yet");
@@ -342,39 +336,27 @@ bool FrameSync::runFrequency()
         return false;
     }
 
+    if (!rateIsPlausible(sourceFieldRateHz)) {
+        tv5725Log("frame time lock: no settled source rate to correct towards");
+        return true;
+    }
+
     const float ticksPerSecond = (float)debugPinTicksPerSecond();
+    const float rateInput = sourceFieldRateHz;
 
     int32_t periodInput = 0;
     int32_t phase = 0;
-    float rateInput = 0.0f;
     bool measured = false;
 
-    for (int attempt = 0; attempt < MeasureAttempts; attempt++) {
-        if (!vsyncPeriodAndPhase(&periodInput, NULL, &phase))
-            continue;
-
-        rateInput = ticksPerSecond / (float)periodInput;
-        if (!rateIsPlausible(rateInput))
-            continue;
-
-        TestBus::selectInputVsync();
-        uint32_t secondPeriod = debugPinPulseTicks();
-        if (secondPeriod == 0)
-            continue;
-
-        float secondRate = ticksPerSecond / (float)secondPeriod;
-        if (!rateIsPlausible(secondRate))
-            continue;
-
-        if (!Clock::RateAgreement::agree(rateInput, secondRate))
-            continue;
-
-        measured = true;
-        break;
+    for (int attempt = 0; attempt < PhaseAttempts; attempt++) {
+        if (vsyncPeriodAndPhase(&periodInput, NULL, &phase)) {
+            measured = true;
+            break;
+        }
     }
 
     if (!measured) {
-        tv5725Log("frame time lock: the input rate could not be measured");
+        tv5725Log("frame time lock: the phase could not be measured");
         return false;
     }
 

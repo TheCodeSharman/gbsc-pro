@@ -58,7 +58,7 @@ TEST_CASE("the option being off is the first thing reported")
 {
     SolvedEngine unit;
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     FrameTimeLock::Conditions conditions = allOpen();
     conditions.optionEnabled = false;
@@ -70,7 +70,7 @@ TEST_CASE("a source that is not there blocks the lock")
 {
     SolvedEngine unit;
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     FrameTimeLock::Conditions conditions = allOpen();
     conditions.sourcePresent = false;
@@ -82,7 +82,7 @@ TEST_CASE("the sync watcher being off blocks the lock")
 {
     SolvedEngine unit;
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     FrameTimeLock::Conditions conditions = allOpen();
     conditions.syncWatcherEnabled = false;
@@ -98,7 +98,7 @@ TEST_CASE("video that routes around the scaler blocks the lock")
     unit.engine.setOutputMode(&ModeBypass);
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     CHECK(reason(gate.blockedBy(allOpen(), 100000))
           == std::string("the video bypasses the scaler"));
@@ -114,7 +114,7 @@ TEST_CASE("a lock with no coast window never arms")
     REQUIRE_FALSE(SyncProcessor::coastPlaced());
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     CHECK(reason(gate.blockedBy(allOpen(), 100000)) == std::string("not armed: no coast window"));
 }
@@ -127,7 +127,7 @@ TEST_CASE("a source that has only just been acquired is not armed against")
     unit.acquisition.resolveFromSource();
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     REQUIRE(unit.acquisition.acquiredPasses() < FrameTimeLock::ArmPasses);
     CHECK(reason(gate.blockedBy(allOpen(), 100000))
@@ -140,7 +140,7 @@ TEST_CASE("a lock something keeps disturbing never arms")
     aSourceWorthLockingTo(unit.acquisition, FrameTimeLock::ArmPasses + 1);
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     lock.defer(100000);
 
@@ -163,7 +163,7 @@ TEST_CASE("an armed lock paces itself between corrections")
     aSourceWorthLockingTo(unit.acquisition, FrameTimeLock::HeldPasses + 2);
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     gate.service(allOpen(), 100000);
     REQUIRE(lock.ready());
@@ -180,7 +180,7 @@ TEST_CASE("an armed lock on a held source runs, and says so once")
     aSourceWorthLockingTo(unit.acquisition, FrameTimeLock::HeldPasses + 2);
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     uint32_t now = 100000;
     for (int i = 0; i < 4; ++i) {
@@ -208,7 +208,7 @@ TEST_CASE("a board with no generator stretches the raster instead of the clock")
 
     FrameSync lock(unit.clock);
     REQUIRE_FALSE(lock.canSteerRate());
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     const uint16_t before = GBS::VDS_VSYNC_RST::read();
 
@@ -228,7 +228,7 @@ TEST_CASE("method 1 corrects the raster and leaves the vsync pulse alone")
     aSourceWorthLockingTo(unit.acquisition, FrameTimeLock::HeldPasses + 2);
 
     FrameSync lock(unit.clock);
-    FrameTimeLock gate(lock, unit.acquisition, unit.engine);
+    FrameTimeLock gate(lock, unit.acquisition, unit.engine, unit.sampling);
 
     const uint16_t pulseBefore = GBS::VDS_VS_ST::read();
 

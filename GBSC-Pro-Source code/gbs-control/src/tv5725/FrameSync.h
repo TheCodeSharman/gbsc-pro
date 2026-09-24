@@ -98,8 +98,16 @@ public:
     bool canSteerRate() const;
 
     // One correction. True means the lock ran or had nothing to do; false means
-    // the measurement failed and the caller should consider resetting.
-    bool runFrequency();
+    // the PHASE could not be measured and the caller should consider resetting.
+    //
+    // `sourceFieldRateHz` is asked of the engine for the same reason
+    // matchRate() asks: two readings taken here spread by more than a hertz on
+    // a source the engine holds to the milli-hertz, so insisting a pair agreed
+    // refused about nine corrections in ten and the lock converged in minutes
+    // rather than seconds. Only the PHASE is measured here, and it is measured
+    // against the period from its own pass, so a biased period cancels in the
+    // ratio. ../../../docs/known-issues.md
+    bool runFrequency(float sourceFieldRateHz);
     bool runVsync(uint8_t frameTimeLockMethod);
 
 private:

@@ -1004,7 +1004,7 @@ SourceMaintenance sourceMaintenance;
 // The only thing on the board that steers the output frame time towards the
 // source's, and the gate that decides when it may.
 Tv5725::FrameSync frameSync(rtos.displayClock);
-FrameTimeLock frameTimeLock(frameSync, inputAcquisition, geometry);
+FrameTimeLock frameTimeLock(frameSync, inputAcquisition, geometry, sourceSampling);
 
 void externalClockGenResetClock()
 {

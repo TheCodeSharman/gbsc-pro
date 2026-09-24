@@ -5,6 +5,7 @@
 
 #include "../tv5725/Adc.h"
 #include "../tv5725/FrameSync.h"
+#include "../tv5725/SourceMeasurement.h"
 #include "../tv5725/SyncProcessor.h"
 #include "../tv5725/Tv5725Log.h"
 #include "../tv5725/VideoPath.h"
@@ -34,9 +35,10 @@ bool dividerLatched()
 
 FrameTimeLock::FrameTimeLock(Tv5725::FrameSync &lock,
                              VideoSourceAcquisition &acquisition,
-                             Tv5725::VideoPath &videoPath)
+                             Tv5725::VideoPath &videoPath,
+                             Tv5725::SourceMeasurement &sampling)
     : lock_(lock), acquisition_(acquisition), videoPath_(videoPath),
-      failuresLeft_(FailuresForgiven), reported_(NULL) {}
+      sampling_(sampling), failuresLeft_(FailuresForgiven), reported_(NULL) {}
 
 void FrameTimeLock::forgiveFailures() { failuresLeft_ = FailuresForgiven; }
 
@@ -101,8 +103,10 @@ void FrameTimeLock::service(const Conditions &conditions, uint32_t nowMs)
         } else {
             // The rate correction is smooth and the raster one is not, so the
             // rate is preferred wherever a generator can carry it.
-            const bool ran = lock_.canSteerRate() ? lock_.runFrequency()
-                                                   : lock_.runVsync(conditions.method);
+            const bool ran =
+                lock_.canSteerRate()
+                    ? lock_.runFrequency(sampling_.settledFieldRateHz())
+                    : lock_.runVsync(conditions.method);
             if (ran) {
                 forgiveFailures();
             } else if (failuresLeft_ == 0) {
