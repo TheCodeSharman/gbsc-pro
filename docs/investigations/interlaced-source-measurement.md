@@ -233,3 +233,30 @@ source on separate sync is the one thing this bench cannot make. A mode file doe
 not close that gap -- it would match the active area, not the pulse structure.
 The one separator-path source with real serrations, the Wii at 480i, does
 alternate, which is at least not evidence against.
+
+## Three explanations of the steady count, all refuted
+
+Why a 312.5-line field holds a steady count on the separator path is still
+unexplained, and so is the factor the reconciliation has to pick. These are the
+models that looked sufficient and are not, so they are not re-proposed.
+
+**A broad-pulse width — PAL 2.5 lines against NTSC 3 — does not explain it.**
+The six-state table above refutes it from its own rows: the *same* 312.5-line
+field alternates on separate sync and holds steady on composite. The behaviour
+follows the **route**, and a property of the source's pulse cannot vary with
+which of this board's separators the signal took.
+
+**"A sustained refusal of the reconciliation means interlaced" is not a
+detector.** It works at 312.5 and fails at 262.5, where a composite interlaced
+source reconciles to a plausible vertical sync width and the refusal never
+comes. A detector that holds on one field count and not the other is reporting
+the field count.
+
+**An odd or even frame total does not predict the 1x/2x factor.** Failed on
+three of four fresh modes. `SourceMeasurement::reconciledFrame()` picks the
+factor by testing both against the counted frame rather than deriving it, which
+is why it survives modes this model would have mis-assigned.
+
+The reconciliation does not apply to an interlaced source and does not claim
+to: the counter holds a field where `VPERIOD_IF` holds a frame, no factor
+reconciles them, and the raw count stands.
