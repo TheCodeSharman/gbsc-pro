@@ -292,6 +292,35 @@ that loop explains the delay(7) and the absent yield() and says nothing about
 the sleep mode -- and it is set across the one edge whose timestamp matters,
 with WIFI_NONE_SLEEP restored only after. Measured as making no difference.
 
+### A warm-reset race -- REFUTED
+
+Every boot in the surveys above is `/restart`, a software ESP reset, and the
+TV5725 keeps its registers across one -- so detection restarts against a chip
+that is not in its power-on state, which a cold boot would not do. The
+difference is real and it is not this fault.
+
+Measured on true cold boots, mains switched off for around fifteen seconds with
+no USB attached, each confirmed by `/bootlog` reading `reason='External System'`
+where every warm boot reads `'Software/System restart'`, and each measured with
+the clock parked:
+
+| boot | missed | pin worst | drift/step | residual sd | worst |
+|---|---|---|---|---|---|
+| cold, clean | 0 of 37 | 0.16% | 2247 | **669** | 3918 |
+| cold, disturbed | 3 of 37 | 2.71% | -6584 | **21708** | 67345 |
+| warm, disturbed (3) | 5..7 of 37 | 1.7..2.6% | 1874..2274 | 16094..17937 | 32961..37956 |
+
+**A cold boot is disturbed as badly as a warm one, and worse than all three
+warm ones measured.** The per-boot split is the same either way. So the survey
+figures taken over `/restart` are not an artefact of the reset type, and
+`/restart` remains a valid way to sample boots.
+
+**Arm the lock through the saved preference when surveying boots.** A boot that
+comes up disarmed cannot shake and cannot be measured, and from the far end it
+is indistinguishable from a clean one -- one cold boot was scored by eye as
+clean when the lock had simply never armed. `/uc?5` persists the option;
+`/sc?W` is RAM only and is a toggle.
+
 ### The chip is configured the same either way -- REFUTED
 
 A full 1536-address dump taken on a clean boot and on a disturbed one, both
@@ -314,11 +343,7 @@ measured line rate.
   correction of a boot is disturbed or none are, so it is a state set once and
   held. It reaches the input path and not the output one, and no register
   differs between the two cases.
-- **Whether a COLD boot behaves differently.** Every boot measured here is
-  `/restart`, a software ESP reset, and the TV5725 keeps its registers across
-  one -- so detection restarts against a chip that is not in its power-on
-  state. A cold boot needs mains AND USB pulled, since USB backfeeds the rails.
-  Untested.
+- ~~Whether a COLD boot behaves differently.~~ **REFUTED, below.**
 - **Whether the divider should be keyed to the source identity.** The same
   source chose 1436 on one boot and 1440 on the next, because the divider comes
   from a measured line rate with nothing quantising it. Framings are already
