@@ -13,11 +13,13 @@ The period comes from `SourceMeasurement::settledFieldRateHz()` now, and only
 the offset between the two edges is measured. What the pin made of the period
 stays on the log line, because it is the instrument that found this.
 
-**A RESIDUAL REMAINS AND ITS CAUSE IS NOT KNOWN.** On some boots the input
-vsync period reads 1..2.5% out and drops pulses for the whole boot, and the
-phase moves with it. The output vsync period beside it, timed by the same ISR
-microseconds later, stays inside 0.06% on the same pass -- so it is not the
-ESP's timestamping, and it is specific to the input path.
+**THE RESIDUAL IS A NOISY PHASE MEASUREMENT, MEASURED WITH THE LOOP PARKED.**
+On some boots the input vsync period reads 1..2.5% out and drops pulses for the
+whole boot, and the phase carries noise eight times the size of its own
+movement. The output vsync period beside it, timed by the same ISRs in the same
+pass, stays inside 0.06% -- so it is not the ESP's timestamping, and it is
+specific to the input path. **What disturbs that path is not known**, and the
+chip is configured identically on a clean boot and a disturbed one.
 
 **The rate is NOT what differs between a shaking boot and a steady one.** That
 model is refuted by the survey below: all six boots matched the same source rate
@@ -223,6 +225,41 @@ An ISR that cannot service an edge would lose both. So the disturbance is
 specific to what the input vsync path delivers, and a model that blames
 interrupt latency has to explain why one signal survives it.
 
+### The phase itself, with the clock parked
+
+**A CORRECTION THAT IS STEERING CANNOT BE USED TO JUDGE ITS OWN MEASUREMENT.**
+At the +-0.06% clamp the loop moves the phase by `0.0006 x 1.67 s x 60.3 Hz`
+of a frame -- about 160000 ticks per interval, which is the size of the jumps a
+noisy measurement makes. Every model argued from the display clock founders
+there, and so does one argued from the phase while the lock is live.
+
+`/framesync?observe=1` runs the correction and prints it without slewing.
+Parked, the clock is fixed, so the true phase must move in a STRAIGHT LINE at
+the residual rate offset and anything else is the instrument. Three boots, 37
+corrections each, clock verified at 108022872 Hz start and end:
+
+| run | drift per step | residual sd | worst residual |
+|---|---|---|---|
+| 1 | 1874 | 16280 | 37956 |
+| 2 | 2160 | 17937 | 32961 |
+| 3 | 2274 | 16094 | 37163 |
+
+**The noise is eight times the signal and the worst excursion eighteen times
+it.** Proportional feedback on an integrator amplifies that into the clock
+swing, which is why the residual is not a limit cycle and why its step sizes
+never repeated.
+
+**A per-pass rejection test does not catch it.** The obvious filter -- discard
+a pass whose pin period disagrees with the engine's -- was checked against the
+captures and fails: phase excursions of 200000 ticks land on passes whose own
+period reads 0.00% out. A pass with a multi-frame period is known bad and worth
+discarding, but a pass with a clean period is not thereby good.
+
+What the numbers do license is a filter on the phase itself. Across three
+samples spaced a pass apart the true phase cannot move more than about 4800
+ticks, because the clamp bounds it, against 16000 of noise -- so the tolerance
+is derivable rather than guessed.
+
 ### WiFi light sleep across the measured edge -- NOT ESTABLISHED
 
 `debugPinPulseEdges()` enters `WIFI_LIGHT_SLEEP` after the first edge and holds
@@ -236,17 +273,58 @@ refutes it:
 | middle | **off** | 5 of 6 |
 | late | on | 2 of 3 |
 
-The split tracks WHEN the boot ran rather than the flag, so the experiment is
-confounded by whatever drifts across a session and cannot separate the two. The
-line is still the obvious suspect and the experiment has to be **interleaved**
-to say anything: alternate the builds boot by boot rather than running a block
-of each.
+The split tracks WHEN the boot ran rather than the flag, so a block of each
+cannot separate them. **Flipping the flag mid-boot removes the boot-to-boot
+variable entirely, and refutes it.** Three boots, light sleep switched at the
+30 s mark of each:
+
+| boot | first half, sleep ON | second half, sleep OFF |
+|---|---|---|
+| 1 | 0.16% worst, 0 missed | 0.16% worst, 0 missed |
+| 2 | 2.23% worst, 5 missed | 2.23% worst, 3 missed |
+| 3 | 1.75% worst, 3 missed | 2.07% worst, **8 missed** |
+
+The disturbance rides through the flip: a clean boot stays clean with it on, a
+disturbed boot stays disturbed with it off, and one got worse without it. It is
+neither the cause nor a cure. It remains a latency knob in the most
+timing-sensitive loop in the firmware with no stated reason -- the comment above
+that loop explains the delay(7) and the absent yield() and says nothing about
+the sleep mode -- and it is set across the one edge whose timestamp matters,
+with WIFI_NONE_SLEEP restored only after. Measured as making no difference.
+
+### The chip is configured the same either way -- REFUTED
+
+A full 1536-address dump taken on a clean boot and on a disturbed one, both
+disarmed first, differ in **nine bytes, and all nine are one number**: the
+solved divider landed at 1436 against 1440, 0.28% apart, and `IF_HSYNC_RST`,
+`SP_RT_HS_SP`, `IF_HB_ST2`, `IF_HB_SP2`, `IF_LINE_SP`, `VDS_HSCALE` and
+`PB_CAP_OFFSET` all follow from it. `PA_SP_S` moved 16 to 20. Not one sync
+processor or input formatter setting differs.
+
+So a model where the reset leaves the chip in a different state is refuted as
+far as any register can show it -- which is not the whole machine, since a
+missing `PLLAD_LAT` edge is invisible and the HC32F460's half is unreadable.
+**The divider scatter is worth its own attention**: the same source at the same
+mode chose two dividers on two boots, because `recommendedDivider()` takes a
+measured line rate.
 
 ## What is still open
 
-- **What disturbs the input vsync path, per boot, for the whole boot.** All 18
-  corrections of a boot are disturbed or none are, so it is a state set once and
-  held. It reaches the input path and not the output one.
+- **What disturbs the input vsync path, per boot, for the whole boot.** Every
+  correction of a boot is disturbed or none are, so it is a state set once and
+  held. It reaches the input path and not the output one, and no register
+  differs between the two cases.
+- **Whether a COLD boot behaves differently.** Every boot measured here is
+  `/restart`, a software ESP reset, and the TV5725 keeps its registers across
+  one -- so detection restarts against a chip that is not in its power-on
+  state. A cold boot needs mains AND USB pulled, since USB backfeeds the rails.
+  Untested.
+- **Whether the divider should be keyed to the source identity.** The same
+  source chose 1436 on one boot and 1440 on the next, because the divider comes
+  from a measured line rate with nothing quantising it. Framings are already
+  stored per `SourceKey` with a tolerance, and the raster is already solved once
+  per source identity. It is a repeatability question and NOT established as
+  reaching the phase noise, which is timed on the ESP.
 - **`targetPhase` is 90 degrees and nothing has measured that it is right.** The
   crossover shows as a stationary tear at `targetPhase/360` down the screen and
   belongs in vertical blanking; 90 degrees puts it a quarter of the way into
