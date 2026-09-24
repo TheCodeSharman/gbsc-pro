@@ -1117,6 +1117,21 @@ twelve tables while they existed, which is what `BringUp` was built from.
   measurement as its line count. What disqualifies a read is asking the chip for
   a value the engine itself put there.
 
+  **BOTH RULES ARE SINGLE RESPONSIBILITY, AND THE EXCEPTION LICENSES ONE OWNER
+  RATHER THAN EVERY CONSUMER.** Every measured fact about the source —
+  field rate, line rate, line count, sync polarity — is owned by
+  `Tv5725::SourceMeasurement`, and a class that needs one asks for it. Taking a
+  second reading of a fact something else already holds is the same defect as a
+  second writer on a field: `FrameSync` timed the source's vsync period on
+  `DEBUG_IN_PIN` inside its own correction, the two instruments disagreed, and
+  the unfiltered one won — a missed edge ISR reads a WHOLE MULTIPLE of the
+  frame, which scales the phase target with it and slams the correction to its
+  clamp. **An agreement test does not rescue a second owner**: agreement rejects
+  noise and cannot reject bias, and two readings of a doubled frame agree with
+  each other perfectly. Only a check against something independently known
+  rejects that, which is what `rateIsPlausible()` is and what the period had
+  none of. `docs/investigations/the-frame-time-lock-saturates.md`.
+
   **Writing a register FROM a measurement is ordinary, not an exception.**
   `SP_HS_INV_REG` set from the measured polarity is the same kind of act as any
   other solved register — one owner, derived once. Prefer it over carrying the
