@@ -44,6 +44,13 @@ public:
     // output. Either way a correction measured before now is worthless.
     void defer(uint32_t nowMs);
 
+    // Measure and print, steer nothing. The loop is proportional feedback on
+    // an integrator, so at the clamp it moves the phase by as much as a noisy
+    // measurement does and the display clock cannot say which it is watching.
+    // With the clock parked the phase must move in a straight line.
+    // ../../../docs/investigations/the-frame-time-lock-saturates.md
+    void setObserveOnly(bool on);
+
     // Nothing has disturbed the lock for this long. Both callers ask it of
     // their own interval -- running a correction is due less often than arming
     // one -- so the interval is the caller's.
@@ -157,6 +164,7 @@ private:
     uint8_t delayLock_;
     int16_t lastCorrection_;
     uint32_t disturbedMs_;
+    bool observeOnly_;
 
     // Display clocks per output frame, or -1 where no ratio has been
     // established. Kept across reset(): callers reset without re-establishing

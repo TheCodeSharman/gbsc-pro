@@ -742,3 +742,27 @@ TEST_CASE("a period the pin reads as three frames does not reach the correction"
         CHECK(loggedContaining("pin 7999998/"));
     }
 }
+
+TEST_CASE("observing measures and prints without steering the display clock")
+{
+    // The loop is proportional feedback on an integrator, so at the clamp it
+    // moves the phase by as much as the noise does and the clock cannot say
+    // which it is watching. Parked, the phase must move in a straight line and
+    // anything else is the measurement.
+    // ../docs/investigations/the-frame-time-lock-saturates.md
+    aLockedSource();
+    g_outputOffset = g_inputPeriod / 100;
+
+    SteerableClock board;
+    FrameSync lock(board.clock);
+    lock.init();
+    lock.initFrequency(60.0f, board.clock.hzNow());
+    lock.setObserveOnly(true);
+
+    CHECK(lock.runFrequency(60.0f));
+    CHECK(board.clock.hzNow() == 108000000u);
+
+    SUBCASE("and the measurement is still printed, which is the whole point") {
+        CHECK(loggedContaining("frame time lock: phase 26666/2666666"));
+    }
+}

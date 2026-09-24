@@ -6610,6 +6610,9 @@ void startWebserver()
         if (request->hasArg("phase")) {
             frameSync.setTargetPhase(request->arg("phase").toInt());
         }
+        if (request->hasArg("observe")) {
+            frameSync.setObserveOnly(request->arg("observe").toInt() != 0);
+        }
         char body[208];
         snprintf_P(body, sizeof(body),
             PSTR("{\"ready\":%s,\"driving\":%s,\"seed\":%u,"

@@ -66,10 +66,12 @@ int32_t framePeriodTicks(float sourceFieldRateHz)
 
 FrameSync::FrameSync(DisplayClock &clock)
     : clock_(clock), targetPhase_(DefaultTargetPhase), ready_(false),
-      delayLock_(0), lastCorrection_(0), disturbedMs_(0),
+      delayLock_(0), lastCorrection_(0), disturbedMs_(0), observeOnly_(false),
       clockPerFrameRate_(-1.0f) {}
 
 void FrameSync::defer(uint32_t nowMs) { disturbedMs_ = nowMs; }
+
+void FrameSync::setObserveOnly(bool on) { observeOnly_ = on; }
 
 bool FrameSync::quietFor(uint32_t ms, uint32_t nowMs) const
 {
@@ -440,7 +442,8 @@ bool FrameSync::runFrequency(float sourceFieldRateHz)
              (unsigned long)clock_.hzNow(), (unsigned long)steered);
     tv5725Log(line);
 
-    clock_.slewTo(steered);
+    if (!observeOnly_)
+        clock_.slewTo(steered);
     return true;
 }
 
