@@ -377,7 +377,7 @@ artefact the capture does not produce would crop picture for nothing.
 
 ### Only the wrap point is not a capture stop
 
-`VideoSourceLine::lastCapture()` is `units - 1`.
+`CaptureWindow::lastCapture()` is `units - 1`.
 
 `units` is the wrap point — `IF_VB_ST` rolls at `2 x (VTOTAL + 1)` and
 `IF_HB_ST2` at `IF_HSYNC_RST + 1` — and a window written onto it rolls rather

@@ -199,25 +199,6 @@ phase shift is the explanation and no choice of pulse end reproduces it.
 
 `investigations/the-composite-capture-window-sits-between-two-wrong-values.md`
 
-### `maxCaptureWidth()` and `capturable()` are one value under two names
-
-`VideoSourceLine::maxCaptureWidth()` is `return capturable();`. Production calls
-the first exactly once, from `CaptureWindow::clampWidth()`; the tests call both
-and four of their assertions do nothing but check the two are equal.
-
-**It is residue rather than a gratuitous alias**, which is why the names look
-deliberate. They were different: `maxCaptureWidth()` bounded the WIDTH by
-`CaptureWidthLimitUnits` while `capturable()` spanned both ends, because only
-the width was bounded and a window could still be panned to the far end of the
-line. That limit is deleted -- the band at the end of the line is the VDS line
-filter, downstream of the capture -- so the two collapsed onto each other and
-nothing removed one of them.
-`investigations/the-tail-green-is-the-vds-line-filter.md` is why the bound went;
-`investigations/tail-green.md` still describes the distinction.
-
-One name, whichever reads better at the one call site. **Do not reinstate a
-width bound to justify keeping both.**
-
 ### The sample-clock group has two writers, and they are the same function twice
 
 `PLLAD_MD`, `IF_HSYNC_RST` and `SP_RT_HS_SP` are one quantity in three

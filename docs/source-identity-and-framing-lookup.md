@@ -24,10 +24,10 @@ VideoPath::adoptSourceKey()
     if (!framings_.find(arrivingKey(), &framing_))
         framing_.reset()                      // leaves the axis untuned
 
-ActiveImage::place(), on an untuned axis
+CaptureWindow::place(), on an untuned axis
     from = timing.published() ? timing.activeStart(axis)
                               : axis.activeStart()
-    start = line.videoAt(from)
+    start = videoAt(line, from)
 ```
 
 So the chain exists and runs in the intended order. Steps 2 and 3 are one

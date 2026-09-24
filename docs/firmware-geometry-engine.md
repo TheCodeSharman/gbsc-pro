@@ -345,12 +345,11 @@ carried as 127 and measured 90 on the bench TV.
 `AxisVertical`'s `windowStopMin` is 0 and is an *assumption* — nobody has crept
 it.
 
-**The capture may not take the hsync pulse.** `Tv5725::VideoSourceLine` carries the
-wrap point *and* what is unusable on it, and `VideoSourceLine::measured()` derives the
-second
-from the source: `ceil(units x HLOW_LEN / PLLAD_MD)`, excluded at the **head**
-only, because `SP_RT_HS_ST` is 0 and the input formatter counts from the sync's
-leading edge.
+**The capture may not take the hsync pulse.** `Tv5725::VideoSourceLine` carries
+the wrap point *and* the sync interval on it, `VideoSourceLine::forDuty()`
+deriving the second from the source as `ceil(units x HLOW_LEN / PLLAD_MD)`. The
+line is data; `CaptureWindow` is what turns it into bounds, excluding the pulse
+at whichever end the measured polarity puts it.
 
 **THE FRAMING IS A PROPORTION OF THE INPUT, AND NO OUTPUT QUANTITY MAY REACH
 IT.** `PanAndZoom` holds where the window starts and how far it runs as
