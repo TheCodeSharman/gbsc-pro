@@ -22,6 +22,17 @@ class SteadyRun {
 public:
     explicit SteadyRun(uint8_t samples);
 
+    // A run of identical samples that collapses a widened pair back onto one
+    // value. Without it the pair never narrows and alternated() is true for the
+    // life of the run, which leaves motion adapt weaving a progressive picture.
+    //
+    // It has to clear the runs a genuinely interlaced source shows, and those
+    // are measured rather than assumed: RISC PC at 800x600@60 with INTERLACE
+    // ON, 1873 samples at the engine's own 20 ms detection interval, the
+    // longest run of either value is five. This is three times that, and
+    // Deinterlacer::FilteredPasses is a second filter behind it.
+    static const uint8_t CollapseSamples = 16;
+
     // Whether two counts are the same measurement: equal, or the pair an
     // interlaced field alternates between.
     //
@@ -60,8 +71,10 @@ public:
 private:
     uint8_t samples_;
     uint8_t run_;
+    uint8_t same_;
     uint16_t high_;
     uint16_t low_;
+    uint16_t latest_;
 };
 
 }  // namespace Tv5725

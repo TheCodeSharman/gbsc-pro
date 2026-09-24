@@ -152,3 +152,80 @@ TEST_CASE("agreement at zero does not wrap")
     CHECK(SteadyRun::agree(0, 1));
     CHECK(SteadyRun::agree(0, 0));
 }
+
+// An interlaced field carries a half line, so its count alternates and the pair
+// widens to hold both values. A source that STOPS alternating has to collapse
+// it again, or `alternated()` is true for the life of the run and
+// `measureScanType()` answers ScanInterlaced for ever -- which leaves motion
+// adapt engaged on a progressive source, weaving a picture that is not
+// interlaced. An ordinary flash arms it: the count wobbles once through
+// re-acquisition and never alternates again.
+// docs/known-issues.md
+TEST_CASE("a source that stops alternating stops reporting an alternating pair")
+{
+    SteadyRun run(Samples);
+
+    for (uint8_t i = 0; i < Samples; ++i)
+        run.sample(i % 2 ? 628 : 627);
+    REQUIRE(run.settled());
+    REQUIRE(run.alternated());
+
+    SUBCASE("a run of one value collapses the pair onto it") {
+        for (uint8_t i = 0; i < SteadyRun::CollapseSamples; ++i)
+            run.sample(627);
+        CHECK_FALSE(run.alternated());
+        CHECK(run.value() == 627);
+        CHECK(run.settled());
+    }
+
+    SUBCASE("and one sample short of it does not") {
+        for (uint8_t i = 0; i < SteadyRun::CollapseSamples - 1; ++i)
+            run.sample(627);
+        CHECK(run.alternated());
+    }
+
+    SUBCASE("and collapses onto the value that ran, not onto the lower end") {
+        // The mirror of the case above. Collapsing onto whichever end happens
+        // to be held reports a count a line out from the one the source is
+        // actually running, and that count is what the solve is sized from.
+        for (uint8_t i = 0; i < SteadyRun::CollapseSamples; ++i)
+            run.sample(628);
+        CHECK_FALSE(run.alternated());
+        CHECK(run.value() == 628);
+    }
+
+    SUBCASE("a run broken by the other value starts the count again") {
+        for (uint8_t i = 0; i < SteadyRun::CollapseSamples - 1; ++i)
+            run.sample(627);
+        run.sample(628);
+        for (uint8_t i = 0; i < SteadyRun::CollapseSamples - 1; ++i)
+            run.sample(627);
+        CHECK(run.alternated());
+    }
+}
+
+// The collapse must clear the runs a GENUINELY interlaced source shows, or it
+// drops motion adapt mid-picture. Measured on the RISC PC at 800x600@60 with
+// ModeServ's INTERLACE ON, sampled at the engine's own 20 ms detection
+// interval: 1873 samples, 953 of 628 against 920 of 627, and the longest run of
+// either value is FIVE. A second window at 25 ms agrees -- 1129 samples, same
+// longest run. CollapseSamples carries three times that.
+TEST_CASE("a genuinely interlaced count is not collapsed by the runs it shows")
+{
+    REQUIRE(SteadyRun::CollapseSamples > 3 * 5);
+
+    SteadyRun run(Samples);
+
+    // The measured run-length histogram, worst case first and repeated: no
+    // arrangement of runs this short may collapse the pair.
+    const uint8_t lengths[] = {5, 4, 3, 2, 1, 2, 3, 2, 1, 2, 4, 2, 1, 3, 5, 2};
+    uint16_t value = 627;
+    for (int pass = 0; pass < 8; ++pass) {
+        for (uint8_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
+            for (uint8_t n = 0; n < lengths[i]; ++n)
+                run.sample(value);
+            value = value == 627 ? 628 : 627;
+        }
+        REQUIRE(run.alternated());
+    }
+}
