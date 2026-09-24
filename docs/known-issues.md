@@ -390,162 +390,48 @@ measured at one framing on one mode, so the sense is not established elsewhere.
 
 ### The default capture is 1.7% narrower than the mode's active region
 
-On 800x600@60, the one VESA mode the bench source offers, the default framing
-takes less of the line than the standard states:
+**Closed by measurement, 2026-09-24.** It was the capture lag, and the lag is
+gone -- the whole of it was `SP_HS_LOOP_SEL` taking the retiming module out of
+circuit, so `CaptureLagFraction` and `FrameLagUnits` no longer exist.
+`investigations/the-capture-lag-was-the-retiming-bypassed.md`.
+
+On the same mode, 800x600@60 on `vga`, `/geometry` now reports:
 
 | | value | the mode's |
 |---|---|---|
 | `poh` | 0.2043 | `(128+88)/1056` = 0.2045 |
-| `peh` | **0.7405** | `800/1056` = **0.7576** |
+| `peh` | **0.7575** | `800/1056` = **0.7576** |
 
-**The start is right to a part in a thousand and only the width is short**, by
-27 units of 1217.
+against the **0.7405** this entry was opened on.
 
-**It is the capture lag running past the end of the counter.**
-`ActiveImage::place()` takes `start` from `videoAt()`, a COUNTER position that
-carries `CaptureLagFraction`, and tests it against `lastCapture()`, which is
-`units - 2` and carries nothing. Here `start = 0.2045 x 1607 + 87 = 416`, the
-wanted width is 1217, and `416 + 1217 = 1633` against a counter stopping at
-1605 -- so `place()` gives the width back. The shortfall follows from the mode
-alone:
+**The asymmetry went with it.** The entry's evidence was that a 100% framing
+showed the source's blanking on one side only, because the far bound was
+`lastCapture - lag`. Forced full on the same mode, `IF_HB_ST2` is **1438 on a
+1439-unit line**, which is `lastCapture` exactly -- nothing is subtracted at the
+far end. The near end is the sync interval and nothing else. Photographed, the
+panel shows the source's blanking on all four sides.
 
-```
-loss = lag fraction - front porch fraction
-     = 0.0539 - 40/1056
-     = 0.0160 x 1607 = 25.7 units        against 27 solved
-```
-
-**Any mode whose front porch is shorter than the capture lag is short by the
-difference**, and DMT 800x600 is that shape at 3.79% against 5.39%.
-
-`VideoSourceLine`'s contract disagrees with this and one of the two is wrong:
-the header states the lag "TRANSLATES a window rather than narrowing it: both
-ends move", while `firstCapture()` adds it and `lastCapture()` does not, so
-`capturable()` is narrowed by it. **The doubled path's answer does not transfer, and that is measured.** The lag
-is zero on a doubled line because `IF_HBIN_SP` is the FIFO's reset and places
-the picture itself; undoubled it reads 2, and writing 87 into it moves the
-picture **0 photo columns**, `r = 0.9765` against the frame before it. The FIFO
-is out of circuit, so the register places nothing and the route is closed.
-
-**The tail is sampled but not reachable.** The capture window already runs the
-full counter -- `IF_HB_SP2` 415 to `IF_HB_ST2` 1605 -- and source units
-1519..1546 arrive at counter 1606..1633, which wraps to the head of the next
-cycle. The ADC does see them; a capture window cannot wrap to take them. What
-would recover them is whatever sets the input formatter's line reset relative to
-sync, and that has not been identified.
-
-**THE LAG NARROWS THE CAPTURE RATHER THAN TRANSLATING IT, AND FULL FRAMING
-SHOWS IT.** `/framing/full` takes the whole capturable region, so at 100% the
-source's own blanking should appear on BOTH sides. It appears on one:
-
-| | source units |
-|---|---|
-| full capture | 196 .. **1518** |
-| the mode's active region | 329 .. 1546 |
-| the line | 0 .. 1607 |
-
-The near bound is the sync end and carries no lag; the far bound is
-`lastCapture - lag` = `1605 - 87`. So the left shows the whole back porch --
-133 units, ~152 photo columns predicted against 147 measured -- and the right
-shows no blanking at all, because the capture stops 28 units INSIDE the picture.
-
-**The default framing's shortfall is the same bound.** Default and full end on
-the same unit:
-
-```
-default   oh  328 + eh 1190 = 1518
-full      oh  196 + eh 1322 = 1518
-```
-
-So widening the framing cannot recover the right-hand 28 units; they are
-unreachable by any framing, and the source's right porch is unreachable full
-stop.
-
-**WHAT THIS IS NOT IS THE 2.3% SIZE DIFFERENCE AGAINST BYPASS**, and the
-temptation to join them is why this says so. Measured on the card with `ANIM
-OFF`, the scaled picture is 2.29% larger than the passed-through one -- marker
-span 1068.0 against 1092.5, which agrees with `0.7576/0.7405` to 0.02% and
-looks like proof. It is not:
-
-- **the difference is SYMMETRIC.** The card's outermost frame line is 15 photo
-  columns wide at BOTH ends scaled and 33 at both ends passed through, and the
-  leftmost complete line moves outward as well as the rightmost. A width
-  trimmed off the far end alone anchors the near edge and cannot do that.
-- **the two frames are two ACQUISITIONS**, and the window the picture is shown
-  through is latched at each one --
-  `investigations/the-shown-window-is-latched-at-lock.md`. A bypass round trip
-  re-latches it, so the fraction of our raster the sink displays need not be the
-  same in the two states, and a size difference between them is not attributable
-  without holding that still.
-
-So the capture shortfall is an arithmetic fact worth fixing on its own terms,
-and the bypass comparison does not measure it. Settling the size difference
-needs the two states compared without a re-latch between them, or the latched
-window measured in each.
-
-### The picture falls up to two lines short of the vertical active region
-
-The output raster opens the display window at the back porch its `OutputMode`
-states, which stopped the picture's landing moving -- 12 trials within
-0.52 photo px against 4 controls at 101 px, every trial with the sink dropping
-the link and re-acquiring. That is what a LATCHED origin predicts: hold the
-blanking still across the lock and the landing repeats.
-`investigations/the-picture-position-is-latched-not-re-rolled.md`.
-
-Horizontally the picture fills the active region the mode states, 1396 px of
-1396. **Vertically it can still fall short, and by how much follows the
-framing.** The encoder treats the whole 1080 as active, so the difference paints
-black at the bottom.
-
-Measured on the bench, 640x480@60 on `vga` into 1080p, 24 framings swept by one
-vertical zoom step each:
-
-| lines painted of 1080 | framings |
-|---|---|
-| 1080 | 11 |
-| 1079 | 9 |
-| 1078 | 4 |
-
-**Those counts predate the aperture's inset and are no longer what the engine
-solves.** The display window now opens one capture unit past the write origin
-and closes one short of where the write ends, because the unit at each end is
-only partly written and shows the previous mode's memory --
-`investigations/the-aperture-is-inset-one-capture-unit-at-each-end.md`. At
-320x256@50 that is `VDS_DIS_VB_SP` 43 and `VDS_DIS_VB_ST` 1118, so the default
-framing paints 1075 of 1080.
-
-**The vertical near unit is no longer given back**, so the two lines it cost are
-recovered. It bought nothing visible -- the aperture was opened eleven rows
-before the write starts and the top edge stayed clean, where the same test at
-the horizontal near end gives a plain band of stale memory -- and the picture is
-placed on the mode's first active line, so the inset was a black bar across the
-top of the screen rather than overscan. Held by `test_axis.cpp`'s "the vertical
-aperture opens on the picture", which walks the zoom range.
-
-What is left beyond the inset is scale granularity. One unit of `VDS_VSCALE` is
-worth 2.2 to 2.4 output lines at these magnifications, and both the window's far
-edge and the memory window's near edge are whole units, so the write ends a
-fraction of a line early and the display window closes on the floor of it.
-Nothing can be recovered there without either a finer scale or cropping the
-bottom of the picture, and cropping is the worse trade: a black edge is visible
-and one press away, where a cropped one looks like a fault.
-
-**The whole-step loss is closed.** `Axis::fitToRaster()` bumped the scale a
-whole step to clear an overshoot of a fifth of a line, which cost 2.1 lines to
-save 0.2 -- the default framing solved 1077 of 1080. The guard measures the
-overshoot in whole units now, because `Axis::solve()` closes the display window
-on the floor of where the write ends and a sub-unit overshoot is blanked there.
-The same framing solves `VDS_VSCALE` 455 against 456 and paints 1080 of 1080.
+**WHAT THIS DOES NOT CLOSE is the 2.3% size difference against bypass**, and
+the temptation to join them is why this says so. The two were never the same
+measurement: the bypass difference is SYMMETRIC about the centre and a capture
+shortfall is not, so agreement between `0.7576/0.7405` and 2.29% was a
+coincidence of magnitudes. See the bypass entries.
 
 ### The capture origin's scan-mode offset was measured against one source
 
-**Closed as a defect, open as a constant.** The same framing took different
+**Closed, and the constant went with it.** The same framing took different
 picture where the line doubler was bypassed -- the source's flashing border down
-the right and across the bottom at 480p and 576p, none at 1080p. It is fixed:
-`VideoSourceLine::CaptureLagFraction` is 0.0539 rather than 0.0640, and
-`FrameLagUnits` is the vertical half, which nothing modelled before. Zero
-flashing columns and rows at all three modes now, against 26 to 28 and 14 to 16
-before.
+the right and across the bottom at 480p and 576p, none at 1080p. It was first
+fixed by tuning a lag, `CaptureLagFraction` 0.0539 with `FrameLagUnits` as its
+vertical half, which took the flashing to zero columns and rows at all three
+modes against 26 to 28 and 14 to 16 before.
+
+**Both constants are now deleted**: the displacement was `SP_HS_LOOP_SEL`
+taking the sync retiming out of circuit, and engaging the retiming accounts for
+the whole of it -- 77.4 counter units measured against the 77.6 the correction
+was applying. What is below is the reasoning about the constant's FORM, kept
+because it says what a future displacement would have to be measured as.
+`investigations/the-capture-lag-was-the-retiming-bypassed.md`.
 
 The frame's form is settled -- a count of counter units, see the entry on it
 below -- and the line's is not:
@@ -732,8 +618,8 @@ The one-line recovery, which needs no reflash and no bench trip:
 
 ### The capture tail runs a whole sync pulse past the picture
 
-`VideoSourceLine::lastCapture()` is `units - 2`, and `firstCapture()` is
-`lag + headBlanking + (syncAtHead ? syncUnits : 0)`. On a low-active source the
+`CaptureWindow::lastCapture()` is `units - 1`, and `firstCapture()` is
+`headBlanking + (syncAtHead ? syncUnits : 0)`. On a low-active source the
 origin is the pulse's trailing edge, so the head excludes no pulse and needs
 none -- and the tail then runs into the NEXT line's pulse, which nothing takes
 off it.
@@ -751,10 +637,12 @@ framing asked for, and the left 43. The asymmetry is not a fault in the source:
 640x480@60 and 800x600@60 both have a **front porch of zero** in this monitor
 definition, so everything past the right border is sync.
 
-The tail that stops where the content does is `units - syncUnits + lagUnits`,
-1394 here against the 1492 in force. Subtracting `syncUnits` WITHOUT the lag
-gives 1320 and costs 70 units of picture, which is the form that was tried and
-reverted.
+The tail that stops where the content does was measured at 1394 here against
+the 1492 in force. **The arithmetic that produced it carried a capture lag that
+no longer exists**, so the 1394 is a reading rather than a formula and the
+shortfall wants re-measuring before anything is keyed on it. Subtracting
+`syncUnits` unconditionally gives 1320 and costs 70 units of picture, which is
+the form that was tried and reverted.
 
 `investigations/the-capture-tail-overruns-the-picture-by-the-sync-pulse.md`
 carries the arithmetic, the photo calibration and the prediction that refutes
@@ -2248,10 +2136,13 @@ without a finer scale; see the aperture entry above.
 
 ### The frame's lag was measured on one source and one scan mode
 
-**Closed.** `VideoSourceLine::FrameLagUnits` is -7 and applies in both scan
-modes; it was -1.5 undoubled and nothing doubled, which put the capture five to
-six source lines inside the picture on every undoubled source and cost the top
-of the picture. Measured with the green frame on three sources, one of them in
+**Closed, and the constant is since deleted.** `FrameLagUnits` was taken to -7
+applying in both scan modes, from -1.5 undoubled and nothing doubled, which had
+put the capture five to six source lines inside the picture on every undoubled
+source and cost the top of it. The lag itself then turned out to be the sync
+retiming being bypassed and the term went altogether --
+`investigations/the-capture-lag-was-the-retiming-bypassed.md`. The measurement
+below is what established the symmetry. Measured with the green frame on three sources, one of them in
 both scan modes:
 
 | source | counter | scan | first picture line | it arrived at |
@@ -2314,18 +2205,19 @@ setting, and a line inside it moves.
 
 ### A half-unit lag kills the control that steps through it
 
-Latent rather than live, and it cost a session. `ActiveImage::place()` maps the
-framing into the counter with `lrintf(fraction x units + lag)`, and `lrintf`
+Latent rather than live, and it cost a session. `CaptureWindow::place()` maps
+the framing into the counter with `lrintf(fraction x units)`, and `lrintf`
 rounds ties to even -- so where the lag is half a unit every whole-unit step of
 the framing lands on a tie, the window does not move, and `VideoPath::step()`
 reverts a framing that moved no register. The control is then dead for good
 rather than coarse: the press that was swallowed once is swallowed every time.
 
 It was reachable while `FrameLagUnits` was -1.5, on `/sc?*=1` at 800x600@60.
-Nothing reaches it now -- the frame's lag is a whole number and the line's is
-`units x CaptureLagFraction`, which a framing seeded through `fractionAt()`
-returns to an integer. **Anything that makes either lag half-integral brings it
-back**, and no test covers it because no constant can currently produce it.
+**Nothing reaches it now, because there is no lag term at all** --
+`CaptureWindow::videoAt()` is the proportion and, where the counter zeroes on
+the sync pulse's trailing edge, a whole-unit sync interval. **Anything that
+re-introduces a fractional displacement into that mapping brings it back**, and
+no test covers it because no constant can currently produce it.
 
 ### The source identity moves when the sync type does
 

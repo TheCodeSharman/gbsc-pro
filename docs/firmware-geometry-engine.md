@@ -355,11 +355,11 @@ at whichever end the measured polarity puts it.
 IT.** `PanAndZoom` holds where the window starts and how far it runs as
 fractions of the capturable region, so 0 is the first unit the capture can reach
 and 1 the last, and `PanAndZoom::clampOn()` — extent in `[0, 1]`, origin at or
-above 0, `origin + extent` at or below 1 — is the whole bound. `ActiveImage`
+above 0, `origin + extent` at or below 1 — is the whole bound. `CaptureWindow`
 takes no `OutputRaster` at all, which is what makes that true by construction
 rather than by discipline.
 
-It was not always. `clampToLine()` used to place the window against the raster
+It was not always. The clamp used to place the window against the raster
 and then seed the framing back from what it placed, so every solve at a new
 output resolution rewrote the stored proportions — a framing tuned at one
 resolution meant a different part of the source at the next, and
@@ -396,9 +396,9 @@ last solved, because the scan mode is settled before `solveRaster()` runs.
 
 **An untuned axis is placed, not guessed twice.** Where active video sits inside
 the line cannot be measured — a border is black active video, electrically
-identical to back porch — so `ActiveImage` places the first window itself and
-`clampToLine()` seeds the framing from what it placed, which is why a default
-framing saved and restored produces identical registers.
+identical to back porch — so `CaptureWindow::place()` places the first window
+itself and `clampFramingTo()` seeds the framing from what it placed, which is
+why a default framing saved and restored produces identical registers.
 
 Two sources for that placement. `Tv5725::SourceTiming` matches the frame, the
 field-rate bucket and the hsync duty against thirteen DMT and CEA-861 rasters,
@@ -409,12 +409,17 @@ keeps a standard's raster while spending its back porch on border sits a few
 pixels left of where the standard says and is the user's to trim — see
 [investigations/vesa-modes-are-clipped-by-default.md](investigations/vesa-modes-are-clipped-by-default.md).
 
-`Tv5725::InputSignal` pairs the two lines into the rectangle the source
-presents, and `Tv5725::CaptureWindow` is the rectangle placed inside it: both
-axes together, holding the signal it must stay within, and clamping the framing
-on the way in. The window and the framing are therefore taken from one
-placement, so they cannot be given different bounds — one unit between them is
-the dead zone.
+`InputFormatter::capturableLine()` and `capturableFrame()` state the two
+counters the source presents, and `Tv5725::CaptureWindow` is the rectangle
+placed inside them: both axes together, holding the two lines it must stay
+within, and clamping the framing on the way in. The window and the framing are
+therefore taken from one placement, so they cannot be given different bounds —
+one unit between them is the dead zone.
+
+The lines themselves are data. Where a window MAY sit in one —
+`firstUnitOn()`, `reachOn()`, `capturableOn()` — and how a framing proportion
+maps into it — `videoAtOn()` and its inverse `fractionAtOn()` — are
+`CaptureWindow`'s, because placing the rectangle is its job.
 
 **The tail is deliberately unbounded and there is a test saying so.** There is
 green there too, but it is not the sync pulse and nothing derives its position;
@@ -509,8 +514,8 @@ narrow it is `VDS_?B_SP` moving up. That makes the safe order fixed:
 
 ## Bypass
 
-`CaptureWindow::scaling()` is false when the output raster reads under 64, and
-a solve stops there. In RGBHV bypass the video path does not go through the VDS
+`VideoPath::rasterSolved()` is false until both output raster axes reach 64,
+and a solve stops short of the geometry until then. In RGBHV bypass the video path does not go through the VDS
 at all, `VDS_?SYNC_RST` reads 0, and there is no geometry to solve — writing one
 would write into a path nobody is using. See [rgbhv-bypass-trap.md](rgbhv-bypass-trap.md).
 

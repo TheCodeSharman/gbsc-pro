@@ -348,8 +348,8 @@ syncUnits = ceil(IF line units x duty)
 ```
 
 On the bench RiscPC `181 / 2553` = 0.0709 and `ceil(1277 x 0.0709)` = **91**.
-`Tv5725::VideoSourceLine::measured()` computes exactly that, per solve, so a source with
-a 0.121 duty excludes 155 units instead.
+`Tv5725::VideoSourceLine::forDuty()` computes exactly that, per solve, so a
+source with a 0.121 duty excludes 155 units instead.
 
 **It also explains `SP_RT_HS_SP`.** `gbs-control.ino` writes `PLLAD_MD x 0.93`.
 `PLLAD_MD - SP_RT_HS_SP` is 179 against `HLOW_LEN`'s 181 — two samples in 2553 —

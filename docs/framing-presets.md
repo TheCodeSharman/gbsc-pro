@@ -27,7 +27,7 @@ refers to a mode. It is mode-independent by construction, which is what makes it
 both the live state and the stored state — there is no separate portable form to
 convert to.
 
-**`ActiveImage` knows the current mode and translates.** It turns the proportions
+**`CaptureWindow` knows the current mode and translates.** It turns the proportions
 into the concrete window in input units for the source as it currently measures,
 and that window is what the geometry engine solves the registers from. It is a
 computed output of the proportions and the mode, never a second source of truth.
