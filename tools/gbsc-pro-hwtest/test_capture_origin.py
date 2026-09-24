@@ -1,19 +1,22 @@
 """Where the capture window may first take video, against a live unit.
 
-The IF line is counted from a hsync edge, and video does not arrive at that
-edge. Three terms separate the two, and VideoSourceLine::firstCapture() is
-their sum:
+The IF line is counted from a hsync edge, and a window may not open on every
+unit of it. Two terms are excluded, and CaptureWindow::firstCapture() is their
+sum:
 
-  * a capture-path lag of ~72 units, measured on four undoubled modes, which is
-    not applied where the line doubler is in circuit -- IF_HBIN_SP is that
-    FIFO's own line reset there and places the picture itself;
-  * head blanking of 22 units, which is the other way round: the capture path
-    writes past the hsync pulse only where the doubler IS in circuit, and a
-    window opened at the pulse's end captures that as saturated green;
+  * head blanking of 22 units, applied only where the line doubler IS in
+    circuit: the capture path writes past the hsync pulse there, and a window
+    opened at the pulse's end captures that as saturated green;
   * the hsync pulse, which is only at the head of the line while the pulse is
     positive-going. STATUS_SYNC_PROC_HSPOL says which, and where it reads 0 the
     origin is the pulse's trailing edge, the sync interval is already behind it,
     and excluding it again throws away video.
+
+THERE IS NO CAPTURE LAG. This suite carried one of 72 units for four modes'
+worth of measurement, and the whole of it was SP_HS_LOOP_SEL taking the sync
+retiming out of circuit -- engaging the retiming accounts for 77.4 counter
+units against the 77.6 the correction applied.
+docs/investigations/the-capture-lag-was-the-retiming-bypassed.md
 
 Every AKF50 640x480 and 1280x480 mode is sync_pol 3, so an inverted pulse is one
 `printf 'MODE X640 Y480 C256 F60\\n' | nc <riscpc> 6502` away.
@@ -32,9 +35,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import get_json, locked_steadily, read_fields, wait_for
 
-# Tv5725::VideoSourceLine. The lag applies to an undoubled line and the head
-# blanking to a doubled one, so a line never carries both.
-CAPTURE_LAG_UNITS = 72
+# Tv5725::VideoSourceLine::DoubledHeadBlankingUnits, which only a doubled line
+# carries.
 DOUBLED_HEAD_BLANKING_UNITS = 22
 
 # The sync processor's own validity window for the hsync duty, and what the
@@ -66,23 +68,25 @@ def sync_units(at):
 
 
 def first_capture(at):
-    """What the engine reports as its earliest capturable unit.
+    """What the engine SOLVED as its earliest capturable unit.
 
-    /geometry gives the capturable span rather than its ends, and the far end is
-    the line's own wrap -- lastCapture() is `units - 2` and there is no second
-    bound, the band at the end of the line being the VDS line filter downstream
-    of the capture.
+    Taken from /geometry rather than re-derived from the registers: the duty
+    behind it is read once at solve time and drifts by an ADC sample afterwards,
+    so a fresh derivation lands one unit out and reports a defect that is not
+    there.
     """
-    units = at["IF_HSYNC_RST"] + 1
-    return (units - 2) - at["geometry"]["ch"]
+    return at["geometry"]["fh"]
 
 
-def test_the_capture_starts_a_lag_after_the_sync_edge(solved):
+def test_the_capture_opens_past_what_the_path_writes_over(solved):
     doubled = solved["IF_LD_RAM_BYPS"] == 0
-    lag = 0 if doubled else CAPTURE_LAG_UNITS
     blanking = DOUBLED_HEAD_BLANKING_UNITS if doubled else 0
     head_guard = sync_units(solved) if solved["STATUS_SYNC_PROC_HSPOL"] else 0
-    due = lag + blanking + head_guard
+    due = blanking + head_guard
+
+    # The floor never reaches zero: measured at 640x480@60, whose pulse is
+    # behind the origin, IF_HB_SP2 at 0 doubles and smears the picture.
+    due = max(due, 1)
 
     assert first_capture(solved) == due, (
         f"line doubled {doubled}, hsync positive "
@@ -104,9 +108,9 @@ def test_an_inverted_pulse_does_not_cost_a_sync_width(solved):
         f"origin, but the capture still starts at {first_capture(solved)}")
 
 
-def test_a_doubled_line_is_blanked_at_the_head_rather_than_lagged(solved):
-    """The two displacement terms are exclusive, and which one applies is the
-    scan mode. A line carrying both would exclude 89 units of video twice over.
+def test_only_a_doubled_line_is_blanked_at_the_head(solved):
+    """Head blanking belongs to the doubled path alone, because only there does
+    the capture path write past the pulse.
     """
     doubled = solved["IF_LD_RAM_BYPS"] == 0
     head_guard = sync_units(solved) if solved["STATUS_SYNC_PROC_HSPOL"] else 0
@@ -117,6 +121,8 @@ def test_a_doubled_line_is_blanked_at_the_head_rather_than_lagged(solved):
             f"doubled, so the head blanking alone is due: "
             f"{DOUBLED_HEAD_BLANKING_UNITS}, engine reports {without_sync}")
     else:
-        assert without_sync == CAPTURE_LAG_UNITS, (
-            f"undoubled, so the capture lag alone is due: {CAPTURE_LAG_UNITS}, "
-            f"engine reports {without_sync}")
+        # Nothing is written past an undoubled line's pulse, so the floor is the
+        # pulse and the one-unit clamp under it.
+        assert without_sync <= 1, (
+            f"undoubled, so nothing but the pulse is due, "
+            f"engine reports {without_sync} past it")

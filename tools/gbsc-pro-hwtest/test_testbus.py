@@ -59,17 +59,24 @@ def sweep(host, console, sp=None, sig=None, if_=None):
     # Drained once and then re-read whole: collect() returns everything since
     # the last drain, so draining between polls loses whatever arrived in the
     # gap -- which shows up as a sweep that never finished.
+    # Accumulated ACROSS polls, not per poll: a sweep prints its rows as it
+    # goes and `tb,done` arrives in the last window of all, so resetting here
+    # keeps only whatever shared that window and reports an empty sweep.
     deadline = time.time() + COLLECT_S
+    header, rows, done = None, {}, False
     while time.time() < deadline:
-        header, rows, done = None, {}, False
         for line in console.collect(0.25):
             if line.startswith("tb,header"):
                 header = line
             elif line == "tb,done":
                 done = True
             elif line.startswith("tb,"):
+                # Selector and transition count are the first two columns and
+                # the header names the rest. Pinning the COLUMN COUNT here
+                # silently drops every row the day one is added, which reads as
+                # a sweep the firmware never ran.
                 parts = line.split(",")
-                if len(parts) == 6:
+                if len(parts) >= 3:
                     rows[int(parts[1])] = int(parts[2])
         if done:
             return header, rows
