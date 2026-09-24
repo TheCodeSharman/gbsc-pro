@@ -10,6 +10,64 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### Every ESP reset engages motion adapt on a progressive source
+
+Measured 2026-09-24 on the RISC PC at 800x600@60, `vga`, separate sync,
+`INTERLACE OFF` -- a source the engine measures as progressive and 627 lines
+steady once settled. `s2_00` primed to `0xff` by hand, then `/restart`: it
+reads `0x19` again within **10 s**, on every attempt, and the picture is green
+and comb-torn for the life of the boot. No flash is involved -- an OTA upload
+shows it only because it resets the ESP on the way past.
+
+`0x19` is `enableMotionAdapt()`'s exact byte (`DIAG_BOB_MIN_BYPS` 1,
+`COEF_SEL` 0, `WEAVE_BYPS` 0, `DET_BYPS` 3, `YTAP3_BYPS` 0, `MIN_CBYPS` 0,
+`PLDY_RAM_BYPS` 0) against `0xff` from `Deinterlacer::init()` and
+`disableMotionAdapt()`, so the byte alone says which function ran.
+
+**The two thresholds race and the engaging one is eight times smaller.** The
+count wobbles once through acquisition, `SteadyRun` widens its pair, and
+`alternated()` reports `ScanInterlaced` until the pair collapses.
+`Deinterlacer::FilteredPasses` is **2**, and `SteadyRun::CollapseSamples` is
+**16** -- so motion adapt engages fourteen samples before the collapse that
+would have said the source is progressive. The collapse fix holds; it is simply
+too late.
+
+**Recovery without a bench trip:** `setfield.py --set DIAG_BOB_PLDY_RAM_BYPS=1`
+restores a clean picture at once. Motion adapt stays engaged behind it, so a
+clean screen is not evidence the state cleared.
+
+**What is not established:** whether the release ever fires afterwards. The
+progressive branch needs `FilteredPasses` consecutive passes at one
+`verticalPeriod`, and `InputFormatter::verticalPeriod()` is debris on separate
+sync. Observed over several minutes, the picture never came good on its own.
+
+### The frame time lock has never armed on the bench VGA source
+
+Measured 2026-09-24, same source. With `enableFrameTimeLock` on, the lock's
+gate reports `not armed: no coast window` and holds there; over three toggles
+and 90 s of console it never reached `running`. So the output field rate on
+this source is set **once**, by `externalClockGenSyncInOutRate()` at each solve,
+and nothing walks a wrong one-shot back.
+
+`SyncProcessor::coastPlaced()` is false because `forgetPositions()` runs at each
+preset load and the loop block that re-places it is gated on `!rgbhvBypass()`,
+as is `VideoSourceAcquisition::placeCoastWindow()`. Both ask
+`RgbhvOutput::isScaling()`, a held flag, where the output mode the engine solved
+answers the same question with one owner.
+
+**This is what a claim that frame lock steadies the picture has to survive.** A
+measurement taken across `/sc?~` compares two acquisitions and charges the
+difference to the option; the preset load re-runs the one-shot rate match on its
+own, with the option in either state.
+
+**The one-shot's tolerance is the thing to size next.**
+`Clock::RateAgreement` accepts two samples within 0.5 Hz absolute or 0.833%
+relative, and `externalClockGenSyncInOutRate()` sets the display clock to that
+ratio. At 60 Hz an agreeing-but-wrong pair puts the output up to 0.8% off the
+source, which beats. `FrameSync::runFrequency()` corrects at most 0.06% per
+1.67 s, so the lock is a slow net under a measurement that can miss by more than
+ten of its steps.
+
 ### An alternating count latched the scan type -- FIXED
 
 **`SteadyRun` narrows the pair now.** A run of `CollapseSamples` identical

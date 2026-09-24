@@ -347,7 +347,7 @@ time, as the step that claims each group lands:
 | `deinterlaceAutoEnabled` | `Deinterlacer`, which holds the motion-adaptive state |
 | `medResLineCount` | **gone.** `ModeDetect::init()` owns the threshold, at the 51 that was in force |
 | `videoIsFrozen` | `FrameBuffer` |
-| `autoBestHtotalEnabled`, `syncLockFailIgnore` | FrameSync, once it has an owner |
+| `syncLockFailIgnore` | FrameSync, once it has an owner |
 | `inputIsYpBpR` | `VideoSourceSelection` |
 | `webServerEnabled`, `webServerStarted`, `allowUpdatesOTA`, `enableDebugPings`, `printInfos`, `freezeAutomation`, `boardHasPower`, `isInLowPowerMode`, `extClockGenDetected` | `RetroScaler` |
 
@@ -1713,7 +1713,7 @@ Of its 53 lines most are already `Tv5725::` calls. Four clusters pin it:
 |---|---|---|
 | `FrameSync::cleanup()`, `externalClockGenResetClock()` | the display clock and the Si5351 | step 11 |
 | `adco->r/g/b`, `uopt->enableAutoGain`, `uopt->wantOutputComponent` | `applyStoredAdcGain()`, `applyRGBPatches()` | ADC gain ownership |
-| `rto->boardHasPower`, `autoBestHtotalEnabled`, `presetID` | guards and flags | with their branches |
+| `rto->boardHasPower`, `presetID` | guards and flags | with their branches |
 
 `rto->inputIsYpBpR` is NOT one of them -- `Adc::inputIsComponent()` already
 answers it from held state, and substituting it removes two lines on its own.
