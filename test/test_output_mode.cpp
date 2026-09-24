@@ -1,5 +1,6 @@
-// Host-compiled unit tests for src/tv5725/OutputRaster.h -- `make -C test
-// output-raster`.
+// Host-compiled unit tests for Tv5725::OutputMode -- `make -C test output-mode`.
+// The raster a mode solves for a measured field rate, which is every output
+// timing register bar the ones the picture's placement decides.
 //
 // `--dump` is intercepted before the test runner sees argv, and prints the
 // solved grid for inspection by hand.

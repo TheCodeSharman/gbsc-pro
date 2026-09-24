@@ -156,7 +156,7 @@ private:
     uint16_t vsyncLines_, vBackPorchLines_, vFrontPorchLines_;
 };
 
-// Defined in OutputRaster.cpp, from the STANDARDS rather than from the tables --
+// From the STANDARDS rather than from the tables --
 // CEA-861 for 1080p/720p/480p/576p, VESA DMT for 1024p/960p. The tables' own
 // heights were one line longer than every one of these; see the constructor.
 // The output is whatever the source is doing. It has no raster, which is what

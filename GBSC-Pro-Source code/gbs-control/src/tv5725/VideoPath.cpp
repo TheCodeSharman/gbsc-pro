@@ -44,12 +44,10 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
       mode_(0),
-      rasterLinePx_(0), rasterFrameLines_(0),
       showing_(false),
       syncOut_(false), syncOutEver_(false),
       encoderLinePx_(0), encoderFrameLines_(0), encoderFieldRateHz_(0),
-      encoderKnown_(false), encoderMoved_(false), activeStop_(0),
-      activeLinesStop_(0), activeStart_(0), activeLinesStart_(0) {}
+      encoderKnown_(false), encoderMoved_(false) {}
 
 const PanAndZoom &VideoPath::framing() const { return framing_; }
 
@@ -203,7 +201,7 @@ bool VideoPath::solveWindows()
     if (!calculateInputFormatterRegisters(capture))
         return refused("input formatter", capture);
 
-    OutputImage solved = calculateOutputRaster(capture);
+    OutputImage solved = imageFor(capture);
     if (!solved.usable()) {
         fail();
         return refused("output raster", capture);
@@ -264,8 +262,7 @@ bool VideoPath::solveRaster()
     // docs/investigations/preset-abandonment-audit.md. Both hold total-1.
     GBS::VDS_HSYNC_RST::write(raster.horizontalTotal - 1);
     GBS::VDS_VSYNC_RST::write(raster.verticalTotal - 1);
-    rasterLinePx_ = raster.horizontalTotal;
-    rasterFrameLines_ = raster.verticalTotal;
+    raster_ = raster;
 
     // One quantity in three registers, so all three are written here.
     // VDS_VSYN_SIZE1 and _2 are the vertical totals the frame-rate selector
@@ -308,19 +305,17 @@ bool VideoPath::solveRaster()
     encoderFieldRateHz_ = fieldRateHz;
     encoderKnown_ = true;
 
-    // The porch is not a register, so the next solve cannot read it back.
-    activeStop_ = raster.activeStop;
-    activeLinesStop_ = raster.activeLinesStop;
-    activeStart_ = raster.activeStart;
-    activeLinesStart_ = raster.activeLinesStart;
-
     return true;
 }
 
 void VideoPath::adoptRaster()
 {
-    rasterLinePx_ = GBS::VDS_HSYNC_RST::read() + 1;
-    rasterFrameLines_ = GBS::VDS_VSYNC_RST::read() + 1;
+    // Read back, which is what adopting means: bypass and a custom preset
+    // leave a raster on the chip that this engine did not solve, so the totals
+    // are all of it there is. The porch is not a register and stays zero.
+    raster_ = OutputTimings();
+    raster_.horizontalTotal = GBS::VDS_HSYNC_RST::read() + 1;
+    raster_.verticalTotal = GBS::VDS_VSYNC_RST::read() + 1;
     displayClock_.adopt();
 }
 
@@ -553,15 +548,10 @@ void VideoPath::configurePassThrough()
     // pad and closing an aperture would blank nothing.
     showOutput(true);
 
-    rasterLinePx_ = 0;
-    rasterFrameLines_ = 0;
+    raster_ = OutputTimings();
 
     // Bypass has no solved raster, so it has no porch either -- and a porch left
     // from the last scaled mode would size the next one's picture.
-    activeStop_ = 0;
-    activeLinesStop_ = 0;
-    activeStart_ = 0;
-    activeLinesStart_ = 0;
 }
 
 void VideoPath::configureScalingPath()
@@ -776,26 +766,35 @@ bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)
     return step(wanted);
 }
 
+uint16_t VideoPath::rasterTotalOn(const Axis &axis) const
+{
+    return axis.vertical() ? raster_.verticalTotal : raster_.horizontalTotal;
+}
+
+uint16_t VideoPath::activeStartOn(const Axis &axis) const
+{
+    return axis.vertical() ? raster_.activeLinesStart : raster_.activeStart;
+}
+
+uint16_t VideoPath::activeStopOn(const Axis &axis) const
+{
+    return axis.vertical() ? raster_.activeLinesStop : raster_.activeStop;
+}
+
 uint16_t VideoPath::narrowestCaptureOn(const Axis &axis) const
 {
-    const bool vertical = axis.vertical();
-    const uint16_t raster = vertical ? rasterFrameLines_ : rasterLinePx_;
+    const uint16_t raster = rasterTotalOn(axis);
     if (raster == 0)
         return 0;
-    return axis.minimumCapture(raster,
-                               vertical ? activeLinesStart_ : activeStart_,
-                               vertical ? activeLinesStop_ : activeStop_);
+    return axis.minimumCapture(raster, activeStartOn(axis), activeStopOn(axis));
 }
 
 uint16_t VideoPath::widestCaptureOn(const Axis &axis) const
 {
-    const bool vertical = axis.vertical();
-    const uint16_t raster = vertical ? rasterFrameLines_ : rasterLinePx_;
+    const uint16_t raster = rasterTotalOn(axis);
     if (raster == 0)
         return 0;
-    return axis.maximumCapture(raster,
-                               vertical ? activeLinesStart_ : activeStart_,
-                               vertical ? activeLinesStop_ : activeStop_);
+    return axis.maximumCapture(raster, activeStartOn(axis), activeStopOn(axis));
 }
 
 void VideoPath::narrowToRaster(PanAndZoom &framing, const CaptureWindow &capture,
@@ -818,7 +817,7 @@ void VideoPath::narrowToRaster(PanAndZoom &framing, const CaptureWindow &capture
 
 bool VideoPath::rasterSolved() const
 {
-    return rasterLinePx_ >= 64 && rasterFrameLines_ >= 64;
+    return raster_.horizontalTotal >= 64 && raster_.verticalTotal >= 64;
 }
 
 bool VideoPath::zoom(int16_t dhPixels, int16_t dvPixels)
@@ -844,7 +843,7 @@ bool VideoPath::refused(const char *step, const CaptureWindow &capture)
     snprintf(line, sizeof(line),
              "solve refused: %s (capture %dx%d, raster %ux%u, lines %u)",
              step, (int)capture.horizontal().width(), (int)capture.vertical().width(),
-             (unsigned)rasterLinePx_, (unsigned)rasterFrameLines_,
+             (unsigned)raster_.horizontalTotal, (unsigned)raster_.verticalTotal,
              (unsigned)sampling_.sourceLines());
     tv5725Log(line);
     return false;
@@ -904,17 +903,15 @@ bool VideoPath::calculateInputFormatterRegisters(CaptureWindow &capture)
     return capture.usable() ? true : fail();
 }
 
-OutputImage VideoPath::calculateOutputRaster(const CaptureWindow &capture) const
+OutputImage VideoPath::imageFor(const CaptureWindow &capture) const
 {
     // The window the hardware plays out, which is the register pair: scaling the
     // picture alone runs the far end past the aperture and the source's last
     // line is blanked.
-    return OutputImage(
-                            capture.horizontal().width(),
-                            capture.vertical().width(),
-                            rasterLinePx_, rasterFrameLines_,
-                            activeStop_, activeLinesStop_,
-                            activeStart_, activeLinesStart_);
+    return OutputImage(capture.horizontal().width(), capture.vertical().width(),
+                       raster_.horizontalTotal, raster_.verticalTotal,
+                       raster_.activeStop, raster_.activeLinesStop,
+                       raster_.activeStart, raster_.activeLinesStart);
 }
 
 void VideoPath::write(const OutputImage &solved, const CaptureWindow &capture)

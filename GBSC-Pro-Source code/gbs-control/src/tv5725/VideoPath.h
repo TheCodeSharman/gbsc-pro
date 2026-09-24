@@ -392,7 +392,7 @@ private:
 
     bool sizeCaptureWindow(CaptureWindow &capture);
     bool calculateInputFormatterRegisters(CaptureWindow &capture);
-    OutputImage calculateOutputRaster(const CaptureWindow &capture) const;
+    OutputImage imageFor(const CaptureWindow &capture) const;
 
     // Ordered so the headroom never dips: the solver always takes the whole
     // memory window, so the only edge that can narrow it is VDS_?B_SP moving up.
@@ -441,9 +441,11 @@ private:
     // costs no read of the chip.
     HsyncPulse reading_;
 
-    // The output raster in force, held rather than read back off VDS_?SYNC_RST.
-    // Zero means there is none, which is what bypass looks like.
-    uint16_t rasterLinePx_, rasterFrameLines_;
+    // The output raster in force, as OutputMode solved it: held WHOLE rather
+    // than unpacked into the fields each caller wants, because the porch is not
+    // a register and the next solve cannot read any of it back. Zero totals
+    // mean there is no raster, which is what bypass looks like.
+    OutputTimings raster_;
 
     // Where the last solve put the picture: both scales and both pairs of
     // blanking windows. Held rather than read back, so the blank is a state
@@ -473,11 +475,12 @@ private:
     // The aperture the last solve chose on one axis: VDS_DIS_?B_ST/SP.
     const BlankingTiming &display(const Axis &axis) const;
 
-    // Where the front porch starts, from the raster this engine solved. The
-    // registers carry no porch, so there is nothing to read back. 0 until a
-    // raster is solved, which is what bypass and a custom preset both stay on.
-    uint16_t activeStop_, activeLinesStop_;
-    uint16_t activeStart_, activeLinesStart_;
+    // This axis's slice of the solved raster: the total it runs to, and where
+    // the picture may start and must stop inside it.
+    uint16_t rasterTotalOn(const Axis &axis) const;
+    uint16_t activeStartOn(const Axis &axis) const;
+    uint16_t activeStopOn(const Axis &axis) const;
+
 };
 
 }  // namespace Tv5725
