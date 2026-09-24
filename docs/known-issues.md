@@ -10,37 +10,6 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
-### Every ESP reset engages motion adapt on a progressive source
-
-Measured 2026-09-24 on the RISC PC at 800x600@60, `vga`, separate sync,
-`INTERLACE OFF` -- a source the engine measures as progressive and 627 lines
-steady once settled. `s2_00` primed to `0xff` by hand, then `/restart`: it
-reads `0x19` again within **10 s**, on every attempt, and the picture is green
-and comb-torn for the life of the boot. No flash is involved -- an OTA upload
-shows it only because it resets the ESP on the way past.
-
-`0x19` is `enableMotionAdapt()`'s exact byte (`DIAG_BOB_MIN_BYPS` 1,
-`COEF_SEL` 0, `WEAVE_BYPS` 0, `DET_BYPS` 3, `YTAP3_BYPS` 0, `MIN_CBYPS` 0,
-`PLDY_RAM_BYPS` 0) against `0xff` from `Deinterlacer::init()` and
-`disableMotionAdapt()`, so the byte alone says which function ran.
-
-**The two thresholds race and the engaging one is eight times smaller.** The
-count wobbles once through acquisition, `SteadyRun` widens its pair, and
-`alternated()` reports `ScanInterlaced` until the pair collapses.
-`Deinterlacer::FilteredPasses` is **2**, and `SteadyRun::CollapseSamples` is
-**16** -- so motion adapt engages fourteen samples before the collapse that
-would have said the source is progressive. The collapse fix holds; it is simply
-too late.
-
-**Recovery without a bench trip:** `setfield.py --set DIAG_BOB_PLDY_RAM_BYPS=1`
-restores a clean picture at once. Motion adapt stays engaged behind it, so a
-clean screen is not evidence the state cleared.
-
-**What is not established:** whether the release ever fires afterwards. The
-progressive branch needs `FilteredPasses` consecutive passes at one
-`verticalPeriod`, and `InputFormatter::verticalPeriod()` is debris on separate
-sync. Observed over several minutes, the picture never came good on its own.
-
 ### The frame time lock has never armed on the bench VGA source
 
 Measured 2026-09-24, same source. With `enableFrameTimeLock` on, the lock's
@@ -85,11 +54,23 @@ Verified on the bench in both directions: interlaced, motion adapt still
 engages; returned to progressive with the source otherwise untouched, the latch
 releases on its own and the picture comes good with no `/sc?~`.
 
-**What this closes.** An ordinary flash used to arm it -- the count wobbles once
-through re-acquisition and motion adapt is engaged by the time the source
-settles -- so a unit coming back from a flash with a green, comb-torn picture
-was this rather than the flash. Reproduced on three consecutive OTA flashes and
-on the commit before the fix.
+**A widened pair is earned, not taken.** Collapsing one leaves the widening
+unguarded, and the thresholds race: a source wobbles by one as it is acquired,
+and `Deinterlacer::FilteredPasses` is TWO against sixteen samples of collapse.
+Motion adapt engaged on every ESP reset, no flash involved, and the picture came
+up green and comb-torn for the life of the boot. A second value is a candidate
+until the count has RETURNED to it `CrossingsForInterlace` times.
+
+**The scan decision holds its own steadiness run**, sampled by
+`measureScanType()` on the maintenance cadence. The solve's run stops being fed
+once a source settles, and a source going interlaced moves the count by one,
+which `SteadyRun::agree()` calls the same measurement -- so nothing re-measures
+and nothing samples the alternation.
+
+Verified 2026-09-24 on the bench in both directions: five consecutive restarts
+on the progressive source leave `s2_00` at `0xff` throughout, and `INTERLACE ON`
+reaches `0x19` within a second or two, `INTERLACE OFF` back to `0xff`
+immediately.
 
 Two things worth keeping from it:
 

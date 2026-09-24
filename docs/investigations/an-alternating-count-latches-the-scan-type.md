@@ -130,3 +130,50 @@ so the collapse cannot be one sample either: a field count that alternates
 count alternates at all;
 [the-deinterlacer-had-two-owners.md](the-deinterlacer-had-two-owners.md) is the
 second writer of the same registers.
+
+## The collapse was not enough, and what the second half is
+
+Collapsing a widened pair leaves the widening itself unguarded, and the two
+thresholds race. A source wobbles by one as it is acquired, which widens the
+pair; `alternated()` then answers yes on every sample until the collapse, which
+needs `CollapseSamples` — sixteen — identical readings. `FilteredPasses` is
+**two**. Motion adapt therefore engaged fourteen samples before the collapse
+could say the source was progressive, on **every ESP reset**, and the picture
+came up green and comb-torn for the life of the boot.
+
+Measured 2026-09-24, RISC PC at 800x600@60 on `vga`, separate sync, `INTERLACE
+OFF`: `s2_00` primed to `0xff` by hand and the unit restarted reads `0x19`
+within ten seconds, every attempt. `0x19` is `enableMotionAdapt()`'s exact byte
+against `0xff` from `Deinterlacer::init()` and `disableMotionAdapt()`, so the
+byte alone names the function that ran. No flash is involved; an OTA upload
+shows it only because it resets the ESP on the way past.
+
+**The pair is earned now.** A second value is a candidate until the count has
+RETURNED to it `CrossingsForInterlace` times — holding a value is one visit
+however long it is held — and only then does the pair widen. One excursion
+crosses once and stops. A value held for `CollapseSamples` is adopted outright
+rather than kept as a candidate, because a source that moves by one and stays
+there has a new count, not a second one.
+
+## The scan decision needs its own steadiness run
+
+Earning the pair costs samples, and the solve's run stops being fed the moment a
+source settles — which is exactly when a source that starts alternating has to
+be noticed. Worse, a source going interlaced moves the count by one, and
+`SteadyRun::agree()` calls that the same measurement, so nothing re-measures and
+nothing ever samples the alternation.
+
+Measured with the pair earned off the solve's run alone: `INTERLACE ON` took
+minutes to reach motion adapt, where `INTERLACE OFF` released it in 0.1 s.
+`SourceMeasurement` holds a second run for the scan decision, sampled by
+`measureScanType()` on the maintenance cadence — the same 20 ms the threshold
+above was measured at. Both directions then land within a second or two of the
+source moving, and five consecutive restarts on a progressive source leave
+`s2_00` at `0xff` throughout.
+
+**`measureScanType()` says its answer on the console** when it changes, and
+`steer()` says when it engages and releases. The alternative is reading the
+scan type back off the deinterlacer's own registers, which report what was done
+rather than what was measured — and the engagement happens around eight seconds
+into a boot, before the websocket server accepts a client, so the console is
+deaf to it. `tv5725Log()` is what those lines go through.
