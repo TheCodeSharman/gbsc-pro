@@ -1,17 +1,23 @@
-# The frame time lock saturates, and the phase wrap does not explain it
+# The frame time lock saturates, and the period was measured twice
 
-**The residual shake is the rate correction sitting at its +-0.06% clamp and
-changing sign, and what causes that is NOT KNOWN.** Two models have been tried
-against the bench and the second is refuted; what is established is the shape of
-the fault, the arithmetic of the loop, and that the one-shot rate match is
-innocent.
+**The saturation is a SECOND OWNER of the source's field rate.** `FrameSync`
+timed the source's vsync period on `DEBUG_IN_PIN` inside its own correction
+while `Tv5725::SourceMeasurement` already held the same quantity, filtered. An
+edge ISR that misses a pulse times the one after it, so the pin reads a WHOLE
+MULTIPLE of the frame -- 2x, 3x and 6x measured. The period scales the phase
+target and folds the offset, so a doubled period doubles the target and throws
+the error by a third of a frame while the phase itself is healthy, and the
+correction goes to its clamp.
 
-**THE PHASE IS NOT LOGGED, AND EVERY MODEL HERE IS INFERRED FROM THE DISPLAY
-CLOCK INSTEAD.** The clock is two steps downstream of the phase -- phase to
-correction to clock -- so a noisy phase and an oscillating one reach it looking
-similar. Anything further wants the phase, the target and the error printed per
-correction. Reaching for another model before that is what produced the refuted
-one below.
+The period comes from `SourceMeasurement::settledFieldRateHz()` now, and only
+the offset between the two edges is measured. What the pin made of the period
+stays on the log line, because it is the instrument that found this.
+
+**A RESIDUAL REMAINS AND ITS CAUSE IS NOT KNOWN.** On some boots the input
+vsync period reads 1..2.5% out and drops pulses for the whole boot, and the
+phase moves with it. The output vsync period beside it, timed by the same ISR
+microseconds later, stays inside 0.06% on the same pass -- so it is not the
+ESP's timestamping, and it is specific to the input path.
 
 **The rate is NOT what differs between a shaking boot and a steady one.** That
 model is refuted by the survey below: all six boots matched the same source rate
@@ -118,7 +124,8 @@ other side.
 
 That is a real asymmetry and it predicted the boot dependence: a quarter of the
 frame lies below the target, against two shaking boots in six. **The prediction
-did not survive the bench.**
+did not survive the bench**, and the period is why: an error jumping by a third
+of a frame looks like a wrap and was one multi-frame period read.
 
 The error is read as the shorter of the two arcs now, in
 `FrameSync::phaseError()`:
@@ -166,30 +173,85 @@ So the cadence fix did not cause the saturation and did not cure it -- it made
 it legible. The shake rate either side of that change is two boots in six
 against one, which at six boots distinguishes nothing.
 
-## What to do next
+## What the phase said, once it was printed
 
-**Log the phase.** `phase`, the target and the unwrapped error, one set per
-correction, beside the rates already on that line. It costs nothing, it is the
-controlled variable, and it separates the two live candidates in one 95 second
-capture:
+`runFrequency()` prints the phase, the target, the error and what the pin made
+of each period. One capture answered it, and the answer was neither candidate:
+on a settling boot the phase falls smoothly and the pin's period holds inside
+**4 ticks of 2652636 over 57 samples**, while on a saturating boot the period
+reads whole multiples of the frame.
 
-| candidate | what the phase looks like |
-|---|---|
-| the measurement is noisy on some boots | jumps with no relation to the correction just made |
-| the loop oscillates | moves smoothly, overshoots the target, comes back |
+Eight boots of the build that printed the phase, lock armed for 30 s each, the
+source steady at 60316 mHz throughout. **The two boots that saturated are
+exactly the two whose period read multi-frame:**
 
-Only after that is a third model worth proposing.
+| boots | multi-frame period reads | clock swing over the last six corrections |
+|---|---|---|
+| six of them | 0 of 18 | 32 .. 568 Hz |
+| one | **7 of 18** | **118 688 Hz** |
+| one | **4 of 18** | **63 432 Hz** |
+
+One line of a saturating boot, with the source unchanged beside it:
+
+    phase 940324/15949606 target 3987401 err -3047077 ... clock 108087688 -> 108022840
+
+The period is six frames. The phase, 940324, is healthy -- it would read
+**+277165** against the true target of 663159, on the other side. Nothing in
+the display clock can show that, which is why every model inferred from the
+clock missed it.
+
+Measured on the build that takes the period from the engine, the target holds
+at **663164 on every correction** while the pin reads 5284150 and 7945238
+beside it.
+
+## The residual, and what has been ruled out
+
+Removing the period did not stop the shake. On a disturbed boot the input
+period still reads 1 .. 2.5% out and drops pulses, and the phase moves with it.
+
+### It is not the ESP's edge timestamping -- the output period is clean
+
+Both periods are timed by the same two ISRs, microseconds apart in one pass. On
+a disturbed boot they do not agree about whether anything is wrong:
+
+| | worst deviation | pulses missed |
+|---|---|---|
+| input vsync | 2.39% | 5 of 18 |
+| output vsync | 0.06% | 0 of 18 |
+
+An ISR that cannot service an edge would lose both. So the disturbance is
+specific to what the input vsync path delivers, and a model that blames
+interrupt latency has to explain why one signal survives it.
+
+### WiFi light sleep across the measured edge -- NOT ESTABLISHED
+
+`debugPinPulseEdges()` enters `WIFI_LIGHT_SLEEP` after the first edge and holds
+it across the second, which is the edge being timestamped. Removing it looked
+decisive -- five clean boots in six against none in six -- and the control
+refutes it:
+
+| block | light sleep | clean boots |
+|---|---|---|
+| early | on | 0 of 6 |
+| middle | **off** | 5 of 6 |
+| late | on | 2 of 3 |
+
+The split tracks WHEN the boot ran rather than the flag, so the experiment is
+confounded by whatever drifts across a session and cannot separate the two. The
+line is still the obvious suspect and the experiment has to be **interleaved**
+to say anything: alternate the builds boot by boot rather than running a block
+of each.
 
 ## What is still open
 
-- **Why it is per boot.** Four boots in six converge to two parts per million
-  and hold; two saturate for as long as the lock is armed. Nothing in the rate
-  or the clock distinguishes them at the start.
-- **Whether the phase measurement is sound at all.** `vsyncPeriodAndPhase()`
-  times an input edge, switches the test bus, and times an output edge some
-  frames later, then takes the difference modulo the input period. The two
-  samples are not simultaneous and the gap between them is not constant.
+- **What disturbs the input vsync path, per boot, for the whole boot.** All 18
+  corrections of a boot are disturbed or none are, so it is a state set once and
+  held. It reaches the input path and not the output one.
 - **`targetPhase` is 90 degrees and nothing has measured that it is right.** The
   crossover shows as a stationary tear at `targetPhase/360` down the screen and
   belongs in vertical blanking; 90 degrees puts it a quarter of the way into
   live video. Only the picture can judge it, and `/framesync?phase=` sets it.
+- **A steady-state error of about 6100 ticks remains on a converged boot**,
+  which is 0.23% of a frame. That is what proportional control on an integrator
+  does: holding an output rate one milli-hertz off the source's needs a non-zero
+  correction, which needs a non-zero error. It is not a fault.
