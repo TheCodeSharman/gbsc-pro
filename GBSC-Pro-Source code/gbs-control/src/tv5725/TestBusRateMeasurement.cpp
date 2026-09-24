@@ -2,17 +2,11 @@
 
 #include <Arduino.h>   // delayMicroseconds(), a hardware settling time
 
+#include "DebugPin.h"
 #include "SyncMeasurement.h"
 #include "SyncProcessor.h"
 #include "TestBus.h"
 #include "Tv5725.h"
-
-// The ESP's edge counter on the debug pin, defined by the sketch the way
-// tv5725Log() is: the count comes from two ISRs reading the CPU's cycle
-// counter, which this layer can neither reach nor host-compile. 0 ticks means
-// no pulse arrived.
-uint32_t debugPinPulseTicks();
-uint32_t debugPinTicksPerSecond();
 
 namespace Tv5725 {
 

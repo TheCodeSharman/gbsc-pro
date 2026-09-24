@@ -16,7 +16,7 @@ CXXFLAGS ?= -std=c++11 -O1 -Wall -Wextra
 # embarrassingly parallel: measured 3m26s serial against 34s here.
 MAKEFLAGS += -j$(shell nproc)
 
-.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
+.PHONY: all test video-signal test-bus test-bus-rate-measurement steady-run sync-on-green sampling-log axis source-key source-timing framing-table framing-text slot-table slot-text scale video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc video-route rgbhv-output write-trace clean help
 .DEFAULT_GOAL := test
 
 ## help: list the targets
@@ -36,8 +36,11 @@ help:
 # amount of quoting inside a make variable survives. Relative to the sketch
 # root, every path is space-free.
 # Tv5725::DisplayClock steers the Si5351 through Clock::ClockGen, so every list
-# that links DisplayClock.cpp links the clock with it.
-CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp
+# that links DisplayClock.cpp links the clock with it. Tv5725::FrameSync judges
+# two readings of the source rate against each other, so RateAgreement comes
+# with them.
+CLOCK_SRC = src/clock/ClockGen.cpp src/clock/ClockRamp.cpp \
+            src/clock/RateAgreement.cpp
 
 # Tv5725::SourceMeasurement holds one quantity in three registers -- PLLAD_MD,
 # IF_HSYNC_RST and SP_RT_HS_SP -- and writes all three, so the blocks that
@@ -307,6 +310,16 @@ segment-select:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" -o "$(OUT)/test_segment_select" \
 	  "$(HERE)/test_segment_select.cpp"
 	@"$(OUT)/test_segment_select"
+
+## frame-sync: host unit tests for the frame time lock's two corrections
+frame-sync:
+	@mkdir -p "$(OUT)"
+	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
+	  -o "$(OUT)/test_frame_sync" \
+	  "$(HERE)/test_frame_sync.cpp" src/tv5725/FrameSync.cpp \
+	  src/tv5725/DisplayClock.cpp src/tv5725/TestBus.cpp \
+	  src/tv5725/VideoRoute.cpp $(CLOCK_SRC)
+	"$(OUT)/test_frame_sync"
 
 ## display-clock: host unit tests for the display clock and the raster it affords
 #
@@ -795,7 +808,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: video-signal test-bus test-bus-rate-measurement steady-run sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries

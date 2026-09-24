@@ -150,13 +150,17 @@ public:
     // ClockGen::begin() is handed, and the serial override.
     void assumeHz(uint32_t hz);
 
-    // Walk to a new frequency rather than jumping. The pump is called between
-    // steps: a slew is up to 750 I2C transactions, long enough that WiFi and
-    // the watchdog need servicing.
-    void slewTo(uint32_t hz, void (*pump)());
+    // What is called between the steps of a slew: up to 750 I2C transactions,
+    // long enough that WiFi and the watchdog need servicing or the frequency
+    // change becomes a reboot.
+    void pumpWith(void (*pump)());
+
+    // Walk to a new frequency rather than jumping.
+    void slewTo(uint32_t hz);
 
 private:
     Clock::ClockGen *generator_;
+    void (*pump_)();
     uint32_t hzNow_;
     uint8_t seed_;
     bool known_;

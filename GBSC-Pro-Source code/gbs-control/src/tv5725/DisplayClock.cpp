@@ -60,8 +60,16 @@ uint16_t DisplayClock::horizontalTotalFor(uint32_t hz, uint16_t frameLines,
     return horizontalTotal > 4096 ? 4096 : (uint16_t)horizontalTotal;
 }
 
+namespace {
+
+// Unset, a harmless stand-in rather than a crash: a host test that does not
+// care what a slew yields to must not have to supply one.
+void noPump() {}
+
+}  // namespace
+
 DisplayClock::DisplayClock()
-    : generator_(0), hzNow_(0), seed_(0), known_(false)
+    : generator_(0), pump_(noPump), hzNow_(0), seed_(0), known_(false)
 {
 }
 
@@ -165,7 +173,9 @@ uint32_t DisplayClock::hzNow() const { return hzNow_; }
 
 void DisplayClock::assumeHz(uint32_t hz) { hzNow_ = hz; }
 
-void DisplayClock::slewTo(uint32_t hz, void (*pump)())
+void DisplayClock::pumpWith(void (*pump)()) { pump_ = pump != 0 ? pump : noPump; }
+
+void DisplayClock::slewTo(uint32_t hz)
 {
     if (generator_ == 0) {
         hzNow_ = hz;
@@ -174,7 +184,7 @@ void DisplayClock::slewTo(uint32_t hz, void (*pump)())
 
     // The loop always finishes ON the target: a clock left even 500 Hz out
     // shows as a rolling bar. The stepping policy is Clock::ClockRamp's.
-    generator_->slewTo(hzNow_, hz, pump);
+    generator_->slewTo(hzNow_, hz, pump_);
     hzNow_ = hz;
 }
 

@@ -13,8 +13,7 @@ static bool decode_flag = 0;
 // #define LEDOFF    pinMode(LED_BUILTIN, INPUT);  digitalWrite(LED_BUILTIN, HIGH)
 
 // GBS_DEBUG: compile in the debug surface -- traces, dumps and the register
-// endpoints. Off by default. Must be defined before the framesync.h include
-// below, which reads it.
+// endpoints. Off by default.
 #ifndef GBS_DEBUG
 #define GBS_DEBUG 0
 #endif
@@ -35,7 +34,7 @@ static bool decode_flag = 0;
 #error "GBS_SAMPLING_LOG needs GBS_DEBUG=1: tv5725Log expands to nothing without it"
 #endif
 
-// The sketch-level twin of framesync.h's fsDebugPrintf: one line to the web
+// One line to the web
 // console, format string kept in flash, and nothing at all when the flag is
 // off. Expands where it is used, so SerialM does not have to exist yet here.
 #if GBS_DEBUG
@@ -86,6 +85,9 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/videosource/SourceMaintenance.h"
 #include "src/videosource/SyncRecovery.h"
 #include "src/tv5725/DisplayClock.h"
+#include "src/tv5725/DebugPin.h"
+#include "src/clock/RateAgreement.h"
+#include "src/tv5725/FrameSync.h"
 #include "src/tv5725/OutputMode.h"
 #include "src/tv5725/BringUp.h"
 #include "src/tv5725/Chip.h"
@@ -995,16 +997,9 @@ Tv5725::Controls geometryControls(geometry, SerialM);
 VideoSourceAcquisition inputAcquisition(sourceSampling, geometry);
 SourceMaintenance sourceMaintenance;
 
-
-#include "framesync.h"
-
-struct FrameSyncAttrs 
-{
-    static const uint8_t debugInPin = DEBUG_IN_PIN;
-    static const uint32_t lockInterval = 100 * 16.70;
-    static const int16_t syncCorrection = 2;
-    static const int32_t syncTargetPhase = 90;
-};
+// The only thing on the board that steers the output frame time towards the
+// source's.
+Tv5725::FrameSync frameSync(rtos.displayClock);
 
 // How long a source must have held before the frame time lock corrects against
 // it, in acquisition passes. A correction measured across a settling source
@@ -1015,14 +1010,13 @@ static const uint8_t FrameTimeLockHeldPasses = 20;
 // and nothing disturbing the lock for this long.
 static const uint8_t FrameTimeLockArmPasses = 10;
 static const uint16_t FrameTimeLockArmQuietMs = 500;
-typedef FrameSyncManager<GBS, FrameSyncAttrs> FrameSync;
 
 void externalClockGenResetClock()
 {
     if (!rto->displayClock.driving()) {
         return;
     }
-    fsDebugPrintf("externalClockGenResetClock()\n");
+    debugPrintf("externalClockGenResetClock()\n");
 
     // The engine steers. It chose the seed when it solved the raster and holds
     // it, because loop() stashes the divider and parks
@@ -1041,7 +1035,7 @@ void externalClockGenResetClock()
                          displayClock.seed(), (unsigned long)(steered / 1000000));
     }
 
-    FrameSync::clearFrequency();
+    frameSync.clearFrequency();
 }
 
 // A rate two consecutive measurements agree on, or 0 when they never do. Each
@@ -1074,7 +1068,7 @@ float agreedRate(float (*measure)())
 
 void externalClockGenSyncInOutRate()
 {
-    fsDebugPrintf("externalClockGenSyncInOutRate()\n");
+    debugPrintf("externalClockGenSyncInOutRate()\n");
 
     if (!rto->displayClock.driving()) {
         return;
@@ -1114,9 +1108,9 @@ void externalClockGenSyncInOutRate()
     }
 
     uint32_t old = rto->displayClock.hzNow();
-    FrameSync::initFrequency(ofr, old);
+    frameSync.initFrequency(ofr, old);
 
-    setExternalClockGenFrequencySmooth((sfr / ofr) * old);
+    rto->displayClock.slewTo((uint32_t)((sfr / ofr) * old));
 
     // In milli-hertz, because the tolerance that admitted these two is 0.5 Hz
     // absolute -- 0.83% at 60 Hz -- and the display clock is set to their
@@ -1322,7 +1316,7 @@ void loadComputedPreset(const Tv5725::OutputChoice &choice, uint8_t presetId)
   Tv5725::Deinterlacer::forgetSteering();
   Tv5725::PresetLoad::forgetScalingRgbhv();
 
-  FrameSync::cleanup();
+  frameSync.cleanup();
 
   Tv5725::VideoRoute::toScaler();
 
@@ -1348,7 +1342,7 @@ void toggleFrameTimeLock(bool persist)
     if (persist) {
         saveUserPrefs();
     }
-    FrameSync::reset(uopt->frameTimeLockMethod);
+    frameSync.reset(uopt->frameTimeLockMethod);
 }
 
 // The ADC input the user chose, or the RGB pins when nothing is chosen -- which
@@ -1393,7 +1387,7 @@ void setResetParameters()
     GBS::IF_HSYNC_RST::write(0x3FF);
     inputFormatter.writeReferenceVerticalBlank();
 
-    FrameSync::cleanup();
+    frameSync.cleanup();
 
     GBS::OUT_SYNC_CNTRL::write(0);
     GBS::DAC_RGBS_PWDNZ::write(0);
@@ -1598,6 +1592,8 @@ void goLowPowerWithInputDetection()
 static void feedWatchdog() { ESP.wdtFeed(); }
 
 static uint32_t millisNow() { return (uint32_t)millis(); }
+
+static void pumpWiFi() { handleWiFi(0); }
 
 // What the engine probes with. The connector settles the sync type on every
 // input but VGA, and measuring one that is already settled gets it wrong:
@@ -2330,22 +2326,193 @@ static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
 // The sink src/tv5725/ composes its diagnostics for. Declared in
 // SourceMeasurement.h and defined here, so a class under src/ can report without
 // reaching for SerialM -- which lives above it and does not host-compile.
-void tv5725Log(const char *message) { fsDebugPrintf("%s\n", message); }
+void tv5725Log(const char *message)
+{
+    debugPrintf("%s\n", message);
+}
 
 
 
 
-// The ESP's half of Tv5725::TestBusRateMeasurement: count the edges of whatever the chip has
-// selected onto the debug pin, and say what one tick is worth. The yield and
-// the watchdog feed stay on this side -- src/tv5725/ calls neither.
-uint32_t debugPinPulseTicks()
+// The ESP's half of src/tv5725/DebugPin.h: time one period of whatever the chip
+// has selected onto the debug pin, and say what one tick is worth. Everything
+// here is an ESP API the engine layer can neither reach nor host-compile.
+
+// How long one measurement waits for its two edges. It needs one to arm and a
+// second to measure, so the worst case is two frame periods -- 40 ms at 50 Hz
+// -- plus the delay(7). 250 ms is comfortably above that and far short of the
+// interval that drops WiFi.
+#define FS_SAMPLE_TIMEOUT_MS 250
+
+// Spins between deadline checks. The wait has to stay a tight poll on a
+// volatile: millis() and ESP.wdtFeed() are function calls, and doing both on
+// every pass slows it enough to stop a measurement completing.
+#define FS_SAMPLE_CHECK_EVERY 1024
+
+// How long debugPinProbe() watches each selector. 25 ms is over one frame at
+// 50 Hz, so a working vsync must show transitions.
+#define FS_PROBE_MS 25
+
+// Rate limit, so a unit that fails twice a second does not fill the console.
+#define FS_PROBE_INTERVAL_MS 2000
+
+namespace MeasurePeriod
+{
+    volatile uint32_t stopTime, startTime;
+    volatile uint32_t armed;
+
+    void _risingEdgeISR_prepare();
+    void _risingEdgeISR_measure();
+
+    void start()
+    {
+        startTime = 0;
+        stopTime = 0;
+        armed = 0;
+        attachInterrupt(DEBUG_IN_PIN, _risingEdgeISR_prepare, RISING);
+    }
+
+    // A completed measurement detaches itself -- _measure() is the last ISR and
+    // it detaches on the way out. A measurement that times out does not, so the
+    // caller has to, or an edge arriving afterwards writes startTime behind the
+    // back of whoever reads it next.
+    void stop()
+    {
+        detachInterrupt(DEBUG_IN_PIN);
+    }
+
+    void ICACHE_RAM_ATTR _risingEdgeISR_prepare()
+    {
+        noInterrupts();
+        __asm__ __volatile__("rsr %0,ccount"
+                             : "=a"(startTime));
+        detachInterrupt(DEBUG_IN_PIN);
+        armed = 1;
+        attachInterrupt(DEBUG_IN_PIN, _risingEdgeISR_measure, RISING);
+        interrupts();
+    }
+
+    void ICACHE_RAM_ATTR _risingEdgeISR_measure()
+    {
+        noInterrupts();
+        __asm__ __volatile__("rsr %0,ccount"
+                             : "=a"(stopTime));
+        detachInterrupt(DEBUG_IN_PIN);
+        interrupts();
+    }
+}
+
+// **THE WAIT IS BOUNDED IN TIME, AND THE WATCHDOG STAYS RUNNING.** Bounding it
+// by loop passes instead, with the watchdog off, holds the CPU long enough that
+// serial, ping and HTTP all die while the picture keeps running -- the TV5725 is
+// a separate chip -- and the caller re-enters immediately, so a bounded stall
+// behaves like a permanent wedge. A PLLAD_MD write big enough to break sync is
+// exactly how you get here.
+//
+// Deliberately no yield() in the spin. The timestamps come from the two
+// ICACHE_RAM_ATTR edge ISRs reading ccount, so this loop is a pure wait -- but
+// yield() runs the WiFi stack, whose interrupts-off sections would delay an edge
+// ISR and skew the timestamp it records. The period resolves to about one cycle
+// in three million, and a few thousand cycles of added interrupt latency would
+// swamp that. The delay(7) after the first edge stays exactly where it is: it
+// yields in the ~20 ms of slack between edges, well away from the one that is
+// about to be measured.
+bool debugPinPulseEdges(uint32_t *start, uint32_t *stop)
 {
     yield();
     ESP.wdtFeed();
-    return FrameSync::getPulseTicks();
+    MeasurePeriod::start();
+
+    const uint32_t deadline = millis() + FS_SAMPLE_TIMEOUT_MS;
+    uint32_t spins = 0;
+    while (MeasurePeriod::stopTime == 0)
+    {
+        if (MeasurePeriod::armed)
+        {
+            MeasurePeriod::armed = 0;
+            delay(7);
+            WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
+        }
+        if (++spins % FS_SAMPLE_CHECK_EVERY == 0)
+        {
+            // Signed difference, so this still terminates across the millis()
+            // wrap rather than spinning for another 49 days.
+            if ((int32_t)(millis() - deadline) >= 0)
+            {
+                break;
+            }
+            ESP.wdtFeed();
+        }
+    }
+
+    *start = MeasurePeriod::startTime;
+    *stop = MeasurePeriod::stopTime;
+    MeasurePeriod::stop();
+    WiFi.setSleepMode(WIFI_NONE_SLEEP);
+
+    // Cycle counter overflow, or no pulse at all.
+    return *start != 0 && *stop != 0 && *start < *stop;
+}
+
+uint32_t debugPinPulseTicks()
+{
+    uint32_t start, stop;
+    return debugPinPulseEdges(&start, &stop) ? stop - start : 0;
 }
 
 uint32_t debugPinTicksPerSecond() { return ESP.getCpuFreqMHz() * 1000000; }
+
+#if GBS_DEBUG
+void debugPinProbe()
+{
+    static uint32_t lastProbe = 0;
+    const uint32_t now = millis();
+    if (lastProbe != 0 && (int32_t)(now - (lastProbe + FS_PROBE_INTERVAL_MS)) < 0)
+    {
+        return;
+    }
+    lastProbe = now;
+
+    // Sweep the selectors this firmware uses elsewhere, so a pin that is simply
+    // on the wrong bus can be told from one that is dead. 0x0 is what framesync
+    // measures on, 0x2 is VDS, 0xa is what the sync watcher and the HTotal
+    // search use. If none of them move it, the fault is the pin or the net.
+    const uint8_t selectors[] = {0x0, 0x2, 0xa};
+    const Tv5725::TestBus::Hold held;
+
+    for (uint8_t i = 0; i < sizeof(selectors); i++)
+    {
+        Tv5725::TestBus::select(selectors[i]);
+        delay(1); // let the mux settle before counting
+
+        int level = digitalRead(DEBUG_IN_PIN);
+        const int first = level;
+        uint32_t transitions = 0;
+        uint32_t spins = 0;
+
+        const uint32_t deadline = millis() + FS_PROBE_MS;
+        while ((int32_t)(millis() - deadline) < 0)
+        {
+            const int sample = digitalRead(DEBUG_IN_PIN);
+            if (sample != level)
+            {
+                transitions++;
+                level = sample;
+            }
+            if (++spins % FS_SAMPLE_CHECK_EVERY == 0)
+            {
+                ESP.wdtFeed();
+            }
+        }
+
+        debugPrintf(
+            "  DEBUG_IN_PIN sel=0x%x: %u transitions in %ums, level %d->%d, %u samples\n",
+            selectors[i], transitions, (unsigned)FS_PROBE_MS, first, level, spins);
+    }
+}
+#else
+void debugPinProbe() {}
+#endif
 
 #define AUTO_GAIN_INIT 0x48
 
@@ -2371,8 +2538,8 @@ static void changeOutputResolution()
     applyOutputResolutionSettings();
 
     // The raster moved, so the ratio the frequency lock steers by is stale.
-    FrameSync::cleanup();
-    FrameSync::clearFrequency();
+    frameSync.cleanup();
+    frameSync.clearFrequency();
     externalClockGenSyncInOutRate();
 }
 
@@ -2520,7 +2687,7 @@ void doPostPresetLoadSteps()
         Tv5725::VideoProcessor::setSixTapFilter(true);
         applyOutputResolutionSettings();
 
-        FrameSync::cleanup();
+        frameSync.cleanup();
         rto->syncLockFailIgnore = 16;
 
         Tv5725::VideoProcessor::applyFreeRunTiming();
@@ -2900,7 +3067,7 @@ void enterHdBypass()
     geometry.setOutputMode(&Tv5725::ModeBypass);
 
     externalClockGenResetClock();
-    FrameSync::cleanup();
+    frameSync.cleanup();
     GBS::ADC_UNUSED_62::write(0x00);
     GBS::PA_ADC_BYPSZ::write(1);
     GBS::PA_SP_BYPSZ::write(1);
@@ -3661,11 +3828,11 @@ static const char *frameTimeLockUnarmedBecause()
         return "not armed: the source has not held long enough";
     if (!Tv5725::SyncProcessor::coastPlaced())
         return "not armed: no coast window";
-    if (!FrameSync::quietFor(FrameTimeLockArmQuietMs))
+    if (!frameSync.quietFor(FrameTimeLockArmQuietMs, millis()))
         return "not armed: something keeps disturbing the lock";
     if (!Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples()))
         return "not armed: the divider is not latched";
-    if (!FrameSync::init())
+    if (!frameSync.init())
         return "not armed: the vsync periods cannot be read";
     return NULL;
 }
@@ -3683,9 +3850,9 @@ static const char *frameTimeLockBlockedBy()
         return "the video bypasses the scaler";
     if (!rto->syncWatcherEnabled)
         return "the sync watcher is off";
-    if (!FrameSync::ready())
+    if (!frameSync.ready())
         return frameTimeLockUnarmedBecause();
-    if (!FrameSync::quietFor(FrameSyncAttrs::lockInterval))
+    if (!frameSync.quietFor(Tv5725::FrameSync::LockIntervalMs, millis()))
         return Pacing;
     if (inputAcquisition.acquiredPasses() <= FrameTimeLockHeldPasses)
         return "the source has not held long enough";
@@ -3715,11 +3882,11 @@ static void serviceFrameTimeLock()
     if (blocked == NULL) {
         if (Tv5725::Adc::dividerLatched(Tv5725::SyncProcessor::lineSamples())) {
             const bool success = rto->displayClock.driving()
-                                     ? FrameSync::runFrequency()
-                                     : FrameSync::runVsync(uopt->frameTimeLockMethod);
+                                     ? frameSync.runFrequency()
+                                     : frameSync.runVsync(uopt->frameTimeLockMethod);
             if (!success) {
                 if (rto->syncLockFailIgnore-- == 0) {
-                    FrameSync::reset(uopt->frameTimeLockMethod);
+                    frameSync.reset(uopt->frameTimeLockMethod);
                 }
             } else if (rto->syncLockFailIgnore > 0) {
                 rto->syncLockFailIgnore = 16;
@@ -3727,7 +3894,7 @@ static void serviceFrameTimeLock()
         } else {
             blocked = "the divider is not latched";
         }
-        FrameSync::defer();
+        frameSync.defer(millis());
     }
     if (blocked != Pacing)
         reportFrameTimeLock(blocked == NULL ? "running" : blocked);
@@ -3761,6 +3928,10 @@ void setup()
     inputAcquisition.usePassThroughSwitch(enterHdBypass);
     inputAcquisition.useWatchdogFeed(feedWatchdog);
     inputAcquisition.useClock(millisNow);
+
+    // A slew is up to 750 I2C transactions, long enough that dropping the WiFi
+    // stack turns a frequency change into a reboot.
+    rtos.displayClock.pumpWith(pumpWiFi);
     applyPassThroughPreference();
 
     // The freeze, on the tick rather than inside the engine.
@@ -4459,7 +4630,7 @@ void loop()
         // raster, so the ratio the frequency lock steers by is stale -- and
         // re-establishing it here is the only thing that does: the
         // applyPresetDoneStage block fires once and cannot see a later solve.
-        FrameSync::clearFrequency();
+        frameSync.clearFrequency();
         externalClockGenSyncInOutRate();
 
     }
@@ -4470,9 +4641,9 @@ void loop()
     {
         const VideoSourceAcquisition::Report &report = inputAcquisition.report();
         if (report.frameTimingMoved)
-            FrameSync::reset(uopt->frameTimeLockMethod);
+            frameSync.reset(uopt->frameTimeLockMethod);
         if (report.vsyncLockStale)
-            FrameSync::defer();
+            frameSync.defer(millis());
         if (report.outputRateSettled)
             externalClockGenSyncInOutRate();
     }
@@ -4712,8 +4883,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
                     disableScanlines();
 
-                    if (uopt->enableFrameTimeLock && FrameSync::getSyncLastCorrection() != 0) {
-                        FrameSync::reset(uopt->frameTimeLockMethod);
+                    if (uopt->enableFrameTimeLock && frameSync.lastCorrection() != 0) {
+                        frameSync.reset(uopt->frameTimeLockMethod);
                     }
 
                     for (int segment = 0; segment <= 5; segment++) {
@@ -4814,7 +4985,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                     latchPLLAD();
 
                     rto->syncLockFailIgnore = 16;
-                    FrameSync::reset(uopt->frameTimeLockMethod);
+                    frameSync.reset(uopt->frameTimeLockMethod);
 
                     delay(200);
                     break;
@@ -5285,7 +5456,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
                 case '_': {
                     const Tv5725::TestBus::Hold held;
                     Tv5725::TestBus::selectInputVsync();
-                    Serial.println(FrameSync::getPulseTicks());
+                    Serial.println(debugPinPulseTicks());
                 } break;
                 case '~':
                     goLowPowerWithInputDetection();
@@ -5388,7 +5559,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
             delay(1);
 
-            FrameSync::defer();
+            frameSync.defer(millis());
 
             if (!Serial.available()) {
 
@@ -5475,7 +5646,7 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
 
             handleType2Command(userCommand);
             userCommand = '@';
-            FrameSync::defer();
+            frameSync.defer(millis());
             handleWiFi(1);
 
             // printf("uopt->presetSlot %d  \n", uopt->presetSlot);
@@ -5636,7 +5807,7 @@ void handleType2Command(char argument)
         case 'i':
             // toggle active frametime lock method
             if (!rto->displayClock.driving()) {
-                FrameSync::reset(uopt->frameTimeLockMethod);
+                frameSync.reset(uopt->frameTimeLockMethod);
             }
             if (uopt->frameTimeLockMethod == 0) {
                 uopt->frameTimeLockMethod = 1;
@@ -6628,20 +6799,20 @@ void startWebserver()
         // The phase target is the one thing here that is settable, because the
         // only instrument that can judge it is the picture.
         if (request->hasArg("phase")) {
-            FrameSync::setTargetPhase(request->arg("phase").toInt());
+            frameSync.setTargetPhase(request->arg("phase").toInt());
         }
         char body[208];
         snprintf_P(body, sizeof(body),
             PSTR("{\"ready\":%s,\"driving\":%s,\"seed\":%u,"
                  "\"targetHz\":%lu,\"nowHz\":%lu,\"fieldRateHz\":%.3f,"
                  "\"targetPhase\":%ld}"),
-            FrameSync::ready() ? "true" : "false",
+            frameSync.ready() ? "true" : "false",
             rto->displayClock.driving() ? "true" : "false",
             rto->displayClock.seed(),
             (unsigned long)rto->displayClock.hz(),
             (unsigned long)rto->displayClock.hzNow(),
             inputAcquisition.sourceFieldRateHz(),
-            (long)FrameSync::targetPhase());
+            (long)frameSync.targetPhase());
         request->send(200, "application/json", body);
     });
 
