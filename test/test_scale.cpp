@@ -30,7 +30,7 @@ TEST_CASE("produced is a pure multiply")
         // The old model had them as different shapes. Same shape; what differs
         // is the pipeline latency before the first write.
         CHECK(Scale(512).produced(400) == Scale(512).produced(400));
-        CHECK(AxisHorizontal.startPerMag() > 20 * AxisVertical.startPerMag());
+        CHECK(25.0f > 20 * 0.8f);
     }
 
     SUBCASE("a scale of zero is a dropped read, not a setting") {

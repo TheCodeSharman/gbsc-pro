@@ -17,6 +17,7 @@
 #include "MeasuredSource.h"
 #include "SolvedEngine.h"
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Memory.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
@@ -622,7 +623,7 @@ TEST_CASE("the divider is bounded by the line the output raster can show")
     SolvedEngine solved(500, 75.0f, 181, &Mode1080p, false);
 
     const uint16_t raster = (uint16_t)(Wire.field(3, 0x01, 0, 12) + 1);
-    const uint16_t showable = AxisHorizontal.maximumCapture(raster, 0, 0);
+    const uint16_t showable = OutputWindow::maximumCapture(AxisHorizontal, raster, 0, 0);
 
     REQUIRE(showable > 0);
     CHECK(solved.engine.lineUnitsOn(AxisHorizontal) <= showable);

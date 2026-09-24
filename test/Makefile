@@ -285,7 +285,7 @@ source-measurement:
  src/tv5725/Axis.cpp src/tv5725/Scale.cpp \
 	  src/tv5725/AxisSolution.cpp src/tv5725/RasterFit.cpp \
 	  src/tv5725/PictureOrigin.cpp src/tv5725/BlankingTiming.cpp \
-	 
+	  src/tv5725/OutputWindow.cpp src/tv5725/OutputTiming.cpp
 	@"$(OUT)/test_source_measurement"
 
 ## memory: host unit tests for the playback burst structure
@@ -528,7 +528,8 @@ input-formatter:
 	  src/tv5725/Axis.cpp src/tv5725/Scale.cpp src/tv5725/AxisSolution.cpp \
 	  src/tv5725/RasterFit.cpp src/tv5725/PictureOrigin.cpp \
 	  src/tv5725/BlankingTiming.cpp src/tv5725/VideoSourceLine.cpp \
-	  src/tv5725/HsyncPulse.cpp
+	  src/tv5725/HsyncPulse.cpp src/tv5725/OutputWindow.cpp \
+	  src/tv5725/OutputTiming.cpp
 	@"$(OUT)/test_input_formatter"
 
 ## chip: host unit tests for Tv5725::Chip

@@ -21,6 +21,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
@@ -1909,7 +1910,7 @@ void dumpTable()
 {
     // The scan mode depends on the OUTPUT as well: a doubled frame with no room
     // to be shown is only cropped. 1080p is what the bench runs.
-    const uint16_t showable = AxisVertical.maximumCapture(1125, 0, 0);
+    const uint16_t showable = OutputWindow::maximumCapture(AxisVertical, 1125, 0, 0);
     const uint8_t Ratios[] = {4, 2, 1};
 
     printf("output 1080p, showable %u, oversampling asked for 4\n", showable);

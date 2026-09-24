@@ -666,7 +666,8 @@ void VideoPath::solveLineDoubling(uint16_t lines)
     // edge and a doubling that only just fits is caught by the capture clamp.
     const uint16_t showable =
         mode_ && !mode_->isBypass()
-            ? AxisVertical.maximumCapture(mode_->frameLines(), 0, 0) : 0;
+            ? OutputWindow::maximumCapture(AxisVertical, mode_->frameLines(), 0, 0)
+            : 0;
     const bool doubled = InputFormatter::shouldDoubleLine(lines, showable);
     if (scanModeApplied_ && doubled == lineDoubled_)
         return;
@@ -738,7 +739,8 @@ uint16_t VideoPath::dividerCeilingForOutput() const
         return 0;
 
     const uint16_t showable =
-        AxisHorizontal.maximumCapture(raster.horizontalTotal, 0, raster.activeStop);
+        OutputWindow::maximumCapture(AxisHorizontal, raster.horizontalTotal, 0,
+                                     raster.activeStop);
     if (showable == 0)
         return 0;
 
@@ -783,18 +785,12 @@ uint16_t VideoPath::activeStopOn(const Axis &axis) const
 
 uint16_t VideoPath::narrowestCaptureOn(const Axis &axis) const
 {
-    const uint16_t raster = rasterTotalOn(axis);
-    if (raster == 0)
-        return 0;
-    return axis.minimumCapture(raster, activeStartOn(axis), activeStopOn(axis));
+    return OutputWindow::narrowestCapture(axis, raster_);
 }
 
 uint16_t VideoPath::widestCaptureOn(const Axis &axis) const
 {
-    const uint16_t raster = rasterTotalOn(axis);
-    if (raster == 0)
-        return 0;
-    return axis.maximumCapture(raster, activeStartOn(axis), activeStopOn(axis));
+    return OutputWindow::widestCapture(axis, raster_);
 }
 
 void VideoPath::narrowToRaster(PanAndZoom &framing, const CaptureWindow &capture,
@@ -909,9 +905,7 @@ OutputWindow VideoPath::imageFor(const CaptureWindow &capture) const
     // picture alone runs the far end past the aperture and the source's last
     // line is blanked.
     return OutputWindow(capture.horizontal().width(), capture.vertical().width(),
-                       raster_.horizontalTotal, raster_.verticalTotal,
-                       raster_.activeStop, raster_.activeLinesStop,
-                       raster_.activeStart, raster_.activeLinesStart);
+                        raster_);
 }
 
 void VideoPath::write(const OutputWindow &solved, const CaptureWindow &capture)

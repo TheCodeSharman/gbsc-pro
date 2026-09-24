@@ -25,13 +25,29 @@ FakeTwoWire Wire;
 
 using namespace Tv5725;
 
+// The raster a case cares about. OutputMode::solve() fills the rest of an
+// OutputTiming; nothing OutputWindow reads is outside these six.
+static Tv5725::OutputTiming rasterOf(uint16_t linePx, uint16_t frameLines,
+                                     uint16_t activeStopH = 0, uint16_t activeStopV = 0,
+                                     uint16_t activeStartH = 0, uint16_t activeStartV = 0)
+{
+    Tv5725::OutputTiming raster;
+    raster.horizontalTotal = linePx;
+    raster.verticalTotal = frameLines;
+    raster.activeStop = activeStopH;
+    raster.activeLinesStop = activeStopV;
+    raster.activeStart = activeStartH;
+    raster.activeLinesStart = activeStartV;
+    return raster;
+}
+
 // --- everything from the capture and the raster alone -------------------------
 
 TEST_CASE("nothing is inherited from the registers")
 {
     // The bench state: 798 IF units captured on a 1126-unit line, 513 units
     // of a 312-line frame, onto a 1445 x 1126 output raster.
-    OutputWindow s(798, 513, 1445, 1126);
+    OutputWindow s(798, 513, rasterOf(1445, 1126));
 
     SUBCASE("both scales are computed, not read") {
         CHECK(((s.scaleOn(AxisHorizontal) >= Scale::Min) && (s.scaleOn(AxisHorizontal) <= Scale::Max)));
@@ -39,8 +55,8 @@ TEST_CASE("nothing is inherited from the registers")
     }
 
     SUBCASE("both memory windows clear their floor") {
-        CHECK(s.on(AxisHorizontal).memory().stop() >= AxisHorizontal.windowStopMin());
-        CHECK(s.on(AxisVertical).memory().stop() >= AxisVertical.windowStopMin());
+        CHECK(s.on(AxisHorizontal).memory().stop() >= 8);
+        CHECK(s.on(AxisVertical).memory().stop() >= 0);
     }
 
     SUBCASE("neither window reaches the value that wraps") {
@@ -54,7 +70,7 @@ TEST_CASE("nothing is inherited from the registers")
     }
 
     SUBCASE("the same capture always gives the same answer") {
-        OutputWindow again = OutputWindow(798, 513, 1445, 1126);
+        OutputWindow again = OutputWindow(798, 513, rasterOf(1445, 1126));
         CHECK(((again.scaleOn(AxisHorizontal) == s.scaleOn(AxisHorizontal))
                && (again.scaleOn(AxisVertical) == s.scaleOn(AxisVertical))));
         CHECK(again.on(AxisHorizontal).memory().stop() == s.on(AxisHorizontal).memory().stop());
@@ -62,7 +78,7 @@ TEST_CASE("nothing is inherited from the registers")
     }
 
     SUBCASE("a capture that reads zero yields no picture rather than a wrong one") {
-        OutputWindow dropped = OutputWindow(0, 0, 1445, 1126);
+        OutputWindow dropped = OutputWindow(0, 0, rasterOf(1445, 1126));
         CHECK(dropped.on(AxisHorizontal).produced() == 0.0f);
         CHECK(dropped.on(AxisVertical).produced() == 0.0f);
     }
@@ -73,7 +89,7 @@ TEST_CASE("the solution carries the front porch to both axes")
     const uint16_t Raster = 1916, Frame = 1126;
     const uint16_t StopH = 1852, StopV = 1121;
 
-    OutputWindow solved(1008, 532, Raster, Frame, StopH, StopV);
+    OutputWindow solved(1008, 532, rasterOf(Raster, Frame, StopH, StopV));
     CHECK(solved.on(AxisHorizontal).display().start() <= (int32_t)StopH);
     CHECK(solved.on(AxisVertical).display().start() <= (int32_t)StopV);
 
@@ -81,7 +97,7 @@ TEST_CASE("the solution carries the front porch to both axes")
         // Compared against the solution that HAS a porch rather than against
         // the porch itself: the window gives back Axis::margin at the far edge,
         // so it sits inside either bound and the porch is the tighter one.
-        OutputWindow plain(1008, 532, Raster, Frame);
+        OutputWindow plain(1008, 532, rasterOf(Raster, Frame));
         CHECK(plain.on(AxisHorizontal).display().start()
               > solved.on(AxisHorizontal).display().start());
         CHECK(plain.on(AxisHorizontal).display().start() < (int32_t)Raster);
@@ -99,7 +115,7 @@ TEST_CASE("the horizontal window goes where the geometry puts it")
     // width, which makes the beat independent of HSCALE, so there is no tearing
     // band left for the window to dodge and no table to consult.
     for (uint16_t capture = 400; capture <= 1009; capture += 3) {
-        OutputWindow solved(capture, 512, 1445, 1126);
+        OutputWindow solved(capture, 512, rasterOf(1445, 1126));
         REQUIRE(solved.usable());
         // The far edges part by the parity unit and no more, and the MEMORY one
         // is the wider: the fetch covers every column the aperture shows.
@@ -118,9 +134,9 @@ TEST_CASE("the scale is exactly what fitToRaster produced")
     // goes one way.
     uint16_t previous = 0;
     for (uint16_t capture = 400; capture <= 1009; ++capture) {
-        OutputWindow solved(capture, 512, 1445, 1126);
+        OutputWindow solved(capture, 512, rasterOf(1445, 1126));
         REQUIRE(solved.usable());
-        AxisSolution plain = AxisHorizontal.solve(capture, solved.scaleOn(AxisHorizontal), 1445);
+        AxisSolution plain = OutputWindow::solve(AxisHorizontal, capture, solved.scaleOn(AxisHorizontal), 1445);
         CHECK(solved.on(AxisHorizontal).memory().stop() == plain.memory().stop());
         CHECK(solved.on(AxisHorizontal).memory().start() == plain.memory().start());
         CHECK(solved.on(AxisHorizontal).display().stop() == plain.display().stop());
@@ -138,7 +154,7 @@ TEST_CASE("both axes allocate only the memory the picture occupies")
     //
     // Horizontally the far edges may part by the parity unit; vertically there
     // is no bias, so they still meet.
-    OutputWindow solved(749, 512, 1445, 1126);
+    OutputWindow solved(749, 512, rasterOf(1445, 1126));
     const int32_t spare = solved.on(AxisHorizontal).memory().start()
                         - solved.on(AxisHorizontal).display().start();
     CHECK(spare >= 0);
@@ -160,7 +176,7 @@ static void dumpGrid()
     for (uint16_t raster : {1445, 1716, 858})
         for (unsigned ch = 100; ch <= 1100; ch += 83)
             for (unsigned cv = 100; cv <= 600; cv += 71) {
-                OutputWindow s(ch, cv, raster, 1126);
+                OutputWindow s(ch, cv, rasterOf(raster, 1126));
                 std::printf("whole %u %u %u %u %u %d %d %d %d %d %d %d %d\n",
                             raster, ch, cv, s.scaleOn(AxisHorizontal).reg(), s.scaleOn(AxisVertical).reg(),
                             s.on(AxisHorizontal).display().stop(), s.on(AxisHorizontal).memory().stop(), s.on(AxisHorizontal).display().stop(), s.on(AxisHorizontal).display().start(),

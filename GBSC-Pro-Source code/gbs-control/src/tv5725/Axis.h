@@ -1,19 +1,23 @@
 #ifndef TV5725_AXIS_H_
 #define TV5725_AXIS_H_
 
-// An axis, which knows its own write-start model and solves itself.
-// See docs/scaler-geometry-model.md for the measurements behind the numbers.
+// RESPONSIBILITY: say which axis this is, and what the CAPTURE path does on
+// it -- the grid a window may move on, the margin the path drops at each end,
+// and where an untuned source is assumed to put its video.
+//
+// It is the token the whole engine is parameterised by: every ...On(axis) call
+// passes one of the two instances below rather than a flag each caller
+// re-derives the same per-axis data from.
+//
+// Where the picture LANDS is not here. The write-start model, the placement
+// and the scale fitting belong to OutputWindow, which owns the registers they
+// produce. See docs/scaler-geometry-model.md for the measurements.
 #include <stdint.h>
-#include "Scale.h"
-#include "RasterFit.h"
-#include "PictureOrigin.h"
-#include "AxisSolution.h"
 
 namespace Tv5725 {
 class Axis {
 public:
-    Axis(float startConst, float startPerMag, uint16_t windowStopMin,
-         uint16_t captureGranularity, uint16_t captureMargin,
+    Axis(uint16_t captureGranularity, uint16_t captureMargin,
          float activeStart, float activeExtent, bool vertical);
 
     // Which axis this is. The one place that knows: callers pass the axis and
@@ -29,17 +33,6 @@ public:
     // docs/investigations/vesa-modes-are-clipped-by-default.md
     float activeStart() const;
     float activeExtent() const;
-
-    // write start = VDS_?B_SP + startConst + startPerMag x magnification.
-    // Pipeline latency before the first write: ~25 input samples of run-up for
-    // the 11-tap horizontal filter, ~1 line for the vertical line buffer.
-    float startConst() const;
-    float startPerMag() const;
-
-    // Lowest VDS_?B_SP that does not corrupt the picture. Horizontally 8,
-    // measured at ONE output hsync setting. Vertically 0 is an ASSUMPTION --
-    // nobody has crept it.
-    uint16_t windowStopMin() const;
 
     // How far beyond the picture the capture window opens at EACH END. The
     // scale is fitted on the widened window because that is what the hardware
@@ -67,94 +60,12 @@ public:
     // of them.
     int16_t stepUnits(int16_t pixels, float magnification) const;
 
-    // The smallest capture that can still fill the room this raster offers, at
-    // this axis's full magnification -- where letterboxing STARTS. Below it the
-    // crop cannot be compensated, so the picture shrinks on screen and the
-    // solve re-centres what is left. Against the ROOM and not the raster total,
-    // because the picture never fills the total: the porch it is placed behind
-    // is a tenth of the line here, and charging it stops the zoom that far
-    // short of the magnification the axis allows.
-    uint16_t minimumCapture(uint16_t rasterTotal, uint16_t activeStart = 0,
-                            uint16_t activeStop = 0) const;
-
-    // The largest capture this raster can SHOW. VDS_?SCALE divides 1024 and
-    // tops out at Scale::Max, so the least magnification the part can express
-    // is barely over 1:1 and it cannot minify at all: a capture past this
-    // produces a picture past the room, and the far end is cropped rather than
-    // shrunk, with the clamped scale the only trace.
-    uint16_t maximumCapture(uint16_t rasterTotal, uint16_t activeStart,
-                            uint16_t activeStop) const;
-
-    float originOffset(float magnification) const;
-
-    // Whether the WRITE FLOOR decides where the picture starts, rather than the
-    // raster's own back porch. The two regimes charge the write origin
-    // differently and both blankingBeforePicture() and minimumCapture() turn on
-    // it, so the comparison lives in one place.
-    bool writeFloorBinds(uint16_t activeStart) const;
-
-    // What must stay blank BEFORE the picture, in output units: whichever of the
-    // write floor and the raster's own back porch is larger. Nothing can be
-    // written before windowStopMin + startConst, which is physical.
-    //
-    // The FAR end owes nothing. Charging it the same reserve leaves a black bar
-    // down the right of every picture that no zoom closes, because the scale is
-    // refitted on every solve. activeStart 0 asks for the write floor alone.
-    //
-    // Float: startConst_ is 0.2 on the vertical axis and truncating it to 0 would
-    // move every vertical solve.
-    float blankingBeforePicture(uint16_t activeStart) const;
-
-    // One past the last pixel the picture may occupy: OutputTiming::activeStop,
-    // the raster total less the minimum front porch. 0 asks for the raster's own
-    // edge, which is what a bypass or a custom preset gets -- there is no solved
-    // raster to take a porch from.
-    uint16_t farBound(uint16_t rasterTotal, uint16_t activeStop) const;
-
-    // The biggest picture this raster can hold, bounded at the NEAR end by the
-    // write floor and at the FAR end by the front porch.
-    float maxDisplayWindow(uint16_t rasterTotal, uint16_t activeStart = 0,
-                           uint16_t activeStop = 0) const;
-
-    // The scale making the picture as big as this raster allows.
-    //
-    // The write offset grows with the magnification that depends on the size
-    // being solved for, so it is solved rather than iterated:
-    //
-    //     produced = room - startPerMag x produced / capture
-    //              = room x capture / (capture + startPerMag)
-    //
-    // A capture too small to fill the raster is bounded by the register at x4.
-    RasterFit fitToRaster(uint16_t capture, uint16_t rasterTotal,
-                    uint16_t activeStart = 0, uint16_t activeStop = 0) const;
-
-    // Centre the picture on the raster. A picture too big to centre starts at
-    // the write floor and overscans off the far end.
-    PictureOrigin placePicture(float produced, uint16_t rasterTotal,
-                           float magnification, uint16_t activeStart = 0) const;
-
-    // This axis's four output registers, from a capture in whatever units the
-    // input formatter counted it in. The display window IS the picture at both
-    // ends: nothing is given back to hide the pipeline's run-up, because at
-    // every clock OutputMode::EngineCeilingHz allows there is none to hide.
-    // docs/investigations/display-window-opens-early.md
-    AxisSolution solve(uint16_t capture, Scale scale, uint16_t rasterTotal,
-                       uint16_t activeStart = 0, uint16_t activeStop = 0) const;
-
 private:
-    // The earliest a picture may START, at this magnification: past the write
-    // floor and past the back porch. fitToRaster and placePicture must agree on
-    // it, so it lives in one place.
-    float placementFloor(float offset, uint16_t activeStart) const;
-
-    float startConst_, startPerMag_;
-    uint16_t windowStopMin_, captureGranularity_, captureMargin_;
+    uint16_t captureGranularity_, captureMargin_;
     float activeStart_, activeExtent_;
     bool vertical_;
 };
 
-// The two axes, defined once in Axis.cpp: `static const` in a header gives every
-// translation unit its own silent copy.
 extern const Axis AxisHorizontal;
 extern const Axis AxisVertical;
 

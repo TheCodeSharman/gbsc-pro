@@ -12,6 +12,7 @@
 
 FakeTwoWire Wire;
 
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/OutputWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
@@ -25,7 +26,7 @@ using Tv5725::VideoSourceLine;
 // What the output can display, in the units the capture is counted in.
 static uint16_t showableIn(uint16_t frameLines)
 {
-    return Tv5725::AxisVertical.maximumCapture(frameLines, 0, 0);
+    return Tv5725::OutputWindow::maximumCapture(Tv5725::AxisVertical, frameLines, 0, 0);
 }
 
 // Leaves IF_LD_ST reading 1, which is neither the 5 this writes nor the 3 the
