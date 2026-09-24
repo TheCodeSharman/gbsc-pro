@@ -13,7 +13,6 @@ run with no hardware attached.
 """
 
 import re
-import socket
 import time
 
 import pytest
@@ -23,6 +22,7 @@ from gbs_unit import (
     field_spec,
     get,
     get_json,
+    mode_serv,
     parse_timings,
     read_reg,
     read_field,
@@ -1441,11 +1441,6 @@ BENCH_MODE_COMMAND = "MODE X320 Y256 C256 F50"
 SOURCE_SETTLE_SECONDS = 11.0
 
 
-def _mode_serv(where, command):
-    """One command per connection: the close is the end of the reply."""
-    with socket.create_connection((where, 6502), 10) as link:
-        link.sendall((command + "\n").encode())
-        return link.recv(200).decode(errors="replace").strip()
 
 
 @pytest.mark.freeze
@@ -1478,7 +1473,7 @@ def test_frozen_firmware_does_not_re_solve_for_a_source_mode_change(host, reques
     get(host, "/freeze?on=1")
     assert _freeze_state(host) is True, "could not arm the freeze"
     try:
-        reply = _mode_serv(where, WITNESS_MODE)
+        reply = mode_serv(where, WITNESS_MODE)
         if not reply.startswith("OK"):
             pytest.skip(f"the source refused {WITNESS_MODE}: {reply}")
         time.sleep(SOURCE_SETTLE_SECONDS)
@@ -1499,7 +1494,7 @@ def test_frozen_firmware_does_not_re_solve_for_a_source_mode_change(host, reques
             f"{before} -> {after}. Geometry::poll() ran behind the freeze."
         )
     finally:
-        _mode_serv(where, BENCH_MODE_COMMAND)
+        mode_serv(where, BENCH_MODE_COMMAND)
         get(host, "/freeze?on=0")
         time.sleep(SOURCE_SETTLE_SECONDS)
         recover_lock(host)
@@ -1940,13 +1935,13 @@ def test_one_source_mode_change_is_answered_by_one_re_measure(
     """
     where = request.config.getoption("--modeserv")
 
-    reply = _mode_serv(where, DOUBLING_LEG_DEPARTURE)
+    reply = mode_serv(where, DOUBLING_LEG_DEPARTURE)
     if not reply.startswith("OK"):
         pytest.skip(f"the source refused {DOUBLING_LEG_DEPARTURE}: {reply}")
     time.sleep(SOURCE_SETTLE_SECONDS)
 
     console.drain()
-    reply = _mode_serv(where, DOUBLING_LEG_DESTINATION)
+    reply = mode_serv(where, DOUBLING_LEG_DESTINATION)
     if not reply.startswith("OK"):
         pytest.skip(f"the source refused {DOUBLING_LEG_DESTINATION}: {reply}")
 

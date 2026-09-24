@@ -10,7 +10,6 @@ puts the framing back however it ends.
 """
 
 import os
-import socket
 import sys
 import time
 
@@ -18,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gbs_unit import (framing_matches, framing_of, framing_settled, fs_dir,
-                      fs_read, get, get_json, press, read_fields,
+                      fs_read, get, get_json, mode_serv, press, read_fields,
                       reset_framing, wait_for)
 
 SLOT_FILE = "/slots.txt"
@@ -241,11 +240,6 @@ OTHER_LINES = 524
 CAPTURABLE_FIELDS = ("ch", "cv")
 
 
-def mode_serv(where, command):
-    """One command per connection: the close is the end of the reply."""
-    with socket.create_connection((where, 6502), 10) as link:
-        link.sendall((command + "\n").encode())
-        return link.recv(200).decode(errors="replace").strip()
 
 
 def capturable(host):

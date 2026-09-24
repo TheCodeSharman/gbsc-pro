@@ -530,10 +530,20 @@ def mode_serv(where, command, timeout=10):
     write and the scaler sees the source leave within ~70 ms, while the reply
     waits on the repaint. A caller timing a transition from this is charging the
     source for two thirds of a mode change that belongs to the engine.
+
+    Read to the close rather than taking one recv. TCP does not promise a whole
+    reply in one read, and MODES answers with every mode the monitor definition
+    allows -- which is 80 on the bench machine, far past any single buffer.
     """
     with socket.create_connection((where, MODESERV_PORT), timeout) as link:
         link.sendall((command + "\n").encode())
-        return link.recv(200).decode(errors="replace").strip()
+        chunks = []
+        while True:
+            block = link.recv(4096)
+            if not block:
+                break
+            chunks.append(block)
+    return b"".join(chunks).decode(errors="replace").strip()
 
 
 # --- console output ---------------------------------------------------------

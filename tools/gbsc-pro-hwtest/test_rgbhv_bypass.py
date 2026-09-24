@@ -10,12 +10,11 @@ preference decides now, and the count decides nothing.
 toggle writes flash. It puts it back.
 """
 
-import socket
 import time
 
 import pytest
 
-from gbs_unit import get, read_fields
+from gbs_unit import get, mode_serv, read_fields
 
 # VTOTAL 627, comfortably above the count that used to force bypass, and a mode
 # the bench display accepts as a passthrough -- which is what made the trap
@@ -38,11 +37,6 @@ PATH = ("DAC_RGBS_ADC2DAC", "OUT_SYNC_SEL",
         "STATUS_SYNC_PROC_VTOTAL", "STATUS_SYNC_PROC_HTOTAL", "PLLAD_MD")
 
 
-def mode_serv(where, command):
-    """One command per connection: the close is the end of the reply."""
-    with socket.create_connection((where, 6502), 10) as link:
-        link.sendall((command + "\n").encode())
-        return link.recv(200).decode(errors="replace").strip()
 
 
 def settled(host, attempts=10, interval=4.0):

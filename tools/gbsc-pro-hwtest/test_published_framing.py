@@ -11,14 +11,13 @@ however it ends. The picture is a VESA raster while it runs.
 """
 
 import os
-import socket
 import sys
 import time
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gbs_unit import read_fields, reset_framing, wait_for
+from gbs_unit import mode_serv, read_fields, reset_framing, wait_for
 
 # VESA DMT 640x480@60, as the standard states it: 800 pixels a line, active
 # video from 144 to 784; 525 lines a frame, active from 35 to 515.
@@ -50,11 +49,6 @@ FIELDS = ("STATUS_SYNC_PROC_VTOTAL", "IF_HSYNC_RST",
           "IF_HB_ST2", "IF_HB_SP2", "IF_VB_ST", "IF_VB_SP")
 
 
-def mode_serv(where, command):
-    """One command per connection: the close is the end of the reply."""
-    with socket.create_connection((where, 6502), 10) as link:
-        link.sendall((command + "\n").encode())
-        return link.recv(200).decode(errors="replace").strip()
 
 
 @pytest.fixture

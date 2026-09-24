@@ -47,7 +47,6 @@ transition being measured -- which a `/getreg` poll would.
 import argparse
 import json
 import re
-import socket
 import statistics
 import threading
 import time
@@ -116,17 +115,6 @@ def summarise(samples):
                    min(got), max(got))
 
 
-def mode_serv(where, command, timeout=20):
-    """One command per connection: the close is the end of the reply."""
-    with socket.create_connection((where, 6502), timeout) as link:
-        link.sendall((command + "\n").encode())
-        chunks = []
-        while True:
-            b = link.recv(4096)
-            if not b:
-                break
-            chunks.append(b)
-    return b"".join(chunks).decode(errors="replace").strip()
 
 
 def geometry(host):
@@ -262,7 +250,7 @@ def analyse(samples, t_cmd, before, dwell=0.0):
     re-solving.
 
     `samples` are (t, geometry) taken right across the command, because
-    mode_serv() blocks until the source has changed mode AND repainted: the
+    gbs_unit.mode_serv() blocks until the source has changed mode AND repainted: the
     engine often acquires inside that call, so a clock started at the reply has
     already missed the transition it meant to time.
 
@@ -309,7 +297,7 @@ def run_one(host, source, mode, deadline_s, dwell):
     watcher.start()
     time.sleep(0.3)
     t_cmd = time.time()
-    reply = mode_serv(source, mode)
+    reply = gbs_unit.mode_serv(source, mode)
     deadline = time.time() + deadline_s
     while True:
         transition = analyse(samples, t_cmd, before, dwell)
@@ -384,7 +372,7 @@ def main():
     time.sleep(1.0)
 
     print(f"{len(tour)} legs x {args.repeat}, departing from {short(tour[0][0])}")
-    mode_serv(args.source, tour[0][0])
+    gbs_unit.mode_serv(args.source, tour[0][0])
 
     runs, firsts = {}, {}
     for n in range(args.repeat):
@@ -393,7 +381,7 @@ def main():
             if not settle(args.host, args.dwell, args.deadline):
                 print(f"  {name:26} run {n + 1}   NO SETTLE at the departure")
                 runs.setdefault(name, []).append(None)
-                mode_serv(args.source, lands)
+                gbs_unit.mode_serv(args.source, lands)
                 continue
             console.drain()
             reply, tr = run_one(args.host, args.source, lands, args.deadline,
