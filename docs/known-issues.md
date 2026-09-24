@@ -1873,6 +1873,37 @@ since the boot log stops recording once a websocket client takes delivery.
 
 ## Untried experiments with a known payoff
 
+### The ADC sampling phase is a fixed guess, and the chip can score it
+
+`Adc::acquirePhase()` sweeps the SYNC PROCESSOR's phase and scores each by
+dither in the line count. The ADC's phase is not swept at all: it is set to
+`MidField`, or half a sample off it at oversample 4, and left. That was
+invisible while no phase took effect at all, and is now a live choice.
+
+**The chip can measure it without the picture.** `TestBus::readHigh()` returns
+the digitised video sample, which `runAutoGain()` already reads -- it watches
+for `0x7f` as the green channel's clipping limit. A phase sampling on pixel
+transitions averages neighbours and loses peak-to-peak; one sampling mid-pixel
+returns the source's real levels. So the metric is the SPREAD of those samples,
+maximised over the phase, which is how a monitor tunes its sample clock. The
+reads being uncorrelated with pixel position does not matter to a statistical
+measure, and a source with sharp edges is what it wants -- PM5544's frequency
+wedge.
+
+**Reproduce the artefact before trusting the metric.** The candidate symptom is
+beating, reported as worst in bypass and as tracking the choice of `PLLAD_MD`.
+Two mechanisms reach that and a phase sweep only answers one: in bypass the
+divider is a hardcoded value rather than one solved from the source, so the
+sample rate need not match the source's pixel rate and beats at ANY phase.
+`the-bypass-divider-is-capped-by-the-channel-counter.md`. Bypass does digitise
+-- `DAC_RGBS_BYPS2DAC` is the HD bypass channel to the DAC, and there is no
+scaler resampling to mask a bad phase -- so the phase reaches it.
+
+**Re-check the symptom first.** `PA_ADC_S` was arbitrary per boot until the
+phase adjuster was restarted on apply, and is deterministic now, so the
+behaviour being explained may already have moved.
+
+
 ### The divider should be keyed to the source identity, not to a raw measurement
 
 `SamplingClock::recommendedDivider()` takes a measured line rate, so the divider
