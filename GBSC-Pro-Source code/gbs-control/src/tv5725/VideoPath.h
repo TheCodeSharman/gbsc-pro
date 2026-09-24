@@ -472,12 +472,6 @@ private:
     // an aperture that admits nothing.
     void writeDisplayAperture() const;
 
-    // This axis's slice of the solved raster: the total it runs to, and where
-    // the picture may start and must stop inside it.
-    uint16_t rasterTotalOn(const Axis &axis) const;
-    uint16_t activeStartOn(const Axis &axis) const;
-    uint16_t activeStopOn(const Axis &axis) const;
-
 };
 
 }  // namespace Tv5725

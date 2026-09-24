@@ -860,3 +860,39 @@ TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds
         CHECK(solved.engine.extentUnitsOn(AxisVertical) == 361);
     }
 }
+
+// Step 5b of write(): the memory window's far edge moves INWARD only once the
+// aperture it bounds has closed, which is the mirror of step 1 moving it
+// outward before the aperture opens. Either way the fetch covers every column
+// the aperture shows.
+//
+// It takes a narrower raster to exercise. Every framing of one raster refits
+// the scale to fill it, so the far edge stays hard against the same bound; only
+// a mode change moves the bound itself. Mode1080p is the narrowest line of the
+// six -- it carries the most active lines, so it gets the least clock per line
+// -- which is why the change runs toward it rather than away.
+//
+// Left unmoved, VDS_HB_ST keeps the wider raster's value, which is past the new
+// line total, where an ST register wraps.
+TEST_CASE("a narrower output raster brings the memory window's far edge in")
+{
+    SolvedEngine solved(311, 50.08f, 181, &Mode960p);
+
+    const uint32_t wide = Wire.field(3, 0x04, 0, 12);   // VDS_HB_ST
+    const uint32_t wideRaster = Wire.field(3, 0x01, 0, 12) + 1;
+    REQUIRE(wide > 0);
+
+    solved.engine.setOutputMode(&Mode1080p);
+    solved.engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(solved.acquisition));
+
+    const uint32_t narrowRaster = Wire.field(3, 0x01, 0, 12) + 1;
+    REQUIRE(narrowRaster < wideRaster);
+
+    CHECK(Wire.field(3, 0x04, 0, 12) < wide);
+    CHECK(Wire.field(3, 0x04, 0, 12) < narrowRaster);
+
+    SUBCASE("and the aperture it bounds is still covered by it") {
+        CHECK(Wire.field(3, 0x04, 0, 12) >= Wire.field(3, 0x10, 0, 12));
+    }
+}

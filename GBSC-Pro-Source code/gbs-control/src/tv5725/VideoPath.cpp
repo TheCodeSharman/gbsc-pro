@@ -763,21 +763,6 @@ bool VideoPath::pan(int16_t dxPixels, int16_t dyPixels)
     return step(wanted);
 }
 
-uint16_t VideoPath::rasterTotalOn(const Axis &axis) const
-{
-    return axis.vertical() ? raster_.verticalTotal : raster_.horizontalTotal;
-}
-
-uint16_t VideoPath::activeStartOn(const Axis &axis) const
-{
-    return axis.vertical() ? raster_.activeLinesStart : raster_.activeStart;
-}
-
-uint16_t VideoPath::activeStopOn(const Axis &axis) const
-{
-    return axis.vertical() ? raster_.activeLinesStop : raster_.activeStop;
-}
-
 uint16_t VideoPath::narrowestCaptureOn(const Axis &axis) const
 {
     return OutputWindow::narrowestCapture(axis, raster_);

@@ -78,9 +78,15 @@ TEST_CASE("nothing is inherited from the registers")
     }
 
     SUBCASE("a capture that reads zero yields no picture rather than a wrong one") {
+        // Unusable, not merely empty: VideoPath::solveWindows() refuses the
+        // whole solve on this, and a picture of no size that reads usable is
+        // written to the chip as a raster of zeroes.
         OutputWindow dropped = OutputWindow(0, 0, rasterOf(1445, 1126));
         CHECK(dropped.horizontal().produced() == 0.0f);
         CHECK(dropped.vertical().produced() == 0.0f);
+        CHECK_FALSE(dropped.horizontal().usable());
+        CHECK_FALSE(dropped.vertical().usable());
+        CHECK_FALSE(dropped.usable());
     }
 }
 

@@ -231,6 +231,43 @@ TEST_CASE("a solved raster reports whether it is usable")
     }
 }
 
+// solve() fills all four fields or none, so a raster assembled by hand is the
+// only one that can carry a subset -- and adoptRaster() assembles one, from the
+// two totals the chip can be read for. Each term is asked for on its own: with
+// only the three others exercised, any one of them can be deleted and the whole
+// suite stays green.
+TEST_CASE("a raster missing any one of the four is refused")
+{
+    OutputTiming whole = Mode1080p.solve(50.0f);
+    REQUIRE(whole.usable());
+
+    SUBCASE("without the line total") {
+        OutputTiming missing = whole;
+        missing.horizontalTotal = 0;
+        CHECK_FALSE(missing.usable());
+    }
+
+    SUBCASE("without the frame total") {
+        OutputTiming missing = whole;
+        missing.verticalTotal = 0;
+        CHECK_FALSE(missing.usable());
+    }
+
+    SUBCASE("without the clock seed") {
+        // DisplayClock::hold() is handed this, and a seed of zero names no
+        // frequency.
+        OutputTiming missing = whole;
+        missing.divider = 0;
+        CHECK_FALSE(missing.usable());
+    }
+
+    SUBCASE("without the field rate") {
+        OutputTiming missing = whole;
+        missing.fieldRate = 0.0f;
+        CHECK_FALSE(missing.usable());
+    }
+}
+
 TEST_CASE("the engine's ceiling leaves the zoom control somewhere to go")
 {
     // NOT the same question as WorkingCeilingHz, which is what the part
