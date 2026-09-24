@@ -21,18 +21,100 @@ The whole placement chain is identical across the two arrangements apart from th
 horizontal capture pair, which is a separate error and is measured in
 [the-composite-capture-window-sits-between-two-wrong-values.md](the-composite-capture-window-sits-between-two-wrong-values.md).
 
-**Sync on green still wants the placement seven units earlier**, and that row
-stands unexplained. The rest of this page is about that arrangement.
+**AND THE SYNC-ON-GREEN LEG IS WITHDRAWN TOO: THERE IS NO DISPLACEMENT AT ALL.**
+The seven units were never an origin error. `IF_VB_ST` takes a small set of
+values the part will not accept on composite sync, the Wii's framing lands on
+one of them, and 21/505 worked only by stepping off it. The rest of this page
+predates that and is kept for the measurements in it; the section below is the
+current reading.
 
-The vertical capture window is placed seven counter units late on sync on green:
-the picture tears and wraps. Separate sync is correct, and it is the only
-arrangement the placement was measured on.
+## The window's END is the whole of it, and only certain values fail
+
+The two edges are separable, and only one of them matters. Measured on the Wii
+at 480p on `ypbpr`, one variable at a time, the other left where the engine put
+it:
+
+| `IF_VB_SP` | `IF_VB_ST` | picture |
+|---|---|---|
+| 21 | 505 | clean |
+| 21 | **512** | wraps and rolls |
+| **28** | 505 | clean |
+| **28** | **513** | clean, full screen |
+
+So the start being seven units later than the working record is inert, and the
+engine's own start with the end moved by ONE unit is correct. A seven-unit
+origin correction is not what this source wants and must not be reinstated.
+
+`IF_VB_ST` is `ov + ev + 2` -- 30 + 480 + 2 = 512 on the Wii, 23 + 600 + 2 = 625
+at 800x600@60, 33 + 480 + 2 = 515 at 640x480@60, each read back against the
+register. The framing decides which value the solve lands on, and nothing in the
+chain knows some of them are unusable.
+
+## The unusable values follow composite sync
+
+Each value written five times on the Wii and three on the RISC PC, leaving the
+register and returning between trials, scored on the input formatter's vertical
+reaching the pin:
+
+| source | lines | `SP_SOG_MODE` | 511 | **512** | 513 | 514 | **515** | 516 |
+|---|---|---|---|---|---|---|---|---|
+| Wii `ypbpr` 480p, sync on green | 525 | 1 | 0/5 | **5/5 dead** | 0/5 | 0/5 | **4/5 dead** | 0/5 |
+| RISC PC `vga` 640x480@60, `SYNC 0` | 525 | 0 | 0/3 | **0/3** | 0/3 | 0/3 | **0/3** | 0/3 |
+| RISC PC `vga` 640x480@60, `SYNC 1` | 525 | 1 | 0/3 | **2/3 dead** | 0/3 | 0/3 | 1, 6, 2 counts | 0/3 |
+
+Separate sync reads a clean ten transitions at every value; composite sync kills
+512, cripples 515, and makes the counts wander. **The 525-line frame is not the
+cause** -- the same raster on separate sync has no bad value anywhere in the
+range -- and neither is the component input, sync on green being `SP_SOG_MODE` 1
+like `SYNC 1`. A wider sweep at step 1 over 420..524 on the Wii found exactly
+these two.
+
+**It is not a band and not an edge.** 513 and 514 sit between the two failures
+and are clean in every trial, so a window edge crossing the vertical sync
+interval does not describe it. 512 is not a poisoned value in itself either: it
+is fine on composite sync at 800x600, where the frame is 628.
+
+**The rule is not known.** What is established is which arrangement carries it,
+that it is per value rather than per region, and that it is reproducible in both
+directions.
+
+## The failure is silent everywhere except the test bus
+
+At an unusable value the vertical blanking is never asserted. The input
+formatter's vertical carries **0 transitions at 0.00% duty** where the blanking
+fraction predicts 6.3%, and that prediction matches the measurement to about
+0.3% at every value that works -- 7.86% against 7.63% at 505, 55.6% against
+55.2% at 256.
+
+What that costs is a second fault on top of the wrap. `TestBus::selectInputVsync()`
+selects exactly this signal, so `FrameSync::vsyncEdges()` cannot read an input
+period, `init()` never arms, the Si5351 is never steered, and the output
+free-runs -- 1601 x 1124 at the unsteered 108.0206 MHz is 60.027 Hz against the
+source's 59.940, which laps the frame every 11.5 s. **The picture rolls as well
+as wrapping, and the roll is downstream of the blanking rather than a fault of
+its own.**
+
+Nothing else sees it. `STATUS_IF_VT_OK` reads 1, `VPERIOD_IF` reads a correct
+524, `STATUS_SYNC_PROC_VTOTAL` reads 524, and a raw dump of s1_18..s1_23 either
+side of the write shows only the two bytes of the field moving. `/framesync`'s
+`ready` is no use as an oracle either: it latches on first arming and stays true
+across a value that has since killed the signal.
+
+**The transition count IS the oracle**, which supersedes needing a photograph
+and a settle for this fault:
+
+```sh
+curl 'http://<ip>/testbus?ms=150&if=3'     # tb,0 is the input formatter's vertical
+```
+
+Sixty transitions in 500 ms is healthy, zero is the fault, and `tb,2` -- the
+VDS's output vsync, swept in the same pass -- is the control that says the pin
+and the pad are working. `sweep_vb_st.py` drives it.
 
 `VideoSourceLine::frame()` builds the vertical line with no sync interval at all
 -- no `syncUnits`, no head blanking -- while the horizontal line is built by
-`forDuty()` from the *measured* hsync pulse. The vertical axis therefore has no
-representation of where the input formatter's line counter zeroes relative to the
-source's vertical sync, and that origin is not the same on every sync type.
+`forDuty()` from the *measured* hsync pulse. That asymmetry is real and is
+described below; it is no longer offered as the explanation for anything.
 
 ## What it replaced
 
@@ -72,9 +154,11 @@ removal:
 | with the lag | 21 | 505 | 99 / 1315 | clean, full screen |
 | without it | **28** | **512** | 99 / 1315 | torn, wrapping at a moving seam |
 
-Same window height, both edges seven units later, horizontal untouched. So
-sync-on-green wants the placement seven units earlier than separate sync does,
-which is the whole of what the deleted constant was worth on that source.
+Same window height, both edges seven units later, horizontal untouched. **The
+reading is sound and the conclusion drawn from it is not**: moving both edges
+together cannot say which one carries the fault, and separating them puts all of
+it on the end. The lag was worth nothing on that source beyond stepping the end
+off 512.
 
 ## Why a register dump cannot see it
 
@@ -85,11 +169,12 @@ only in `IF_VB_ST`/`IF_VB_SP`, which `/geometry` does not carry. Every other
 register in the solve is byte-identical, `PLLAD_MD` 1448 against
 `STATUS_SYNC_PROC_HTOTAL` 1448 and `HPERIOD_IF` 214 among them.
 
-The picture is the only instrument, and it needs a settle: for about a minute
-after the source is acquired the output is blank -- white on one build, black on
-another -- and a photograph taken when `state` first reads `acquired` shows
-nothing wrong on a build that is badly broken. Judging a frame taken at the
-moment of lock produced false verdicts in both directions.
+The picture needs a settle: for about a minute after the source is acquired the
+output is blank -- white on one build, black on another -- and a photograph taken
+when `state` first reads `acquired` shows nothing wrong on a build that is badly
+broken. Judging a frame taken at the moment of lock produced false verdicts in
+both directions. **The picture is no longer the only instrument**, and the test
+bus above needs neither a settle nor a camera.
 
 ## What a bisect costs here, and the oracle it needs
 
@@ -100,29 +185,29 @@ usable oracle.** Picture quality after a settle is: every build tested was
 either clean on every acquire or torn on every acquire, with no build sitting
 between.
 
-## The magnitudes are not one number
+## The magnitudes are not one number, and one of them is not a magnitude
 
-Sync on green wants the placement seven units earlier than separate sync.
 Composite sync counted a shorter frame, 623 against 627, and that was the whole
-of its displacement -- so the two were never the same correction, and restoring
-the count fixed one of them and left the other exactly where it was.
+of its displacement. **The Wii's is not a displacement at all** -- the section
+at the head of this page separates the two window edges and puts everything on
+the end landing on a value composite sync will not take. So there were never two
+corrections to reconcile; there was one correction and one unusable register
+value.
 
-**The quantity that fixed composite is not the quantity sync on green needs.**
-The Wii's sync on green is serrated, so the counter loses nothing: `VPERIOD_IF`
-524 equals `STATUS_SYNC_PROC_VTOTAL` 524 and the reconciliation correctly yields
-0. There is no shortfall on that source to add back.
+**The quantity that fixed composite reaches nothing here.** The Wii's sync on
+green is serrated, so the counter loses nothing: `VPERIOD_IF` 524 equals
+`STATUS_SYNC_PROC_VTOTAL` 524 and the reconciliation correctly yields 0. There
+is no shortfall on that source to add back, and none is wanted.
 
-**And seven is not established as the right magnitude.** A wrap is a binary
-test: writing 21/505 by hand, vertical only with `IF_HB_SP2` untouched, cleans
-the picture completely, and writing 28/512 wraps it. That says 28 is wrong and 21
-works, and nothing at all about 20 or 22. There is one Wii mode and one sync
-arrangement behind it, so there is no A/B. Switching the Wii to 480i and 576i
-with 480p as the control in the same sitting is what would give one.
+**The A/B this page said did not exist is now on the bench.** DMT 640x480@60 is
+525 total lines at 59.94 Hz, the Wii's vertical raster exactly, and the RISC PC
+carries it -- `MODE X640 Y480 C256 F60`, either sync type, one command. That is
+what established the fault follows composite sync rather than the mode or the
+input, and it is how any further claim about this should be checked.
 
-**The source's vertical sync width is not the quantity**, which is the rule a
-placement would naturally be written against and which the section below
-refutes: the displacement matches neither the vsync width nor either porch on
-any mode measured.
+**The source's vertical sync width is not the quantity** either, which is the
+rule a placement would naturally be written against: it matches neither the
+vsync width nor either porch on any mode measured.
 
 ## The vertical axis consults no polarity, where the horizontal does
 
@@ -146,14 +231,19 @@ tested from this end.
 
 ## The shape the fix has to take
 
-A constant applied at four call sites, compensating for an error owned by a
-different class, is not something any of those call sites can be read against.
-The origin belongs to whatever determines the sync arrangement, derived once from
-the measurement and handed to `CaptureWindow` the way the hsync pulse already is
--- `docs/sync-type-selection.md` is where that choice is made.
+**Not an origin.** Deriving a vertical origin from the sync arrangement and
+handing it to `CaptureWindow` builds a mechanism for a displacement that the
+edge-separation measurement says is not there, and it would leave the solve free
+to land on an unusable value from some other framing.
 
-Restoring the constant would restore the picture and reinstate exactly the
-arrangement that hid the fault.
+What the solve needs is for `IF_VB_ST` not to take a value the part refuses on
+composite sync. Until the rule behind those values is known that is a list and
+not a derivation, so it is worth knowing first what the list is: whether it
+moves with `IF_VB_SP`, with the frame, or with the coast window.
+
+Restoring the deleted constant would restore the picture and reinstate exactly
+the arrangement that hid the fault -- and on this reading it would fix it by
+coincidence, which is worse.
 
 [the-capture-lag-was-the-retiming-bypassed.md](the-capture-lag-was-the-retiming-bypassed.md)
 is the horizontal constant that turned out to be one misconfigured bit;
@@ -204,8 +294,10 @@ needing a reconfigure, and concluding "it follows our window" from it is wrong.
 
 **Sync on green looks ordinary on it.** The Wii at 480p reads ~42 against the
 mode's 45, the same two-to-four line deficit every separate-sync mode shows --
-so this measurement says nothing about the seven units the Wii wants, which is
-the one displacement still open.
+so nothing here distinguishes the arrangement that carries the unusable values
+from the one that does not. It is the high time that reads ordinary; whether the
+signal is there **at all** is the discriminator, and that is the reading the
+head of this page is built on.
 
 **THE SIGNAL IS THE PORCHES, NOT THE WHOLE BLANKING.** There was never a
 deficit; the comparison was against the wrong quantity. Measured off the CPU

@@ -117,29 +117,58 @@ no steering and no filtering, and picks its vertical tap from the same
 
 `docs/investigations/an-alternating-count-latches-the-scan-type.md`
 
-### The Wii's vertical capture window is placed seven units late and the picture wraps
+### `IF_VB_ST` has values composite sync will not take, and the Wii's framing lands on one
 
-`ypbpr` on the Wii in 480p, sync on green: `IF_VB_SP` 28 and `IF_VB_ST` 512
-where 21 and 505 are wanted. Writing 21/505 by hand, vertical only with
-`IF_HB_SP2` untouched at 101, **cleans the picture completely** -- full screen,
-no tear, no wrap.
+`ypbpr` on the Wii in 480p, sync on green: the solve writes `IF_VB_ST` 512, the
+vertical blanking is then never asserted, and the picture wraps and rolls.
+**512 is the whole of it** -- the engine's own `IF_VB_SP` 28 with the end moved
+one unit to 513 is clean and full screen.
 
-**It is a regression and not a framing preference.** `/geometry` reports the same
-framing either side of `9cea6c0e7` (`ov` 30, `ev` 480, `ch` 1449, `cv` 525), a
-bisect over 113 commits found that commit with its parent clean, and a wrap is
-not something a wrong framing can produce.
+**The window's start is inert and the end is not.** 28/505 is clean, 21/512
+wraps. A correction of seven units on both edges is what the deleted
+`FrameLagUnits` did and it worked by stepping the end off 512; **do not
+reinstate it.**
 
-**Seven is not established as the magnitude.** A wrap is a binary test: it says
-28 is wrong and 21 works, and nothing about 20 or 22. There is one Wii mode and
-one sync arrangement behind it, so there is no A/B.
+`IF_VB_ST` is `ov + ev + 2` -- 512 on the Wii, 625 at 800x600@60, 515 at
+640x480@60 -- so which value a solve lands on follows the framing.
 
-**The measured vertical sync cannot supply it.** The Wii's sync on green is
-serrated, so the counter loses nothing -- `VPERIOD_IF` 524 equals
-`STATUS_SYNC_PROC_VTOTAL` 524 and `reconciledFrame()` correctly yields 0. The
-quantity that fixed the composite path is not the quantity this needs.
+**The unusable values follow composite sync, not the input and not the mode.**
+Each written five times on the Wii and three on the RISC PC, scored on the input
+formatter's vertical reaching the pin:
 
-What would settle the magnitude: the Wii in 480i and 576i with 480p as the
-control in the same sitting.
+| source | lines | `SP_SOG_MODE` | 512 | 515 |
+|---|---|---|---|---|
+| Wii `ypbpr` 480p | 525 | 1 | dead 5/5 | dead 4/5 |
+| RISC PC 640x480@60 `SYNC 0` | 525 | 0 | 0/3 | 0/3 |
+| RISC PC 640x480@60 `SYNC 1` | 525 | 1 | dead 2/3 | crippled |
+
+Separate sync reads clean at every value in 511..516; a step-1 sweep over
+420..524 on the Wii finds exactly these two, with 513 and 514 clean between
+them, so it is neither a band nor an edge. 512 is fine on composite sync at
+800x600, where the frame is 628. **The rule is not known.**
+
+**Only the test bus sees it.** `STATUS_IF_VT_OK` reads 1, `VPERIOD_IF` and
+`STATUS_SYNC_PROC_VTOTAL` both read a correct 524, and a raw dump shows only the
+field's two bytes moving. `curl '.../testbus?ms=150&if=3'` -- `tb,0` is 60
+transitions in 500 ms when healthy and 0 at an unusable value, with `tb,2` as
+the control. `sweep_vb_st.py` drives it.
+
+**The roll is a consequence, not a second fault.** `TestBus::selectInputVsync()`
+selects that same signal, so `FrameSync` cannot read an input period, never
+arms, and the output free-runs -- 60.027 Hz against 59.940, lapping every 11.5 s.
+`/framesync`'s `ready` latches once armed and is not an oracle for this.
+
+**Composite sync at 640x480@60 also shows momentary combing, and an HTTP read
+cannot confirm or refute it.** The picture alternates between clean frames and
+sheared ones with a duplicated right portion, and the deinterlacer's green
+overlay appears briefly. `IF_PRGRSV_CNTRL` and `IF_LD_RAM_BYPS` both read 1
+afterwards, which says nothing: a point read answers at tens of hertz and cannot
+see a bit that toggles. The count dithering is the candidate -- the same
+arrangement reads `STATUS_SYNC_PROC_VTOTAL` 522 against `VPERIOD_IF` 524, and
+the test-bus counts wander where separate sync holds one value -- with the scan
+decision following it. `Tv5725::SamplingLog` is what can settle it, logging the
+count and the scan registers together from inside `loop()`; it needs
+`GBS_SAMPLING_LOG=1` on the `flash-ota` line.
 
 `investigations/the-vertical-origin-follows-the-sync-type.md`
 
