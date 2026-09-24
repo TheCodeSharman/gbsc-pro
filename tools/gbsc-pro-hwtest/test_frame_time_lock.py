@@ -22,6 +22,7 @@ FRAME_TIME_LOCK_BIT = 1 << 1
 
 LOCK_LINE = "frame time lock:"
 OPTION_OFF = "frame time lock: the option is off"
+RUNNING = "frame time lock: running"
 
 
 def _frame_time_lock_selected(console, seconds=3.0):
@@ -91,6 +92,35 @@ def test_the_option_reaches_the_lock_at_runtime(host, console):
         assert stopped == OPTION_OFF, (
             f"the option went off and the gate said {stopped!r}, so the lock "
             "did not stop steering when the user switched it off"
+        )
+    finally:
+        _select_frame_time_lock(host, console, started_on)
+
+
+def test_the_lock_runs_on_a_locked_source(host, console, source):
+    """Switched on, the lock has to reach the source -- not merely open a gate.
+
+    This could not pass at all until the coast window was placed again: the
+    loop asked a held flag whether the video was bypassing the scaler, the flag
+    read pass-through on a unit that was scaling, and the coast window that
+    FrameSync::init() needs was never written. The gate reported
+    `not armed: no coast window` for as long as anyone watched.
+
+    Frame time lock is the only thing on the board that steers the output field
+    rate towards the source's, so an option that opens its gate and never
+    corrects leaves a beat between the two nothing walks back.
+    """
+    started_on = _frame_time_lock_selected(console)
+    try:
+        _select_frame_time_lock(host, console, False)
+        console.drain()
+        _select_frame_time_lock(host, console, True)
+
+        live = _wait_for_lock_line(console, seconds=30.0)
+        assert live == RUNNING, (
+            f"the lock reports {live!r} on a locked source. It corrects on its "
+            "own interval once armed, so anything else here is a condition it "
+            "is waiting on rather than a pause"
         )
     finally:
         _select_frame_time_lock(host, console, started_on)

@@ -4,6 +4,7 @@ WebSocket. See docs/gbs-control-debug-interface.md for the surface itself."""
 import json
 import os
 import re
+import socket
 import threading
 import time
 import urllib.error
@@ -513,6 +514,26 @@ def field_from(registers, register, offset, width):
             return None
         raw |= byte << (8 * index)
     return (raw >> offset) & ((1 << width) - 1)
+
+
+# --- the source ------------------------------------------------------------
+
+MODESERV_PORT = 6502
+
+
+def mode_serv(where, command, timeout=10):
+    """Send one command to ModeServ on the SOURCE and return its reply.
+
+    One command per connection: the close is the end of the reply.
+
+    **THE REPLY IS NOT WHEN THE TIMING CHANGED.** VIDC20 moves on a register
+    write and the scaler sees the source leave within ~70 ms, while the reply
+    waits on the repaint. A caller timing a transition from this is charging the
+    source for two thirds of a mode change that belongs to the engine.
+    """
+    with socket.create_connection((where, MODESERV_PORT), timeout) as link:
+        link.sendall((command + "\n").encode())
+        return link.recv(200).decode(errors="replace").strip()
 
 
 # --- console output ---------------------------------------------------------

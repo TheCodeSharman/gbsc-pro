@@ -5,7 +5,14 @@ import os
 
 import pytest
 
-from gbs_unit import Console, get, read_reg, reset_framing, write_reg
+from gbs_unit import (
+    Console,
+    get,
+    mode_serv,
+    read_reg,
+    reset_framing,
+    write_reg,
+)
 
 
 def pytest_addoption(parser):
@@ -194,6 +201,26 @@ def host(request):
     if status != 200:
         pytest.skip(f"{address} did not answer /wifi/status (status {status}: {body})")
     return address
+
+
+@pytest.fixture
+def modeserv(request):
+    """Drive the SOURCE. Returns a callable taking one ModeServ command.
+
+    Skips without --modeserv, because nothing else on the bench can put a
+    chosen raster on the input -- and a test that quietly measured whatever
+    mode happened to be up would be green for the wrong reason.
+    """
+    where = request.config.getoption("--modeserv")
+    if not where:
+        pytest.skip("needs the source: pass --modeserv <host>")
+
+    def send(command):
+        reply = mode_serv(where, command)
+        assert reply.startswith("OK"), f"ModeServ refused {command!r}: {reply!r}"
+        return reply
+
+    return send
 
 
 @pytest.fixture
