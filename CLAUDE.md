@@ -414,6 +414,14 @@ diagnosing "the unit" while able to observe roughly a third of it.
   **which the default build does not keep**: `BOOTLOG_BYTES=0`, so rebuild with
   `BOOTLOG_BYTES=2048` before trying to tell "no frame sent" from "frame sent and
   ignored".
+- **THE HC32 CAN STOP FOLLOWING INPUT SELECTIONS, AND NOTHING ON THE BOARD SEES
+  IT.** `asw_01` left low on VGA puts `HS_IN` on `SOGIN`, so an RGB source with
+  separate sync delivers vertical and no horizontal: a correct field rate beside
+  a doubled line count and `NO EDGE`. `/sc?~`, `/input`, `/restart`, a sample
+  clock restart and a source mode round trip all fail to reach it; **a mains AND
+  USB power cycle recovers it at once**. The cheap discriminator is the OTHER
+  input -- one `/input` request, and a source that acquires proves the board.
+  `docs/known-issues.md`.
 - **AV module v1.3 changes only the ADV7280/ADV7391 composite path** (525p vs
   625p encoder config). `uart_dma.c` and `flash.c` are byte-identical to v1.2.3.
   It cannot affect RGB/VGA routing — don't reach for it to fix a VGA fault.
