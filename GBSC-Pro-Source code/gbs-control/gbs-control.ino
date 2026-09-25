@@ -82,6 +82,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/tv5725/TestBus.h"
 #include "src/tv5725/TestBusRateMeasurement.h"
+#include "src/videosource/SourceAbsence.h"
 #include "src/videosource/SourceMaintenance.h"
 #include "src/videosource/SyncRecovery.h"
 #include "src/videosource/FrameTimeLock.h"
@@ -1581,21 +1582,7 @@ static_assert(VideoSourceSelection::Composite == InfoAV, "VideoSourceSelection::
 // on a boot that would otherwise never acquire at all.
 static const unsigned long DetectCountWaitMs = 600;
 
-// How many detection passes must find nothing before the chip is powered down.
-// Sized from the gap between a selection and hsync, which is NOT one quantity:
-// measured over ten input changes, 0.16 to 1.12 s passes before detection even
-// looks -- the route is queued to loop() and the mux is the HC32's, over a UART
-// with no readback -- and hsync is then already there on most RGB crossings and
-// within one pass interval on the rest. Several passes cover all of it without
-// any of them having to guess a settling time.
-//
-// Powering down later costs nothing but power: an empty socket stays an empty
-// socket, while a source declared absent by mistake pays for the teardown twice
-// over.
-static const uint8_t AbsentPassesBeforeLowPower = 5;
-
-// The unbroken run of passes that found no sync. Reset by any pass that did.
-static uint8_t absentPasses = 0;
+SourceAbsence sourceAbsence;
 
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
@@ -1864,7 +1851,7 @@ uint8_t inputAndSyncDetect()
     const unsigned long detectAt = millis();
     uint8_t syncFound = detectAndSwitchToActiveInput();
     if (syncFound != 0) {
-        absentPasses = 0;
+        sourceAbsence.found();
     }
     debugPrintf("DETECT: %lums, syncFound %u\n",
                 (unsigned long)(millis() - detectAt), (unsigned)syncFound);
@@ -1873,16 +1860,12 @@ uint8_t inputAndSyncDetect()
     if (syncFound == 0) {
         const bool syncPresent = Tv5725::SyncProcessor::signalPresent();
         SYNC_EVENT("det sync present", syncPresent ? 1 : 0);
-        if (!syncPresent)
-        {
-            // ABSENCE HAS TO PERSIST. A mux that has just moved looks exactly
-            // like an empty socket, and tearing the chip down on one pass costs
-            // the acquisition twice over: setResetParameters() zeroes segments 0
-            // and 2, and the rate measured through the result is then rejected
-            // for seconds afterwards.
-            // docs/known-issues.md, "The 450 ms hsync wait in detection never waits"
-            if (++absentPasses < AbsentPassesBeforeLowPower) {
-                SYNC_EVENT("det absent", absentPasses);
+        if (syncPresent) {
+            sourceAbsence.undecided();
+        } else {
+            sourceAbsence.missed();
+            if (!sourceAbsence.shouldPowerDown()) {
+                SYNC_EVENT("det absent", sourceAbsence.passes());
                 return 0;
             }
             if (rto->isInLowPowerMode == false) {
