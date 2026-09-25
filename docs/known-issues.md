@@ -695,6 +695,48 @@ The one-line recovery, which needs no reflash and no bench trip:
 
     python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set PAD_SYNC_OUT_ENZ=0
 
+### The encoder holds stale timing with the sync pad correctly low, and nothing re-triggers a re-look
+
+**This is not the latched-down pad above, and reading it as that one wastes the
+session.** `PAD_SYNC_OUT_ENZ` reads **0**, which is correct, and the sink still
+shows nothing.
+
+Measured on the bench with the Wii on `ypbpr` at 480p, every software-visible
+signal healthy: `/geometry` `state: acquired`, 525 lines at 31468 Hz;
+`PLLAD_MD` 1448 against `STATUS_SYNC_PROC_HTOTAL` 1448; `DAC_RGBS_PWDNZ` 1;
+the scaling path (`DAC_RGBS_BYPS2DAC` 0, `OUT_SYNC_SEL` 0); both scales matching
+their display windows to within a pixel. The console carried
+
+    frame time lock: ... in 59939 mHz, out 59939 -> 59939 mHz, clock 105324360
+
+every 1.5 s, and the `out` term is the TV5725's own VSOUT sampled on
+`DEBUG_IN_PIN` -- so the scaler was feeding the encoder throughout. The HDMI
+capture read mean luma **0.00**; a `PAD_SYNC_OUT_ENZ` 0 -> 1 -> 0 toggle by hand
+brought it back to **156.61** within 9 s, with no power cycle and no register
+otherwise touched.
+
+**What has no automatic exit is the trigger.** `VideoPath` arms `encoderMoved_`
+only when a SOLVE moves the horizontal total, the vertical total or the field
+rate, so the re-look fires on a mode change and on nothing else. A unit left
+settled, or a sink that dropped the link and re-acquired while the board's
+timing never moved, arms nothing -- and the state is indistinguishable from a
+healthy one in any register dump, because every register IS healthy.
+
+The raster being asked for is a standing aggravation rather than the cause:
+`Geometry::solveRaster()` lands 1561 x 1124 at 105.32 MHz for this source, which
+is no CEA mode, because 1080p59.94's 2200 x 1125 needs 148 MHz and
+`OutputMode::EngineCeilingHz` is 108. `investigations/encoder-stale-timing.md`
+is what the re-look exists for.
+
+The recovery, which needs no reflash and no bench trip:
+
+    python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set PAD_SYNC_OUT_ENZ=1
+    python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set PAD_SYNC_OUT_ENZ=0
+
+**Wait 7-8 s before judging a capture taken after it.** The link re-acquires
+over several seconds and an immediate grab returns the black frames emitted
+during it, which reads as the toggle having failed.
+
 ### The capture tail runs a whole sync pulse past the picture
 
 `CaptureWindow::lastCapture()` is `units - 1`, and `firstCapture()` is
@@ -2002,7 +2044,7 @@ phase adjuster was restarted on apply, and is deterministic now, so the
 behaviour being explained may already have moved.
 
 
-### The recovery ladder escalates through every first acquisition
+### The recovery ladder escalates through every first acquisition -- FIXED
 
 `unmeasuredPasses_` carries TWO facts: how long it has been since the engine
 could measure the source, and where the escalation has reached --
@@ -2042,12 +2084,66 @@ the picture was sheared. `/sc?~` cleared it and the source acquired in 10 s.
 not, selected by `sourceState_`, and both read the same two counters by design.
 What is wrong is that one of those counters is also the ladder's position.
 
-**The shape of the fix is an explicit position**, advanced deliberately, rather
-than a modulus of a counter that means something else -- and a source that has
-never been acquired since a deliberate input or mode change is acquiring rather
-than failing, so nothing should escalate for it. The `ToggleInput` rung is the
-constraint on going too far: it is what sweeps for a source when nothing has
-been chosen, and a grace that swallows it leaves a fresh boot with no sweep.
+**The ladder now carries its own position.** `recoveryPosition_` advances only
+where escalation is warranted, and `unmeasuredPasses_` is left to mean the one
+thing it says. The position is pinned while the engine has not yet had its
+chance at the source now selected -- set by an input selection, cleared by an
+acquisition -- so a source that is still being acquired escalates nothing.
+
+**The grace is not permanent, and that is what keeps a stuck source reachable.**
+Maintenance being withdrawn after being granted is detection concluding there is
+nothing there, which spends the engine's chance: the rungs are what is left, and
+the ladder runs from that point exactly as before. The `ToggleInput` rung is
+therefore still reached on a unit with nothing chosen, which is the sweep a
+fresh boot depends on.
+
+Measured across the same `vga` -> `ypbpr` selection, before and after: recoveries
+during the switch fell from **3 to 1**, and `recovery: full reset at pass 150`
+-- the rung that wrote a garbage divider of 620 and left the engine solving for
+the other source -- no longer fires at all.
+
+**It does not fix the outcome, because the ladder was not the cause of it.** The
+same measurement lands on the other source's raster either way; the sync
+arrangement outliving the input change is what does that, filed below.
+
+### The sync arrangement outlives an input change, so YPbPr measures the source on the other connector
+
+**The ADC input follows the selection and the sync path does not.** `ADC_INPUT_SEL`
+moves, `SP_EXT_SYNC_SEL` and `SP_SOG_MODE` keep the answer chosen for the input
+being left, and the sync processor carries on watching the external H/V pins --
+which still carry the VGA connector's hsync. The engine then measures the OTHER
+source, live, and solves for it.
+
+Measured with the RISC PC on `vga` at 800x600@60 and the Wii on `ypbpr` at 480p:
+
+| state | `SP_SOG_MODE` | `SP_EXT_SYNC_SEL` | `ADC_INPUT_SEL` | `STATUS_SYNC_PROC_VTOTAL` |
+|---|---|---|---|---|
+| on `vga` | 0 | 0 | 1 | 627 |
+| after `/input?src=ypbpr` | 0 | 0 | 0 | 627 |
+| RISC PC moved to 320x256@50 | 0 | 0 | 0 | **311** |
+| RISC PC back at 800x600@60 | 0 | 0 | 0 | **627** |
+| after `/sc?~` | 1 | 1 | 0 | 524 |
+
+**The third and fourth rows are what make it a leak rather than a stale number.**
+The count on `ypbpr` FOLLOWS the RISC PC's mode, so the sync processor is taking
+live edges from the connector that is not selected. `/geometry` reports
+`state: acquired` at 37879 Hz over 628 lines throughout, and every register reads
+self-consistent, so nothing in a dump says the wrong source is being measured.
+
+**Nothing arms the re-probe, and the reason is circular.**
+`Geometry::useSyncTypeProbe()` runs per source MODE change, and from the engine's
+side the source never changed mode: it measured 627 lines before the input change
+and 627 after, because it is the same physical signal. A source identity that
+cannot move cannot arm the probe that would notice it had.
+
+`/sc?~` is the recovery -- it runs `goLowPowerWithInputDetection()`, which forgets
+the sync type -- and it is the only one. `/input` does not clear it, which is what
+makes an input change appear to have been ignored by the HC32 when the analog
+switches followed correctly.
+
+**The fix belongs with the sync arrangement's owner, not with detection.** An
+input selection invalidates the held arrangement the way a source identity change
+invalidates a divider; `docs/acquisition-migration-plan.md` step 3 is the seam.
 
 ### The component separator search cannot exit early, so it costs 6 s every time
 
