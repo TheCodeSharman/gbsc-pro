@@ -732,9 +732,23 @@ latched by hand, which is recorded in CLAUDE.md. That would close the loop:
 `count=0 ht=0 lock=0` measured across a whole 6 s window on a selection that
 then acquired at 15 s.
 
-**The experiment that settles it** is to log `SP_PRE_COAST`, `SP_POST_COAST` and
-the clamp positions across the passes where detection finds nothing. Zero there
-makes the loop real.
+**That loop is REFUTED, and cheaply.** Detection's entry gate was moved to
+`SyncProcessor::signalPresent()`, which counts transitions on the test bus and
+does not rail, and the passes that found nothing went on finding nothing:
+acquisition measured 8.32 s against 8.27 before, with the same five failed
+passes. The two instruments agree, so the stall is not the instrument and not
+the windows.
+
+**What the five passes were actually waiting for was the absence run's own
+threshold.** The teardown at pass five is what makes the source appear -- sync
+arrives 0.6 s after it and detection then succeeds in 25 ms -- so the fix was to
+spend that patience on a deliberate selection rather than to change any
+instrument. `SourceAbsence::selectionChanged()`.
+
+Removing the gate from the two window writers stands on its own, as an owner
+removed: whether a source is worth writing for is
+`VideoSourceAcquisition::mayWriteForSource()`, which is a count in range plus a
+steadiness run.
 
 `SyncProcessor::signalPresent()` counts transitions on the test bus and does not
 rail. Detection currently uses it only to decide whether to GIVE UP, never to
