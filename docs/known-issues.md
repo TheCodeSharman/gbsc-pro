@@ -693,7 +693,108 @@ whichever writer lowered it.
 
 The one-line recovery, which needs no reflash and no bench trip:
 
-    python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set PAD_SYNC_OUT_ENZ=0
+    python3 tools/gbsc-pro-hwtest/setfield.py --host <ip> --set PAD_SYNC_OUT_ENZ=0### `STATUS_SYNC_PROC_HSACT` saturates in BOTH directions, and five decisions hang off it
+
+It reports the sync processor's own state rather than whether a signal is
+arriving, and both rails have now been measured on this bench within one day:
+
+| state | reading |
+|---|---|
+| a YPbPr source arriving, which then acquired | **0** across a 450 ms window, some 45 samples |
+| nothing counted at all, `VTOTAL` 0, separator swept 1..20 | **1** at every one of the twenty levels |
+
+The second is the new one and it is the more misleading, because the bit reads
+TRUE while the sync processor counts nothing whatsoever. It is not a duty cycle
+like `STATUS_MISC_PLLAD_LOCK`: it does not flicker, it rails.
+
+**Five decisions key on it**, and each rail breaks a different one:
+
+| site | what it gates | broken by |
+|---|---|---|
+| `SyncProcessor::acquireClampWindow()` | returns false, so the clamp window is NOT PLACED | stuck 0 |
+| `SyncProcessor::acquireCoastWindow()` | returns false, so the coast window is NOT PLACED | stuck 0 |
+| `SyncOnGreen::edgesHeld()` | the separator walk's success test, 60 reads in 60 ms | stuck 1 |
+| `SyncOnGreen::separatorHolds()` | any 0 in the run means not held | stuck 1 |
+| `detectAndSwitchToActiveInput()` | whether detection looks at all | both |
+
+**Stuck 1 makes the separator walk a no-op.** `edgesHeld()` passes at the first
+level tried, so `SyncOnGreen::acquire()` returns without searching and the
+discrimination rests entirely on `separatorHolds()`. That is measured, not
+inferred: sweeping `ADC_SOGCTRL` 1..20 on a frozen unit gave `HSACT` 1 at every
+level with `VTOTAL` 0 at every level.
+
+**Stuck 0 is a candidate for a self-sustaining stall, and it is NOT yet
+established.** If the clamp and the coast windows are refused, the sync
+processor is left unconfigured -- and an unconfigured sync processor reads
+`STATUS_SYNC_PROC_HTOTAL` wrong and does not move when a divider is written and
+latched by hand, which is recorded in CLAUDE.md. That would close the loop:
+`HSACT` 0, no clamp, no coast, nothing counted, `HSACT` stays 0. It matches the
+`count=0 ht=0 lock=0` measured across a whole 6 s window on a selection that
+then acquired at 15 s.
+
+**The experiment that settles it** is to log `SP_PRE_COAST`, `SP_POST_COAST` and
+the clamp positions across the passes where detection finds nothing. Zero there
+makes the loop real.
+
+`SyncProcessor::signalPresent()` counts transitions on the test bus and does not
+rail. Detection currently uses it only to decide whether to GIVE UP, never to
+decide whether to look.
+
+### YPbPr emits a flat grey field with the sync side perfect, intermittently
+
+**The sync half is right and the video half carries nothing.** On `ypbpr` with
+the Wii in 480p the engine acquires and holds -- `STATUS_SYNC_PROC_VTOTAL` 524,
+`STATUS_SYNC_PROC_HTOTAL` 1448 against `PLLAD_MD` 1448, `SP_SOG_MODE` 1,
+`SP_EXT_SYNC_SEL` 1, `DAC_RGBS_PWDNZ` 1, the scaling path
+(`DAC_RGBS_BYPS2DAC` 0, `OUT_SYNC_SEL` 0), both scales matching their display
+windows to within a pixel, `/geometry` reporting `state: acquired` at 525 lines
+and 31468 Hz -- and the emitted frame is a UNIFORM grey field at mean luma 183,
+filling the whole raster, with no structure anywhere in it.
+
+**The board is not at fault as a whole, and `vga` is what proves it.** Selecting
+the RISC PC on the same unit, seconds later, gives a complete PM5544 -- colour
+blocks, greyscale staircase, frequency wedge, full screen, mean luma 157. So the
+capture window, the VDS, the DACs, the encoder and the HDMI link all work. The
+fault is on the component path only.
+
+**It is intermittent**, and it is not caused by removing detection's component
+separator search: it was seen repeatedly before that change went in.
+
+Neither `/sc?~` nor an input re-selection clears it, and nor does a
+`PAD_SYNC_OUT_ENZ` toggle -- that recovers a sink showing NOTHING, which this is
+not.
+
+**WHAT DID CLEAR IT ONCE WAS A BUTTON PRESS ON THE WII REMOTE**, with nothing on
+the board touched, the menu returning within seconds. That points at the SOURCE
+and it is not conclusive: the console had been idle for hours, it has also been
+observed emitting a picture for days at a time without blanking, and the engine
+re-solves often enough that one coincidence is cheap. **Establish whether the
+grey field is still arriving before diagnosing the board** -- waking the console
+costs one button press, against a session spent on the component path.
+
+The measurement that would settle it without a person at the bench is the
+console's own field rate against the ADC's output, or a second component
+source.
+
+What is recorded and not yet explained:
+
+- `ADC_RGCTRL`/`GGCTRL`/`BGCTRL` read **51, 51, 51** in one grey state and
+  **123, 123, 123** in another, both while grey. Equal across the three
+  channels either way, so this is not a colour cast.
+- `ADC_RYSEL_R` and `ADC_RYSEL_B` both read **0** on a source selected as
+  YPbPr. Whether they should be 1 there is not established here; it is recorded
+  because a component source reaching the ADC as though it were RGB is the kind
+  of thing that produces no chroma rather than no picture, and it was measured
+  in the grey state.
+- `SP_CLAMP_MANUAL` 1 with `SP_CS_CLP_ST`/`SP` at 47/51.
+- The same state can read `STATUS_SYNC_PROC_VTOTAL` **97** moments later, which
+  is the unlocked value, so the lock is not steady across the fault either.
+
+**A uniform field means the ADC is sampling a constant**, so the question is
+what reaches the ADC on the component path and not on the RGB one. The analog
+switches are the HC32's and cannot be read back, which is the obvious thing this
+measurement cannot see. The discriminator that has NOT been run is a second
+component source.
 
 ### The encoder holds stale timing with the sync pad correctly low, and nothing re-triggers a re-look
 
