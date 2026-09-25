@@ -12,6 +12,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "LoggedLines.h"
+
 #include "fake/Wire.h"
 
 FakeTwoWire Wire;

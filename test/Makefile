@@ -655,7 +655,7 @@ sync-measurement:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_measurement" \
 	  "$(HERE)/test_sync_measurement.cpp" src/tv5725/SyncMeasurement.cpp \
-	  src/tv5725/SyncProcessor.cpp src/tv5725/Interrupts.cpp
+	  src/tv5725/SyncProcessor.cpp src/tv5725/Interrupts.cpp src/tv5725/TestBus.cpp
 	@"$(OUT)/test_sync_measurement"
 
 ## colour-space: host unit tests for Tv5725::ColourSpace
@@ -667,7 +667,8 @@ colour-space:
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_colour_space" \
 	  "$(HERE)/test_colour_space.cpp" src/tv5725/ColourSpace.cpp \
-	  src/tv5725/Adc.cpp src/tv5725/InputFormatter.cpp src/tv5725/VideoProcessor.cpp
+	  src/tv5725/Adc.cpp src/tv5725/InputFormatter.cpp src/tv5725/VideoProcessor.cpp \
+	  src/tv5725/VideoSourceLine.cpp src/tv5725/HsyncPulse.cpp
 	@"$(OUT)/test_colour_space"
 
 ## framing-save-timer: host unit tests for Tv5725::FramingSaveTimer
@@ -828,7 +829,7 @@ write-trace:
 	@"$(OUT)/test_write_trace"
 
 ## test: every host unit test
-test: video-signal test-bus test-bus-rate-measurement steady-run source-absence sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
+test: video-signal test-bus test-bus-rate-measurement steady-run source-absence sync-measurement colour-space framing-save-timer sync-on-green axis source-key source-timing framing-table framing-text slot-table slot-text scale sync-processor video-processor video-source-line capture-window output-window video-path source-measurement memory-window display-clock frame-sync frame-time-lock output-mode output-choice clock-ramp rate-agreement hold-ramp sync-search video-source-selection segment-select register-queue preset-load sdram-timings memory-bus bringup chip frame-buffer input-formatter hd-bypass sync-recovery source-maintenance video-source-acquisition mode-detect deinterlacer interrupts field-request video-path-raster video-path-windows controls adc sampling-log video-route rgbhv-output write-trace
 all: test
 
 ## clean: remove the compiled test binaries
