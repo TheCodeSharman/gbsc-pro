@@ -181,6 +181,7 @@ volatile uint8_t pendingTestBusIf = 0xff;
 // callback and the bus belongs to loop().
 volatile bool pendingCoast = false;
 volatile bool pendingCoastClear = false;
+volatile bool pendingCoastApply = false;
 volatile uint8_t pendingCoastPre = 0;
 volatile uint8_t pendingCoastPost = 0;
 volatile bool pendingSampleClock = false;
@@ -3224,17 +3225,21 @@ static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
         Tv5725::SyncProcessor::retimeStopFor(divider));
 }
 
-static void applyCoastOverride(bool clear, uint8_t pre, uint8_t post)
+static void applyCoastOverride(bool apply, bool clear, uint8_t pre, uint8_t post)
 {
-    if (clear)
-        Tv5725::SyncProcessor::forgetCoastOverride();
-    else
-        Tv5725::SyncProcessor::overrideCoast(pre, post);
+    if (apply) {
+        if (clear)
+            Tv5725::SyncProcessor::forgetCoastOverride();
+        else
+            Tv5725::SyncProcessor::overrideCoast(pre, post);
 
-    // A re-solve rather than a write: the pair's branch follows the sync type,
-    // and the sync type is not settled while detection is probing, so applying
-    // one branch from here writes the other source's configuration.
-    inputAcquisition.resolveFromSource();
+        // The pair reaches the chip only through a sync-type application, which
+        // skips a path already in force, so a re-solve alone leaves a settled
+        // source on the old coast. The branch comes from the sync type the
+        // engine holds: SyncMeasurement's is not settled while detection probes.
+        geometry.reapplySyncTypeInForce();
+        inputAcquisition.resolveFromSource();
+    }
 
     debugPrintf("coast: %s %u/%u\n",
         Tv5725::SyncProcessor::coastOverridden() ? "override" : "default",
@@ -5409,7 +5414,8 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
         }
         if (pendingCoast) {
             pendingCoast = false;
-            applyCoastOverride(pendingCoastClear, pendingCoastPre, pendingCoastPost);
+            applyCoastOverride(pendingCoastApply, pendingCoastClear,
+                pendingCoastPre, pendingCoastPost);
         }
         if (pendingSampleClock) {
             pendingSampleClock = false;
@@ -6401,11 +6407,16 @@ void startWebserver()
     // on a running engine. Freezing would hold it too and would stop the
     // re-solve that makes the consequence for the count visible.
     server.on("/coast", HTTP_GET, [](AsyncWebServerRequest *request) {
+        const bool pre = request->hasParam("pre");
+        const bool post = request->hasParam("post");
         pendingCoastClear = request->hasParam("clear");
-        if (request->hasParam("pre"))
+        if (pre)
             pendingCoastPre = (uint8_t)request->getParam("pre")->value().toInt();
-        if (request->hasParam("post"))
+        if (post)
             pendingCoastPost = (uint8_t)request->getParam("post")->value().toInt();
+        // Asked for nothing, report: a bare /coast that applied would carry
+        // whatever the last request left behind.
+        pendingCoastApply = pendingCoastClear || pre || post;
         pendingCoast = true;
         request->send(200, "application/json", "{\"queued\":\"coast\"}");
     });

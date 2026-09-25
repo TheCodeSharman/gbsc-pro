@@ -1894,6 +1894,30 @@ TEST_CASE("reacquiring the sync type reports what the source carries")
     CHECK(engine.reacquireSyncType());
 }
 
+TEST_CASE("a coast changed on a settled source reaches the chip")
+{
+    seedBenchSource();
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+    engine.useSyncTypeProbe(probeOwnVsync);
+
+    g_hasOwnVsync = false;
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE(SyncProcessor::SP_PRE_COAST::read() == 7);
+
+    SyncProcessor::overrideCoast(12, 12);
+    engine.reapplySyncTypeInForce();
+    const uint32_t applied = SyncProcessor::SP_PRE_COAST::read();
+    SyncProcessor::forgetCoastOverride();
+
+    CHECK(applied == 12);
+}
+
 // --- what a mode change looks like when the line count cannot show it ---------
 //
 // sourceMoved() is the only thing that arms a solve while the engine is idle,

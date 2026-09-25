@@ -242,6 +242,10 @@ public:
     // docs/investigations/the-gate-runs-a-ladder-that-is-not-safe-yet.md
     bool reacquireSyncType();
 
+    // Put the path back on the chip for the sync type already in force, asking
+    // no probe. False where no sync type has been applied yet.
+    bool reapplySyncTypeInForce();
+
     bool reset();
 
     // True where the press MOVED the capture window. Neither zoom stop shows in

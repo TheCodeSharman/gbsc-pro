@@ -617,6 +617,17 @@ bool VideoPath::reacquireSyncType()
     return SyncMeasurement::isCsync();
 }
 
+bool VideoPath::reapplySyncTypeInForce()
+{
+    if (!syncTypeApplied_)
+        return false;
+
+    const bool csync = syncTypeInForce_;
+    syncTypeApplied_ = false;
+    applySyncType(csync);
+    return true;
+}
+
 // OPTIMISTIC, AND THE LADDER PAYS FOR BEING WRONG. A source changes its sync
 // type far more rarely than it changes mode, and measuring costs the probe's
 // settle and window -- a composite source has no V to arrive, so it spends the
