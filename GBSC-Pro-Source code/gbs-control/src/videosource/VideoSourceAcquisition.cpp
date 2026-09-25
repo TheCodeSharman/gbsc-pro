@@ -32,7 +32,9 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       solvedLinePeriod_(0), rateRun_(0), sourceInterrupted_(false),
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
-      unmeasuredPasses_(0), acquiredPasses_(0), runAdvanced_(false) {}
+      unmeasuredPasses_(0), acquiredPasses_(0), recoveryPosition_(0),
+      firstAcquisition_(true), selectionSeen_(VideoSourceSelection::selected()),
+      runAdvanced_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
 
@@ -56,7 +58,14 @@ void VideoSourceAcquisition::useWatchdogFeed(void (*feed)())
     watchdog_ = feed != 0 ? feed : noWatchdog;
 }
 
-void VideoSourceAcquisition::allowMaintenance(bool allowed) { maintenanceAllowed_ = allowed; }
+void VideoSourceAcquisition::allowMaintenance(bool allowed)
+{
+    // Withdrawn after being granted is detection giving up on the source, which
+    // is the engine's chance spent: the ladder is warranted from here.
+    if (maintenanceAllowed_ && !allowed)
+        firstAcquisition_ = false;
+    maintenanceAllowed_ = allowed;
+}
 
 void VideoSourceAcquisition::useClock(uint32_t (*nowMs)())
 {
@@ -510,13 +519,20 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     if (!detectionPass)
         return solved;
 
+    noteSelection();
+
     if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
+        recoveryPosition_ = 0;
+        firstAcquisition_ = false;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
     } else {
         acquiredPasses_ = 0;
         unmeasuredPasses_ = (uint16_t)((unmeasuredPasses_ + 1) % SyncRecovery::CycleLength);
+        if (!firstAcquisition_)
+            recoveryPosition_ =
+                (uint16_t)((recoveryPosition_ + 1) % SyncRecovery::CycleLength);
     }
 
     // Ungated: a sync pad left away is a dark panel, and whether maintenance is
@@ -587,13 +603,24 @@ void VideoSourceAcquisition::keepSourceComing(uint32_t nowMs)
 
 SyncRecovery::Step VideoSourceAcquisition::recoveryDue() const
 {
-    return SyncRecovery::stepAt(unmeasuredPasses_);
+    return SyncRecovery::stepAt(recoveryPosition_);
 }
 
 void VideoSourceAcquisition::restartRecovery()
 {
     unmeasuredPasses_ = 0;
+    recoveryPosition_ = 0;
     ownVsyncFound_ = false;
+}
+
+void VideoSourceAcquisition::noteSelection()
+{
+    const VideoSourceSelection::Id chosenNow = VideoSourceSelection::selected();
+    if (chosenNow == selectionSeen_)
+        return;
+    selectionSeen_ = chosenNow;
+    firstAcquisition_ = true;
+    recoveryPosition_ = 0;
 }
 
 uint16_t VideoSourceAcquisition::acquiredPasses() const { return acquiredPasses_; }
@@ -939,7 +966,7 @@ void VideoSourceAcquisition::recoverSource()
     if (due != SyncRecovery::None) {
         char line[64];
         snprintf(line, sizeof(line), "recovery: %s at pass %u",
-                 SyncRecovery::nameOf(due), (unsigned)unmeasuredPasses_);
+                 SyncRecovery::nameOf(due), (unsigned)recoveryPosition_);
         tv5725Log(line);
     }
 

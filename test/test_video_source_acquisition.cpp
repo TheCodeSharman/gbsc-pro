@@ -15,6 +15,7 @@
 
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceAcquisition.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/videosource/SyncRecovery.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/videosource/VideoSourceSelection.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
@@ -2165,4 +2166,73 @@ TEST_CASE("a source that changes rate while passed through is re-sized")
 
     CHECK(g_passThroughSwitches == 1);
     CHECK(HdBypass::HD_HSYNC_RST::read() != sizedFor524);
+}
+
+TEST_CASE("a first acquisition does not escalate the ladder")
+{
+    // A component source takes about ten seconds to acquire and a pass is
+    // 20 ms, so the whole ladder -- sync-type re-probe, sampling clock restart,
+    // full reset -- ran DURING an ordinary selection rather than after a
+    // failure. Measured on the bench, FullReset fired 3.03 s after detection
+    // succeeded and the engine then held a solve for the other source.
+    // docs/known-issues.md, "The recovery ladder escalates through every first
+    // acquisition"
+    seedBenchSource();
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+
+    g_logLines.clear();
+    seedSourceLines(0);
+    for (uint16_t i = 0; i < SyncRecovery::CycleLength; ++i)
+        unit.poll();
+
+    CHECK_FALSE(loggedContaining("recovery: "));
+}
+
+TEST_CASE("detection giving up on the source releases the ladder")
+{
+    // The grace above must not be permanent. Maintenance is withdrawn when
+    // detection concludes there is nothing there, and a source that detection
+    // cannot find has had the engine's chance: the rungs are what is left.
+    seedBenchSource();
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+
+    seedSourceLines(0);
+    for (uint16_t i = 0; i < SyncRecovery::positionOf(SyncRecovery::FullReset); ++i)
+        unit.poll();
+    unit.acquisition.allowMaintenance(false);
+    unit.acquisition.allowMaintenance(true);
+
+    g_logLines.clear();
+    for (uint16_t i = 0; i < SyncRecovery::positionOf(SyncRecovery::FullReset) + 4; ++i)
+        unit.poll();
+
+    CHECK(loggedContaining("recovery: full reset at pass"));
+}
+
+TEST_CASE("selecting another input gives the new source a first acquisition too")
+{
+    // The bench case: the RISC PC is acquired on `vga`, `ypbpr` is selected,
+    // and the Wii needs about ten seconds. Without this the grace is spent on
+    // the source being left rather than the one arriving, and the ladder runs a
+    // full reset three seconds into the new acquisition.
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+    Acquiring unit;
+    unit.acquisition.allowMaintenance(true);
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    g_logLines.clear();
+    seedSourceLines(0);
+    for (uint16_t i = 0; i < SyncRecovery::CycleLength; ++i)
+        unit.poll();
+
+    CHECK_FALSE(loggedContaining("recovery: "));
+    VideoSourceSelection::forgetSelection();
 }

@@ -12,6 +12,7 @@
 #include "../tv5725/VideoPath.h"
 #include "SourceMaintenance.h"
 #include "SyncRecovery.h"
+#include "VideoSourceSelection.h"
 
 class VideoSourceAcquisition {
 public:
@@ -226,6 +227,7 @@ public:
     void sourceInterrupted();
 
 private:
+    void noteSelection();
     bool detectionDue(uint32_t nowMs);
 
     bool sourceMoved();
@@ -380,10 +382,19 @@ private:
     bool vsyncAbsentArmed_;
 
 
-    // Consecutive passes that did not reach an acquired source. Wrapped at the
-    // ladder's cycle rather than left to run, so the cycle stays aligned.
+    // Consecutive passes that did not reach an acquired source.
     uint16_t unmeasuredPasses_;
     uint16_t acquiredPasses_;
+    // How far the escalation has got, which is a different fact from how long
+    // since a measurement: the one above climbs legitimately while a source is
+    // being acquired and this must not move then.
+    uint16_t recoveryPosition_;
+    // Whether the engine has yet had its chance at the source now selected. A
+    // component acquisition takes about ten seconds and a pass is 20 ms, so
+    // every rung to FullReset falls due DURING an ordinary selection, tearing
+    // down the sync path the engine is still solving through.
+    bool firstAcquisition_;
+    VideoSourceSelection::Id selectionSeen_;
     bool runAdvanced_;
 };
 
