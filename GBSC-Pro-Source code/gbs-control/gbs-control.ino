@@ -82,6 +82,7 @@ static unsigned long Tim_Resolution = 0, Tim_Resolution_Start = 0;
 #include "src/tv5725/SyncMeasurement.h"
 #include "src/tv5725/TestBus.h"
 #include "src/tv5725/TestBusRateMeasurement.h"
+#include "src/videosource/DetectionEntry.h"
 #include "src/videosource/SourceAbsence.h"
 #include "src/videosource/SourceMaintenance.h"
 #include "src/videosource/SyncRecovery.h"
@@ -1603,23 +1604,22 @@ uint8_t detectAndSwitchToActiveInput()
     uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
     SYNC_EVENT("det enter", currentInput);
     unsigned long timeout = millis();
-    while (millis() - timeout < 450) {
+    while (true) {
         delay(10);
         handleWiFi(0);
 
-        boolean stable = Tv5725::SyncProcessor::hsyncActive();
-        SYNC_EVENT("det hsact", stable ? 1 : 0);
-        // printf("stable = %d \n",stable);
+        // The test bus rather than STATUS_SYNC_PROC_HSACT: that bit rails in
+        // both directions and says nothing here.
+        // docs/known-issues.md, "STATUS_SYNC_PROC_HSACT saturates"
+        const bool present = Tv5725::SyncProcessor::signalPresent();
+        SYNC_EVENT("det hsact", present ? 1 : 0);
 
-        // KEEP LOOKING FOR THE WHOLE WINDOW. A mux that has just moved has not
-        // delivered a line yet, and concluding on the first sample declares a
-        // present source absent -- which sends the caller to
-        // goLowPowerWithInputDetection(), zeroing segments 0 and 2 on a source
-        // that was there all along.
-        // docs/known-issues.md, "The 450 ms hsync wait in detection never waits"
-        if (!stable) {
+        const DetectionEntry::Step step =
+            DetectionEntry::stepAt(present, (uint32_t)(millis() - timeout));
+        if (step == DetectionEntry::GiveUp)
+            break;
+        if (step == DetectionEntry::Wait)
             continue;
-        }
 
         {
             currentInput = GBS::ADC_INPUT_SEL::read();
@@ -1808,7 +1808,7 @@ uint8_t detectAndSwitchToActiveInput()
             Tv5725::SyncOnGreen::putInForce();
         }
 
-        // Hsync arrived and no branch claimed it, so waiting longer for hsync
+        // A signal arrived and no branch claimed it, so waiting longer
         // answers nothing.
         break;
     }
