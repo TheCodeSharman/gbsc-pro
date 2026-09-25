@@ -434,34 +434,25 @@ bool VideoPath::installSampling(SamplingReason reason)
     if (divider == 0)
         return false;
 
-    // WITHIN A TOLERANCE, BOTH OF THEM, and an exact test on either leaves a
-    // source that can never finish measuring. This is asked on every pass until
-    // the duty lands, the measured rate carries the field rate's jitter, and
-    // every write re-latches the ADC PLL and restarts the settle -- so the duty
-    // is never read through a settled clock.
+    // ASKED OF THE RATE, NOT OF THE DIVIDER. The divider is an actuator inside
+    // the loop that measures its own input, so re-deriving it per measurement
+    // limit-cycles either side of the value it wants and no tolerance on the
+    // divider converges. Holding it against the rate it was sized from costs
+    // nothing, because a settled source carries no scatter to forgive.
     //
-    // Measured on the bench, exactly on the divider: 50.08 Hz and 50.05 Hz
-    // alternating gave 2506 and 2508, and the engine oscillated between them
-    // for as long as it was left, reporting UNLOCKED on every duty.
-    //
-    // The rate is compared as well as the divider because what the rate is FOR
-    // is the post divider row and the VCO gain, which are a function of the
-    // divider TIMES the rate -- so a divider that did not move can still want a
-    // different row.
-    //
-    // IT IS A TOLERANCE ON A MEASUREMENT AND NOTHING ELSE. The OUTPUT is a
-    // choice and carries no jitter, so a divider sized for one is compared
-    // exactly: 480p's 1876 and 576p's 1952 are 4.1% apart, inside the tolerance
-    // and no part of it noise, and forgiven there the two SD modes share
-    // whichever clock was arrived from.
+    // A divider that was CHOSEN rather than measured compares exactly: the
+    // output moves the bound the divider is sized against, and a held one is a
+    // command that a rate which did not move must not swallow.
+    // ../../../docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md
     const uint32_t rate = sampling_.lineRateHz();
     const uint16_t inForce = Adc::dividerInForce();
+    const bool derivedFromMeasurement =
+        reason == SamplingFollowsMeasurement && heldDivider_ == 0;
     const bool alreadyInForce =
-        reason == SamplingFollowsOutput
-            ? divider == inForce
-            : VideoSignal::ratesAgree(divider, inForce, DividerJitterPerMille)
-                  && VideoSignal::ratesAgree(rate, installedRateHz_,
-                                             InstalledRatePerMille);
+        derivedFromMeasurement
+            ? VideoSignal::ratesAgree(rate, installedRateHz_,
+                                      SourceIdentityPerMille)
+            : divider == inForce;
     if (inForce != 0 && alreadyInForce)
         return true;
 
@@ -685,6 +676,10 @@ void VideoPath::solveLineDoubling(uint16_t lines)
 
     const bool component = Adc::inputIsComponent();
 
+    // An IF unit is two ADC samples on a doubled line and one on an undoubled
+    // one, so the doubling sizes the divider as much as the rate does, and the
+    // clock in force is no longer the one this rate installed.
+    installedRateHz_ = 0;
     lineDoubled_ = doubled;
     inputFormatter_.applyLineDoubling(doubled, component);
     VideoProcessor::applyLineDoubling(doubled, component);
@@ -715,7 +710,13 @@ void VideoPath::applySampling(uint16_t divider)
     sampling_.samplingClockLatched();
 }
 
-void VideoPath::holdDivider(uint16_t divider) { heldDivider_ = divider; }
+// Taking a hold and releasing one are both commands, so neither may be skipped
+// by installSampling()'s rate test.
+void VideoPath::holdDivider(uint16_t divider)
+{
+    heldDivider_ = divider;
+    installedRateHz_ = 0;
+}
 
 uint16_t VideoPath::heldDivider() const { return heldDivider_; }
 

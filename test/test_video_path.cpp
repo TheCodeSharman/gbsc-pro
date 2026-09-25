@@ -2056,3 +2056,79 @@ TEST_CASE("an undoubled source is sampled up to the measured ceiling")
               <= InputFormatter::LineCounterMax);
     }
 }
+
+// --- the divider follows the source, not the reading -------------------------
+
+// Measure until the rate is taken, so a case that moves the source's rate is not
+// asserting against a reading still settling. The settle is bounded, so a run
+// that never lands is a failure rather than a hang.
+static bool measureUntilTaken(SourceMeasurement &sampling)
+{
+    for (uint8_t i = 0; i < 4 * (SourceMeasurement::SteadySamples
+                                 + SourceMeasurement::LatchSettlePasses); ++i)
+        if (sampling.measureRate() == SourceMeasurement::Measured)
+            return true;
+    return false;
+}
+
+TEST_CASE("a rate that moves without changing the source leaves the divider alone")
+{
+    // The divider is an actuator inside the loop that measures its own input:
+    // the field rate is timed off the input formatter's vertical, and the IF's
+    // line counter IS the divider. So a re-write moves the sensor, the next
+    // reading asks for a different divider, and the pair limit-cycles.
+    //
+    // Measured on the bench across one input switch, alternating for 40 s:
+    //
+    //     rate 31519 -> divider 1444        rate 31440 -> divider 1448
+    //
+    // Neither is a fixed point, and the true rate of 31468 asks for the 1446
+    // between them, which the cycle never visits. A tolerance cannot settle it;
+    // the divider has to be chosen once for the source and then held. 250
+    // back-to-back timings of that settled source gave one line rate in 250, so
+    // the scatter is the loop's own and not the source's.
+    //
+    // An undoubled 524-line source, because that is where the RATE binds the
+    // divider. A doubled line is held by DoubledLineSampleLimit instead, and a
+    // wall that does not move with the rate cannot cycle.
+    Wire.reset();
+    poisonChip();
+    seedField(3, 0x01, 0, 12, 1915);   // VDS_HSYNC_RST, output line - 1
+    seedField(3, 0x02, 4, 11, 1124);   // VDS_VSYNC_RST, output frame - 1
+    seedField(1, 0x0E, 0, 11, 1125);   // IF_HSYNC_RST, capture wrap - 1
+    seedField(5, 0x12, 0, 12, 2250);   // PLLAD_MD
+    seedField(4, 0x21, 0, 1, 1);       // CAPTURE_ENABLE, running
+    Chip::holdPower(true);
+    seedField(0, 0x0F, 0, 8, 0);
+    Wire.lockSyncProcessor();
+    seedSourceMeasurement();
+    seedSourceLines(524);
+    g_fieldRate = 60.0f;
+
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+    VideoSourceAcquisition acquisition(sampling, engine);
+
+    engine.setOutputMode(benchMode());
+    engine.inputTimingsChanged(4);
+    REQUIRE(pollUntilSolved(acquisition));
+    REQUIRE_FALSE(engine.lineDoubled());
+
+    const uint16_t chosen = Adc::dividerInForce();
+    REQUIRE(chosen != 0);
+
+    // Inside SourceIdentityPerMille and outside what the divider quantises to,
+    // so the same source asks for a different divider -- which is the whole of
+    // the limit cycle's step.
+    g_fieldRate = 60.0f * (1.0f + 4.0f / 1000.0f);
+    REQUIRE(measureUntilTaken(sampling));
+    REQUIRE(sampling.lineRateHz() != 0);
+    REQUIRE(SamplingClock::recommendedDivider(sampling.lineRateHz(), 4,
+                                              engine.lineDoubled(), 0)
+            != chosen);
+
+    CHECK(engine.installSampling(VideoPath::SamplingFollowsMeasurement));
+    CHECK(Adc::dividerInForce() == chosen);
+}

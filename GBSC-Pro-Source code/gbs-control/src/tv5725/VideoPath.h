@@ -180,17 +180,6 @@ public:
     enum SamplingReason { SamplingFollowsMeasurement, SamplingFollowsOutput };
     bool installSampling(SamplingReason reason);
 
-    // How far a re-derived divider may sit from the one in force before it is
-    // written. This is QUANTISATION, not measurement: a field rate wobbling
-    // either side of a divider step chose 2506 and 2508, which is 0.08%, and
-    // every write re-latches the ADC PLL and restarts the settle.
-    static const uint16_t DividerJitterPerMille = 2;
-
-    // And the rate the divider in force was sized from, asked because the post
-    // divider row and the VCO gain are a function of the divider TIMES the
-    // rate -- so a divider that did not move can still want a different row.
-    static const uint16_t InstalledRatePerMille = 50;
-
     // Solve every register from the measurement the caller has just taken.
     PollOutcome solveFromMeasurement();
 
