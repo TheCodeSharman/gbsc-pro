@@ -10,6 +10,48 @@ regardless of which step is in flight.
 
 ## Reaches the picture
 
+### The HC32 stops following input selections, and only a true power cycle returns it
+
+**Measured on `vga` with the RISC PC at 800x600@60.** The sync processor reports
+a correct field rate and no horizontal edges: `sampling: 1222 lines x 60.31 Hz`
+against the 628 that mode gives, `duty:` lines reading `NO EDGE` and totals
+thrashing 881..1995, never leaving `UNLOCKED`. The count is what doubling gives
+-- 628 x 2 = 1256, less the ~34 lines of vertical interval carrying no pulses.
+
+**`asw_01` is the mechanism and no instrument on the board can see it.** It
+selects the dedicated HSync pin over `SOGIN`, and VGA is the only input that
+raises it. Low, `HS_IN` is sync on green, which an RGB source with separate sync
+does not provide -- so vertical arrives on its own pin and horizontal does not.
+It lives on the HC32F460, which is write-only, keeps `asw_01..04` in its own
+flash, and restores them at boot from `Video_ReadNot2()`.
+
+**Every scaler-side recovery was tried and none of them reach it**, each
+confirmed against the live fault:
+
+| tried | result |
+|---|---|
+| `/sc?~` | no change |
+| `/input?src=vga`, re-sending the HC32 frame | no change; `InputVGA()` sends it unconditionally with the right mode byte |
+| `/restart` | no change, and the fault survives the boot |
+| `/sampleclock?md=1438`, which restarts the ADC PLL | no change, still `lock 0` |
+| a source mode change, and a `SYNC 1`/`SYNC 0` round trip | restores the field rate reading, not the lock |
+| **mains *and* USB power cycle** | **recovered at once** |
+
+USB backfeeds the rails, so mains alone leaves the HC32 powered and is not a
+power cycle.
+
+**Nothing in a register dump distinguishes it.** The sync processor, the clock
+group and the sync-type decision all read exactly what a healthy unit reads --
+`SP_SOG_MODE` 0, coast 0/0, `SP_H_PULSE_IGNOR` 255, divider correct and latched,
+`own V sync: yes` probing to separate H/V. The engine is measuring faithfully;
+what it is measuring is half a signal.
+
+**The discriminator is the other input.** `ypbpr` acquiring on the same board at
+the same moment -- 525 lines at 31468 Hz, held over five samples -- is what
+separates a board fault from a signal-path one, and it costs one `/input`
+request. Reach for it before any firmware hypothesis.
+
+
 ### About half of boots shake, and the rate was only part of it
 
 **The shake is a property of the BOOT.** Surveyed with
