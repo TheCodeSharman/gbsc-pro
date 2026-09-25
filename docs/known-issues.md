@@ -2106,7 +2106,7 @@ the other source -- no longer fires at all.
 same measurement lands on the other source's raster either way; the sync
 arrangement outliving the input change is what does that, filed below.
 
-### The sync arrangement outlives an input change, so YPbPr measures the source on the other connector
+### The sync arrangement outlives an input change, so YPbPr measures the source on the other connector -- FIXED
 
 **The ADC input follows the selection and the sync path does not.** `ADC_INPUT_SEL`
 moves, `SP_EXT_SYNC_SEL` and `SP_SOG_MODE` keep the answer chosen for the input
@@ -2141,9 +2141,44 @@ the sync type -- and it is the only one. `/input` does not clear it, which is wh
 makes an input change appear to have been ignored by the HC32 when the analog
 switches followed correctly.
 
-**The fix belongs with the sync arrangement's owner, not with detection.** An
-input selection invalidates the held arrangement the way a source identity change
-invalidates a divider; `docs/acquisition-migration-plan.md` step 3 is the seam.
+**Three things had to change, and each hid the next.**
+
+`sourceMoved()` arms on the SELECTION. `establishSyncType()` runs only while a
+mode change is in flight, and an input change never looked like one, so the
+re-establish was never reached at all.
+
+The arrangement is held against the selection it was chosen for, so it cannot be
+reused across a change of connector.
+
+And `VideoPath` kept its own record of whether the sync type was known, beside
+`SyncMeasurement`'s. A second record cannot see the sketch's own `forget()`, so
+`setResetParameters()` -- which says the answer is unknown and then guesses
+separate -- left `VideoPath` reading that guess as a measurement. Detection
+drops to low power about five seconds into a selection, which is where the
+right arrangement was being undone. `SyncMeasurement::syncType()` already
+expressed probe-if-unknown, so the flag was an owner to remove rather than a
+conflict to arbitrate.
+
+After: the arrangement is applied 0.11 s after the selection and holds, the Wii
+acquires at 524 lines and 31468 Hz, and the picture comes up with no `/sc?~`.
+Selecting `vga` probes -- `own V sync: yes after 3ms` -- because VGA is the one
+connector that can present either, and lands on separate.
+
+**The arrangement is logged now**, because every register it writes is one
+several other paths also write: which owner last had it cannot be read off a
+dump, and this overwrite was invisible until the log said so.
+
+    0.03  source moved: input (163 lines, solved 627)
+    0.11  sync arrangement: composite or SOG for input 4
+
+**`SyncMeasurement` still has more than one writer.** `setResetParameters()` and
+`resetRunTimeDefaults()` both call `set(false)` beside a `forget()`, which is a
+reset guessing at a measurement; detection decides a sync type of its own from a
+sweep at `detectAndSwitchToActiveInput()`; and
+`TestBusRateMeasurement::sourceFieldRateHz()` reads the held DECISION to pick a
+test bus, which is why detection brackets a measurement with `set(1)`/`set(0)`.
+None of those can now reach a settled input through `VideoPath`, but they remain
+owners. `docs/acquisition-migration-plan.md` step 2 is what retires them.
 
 ### The component separator search cannot exit early, so it costs 6 s every time
 
