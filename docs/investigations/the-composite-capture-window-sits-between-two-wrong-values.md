@@ -40,6 +40,33 @@ which puts the correct value near the midpoint of 120 and 294.
 rather than the difference being filed as a constant — because the two candidate
 origins are a *whole* pulse apart, and the truth is at neither.
 
+## What each arrangement's own window costs, in emitted pixels
+
+Captured off the HDMI output rather than photographed, so these are output pixels
+and not photo columns. `PATTERN CARD` puts a coloured border hard against the
+source's edge, which is what makes a black margin the OUTPUT's edge rather than
+the card's own black ring — the black-castellation card gives the same figures,
+which is the check that the border is not needed to get them right.
+
+RISC PC at 800x600@60, the sync type the only variable, four frames a state and
+every frame identical:
+
+| | left | right | top | bottom | lit area |
+|---|---|---|---|---|---|
+| separate (`SYNC 0`) | **13** | 0 | 0 | **10** | 1907 x 1070 |
+| composite (`SYNC 1`) | **128** | 0 | 0 | **40** | 1792 x 1040 |
+
+So composite costs 115 px of width and 30 of height against separate, anchored
+at the right and the top, with the right margin 0 in both — the tail is against
+the display window's edge, so the picture is displaced rather than shrunk and
+what leaves the right is clipped.
+
+**The vertical loses 30 rows with no vertical register differing.** `IF_VB_ST`
+625 and `IF_VB_SP` 21 are identical across the two, as are both scales and both
+display windows, so the only thing left to carry it is the count reading 623
+against 627. That is a second error on this path and not the horizontal one seen
+twice.
+
 ## The 174 units are one whole pulse, and the switch is the polarity bit
 
 The gap is not a mystery quantity. `VideoSourceLine::forDuty()` takes the origin
