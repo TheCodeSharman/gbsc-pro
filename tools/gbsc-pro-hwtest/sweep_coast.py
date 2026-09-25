@@ -14,6 +14,10 @@ measure:
   engine prints a `sampling:` line only when it re-measures, so a settled source
   prints NONE and a burst of differing counts is the dither itself. A `scan:`
   line is edge-triggered and appearing at all means the scan decision moved.
+  **`source absent:` is counted too, and it is the one that catches a source
+  dropping and re-acquiring several times a second** -- that churn prints no
+  `sampling:` line at all, and a point read of `/geometry` lands on whichever
+  phase it happens to catch, so neither of those sees it.
 - **the vertical blanking**, which `IF_VB_ST` carries to the pin. Composite sync
   refuses a small set of values for it, the set moves with the coast, and only
   the test bus sees it -- `STATUS_IF_VT_OK` reads 1 and `VPERIOD_IF` reads a
@@ -65,10 +69,11 @@ def testbus(host, console, window_ms):
 
 
 def watch(console, seconds):
-    """The counts the engine re-measured in the window, and whether the scan
-    decision moved. No line at all is the settled case."""
+    """What the engine did to the source in the window: the counts it
+    re-measured, the times it lost the source, and whether the scan decision
+    moved. Nothing at all is the settled case."""
     console.drain()
-    counts, scans = [], []
+    counts, scans, lost = [], [], 0
     deadline = time.time() + seconds
     while time.time() < deadline:
         for line in console.collect(0.5):
@@ -76,12 +81,14 @@ def watch(console, seconds):
                 counts.append(int(line.split()[1]))
             elif line.startswith("scan: "):
                 scans.append(line)
+            elif line.startswith("source absent:"):
+                lost += 1
         console.drain()
-    return counts, scans
+    return counts, scans, lost
 
 
 def score(host, console, dwell, window_ms):
-    counts, scans = watch(console, dwell)
+    counts, scans, lost = watch(console, dwell)
     vertical, control = testbus(host, console, window_ms)
     fields = read_fields(host, [
         "SP_PRE_COAST", "SP_POST_COAST", "IF_VB_ST", "STATUS_SYNC_PROC_VTOTAL"])
@@ -92,6 +99,7 @@ def score(host, console, dwell, window_ms):
         "vtotal": fields["STATUS_SYNC_PROC_VTOTAL"],
         "state": state.get("state", "?"),
         "resolves": len(counts),
+        "lost": lost,
         "distinct": sorted(set(counts)),
         "scans": scans,
         "vertical": vertical,
@@ -115,7 +123,7 @@ def main():
     time.sleep(0.5)
 
     print(f"# {'coast':>7} {'applied':>8} {'state':>9} {'ifvb':>5} {'vt':>5} "
-          f"{'tb0':>4} {'ctl':>4} {'solves':>6}  counts")
+          f"{'tb0':>4} {'ctl':>4} {'lost':>4} {'solves':>6}  counts")
     good = []
     try:
         for pre in pres:
@@ -126,7 +134,8 @@ def main():
 
                 steady = (row["state"] == "acquired"
                           and len(row["distinct"]) <= 1
-                          and not row["scans"])
+                          and not row["scans"]
+                          and row["lost"] == 0)
                 live = bool(row["vertical"]) and bool(row["control"])
                 mark = ""
                 if steady and live:
@@ -141,7 +150,8 @@ def main():
                       f"{row['applied'][1]:<4} {row['state']:>9} "
                       f"{row['ifvb']:>5} {row['vtotal']:>5} "
                       f"{str(row['vertical']):>4} {str(row['control']):>4} "
-                      f"{row['resolves']:>6}  {row['distinct']}{mark}",
+                      f"{row['lost']:>4} {row['resolves']:>6}  "
+                      f"{row['distinct']}{mark}",
                       flush=True)
                 for line in row["scans"]:
                     print(f"        {line}", flush=True)
