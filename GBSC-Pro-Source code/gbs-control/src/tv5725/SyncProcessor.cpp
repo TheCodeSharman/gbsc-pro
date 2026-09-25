@@ -1,5 +1,7 @@
 #include "SyncProcessor.h"
 
+#include "TestBus.h"
+
 #include <Arduino.h>   // delayMicroseconds(), a hardware settling time
 
 #include "Adc.h"
@@ -493,6 +495,16 @@ void SyncProcessor::applySeparationThresholds(bool csync)
         applyPulseIgnore(false, false);
         SP_DLT_REG::write(0x00);
     }
+}
+
+bool SyncProcessor::signalPresent()
+{
+    const TestBus::Hold held;
+
+    TestBus::select(TestBus::SyncProcessor);
+    driveTestBus(TestModuleOutProc, 0);
+
+    return TestBus::read() > SignalPresentAbove;
 }
 
 void SyncProcessor::clampFromReferenceClock()

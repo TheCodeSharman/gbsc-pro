@@ -23,7 +23,7 @@ const uint16_t EdgeWindowMs = 60;
 
 // The sync processor's own test bus, which is where the sync separator's output
 // appears. Selecting it is what makes it readable, and TestBus::Hold puts back
-// what was there: the console, the auto-gain routine and getSyncPresent() drive
+// what was there: the console, the auto-gain routine and signalPresent() drive
 // the same registers for other things.
 struct SeparatorBus {
     TestBus::Hold held;

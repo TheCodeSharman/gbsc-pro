@@ -634,7 +634,8 @@ sync-processor:
 	@mkdir -p "$(OUT)"
 	cd "$(SKETCH)" && $(CXX) $(CXXFLAGS) -I "$(HERE)" -I "$(HERE)/fake" \
 	  -o "$(OUT)/test_sync_processor" \
-	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp
+	  "$(HERE)/test_sync_processor.cpp" src/tv5725/SyncProcessor.cpp \
+	  src/tv5725/TestBus.cpp
 	@"$(OUT)/test_sync_processor"
 
 ## sync-measurement: host unit tests for Tv5725::SyncMeasurement

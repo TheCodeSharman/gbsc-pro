@@ -209,6 +209,19 @@ public:
     // retiming a line that is not arriving.
     static uint16_t retimeStopFor(uint16_t divider);
 
+    // Whether ANY sync is reaching this block, counted off its own output stage
+    // on the test bus rather than read off a status bit. STATUS_SYNC_PROC_HSACT
+    // reads like the answer and is not one: measured, it held 0 across a 450 ms
+    // window of some 45 samples on a YPbPr source that then acquired.
+    //
+    // It is still downstream of this block's configuration, so it cannot report a
+    // signal the block is not set up to carry.
+    // ../../../docs/known-issues.md, "The 450 ms hsync wait in detection never waits"
+    static bool signalPresent();
+
+    // What the bus has to exceed. Upstream's threshold, carried unmeasured.
+    static const uint16_t SignalPresentAbove = 0x0180;
+
     // SP_TEST_MODULE's values, from RD-5725-1.1's own table. Only the stages
     // something selects are named.
     static const uint8_t TestModuleVsActDet = 4;

@@ -152,3 +152,58 @@ TEST_CASE("a hold puts back a bus that was not enabled")
 
     CHECK(!TestBus::enabled());
 }
+
+// --- is there a signal at all -------------------------------------------------
+
+// The bus reading, seeded straight into the fake's banks so it is an INPUT
+// rather than something the code under test wrote. TEST_BUS is 16 bits at
+// s0_2E.
+static void seedTestBus(uint16_t value)
+{
+    Wire.bank[0][0x2E] = (uint8_t)(value & 0xFF);
+    Wire.bank[0][0x2F] = (uint8_t)(value >> 8);
+}
+
+TEST_CASE("a signal is reported from what the bus counts, not from a status bit")
+{
+    // STATUS_SYNC_PROC_HSACT reads like the answer and is not one: measured, it
+    // held 0 across a 450 ms window of ~45 samples on a YPbPr source that then
+    // acquired, and 1 in 40 of 40 on a settled separate-sync one. The bus
+    // carries the stage's own activity instead.
+    Wire.reset();
+
+    seedTestBus(0x0400);
+    CHECK(SyncProcessor::signalPresent());
+
+    seedTestBus(0x0000);
+    CHECK_FALSE(SyncProcessor::signalPresent());
+}
+
+TEST_CASE("the threshold is the reading above it, not the reading on it")
+{
+    Wire.reset();
+
+    seedTestBus(SyncProcessor::SignalPresentAbove);
+    CHECK_FALSE(SyncProcessor::signalPresent());
+
+    seedTestBus((uint16_t)(SyncProcessor::SignalPresentAbove + 1));
+    CHECK(SyncProcessor::signalPresent());
+}
+
+TEST_CASE("asking puts the bus back where it was found")
+{
+    // The pin is shared, and a reader that leaves the bus on its own stage
+    // silently changes what the next reader measures.
+    Wire.reset();
+
+    TestBus::select(3);   // any other selector; the numbers are undocumented
+    SyncProcessor::driveTestBus(SyncProcessor::TestModuleVsActDet, 0);
+    const uint8_t selector = TestBus::selected();
+    const uint32_t stage = SyncProcessor::SP_TEST_MODULE::read();
+
+    seedTestBus(0x0400);
+    CHECK(SyncProcessor::signalPresent());
+
+    CHECK(TestBus::selected() == selector);
+    CHECK(SyncProcessor::SP_TEST_MODULE::read() == stage);
+}

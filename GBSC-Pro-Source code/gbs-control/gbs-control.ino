@@ -1871,7 +1871,7 @@ uint8_t inputAndSyncDetect()
     SYNC_EVENT("det found", syncFound);
     // printf(" syncFound = %d \n",syncFound);
     if (syncFound == 0) {
-        const bool syncPresent = getSyncPresent();
+        const bool syncPresent = Tv5725::SyncProcessor::signalPresent();
         SYNC_EVENT("det sync present", syncPresent ? 1 : 0);
         if (!syncPresent)
         {
@@ -2919,17 +2919,6 @@ void applyPresets()
         delay(400);
     }
     doPostPresetLoadSteps();
-}
-
-boolean getSyncPresent() //
-{
-    const Tv5725::TestBus::Hold held;
-
-    Tv5725::TestBus::select(Tv5725::TestBus::SyncProcessor);
-    Tv5725::SyncProcessor::driveTestBus(
-        Tv5725::SyncProcessor::TestModuleOutProc, 0);
-
-    return Tv5725::TestBus::read() > 0x0180;
 }
 
 
