@@ -14,6 +14,11 @@ void SourceAbsence::missed()
 
 void SourceAbsence::undecided() {}
 
+void SourceAbsence::selectionChanged()
+{
+    passes_ = PassesBeforeLowPower - 1;
+}
+
 bool SourceAbsence::shouldPowerDown() const
 {
     return passes_ >= PassesBeforeLowPower;

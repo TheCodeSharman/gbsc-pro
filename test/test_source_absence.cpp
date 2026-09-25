@@ -80,3 +80,51 @@ TEST_CASE("a pass that found nothing while a signal reaches the chip holds the r
 
     CHECK(absence.passes() == 2);
 }
+
+TEST_CASE("a deliberate selection spends the patience the run exists for")
+{
+    // **THE TEARDOWN IS WHAT MAKES THE SOURCE APPEAR AFTER AN INPUT CHANGE.**
+    // Measured on the bench selecting the Wii on `ypbpr`: four passes report
+    // `det hsact,0` and `det sync present,0` -- nothing on either instrument --
+    // then the run reaches its threshold at pass five,
+    // goLowPowerWithInputDetection() runs, and sync is present 0.6 s later with
+    // detection succeeding in 25 ms. The five seconds are spent waiting for the
+    // counter, not waiting for the source.
+    //
+    // The run exists so that a DROPPED MEASUREMENT does not cost a teardown. A
+    // deliberate selection is not a dropped measurement: it is a known event
+    // after which the chip demonstrably needs the reset. So the patience is
+    // spent up front and the first pass that finds nothing acts.
+    SourceAbsence absence;
+
+    absence.selectionChanged();
+
+    REQUIRE_FALSE(absence.shouldPowerDown());
+    absence.missed();
+    CHECK(absence.shouldPowerDown());
+}
+
+TEST_CASE("a selection whose source is already there costs no teardown")
+{
+    // Switching to an input that already has sync -- the RISC PC on vga --
+    // succeeds on the first pass, so the spent patience is never drawn on.
+    SourceAbsence absence;
+    absence.selectionChanged();
+
+    absence.found();
+
+    CHECK_FALSE(absence.shouldPowerDown());
+}
+
+TEST_CASE("the patience returns once the selection has been answered")
+{
+    // Spending it is for the one pass after the change, not for the life of the
+    // input: a dropped measurement seconds later is a dropped measurement again.
+    SourceAbsence absence;
+    absence.selectionChanged();
+    absence.found();
+
+    absence.missed();
+
+    CHECK_FALSE(absence.shouldPowerDown());
+}

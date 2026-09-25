@@ -2,6 +2,7 @@
 #ifndef OLED_MENU_IMPLEMENTATION_H_
 #define OLED_MENU_IMPLEMENTATION_H_
 #include "OLEDMenuManager.h"
+#include "src/videosource/SourceAbsence.h"
 #include "src/videosource/VideoSourceSelection.h"
 
 
@@ -110,6 +111,10 @@ void applyInputRegisters(const VideoSourceSelection::Settings &settings);
 // A menu selection: the registers above plus the bookkeeping every handler
 // repeated -- the legacy source byte, the stored id, the brightness set, the
 // low-power clear and the preference save.
+// The absence run, so a deliberate selection can spend its patience: the
+// teardown is what makes a source appear after an input change.
+extern SourceAbsence sourceAbsence;
+
 void applyInputSelection(VideoSourceSelection::Id id);
 
 void InputRGBs(void);

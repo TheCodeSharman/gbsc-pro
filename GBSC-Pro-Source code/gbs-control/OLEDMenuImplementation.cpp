@@ -605,6 +605,7 @@ void applyInputSelection(VideoSourceSelection::Id id)
 
     SeleInputSource = settings.legacySource;
     VideoSourceSelection::select(id);
+    sourceAbsence.selectionChanged();
     resetSyncProcessor();
     applyInputRegisters(settings);
     BriorCon = settings.brightnessSet;
