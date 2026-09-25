@@ -1,5 +1,12 @@
 # The vertical capture origin follows the sync type
 
+**THE TITLE IS THE REFUTED MODEL.** Both legs of it are withdrawn below and
+neither is a displacement: the composite one was the short count, and the
+sync-on-green one is a set of `IF_VB_ST` values composite sync will not take.
+Nothing here licenses a vertical origin derived from the sync arrangement, and
+the deleted `FrameLagUnits` must not be reinstated. The two sections after the
+banners are the current reading; the rest is kept for its measurements.
+
 **THE COUPLING IS WITHDRAWN ON COMPOSITE SYNC.** The title's claim held on two
 arrangements when it was written and holds on one now: the composite leg was a
 consequence of the short count, and restoring the count closed it.
@@ -100,12 +107,70 @@ without it, every row reads back 7/3 whatever was written, because the engine
 re-applies the pair within a pass -- and the readings then differ anyway, from
 ordinary flakiness, which reads exactly like the coast having an effect.
 
-**This is a direction and not a result.** Every row above shows counts well
-under eighteen at values that are not dead, so this source is flaky across the
-whole range, and a longer run of the same sweep lost the console halfway and
-returned nothing for four of its eight rows. What is wanted is the same sweep on
-the Wii: **if 0/0 clears that source too, the coast is the fault and not the
-register value.**
+The Wii answers the same way, A/B/A/B, three trials a cell, scored the same:
+
+| coast | 512 | 513 | 515 |
+|---|---|---|---|
+| 7/3 | 0, 0, 0 | 17, 18, 18 | 0, 0, 2 |
+| 0/0 | 18, 18, 16 | 18, 18, 18 | 16, 18, 18 |
+| 7/3 | 0, 18, 0 | 18, 18, 18 | 0, 2, 2 |
+| 0/0 | 18, 17, 18 | 18, 18, 18 | 18, 18, 18 |
+
+So 0/0 clears both unusable values outright on both composite sources.
+
+### And coasting 0/0 is REFUTED anyway, because the coast holds the count
+
+**DO NOT MAKE THE COAST FOLLOW `serrated`.** It was built and flashed --
+`applyForSyncType()` and `applySeparationThresholds()` taking the fact
+`SyncProcessor::prepare()` is already handed -- and the Wii at 480p came up with
+no picture at all. The count stops being steady:
+
+```
+source absent: 526 lines ... source acquired: 524 lines ... 525 lines
+recovery: lift SOG floor at pass 2
+scan: progressive, count 526, no settled count
+scan: interlaced, count 525
+deinterlacer: motion adapt engaged
+```
+
+At 7/3 the count is 524 in every sample and `VPERIOD_IF` agrees at 524. At 0/0
+the count dithers 524/525/526, the scan decision follows it, the deinterlacer
+engages on a progressive source, and `VPERIOD_IF` reads 995. Every register
+either side reads healthy -- acquired, `PLLAD_MD` 1446 against
+`STATUS_SYNC_PROC_HTOTAL` 1446, the frame time lock armed and steering.
+
+**The coast is load-bearing on an unserrated composite source too**, so the
+naming is not the whole story and neither is the NOR argument below: whatever it
+does for the count, it does without serrations to skip.
+
+**THE FREEZE IS WHAT HID THIS.** `/freeze?on=1` is required to hold the pair
+against the engine, and it also stops the engine re-solving -- so the coast
+sweep measures the blanking signal with the consequence for the count frozen
+out. A coast reading taken frozen says nothing about what the engine will do
+with the count afterwards. Sweep frozen to find the signal, then flash and watch
+the console unfrozen before believing it.
+
+### What is left
+
+The trade is real and neither end of it is usable:
+
+| coast | the count | the blanking signal |
+|---|---|---|
+| 7/3 | steady 524, `VPERIOD_IF` agrees | dead at `IF_VB_ST` 512 and 515 |
+| 0/0 | dithers 524..526, scan flips | live at every value in 511..516 |
+
+So a fix has to keep the coast and keep `IF_VB_ST` off the values that fail
+under it. Two shapes, neither tried:
+
+- **A coast that does both.** 12/12 read healthy on the RISC PC frozen; whether
+  it holds the count is unmeasured, and the engine writes one pair so this is a
+  flash per value rather than a sweep.
+- **Check the signal in the solve.** The engine already has the instrument --
+  `TestBus::selectInputVsync()` and `debugPinPulseEdges()` are what
+  `FrameSync::bothVsyncPeriodsReadable()` uses -- so the capture window's
+  vertical pair can be verified after it is written and nudged where the
+  vertical does not come back. That needs no rule for the bad set, which is
+  what makes it worth more than a nudge by a constant.
 
 ### Why the coast is a candidate at all
 

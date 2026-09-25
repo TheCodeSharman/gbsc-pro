@@ -147,16 +147,23 @@ Separate sync reads clean at every value in 511..516; a step-1 sweep over
 them, so it is neither a band nor an edge. 512 is fine on composite sync at
 800x600, where the frame is 628.
 
-**The coast pair moves the set, which is where to look next.** On the RISC PC at
-640x480@60 `SYNC 1`, automation frozen, nothing is dead at `SP_PRE_COAST`/
-`SP_POST_COAST` 0/0, and at 4/4 the dead values are 513 and 516 instead of 512
-and 515 -- so the register value is not the property. The bench source's
-composite sync is VIDC20's NOR form with no serrations to coast through, and
-`serrated` reaches none of the three writers of that pair though
-`applyPulseIgnore()` next to them takes it. **It is a direction, not a result:**
-that source is flaky at every value in the range. The Wii at 0/0 is what would
-settle it. Freeze first, or the engine restores the pair within a pass and every
-row reads back 7/3.
+**The coast pair moves the set.** Frozen, nothing is dead at `SP_PRE_COAST`/
+`SP_POST_COAST` 0/0 on either composite source, and at 4/4 on the RISC PC the
+dead values become 513 and 516 -- so the register value is not the property.
+
+**BUT MAKING THE COAST FOLLOW `serrated` IS REFUTED, AND WAS FLASHED.** At 0/0
+the Wii's count stops being steady -- 524/525/526 against a rock-steady 524 at
+7/3 -- the scan decision follows it, the deinterlacer engages on a progressive
+source, `VPERIOD_IF` reads 995 against 524, and there is no picture. The coast
+holds the count even on a source with no serrations to skip. The freeze is what
+hid it: holding the pair against the engine also stops the engine re-solving, so
+a coast sweep taken frozen says nothing about the count.
+
+So a fix keeps the coast and keeps `IF_VB_ST` off the failing values. The shape
+worth trying is the engine checking the signal itself after it writes the pair --
+`TestBus::selectInputVsync()` and `debugPinPulseEdges()` are already what
+`FrameSync::bothVsyncPeriodsReadable()` uses -- which needs no rule for the bad
+set.
 
 **Only the test bus sees it.** `STATUS_IF_VT_OK` reads 1, `VPERIOD_IF` and
 `STATUS_SYNC_PROC_VTOTAL` both read a correct 524, and a raw dump shows only the
