@@ -283,9 +283,16 @@ public:
     // and a pair chosen as a serration skip reads as optional there and is not.
     // Too short and the PLL resumes tracking a reference still irregular; too
     // long and it stops tracking sync it needed.
+    //
+    // THE POST COAST ALSO DECIDES WHETHER THE VERTICAL BLANKING REACHES THE
+    // PIN, and a post of 3 is the one value that stops it: measured on the Wii
+    // on ypbpr at IF_VB_ST 512, the input formatter's vertical is dead at 3 and
+    // live at every value from 4 to 12, against a steady count throughout. 6 is
+    // two lines clear of that edge and inside the band the RISC PC on composite
+    // sync is indifferent across.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
     static const uint8_t CompositePreCoastLines = 7;
-    static const uint8_t CompositePostCoastLines = 3;
+    static const uint8_t CompositePostCoastLines = 6;
 
     // A coast to apply in place of the two above, wherever the pair is written.
     // The engine re-applies the pair on every solve, so a value written from

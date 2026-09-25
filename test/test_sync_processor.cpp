@@ -105,7 +105,7 @@ TEST_CASE("csync coasts around the vertical interval and protects the line")
     CHECK(applied<SyncProcessor::SP_SOG_MODE>(csync) == 1);
     CHECK(applied<SyncProcessor::SP_NO_COAST_REG>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_PRE_COAST>(csync) == 7);
-    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 3);
+    CHECK(applied<SyncProcessor::SP_POST_COAST>(csync) == 6);
     CHECK(applied<SyncProcessor::SP_SYNC_BYPS>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_HS_LOOP_SEL>(csync) == 0);
     CHECK(applied<SyncProcessor::SP_H_PROTECT>(csync) == 1);
@@ -494,7 +494,7 @@ TEST_CASE("the composite coast pair counts a source's lines, not its serrations"
     SyncProcessor::applyForSyncType(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
 TEST_CASE("a composite source is coasted over its vertical interval")
@@ -503,7 +503,7 @@ TEST_CASE("a composite source is coasted over its vertical interval")
     SyncProcessor::applySeparationThresholds(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
     CHECK(SyncProcessor::SP_DLT_REG::read() >= 0x70);
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x0e);
 }
@@ -549,7 +549,7 @@ TEST_CASE("forgetting the override returns the constants")
     SyncProcessor::applyForSyncType(true);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
 // Putting the sync path back for a scaling RGBHV source, after a preset written
@@ -955,7 +955,7 @@ TEST_CASE("a source whose sync carries no vertical interval gets the thresholds"
     SyncProcessor::applyDynamic(source);
 
     CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
-    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
     CHECK(SyncProcessor::SP_DLT_REG::read() == 0xC0);
 }
 
