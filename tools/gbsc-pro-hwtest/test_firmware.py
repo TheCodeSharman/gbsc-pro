@@ -1616,9 +1616,10 @@ def test_the_input_route_queues_a_selection(host, source):
 
 
 # How long a selection is watched before it counts as having stuck. Detection's
-# sweep gives up on an input after 450 ms and the no-sync toggle fires on a
-# counter, so a few seconds catches the first and a longer hold catches the
-# second.
+# sweep gives up on an input after one 10 ms sample of STATUS_SYNC_PROC_HSACT --
+# the 450 ms its loop names is never spent, because every path through the body
+# returns -- and the no-sync toggle fires on a counter, so a few seconds catches
+# the first and a longer hold catches the second.
 SELECTION_HOLD_SECONDS = 25.0
 
 # ADC_INPUT_SEL for each name: RGBs, RGsB and VGA read the RGB pins, YPbPr,
@@ -1634,6 +1635,142 @@ OTHER_CONNECTOR = {0: "vga", 1: "ypbpr"}
 # Selecting blocks loop() for seconds while detection runs, so the mux does not
 # move the instant the route answers.
 SELECTION_TIMEOUT = 20.0
+
+
+# How long an RGB input may take to reach its own line rate after the mux moves
+# to it. Measured over five crossings on the bench RISC PC at 800x600@60: 3.65,
+# 3.74 and 3.75 s where detection did not declare the source absent, against
+# 13.78 and 14.55 s where it did and goLowPowerWithInputDetection() zeroed
+# segments 0 and 2. The bound sits between the two clusters with better than a
+# factor of two either side.
+#
+# The RGB connector, because the YPbPr branch spends a fixed 6 s in a separator
+# search whose early exit cannot fire, which leaves no room for a bound that
+# separates anything.
+RGB_ACQUIRE_SECONDS = 8.0
+
+# The line rate has to be the SOURCE's, not merely non-zero: a garbage rate is
+# taken and held during this window -- 82963 Hz measured on a 37879 Hz source --
+# so "the engine reported a rate" is not "the engine found the source".
+ACQUIRE_RATE_PER_MILLE = 20
+
+# How long the mux is given to come back. Its own acquisition is not what is
+# being measured, but the selection is queued to loop(), which the other
+# connector's detection can hold for 6 s at a time, so this is generous.
+AWAY_SETTLE_SECONDS = 60.0
+
+
+def test_a_present_source_is_not_declared_absent_when_its_input_is_selected(
+        host, source):
+    """Selecting an input that has a source on it must acquire, not tear down.
+
+    Detection reads STATUS_SYNC_PROC_HSACT once, 10 ms after entry, and a pass
+    that misses it returns 0 -- on which inputAndSyncDetect() calls
+    goLowPowerWithInputDetection(), powering the DAC down and running
+    setResetParameters(), which zeroes segments 0 and 2. The source was there the
+    whole time; the mux had just moved.
+
+    What it costs is the whole of the bimodal acquisition: the chip has to be
+    brought back up, and a rate measured through it is then rejected for seconds
+    -- up to 97 consecutive readings measured.
+
+    **The teardown itself is not observable from here.** It announces itself with
+    bootLogPrintf, which writes to Serial and not to SerialM, so it reaches
+    neither the websocket console nor /bootlog's reader; and register reads are
+    queued to loop(), which detection blocks. So this asserts the cost instead of
+    the cause, and the two clusters are far enough apart to carry it.
+
+    Crosses to the other connector and back, so the mux really moves -- selecting
+    the input already in use proves nothing. The input crossed back to is the
+    STORED one rather than a name picked from the table: only one of the three
+    RGB spellings is cabled on a given bench, and guessing costs a detection
+    sweep per guess.
+    """
+    prefs = fs_read(host, PREFS_PATH)
+    assert prefs and len(prefs) > PREFS_INFO_BYTE, (
+        f"could not read the preferences: {prefs!r}")
+    stored = ord(prefs[PREFS_INFO_BYTE]) - ord("0")
+    assert stored in STORED_INPUT_IDS, (
+        f"no input is stored (Info={stored}), so nothing has been chosen -- "
+        "select one over /input or at the OLED first")
+
+    chosen = INPUT_NAMES[stored - 1]
+    if SELECTED_ADC_INPUT[chosen] != 1:
+        pytest.skip(
+            f"the stored input is {chosen}, on the YPbPr connector, whose branch "
+            "spends a fixed 6 s in a separator search that cannot exit early -- "
+            "which leaves no room for a bound that separates anything")
+
+    away = OTHER_CONNECTOR[1]
+
+    def line_rate():
+        _, report = get_json(host, "/geometry")
+        return (report or {}).get("lineRateHz") or 0
+
+    def showing_the_rgb_source():
+        _, report = get_json(host, "/geometry")
+        if not report or report.get("state") != "acquired":
+            return False
+        return abs((report.get("lineRateHz") or 0) - wanted) <= tolerance
+
+    wanted = wait_for(line_rate, timeout=30.0)
+    if not wanted:
+        pytest.skip(f"nothing acquires on {chosen}, so there is no source to be "
+                    "declared absent")
+    tolerance = wanted * ACQUIRE_RATE_PER_MILLE // 1000
+
+    # Three crossings, and every one of them has to hold. The teardown depends on
+    # where in the 10 ms sample the mux move lands, so it fires on some crossings
+    # and not others -- measured 2 of 5 on this connector. One crossing is
+    # therefore a coin toss dressed as a regression guard.
+    took = []
+
+    try:
+        for _ in range(3):
+            get(host, f"/input?src={away}")
+            assert wait_for(lambda: read_named(host, "ADC_INPUT_SEL") == 0,
+                            timeout=SELECTION_TIMEOUT), (
+                f"{away} was selected and the mux never moved off the RGB input")
+
+            # The engine has to have LET GO of the RGB source before the return
+            # can be timed. /geometry keeps reporting the last rate it solved --
+            # observed reporting the RGB rate for a full minute while the mux sat
+            # on the other connector -- so a clock started before that measures
+            # nothing and passes.
+            assert wait_for(lambda: not showing_the_rgb_source(),
+                            timeout=SELECTION_TIMEOUT), (
+                f"the mux moved off the RGB input and /geometry still calls "
+                f"{wanted} Hz acquired, so there is nothing here to re-acquire")
+
+            # Timed from the mux ARRIVING, not from the request. /input only
+            # queues, and the other connector may be inside a detection pass that
+            # blocks loop() for 6 s -- which would charge this measurement for a
+            # wait that belongs to the input being left.
+            get(host, f"/input?src={chosen}")
+            assert wait_for(lambda: read_named(host, "ADC_INPUT_SEL") == 1,
+                            timeout=AWAY_SETTLE_SECONDS), (
+                f"{chosen} was selected and the mux never came back to it")
+            started = time.monotonic()
+            back = wait_for(
+                lambda: abs(line_rate() - wanted) <= tolerance,
+                timeout=RGB_ACQUIRE_SECONDS,
+            )
+            elapsed = time.monotonic() - started
+            assert back, (
+                f"{chosen} carries a {wanted} Hz line and did not reach it "
+                f"within {RGB_ACQUIRE_SECONDS:.0f}s of being selected -- "
+                f"/geometry reports {line_rate()} after {elapsed:.1f}s, and "
+                f"earlier crossings took {took}. Detection concluded the source "
+                f"was absent on a single 10 ms sample of STATUS_SYNC_PROC_HSACT "
+                f"taken just after the mux moved, and the teardown that follows "
+                f"costs the rest.")
+            took.append(round(elapsed, 2))
+    finally:
+        get(host, f"/input?src={chosen}")
+        assert wait_for(lambda: read_named(host, "ADC_INPUT_SEL") == 1,
+                        timeout=SELECTION_TIMEOUT), (
+            f"{chosen} was selected and ADC_INPUT_SEL never returned to it, so "
+            "the bench is not where this test found it")
 
 
 def test_a_chosen_input_is_not_swept_away(host, source):
