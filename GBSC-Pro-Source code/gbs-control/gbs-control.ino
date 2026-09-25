@@ -1778,32 +1778,26 @@ uint8_t detectAndSwitchToActiveInput()
                 delay(40);
             } else if (currentInput == 0 && Info_sate == 0) //&& SeleInputSource == S_YUV ) // 20240919
             {
-                // printf("this 0 \n");
-                uint16_t testCycle = 0;
+                // **THE SEPARATOR LEVEL IS NOT A LINE-COUNT QUESTION.** This
+                // walked the level for 6000 ms waiting for a source count, and
+                // the count cannot answer: measured across the whole window at
+                // every level, STATUS_SYNC_PROC_VTOTAL, HTOTAL and
+                // STATUS_MISC_PLLAD_LOCK all read 0, with PLLAD_MD left on the
+                // previous source's value. Nothing can be counted until the
+                // engine has sized a divider for the source arriving, which
+                // happens after this returns -- so the walk asked an instrument
+                // that was dead for the duration and always timed out on
+                // ComponentLevel, which is what works.
+                //
+                // Tv5725::SyncOnGreen::acquire() is the walk that can answer,
+                // and it runs on this path: it scores the SEPARATOR BUS rather
+                // than the count, so it needs neither a divider nor a locked
+                // PLL, and it walks down from ComponentLevel for a source whose
+                // sync on green is weaker than this bench's.
                 SYNC_EVENT("det ypbpr branch", currentInput);
                 rto->inputIsYpBpR = true;
                 GBS::MD_SEL_VGA60::write(0);
-
-                unsigned long timeOutStart = millis();
-                while ((millis() - timeOutStart) < 6000) {
-                    delay(2);
-                    if (Tv5725::VideoSignal::countIsSource(
-                            Tv5725::SyncProcessor::lineCount())) {
-                        return 2;
-                    }
-
-                    testCycle++;
-                    if ((testCycle % Tv5725::SyncOnGreen::SearchStepCycles) == 0) {
-                        SYNC_EVENT("det ypbpr sog",
-                                   Tv5725::SyncOnGreen::level());
-                        Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::nextSearchLevel(
-                            Tv5725::SyncOnGreen::level()));
-                        Tv5725::SyncOnGreen::putInForce();
-                    }
-                }
-
-                SYNC_EVENT("det ypbpr timeout", 14);
-                Tv5725::SyncOnGreen::choose(14);
+                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::ComponentLevel);
                 Tv5725::SyncOnGreen::putInForce();
 
                 return 2;
