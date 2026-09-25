@@ -616,8 +616,8 @@ TEST_CASE("coasting further for a serrated source leaves the pulse-ignore alone"
 
     SyncProcessor::widenCoast();
 
-    const uint32_t pre = SyncProcessor::SerratedPreCoastLines;
-    const uint32_t post = SyncProcessor::SerratedPostCoastLines;
+    const uint32_t pre = SyncProcessor::CompositePreCoastLines;
+    const uint32_t post = SyncProcessor::CompositePostCoastLines;
 
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() == 107);
     CHECK(SyncProcessor::SP_PRE_COAST::read() > pre);

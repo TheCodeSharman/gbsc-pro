@@ -276,14 +276,16 @@ public:
     // this block's.
     static void reset();
 
-    // How many lines either side of the vertical interval a composite source is
-    // coasted over. A 625-line source's equalisation pulses sit either side of
-    // the interval at twice line rate; coasted far enough they are skipped and
-    // the count is the source's lines, and coasted too few after it they are
-    // counted and it measures 622.
+    // How many lines either side of the vertical interval the PLL is held over
+    // on a composite source. COAST stops the PLL tracking the reference and
+    // holds its output frequency, so the pair is load-bearing on an UNSERRATED
+    // csync too -- the vertical interval starves the PLL of edges either way,
+    // and a pair chosen as a serration skip reads as optional there and is not.
+    // Too short and the PLL resumes tracking a reference still irregular; too
+    // long and it stops tracking sync it needed.
     // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-    static const uint8_t SerratedPreCoastLines = 7;
-    static const uint8_t SerratedPostCoastLines = 3;
+    static const uint8_t CompositePreCoastLines = 7;
+    static const uint8_t CompositePostCoastLines = 3;
 
     // A coast to apply in place of the two above, wherever the pair is written.
     // The engine re-applies the pair on every solve, so a value written from

@@ -126,12 +126,12 @@ bool SyncProcessor::coastOverridden() { return coastOverridden_; }
 
 uint8_t SyncProcessor::preCoastLines()
 {
-    return coastOverridden_ ? preCoastOverride_ : SerratedPreCoastLines;
+    return coastOverridden_ ? preCoastOverride_ : CompositePreCoastLines;
 }
 
 uint8_t SyncProcessor::postCoastLines()
 {
-    return coastOverridden_ ? postCoastOverride_ : SerratedPostCoastLines;
+    return coastOverridden_ ? postCoastOverride_ : CompositePostCoastLines;
 }
 
 void SyncProcessor::applyPulseIgnore(bool csync, bool serrated)
