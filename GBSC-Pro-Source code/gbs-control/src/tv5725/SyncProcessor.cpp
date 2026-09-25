@@ -35,6 +35,9 @@ const uint8_t SerratedCoastLines = 9;
 const uint16_t PulseWidthDifference = 0xC0;
 bool coastPlaced_ = false;
 bool clampPlaced_ = false;
+bool coastOverridden_ = false;
+uint8_t preCoastOverride_ = 0;
+uint8_t postCoastOverride_ = 0;
 const uint8_t OwnVsyncPulseIgnore = 0xff;
 const uint8_t SerratedPulseIgnore = 0x6b;
 const uint8_t UnserratedPulseIgnore = 0x02;
@@ -108,6 +111,27 @@ void SyncProcessor::forgetPositions()
 void SyncProcessor::adoptClampPlacement()
 {
     clampPlaced_ = true;
+}
+
+void SyncProcessor::overrideCoast(uint8_t pre, uint8_t post)
+{
+    coastOverridden_ = true;
+    preCoastOverride_ = pre;
+    postCoastOverride_ = post;
+}
+
+void SyncProcessor::forgetCoastOverride() { coastOverridden_ = false; }
+
+bool SyncProcessor::coastOverridden() { return coastOverridden_; }
+
+uint8_t SyncProcessor::preCoastLines()
+{
+    return coastOverridden_ ? preCoastOverride_ : SerratedPreCoastLines;
+}
+
+uint8_t SyncProcessor::postCoastLines()
+{
+    return coastOverridden_ ? postCoastOverride_ : SerratedPostCoastLines;
 }
 
 void SyncProcessor::applyPulseIgnore(bool csync, bool serrated)
@@ -231,8 +255,8 @@ void SyncProcessor::applyForSyncType(bool csync)
         Adc::ADC_SOGEN::write(1);
         SP_SOG_MODE::write(1);
         SP_NO_COAST_REG::write(0);
-        SP_PRE_COAST::write(SerratedPreCoastLines);
-        SP_POST_COAST::write(SerratedPostCoastLines);
+        SP_PRE_COAST::write(preCoastLines());
+        SP_POST_COAST::write(postCoastLines());
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
@@ -459,8 +483,8 @@ void SyncProcessor::applyForScalingRgbhv(bool csync)
 void SyncProcessor::applySeparationThresholds(bool csync)
 {
     if (csync) {
-        SP_PRE_COAST::write(SerratedPreCoastLines);
-        SP_POST_COAST::write(SerratedPostCoastLines);
+        SP_PRE_COAST::write(preCoastLines());
+        SP_POST_COAST::write(postCoastLines());
         applyPulseWidthDifference();
         applyPulseIgnore(true, false);
     } else {

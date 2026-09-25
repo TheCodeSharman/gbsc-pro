@@ -508,6 +508,50 @@ TEST_CASE("a composite source is coasted over its vertical interval")
     CHECK(SyncProcessor::SP_H_PULSE_IGNOR::read() <= 0x0e);
 }
 
+TEST_CASE("an overridden coast is what the sync type applies")
+{
+    // The pair cannot be held against the engine from outside: it re-applies on
+    // every solve, and holding it with a freeze stops the re-solve that makes
+    // the count consequence visible. An override is what makes a coast
+    // measurable on a running engine.
+    SyncProcessor::overrideCoast(12, 9);
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 12);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
+
+    SyncProcessor::forgetCoastOverride();
+}
+
+TEST_CASE("an overridden coast reaches the separation thresholds too")
+{
+    // Two functions write the pair, so an override reaching one of them would
+    // be undone by whichever ran last.
+    SyncProcessor::overrideCoast(12, 9);
+
+    Wire.reset();
+    SyncProcessor::applySeparationThresholds(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 12);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 9);
+
+    SyncProcessor::forgetCoastOverride();
+}
+
+TEST_CASE("forgetting the override returns the constants")
+{
+    SyncProcessor::overrideCoast(12, 9);
+    SyncProcessor::forgetCoastOverride();
+
+    Wire.reset();
+    SyncProcessor::applyForSyncType(true);
+
+    CHECK(SyncProcessor::SP_PRE_COAST::read() == 7);
+    CHECK(SyncProcessor::SP_POST_COAST::read() == 3);
+}
+
 // Putting the sync path back for a scaling RGBHV source, after a preset written
 // for another standard has moved it.
 

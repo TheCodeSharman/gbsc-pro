@@ -179,6 +179,10 @@ volatile uint8_t pendingTestBusIf = 0xff;
 
 // What /sampleclock queued. Same reason: the route answers from a network
 // callback and the bus belongs to loop().
+volatile bool pendingCoast = false;
+volatile bool pendingCoastClear = false;
+volatile uint8_t pendingCoastPre = 0;
+volatile uint8_t pendingCoastPost = 0;
 volatile bool pendingSampleClock = false;
 volatile bool pendingSampleClockApply = false;
 volatile uint16_t pendingSampleClockDivider = 0;
@@ -3220,6 +3224,24 @@ static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
         Tv5725::SyncProcessor::retimeStopFor(divider));
 }
 
+static void applyCoastOverride(bool clear, uint8_t pre, uint8_t post)
+{
+    if (clear)
+        Tv5725::SyncProcessor::forgetCoastOverride();
+    else
+        Tv5725::SyncProcessor::overrideCoast(pre, post);
+
+    // A re-solve rather than a write: the pair's branch follows the sync type,
+    // and the sync type is not settled while detection is probing, so applying
+    // one branch from here writes the other source's configuration.
+    inputAcquisition.resolveFromSource();
+
+    debugPrintf("coast: %s %u/%u\n",
+        Tv5725::SyncProcessor::coastOverridden() ? "override" : "default",
+        (unsigned)Tv5725::SyncProcessor::preCoastLines(),
+        (unsigned)Tv5725::SyncProcessor::postCoastLines());
+}
+
 static void applySampleClock(bool apply, uint16_t divider, uint8_t oversample)
 {
     if (!apply) {
@@ -5385,6 +5407,10 @@ void web_service(uint8_t inputStage, uint8_t segmentCurrent, uint8_t registerCur
             sweepTestBus(pendingTestBusMs, pendingTestBusSp, pendingTestBusSig,
                          pendingTestBusIf);
         }
+        if (pendingCoast) {
+            pendingCoast = false;
+            applyCoastOverride(pendingCoastClear, pendingCoastPre, pendingCoastPost);
+        }
         if (pendingSampleClock) {
             pendingSampleClock = false;
             applySampleClock(pendingSampleClockApply,
@@ -6369,6 +6395,19 @@ void startWebserver()
     server.on("/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
         pendingRestart = true;
         request->send(200, "application/json", "{\"queued\":\"restart\"}");
+    });
+
+    // The coast pair, held against the engine's own constants so it can be swept
+    // on a running engine. Freezing would hold it too and would stop the
+    // re-solve that makes the consequence for the count visible.
+    server.on("/coast", HTTP_GET, [](AsyncWebServerRequest *request) {
+        pendingCoastClear = request->hasParam("clear");
+        if (request->hasParam("pre"))
+            pendingCoastPre = (uint8_t)request->getParam("pre")->value().toInt();
+        if (request->hasParam("post"))
+            pendingCoastPost = (uint8_t)request->getParam("post")->value().toInt();
+        pendingCoast = true;
+        request->send(200, "application/json", "{\"queued\":\"coast\"}");
     });
 
     server.on("/sampleclock", HTTP_GET, [](AsyncWebServerRequest *request) {

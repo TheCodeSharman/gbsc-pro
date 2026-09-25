@@ -285,6 +285,17 @@ public:
     static const uint8_t SerratedPreCoastLines = 7;
     static const uint8_t SerratedPostCoastLines = 3;
 
+    // A coast to apply in place of the two above, wherever the pair is written.
+    // The engine re-applies the pair on every solve, so a value written from
+    // outside does not survive one; holding it with a freeze stops the re-solve
+    // that makes the consequence for the count visible, which is the thing a
+    // coast has to be judged on.
+    static void overrideCoast(uint8_t pre, uint8_t post);
+    static void forgetCoastOverride();
+    static bool coastOverridden();
+    static uint8_t preCoastLines();
+    static uint8_t postCoastLines();
+
     // Coast further, and ignore fewer short pulses, for a serrated source whose
     // sync has gone. Equalisation pulses sit either side of the vertical
     // interval, so the coast has to cover more lines than the sync type asked
