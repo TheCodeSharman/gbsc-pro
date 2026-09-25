@@ -24,8 +24,8 @@ A SETTLE.** Measured on `vga`: `/input?src=vga` to `sampling: 311 lines x
 and the sync-type probe answering `own V sync: yes after 2ms`. Measured on
 `ypbpr` with the Wii in 480p: `/input?src=ypbpr` to `sampling: 524 lines x
 59.80 Hz -> line rate 31395` in 15.2 s, acquired and holding, `PLLAD_MD` 1096
-against `STATUS_SYNC_PROC_HTOTAL` 1096, `SP_SOG_MODE` 1, `HPERIOD_IF` at the 214
-that mode is due, and a clean legible picture.
+against `STATUS_SYNC_PROC_HTOTAL` 1096, `SP_SOG_MODE` 1, and a clean legible
+picture.
 **Do not budget minutes for a source to appear**; a source that has not solved
 in about ten seconds is not settling.
 
@@ -347,15 +347,6 @@ between each pair. The console also drops bursts, so ask for an interval the
 link can carry: `ms=25` over 30 s lands ~1050 lines and reports its own
 effective rate.
 
-**THE OPPOSITE CLAIM IS REFUTED: HTTP DOES NOT REPORT A RAILED `HPERIOD_IF` AS
-HEALTHY.** Measured against the log in one window on one railed state, seven
-HTTP reads at five-second spacing returned **zero** healthy values, and dense
-HTTP and the log agree the register is railed. So a sparse read is not a trap
-that shows 431 while the part rails — it shows 255 and 511 like everything else.
-What the two do disagree on is WHICH bad value, and that is not a split read:
-`read_field()`'s two requests and `read_named()`'s one agree with each other.
-`docs/investigations/hperiod-if-railing.md`.
-
 **AND A READING TAKEN TWO SOURCE EXCURSIONS LATER IS NOT A SECOND INSTRUMENT.**
 An input change or a sync-type round trip re-rails the register, so a healthy
 HTTP sample before one and a railed on-device sample after it compare two
@@ -589,62 +580,39 @@ mistake that has been made and cost a wrong diagnosis — bypass produces a work
   now and nothing classifies, but **anything that re-introduces a value carrying
   both the source's scan and the output chosen for it brings this back**, and a
   register dump cannot see it.
-- **THE TWO RECOVERIES ARE NOT INTERCHANGEABLE, and each fails at the other's
-  fault.** Measured, both directions:
+- **DO NOT PURSUE `HPERIOD_IF`'S UNRELIABILITY. IT IS ACCEPTED AS UNRECOVERABLY
+  BROKEN AND NOTHING RELIES ON IT.** The engine reads it in exactly one role --
+  a change detector, asking whether the reading MOVED. That comparison is
+  against its own earlier value, so a bias cancels and a rail compares equal to
+  itself, which is why the role is safe where every other use is not.
+  `SourceMeasurement.cpp` states this at the head of the file and
+  `SourceMeasurement::measureLineRate()` derives the line rate from the count
+  and the field rate instead.
 
-  | fault | cleared by | does NOT clear it |
-  |---|---|---|
-  | railed `HPERIOD_IF`, sync processor fine | a source mode change round trip, or an `ADC_INPUT_SEL` bounce | `/sc?~`, every `SFTRST_*_RSTZ`, the analog bias resets, every clock reset in BOTH domains, one cold boot |
-  | divider stuck on another mode's value | `/sc?~` | a mode-change round trip |
+  **So asking what it IS is not a diagnostic, and checking it against the value
+  a mode should give is how a session gets spent.** It reads wrong on separate
+  sync as a matter of course, it reads wrong in bypass, and it reads a stable
+  wrong value often enough that every stability check passes it. A wrong
+  reading is expected and is evidence of nothing.
 
-  So reach for the one that matches. A stuck `PLLAD_MD` survived 311 -> 524 ->
-  311 unchanged at 1822 and the picture rolled; `/sc?~` restored 2250 at once.
-  **Judge the divider against the source**, not against whether it moved.
+  **The recoveries were exhausted and the question is closed**: every
+  `SFTRST_*_RSTZ`, the analog bias resets, every clock reset in BOTH domains,
+  `PLLAD_VCORST`, `PLLAD_PDZ`, `ADC_POWDZ`, `PLL_VCORST`, `SDRAM_RESET_SIGNAL`,
+  `PLL_LEN`, `MEM_CLK_DLY_REG`, a divider sweep over 1000..2900, a cold boot,
+  and an `ADC_INPUT_SEL` bounce that clears it sometimes and CAUSES it other
+  times. The measurements are in `docs/investigations/hperiod-if-railing.md` and
+  they stay there.
 
-  **Neither clearance is certain, so try them in cost order.** A 2026-08-25
-  measurement has a mode round trip failing to clear it and a cold boot restoring
-  431 at once -- both columns of the first row the wrong way round. A 2026-09-06
-  measurement has the round trip clearing it completely: 431 steady in 5 of 5
-  samples over 24 s. The round trip is cheapest and needs no bench trip; the
-  bounce and a cold boot are what is left when it fails. **The held rate that
-  went with that reading is no longer reachable from `HPERIOD_IF`** -- it is a
-  change detector now, so a railed reading can strand the held rate but cannot
-  set one.
-
-  **`ADC_INPUT_SEL` to 0 for 400 ms and back clears it from this end**, with no
-  source change at all -- 0/16 correct before, 16/16 at 431 after,
-  `STATUS_IF_HT_OK` 0 -> 1. It also CAUSES it, railing a mode that read correctly
-  six times beforehand, so it is a recovery and never something to run in front
-  of a measurement.
-
-  **NO CLOCK RESET REACHES IT, IN EITHER DOMAIN.** The ADC side is closed by the
-  divider sweep over 1000..2900, the clock group verified correct while the fault
-  stands, `PLLAD_VCORST`, `PLLAD_PDZ` and `ADC_POWDZ`. The display and memory
-  side is closed by `PLL_VCORST`, `SDRAM_RESET_SIGNAL`, `PLL_LEN` and
-  `MEM_CLK_DLY_REG`, each pulsed against a live instance with every write read
-  back, each 0/16 correct afterwards.
-
-  **`HPERIOD_IF` IS A CHANGE DETECTOR AND NOTHING ELSE.** It does not state the
-  line rate and nothing derives one from it: `SourceMeasurement::measureLineRate()`
-  takes the count and the field rate and calls `VideoSignal::lineRateFor()`.
-  Asking whether the reading MOVED is safe where asking what it IS is not,
-  because the comparison is against its own earlier value -- a bias cancels and a
-  rail compares equal to itself. `SourceMeasurement.cpp` states this at the head
-  of the file.
-
-  **It still reaches the picture, through the HELD rate.** A rate once accepted
-  becomes the held good one and `rateFollowsCount()` rejects correct readings
-  against it, so the engine can sit at `state: absent` with the sync processor
-  counting the source perfectly beside it -- measured with `STATUS_SYNC_PROC_VTOTAL`
-  following the source and the held rate stuck on the previous mode's.
-  `HeldRateRejectionLimit` is what lets it out. A register dump cannot
-  distinguish the two states.
-- **Check `HPERIOD_IF` against the value the MODE should give** when reading it
-  as a diagnostic, which is `27e6 / (4 x lineRateHz) - 1` -- 431 at 311 lines/50 Hz,
-  213 at 524/60, 214 at 448/70, 177 at 627/60. Steady is not valid: a steady **50**
-  was measured at 640x480@60 where 213 was due, and every check that tests
-  stability alone passes it.
-  `docs/investigations/hperiod-if-railing.md` has the table.
+  **What it can still do is strand the HELD rate.** A rate once accepted becomes
+  the held good one and `rateFollowsCount()` rejects correct readings against it,
+  so the engine can sit at `state: absent` with the sync processor counting the
+  source perfectly beside it. `HeldRateRejectionLimit` is what lets it out. That
+  is a fault in the held rate, not a reason to go back to the register.
+- **A DIVIDER STUCK ON ANOTHER MODE'S VALUE IS A DIFFERENT FAULT, and `/sc?~` is
+  what clears it.** A mode-change round trip does not: a stuck `PLLAD_MD`
+  survived 311 -> 524 -> 311 unchanged at 1822 with the picture rolling, and
+  `/sc?~` restored 2250 at once. **Judge the divider against the source**, not
+  against whether it moved.
 - **Check the preferences before diagnosing anything.** A short read of
   `/preferencesv2.txt` silently yields a full set of defaults, and one evening
   produced three separate investigations with this single cause: the custom
@@ -1020,32 +988,13 @@ twelve tables while they existed, which is what `BringUp` was built from.
   on a source with its own V sync, and the full window is spent only on a
   genuinely composite source where the timeout is the right answer.
   `docs/sync-type-selection.md`.
-- **`HPERIOD_IF` going bad is three different faults, and BYPASS IS NOT ONE OF
-  THEM — establish the path first.** With the IF out of the path the register
-  measures nothing, and it does *not* only sit at a stable `0`: measured in
-  bypass it ran 255, 511, 511, 275, 258, 511 while the sync processor stayed
-  perfect beside it, which is indistinguishable from the railing fault and has
-  twice been diagnosed as one. `DAC_RGBS_BYPS2DAC` and `OUT_SYNC_SEL` are 1 in
-  bypass and 0 on the scaling path; `DAC_RGBS_ADC2DAC` is NOT the tell, being 0
-  on both paths, and the scale registers are not either, since
-  bypass leaves `VDS_HSCALE`/`VDS_VSCALE` on the last scaled load's values.
-  `docs/rgbhv-bypass-trap.md`. On the scaling path, noisy multi-valued garbage
-  is the second fault. The third is
-  the dangerous one: **a single stable value that is simply wrong** (192 where
-  212 was due), which every health check ever written here scores as healthy
-  because it is stable and nowhere near a rail. **Validate against the expected
-  value for the mode, not against `0`/`511`.** `STATUS_IF_HT_OK` reads 1 even
-  when railed, so it is not a validity signal either. `docs/tv5725-chip.md`.
-- **What predicts the fault is the mode you land in, not what happened before.**
-  Over 195 transitions the failure rate by destination runs 44% (VTOTAL 524), 28%
-  (363), 24% (533) and 0-4% for everything else — and the wrong values repeat:
-  524 latches `50`, while 311 and 261 both latch `350`. A preceding deep sync
-  loss raises the odds (28% vs 3% after a clean change) but **is not a
-  discriminator** — an earlier "0 of 32 without a deep sync loss", drawn from 42
-  transitions, does not survive the full sample and sent two sessions after a
-  test that does not exist. To reproduce, park the source in VTOTAL 524.
-  A one-sample `97`/`98` blip mid-change is normal; `SP_VTOTAL` *steady* at a
-  non-mode value is the fault.
+- **The scaling path and bypass are told apart by `DAC_RGBS_BYPS2DAC` and
+  `OUT_SYNC_SEL`**, both 1 in bypass and 0 on the scaling path.
+  `DAC_RGBS_ADC2DAC` is NOT the tell, being 0 on both, and the scale registers
+  are not either, since bypass leaves `VDS_HSCALE`/`VDS_VSCALE` on the last
+  scaled load's values. **Establish the path before reading anything the input
+  formatter owns as a fault** -- in bypass the IF is out of the circuit and its
+  registers measure nothing. `docs/rgbhv-bypass-trap.md`.
 - **Judge only settled samples.** Discard ~6 s after any mode change. Raw
   sampling across a sweep throws garbage at nearly every change that resolves on
   its own; scoring those produced 15 false positives in one run.
@@ -1053,7 +1002,6 @@ twelve tables while they existed, which is what `BringUp` was built from.
   unrelated. A yellow-tinted picture is `DAC_RGBS_B0ENZ` (s0 `0x45` bit 0)
   cleared by a bulk table load that never got patched back — the firmware never
   writes that bit to 0 anywhere. Fix: `curl '…/setreg?s=0&r=0x45&v=0x11'`.
-  Same mechanism is the leading explanation for the `HPERIOD_IF` failures.
   `docs/preset-load-clobber.md`.
 - **"Something writes it" is not "something owns it", and there are TWO levels
   of that.** The first is settled: a field written only by `setResetParameters()`
@@ -1077,8 +1025,8 @@ twelve tables while they existed, which is what `BringUp` was built from.
   RGBHV source used to enter bypass above 535 lines with no branch to leave by,
   so it stayed there for the life of the boot. Removed once the bench measured
   what it was costing: 800x600 at VTOTAL 627 scales sharp and full screen, with
-  `PLLAD_MD` 1124 latched against the bypass switch's hardcoded 1856 and
-  `HPERIOD_IF` at the 176 that mode is due. **`preferScalingRgbhv` decides now**,
+  `PLLAD_MD` 1124 latched against the bypass switch's hardcoded 1856.
+  **`preferScalingRgbhv` decides now**,
   both ways, and bypass is still reachable by turning it off (`/uc?x`).
   `docs/rgbhv-bypass-trap.md`.
 - **`produced` IS `capture x 1024 / scale`** — a simple multiply, both axes, no
