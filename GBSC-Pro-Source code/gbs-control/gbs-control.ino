@@ -674,7 +674,7 @@ static void resetRunTimeDefaults()
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::Deinterlacer::forgetSteering();
     Tv5725::Chip::holdPower(true);
-    Tv5725::SyncMeasurement::set(false);
+    Tv5725::SyncMeasurement::forget();
     rto->isValidForScalingRGBHV = false;
     rto->osr = 0;
 }
@@ -1263,7 +1263,6 @@ void setResetParameters()
     Tv5725::Deinterlacer::disableMotionAdapt();
     Tv5725::Deinterlacer::forgetScanlines();
     Tv5725::Deinterlacer::forgetSteering();
-    Tv5725::SyncMeasurement::set(false);                   
     rto->isValidForScalingRGBHV = false;          
     rto->osr = 0;                  
 

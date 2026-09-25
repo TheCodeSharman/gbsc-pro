@@ -23,7 +23,11 @@ bool SyncMeasurement::isSet() { return set_; }
 
 void SyncMeasurement::set(bool csync) { csync_ = csync; }
 
-void SyncMeasurement::forget() { set_ = false; }
+void SyncMeasurement::forget()
+{
+    set_ = false;
+    csync_ = false;
+}
 
 bool SyncMeasurement::probe(bool (*hasOwnVsyncNow)())
 {

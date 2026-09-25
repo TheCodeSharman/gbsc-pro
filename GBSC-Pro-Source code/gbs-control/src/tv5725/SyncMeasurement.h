@@ -22,6 +22,11 @@ public:
     static bool isSet();
 
     static void set(bool csync);
+
+    // Unknown again, ANSWER AND ARMING BOTH. Most readers take isCsync()
+    // directly rather than through syncType(), applyPresets() among them, so a
+    // forget that cleared only the arming left the previous source's answer
+    // writing the whole sync path.
     static void forget();
 
     // The held sync type, probing only if nothing has been measured yet.

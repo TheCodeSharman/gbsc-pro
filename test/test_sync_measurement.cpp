@@ -187,3 +187,21 @@ TEST_CASE("the probe answers for the disturbance its own write made")
     SyncMeasurement::hasOwnVsync(testClock);
     CHECK(Wire.touched[0][0x58]);
 }
+
+TEST_CASE("forgetting the sync type forgets the answer too, not just the arming")
+{
+    // **THE VALUE OUTLIVED THE VERDICT.** forget() cleared only the arming, so
+    // isCsync() went on returning the last answer to every reader that does not
+    // go through syncType() -- applyPresets() among them, which writes the whole
+    // sync path from it. Two resets papered over that by calling set(false)
+    // beside forget(), which is a reset guessing at a measurement and made each
+    // of them a second owner of the held answer.
+    SyncMeasurement::forget();
+    SyncMeasurement::set(true);
+    REQUIRE(SyncMeasurement::isCsync());
+
+    SyncMeasurement::forget();
+
+    CHECK_FALSE(SyncMeasurement::isCsync());
+    CHECK_FALSE(SyncMeasurement::isSet());
+}
