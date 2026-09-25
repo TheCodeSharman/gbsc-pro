@@ -2,10 +2,18 @@
 
 **THE TITLE IS THE REFUTED MODEL.** Both legs of it are withdrawn below and
 neither is a displacement: the composite one was the short count, and the
-sync-on-green one is a set of `IF_VB_ST` values composite sync will not take.
-Nothing here licenses a vertical origin derived from the sync arrangement, and
-the deleted `FrameLagUnits` must not be reinstated. The two sections after the
-banners are the current reading; the rest is kept for its measurements.
+sync-on-green one is the COAST. Nothing here licenses a vertical origin derived
+from the sync arrangement, and the deleted `FrameLagUnits` must not be
+reinstated. The two sections after the banners are the current reading; the rest
+is kept for its measurements.
+
+**THE SECOND LEG IS NOW CLOSED, AND "VALUES COMPOSITE SYNC WILL NOT TAKE" IS
+ITSELF REFUTED.** `SP_POST_COAST` 3 is what stops the vertical blanking reaching
+the pin; 4 to 12 do not, at the same `IF_VB_ST` 512 and the same count 524. The
+pair 4/3 and 4/6 is the disproof -- one value of the field, two outcomes. The
+default is now 6 and the fault does not occur. Everything below that reads as a
+property of the FIELD is a property of the coast the sweep held fixed while it
+varied the field. `docs/known-issues.md`.
 
 **THE COUPLING IS WITHDRAWN ON COMPOSITE SYNC.** The title's claim held on two
 arrangements when it was written and holds on one now: the composite leg was a

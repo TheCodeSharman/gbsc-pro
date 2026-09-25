@@ -159,78 +159,85 @@ no steering and no filtering, and picks its vertical tap from the same
 
 `docs/investigations/an-alternating-count-latches-the-scan-type.md`
 
-### `IF_VB_ST` has values composite sync will not take, and the Wii's framing lands on one
+### The composite post coast decides whether the vertical blanking reaches the pin
 
-`ypbpr` on the Wii in 480p, sync on green: the solve writes `IF_VB_ST` 512, the
-vertical blanking is then never asserted, and the picture wraps and rolls.
-**512 is the whole of it** -- the engine's own `IF_VB_SP` 28 with the end moved
-one unit to 513 is clean and full screen.
+**FIXED.** `SyncProcessor::CompositePostCoastLines` is 6. It was 3, and 3 is the
+one value that stops the input formatter's vertical reaching `DEBUG_IN_PIN`.
 
-**The window's start is inert and the end is not.** 28/505 is clean, 21/512
-wraps. A correction of seven units on both edges is what the deleted
-`FrameLagUnits` did and it worked by stepping the end off 512; **do not
-reinstate it.**
+Measured on the Wii on `ypbpr` at 480p, sync on green, at the `IF_VB_ST` 512 its
+framing lands on, scored on `/testbus?ms=150&if=3` with the engine solving
+normally:
 
-`IF_VB_ST` is `ov + ev + 2` -- 512 on the Wii, 625 at 800x600@60, 515 at
-640x480@60 -- so which value a solve lands on follows the framing.
+| `SP_POST_COAST` | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 12 |
+|---|---|---|---|---|---|---|---|---|
+| `tb,0` transitions | **0** | 18 | 18 | 18 | 18 | 18 | 18 | 18 |
 
-**The unusable values follow composite sync, not the input and not the mode.**
-Each written five times on the Wii and three on the RISC PC, scored on the input
-formatter's vertical reaching the pin:
+`tb,2` is 17..18 throughout as the control, `STATUS_SYNC_PROC_VTOTAL` is 524 at
+every one, and the engine stays `acquired`. The same edge holds at every
+`SP_PRE_COAST` from 4 to 13.
 
-| source | lines | `SP_SOG_MODE` | 512 | 515 |
-|---|---|---|---|---|
-| Wii `ypbpr` 480p | 525 | 1 | dead 5/5 | dead 4/5 |
-| RISC PC 640x480@60 `SYNC 0` | 525 | 0 | 0/3 | 0/3 |
-| RISC PC 640x480@60 `SYNC 1` | 525 | 1 | dead 2/3 | crippled |
-
-Separate sync reads clean at every value in 511..516; a step-1 sweep over
-420..524 on the Wii finds exactly these two, with 513 and 514 clean between
-them, so it is neither a band nor an edge. 512 is fine on composite sync at
-800x600, where the frame is 628.
-
-**The coast pair moves the set.** Frozen, nothing is dead at `SP_PRE_COAST`/
-`SP_POST_COAST` 0/0 on either composite source, and at 4/4 on the RISC PC the
-dead values become 513 and 516 -- so the register value is not the property.
-
-**BUT MAKING THE COAST FOLLOW `serrated` IS REFUTED, AND WAS FLASHED.** At 0/0
-the Wii's count stops being steady -- 524/525/526 against a rock-steady 524 at
-7/3 -- the scan decision follows it, the deinterlacer engages on a progressive
-source, `VPERIOD_IF` reads 995 against 524, and there is no picture. The coast
-holds the count even on a source with no serrations to skip. The freeze is what
-hid it: holding the pair against the engine also stops the engine re-solving, so
-a coast sweep taken frozen says nothing about the count.
-
-So a fix keeps the coast and keeps `IF_VB_ST` off the failing values. The shape
-worth trying is the engine checking the signal itself after it writes the pair --
-`TestBus::selectInputVsync()` and `debugPinPulseEdges()` are already what
-`FrameSync::bothVsyncPeriodsReadable()` uses -- which needs no rule for the bad
-set.
+**THE UNUSABLE `IF_VB_ST` VALUES ARE NOT A PROPERTY OF `IF_VB_ST`.** 4/3 and 4/6
+are the same 512 with opposite outcomes. The old framing -- a small set of values
+composite sync refuses, moving with the coast -- was reading the coast's effect
+off the axis it was varying. So there is no bad set to keep a solve away from,
+and `sweep_vb_st.py` measures a real signal against the wrong variable.
 
 **Only the test bus sees it.** `STATUS_IF_VT_OK` reads 1, `VPERIOD_IF` and
 `STATUS_SYNC_PROC_VTOTAL` both read a correct 524, and a raw dump shows only the
-field's two bytes moving. `curl '.../testbus?ms=150&if=3'` -- `tb,0` is 60
-transitions in 500 ms when healthy and 0 at an unusable value, with `tb,2` as
-the control. `sweep_vb_st.py` drives it.
+field's two bytes moving. `sweep_coast.py` drives the pair and scores the count
+and the blanking together.
 
 **The roll is a consequence, not a second fault.** `TestBus::selectInputVsync()`
 selects that same signal, so `FrameSync` cannot read an input period, never
 arms, and the output free-runs -- 60.027 Hz against 59.940, lapping every 11.5 s.
 `/framesync`'s `ready` latches once armed and is not an oracle for this.
 
-**Composite sync at 640x480@60 also shows momentary combing, and an HTTP read
-cannot confirm or refute it.** The picture alternates between clean frames and
-sheared ones with a duplicated right portion, and the deinterlacer's green
-overlay appears briefly. `IF_PRGRSV_CNTRL` and `IF_LD_RAM_BYPS` both read 1
-afterwards, which says nothing: a point read answers at tens of hertz and cannot
-see a bit that toggles. The count dithering is the candidate -- the same
-arrangement reads `STATUS_SYNC_PROC_VTOTAL` 522 against `VPERIOD_IF` 524, and
-the test-bus counts wander where separate sync holds one value -- with the scan
-decision following it. `Tv5725::SamplingLog` is what can settle it, logging the
-count and the scan registers together from inside `loop()`; it needs
-`GBS_SAMPLING_LOG=1` on the `flash-ota` line.
+**The pre coast holds the COUNT, and that is the other axis.** At `SP_PRE_COAST`
+0 the Wii's count dithers across 8 to 14 distinct values in a 14 s window at
+every post coast, the scan decision follows it and the engine drops to `absent`.
+That is why 0/0 was refuted, and it is not what the post coast does.
+
+**A correction of seven units on both window edges is what the deleted
+`FrameLagUnits` did. Do not reinstate it** -- it worked by stepping the end off
+512, which is now understood to be the coast rather than the value.
 
 `investigations/the-vertical-origin-follows-the-sync-type.md`
+
+### Composite sync at 640x480@60 loses the source at every coast pair
+
+The RISC PC on `vga` at 640x480@60, `SYNC 1`: the engine cycles
+`source acquired: 524 lines` and `source absent: ~490 lines` about ten times a
+second, with `scan:` alternating interlaced 525 / progressive 524 and the
+deinterlacer engaging and releasing under it. The picture alternates between
+clean frames and sheared ones with a duplicated right portion.
+
+**No coast pair helps, and the shipped one is not special.** Twenty pairs swept
+over `SP_PRE_COAST` 4..12 and `SP_POST_COAST` 0..12: every one loses the source
+between 19 and 42 times in a 14 s window, 7/3 among them at 27.
+
+**A point read agrees with whichever phase it catches.** `/geometry` reads
+`acquired` from this state as often as not, and three reads in a row at six
+second spacing all read `acquired` while the console showed the churn. Score it
+off `source absent:` on the console, which is what `sweep_coast.py` counts.
+
+The same machine at 320x256@50 on `SYNC 1` holds perfectly -- 624 lines, vt 308,
+0 to 3 losses at every pair -- so this is the mode and not composite sync.
+800x600@60 on `SYNC 1` is between the two and does not hold acquisition either.
+
+### A sync-type round trip strands the engine at `absent` with the count correct
+
+RISC PC on `vga` at 320x256@50: `SYNC 1` acquires and holds, and `SYNC 0` after
+it sits at `state: absent` indefinitely with `STATUS_SYNC_PROC_VTOTAL` reading
+311 -- the source's true separate-sync count -- beside a held `cv` of 624 from
+the composite solve. `/sc?~` recovers it in under a minute.
+
+**It is not the coast.** The same round trip strands identically with the coast
+overridden to the old 7/3 and to the current 7/6, and the separate-sync branch
+writes 0/0 either way.
+
+This is the held-rate stranding `HeldRateRejectionLimit` exists for, reached by
+a count that moves 624 -> 311 across one sync change.
+
 
 ### The composite capture window opens a whole pulse from the wrong end, and neither end is right
 

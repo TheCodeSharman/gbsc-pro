@@ -179,22 +179,30 @@ One source, unchanged throughout.
 is not the tidy-up that follows the measurement, it is what makes the
 measurement possible. Establish one owner, then sweep.
 
-## The coast does nothing on a source without serrations
+## The coast does not move the COUNT on a source without serrations
 
 The same sweep on the RISC PC at 320x256@50, `SYNC 1`, so composite sync with a
 progressive RGB source: **`STATUS_SYNC_PROC_VTOTAL` read 308 at all 242 samples
 across all 121 pairs.** The coast pair has no effect on the count at all.
 
-That is the first link of the loop missing, and it is why this source acquires
-in about eight seconds while the Wii never converges. A progressive source's
-vertical sync carries no equalisation or serration pulses, so there is nothing
-for the coast to skip and nothing for its value to change.
+**The explanation once given here -- that a progressive source has no serrations
+for the coast to skip -- is refuted.** COAST is a PLL hold: RD-5725-1.1 has it
+disabling the PLL from tracking the input reference and maintaining the PLL
+output clock frequency where the reference is not a regular period hsync. A
+vertical interval starves the PLL of edges whether or not serrations sit in it,
+so the pair is doing something on this source too. What it is not doing is
+changing the line count.
 
-**Two consequences.** A coast value cannot be validated against a progressive
-source -- every value scores identically -- so the RISC PC is a control for the
-loop, not a reference for the value. And a coast rule derived from anything the
-board measures has to be derived from something that varies with the vertical
-interval, which no progressive source exercises.
+**And the count is not the only thing that answers to it.** The post coast
+decides whether the input formatter's vertical blanking reaches the pin, which
+no count can see -- `docs/known-issues.md`. A sweep scored on the count alone
+therefore reads "no effect" off a source where the effect is real and elsewhere.
+
+**Two consequences.** A coast value cannot be validated on the COUNT against a
+progressive source -- every value scores identically -- so the RISC PC is a
+control for the loop, not a reference for the value. And a sweep has to score
+the blanking beside the count, which `tools/gbsc-pro-hwtest/sweep_coast.py`
+does.
 
 ## Composite sync reclassifies the source, and the count loses three lines
 
@@ -213,9 +221,15 @@ Two further measurements from the same run, on one machine in one mode with only
 ## How it is closed
 
 `SyncProcessor` owns `SP_PRE_COAST` and `SP_POST_COAST` alone. The per-standard
-ladder in `updateSpDynamic()` no longer writes them, and the pair is named --
-`SerratedPreCoastLines` 7 and `SerratedPostCoastLines` 3 -- for what it decides,
-which is whether the equalisation pulses land inside the count.
+ladder in `updateSpDynamic()` no longer writes them, and the pair is named
+`CompositePreCoastLines` and `CompositePostCoastLines` -- for the sync type it
+applies to, rather than for a serration model that does not survive the RISC
+PC's unserrated NOR csync.
+
+The post value is **6**, not the 3 this page settled on. 3 stops the vertical
+blanking reaching the pin on the Wii, measured against 4..12 which do not, and
+the count is 524 at all of them -- so the value this page chose on the count
+alone was wrong on an axis it never scored.
 
 The value is 7/3 rather than 4/7 on two measurements: on the serrated source 7/3
 counts the lines and 4/7 counts the serrations, and on the only progressive
