@@ -145,7 +145,18 @@ formatter's vertical reaching the pin:
 Separate sync reads clean at every value in 511..516; a step-1 sweep over
 420..524 on the Wii finds exactly these two, with 513 and 514 clean between
 them, so it is neither a band nor an edge. 512 is fine on composite sync at
-800x600, where the frame is 628. **The rule is not known.**
+800x600, where the frame is 628.
+
+**The coast pair moves the set, which is where to look next.** On the RISC PC at
+640x480@60 `SYNC 1`, automation frozen, nothing is dead at `SP_PRE_COAST`/
+`SP_POST_COAST` 0/0, and at 4/4 the dead values are 513 and 516 instead of 512
+and 515 -- so the register value is not the property. The bench source's
+composite sync is VIDC20's NOR form with no serrations to coast through, and
+`serrated` reaches none of the three writers of that pair though
+`applyPulseIgnore()` next to them takes it. **It is a direction, not a result:**
+that source is flaky at every value in the range. The Wii at 0/0 is what would
+settle it. Freeze first, or the engine restores the pair within a pass and every
+row reads back 7/3.
 
 **Only the test bus sees it.** `STATUS_IF_VT_OK` reads 1, `VPERIOD_IF` and
 `STATUS_SYNC_PROC_VTOTAL` both read a correct 524, and a raw dump shows only the

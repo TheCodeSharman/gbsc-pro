@@ -78,6 +78,57 @@ is fine on composite sync at 800x600, where the frame is 628.
 that it is per value rather than per region, and that it is reproducible in both
 directions.
 
+### The coast window moves the set, which is the lead worth following
+
+The coast pair is what composite sync puts around the vertical interval, and the
+unusable values move when it moves. Measured on the RISC PC at 640x480@60,
+`SYNC 1`, automation frozen so the engine cannot restore the pair, each value
+written three times and scored on the worst reading (eighteen transitions at
+`ms=150` is healthy):
+
+| `SP_PRE_COAST`/`SP_POST_COAST` | 511 | 512 | 513 | 514 | 515 | 516 |
+|---|---|---|---|---|---|---|
+| **7/3**, what the engine writes | 16 | **0** | 12 | 10 | 4 | 14 |
+| 0/0 | 14 | 10 | 7 | 12 | 17 | 8 |
+| 4/4 | 13 | 10 | **0** | 14 | 10 | **0** |
+
+At 0/0 nothing is dead; at 4/4 the dead values are 513 and 516 rather than 512
+and 515. **So the value is not the property -- the coast is in the mechanism.**
+
+**FREEZE FIRST, OR THE EXPERIMENT MEASURES NOTHING.** `/freeze?on=1`. Run
+without it, every row reads back 7/3 whatever was written, because the engine
+re-applies the pair within a pass -- and the readings then differ anyway, from
+ordinary flakiness, which reads exactly like the coast having an effect.
+
+**This is a direction and not a result.** Every row above shows counts well
+under eighteen at values that are not dead, so this source is flaky across the
+whole range, and a longer run of the same sweep lost the console halfway and
+returned nothing for four of its eight rows. What is wanted is the same sweep on
+the Wii: **if 0/0 clears that source too, the coast is the fault and not the
+register value.**
+
+### Why the coast is a candidate at all
+
+[the-risc-pc-composite-sync-is-not-serrated.md](the-risc-pc-composite-sync-is-not-serrated.md)
+measures the bench source's composite sync as VIDC20's **NOR** form, whose
+vertical interval is one flat level -- the horizontal edges inside it are absent
+rather than attenuated. There are no serrations to coast through, so a seven-line
+pre-coast on that source discards seven lines of good horizontal sync just before
+the vertical interval instead of protecting anything.
+
+The arithmetic puts that where the failures are. With the counter zeroing on the
+vertical sync's trailing edge, `IF_VB_SP` 31..33 matches DMT 640x480@60's
+33-line back porch, active ends near count 513, and a seven-line pre-coast
+covers roughly counts 516..522 -- adjacent to the values that fail.
+
+**And `serrated` reaches none of the three writers.** `SyncProcessor::prepare()`
+is handed it, `applyPulseIgnore(csync, serrated)` takes it, and the coast pair is
+written from `csync` alone by `applyForSyncType()`, `applySeparationThresholds()`
+and `widenCoast()` -- under constants named `SerratedPreCoastLines` and
+`SerratedPostCoastLines`. `SyncProcessor.h` states the pair is
+`applyForSyncType()`'s alone and records what a second writer cost, so the
+single-owner rule it sets out is already broken by two more.
+
 ## The failure is silent everywhere except the test bus
 
 At an unusable value the vertical blanking is never asserted. The input
