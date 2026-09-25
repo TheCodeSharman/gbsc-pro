@@ -372,14 +372,27 @@ TEST_CASE("a source with no solved rate leaves the window alone")
     CHECK_FALSE(Wire.touched[0x05][0x4F]);
 }
 
-TEST_CASE("an unstable sync processor leaves the window alone")
+TEST_CASE("the window is placed from the line rate rather than from a status bit")
 {
+    // **STATUS_SYNC_PROC_HSACT RAILS IN BOTH DIRECTIONS AND CANNOT GATE THIS.**
+    // Measured on the bench the same day: 0 across a 450 ms window on a source
+    // that then acquired, and 1 at every one of twenty separator levels while
+    // the sync processor counted nothing at all.
+    //
+    // Refusing on 0 is the damaging rail, because it leaves the coast and clamp
+    // windows unwritten -- and an unconfigured sync processor cannot count, so
+    // the bit stays 0 and nothing ever places them.
+    //
+    // Whether a source is worth writing for is the CALLER's question and it
+    // already asks it: VideoSourceAcquisition::mayWriteForSource() is
+    // Chip::hasPower() && !sourceIsSearching(), which is a count in range and a
+    // steadiness run rather than one bit.
+    // docs/known-issues.md, "STATUS_SYNC_PROC_HSACT saturates in BOTH directions"
     steadyLine(431);
     GBS::STATUS_SYNC_PROC_HSACT::write(0);
 
-    CHECK_FALSE(SyncProcessor::acquireCoastWindow(false, BenchLineRateHz));
-    CHECK_FALSE(Wire.touched[0x05][0x4D]);
-    CHECK_FALSE(Wire.touched[0x05][0x4F]);
+    CHECK(SyncProcessor::acquireCoastWindow(false, BenchLineRateHz));
+    CHECK(Wire.touched[0x05][0x4D]);
 }
 
 TEST_CASE("a line too short to place a window in writes nothing")
@@ -690,11 +703,12 @@ TEST_CASE("placing the coast window records that it is placed")
 
 TEST_CASE("a window that could not be measured is not recorded as placed")
 {
+    // The line rate is what the window is derived from, so a rate no source
+    // runs is what makes it underivable -- not a status bit.
     steadyLine(431);
-    GBS::STATUS_SYNC_PROC_HSACT::write(0);
     SyncProcessor::forgetPositions();
 
-    REQUIRE_FALSE(SyncProcessor::acquireCoastWindow(false, BenchLineRateHz));
+    REQUIRE_FALSE(SyncProcessor::acquireCoastWindow(false, 1000000));
 
     CHECK_FALSE(SyncProcessor::coastPlaced());
 }

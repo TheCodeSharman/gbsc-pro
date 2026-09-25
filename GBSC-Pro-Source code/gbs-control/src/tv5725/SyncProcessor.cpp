@@ -424,9 +424,6 @@ bool SyncProcessor::acquireClampWindow(bool csync, bool component,
     if (lineLength == 0 || lineLength > ClampLineCeiling)
         return false;
 
-    if (!hsyncActive())
-        return false;
-
     const uint16_t start = clampStartFor(lineLength, csync, component) + offset;
     const uint16_t stop = clampStopFor(lineLength, csync, component) + offset;
 
@@ -445,9 +442,6 @@ bool SyncProcessor::acquireCoastWindow(bool autoCoast, uint32_t lineRateHz)
 {
     const uint32_t lineLength = coastLineFor(lineRateHz);
     if (lineLength <= LineLengthFloor || lineLength >= LineLengthCeiling)
-        return false;
-
-    if (!hsyncActive())
         return false;
 
     if (autoCoast) {
