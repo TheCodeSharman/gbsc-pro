@@ -1516,10 +1516,12 @@ says where that bites: 1056x256 at 0.72 samples a pixel is short only because
 this cap holds it there.
 
 **The divider now follows the measured line rate**, where the cap flattened it:
-4 counts per 25 Hz on a 15.6 kHz doubled line. A rate wobble therefore rewrites
-`PLLAD_MD` and re-latches the ADC PLL, which nothing asked for and which the
-bench has not been watched for. Undoubled sources are immune where the counter
-binds, because the wall does not move with the rate.
+4 counts per 25 Hz on a 15.6 kHz doubled line. Undoubled sources are immune where
+the counter binds, because the wall does not move with the rate. Where the RATE
+binds it, a wobble used to rewrite `PLLAD_MD` and re-latch the ADC PLL on every
+measurement pass, which limit-cycles -- measured, and held against the rate the
+divider was sized from instead.
+`docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md`.
 
 **The conversion budget is gone with it.** It preferred the oversampling row
 that spent most of the ADC's rating, which stood in for the green block; under
@@ -2000,7 +2002,52 @@ phase adjuster was restarted on apply, and is deterministic now, so the
 behaviour being explained may already have moved.
 
 
-### The divider should be keyed to the source identity, not to a raw measurement
+### The component separator search cannot exit early, so it costs 6 s every time
+
+`detectAndSwitchToActiveInput()`'s YPbPr branch runs a 6000 ms loop whose only
+early exit is `VideoSignal::countIsSource(SyncProcessor::lineCount())`. Measured
+across five switches to the Wii on `ypbpr` 480p, instrumented with
+`SamplingLog::event()`: the count reads outside source range for the whole
+window on every one of them, the loop always times out, and both paths then
+`return 2`. **The search's entire effect is to burn 6 s and leave `ADC_SOGCTRL`
+at 14**, which is the `choose(14)` the timeout applies and which is what works.
+
+Detection cost 7.4 s on all five switches, against a 9.6 s best-case total
+acquisition -- so this is most of the fixed cost of selecting the input, and it
+is spent on a search that never succeeds. The ratchet inside it walks
+4, 6, 8, 10, 12, 14, 1, 2 and round again, twice, at 400 ms a step; 14 is
+therefore tried twice DURING the window without the count ever coming into
+range, which is the evidence that the level is not what the loop is waiting for.
+
+**What is not established is why the count is out of range throughout**, and the
+candidate is that nothing has set a divider the arriving source can be counted
+through -- the loop measures before any clock is installed for it. That is the
+rule `docs/investigations/the-reference-divider-was-the-bootstrap.md` removed the
+reference divider from, so the answer is not to reinstate it.
+
+Removing the wait outright is not obviously safe: `choose(14)` is what carries
+this source, and no other component source has been measured here.
+
+### The 450 ms hsync wait in detection never waits
+
+The loop is `while (millis() - timeout < 450)`, and every path through its body
+returns -- the final `return 0` sits inside it. So it runs exactly one
+iteration: `STATUS_SYNC_PROC_HSACT` is read once, 10 ms after entry, and a pass
+that misses it returns 0. On that answer `inputAndSyncDetect()` can call
+`goLowPowerWithInputDetection()`, which powers the DAC down and runs
+`setResetParameters()`.
+
+Measured across five switches: the first pass after `/input` always misses hsync
+and returns 0 in 13 ms, and the second pass 0.7 s later takes the branch. So the
+budget the code states is not the budget it applies, and whether the chip is torn
+down rests on a single sample of a status bit taken just after the mux moved.
+
+`goLowPowerWithInputDetection()` announces itself with `bootLogPrintf`, which
+writes to `Serial` and not to `SerialM` -- so **it never reaches the websocket
+console**, and a teardown is invisible to every instrument a session can reach
+remotely.
+
+### The divider should be keyed to the source identity, not to a raw measurement -- FIXED
 
 `SamplingClock::recommendedDivider()` takes a measured line rate, so the divider
 inherits that measurement's scatter and the same source lands on a different one
@@ -2029,6 +2076,22 @@ which is timed on the ESP off the input formatter's vertical output.
 **Do not quantise the RATE into buckets** -- `SourceKey.h` rejects that by
 measurement, and `SourceKey`'s tolerance is the mechanism that has no boundary
 to land near.
+
+**It was worse than a repeatability tidy, and the bench has now been watched.**
+The divider is an actuator inside the loop that measures it -- the field rate is
+timed off the input formatter's vertical and the IF's line counter IS the
+divider -- so re-deriving it per measurement pass limit-cycles. Measured across
+one input switch to the Wii on `ypbpr` 480p: 48 divider writes over 40 s
+alternating `31519 -> 1444` and `31440 -> 1448`, with no `source moved:` line in
+the window, `STATUS_SYNC_PROC_HTOTAL` reading 1703 against the divider's 1448
+and an explicit `UNLOCKED`. The 1446 the true rate asks for is never visited, so
+**no tolerance on the divider converges** -- it decides how far each swing
+travels and nothing else.
+
+`installSampling()` now holds the divider against the rate it was sized from, at
+the tolerance that means two readings are one source. A commanded divider and
+one a mode change asks for are choices rather than measurements and compare
+exactly. `docs/investigations/the-divider-is-an-actuator-in-its-own-sensor.md`.
 
 ### WiFi light sleep in the edge sampler does nothing and has no stated reason
 
