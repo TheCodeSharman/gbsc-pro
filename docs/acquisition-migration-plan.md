@@ -9,7 +9,7 @@ are**. This page is the order to move it in, and the seam each step cuts on.
     260  doPostPresetLoadSteps
     256  detectAndSwitchToActiveInput
     151  applyPresets
-     74  inputAndSyncDetect
+     70  inputAndSyncDetect
      27  loadComputedPreset
      24  applySavedInputSource
      20  runSourceRecovery
@@ -45,16 +45,19 @@ Each step names the seam, so a step can be judged before it is taken. The rule
 throughout: **move the DECISION, leave the blocking to the caller.** A pure
 decision is host-testable; a `delay()` is not.
 
-### 1. The absence decision
+### 1. The absence decision -- DONE
 
-`inputAndSyncDetect()` turns "this pass found nothing" into "power the chip
-down". The state is a run length and a threshold, which is a value object.
+`SourceAbsence` holds the run and answers `shouldPowerDown()`. The sketch keeps
+the `goLowPowerWithInputDetection()` call, which is the blocking half.
 
-Seam: a class holding the unbroken run of passes that found no sync, told
-`found()` / `missed()`, answering `shouldPowerDown()`. The sketch keeps the
-`goLowPowerWithInputDetection()` call.
+**The caller has THREE cases, not two**, and the third was expressed only by the
+absence of an assignment: detection claimed nothing while a signal IS reaching
+the sync processor. That is neither evidence, so `undecided()` neither advances
+the run nor ends it.
 
-Retires: the teardown-on-one-sample class of fault, with a host test.
+The run saturates. It was a `uint8_t` incremented without a ceiling, so an
+absence lasting 256 passes withdrew a verdict already reached and the chip came
+back up for five more passes before reaching it again.
 
 ### 2. The detection pass's shape
 
