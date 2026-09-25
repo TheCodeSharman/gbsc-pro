@@ -2002,6 +2002,53 @@ phase adjuster was restarted on apply, and is deterministic now, so the
 behaviour being explained may already have moved.
 
 
+### The recovery ladder escalates through every first acquisition
+
+`unmeasuredPasses_` carries TWO facts: how long it has been since the engine
+could measure the source, and where the escalation has reached --
+`SyncRecovery::stepAt()` takes the position as `passes % CycleLength`. The first
+climbs legitimately while a source is still being acquired; the second must not
+move then, and nothing separates them.
+
+A pass is 20 ms, so the rungs fall due in seconds:
+
+| rung | pass | time |
+|---|---|---|
+| lift SOG floor | 2 | 0.04 s |
+| reprobe sync type | 44 | 0.88 s |
+| restart sampling clock | 60 | 1.2 s |
+| full reset | 150 | 3.0 s |
+| toggle input | 413 | 8.3 s |
+| cycle restarts | 451 | 9.0 s |
+
+**A component acquisition takes about ten seconds at its best**, of which 7.4 s
+is detection, so the whole ladder -- sync-type re-probe, sampling clock restart,
+full reset and input toggle -- runs *during* an ordinary YPbPr selection rather
+than after a failure.
+
+Measured on the bench, one selection of the Wii on `ypbpr`:
+
+    13.68  evt,det found,2                          detection succeeded
+    16.71  recovery: full reset at pass 150         3.03 s later
+    19.38  sampling: rate 82991 -> divider 620      garbage
+    28.33  sampling: rate 37879 -> divider 1438     the OTHER source's rate
+    28.61  source moved: interrupt (627 lines, solved 627)
+
+The engine then held a solve for the RISC PC while the Wii's signal arrived, and
+the picture was sheared. `/sc?~` cleared it and the source acquired in 10 s.
+
+**The two ladders are not the problem and are already mutually exclusive.**
+`SourceMaintenance` runs on an acquired source and `SyncRecovery` on one that is
+not, selected by `sourceState_`, and both read the same two counters by design.
+What is wrong is that one of those counters is also the ladder's position.
+
+**The shape of the fix is an explicit position**, advanced deliberately, rather
+than a modulus of a counter that means something else -- and a source that has
+never been acquired since a deliberate input or mode change is acquiring rather
+than failing, so nothing should escalate for it. The `ToggleInput` rung is the
+constraint on going too far: it is what sweeps for a source when nothing has
+been chosen, and a grace that swallows it leaves a fresh boot with no sweep.
+
 ### The component separator search cannot exit early, so it costs 6 s every time
 
 `detectAndSwitchToActiveInput()`'s YPbPr branch runs a 6000 ms loop whose only
