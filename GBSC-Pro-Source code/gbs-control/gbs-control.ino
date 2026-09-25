@@ -1581,6 +1581,22 @@ static_assert(VideoSourceSelection::Composite == InfoAV, "VideoSourceSelection::
 // on a boot that would otherwise never acquire at all.
 static const unsigned long DetectCountWaitMs = 600;
 
+// How many detection passes must find nothing before the chip is powered down.
+// Sized from the gap between a selection and hsync, which is NOT one quantity:
+// measured over ten input changes, 0.16 to 1.12 s passes before detection even
+// looks -- the route is queued to loop() and the mux is the HC32's, over a UART
+// with no readback -- and hsync is then already there on most RGB crossings and
+// within one pass interval on the rest. Several passes cover all of it without
+// any of them having to guess a settling time.
+//
+// Powering down later costs nothing but power: an empty socket stays an empty
+// socket, while a source declared absent by mistake pays for the teardown twice
+// over.
+static const uint8_t AbsentPassesBeforeLowPower = 5;
+
+// The unbroken run of passes that found no sync. Reset by any pass that did.
+static uint8_t absentPasses = 0;
+
 uint8_t detectAndSwitchToActiveInput()
 {                                      // if any
     // First few passes only: the boot log is 2 KB and this runs forever.
@@ -1599,19 +1615,32 @@ uint8_t detectAndSwitchToActiveInput()
         return 0;
     }
     uint8_t currentInput = GBS::ADC_INPUT_SEL::read();
-    // printf("currentInput = %d \n",currentInput);
+    SYNC_EVENT("det enter", currentInput);
     unsigned long timeout = millis();
     while (millis() - timeout < 450) {
         delay(10);
         handleWiFi(0);
 
         boolean stable = Tv5725::SyncProcessor::hsyncActive();
+        SYNC_EVENT("det hsact", stable ? 1 : 0);
         // printf("stable = %d \n",stable);
-        if (stable) {
+
+        // KEEP LOOKING FOR THE WHOLE WINDOW. A mux that has just moved has not
+        // delivered a line yet, and concluding on the first sample declares a
+        // present source absent -- which sends the caller to
+        // goLowPowerWithInputDetection(), zeroing segments 0 and 2 on a source
+        // that was there all along.
+        // docs/known-issues.md, "The 450 ms hsync wait in detection never waits"
+        if (!stable) {
+            continue;
+        }
+
+        {
             currentInput = GBS::ADC_INPUT_SEL::read();
 
             if ((currentInput == 1 && Info_sate == 0) && (SeleInputSource == S_VGA || SeleInputSource == S_RGBs)) // 20240919
             {                                                                                                     // RGBS or RGBHV
+                SYNC_EVENT("det rgb branch", SeleInputSource);
                 boolean vsyncActive = 0;
                 rto->inputIsYpBpR = false; // declare for MD
                 Tv5725::SyncOnGreen::choose(13); //
@@ -1732,6 +1761,7 @@ uint8_t detectAndSwitchToActiveInput()
                 if (Info_sate == 0 &&
                     SyncSearch::searchFor(SeleInputSource, vsyncActive) == SyncSearch::VsyncAbsent) {
 
+                    SYNC_EVENT("det rgb search", 0);
                     Tv5725::SyncMeasurement::set(true);
                     GBS::MD_SEL_VGA60::write(0); 
                     uint16_t testCycle = 0;
@@ -1745,6 +1775,8 @@ uint8_t detectAndSwitchToActiveInput()
                         testCycle++;
                         
                         if ((testCycle % 150) == 0) {
+                            SYNC_EVENT("det rgb sog",
+                                       Tv5725::SyncOnGreen::level());
                             if (Tv5725::SyncOnGreen::level() == 1) {
                                 Tv5725::SyncOnGreen::choose(2);
                             } else {
@@ -1768,6 +1800,7 @@ uint8_t detectAndSwitchToActiveInput()
             {
                 // printf("this 0 \n");
                 uint16_t testCycle = 0;
+                SYNC_EVENT("det ypbpr branch", currentInput);
                 rto->inputIsYpBpR = true;
                 GBS::MD_SEL_VGA60::write(0);
 
@@ -1781,6 +1814,8 @@ uint8_t detectAndSwitchToActiveInput()
 
                     testCycle++;
                     if ((testCycle % 180) == 0) {
+                        SYNC_EVENT("det ypbpr sog",
+                                   Tv5725::SyncOnGreen::level());
                         if (Tv5725::SyncOnGreen::level() == 1) {
                             Tv5725::SyncOnGreen::choose(2);
                         } else {
@@ -1793,6 +1828,7 @@ uint8_t detectAndSwitchToActiveInput()
                     }
                 }
 
+                SYNC_EVENT("det ypbpr timeout", 14);
                 Tv5725::SyncOnGreen::choose(14);
                 Tv5725::SyncOnGreen::putInForce();
 
@@ -1804,12 +1840,15 @@ uint8_t detectAndSwitchToActiveInput()
             Tv5725::SyncOnGreen::putInForce();
         }
 
-        if (detectionMayChangeInput()) {
-            Tv5725::Adc::selectInput(!currentInput);
-            delay(200);
-        }
+        // Hsync arrived and no branch claimed it, so waiting longer for hsync
+        // answers nothing.
+        break;
+    }
 
-        return 0;
+    if (detectionMayChangeInput()) {
+        SYNC_EVENT("det toggle input", !currentInput);
+        Tv5725::Adc::selectInput(!currentInput);
+        delay(200);
     }
 
     return 0;
@@ -1824,13 +1863,30 @@ uint8_t inputAndSyncDetect()
     // docs/investigations/detection-blocks-the-loop.md
     const unsigned long detectAt = millis();
     uint8_t syncFound = detectAndSwitchToActiveInput();
+    if (syncFound != 0) {
+        absentPasses = 0;
+    }
     debugPrintf("DETECT: %lums, syncFound %u\n",
                 (unsigned long)(millis() - detectAt), (unsigned)syncFound);
+    SYNC_EVENT("det found", syncFound);
     // printf(" syncFound = %d \n",syncFound);
     if (syncFound == 0) {
-        if (!getSyncPresent()) 
+        const bool syncPresent = getSyncPresent();
+        SYNC_EVENT("det sync present", syncPresent ? 1 : 0);
+        if (!syncPresent)
         {
+            // ABSENCE HAS TO PERSIST. A mux that has just moved looks exactly
+            // like an empty socket, and tearing the chip down on one pass costs
+            // the acquisition twice over: setResetParameters() zeroes segments 0
+            // and 2, and the rate measured through the result is then rejected
+            // for seconds afterwards.
+            // docs/known-issues.md, "The 450 ms hsync wait in detection never waits"
+            if (++absentPasses < AbsentPassesBeforeLowPower) {
+                SYNC_EVENT("det absent", absentPasses);
+                return 0;
+            }
             if (rto->isInLowPowerMode == false) {
+                SYNC_EVENT("det low power", 1);
                 rto->sourceDisconnected = true; 
                             GBS::SP_SOG_MODE::write(1);
                 goLowPowerWithInputDetection();
