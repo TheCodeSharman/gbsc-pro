@@ -81,6 +81,20 @@ public:
 
     static uint8_t level();
 
+    // The next level detection's search should try. Even levels from the floor
+    // up to ComponentLevel, then the floor itself, which is the one odd level
+    // the cycle visits.
+    //
+    // **ONE WALK, NOT TWO.** Detection ran this open-coded in both its RGB and
+    // its component branch, differing in a ceiling and a period with no reason
+    // recorded for either. The ceilings were indistinguishable in effect.
+    static uint8_t nextSearchLevel(uint8_t from);
+
+    // How many 2 ms detection cycles a search waits before stepping. 360 ms,
+    // which is the component branch's period: the RGB branch's 300 ms is the
+    // divergence that went.
+    static const uint16_t SearchStepCycles = 180;
+
     // Walk the chosen level down until the sync processor holds clean edges
     // over a run, and put DefaultLevel back if the floor is reached without
     // finding one. Chooses DefaultLevel and touches nothing when the sync separator is

@@ -506,3 +506,37 @@ TEST_CASE("forgetting the window discards the samples counted in it")
 
     CHECK(SyncOnGreen::level() == 11);
 }
+
+TEST_CASE("the detection walk cycles the even levels and takes in the floor")
+{
+    // ONE WALK, NOT TWO. Detection ran this ratchet open-coded in both its RGB
+    // and its component branch, differing in a ceiling (15 against 16) and a
+    // period (150 cycles against 180, so 300 ms a step against 360). The
+    // ceilings are indistinguishable in effect: 14 steps to 16, which trips
+    // both, and the odd levels are only ever reached from the explicit
+    // DefaultLevel start. Neither divergence had a reason recorded.
+    //
+    // Measured on the bench, the component branch walks 4, 6, 8, 10, 12, 14, 1,
+    // 2 and round again, twice, inside its 6 s window.
+    const uint8_t expected[] = {4, 6, 8, 10, 12, 14, 1, 2, 4};
+    uint8_t level = SyncOnGreen::ComponentLevel - 12;   // 2
+    REQUIRE(level == 2);
+
+    for (uint8_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
+        level = SyncOnGreen::nextSearchLevel(level);
+        CHECK(level == expected[i]);
+    }
+}
+
+TEST_CASE("the walk leaves the floor by a step rather than by doubling it")
+{
+    // The floor is the one odd level the cycle visits, and it is a special case
+    // because level + 2 from 1 lands on 3, which is off the even ladder the
+    // rest of the walk uses.
+    CHECK(SyncOnGreen::nextSearchLevel(1) == 2);
+}
+
+TEST_CASE("the walk returns to the floor from the top")
+{
+    CHECK(SyncOnGreen::nextSearchLevel(SyncOnGreen::ComponentLevel) == 1);
+}

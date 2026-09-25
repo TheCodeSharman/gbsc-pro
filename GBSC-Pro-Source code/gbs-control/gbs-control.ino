@@ -1761,17 +1761,11 @@ uint8_t detectAndSwitchToActiveInput()
                         }
                         testCycle++;
                         
-                        if ((testCycle % 150) == 0) {
+                        if ((testCycle % Tv5725::SyncOnGreen::SearchStepCycles) == 0) {
                             SYNC_EVENT("det rgb sog",
                                        Tv5725::SyncOnGreen::level());
-                            if (Tv5725::SyncOnGreen::level() == 1) {
-                                Tv5725::SyncOnGreen::choose(2);
-                            } else {
-                                Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 2);
-                            }
-                            if (Tv5725::SyncOnGreen::level() >= 15) {
-                                Tv5725::SyncOnGreen::choose(1);
-                            }
+                            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::nextSearchLevel(
+                                Tv5725::SyncOnGreen::level()));
                             Tv5725::SyncOnGreen::putInForce();
                         }
 
@@ -1800,17 +1794,11 @@ uint8_t detectAndSwitchToActiveInput()
                     }
 
                     testCycle++;
-                    if ((testCycle % 180) == 0) {
+                    if ((testCycle % Tv5725::SyncOnGreen::SearchStepCycles) == 0) {
                         SYNC_EVENT("det ypbpr sog",
                                    Tv5725::SyncOnGreen::level());
-                        if (Tv5725::SyncOnGreen::level() == 1) {
-                            Tv5725::SyncOnGreen::choose(2);
-                        } else {
-                            Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::level() + 2);
-                        }
-                        if (Tv5725::SyncOnGreen::level() >= 16) {
-                            Tv5725::SyncOnGreen::choose(1);
-                        }
+                        Tv5725::SyncOnGreen::choose(Tv5725::SyncOnGreen::nextSearchLevel(
+                            Tv5725::SyncOnGreen::level()));
                         Tv5725::SyncOnGreen::putInForce();
                     }
                 }

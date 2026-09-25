@@ -167,6 +167,16 @@ void SyncOnGreen::putInForce()
 
 uint8_t SyncOnGreen::level() { return level_; }
 
+const uint16_t SyncOnGreen::SearchStepCycles;
+
+uint8_t SyncOnGreen::nextSearchLevel(uint8_t from)
+{
+    if (from == 1)
+        return 2;
+    const uint8_t next = (uint8_t)(from + 2);
+    return next >= ComponentLevel + 2 ? 1 : next;
+}
+
 bool SyncOnGreen::inSyncPath() { return SyncMeasurement::isCsync(); }
 
 void SyncOnGreen::acquire(uint32_t (*nowMs)(), void (*putInForce)())
