@@ -20,6 +20,7 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SamplingClock.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncOnGreen.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/BringUp.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Chip.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoRoute.h"
@@ -2234,5 +2235,38 @@ TEST_CASE("selecting another input gives the new source a first acquisition too"
         unit.poll();
 
     CHECK_FALSE(loggedContaining("recovery: "));
+    VideoSourceSelection::forgetSelection();
+}
+
+TEST_CASE("selecting another input re-establishes the sync arrangement")
+{
+    // THE ARRANGEMENT IS HELD AGAINST THE SELECTION IT WAS CHOSEN FOR. Measured
+    // on the bench: with the RISC PC on `vga` at 800x600@60 and the Wii on
+    // `ypbpr`, `ADC_INPUT_SEL` followed the selection and `SP_EXT_SYNC_SEL`
+    // stayed 0, so the sync processor went on watching the external H/V pins --
+    // which still carry the VGA connector's hsync. Moving the RISC PC to
+    // 320x256@50 moved the count reported on `ypbpr` from 627 to 311, so it was
+    // measuring the other source live.
+    //
+    // Nothing arms a re-probe there and the reason is circular: the probe runs
+    // per source MODE change, and the source never appears to change mode
+    // because it is the same physical signal either side of the switch.
+    // docs/known-issues.md, "The sync arrangement outlives an input change"
+    seedBenchSource();
+    Acquiring unit;
+    unit.path.useSyncTypeProbe(probeOwnVsync);
+
+    VideoSourceSelection::select(VideoSourceSelection::Vga);
+    g_hasOwnVsync = true;
+    unit.start();
+    REQUIRE(unit.pollUntilSolved());
+    REQUIRE(SyncProcessor::SP_SOG_MODE::read() == 0);
+
+    VideoSourceSelection::select(VideoSourceSelection::Ypbpr);
+    g_hasOwnVsync = false;
+    for (uint8_t i = 0; i < 4 * SourceMeasurement::SteadySamples; ++i)
+        unit.poll();
+
+    CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
     VideoSourceSelection::forgetSelection();
 }

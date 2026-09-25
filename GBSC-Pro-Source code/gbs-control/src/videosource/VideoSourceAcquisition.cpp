@@ -319,6 +319,20 @@ bool VideoSourceAcquisition::sourceMoved()
 
     const uint16_t lines = sampling_.countNow();
 
+    // **A DIFFERENT INPUT IS A DIFFERENT SOURCE, AND NO MEASUREMENT CAN SEE
+    // IT.** The sync processor may be watching pins the selection did not move,
+    // so the count reads the same either side of the change -- which is what
+    // left the held sync arrangement in force on a connector that does not
+    // carry it. The selection is the event; the count is not evidence about it.
+    // docs/known-issues.md, "The sync arrangement outlives an input change"
+    if (selectionMoved()) {
+        // Nothing measured through the previous input survives the change, this
+        // verdict included: inputTimingsChanged() blanks the pad, and a state
+        // left at acquired would be read as one the new source had earned.
+        sourceState_ = SourceAbsent;
+        return armMove("input", lines);
+    }
+
     // ONE ADVANCE OF THE RUN PER POLL. countHeld() mutates it, so a second
     // caller double-advances it and the steadiness both readers depend on is
     // no longer over consecutive polls.
@@ -519,8 +533,6 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
     if (!detectionPass)
         return solved;
 
-    noteSelection();
-
     if (sourceState_ == SourceAcquired) {
         unmeasuredPasses_ = 0;
         recoveryPosition_ = 0;
@@ -613,14 +625,15 @@ void VideoSourceAcquisition::restartRecovery()
     ownVsyncFound_ = false;
 }
 
-void VideoSourceAcquisition::noteSelection()
+bool VideoSourceAcquisition::selectionMoved()
 {
     const VideoSourceSelection::Id chosenNow = VideoSourceSelection::selected();
     if (chosenNow == selectionSeen_)
-        return;
+        return false;
     selectionSeen_ = chosenNow;
     firstAcquisition_ = true;
     recoveryPosition_ = 0;
+    return true;
 }
 
 uint16_t VideoSourceAcquisition::acquiredPasses() const { return acquiredPasses_; }
@@ -652,7 +665,7 @@ bool VideoSourceAcquisition::runPass(uint32_t nowMs, bool &detectionPass)
     // point: the sync path decides what the sync processor counts, and the scan
     // mode decides the divider the measurement asks for.
     // docs/video-source-acquisition.md
-    videoPath_.establishSyncType();
+    videoPath_.establishSyncType((uint8_t)VideoSourceSelection::selected());
     videoPath_.prepareToMeasure(sampling_.readSourceLines());
 
     bool settling = false;

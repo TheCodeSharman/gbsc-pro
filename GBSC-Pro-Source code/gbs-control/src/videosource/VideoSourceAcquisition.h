@@ -227,7 +227,7 @@ public:
     void sourceInterrupted();
 
 private:
-    void noteSelection();
+    bool selectionMoved();
     bool detectionDue(uint32_t nowMs);
 
     bool sourceMoved();

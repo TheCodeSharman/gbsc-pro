@@ -148,7 +148,12 @@ public:
     // Put the chip on the sync path the source carries, so that what the caller
     // reads next is the source rather than the last one's path. Measures
     // nothing the engine keeps, and runs once per mode change.
-    void establishSyncType();
+    //
+    // **THE ANSWER IS HELD AGAINST THE SELECTION IT WAS CHOSEN FOR**, so it
+    // cannot outlive an input change: the two connectors carry different sync,
+    // and a held answer reapplied to the other one leaves the sync processor
+    // watching pins the selected source does not drive.
+    void establishSyncType(uint8_t chosenFor);
     void applySyncType(bool csync);
 
     // The hsync pulse, taken by the layer that measures and handed over. THE
@@ -416,10 +421,12 @@ private:
     SourceMeasurement &sampling_;
     bool scanModeApplied_;
     bool lineDoubled_;
-    bool syncTypeProbed_;
     // The path as it was last written, so a mode change that reuses the held
     // sync type pays neither the probe nor the settle behind it.
     bool syncTypeApplied_, syncTypeInForce_;
+    // No selection carries this value, so the first pass always establishes.
+    static const uint8_t NoSelectionSeen = 0xFF;
+    uint8_t syncTypeChosenFor_;
     bool (*syncProbe_)();
     SourceKey framedKey_;
     FramingTable &framings_;

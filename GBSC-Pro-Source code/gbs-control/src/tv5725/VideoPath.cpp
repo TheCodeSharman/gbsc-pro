@@ -37,8 +37,8 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       timing_(0.0f),
       sampling_(sampling),
       scanModeApplied_(false), lineDoubled_(true),
-      syncTypeProbed_(false), syncTypeApplied_(false),
-      syncTypeInForce_(false), syncProbe_(0),
+      syncTypeApplied_(false),
+      syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), syncProbe_(0),
       framings_(framings),
       solvePending_(false), modePending_(false), modeOversample_(4),
       heldDivider_(0), fullFraming_(false), installedRateHz_(0),
@@ -596,15 +596,15 @@ void VideoPath::useSyncTypeProbe(bool (*hasOwnVsync)()) { syncProbe_ = hasOwnVsy
 
 void VideoPath::forgetSyncType()
 {
-    syncTypeProbed_ = false;
+    SyncMeasurement::forget();
     syncTypeApplied_ = false;
 }
 
 bool VideoPath::reacquireSyncType()
 {
-    syncTypeProbed_ = false;
+    SyncMeasurement::forget();
     syncTypeApplied_ = false;
-    establishSyncType();
+    establishSyncType(syncTypeChosenFor_);
     return SyncMeasurement::isCsync();
 }
 
@@ -627,19 +627,24 @@ bool VideoPath::reapplySyncTypeInForce()
 // escalation ladder: the wrong path counts 97..137 on a 311-line source, which
 // arms a re-probe.
 // ../../../../docs/investigations/own-vsync-probe-window.md
-void VideoPath::establishSyncType()
+void VideoPath::establishSyncType(uint8_t chosenFor)
 {
+    if (chosenFor != syncTypeChosenFor_) {
+        syncTypeChosenFor_ = chosenFor;
+        SyncMeasurement::forget();
+        syncTypeApplied_ = false;
+    }
+
     if (syncProbe_ == 0)
         return;
 
-    bool csync;
-    if (syncTypeProbed_) {
-        csync = SyncMeasurement::isCsync();
-    } else {
-        syncTypeProbed_ = true;
-        csync = SyncMeasurement::probe(syncProbe_);
-    }
-    applySyncType(csync);
+    // ONE RECORD OF WHETHER THE SYNC TYPE IS KNOWN, and it is
+    // SyncMeasurement's. A second flag here cannot see the sketch's own
+    // forget(), so a reset that says the answer is unknown left this reading a
+    // held value the reset had already replaced with a guess -- measured on the
+    // bench as the right arrangement applied on an input change and undone five
+    // seconds later when detection dropped to low power.
+    applySyncType(SyncMeasurement::syncType(syncProbe_));
 }
 
 // The settle is what makes this worth skipping: applying the path the chip is
@@ -650,6 +655,15 @@ void VideoPath::applySyncType(bool csync)
         return;
     syncTypeApplied_ = true;
     syncTypeInForce_ = csync;
+
+    // THE ARRANGEMENT IS INVISIBLE OTHERWISE. Every register it writes is one
+    // several other paths also write, so which owner last had it cannot be read
+    // off a dump -- and a source measured through the wrong one reports a clean
+    // count for the source on the other connector.
+    char line[56];
+    snprintf(line, sizeof(line), "sync arrangement: %s for input %u",
+             csync ? "composite or SOG" : "separate", (unsigned)syncTypeChosenFor_);
+    tv5725Log(line);
 
     SyncProcessor::applyForSyncType(csync);
     ModeDetect::applySyncType(csync ? ModeDetect::Csync : ModeDetect::SeparateSync);
