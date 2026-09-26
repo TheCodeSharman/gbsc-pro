@@ -33,7 +33,9 @@ VideoSourceAcquisition::VideoSourceAcquisition(Tv5725::SourceMeasurement &sampli
       unsettledPasses_(0), unsettledArmed_(false),
       vsyncAbsentPasses_(0), vsyncAbsentArmed_(false),
       unmeasuredPasses_(0), acquiredPasses_(0), recoveryPosition_(0),
-      firstAcquisition_(true), selectionSeen_(VideoSourceSelection::selected()),
+      firstAcquisition_(true), firstAcquisitionTimed_(false),
+      firstAcquisitionMs_(0),
+      selectionSeen_(VideoSourceSelection::selected()),
       runAdvanced_(false) {}
 
 void VideoSourceAcquisition::useRunGate(bool (*mayRun)()) { mayRun_ = mayRun; }
@@ -537,11 +539,20 @@ bool VideoSourceAcquisition::poll(uint32_t nowMs)
         unmeasuredPasses_ = 0;
         recoveryPosition_ = 0;
         firstAcquisition_ = false;
+        firstAcquisitionTimed_ = false;
         if (acquiredPasses_ < AcquiredPassCeiling)
             ++acquiredPasses_;
     } else {
         acquiredPasses_ = 0;
         unmeasuredPasses_ = (uint16_t)((unmeasuredPasses_ + 1) % SyncRecovery::CycleLength);
+        if (firstAcquisition_) {
+            if (!firstAcquisitionTimed_) {
+                firstAcquisitionTimed_ = true;
+                firstAcquisitionMs_ = nowMs;
+            } else if (nowMs - firstAcquisitionMs_ >= FirstAcquisitionGraceMs) {
+                firstAcquisition_ = false;
+            }
+        }
         if (!firstAcquisition_)
             recoveryPosition_ =
                 (uint16_t)((recoveryPosition_ + 1) % SyncRecovery::CycleLength);
@@ -632,6 +643,7 @@ bool VideoSourceAcquisition::selectionMoved()
         return false;
     selectionSeen_ = chosenNow;
     firstAcquisition_ = true;
+    firstAcquisitionTimed_ = false;
     recoveryPosition_ = 0;
     return true;
 }

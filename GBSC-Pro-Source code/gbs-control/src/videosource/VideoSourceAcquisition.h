@@ -394,6 +394,17 @@ private:
     // every rung to FullReset falls due DURING an ordinary selection, tearing
     // down the sync path the engine is still solving through.
     bool firstAcquisition_;
+
+    // How long that hold lasts. It exists so the ladder does not tear down a
+    // sync path an ordinary selection is still solving through, which is a
+    // bounded job -- 4.4 to 6.8 s on a component source, measured -- while
+    // FullReset is the only thing that resets the sync processor block, and a
+    // block that has wedged is recoverable by nothing else.
+    // ../../../../docs/known-issues.md
+    static const uint32_t FirstAcquisitionGraceMs = 15000;
+
+    bool firstAcquisitionTimed_;
+    uint32_t firstAcquisitionMs_;
     VideoSourceSelection::Id selectionSeen_;
     bool runAdvanced_;
 };

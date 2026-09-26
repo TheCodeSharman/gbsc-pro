@@ -2270,3 +2270,49 @@ TEST_CASE("selecting another input re-establishes the sync arrangement")
     CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
     VideoSourceSelection::forgetSelection();
 }
+
+// The escalation ladder is held off through a first acquisition so its rungs
+// do not tear down a sync path the engine is still solving through. FullReset
+// is the only thing that resets the sync processor block, though, and a block
+// that has wedged is recoverable by nothing else -- measured on the Wii at
+// 480p over ypbpr, where the configuration reads correct throughout
+// (SP_PRE_COAST 7, SP_POST_COAST 6, SP_DLT_REG 192, SP_SOG_MODE 1) and the
+// block still counts 100 lines with the ADC PLL unlocked, until a
+// SFTRST_SYNC_RSTZ pulse clears it. So the hold is bounded rather than
+// permanent. docs/known-issues.md
+TEST_CASE("a first acquisition that never completes lets the ladder back in")
+{
+    seedBenchSource();
+    seedLineSamples(BenchDivider);
+    Acquiring unit;
+    unit.start();
+
+    seedSourceLines(97);                  // a count no source runs
+    unit.path.inputTimingsChanged();
+
+    // A rung is due only on its own first-fire pass, so what a case can ask is
+    // whether one came due at all across the window.
+    bool escalated = false;
+    bool fullReset = false;
+    for (uint16_t i = 0; i < 7000 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
+        unit.poll();
+        if (unit.acquisition.recoveryDue() != SyncRecovery::None)
+            escalated = true;
+    }
+
+    // A healthy component acquisition is 4.4 to 6.8 s, so nothing has escalated
+    // by then.
+    CHECK_FALSE(escalated);
+
+    for (uint16_t i = 0; i < 20000 / VideoSourceAcquisition::DetectionIntervalMs; ++i) {
+        unit.poll();
+        const SyncRecovery::Step due = unit.acquisition.recoveryDue();
+        if (due != SyncRecovery::None)
+            escalated = true;
+        if (due == SyncRecovery::FullReset)
+            fullReset = true;
+    }
+
+    CHECK(escalated);
+    CHECK(fullReset);
+}
