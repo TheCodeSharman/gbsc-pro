@@ -383,7 +383,15 @@ diagnosing "the unit" while able to observe roughly a third of it.
   115200 8N1. 7-byte frame: `41 44 <cmd> <arg> <val|nonce> FE <sum of bytes 0-5>`.
   `'S'` selects input: `0x4n` RGBs, `0x5n` RGsB, `0x6n` VGA, `0x70` YPbPr,
   `0x1n` S-Video, `0x2n` composite; `0xA0`/`0xA1` toggle `asw_02`. There is **no
-  readback** — the `'I'` INFO handler is commented out.
+  readback**, and the reason is the BOARD rather than the firmware: **no
+  conductor carries a reply.** `ESP_RXD` is driven only by the CH340's TXD
+  through R60, and the HC32's `USART4` TX (PB6, pin 42) goes to the J18 header
+  and to SW2, the update button that holds the bootloader entry — so the pin
+  that would answer is spent on something else. Read off schematic sheet 12.
+  **No HC32 firmware change reaches an acknowledge, a state query, a log or a
+  UART IAP**; each needs a wire, and J18 exposes PB5/PB4/PB3 beside GND for
+  one. The `'I'` INFO handler being commented out is a consequence of this, not
+  the cause.
 - **The OLED menu is on the ESP**, not the HC32. Picking an input there works
   because that handler transmits the frame above.
 - **`ADC_INPUT_SEL` is only half the input path.** It selects which TV5725 ADC
