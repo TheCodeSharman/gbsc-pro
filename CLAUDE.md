@@ -54,9 +54,18 @@ known to do.
 `hdmi_capture.py` gives the emitted frame itself, so a margin is a number rather
 than a judgement and two states compare without controlling the room. The
 television runs beside it off the dongle's loop-out, so both views are live at
-once. **A stream of black frames is the HDMI connector at the dongle**, which
-neither power cycle clears and which every software-visible signal reports as
-healthy. `docs/bench-output-capture.md`.
+once. **A BLACK CAPTURE IS A BAD SCALER CONFIGURATION UNTIL THE BOARD HAS BEEN
+RULED OUT.** Measured: the blocks the low-power teardown holds down
+(`SFTRST_MEM_RSTZ` and its four neighbours in `s0_46`) were left held after the
+source acquired, and the part emitted nothing while every configuration register
+read correct -- a clean `/getregs` is no evidence here. Ask `s0_46`, then `s0_45`
+and `s0_49`, then the console's `frame time lock` line, whose `out` rate proves
+the scaler is feeding the encoder.
+**An unseated HDMI input at the dongle does the same and neither power cycle
+clears it -- but it is the LAST resort rather than the first**, because a
+connector that has been seated stays seated, and reaching for it ahead of the
+board is how a real fault gets a session spent on the cable.
+`docs/bench-output-capture.md`.
 
 ## Layout
 
