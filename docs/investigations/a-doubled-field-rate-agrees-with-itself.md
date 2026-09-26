@@ -107,6 +107,35 @@ rate as such.
 `VPERIOD_IF` does not discriminate it -- 524 at the doubled readings and 524
 once settled -- so it is not available as the independent witness.
 
+## What a self-consistent reference changed
+
+`setResetParameters()` wrote `IF_HSYNC_RST` as the literal `0x3FF` beside a
+divider of 2506, and `lineCounterFor(2506, false)` is 2506 against an
+eleven-bit register, so the undoubled bring-up line truncates to 458 -- which is
+what the bench reads during the window the doubled rate is measured in.
+`Adc::BringUpLineDoubled` states the scan the pair is carried as, the counter
+becomes 1253, and it fits.
+
+**The doubled readings go.** Six input changes carry no reading at twice the
+source's rate, where every capture before it carried 119.85 and 119.90 and
+sized a divider of 694.
+
+**It buys no acquisition time**, because the next transient takes the place the
+doubled one had:
+
+```
+sampling: 524 lines x 92.18 Hz -> line rate 48396
+sampling: rate 48396 doubled 0 -> divider 936
+sampling: 524 lines x 59.95 Hz -> line rate 0      the true rate, refused
+sampling: 524 lines x 59.95 Hz -> line rate 0
+```
+
+That is `a-transient-becomes-the-judged-rate.md` rather than this: 92.18 Hz is
+accepted first, becomes what `rateFollowsCount()` judges against, and the
+correct readings are refused until `HeldRateRejectionLimit` drains. **92.18 Hz
+is the first reading of every capture taken on this source, to the hundredth**,
+so it is deterministic and not jitter.
+
 ## What this is not
 
 It is not `SourceMeasurement::settlePasses_` being unarmed.
