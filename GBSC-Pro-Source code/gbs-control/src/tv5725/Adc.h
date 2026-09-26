@@ -440,6 +440,15 @@ public:
     // this leaves it low rather than writing the byte it sits in.
     static void holdPllInReset();
 
+    // The reference sampling clock, installed as the whole PLL group. **A SOURCE
+    // CANNOT BE MEASURED THROUGH THE DIVIDER THE LAST ONE LEFT**, because the
+    // sync processor counts in ADC clocks: on a source the previous input's
+    // divider does not fit, STATUS_SYNC_PROC_VTOTAL reads 97 and there is
+    // nothing to solve from. So anything that changes which source is arriving
+    // installs this first, measures, then solves.
+    // ../../../../docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md
+    static void installReferenceSamplingClock();
+
     static void applyResetParameters();
 
     // Whether the PLL is running the divider in force, against the sync

@@ -1106,3 +1106,27 @@ TEST_CASE("the sync processor's phase is not in force until its adjuster restart
     CHECK((last & 0x01) == 1);
     CHECK(((last >> 1) & 0x1f) == 5);
 }
+
+TEST_CASE("a new source is measured through the reference clock, not the last one's")
+{
+    // The divider in force belongs to whatever was selected before, and the sync
+    // processor counts in ADC clocks, so a source measured through it cannot be
+    // counted: measured on the bench, STATUS_SYNC_PROC_VTOTAL reads 97 against
+    // the previous input's 1438 and the engine has nothing to solve from.
+    // docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md
+    Wire.reset();
+
+    Adc::installReferenceSamplingClock();
+
+    CHECK(Wire.field(5, Adc::PLLAD_MD::byteOffset, Adc::PLLAD_MD::bitOffset,
+                     Adc::PLLAD_MD::bitWidth) == Adc::BringUpDivider);
+}
+
+TEST_CASE("the reference clock is latched, so the PLL leaves on it")
+{
+    Wire.reset();
+
+    Adc::installReferenceSamplingClock();
+
+    CHECK(lastWriteOf<Adc::PLLAD_MD>() < latchRisingEdge());
+}

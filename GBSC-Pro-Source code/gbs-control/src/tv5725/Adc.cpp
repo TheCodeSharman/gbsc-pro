@@ -451,6 +451,11 @@ void Adc::applyResetParameters()
     PLLAD_R::write(3);
     PLLAD_S::write(3);
 
+    installReferenceSamplingClock();
+}
+
+void Adc::installReferenceSamplingClock()
+{
     // The whole group, not the divider alone. A divider written without the
     // crossover row and the VCO gain puts the PLL on a frequency the hardware
     // will not run, which is a solid green screen with every register

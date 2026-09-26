@@ -606,6 +606,7 @@ void applyInputSelection(VideoSourceSelection::Id id)
     SeleInputSource = settings.legacySource;
     VideoSourceSelection::select(id);
     sourceAbsence.selectionChanged();
+    Tv5725::Adc::installReferenceSamplingClock();
     resetSyncProcessor();
     applyInputRegisters(settings);
     BriorCon = settings.brightnessSet;
