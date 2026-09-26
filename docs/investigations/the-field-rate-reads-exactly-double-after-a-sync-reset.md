@@ -1,38 +1,30 @@
-# The field rate reads exactly double after a sync reset, on the component path
+# The field rate reads exactly double after a sync reset
 
-`SourceMeasurement::sampleFieldRateHz()` returns **119.87 Hz against a real
-59.93** in the window after the sync processor is reset on `ypbpr` -- exactly
-twice, two or three consecutive samples, clearing in about 0.3 s. On `vga` it
-does not happen.
+`SourceMeasurement::sampleFieldRateHz()` returns **exactly twice the source's
+field rate** in the window after the sync processor is reset -- two or three
+consecutive samples, clearing in a few hundred milliseconds. Measured on both
+bench inputs:
+
+| source | sync | count | settled | the samples in that window |
+|---|---|---|---|---|
+| Wii 480p on `ypbpr` | sync on green | 524 | 59.93 Hz | 119.87, 119.87, 119.87 |
+| RiscPC 320x256@50 on `vga` | separate H/V | 311 | 50.08 Hz | 100.16, 100.16, 100.16 |
 
 The rate is timed off the input formatter's vertical on the test bus
 (`TestBusRateMeasurement::sourceFieldRateHz(false)` selects it), so what is
-doubled is the number of vertical assertions per frame rather than anything
-arithmetic in the engine.
-
-## The measurement
-
-`/sc?~` on a settled source, eight trials each, same build, same command. The
-count is the engine's own `sampling:` line.
-
-| input | trials showing an exactly doubled rate | what the samples read |
-|---|---|---|
-| `ypbpr`, Wii 480p, sync on green | **8 of 8** | 119.87, 119.87, 119.87 then 59.93 |
-| `vga`, RiscPC 800x600@60, separate sync | **0 of 8** | 60.31 throughout |
-
-It is not strictly exclusive to the component path -- one earlier `vga` trial in
-eleven read `627 lines x 120.63 Hz`, which is the same exact doubling. So the
-asymmetry is overwhelming rather than absolute, and an explanation resting on
-component video alone has that one reading to account for.
+doubled is the number of vertical assertions the pin carries rather than
+anything arithmetic in the engine: the period is counted on the ESP's own clock
+and the divider does not enter it.
 
 ## `rateFollowsCount()` hides it, and a change of input removes the guard
 
-Every doubled sample above reported `line rate 0`. The count had not moved, so
-`rateFollowsCount()` refused the rate against the held one, and nothing acted on
-it. **That is why the fault is invisible on a re-detect.**
+Every doubled sample on a source whose count has not moved reports `line rate
+0`. The count had not moved, so `rateFollowsCount()` refused the rate against
+the held one and nothing acted on it. **That is why the fault is invisible on a
+re-detect.**
 
 A change of input is the case the guard is deliberately off for -- a moved count
-IS a mode change, so any rate is admitted. Measured over four `vga` -> `ypbpr`
+IS a mode change, so any rate is admitted. Measured over three `vga` -> `ypbpr`
 selections, every one of them:
 
 ```
@@ -45,124 +37,119 @@ sampling: rate 31468 doubled 0 -> divider 1448
 ```
 
 62936 is exactly twice 31468. So the engine solves **three dividers and three
-ADC PLL re-latches** before it lands, on every `ypbpr` selection, 4 of 4. The
-same four `vga` selections solved one divider each and showed no wrong rate.
+ADC PLL re-latches** before it lands, on every `ypbpr` selection, against one on
+`vga`.
 
-## The cause: the input formatter is left describing two different scans
+## Four candidates, all refuted
 
-**The doubled samples land exactly in a window where the block's scan registers
-disagree with each other.** Read against the console in one window, polling the
-five registers that carry the scan across a `vga` -> `ypbpr` selection:
+Each of these was the leading explanation at some point and each is now closed
+by measurement. Do not reinstate one without new evidence.
 
-| when | `PRGRSV` | `LD_RAM_BYPS` | `LD_SEL_PROV` | `HS_DEC_FACTOR` | `HSYNC_RST` | `PLLAD_MD` | the rate read |
-|---|---|---|---|---|---|---|---|
-| settled, before | 1 | 1 | 1 | 0 | 1438 | 1438 | 60.31, right |
-| reference line in | 1 | 1 | 1 | **1** | **1253** | 2506 | -- |
-| the measurement | 1 | 1 | 1 | **1** | **1253** | 2506 | **119.87, twice** |
-| solved | 1 | 1 | 1 | 0 | 1448 | 1448 | 59.93, right |
+**NOT the input formatter's scan being half applied.** The scan is five
+registers -- three routing the line doubler, plus the counter and the decimation
+that size the line for it -- and they used to be written by two owners: the
+selection installed the reference line's counter and decimation while the solve
+wrote the three path registers for the arriving source, its own counter write
+refusing. The doubled samples landed in that window, which read `PRGRSV` 1,
+`LD_RAM_BYPS` 1, `LD_SEL_PROV` 1 against `HS_DEC_FACTOR` 1 and a counter of
+1253. With `InputFormatter::applyScan()` making the five one write, a register
+poll interleaved with the console across a selection reads a consistent scan on
+every one of hundreds of samples -- and **three consecutive samples still read
+119.87**, taken at `MD 2506 RST 1253 DEC 1 path 000`, wholly agreeing.
 
-The three path registers say PROGRESSIVE while the decimation and the counter
-say DOUBLED. The block is told an IF unit is two ADC samples with the
-progressive path in circuit, and its vertical then asserts twice per frame.
+**NOT the doubled scan itself.** The everyday bench source is 311 lines and is
+captured line-doubled all day, reading 50.08 Hz. A doubled scan is not enough.
 
-**Two writers put it there, each writing part of the scan.**
-`setResetParameters()` calls `writeLineCounter(BringUpDivider,
-BringUpLineDoubled)`, which writes the counter and the decimation and nothing
-else -- the reference line cannot be represented undoubled, 2506 truncating to
-458 in an eleven-bit counter, so it has to be doubled. Then
-`VideoPath::solveLineDoubling()` decides the arriving source is progressive and
-calls `applyLineDoubling(false, ...)`, which writes the three path registers and
-then asks `writeLineCounter(2506, false)` to re-size -- which **refuses**, 2506
-not fitting, and leaves the decimation and the counter on the doubled line.
+**NOT the divider.** Held at the reference divider with
+`/sampleclock?hold=2506` -- the engine solving around it, so the state is
+`MD 2506`, `STATUS_SYNC_PROC_HTOTAL` 2506, counter 1253, decimation 1, the exact
+register state the doubled samples are read in -- a source mode change forces a
+fresh measurement and it reads **50.08 Hz, twice over**. The divider the doubled
+samples share is a coincidence of when the reference clock is in force, not a
+cause.
 
-So each writer is individually defensible and the pair of them leaves a scan
-that is half one thing and half the other. It is the same shape as
-`two-owners-of-the-coast-lengths-double-the-count.md`: one configuration, two
-authors, and a self-consistent-looking register dump.
+**NOT the sync arrangement, and not the Wii.** The asymmetry the earlier trials
+showed -- 8 of 8 on `ypbpr` against 0 of 8 on `vga` -- does not survive a
+`vga` source that is line-doubled: the RiscPC at 320x256@50 on separate sync
+reads three consecutive samples at 100.16 Hz. The earlier `vga` trials were
+taken at 800x600@60, which is progressive, so what they varied was the scan and
+not the connector.
 
-**The input asymmetry follows from it.** On separate sync the vertical the test
-bus carries comes from the dedicated VSync pin rather than from the input
-formatter's own separator, so a mixed scan does not corrupt it -- which is the
-same reason `VPERIOD_IF` is debris on that input.
+**NOT the coast.** `SP_PRE_COAST`/`SP_POST_COAST` read 7/6 unchanged through the
+doubled samples and the correct ones that follow, with `SP_SOG_MODE` 1,
+`SP_EXT_SYNC_SEL` 1, `SP_H_PULSE_IGNOR` 2 and `SP_DLT_REG` 0xC0 beside them, and
+the sync processor's line count is 524 and correct in the same samples. The
+serration mechanism of `two-owners-of-the-coast-lengths-double-the-count.md`
+does not explain this one.
 
-## A fix has to apply the scan and the divider together, and that is the hard part
+## What is left
 
-**Tried and reverted**, so the next attempt does not repeat it.
+The window itself: after the sync processor is reset and before the source has
+settled, with the reference clock in force. In every tape the doubled samples
+arrive within a second of `source absent` or `DETECT` and are followed by a
+correct one with nothing in the register set having moved that any of the
+refutations above leaves standing.
+
+**Do not read it as ordinary settling.** A first sample of 60..160 Hz followed by
+a good one is documented as `getSourceFieldRate()` settling and 119.87 sits
+inside that band, which is exactly what has let this pass as normal. A settling
+analog path gives arbitrary values; three consecutive samples at 2.0000x do not.
+
+The next instrument is the one a 0.4 s HTTP poll cannot be: the doubled samples
+and the correct ones are 300 ms apart, and what separates them has to be sampled
+from inside `loop()`. `Tv5725::SamplingLog` sweeping the sync processor and the
+input formatter's status bits through that window is the measurement, not more
+point reads.
+
+## Two refuted attempts at a fix, before the cause was known
+
+Both were aimed at the mixed scan, which is now refuted as the cause -- but the
+shapes are worth not repeating.
 
 Making the reference line go in as a whole scan is correct and not sufficient.
-`InputFormatter::carryReferenceLine()` -- `applyLineDoubling(true, component)`
-followed by `writeLineCounter(divider, true)` -- does make the reference window
-consistent, measured: the block reads `PRGRSV` 0, `LD_RAM_BYPS` 0, `LD_SEL_PROV`
-0 with the doubled counter, where before it read the mixture above. But the
-mixture is then **re-created** by `applyLineDoubling(false, ...)` a moment later,
-and the doubled rate is read in that second window instead. Measured, the divider
-churn is unchanged: still 694, then 2200, then 1448.
+`applyLineDoubling(true, component)` followed by `writeLineCounter(divider,
+true)` does make the reference window consistent, measured, and the mixture is
+then **re-created** by `applyLineDoubling(false, ...)` a moment later. The
+divider churn was unchanged: still 694, then 2200, then 1448. It also cost about
+a second of acquisition on `ypbpr`, 5.5..6.3 s against 4.9..5.1 s.
 
 Refusing the scan when its line will not fit the counter deadlocks. The divider
 install on the output path is gated on the scan having changed, so a refused
 scan stops the divider moving and the scan can then never come to fit. Four host
 suites catch it.
 
-**What the shape has to be**: the scan is decided from the line count, the
-divider is derived from the scan, and the two are then applied TOGETHER, so the
-counter is always sized for the divider going in beside it. Today
-`solveLineDoubling()` both decides and applies, and `applySampling()` applies the
-divider separately -- and between them is the window this fault lives in.
-
 **Do not judge an attempt on one run, and let the unit settle after a flash.**
-`carryReferenceLine` measured 1 of 8 on the trial below immediately after its
-flash and 8 of 8 on the identical build once settled, which read as a fix and was
-not one. It also cost about a second of acquisition on `ypbpr`, 5.5..6.3 s
-against 4.9..5.1 s.
+The first of those measured 1 of 8 immediately after its flash and 8 of 8 on the
+identical build once settled, which read as a fix and was not one.
 
-## The coast is not the cause
+## The scan has one owner now, and that stands on its own
 
-The obvious candidate is the mechanism of
-`two-owners-of-the-coast-lengths-double-the-count.md`: an insufficient coast
-lets the equalisation and serration pulses either side of the vertical interval
-be counted, and roughly twice comes out. **Refuted here.** Read against the
-console in one window, `SP_PRE_COAST`/`SP_POST_COAST` hold **7/6 unchanged**
-through the doubled samples and through the correct ones that follow 0.3 s
-later, as do `SP_SOG_MODE` 1, `SP_EXT_SYNC_SEL` 1, `SP_H_PULSE_IGNOR` 2 and
-`SP_DLT_REG` 0xC0.
+`InputFormatter::applyScan(divider, lineDoubled, component)` writes all five
+registers or none of them, and it is the only way in. `VideoPath` applies it
+beside the divider it was sized for; `solveLineDoubling()` decides the scan and
+applies it against the clock already in force, so the block is still corrected
+while the source is unmeasurable -- its own measurements only mean something
+once its scan matches the source, and a scan derived after that gate is never
+reached. The three callers outside the engine -- the selection edge, the reset
+parameters and the `/sampleclock` debug route -- each install a consistent pair.
 
-So whatever clears it is not one of those six, and the doubling is not the
-serration count wearing another name -- the sync processor's line count is
-**524 and correct** in the same samples that report 119.87 Hz.
+What that bought, measured across three `vga` -> `ypbpr` cycles either side:
+the refused-counter lines per selection fell from four to two, acquisition was
+unchanged (`vga` 3.8 s, `ypbpr` 5.7..6.2 s), and the scan never half-describes
+the line. What it did not buy is the doubled rate or the divider churn, which
+are unchanged.
 
-What does clear it is somewhere in the recovery ladder: the last doubled sample
-lands 90 ms after `recovery: coast window at pass 8` and the first correct one
-100 ms after that. A 0.4 s register poll cannot resolve which write did it, so
-the next instrument is a `SamplingLog`-style sweep of the sync processor through
-that 300 ms rather than more point reads.
+`tools/gbsc-pro-hwtest/test_selection_measures_one_line.py` guards it: polled
+across one selection, the pre-fix build reads the mixture in 13 of 266 samples
+and the fixed build in none.
 
-## What is established, and what is not
+## The selection path installs the clock and the line together now
 
-Established: the phenomenon, its exactness, its input asymmetry, the guard that
-hides it, the case that removes the guard, the cost in dividers, and the mixed
-scan that causes it. Not established: the chip-internal reason a mixed scan makes
-the vertical assert exactly twice rather than at some other ratio -- which is not
-needed to fix it, the mixture being wrong whatever the ratio.
-
-**Do not read the divider churn as settling.** A first sample of 60..160 Hz
-followed by a good one is documented as `getSourceFieldRate()` settling, and
-119.87 sits inside that band -- which is exactly what has let this pass as
-normal. A settling analog path gives arbitrary values; three consecutive samples
-at exactly 2.0000x do not.
-
-## The selection path installs the clock without the line it implies
-
-Found in the same tapes and separate from the above. `Adc::BringUpLineDoubled`
-exists because the reference divider cannot be represented undoubled -- 2506
-truncates to 458 in an eleven-bit counter. `setResetParameters()` honours it,
-writing `writeLineCounter(BringUpDivider, BringUpLineDoubled)` beside the clock.
-`applyInputSelection()` installs the clock alone, and
-`VideoPath::inputTimingsChanged()` then re-applies the divider in force carrying
-`lineDoubled_`, the PREVIOUS source's scan.
-
-The visible result is two to four `if line counter: 2506 does not fit, holding
-N` lines per selection. Nothing is corrupted, because `writeLineCounter()`
-refuses a counter that does not fit and leaves both registers alone -- the pair
-stays agreeing. But the refusal is the block's line being sized by a scan that
-was never the reference clock's, and the correct value arrives only on the paths
-that happen to run the teardown.
+`Adc::BringUpLineDoubled` exists because the reference divider cannot be
+represented undoubled -- 2506 truncates to 458 in an eleven-bit counter.
+`applyInputSelection()` used to install the clock alone, leaving the previous
+source's line beside it, and `VideoPath::inputTimingsChanged()` then re-applied
+the divider in force carrying the previous source's scan. Both install the
+reference pair whole now, and `inputTimingsChanged()` re-asserts the clock
+alone -- the divider being the one already in force, the line beside it already
+describes it.
