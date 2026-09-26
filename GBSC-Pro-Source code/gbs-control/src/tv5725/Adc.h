@@ -419,6 +419,14 @@ public:
     static const uint16_t BringUpDivider = 2506;
     static const uint32_t BringUpLineRateHz = 15625;
 
+    // The scan the bring-up line is carried as, which the input formatter's
+    // line counter is sized from. 15625 is the SD line, and an SD line is
+    // doubled -- so the counter is half the divider and fits its eleven bits.
+    // Undoubled the pair cannot be represented at all: 2506 truncates to 458,
+    // and the block then counts several lines per line and times the source's
+    // field rate off the result.
+    static const bool BringUpLineDoubled = true;
+
     // The divider alone, latched. NOT the crossover row -- applySampleRate() is
     // what writes the group, and a caller here is holding the rest itself.
     static void applyDivider(uint16_t divider);

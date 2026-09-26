@@ -16,6 +16,7 @@ FakeTwoWire Wire;
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Axis.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/VideoSourceLine.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/Adc.h"
 
 static Tv5725::InputFormatter inputFormatter;
 
@@ -41,6 +42,32 @@ struct FreshChip {
         inputFormatter.init();
     }
 };
+
+// The reset state installs a divider and a line counter, and they have to
+// describe the same line: the source's field rate is timed off this block's
+// test bus, so a counter sized for a line the ADC is not clocking reports a
+// rate that is not the source's.
+//
+// IF_HSYNC_RST is ELEVEN BITS. A counter that does not fit is truncated by the
+// register and says nothing -- 2506 arrives as 458 -- so the bound is what the
+// bring-up pair has to satisfy, not a preference.
+TEST_CASE("the bring-up line counter fits the register it is written to")
+{
+    const uint16_t divider = Tv5725::Adc::BringUpDivider;
+    const bool doubled = Tv5725::Adc::BringUpLineDoubled;
+    const uint16_t counter = InputFormatter::lineCounterFor(divider, doubled);
+    const uint16_t maximum = InputFormatter::LineCounterMax;
+
+    CHECK(counter <= maximum);
+
+    SUBCASE("and it is the divider's own line, not a literal") {
+        // 0x3FF is what the reset used to write, and it is neither the divider
+        // nor half of it.
+        const uint16_t halved = (uint16_t)(divider / 2);
+        CHECK(counter == halved);
+        CHECK(counter != 0x3FF);
+    }
+}
 
 TEST_CASE("the line double write reset position is owned, one value for every mode")
 {

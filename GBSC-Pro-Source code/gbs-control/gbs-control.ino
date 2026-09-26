@@ -1278,7 +1278,8 @@ void setResetParameters()
     rto->presetID = 0;
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
-    GBS::IF_HSYNC_RST::write(0x3FF);
+    inputFormatter.writeLineCounter(Tv5725::Adc::BringUpDivider,
+                                   Tv5725::Adc::BringUpLineDoubled);
     inputFormatter.writeReferenceVerticalBlank();
 
     frameSync.cleanup();
