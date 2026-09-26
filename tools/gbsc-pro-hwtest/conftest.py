@@ -7,10 +7,13 @@ import pytest
 
 from gbs_unit import (
     Console,
+    geometry_gated,
     get,
     mode_serv,
     read_reg,
     reset_framing,
+    select_input,
+    wait_for_acquisition,
     write_reg,
 )
 
@@ -322,3 +325,23 @@ def register_guard(host):
 
     for segment, register, value in reversed(saved):
         write_reg(host, segment, register, value)
+
+
+@pytest.fixture
+def on_vga(host, source):
+    """Settled on `vga`, so a test about changing input starts from one known
+    divider and one known solve every run.
+
+    Skips rather than fails where the source will not lock: both bench sources
+    being present is the operator's promise rather than something the unit can be
+    asked, and the Wii goes to its idle screen on a button press. Leaves the unit
+    on `ypbpr`, which is where the bench keeps it.
+    """
+    if geometry_gated(host):
+        pytest.skip("/geometry is gated out of this build")
+    select_input(host, "vga")
+    if wait_for_acquisition(host, "vga") is None:
+        pytest.skip("vga does not acquire: check the source is on")
+    yield
+    select_input(host, "ypbpr")
+    wait_for_acquisition(host, "ypbpr")

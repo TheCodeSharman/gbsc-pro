@@ -140,6 +140,52 @@ def framing_of(payload):
         return None
     return {name: payload[name] for name in FRAMING_FIELDS if name in payload}
 
+# --- selecting between the bench sources ------------------------------------
+
+# The bench pair, and the line rate each measures when it is the one acquired. A
+# source is identified by its rate rather than its capture height: the solved
+# height varies between acquisitions of ONE source -- 525, 526 and 529 all
+# measured on the Wii -- so a harness keyed on that reports false stalls.
+SOURCES = {"vga": 37879, "ypbpr": 31468}
+RATE_TOLERANCE_HZ = 900
+
+# Healthy acquisitions land in 4..8 s, and the states these guard against did not
+# recover at all. Generous, because a slow acquisition is not the fault.
+ACQUIRE_LIMIT_S = 60.0
+
+
+def acquired_rate(host, want):
+    """The line rate once the engine holds an acquisition OF `want`, else None.
+
+    A stalled selection keeps the PREVIOUS source's solve and still reports
+    `state: acquired`, so the rate is what separates the two.
+    """
+    status, payload = get_json(host, "/geometry")
+    if status != 200 or payload is None:
+        return None
+    if payload.get("state") != "acquired":
+        return None
+    rate = payload.get("lineRateHz", 0)
+    if abs(rate - SOURCES[want]) > RATE_TOLERANCE_HZ:
+        return None
+    return rate
+
+
+def select_input(host, want):
+    """/input is queued for loop(), so the 200 means understood, not selected."""
+    assert "queued" in get(host, f"/input?src={want}")[1]
+
+
+def wait_for_acquisition(host, want, limit_s=ACQUIRE_LIMIT_S):
+    """Seconds until `want` is acquired, or None once `limit_s` has passed."""
+    started = time.monotonic()
+    while time.monotonic() - started < limit_s:
+        if acquired_rate(host, want) is not None:
+            return time.monotonic() - started
+        time.sleep(0.25)
+    return None
+
+
 # The character /sc? carries to reach Geometry::reset().
 #
 # **NOT '@'.** web_service() parks that in serialCommand to mean "nothing
