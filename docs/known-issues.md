@@ -241,42 +241,34 @@ a count that moves 624 -> 311 across one sync change.
 
 ### The composite capture window opens a whole pulse from the wrong end, and neither end is right
 
-The horizontal capture window opens 174 units earlier on composite sync than on
-separate sync, and the picture sits right on screen. RISC PC on `vga` at
-800x600@60, one cable, one raster, sync type the only variable:
+**FIXED, in two parts.** The whole pulse was `HsyncPulse` carrying the measured
+polarity into `syncAtHead`, and that went with the polarity. What was left is
+the sync separator's own delay: its output reaches the input formatter's line
+counter late, so a source through it -- composite sync and sync on green both --
+lands **7% of the line earlier in the counter** than its published raster
+states. `VideoSourceLine::SeparatorOriginPerMille` is 70.
 
-| field | separate | composite |
-|---|---|---|
-| `IF_HB_SP2` | 294 | **120** |
-| `IF_HB_ST2` | 1384 | **1210** |
-| `STATUS_SYNC_PROC_HLOW_LEN` | 176 | 173 |
-| `STATUS_SYNC_PROC_HSPOL` | 1 | 0 |
-| `SP_HS_INV_REG` | 1 | 0 |
+It is a fraction of the line and not a count of units, measured on one cable and
+one raster with the sync type the only variable:
 
-Same width, and a return to `SYNC 0` gives 294 exactly. Everything else in the
-placement chain is identical -- both scales, both memory windows, both display
-windows, both output sync pulses, the vertical pair and the divider.
+| mode | counter | separate - composite | fraction |
+|---|---|---|---|
+| 320x256@50, doubled | 1100 | 76.5 | **6.96%** |
+| 640x480@60, undoubled | 1446 | 103, 109 | **7.1%, 7.5%** |
 
-**The 174 is one whole pulse, taken from the polarity bit.**
-`VideoSourceLine::forDuty()` gets its origin end from `HsyncPulse::syncAtHead()`,
-which is a copy of the polarity `normalisePolarity()` read -- and on csync that
-bit reports the signal arriving BEFORE the separator, where the separator
-regenerates H. The duty is not the variable: 176/1438 and 173/1438 are 0.122 and
-0.120, both accepted, so neither state is on `FallbackDuty`.
+A count fitted to either is 40% wrong on the other. A constant time is refuted
+by the 800x600@60 point.
 
-**NEITHER VALUE IS CORRECT, WHICH IS WHY A CORRECTED BIT IS NOT THE FIX.**
-Frozen, with the separate-sync window forced onto composite, the picture moves
-too far the other way -- black at the right and the leftmost castellation column
-cut, where its own window leaves black at the left. Both bands are roughly equal
-by eye, about 180 and 190 px of a 1500 px picture, putting the truth near the
-midpoint of 120 and 294 -- about half a pulse, at neither end.
+Solved at 640x480@60 the two arrangements now place the window a lead apart --
+`IF_HB_SP2` 260 separate against 159 composite -- and the emitted picture is
+flush at both: the 128 px black band down the left of the composite frame is 4
+px, the same as separate.
 
-What would settle it: creep `IF_HB_SP2` from 120 upward with automation frozen,
-one unit a press, width held, and read the boundary off the picture.
-`creep_window.py` is the pattern. If the answer is the midpoint, a separator
-phase shift is the explanation and no choice of pulse end reproduces it.
+**The vertical residual is NOT fixed.** Composite still sits about 34 output
+rows up at 640x480@60, leaving a black band across the bottom, with the
+horizontal flush.
 
-`investigations/the-composite-capture-window-sits-between-two-wrong-values.md`
+`investigations/the-separator-moves-the-counters-origin.md`
 
 ### The sample-clock group has two writers, and they are the same function twice
 
