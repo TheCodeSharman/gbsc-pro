@@ -811,18 +811,30 @@ TEST_CASE("one framing names the same source video in either scan mode")
 
 // --- where a window may sit in the counter -----------------------------------
 
-TEST_CASE("the capture stops where the line wraps, and nowhere earlier")
+// A STOP AT THE COUNTER'S TOTAL NEVER CLOSES THE WINDOW. `units` is the span
+// IF_HSYNC_RST states and the counter runs 0..units-2 inside it, so units-1 is
+// the total itself and the counter never equals it. A window stopped there runs
+// on, and on the line-doubled path the capture stops being written at all:
+// measured on the bench RiscPC at 320x256@50, IF_HSYNC_RST 1100, engine-solved
+// at a 100% framing with the rest of the chain identical --
+//
+//     IF_HB_ST2  1100   the card frozen and played out twice down the frame
+//     IF_HB_ST2  1099   one card, the card's own animation running
+//     IF_HB_ST2  1098   the same
+//
+// One rule for both axes and both scan modes: the unit it gives up is the last
+// sample of the front porch horizontally and a line of the vsync pulse
+// vertically, and neither carries picture.
+// docs/investigations/the-capture-stop-must-be-a-unit-the-counter-reaches.md
+TEST_CASE("the capture stops on the last unit the counter reaches")
 {
-    // `units` is the wrap point, so the last unit a window may stop on is the
-    // one before it. That unit holds frame: the tail of an undoubled line is
-    // the front porch, and stopping a unit earlier loses a sample of it.
-    CHECK(reachOf(VideoSourceLine(1277), AxisHorizontal) == 1276);
-    CHECK(reachOf(VideoSourceLine(1126), AxisHorizontal) == 1125);
+    CHECK(reachOf(VideoSourceLine(1277), AxisHorizontal) == 1275);
+    CHECK(reachOf(VideoSourceLine(1101), AxisHorizontal) == 1099);
 
     SUBCASE("the head guard still applies, and the two do not cross") {
         const VideoSourceLine bench = measuredLine(1277, 181, 2553);
         CHECK(firstUnitOf(bench, AxisHorizontal) < reachOf(bench, AxisHorizontal));
-        CHECK(reachOf(bench, AxisHorizontal) == 1276);
+        CHECK(reachOf(bench, AxisHorizontal) == 1275);
     }
 }
 
@@ -855,14 +867,10 @@ TEST_CASE("the capture floor hides the sync pulse and nothing else")
         CHECK(firstUnitOf(line, AxisHorizontal) == line.syncUnits());
     }
 
-    SUBCASE("the stop is the last unit before the wrap") {
-        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine);
-        CHECK(reachOf(line, AxisHorizontal) == Units - 1);
-    }
-
     SUBCASE("the span left is the line less the pulse") {
         const VideoSourceLine line = measuredLine(900, 109, 900);
-        CHECK(capturableOf(line, AxisHorizontal) == 900 - 1 - line.syncUnits());
+        CHECK(capturableOf(line, AxisHorizontal)
+              == reachOf(line, AxisHorizontal) - line.syncUnits());
     }
 }
 

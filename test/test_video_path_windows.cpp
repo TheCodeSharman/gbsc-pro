@@ -667,14 +667,12 @@ TEST_CASE("a forced full framing captures everything the source offers")
     CHECK(Wire.field(1, 0x1E, 0, 11) == (verticalFloor > 0 ? verticalFloor : 0));
 
     // The far edge is the last unit the framing can name: the pulse is excluded
-    // at the head, so what is left runs to the unit before the counter wraps.
+    // at the head, and the tail stops on the last unit the counter reaches.
     // Nothing displaces it, so the registers follow the framing exactly.
     CHECK(Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11)
           == solved.engine.extentUnitsOn(AxisHorizontal));
-    CHECK(Wire.field(1, 0x18, 0, 11)
-          == solved.engine.lineUnitsOn(AxisHorizontal) - 1);
-    CHECK(Wire.field(1, 0x1C, 0, 11)
-          == solved.engine.lineUnitsOn(AxisVertical) - 1);
+    CHECK(Wire.field(1, 0x18, 0, 11) == solved.engine.reachOn(AxisHorizontal));
+    CHECK(Wire.field(1, 0x1C, 0, 11) == solved.engine.reachOn(AxisVertical));
 
     SUBCASE("and the scaler still magnifies rather than clamping at unity") {
         CHECK(Wire.field(3, 0x16, 0, 10) <= Scale::Max);
@@ -840,9 +838,9 @@ TEST_CASE("the framing realised at a zoom stop is the same whichever bound binds
             solved.engine.zoom(0, -40);
         }
         CHECK(solved.engine.originUnitsOn(AxisHorizontal) == 129);
-        CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 971);
+        CHECK(solved.engine.extentUnitsOn(AxisHorizontal) == 970);
         CHECK(solved.engine.originUnitsOn(AxisVertical) == 38);
-        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 585);
+        CHECK(solved.engine.extentUnitsOn(AxisVertical) == 582);
     }
 
     SUBCASE("zoomed in to where the magnification stops") {

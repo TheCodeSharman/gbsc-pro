@@ -98,17 +98,16 @@ uint16_t CaptureWindow::firstCapture(const VideoSourceLine &line)
 
 uint16_t CaptureWindow::lastCapture(const VideoSourceLine &line)
 {
-    // `units` is the wrap point, and a window written onto it rolls rather
-    // than clamping, so the last unit a window may stop on is the one before
-    // it. That unit is captured: horizontally it is the last sample of the
-    // front porch, vertically the last line of the vsync pulse.
-    // docs/investigations/the-capture-tail-was-one-unit-short.md
+    // `units` is the span IF_HSYNC_RST states, and the counter runs 0..units-2
+    // inside it -- units-1 is the total itself, which the counter never equals,
+    // so a window stopped there never closes.
+    // docs/investigations/the-capture-stop-must-be-a-unit-the-counter-reaches.md
     //
     // THE PULSE IS NOT TAKEN OFF THE TAIL, on either counter. Excluding it
     // costs picture: measured at 640x480@60 the right-hand border goes with
-    // it. What arrives there is bounded by the wrap, not by the pulse.
+    // it. What arrives there is bounded by the counter, not by the pulse.
     // docs/known-issues.md
-    return line.units() < 1 ? 0 : line.units() - 1;
+    return line.units() < 2 ? 0 : line.units() - 2;
 }
 
 uint16_t CaptureWindow::capturable(const VideoSourceLine &line)
