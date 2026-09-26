@@ -36,8 +36,7 @@ VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse
     // outside the capture rather than half in it. HsyncPulse's ceiling keeps it
     // under a sixth of the line, so what is left is always the greater part.
     return VideoSourceLine(units, (uint16_t)ceilf(units * pulse.syncDuty()),
-                           lineDoubled ? DoubledHeadBlankingUnits : 0,
-                           pulse.syncAtHead());
+                           lineDoubled ? DoubledHeadBlankingUnits : 0, true);
 }
 
 uint16_t VideoSourceLine::units() const { return units_; }

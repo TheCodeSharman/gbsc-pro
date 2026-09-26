@@ -424,11 +424,11 @@ bool SourceMeasurement::readSource()
     snprintf(line, sizeof(line), "duty: %u pulse / %u divider, htotal %u, %s%s%s",
              (unsigned)low, (unsigned)divider, (unsigned)lineSamples,
              positive ? "positive" : "negative", found ? "" : ", NO EDGE",
-             latched ? (HsyncPulse(duty, positive).isPulse() ? "" : ", NOT A PULSE")
+             latched ? (HsyncPulse(duty).isPulse() ? "" : ", NOT A PULSE")
                      : ", UNLOCKED");
     tv5725Log(line);
 
-    return takeDuty(latched, HsyncPulse(duty, positive));
+    return takeDuty(latched, HsyncPulse(duty));
 }
 
 // Whether the solve has a duty it can use, taking this reading if it is one.

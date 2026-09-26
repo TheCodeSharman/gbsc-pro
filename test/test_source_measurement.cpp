@@ -1364,7 +1364,6 @@ TEST_CASE("one call measures the source, and every reading comes from that pass"
     CHECK(sampling.sourceLines() == 311);
     CHECK(sampling.lineRateHz() == 15624u);
     CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
-    CHECK_FALSE(sampling.hsync().syncAtHead());
 }
 
 // STATUS_SYNC_PROC_HLOW_LEN IS THE LOW TIME, NOT THE PULSE. RD-5725-1.1 S0_19:
@@ -1389,7 +1388,6 @@ TEST_CASE("the hsync duty is the pulse whichever polarity the source sends")
 
     REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
     CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
-    CHECK(sampling.hsync().syncAtHead());
 }
 
 // The correction is a WRITE, and the sync processor owns it, so the count read
@@ -1420,7 +1418,6 @@ TEST_CASE("a low-active source is left alone")
     REQUIRE(measurePastGate(sampling) == SourceMeasurement::Measured);
     CHECK(SyncProcessor::SP_HS_INV_REG::read() == 0u);
     CHECK(sampling.hsync().syncDuty() == doctest::Approx(181.0f / (float)BenchDivider));
-    CHECK_FALSE(sampling.hsync().syncAtHead());
 }
 
 // THE COUNT IS ONLY THE PULSE WHILE THE PROCESSOR IS COUNTING THE LINE THE

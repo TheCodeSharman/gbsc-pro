@@ -2,10 +2,9 @@
 
 namespace Tv5725 {
 
-HsyncPulse::HsyncPulse() : syncDuty_(0.0f), syncAtHead_(false) {}
+HsyncPulse::HsyncPulse() : syncDuty_(0.0f) {}
 
-HsyncPulse::HsyncPulse(float syncDuty, bool syncAtHead)
-    : syncDuty_(syncDuty), syncAtHead_(syncAtHead) {}
+HsyncPulse::HsyncPulse(float syncDuty) : syncDuty_(syncDuty) {}
 
 float HsyncPulse::syncDuty() const { return syncDuty_; }
 
@@ -15,7 +14,5 @@ bool HsyncPulse::isPulse() const
     return perMille >= (float)PulseFloorPerMille
         && perMille <= (float)PulseCeilingPerMille;
 }
-
-bool HsyncPulse::syncAtHead() const { return syncAtHead_; }
 
 }  // namespace Tv5725

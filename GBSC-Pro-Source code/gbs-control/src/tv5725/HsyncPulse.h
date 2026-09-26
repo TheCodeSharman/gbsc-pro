@@ -22,7 +22,7 @@ namespace Tv5725 {
 class HsyncPulse {
 public:
     HsyncPulse();
-    HsyncPulse(float syncDuty, bool syncAtHead);
+    explicit HsyncPulse(float syncDuty);
 
     float syncDuty() const;
 
@@ -43,13 +43,8 @@ public:
     static const uint16_t PulseFloorPerMille = 41;
     static const uint16_t PulseCeilingPerMille = 152;
 
-    // Whether the hsync pulse is positive-going, which is what says which end
-    // of the line the sync interval sits at.
-    bool syncAtHead() const;
-
 private:
     float syncDuty_;
-    bool syncAtHead_;
 };
 
 }  // namespace Tv5725

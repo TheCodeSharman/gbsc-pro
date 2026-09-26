@@ -478,11 +478,9 @@ TEST_CASE("a VESA source is captured where its published raster puts picture")
     const long start = Wire.field(1, 0x18, 0, 11);
 
     // 18.0% is where the published raster puts picture in ITS line, counted
-    // from the hsync leading edge. This mode's pulse is inverted, so the line
-    // is counted from the trailing edge with the pulse already behind it.
-    const long sync = (long)std::ceil((double)line * (double)HsyncLow / (double)Divider);
-
-    CHECK_NEAR(stop, 0.180 * line - sync, 2);
+    // from the hsync leading edge -- which is the counter's origin on every
+    // source, the polarity having been normalised before the count.
+    CHECK_NEAR(stop, 0.180 * line, 2);
     CHECK_NEAR(start - stop, 0.800 * line, 2);
 }
 
@@ -668,15 +666,13 @@ TEST_CASE("a forced full framing captures everything the source offers")
                              - (long)AxisVertical.captureMargin();
     CHECK(Wire.field(1, 0x1E, 0, 11) == (verticalFloor > 0 ? verticalFloor : 0));
 
-    // The far edge is the last unit the framing can name, and this source's
-    // pulse decides where that is: it sits at the TAIL, so the source's video
-    // ends a sync width before the counter wraps and the window stops there
-    // rather than on the wrap. With the lag gone nothing else displaces it, so
-    // the registers follow the framing exactly.
+    // The far edge is the last unit the framing can name: the pulse is excluded
+    // at the head, so what is left runs to the unit before the counter wraps.
+    // Nothing displaces it, so the registers follow the framing exactly.
     CHECK(Wire.field(1, 0x18, 0, 11) - Wire.field(1, 0x1A, 0, 11)
           == solved.engine.extentUnitsOn(AxisHorizontal));
     CHECK(Wire.field(1, 0x18, 0, 11)
-          < solved.engine.lineUnitsOn(AxisHorizontal) - 2);
+          == solved.engine.lineUnitsOn(AxisHorizontal) - 1);
     CHECK(Wire.field(1, 0x1C, 0, 11)
           == solved.engine.lineUnitsOn(AxisVertical) - 1);
 

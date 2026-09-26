@@ -472,7 +472,7 @@ TEST_CASE("the block holds the line counter it wrote")
 
     SUBCASE("the counter it offers a capture window is the one it wrote") {
         block.applyScan(2000, true, false);
-        CHECK(block.capturableLine(HsyncPulse(0.0718f, true)).units()
+        CHECK(block.capturableLine(HsyncPulse(0.0718f)).units()
               == block.lineUnits());
     }
 }
@@ -483,7 +483,7 @@ TEST_CASE("the block holds the line counter it wrote")
 // occupy.
 TEST_CASE("the block states the counters a capture window sits in")
 {
-    const HsyncPulse pulse(0.0718f, true);
+    const HsyncPulse pulse(0.0718f);
 
     SUBCASE("the line wraps one past the counter it wrote") {
         InputFormatter block;
@@ -495,18 +495,13 @@ TEST_CASE("the block states the counters a capture window sits in")
         CHECK(block.capturableLine(pulse).units() == 2001);
     }
 
-    SUBCASE("the pulse is excluded from the head where it sits there") {
+    SUBCASE("the pulse is excluded from the head") {
         InputFormatter block;
         block.applyScan(2000, false, false);
 
-        const VideoSourceLine atHead = block.capturableLine(pulse);
-        CHECK(atHead.syncUnits() == 144);        // ceil(2001 x 0.0718)
-        CHECK(atHead.syncAtHead());
-
-        // Inverted, the interval is already behind the origin and a guard there
-        // would throw away video.
-        const VideoSourceLine atTail = block.capturableLine(HsyncPulse(0.0718f, false));
-        CHECK_FALSE(atTail.syncAtHead());
+        const VideoSourceLine line = block.capturableLine(pulse);
+        CHECK(line.syncUnits() == 144);          // ceil(2001 x 0.0718)
+        CHECK(line.syncAtHead());
     }
 
     SUBCASE("a doubled line keeps the head blanking clear of the capture") {

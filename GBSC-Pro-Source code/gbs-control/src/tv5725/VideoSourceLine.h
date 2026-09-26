@@ -54,11 +54,12 @@ public:
     // suit the bench source to one unit, which made every other mode wrong and
     // invisible. HsyncPulse.h
     //
-    // The pulse's own polarity says which end of the line the origin is on. A
-    // positive-going pulse puts it on the leading edge, so the pulse is at the
-    // head and no window may start inside it; an inverted one puts it on the
-    // trailing edge, where the sync interval is already behind the origin and a
-    // guard there would throw away video.
+    // THE PULSE IS AT THE HEAD WHATEVER POLARITY THE SOURCE SENDS, because
+    // SyncProcessor::normaliseHsyncPolarity() inverts a high-active one before
+    // the count is taken: every source reaches this counter as a low-active
+    // pulse on the leading edge. Compensating for the polarity here applies it
+    // a second time and opens the window a whole sync width early.
+    // ../../../../docs/investigations/the-capture-floor-followed-a-normalised-polarity.md
     static VideoSourceLine forDuty(uint16_t units, const HsyncPulse &pulse,
                                    bool lineDoubled);
 

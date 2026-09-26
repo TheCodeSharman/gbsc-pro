@@ -21,12 +21,11 @@ FakeTwoWire Wire;
 // is the pair the chip reports. Their ratio is the duty; two samples to the unit
 // is what says the line is doubled.
 static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
-                                            uint16_t adcLine, bool syncAtHead)
+                                            uint16_t adcLine)
 {
     return Tv5725::VideoSourceLine::forDuty(
         units,
-        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f,
-                           syncAtHead),
+        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f),
         adcLine >= units + units / 2);
 }
 
@@ -43,13 +42,13 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
 
     SUBCASE("the pulse width comes from the hsync duty") {
-        CHECK(measuredLine(LineUnits, HsyncLow, AdcLine, true).syncUnits() == 81);
+        CHECK(measuredLine(LineUnits, HsyncLow, AdcLine).syncUnits() == 81);
     }
 
     SUBCASE("a wider pulse excludes proportionally more") {
         // 800x600@60 is hsync 128 of 1056, a duty of 0.121 -- nearly twice the
         // bench source's. A fixed guard would under-clip it.
-        CHECK(measuredLine(1126, 128, 1056, true).syncUnits() == 137);
+        CHECK(measuredLine(1126, 128, 1056).syncUnits() == 137);
     }
 
     SUBCASE("a line with nothing measured keeps all of itself") {
@@ -59,16 +58,14 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
     }
 }
 
-// The pulse's own polarity says which end of the counter the origin is on. A
-// positive-going pulse puts it on the leading edge, so the pulse is at the head;
-// an inverted one puts it on the trailing edge, where the sync interval is
-// already behind the origin.
-TEST_CASE("the pulse's polarity says which end of the line it sits on")
+// The sync processor normalises the source's polarity before the count is
+// taken, so a high-active source and a low-active one both reach this counter
+// as a pulse on the leading edge. A line the chip measured therefore always
+// carries its pulse at the head, whatever the source sends.
+// docs/investigations/the-capture-floor-followed-a-normalised-polarity.md
+TEST_CASE("a measured line carries its pulse at the head")
 {
-    const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
-
-    CHECK(measuredLine(Units, HsyncLow, AdcLine, true).syncAtHead());
-    CHECK_FALSE(measuredLine(Units, HsyncLow, AdcLine, false).syncAtHead());
+    CHECK(measuredLine(1495, 172, 1494).syncAtHead());
 }
 
 // The capture path writes blanking past the hsync pulse where the line doubler
@@ -78,9 +75,9 @@ TEST_CASE("the pulse's polarity says which end of the line it sits on")
 TEST_CASE("head blanking is carried only where the line is doubled")
 {
     // Two ADC samples to the unit is the doubled path; one is not.
-    CHECK(measuredLine(1103, 156, 2206, true).headBlankingUnits()
+    CHECK(measuredLine(1103, 156, 2206).headBlankingUnits()
           == VideoSourceLine::DoubledHeadBlankingUnits);
-    CHECK(measuredLine(1439, 176, 1438, true).headBlankingUnits() == 0);
+    CHECK(measuredLine(1439, 176, 1438).headBlankingUnits() == 0);
 }
 
 // WHERE THE COUNTER ZEROES ON VERTICAL SYNC IS NOT THE SAME ON EVERY SYNC

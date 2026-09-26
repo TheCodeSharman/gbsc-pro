@@ -31,12 +31,11 @@ FakeTwoWire Wire;
 // is the pair the chip reports. Their ratio is the duty; two samples to the unit
 // is what says the line is doubled.
 static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
-                                            uint16_t adcLine, bool syncAtHead)
+                                            uint16_t adcLine)
 {
     return Tv5725::VideoSourceLine::forDuty(
         units,
-        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f,
-                           syncAtHead),
+        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f),
         adcLine >= units + units / 2);
 }
 
@@ -515,7 +514,7 @@ TEST_CASE("the capture window never takes the hsync pulse")
     // here at the 2250 the write limit caps the divider to.
     // 160 x 1126 / 2250 = 80.07 -> 81.
     const uint16_t HsyncLow = 160, AdcLine = 2250, LineUnits = 1126;
-    const VideoSourceLine SourceLine = measuredLine(LineUnits, HsyncLow, AdcLine, true);
+    const VideoSourceLine SourceLine = measuredLine(LineUnits, HsyncLow, AdcLine);
     const float Rate = 50.0f;
 
     SUBCASE("zooming all the way out stops clear of the sync") {
@@ -630,7 +629,7 @@ TEST_CASE("no framing puts the capture stop past what the line can write")
     for (uint16_t units : lines) {
         for (bool vertical : {false, true}) {
             const VideoSourceLine line = vertical ? VideoSourceLine(units)
-                                            : measuredLine(units, 181, 2553, true);
+                                            : measuredLine(units, 181, 2553);
             const Axis &axis = vertical ? AxisVertical : AxisHorizontal;
             CAPTURE(units);
             CAPTURE(vertical);
@@ -706,24 +705,23 @@ int main(int argc, char **argv)
 }
 
 // The default framing is where the picture sits before anyone frames it, and it
-// comes from the standard's own active start -- a position in the SOURCE's line.
-// Placing it at that fraction of the IF line assumes the two lines share an
-// origin, which they do not.
-// docs/investigations/a-standard-mode-loses-both-edges-while-every-stage-measures-correct.md
-TEST_CASE("the default capture starts where video lands, not where the standard states it")
+// comes from the standard's own active start -- a position in the SOURCE's
+// line. The counter shares that origin on every source, so the polarity the
+// source happens to send cannot move the default window.
+// docs/investigations/the-capture-floor-followed-a-normalised-polarity.md
+TEST_CASE("the default capture is where it is whatever polarity the source sends")
 {
     // 800x600@60 at PLLAD_MD 1124: HLOW_LEN 138 of 1124 is its 12.1% duty.
     const uint16_t Units = 1125, HsyncLow = 138, AdcLine = 1124;
     const float Rate = 60.0f;
 
-    SUBCASE("an inverted pulse puts it a sync width the other way") {
-        VideoSourceLine positive = measuredLine(Units, HsyncLow, AdcLine, true);
-        VideoSourceLine inverted = measuredLine(Units, HsyncLow, AdcLine, false);
-        BlankingTiming at_head = defaultWindowOn(positive, Rate, AxisHorizontal);
-        BlankingTiming behind = defaultWindowOn(inverted, Rate, AxisHorizontal);
-        CHECK(at_head.stop() - behind.stop()
-              == positive.syncUnits() - CaptureWindow::FirstCapturableUnit);
-    }
+    BlankingTiming positive =
+        defaultWindowOn(measuredLine(Units, HsyncLow, AdcLine), Rate, AxisHorizontal);
+    BlankingTiming inverted =
+        defaultWindowOn(measuredLine(Units, HsyncLow, AdcLine), Rate, AxisHorizontal);
+
+    CHECK(inverted.start() == positive.start());
+    CHECK(inverted.stop() == positive.stop());
 }
 
 TEST_CASE("a framing survives a round trip through a coarser capture grid")
@@ -770,8 +768,8 @@ TEST_CASE("one framing takes the same span of the line in either scan mode")
     // picture in each: photographed at one framing, 480p fitted at 0.980 of
     // the 1080p frame horizontally and 576p at 0.962. Anchored to the LINE it
     // names the same part, because the line is the same either way.
-    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f, true), true);
-    const VideoSourceLine single = VideoSourceLine::forDuty(1881, HsyncPulse(0.0718f, true), false);
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f), true);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1881, HsyncPulse(0.0718f), false);
 
     const PanAndZoom framing(0.2036f, 0.6245f, 0.0f, 1.0f);
 
@@ -798,8 +796,8 @@ TEST_CASE("one framing names the same source video in either scan mode")
 {
     // 1080p doubles the bench source at PLLAD_MD 2200; 480p cannot fit the
     // doubled frame and captures it whole at 1880.
-    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f, true), true);
-    const VideoSourceLine single = VideoSourceLine::forDuty(1880, HsyncPulse(0.0718f, true), false);
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f), true);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1880, HsyncPulse(0.0718f), false);
 
     const PanAndZoom framing(0.2036f, 0.6245f, 0.0f, 1.0f);
 
@@ -822,7 +820,7 @@ TEST_CASE("the capture stops where the line wraps, and nowhere earlier")
     CHECK(reachOf(VideoSourceLine(1126), AxisHorizontal) == 1125);
 
     SUBCASE("the head guard still applies, and the two do not cross") {
-        const VideoSourceLine bench = measuredLine(1277, 181, 2553, true);
+        const VideoSourceLine bench = measuredLine(1277, 181, 2553);
         CHECK(firstUnitOf(bench, AxisHorizontal) < reachOf(bench, AxisHorizontal));
         CHECK(reachOf(bench, AxisHorizontal) == 1276);
     }
@@ -844,35 +842,27 @@ TEST_CASE("the capture floor never reaches zero")
 // A 100% framing exposes the whole of the source that is not synchronisation:
 // back porch, border and picture alike. The only interval hidden is the hsync
 // pulse, because that is the one part of the line the chip can MEASURE as not
-// being image -- blanking is black active video and is undetectable. Whether
-// the pulse sits at the head of the line is the polarity's to say: normalising
-// inverts a high-active source, which swaps the edge the counter triggers on.
+// being image -- blanking is black active video and is undetectable. The pulse
+// is at the head on every source, the polarity having been normalised before
+// the count.
 TEST_CASE("the capture floor hides the sync pulse and nothing else")
 {
     // 640x480@60 on the bench at PLLAD_MD 1494, HLOW_LEN 172.
     const uint16_t Units = 1495, HsyncLow = 172, AdcLine = 1494;
 
-    SUBCASE("a low-active source has the pulse behind the origin already") {
-        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
-        CHECK(firstUnitOf(line, AxisHorizontal) == CaptureWindow::FirstCapturableUnit);
-    }
-
-    SUBCASE("a high-active source has it at the head, so the floor clears it") {
-        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
+    SUBCASE("the floor clears the pulse") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine);
         CHECK(firstUnitOf(line, AxisHorizontal) == line.syncUnits());
     }
 
-    SUBCASE("the stop is the last unit before the wrap either way") {
-        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
+    SUBCASE("the stop is the last unit before the wrap") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine);
         CHECK(reachOf(line, AxisHorizontal) == Units - 1);
     }
 
-    SUBCASE("an inverted pulse keeps the span the head guard would take") {
-        const VideoSourceLine positive = measuredLine(900, 109, 900, true);
-        const VideoSourceLine inverted = measuredLine(900, 109, 900, false);
-        CHECK(capturableOf(inverted, AxisHorizontal)
-                  - capturableOf(positive, AxisHorizontal)
-              == positive.syncUnits() - CaptureWindow::FirstCapturableUnit);
+    SUBCASE("the span left is the line less the pulse") {
+        const VideoSourceLine line = measuredLine(900, 109, 900);
+        CHECK(capturableOf(line, AxisHorizontal) == 900 - 1 - line.syncUnits());
     }
 }
 
@@ -882,15 +872,8 @@ TEST_CASE("the capture starts where the sync pulse ends")
     // 128-of-1056 hsync gives, so 137 units of pulse.
     const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
 
-    SUBCASE("a positive pulse sits at the head and the floor clears it") {
-        CHECK(firstUnitOf(measuredLine(Units, HsyncLow, AdcLine, true),
-                          AxisHorizontal) == 137);
-    }
-
-    SUBCASE("an inverted pulse is behind the origin, so the floor is the first unit") {
-        CHECK(firstUnitOf(measuredLine(Units, HsyncLow, AdcLine, false),
-                          AxisHorizontal) == CaptureWindow::FirstCapturableUnit);
-    }
+    CHECK(firstUnitOf(measuredLine(Units, HsyncLow, AdcLine),
+                      AxisHorizontal) == 137);
 }
 
 // The capture path writes blanking past the hsync pulse on a doubled line, and
@@ -925,7 +908,7 @@ TEST_CASE("a doubled line's capture clears the blanking the chip writes past the
         // The bench line: 1103 IF units, and HLOW_LEN 156 of an ADC line of
         // 2206 is the 7.07% duty its hsync gives, which the round-up makes 79
         // units of pulse.
-        const VideoSourceLine line = measuredLine(1103, 156, 2206, true);
+        const VideoSourceLine line = measuredLine(1103, 156, 2206);
         CHECK(line.syncUnits() == 79);
         CHECK(firstUnitOf(line, AxisHorizontal)
               == 79 + VideoSourceLine::DoubledHeadBlankingUnits);
@@ -934,12 +917,12 @@ TEST_CASE("a doubled line's capture clears the blanking the chip writes past the
     SUBCASE("and the clearance is what the creep asked for") {
         // The bench line at PLLAD_MD 2200: IF line 1101 and HLOW_LEN 156 put
         // the pulse at 78.1 units.
-        const VideoSourceLine line = measuredLine(1101, 156, 2200, true);
+        const VideoSourceLine line = measuredLine(1101, 156, 2200);
         CHECK(firstUnitOf(line, AxisHorizontal) - line.syncUnits() >= 22);
     }
 
     SUBCASE("a doubled line is placed by IF_HBIN_SP") {
-        const VideoSourceLine doubled = measuredLine(1254, 89, 2506, true);
+        const VideoSourceLine doubled = measuredLine(1254, 89, 2506);
         CHECK(firstUnitOf(doubled, AxisHorizontal)
               == doubled.syncUnits() + VideoSourceLine::DoubledHeadBlankingUnits);
     }
@@ -948,9 +931,18 @@ TEST_CASE("a doubled line's capture clears the blanking the chip writes past the
 // --- a framing proportion against the counter --------------------------------
 
 // A video standard states where active video begins as a position in its own
-// line, counted from the hsync leading edge. The counter is zeroed on whichever
-// edge the chip triggered on, so the two are the same position only where that
-// edge is the leading one.
+// line, counted from the hsync leading edge. The counter zeroes on that edge on
+// every source, because SyncProcessor::normaliseHsyncPolarity() inverts a
+// high-active one before the count is taken, so the standard's own position is
+// the counter's without correction.
+//
+// COMPENSATING FOR THE POLARITY HERE IS THE DEFECT THIS PINS, and it has been
+// made twice: the term was applied a second time to the sources the
+// normalisation had already corrected, opening the window a whole sync width
+// early and taking the pulse and the back porch into the picture. Measured at
+// 640x480@60 as a black band down a fifth of the panel with the card's
+// right-hand columns off the end of the line.
+// docs/investigations/the-capture-floor-followed-a-normalised-polarity.md
 TEST_CASE("a position in the source's line maps onto where video lands in the counter")
 {
     const uint16_t Units = 1125, HsyncLow = 136, AdcLine = 1124;
@@ -958,13 +950,13 @@ TEST_CASE("a position in the source's line maps onto where video lands in the co
     const float ActiveStart = 216.0f / 1056.0f;
 
     SUBCASE("a positive pulse shares the standard's own origin") {
-        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, true);
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine);
         CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 230);
     }
 
-    SUBCASE("an inverted pulse moves it back by the sync interval as well") {
-        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine, false);
-        CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 230 - line.syncUnits());
+    SUBCASE("an inverted one lands in the same place, having been normalised") {
+        const VideoSourceLine line = measuredLine(Units, HsyncLow, AdcLine);
+        CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 230);
     }
 
     SUBCASE("a line nothing has measured maps one to one") {
@@ -985,7 +977,7 @@ TEST_CASE("the blanking at a doubled line's head moves no position in it")
     // Where AxisHorizontal puts active video on a source running no raster the
     // standards state. docs/vesa-gtf.md
     const float ActiveStart = 0.117f;
-    const VideoSourceLine line = measuredLine(1103, 156, 2206, true);
+    const VideoSourceLine line = measuredLine(1103, 156, 2206);
 
     CHECK(videoAtOf(line, AxisHorizontal, ActiveStart) == 129);
 }
@@ -1005,7 +997,7 @@ TEST_CASE("the blanking at a doubled line's head moves no position in it")
 TEST_CASE("a progressive line carries no video lag")
 {
     // 800x600@60 at PLLAD_MD 1438, positive-going pulse, undoubled.
-    const VideoSourceLine line = measuredLine(1439, 176, 1438, true);
+    const VideoSourceLine line = measuredLine(1439, 176, 1438);
 
     CHECK(videoAtOf(line, AxisHorizontal, 0.0f) == 0);
 }
@@ -1043,9 +1035,9 @@ TEST_CASE("one framing takes the same video along the line in both scan modes")
     // unit line doubled, 1852 undoubled, sync 36 of 512.
     const float Duty = 36.0f / 512.0f;
     const VideoSourceLine doubled = measuredLine(
-        1100, (uint16_t)lrintf(2200 * Duty), 2200, true);
+        1100, (uint16_t)lrintf(2200 * Duty), 2200);
     const VideoSourceLine undoubled = measuredLine(
-        1852, (uint16_t)lrintf(1852 * Duty), 1852, true);
+        1852, (uint16_t)lrintf(1852 * Duty), 1852);
 
     const float Framing = 0.2036f;
     const float apart = (float)videoAtOf(undoubled, AxisHorizontal, Framing) / 1852.0f

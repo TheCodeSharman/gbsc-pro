@@ -86,11 +86,11 @@ float CaptureWindow::fractionAtOn(const Axis &axis, uint16_t position) const
 
 uint16_t CaptureWindow::firstCapture(const VideoSourceLine &line)
 {
-    // Zero is not a capture start. Measured at 640x480@60, whose pulse is
-    // behind the origin and so raises the floor off nothing: IF_HB_SP2 at 0
-    // doubles and smears the picture, and 1 is clean with every other register
-    // identical. The tail keeps two units clear of the wrap for its own
-    // reasons; this is the head's equivalent.
+    // Zero is not a capture start: IF_HB_SP2 at 0 doubles and smears the
+    // picture, and 1 is clean with every other register identical. The tail
+    // keeps two units clear of the wrap for its own reasons; this is the
+    // head's equivalent, and it is what a frame carrying no interval at the
+    // head floors on.
     const long floor = (long)line.headBlankingUnits()
                      + (line.syncAtHead() ? (long)line.syncUnits() : 0L);
     return floor < (long)FirstCapturableUnit ? FirstCapturableUnit : (uint16_t)floor;
@@ -104,11 +104,10 @@ uint16_t CaptureWindow::lastCapture(const VideoSourceLine &line)
     // front porch, vertically the last line of the vsync pulse.
     // docs/investigations/the-capture-tail-was-one-unit-short.md
     //
-    // THE PULSE IS NOT TAKEN OFF THE TAIL. Where the line is counted from the
-    // pulse's trailing edge the next line's pulse does occupy the tail, and
-    // excluding it costs picture: measured at 640x480@60 the right-hand border
-    // goes with it. What arrives there is bounded by the wrap, not by the
-    // pulse. docs/known-issues.md
+    // THE PULSE IS NOT TAKEN OFF THE TAIL, on either counter. Excluding it
+    // costs picture: measured at 640x480@60 the right-hand border goes with
+    // it. What arrives there is bounded by the wrap, not by the pulse.
+    // docs/known-issues.md
     return line.units() < 1 ? 0 : line.units() - 1;
 }
 
