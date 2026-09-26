@@ -91,11 +91,14 @@ uint16_t CaptureWindow::firstCapture(const VideoSourceLine &line)
     // keeps two units clear of the wrap for its own reasons; this is the
     // head's equivalent, and it is what a frame carrying no interval at the
     // head floors on.
-    // The pulse sits from -originLead to syncUnits - originLead in this counter,
-    // so a floor left at the pulse width puts the start of the picture below it
-    // where no framing can reach it.
-    const long pulse = (long)line.syncUnits() - (long)line.originLeadUnits();
-    const long floor = (long)line.headBlankingUnits() + (pulse > 0 ? pulse : 0L);
+    // **THE ORIGIN LEAD DOES NOT REACH THIS.** Only the video moves along the
+    // counter; what the capture path writes at the head stays where the counter
+    // puts it. Measured on the bench at 320x256@50 with the window forced to
+    // the same unit on both sync types: opened at 88 the separator's path shows
+    // saturated green to that unit and separate sync shows none at any value
+    // down to 70.
+    // docs/investigations/the-separator-moves-the-counters-origin.md
+    const long floor = (long)line.headBlankingUnits() + (long)line.syncUnits();
     return floor < (long)FirstCapturableUnit ? FirstCapturableUnit : (uint16_t)floor;
 }
 

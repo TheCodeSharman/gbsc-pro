@@ -843,8 +843,12 @@ TEST_CASE("a source on the sync separator is captured earlier in the line")
     SyncMeasurement::set(false);
 
     // The framing is unmoved, so it names the same part of the source both
-    // times: 7% of the 1101-unit counter this source is captured in.
-    CHECK(ownHsync - separated == 77);
+    // times and the window opens earlier to take it. The lead is 7% of this
+    // source's 1101-unit counter; the floor does not move with it, so on a
+    // doubled line the window reaches the floor before it has spent the whole
+    // lead and the rest of that part of the line is not capturable.
+    CHECK(separated < ownHsync);
+    CHECK(separated == solved.engine.firstUnitOn(AxisHorizontal));
 }
 
 // THE FRAMING THE BOUNDS REALISE AT EACH ZOOM STOP. The framing is clamped

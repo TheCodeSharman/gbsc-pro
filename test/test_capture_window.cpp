@@ -752,11 +752,11 @@ TEST_CASE("the default capture is where it is whatever polarity the source sends
 // against 76.5 measured, so the two are 40% apart and the count is refuted. A
 // constant TIME is refuted by the handover's own 800x600@60 point.
 //
-// The floor comes down with it. On the separator's path the pulse sits from
-// -lead to syncUnits - lead in this counter, so a floor left at the pulse width
-// puts the start of the picture below it, where no framing can reach it --
-// measured at 640x480@60 on composite, where the source's first active unit
-// lands at 164 against a floor of 173.
+// **THE FLOOR DOES NOT MOVE WITH IT.** Only the video travels along the counter;
+// what the capture path writes at the head stays where the counter puts it.
+// Measured at 320x256@50 with the window forced to the same unit on both sync
+// types: at 88 the separator's path shows saturated green out to that unit and
+// separate sync shows none at any value down to 70.
 // docs/investigations/the-separator-moves-the-counters-origin.md
 TEST_CASE("a source on the sync separator lands earlier in the counter")
 {
@@ -773,9 +773,9 @@ TEST_CASE("a source on the sync separator lands earlier in the counter")
                         ActiveStart) == 159);
     }
 
-    SUBCASE("the floor moves with it, so the picture stays reachable") {
-        const VideoSourceLine line = separatedLine(1447, 170, 1446);
-        CHECK(firstUnitOf(line, AxisHorizontal) == 70);
+    SUBCASE("the floor stays where the counter puts it") {
+        CHECK(firstUnitOf(separatedLine(1447, 170, 1446), AxisHorizontal)
+              == firstUnitOf(measuredLine(1447, 170, 1446), AxisHorizontal));
     }
 
     SUBCASE("a position maps back to the framing it was taken from") {
