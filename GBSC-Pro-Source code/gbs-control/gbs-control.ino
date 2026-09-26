@@ -547,25 +547,6 @@ static void bootLogAppend(const char *data, size_t len)
 #endif
 }
 
-// For the early trace, which runs before SerialM exists.
-static void bootLogPrintf(const char *fmt, ...)
-{
-    char line[192];
-    va_list ap;
-    va_start(ap, fmt);
-    int n = vsnprintf(line, sizeof(line), fmt, ap);
-    va_end(ap);
-    if (n < 0) {
-        return;
-    }
-    if (n > (int)sizeof(line) - 1) {
-        n = sizeof(line) - 1; // vsnprintf reports what it wanted, not what it wrote
-    }
-
-    Serial.print(line);
-    bootLogAppend(line, (size_t)n);
-}
-
 // Does a buffer that came back from /preferencesv2.txt look like content?
 //
 // The count is checked by the caller; this catches a read that returned the
@@ -887,6 +868,7 @@ static const uint32_t CONSOLE_BROADCAST_MIN_HEAP = 8000;
 
 class SerialMirror : public Stream
 {
+public:
     size_t write(const uint8_t *data, size_t size)
     {
         bootLogAppend((const char *)data, size);
@@ -944,6 +926,29 @@ class SerialMirror : public Stream
 };
 
 SerialMirror SerialM;
+
+// The boot trace. It goes through SerialM like everything else, because that is
+// what reaches the websocket console -- SerialMirror::write() appends to the
+// boot log itself, so the ring still has every line and nothing is written
+// twice. Printed to Serial alone these lines existed only on a cable: a
+// teardown, an input selection and a detection result were all invisible to
+// every instrument a session can reach remotely.
+static void bootLogPrintf(const char *fmt, ...)
+{
+    char line[192];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        return;
+    }
+    if (n > (int)sizeof(line) - 1) {
+        n = sizeof(line) - 1; // vsnprintf reports what it wanted, not what it wrote
+    }
+
+    SerialM.write(line, (size_t)n);
+}
 
 // THE COMPOSITION ROOT. The instances are declared here, in one translation
 // unit, and injected into whatever needs them.
