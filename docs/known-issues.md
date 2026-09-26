@@ -776,11 +776,17 @@ else touched -- the capture goes from a black frame to a 1809x1075 picture. The
 display PLL divisors are on their reset values in the same state, so what comes
 back is structurally wrong until a full re-init runs.
 
-**It is not reliably reproducible.** The first `/sc?~` after the fault left the
-blocks held; the second released them correctly, so the release is
-path-dependent rather than absent. What is established is that acquisition does
-not guarantee it, and that a clean register dump does not clear the board --
-which is why `bench-output-capture.md` asks `s0_46` first.
+**A FLASH IS WHAT REPRODUCES IT**, twice in four OTA uploads. The unit comes
+back, detection runs, the source is acquired at the right count and rate, and
+the blocks are still down -- `s0_46` reading 0x41 against the 0x7f a working
+state holds, with `s0_45` 0x01 and `PAD_TRI_ENZ` 1 beside it.
+
+`/sc?~` clears it, though not always on the first call: one occasion needed a
+second, so the release is path-dependent rather than absent. What is
+established is that acquisition does not guarantee it, and that a clean
+register dump does not clear the board -- which is why
+`bench-output-capture.md` asks `s0_46` first, and why the reading it asks for
+is the one that answers in a single request.
 
 ### The absence run has a branch that can never end it
 
