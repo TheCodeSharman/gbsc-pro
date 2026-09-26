@@ -69,6 +69,29 @@ TEST_CASE("the bring-up line counter fits the register it is written to")
     }
 }
 
+// IF_HSYNC_RST is eleven bits and the register takes the low bits of whatever
+// it is handed: 2506 arrives as 458, the block then counts several lines per
+// line, and the source's field rate -- timed off this block's test bus -- comes
+// back a fraction of the truth. Nothing reads back wrong, because 458 is what
+// the register holds.
+//
+// Measured on an input change: applySampling() re-applies the divider in force
+// with the OUTGOING source's scan mode, so the bring-up divider arrives
+// undoubled and truncates.
+TEST_CASE("a line counter the register cannot hold is refused, not truncated")
+{
+    FreshChip fresh;
+
+    inputFormatter.writeLineCounter(1438, false);
+    REQUIRE(Wire.field(1, 0x0E, 0, 11) == 1438);
+
+    inputFormatter.writeLineCounter(2506, false);
+
+    CHECK(Wire.field(1, 0x0E, 0, 11) != 458);
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1438);
+    CHECK(inputFormatter.lineUnits() == 1439);
+}
+
 TEST_CASE("the line double write reset position is owned, one value for every mode")
 {
     FreshChip chip;
@@ -366,7 +389,7 @@ TEST_CASE("the block holds the line counter it wrote")
     }
 
     SUBCASE("the counter it offers a capture window is the one it wrote") {
-        block.writeLineCounter(2200, true);
+        block.writeLineCounter(2000, true);
         CHECK(block.capturableLine(HsyncPulse(0.0718f, true)).units()
               == block.lineUnits());
     }
@@ -383,19 +406,19 @@ TEST_CASE("the block states the counters a capture window sits in")
     SUBCASE("the line wraps one past the counter it wrote") {
         InputFormatter block;
 
-        block.writeLineCounter(2200, true);
-        CHECK(block.capturableLine(pulse).units() == 1101);
+        block.writeLineCounter(2000, true);
+        CHECK(block.capturableLine(pulse).units() == 1001);
 
-        block.writeLineCounter(2200, false);
-        CHECK(block.capturableLine(pulse).units() == 2201);
+        block.writeLineCounter(2000, false);
+        CHECK(block.capturableLine(pulse).units() == 2001);
     }
 
     SUBCASE("the pulse is excluded from the head where it sits there") {
         InputFormatter block;
-        block.writeLineCounter(2200, false);
+        block.writeLineCounter(2000, false);
 
         const VideoSourceLine atHead = block.capturableLine(pulse);
-        CHECK(atHead.syncUnits() == 159);        // ceil(2201 x 0.0718)
+        CHECK(atHead.syncUnits() == 144);        // ceil(2001 x 0.0718)
         CHECK(atHead.syncAtHead());
 
         // Inverted, the interval is already behind the origin and a guard there
@@ -406,7 +429,7 @@ TEST_CASE("the block states the counters a capture window sits in")
 
     SUBCASE("a doubled line keeps the head blanking clear of the capture") {
         InputFormatter block;
-        block.writeLineCounter(2200, true);
+        block.writeLineCounter(2000, true);
 
         const VideoSourceLine doubled = block.capturableLine(pulse);
         CHECK(doubled.headBlankingUnits()
@@ -419,17 +442,17 @@ TEST_CASE("the block states the counters a capture window sits in")
         // the same one the line counter was written with.
         InputFormatter block;
 
-        block.writeLineCounter(2200, true);
+        block.writeLineCounter(2000, true);
         CHECK(block.capturableFrame(311).units() == 624);
 
-        block.writeLineCounter(2200, false);
+        block.writeLineCounter(2000, false);
         CHECK(block.capturableFrame(311).units() == 312);
         CHECK(block.capturableFrame(627).units() == 628);
     }
 
     SUBCASE("the frame excludes nothing, because no vertical pulse is measured") {
         InputFormatter block;
-        block.writeLineCounter(2200, false);
+        block.writeLineCounter(2000, false);
 
         CHECK(block.capturableFrame(627).syncUnits() == 0);
         CHECK(block.capturableFrame(627).headBlankingUnits() == 0);

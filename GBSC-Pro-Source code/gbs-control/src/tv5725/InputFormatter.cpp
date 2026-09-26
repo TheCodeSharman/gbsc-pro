@@ -2,6 +2,8 @@
 
 #include "../../gbs_types.h"
 
+#include <stdio.h>
+
 namespace Tv5725 {
 
 InputFormatter::InputFormatter() : lineUnits_(0), doubled_(false) {}
@@ -147,6 +149,20 @@ void InputFormatter::init()
 void InputFormatter::writeLineCounter(uint16_t divider, bool lineDoubled)
 {
     const uint16_t counter = lineCounterFor(divider, lineDoubled);
+
+    // The register takes the low eleven bits of whatever it is handed, so a
+    // counter that does not fit arrives as a different line and reads back as
+    // one. Keeping the last value that did fit is what makes the caller's
+    // mistake visible instead of silent.
+    if (counter > LineCounterMax) {
+        char line[72];
+        snprintf(line, sizeof(line),
+                 "if line counter: %u does not fit, holding %u",
+                 (unsigned)counter, (unsigned)(lineUnits_ ? lineUnits_ - 1 : 0));
+        tv5725Log(line);
+        return;
+    }
+
     IF_HSYNC_RST::write(counter);
 
     // The counter wraps one past its last value, so the span is the register
