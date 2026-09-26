@@ -1699,11 +1699,20 @@ across two captured frames differs by 2.23 -- so the playback is reading the
 buffer twice while the source advances, rather than one field being written
 twice.
 
-The default framing is 94% of the counter and is correct, so whatever this is
-starts somewhere above that. **Creeping the vertical extent from the default to
-the full and finding where the second copy appears is the measurement**; a
-boundary would say whether it is the fetch, the stride or the buffer's own
-wrap. `Memory::FetchFloor` and the stride's clamp are the entries to read first.
+**IT IS DETERMINISTIC, AND IT IS OLDER THAN THE CAPTURE-PLACEMENT WORK.**
+Five forced full framings in a row on the RiscPC gave the same three bands each
+time, and they gave them on the build from before the placement fixes landed --
+`b6ec79cb3`, flashed to the unit and re-tested -- so the fault is neither
+intermittent nor those changes. The history in between has not been bisected,
+and the test is reliable enough to bisect with: force a full framing, count the
+lit bands.
+
+**One zoom step short of the limit is clean**, so what breaks is the extreme of
+the range rather than the range. The default framing is 94% of the counter and
+is correct. **Creeping the vertical extent from the default to the full and
+finding where the second copy appears is the measurement**; a boundary would say
+whether it is the fetch, the stride or the buffer's own wrap.
+`Memory::FetchFloor` and the stride's clamp are the entries to read first.
 
 ### A short output raster shreds a source of few lines, and only that combination
 
