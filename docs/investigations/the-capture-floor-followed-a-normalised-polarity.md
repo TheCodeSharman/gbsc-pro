@@ -54,3 +54,36 @@ had stopped being true one function call earlier.
 
 `CLAUDE.md` states the rule the fix restores: normalise at the hardware
 boundary, write it once, and let everything downstream see one shape.
+
+## It came back, through the type that replaced the float
+
+The branch was removed once and returned: `forDuty()` was given an `HsyncPulse`
+in place of a bare duty, and the polarity was carried into the new type as
+`syncAtHead` and read straight back out. The refactor was about refusing a
+substituted duty and changed nothing else, so the term arrived with it unnoticed
+and both the floor and `videoAt()` branched again.
+
+Measured on the bench at 640x480@60 on `vga`, separate sync, read off the
+emitted frame with the USB capture rather than off the panel:
+
+| | with the branch | without |
+|---|---|---|
+| `IF_HB_SP2` | **89** | **260** |
+| the standard's 18.0% of a 1447-unit line | 260 | 260 |
+| black columns at the left of the emitted frame | **283** | **4** |
+| the card's right-hand columns | off the end of the line | on the panel |
+
+171 units early is 171/1158 x 1920 = 283 emitted columns, which is the band
+measured. Translating the window by the sync width with automation frozen --
+`IF_HB_SP2` 89 -> 260, `IF_HB_ST2` 1247 -> 1418, nothing else touched -- took
+the band to 4 px and brought the whole card back, before any firmware change.
+
+800x600@60 sends high-active hsync, took the other branch and was correct
+throughout: 14 px before and after. That pairing is the same one this page
+opened with, and it is what identifies the fault as a branch rather than as
+something peculiar to one mode.
+
+**The polarity is off the type entirely now**, rather than left on it unread. It
+has two live owners -- the normalising write, and `SourceKey`'s identity for the
+framing lookup -- and a third copy sitting on the pulse is what let a refactor
+reintroduce the compensation without anyone deciding to.

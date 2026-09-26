@@ -1477,14 +1477,6 @@ the state still absent. `/input?src=vga` re-acquired in under a minute. So the
 input re-selection is the recovery here, not the one the stuck-divider row of
 `CLAUDE.md` names.
 
-### 640x480@60 is captured too narrow and magnified to fill
-
-`eh` 623 of `ch` 1023 is 61% of the line where the matched raster puts active
-video at 80%. The raster match itself is right -- sync duty 11.50% against DMT's
-12.00%, inside the 1.5-point tolerance, and `ov` 35 / `ev` 480 exact -- so the
-fault is in what the capture window is solved to, not in which raster was
-matched.
-
 ### The clamp window sits inside the sync pulse, on both sync branches
 
 Two instances: 320x256 on composite sync, clamp 14..76 against a 144-sample
@@ -1630,11 +1622,60 @@ active video where the blanking ends, and that it resamples the whole line --
 are not both true in the way they are currently used.
 `investigations/the-active-window-is-a-fraction-of-the-line.md`.
 
+**IT ALSO BITES BELOW THE STATED BOUNDARY, in the other direction.** 800x600@56
+runs a LONGER raster -- 1706 against the 1600 that makes the line exactly
+1080p's -- and lands with a 105-column black band down the left, measured on the
+emitted frame with the capture window sitting on its published raster to four
+hundredths of a percent. So the 70.9 Hz figure bounds where the active span
+stops fitting, and it does not bound the band: every raster measured away from
+1600 carries one, 1440 giving 133 columns and 1706 giving 105, against 4 and 14
+at 1600 and 1592. What the encoder does with a line that is not 1080p's length
+is not settled.
+
 Two things that are NOT the fault: the capture window, which matches the mode's
 published active region to the unit (640x480@75 reads `oh 292 / eh 1017` of
 `ch 1335` against DMT's `(64+120)/840` and `640/840`); and `EngineCeilingHz`,
 which buys room at 129.6 MHz -- a raster of 1728 at 75 Hz clears the bound -- but
 raises the rate at which the same mismatch bites rather than removing it.
+
+### 800x600@56 never settles the frame time lock, and the picture wobbles vertically
+
+Seen on `vga` on separate sync, and it is the FIELD RATE rather than the mode:
+800x600 at 60 and 72 are steady and 56 is not. The engine's measurement of the
+source is steady throughout -- `in 56249 mHz` on every line for 65 s -- and what
+does not settle is the correction:
+
+    phase 796640/2844464 target 711116 err  85524
+    phase 722362/2844464 target 711116 err  11246
+    phase 719190/2844464 target 711116 err   8074
+    ...
+    phase 676064/2844464 target 711116 err -35052
+    phase 771320/2844464 target 711116 err  60204
+
+54 lines over 65 s, the error swinging between -35000 and +65000 without
+converging, and the display clock dithering 107947536 .. 107961952 with it.
+
+**The `pin` column is the lead.** It reads about 2844400 on most passes and
+5688808, 5675154 or 8524106 on others -- two and three times the frame period,
+which is a MISSED EDGE rather than a measurement. A doubled reading scales the
+phase target with it, which is the shape
+`investigations/the-frame-time-lock-saturates.md` records.
+
+### The RISC PC emits 1024x768@60 about 23 units after its published raster
+
+Measured two ways that need no common assumption: at the default framing the
+card's green frame lands 38 columns into the panel, and at a forced 100% framing
+the source's first active column reads 342 of a 1443-unit line. Both put active
+video at 23.7% of the line where DMT states 22.02%, and the monitor definition's
+entry carries DMT's own `136,160,0,1024,0,24` with no border to spend.
+
+The capture opens at 22.04%, which is the published raster to two hundredths, so
+this is the source rather than the placement. 640x480@60 and 800x600@60 on the
+same machine are exact -- 261 against 260.5 and 296 against 294.3 -- so it is
+not a general offset either.
+
+It costs a 38-column band at the left of that one mode, which a pan press
+removes and the framing table then remembers.
 
 ### A short output raster shreds a source of few lines, and only that combination
 
@@ -2040,6 +2081,31 @@ whole PLL group has to move together.
 Acquisition also took about 40 s against the 15.2 s on record for this mode.
 
 ## Fixed, kept here until the next session has seen them
+
+### 640x480@60 was captured too narrow and magnified to fill -- FIXED
+
+`eh` 623 of `ch` 1023 was 61% of the line where the matched raster puts active
+video at 80%. It measures `eh` 1159 of `ch` 1449 now, which is 79.99%, and the
+emitted frame carries the card's green frame at both ends of the line.
+
+The capture window was opened a whole hsync pulse early, the polarity having
+been compensated for twice -- once by the normalising write and again by the
+placement.
+`investigations/the-capture-floor-followed-a-normalised-polarity.md`.
+
+### The vertical capture opened five lines into the picture -- FIXED
+
+The top of the picture was cut and the same amount of the source's own blanking
+shown at the bottom in its place: 17 black rows at 640x480@60, 10 at
+800x600@60. The published raster stated its vertical start as the back porch
+alone, which is right only where the vsync pulse is as wide as the counter's
+origin is far from its leading edge. Measured across four pulse widths, that
+origin is a fixed 7.3 lines and does not follow the pulse.
+
+Now 3/6, 3/5 and 2/3 rows at 640x480@60, 800x600@60 and 1024x768@60, with the
+card's green frame on the panel at both edges.
+`investigations/the-vertical-capture-window-is-placed-late.md`.
+
 
 ### The ADC sampling phase was chosen against the oversampling ASKED FOR
 

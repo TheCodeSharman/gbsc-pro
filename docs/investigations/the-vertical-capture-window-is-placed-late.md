@@ -59,3 +59,60 @@ The capture now opens on the source's first picture line, and the first and last
 source lines still cannot both be shown: they are 599 apart and the display
 aperture shows about 598. That is the aperture's far-end guard, not the capture.
 `docs/known-issues.md`.
+
+## The lag went with the horizontal one, and came back as the pulse width
+
+`FrameLagUnits` was deleted along with `CaptureLagFraction` when the horizontal
+displacement turned out to be `SP_HS_LOOP_SEL` taking the sync retiming out of
+circuit. Engaging the retiming accounts for the whole of the HORIZONTAL
+displacement; it resets the line counter, and the frame counter is reset by
+vsync, so nothing in that change reaches the vertical. The vertical placement
+went back to being late and the symptom returned with it.
+
+What replaced the lag was the raster table stating its vertical start as the
+back porch alone, on the reading that the counter zeroes on the vsync pulse's
+trailing edge. That is the same constant wearing another name, and it is only
+right where the pulse is as wide as the lag.
+
+## The origin is fixed, and it is not the pulse width
+
+Measured on the RiscPC on `vga` by forcing a 100% framing, so the source's own
+blanking is inside the capture on all four sides, and reading `PATTERN CARD`'s
+one-line green frame off the emitted picture. The capture window is played out
+across the whole panel, so a panel row maps back into the counter through the
+window's own span, and the green line gives the counter line the source's first
+active line arrives at:
+
+| mode | sync | back porch | stated start | arrives at | difference |
+|---|---|---|---|---|---|
+| 640x480@60 | 2 | 33 | 35 | 27.7 | **-7.3** |
+| 800x600@60 | 4 | 23 | 27 | 19.7 | **-7.3** |
+| 1024x768@60 | 6 | 29 | 35 | 27.6 | **-7.4** |
+| 640x480@75 | 3 | 16 | 19 | 11.1 | **-7.9** |
+
+Each measured span is the mode's own active line count to within a line -- 479.3
+of 480, 599.8 of 600, 767.7 of 768, 480.0 of 480 -- which is what says the two
+green lines are the source's first and last active lines and not something else.
+
+**Four pulse widths and one difference.** The origin does not follow the pulse,
+so it is not the trailing edge: it is a fixed distance after the LEADING edge,
+which is where the chip's vsync detection settles. The back-porch-alone reading
+fits 800x600@60 to three lines and 640x480@60 to five, and the difference
+between those two IS the difference between their sync widths.
+
+`SourceTiming` states both axes from the leading edge now, as the standards do,
+and subtracts the origin once. Against the panel:
+
+| mode | black rows top/bottom before | after |
+|---|---|---|
+| 640x480@60 | 0 / 17 | 3 / 6 |
+| 800x600@60 | 0 / 10 | 3 / 5 |
+| 1024x768@60 | 1 / 5 | 2 / 3 |
+
+The green frame is on the panel at both edges afterwards, where the top line was
+previously cut and its rows shown as the source's blanking at the bottom.
+
+**IT IS THE INPUT FORMATTER'S COUNTER AND NOT THE HD CHANNEL'S.** Pass-through
+blanks against a counter in another block, which none of this measures, so
+`activeStartLine()` still takes the pulse's end as its origin and pass-through's
+blanking is where it has always been.
