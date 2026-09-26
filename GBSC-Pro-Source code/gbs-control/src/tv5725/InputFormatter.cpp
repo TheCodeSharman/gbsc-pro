@@ -23,10 +23,14 @@ VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse,
     return VideoSourceLine::forDuty(lineUnits_, pulse, doubled_, separated);
 }
 
-VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines) const
+VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines,
+                                                bool separated) const
 {
-    return VideoSourceLine::frame(doubled_ ? (uint16_t)(2 * (sourceLines + 1))
-                                           : (uint16_t)(sourceLines + 1));
+    const uint16_t perLine = doubled_ ? 2 : 1;
+    return VideoSourceLine::frame(
+        (uint16_t)(perLine * (sourceLines + 1)),
+        separated ? (uint16_t)(perLine * VideoSourceLine::SeparatorFrameLeadLines)
+                  : 0);
 }
 
 uint16_t InputFormatter::verticalPeriod()

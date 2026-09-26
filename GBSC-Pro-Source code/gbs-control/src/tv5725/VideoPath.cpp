@@ -927,7 +927,8 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
 
     capture = CaptureWindow(inputFormatter_.capturableLine(reading_,
                                                           SyncMeasurement::isCsync()),
-                            inputFormatter_.capturableFrame(sourceLines),
+                            inputFormatter_.capturableFrame(sourceLines,
+                                                            SyncMeasurement::isCsync()),
                             timing_);
     return true;
 }

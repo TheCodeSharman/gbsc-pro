@@ -520,19 +520,33 @@ TEST_CASE("the block states the counters a capture window sits in")
         InputFormatter block;
 
         block.applyScan(2000, true, false);
-        CHECK(block.capturableFrame(311).units() == 624);
+        CHECK(block.capturableFrame(311, false).units() == 624);
 
         block.applyScan(2000, false, false);
-        CHECK(block.capturableFrame(311).units() == 312);
-        CHECK(block.capturableFrame(627).units() == 628);
+        CHECK(block.capturableFrame(311, false).units() == 312);
+        CHECK(block.capturableFrame(627, false).units() == 628);
     }
 
     SUBCASE("the frame excludes nothing, because no vertical pulse is measured") {
         InputFormatter block;
         block.applyScan(2000, false, false);
 
-        CHECK(block.capturableFrame(627).syncUnits() == 0);
-        CHECK(block.capturableFrame(627).headBlankingUnits() == 0);
+        CHECK(block.capturableFrame(627, false).syncUnits() == 0);
+        CHECK(block.capturableFrame(627, false).headBlankingUnits() == 0);
+    }
+
+    // The counter counts half-lines with the doubler in, so a delay stated in
+    // the source's own lines is twice as many units there.
+    SUBCASE("the separator's delay follows the scan mode the counter is in") {
+        InputFormatter block;
+
+        block.applyScan(2000, false, false);
+        CHECK(block.capturableFrame(627, true).originLeadUnits()
+              == VideoSourceLine::SeparatorFrameLeadLines);
+
+        block.applyScan(2000, true, false);
+        CHECK(block.capturableFrame(311, true).originLeadUnits()
+              == 2 * VideoSourceLine::SeparatorFrameLeadLines);
     }
 }
 

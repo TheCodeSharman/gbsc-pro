@@ -37,12 +37,11 @@ public:
     // interval to exclude and no head blanking.
     static VideoSourceLine frame(uint16_t units);
 
-    // The frame for a counter that zeroes on the pulse's LEADING edge instead,
-    // where the pulse is leading blanking and the video sits that far behind
-    // the origin. Which edge a sync arrangement zeroes on is not derivable here
-    // and is the caller's.
-    // ../../../../docs/investigations/the-vertical-origin-follows-the-sync-type.md
-    static VideoSourceLine frame(uint16_t units, uint16_t vsyncUnits);
+    // The frame for a counter the video reaches late, which is the sync
+    // separator's path: the video sits that many units behind the origin.
+    // Nothing is excluded at the head -- no hardware facility measures the
+    // vertical sync interval in these units.
+    static VideoSourceLine frame(uint16_t units, uint16_t originLeadUnits);
 
     // The line the source sends, from the pulse measured off it. The pulse is
     // that fraction of `units`, and nothing here is a constant for one source:
@@ -75,6 +74,13 @@ public:
     // 40% wrong on the other.
     // ../../../../docs/investigations/the-separator-moves-the-counters-origin.md
     static const uint16_t SeparatorOriginPerMille = 70;
+
+    // The same delay on the vertical, where it is a COUNT of the source's own
+    // lines rather than a fraction of the frame -- measured 15.2 lines of a
+    // 525-line frame and 16.6 of a 312-line one, where a fraction fitted to
+    // either is 80% wrong on the other.
+    // ../../../../docs/investigations/the-separator-moves-the-counters-origin.md
+    static const uint16_t SeparatorFrameLeadLines = 16;
 
     // Where the counter rolls over.
     uint16_t units() const;

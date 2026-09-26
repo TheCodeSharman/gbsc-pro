@@ -6,6 +6,7 @@ namespace Tv5725 {
 
 const uint16_t VideoSourceLine::DoubledHeadBlankingUnits;
 const uint16_t VideoSourceLine::SeparatorOriginPerMille;
+const uint16_t VideoSourceLine::SeparatorFrameLeadLines;
 
 VideoSourceLine::VideoSourceLine(uint16_t units)
     : units_(units), syncUnits_(0), headBlankingUnits_(0),
@@ -27,9 +28,9 @@ VideoSourceLine VideoSourceLine::frame(uint16_t units)
     return VideoSourceLine(units);
 }
 
-VideoSourceLine VideoSourceLine::frame(uint16_t units, uint16_t vsyncUnits)
+VideoSourceLine VideoSourceLine::frame(uint16_t units, uint16_t originLeadUnits)
 {
-    return VideoSourceLine(units, vsyncUnits, 0, vsyncUnits);
+    return VideoSourceLine(units, 0, 0, originLeadUnits);
 }
 
 VideoSourceLine VideoSourceLine::forDuty(uint16_t units, const HsyncPulse &pulse,

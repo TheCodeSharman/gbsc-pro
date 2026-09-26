@@ -1140,11 +1140,11 @@ TEST_CASE("one framing takes the same video whichever scan mode is in force")
 TEST_CASE("the frame's origin follows where the counter zeroes on vertical sync")
 {
     // The Wii at 480p on ypbpr: 524 counted lines, so a 525-unit frame.
-    SUBCASE("a counter zeroed on the trailing edge puts video at its own origin") {
+    SUBCASE("a counter the video reaches on time puts it at the origin") {
         CHECK(videoAtOf(VideoSourceLine::frame(525), AxisVertical, 0.4f) == 210);
     }
 
-    SUBCASE("a counter zeroed on the leading edge puts it a sync interval earlier") {
+    SUBCASE("one the video reaches late puts it that far earlier") {
         CHECK(videoAtOf(VideoSourceLine::frame(525, 7), AxisVertical, 0.4f) == 203);
     }
 
@@ -1154,4 +1154,28 @@ TEST_CASE("the frame's origin follows where the counter zeroes on vertical sync"
                            videoAtOf(frame, AxisVertical, 0.4f))
               == doctest::Approx(0.4f));
     }
+}
+
+// THE VERTICAL CARRIES THE SAME DELAY, and there it is a COUNT of the source's
+// own lines rather than a fraction of the frame. Measured as the displacement of
+// the card's bottom green line between the two sync types, converted at
+// 1024 / VDS_VSCALE output rows to the capture unit:
+//
+//     mode           frame counter   rows   capture units   source lines
+//     640x480@60          525         34        15.2            15.2
+//     320x256@50          624         61        33.1            16.6
+//
+// A fraction fitted to either is 80% wrong on the other -- 2.9% against 5.3% --
+// where the line count agrees to 9%. The doubled counter counts half-lines, so
+// the lead doubles with it.
+// docs/investigations/the-separator-moves-the-counters-origin.md
+TEST_CASE("a source on the sync separator arrives late in the frame too")
+{
+    // 640x480@60: active video starts 28 units into a 525-unit frame once the
+    // counter's own origin is taken off the standard's figure.
+    const float ActiveStart = 28.0f / 525.0f;
+
+    CHECK(videoAtOf(VideoSourceLine::frame(525), AxisVertical, ActiveStart) == 28);
+    CHECK(videoAtOf(VideoSourceLine::frame(525, VideoSourceLine::SeparatorFrameLeadLines),
+                    AxisVertical, ActiveStart) == 12);
 }

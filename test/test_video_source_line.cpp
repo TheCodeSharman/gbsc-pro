@@ -95,8 +95,8 @@ TEST_CASE("the frame states where its counter zeroes on vertical sync")
         CHECK(VideoSourceLine::frame(525).originLeadUnits() == 0);
     }
 
-    SUBCASE("a frame zeroed on the leading edge carries the pulse as blanking") {
-        CHECK(VideoSourceLine::frame(525, 7).syncUnits() == 7);
+    SUBCASE("a frame the video reaches late carries the delay and no pulse") {
+        CHECK(VideoSourceLine::frame(525, 7).syncUnits() == 0);
         CHECK(VideoSourceLine::frame(525, 7).originLeadUnits() == 7);
         CHECK(VideoSourceLine::frame(525, 7).headBlankingUnits() == 0);
     }

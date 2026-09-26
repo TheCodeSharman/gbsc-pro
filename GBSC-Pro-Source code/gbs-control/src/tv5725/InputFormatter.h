@@ -352,7 +352,7 @@ public:
     // Nothing is excluded at either end: no hardware facility measures the
     // vertical sync interval in these units, and a guess there would crop
     // picture rather than blanking.
-    VideoSourceLine capturableFrame(uint16_t sourceLines) const;
+    VideoSourceLine capturableFrame(uint16_t sourceLines, bool separated) const;
 
     // What the line counter must be set to for a given ADC divider. The
     // horizontal decimation is what relates them, and only the line doubler
