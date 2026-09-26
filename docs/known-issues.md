@@ -946,6 +946,15 @@ the one teardown had run. After, 0 of 6, acquiring in 4.1..6.4 s.
 de-duplicates identical consecutive events, so a ladder repeating one branch
 prints once and then goes silent.
 
+**The selection edge now says what it did, which is what the wedge above is
+gated on.** `applyInputSelection()` reports once the sequence is complete --
+`input selected: ypbpr, reference divider 2506, reset +18ms, registers +18ms,
+saved +24ms` -- and the guard is that the line precedes detection's first
+`DETECT`, not that an acquisition came in under some number of seconds. Neither
+the duration nor the condition repeats well enough to gate on: the two duration
+distributions overlap, and a first-pass claim was 1 in 20, then 4 in 12, then 0
+in 12. The ordering repeats on every selection.
+
 ### The encoder holds stale timing with the sync pad correctly low, and nothing re-triggers a re-look
 
 **This is not the latched-down pad above, and reading it as that one wastes the

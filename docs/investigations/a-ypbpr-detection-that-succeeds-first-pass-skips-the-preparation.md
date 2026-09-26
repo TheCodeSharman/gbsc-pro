@@ -178,6 +178,42 @@ alone would have reached a threshold nobody acted on. So
 `SourceAbsence::poweredDown()` re-arms the run once a teardown has been made and
 the call site acts on every threshold. **Recovery is retried, never abandoned.**
 
+## The guard is an ORDER, because neither duration nor the condition repeats
+
+A timing threshold cannot gate a build on this. The wedge cost 25..32 s against a
+healthy worst case of 12.6 s, the two distributions overlap, and an attempt at a
+threshold both failed and skipped on a healthy unit inside two runs. Nor can the
+condition be provoked: a first-pass claim was 1 in 20, then 4 in 12, then 0 in 12,
+and the double selection above reproduces the OTHER fault instead.
+
+What does repeat, on every selection and whichever way the first pass goes, is
+where the preparation sits relative to detection. Before the repair it could only
+follow detection's first report, being inside the failure branch; after it, it
+always precedes it. So `applyInputSelection()` says what it did once the sequence
+is complete:
+
+    input selected: ypbpr, reference divider 2506, reset +18ms, registers +18ms, saved +24ms
+
+and `test_input_selection_prepares.py` asserts that line arrives before the first
+`DETECT`. **Said after the sequence rather than during it**, because a console
+write inside the window perturbs what it is timing.
+
+**The divider is compared against the one the previous source solved, never
+against `Adc::BringUpDivider`.** A build that stopped installing the reference
+clock still reports a divider on that line, and the one it reports is the last
+source's -- so a test asserting the line names *a* divider passes through the
+regression it exists to catch. Proven by taking the call out and flashing: the
+selection reports `reference divider 1438`, `vga`'s own, and the guard fails
+naming it. The ordering assertion passes there, correctly, which is why the two
+are separate tests.
+
+The offsets are the other half of what that line is for: nothing marked the mux
+frame, the `SFTRST_SYNC_RSTZ` pulse or the `ADC_INPUT_SEL` write, so their
+ordering against the block's counters could not be read at all. Measured, the
+whole selection costs 24 ms of `loop()` -- 18 of them the reset's own delay, the
+input registers free beside it, and 6 for the preferences write. The line itself
+lands about 250 ms after the request, `/input` being queued for `loop()`.
+
 ## What the repair measures
 
 | | before | after |
