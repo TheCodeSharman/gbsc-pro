@@ -821,85 +821,130 @@ can. **It is not the acquisition stall below** -- the two interlace bits read 0
 in 807 of 807 samples through a measured stall -- so this is a latent defect
 rather than an observed one.
 
-### An input change can wedge the sync processor block, and only a block reset clears it
+### A YPbPr detection that succeeds on its first pass skips the only preparation
 
 **This is the acquisition stall on `ypbpr`, and it is distinct from the absence
 run below**: `state: absent` here holds the previous source's solve with a
 signal reaching the chip, where that one stalls with detection unable to claim
 a signal.
 
-Measured on the Wii at 480p over `ypbpr`, cycling `/input` against `vga`.
-Roughly **one acquisition in 25** pooled across runs, though the rate is not
-steady -- 2 in 14 and 1 in 40 were both measured.
+The preparation a new source needs is reached only through detection's FAILURE
+branch: `syncFound 0` with no signal present goes to
+`goLowPowerWithInputDetection()`, which calls `setResetParameters()`, which
+installs `Adc::BringUpDivider` as a reference sampling clock. A first pass
+returning 2 skips it, and the chip then measures the new source through the
+previous source's ADC clock. **The healthy path depends on detection failing**,
+and nothing on the selection path prepares the chip.
 
-**THE CONFIGURATION IS CORRECT THROUGHOUT, AND THAT IS THE FINDING.** Read by
-name through a stall and again after a recovery:
+Measured over 32 `ypbpr` acquisitions, cycling `/input` against `vga`, the
+correlation is exact with no exceptions either way:
 
-| | stalled | recovered |
+| | first `DETECT` | low-power passes | acquired in | n |
+|---|---|---|---|---|
+| healthy | 441..464 ms, `syncFound 0` | 1 | 4.8..7.1 s | 27 |
+| wedged | 96..441 ms, **`syncFound 2`** | 0 | 25.2..32.1 s | 5 |
+
+The determinant is `syncFound`, not the duration -- one wedge claimed the source
+after 441 ms, longer than several healthy first passes. **The rate is erratic**:
+1 in 20, then 4 in 12, then 0 in 12, pooled 5 in 44. So absence over a dozen
+cycles is not evidence that a change fixed it.
+
+What the wedged chip holds, against a healthy `ypbpr` acquisition read the same
+way. **A `vga` baseline does not serve** -- that is the RGBHV route, where
+`SP_H_PROTECT` is 0 and the clamp is not held, so two rows read as faults
+against it and neither is one on that input:
+
+| | wedged | healthy `ypbpr` |
 |---|---|---|
-| `SP_PRE_COAST` / `SP_POST_COAST` | 7 / 6 | 7 / 6 |
-| `SP_DLT_REG` | 192 | 192 |
-| `SP_SOG_MODE` | 1 | 1 |
 | `STATUS_SYNC_PROC_VTOTAL` | 97..105 | 524 |
-| `PLLAD_MD` | 1438, the previous source's | 1448 |
-| `STATUS_MISC_PLLAD_LOCK` | 0 | 1 |
+| `STATUS_SYNC_PROC_HSACT` | 0 | 1 |
+| `PLLAD_MD` / `STATUS_SYNC_PROC_HTOTAL` | 1438 / 1438, `vga`'s | 1448 / 1448 |
+| `SP_CLAMP_MANUAL` | 1 | 0 |
+| `SP_H_PROTECT` | 1 | 0 |
+| `HPERIOD_IF` | 13..14 | 214 |
 
-The source IS reaching the chip: `/testbus` through a stall gives 4024, 1794
-and 2048 transitions in 25 ms on selectors 5, 7 and 18, which is a 31 kHz line
-arriving. So the analog path is connected and the registers are right, and the
-block still will not count.
+**`SFTRST_SYNC_RSTZ` ALONE DOES NOT CLEAR IT, AND THE CLAIM THAT IT DOES IS
+REFUTED.** Measured three times with `/freeze?on=1` holding the ladder off so
+nothing else could act: the pulse restarts the horizontal side --
+`STATUS_MISC_PLLAD_LOCK` 0 -> 1, `HPERIOD_IF` 14 -> 214 -- and `VTOTAL` stays 97
+while the lock decays again. A `PLLAD_LAT` rising edge changes nothing, three
+times, the divider in force being the one the register already holds. The earlier
+claim rested on re-selecting the same input, which also runs `LoadDefault()` and
+re-applies the input registers, so it isolated nothing.
 
-**What clears it is `SFTRST_SYNC_RSTZ`**, the pulse `resetSyncProcessor()`
-makes. Re-selecting the SAME input recovers it -- which moves no selection and
-so tells the engine nothing, but does reset the block. The escalation ladder's
-`FullReset` rung is the engine's own copy of that pulse, and it is what
-recovers the source when the ladder is allowed to run: measured, the nine rungs
-before it all fired and changed nothing, and `FullReset` acquired the source
-within a second.
+The 25..32 s is the ladder: 15 s of first-acquisition hold, then rungs at about
+ten a second to `FullReset` at position 150. The early rungs move it into a
+second state rather than fixing it -- divider 1448 with `VTOTAL` 524 correct and
+`HTOTAL` pinned 1704..1706, lock 0 in every sample over 13 s, which is a
+free-running VCO at about 53.6 MHz. `RestartSamplingClock`, the rung written for
+exactly that, fires at position 60 and changes nothing; `FullReset` clears it in
+under a second.
 
-**Why the block wedges is NOT established.** What is established is that it is
-block state rather than register state, because every configuration register
-reads correct while it is wedged.
+**And the reordering that made the fault three times more frequent is explained
+by this rather than by the mux.** Letting the mux settle before detection runs
+makes a first-pass claim MORE likely, so the preparation ran less often.
 
-**Four repairs were tried and measured, and all four are refused:**
+**The count gate the RGB branch has is not the fix.** `countIsSource(97)` is
+false, so that gate would reject this state -- but on the YPbPr branch nothing
+can be counted until a divider is sized for the arriving source, which happens
+after detection returns, so it would reject every first pass.
 
-| tried | measured |
-|---|---|
-| re-probe the sync type on a cadence | the arrangement comes back the same every time; the count stays 97 |
-| install `Adc::BringUpDivider` as a reference | `PLLAD_MD` 2506 installed, count still 97, and `IF_HSYNC_RST` cannot hold 2506 so it is left describing another line |
-| write `SP_DLT_REG` with the coast | a real defect and fixed, but the stall recurs with `SP_DLT_REG` correct at 192 |
-| reset the block AFTER the input registers, with 200 ms for the AV module | **worse**: 2 stalls in 3 cycles against 1 in 40 |
+**What repairs it is the selection path installing a reference clock.**
+`applyInputSelection()` calls `Adc::installReferenceSamplingClock()` before it
+resets the sync processor, so the block comes out of reset with a clock the
+arriving source can be counted through whether or not detection's first pass
+claims it.
 
-The last of those is worth keeping in mind before reaching for it again: the
-ordering looks wrong -- `applyInputSelection()` resets the block and then
-switches `ADC_INPUT_SEL` under it, while the AV module is still moving the
-analog mux -- and correcting it made the fault more frequent, not less.
+Measured over 70 `ypbpr` acquisitions afterwards: **no stall**, and the one pass
+that did claim the source acquired in **1.6 s**, against 25.2..32.1 s for all
+five that claimed it before. That one is the evidence, being the condition rather
+than its absence. It also became rarer, 1 in 70 against 5 in 44, because
+installing and latching the group leaves the sync processor with nothing to
+report for a moment, so the first pass usually fails and the preparation runs by
+design rather than by luck.
 
-### The absence run has a branch that can never end it
+Installing the bare divider instead is refused: `PLLAD_MD` 2506 written into a
+live wedge leaves the count at 97, and `IF_HSYNC_RST` cannot hold 2506 so it is
+left describing another line. The whole PLL group is what
+`installReferenceSamplingClock()` writes, and the write lands before the
+`PLLAD_LAT` rising edge so the PLL leaves on it.
+`docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md`.
 
-`SourceAbsence::undecided()` is a no-op by construction: detection finding
-nothing while a signal IS reaching the sync processor is neither evidence, so
-the run neither advances nor ends. The teardown is reachable only through
-`missed()`.
+### The absence run retries the teardown rather than stalling
 
-So a source that keeps something on the test bus while detection cannot claim it
-stalls **indefinitely**. Measured once on `ypbpr`: `state: absent` across 150 s
-of polling, holding the previous source's solve throughout (`cv` 628 at 37879 Hz
-on a 525-line source), with `SP_VTOTAL` 97, `HSACT` 0 and `PLLAD_MD` still on
-`vga`'s 1438. A manual `/sc?~` cleared it in 6.2 s; nothing on the board would
-have.
+**Fixed, and recorded because the shape recurs.** `SourceAbsence::undecided()`
+was a no-op: detection finding nothing while a signal IS reaching the sync
+processor was treated as neither evidence, so the run neither advanced nor ended
+and the teardown was reachable only through `missed()`. A source keeping
+something on the test bus while detection could not claim it therefore stalled
+**indefinitely** -- measured on `ypbpr`, `state: absent` across 150 s of polling
+holding the previous source's solve (`cv` 628 at 37879 Hz on a 525-line source),
+`SP_VTOTAL` 97, `HSACT` 0, `PLLAD_MD` still on `vga`'s 1438. Waking the source
+did not clear it, the stall outlasting the source returning by 45 s, so it was
+the engine rather than the source. `/sc?~` cleared it in 6.2 s and nothing on the
+board would have.
 
-Waking the source did not clear it -- the stall outlasted the source returning
-by 45 s -- so this is the engine rather than the source.
+**A second guard made the teardown a one-shot**, which is what turned a slow
+recovery into no recovery: the call site ran it only `if (rto->isInLowPowerMode
+== false)`, and that flag is cleared only where detection claims a source. So a
+source that was never claimed got exactly one teardown and then nothing, however
+long the run counted.
 
-**What is not established is which branch ran**, because `SYNC_EVENT` needs
-`GBS_SAMPLING_LOG=1` and the fault was caught on a default build.
-`SamplingLog::event()` also de-duplicates identical consecutive events, so a
-ladder repeating one branch prints once and then goes silent: a quiet console is
-what this fault looks like, not evidence against it.
+Both are repaired. `undecided()` advances the run as `missed()` does,
+`SourceAbsence::poweredDown()` re-arms it once a teardown has been made, and the
+call site acts on every threshold instead of once. **Recovery is retried and
+never abandoned.**
 
-Two `ypbpr` acquisitions in eight have since failed to complete inside 50 s on
-an instrumented build, which is the same shape and has not been tied to this.
+**The reproduction is deterministic and is the regression test worth keeping**:
+selecting `ypbpr` twice about 1.5 s apart from a settled `vga` acquisition.
+Before, 6 of 6 held `state: absent` for the full 90 s each attempt was given,
+with `VTOTAL` 0, `HSACT` 0 and `PLLAD_MD` 2506 -- the reference divider showing
+the one teardown had run. After, 0 of 6, acquiring in 4.1..6.4 s.
+
+**A quiet console is what this fault looks like, not evidence against it.**
+`SYNC_EVENT` needs `GBS_SAMPLING_LOG=1`, and `SamplingLog::event()`
+de-duplicates identical consecutive events, so a ladder repeating one branch
+prints once and then goes silent.
 
 ### The encoder holds stale timing with the sync pad correctly low, and nothing re-triggers a re-look
 
