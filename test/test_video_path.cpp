@@ -445,13 +445,61 @@ TEST_CASE("a measurement that solved nothing keeps the clock, and never writes a
     // Nothing MEASURED has sized a divider, which is what a chip reset leaves:
     // the clock in force is the bring-up one, and no source has been read.
     Adc::applyResetParameters();
+    REQUIRE(inputFormatter.applyScan(Adc::BringUpDivider, Adc::BringUpLineDoubled,
+                                     false));
     REQUIRE(sampling.lineRateHz() == 0);
     engine.inputTimingsChanged(4);
 
     CHECK(Adc::PLLAD_MD::read() == Adc::BringUpDivider);
+
+    // And the scan is left alone, because the divider re-asserted is the one
+    // already in force: the counter beside it already describes that line, and
+    // re-sizing it from the OUTGOING source's scan is what half-applied it.
     CHECK(InputFormatter::IF_HSYNC_RST::read()
-          == (engine.lineDoubled() ? Adc::BringUpDivider / 2
-                                   : Adc::BringUpDivider));
+          == InputFormatter::lineCounterFor(Adc::BringUpDivider,
+                                            Adc::BringUpLineDoubled));
+    CHECK(InputFormatter::IF_HS_DEC_FACTOR::read()
+          == (Adc::BringUpLineDoubled ? 1u : 0u));
+}
+
+// The state a measurement is taken through, on an input change. The reference
+// sampling clock cannot be represented undoubled -- 2506 truncates to 458 in an
+// eleven-bit counter -- so the scan the selection leaves is the CLOCK's line and
+// not the arriving source's.
+//
+// Deciding the source's scan before the divider that carries it is installed
+// leaves the three path registers saying progressive with a doubled counter and
+// decimation beside them. The source's field rate is timed off this block's
+// vertical, so what that state reports is exactly twice the truth -- and on a
+// change of input the count has moved, so rateFollowsCount() admits it and the
+// engine solves a divider for half a line.
+// docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+TEST_CASE("the scan the source is measured through describes one line")
+{
+    seedBenchSource();
+    seedSourceLines(524);
+    DisplayClock clock;
+    SourceMeasurement sampling(inputFormatter);
+    FramingTable framings;
+    VideoPath engine(clock, sampling, framings, inputFormatter);
+
+    engine.setOutputMode(benchMode());
+
+    // What an input selection leaves behind: the reference clock, and the scan
+    // that clock's line implies.
+    Adc::applyResetParameters();
+    REQUIRE(inputFormatter.applyScan(Adc::BringUpDivider, Adc::BringUpLineDoubled,
+                                     false));
+
+    engine.inputTimingsChanged(4);
+    engine.prepareToMeasure(524);
+
+    const bool doubled = InputFormatter::IF_HS_DEC_FACTOR::read() == 1;
+    CHECK(InputFormatter::IF_PRGRSV_CNTRL::read() == (doubled ? 0u : 1u));
+    CHECK(InputFormatter::IF_LD_RAM_BYPS::read() == (doubled ? 0u : 1u));
+    CHECK(InputFormatter::IF_LD_SEL_PROV::read() == (doubled ? 0u : 1u));
+    CHECK(lineCounterInForce()
+          == (doubled ? dividerInForce() / 2 : dividerInForce()));
 }
 
 TEST_CASE("a transition blanks the picture and leaves the output sync running")

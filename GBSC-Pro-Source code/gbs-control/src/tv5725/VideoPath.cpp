@@ -36,7 +36,7 @@ VideoPath::VideoPath(DisplayClock &displayClock, SourceMeasurement &sampling,
       firstHorizontal_(0), firstVertical_(0), activeStartLine_(0),
       timing_(0.0f),
       sampling_(sampling),
-      scanModeApplied_(false), lineDoubled_(true),
+      scanSolved_(false), lineDoubled_(true),
       syncTypeApplied_(false),
       syncTypeInForce_(false), syncTypeChosenFor_(NoSelectionSeen), syncProbe_(0),
       framings_(framings),
@@ -330,7 +330,7 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
 
     modePending_ = true;
     modeOversample_ = oversample;
-    scanModeApplied_ = false;
+    scanSolved_ = false;
 
     // The line count is about to move, so the steadiness run so far means
     // nothing.
@@ -341,7 +341,11 @@ void VideoPath::inputTimingsChanged(uint8_t oversample)
     // ADC clocks -- so every measurement is garbage until this runs, the
     // steadiness gate never passes, and the pass that would have fixed the
     // clock never arrives.
-    applySampling(Adc::dividerInForce());
+    //
+    // The clock alone: the divider is the one already in force, so the scan
+    // beside it already describes that line, and re-asserting it from the
+    // OUTGOING source's decision is what left the block half doubled.
+    applySamplingClock(Adc::dividerInForce());
 }
 
 bool VideoPath::passedThrough() const
@@ -448,11 +452,17 @@ bool VideoPath::installSampling(SamplingReason reason)
     const uint16_t inForce = Adc::dividerInForce();
     const bool derivedFromMeasurement =
         reason == SamplingFollowsMeasurement && heldDivider_ == 0;
+
+    // AND OF THE SCAN, because the divider is sized against it: the scan on the
+    // chip is the one the last install put there, and the selection path leaves
+    // the reference clock's rather than this source's -- so a rate that agrees
+    // must not suppress the install that carries the scan in.
     const bool alreadyInForce =
-        derivedFromMeasurement
-            ? VideoSignal::ratesAgree(rate, installedRateHz_,
-                                      SourceIdentityPerMille)
-            : divider == inForce;
+        inputFormatter_.scanIsDoubled() == lineDoubled_
+        && (derivedFromMeasurement
+                ? VideoSignal::ratesAgree(rate, installedRateHz_,
+                                          SourceIdentityPerMille)
+                : divider == inForce);
     if (inForce != 0 && alreadyInForce)
         return true;
 
@@ -463,7 +473,7 @@ bool VideoPath::installSampling(SamplingReason reason)
              (unsigned long)rate, (unsigned)lineDoubled_, (unsigned)divider);
     tv5725Log(line);
 
-    applySampling(divider);
+    applySampling(divider, lineDoubled_);
     return true;
 }
 
@@ -685,31 +695,60 @@ void VideoPath::solveLineDoubling(uint16_t lines)
             ? OutputWindow::maximumCapture(AxisVertical, mode_->frameLines(), 0, 0)
             : 0;
     const bool doubled = InputFormatter::shouldDoubleLine(lines, showable);
-    if (scanModeApplied_ && doubled == lineDoubled_)
+    if (scanSolved_ && doubled == lineDoubled_)
         return;
-
-    const bool component = Adc::inputIsComponent();
 
     // An IF unit is two ADC samples on a doubled line and one on an undoubled
     // one, so the doubling sizes the divider as much as the rate does, and the
     // clock in force is no longer the one this rate installed.
     installedRateHz_ = 0;
     lineDoubled_ = doubled;
-    inputFormatter_.applyLineDoubling(doubled, component);
-    VideoProcessor::applyLineDoubling(doubled, component);
-    Deinterlacer::applyLineDoubling(doubled);
-    scanModeApplied_ = true;
+    scanSolved_ = true;
+
+    // SIZED FOR THE CLOCK ALREADY IN FORCE, because that is the line the block
+    // is counting. A scan the clock in force cannot be represented in is
+    // refused whole and carried by the install that moves the divider -- which
+    // is the reference clock's case, 2506 samples being a line no progressive
+    // counter can hold.
+    applyScan(Adc::dividerInForce(), doubled);
 }
 
 bool VideoPath::lineDoubled() const { return lineDoubled_; }
 
-void VideoPath::applySampling(uint16_t divider)
+bool VideoPath::applyScan(uint16_t divider, bool doubled)
+{
+    if (divider == 0)
+        return false;
+
+    // The line counter is a count of IF units and the decimation is what an IF
+    // unit IS, so the scan and the line it is sized for are one setting: written
+    // apart, the block counts several lines per line and the source's field
+    // rate -- timed off that block's vertical -- comes back a multiple of the
+    // truth.
+    // ../../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+    const bool component = Adc::inputIsComponent();
+    if (!inputFormatter_.applyScan(divider, doubled, component))
+        return false;
+
+    VideoProcessor::applyLineDoubling(doubled, component);
+    Deinterlacer::applyLineDoubling(doubled);
+    return true;
+}
+
+void VideoPath::applySampling(uint16_t divider, bool doubled)
+{
+    if (!applyScan(divider, doubled))
+        return;
+
+    applySamplingClock(divider);
+}
+
+void VideoPath::applySamplingClock(uint16_t divider)
 {
     if (divider == 0)
         return;
 
     Adc::applySampleRate(divider, sampling_.lineRateHz(), modeOversample_);
-    inputFormatter_.writeLineCounter(divider, lineDoubled_);
     SyncProcessor::writeRetimeStop(SyncProcessor::retimeStopFor(divider));
 
     // The clamp is a fraction of the LINE, so it moves with the divider. Left
@@ -736,7 +775,7 @@ uint16_t VideoPath::heldDivider() const { return heldDivider_; }
 
 void VideoPath::restartSamplingClock()
 {
-    applySampling(Adc::dividerInForce());
+    applySamplingClock(Adc::dividerInForce());
     Adc::restartPll();
     SyncProcessor::forgetPositions();
 }

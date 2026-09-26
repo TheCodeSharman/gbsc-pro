@@ -17,7 +17,7 @@ namespace Tv5725 {
 // the ADC rather than the digital port, and the piecewise H-sync rate correction
 // is off. What moves per mode -- IF_HB_* and IF_LINE_SP -- is the engine's,
 // which computes the capture window rather than transcribing it; IF_HBIN_SP
-// moves with the line doubler instead, and applyLineDoubling() says why.
+// moves with the line doubler instead, and applyScan() says why.
 //
 // IF_LD_ST shares s1_0c with IF_LD_RAM_BYPS (bit 0) and IF_INI_ST (bits 7-5),
 // both written by doPostPresetLoadSteps(). Three owners in one byte is safe only
@@ -246,13 +246,6 @@ public:
     // the bring-up where a preset table would have been loaded.
     void init();
 
-    // The line counter. Derived here from the divider just applied and the scan
-    // mode, and HELD: a caller re-deriving it is asking the chip a question a
-    // read-back cannot answer, because PLLAD_LAT is what loads the divider into
-    // the ADC PLL and between a write and that edge the ADC runs one value
-    // while the register reports another.
-    void writeLineCounter(uint16_t divider, bool lineDoubled);
-
     // The span the counter wraps at, which is one past what it was written
     // with. 0 until the first write.
     uint16_t lineUnits() const;
@@ -300,11 +293,21 @@ public:
     // shipped 136..272 and this is the one the bench picture is right on.
     static const uint16_t LineDoubleReset = 272;
 
-    // Put every register the line doubler decides into one of the two states.
+    // The scan mode, in every register that carries it: the three the line
+    // doubler is routed by, and the two that size the line for it -- the counter
+    // and the decimation. ONE CALL, because a count of IF units and what an IF
+    // unit IS are one fact, and the source's field rate is timed off this
+    // block's vertical: a counter sized for a doubled line beside a progressive
+    // path reads the rate exactly twice.
+    //
     // The colour path comes with it because the luma delay needs both: only a
-    // component source arrives with luma and chroma separated, and only the
-    // line doubler puts them out.
-    void applyLineDoubling(bool lineDoubled, bool component);
+    // component source arrives with luma and chroma separated, and only the line
+    // doubler puts them out.
+    //
+    // False where the line does not fit the counter, having written nothing --
+    // so the divider it was derived for must not be installed either.
+    // ../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+    bool applyScan(uint16_t divider, bool lineDoubled, bool component);
 
     // Below this many total source lines the capture is line-doubled, so the
     // rest of the chain has enough lines to reach the output resolution.
@@ -356,14 +359,17 @@ public:
     //
     // It states the rule, which is what a divider has to be checked against
     // before it is chosen. **The engine does not re-derive the counter from
-    // it** -- writeLineCounter() applies it once and holds the result, because
-    // between a divider write and PLLAD_LAT the ADC runs one value while the
-    // register reports another.
+    // it** -- applyScan() applies it once and holds the result, because between a
+    // divider write and PLLAD_LAT the ADC runs one value while the register
+    // reports another.
     static uint16_t lineCounterFor(uint16_t divider, bool lineDoubled);
+
+    // Which scan the block is in, as the last applyScan() left it. What an IF
+    // unit is, so the capture window's counters come off it.
+    bool scanIsDoubled() const;
 
 private:
     uint16_t lineUnits_;
-    uint16_t divider_;
     bool doubled_;
 
 public:

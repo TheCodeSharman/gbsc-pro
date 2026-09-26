@@ -6,7 +6,7 @@
 
 namespace Tv5725 {
 
-InputFormatter::InputFormatter() : lineUnits_(0), divider_(0), doubled_(false) {}
+InputFormatter::InputFormatter() : lineUnits_(0), doubled_(false) {}
 
 const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
@@ -82,7 +82,7 @@ void InputFormatter::init()
     // ship, bar IF_HS_Y_PDELAY 2 in ntsc_1920x1080, which the YPbPr branch still
     // asks for afterwards.
     IF_HS_INT_LPF_BYPS::write(0x0);              // s1_02[0:0]
-    // The path every load starts from. applyLineDoubling() owns it from here
+    // The path every load starts from. applyScan() owns it from here
     // on, writing the scan mode's own value on every solve.
     IF_HS_SEL_LPF::write(0x1);                   // s1_02[1:1]
     IF_HS_PSHIFT_BYPS::write(0x1);               // s1_02[3:3]
@@ -121,11 +121,11 @@ void InputFormatter::init()
     IF_HB_ST::write(2);                          // s1_10[10:0]
     IF_HB_SP::write(72);                         // s1_12[10:0]
 
-    // applyLineDoubling() owns this from here on; what it needs before the first
+    // applyScan() owns this from here on; what it needs before the first
     // scan mode is decided is a value that is not 0, which blanks the whole line.
     IF_HBIN_SP::write(LineDoubleReset);          // s1_26[11:0]
 
-    // Its start. applyLineDoubling() owns this from here on too; what it needs
+    // Its start. applyScan() owns this from here on too; what it needs
     // before the first scan mode is decided is a defined value, because the
     // part keeps its registers across an ESP reset.
     IF_HBIN_ST::write(0);                        // s1_24[11:0]
@@ -140,38 +140,9 @@ void InputFormatter::init()
     IF_AUTO_OFST_V_RANGE::write(0x0);            // s1_2a[7:4]
 }
 
-void InputFormatter::writeLineCounter(uint16_t divider, bool lineDoubled)
-{
-    const uint16_t counter = lineCounterFor(divider, lineDoubled);
-
-    // The register takes the low eleven bits of whatever it is handed, so a
-    // counter that does not fit arrives as a different line and reads back as
-    // one. Keeping the last value that did fit is what makes the caller's
-    // mistake visible instead of silent -- and it leaves the pair agreeing,
-    // because neither register is written.
-    if (counter > LineCounterMax) {
-        char line[72];
-        snprintf(line, sizeof(line),
-                 "if line counter: %u does not fit, holding %u",
-                 (unsigned)counter, (unsigned)(lineUnits_ ? lineUnits_ - 1 : 0));
-        tv5725Log(line);
-        return;
-    }
-
-    IF_HSYNC_RST::write(counter);
-
-    // WHAT AN IF UNIT IS, written with the count of them. The two are one fact
-    // and a caller that could set them apart is a caller that will.
-    IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);
-
-    // The counter wraps one past its last value, so the span is the register
-    // plus one.
-    lineUnits_ = (uint16_t)(counter + 1);
-    divider_ = divider;
-    doubled_ = lineDoubled;
-}
-
 uint16_t InputFormatter::lineUnits() const { return lineUnits_; }
+
+bool InputFormatter::scanIsDoubled() const { return doubled_; }
 
 // Inside every frame any source presents, so it cannot be the window that
 // stops the block measuring.
@@ -188,8 +159,28 @@ void InputFormatter::writeLineCounterStart(uint16_t pixels)
 
 
 
-void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
+// The scan is one setting and it goes in whole or not at all. Three registers
+// route the line doubler, and the counter and the decimation size the line for
+// it -- a count of IF units beside what an IF unit IS -- so a caller that could
+// set them apart is a caller that will, and the source's field rate is timed off
+// this block's vertical.
+//
+// The counter takes the low eleven bits of whatever it is handed, so a line that
+// does not fit arrives as a different one and reads back as one. Nothing is
+// written then, which keeps the five describing the line they already did.
+// ../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+bool InputFormatter::applyScan(uint16_t divider, bool lineDoubled, bool component)
 {
+    const uint16_t counter = lineCounterFor(divider, lineDoubled);
+    if (counter > LineCounterMax) {
+        char line[72];
+        snprintf(line, sizeof(line),
+                 "if line counter: %u does not fit, holding %u",
+                 (unsigned)counter, (unsigned)(lineUnits_ ? lineUnits_ - 1 : 0));
+        tv5725Log(line);
+        return false;
+    }
+
     const bool progressive = !lineDoubled;
 
     IF_LD_SEL_PROV::write(progressive ? 1 : 0);
@@ -201,11 +192,14 @@ void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
     IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
     IF_HBIN_ST::write(progressive ? 0 : DoubledTailBlanking);
 
-    // The line counter is a count of IF units, so a scan mode that changes what
-    // a unit IS carries it. Sized from the divider already held, which is the
-    // same line either way.
-    if (divider_ != 0)
-        writeLineCounter(divider_, lineDoubled);
+    IF_HSYNC_RST::write(counter);
+    IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);
+
+    // The counter wraps one past its last value, so the span is the register
+    // plus one.
+    lineUnits_ = (uint16_t)(counter + 1);
+    doubled_ = lineDoubled;
+    return true;
 }
 
 }  // namespace Tv5725

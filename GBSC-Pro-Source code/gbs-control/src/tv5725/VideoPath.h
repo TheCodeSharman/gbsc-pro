@@ -335,15 +335,33 @@ private:
     uint16_t chooseDivider() const;
 
 
-    // Put the chip on a divider, in all three of the registers that carry it.
-    // The divider goes first because Adc latches it,
-    // and the latch loads KS, CKOS and ICP with it -- so anything setting those
-    // must already have run. A measurement that solved nothing writes nothing.
-    void applySampling(uint16_t divider);
+    // Put the chip on a divider AND the scan sized for it, together. An IF unit
+    // is two ADC samples on a doubled line and one on an undoubled one, so the
+    // two are one setting: installed apart, the block counts a line that is not
+    // arriving and the source's field rate -- timed off it -- comes back a
+    // multiple of the truth. Nothing is written at all where the line does not
+    // fit the counter.
+    // ../../../../docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md
+    void applySampling(uint16_t divider, bool doubled);
+
+    // The scan alone, sized for a divider that is going in beside it or is
+    // already in force. False where the line does not fit the counter, having
+    // written nothing.
+    bool applyScan(uint16_t divider, bool doubled);
+
+    // The clock alone, for a caller re-asserting the divider ALREADY IN FORCE:
+    // the scan beside it already describes that line, and re-asserting one from
+    // a stale decision is what left the block half doubled.
+    void applySamplingClock(uint16_t divider);
 
     // **Before the divider is chosen, because it derives from this**: the
     // capture write limit doubles with the line doubler, so the two describe one
     // decision and the wrong order sizes the divider for the previous source.
+    //
+    // Applied against the clock in force, so the block is corrected while the
+    // source is still unmeasurable: its own measurements only mean something
+    // once its scan matches the source, and a scan derived after that gate is
+    // never reached.
     void solveLineDoubling(uint16_t lines);
 
     // Whether video routes around the VDS. The mode in force says it, so there
@@ -419,7 +437,7 @@ private:
     uint16_t activeStartLine_;
     SourceTiming timing_;
     SourceMeasurement &sampling_;
-    bool scanModeApplied_;
+    bool scanSolved_;
     bool lineDoubled_;
     // The path as it was last written, so a mode change that reuses the held
     // sync type pays neither the probe nor the settle behind it.

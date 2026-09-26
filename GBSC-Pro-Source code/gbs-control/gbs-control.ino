@@ -1278,8 +1278,13 @@ void setResetParameters()
     rto->presetID = 0;
     Tv5725::PresetLoad::forgetScalingRgbhv();
 
-    inputFormatter.writeLineCounter(Tv5725::Adc::BringUpDivider,
-                                   Tv5725::Adc::BringUpLineDoubled);
+    // The reference line WHOLE, path registers included. The scan and the line
+    // it is sized for are one setting, and the reference divider cannot be
+    // represented undoubled -- so leaving the previous source's scan beside this
+    // counter is what the block then times the arriving field rate through.
+    inputFormatter.applyScan(Tv5725::Adc::BringUpDivider,
+                             Tv5725::Adc::BringUpLineDoubled,
+                             Tv5725::Adc::inputIsComponent());
     inputFormatter.writeReferenceVerticalBlank();
 
     frameSync.cleanup();
@@ -3228,8 +3233,10 @@ static void applyScalingSampleClock(uint16_t divider, uint8_t oversample)
 {
     const bool doubled = geometry.lineDoubled();
 
+    if (!inputFormatter.applyScan(divider, doubled, Tv5725::Adc::inputIsComponent()))
+        return;
+
     Tv5725::Adc::applySampleRate(divider, sourceSampling.lineRateHz(), oversample);
-    inputFormatter.writeLineCounter(divider, doubled);
     Tv5725::SyncProcessor::writeRetimeStop(
         Tv5725::SyncProcessor::retimeStopFor(divider));
 }

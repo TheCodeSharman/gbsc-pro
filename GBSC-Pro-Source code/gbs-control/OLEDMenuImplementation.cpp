@@ -9,6 +9,7 @@
 #include "src/WebSocketsServer.h"
 #include "fonts.h"
 #include "src/tv5725/Adc.h"
+#include "src/tv5725/InputFormatter.h"
 #include "src/tv5725/TestBusRateMeasurement.h"
 #include "src/tv5725/Deinterlacer.h"
 #include "src/tv5725/SyncProcessor.h"
@@ -90,6 +91,7 @@ extern uint8_t InputChanged;
   3：Ypbpr\
   选择输入的信号
 extern uint8_t SeleInputSource;
+extern Tv5725::InputFormatter inputFormatter;
 
 // 上电选择亮度
 extern uint8_t BriorCon;
@@ -612,6 +614,13 @@ void applyInputSelection(VideoSourceSelection::Id id)
     VideoSourceSelection::select(id);
     sourceAbsence.selectionChanged();
     Tv5725::Adc::installReferenceSamplingClock();
+    // And the scan its line implies, in the same breath: the reference divider
+    // is 2506 ADC samples, which no progressive counter can hold, so the
+    // previous source's scan left beside it makes the input formatter count
+    // several lines per line.
+    inputFormatter.applyScan(Tv5725::Adc::BringUpDivider,
+                             Tv5725::Adc::BringUpLineDoubled,
+                             Tv5725::Adc::inputIsComponent());
     resetSyncProcessor();
     const unsigned long reset = millis();
     applyInputRegisters(settings);

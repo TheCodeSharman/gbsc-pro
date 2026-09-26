@@ -335,8 +335,8 @@ TEST_CASE("the input formatter's horizontal path is owned on a 15 kHz RGB source
     // tables disagree on four of them because they are the scale-down path
     // rather than a second opinion about this one.
     //
-    // IF_HS_DEC_FACTOR was a sixth and is not unowned: writeLineCounter() writes
-    // it with the counter it sizes, which is the case above.
+    // IF_HS_DEC_FACTOR was a sixth and is not unowned: applyScan() writes it with
+    // the counter it sizes, which is the case above.
     CHECK(written(1, 0x02, 4, 1) == 0u);   // IF_HS_TAP11_BYPS
     CHECK(written(1, 0x02, 5, 2) == 3u);   // IF_HS_Y_PDELAY
     CHECK(written(1, 0x10, 0, 11) == 2u);  // IF_HB_ST,  blanking set 0
@@ -357,7 +357,7 @@ TEST_CASE("the decimation is not written apart from the line counter it sizes")
     // The part keeps its registers across an ESP reset, so a bring-up that
     // writes one of the pair is a bring-up that can DESYNCHRONISE it against
     // whatever the last session left in the other.
-    // InputFormatter::writeLineCounter() writes both or neither.
+    // InputFormatter::applyScan() writes both or neither.
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_DEC_FACTOR) == NotWritten);
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_HSYNC_RST) == NotWritten);
 }
@@ -454,8 +454,8 @@ TEST_CASE("the peaking filter's shape is the bring-up's, its gain is not")
 
 TEST_CASE("the input formatter's fixed horizontal filtering is the bring-up's")
 {
-    // IF_HS_SEL_LPF is the path a load starts from, and applyLineDoubling()
-    // writes the scan mode's own value over it on every solve.
+    // IF_HS_SEL_LPF is the path a load starts from, and applyScan() writes the
+    // scan mode's own value over it on every solve.
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_INT_LPF_BYPS) == 0);
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_PSHIFT_BYPS) == 1);
     CHECK(WRITTEN(Tv5725::InputFormatter::IF_LD_WRST_SEL) == 1);
