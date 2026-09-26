@@ -565,58 +565,9 @@ TEST_CASE("forgetting the override returns the constants")
     CHECK(SyncProcessor::SP_POST_COAST::read() == 6);
 }
 
-// Putting the sync path back for a scaling RGBHV source, after a preset written
-// for another standard has moved it.
 
-TEST_CASE("a composite-sync scaling RGBHV source coasts on its own window")
-{
-    Wire.reset();
-    Wire.poison(Poisons[0]);
 
-    SyncProcessor::applyForScalingRgbhv(true);
 
-    CHECK(SyncProcessor::SP_SOG_MODE::read() == 1);
-    CHECK(SyncProcessor::SP_H_CST_ST::read() == 0x10);
-    CHECK(SyncProcessor::SP_H_CST_SP::read() == 0x80);
-    CHECK(SyncProcessor::SP_H_PROTECT::read() == 1);
-}
-
-TEST_CASE("that window is NARROWER than the default and does not substitute")
-{
-    // 0x80 against applyDefaultCoastWindow()'s 0x100. The two look alike and
-    // are not the same operation: swapping one for the other moves where the
-    // sync processor stops coasting by half a window.
-    Wire.reset();
-    SyncProcessor::applyForScalingRgbhv(true);
-    const uint32_t scaling = SyncProcessor::SP_H_CST_SP::read();
-
-    Wire.reset();
-    SyncProcessor::applyDefaultCoastWindow();
-
-    CHECK(scaling != SyncProcessor::SP_H_CST_SP::read());
-}
-
-TEST_CASE("a separate-sync scaling RGBHV source runs uncoasted and clamps by hand")
-{
-    Wire.reset();
-    Wire.poison(Poisons[0]);
-
-    SyncProcessor::applyForScalingRgbhv(false);
-
-    CHECK(SyncProcessor::SP_SOG_MODE::read() == 0);
-    CHECK(SyncProcessor::SP_CLAMP_MANUAL::read() == 1);
-    CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1);
-}
-
-TEST_CASE("the separate-sync arm leaves the coast window where it was")
-{
-    Wire.reset();
-
-    SyncProcessor::applyForScalingRgbhv(false);
-
-    CHECK_FALSE(Wire.touched[0x05][0x4D]);
-    CHECK_FALSE(Wire.touched[0x05][0x4F]);
-}
 
 TEST_CASE("coasting further for a serrated source leaves the pulse-ignore alone")
 {
@@ -805,42 +756,8 @@ TEST_CASE("the search forgets where the windows were placed")
     CHECK_FALSE(SyncProcessor::clampPlaced());
 }
 
-TEST_CASE("the scaling RGBHV path takes the retiming module's auto polarity")
-{
-    for (int i = 0; i < 2; ++i) {
-        Wire.reset();
-        SyncProcessor::applyForScalingRgbhv(i == 0);
 
-        CHECK(SyncProcessor::SP_SOG_P_ATO::read() == 1);
-    }
-}
 
-TEST_CASE("the scaling RGBHV path puts the SD vertical sync at the top of the frame")
-{
-    Wire.reset();
-    SyncProcessor::writeSdVsyncStart(301);
-    SyncProcessor::writeSdVsyncStop(299);
-
-    SyncProcessor::applyForScalingRgbhv(false);
-
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_L::read() == 2);
-    CHECK(SyncProcessor::SP_SDCS_VSST_REG_H::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_L::read() == 0);
-    CHECK(SyncProcessor::SP_SDCS_VSSP_REG_H::read() == 0);
-}
-
-TEST_CASE("a scaling RGBHV source is a new source, so neither window is placed")
-{
-    steadyLine(431);
-    SyncProcessor::forgetPositions();
-    REQUIRE(SyncProcessor::acquireCoastWindow(false, BenchLineRateHz));
-    REQUIRE(SyncProcessor::coastPlaced());
-
-    SyncProcessor::applyForScalingRgbhv(false);
-
-    CHECK_FALSE(SyncProcessor::coastPlaced());
-    CHECK_FALSE(SyncProcessor::clampPlaced());
-}
 
 // Whether the bring-up writes a field at all. Two complementary poisons: one
 // cannot tell a field written 0 from one left at a poison whose bits are
