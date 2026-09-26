@@ -1095,3 +1095,17 @@ TEST_CASE("the per-load setup leaves the coast enable the sync type chose")
 
     CHECK(SyncProcessor::SP_NO_COAST_REG::read() == 1u);
 }
+
+TEST_CASE("the sync type writes the pulse width difference with the coast")
+{
+    // The coast lengths and the pulse width difference are ONE separation
+    // configuration, and applyForSyncType() used to write only the coast.
+    // Measured on the bench across a vga -> ypbpr change that stalled:
+    // SP_PRE_COAST 7 and SP_POST_COAST 6 against SP_DLT_REG 0 -- the composite
+    // coast carrying the separate-sync pulse width left behind by the source
+    // before it. The sync processor then counted 97 lines, the ADC PLL never
+    // locked, and the dynamic writes that would repair it are withheld from a
+    // source the engine cannot count. docs/known-issues.md
+    CHECK(wasWritten<SyncProcessor::SP_DLT_REG>(true));
+    CHECK(applied<SyncProcessor::SP_DLT_REG>(true) >= 0x70);
+}

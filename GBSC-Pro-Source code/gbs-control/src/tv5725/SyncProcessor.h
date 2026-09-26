@@ -546,6 +546,12 @@ public:
     // is deliberate rather than a duplicate to fold away: this refreshes on a
     // schedule, so a register something else moved comes back, and there is a
     // test pinning that applyForSyncType() does NOT write the other two.
+    // The coast lengths, the pulse width difference and the pulse ignore are
+    // ONE separation configuration and have one writer. Writing the coast
+    // alone leaves a composite source carrying the previous separate-sync
+    // pulse width, which the sync processor cannot separate -- it counts 97
+    // lines and the ADC PLL never locks.
+    // ../../../../docs/known-issues.md
     static void applySeparationThresholds(bool csync);
 
     // How many readings the clamp window agrees over. More than the coast

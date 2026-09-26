@@ -259,6 +259,7 @@ void SyncProcessor::applyForSyncType(bool csync)
         SP_NO_COAST_REG::write(0);
         SP_PRE_COAST::write(preCoastLines());
         SP_POST_COAST::write(postCoastLines());
+        applyPulseWidthDifference();
         SP_SYNC_BYPS::write(0);
         SP_HS_LOOP_SEL::write(0);
         SP_H_PROTECT::write(1);
