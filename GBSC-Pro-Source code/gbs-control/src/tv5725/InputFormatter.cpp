@@ -6,7 +6,7 @@
 
 namespace Tv5725 {
 
-InputFormatter::InputFormatter() : lineUnits_(0), doubled_(false) {}
+InputFormatter::InputFormatter() : lineUnits_(0), divider_(0), doubled_(false) {}
 
 const uint16_t InputFormatter::LineCounterMax;
 const uint16_t InputFormatter::DoubleBelowLines;
@@ -153,7 +153,8 @@ void InputFormatter::writeLineCounter(uint16_t divider, bool lineDoubled)
     // The register takes the low eleven bits of whatever it is handed, so a
     // counter that does not fit arrives as a different line and reads back as
     // one. Keeping the last value that did fit is what makes the caller's
-    // mistake visible instead of silent.
+    // mistake visible instead of silent -- and it leaves the pair agreeing,
+    // because neither register is written.
     if (counter > LineCounterMax) {
         char line[72];
         snprintf(line, sizeof(line),
@@ -165,9 +166,14 @@ void InputFormatter::writeLineCounter(uint16_t divider, bool lineDoubled)
 
     IF_HSYNC_RST::write(counter);
 
+    // WHAT AN IF UNIT IS, written with the count of them. The two are one fact
+    // and a caller that could set them apart is a caller that will.
+    IF_HS_DEC_FACTOR::write(lineDoubled ? 1 : 0);
+
     // The counter wraps one past its last value, so the span is the register
     // plus one.
     lineUnits_ = (uint16_t)(counter + 1);
+    divider_ = divider;
     doubled_ = lineDoubled;
 }
 
@@ -192,7 +198,6 @@ void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
 {
     const bool progressive = !lineDoubled;
 
-    IF_HS_DEC_FACTOR::write(progressive ? 0 : 1);
     IF_LD_SEL_PROV::write(progressive ? 1 : 0);
     IF_PRGRSV_CNTRL::write(progressive ? 1 : 0);
     IF_LD_RAM_BYPS::write(progressive ? 1 : 0);
@@ -201,6 +206,12 @@ void InputFormatter::applyLineDoubling(bool lineDoubled, bool component)
     IF_HS_Y_PDELAY::write(!progressive && component ? 2 : 3);
     IF_HBIN_SP::write(progressive ? NoHeadBlanking : LineDoubleReset);
     IF_HBIN_ST::write(progressive ? 0 : DoubledTailBlanking);
+
+    // The line counter is a count of IF units, so a scan mode that changes what
+    // a unit IS carries it. Sized from the divider already held, which is the
+    // same line either way.
+    if (divider_ != 0)
+        writeLineCounter(divider_, lineDoubled);
 }
 
 }  // namespace Tv5725

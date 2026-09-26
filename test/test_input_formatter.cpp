@@ -92,6 +92,37 @@ TEST_CASE("a line counter the register cannot hold is refused, not truncated")
     CHECK(inputFormatter.lineUnits() == 1439);
 }
 
+// THE SCAN MODE IS ONE FACT AND THE TWO REGISTERS THAT CARRY IT MUST AGREE.
+// IF_HSYNC_RST is a count of IF units and IF_HS_DEC_FACTOR is what an IF unit
+// IS -- one ADC sample undoubled, two doubled -- so a counter sized for one
+// and a decimation saying the other makes the block count several lines per
+// line. The source's field rate is timed off this block's vertical test bus,
+// so what that produces is a rate that is a fraction of the truth.
+//
+// Measured at the reset state: a counter of 1253 against a 2506-sample line
+// with the decimation off is exactly two IF lines per line, and the rate reads
+// exactly twice the source's.
+TEST_CASE("the line counter and the decimation are written together")
+{
+    FreshChip fresh;
+
+    inputFormatter.writeLineCounter(1438, false);
+    CHECK(Wire.field(1, 0x0E, 0, 11) == 1438);
+    CHECK(Wire.field(1, 0x0B, 4, 2) == 0);
+
+    SUBCASE("doubled, the counter halves and the decimation says so") {
+        inputFormatter.writeLineCounter(2506, true);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 1253);
+        CHECK(Wire.field(1, 0x0B, 4, 2) == 1);
+    }
+
+    SUBCASE("and a scan mode change carries the counter with it") {
+        inputFormatter.applyLineDoubling(true, false);
+        CHECK(Wire.field(1, 0x0E, 0, 11) == 719);
+        CHECK(Wire.field(1, 0x0B, 4, 2) == 1);
+    }
+}
+
 TEST_CASE("the line double write reset position is owned, one value for every mode")
 {
     FreshChip chip;

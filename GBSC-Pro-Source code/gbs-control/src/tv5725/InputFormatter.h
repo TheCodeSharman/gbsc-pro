@@ -363,6 +363,7 @@ public:
 
 private:
     uint16_t lineUnits_;
+    uint16_t divider_;
     bool doubled_;
 
 public:
