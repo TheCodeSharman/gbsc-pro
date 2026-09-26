@@ -16,6 +16,7 @@
 #include "src/tv5725/VideoRoute.h"
 #include "src/tv5725/RgbhvOutput.h"
 #include "src/videosource/FrameTimeLock.h"
+#include "src/tv5725/Tv5725Log.h"
 #include <stdio.h>
 
 
@@ -599,21 +600,38 @@ void applyInputRegisters(const VideoSourceSelection::Settings &settings)
         Tv5725::Adc::selectInput(settings.adcInputSel);
 }
 
+// **SAID AFTER THE SEQUENCE, NOT DURING IT.** A console write inside the window
+// perturbs the thing it is timing, and the reference divider is what detection's
+// next pass counts the arriving source in -- so the one fact worth reading off
+// this line is that it precedes detection's first DETECT.
+// docs/investigations/a-ypbpr-detection-that-succeeds-first-pass-skips-the-preparation.md
 void applyInputSelection(VideoSourceSelection::Id id)
 {
     const VideoSourceSelection::Settings settings = VideoSourceSelection::settingsFor(id);
+    const unsigned long began = millis();
 
     SeleInputSource = settings.legacySource;
     VideoSourceSelection::select(id);
     sourceAbsence.selectionChanged();
     Tv5725::Adc::installReferenceSamplingClock();
     resetSyncProcessor();
+    const unsigned long reset = millis();
     applyInputRegisters(settings);
+    const unsigned long registers = millis();
     BriorCon = settings.brightnessSet;
     rto->sourceDisconnected = true;
     if (settings.clearsLowPower)
         rto->isInLowPowerMode = false;
     saveUserPrefs();
+
+    char line[112];
+    snprintf(line, sizeof(line),
+             "input selected: %s, reference divider %u, reset +%lums, "
+             "registers +%lums, saved +%lums",
+             VideoSourceSelection::name(id),
+             (unsigned)Tv5725::Adc::dividerInForce(),
+             reset - began, registers - began, millis() - began);
+    tv5725Log(line);
 }
 
 void InputVGA_mode(uint8_t mode)

@@ -2237,7 +2237,7 @@ static void traceIrFrames(uint32_t bySelectOption, uint32_t byOsdIr,
 }
 
 // The sink src/tv5725/ composes its diagnostics for. Declared in
-// SourceMeasurement.h and defined here, so a class under src/ can report without
+// Tv5725Log.h and defined here, so a class under src/ can report without
 // reaching for SerialM -- which lives above it and does not host-compile.
 void tv5725Log(const char *message)
 {
