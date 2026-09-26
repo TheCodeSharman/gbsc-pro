@@ -9,6 +9,9 @@ starts and stops. The television is a second view of the same thing; this one
 is repeatable to the byte, so two states are comparable without controlling the
 room.
 
+An all-black capture is a board state until the board has been ruled out. The
+connector is the last resort, not the first: a seated one stays seated.
+
 The device node renumbers whenever the dongle is replugged, so it is found by
 USB id rather than named. `docs/bench-output-capture.md` is what the readings
 mean and which traps they carry.
@@ -90,8 +93,11 @@ def main():
 
     print(f"{dev}  {width}x{height}  {rgb.shape[0]} frame(s)  mean luma {grey.mean():.2f}")
     if grey.max() <= BLACK:
-        print("  ALL BLACK -- the dongle streams well-formed black frames when its HDMI\n"
-              "  input is not seated. Check the connector before reading this as no signal.")
+        print("  ALL BLACK -- nothing reached the dongle. ASK THE BOARD FIRST: a block\n"
+              "  left held in reset emits nothing while every configuration register\n"
+              "  reads correct, so a clean dump is no evidence. s0_46 (SFTRST_*_RSTZ\n"
+              "  all 1), s0_45, s0_49, then the console's frame time lock 'out' rate.\n"
+              "  An unseated HDMI input does this too and is the LAST thing to check.")
         return 1
 
     for i in range(rgb.shape[0]):
