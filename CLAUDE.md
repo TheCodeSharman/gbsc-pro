@@ -255,6 +255,7 @@ as a healthy engine reporting a correct measurement, over and over.
 | `source moved: interrupt \| count \| rate (N lines, solved M)` | why a solve was armed. `interrupt` with `N == M` is the count saying nothing moved, which is the case the latch exists for -- the same count at a different field rate. **An arm SPENDS the latch**, so one taken during a change the engine armed for another reason cannot fire again afterwards |
 | `own V sync: yes\|no after Nms` | the sync type probe ran. **It writes `SP_EXT_SYNC_SEL`, and the chip latches that as a SOG switch**, which the probe acknowledges itself -- so an `interrupt` arm after one is a disturbance the probe did not cause |
 | `no INPUT vsync` / `no OUTPUT vsync` | which FrameSync sample timed out. Do not infer which — it says |
+| `input selected: ypbpr, reference divider 2506, reset +18ms, …` | the selection edge, said once the sequence is complete. **It must arrive BEFORE the first `DETECT`** — that ordering is what says the arriving source will be counted through a reference clock rather than the previous source's, and it is the only part of that fault which repeats reliably enough to test. It lands ~250 ms after the request, `/input` being queued for `loop()` |
 | `h:%4u … ht:%4d vt:%4d … u:%3x s:%2x S:%2d` | `printInfo()`. `h:` is `HPERIOD_IF`, `ht:`/`vt:` are `STATUS_SYNC_PROC_HTOTAL`/`VTOTAL`, **`u:` is `VideoSourceAcquisition::unmeasuredPasses()` IN HEX**, `s:` is `acquiredPasses()`, `S:` is the SOG level |
 
 **`u:` climbing with `s: 0` is a diagnosis on its own.** One of the two is always
