@@ -23,7 +23,9 @@ uint8_t ifStatusBits()
                      | (GBS::STATUS_IF_VT_OK::read() << 1)
                      | (GBS::STATUS_IF_HT_BAD::read() << 2)
                      | (GBS::STATUS_IF_VT_BAD::read() << 3)
-                     | (GBS::STATUS_IF_NO_SYNC::read() << 4));
+                     | (GBS::STATUS_IF_NO_SYNC::read() << 4)
+                     | (GBS::STATUS_IF_INP_NTSC_INT::read() << 5)
+                     | (GBS::STATUS_IF_INP_PAL_INT::read() << 6));
 }
 
 // Short and fixed-width so a long capture stays readable and parses without a
