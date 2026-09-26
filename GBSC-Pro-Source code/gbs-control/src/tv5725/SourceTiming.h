@@ -60,13 +60,15 @@ private:
     struct Raster {
         uint16_t totalLines, rateHz;
         uint16_t totalPixels, syncPixels, activeStartPixel, activePixels;
-        uint16_t activeStartLine, activeLines;
+        uint16_t vsyncLines, activeStartLine, activeLines;
     };
 
     static const Raster Published[];
     static const uint16_t PublishedCount;
 
     static const Raster *lookUp(const SourceKey &measured);
+
+    uint16_t lineFor(uint16_t statedLine, uint16_t frameLines) const;
 
     float fieldRateHz_;
     const Raster *raster_;

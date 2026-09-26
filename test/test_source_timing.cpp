@@ -42,29 +42,41 @@ TEST_CASE("a VESA source is placed where its own raster puts active video")
 
 TEST_CASE("the vertical axis comes from the same raster")
 {
-    // 525 lines, 2 of sync and 33 of back porch before 480 of picture. The
-    // counter zeroes after the sync, so the blanking it sees is the 33.
+    // 525 lines, 2 of sync and 33 of back porch before 480 of picture, and a
+    // counter whose origin is 7 lines after the pulse's leading edge.
     SourceTiming dmt = SourceTiming::matching(SourceKey(524, 59.94f, 96.0f / 800.0f, SourceKey::Negative, SourceKey::Negative));
 
     REQUIRE(dmt.published());
-    CHECK_NEAR(dmt.activeStart(AxisVertical), 33.0f / 525.0f, 0.0005f);
+    CHECK_NEAR(dmt.activeStart(AxisVertical), 28.0f / 525.0f, 0.0005f);
     CHECK_NEAR(dmt.activeExtent(AxisVertical), 480.0f / 525.0f, 0.0005f);
 }
 
-TEST_CASE("the vertical start is counted from the counter's zero")
+// THE VERTICAL COUNTER'S ORIGIN IS A FIXED DISTANCE AFTER THE VSYNC LEADING
+// EDGE, AND IT IS NOT THE PULSE WIDTH. Measured on the RiscPC on vga by forcing
+// a 100% framing and reading the card's one-line green frame off the emitted
+// picture, which gives the counter line the source's own first active line
+// arrives at:
+//
+//     mode           sync + back porch   arrives at   difference
+//     640x480@60          2 + 33 = 35        27.7       -7.3
+//     800x600@60          4 + 23 = 27        19.7       -7.3
+//     1024x768@60         6 + 29 = 35        27.6       -7.4
+//     640x480@75          3 + 16 = 19        11.1       -7.9
+//
+// Four pulse widths and one difference, so the origin does not follow the
+// pulse: what the standard states from the leading edge is where video lands,
+// less the origin. Taking the back porch alone instead is right only where the
+// pulse happens to be 7 lines, and cost five lines off the top of 640x480@60
+// with the source's own blanking shown at the bottom in their place.
+// docs/investigations/the-vertical-capture-window-is-placed-late.md
+TEST_CASE("the vertical start is the standard's, less the counter's origin")
 {
-    // The input formatter's vertical counter zeroes on the vsync pulse's
-    // TRAILING edge, so the blanking before active video is the back porch
-    // alone. The standards state the frame from the LEADING edge and count the
-    // sync width with it, which places the window a sync width into the picture.
-    // docs/investigations/the-capture-tail-was-one-unit-short.md
-    //
     // 800x600@60 is 628 lines: 4 of sync, 23 of back porch, 600 of picture.
     SourceTiming dmt = SourceTiming::matching(
         SourceKey(627, 60.32f, 128.0f / 1056.0f, SourceKey::Positive, SourceKey::Positive));
     REQUIRE(dmt.published());
 
-    CHECK_NEAR(dmt.activeStart(AxisVertical), 23.0f / 628.0f, 0.0005f);
+    CHECK_NEAR(dmt.activeStart(AxisVertical), 20.0f / 628.0f, 0.0005f);
 }
 
 TEST_CASE("a measured rate anywhere in the bucket still matches")
@@ -125,8 +137,10 @@ TEST_CASE("the line active video starts on, for a caller that cannot scale")
 {
     // Pass-through plays the source's own raster out, so the only thing it can
     // blank correctly is what the raster says is not picture. 720x480p spends
-    // 6 lines on sync and 30 on back porch, and the counter zeroes after the
-    // sync, so active video is line 30 of 525.
+    // 6 lines on sync and 30 on back porch. THE BLANKING IS PLACED AGAINST THE
+    // HD CHANNEL'S COUNTER, not the input formatter's, and where that one
+    // zeroes has not been measured -- so it is taken as the pulse's end and
+    // active video is line 30 of 525.
     const SourceTiming cea = SourceTiming::matching(SourceKey(524, 59.94f, 62.0f / 858.0f, SourceKey::Negative, SourceKey::Negative));
     REQUIRE(cea.published());
 
