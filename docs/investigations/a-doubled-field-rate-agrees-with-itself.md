@@ -136,6 +136,34 @@ correct readings are refused until `HeldRateRejectionLimit` drains. **92.18 Hz
 is the first reading of every capture taken on this source, to the hundredth**,
 so it is deterministic and not jitter.
 
+## The transients are fractions of one frame, and two of three are the counter
+
+Every transient reading on this source is an edge-to-edge interval that is not
+the whole frame. Both `MeasurePeriod` ISRs are `RISING`, so a short reading
+means the pin carried MORE THAN ONE rising edge per frame. Counted across
+every capture taken on the Wii at 480p, at 160 MHz where a frame is 2,669,358
+ticks:
+
+| reading | seen | ticks | of a frame |
+|---|---|---|---|
+| 171.36 Hz | 63 | 933,707 | 0.350 |
+| 92.18 Hz | 42 | 1,735,735 | 0.650 |
+| 119.87 Hz | 21 | 1,334,445 | 0.500 |
+
+**933,707 + 1,735,735 = 2,669,442**, three parts in a hundred thousand from the
+frame. The first two are one frame split at 35%, read from whichever side the
+measurement landed in.
+
+That split was `IF_HSYNC_RST` truncating. The register takes eleven bits, and
+`applySampling()` re-applies the divider in force with the OUTGOING source's
+scan mode -- so after a teardown the bring-up divider arrives undoubled, 2506
+does not fit, and 458 is what the block counts with. Refusing the write instead
+removes both readings: six input changes afterwards carry neither.
+
+**0.500 is a different quantity and remains.** Half a frame is the field against
+the frame, not a counter sized wrong, so it is the scan mode rather than the
+line length.
+
 ## What this is not
 
 It is not `SourceMeasurement::settlePasses_` being unarmed.
