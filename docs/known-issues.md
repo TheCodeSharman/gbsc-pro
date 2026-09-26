@@ -754,61 +754,59 @@ steadiness run.
 rail. Detection currently uses it only to decide whether to GIVE UP, never to
 decide whether to look.
 
-### YPbPr emits a flat grey field with the sync side perfect, intermittently
+### A teardown can leave the chip's blocks held in reset after the source acquires
 
-**The sync half is right and the video half carries nothing.** On `ypbpr` with
-the Wii in 480p the engine acquires and holds -- `STATUS_SYNC_PROC_VTOTAL` 524,
-`STATUS_SYNC_PROC_HTOTAL` 1448 against `PLLAD_MD` 1448, `SP_SOG_MODE` 1,
-`SP_EXT_SYNC_SEL` 1, `DAC_RGBS_PWDNZ` 1, the scaling path
-(`DAC_RGBS_BYPS2DAC` 0, `OUT_SYNC_SEL` 0), both scales matching their display
-windows to within a pixel, `/geometry` reporting `state: acquired` at 525 lines
-and 31468 Hz -- and the emitted frame is a UNIFORM grey field at mean luma 183,
-filling the whole raster, with no structure anywhere in it.
+**The screen is black and every configuration register reads correct.** Measured
+on `ypbpr` with the Wii at 480p, `/geometry` reporting `state: acquired` at 525
+lines and 31468 Hz, `present: true`, both scales matching their windows:
 
-**The board is not at fault as a whole, and `vga` is what proves it.** Selecting
-the RISC PC on the same unit, seconds later, gives a complete PM5544 -- colour
-blocks, greyscale staircase, frequency wedge, full screen, mean luma 157. So the
-capture window, the VDS, the DACs, the encoder and the HDMI link all work. The
-fault is on the component path only.
+```
+SFTRST_MEM_RSTZ  SFTRST_MEM_FF_RSTZ  SFTRST_FIFO_RSTZ
+SFTRST_DEINT_RSTZ  SFTRST_OSD_RSTZ          all 0      s0_46 = 0x41
+DAC_RGBS_S1EN 0        PLL_MS 2   PLL_R 0   PLL_S 2 -> 0
+```
 
-**It is intermittent**, and it is not caused by removing detection's component
-separator search: it was seen repeatedly before that change went in.
+Those five are **active low**, so 0 is a block held in reset and no video
+crosses the part. They are what `Tv5725::BringUp::holdAllBlocks()` writes inside
+`setResetParameters()`, on the low-power teardown. The source acquired
+afterwards and nothing released them.
 
-Neither `/sc?~` nor an input re-selection clears it, and nor does a
-`PAD_SYNC_OUT_ENZ` toggle -- that recovers a sink showing NOTHING, which this is
-not.
+**Writing the five bits to 1 by hand restores output immediately**, with nothing
+else touched -- the capture goes from a black frame to a 1809x1075 picture. The
+display PLL divisors are on their reset values in the same state, so what comes
+back is structurally wrong until a full re-init runs.
 
-**WHAT DID CLEAR IT ONCE WAS A BUTTON PRESS ON THE WII REMOTE**, with nothing on
-the board touched, the menu returning within seconds. That points at the SOURCE
-and it is not conclusive: the console had been idle for hours, it has also been
-observed emitting a picture for days at a time without blanking, and the engine
-re-solves often enough that one coincidence is cheap. **Establish whether the
-grey field is still arriving before diagnosing the board** -- waking the console
-costs one button press, against a session spent on the component path.
+**It is not reliably reproducible.** The first `/sc?~` after the fault left the
+blocks held; the second released them correctly, so the release is
+path-dependent rather than absent. What is established is that acquisition does
+not guarantee it, and that a clean register dump does not clear the board --
+which is why `bench-output-capture.md` asks `s0_46` first.
 
-The measurement that would settle it without a person at the bench is the
-console's own field rate against the ADC's output, or a second component
-source.
+### The absence run has a branch that can never end it
 
-What is recorded and not yet explained:
+`SourceAbsence::undecided()` is a no-op by construction: detection finding
+nothing while a signal IS reaching the sync processor is neither evidence, so
+the run neither advances nor ends. The teardown is reachable only through
+`missed()`.
 
-- `ADC_RGCTRL`/`GGCTRL`/`BGCTRL` read **51, 51, 51** in one grey state and
-  **123, 123, 123** in another, both while grey. Equal across the three
-  channels either way, so this is not a colour cast.
-- `ADC_RYSEL_R` and `ADC_RYSEL_B` both read **0** on a source selected as
-  YPbPr. Whether they should be 1 there is not established here; it is recorded
-  because a component source reaching the ADC as though it were RGB is the kind
-  of thing that produces no chroma rather than no picture, and it was measured
-  in the grey state.
-- `SP_CLAMP_MANUAL` 1 with `SP_CS_CLP_ST`/`SP` at 47/51.
-- The same state can read `STATUS_SYNC_PROC_VTOTAL` **97** moments later, which
-  is the unlocked value, so the lock is not steady across the fault either.
+So a source that keeps something on the test bus while detection cannot claim it
+stalls **indefinitely**. Measured once on `ypbpr`: `state: absent` across 150 s
+of polling, holding the previous source's solve throughout (`cv` 628 at 37879 Hz
+on a 525-line source), with `SP_VTOTAL` 97, `HSACT` 0 and `PLLAD_MD` still on
+`vga`'s 1438. A manual `/sc?~` cleared it in 6.2 s; nothing on the board would
+have.
 
-**A uniform field means the ADC is sampling a constant**, so the question is
-what reaches the ADC on the component path and not on the RGB one. The analog
-switches are the HC32's and cannot be read back, which is the obvious thing this
-measurement cannot see. The discriminator that has NOT been run is a second
-component source.
+Waking the source did not clear it -- the stall outlasted the source returning
+by 45 s -- so this is the engine rather than the source.
+
+**What is not established is which branch ran**, because `SYNC_EVENT` needs
+`GBS_SAMPLING_LOG=1` and the fault was caught on a default build.
+`SamplingLog::event()` also de-duplicates identical consecutive events, so a
+ladder repeating one branch prints once and then goes silent: a quiet console is
+what this fault looks like, not evidence against it.
+
+Two `ypbpr` acquisitions in eight have since failed to complete inside 50 s on
+an instrumented build, which is the same shape and has not been tied to this.
 
 ### The encoder holds stale timing with the sync pad correctly low, and nothing re-triggers a re-look
 

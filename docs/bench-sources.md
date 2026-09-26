@@ -264,6 +264,20 @@ for it and it is weaker than this one.
 
 ## The Wii
 
+**IT DIMS TO A FLAT GREY FIELD WHEN IT IS LEFT IDLE, AND THAT IS THE SOURCE
+RATHER THAN THE SCALER.** The Wii Menu blanks to a uniform grey after a period
+with no input, and the emitted frame is then a flat field filling the whole
+raster with no structure in it -- while the sync half stays perfect, because the
+console is still driving a valid 480p raster. Any pressed button on the remote
+restores the menu within seconds, with nothing on the board touched.
+
+Measured twice, the second time with the capture either side of the press: a
+grey field at mean luma 204 became the complete Wii Menu. Left longer it stops
+delivering sync the engine will acquire at all, so `ypbpr` sitting at
+`state: absent` with `vga` acquiring normally is worth a button press before it
+is worth a diagnosis. **A grey `ypbpr` capture is the console idling until a
+press says otherwise**, and the press costs nothing.
+
 On the YPbPr input, and the only source here for three things:
 
 - **Sync on green.** Component carries sync on Y, so this is the real test of
