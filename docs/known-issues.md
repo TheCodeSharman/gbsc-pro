@@ -802,11 +802,25 @@ there the doubled rate becomes the line rate: 4 of 4 `ypbpr` selections take
 1448. Three dividers and three ADC PLL re-latches per selection, against one on
 `vga`.
 
-**The coast is not the cause**, which is the tempting reading given
-`two-owners-of-the-coast-lengths-double-the-count.md`. `SP_PRE_COAST`/
+**The cause is a half-applied scan.** The doubled samples land exactly where the
+block's five scan registers disagree: `IF_PRGRSV_CNTRL`, `IF_LD_RAM_BYPS` and
+`IF_LD_SEL_PROV` say progressive while `IF_HS_DEC_FACTOR` 1 and `IF_HSYNC_RST`
+1253 say doubled. Two writers put it there -- `setResetParameters()` writes the
+counter and the decimation for the reference line, which has to be doubled
+because 2506 does not fit eleven bits undoubled, and `applyLineDoubling(false)`
+then writes the three path registers while `writeLineCounter(2506, false)`
+refuses and leaves the other two behind.
+
+**The coast is NOT the cause**, which is the tempting reading given
+`two-owners-of-the-coast-lengths-double-the-count.md`: `SP_PRE_COAST`/
 `SP_POST_COAST` read 7/6 unchanged through the doubled samples and the correct
-ones, and the line count is 524 and right in the same samples. Why the input
-formatter's vertical asserts twice is not established.
+ones, and the line count is 524 and right in the same samples.
+
+**Making the reference line go in as a whole scan is not sufficient, and has been
+tried.** The mixture is re-created by `applyLineDoubling(false)` a moment later
+and the churn is unchanged; refusing the scan when its line will not fit
+deadlocks, the divider install being gated on the scan having changed. The fix
+has to apply the scan and the divider together.
 
 **Do not read it as settling.** 119.87 sits inside the 60..160 Hz band the
 console table calls `getSourceFieldRate()` settling, which is what has let it
