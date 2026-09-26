@@ -2606,24 +2606,24 @@ reference divider from, so the answer is not to reinstate it.
 Removing the wait outright is not obviously safe: `choose(14)` is what carries
 this source, and no other component source has been measured here.
 
-### The 450 ms hsync wait in detection never waits
+### The 450 ms hsync wait in detection never waits -- FIXED
 
-The loop is `while (millis() - timeout < 450)`, and every path through its body
-returns -- the final `return 0` sits inside it. So it runs exactly one
-iteration: `STATUS_SYNC_PROC_HSACT` is read once, 10 ms after entry, and a pass
-that misses it returns 0. On that answer `inputAndSyncDetect()` can call
-`goLowPowerWithInputDetection()`, which powers the DAC down and runs
-`setResetParameters()`.
+**Both halves.** `DetectionEntry::stepAt()` owns the decision now and the
+caller loops on it, so the window is spent rather than sampled once, and the
+instrument is `SyncProcessor::signalPresent()` -- transitions on the test bus --
+rather than `STATUS_SYNC_PROC_HSACT`, which rails in both directions and said
+nothing there.
 
-Measured across five switches: the first pass after `/input` always misses hsync
-and returns 0 in 13 ms, and the second pass 0.7 s later takes the branch. So the
-budget the code states is not the budget it applies, and whether the chip is torn
-down rests on a single sample of a status bit taken just after the mux moved.
+**And the trace reaches the console.** `bootLogPrintf()` wrote to `Serial` and
+appended to the boot log, which is `SerialM` minus the websocket, so
+`LOWPOWER:`, `INPUT:` and `DETECT:` existed only on a cable -- and in the
+default build, where `BOOTLOG_BYTES` is 0, nowhere a session could reach at
+all. It goes through `SerialM` now; `SerialMirror::write()` appends to the ring
+itself, so nothing is written twice.
 
-`goLowPowerWithInputDetection()` announces itself with `bootLogPrintf`, which
-writes to `Serial` and not to `SerialM` -- so **it never reaches the websocket
-console**, and a teardown is invisible to every instrument a session can reach
-remotely.
+Verified on the bench: `DETECT: enter`, `DETECT: found` and
+`input selected: vga` all arrive on the websocket console across an
+`/input?src=vga`.
 
 ### The divider should be keyed to the source identity, not to a raw measurement -- FIXED
 
