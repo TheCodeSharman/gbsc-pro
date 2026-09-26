@@ -27,24 +27,45 @@ starts and stops, and frames of one state come back identical.
 black, and a one-frame grab returns one of them -- which reads exactly like no
 signal. The tool discards forty.
 
-## A stream of black frames is the HDMI connector, not the signal
+## A black capture is the board first and the connector last
 
-**This is the trap, and every software-visible signal says the unit is healthy
-while it happens.** With its HDMI input unseated the dongle stays enumerated,
-reports 1920x1080 at 60 fps, and delivers a full stream of well-formed frames at
-limited-range black. Nothing in `lsusb`, the kernel log or `v4l2-ctl` says
-otherwise.
+**ASK THE SCALER BEFORE ASKING THE CABLE.** A black capture has been a board
+state, and the reason it is worth stating in this order is that a clean register
+dump does not clear the board: the blocks the low-power teardown holds down were
+left held after the source acquired, and the part emitted nothing while
+`/geometry` reported `acquired` and every configuration register read correct.
 
-Neither power cycle reaches it. The dongle re-enumerates cleanly over USB and
-carries on delivering black; the board reboots, re-acquires and carries on
-emitting. **Re-seat the HDMI cable at the dongle**, which is the only thing that
-clears it, and check it before reading black as a fault anywhere else.
+The order that separates them, cheapest first:
 
-What the board is doing is answered without the dongle at all: the console's
-`frame time lock` line carries `out`, which is the TV5725's own VSOUT sampled on
-`DEBUG_IN_PIN`. That proves the scaler is feeding the encoder. **It does not
-prove the encoder is transmitting** -- it is upstream of the MS9288A -- so it
-exonerates the scaler and says nothing about the link.
+| ask | healthy |
+|---|---|
+| `s0_46` | `SFTRST_MEM_RSTZ` and its four neighbours all 1 -- **active low**, so 0 is a block held in reset and no video crosses the part |
+| `s0_45` | 0x11, the three colour channels enabled and the DAC powered |
+| `s0_49` | `PAD_SYNC_OUT_ENZ` 0 and `PAD_TRI_ENZ` 0, so HSOUT/VSOUT are driven |
+| the console | `frame time lock` carrying an `out` rate that matches `in` |
+
+That last one is answered without the dongle at all: `out` is the TV5725's own
+VSOUT sampled on `DEBUG_IN_PIN`, so it proves the scaler is feeding the encoder.
+**It does not prove the encoder is transmitting** -- it is upstream of the
+MS9288A -- so it exonerates the scaler and says nothing about the link.
+
+With all four healthy and the panel still dark, the encoder is next
+(`PAD_SYNC_OUT_ENZ` toggled 1 then 0), and a full power cycle -- mains *and*
+USB -- after that.
+
+## The unseated HDMI input, which is the last resort
+
+With its input unseated the dongle stays enumerated, reports 1920x1080 at 60 fps,
+and delivers a full stream of well-formed frames at limited-range black. Nothing
+in `lsusb`, the kernel log or `v4l2-ctl` says otherwise, and neither power cycle
+reaches it: the dongle re-enumerates cleanly and carries on delivering black.
+Re-seating the cable is the only thing that clears it.
+
+**It belongs at the bottom of the list rather than the top.** A connector that
+has been seated stays seated, so this explains a black capture once and then
+stops being a live hypothesis -- while a scaler that emits nothing is reachable
+from any session and has done it since. Reaching for the cable first is how a
+board fault gets a session spent on the bench.
 
 ## The loop-out carries a television at the same time
 
