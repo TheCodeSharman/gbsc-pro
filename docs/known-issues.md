@@ -1679,40 +1679,33 @@ removes and the framing table then remembers.
 
 ### A 100% framing plays the captured frame out twice, compressed
 
-A forced full framing should show the capture region once. It shows it TWICE,
-each copy vertically compressed, on both scan modes -- so it is neither
-interlace nor the line doubler.
+**FIXED.** `CaptureWindow::lastCapture()` returns `units - 2`. It returned
+`units - 1`, which is `IF_HSYNC_RST` itself -- the line total, a value the
+counter never equals -- so a framing that asked for the whole line stopped the
+capture window on it and the window never closed.
 
-| source | default framing | forced full |
+Measured on the RiscPC at 320x256@50, engine-solved at a forced full framing,
+automation frozen and `IF_HB_ST2` the only variable:
+
+| `IF_HB_ST2` | `IF_HSYNC_RST` | emitted |
 |---|---|---|
-| RiscPC 320x256@50 on `vga`, progressive, doubled | one card, 943 rows | **two cards**, ~548 rows each |
-| Wii 576i on `ypbpr`, interlaced, doubled | one picture, 974 rows | **two pictures**, 471 rows each |
+| **1100** | 1100 | **two cards**, the upper one cut, the card's own animation stopped |
+| 1099 | 1100 | one card, complete, animating |
+| 1098 | 1100 | the same |
 
-**The arithmetic says one copy should fill the screen.** At the full framing the
-RiscPC captures 623 lines with `VDS_VSCALE` 591, so `623 x 1024 / 591` is 1079
-rows against a 1075-row display window -- one copy, filling it. Twice that
-arrives.
+The stopped animation is what names the side: the source keeps drawing, so a
+frozen picture is the write side and not the playback. Solved, the same framing
+now gives `IF_HB_ST2` 1099 and one card, three forced framings in a row.
 
-**The two copies are not the same frame.** On the Wii, whose menu animates, the
-copies differ by 4.15 mean luma over the animating tiles where the same copy
-across two captured frames differs by 2.23 -- so the playback is reading the
-buffer twice while the source advances, rather than one field being written
-twice.
+**Only the extreme of the range reached it**, which is why the default framing
+never showed it -- that framing takes 94% of the counter and stops well short.
+One zoom step in was clean for that reason alone.
 
-**IT IS DETERMINISTIC, AND IT IS OLDER THAN THE CAPTURE-PLACEMENT WORK.**
-Five forced full framings in a row on the RiscPC gave the same three bands each
-time, and they gave them on the build from before the placement fixes landed --
-`b6ec79cb3`, flashed to the unit and re-tested -- so the fault is neither
-intermittent nor those changes. The history in between has not been bisected,
-and the test is reliable enough to bisect with: force a full framing, count the
-lit bands.
+**The green frame's extent cannot score this.** A second copy inside the first
+one's bounding box leaves the outermost green where it was, and readings taken
+that way report a doubled frame as clean. Count the card's single red block.
 
-**One zoom step short of the limit is clean**, so what breaks is the extreme of
-the range rather than the range. The default framing is 94% of the counter and
-is correct. **Creeping the vertical extent from the default to the full and
-finding where the second copy appears is the measurement**; a boundary would say
-whether it is the fetch, the stride or the buffer's own wrap.
-`Memory::FetchFloor` and the stride's clamp are the entries to read first.
+`investigations/the-capture-stop-must-be-a-unit-the-counter-reaches.md`
 
 ### A short output raster shreds a source of few lines, and only that combination
 

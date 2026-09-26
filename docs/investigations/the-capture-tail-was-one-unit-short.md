@@ -1,12 +1,16 @@
 # The capture tail was one unit short, and the two counters zero differently
 
-`VideoSourceLine::lastCapture()` returns `units - 1`. It used to return
-`units - 2`, which cost a sample of the front porch on every line and a line of
-the frame on every field.
+**THE TITLE'S CLAIM IS WITHDRAWN. THE BOUND IS `units - 2` AGAIN.** `units - 1`
+is `IF_HSYNC_RST` itself, which the counter never equals, and a window stopped
+there never closes -- on the line-doubled path the capture freezes and the frame
+plays out twice. The verification below was taken at 800x600@60, an undoubled
+source, which tolerates it.
+[the-capture-stop-must-be-a-unit-the-counter-reaches.md](the-capture-stop-must-be-a-unit-the-counter-reaches.md)
+has the measurement, and the unit at stake is front porch rather than picture.
 
-The unit it recovers is not the interesting part. What the measurement settled is
-where each of the input formatter's counters takes its zero, and those turn out
-not to match.
+**What this page still settles is where each of the input formatter's counters
+takes its zero**, and those turn out not to match. That half stands and the
+sections below are it.
 
 ## The horizontal counter zeroes on the hsync pulse's LEADING edge
 
