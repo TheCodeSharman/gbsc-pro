@@ -943,6 +943,28 @@ installing and latching the group leaves the sync processor with nothing to
 report for a moment, so the first pass usually fails and the preparation runs by
 design rather than by luck.
 
+**THAT ONE OBSERVATION IS THE WHOLE OF THE SURVIVAL EVIDENCE, AND A SECOND ONE
+DISAGREES WITH IT.** Caught on a `GBS_SAMPLING_LOG=1` build with the log running
+at 25 ms, a `vga` -> `ypbpr` selection reported `DETECT: 29ms, syncFound 2` and
+then held `STATUS_SYNC_PROC_VTOTAL` 97 with `HSACT` 0 for **15 s**, until the
+ladder lifted it at `recovery: lift SOG floor at pass 2` and it acquired about
+1.3 s later -- roughly 16 s in all, which is the ladder's own hold rather than a
+repair.
+
+**The preparation had plainly run**: `PLLAD_MD` 2506 with
+`STATUS_SYNC_PROC_HTOTAL` 2506 beside it in every sample through the stall, so
+this is not the pre-repair state, which held the previous source's 1438. It is
+the reference clock in force and the sync processor still not counting -- the
+shape the absence-run entry describes rather than the shape this one does.
+
+**It is confounded and must not be read as a regression.** A 25 ms sampling log
+loads `loop()`, which is the thread detection and the ladder both run on. What it
+does establish is that "the fault is survived" rests on n=1 and has one
+disagreeing observation against it. **Get a real n for first-pass claims on the
+default build before relying on it** -- the condition is about 1 in 70, so that
+is a long cycling run rather than a quick check, and `syncFound 2` on the first
+`DETECT` after a selection is what identifies one.
+
 Installing the bare divider instead is refused: `PLLAD_MD` 2506 written into a
 live wedge leaves the count at 97, and `IF_HSYNC_RST` cannot hold 2506 so it is
 left describing another line. The whole PLL group is what
