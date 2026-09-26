@@ -328,18 +328,38 @@ TEST_CASE("the ADC PLL's charge pump and VCO gain are the scaling values")
 
 TEST_CASE("the input formatter's horizontal path is owned on a 15 kHz RGB source")
 {
-    // Six fields doPostPresetLoadSteps() writes only inside branches a 15 kHz
+    // Five fields doPostPresetLoadSteps() writes only inside branches a 15 kHz
     // RGB source into a non-custom preset does not take -- YPbPr, standards
     // 3/4/8/9, and presetID 0x06/0x16 -- so nothing wrote them once the tables
     // went. Every value is what all ten SCALING tables ship; the two *_downscale
-    // tables disagree on four of the six because they are the scale-down path
+    // tables disagree on four of them because they are the scale-down path
     // rather than a second opinion about this one.
+    //
+    // IF_HS_DEC_FACTOR was a sixth and is not unowned: writeLineCounter() writes
+    // it with the counter it sizes, which is the case above.
     CHECK(written(1, 0x02, 4, 1) == 0u);   // IF_HS_TAP11_BYPS
     CHECK(written(1, 0x02, 5, 2) == 3u);   // IF_HS_Y_PDELAY
-    CHECK(written(1, 0x0B, 4, 2) == 1u);   // IF_HS_DEC_FACTOR
     CHECK(written(1, 0x10, 0, 11) == 2u);  // IF_HB_ST,  blanking set 0
     CHECK(written(1, 0x12, 0, 11) == 72u); // IF_HB_SP,  blanking set 0
     CHECK(written(1, 0x26, 0, 12) == 272u);// IF_HBIN_SP
+}
+
+TEST_CASE("the decimation is not written apart from the line counter it sizes")
+{
+    // ONE FACT IN TWO REGISTERS. IF_HSYNC_RST counts IF units and
+    // IF_HS_DEC_FACTOR is what an IF unit IS -- one ADC sample undoubled, two
+    // doubled -- so a counter sized for one against a decimation saying the
+    // other makes the block count several lines per line, and the source's field
+    // rate is timed off this block. Measured: a counter of 1253 on a
+    // 2506-sample line with the decimation off reads exactly twice the source's
+    // rate.
+    //
+    // The part keeps its registers across an ESP reset, so a bring-up that
+    // writes one of the pair is a bring-up that can DESYNCHRONISE it against
+    // whatever the last session left in the other.
+    // InputFormatter::writeLineCounter() writes both or neither.
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HS_DEC_FACTOR) == NotWritten);
+    CHECK(WRITTEN(Tv5725::InputFormatter::IF_HSYNC_RST) == NotWritten);
 }
 
 TEST_CASE("the two fields a standard change would otherwise inherit are owned")

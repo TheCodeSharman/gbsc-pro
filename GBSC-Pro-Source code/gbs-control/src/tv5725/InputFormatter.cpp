@@ -100,12 +100,6 @@ void InputFormatter::init()
     IF_HS_RATE_SEG7::write(0x0);                 // s1_0a[7:0]
     IF_HS_RATE_LOW::write(0x0);                  // s1_0b[3:0]
 
-    // The non-linear scaling-down factor select: 00 is a ratio over 1/2, 01
-    // under 1/2, 10 under 1/4 (RD-5725-1.1, s1_0b[5:4]). Nothing consults it
-    // here -- every IF_HS_RATE_SEG above is 0, so the scaling-down DDA is not
-    // running -- and it is written at what the ten scaling tables ship rather
-    // than at what a zero rate implies, because that is the picture that works.
-    IF_HS_DEC_FACTOR::write(0x1);                // s1_0b[5:4]
     IF_SEL_HSCALE::write(0x1);                   // s1_0b[6:6]
 
     // The line double's write reset start position (RD-5725-1.1, s1_0c[4:1]).
