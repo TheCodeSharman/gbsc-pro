@@ -8,15 +8,15 @@ struct Row {
     VideoSourceSelection::Settings settings;
 };
 
-// frame, legacySource, brightnessSet, writesAdc, adcInputSel, adcSogEn,
+// frame, legacySource, brightnessSet, adcInputSel, adcSogEn,
 // extSyncSel, clearsLowPower
 const Row Rows[] = {
-    {VideoSourceSelection::Rgbs,      "rgbs",  {0x40, 1, 0, true,  1, 1, 1, false}},
-    {VideoSourceSelection::RgsB,      "rgsb",  {0x50, 1, 0, true,  1, 1, 1, false}},
-    {VideoSourceSelection::Vga,       "vga",   {0x61, 2, 0, true,  1, 1, 0, false}},
-    {VideoSourceSelection::Ypbpr,     "ypbpr", {0x70, 3, 1, true,  0, 0, 1, false}},
-    {VideoSourceSelection::SVideo,    "sv",    {0x10, 3, 2, true,  0, 0, 1, true}},
-    {VideoSourceSelection::Composite, "av",    {0x20, 3, 2, true,  0, 0, 1, true}},
+    {VideoSourceSelection::Rgbs,      "rgbs",  {0x40, 1, 0, 1, 1, 1, false}},
+    {VideoSourceSelection::RgsB,      "rgsb",  {0x50, 1, 0, 1, 1, 1, false}},
+    {VideoSourceSelection::Vga,       "vga",   {0x61, 2, 0, 1, 1, 0, false}},
+    {VideoSourceSelection::Ypbpr,     "ypbpr", {0x70, 3, 1, 0, 0, 1, false}},
+    {VideoSourceSelection::SVideo,    "sv",    {0x10, 3, 2, 0, 0, 1, true}},
+    {VideoSourceSelection::Composite, "av",    {0x20, 3, 2, 0, 0, 1, true}},
 };
 
 const uint8_t RowCount = sizeof(Rows) / sizeof(Rows[0]);
@@ -47,7 +47,7 @@ VideoSourceSelection::Settings VideoSourceSelection::settingsFor(Id id)
 
     // Not reachable through chosen(), and a caller that skipped it gets an
     // input that selects nothing rather than one that selects the wrong thing.
-    Settings none = {0, 0, 0, false, 0, 0, 1, false};
+    Settings none = {0, 0, 0, 0, 0, 1, false};
     return none;
 }
 

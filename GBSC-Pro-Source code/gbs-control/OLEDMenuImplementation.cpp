@@ -593,11 +593,9 @@ void SetReg(unsigned char reg, unsigned char val)
 
 void applyInputRegisters(const VideoSourceSelection::Settings &settings)
 {
-    if (settings.writesAdc)
-        Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
+    Tv5725::Adc::enableSyncOnGreen(settings.adcSogEn);
     Tv5725::SyncProcessor::selectExternalSync(settings.extSyncSel);
-    if (settings.writesAdc)
-        Tv5725::Adc::selectInput(settings.adcInputSel);
+    Tv5725::Adc::selectInput(settings.adcInputSel);
 }
 
 // **SAID AFTER THE SEQUENCE, NOT DURING IT.** A console write inside the window

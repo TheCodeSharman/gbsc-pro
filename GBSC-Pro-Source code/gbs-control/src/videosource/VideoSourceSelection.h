@@ -48,10 +48,6 @@ public:
         // BriorCon.
         uint8_t brightnessSet;
 
-        // YPbPr writes none of the three below. Carried from the handler rather
-        // than corrected: it looks wrong beside the other five, and changing it
-        // is a behaviour change owed its own evidence.
-        bool writesAdc;
         uint8_t adcInputSel;
         uint8_t adcSogEn;
 

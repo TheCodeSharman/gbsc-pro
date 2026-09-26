@@ -66,28 +66,18 @@ TEST_CASE("the ADC mux and its sync-on-green follow the input")
         }
     }
 
+    // YPbPr belongs here rather than being left uncovered: it reached its input
+    // only because detection swept the mux until something had sync, and with the
+    // sweep answering to the user's choice a selection that does not move the mux
+    // cannot arrive at all -- so selecting it left the ADC on the RGB pins and
+    // nothing locked.
     SUBCASE("and the decoded inputs take input 0 with it off") {
-        for (VideoSourceSelection::Id id : {VideoSourceSelection::SVideo, VideoSourceSelection::Composite}) {
+        for (VideoSourceSelection::Id id : {VideoSourceSelection::Ypbpr,
+                                   VideoSourceSelection::SVideo, VideoSourceSelection::Composite}) {
             CHECK(VideoSourceSelection::settingsFor(id).adcInputSel == 0);
             CHECK(VideoSourceSelection::settingsFor(id).adcSogEn == 0);
         }
     }
-}
-
-TEST_CASE("every input points the ADC mux at itself")
-{
-    // YPbPr wrote none of the three and reached its input only because
-    // detection swept the mux until something had sync. With the sweep
-    // answering to the user's choice instead, a selection that does not move
-    // the mux cannot arrive at all -- so selecting YPbPr left the ADC on the
-    // RGB pins and nothing locked.
-    //
-    // Its values were already here and already match S-Video and composite,
-    // which share the connector and write all three.
-    for (VideoSourceSelection::Id id : {VideoSourceSelection::Rgbs, VideoSourceSelection::RgsB,
-                               VideoSourceSelection::Vga, VideoSourceSelection::Ypbpr,
-                               VideoSourceSelection::SVideo, VideoSourceSelection::Composite})
-        CHECK(VideoSourceSelection::settingsFor(id).writesAdc);
 }
 
 TEST_CASE("the decoded inputs take the unit out of low power")
