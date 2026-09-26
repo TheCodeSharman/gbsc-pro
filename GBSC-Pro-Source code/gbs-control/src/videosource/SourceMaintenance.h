@@ -39,9 +39,20 @@ public:
         bool steerDeinterlacer;
     };
 
+    // How long an acquired source must have held before an act is worth
+    // making at all. NOT Due: these stay true once reached, and what stops
+    // them running twice is the register state the act leaves behind rather
+    // than the pass they fell due on.
+    struct Ready {
+        bool coastWindow;
+        bool clampWindow;
+        bool autoGain;
+    };
+
     SourceMaintenance();
 
     Due dueAt(const Source &source);
+    static Ready readyAt(const Source &source);
 
     // Where a run of failed passes stops being a dropped measurement and starts
     // being a source that went away. The ladder's own full reset sits here too.

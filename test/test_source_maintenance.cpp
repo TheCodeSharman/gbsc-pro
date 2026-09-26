@@ -140,3 +140,43 @@ TEST_CASE("a short run of failed passes arms nothing")
     CHECK_FALSE(maintenance.dueAt(source).restoreAfterLongAbsence);
     CHECK(settled(maintenance, 1).holdCapture);
 }
+
+// --- how long an acquired source must hold before a window is worth placing --
+//
+// A THRESHOLD RATHER THAN A CADENCE, which is why it is not in Due: these stay
+// true once reached, and what stops them running twice is the placement's own
+// register state rather than the pass they fell due on.
+
+namespace {
+
+SourceMaintenance::Ready ready(SourceMaintenance &maintenance, uint16_t acquiredPasses)
+{
+    SourceMaintenance::Source source;
+    source.acquiredPasses = acquiredPasses;
+    source.unmeasuredPasses = 0;
+    source.samplingPhaseFound = true;
+    return maintenance.readyAt(source);
+}
+
+}  // namespace
+
+TEST_CASE("the clamp window waits for fewer passes than the coast window")
+{
+    SourceMaintenance maintenance;
+
+    CHECK_FALSE(ready(maintenance, 3).clampWindow);
+    CHECK(ready(maintenance, 4).clampWindow);
+    CHECK(ready(maintenance, 40).clampWindow);
+
+    CHECK_FALSE(ready(maintenance, 6).coastWindow);
+    CHECK(ready(maintenance, 7).coastWindow);
+    CHECK(ready(maintenance, 40).coastWindow);
+}
+
+TEST_CASE("auto gain waits for a long settled run")
+{
+    SourceMaintenance maintenance;
+
+    CHECK_FALSE(ready(maintenance, 90).autoGain);
+    CHECK(ready(maintenance, 91).autoGain);
+}

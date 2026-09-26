@@ -11,6 +11,15 @@ const uint16_t DynamicFirstPass = 2;
 const uint16_t DynamicSecondPass = 6;
 const uint16_t DynamicEveryPasses = 31;
 
+// A window measured before the source has held describes a line it was not
+// yet sending, and the clamp is the cheaper of the two to have wrong.
+const uint16_t ClampReadyPasses = 4;
+const uint16_t CoastReadyPasses = 7;
+
+// Auto gain reads the picture rather than the sync, so it waits for a run long
+// enough that the picture is the source's own.
+const uint16_t AutoGainReadyPasses = 91;
+
 const uint16_t ForgetPositionsPass = 45;
 const uint16_t AcknowledgeSogBadPass = 160;
 const uint16_t DeinterlacerFirstPass = 3;
@@ -60,4 +69,15 @@ SourceMaintenance::Due SourceMaintenance::dueAt(const Source &source)
         due.steerDeinterlacer = true;
 
     return due;
+}
+
+SourceMaintenance::Ready SourceMaintenance::readyAt(const Source &source)
+{
+    Ready ready = {false, false, false};
+
+    ready.clampWindow = source.acquiredPasses >= ClampReadyPasses;
+    ready.coastWindow = source.acquiredPasses >= CoastReadyPasses;
+    ready.autoGain = source.acquiredPasses >= AutoGainReadyPasses;
+
+    return ready;
 }
