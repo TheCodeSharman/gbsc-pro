@@ -1677,6 +1677,34 @@ not a general offset either.
 It costs a 38-column band at the left of that one mode, which a pan press
 removes and the framing table then remembers.
 
+### A 100% framing plays the captured frame out twice, compressed
+
+A forced full framing should show the capture region once. It shows it TWICE,
+each copy vertically compressed, on both scan modes -- so it is neither
+interlace nor the line doubler.
+
+| source | default framing | forced full |
+|---|---|---|
+| RiscPC 320x256@50 on `vga`, progressive, doubled | one card, 943 rows | **two cards**, ~548 rows each |
+| Wii 576i on `ypbpr`, interlaced, doubled | one picture, 974 rows | **two pictures**, 471 rows each |
+
+**The arithmetic says one copy should fill the screen.** At the full framing the
+RiscPC captures 623 lines with `VDS_VSCALE` 591, so `623 x 1024 / 591` is 1079
+rows against a 1075-row display window -- one copy, filling it. Twice that
+arrives.
+
+**The two copies are not the same frame.** On the Wii, whose menu animates, the
+copies differ by 4.15 mean luma over the animating tiles where the same copy
+across two captured frames differs by 2.23 -- so the playback is reading the
+buffer twice while the source advances, rather than one field being written
+twice.
+
+The default framing is 94% of the counter and is correct, so whatever this is
+starts somewhere above that. **Creeping the vertical extent from the default to
+the full and finding where the second copy appears is the measurement**; a
+boundary would say whether it is the fetch, the stride or the buffer's own
+wrap. `Memory::FetchFloor` and the stride's clamp are the entries to read first.
+
 ### A short output raster shreds a source of few lines, and only that combination
 
 The RiscPC at 320x256@50 -- 311 lines -- into 480p or 576p: the card is torn into
