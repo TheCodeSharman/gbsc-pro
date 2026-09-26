@@ -65,12 +65,12 @@ TEST_CASE("a long absence stays an absence")
     CHECK_FALSE(withdrawn);
 }
 
-TEST_CASE("a pass that found nothing while a signal reaches the chip holds the run")
+TEST_CASE("a pass that found nothing while a signal reaches the chip advances the run")
 {
-    // Neither evidence. STATUS_SYNC_PROC_HSACT is not a signal-presence test and
-    // SyncProcessor::signalPresent() counts activity on the test bus instead, so
-    // a source whose sync is arriving but which detection has not claimed is a
-    // source to keep looking for rather than one to power down for.
+    // A source whose sync is arriving but which detection has not claimed is a
+    // source the chip is configured wrongly for, and the teardown is what
+    // repairs that. Holding the run here is what let `state: absent` stand for
+    // 150 s with the source present throughout.
     SourceAbsence absence;
     absence.missed();
     absence.missed();
@@ -78,7 +78,7 @@ TEST_CASE("a pass that found nothing while a signal reaches the chip holds the r
     absence.undecided();
     absence.undecided();
 
-    CHECK(absence.passes() == 2);
+    CHECK(absence.passes() == 4);
 }
 
 TEST_CASE("a deliberate selection spends the patience the run exists for")
@@ -127,4 +127,56 @@ TEST_CASE("the patience returns once the selection has been answered")
     absence.missed();
 
     CHECK_FALSE(absence.shouldPowerDown());
+}
+
+TEST_CASE("a signal detection cannot claim still reaches the teardown")
+{
+    // Detection finding nothing while a signal IS reaching the sync processor is
+    // the state a teardown repairs: the chip is misconfigured rather than the
+    // socket empty, and measured on the bench the run held `state: absent` for
+    // 150 s with the source sitting there until `/sc?~` forced one. A run that
+    // neither advances nor ends is what left it there.
+    SourceAbsence absence;
+
+    for (uint8_t i = 0; i < SourceAbsence::PassesBeforeLowPower; ++i)
+        absence.undecided();
+
+    CHECK(absence.shouldPowerDown());
+}
+
+TEST_CASE("an unclaimed signal is still one dropped pass, not a source leaving")
+{
+    SourceAbsence absence;
+
+    absence.undecided();
+
+    CHECK_FALSE(absence.shouldPowerDown());
+}
+
+TEST_CASE("a teardown re-arms the run rather than ending it")
+{
+    // **THE RUN MUST NEVER STALL.** A teardown that did not bring the source
+    // back is a teardown to make again, so performing one returns the run to
+    // counting instead of leaving it latched at its threshold for ever.
+    SourceAbsence absence;
+    for (uint8_t i = 0; i < SourceAbsence::PassesBeforeLowPower; ++i)
+        absence.undecided();
+    REQUIRE(absence.shouldPowerDown());
+
+    absence.poweredDown();
+
+    CHECK_FALSE(absence.shouldPowerDown());
+}
+
+TEST_CASE("a source still missing after a teardown asks for another one")
+{
+    SourceAbsence absence;
+    for (uint8_t i = 0; i < SourceAbsence::PassesBeforeLowPower; ++i)
+        absence.undecided();
+    absence.poweredDown();
+
+    for (uint8_t i = 0; i < SourceAbsence::PassesBeforeLowPower; ++i)
+        absence.undecided();
+
+    CHECK(absence.shouldPowerDown());
 }

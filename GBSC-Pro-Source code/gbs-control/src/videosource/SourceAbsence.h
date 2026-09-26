@@ -38,9 +38,19 @@ public:
     // reaches its threshold, and sync is there 0.6 s after the reset.
     void selectionChanged();
 
-    // Detection claimed nothing while a signal IS reaching it. Neither
-    // evidence, so the run neither advances nor ends.
+    // Detection claimed nothing while a signal IS reaching it. **THE RUN MUST
+    // ADVANCE ON THIS**, because the teardown is what repairs it: the chip is
+    // misconfigured rather than the socket empty, and a run that treats the
+    // state as no evidence holds `state: absent` with the source sitting there
+    // until something outside the engine forces one.
     void undecided();
+
+    // The caller has performed the teardown. **THE RUN RE-ARMS RATHER THAN
+    // ENDING**, because a teardown that did not bring the source back is one to
+    // make again: a run latched at its threshold asks for nothing further, and a
+    // caller that acts once then guards itself off leaves `state: absent`
+    // standing with the source present. Recovery is retried, never abandoned.
+    void poweredDown();
 
     bool shouldPowerDown() const;
 

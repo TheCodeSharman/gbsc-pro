@@ -12,11 +12,19 @@ void SourceAbsence::missed()
         ++passes_;
 }
 
-void SourceAbsence::undecided() {}
+void SourceAbsence::undecided()
+{
+    missed();
+}
 
 void SourceAbsence::selectionChanged()
 {
     passes_ = PassesBeforeLowPower - 1;
+}
+
+void SourceAbsence::poweredDown()
+{
+    passes_ = 0;
 }
 
 bool SourceAbsence::shouldPowerDown() const

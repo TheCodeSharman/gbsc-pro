@@ -1850,13 +1850,12 @@ uint8_t inputAndSyncDetect()
                 SYNC_EVENT("det absent", sourceAbsence.passes());
                 return 0;
             }
-            if (rto->isInLowPowerMode == false) {
-                SYNC_EVENT("det low power", 1);
-                rto->sourceDisconnected = true; 
-                            GBS::SP_SOG_MODE::write(1);
-                goLowPowerWithInputDetection();
-                rto->isInLowPowerMode = true;
-            }
+            SYNC_EVENT("det low power", 1);
+            rto->sourceDisconnected = true;
+            GBS::SP_SOG_MODE::write(1);
+            goLowPowerWithInputDetection();
+            rto->isInLowPowerMode = true;
+            sourceAbsence.poweredDown();
         }
         return 0;
     } else if (syncFound == 1 && Info_sate == 0) //&& SeleInputSource == S_RGBs)
