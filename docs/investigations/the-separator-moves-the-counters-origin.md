@@ -67,6 +67,28 @@ head blanking and spends more of it before the pulse stops it.
 It is not the lead moving a fixed feature -- that would put it EARLIER in the
 counter on the separator's path, and it reads later.
 
+## The vertical carries the same delay, as a count of lines
+
+`VideoSourceLine::SeparatorFrameLeadLines` is 16, and the counter counts
+half-lines with the line doubler in, so the lead doubles with the scan.
+
+Measured as the displacement of the card's bottom green line between the two
+sync types, converted at `1024 / VDS_VSCALE` output rows to the capture unit:
+
+| mode | frame counter | output rows | capture units | source lines |
+|---|---|---|---|---|
+| 640x480@60 | 525 | 34 | 15.2 | **15.2** |
+| 320x256@50 | 624 | 61 | 33.1 | **16.6** |
+
+**A fraction is refuted**: 2.9% of the frame against 5.3%, where the line count
+agrees to 9%. The horizontal is the other way round, and the two need not agree
+— one is a delay through a PLL locked to the line, the other a delay through
+whatever counts lines.
+
+Solved at 640x480@60 the emitted frame's black margins are top 5 / bottom 5 on
+composite against top 0..3 / bottom 5..6 on separate, where composite sat 34
+rows up before.
+
 ## What it is not
 
 **`SP_RT_HS_SP` is inert.** The firmware writes it at 93% of `PLLAD_MD`, so
