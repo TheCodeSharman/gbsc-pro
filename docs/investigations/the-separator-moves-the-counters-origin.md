@@ -38,17 +38,34 @@ phase: the sync processor counts in ADC clocks and `PLLAD_MD` clocks fill one
 line, so a delay proportional to `PLLAD_MD` is a fixed part of the line whatever
 the line rate.
 
-## The floor comes down with it
+## The floor does NOT come down with it
 
-On the separator's path the hsync pulse sits from `−lead` to
-`syncUnits − lead` in this counter, so a capture floor left at the pulse width
-puts the start of the picture below it, where no framing can reach. Measured at
-640x480@60 on composite at a forced full framing: the window opened on its floor
-of 173 and the source's first active unit lands at 164, with the card's left
-green edge off the end of the frame.
+Only the video travels along the counter. What the capture path writes at the
+head stays where the counter puts it, so `CaptureWindow::firstCapture()` is
+`syncUnits + headBlanking` on both arrangements.
 
-`CaptureWindow::firstCapture()` therefore takes the pulse as
-`syncUnits − originLead`, floored at zero.
+Measured at 320x256@50 with automation frozen and `IF_HB_SP2` forced to the same
+unit on each sync type, counting columns of saturated green at the head of the
+emitted line:
+
+| `IF_HB_SP2` | 52 | 60 | 70 | 80 | 85 | 88 | 90 | 100 | 110 |
+|---|---|---|---|---|---|---|---|---|---|
+| composite | 74 | 58 | 38 | 17 | — | **0** | 0 | 0 | 0 |
+| separate | — | — | **0** | 0 | 0 | — | 0 | 0 | 0 |
+
+So the blanking reaches unit 88 on the separator's path and nothing measurable
+on separate sync, at the same divider, the same mode and the same register. A
+floor discounted by the lead opens at 52 and takes 36 units of it into the
+picture as a green band down the left of the screen.
+
+**What follows is that a doubled line cannot spend the whole lead.** The floor
+is 101 at this mode, so the window reaches it after 28 of the 77 units and the
+rest of that part of the line is not capturable at all. An undoubled line has no
+head blanking and spends more of it before the pulse stops it.
+
+**Why the blanking is there on one arrangement and not the other is not known.**
+It is not the lead moving a fixed feature -- that would put it EARLIER in the
+counter on the separator's path, and it reads later.
 
 ## What it is not
 
