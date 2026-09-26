@@ -788,6 +788,91 @@ register dump does not clear the board -- which is why
 `bench-output-capture.md` asks `s0_46` first, and why the reading it asks for
 is the one that answers in a single request.
 
+### The serration test reads VPERIOD_IF on a scale the reconciliation does not give it
+
+`VPERIOD_IF` presents the frame either in whole lines or in half lines
+depending on the source, and `SourceMeasurement::reconciledFrame()` is what
+normalises that -- it tries factor 1 and factor 2 and takes whichever lands a
+small non-negative distance above the counted frame. Measured on this bench:
+
+| source | count | `VPERIOD_IF` | ratio |
+|---|---|---|---|
+| RiscPC 320x256@50 composite | 311 | 623 | 2 |
+| RiscPC 800x600@60 composite | 623 | 1255 | 2 |
+| Wii 480p component | 524 | 524 | **1** |
+| Wii 576i component | 311 field | 624 | 2 |
+
+`countIsSerrations()` does not go through that normalisation. It takes the raw
+reading and hardcodes the halving, so on a ratio-1 source the distance from the
+count to the period is **zero** and the test fires on every pass. The count
+alone cannot separate the two cases -- a serration-doubled interlaced count
+against its period and a correct progressive count against its period are the
+same comparison -- so the whole verdict rests on the gate, which is the two
+Mode Detect interlace bits.
+
+**The consequence is a silent permanent refusal**, reproduced at the host layer:
+a steady count of 524 with `VPERIOD_IF` 524 and the interlace bits set returns
+`Serrations` on every pass for ever, and `reading()` answers that with
+`SyncProcessor::widenCoast()`, which writes registers and logs nothing.
+
+It needs a source of **400 lines or more**, because `VPERIOD_IF / 2` must still
+pass `countIsSource()`. The 311-line RiscPC cannot reach it; the Wii at 480p
+can. **It is not the acquisition stall below** -- the two interlace bits read 0
+in 807 of 807 samples through a measured stall -- so this is a latent defect
+rather than an observed one.
+
+### An input change measures through the previous source's divider, and the count it gets has no route out
+
+**This is the acquisition stall on `ypbpr`, and it is distinct from the absence
+run below**: `state: absent` here holds the previous source's solve with the
+sync processor counting, where that one stalls with detection unable to claim a
+signal.
+
+Measured on the Wii at 480p over `ypbpr`, cycling `/input` against `vga`,
+**one acquisition in twelve**. `Tv5725::SamplingLog` at 25 ms across the whole
+window:
+
+| | stalled | healthy |
+|---|---|---|
+| `PLLAD_MD` | **1438 in 807 of 807 samples** -- `vga`'s | 2506, then 694, 2200, 1446, settling on 1448 |
+| `STATUS_SYNC_PROC_VTOTAL` | 97 in 771 of 807 | 0 until 3.2 s, then 524 |
+| `VPERIOD_IF` | 394..401 | 524 |
+| the two Mode Detect interlace bits | 0 in 807 of 807 | 0 |
+
+The console carries `DETECT: 24ms, syncFound 2` and then **nothing whatever**
+for the rest of the capture. That silence is the diagnosis rather than a gap in
+it: `SourceMeasurement::measureLineRate()` prints its `sampling:` line
+unconditionally, so no such line means the pass never reached it and the refusal
+is upstream, in `sampleSteady()`. `countIsSource(97)` is false, so the run is
+restarted every pass and nothing logs.
+
+**The divider is the cause and the count is the symptom.** The `ypbpr` arm of
+`detectAndSwitchToActiveInput()` returns with the previous source's `PLLAD_MD`
+standing, which its own comment states, on the basis that the engine sizes one
+after it returns. The engine sizes one in `installSampling()`, which runs only
+once `measureRate()` has succeeded -- and that cannot succeed while the count
+taken through the stale divider is 97. **The divider is derived from the
+measurement and the measurement needs a workable divider.** The healthy path
+breaks the circle by passing through a teardown, which leaves
+`Adc::BringUpDivider`; the stalled path takes `det hsact,0` then `det hsact,1`
+and never tears down.
+
+`VideoPath::prepareToMeasure()` is where the reference would belong and it
+states that it installs no clock, because the reset state is already one that
+can be measured through. That holds only where a reset happened.
+
+**Neither recovery is reachable from the state.** The `unusable count` arm is
+the one caller of `forgetSyncType()` and lives in
+`VideoSourceAcquisition::sourceMoved()`, which `runPass()` skips entirely while
+`changingMode()` is true -- and `modePending_` is cleared only by a completed
+solve. `selectionMoved()` sets `firstAcquisition_`, which pins
+`recoveryPosition_` at 0, so the escalation ladder does not run either.
+
+**Re-probing the sync type is not the fix and was measured not to be**: forced
+to re-probe on a cadence, the arrangement comes back `composite or SOG for
+input 4` every time and the count stays 97. What is missing is a reference
+sampling clock, not a different sync path.
+
 ### The absence run has a branch that can never end it
 
 `SourceAbsence::undecided()` is a no-op by construction: detection finding
