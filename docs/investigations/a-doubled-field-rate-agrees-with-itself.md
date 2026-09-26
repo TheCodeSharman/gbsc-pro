@@ -154,15 +154,35 @@ ticks:
 frame. The first two are one frame split at 35%, read from whichever side the
 measurement landed in.
 
-That split was `IF_HSYNC_RST` truncating. The register takes eleven bits, and
+`IF_HSYNC_RST` truncating is part of it. The register takes eleven bits, and
 `applySampling()` re-applies the divider in force with the OUTGOING source's
 scan mode -- so after a teardown the bring-up divider arrives undoubled, 2506
-does not fit, and 458 is what the block counts with. Refusing the write instead
-removes both readings: six input changes afterwards carry neither.
+does not fit, and 458 is what the block counts with. Refusing that write
+removes the 0.650 reading outright.
 
-**0.500 is a different quantity and remains.** Half a frame is the field against
-the frame, not a counter sized wrong, so it is the scan mode rather than the
-line length.
+**It does not remove the other two**, and counted per run rather than pooled the
+0.500 reading was always the common one:
+
+| run | 0.500 | 0.350 | 0.650 |
+|---|---|---|---|
+| before either change | 21 | 3 | 6 |
+| the reset state stated | 10 | 3 | 9 |
+| the truncated write refused | 12 | 2 | 0 |
+
+So one family of three is accounted for. A pooled count across every capture
+makes 0.350 look frequent and it is not; it is a handful per run throughout.
+
+**The reset state is still not self-consistent, and that is where 0.500 comes
+from.** `BringUpLineDoubled` makes the counter 1253, which is the doubled form,
+while `IF_HS_DEC_FACTOR` stays 0 -- so one IF unit is one ADC sample and the
+block counts 1253 of the 2506 a line actually runs. Exactly two IF lines per
+line is exactly half a frame between vertical pulses.
+
+The counter and the decimation are written by different calls:
+`writeLineCounter()` and `applyLineDoubling()`, and only the second reaches
+`IF_HS_DEC_FACTOR` -- along with the deinterlacer and the video processor,
+because a scan mode is all three. Setting a scan mode at reset is a wider
+change than sizing a counter, and it has not been made.
 
 ## What this is not
 
