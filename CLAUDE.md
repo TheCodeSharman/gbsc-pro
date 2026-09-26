@@ -29,13 +29,16 @@ picture.
 **Do not budget minutes for a source to appear**; a source that has not solved
 in about ten seconds is not settling.
 
-**ESTABLISH WHICH WII OUTPUT MODE IS SET BEFORE JUDGING THE INPUT.** The two
-measured so far behave completely differently: 480p solves in 15 s and holds,
-480i never reaches `state: acquired` at all, because an interlaced field count
-alternates 259/260 and the steadiness run needs four identical samples --
-measured, two values in 1417 samples, and the picture rolls while every register
-reads correct. A wandering count is a property of the mode, so
-`ypbpr` is not unusable as an input.
+**ESTABLISH WHICH WII OUTPUT MODE IS SET BEFORE JUDGING THE INPUT.** All three
+solve and hold. 480p solves in 15 s. 480i alternates 259/260 and still acquires,
+because `SteadyRun::agree()` treats a pair alternating by one as agreeing -- an
+earlier reading that it never reaches `state: acquired` predates that. 576i
+takes about 40 s and holds a steady count of 310.
+
+**AND ONLY 480i IS DEINTERLACED.** 576i is steered as progressive and shown as a
+single field, line doubled -- correct in shape and aspect at half the vertical
+resolution, which is invisible without a reference. The same is true of the RISC
+PC's `INTERLACE ON` modes. `docs/investigations/interlaced-source-measurement.md`.
 `docs/investigations/mode-detect-answers-before-any-measurement.md`,
 `docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md`.
 
