@@ -1971,31 +1971,6 @@ TEST_CASE("a coast changed on a settled source reaches the chip")
 // sourceMoved() is the only thing that arms a solve while the engine is idle,
 // and it had one input: the line count. Two sources move underneath it.
 
-TEST_CASE("a source whose serrations are counted as lines is coasted further")
-{
-    // Refusing to solve is not enough on its own. Nothing would change, so a
-    // source whose vertical interval the default pair does not cover would
-    // never come up at all.
-    // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-    seedBenchSource();
-    seedSourceLines(607);
-    seedSourceHalfLines(624);
-    SyncProcessor::applyForSyncType(true);
-    const uint32_t before = SyncProcessor::SP_PRE_COAST::read();
-
-    DisplayClock clock;
-
-    SourceMeasurement sampling(inputFormatter);
-    FramingTable framings;
-    VideoPath engine(clock, sampling, framings, inputFormatter);
-    VideoSourceAcquisition acquisition(sampling, engine);
-    engine.setOutputMode(benchMode());
-    engine.inputTimingsChanged(4);
-    pollUntilSolved(acquisition);
-
-    CHECK(SyncProcessor::SP_PRE_COAST::read() > before);
-}
-
 TEST_CASE("a source that measures its own lines is left on the pair it has")
 {
     seedBenchSource();

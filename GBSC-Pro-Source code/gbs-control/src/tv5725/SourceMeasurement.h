@@ -62,7 +62,6 @@ public:
     enum MeasurementStatus {
         ClockSettling, // the sampling clock was latched too recently to read through
         NotSteady,     // the count is still gathering samples
-        Serrations,    // the settled count read the serrations, not the source
         Unmeasurable,  // nothing could speak for a line rate
         Settling,      // a reading, which has not repeated or cannot be believed
         Measured,
@@ -222,7 +221,6 @@ private:
     // --- the one pass, in the order it takes them ----------------------------
 
     bool sampleSteady();
-    bool countWasSerrations() const;
     bool measureLineRate();
     float sampleFieldRateHz();
     static float medianOfThree(float a, float b, float c);
@@ -237,18 +235,10 @@ private:
 
     static uint16_t measureSourceLinesCorrected(uint16_t divider);
 
-    // Whether the sync processor counted the source's lines or the serration
-    // and equalisation pulses either side of the vertical interval. Only an
-    // interlaced source can have its count doubled, and the half-line witness
-    // alone cannot separate the two: a correct 480p count sits exactly on the
-    // total and reads identically to a doubled one.
     // The widest vertical sync a reconciliation may restore. The widest in the
     // DMT set this bench carries is 7 lines, and a bound is what refuses a torn
     // reading that happens to land a plausible distance away.
     static const uint16_t VerticalSyncMaxLines = 8;
-
-    static bool countIsSerrations(uint16_t lines, uint16_t halfLines,
-                                  bool interlaced);
 
     bool countAlternated() const;
 
@@ -326,7 +316,6 @@ private:
     // measureScanType().
     SteadyRun scanSteady_;
     uint8_t rateAttempts_;
-    bool serrationsSeen_;  // the last completed steadiness run read the serrations
     int8_t scanReported_;  // the last answer measureScanType() logged, so it logs changes
 };
 

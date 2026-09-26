@@ -740,14 +740,6 @@ bool VideoSourceAcquisition::reading(Tv5725::SourceMeasurement::MeasurementStatu
                                      bool &settling)
 {
     switch (status) {
-    case Tv5725::SourceMeasurement::Serrations:
-        // The coast pair in force is not covering the serrations. Margin over
-        // the default rather than a search for the lowest pair that works:
-        // which pairs measure a source is not reproducible between runs.
-        // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
-        Tv5725::SyncProcessor::widenCoast();
-        return false;
-
     case Tv5725::SourceMeasurement::ClockSettling:
         // Not absent. The sampling clock was latched a moment ago and nothing
         // read through it is the source's yet, which is a wait rather than a

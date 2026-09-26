@@ -246,21 +246,6 @@ public:
                                                                       // value
 
     // Every static register of this subsystem, in address order.
-    // Whether the source could have had its line count doubled by the
-    // serrations, which only an interlaced source can. A COARSE gate rather
-    // than the scan type: the two STATUS_00 bits behind it read byte-identical
-    // across a real interlace change, so they carry a vertical-period family
-    // and not the scan. SourceMeasurement::scanType() is the measurement.
-    //
-    // It cannot be replaced by that measurement, and the reason is circular --
-    // docs/investigations/interlaced-source-measurement.md.
-    static bool sourceIsInterlaced();
-
-    // The other half, and not the negation of it: all four bits are clear for a
-    // source Mode Detect names nothing for, where neither answer is available
-    // and the caller falls back to what it can measure itself.
-    static bool sourceIsProgressive();
-
     static void init();
 
     // Whether the source presents its own H/V sync or a composite one, which

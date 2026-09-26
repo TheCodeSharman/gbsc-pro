@@ -8,18 +8,6 @@
 namespace Tv5725 {
 
 
-bool ModeDetect::sourceIsInterlaced()
-{
-    return GBS::STATUS_IF_INP_NTSC_INT::read() == 1
-        || GBS::STATUS_IF_INP_PAL_INT::read() == 1;
-}
-
-bool ModeDetect::sourceIsProgressive()
-{
-    return GBS::STATUS_IF_INP_NTSC_PRG::read() == 1
-        || GBS::STATUS_IF_INP_PAL_PRG::read() == 1;
-}
-
 void ModeDetect::init()
 {
     MD_HPERIOD_LOCK_VALUE::write(22);           // s1_60[4:0]

@@ -113,14 +113,6 @@ static void seedSourceHalfLines(uint16_t halfLines)
     Wire.bank[0][0x00] |= 0x01;
 }
 
-// What Mode Detect publishes about the source, in STATUS_00. Only an interlaced
-// source can have its count doubled by the serrations, so a case about that
-// fault has to say so. Call AFTER seedSourceLines(), which resets the bus.
-static void seedInterlaced()
-{
-    Wire.bank[0][0x00] |= 0x20;   // STATUS_IF_INP_PAL_INT
-}
-
 
 static void seedHPeriod(uint16_t hperiod)
 {
@@ -1118,85 +1110,6 @@ TEST_CASE("a reading implying a line no television generates is refused")
 // measures the same frame in half-lines by a route the coast cannot double.
 // docs/investigations/two-owners-of-the-coast-lengths-double-the-count.md
 
-TEST_CASE("a field count against the frame in half-lines is the source's lines")
-{
-    // 310 against a 624 half-line frame is the source's own count, nearer half
-    // the witness than the whole of it.
-    SourceMeasurement measurement(inputFormatter);
-    seedSourceLines(310);
-    seedSourceHalfLines(624);
-    seedInterlaced();
-
-    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
-}
-
-TEST_CASE("a count as large as the half-line total is the serrations")
-{
-    SourceMeasurement measurement(inputFormatter);
-    seedSourceLines(607);
-    seedSourceHalfLines(624);
-    seedInterlaced();
-
-    CHECK(measurePastGate(measurement) == SourceMeasurement::Serrations);
-}
-
-TEST_CASE("a progressive source whose frame the witness counts in lines is not serrations")
-{
-    // 480p on YPbPr, measured on the bench: SP_VTOTAL 524 with VPERIOD_IF 524,
-    // steady, STATUS_IF_VT_OK set. The witness is not reporting half-lines
-    // here, so the count sits exactly ON it -- which reads identically to a
-    // doubled count. Judged on the witness alone this source is rejected on
-    // every pass, no solve ever runs, and the sync pads stay blanked for ever.
-    //
-    // The source not being interlaced is what separates them, and it is
-    // measured rather than inferred.
-    SourceMeasurement measurement(inputFormatter);
-    seedSourceLines(524);
-    seedSourceHalfLines(524);
-
-    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
-}
-
-TEST_CASE("a progressive source cannot have counted the serrations")
-{
-    // A progressive source has no field and frame to differ, so nothing can
-    // double its count however the witness reads.
-    SourceMeasurement measurement(inputFormatter);
-    seedSourceLines(607);
-    seedSourceHalfLines(624);
-
-    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
-}
-
-TEST_CASE("a half-line total that measures nothing refuses to judge the count")
-{
-    // VPERIOD_IF is debris on a separate-sync source, where it reads values
-    // like 20 against a true 311. Judged against that, any count at all looks
-    // nearer the total than half of it.
-    SourceMeasurement measurement(inputFormatter);
-    seedSourceLines(311);
-    seedSourceHalfLines(20);
-    seedInterlaced();
-
-    CHECK(measurePastGate(measurement) != SourceMeasurement::Serrations);
-}
-
-TEST_CASE("a serration count never goes steady, however still it holds")
-{
-    // The coast is not covering the equalisation pulses, so the sync processor
-    // counts them and reports about twice the source. It holds that value
-    // perfectly, which is exactly what a steadiness run on its own cannot see.
-    seedSourceLines(607);
-    seedSourceHalfLines(624);
-    seedInterlaced();
-    SourceMeasurement measurement(inputFormatter);
-
-    for (uint8_t i = 0; i < SourceMeasurement::SteadySamples * 3; ++i) {
-        CAPTURE(i);
-        CHECK_FALSE(rateMeasured(measureOnce(measurement)));
-    }
-}
-
 TEST_CASE("a field count goes steady with the witness live")
 {
     seedSourceLines(310);
@@ -1204,49 +1117,6 @@ TEST_CASE("a field count goes steady with the witness live")
     SourceMeasurement measurement(inputFormatter);
 
     CHECK(measurePastGate(measurement) != SourceMeasurement::NotSteady);
-}
-
-TEST_CASE("the reason a serration count was refused is available to the caller")
-{
-    // The engine cannot tell "not settled yet" from "settled on the wrong
-    // count" by the return value alone, and only the second is worth acting on.
-    seedSourceLines(607);
-    seedSourceHalfLines(624);
-    seedInterlaced();
-    SourceMeasurement measurement(inputFormatter);
-
-    CHECK(measurePastGate(measurement) == SourceMeasurement::Serrations);
-}
-
-TEST_CASE("a count still gathering samples is not reported as serrations")
-{
-    seedSourceLines(310);
-    seedSourceHalfLines(624);
-    SourceMeasurement measurement(inputFormatter);
-
-    CHECK(measureOnce(measurement) == SourceMeasurement::NotSteady);
-}
-
-TEST_CASE("a good count clears a serration verdict")
-{
-    seedSourceLines(607);
-    seedSourceHalfLines(624);
-    seedInterlaced();
-    SourceMeasurement measurement(inputFormatter);
-    REQUIRE(measurePastGate(measurement) == SourceMeasurement::Serrations);
-
-    seedSourceLines(310);
-    seedSourceHalfLines(624);
-    seedInterlaced();
-
-    // A completed run at the new count is what clears it. The verdict stands
-    // while the run is still re-gathering, because that is the state the coast
-    // was widened for and one good sample does not undo it.
-    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
-    for (uint8_t i = 0; i < 2 * SourceMeasurement::SteadySamples; ++i)
-        reading = measureOnce(measurement);
-
-    CHECK(reading != SourceMeasurement::Serrations);
 }
 
 TEST_CASE("a finer line never buys fewer samples than a coarser one")
@@ -1772,23 +1642,6 @@ TEST_CASE("a count still gathering samples costs no field rate measurement")
 
     CHECK(measureOnce(sampling) == SourceMeasurement::NotSteady);
     CHECK(g_fieldRateCalls == 0);
-}
-
-// The caller widens the coast on this, so it has to be distinguishable from a
-// run that is merely still gathering.
-TEST_CASE("a count that read the serrations is reported apart from an unsettled one")
-{
-    SourceMeasurement sampling(inputFormatter);
-    Adc::applyDivider(BenchDivider);
-    seedSourceLines(622);
-    seedSourceHalfLines(622);
-    seedInterlaced();
-
-    SourceMeasurement::MeasurementStatus reading = SourceMeasurement::NotSteady;
-    for (uint8_t pass = 0; pass < 16 && reading != SourceMeasurement::Serrations; ++pass)
-        reading = measureOnce(sampling);
-
-    CHECK(reading == SourceMeasurement::Serrations);
 }
 
 // A rate is not worth sizing a raster from until it has repeated, and the

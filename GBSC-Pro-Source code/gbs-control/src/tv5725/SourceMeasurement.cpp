@@ -95,31 +95,8 @@ SourceMeasurement::SourceMeasurement(InputFormatter &inputFormatter)
       vsyncPolarity_(SourceKey::Undetermined), verticalPeriod_(0),
       dutyMeasured_(false), settlePasses_(0),
       steady_(SteadySamples), scanSteady_(SteadySamples), rateAttempts_(0),
-      serrationsSeen_(false),
       scanReported_(-1)
 {
-}
-
-bool SourceMeasurement::countWasSerrations() const
-{
-    return serrationsSeen_;
-}
-
-bool SourceMeasurement::countIsSerrations(uint16_t lines, uint16_t halfLines,
-                                          bool interlaced)
-{
-    if (!interlaced)
-        return false;
-
-    const uint16_t frameLines = (uint16_t)(halfLines / 2);
-    if (!VideoSignal::countIsSource(frameLines))
-        return false;
-
-    const int32_t toHalfLines = (int32_t)lines - (int32_t)halfLines;
-    const int32_t toFrame = (int32_t)lines - (int32_t)frameLines;
-    const int32_t fromHalfLines = toHalfLines < 0 ? -toHalfLines : toHalfLines;
-    const int32_t fromFrame = toFrame < 0 ? -toFrame : toFrame;
-    return fromHalfLines < fromFrame;
 }
 
 bool SourceMeasurement::countAlternated() const { return scanSteady_.alternated(); }
@@ -171,13 +148,6 @@ bool SourceMeasurement::sampleSteady()
         return false;
 
     verticalPeriod_ = inputFormatter_.verticalPeriod();
-    if (countIsSerrations(lines, verticalPeriod_,
-                          ModeDetect::sourceIsInterlaced())) {
-        serrationsSeen_ = true;
-        steady_.restart(lines);
-        return false;
-    }
-    serrationsSeen_ = false;
     return true;
 }
 
@@ -340,7 +310,7 @@ SourceMeasurement::MeasurementStatus SourceMeasurement::measureRate()
     }
 
     if (!sampleSteady())
-        return countWasSerrations() ? Serrations : NotSteady;
+        return NotSteady;
 
     if (!measureLineRate())
         return Unmeasurable;
