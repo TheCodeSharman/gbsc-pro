@@ -2370,14 +2370,6 @@ go together, and doing both is what removes a base from `gbs_types.h`.
 
 ## Dead code whose fate is undecided
 
-### `applyForScalingRgbhv()` and `applyScalingChargePump()` have no callers
-
-Their only call site went with `loadScalingRgbhvPreset()`. Whether each is a
-preset-era put-back that dies with the tables or a behaviour to restore is
-undecided. `applyForScalingRgbhv()` overlaps `applyForSyncType()` on
-`SP_SOG_MODE` and the overflow protect, so wiring it back as-is would put two
-owners on those.
-
 ### `RgbhvOutput` reports bypass on a unit that is scaling
 
 Measured on the bench RiscPC at 320x256@50 on `vga`, scaled, `OUT_SYNC_SEL` 0
