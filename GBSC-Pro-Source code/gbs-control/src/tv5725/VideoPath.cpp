@@ -925,7 +925,8 @@ bool VideoPath::sizeCaptureWindow(CaptureWindow &capture)
     if (!VideoSignal::isVideo(sourceLines, sampling_.fieldRateHz()))
         return fail();
 
-    capture = CaptureWindow(inputFormatter_.capturableLine(reading_),
+    capture = CaptureWindow(inputFormatter_.capturableLine(reading_,
+                                                          SyncMeasurement::isCsync()),
                             inputFormatter_.capturableFrame(sourceLines),
                             timing_);
     return true;

@@ -36,7 +36,18 @@ static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
     return Tv5725::VideoSourceLine::forDuty(
         units,
         Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f),
-        adcLine >= units + units / 2);
+        adcLine >= units + units / 2, false);
+}
+
+// The same line reaching the counter through the sync separator, which is the
+// composite-sync and the sync-on-green arrangement both.
+static Tv5725::VideoSourceLine separatedLine(uint16_t units, uint16_t hlowLen,
+                                             uint16_t adcLine)
+{
+    return Tv5725::VideoSourceLine::forDuty(
+        units,
+        Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f),
+        adcLine >= units + units / 2, true);
 }
 
 using namespace Tv5725;
@@ -724,6 +735,57 @@ TEST_CASE("the default capture is where it is whatever polarity the source sends
     CHECK(inverted.stop() == positive.stop());
 }
 
+// THE SYNC SEPARATOR'S OUTPUT REACHES THE COUNTER LATE, so a source arriving
+// through it lands earlier in the counter than its published raster states. The
+// separator carries composite sync and sync on green both -- SP_SOG_MODE 1 --
+// and a source with its own hsync line does not go near it.
+//
+// **IT IS A FRACTION OF THE LINE, NOT A COUNT OF UNITS.** Measured on the RISC
+// PC on `vga`, the sync type set from CMOS so one cable and one raster carry
+// both, reading the card's green frame off the emitted frame:
+//
+//     mode            line   separate - composite   fraction
+//     320x256@50      1100          76.5             6.96%
+//     640x480@60      1446         103, 109          7.1, 7.5%
+//
+// A constant count fitted to 640x480@60 predicts 50 units at the bench mode
+// against 76.5 measured, so the two are 40% apart and the count is refuted. A
+// constant TIME is refuted by the handover's own 800x600@60 point.
+//
+// The floor comes down with it. On the separator's path the pulse sits from
+// -lead to syncUnits - lead in this counter, so a floor left at the pulse width
+// puts the start of the picture below it, where no framing can reach it --
+// measured at 640x480@60 on composite, where the source's first active unit
+// lands at 164 against a floor of 173.
+// docs/investigations/the-separator-moves-the-counters-origin.md
+TEST_CASE("a source on the sync separator lands earlier in the counter")
+{
+    // 640x480@60 at PLLAD_MD 1446: 1447 counter units, HLOW_LEN 170.
+    const float ActiveStart = 144.0f / 800.0f;
+
+    SUBCASE("a source with its own hsync lands where the standard states") {
+        CHECK(videoAtOf(measuredLine(1447, 170, 1446), AxisHorizontal,
+                        ActiveStart) == 260);
+    }
+
+    SUBCASE("one through the separator lands a fraction of the line earlier") {
+        CHECK(videoAtOf(separatedLine(1447, 170, 1446), AxisHorizontal,
+                        ActiveStart) == 159);
+    }
+
+    SUBCASE("the floor moves with it, so the picture stays reachable") {
+        const VideoSourceLine line = separatedLine(1447, 170, 1446);
+        CHECK(firstUnitOf(line, AxisHorizontal) == 70);
+    }
+
+    SUBCASE("a position maps back to the framing it was taken from") {
+        const VideoSourceLine line = separatedLine(1447, 170, 1446);
+        CHECK(fractionAtOf(line, AxisHorizontal,
+                           videoAtOf(line, AxisHorizontal, ActiveStart))
+              == doctest::Approx(ActiveStart).epsilon(0.001));
+    }
+}
+
 TEST_CASE("a framing survives a round trip through a coarser capture grid")
 {
     // An output too short for a doubled frame turns the line doubler off, and
@@ -768,8 +830,8 @@ TEST_CASE("one framing takes the same span of the line in either scan mode")
     // picture in each: photographed at one framing, 480p fitted at 0.980 of
     // the 1080p frame horizontally and 576p at 0.962. Anchored to the LINE it
     // names the same part, because the line is the same either way.
-    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f), true);
-    const VideoSourceLine single = VideoSourceLine::forDuty(1881, HsyncPulse(0.0718f), false);
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f), true, false);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1881, HsyncPulse(0.0718f), false, false);
 
     const PanAndZoom framing(0.2036f, 0.6245f, 0.0f, 1.0f);
 
@@ -796,8 +858,8 @@ TEST_CASE("one framing names the same source video in either scan mode")
 {
     // 1080p doubles the bench source at PLLAD_MD 2200; 480p cannot fit the
     // doubled frame and captures it whole at 1880.
-    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f), true);
-    const VideoSourceLine single = VideoSourceLine::forDuty(1880, HsyncPulse(0.0718f), false);
+    const VideoSourceLine doubled = VideoSourceLine::forDuty(1100, HsyncPulse(0.0718f), true, false);
+    const VideoSourceLine single = VideoSourceLine::forDuty(1880, HsyncPulse(0.0718f), false, false);
 
     const PanAndZoom framing(0.2036f, 0.6245f, 0.0f, 1.0f);
 

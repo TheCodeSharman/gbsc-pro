@@ -91,8 +91,11 @@ uint16_t CaptureWindow::firstCapture(const VideoSourceLine &line)
     // keeps two units clear of the wrap for its own reasons; this is the
     // head's equivalent, and it is what a frame carrying no interval at the
     // head floors on.
-    const long floor = (long)line.headBlankingUnits()
-                     + (line.syncAtHead() ? (long)line.syncUnits() : 0L);
+    // The pulse sits from -originLead to syncUnits - originLead in this counter,
+    // so a floor left at the pulse width puts the start of the picture below it
+    // where no framing can reach it.
+    const long pulse = (long)line.syncUnits() - (long)line.originLeadUnits();
+    const long floor = (long)line.headBlankingUnits() + (pulse > 0 ? pulse : 0L);
     return floor < (long)FirstCapturableUnit ? FirstCapturableUnit : (uint16_t)floor;
 }
 
@@ -122,7 +125,7 @@ uint16_t CaptureWindow::capturable(const VideoSourceLine &line)
 uint16_t CaptureWindow::videoAt(const VideoSourceLine &line, float lineFraction)
 {
     long at = lrintf(lineFraction * (float)line.units())
-            - (line.syncAtHead() ? 0L : (long)line.syncUnits());
+            - (long)line.originLeadUnits();
     if (at < 0)
         at = 0;
     return at > (long)line.units() ? line.units() : (uint16_t)at;
@@ -132,8 +135,7 @@ float CaptureWindow::fractionAt(const VideoSourceLine &line, uint16_t position)
 {
     if (line.units() == 0)
         return 0.0f;
-    const float at = (float)position
-                   + (line.syncAtHead() ? 0.0f : (float)line.syncUnits());
+    const float at = (float)position + (float)line.originLeadUnits();
     return at < 0.0f ? 0.0f : at / (float)line.units();
 }
 

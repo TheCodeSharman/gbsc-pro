@@ -472,7 +472,7 @@ TEST_CASE("the block holds the line counter it wrote")
 
     SUBCASE("the counter it offers a capture window is the one it wrote") {
         block.applyScan(2000, true, false);
-        CHECK(block.capturableLine(HsyncPulse(0.0718f)).units()
+        CHECK(block.capturableLine(HsyncPulse(0.0718f), false).units()
               == block.lineUnits());
     }
 }
@@ -489,26 +489,26 @@ TEST_CASE("the block states the counters a capture window sits in")
         InputFormatter block;
 
         block.applyScan(2000, true, false);
-        CHECK(block.capturableLine(pulse).units() == 1001);
+        CHECK(block.capturableLine(pulse, false).units() == 1001);
 
         block.applyScan(2000, false, false);
-        CHECK(block.capturableLine(pulse).units() == 2001);
+        CHECK(block.capturableLine(pulse, false).units() == 2001);
     }
 
     SUBCASE("the pulse is excluded from the head") {
         InputFormatter block;
         block.applyScan(2000, false, false);
 
-        const VideoSourceLine line = block.capturableLine(pulse);
+        const VideoSourceLine line = block.capturableLine(pulse, false);
         CHECK(line.syncUnits() == 144);          // ceil(2001 x 0.0718)
-        CHECK(line.syncAtHead());
+        CHECK(line.originLeadUnits() == 0);
     }
 
     SUBCASE("a doubled line keeps the head blanking clear of the capture") {
         InputFormatter block;
         block.applyScan(2000, true, false);
 
-        const VideoSourceLine doubled = block.capturableLine(pulse);
+        const VideoSourceLine doubled = block.capturableLine(pulse, false);
         CHECK(doubled.headBlankingUnits()
               == VideoSourceLine::DoubledHeadBlankingUnits);
     }

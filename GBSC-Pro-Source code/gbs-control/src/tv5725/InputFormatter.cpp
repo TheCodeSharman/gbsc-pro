@@ -17,9 +17,10 @@ uint16_t InputFormatter::lineCounterFor(uint16_t divider, bool lineDoubled)
     return lineDoubled ? (uint16_t)(divider / 2) : divider;
 }
 
-VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse) const
+VideoSourceLine InputFormatter::capturableLine(const HsyncPulse &pulse,
+                                               bool separated) const
 {
-    return VideoSourceLine::forDuty(lineUnits_, pulse, doubled_);
+    return VideoSourceLine::forDuty(lineUnits_, pulse, doubled_, separated);
 }
 
 VideoSourceLine InputFormatter::capturableFrame(uint16_t sourceLines) const

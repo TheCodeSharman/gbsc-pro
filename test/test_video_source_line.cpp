@@ -26,7 +26,7 @@ static Tv5725::VideoSourceLine measuredLine(uint16_t units, uint16_t hlowLen,
     return Tv5725::VideoSourceLine::forDuty(
         units,
         Tv5725::HsyncPulse(adcLine > 0 ? (float)hlowLen / (float)adcLine : 0.0f),
-        adcLine >= units + units / 2);
+        adcLine >= units + units / 2, false);
 }
 
 using namespace Tv5725;
@@ -65,7 +65,7 @@ TEST_CASE("the hsync pulse width comes from the measured duty")
 // docs/investigations/the-capture-floor-followed-a-normalised-polarity.md
 TEST_CASE("a measured line carries its pulse at the head")
 {
-    CHECK(measuredLine(1495, 172, 1494).syncAtHead());
+    CHECK(measuredLine(1495, 172, 1494).originLeadUnits() == 0);
 }
 
 // The capture path writes blanking past the hsync pulse where the line doubler
@@ -92,12 +92,12 @@ TEST_CASE("the frame states where its counter zeroes on vertical sync")
     // The Wii at 480p on ypbpr: 524 counted lines, so a 525-unit frame.
     SUBCASE("a frame given no vsync interval excludes nothing") {
         CHECK(VideoSourceLine::frame(525).syncUnits() == 0);
-        CHECK(VideoSourceLine::frame(525).syncAtHead());
+        CHECK(VideoSourceLine::frame(525).originLeadUnits() == 0);
     }
 
     SUBCASE("a frame zeroed on the leading edge carries the pulse as blanking") {
         CHECK(VideoSourceLine::frame(525, 7).syncUnits() == 7);
-        CHECK_FALSE(VideoSourceLine::frame(525, 7).syncAtHead());
+        CHECK(VideoSourceLine::frame(525, 7).originLeadUnits() == 7);
         CHECK(VideoSourceLine::frame(525, 7).headBlankingUnits() == 0);
     }
 }

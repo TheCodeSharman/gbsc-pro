@@ -22,6 +22,7 @@
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/MemoryWindow.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncProcessor.h"
 #include "../GBSC-Pro-Source code/gbs-control/src/tv5725/InputFormatter.h"
+#include "../GBSC-Pro-Source code/gbs-control/src/tv5725/SyncMeasurement.h"
 
 static Tv5725::InputFormatter inputFormatter;
 
@@ -821,6 +822,29 @@ TEST_CASE("the vertical capture window clears the picture by more than the path 
 
     CHECK(Wire.field(1, 0x1C, 0, 11) - Wire.field(1, 0x1E, 0, 11)
           == solved.engine.extentUnitsOn(AxisVertical) + 4);
+}
+
+// THE SYNC TYPE REACHES THE CAPTURE WINDOW. The sync separator's output arrives
+// at the input formatter's line counter late, so a source through it sits
+// earlier in the counter and a window placed as though it were not is a whole
+// separator delay off -- measured on the bench as 100 units of 1446 at
+// 640x480@60, which cuts the left of the picture and leaves black at the right.
+// docs/investigations/the-separator-moves-the-counters-origin.md
+TEST_CASE("a source on the sync separator is captured earlier in the line")
+{
+    SolvedEngine solved(311, 50.08f, 181, &Mode1080p);
+    const uint16_t ownHsync = Wire.field(1, 0x1A, 0, 11);
+
+    // The sync type moves without the mux, so it is re-solved rather than
+    // re-detected: inputTimingsChanged() forgets the held answer.
+    SyncMeasurement::set(true);
+    REQUIRE(resolveUntilSolved(solved.acquisition));
+    const uint16_t separated = Wire.field(1, 0x1A, 0, 11);
+    SyncMeasurement::set(false);
+
+    // The framing is unmoved, so it names the same part of the source both
+    // times: 7% of the 1101-unit counter this source is captured in.
+    CHECK(ownHsync - separated == 77);
 }
 
 // THE FRAMING THE BOUNDS REALISE AT EACH ZOOM STOP. The framing is clamped
