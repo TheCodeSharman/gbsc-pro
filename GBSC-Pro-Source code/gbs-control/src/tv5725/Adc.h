@@ -420,9 +420,11 @@ public:
     // The rate is the LOWEST line the part is expected to carry, so that every
     // faster source needs the PLL to divide rather than multiply: asked for a
     // frequency under its lock range it locks to every kth hsync, and
-    // measureSourceLinesCorrected() recovers k up to LinesPerCountMax -- which
-    // reaches 62.5 kHz. Above that the first count is not the source's and the
-    // recovery ladder is what answers.
+    // measureSourceLinesCorrected() recovers k up to LinesPerCountMax. **HOW FAR
+    // THAT REACHES IS A PROPERTY OF THE DIVIDER**, the conversion rate being
+    // divider x line rate against the part's 162 MSPS: swept on the bench at
+    // 37.9, 45.0, 67.6 and 75.0 kHz, every one counted and rated correctly first
+    // pass with one divider solved and STATUS_SYNC_PROC_HTOTAL equal to it.
     // ../../../docs/investigations/the-reference-divider-was-the-bootstrap.md
     static const uint16_t BringUpDivider = 1400;
     static const uint32_t BringUpLineRateHz = 15625;
