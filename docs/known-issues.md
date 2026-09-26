@@ -241,34 +241,64 @@ a count that moves 624 -> 311 across one sync change.
 
 ### The composite capture window opens a whole pulse from the wrong end, and neither end is right
 
-**FIXED, in two parts.** The whole pulse was `HsyncPulse` carrying the measured
-polarity into `syncAtHead`, and that went with the polarity. What was left is
-the sync separator's own delay: its output reaches the input formatter's line
-counter late, so a source through it -- composite sync and sync on green both --
-lands **7% of the line earlier in the counter** than its published raster
-states. `VideoSourceLine::SeparatorOriginPerMille` is 70.
+**FIXED, in three parts.** The whole pulse was `HsyncPulse` carrying the
+measured polarity into `syncAtHead`, and that went with the polarity. What was
+left is the sync separator's own delay, on both axes: its output reaches the
+input formatter's counters late, so a source through it -- composite sync and
+sync on green both -- lands earlier in them than its published raster states.
 
-It is a fraction of the line and not a count of units, measured on one cable and
-one raster with the sync type the only variable:
-
-| mode | counter | separate - composite | fraction |
+| axis | constant | value | shape |
 |---|---|---|---|
-| 320x256@50, doubled | 1100 | 76.5 | **6.96%** |
-| 640x480@60, undoubled | 1446 | 103, 109 | **7.1%, 7.5%** |
+| horizontal | `VideoSourceLine::SeparatorOriginPerMille` | 70 | a fraction of the LINE |
+| vertical | `VideoSourceLine::SeparatorFrameLeadLines` | 16 | a count of the source's LINES |
 
-A count fitted to either is 40% wrong on the other. A constant time is refuted
-by the 800x600@60 point.
+Measured on one cable and one raster with the sync type the only variable:
 
-Solved at 640x480@60 the two arrangements now place the window a lead apart --
-`IF_HB_SP2` 260 separate against 159 composite -- and the emitted picture is
-flush at both: the 128 px black band down the left of the composite frame is 4
-px, the same as separate.
+| mode | line | separate - composite | fraction | frame rows | source lines |
+|---|---|---|---|---|---|
+| 320x256@50, doubled | 1100 | 76.5 | **6.96%** | 61 | **16.6** |
+| 640x480@60, undoubled | 1446 | 103, 109 | **7.1%, 7.5%** | 34 | **15.2** |
 
-**The vertical residual is NOT fixed.** Composite still sits about 34 output
-rows up at 640x480@60, leaving a black band across the bottom, with the
-horizontal flush.
+Horizontally a count fitted to either mode is 40% wrong on the other;
+vertically a fraction is 80% wrong. The two axes need not agree -- one is a
+delay through a PLL locked to the line, the other through whatever counts lines.
+
+Solved at 640x480@60 the emitted frame's black margins:
+
+| | left | right | top | bottom |
+|---|---|---|---|---|
+| separate | 5 | 0 | 0..3 | 5..6 |
+| composite | 14 | 15 | 5 | 5 |
+
+against 128 px of black down the left and 34 rows up before. The Wii on `ypbpr`
+takes both leads too and acquires clean and full screen.
 
 `investigations/the-separator-moves-the-counters-origin.md`
+
+### The separator's path writes head blanking a doubled line cannot capture past
+
+On the sync separator's path a doubled line carries saturated green to unit 88
+of its 1101-unit counter, and separate sync carries none measurable at the same
+divider, the same mode and the same register. Measured at 320x256@50 with
+automation frozen, counting columns of green at the head of the emitted line:
+
+| `IF_HB_SP2` | 52 | 60 | 70 | 80 | 88 | 90 | 100 |
+|---|---|---|---|---|---|---|---|
+| composite | 74 | 58 | 38 | 17 | **0** | 0 | 0 |
+| separate | -- | -- | **0** | 0 | -- | 0 | 0 |
+
+So the capture floor cannot come down by the separator's lead, and a doubled
+line therefore spends only 28 of its 77 units of it -- the picture on composite
+sits about 97 output pixels left of where separate puts it at that mode. An
+undoubled line has no head blanking and reaches within 12 units, which costs 24
+px of width at 640x480@60.
+
+**Why the blanking is on one arrangement and not the other is not known.** It is
+not the lead moving a fixed feature: that would put it EARLIER in the counter on
+the separator's path and it reads later.
+
+What would settle it: the same creep at a second divider, which needs a doubled
+source that is not 15 kHz, or `IF_HBIN_SP` swept against it.
 
 ### The sample-clock group has two writers, and they are the same function twice
 
