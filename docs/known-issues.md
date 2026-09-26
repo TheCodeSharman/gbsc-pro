@@ -788,6 +788,46 @@ register dump does not clear the board -- which is why
 `bench-output-capture.md` asks `s0_46` first, and why the reading it asks for
 is the one that answers in a single request.
 
+### The field rate reads exactly double after a sync reset, on the component path
+
+`SourceMeasurement::sampleFieldRateHz()` returns 119.87 Hz against a real 59.93
+in the window after the sync processor is reset on `ypbpr` -- **8 of 8** trials,
+two or three consecutive samples, clearing in about 0.3 s. On `vga` it is **0 of
+8** under the identical command.
+
+`rateFollowsCount()` hides it wherever the count has not moved, reporting `line
+rate 0`. **A change of input is the case that guard is deliberately off for**, so
+there the doubled rate becomes the line rate: 4 of 4 `ypbpr` selections take
+62936 Hz -- exactly twice 31468 -- solve `PLLAD_MD` 694, then 2200, and only then
+1448. Three dividers and three ADC PLL re-latches per selection, against one on
+`vga`.
+
+**The coast is not the cause**, which is the tempting reading given
+`two-owners-of-the-coast-lengths-double-the-count.md`. `SP_PRE_COAST`/
+`SP_POST_COAST` read 7/6 unchanged through the doubled samples and the correct
+ones, and the line count is 524 and right in the same samples. Why the input
+formatter's vertical asserts twice is not established.
+
+**Do not read it as settling.** 119.87 sits inside the 60..160 Hz band the
+console table calls `getSourceFieldRate()` settling, which is what has let it
+pass as normal -- but a settling analog path gives arbitrary values, not three
+consecutive samples at exactly 2.0000x.
+`docs/investigations/the-field-rate-reads-exactly-double-after-a-sync-reset.md`.
+
+### The selection path installs the reference clock without the line it implies
+
+`Adc::BringUpLineDoubled` exists because the reference divider cannot be
+represented undoubled -- 2506 truncates to 458 in an eleven-bit counter.
+`setResetParameters()` writes `writeLineCounter(BringUpDivider,
+BringUpLineDoubled)` beside the clock; `applyInputSelection()` installs the clock
+alone, and `VideoPath::inputTimingsChanged()` re-applies the divider in force
+carrying `lineDoubled_`, the previous source's scan.
+
+Visible as two to four `if line counter: 2506 does not fit, holding N` lines per
+selection. Nothing is corrupted -- `writeLineCounter()` refuses a counter that
+does not fit and leaves both registers alone, so the pair stays agreeing -- but
+the block is left sized by a scan that was never the reference clock's.
+
 ### The serration test reads VPERIOD_IF on a scale the reconciliation does not give it
 
 `VPERIOD_IF` presents the frame either in whole lines or in half lines
