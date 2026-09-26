@@ -821,57 +821,59 @@ can. **It is not the acquisition stall below** -- the two interlace bits read 0
 in 807 of 807 samples through a measured stall -- so this is a latent defect
 rather than an observed one.
 
-### An input change measures through the previous source's divider, and the count it gets has no route out
+### An input change can wedge the sync processor block, and only a block reset clears it
 
 **This is the acquisition stall on `ypbpr`, and it is distinct from the absence
-run below**: `state: absent` here holds the previous source's solve with the
-sync processor counting, where that one stalls with detection unable to claim a
-signal.
+run below**: `state: absent` here holds the previous source's solve with a
+signal reaching the chip, where that one stalls with detection unable to claim
+a signal.
 
-Measured on the Wii at 480p over `ypbpr`, cycling `/input` against `vga`,
-**one acquisition in twelve**. `Tv5725::SamplingLog` at 25 ms across the whole
-window:
+Measured on the Wii at 480p over `ypbpr`, cycling `/input` against `vga`.
+Roughly **one acquisition in 25** pooled across runs, though the rate is not
+steady -- 2 in 14 and 1 in 40 were both measured.
 
-| | stalled | healthy |
+**THE CONFIGURATION IS CORRECT THROUGHOUT, AND THAT IS THE FINDING.** Read by
+name through a stall and again after a recovery:
+
+| | stalled | recovered |
 |---|---|---|
-| `PLLAD_MD` | **1438 in 807 of 807 samples** -- `vga`'s | 2506, then 694, 2200, 1446, settling on 1448 |
-| `STATUS_SYNC_PROC_VTOTAL` | 97 in 771 of 807 | 0 until 3.2 s, then 524 |
-| `VPERIOD_IF` | 394..401 | 524 |
-| the two Mode Detect interlace bits | 0 in 807 of 807 | 0 |
+| `SP_PRE_COAST` / `SP_POST_COAST` | 7 / 6 | 7 / 6 |
+| `SP_DLT_REG` | 192 | 192 |
+| `SP_SOG_MODE` | 1 | 1 |
+| `STATUS_SYNC_PROC_VTOTAL` | 97..105 | 524 |
+| `PLLAD_MD` | 1438, the previous source's | 1448 |
+| `STATUS_MISC_PLLAD_LOCK` | 0 | 1 |
 
-The console carries `DETECT: 24ms, syncFound 2` and then **nothing whatever**
-for the rest of the capture. That silence is the diagnosis rather than a gap in
-it: `SourceMeasurement::measureLineRate()` prints its `sampling:` line
-unconditionally, so no such line means the pass never reached it and the refusal
-is upstream, in `sampleSteady()`. `countIsSource(97)` is false, so the run is
-restarted every pass and nothing logs.
+The source IS reaching the chip: `/testbus` through a stall gives 4024, 1794
+and 2048 transitions in 25 ms on selectors 5, 7 and 18, which is a 31 kHz line
+arriving. So the analog path is connected and the registers are right, and the
+block still will not count.
 
-**The divider is the cause and the count is the symptom.** The `ypbpr` arm of
-`detectAndSwitchToActiveInput()` returns with the previous source's `PLLAD_MD`
-standing, which its own comment states, on the basis that the engine sizes one
-after it returns. The engine sizes one in `installSampling()`, which runs only
-once `measureRate()` has succeeded -- and that cannot succeed while the count
-taken through the stale divider is 97. **The divider is derived from the
-measurement and the measurement needs a workable divider.** The healthy path
-breaks the circle by passing through a teardown, which leaves
-`Adc::BringUpDivider`; the stalled path takes `det hsact,0` then `det hsact,1`
-and never tears down.
+**What clears it is `SFTRST_SYNC_RSTZ`**, the pulse `resetSyncProcessor()`
+makes. Re-selecting the SAME input recovers it -- which moves no selection and
+so tells the engine nothing, but does reset the block. The escalation ladder's
+`FullReset` rung is the engine's own copy of that pulse, and it is what
+recovers the source when the ladder is allowed to run: measured, the nine rungs
+before it all fired and changed nothing, and `FullReset` acquired the source
+within a second.
 
-`VideoPath::prepareToMeasure()` is where the reference would belong and it
-states that it installs no clock, because the reset state is already one that
-can be measured through. That holds only where a reset happened.
+**Why the block wedges is NOT established.** What is established is that it is
+block state rather than register state, because every configuration register
+reads correct while it is wedged.
 
-**Neither recovery is reachable from the state.** The `unusable count` arm is
-the one caller of `forgetSyncType()` and lives in
-`VideoSourceAcquisition::sourceMoved()`, which `runPass()` skips entirely while
-`changingMode()` is true -- and `modePending_` is cleared only by a completed
-solve. `selectionMoved()` sets `firstAcquisition_`, which pins
-`recoveryPosition_` at 0, so the escalation ladder does not run either.
+**Four repairs were tried and measured, and all four are refused:**
 
-**Re-probing the sync type is not the fix and was measured not to be**: forced
-to re-probe on a cadence, the arrangement comes back `composite or SOG for
-input 4` every time and the count stays 97. What is missing is a reference
-sampling clock, not a different sync path.
+| tried | measured |
+|---|---|
+| re-probe the sync type on a cadence | the arrangement comes back the same every time; the count stays 97 |
+| install `Adc::BringUpDivider` as a reference | `PLLAD_MD` 2506 installed, count still 97, and `IF_HSYNC_RST` cannot hold 2506 so it is left describing another line |
+| write `SP_DLT_REG` with the coast | a real defect and fixed, but the stall recurs with `SP_DLT_REG` correct at 192 |
+| reset the block AFTER the input registers, with 200 ms for the AV module | **worse**: 2 stalls in 3 cycles against 1 in 40 |
+
+The last of those is worth keeping in mind before reaching for it again: the
+ordering looks wrong -- `applyInputSelection()` resets the block and then
+switches `ADC_INPUT_SEL` under it, while the AV module is still moving the
+analog mux -- and correcting it made the fault more frequent, not less.
 
 ### The absence run has a branch that can never end it
 
