@@ -392,6 +392,15 @@ diagnosing "the unit" while able to observe roughly a third of it.
   UART IAP**; each needs a wire, and J18 exposes PB5/PB4/PB3 beside GND for
   one. The `'I'` INFO handler being commented out is a consequence of this, not
   the cause.
+- **THE HC32 HAS THREE TWO-WIRE BUSES AND ONLY ONE CARRIES A CHIP**, which is a
+  trap because the chips are NOT on the pins named `I2C_*`. Schematic sheet 12:
+
+  | HC32 pins | net | on it |
+  |---|---|---|
+  | 17 / 16 (PA7/PA6) | `SDA` / `SCL` | the ADV7280 (0x42, ALSB high) and the ADV7391 |
+  | 46 / 45 (PB9/PB8) | `I2C_SDA` / `I2C_SCL` | nothing -- out to J16, a 4-pin header, with 2.2K pull-ups |
+  | 15 / 14 (PA5/PA4) | `SCREEN_SDA` / `SCREEN_SCL` | nothing -- out to J17, for an external screen |
+
 - **The OLED menu is on the ESP**, not the HC32. Picking an input there works
   because that handler transmits the frame above.
 - **`ADC_INPUT_SEL` is only half the input path.** It selects which TV5725 ADC
@@ -439,8 +448,8 @@ diagnosing "the unit" while able to observe roughly a third of it.
   board. Only removing power clears it. Its I²C slave pins are wired to
   nothing — SDA (29) and SCL (28) carry no-connect flags on schematic sheet
   4/13 — so an NDA register map would still not reach it, and neither MCU's
-  firmware addresses it: the HC32 drives one I²C device (0x42, the ADV7280)
-  and the ESP drives the TV5725, Si5351, STV9426, PT2257 and the EEPROM. The
+  firmware addresses it: the HC32 drives the ADV7280 and the ADV7391, and the
+  ESP drives the TV5725, Si5351, STV9426, PT2257 and the EEPROM. The
   encoder configures itself from its own MCU and ROM — `MCUSEL` (pin 4) is
   strapped low through R56, and the firmware is on-die mask ROM, not an
   external part — and reads the sink's EDID over its own DDC master.
